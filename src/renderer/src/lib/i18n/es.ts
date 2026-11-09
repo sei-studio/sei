@@ -2444,4 +2444,18 @@ export const ES: Record<string, string> = {
   "Could not change this setting. Try again.": "No se pudo cambiar este ajuste. Inténtalo de nuevo.",
   // ── suggest-a-game hint (261109) ──
   "{game} already works in Sei": "{game} ya funciona en Sei",
+  // ── profile Overview + one-page settings (product call 261110) ──
+  "Companion profile": "Perfil del compi",
+  "Custom image": "Imagen personalizada",
+  "Farmer look ready": "Aspecto de granjero listo",
+  "Hear voice": "Escuchar voz",
+  "How {name} looks in Minecraft, and the name they use in your worlds.": "Cómo se ve {name} en Minecraft y el nombre que usa en tus mundos.",
+  "Loading sample...": "Cargando muestra...",
+  "No game looks yet. They are made on the first launch.": "Aún no hay aspectos de juego. Se crean la primera vez que se abre el juego.",
+  "Overview": "Resumen",
+  "Play voice sample": "Reproducir muestra de voz",
+  "Skin ready": "Skin lista",
+  "Stop sample": "Detener muestra",
+  "Your settings": "Tus ajustes",
+  "by {name}": "de {name}",
 };

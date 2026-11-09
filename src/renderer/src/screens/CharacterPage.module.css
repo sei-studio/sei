@@ -281,14 +281,15 @@
   border-bottom-color: var(--accent);
 }
 
-/* The danger tab's label stays muted until picked, then reads red. */
-.tabDanger.tabActive {
-  color: var(--red);
-  border-bottom-color: var(--red);
+/* "by Sei" / "by <author>" on someone else's companion (261110). */
+.metaItem dd.byline {
+  font-weight: 500;
+  color: var(--text);
 }
 
-/* ── Tab panel ─────────────────────────────────────────────────────────
-   Only the active tab renders here, and it scrolls INSIDE this area: the
+/* ── Body panel ────────────────────────────────────────────────────────
+   The owner's settings page, or a foreign companion's active tab. It
+   scrolls INSIDE this area: the
    .content column shrinks it (min-height: 0) to fit above the pinned deploy
    row, so one section never scrolls into the next. The negative margin +
    padding keep the scrollbar off the rows' right edge. */
@@ -484,3 +485,10 @@
   background: var(--bg3);
 }
 
+
+/* The owner's one-page settings start right under the meta line (no tab
+   bar above them, so no pull-up). */
+.panelOwner {
+  margin-top: 0;
+  padding-top: var(--space-xs);
+}

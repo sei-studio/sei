@@ -2444,4 +2444,18 @@ export const JA: Record<string, string> = {
   "Could not change this setting. Try again.": "この設定を変更できませんでした。もう一度お試しください。",
   // ── suggest-a-game hint (261109) ──
   "{game} already works in Sei": "{game}はすでにSeiで遊べます",
+  // ── profile Overview + one-page settings (product call 261110) ──
+  "Companion profile": "コンパニオンのプロフィール",
+  "Custom image": "カスタム画像",
+  "Farmer look ready": "農家の見た目が完成",
+  "Hear voice": "声を聞く",
+  "How {name} looks in Minecraft, and the name they use in your worlds.": "Minecraftでの{name}の見た目と、ワールドで使う名前。",
+  "Loading sample...": "サンプルを読み込み中...",
+  "No game looks yet. They are made on the first launch.": "ゲーム用の見た目はまだありません。初めて起動したときに作られます。",
+  "Overview": "概要",
+  "Play voice sample": "ボイスサンプルを再生",
+  "Skin ready": "スキン完成",
+  "Stop sample": "サンプルを停止",
+  "Your settings": "あなたの設定",
+  "by {name}": "{name}制作",
 };

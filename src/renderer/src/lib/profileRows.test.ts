@@ -1,6 +1,7 @@
 /**
- * profileRows (261107, profile v0.7 "Option A"): who may use which profile
- * row, which tabs a companion gets, and the analytics shape.
+ * profileRows (261107, reworked by product call 261110): who may use which
+ * profile row, the owner page's sections, a foreign companion's tabs, and
+ * the analytics shape.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,18 +9,25 @@ const track = vi.fn();
 (globalThis as unknown as { window: unknown }).window = { sei: { track } };
 
 const {
-  PROFILE_TABS,
+  PROFILE_SECTIONS,
+  foreignSettingsRows,
+  foreignTabs,
+  isProfileFocus,
   lockTipKey,
+  ownerSections,
   profileAccess,
   profileKind,
-  profileTabs,
-  requestProfileTab,
-  resolveProfileTab,
-  sharingTabLabel,
-  takeRequestedProfileTab,
+  profileView,
+  requestProfileFocus,
+  resolveForeignTab,
+  sectionOf,
+  takeRequestedProfileFocus,
   trackProfileActionClicked,
+  trackProfileCtaClicked,
   trackProfileTabViewed,
   trackProfileTooltipOpened,
+  trackProfileViewed,
+  trackProfileVoiceSample,
 } = await import('./profileRows');
 type Input = Parameters<typeof profileAccess>[0];
 
@@ -34,7 +42,11 @@ const base: Omit<Input, 'kind'> = {
   noVoice: false,
 };
 
-describe('profileKind', () => {
+/** The owner page as section -> rows. */
+const sections = (input: Input): Record<string, string[]> =>
+  Object.fromEntries(ownerSections(profileAccess(input)).map((s) => [s.section, s.rows]));
+
+describe('profileKind / profileView', () => {
   it('a bundled default is built-in, whoever owns the row', () => {
     expect(profileKind({ is_default: true, owner: THEM, kind: 'custom' }, ME)).toBe('builtin');
     expect(profileKind({ is_default: true, owner: null }, null)).toBe('builtin');
@@ -48,62 +60,67 @@ describe('profileKind', () => {
   it('your own (or a legacy null-owner) custom companion is custom', () => {
     expect(profileKind({ is_default: false, owner: ME, kind: 'custom' }, ME)).toBe('custom');
     expect(profileKind({ is_default: false, owner: null, kind: 'custom' }, null)).toBe('custom');
-    // kind defaults to custom
     expect(profileKind({ is_default: false, owner: null }, ME)).toBe('custom');
   });
 
   it('your own system-cast companion is awakened', () => {
     expect(profileKind({ is_default: false, owner: ME, kind: 'unique' }, ME)).toBe('awakened');
   });
+
+  it('owner view for yours, the Overview for everyone else', () => {
+    expect(profileView('custom')).toBe('owner');
+    expect(profileView('awakened')).toBe('owner');
+    expect(profileView('builtin')).toBe('foreign');
+    expect(profileView('world')).toBe('foreign');
+  });
 });
 
-describe('profileAccess', () => {
-  it('custom: every edit surface is live', () => {
+describe('owner page (one scroll, sections in use order)', () => {
+  it('custom: Look, Voice, Personality, Games, Sharing, Danger zone, every row live', () => {
+    expect(sections({ ...base, kind: 'custom' })).toEqual({
+      look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
+      voice: ['voice', 'pitch'],
+      personality: ['about', 'persona', 'knowledge'],
+      games: ['chess', 'dst'],
+      sharing: ['publicToggle'],
+      danger: ['resetMemory', 'unbind'],
+    });
     const a = profileAccess({ ...base, kind: 'custom' });
-    for (const row of ['cardImage', 'skin', 'voice', 'pitch', 'name', 'description', 'persona', 'username', 'chess'] as const) {
+    for (const row of ['cardImage', 'skin', 'voice', 'pitch', 'about', 'persona', 'chess'] as const) {
       expect(a[row], row).toBe('edit');
     }
     expect(a.cardUpload).toBe(true);
     expect(a.skinEdit).toBe(true);
     expect(a.skinGenerate).toBe(true);
-    expect(a.avatar).toBe('manage');
-    expect(a.publicToggle).toBe('edit');
-    expect(a.report).toBe('hidden');
-    expect(a.resetMemory).toBe('edit');
-    expect(a.unbind).toBe('edit');
+    expect(a.avatarMode).toBe('manage');
+    expect(a.report).toBe(false);
   });
 
-  it('built-in: look, voice and personality are locked, the rest stays live', () => {
-    const a = profileAccess({ ...base, kind: 'builtin' });
-    for (const row of ['cardImage', 'skin', 'voice', 'name', 'description', 'persona', 'username', 'chess'] as const) {
-      expect(a[row], row).toBe('locked');
-    }
-    expect(a.pitch).toBe('hidden');
-    expect(a.cardUpload).toBe(false);
-    expect(a.skinEdit).toBe(false);
-    expect(a.skinGenerate).toBe(false);
-    expect(a.avatar).toBe('pick');
-    expect(a.floatingAvatar).toBe('edit');
-    expect(a.knowledge).toBe('edit');
-    expect(a.dst).toBe('edit');
-    // The Sharing rows are hidden for built-ins.
-    expect(a.publicToggle).toBe('hidden');
-    expect(a.othersHear).toBe('hidden');
-    expect(a.report).toBe('hidden');
-    expect(a.resetMemory).toBe('edit');
-    expect(a.unbind).toBe('edit');
+  it('the order is the one people use: look first, destructive last', () => {
+    expect(PROFILE_SECTIONS[0]).toBe('look');
+    expect(PROFILE_SECTIONS[PROFILE_SECTIONS.length - 1]).toBe('danger');
   });
 
-  it('World: locked like a built-in, plus Report', () => {
-    const a = profileAccess({ ...base, kind: 'world' });
-    expect(a.name).toBe('locked');
-    expect(a.cardImage).toBe('locked');
-    expect(a.publicToggle).toBe('hidden');
-    expect(a.report).toBe('edit');
-    expect(a.avatar).toBe('pick');
+  it('merged rows: name and description are one row, the username lives in the skin row', () => {
+    const rows = ownerSections(profileAccess({ ...base, kind: 'custom' })).flatMap((s) => s.rows) as string[];
+    expect(rows).toContain('about');
+    expect(rows).not.toContain('name');
+    expect(rows).not.toContain('description');
+    expect(rows).not.toContain('username');
+    expect(new Set(rows).size).toBe(rows.length);
   });
 
-  it('awakened: owned, so the card image, skin generation and Public stay live; the edit surfaces lock', () => {
+  it('WorldLink is its own section; Idle lines needs her on the desktop', () => {
+    expect(sections({ ...base, kind: 'custom', seilinkOn: true }).worldlink).toEqual(['desktopRoom', 'room', 'intro']);
+    expect(sections({ ...base, kind: 'custom', seilinkOn: true, movedInHere: true }).worldlink).toEqual([
+      'desktopRoom',
+      'room',
+      'idleLines',
+      'intro',
+    ]);
+  });
+
+  it('awakened: owned, so card image, skin generation and Public stay live; the edit surfaces lock', () => {
     const a = profileAccess({ ...base, kind: 'awakened' });
     expect(a.cardImage).toBe('edit');
     expect(a.cardUpload).toBe(false);
@@ -111,30 +128,9 @@ describe('profileAccess', () => {
     expect(a.skinEdit).toBe(false);
     expect(a.skinGenerate).toBe(true);
     expect(a.publicToggle).toBe('edit');
-    expect(a.name).toBe('locked');
+    expect(a.about).toBe('locked');
     expect(a.voice).toBe('locked');
     expect(a.pitch).toBe('hidden');
-  });
-
-  it('a preview (not in the library) hides the library-only rows', () => {
-    const a = profileAccess({ ...base, kind: 'world', inLibrary: false, seilinkOn: true });
-    expect(a.knowledge).toBe('hidden');
-    expect(a.dst).toBe('hidden');
-    expect(a.desktopRoom).toBe('hidden');
-    expect(a.resetMemory).toBe('hidden');
-    expect(a.unbind).toBe('hidden');
-    expect(a.report).toBe('edit');
-    // A removed built-in previewed again cannot generate a skin either.
-    expect(profileAccess({ ...base, kind: 'awakened', inLibrary: false }).skinGenerate).toBe(false);
-  });
-
-  it('WorldLink rows need WorldLink; Idle lines also needs her on the desktop', () => {
-    const off = profileAccess({ ...base, kind: 'builtin' });
-    expect([off.desktopRoom, off.room, off.idleLines, off.intro]).toEqual(['hidden', 'hidden', 'hidden', 'hidden']);
-    const on = profileAccess({ ...base, kind: 'builtin', seilinkOn: true });
-    expect([on.desktopRoom, on.room, on.idleLines, on.intro]).toEqual(['edit', 'edit', 'hidden', 'edit']);
-    const here = profileAccess({ ...base, kind: 'builtin', seilinkOn: true, movedInHere: true });
-    expect(here.idleLines).toBe('edit');
   });
 
   it('Others will hear: own ElevenLabs voice on an owned companion only', () => {
@@ -147,43 +143,84 @@ describe('profileAccess', () => {
   it('No voice: nothing to tune, so no Pitch row', () => {
     expect(profileAccess({ ...base, kind: 'custom', noVoice: true }).pitch).toBe('hidden');
   });
+
+  it('sectionOf maps every row to its section', () => {
+    expect(sectionOf('about')).toBe('personality');
+    expect(sectionOf('intro')).toBe('worldlink');
+    expect(sectionOf('unbind')).toBe('danger');
+  });
 });
 
-describe('tabs', () => {
-  it('own companion: all six tabs, Sharing named Sharing', () => {
-    const a = profileAccess({ ...base, kind: 'custom' });
-    expect(profileTabs(a)).toEqual([...PROFILE_TABS]);
-    expect(sharingTabLabel(a)).toBe('Sharing');
-  });
+describe('foreign companions (Overview first, no owner rows)', () => {
+  for (const kind of ['builtin', 'world'] as const) {
+    it(`${kind}: no owner-only row exists at all, not even locked`, () => {
+      const a = profileAccess({ ...base, kind, seilinkOn: true, ownVoice: true });
+      for (const row of ['cardImage', 'skin', 'voice', 'pitch', 'about', 'persona', 'chess', 'publicToggle', 'othersHear'] as const) {
+        expect(a[row], row).toBe('hidden');
+      }
+      expect(a.view).toBe('foreign');
+      expect(ownerSections(a).flatMap((s) => s.rows).every((r) => !['cardImage', 'persona'].includes(r))).toBe(true);
+    });
+  }
 
-  it('built-in without WorldLink: no Sharing tab', () => {
-    const a = profileAccess({ ...base, kind: 'builtin' });
-    expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'danger']);
-  });
-
-  it('built-in with WorldLink: the tab holds only WorldLink rows and is named WorldLink', () => {
+  it('in the library: Overview + Your settings with only your per-companion rows', () => {
     const a = profileAccess({ ...base, kind: 'builtin', seilinkOn: true });
-    expect(profileTabs(a)).toContain('sharing');
-    expect(sharingTabLabel(a)).toBe('WorldLink');
+    expect(foreignTabs(a)).toEqual(['overview', 'settings']);
+    expect(foreignSettingsRows(a)).toEqual([
+      'avatar',
+      'floatingAvatar',
+      'knowledge',
+      'dst',
+      'desktopRoom',
+      'room',
+      'intro',
+      'resetMemory',
+      'unbind',
+    ]);
+    expect(a.avatarMode).toBe('pick');
   });
 
-  it('a World preview keeps Danger zone for Report', () => {
-    const a = profileAccess({ ...base, kind: 'world', inLibrary: false });
-    expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'danger']);
+  it('a preview (World, or a removed built-in): the Overview only', () => {
+    const a = profileAccess({ ...base, kind: 'world', inLibrary: false, seilinkOn: true });
+    expect(foreignTabs(a)).toEqual(['overview']);
+    expect(foreignSettingsRows(a)).toEqual([]);
+    expect(a.report).toBe(true);
+    expect(profileAccess({ ...base, kind: 'builtin', inLibrary: false }).report).toBe(false);
+    // A removed Awakened companion previewed again cannot generate a skin.
+    expect(profileAccess({ ...base, kind: 'awakened', inLibrary: false }).skinGenerate).toBe(false);
   });
 
-  it('resolveProfileTab falls back to the first tab', () => {
-    const tabs = ['look', 'voice', 'danger'] as const;
-    expect(resolveProfileTab(tabs, 'voice')).toBe('voice');
-    expect(resolveProfileTab(tabs, 'sharing')).toBe('look');
-    expect(resolveProfileTab(tabs, null)).toBe('look');
-    expect(resolveProfileTab([], null)).toBe('look');
+  it('Report is for World companions, never a built-in', () => {
+    expect(profileAccess({ ...base, kind: 'world' }).report).toBe(true);
+    expect(profileAccess({ ...base, kind: 'builtin' }).report).toBe(false);
   });
 
-  it('a requested tab is used once', () => {
-    requestProfileTab('games');
-    expect(takeRequestedProfileTab()).toBe('games');
-    expect(takeRequestedProfileTab()).toBe(null);
+  it('an owner has no foreign settings list', () => {
+    expect(foreignSettingsRows(profileAccess({ ...base, kind: 'custom' }))).toEqual([]);
+  });
+
+  it('resolveForeignTab falls back to Overview', () => {
+    expect(resolveForeignTab(['overview', 'settings'], 'settings')).toBe('settings');
+    expect(resolveForeignTab(['overview'], 'settings')).toBe('overview');
+    expect(resolveForeignTab(['overview'], null)).toBe('overview');
+  });
+});
+
+describe('requested focus', () => {
+  it('is used once, a tab or a section', () => {
+    requestProfileFocus('games');
+    expect(takeRequestedProfileFocus()).toBe('games');
+    expect(takeRequestedProfileFocus()).toBe(null);
+    requestProfileFocus('settings');
+    expect(takeRequestedProfileFocus()).toBe('settings');
+  });
+
+  it('isProfileFocus accepts tabs and sections only', () => {
+    expect(isProfileFocus('overview')).toBe(true);
+    expect(isProfileFocus('worldlink')).toBe(true);
+    expect(isProfileFocus('sharing')).toBe(true);
+    expect(isProfileFocus('nope')).toBe(false);
+    expect(isProfileFocus(null)).toBe(false);
   });
 });
 
@@ -199,14 +236,23 @@ describe('lock tooltip', () => {
 describe('analytics (shape only)', () => {
   beforeEach(() => track.mockClear());
 
-  it('sends the three profile events with closed props', () => {
-    trackProfileTabViewed('voice', 'builtin');
-    trackProfileActionClicked('replay_intro', 'sharing', 'custom');
+  it('sends the profile events with closed props', () => {
+    trackProfileViewed('foreign', 'world', 'world', false);
+    trackProfileTabViewed('overview', 'builtin');
+    trackProfileActionClicked('replay_intro', 'worldlink', 'custom');
     trackProfileTooltipOpened('locked');
+    trackProfileVoiceSample('foreign', 'world', 'overview', 'bundled', 'played');
+    trackProfileCtaClicked('invite', 'foreign', 'world', 'world');
     expect(track.mock.calls).toEqual([
-      ['profile_tab_viewed', { tab: 'voice', character_kind: 'builtin' }],
-      ['profile_action_clicked', { action: 'replay_intro', tab: 'sharing', character_kind: 'custom' }],
+      ['profile_viewed', { view: 'foreign', character_kind: 'world', entry: 'world', in_library: false }],
+      ['profile_tab_viewed', { tab: 'overview', character_kind: 'builtin' }],
+      ['profile_action_clicked', { action: 'replay_intro', tab: 'worldlink', character_kind: 'custom' }],
       ['profile_tooltip_opened', { key: 'locked' }],
+      [
+        'profile_voice_sample_played',
+        { view: 'foreign', character_kind: 'world', tab: 'overview', source: 'bundled', outcome: 'played' },
+      ],
+      ['profile_cta_clicked', { cta: 'invite', view: 'foreign', character_kind: 'world', entry: 'world' }],
     ]);
   });
 
@@ -214,6 +260,6 @@ describe('analytics (shape only)', () => {
     track.mockImplementationOnce(() => {
       throw new Error('bridge gone');
     });
-    expect(() => trackProfileTabViewed('look', 'custom')).not.toThrow();
+    expect(() => trackProfileViewed('owner', 'custom', 'library', true)).not.toThrow();
   });
 });

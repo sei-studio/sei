@@ -27,14 +27,19 @@
  *                    on the Look tab's card image Regenerate button
  *                    (261107); without it the hint is marked seen so other
  *                    character shots stay as they were.
- *     &tab=look|voice|personality|games|sharing|danger   (character) the
- *                    profile tab to open on (profile v0.7, 261107)
+ *     &tab=overview|settings   (character, someone else's companion) the
+ *                    tab to open on; &tab=look|voice|personality|games|
+ *                    sharing|worldlink|danger scrolls your own companion's
+ *                    page to that section (product call 261110)
  *     &who=own|builtin|world   (character) Sui as your own companion
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on
  *                    puts her on the desktop (the Idle lines row)
+ *     &img=custom    (character, own) the card image is one the player
+ *                    uploaded, so there is no Regenerate (261110); without
+ *                    it the active image is a regenerated version
  *     &noskin=1      (character) skin still the creation placeholder, so
- *                    the Look tab shows Add / Generate
+ *                    the Look section shows Add / Generate
  *
  * The World tab and a profile opened from World: ?dashshot=screen&screen=world|worldprofile
  * (DevWorldShot, 261110).
@@ -77,7 +82,7 @@ import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
 import { isUiLanguage } from '@shared/uiLanguage';
 import { markRegenHintSeen, regenHintKey } from '../lib/regenHintPref';
-import { PROFILE_TABS, requestProfileTab, type ProfileTab } from '../lib/profileRows';
+import { isProfileFocus, requestProfileFocus } from '../lib/profileRows';
 
 const SUI = '3f6c2a1e-9b7d-4c1a-8e2f-5a6b7c8d9e01';
 const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
@@ -199,6 +204,8 @@ function seed(): void {
       ui_language: params.get('lang') ?? 'en',
       added_default_ids: who === 'builtin' ? [SUI] : [],
       added_world_ids: who === 'world' ? [SUI] : [],
+      // Your DST pick for a companion in your library (the Overview's games).
+      dst_survivor: who === 'own' ? {} : { [SUI]: { prefab: 'willow' } },
     }),
     seilinkAvailability: async () => seilinkAvailability,
     seilinkLoginItemGet: async () => loginItemState ?? { supported: false, enabled: false, needsApproval: false, decided: false },
@@ -208,15 +215,52 @@ function seed(): void {
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
     voiceListVoices: async () => VOICES,
     voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
-    charsPortraitVersions: async (id: string) => ({
-      versions: [
-        { file: `${id}.png`, source: 'original' },
-        { file: `${id}.v1.png`, source: 'regenerated' },
-      ],
-      active: `${id}.png`,
-      regenCount: 1,
-      regenLimit: 3,
-    }),
+    // &img=custom: the player's own upload is showing (no Regenerate);
+    // otherwise a regenerated version is (Regenerate, 2 left).
+    charsPortraitVersions: async (id: string) =>
+      params.get('img') === 'custom'
+        ? {
+            versions: [{ file: `${id}.png`, created_at: new Date(now - 30 * 24 * HOUR).toISOString(), source: 'upload' }],
+            active: `${id}.png`,
+            regenCount: 0,
+            regenLimit: 3,
+          }
+        : {
+            versions: [
+              { file: `${id}.png`, created_at: new Date(now - 30 * 24 * HOUR).toISOString(), source: 'original' },
+              { file: `${id}-v2.png`, created_at: new Date(now - 2 * 24 * HOUR).toISOString(), source: 'regen' },
+            ],
+            active: `${id}-v2.png`,
+            regenCount: 1,
+            regenLimit: 3,
+          },
+    // The profile's cloud facts (261110): author, add count, Stardew look, sample voice.
+    charsOverviewInfo: async () =>
+      who === 'world'
+        ? { creatorName: 'kitsune', addCount: 72, stardewLook: true, sampleVoiceId: 'v-sarah' }
+        : who === 'builtin'
+          ? { creatorName: null, addCount: 1840, stardewLook: true, sampleVoiceId: 'v-lily' }
+          : { creatorName: null, addCount: 12, stardewLook: false, sampleVoiceId: 'v-sarah' },
+    // Someone else's companion shows its public avatars; your own has the card only.
+    avatarLibraryList: async (id: string) => {
+      const item = (aid: string, kind: string, source: string, name: string | null, url: string | null) => ({
+        id: aid, kind, source, name, sha256: null, rev: aid, bytes: 1, mime: 'image/png', is_public: true,
+        is_default: source === 'card', sort_order: 0, moderation: 'clean', shareable: true, url, created_at: '',
+      });
+      const avatars = [item(`${id}-card`, 'portrait', 'card', null, suiArt)];
+      if (who !== 'own') {
+        avatars.push(item(`${id}-a1`, 'portrait', 'upload', 'Winter cloak', suiArt));
+        avatars.push(item(`${id}-a2`, 'live2d', 'upload', 'Desk buddy', null));
+      }
+      return {
+        state: 'ready',
+        list: { is_owner: who === 'own', avatars, default_id: `${id}-card` },
+        pick_id: null,
+        effective_id: `${id}-card`,
+      };
+    },
+    onAvatarLibrary: () => () => undefined,
+    track: () => undefined,
     knowledgeList: async () => [
       { id: 'k1', title: 'Base coordinates', bytes: 420, added: new Date(now - 9 * 24 * HOUR).toISOString(), source: 'text' },
       { id: 'k2', title: 'Farm plan.md', bytes: 3100, added: new Date(now - 3 * 24 * HOUR).toISOString(), source: 'upload' },
@@ -256,9 +300,9 @@ function seed(): void {
     addedDefaultIds: new Set(who === 'builtin' ? [SUI] : []),
     addedWorldIds: new Set(who === 'world' ? [SUI] : []),
   });
-  // The profile tab to open on (261107).
+  // The profile tab (someone else's companion) or section (your own) to open on.
   const shotTab = params.get('tab');
-  if (PROFILE_TABS.includes(shotTab as ProfileTab)) requestProfileTab(shotTab as ProfileTab);
+  if (isProfileFocus(shotTab)) requestProfileFocus(shotTab);
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });
   if (screen === 'character' || screen === 'edit') nav({ kind: 'character', id: SUI });

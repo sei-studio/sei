@@ -1,0 +1,261 @@
+/* Profile Overview (product call 261110): a companion you do not own.
+   Calm and scannable: the description, then a short label | value list. */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding-top: var(--space-xs);
+}
+
+.desc {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: minmax(90px, 22%) minmax(0, 1fr);
+  column-gap: var(--space-md);
+  align-items: start;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.fact:last-child {
+  border-bottom: 0;
+}
+
+.fact dt {
+  padding-top: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.fact dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.none {
+  display: inline-block;
+  padding-top: 5px;
+  color: var(--muted);
+}
+
+/* ── Voice ──────────────────────────────────────────────────────────── */
+
+.voice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.voiceLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sample {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control);
+  flex: none;
+}
+
+/* No visible border (house rule for buttons): a soft accent fill. */
+.sampleBtn {
+  appearance: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-width: 30px;
+  height: 30px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.sampleBtn:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.sampleBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sampleBtn[aria-busy='true'] {
+  cursor: progress;
+}
+
+.sampleBtnOn {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.sampleBtnOn:hover {
+  background: var(--accent-strong);
+}
+
+.sampleErr {
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+/* ── Games ──────────────────────────────────────────────────────────── */
+
+.games {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.game {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  padding: 5px var(--space-sm) 5px 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  min-width: 0;
+}
+
+.gameThumb {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background-size: cover;
+  background-position: center;
+}
+
+.gameText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gameName {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.gameDetail {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── Avatars ────────────────────────────────────────────────────────── */
+
+.avatars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.avatar {
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.avatarThumb {
+  width: 72px;
+  height: 90px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatarThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.avatarKind {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.avatarName {
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Report (quiet link, someone else's companion) ──────────────────── */
+
+.report {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.report:hover,
+.report:focus-visible {
+  color: var(--red);
+}

@@ -1,8 +1,9 @@
 /**
- * ProfileSettings (261107, profile v0.7), server-rendered: each tab renders
- * only its own rows, a locked row shows its value with a Locked marker and no
- * action, and no row carries a subtext line. Effects (IPC reads) do not run
- * under renderToStaticMarkup, so values that come from IPC are not checked.
+ * ProfileSettings (product call 261110), server-rendered: your own companion
+ * is one page of sections in use order, someone else's shows only the rows
+ * that are yours for it (no locked owner rows), and no row carries a
+ * subtext line. Effects (IPC reads) do not run under renderToStaticMarkup,
+ * so values that come from IPC (and rows that wait on one) are not checked.
  */
 import { describe, expect, it } from 'vitest';
 import React from 'react';
@@ -16,9 +17,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 };
 
 const { ProfileSettings } = await import('./ProfileSettings');
-const { PROFILE_TABS, profileAccess } = await import('../../lib/profileRows');
+const { profileAccess } = await import('../../lib/profileRows');
 type Kind = Parameters<typeof profileAccess>[0]['kind'];
-type Tab = (typeof PROFILE_TABS)[number];
 
 const character = {
   id: 'c1',
@@ -41,7 +41,7 @@ const character = {
 
 const noop = (): void => undefined;
 
-function render(tab: Tab, kind: Kind, extra: Partial<Parameters<typeof profileAccess>[0]> = {}): string {
+function render(kind: Kind, extra: Partial<Parameters<typeof profileAccess>[0]> = {}, metadata?: object): string {
   const access = profileAccess({
     kind,
     inLibrary: true,
@@ -53,9 +53,8 @@ function render(tab: Tab, kind: Kind, extra: Partial<Parameters<typeof profileAc
   });
   return renderToStaticMarkup(
     React.createElement(ProfileSettings, {
-      character,
+      character: metadata ? ({ ...character, metadata } as typeof character) : character,
       access,
-      tab,
       onAction: noop,
       onTipOpen: noop,
       openEdit: noop,
@@ -68,72 +67,143 @@ function render(tab: Tab, kind: Kind, extra: Partial<Parameters<typeof profileAc
       shareToggleDisabled: false,
       onResetMemory: noop,
       onUnbind: noop,
-      onReport: noop,
       refreshKey: 0,
     }),
   );
 }
 
 const rows = (html: string): string[] => [...html.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1]);
+const sectionsOf = (html: string): string[] => [...html.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]);
 const locked = (html: string): string[] =>
   [...html.matchAll(/data-row="([^"]+)" data-locked="true"/g)].map((m) => m[1]);
 
-describe('ProfileSettings tabs', () => {
-  it('each tab renders only its own rows (own companion)', () => {
-    expect(rows(render('look', 'custom'))).toEqual(['card-image', 'skin', 'avatar', 'floating-avatar']);
-    expect(rows(render('voice', 'custom'))).toEqual(['voice', 'pitch']);
-    expect(rows(render('personality', 'custom'))).toEqual(['name', 'description', 'persona', 'knowledge']);
-    expect(rows(render('games', 'custom'))).toEqual(['username', 'chess', 'dst']);
-    expect(rows(render('sharing', 'custom'))).toEqual(['public']);
-    expect(rows(render('danger', 'custom'))).toEqual(['reset-memory', 'unbind']);
-  });
-
-  it('own companion: nothing is locked, the edit actions are there', () => {
-    for (const tab of PROFILE_TABS) expect(locked(render(tab, 'custom')), tab).toEqual([]);
-    const look = render('look', 'custom');
-    expect(look).toContain('>Versions<');
-    expect(look).toContain('>Manage<');
-    expect(render('personality', 'custom')).toContain('>Rename<');
-  });
-
-  it('built-in: the made-as-is rows are locked, with the reason as the marker label', () => {
-    const look = render('look', 'builtin');
-    expect(locked(look)).toEqual(['card-image', 'skin']);
-    expect(look).toContain('Locked: Sui is a built-in companion');
-    expect(look).not.toContain('>Versions<');
-    expect(locked(render('voice', 'builtin'))).toEqual(['voice']);
-    expect(rows(render('voice', 'builtin'))).toEqual(['voice']);
-    expect(locked(render('personality', 'builtin'))).toEqual(['name', 'description', 'persona']);
-    expect(locked(render('games', 'builtin'))).toEqual(['username', 'chess']);
-  });
-
-  it('World: Report sits in the Danger zone', () => {
-    expect(rows(render('danger', 'world'))).toEqual(['report', 'reset-memory', 'unbind']);
-    expect(render('look', 'world')).toContain('Locked: Sui was made by another player');
-  });
-
-  it('WorldLink rows appear on the Sharing tab when WorldLink is on', () => {
-    expect(rows(render('sharing', 'builtin', { seilinkOn: true }))).toEqual(['desktop-room', 'room', 'intro']);
-    expect(rows(render('sharing', 'custom', { seilinkOn: true, movedInHere: true, ownVoice: true }))).toEqual([
+describe('ProfileSettings, your own companion', () => {
+  it('one page: every section in use order, with headings', () => {
+    const html = render('custom', { seilinkOn: true });
+    expect(sectionsOf(html)).toEqual(['look', 'voice', 'personality', 'games', 'sharing', 'worldlink', 'danger']);
+    for (const h of ['>Look<', '>Voice<', '>Personality<', '>Games<', '>Sharing<', '>WorldLink<', '>Danger zone<']) {
+      expect(html).toContain(h);
+    }
+    expect(rows(html)).toEqual([
+      'card-image',
+      'skin',
+      'avatar',
+      'floating-avatar',
+      'voice',
+      'pitch',
+      'about',
+      'persona',
+      'knowledge',
+      'chess',
+      'dst',
       'public',
-      'others-hear',
       'desktop-room',
       'room',
-      'idle-lines',
       'intro',
+      'reset-memory',
+      'unbind',
     ]);
   });
 
+  it('nothing is locked, the edit actions are there, duplicates are gone', () => {
+    const html = render('custom');
+    expect(locked(html)).toEqual([]);
+    expect(html).toContain('>Name and description<');
+    expect(html).not.toContain('>Rename<');
+    expect(html).not.toContain('>In-game username<');
+    // The username sits in the skin row's value.
+    expect(html).toContain('>Sui<');
+  });
+
+  it('awakened: the cast surfaces are locked with the reason', () => {
+    const html = render('awakened');
+    expect(locked(html)).toEqual(['voice', 'about', 'persona', 'chess']);
+    expect(html).toContain('Locked: Sui was awakened by Sei');
+  });
+
+  it('an uploaded card image has no Regenerate (product call 261110)', () => {
+    const upload = { voiceId: 'v-sarah', portrait_versions: [{ file: 'c1.png', created_at: '', source: 'upload' }], portrait_active: 'c1.png' };
+    const withImage = { ...character, portrait_image: 'c1.png' };
+    const html = renderToStaticMarkup(
+      React.createElement(ProfileSettings, {
+        character: { ...withImage, metadata: upload } as typeof character,
+        access: profileAccess({ kind: 'custom', inLibrary: true, seilinkOn: false, movedInHere: false, ownVoice: false, noVoice: false }),
+        onAction: noop,
+        onTipOpen: noop,
+        openEdit: noop,
+        openCardImage: noop,
+        openKnowledge: noop,
+        openSkinEdit: noop,
+        openAvatars: noop,
+        openFloating: noop,
+        onToggleShared: noop,
+        shareToggleDisabled: false,
+        onResetMemory: noop,
+        onUnbind: noop,
+        refreshKey: 0,
+      }),
+    );
+    expect(html).toContain('>Custom image<');
+    expect(html).not.toContain('Regenerate');
+    const regen = { voiceId: 'v-sarah', portrait_versions: [{ file: 'c1-v2.png', created_at: '', source: 'regen' }], portrait_active: 'c1-v2.png' };
+    const html2 = renderToStaticMarkup(
+      React.createElement(ProfileSettings, {
+        character: { ...withImage, portrait_image: 'c1-v2.png', metadata: regen } as typeof character,
+        access: profileAccess({ kind: 'custom', inLibrary: true, seilinkOn: false, movedInHere: false, ownVoice: false, noVoice: false }),
+        onAction: noop,
+        onTipOpen: noop,
+        openEdit: noop,
+        openCardImage: noop,
+        openKnowledge: noop,
+        openSkinEdit: noop,
+        openAvatars: noop,
+        openFloating: noop,
+        onToggleShared: noop,
+        shareToggleDisabled: false,
+        onResetMemory: noop,
+        onUnbind: noop,
+        refreshKey: 0,
+      }),
+    );
+    expect(html2).toContain('Regenerate');
+  });
+
+  it('No voice: no sample button and no Pitch row', () => {
+    const html = render('custom', { noVoice: true }, { voiceId: 'none' });
+    expect(rows(html)).not.toContain('pitch');
+    expect(html).not.toContain('Play voice sample');
+    expect(render('custom')).toContain('Play voice sample');
+  });
+});
+
+describe("ProfileSettings, someone else's companion (Your settings)", () => {
+  for (const kind of ['builtin', 'world'] as const) {
+    it(`${kind}: only your rows, nothing locked, no owner controls`, () => {
+      const html = render(kind, { seilinkOn: true });
+      expect(locked(html)).toEqual([]);
+      // Avatar waits on its library read (and only shows with two or more).
+      expect(rows(html)).toEqual(['floating-avatar', 'knowledge', 'dst', 'desktop-room', 'room', 'intro', 'reset-memory', 'unbind']);
+      for (const owner of ['card-image', 'skin', 'voice', 'persona', 'about', 'chess', 'public']) {
+        expect(rows(html)).not.toContain(owner);
+      }
+      expect(html).not.toContain('Regenerate');
+      expect(html).not.toContain('>Report<');
+    });
+  }
+
+  it('a preview renders nothing (no settings until it is yours)', () => {
+    expect(rows(render('world', { inLibrary: false }))).toEqual([]);
+  });
+});
+
+describe('copy rules', () => {
   it('no row has a subtext line: explanations are tooltips, not text', () => {
     for (const kind of ['custom', 'builtin', 'world', 'awakened'] as const) {
-      for (const tab of PROFILE_TABS) {
-        // Visible text only (the Locked marker's aria-label carries its reason).
-        const html = render(tab, kind, { seilinkOn: true, movedInHere: true, ownVoice: true }).replace(/="[^"]*"/g, '');
-        // Tooltip text is only rendered while open (a portal), never inline.
-        expect(html, `${kind}/${tab}`).not.toContain('Companions you create can change all of it.');
-        expect(html).not.toContain('Wipes chats and memories');
-        expect(html).not.toContain('—');
-      }
+      // Visible text only (the Locked marker's aria-label carries its reason).
+      const html = render(kind, { seilinkOn: true, movedInHere: true, ownVoice: true }).replace(/="[^"]*"/g, '');
+      expect(html, kind).not.toContain('Companions you create can change all of it.');
+      expect(html).not.toContain('Wipes chats and memories');
+      expect(html).not.toContain('—');
     }
   });
 });

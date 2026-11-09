@@ -65,4 +65,18 @@ export const ZH_PROFILE_261107: Record<string, string> = {
   "Tell us if {name} breaks the rules.": "如果 {name} 违反规则，请告诉我们。",
   "Wipes chats and memories of you. Game inventory stays.": "清除聊天记录和关于你的记忆。游戏背包会保留。",
   "Upload a new image": "上传新图片",
+  // Profile Overview + one-page settings (product call 261110).
+  "Companion profile": "伙伴资料",
+  "Custom image": "自定义图片",
+  "Farmer look ready": "农夫形象已就绪",
+  "Hear voice": "试听声音",
+  "How {name} looks in Minecraft, and the name they use in your worlds.": "{name} 在 Minecraft 里的样子，以及在你的世界里用的名字。",
+  "Loading sample...": "正在加载试听...",
+  "No game looks yet. They are made on the first launch.": "还没有游戏形象。第一次启动游戏时会生成。",
+  "Overview": "概览",
+  "Play voice sample": "播放声音试听",
+  "Skin ready": "皮肤已就绪",
+  "Stop sample": "停止试听",
+  "Your settings": "你的设置",
+  "by {name}": "来自 {name}",
 };
