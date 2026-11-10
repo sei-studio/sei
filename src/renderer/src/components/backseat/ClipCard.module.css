@@ -1,12 +1,13 @@
-/** Inline clip attachment on a companion message in the chat thread. */
+/** Inline clip attachment on a companion message in the chat thread.
+ * Quiet register (261110, pass 2): a step-1 fill, no frame or rules; the
+ * reveal action is a wash-filled small button. */
 
 .card {
   margin-top: var(--space-xs);
   max-width: 420px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius);
   overflow: hidden;
-  background: var(--surface-2);
+  background: var(--step-1);
 }
 
 .video {
@@ -20,15 +21,15 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-xs) var(--space-sm);
-  border-top: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
 }
 
 .reason {
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
   color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -37,18 +38,20 @@
 
 .reveal {
   flex: 0 0 auto;
-  padding: 2px var(--space-sm);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
+  min-height: var(--control-xs);
+  padding: 0 var(--space-md);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--wash);
+  color: var(--text-2);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--fs-meta);
+  font-weight: 700;
   cursor: pointer;
-  transition: color 120ms var(--ease), border-color 120ms var(--ease);
+  transition: color 120ms var(--ease), background 120ms var(--ease);
 }
 
 .reveal:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--text);
+  background: var(--wash-hi);
 }

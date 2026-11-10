@@ -37,25 +37,28 @@
 }
 
 /* 260518-o1k T7: mod-link summary block on the done step. Renders below
- * the existing "All set" copy. Per-install block separated by top border. */
+ * the existing "All set" copy. Quiet register (261110, pass 2): each
+ * install is a step-1 fill set apart by space, not a top rule. */
 .modLinkSummary {
   margin-top: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--border);
+  padding: var(--space-md) var(--space-md-plus);
+  border-radius: var(--radius);
+  background: var(--wash);
 }
 
 .modLinkSummary h4 {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--fs-body);
+  font-weight: 600;
   margin: 0 0 var(--space-xs) 0;
   color: var(--text);
 }
 
 .modLinkSummary p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
   color: var(--text-2);
-  line-height: 1.5;
+  line-height: var(--lh-meta);
 }
 
 .modLinkSummary details {
@@ -63,19 +66,21 @@
 }
 
 .modLinkSummary summary {
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
   user-select: none;
 }
 
+/* Mod file names: mono is right here, they are file IDs. */
 .modLinkExclusionList {
   margin: var(--space-xs) 0 0 0;
   padding-left: var(--space-md);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   font-family: var(--mono);
   color: var(--text-2);
-  line-height: 1.6;
+  line-height: var(--lh-meta);
 }
 
 .modLinkExclusionList li {

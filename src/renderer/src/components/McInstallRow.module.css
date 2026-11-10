@@ -1,8 +1,9 @@
 /* McInstallRow.module.css — UI-SPEC §"Interaction States" McInstallRow.
  *
- * Sharp corners (D-28). All colors/spacing reference tokens; zero hex.
- * Hover/focus uses --accent-soft background; selected row gets a 2px --accent
- * left-edge bar per UI-SPEC §"Accent reserved-for list" item 5.
+ * Quiet register (261110, pass 2): each row is a wash fill, rows 2px apart
+ * (the list's gap) instead of hairlines; hover lifts to wash-hi; the
+ * selected row keeps its 2px accent left bar on an accent-soft fill. Body
+ * label, meta helper lines, mono only for the install path.
  *
  * No transform-based hovers per UI-SPEC §"Interaction States" (sharp/calm feel).
  */
@@ -11,18 +12,18 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-md-plus);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-md) var(--space-md-plus);
+  background: var(--wash);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: background 120ms ease;
   outline: none;
-  /* Reserve room for the 2px left-edge bar so width doesn't shift on selection. */
-  border-left: 2px solid transparent;
+  /* The 2px selection bar is drawn inside, so width never shifts. */
+  box-shadow: inset 2px 0 0 transparent;
 }
 
 .row:hover {
-  background: var(--accent-soft);
+  background: var(--wash-hi);
 }
 
 .row:focus-visible {
@@ -32,7 +33,11 @@
 
 .selected {
   background: var(--accent-soft);
-  border-left: 2px solid var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.selected:hover {
+  background: var(--accent-soft);
 }
 
 .selected:focus-visible {
@@ -41,8 +46,8 @@
 }
 
 .checkbox {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin: 0;
   flex-shrink: 0;
   cursor: pointer;
@@ -52,24 +57,24 @@
 .text {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: var(--gap-tight);
   min-width: 0;
   flex: 1;
 }
 
 .label {
   font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 400;
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--text);
-  line-height: 1.4;
+  line-height: var(--lh-body);
 }
 
 .path {
   font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-2);
-  line-height: 1.4;
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  line-height: var(--lh-meta);
   word-break: break-all;
 }
 
@@ -85,30 +90,31 @@
   cursor: default;
 }
 .readOnly:hover {
-  background: var(--surface);
+  background: var(--wash);
 }
 .readOnly:focus-visible {
   outline: none;
 }
 
-/* 260518-o1k T7: small muted caption under Lunar rows explaining why
- * Sei can't fully integrate (no custom-skin-mod support). */
+/* 260518-o1k T7: muted caption under Lunar rows explaining why Sei can't
+ * fully integrate (no custom-skin-mod support). */
 .lunarCaption {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
   color: var(--text-2);
-  line-height: 1.45;
+  line-height: var(--lh-meta);
   margin-top: var(--space-xs);
-  font-style: italic;
 }
 
 /* 260518-o1k T8: pre-1.14 inline MC warning. Informational only — does
  * not disable the Continue button; user deselects the row to proceed. */
 .warning {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--warn, var(--text-2));
-  line-height: 1.45;
+  line-height: var(--lh-meta);
   margin-top: var(--space-xs);
 }
 
@@ -121,7 +127,8 @@
   gap: var(--space-sm);
   margin-top: var(--space-xs);
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--text-2);
 }
 
@@ -131,10 +138,16 @@
 
 .versionSelect {
   font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-1);
-  background: var(--surface-2, var(--bg-2));
-  border: 1px solid var(--border);
+  font-size: var(--fs-meta);
+  color: var(--text);
+  background: var(--wash-hi);
+  border: 0;
   border-radius: var(--radius);
-  padding: 2px var(--space-xs);
+  height: var(--control-xs);
+  padding: 0 var(--space-sm);
+}
+
+.versionSelect option {
+  background: var(--step-1);
+  color: var(--text);
 }

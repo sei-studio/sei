@@ -39,9 +39,11 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.55);
   color: #fff;
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
   opacity: 0;
   transition: opacity 120ms var(--ease);
 }
@@ -53,6 +55,40 @@
 
 .err {
   color: var(--red);
-  font-size: 12px;
-  font-family: var(--mono);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+/* Default variant (the Add Character card image step): the picked image or
+   an empty --wash square, then the buttons. No frame lines (261110). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-stack);
+  flex-wrap: wrap;
+}
+
+.preview,
+.empty {
+  width: var(--space-4xl);
+  height: var(--space-4xl);
+  flex-shrink: 0;
+  border-radius: var(--radius);
+}
+
+.preview {
+  object-fit: cover;
+  display: block;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wash);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
 }

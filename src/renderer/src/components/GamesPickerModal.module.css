@@ -1,11 +1,13 @@
 /* GamesPickerModal — tiled game grid (Phase 18/19).
  * Sharp, borderless tiles (per UI-DESIGN-SYSTEM): a surface fill that lights to
- * accent-soft on hover, no boxy outlines, no status badges. Token colors only. */
+ * accent-soft on hover, no boxy outlines, no status badges. Token colors only.
+ * Quiet register (261110, pass 2): the ModalShell scrim, panel and inset, the
+ * title step for the heading and the tile names, wash fills for plain tiles. */
 
 .scrim {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: rgba(4, 7, 15, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,10 +16,10 @@
 }
 
 .modal {
-  width: 560px;
-  max-width: calc(100vw - 64px);
-  max-height: calc(100vh - 64px);
-  background: var(--surface);
+  width: 640px;
+  max-width: calc(100vw - 2 * var(--space-lg));
+  max-height: calc(100vh - 2 * var(--space-xl));
+  background: var(--bg2);
   box-shadow: var(--shadow-pop);
   animation: fade-up 280ms var(--ease-pop) both;
   display: flex;
@@ -27,37 +29,39 @@
 }
 
 .header {
-  padding: var(--space-lg) var(--space-lg) var(--space-sm);
+  padding: var(--pad-modal) var(--pad-modal) 0;
 }
 
 .title {
   font-family: var(--display);
-  font-size: 22px;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--text);
   margin: 0;
 }
 
 .subtitle {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
   color: var(--muted);
-  margin: var(--space-xs) 0 0;
+  margin: var(--gap-tight) 0 0;
 }
 
 .grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg) var(--space-lg);
+  gap: var(--space-sm);
+  padding: var(--gap-group) var(--pad-modal) var(--pad-modal);
   overflow-y: auto;
 }
 
 /* Tile = borderless surface card; the (i) hint overlays its bottom-right. */
 .tile {
   position: relative;
-  background: var(--surface-2);
+  background: var(--wash);
   transition: background 140ms var(--ease);
   border-radius: var(--radius);
 }
@@ -101,10 +105,12 @@
   z-index: 1;
   justify-content: flex-end;
   align-items: flex-start;
-  padding: var(--space-md);
+  padding: var(--space-md) var(--space-md-plus);
 }
 
 .tileImage .tileName {
+  /* Clear the (i) in the corner. */
+  padding-right: 32px;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
@@ -118,7 +124,7 @@
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-lg) var(--space-md-plus);
-  min-height: 128px;
+  min-height: 136px;
   justify-content: center;
   border: none;
   background: transparent;
@@ -149,9 +155,9 @@
 
 .tileName {
   font-family: var(--display);
-  font-size: 18px;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   font-weight: 600;
-  letter-spacing: 0.01em;
 }
 
 /* Coming-soon image tiles keep their art readable under the lock dim. */
@@ -159,21 +165,20 @@
   opacity: 0.82;
 }
 
-/* "SOON" tag on placeholder tiles: same corner box as the (i) affordance
- * (26px tall, space-sm insets) so its bottom and left line up with the
- * tooltip across tiles. Rides above the image scrim. */
+/* "SOON" tag on placeholder tiles: in the (i) affordance's corner box
+ * (26px tall, space-sm insets), right-aligned so a longer translation grows
+ * inward. Rides above the image scrim. */
 .soonTag {
   position: absolute;
-  bottom: var(--space-sm);
-  left: calc(100% - 26px - var(--space-sm));
+  bottom: var(--space-md);
+  right: var(--space-md-plus);
   height: 26px;
   display: inline-flex;
   align-items: center;
   z-index: 1;
-  font-family: var(--display);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 700;
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   pointer-events: none;
@@ -184,8 +189,8 @@
  * the hover popup below). Quiet, borderless, → accent on hover. */
 .infoHint {
   position: absolute;
-  bottom: var(--space-sm);
-  right: var(--space-sm);
+  bottom: var(--space-md);
+  right: var(--space-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -221,38 +226,41 @@
   position: fixed;
   z-index: 101;
   pointer-events: none;
-  background: var(--surface-2);
+  background: var(--step-2);
+  border-radius: var(--radius);
+  overflow: hidden;
   box-shadow: var(--shadow-pop);
   animation: infoPopFade 140ms var(--ease) both;
 }
 
 .infoPopArt {
-  height: 110px;
+  height: 132px;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
 }
 
 .infoPopBody {
-  padding: var(--space-md);
+  padding: var(--space-md-plus);
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: var(--gap-tight);
 }
 
 .infoPopTitle {
   font-family: var(--display);
-  font-size: 15px;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--text);
 }
 
 .infoPopText {
   margin: 0;
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--text-2);
 }
 

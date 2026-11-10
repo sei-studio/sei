@@ -1,8 +1,8 @@
 /* CodeInput.module.css — segmented one-time-code field.
  *
- * Follows the TextField underline treatment rather than boxing each digit:
- * the surface has no CSS borders anywhere else (D-28 / D-31), and six outlined
- * squares would be the only bordered control in the app.
+ * Quiet register (261110): each digit is a TextField-style --wash cell with
+ * no frame line; focus and an invalid code draw the 2px rule along the
+ * bottom, inset so the cell never grows.
  */
 
 .row {
@@ -17,17 +17,16 @@
   height: 56px;
   flex: 0 1 44px;
   min-width: 0;
-  background: transparent;
+  background: var(--wash);
   border: none;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: var(--radius); /* D-28 */
+  border-radius: var(--radius);
   color: var(--text);
   font-family: var(--mono);
   font-size: 28px;
   text-align: center;
   padding: 0;
   outline: none;
-  transition: border-color 140ms ease;
+  transition: box-shadow 140ms ease;
   /* Numeric spinners would put arrows inside a one-character box. */
   -moz-appearance: textfield;
 }
@@ -39,17 +38,16 @@
 }
 
 .cell:focus {
-  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 /* The whole code is one value, so an invalid code marks every cell, not the
    one that happens to hold focus. */
 .invalid .cell {
-  border-bottom-color: var(--red);
+  box-shadow: inset 0 -2px 0 var(--red);
 }
 
 .cell:disabled {
   opacity: 0.5;
-  border-bottom-color: var(--border);
   cursor: not-allowed;
 }

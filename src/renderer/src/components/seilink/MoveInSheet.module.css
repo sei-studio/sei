@@ -20,33 +20,33 @@
   background: var(--accent);
   color: var(--accent-text);
   font-family: var(--display);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  line-height: 1.4;
+  line-height: var(--lh-meta);
 }
 
 .noticeText {
   margin: 0;
   font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.45;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text);
 }
 
 .line {
   margin: 0;
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.45;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
 }
 
 .error {
   margin: 0;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--red);
 }
 
@@ -54,7 +54,7 @@
 .preparing {
   margin: 0;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   animation: preparingPulse 2.4s ease-in-out infinite;
 }

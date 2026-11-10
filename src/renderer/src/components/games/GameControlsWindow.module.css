@@ -1,46 +1,47 @@
-/* GameControlsWindow / GameStatusStrip (game adapters M2). Tokens only. */
+/* GameControlsWindow / GameStatusStrip (game adapters M2). Tokens only.
+ * Quiet register (261110, pass 2): step-1 fills without frames, meta labels
+ * in sentence case, body text. */
 .strip {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  padding: var(--space-sm) var(--space-md-plus);
+  border-radius: var(--radius);
+  background: var(--step-1);
 }
 
 .stripTitle {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
 }
 
 .stripText {
-  font-size: 13px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   color: var(--text);
 }
 
 .controls {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md-plus);
+  border-radius: var(--radius);
+  background: var(--step-1);
 }
 
 .row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--gap-control);
 }
 
 .modeLabel {
   margin-left: var(--space-sm);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -50,7 +51,8 @@
 
 .hint {
   min-height: 1.4em;
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--text-2);
 }

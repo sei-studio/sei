@@ -33,7 +33,7 @@ export interface GamesPickerModalProps {
 
 /** Hover popup metrics — width fixed for placement math; height is estimated
  * generously for the vertical clamp (the card is shorter in practice). */
-const POPUP_W = 250;
+const POPUP_W = 300;
 const POPUP_EST_H = 260;
 const POPUP_GAP = 10;
 const POPUP_DELAY_MS = 250;

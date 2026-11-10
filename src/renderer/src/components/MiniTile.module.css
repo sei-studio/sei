@@ -2,7 +2,8 @@
  * A fixed-size static card (Discord-activity style): game picker art or the
  * call portraits, with the labeled back chip as the only interactive element.
  * The inline `right` offset moves the tile left of the chat profile panel
- * when that panel is open. */
+ * when that panel is open. Quiet register (261110, pass 2): no frame lines,
+ * the shadow lifts it; the back chip is a fill at the meta step. */
 
 .tile {
   position: fixed;
@@ -12,8 +13,7 @@
   z-index: 600;
   width: 224px;
   height: 126px;
-  border: 1px solid var(--border-strong);
-  background: var(--bg2);
+  background: var(--step-1);
   box-shadow: var(--shadow-pop);
   overflow: hidden;
   transition:
@@ -33,18 +33,20 @@
 /* "‹ Chess" return chip, top-left, the tile's only control. */
 .backBtn {
   position: absolute;
-  top: 6px;
-  left: 6px;
+  top: var(--space-sm);
+  left: var(--space-sm);
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px 0 5px;
-  border: 1px solid var(--border-strong);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  gap: var(--space-xs);
+  height: var(--control-xs);
+  padding: 0 var(--space-md) 0 var(--space-sm);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -54,8 +56,8 @@
 }
 
 .backBtn:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Call tile: portraits only (never the player's own), centered. */
@@ -63,7 +65,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: var(--space-sm);
   height: 100%;
 }
 

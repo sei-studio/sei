@@ -2,21 +2,22 @@
    animation come from ModalShell. */
 .lede {
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
   margin: 0;
 }
 
 .email {
   font-family: var(--sans);
-  font-size: 18px;
+  font-size: var(--fs-body);
   font-weight: 500;
   text-align: center;
-  padding: 12px 0;
+  padding: var(--space-md-plus) 0;
   margin: 0;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  /* Quiet register (261110): a fill instead of two hairlines. */
+  background: var(--wash);
+  border-radius: var(--radius);
 }
 
 .email a {
@@ -30,8 +31,8 @@
 
 .note {
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--text-2);
   margin: 0;
 }

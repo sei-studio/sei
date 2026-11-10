@@ -3,20 +3,26 @@
  * owns the scrim, the panel, the title and the footer and this styles only the
  * source list. Before 260803 the same list swapped into the games popup's
  * frame, which is why it has never carried a surface of its own.
+ *
+ * Quiet register (261110, pass 2): body/meta type steps, wash-filled tiles
+ * with a wash-hi + accent foot for the picked one (no frames or rings), the
+ * tab underline without a hairline track, space instead of the option rule.
  */
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--gap-group);
   min-height: 0;
   /* The popup is a fixed frame; the source list is what scrolls. */
   max-height: 68vh;
 }
 
 .sub {
-  margin: var(--space-xs) 0 0;
+  margin: var(--gap-tight) 0 0;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
   color: var(--muted);
 }
 
@@ -26,7 +32,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
+  gap: var(--gap-stack);
   padding-right: var(--space-xs);
 }
 
@@ -35,23 +41,19 @@
    reliably below the fold. */
 .tabs {
   display: flex;
-  gap: var(--space-xs);
-  border-bottom: 1px solid var(--border);
+  gap: var(--space-md-plus);
 }
 
 .tab {
-  padding: var(--space-xs) var(--space-sm);
+  padding: var(--space-xs) 0 var(--space-sm);
   border: 0;
   border-bottom: 2px solid transparent;
   background: none;
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--muted);
-  /* Sits on the container's border, so the active underline replaces it rather
-     than doubling it. */
-  margin-bottom: -1px;
   transition: color 120ms var(--ease), border-color 120ms var(--ease);
 }
 
@@ -66,7 +68,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: var(--space-sm);
 }
 
@@ -74,38 +76,41 @@
   margin: var(--space-lg) 0;
   text-align: center;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   color: var(--muted);
 }
 
 .tile {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
-  padding: var(--space-xs);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  background: var(--surface-2);
+  gap: var(--space-sm);
+  padding: var(--space-sm);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--wash);
   cursor: pointer;
   text-align: left;
-  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+  transition: background 120ms var(--ease);
 }
 
 .tile:hover {
-  border-color: var(--accent);
+  background: var(--wash-hi);
 }
 
+/* Picked: a stronger fill and the 2px accent rule along the foot. */
 .tileOn {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  background: var(--wash-hi);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .thumbWrap {
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 6px;
-  background: var(--bg4);
+  border-radius: var(--radius-sm);
+  background: var(--wash);
 }
 
 .thumb {
@@ -124,19 +129,21 @@
 .tileName {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   min-width: 0;
 }
 
 .appIcon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
 }
 
 .tileText {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
   color: var(--text);
   /* Window titles run long and are not worth two lines in a grid this dense. */
   overflow: hidden;
@@ -147,19 +154,19 @@
 .error {
   margin: 0;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--red);
 }
 
-/* Recording toggle (260807). Sits below the source list, above the footer, and
-   is separated by a rule: it is not part of choosing a source, it is a setting
-   that happens to matter most to whoever is looking at this modal. */
+/* Recording toggle (260807). Sits below the source list, above the footer, set
+   apart by space: it is not part of choosing a source, it is a setting that
+   happens to matter most to whoever is looking at this modal. */
 .option {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
   padding-top: var(--space-sm);
-  border-top: 1px solid var(--border);
 }
 
 .optionLabel {
@@ -169,6 +176,7 @@
   align-items: center;
   gap: var(--space-xs);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   color: var(--text);
 }

@@ -21,11 +21,14 @@
 }
 
 /* ── World ───────────────────────────────────────────────────────────── */
+/* Quiet register (261110, pass 2): the same inset as Home (so the left edge
+ * holds still when switching tabs), filled controls on the field, cards with
+ * a small gap instead of a butted mosaic. */
 .browse {
-  padding: var(--space-lg) 0 0;
+  padding: var(--space-2xl) 0 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-md-plus);
+  gap: var(--gap-group);
   flex: 1;
   min-height: 0;
 }
@@ -34,25 +37,26 @@
 .worldTop {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: 0 var(--space-lg);
+  gap: var(--gap-control);
+  padding: 0 var(--space-2xl);
   flex-shrink: 0;
 }
 
 .search {
-  width: 280px;
-  height: 38px;
+  width: 320px;
+  height: var(--control);
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg2);
-  padding: 0 12px;
+  gap: var(--space-sm);
+  background: var(--wash);
+  border-radius: var(--radius);
+  padding: 0 var(--space-md-plus);
   color: var(--muted);
-  transition: border-color 0.2s ease;
+  transition: box-shadow 140ms ease, background 140ms ease;
 }
 
 .search:focus-within {
-  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .searchField {
@@ -62,46 +66,59 @@
   border: 0;
   color: var(--text);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   outline: none;
 }
 
 .searchField::placeholder {
-  color: var(--muted-2);
+  color: var(--muted);
 }
 
-/* Sort select, restyled to match the search box (sans, sharp, bg2). */
+/* Sort select: the same wash fill and height as the search box. */
 .sortSelect {
   -webkit-appearance: none;
   appearance: none;
-  height: 38px;
-  padding: 0 28px 0 12px;
+  height: var(--control);
+  padding: 0 40px 0 var(--space-md-plus);
   border: none;
-  background: var(--bg2);
+  border-radius: var(--radius);
+  background-color: var(--wash);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
+  font-weight: 600;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.2s ease;
+  transition: box-shadow 140ms ease, background-color 140ms ease;
   /* Chevron drawn with a background gradient (currentColor unavailable in url()). */
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
     linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-  background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
-  background-size: 5px 5px, 5px 5px;
+  background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%;
+  background-size: 6px 6px, 6px 6px;
   background-repeat: no-repeat;
 }
 
-.sortSelect:focus {
-  border-color: var(--accent);
+.sortSelect:hover {
+  background-color: var(--wash-hi);
 }
 
-/* Right-aligned party-slots indicator (mono muted). */
+.sortSelect:focus-visible {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* The native option list opens on the OS surface; keep it readable. */
+.sortSelect option {
+  background: var(--step-1);
+  color: var(--text);
+}
+
+/* Right-aligned party-slots indicator: a quiet meta line. */
 .slots {
   margin-left: auto;
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -114,11 +131,8 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-md-plus);
-  /* Top padding gives headroom for the card hover-lift so overflow:auto
-   * doesn't clip the lifted top row. */
-  padding: 10px var(--space-lg) var(--space-3xl);
-  scroll-padding-top: 10px;
+  gap: var(--gap-group);
+  padding: 0 var(--space-2xl) var(--space-3xl);
   /* Hide the scrollbar (still scrolls) — matches the IconRail treatment. */
   scrollbar-width: none;
 }
@@ -128,12 +142,12 @@
   width: 0;
 }
 
-/* Fixed 6-up mosaic, cards butting edge-to-edge (260709 — was responsive
- * auto-fill with 14px gaps). */
+/* Fixed 6-up grid of cards on the field (pass 2: an 8px gap, was butted
+ * edge-to-edge since 260709). */
 .grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 0;
+  gap: var(--space-sm);
   align-items: start;
 }
 
@@ -143,15 +157,15 @@
   text-align: center;
   color: var(--muted);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
 }
 
 .error {
   color: var(--red);
 }
 
-/* Centered "Load more" row below the World grid (260704 — replaced the
- * infinite-scroll sentinel). */
+/* Centered retry row below the World grid. */
 .loadMoreRow {
   display: flex;
   justify-content: center;
@@ -163,42 +177,43 @@
 .autoloadSentinel {
   flex-shrink: 0;
   height: 1px;
-  margin-top: calc(-1 * var(--space-md-plus));
+  margin-top: calc(-1 * var(--gap-group));
   pointer-events: none;
 }
 
 /* Wireframe placeholder card shown in unfilled grid slots while a World page
- * is fetching. Mirrors the scouting card chrome: full-bleed 3:4 art with
- * name/meta bars overlaid at the bottom (v0.3 overlay style, 260709). Static
- * by design (260705) — no shimmer sweep. */
+ * is fetching. Mirrors the card: full-bleed 3:4 art with name/meta bars at
+ * the bottom. Static by design (260705) — no shimmer sweep. */
 .skeletonCard {
   position: relative;
   aspect-ratio: 3 / 4;
-  background: var(--bg2);
+  background: var(--step-1);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .skeletonArt {
   position: absolute;
   inset: 0;
-  background: var(--bg3);
+  background: var(--step-1);
 }
 
 .skeletonName,
 .skeletonMeta {
   position: absolute;
-  left: 12px;
-  height: 12px;
+  left: var(--space-md-plus);
+  height: 16px;
   width: 60%;
-  background: var(--border);
+  background: var(--wash-hi);
+  border-radius: var(--radius-sm);
 }
 
 .skeletonName {
-  bottom: 30px;
+  bottom: 40px;
 }
 
 .skeletonMeta {
-  bottom: 13px;
-  height: 8px;
+  bottom: var(--space-md-plus);
+  height: 10px;
   width: 40%;
 }
-

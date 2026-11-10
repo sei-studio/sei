@@ -77,8 +77,8 @@
 
 .label {
   font-weight: 700;
-  font-size: 13px;
-  line-height: 1.05;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   letter-spacing: 0.02em;
   text-align: center;
   /* "Update Sei" fits on one line in the 74px rail; longer translations wrap
@@ -112,11 +112,10 @@
 }
 
 .downloadingLabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--rail-fg);
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .track {
@@ -135,15 +134,15 @@
 }
 
 .confirmBody {
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--text-2);
   margin: 0;
 }
 
 .confirmNote {
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--text-2);
   margin: var(--space-sm) 0 0;
 }
@@ -159,8 +158,8 @@
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   padding: var(--space-sm) var(--space-md);
   pointer-events: none;
   z-index: 9999;

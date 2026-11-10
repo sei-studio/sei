@@ -10,9 +10,9 @@
   align-items: center;
   gap: var(--space-sm);
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: var(--lh-meta);
 }
 
 /*
@@ -22,9 +22,8 @@
  * font-family declaration on .label (var(--sans)) does not win.
  */
 .pill.size_tag {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 10px;
-  letter-spacing: 0.04em;
   gap: 6px;
   /*
    * B5 chrome polish: pin the tag-variant pill height to match
@@ -32,12 +31,12 @@
    * byte-identical heights regardless of label length.
    */
   height: 18px;
+  font-weight: 600;
 }
 
 .pill.size_tag .label {
-  font-family: var(--mono);
+  font-family: var(--sans);
   font-size: 10px;
-  letter-spacing: 0.04em;
   font-weight: 600;
 }
 
@@ -63,11 +62,10 @@
 }
 
 .secondary {
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--text-2);
   text-transform: none;
-  letter-spacing: normal;
   font-weight: 400;
   /* Defensive: a long secondary (e.g. a file path or error string) must wrap
    * rather than force the pill's min-content width and blow out its container.

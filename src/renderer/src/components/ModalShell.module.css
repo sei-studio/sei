@@ -22,7 +22,16 @@
   /* 261103 spacing pass: one inset and one rhythm for every dialog. The
      panel's gap is the group gap; a modal's children carry no outer
      margins, they group their own lines with a tighter inner gap. */
+  /* Quiet register (261110): a roomier inset (32) for the larger type. Set
+     on the panel so the footer rule and any full-bleed child read it too. */
+  --pad-modal: var(--space-xl);
   padding: var(--pad-modal);
+  /* Body copy that a modal does not style itself reads at the body step. */
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
+  color: var(--text-2);
   display: flex;
   flex-direction: column;
   gap: var(--gap-group);

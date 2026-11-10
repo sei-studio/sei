@@ -4,8 +4,8 @@
 .lede {
   margin: 0;
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
 }
 
@@ -17,8 +17,8 @@
   align-items: center;
   justify-content: center;
   height: 300px;
-  background: var(--bg4);
-  border: 1px solid var(--border);
+  background: var(--wash);
+  border: 0;
   overflow: hidden;
 }
 
@@ -30,10 +30,10 @@
 }
 
 .previewEmpty {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--muted);
+  font-weight: 600;
 }
 
 /* Translucent veil while a regeneration runs so the stale image reads as
@@ -45,11 +45,11 @@
   align-items: center;
   justify-content: center;
   background: var(--accent-soft);
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--text);
   animation: veilPulse calc(1.4s / var(--flux)) var(--ease) infinite alternate;
+  font-weight: 600;
 }
 
 @keyframes veilPulse {
@@ -73,8 +73,8 @@
   gap: var(--space-xs);
   width: 72px;
   padding: 4px;
-  border: 1px solid var(--border);
-  background: var(--bg2);
+  border: 0;
+  background: var(--wash);
   cursor: pointer;
   color: var(--text-2);
   transition: border-color calc(120ms / var(--flux)) var(--ease);
@@ -83,7 +83,7 @@
 
 .thumb:hover:not(:disabled),
 .thumb:focus-visible {
-  border-color: var(--accent);
+  background: var(--wash-hi);
   outline: none;
 }
 
@@ -93,8 +93,9 @@
 }
 
 .thumbActive {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  /* Selection is a fill plus a 2px accent underline, never a ring (261110). */
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
   color: var(--text);
 }
 
@@ -106,10 +107,10 @@
 }
 
 .thumbLabel {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .regenRow {
@@ -126,15 +127,16 @@
 }
 
 .hint {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--muted);
+  font-weight: 600;
 }
 
 .error {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--red);
+  font-weight: 600;
 }

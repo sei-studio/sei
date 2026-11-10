@@ -12,7 +12,11 @@
  *
  * The 3D table and the launch photo are always dark wood regardless of app
  * theme, so text sitting directly on them uses fixed light art colors (same
- * exemption as the scene palette in three/ChessScene.ts), not theme tokens. */
+ * exemption as the scene palette in three/ChessScene.ts), not theme tokens.
+ *
+ * Quiet register (261110, pass 2): the HUD copy is on the four type steps
+ * (meta for the move list and small labels, body for result detail); mono
+ * stays only on move notation, which is code. */
 
 .panel {
   height: 100%;
@@ -91,9 +95,9 @@
 .launchTitle {
   margin: 0;
   font-family: var(--display);
-  font-size: 34px;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
   font-weight: 600;
-  letter-spacing: 0.04em;
   color: var(--scene-ink);
   text-shadow: var(--scene-text-shadow);
 }
@@ -102,7 +106,7 @@
   margin: 0;
   max-width: 320px;
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--scene-ink-soft);
   text-shadow: var(--scene-text-shadow);
@@ -112,7 +116,7 @@
   margin: 0;
   max-width: 320px;
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: var(--fs-meta);
   font-weight: 500;
   line-height: 1.5;
   color: var(--scene-error);
@@ -127,8 +131,8 @@
 }
 
 .sideSep {
-  font-family: var(--mono);
-  font-size: 13px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--scene-ink-soft);
   text-shadow: var(--scene-text-shadow);
 }
@@ -140,9 +144,8 @@
   background: transparent;
   padding: 2px var(--space-xs);
   font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: var(--fs-body);
+  font-weight: 700;
   color: var(--scene-ink-soft);
   text-shadow: var(--scene-text-shadow);
   cursor: pointer;
@@ -230,7 +233,7 @@
 .capturedDiff {
   margin-left: var(--space-sm);
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
   color: var(--scene-ink-soft);
   text-shadow: var(--scene-text-shadow);
 }
@@ -260,7 +263,7 @@
   padding: var(--space-sm) var(--space-md);
   text-align: center;
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
@@ -272,7 +275,7 @@
 
 .moveNum {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   color: var(--muted-2);
   display: flex;
   align-items: center;
@@ -288,7 +291,7 @@
   text-align: left;
   padding: 3px var(--space-sm);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   cursor: pointer;
   transition: background 100ms var(--ease), color 100ms var(--ease);
@@ -316,10 +319,11 @@
   border: none;
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  padding: 4px var(--space-sm);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
   cursor: pointer;
   transition: background 120ms var(--ease), color 120ms var(--ease);
 }
@@ -382,7 +386,7 @@
 
 .resignLabel {
   font-family: var(--sans);
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   font-weight: 700;
   color: var(--red);
 }
@@ -399,7 +403,7 @@
   gap: var(--space-md);
   padding: var(--space-sm) var(--space-md);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text);
   white-space: nowrap;
   box-shadow: var(--shadow-pop);
@@ -417,7 +421,7 @@
   left: 50%;
   transform: translateX(-50%);
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--scene-ink-soft);
   text-shadow: var(--scene-text-shadow);
   white-space: nowrap;
@@ -450,9 +454,9 @@
 
 .resultTitle {
   font-family: var(--display);
-  font-size: 24px;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   font-weight: 600;
-  letter-spacing: 0.06em;
   color: var(--text);
 }
 
@@ -471,7 +475,7 @@
 
 .resultDetail {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   color: var(--text-2);
   margin-top: 2px;
@@ -486,7 +490,7 @@
 .modalBody {
   margin: 0 0 var(--space-md);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--text-2);
 }

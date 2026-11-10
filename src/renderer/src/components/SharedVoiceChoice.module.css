@@ -1,5 +1,5 @@
 /* SharedVoiceChoice (261019) — "Others will hear" line + one select + one
-   sample button. Summoning Terminal: sharp corners, token colors only. */
+   sample button. Quiet register (261110): wash fills, no frame lines. */
 
 .root {
   display: flex;
@@ -10,8 +10,9 @@
 
 .line {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--text-2);
 }
 
@@ -25,14 +26,21 @@
 .select {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 7px var(--space-md);
+  height: var(--control-sm);
+  padding: 0 var(--space-md);
   font: inherit;
-  font-size: 14px;
-  background: var(--input-bg, var(--window));
+  font-size: var(--fs-body);
+  font-weight: 500;
+  background: var(--wash);
   color: var(--text);
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius);
   cursor: pointer;
+}
+
+.select option {
+  background: var(--bg2);
+  color: var(--text);
 }
 
 .select:focus-visible,
@@ -49,20 +57,19 @@
 
 .playBtn {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: transparent;
+  border: 0;
+  background: var(--wash);
   color: var(--accent);
   cursor: pointer;
 }
 
 .playBtn:hover:not(:disabled) {
-  border-color: var(--accent);
   background: var(--accent-soft);
 }
 
@@ -80,7 +87,8 @@
 }
 
 .error {
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--red);
 }
 
@@ -90,7 +98,8 @@
   align-items: baseline;
   gap: var(--gap-control);
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
   color: var(--text-2);
 }
 
@@ -100,7 +109,8 @@
   border: none;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;

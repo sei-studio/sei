@@ -12,7 +12,9 @@
   position: relative;
   height: 100%;
   overflow: hidden;
-  background: var(--window);
+  /* Quiet register (261110): no panel of its own. The field shows through,
+     as on every other screen, so there is no content corner at the top-left. */
+  background: transparent;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
 }
@@ -144,8 +146,9 @@
 
 .artSavedNote {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   word-break: break-all;
 }
@@ -245,7 +248,7 @@
 .kindChip {
   align-self: baseline;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   font-weight: 600;
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
@@ -272,14 +275,14 @@
 
 .metaItem dt {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
 .metaItem dd {
   margin: 0;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   font-weight: 600;
   color: var(--text-2);
   white-space: nowrap;
@@ -354,7 +357,7 @@
 
 .addError {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--red);
   margin: 0;
 }
@@ -371,7 +374,7 @@
 
 .confirmBody {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--text-2);
   margin: 0;

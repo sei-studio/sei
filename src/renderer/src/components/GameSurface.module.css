@@ -161,7 +161,7 @@
 
 /* Unified end "x", right. Red on hover. */
 .endBtn {
-  font-size: 18px;
+  font-size: var(--fs-body);
   line-height: 1;
 }
 

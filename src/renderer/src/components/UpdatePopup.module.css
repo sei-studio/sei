@@ -5,10 +5,10 @@
  */
 
 .body {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text-2);
   margin: 0;
-  line-height: 1.45;
+  line-height: var(--lh-body);
 }
 
 /* Paragraphs of one message: a step tighter than the shell's group gap. */
@@ -29,17 +29,17 @@
 }
 
 .changelogHeading {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--accent);
   margin-top: var(--space-xs);
+  font-weight: 600;
 }
 
 .changelogPara {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text);
-  line-height: 1.45;
+  line-height: var(--lh-body);
   margin: 0;
 }
 
@@ -52,7 +52,7 @@
 }
 
 .changelogList li {
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text);
-  line-height: 1.4;
+  line-height: var(--lh-body);
 }

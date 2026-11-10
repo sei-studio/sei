@@ -3,6 +3,9 @@
  * for a backseat game tile. The body of a ModalShell, so the shell owns the
  * scrim, panel, title and footer. Same registers as ShareScreenModal, which
  * this hands over to.
+ *
+ * Quiet register (261110, pass 2): body and meta type steps, a square wash
+ * field instead of the pill, no rings or hairlines (lift and dim only).
  */
 
 /* ── Intro ─────────────────────────────────────────────────────────────── */
@@ -17,15 +20,15 @@
   aspect-ratio: 16 / 10;
   background-size: cover;
   background-position: center;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .introText {
   margin: 0;
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--text-2);
 }
 
@@ -52,19 +55,18 @@
 .pill {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 8px 0 14px;
-  border-radius: 999px;
-  background: var(--surface-2);
+  gap: var(--space-sm);
+  height: var(--control);
+  padding: 0 var(--space-sm) 0 var(--space-md-plus);
+  border-radius: var(--radius);
+  background: var(--wash);
   color: var(--muted);
-  box-shadow: inset 0 0 0 1px transparent;
   transition: box-shadow 140ms var(--ease), color 140ms var(--ease);
 }
 
 .pill:focus-within {
   color: var(--accent);
-  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 4px var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .pillInput {
@@ -76,7 +78,7 @@
   background: transparent;
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 500;
 }
 
@@ -89,10 +91,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--control-xs);
+  height: var(--control-xs);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -101,7 +103,7 @@
 
 .pillClear:hover,
 .pillClear:focus-visible {
-  background: var(--accent-soft);
+  background: var(--wash-hi);
   color: var(--text);
   outline: none;
 }
@@ -138,12 +140,12 @@
   min-height: 0;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
   align-content: start;
-  gap: 12px;
-  /* Room for the hover lift and the picked card (lifted 3px, scaled 1.04,
-     3px ring: up to ~9px past its edge), which the scroll box would otherwise
-     clip. The negative margin keeps the cards flush with the pill. */
+  gap: var(--space-sm);
+  /* Room for the hover lift and the picked card (lifted 3px, scaled 1.04:
+     up to ~9px past its edge), which the scroll box would otherwise clip.
+     The negative margin keeps the cards flush with the pill. */
   padding: 10px 8px 8px;
   margin: -10px -8px 0;
 }
@@ -156,10 +158,11 @@
   aspect-ratio: 16 / 9;
   background: linear-gradient(
     100deg,
-    var(--surface-2) 30%,
-    var(--accent-soft) 50%,
-    var(--surface-2) 70%
+    var(--wash) 30%,
+    var(--wash-hi) 50%,
+    var(--wash) 70%
   );
+  border-radius: var(--radius);
   background-size: 300% 100%;
   animation: shimmer 1.3s ease-in-out infinite;
 }
@@ -172,7 +175,7 @@
 }
 
 /* No results, a bad link, offline: one plain line centered in the empty
-   grid area, in the app's empty-state register (muted 14px). */
+   grid area, in the app's empty-state register (muted body). */
 .notice {
   position: absolute;
   inset: 0;
@@ -182,8 +185,9 @@
   margin: 0;
   padding: 0 24px;
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.4;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   text-align: center;
   color: var(--muted);
 }
@@ -202,7 +206,8 @@
   padding: 0;
   border: none;
   overflow: hidden;
-  background: var(--surface-2);
+  border-radius: var(--radius);
+  background: var(--wash);
   color: #fff;
   cursor: pointer;
   text-align: left;
@@ -223,8 +228,20 @@
 .card:not(:disabled):hover,
 .card:focus-visible {
   transform: translateY(-3px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32), 0 0 0 2px var(--accent);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
   outline: none;
+}
+
+/* Keyboard focus still needs a mark: the 2px accent rule along the foot. */
+.card:focus-visible::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 2;
 }
 
 .card:not(:disabled):active {
@@ -239,7 +256,7 @@
   /* Wins over the entrance animation's transform. */
   animation: none;
   transform: translateY(-3px) scale(1.04);
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36), 0 0 0 3px var(--accent);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.36);
   z-index: 1;
 }
 
@@ -303,7 +320,7 @@
     hsl(calc(var(--hue) + 40) 60% 30%)
   );
   font-family: var(--display);
-  font-size: 34px;
+  font-size: var(--fs-display);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.85);
 }
@@ -324,14 +341,13 @@
 
 .name {
   position: absolute;
-  left: 9px;
-  right: 9px;
-  bottom: 7px;
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: var(--space-sm);
   font-family: var(--display);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: 0.01em;
+  line-height: var(--lh-title);
   color: #fff;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
   display: -webkit-box;
@@ -343,24 +359,23 @@
 
 .count {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--space-sm);
+  right: var(--space-sm);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px 2px 6px;
-  border-radius: 999px;
-  /* Near-solid, blurred behind, with a hairline edge: the corner of a
-     thumbnail is often its own title art ("CRAFT UNITS"), and the count has
-     to read over it. */
+  gap: var(--space-xs);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  /* Near-solid, blurred behind: the corner of a thumbnail is often its own
+     title art ("CRAFT UNITS"), and the count has to read over it. */
   background: rgba(6, 6, 8, 0.82);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: var(--lh-meta);
   font-variant-numeric: tabular-nums;
   color: #fff;
 }
@@ -382,11 +397,11 @@
 .skip {
   border: none;
   background: transparent;
-  padding: 4px 12px;
+  min-height: var(--control-xs);
+  padding: 0 var(--space-md);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--muted);
   cursor: pointer;
   transition: color 120ms var(--ease);
@@ -405,12 +420,6 @@
   cursor: default;
 }
 
-/* Light themes: --surface-2 is the panel's own white, so the pill would
-   vanish once it loses focus; it takes the theme's soft tint instead. */
-:root[data-scheme='light'] .pill {
-  background: var(--bg4);
-}
-
 /* Light themes: the white panel needs a softer card shadow. */
 :root[data-scheme='light'] .card {
   box-shadow: 0 1px 3px rgba(34, 60, 110, 0.16);
@@ -418,11 +427,11 @@
 
 :root[data-scheme='light'] .card:not(:disabled):hover,
 :root[data-scheme='light'] .card:focus-visible {
-  box-shadow: 0 10px 22px rgba(34, 60, 110, 0.2), 0 0 0 2px var(--accent);
+  box-shadow: 0 10px 22px rgba(34, 60, 110, 0.2);
 }
 
 :root[data-scheme='light'] .cardPicked {
-  box-shadow: 0 12px 26px rgba(34, 60, 110, 0.24), 0 0 0 3px var(--accent);
+  box-shadow: 0 12px 26px rgba(34, 60, 110, 0.24);
 }
 
 @media (prefers-reduced-motion: reduce) {

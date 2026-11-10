@@ -10,7 +10,7 @@
 
 .dot {
   height: 6px;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   transition: width 240ms ease, background 240ms ease;
 }
 
@@ -21,10 +21,10 @@
 
 .past {
   width: 6px;
-  background: var(--text-2);
+  background: var(--muted);
 }
 
 .future {
   width: 6px;
-  background: var(--border-strong);
+  background: var(--track);
 }

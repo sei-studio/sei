@@ -32,6 +32,11 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
     void import('./components/DevWorldShot').then(({ DevWorldShot }) => {
       root.render(<DevWorldShot />);
     });
+  } else if (which === 'screen' && screenShot === 'modal') {
+    // 261110: dialogs DevScreenShot does not cover (DevModalShot).
+    void import('./components/DevModalShot').then(({ DevModalShot }) => {
+      root.render(<DevModalShot />);
+    });
   } else if (which === 'screen') {
     // 261103: the real screens in the real shell (DevScreenShot).
     void import('./components/DevScreenShot').then(({ DevScreenShot }) => {

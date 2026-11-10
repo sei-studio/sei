@@ -57,7 +57,7 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   font-weight: 600;
   cursor: pointer;
   transition: background 140ms ease, color 140ms ease;
@@ -86,7 +86,7 @@
 }
 
 .sampleErr {
-  font-size: 12.5px;
+  font-size: var(--fs-meta);
   color: var(--red);
 }
 
@@ -151,14 +151,14 @@
 
 .avatarKind {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   font-weight: 600;
   color: var(--text-2);
 }
 
 .avatarName {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   line-height: 1.25;
   color: var(--muted);
   overflow: hidden;
@@ -178,7 +178,7 @@
   gap: var(--gap-tight);
   padding: 2px 0;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms ease;

@@ -5,8 +5,7 @@
   gap: 12px;
   padding: 10px 16px;
   font-family: var(--sans);
-  font-size: 13px;
-  border-bottom: 1px solid var(--border-strong);
+  font-size: var(--fs-meta);
 }
 
 .warn {
@@ -31,7 +30,7 @@
 .dismiss {
   background: transparent;
   border: 0;
-  font-size: 18px;
+  font-size: var(--fs-body);
   line-height: 1;
   cursor: pointer;
   color: inherit;

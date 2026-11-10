@@ -9,7 +9,7 @@
 .root {
   max-width: 640px;
   margin: 0 auto;
-  padding: 0 56px;
+  padding: 0 var(--space-3xl);
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -22,34 +22,39 @@
 
 /* Voice-calls opt-in (260705) — quiet companion card under the wizard. */
 .voiceCard {
-  margin-top: 18px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  padding: 12px 14px;
+  margin-top: var(--space-lg);
+  background: var(--wash);
+  border-radius: var(--radius);
+  padding: var(--pad-card);
 }
 
 .voiceLabel {
   display: flex;
-  gap: 10px;
+  gap: var(--space-md);
   align-items: flex-start;
   cursor: pointer;
 }
 
 .voiceCheckbox {
-  margin-top: 2px;
+  margin-top: 4px;
   accent-color: var(--accent);
 }
 
 .voiceTitle {
   display: block;
-  font-size: 13px;
+  font-family: var(--sans);
+  font-size: var(--fs-body);
   font-weight: 600;
+  line-height: var(--lh-body);
   color: var(--text);
 }
 
 .voiceHint {
   display: block;
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--muted);
   margin-top: 2px;
   font-variant-numeric: tabular-nums;

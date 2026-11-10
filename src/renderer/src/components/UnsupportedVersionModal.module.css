@@ -1,9 +1,11 @@
 /* UnsupportedVersionModal.module.css — unsupported-world-version popup body.
  * Scrim + panel + title come from ModalShell; body copy mirrors
- * SummonConflictModal, the numbered steps mirror LanNotOpenModal. */
+ * SummonConflictModal, the numbered steps mirror LanNotOpenModal.
+ * Quiet register (261110, pass 2): body/meta steps, sans numerals, version
+ * chips as wash fills (mono kept: they are version codes). */
 
 .body {
-  font-size: 15px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--text-2);
   margin: 0;
@@ -25,24 +27,24 @@
 }
 
 .stepNumber {
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--accent);
-  width: 22px;
+  width: 24px;
   flex-shrink: 0;
 }
 
 .stepBody {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--text);
 }
 
 .hint {
-  font-size: 13px;
+  font-size: var(--fs-meta);
   line-height: 1.5;
   color: var(--muted);
   margin: 0;
@@ -56,7 +58,7 @@
 
 .versionsSummary {
   width: fit-content;
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--accent);
   cursor: pointer;
 }
@@ -67,16 +69,15 @@
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-sm);
 }
 
 .span {
-  padding: 3px 8px;
+  padding: var(--space-xs) var(--space-sm);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: var(--wash);
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
