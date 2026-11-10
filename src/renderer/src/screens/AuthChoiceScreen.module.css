@@ -8,10 +8,6 @@
  * Source: 10-UI-SPEC §AuthChoiceScreen + §SignInModal styling tokens. Both
  * light + dark themes pull from --window / --surface / --border / --text so
  * the form looks intentional on either palette.
- *
- * Quiet register (261110): the form panel is a --step-1 fill with no shadow,
- * the "or" divider is text without rules, selects are --wash fills, and type
- * sits on the four steps (title / body / meta).
  */
 
 .shell {
@@ -35,19 +31,20 @@
 .formPanel {
   width: 100%;
   max-width: 420px;
-  background: var(--step-1);
-  border-radius: var(--radius);
-  padding: var(--space-xl);
+  background: var(--surface);
+  padding: var(--space-xl) var(--space-xl) var(--space-xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-md-plus);
+  box-shadow: var(--shadow-card);
 }
 
 .title {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 34px;
   font-weight: 600;
-  line-height: var(--lh-title);
+  line-height: 1.05;
+  letter-spacing: 0.02em;
   color: var(--text);
   margin: 0;
   text-align: left;
@@ -55,18 +52,15 @@
 
 .framing {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 14px;
   color: var(--muted);
   margin: 0;
 }
 
 .bodyText {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -91,16 +85,14 @@
 
 .fieldLabel {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-2);
 }
 
 .errorText {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }
@@ -108,9 +100,7 @@
 /* 261023 — neutral follow-up under a failed password sign-in. */
 .hintText {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
+  font-size: 14px;
   color: var(--text-2);
   margin: 0;
 }
@@ -118,12 +108,18 @@
 .divider {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--space-md);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 13px;
   color: var(--muted);
   margin: 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
 }
 
 .toggleRow {
@@ -135,13 +131,10 @@
   background: none;
   border: 0;
   font: inherit;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 14px;
   color: var(--text-2);
   cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 3px;
   padding: 0;
 }
 
@@ -159,13 +152,10 @@
   background: none;
   border: 0;
   font: inherit;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 14px;
   color: var(--text-2);
   cursor: pointer;
   text-decoration: underline;
-  text-underline-offset: 3px;
   padding: 0;
 }
 
@@ -183,12 +173,10 @@
   background: none;
   border: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 13px;
   color: var(--muted);
   cursor: pointer;
-  min-height: var(--control-sm);
-  padding: 0 var(--space-md);
+  padding: 4px 8px;
   text-decoration: none;
 }
 
@@ -208,10 +196,9 @@
   align-items: flex-start;
   gap: var(--space-xs);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
+  font-size: 13px;
   color: var(--text-2);
-  line-height: var(--lh-meta);
+  line-height: 1.4;
   cursor: pointer;
 }
 
@@ -240,25 +227,17 @@
 .dobSelect {
   flex: 1;
   min-width: 0;
-  min-height: var(--control);
-  padding: 0 var(--space-md);
+  padding: 8px 10px;
   font: inherit;
-  font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  background: var(--wash);
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
   color: var(--text);
-  border: 0;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   cursor: pointer;
 }
 
-.dobSelect option {
-  background: var(--bg2);
-  color: var(--text);
-}
-
 .dobSelect:focus-visible {
-  outline: none;
-  box-shadow: inset 0 -2px 0 var(--accent);
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
 }

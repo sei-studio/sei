@@ -2,25 +2,24 @@
  * OS permission cards (260929): the microphone card (MicAccessCard) and the
  * Screen Recording step inside the share picker (ScreenAccessGate). Both are
  * ModalShell bodies, so the shell owns the panel, the title and the footer.
- * Quiet register (261110, pass 2): body/meta type steps.
  */
 .body {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-stack);
+  gap: var(--space-sm);
 }
 
 .why {
   margin: 0;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   color: var(--text);
 }
 
 .how {
   margin: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -35,7 +34,7 @@
   gap: var(--space-xs);
   margin: var(--space-xs) 0 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--muted);
 }
 

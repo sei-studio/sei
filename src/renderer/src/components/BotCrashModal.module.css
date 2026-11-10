@@ -3,8 +3,8 @@
  * LanNotOpenModal. */
 
 .body {
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }

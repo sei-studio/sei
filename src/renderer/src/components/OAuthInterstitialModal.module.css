@@ -12,20 +12,20 @@
 /* Scrim, panel, and title now come from ModalShell (tier 'stacked'). */
 
 .body {
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
 
 .countdown {
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--muted);
   margin: 0;
 }
 
 .success {
-  font-size: var(--fs-body);
+  font-size: 15px;
   color: var(--text);
   margin: 0;
 }

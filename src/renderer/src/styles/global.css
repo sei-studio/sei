@@ -224,6 +224,57 @@ input[type='range']:disabled {
 .u-brk.bl { bottom: 0; left: 0; border-bottom: 1.5px solid; border-left: 1.5px solid; }
 .u-brk.br { bottom: 0; right: 0; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * HUD overlay layers — mounted once by MacosWindow above all content.
+ * pointer-events:none throughout so they never intercept input.
+ *
+ * The mockup ships only TWO atmosphere layers: a faint film grain and a soft
+ * vignette. Its scanline layer is disabled (--scan:0) and its accent "sweep"
+ * band is `display:none` — both are intentionally absent here too (they read
+ * as a distracting moving scan over the UI).
+ * ───────────────────────────────────────────────────────────────────── */
+.hud-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.hud-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-scheme="dark"] .hud-grain {
+  opacity: 0.04;
+}
+
+.hud-vignette {
+  position: absolute;
+  /* Confine the vignette to the content panel so it never darkens the chrome
+     (top bar + IconRail). The chrome stays a flat, uniform --rail fill so the
+     two strips read as one continuous background, while the vignette belongs to
+     the overlaid content. Top inset = drag-strip height (34px); left inset =
+     rail width. (When the rail is hidden — onboarding/auth — the 74px left
+     inset is visually negligible: the vignette only darkens past 55% radius.) */
+  top: 34px;
+  left: var(--rail-w);
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  /* Vignette darkening removed — no dark gradient at the bottom of the content
+     panel (grain overlay is kept for texture). */
+  background: none;
+}
+
+:root[data-scheme="dark"] .hud-vignette {
+  background: none;
+}
+
 /* ── Fast tooltip (data-tip) ─────────────────────────────────────────────
  * Native `title` tooltips take ~1.5s to appear. This CSS tooltip shows on a
  * short standard delay (~300ms). Add `data-tip="Label"` to any element (keep

@@ -1,10 +1,6 @@
 /* AwakenScreen.module.css — mockup view-awaken (.awaken-head / .awaken-body /
  * .matched / .side-origins), tokens only.
- * Source: docs/design/UI-REDESIGN-PARTY.md §4.3.
- *
- * Quiet register (261110): no hairlines. The hero and the three origins are
- * raised --step-1 cards on the field (the origins 2px apart, as rows), the
- * Begin CTA is a filled 48px button with no frame, four type steps. */
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.3. */
 
 .root {
   display: flex;
@@ -15,7 +11,7 @@
 }
 
 .head {
-  padding: var(--space-md-plus) var(--page-inset) var(--space-md);
+  padding: var(--space-md-plus) var(--space-lg) var(--space-md);
   display: flex;
   align-items: center;
   flex: none;
@@ -24,8 +20,7 @@
 .body {
   flex: 1;
   display: flex;
-  gap: var(--gap-group);
-  padding: 0 var(--page-inset) var(--space-lg);
+  border-top: 1px solid var(--border);
   min-height: 0;
 }
 
@@ -39,11 +34,10 @@
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: var(--space-lg);
+  gap: 20px;
   padding: var(--space-2xl);
-  background: var(--step-1);
+  background: none;
   border: 0;
-  border-radius: var(--radius);
   color: var(--text);
   cursor: pointer;
   transition: background 0.2s var(--ease);
@@ -63,8 +57,7 @@
 
 .matched:hover,
 .matched:focus-visible {
-  background: color-mix(in srgb, var(--accent) 4%, var(--step-1));
-  outline: none;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 /* Hero starfield — Leo, same recipe as the party wall's dormant-slot skies
@@ -98,8 +91,8 @@
 .matchedTitle {
   font-family: var(--display);
   font-weight: 600;
-  font-size: var(--fs-display);
-  line-height: var(--lh-display);
+  font-size: 34px;
+  line-height: 1.1;
   color: var(--text);
   margin: 0;
 }
@@ -108,67 +101,65 @@
   margin: 0;
   color: var(--text-2);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 15px;
 }
 
 /* "Begin" CTA — primary button language (span: it lives inside the hero
  * <button>, so it can't be a nested button). */
 .go {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--control);
-  padding: 0 var(--space-xl);
+  margin-top: 6px;
+  padding: 10px 32px;
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  line-height: 1;
+  font-size: 14px;
+  font-weight: 600;
   background: var(--accent);
   color: var(--accent-text);
-  border-radius: var(--radius);
+  border: 1px solid var(--accent);
   transition: background 0.15s var(--ease);
 }
 
 .matched:hover .go,
 .matched:focus-visible .go {
   background: var(--accent-strong);
+  border-color: var(--accent-strong);
 }
 
 /* ── Right column: secondary origins ─────────────────────────────────── */
 .origins {
   flex: 1;
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .origin {
   flex: 1;
   text-align: left;
-  padding: var(--space-lg);
+  padding: var(--space-lg) 26px;
   border: 0;
-  border-radius: var(--radius);
-  background: var(--step-1);
+  border-bottom: 1px solid var(--border);
+  background: none;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: var(--space-sm);
+  gap: 4px;
   cursor: pointer;
   transition: background 0.15s var(--ease);
 }
 
+.origin:last-child {
+  border-bottom: 0;
+}
+
 .origin:hover,
 .origin:focus-visible {
-  background: var(--step-2);
-  outline: none;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
 }
 
 .originTitle {
   font-family: var(--display);
   font-weight: 600;
-  font-size: var(--fs-title);
-  line-height: var(--lh-title);
+  font-size: 19px;
   margin: 0;
   color: var(--text-2);
   transition: color 0.15s var(--ease);
@@ -183,9 +174,7 @@
   margin: 0;
   color: var(--muted);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
+  font-size: 13px;
 }
 
 /* 260706: "Update my preferences" — a quiet text entry to the full
@@ -194,20 +183,19 @@
   flex: none;
   display: flex;
   justify-content: center;
-  padding: 0 0 var(--space-md);
+  padding: 10px 0 4px;
 }
 
 .prefsLink {
   background: none;
   border: none;
-  min-height: var(--control-sm);
-  padding: 0 var(--space-md);
+  padding: 4px 8px;
   cursor: pointer;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 13px;
   color: var(--muted);
-  border-radius: var(--radius);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .prefsLink:hover {

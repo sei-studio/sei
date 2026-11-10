@@ -11,9 +11,8 @@
   /* No outer margin (261103): the host sets the distance, so the edit
      modal's subsection gap is not stacked on a 32px push. */
   padding: var(--space-lg);
-  /* Quiet register (261110): the raised fill, no frame line. */
-  border: 0;
-  background: var(--step-1);
+  border: 1px solid var(--border);
+  background: var(--window);
   border-radius: var(--radius);
 }
 
@@ -45,10 +44,10 @@
 }
 
 .eyebrow {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -68,16 +67,15 @@
 
 .skinCaption {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 12px;
   color: var(--muted);
-  max-width: 200px;
-  line-height: var(--lh-meta);
+  max-width: 160px;
+  line-height: 1.4;
 }
 
 .cols {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 240px 1fr;
   gap: var(--space-lg);
 }
 
@@ -103,22 +101,22 @@
   gap: var(--space-sm);
   padding: var(--space-md);
   text-align: center;
-  background: color-mix(in srgb, var(--step-1) 86%, transparent);
+  background: color-mix(in srgb, var(--window) 82%, transparent);
   backdrop-filter: blur(2px);
 }
 
 .setupOverlayTitle {
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--text);
 }
 
 .setupOverlayBody {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--text-2);
   margin: 0;
 }
@@ -131,10 +129,10 @@
 }
 
 .fieldEyebrow {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
   color: var(--muted);
   margin-top: var(--space-md-plus);
   margin-bottom: var(--space-xs);
@@ -147,11 +145,10 @@
 
 .hint {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--text-2);
   margin: var(--space-xs) 0 0 0;
-  line-height: var(--lh-meta);
+  line-height: 1.4;
 }
 
 .sourceTabs {
@@ -165,8 +162,7 @@
   align-items: center;
   gap: var(--space-xs);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
+  font-size: 13px;
   color: var(--text);
   cursor: pointer;
 }
@@ -186,25 +182,28 @@
 .removeBtn {
   appearance: none;
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   color: var(--red);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  min-height: var(--control-sm);
-  padding: 0 var(--space-md);
+  font-size: 14px;
+  font-weight: 500;
+  padding: var(--space-sm) var(--space-md);
   cursor: pointer;
+  /* Sharp corners (D-28). */
   border-radius: var(--radius-sm);
-  transition: background 120ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
-/* No border line on hover (261110): a faint red fill, like Button's danger. */
 .removeBtn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 10%, transparent);
+  border-color: var(--red);
+  /* color-mix preserves the spec's 6% tint without a hardcoded rgba literal. */
+  background: color-mix(in srgb, var(--red) 6%, transparent);
 }
 
 .removeBtn:focus-visible {
-  outline: 1.5px solid var(--red);
+  outline: 2px solid var(--red);
   outline-offset: 2px;
 }
 
@@ -215,27 +214,24 @@
 
 .errorCopy {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 12px;
   color: var(--red);
   margin: var(--space-xs) 0 0 0;
-  line-height: var(--lh-meta);
+  line-height: 1.4;
 }
 
 .warnCopy {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 12px;
   color: var(--warn);
   margin: var(--space-xs) 0 0 0;
-  line-height: var(--lh-meta);
+  line-height: 1.4;
 }
 
 .successCopy {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 12px;
   color: var(--green);
   margin: var(--space-xs) 0 0 0;
-  line-height: var(--lh-meta);
+  line-height: 1.4;
 }

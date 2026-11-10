@@ -117,7 +117,7 @@ export function AwakenScreen(): React.ReactElement {
   return (
     <div className={styles.root}>
       <div className={styles.head}>
-        <Button kind="quiet" size="md" onClick={() => navigate({ kind: 'home' })}>
+        <Button kind="quiet" size="sm" onClick={() => navigate({ kind: 'home' })}>
           {t('← Back')}
         </Button>
       </div>

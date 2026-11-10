@@ -30,18 +30,18 @@
 
 .singleTitle {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 19px;
   font-weight: 600;
-  line-height: var(--lh-title);
+  letter-spacing: 0.02em;
   color: var(--text);
   margin: 0 0 var(--gap-group);
 }
 
 /* ── Left sidebar ─────────────────────────────────────────────────────── */
 .sidebar {
-  /* Wide enough for the title on one line at --fs-title (261110). */
-  width: 236px;
+  width: 208px;
   flex-shrink: 0;
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   padding: var(--pad-modal) var(--space-md);
@@ -50,9 +50,9 @@
 
 .title {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 19px;
   font-weight: 600;
-  line-height: var(--lh-title);
+  letter-spacing: 0.02em;
   color: var(--text);
   margin: 0 0 var(--gap-group);
   padding: 0 var(--space-md);
@@ -73,7 +73,7 @@
   border: 0;
   background: transparent;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   font-weight: 500;
   color: var(--text-2);
   cursor: pointer;
@@ -126,8 +126,8 @@
 
 .paneHint {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--muted);
   margin: 0;
 }
@@ -135,11 +135,11 @@
 /* Why-this-opened banner (e.g. the share toggle needs a description first). */
 .notice {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--accent);
   background: var(--accent-soft);
-  border: 0;
+  border: 1px solid var(--accent);
   padding: var(--space-sm) var(--pad-control);
   margin: 0;
   border-radius: var(--radius);
@@ -152,30 +152,31 @@
 }
 
 .label {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
-  font-weight: 600;
 }
 
 .error {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--red);
   padding: var(--space-xs) 0;
 }
 
 .savedTag {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--green);
-  font-weight: 600;
 }
 
 /* ── Persona mode tabs (Standard / Advanced) — underline like detail tabs ── */
 .modeTabs {
   display: flex;
   gap: var(--space-lg);
+  border-bottom: 1px solid var(--border);
   align-self: flex-start;
 }
 
@@ -186,8 +187,9 @@
   margin-bottom: -1px;
   padding: var(--space-sm) 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   color: var(--muted);
   cursor: pointer;
   transition: color 140ms var(--ease), border-color 140ms var(--ease);
@@ -210,8 +212,8 @@
 /* ── Persona advanced raw-prompt editor (input-style box) ─────────────── */
 .expandedBody {
   position: relative;
-  border: 0;
-  background: var(--wash);
+  border: 1px solid var(--border-strong);
+  background: rgba(127, 127, 127, 0.03);
   padding: var(--pad-control);
   border-radius: var(--radius);
 }
@@ -220,9 +222,9 @@
   display: block;
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-body);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--text);
   background: transparent;
   border: 0;
@@ -234,7 +236,6 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-weight: 500;
 }
 
 .expandedTextarea:disabled {
@@ -246,20 +247,20 @@
   position: absolute;
   top: 8px;
   right: 8px;
-  border: 0;
-  background: var(--wash);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   color: var(--muted);
   padding: 4px 10px;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  font-weight: 600;
 }
 
 .expandedCopy:hover {
   color: var(--accent);
-  background: var(--wash-hi);
+  border-color: var(--accent);
 }
 
 /* ── Inline confirm banner (advanced → standard) ──────────────────────── */
@@ -267,16 +268,16 @@
   display: flex;
   flex-direction: column;
   gap: var(--gap-control);
-  border: 0;
-  background: var(--wash);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   padding: var(--pad-control);
   border-radius: var(--radius);
 }
 
 .confirmBannerText {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.45;
   color: var(--text-2);
 }
 
@@ -303,7 +304,7 @@
 
 .appearanceNote {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--muted);
   font-style: italic;
 }
@@ -318,8 +319,8 @@
 
 .dangerHint {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
   margin: 0;
 }
@@ -338,13 +339,14 @@
   gap: var(--gap-control);
   justify-content: flex-end;
   padding: var(--gap-group) 0 var(--pad-modal);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .footerHint {
   margin-right: auto;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--muted);
 }
 
@@ -366,4 +368,5 @@
 .sharedVoice {
   margin-top: var(--gap-group);
   padding-top: var(--gap-group);
+  border-top: 1px solid var(--border);
 }

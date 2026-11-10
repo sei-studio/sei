@@ -2,8 +2,8 @@
    footer and animation come from ModalShell. */
 .body {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -23,7 +23,7 @@
   display: flex;
   align-items: center;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -36,8 +36,8 @@
 }
 
 .list li label input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   cursor: pointer;
   accent-color: var(--accent);
   flex-shrink: 0;
@@ -59,19 +59,17 @@
    the banner explains why already-uploaded chars might appear in the list. */
 .warnBanner {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.4;
   color: var(--text);
-  padding: var(--space-md) var(--space-md-plus);
-  /* A warn-tinted fill (no side rule), as a one-line notice reads. */
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  border-radius: var(--radius);
+  padding: 10px 12px;
+  border-left: 2px solid var(--warn);
   margin: 0;
 }
 
 .status {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--text-2);
   margin: 0;
 }
@@ -86,5 +84,5 @@
 
 .resultMessage {
   color: var(--text-2);
-  font-size: var(--fs-meta);
+  font-size: 13px;
 }

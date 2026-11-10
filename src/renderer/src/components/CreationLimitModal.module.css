@@ -2,8 +2,8 @@
    animation come from ModalShell. */
 .body {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -11,9 +11,9 @@
 /* Reset-time hint — mono micro-label register (matches the design system's
    caption idiom). Sentence case, no uppercase transform. */
 .hint {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
   margin: 0;
-  font-weight: 600;
 }

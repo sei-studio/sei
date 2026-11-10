@@ -252,9 +252,19 @@ export function DevWorldShot(): React.ReactElement {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <IconRail />
-            {/* As App.tsx since the quiet register (261110): no framed panel. */}
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'transparent' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
+              <main
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  minHeight: 0,
+                  overflow: 'auto',
+                  background: 'var(--window)',
+                  borderTopLeftRadius: 'var(--radius)',
+                  borderTop: '1px solid var(--border)',
+                  borderLeft: '1px solid var(--border)',
+                }}
+              >
                 {body}
               </main>
             </div>

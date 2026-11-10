@@ -1,5 +1,5 @@
 /* Placeholder game panels (game adapters M0). Colors/spacing from tokens.css;
- * the quiet register's title and body steps (261110, pass 2). */
+ * font sizes follow the existing modal copy (LanNotOpenModal.module.css). */
 .panel {
   display: flex;
   flex-direction: column;
@@ -13,9 +13,7 @@
 
 .title {
   margin: 0;
-  font-family: var(--display);
-  font-size: var(--fs-title);
-  line-height: var(--lh-title);
+  font-size: 15px;
   font-weight: 600;
   color: var(--text);
 }
@@ -23,8 +21,7 @@
 .hint {
   margin: 0;
   max-width: 36ch;
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-2);
 }

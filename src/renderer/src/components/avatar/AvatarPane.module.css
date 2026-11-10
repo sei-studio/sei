@@ -32,25 +32,25 @@
 }
 
 .label {
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text);
 }
 
 .hint {
   margin: 0;
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text-2);
 }
 
 .subHint {
   margin: 0;
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--text-2);
 }
 
 .error {
   margin: 0;
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--red);
 }
 
@@ -59,8 +59,8 @@
 .previewBox {
   position: relative;
   height: 280px;
-  border: 0;
-  background: var(--wash);
+  border: 1px solid var(--border);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -75,7 +75,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text-2);
   pointer-events: none;
 }
@@ -89,15 +89,15 @@
   justify-content: center;
   gap: var(--space-xs);
   padding: var(--space-xl) var(--space-md);
-  border: 0;
-  background: var(--wash);
+  border: 1px dashed var(--border);
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease;
 }
 
 .uploadBox:hover:not(:disabled) {
-  background: var(--wash-hi);
+  border-color: var(--accent);
   background: var(--surface-2);
 }
 
@@ -113,17 +113,17 @@
 }
 
 .downloadBox:hover {
-  background: var(--wash-hi);
+  border-color: var(--border);
   background: var(--surface);
 }
 
 .uploadTitle {
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text);
 }
 
 .uploadSub {
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--text-2);
 }
 
@@ -137,21 +137,21 @@
 .btn,
 .btnDanger {
   padding: 6px 14px;
-  font-size: var(--fs-meta);
-  border: 0;
-  background: var(--wash);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
   transition: border-color 120ms ease, color 120ms ease;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--wash-hi);
+  border-color: var(--accent);
   color: var(--accent);
 }
 
 .btnDanger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--red) 14%, transparent);
+  border-color: var(--red);
   color: var(--red);
 }
 

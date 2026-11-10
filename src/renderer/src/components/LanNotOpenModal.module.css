@@ -1,12 +1,10 @@
 /* LanNotOpenModal.module.css — failed-summon "open to LAN" guidance popup.
  * Scrim + panel + title come from ModalShell; body copy mirrors
- * UnsupportedVersionModal, the numbered steps mirror LanModal.
- * Quiet register (261110, pass 2): body/meta steps, sans numerals. */
+ * UnsupportedVersionModal, the numbered steps mirror LanModal. */
 
 .body {
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -17,55 +15,50 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-stack);
+  gap: 12px;
 }
 
 .step {
   display: flex;
-  gap: var(--space-md);
+  gap: 16px;
   align-items: baseline;
 }
 
 .stepNumber {
-  font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--accent);
-  width: 24px;
+  width: 22px;
   flex-shrink: 0;
 }
 
 .stepBody {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--text);
 }
 
 .hint {
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
   margin: 0;
 }
 
 /* Result line under a Start Minecraft press (260929). */
 .note {
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
   padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius);
+  border-left: 2px solid var(--accent);
   background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .note[data-tone='warn'] {
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  box-shadow: inset 2px 0 0 var(--warn);
+  border-left-color: var(--warn);
 }

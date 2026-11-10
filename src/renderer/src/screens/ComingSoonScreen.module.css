@@ -11,16 +11,16 @@
 
 /* Mono micro-label (see .u-lbl). Sentence case; no uppercase / pixel font. */
 .eyebrow {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
   margin-bottom: 8px;
-  font-weight: 600;
 }
 
 .title {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 28px;
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--heading);

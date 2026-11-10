@@ -115,7 +115,7 @@ export function UsernameSearchField({
 
   return (
     <div className={styles.wrapper}>
-      <div className={styles.fieldEyebrow}>{t('Mojang username')}</div>
+      <div className={styles.fieldEyebrow}>{t('MOJANG USERNAME')}</div>
       <div className={styles.row}>
         <div className={styles.inputCol}>
           <TextField

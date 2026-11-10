@@ -13,10 +13,8 @@
 
   width: var(--skin-preview-w);
   height: var(--skin-preview-h);
-  /* Quiet register (261110): a wash, no frame line. */
-  background: var(--wash);
-  border: 0;
-  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  border: 1px solid var(--border);
   display: grid;
   place-items: center;
   position: relative;
@@ -46,17 +44,15 @@
   left: var(--space-md);
   right: var(--space-md);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--text-2);
   text-align: center;
 }
 
 .loadingHint {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--muted);
+  font-size: 14px;
+  color: var(--text-2);
   text-align: center;
 }

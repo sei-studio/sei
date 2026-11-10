@@ -9,32 +9,32 @@
   min-height: 480px;
 }
 
-/* Step counter: the meta step (quiet register, 261110; was a mono label). */
+/* Mono micro-label (see .u-lbl). Sentence case; no uppercase / pixel font. */
 .stepIndicator {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: var(--space-sm);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+  margin-bottom: var(--space-md);
+  letter-spacing: 0.04em;
 }
 
 .heading {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 24px;
   font-weight: 600;
-  line-height: var(--lh-title);
+  line-height: 1.2;
   color: var(--text);
   margin: 0 0 var(--space-lg) 0;
+  letter-spacing: 0.01em;
 }
 
 .body {
   flex: 1;
   min-height: 0;
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
-  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
 }
 
 .body p {
