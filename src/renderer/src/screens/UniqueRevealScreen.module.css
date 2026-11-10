@@ -105,10 +105,9 @@
 
 .heading {
   font-family: var(--display);
-  font-size: 42px;
+  font-size: var(--fs-display);
   font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.05;
+  line-height: var(--lh-display);
   color: var(--heading);
   margin: 0;
   flex-shrink: 1;
@@ -118,8 +117,9 @@
 
 .intro {
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--text-2);
   margin: 0;
   max-width: 42ch;

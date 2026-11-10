@@ -1,16 +1,19 @@
 /* SignInModal — unified sign-in / sign-up modal (D-01).
  *
- * Scrim + 460px modal cloned from DeleteConfirmModal pattern. Padding
- * 24px 40px 40px per UI-SPEC §Spacing tokens (var(--space-2xl) for the
- * SetupWizardModal-style modal padding). Sharp corners (D-28).
+ * Scrim, panel and title come from ModalShell; this file styles the body.
+ * Quiet register (261110): no rules or frames. The "or" divider is text
+ * alone, the DOB selects are --wash fills with an accent underline on focus,
+ * and type sits on the four steps (body for reading text and labels, meta
+ * for helper lines, errors and links).
  *
  * Source: 10-UI-SPEC §SignInModal + Copywriting Contract.
  */
 
-/* Scrim, panel, and title now come from ModalShell. */
-
 .framing {
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--muted);
   margin: 0;
 }
@@ -20,18 +23,27 @@
   justify-content: flex-start;
 }
 
-.toggleLink {
+.toggleLink,
+.forgotLink {
   background: none;
   border: 0;
   font: inherit;
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
-  text-decoration: underline;
   padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.toggleLink:focus-visible {
+.forgotLink {
+  align-self: flex-start;
+}
+
+.toggleLink:focus-visible,
+.forgotLink:focus-visible {
   outline: 1.5px solid var(--accent);
   outline-offset: 2px;
 }
@@ -50,20 +62,27 @@
 }
 
 .fieldLabel {
-  font-size: 14px;
-  font-weight: 500;
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--text-2);
 }
 
 .errorText {
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
   color: var(--red);
   margin: 0;
 }
 
 /* 261023 — neutral follow-up under a failed password sign-in. */
 .hintText {
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--text-2);
   margin: 0;
 }
@@ -71,48 +90,25 @@
 .divider {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  font-size: 14px;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
   margin: 0;
 }
 
-.divider::before, .divider::after {
-  content: '';
-  flex: 1;
-  border-top: 1px solid var(--border);
-}
-
-.forgotLink {
-  background: none;
-  border: 0;
-  font: inherit;
-  font-size: 14px;
-  color: var(--text-2);
-  cursor: pointer;
-  padding: 0;
-  align-self: flex-start;
-  text-decoration: underline;
-}
-
-.forgotLink:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture row.
- * Matches the existing fieldLabel typography (14px, --text-2) so the
- * required-checkbox doesn't read as a separate visual layer. Aligned
- * to flex-start so a wrapped two-line label stays anchored under the
- * checkbox glyph rather than centered against it.
- */
+/* Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture row. Aligned to
+ * flex-start so a wrapped two-line label stays anchored under the checkbox. */
 .tosCheckbox {
   display: flex;
   align-items: flex-start;
   gap: var(--space-xs);
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 500;
   color: var(--text-2);
-  line-height: 1.4;
+  line-height: var(--lh-meta);
   cursor: pointer;
 }
 
@@ -132,11 +128,7 @@
   outline-offset: 2px;
 }
 
-/* F-10 (quick/260525-usc) — COPPA DOB age gate three-dropdown row.
- * Three equal-width <select>s laid out as a flex row with the same gap
- * as the form's fieldGroup vertical rhythm. Matches the TextField look
- * by reusing the global form-control colours and 14px label spec.
- */
+/* F-10 (quick/260525-usc) — COPPA DOB age gate three-dropdown row. */
 .dobRow {
   display: flex;
   gap: var(--space-xs);
@@ -145,17 +137,25 @@
 .dobSelect {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
+  min-height: var(--control);
+  padding: 0 var(--space-md);
   font: inherit;
-  font-size: 14px;
-  background: var(--input-bg, var(--window));
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 500;
+  background: var(--wash);
   color: var(--text);
-  border: 1px solid var(--border-strong);
+  border: 0;
   border-radius: var(--radius);
   cursor: pointer;
 }
 
+.dobSelect option {
+  background: var(--bg2);
+  color: var(--text);
+}
+
 .dobSelect:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }

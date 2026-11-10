@@ -50,6 +50,7 @@ import { applySharedVoicePick, applyVoicePick, type OwnVoicePick } from '@shared
 import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
 import type { Character } from '@shared/characterSchema';
 import { KNOWLEDGE_COMPACT_SUGGEST_BYTES } from '@shared/ipc';
+import styles from './AddCharacterScreen.module.css';
 
 const STEPS = 7;
 
@@ -60,7 +61,20 @@ interface PendingKnowledge {
   bytes: number;
 }
 
-export function AddCharacterScreen({ importFirst = false }: { importFirst?: boolean } = {}): React.ReactElement {
+export interface AddCharacterScreenProps {
+  importFirst?: boolean;
+  /** Dev screenshot harness only (DevScreenShot `screen=add&step=N`): open
+   * at this step with this already-created character. Prod callers pass
+   * neither, so the flow always starts at step 0 with nothing created. */
+  initialStep?: number;
+  initialCreated?: Character | null;
+}
+
+export function AddCharacterScreen({
+  importFirst = false,
+  initialStep = 0,
+  initialCreated = null,
+}: AddCharacterScreenProps = {}): React.ReactElement {
   const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const addCharacter = useDataStore((s) => s.addCharacter);
@@ -75,8 +89,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   // description). Signed-out: 5 steps (name → persona → image → skin → voice),
   // then save private.
   const totalSteps = signedIn ? STEPS : 5;
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState('');
+  const [step, setStep] = useState(initialStep);
+  const [name, setName] = useState(initialCreated?.name ?? '');
   const [personaSource, setPersonaSource] = useState('');
   // "Expand my prompt". ON by default (260725): runs the LLM expander that
   // rewrites the blurb into the four-section base personality. OFF uses the
@@ -108,7 +122,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [created, setCreated] = useState<Character | null>(null);
+  const [created, setCreated] = useState<Character | null>(initialCreated);
   // Daily-cap hit mid-flow (rare race past the pre-flight gate in
   // CharactersScreen) — surfaces the same CreationLimitModal.
   const [limitHit, setLimitHit] = useState(false);
@@ -414,58 +428,31 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           }
         />
         {pendingKnowledge.length > 0 ? (
-          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className={styles.fileList}>
             {pendingKnowledge.map((f, i) => (
-              <div
-                key={`${f.title}-${i}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  padding: '8px 12px',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    minWidth: 0,
-                    fontSize: 14,
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--muted)' }} aria-hidden="true">
-                    <FileTextIcon size={15} />
+              <div key={`${f.title}-${i}`} className={styles.fileRow}>
+                <span className={styles.fileName}>
+                  <span className={styles.fileIcon} aria-hidden="true">
+                    <FileTextIcon size={16} />
                   </span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {f.title}
-                  </span>
+                  <span className={styles.ellipsis}>{f.title}</span>
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
+                <span className={styles.fileEnd}>
+                  <span className={styles.meta}>
                     {t('{n} KB', { n: Math.max(1, Math.round(f.bytes / 1024)) })}
                   </span>
                   <Button
-                    kind="ghost"
-                    size="sm"
+                    kind="quiet"
+                    size="md"
                     aria-label={t('Remove {name}', { name: f.title })}
                     onClick={() => setPendingKnowledge((prev) => prev.filter((_, j) => j !== i))}
                   >
-                    <TrashIcon size={13} />
+                    <TrashIcon size={15} />
                   </Button>
                 </span>
               </div>
             ))}
-            <div
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 11,
-                letterSpacing: '0.04em',
-                color: 'var(--muted)',
-              }}
-            >
+            <div className={`${styles.meta} ${styles.fileTotal}`}>
               {t(pendingKnowledge.length === 1 ? '{n} file, {kb} KB total' : '{n} files, {kb} KB total', {
                 n: pendingKnowledge.length,
                 kb: Math.max(1, totalKb),
@@ -520,17 +507,9 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           placeholder={t('Describe your character.')}
           aria-label={t('Persona source')}
         />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginTop: 16,
-          }}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>{t('Expand my prompt')}</span>
+        <div className={styles.optionRow}>
+          <span className={styles.optionLabel}>
+            <span>{t('Expand my prompt')}</span>
             <InfoTip
               text={t('Let AI build on what you wrote, keeping your details and adding structure. Off uses your text exactly as written.')}
               label={t('About Expand my prompt')}
@@ -546,17 +525,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           <ExpansionProgressRow pct={expansion.pct} label={expansion.label} />
         ) : null}
         {knowledgeStatus ? (
-          <div
-            style={{
-              marginTop: 12,
-              fontFamily: 'var(--mono)',
-              fontSize: 12,
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-              color: 'var(--muted)',
-            }}
-            aria-live="polite"
-          >
+          <div className={`${styles.meta} ${styles.status}`} aria-live="polite">
             {knowledgeStatus}
           </div>
         ) : null}
@@ -631,7 +600,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       >
         {created ? (
           // The box's distance from the hint is the step's to set (261103).
-          <div style={{ paddingTop: 'var(--space-xl)' }}>
+          <div className={styles.skinWrap}>
             <SkinEditor
               character={created}
               onChanged={() => {
@@ -686,7 +655,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         nextKind={visibility === 'public' ? 'accent' : 'primary'}
         nextDisabled={!validate()}
       >
-        <div style={{ display: 'flex', gap: 12 }}>
+        <div className={styles.choices}>
           <Button
             kind={visibility === 'public' ? 'accent' : 'ghost'}
             size="lg"
@@ -703,7 +672,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           </Button>
         </div>
         {visibility === 'public' && voiceOwn && voiceId && created ? (
-          <div style={{ marginTop: 18, maxWidth: 460 }}>
+          <div className={styles.sharedVoice}>
             <SharedVoiceChoice
               characterId={created.id}
               ownGender={voiceOwn.gender}
@@ -746,26 +715,14 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
 /**
  * Live progress for the streaming persona expansion. The model writes six
  * sections in order; `label` names the one currently being written and `pct`
- * tracks the streamed fraction. JetBrains-Mono caption above a slim PercentBar,
- * matching the design system's label register.
+ * tracks the streamed fraction. A meta-step caption above a slim PercentBar.
  */
 function ExpansionProgressRow({ pct, label: rawLabel }: { pct: number; label: string }): React.ReactElement {
   const t = useT();
   const label = t(rawLabel);
   return (
-    <div style={{ marginTop: 16 }} aria-live="polite">
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          marginBottom: 8,
-          fontFamily: 'var(--mono)',
-          fontSize: 12,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          color: 'var(--muted)',
-        }}
-      >
+    <div className={styles.progress} aria-live="polite">
+      <div className={`${styles.meta} ${styles.progressHead}`}>
         <span>{t('Summoning persona: {label}', { label })}</span>
         <span>{pct}%</span>
       </div>
@@ -775,16 +732,5 @@ function ExpansionProgressRow({ pct, label: rawLabel }: { pct: number; label: st
 }
 
 function ErrorRow({ message }: { message: string }): React.ReactElement {
-  return (
-    <div
-      style={{
-        marginTop: 12,
-        color: 'var(--red)',
-        fontFamily: 'var(--mono)',
-        fontSize: 13,
-      }}
-    >
-      {message}
-    </div>
-  );
+  return <div className={styles.error}>{message}</div>;
 }

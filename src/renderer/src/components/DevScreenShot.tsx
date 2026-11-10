@@ -43,6 +43,14 @@
  *     &noskin=1      (character) skin still the creation placeholder, so
  *                    the Look section shows Add / Generate
  *
+ *     screen = awaken              the add-a-companion entry (AwakenScreen)
+ *     screen = add&step=0..6       the Add Character flow at that step
+ *                                  (steps 2-6 open with Sui as the
+ *                                  just-created companion; &import=1 = the
+ *                                  "Bring their memories" phase before step 0)
+ *     screen = skinsetup           the onboarding skin-setup step (SkinSetupScreen)
+ *     screen = reveal              a new companion's reveal (UniqueRevealScreen, Sui)
+ *
  * The World tab and a profile opened from World: ?dashshot=screen&screen=world|worldprofile
  * (DevWorldShot, 261110).
  *
@@ -75,11 +83,16 @@ import { MoveInSheetView } from './seilink/MoveInSheet';
 import { TutorialOverlay } from './tutorial/TutorialOverlay';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import type { SeilinkAvailability } from '@shared/seilinkHost';
+import type { Character } from '@shared/characterSchema';
 import { CharactersScreen } from '../screens/CharactersScreen';
 import { CharacterPage } from '../screens/CharacterPage';
 import { ChatScreen } from '../screens/ChatScreen';
 import { VoiceCallScreen } from '../screens/VoiceCallScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { AwakenScreen } from '../screens/AwakenScreen';
+import { AddCharacterScreen } from '../screens/AddCharacterScreen';
+import { SkinSetupScreen } from '../screens/SkinSetupScreen';
+import { UniqueRevealScreen } from '../screens/UniqueRevealScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
 import { isUiLanguage } from '@shared/uiLanguage';
@@ -91,7 +104,7 @@ const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
 const MARV = 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e06';
 const PEBBLE = '6d0a3f0e-58a4-4d43-9a43-6c1f0d2b7e11';
 
-type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit';
+type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit' | 'awaken' | 'add' | 'skinsetup' | 'reveal';
 
 const params = new URLSearchParams(window.location.search);
 const screen = (params.get('screen') ?? 'home') as Screen;
@@ -311,6 +324,8 @@ function seed(): void {
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
+  if (screen === 'awaken') nav({ kind: 'awaken' });
+  if (screen === 'add') nav({ kind: 'add-character' });
   if (tourShot) {
     nav({ kind: 'home' });
     useTutorialStore.getState().startSeilink(SUI, params.get('audience') === 'new' ? 'new' : 'existing', 1);
@@ -378,6 +393,22 @@ export function DevScreenShot(): React.ReactElement {
         return <VoiceCallScreen characterId={SUI} />;
       case 'settings':
         return <SettingsScreen />;
+      case 'awaken':
+        return <AwakenScreen />;
+      case 'skinsetup':
+        return <SkinSetupScreen />;
+      case 'reveal':
+        return <UniqueRevealScreen characterId={SUI} />;
+      case 'add': {
+        const step = Math.max(0, Math.min(6, Number(params.get('step') ?? 0) || 0));
+        return (
+          <AddCharacterScreen
+            importFirst={params.get('import') === '1'}
+            initialStep={step}
+            initialCreated={step >= 2 ? (CHARACTERS[0] as unknown as Character) : null}
+          />
+        );
+      }
       default:
         return <CharactersScreen />;
     }

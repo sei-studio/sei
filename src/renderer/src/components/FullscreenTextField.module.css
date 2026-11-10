@@ -1,5 +1,6 @@
 /* FullscreenTextField.module.css — inline textarea + expand-icon popup editor.
-   Sharp corners per D-28 (matches TextField). */
+   Quiet register (261110): the TextField fill, no frame line; focus draws the
+   2px accent rule along the bottom. */
 
 .wrap {
   position: relative;
@@ -8,23 +9,23 @@
 
 .input {
   width: 100%;
-  min-height: 120px;
+  min-height: 144px;
   resize: vertical;
-  padding: 12px 40px 12px 14px; /* right gutter clears the expand button */
-  background: transparent;
-  border: 1px solid var(--border-strong);
+  padding: var(--space-md) 44px var(--space-md) var(--space-md-plus); /* right gutter clears the expand button */
+  background: var(--wash);
+  border: none;
   border-radius: var(--radius);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   outline: none;
-  transition: border-color 140ms ease;
+  transition: box-shadow 140ms ease, background 140ms ease;
 }
 
-.input:hover,
 .input:focus {
-  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .input::placeholder {
@@ -33,13 +34,13 @@
 
 .expandBtn {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--space-sm);
+  right: var(--space-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--control-xs);
+  height: var(--control-xs);
   padding: 0;
   background: transparent;
   border: 0;
@@ -64,19 +65,20 @@
   width: min(80vw, 880px);
   height: min(60vh, 520px);
   resize: none;
-  background: var(--bg);
+  background: var(--wash);
   border: none;
   border-radius: var(--radius);
-  padding: 16px;
+  padding: var(--space-md-plus);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   outline: none;
 }
 
 .editor:focus {
-  border-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .editor::placeholder {

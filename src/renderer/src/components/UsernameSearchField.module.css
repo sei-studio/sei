@@ -13,11 +13,10 @@
 
 .fieldEyebrow {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
-  color: var(--text-2);
+  line-height: var(--lh-meta);
+  color: var(--muted);
   margin-bottom: var(--space-xs);
 }
 
@@ -39,9 +38,10 @@
   margin-top: var(--space-xs);
   margin-bottom: 0;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--text-2);
-  line-height: 1.4;
+  line-height: var(--lh-meta);
 }
 
 .result.error {

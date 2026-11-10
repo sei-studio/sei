@@ -217,7 +217,7 @@ export function PortraitImagePicker({
             </Button>
           ) : null}
           {error ? (
-            <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>{error}</span>
+            <span className={avatarStyles.err}>{error}</span>
           ) : null}
         </div>
         {cropImg ? (
@@ -234,36 +234,11 @@ export function PortraitImagePicker({
 
   return (
     <>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div className={avatarStyles.row}>
       {value ? (
-        <img
-          src={portraitSrc(value)!}
-          alt={t('Card image preview')}
-          style={{
-            width: 56,
-            height: 56,
-            objectFit: 'cover',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius)',
-          }}
-        />
+        <img src={portraitSrc(value)!} alt={t('Card image preview')} className={avatarStyles.preview} />
       ) : (
-        <div
-          style={{
-            width: 56,
-            height: 56,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px dashed var(--border)',
-            borderRadius: 'var(--radius)',
-            color: 'var(--muted)',
-            fontSize: 11,
-            fontFamily: 'var(--mono)',
-          }}
-        >
-          {t('NONE')}
-        </div>
+        <div className={avatarStyles.empty}>{t('None')}</div>
       )}
       <input
         ref={inputRef}
@@ -274,18 +249,16 @@ export function PortraitImagePicker({
       />
       {/* The shared Button, like BackgroundImagePicker (261103): these two
           were hand-rolled with a fainter border than every other secondary. */}
-      <Button kind="ghost" size="sm" disabled={busy} onClick={onPick}>
+      <Button kind="secondary" size="md" disabled={busy} onClick={onPick}>
         {busy ? t('Working…') : value ? t('Change') : t('Upload')}
       </Button>
       {value ? (
-        <Button kind="danger" size="sm" disabled={busy} onClick={() => void onRemove()}>
+        <Button kind="danger" size="md" disabled={busy} onClick={() => void onRemove()}>
           {t('Remove')}
         </Button>
       ) : null}
       {error ? (
-        <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>
-          {error}
-        </span>
+        <span className={avatarStyles.err}>{error}</span>
       ) : null}
     </div>
     {cropImg ? (

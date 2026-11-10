@@ -1,0 +1,120 @@
+/* AddCharacterScreen.module.css — the bits of the Add Character flow that
+ * are not QuestionShell's (quiet register, 261110; these were inline styles
+ * with 1px frames and 11-13px mono labels). Four type steps, fills not lines. */
+
+/* Import phase: the files waiting for the companion to exist. */
+.fileList {
+  margin-top: var(--gap-group);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-stack);
+  min-height: var(--control);
+  padding: 0 var(--space-xs) 0 var(--space-md-plus);
+  background: var(--wash);
+  border-radius: var(--radius);
+}
+
+.fileName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.fileIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+/* Sizes, totals, status and progress captions: the meta step. */
+.meta {
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
+  color: var(--muted);
+}
+
+.fileTotal {
+  margin-top: var(--space-sm);
+}
+
+/* Step 1: "Expand my prompt" + its toggle. */
+.optionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-stack);
+  margin-top: var(--gap-group);
+}
+
+.optionLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.status {
+  margin-top: var(--gap-stack);
+}
+
+.progress {
+  margin-top: var(--gap-group);
+}
+
+.progressHead {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+/* Step 3: the skin box sits a section below the hint. */
+.skinWrap {
+  padding-top: var(--space-sm);
+}
+
+/* Step 5: the two visibility choices. */
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.sharedVoice {
+  margin-top: var(--gap-group);
+  max-width: 460px;
+}
+
+.error {
+  margin-top: var(--gap-stack);
+  color: var(--red);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
+}
