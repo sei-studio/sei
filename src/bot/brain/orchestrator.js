@@ -2740,6 +2740,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     else if (typeof a.player === 'string') parts.push(a.player)
     else if (typeof a.item === 'string') parts.push(a.item)
     else if (typeof a.name === 'string') parts.push(a.name)
+    // 261110 (pass 49): the count. "You're currently: gather oak_log" read as
+    // any wood gather, so "go get more wood, like 10 more" during her own
+    // 3-log gather got "on it" and the 3-log gather ran on (probe 1/10).
+    if (parts.length && Number.isFinite(a.count)) parts.unshift(String(a.count))
     if (typeof a.times === 'number') parts.push(`times=${a.times}`)
     return `${name}${parts.length ? ' ' + parts.join(' ') : ''}`.slice(0, 120)
   }

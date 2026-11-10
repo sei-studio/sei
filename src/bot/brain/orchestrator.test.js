@@ -43,7 +43,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     expect(t).toContain('If they ask you to come to them or follow them, or point out where they are, call the action that takes you to them')
     expect(t).toContain('If they ask you to stop or to stay where you are, call unfollow')
     expect(t).toContain('make the switch in this same turn, even when the current action is one they asked for')
-    expect(t).toContain('asked for once you finish what you are doing now is not a switch')
+    expect(t).toContain('Only when their own line puts it after what you are doing now is it not a switch')
     // 261018 (pass 17): a changed count or item re-calls the action; a line
     // that drops the job and asks for a new one calls only the new action.
     expect(t).toContain('If they change the job you are on, like how many or which item, call that action again with the new details')
