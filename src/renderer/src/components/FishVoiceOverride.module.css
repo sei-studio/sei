@@ -14,15 +14,15 @@
 }
 
 .title {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
+  font-family: var(--sans);
+  font-size: var(--fs-title);
   color: var(--muted);
+  font-weight: 600;
 }
 
 .current {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text);
   flex: 1 1 auto;
   min-width: 0;
@@ -42,15 +42,15 @@
 
 .hint {
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--muted);
   margin: 0;
 }
 
 .error {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--red);
   margin: 0;
 }

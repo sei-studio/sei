@@ -3,8 +3,8 @@
    + success line. */
 .body {
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
   margin: 0;
 }
@@ -20,14 +20,14 @@
 
 .errorText {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--red);
   margin: 0;
 }
 
 .success {
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
   color: var(--text);
   margin: 0;
 }

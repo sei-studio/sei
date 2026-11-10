@@ -2,8 +2,8 @@
 
 .body {
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
   margin: 0;
 }
@@ -19,15 +19,15 @@
   align-items: center;
   gap: 10px;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text);
   cursor: pointer;
   user-select: none;
 }
 
 .checkbox input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   cursor: pointer;
   accent-color: var(--accent);
   flex-shrink: 0;
@@ -40,7 +40,7 @@
 
 .errorText {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--red);
   margin: 0;
 }

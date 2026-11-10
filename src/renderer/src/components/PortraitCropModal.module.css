@@ -5,7 +5,7 @@
 
 .hint {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   margin: 0;
 }
@@ -16,7 +16,6 @@
   position: relative;
   overflow: hidden;
   background: var(--bg);
-  border: 1px solid var(--border-strong);
   cursor: grab;
   touch-action: none;
   user-select: none;
