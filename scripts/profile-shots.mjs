@@ -11,6 +11,8 @@
  * Chrome through playwright, then opens the `?dashshot=screen` harnesses
  * (DevWorldShot for a World companion, DevScreenShot for Sui as a built-in
  * or as your own companion) and writes `<prefix><shot>.png` for each shot.
+ * A shot in CLICKS clicks that selector first (world-avatars: the portrait
+ * corner's Avatars popover open).
  * Everything it starts is closed before it exits. CHROME_PATH overrides the browser (default
  * /usr/bin/google-chrome). Analytics are stubbed by the harnesses.
  */
@@ -33,6 +35,7 @@ const QUERY = arg('query', '');
 const SHOTS = {
   world: 'screen=worldprofile&who=Aria',
   'world-noart': 'screen=worldprofile&who=Solphivia',
+  'world-avatars': 'screen=worldprofile&who=Aria',
   builtin: 'screen=character&who=builtin',
   'builtin-settings': 'screen=character&who=builtin&tab=settings',
   'builtin-worldlink': 'screen=character&who=builtin&tab=worldlink&seilink=on',
@@ -44,6 +47,9 @@ const SHOTS = {
   'own-worldlink': 'screen=character&tab=worldlink&seilink=on&movedin=1',
   'own-more': 'screen=character&tab=more&seilink=on',
   'own-custom-image': 'screen=character&tab=look&img=custom',
+};
+const CLICKS = {
+  'world-avatars': '[data-avatars-btn]',
 };
 const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
 
@@ -78,6 +84,11 @@ async function main() {
       await page.waitForSelector('main h1', { timeout: 60_000 }).catch(() => console.log(`${name}: no page title`));
       // Let the page's open animation, the portrait and the rows' reads settle.
       await page.waitForTimeout(1600);
+      if (CLICKS[name]) {
+        await page.click(CLICKS[name]).catch((e) => console.log(`${name}: click failed: ${e.message.slice(0, 120)}`));
+        await page.mouse.move(0, 0);
+        await page.waitForTimeout(500);
+      }
       const file = path.join(OUT, `${PREFIX}${name}.png`);
       await page.screenshot({ path: file });
       console.log(file);

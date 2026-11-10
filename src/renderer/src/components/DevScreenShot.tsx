@@ -236,13 +236,13 @@ function seed(): void {
             regenCount: 1,
             regenLimit: 3,
           },
-    // The profile's cloud facts (261110): author, add count, Stardew look, sample voice.
+    // The profile's cloud facts (261110): author, add count, sample voice.
     charsOverviewInfo: async () =>
       who === 'world'
-        ? { creatorName: 'kitsune', addCount: 72, stardewLook: true, sampleVoiceId: 'v-sarah' }
+        ? { creatorName: 'kitsune', addCount: 72, sampleVoiceId: 'v-sarah' }
         : who === 'builtin'
-          ? { creatorName: null, addCount: 1840, stardewLook: true, sampleVoiceId: 'v-lily' }
-          : { creatorName: null, addCount: 12, stardewLook: false, sampleVoiceId: 'v-sarah' },
+          ? { creatorName: null, addCount: 1840, sampleVoiceId: 'v-lily' }
+          : { creatorName: null, addCount: 12, sampleVoiceId: 'v-sarah' },
     // Someone else's companion shows its public avatars; your own has the card only.
     avatarLibraryList: async (id: string) => {
       const item = (aid: string, kind: string, source: string, name: string | null, url: string | null) => ({

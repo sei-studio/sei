@@ -52,6 +52,7 @@ import { useSkinGenerate } from '../SkinGenerateButton';
 import { HoverTip } from './HoverTip';
 import { ActionChip, ProfileRow, RowValue } from './ProfileRow';
 import { VoiceSampleButton, type SampleResult } from './VoiceSample';
+import { UserText } from './UserText';
 import styles from './Profile.module.css';
 
 export interface ProfileSettingsProps {
@@ -660,12 +661,15 @@ function AboutRow(p: RowProps): React.ReactElement {
       label={t('Name and description')}
       tall
       value={
-        <span className={styles.about}>
+        <div className={styles.about}>
           <span className={styles.aboutName}>{character.name}</span>
-          <span className={styles.clamp} title={description || undefined}>
-            {description || t('No description yet.')}
-          </span>
-        </span>
+          {/* The description is the creator's words: boxed as user text. */}
+          {description ? (
+            <UserText text={description} lines={3} />
+          ) : (
+            <span className={styles.clamp}>{t('No description yet.')}</span>
+          )}
+        </div>
       }
       lockedTip={access.about === 'locked' ? lockTip : null}
       actions={

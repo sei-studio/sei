@@ -101,13 +101,20 @@
   background: linear-gradient(0deg, color-mix(in srgb, var(--window) 40%, transparent), transparent 22%);
 }
 
-/* Expand-art corner button (260729): floats over the portrait's bottom-right,
-   reusing the game surface's fullscreen glyph. Quiet, borderless chip. */
-.artExpandBtn {
+/* The portrait's bottom-right corner: the Avatars button (profile v3) beside
+   the expand-art one (260729). */
+.artCorner {
   position: absolute;
   right: var(--space-md-plus);
   bottom: var(--space-md-plus);
   z-index: 4;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* A corner button: quiet, borderless chip (the expand-art one reuses the
+   game surface's fullscreen glyph). */
+.artExpandBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;

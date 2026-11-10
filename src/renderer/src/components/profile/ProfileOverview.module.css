@@ -1,7 +1,8 @@
 /* Profile Overview (profile v2, product call 261110): a companion you do
-   not own. One surface, no boxed panels, few type sizes: 17px reading
-   text, 15px tile names, 13px quiet details and shelf headings. Games and
-   avatars are picture tiles of one height, side by side when they fit. */
+   not own. One surface, few type sizes: 17px reading text, 15px voice
+   line, 13px quiet details. The creator's description is boxed as user
+   text (Profile.module.css .userText, profile v3). The public avatars open
+   in a small popover from the portrait's corner (.avatarsPop below). */
 
 .overview {
   display: flex;
@@ -15,20 +16,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--gap-group);
-}
-
-.desc {
-  margin: 0;
-  max-width: 62ch;
-  font-family: var(--sans);
-  font-size: 17px;
-  line-height: 1.55;
-  color: var(--text-2);
-  white-space: pre-line;
-  display: -webkit-box;
-  -webkit-line-clamp: 6;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .voice {
@@ -103,38 +90,30 @@
   color: var(--red);
 }
 
-/* ── Shelves: Games, then Avatars ───────────────────────────────────── */
-
-.shelves {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: var(--gap-section);
-  row-gap: var(--gap-group);
+/* ── Avatars popover (profile v3): opens from the portrait's corner
+   button, right above it. Its public avatars as picture tiles, no title
+   row (the button's tooltip names it). ──────────────────────────────── */
+.avatarsPop {
+  position: fixed;
+  z-index: 900;
+  max-width: min(440px, calc(100vw - 16px));
+  padding: var(--space-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+  animation: avatarsPopIn 140ms var(--ease);
 }
 
-.shelf {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-stack);
-  min-width: 0;
+@keyframes avatarsPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
-.shelfHead {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.none {
-  margin: 0;
-  font-family: var(--sans);
-  font-size: 15px;
-  color: var(--muted);
-}
-
-.tiles {
+.avatarTiles {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -143,48 +122,6 @@
   gap: var(--gap-stack);
 }
 
-/* A game: its cover art, the name, and what is ready for it. */
-.game {
-  width: 152px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-tight);
-  min-width: 0;
-}
-
-.cover {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  margin-bottom: var(--gap-tight);
-  border-radius: var(--radius);
-  background-color: var(--bg3);
-  background-size: cover;
-  background-position: center;
-}
-
-.tileName {
-  font-family: var(--sans);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tileDetail {
-  font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.25;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* An avatar: the picture, as tall as a game tile (cover + two text lines). */
 .avatar {
   width: 92px;
   display: flex;
@@ -198,7 +135,8 @@
   height: 128px;
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg3);
+  /* A step off the popover's own fill, so a kind tile (Live2D) still reads. */
+  background: color-mix(in srgb, var(--text) 7%, var(--surface-2));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -216,6 +154,16 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
+}
+
+.avatarName {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Report (quiet link, someone else's companion) ──────────────────── */

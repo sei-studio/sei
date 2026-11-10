@@ -15,9 +15,10 @@
  *    launch.
  *  - SOMEONE ELSE'S (a built-in, or a World companion): a byline ("by Sei",
  *    "by <author>") and the created date; Overview first
- *    (components/profile/ProfileOverview.tsx: games, public avatars,
- *    Report), then "Your settings", WorldLink and More once it is in your
- *    library. No
+ *    (components/profile/ProfileOverview.tsx: the description, boxed as
+ *    the creator's words, its voice, Report), then "Your settings",
+ *    WorldLink and More once it is in your library. Its avatars open from a
+ *    button on the portrait's corner, beside the full-art button. No
  *    owner control (look, voice, persona, Public, Locked rows) shows.
  *
  * The rows (components/profile/ProfileSettings.tsx) are label + value +
@@ -61,7 +62,7 @@ import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { ReportCompanionModal } from '../components/ReportCompanionModal';
 import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
 import { ProfileSettings } from '../components/profile/ProfileSettings';
-import { ProfileIntro, ProfileOverview } from '../components/profile/ProfileOverview';
+import { ProfileAvatarsButton, ProfileIntro, ProfileOverview } from '../components/profile/ProfileOverview';
 import type { SampleResult } from '../components/profile/VoiceSample';
 import { AvatarsModal, FloatingAvatarModal, SkinEditModal } from '../components/profile/ProfileModals';
 import { formatDate } from '../lib/formatDate';
@@ -191,7 +192,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [initialFocus] = useState<ProfileFocus | null>(() => takeRequestedProfileFocus());
   // The section menu tab the player picked (null = the first tab).
   const [wantedTab, setWantedTab] = useState<ProfileFocus | null>(initialFocus);
-  // chars:overview-info (creator, add count, Stardew look, sample voice).
+  // chars:overview-info (creator, add count, sample voice).
   const [overview, setOverview] = useState<{ id: string; info: CharacterOverviewInfo } | null>(null);
   const [preparing, setPreparing] = useState<boolean>(false);
   // Flips true once the cache-miss mount effect has concluded (downloaded, or
@@ -880,8 +881,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             <ProfileOverview
               key={character.id}
               character={character}
-              info={info}
-              inLibrary={!isPreview}
               canReport={access.report}
               intro={intro}
               onReport={() => {
@@ -930,23 +929,35 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           <div className={styles.dScrim} />
         </div>
 
-        {/* Expand the full art (260729), only when there is real portrait art
-            to show (the procedural sprite has nothing to save). */}
-        {portraitSrc(character.portrait_image) ? (
-          <button
-            type="button"
-            className={styles.artExpandBtn}
-            onClick={() => {
-              setArtSavedTo(null);
-              setArtOpen(true);
-            }}
-            aria-label={t('View full art')}
-            data-tip={t('View full art')}
-            data-tip-edge="right"
-          >
-            <FullscreenIcon size={16} />
-          </button>
-        ) : null}
+        {/* The corner buttons: the avatars popover (someone else's companion,
+            when it has avatars beyond the card image; profile v3) and the
+            full art (260729, only when there is real portrait art to show:
+            the procedural sprite has nothing to save). */}
+        <div className={styles.artCorner} data-art-corner="true">
+          {view === 'foreign' ? (
+            <ProfileAvatarsButton
+              key={`avatars:${character.id}`}
+              character={character}
+              className={styles.artExpandBtn}
+              onOpen={() => onAction('view_avatars')}
+            />
+          ) : null}
+          {portraitSrc(character.portrait_image) ? (
+            <button
+              type="button"
+              className={styles.artExpandBtn}
+              onClick={() => {
+                setArtSavedTo(null);
+                setArtOpen(true);
+              }}
+              aria-label={t('View full art')}
+              data-tip={t('View full art')}
+              data-tip-edge="right"
+            >
+              <FullscreenIcon size={16} />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {editing ? (
