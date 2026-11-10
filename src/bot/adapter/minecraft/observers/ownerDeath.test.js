@@ -75,4 +75,12 @@ describe('recordOwnerDeath', () => {
     expect(bot._seiOwnerDeath.pos).toBeNull()
     expect(bot._seiOwnerDeath.entity).toBeNull()
   })
+  // keepInventory: the respawned body visibly holds or wears something.
+  it('does not claim an empty inventory when the respawned player still has gear', () => {
+    const death = { text: 'Alex was slain by Zombie', at: T0, pos: null, entity: body }
+    const t = ownerStateClause(20, death, { id: 7, equipment: [{ name: 'iron_sword' }, null, null, null, null, null] }, null, T0 + 10_000)
+    expect(t).toContain('keeps inventory')
+    expect(t).not.toContain('empty inventory')
+    expect(ownerStateClause(20, death, { id: 7, equipment: [null, null, null, null, null, null] }, null, T0 + 10_000)).toContain('empty inventory')
+  })
 })

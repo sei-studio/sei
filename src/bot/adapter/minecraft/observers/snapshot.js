@@ -136,6 +136,12 @@ export function ownerStateClause(hp, death, ownerEnt, selfPos = null, nowMs = Da
   // "Anything they carried": the bot cannot see their inventory, and a
   // player with nothing drops nothing ("i got your stuff" before any
   // pickup, same compare).
+  // keepInventory worlds: a respawned player who visibly holds or wears
+  // something kept their things, so "empty inventory" would be a wrong fact.
+  // The bot cannot read gamerules; the new body's equipment is what it sees.
+  let kept = false
+  try { kept = !sameBody && Array.isArray(ownerEnt?.equipment) && ownerEnt.equipment.some(Boolean) } catch { kept = false }
+  if (kept) return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with their gear still on them, so this world keeps inventory`
   const spot = deathSpotFromYou(recent.pos, selfPos)
   const where = spot ? `where they died, ${spot}` : 'where they died'
   return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Anything they carried dropped ${where}, unless someone has picked it up since`
