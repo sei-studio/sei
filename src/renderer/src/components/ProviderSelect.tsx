@@ -43,9 +43,17 @@ export interface ProviderSelectProps {
   compact?: boolean;
   /** Providers not offered here (Playtime > My keys leaves out the ChatGPT plan, its own tab). */
   exclude?: readonly Provider[];
+  /** Borderless filled trigger in the quiet register (Playtime > My keys). */
+  quiet?: boolean;
 }
 
-export function ProviderSelect({ value, onChange, compact = false, exclude }: ProviderSelectProps): React.ReactElement {
+export function ProviderSelect({
+  value,
+  onChange,
+  compact = false,
+  exclude,
+  quiet = false,
+}: ProviderSelectProps): React.ReactElement {
   const t = useT();
   const [open, setOpen] = useState(false);
   // The offered list: the 8 shown providers, plus the current value when it
@@ -148,7 +156,7 @@ export function ProviderSelect({ value, onChange, compact = false, exclude }: Pr
   return (
     <div
       ref={rootRef}
-      className={[styles.root, compact ? styles.compact : '', open ? styles.open : '']
+      className={[styles.root, compact ? styles.compact : '', quiet ? styles.quiet : '', open ? styles.open : '']
         .filter(Boolean)
         .join(' ')}
     >

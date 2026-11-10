@@ -26,6 +26,8 @@ import { isUiLanguage } from '@shared/uiLanguage';
 import { PlaytimeScreen } from '../screens/PlaytimeScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { SpendAlertBanner } from './playtime/SpendAlertBanner';
+import { MacosWindow } from './MacosWindow';
+import { IconRail } from './IconRail';
 
 const params = new URLSearchParams(window.location.search);
 
@@ -62,10 +64,21 @@ export function DevPlaytimeShot(): React.ReactElement {
   useEffect(() => {
     void useChatgptStore.getState().load();
   }, []);
+  // The real shell (MacosWindow with the field backdrop, the rail), like
+  // DevScreenShot, so the page is judged against the restyled screens.
   return (
-    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)' }}>
-      <SpendAlertBanner />
-      {params.get('part') === 'settings' ? <SettingsScreen /> : <PlaytimeScreen />}
+    <div style={{ position: 'fixed', inset: 0, display: 'flex' }}>
+      <MacosWindow railHidden={false}>
+        <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+          <IconRail />
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+            <SpendAlertBanner />
+            <main style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'transparent' }}>
+              {params.get('part') === 'settings' ? <SettingsScreen /> : <PlaytimeScreen />}
+            </main>
+          </div>
+        </div>
+      </MacosWindow>
     </div>
   );
 }

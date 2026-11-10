@@ -160,7 +160,7 @@ function BrainSection({
       <div className={styles.panel}>
         <Row
           testId="mykeys-brain"
-          label={<ProviderSelect value={provider} onChange={(p) => void onChangeProvider(p)} compact exclude={NO_CHATGPT} />}
+          label={<ProviderSelect value={provider} onChange={(p) => void onChangeProvider(p)} compact quiet exclude={NO_CHATGPT} />}
         >
           {editing ? (
             <span className={styles.editor}>

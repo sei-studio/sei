@@ -505,7 +505,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         }
       : {}),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = authMode || chatMode || creditWallMode || robloxMode || permsMode || onboardMode || homeMode || voiceKeyMode || artMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = authMode || chatMode || creditWallMode || robloxMode || permsMode || onboardMode || homeMode || voiceKeyMode || artMode || playtimeMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];

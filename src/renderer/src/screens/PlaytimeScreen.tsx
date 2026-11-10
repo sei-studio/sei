@@ -1,5 +1,5 @@
 /**
- * PlaytimeScreen — the Playtime page (261110, product call 261110): one page
+ * PlaytimeScreen: the Playtime page (261110, product call 261110): one page
  * for what runs the companions and what it costs, in three tabs.
  *
  * - Sei: the Sei plan on the cloud (SeiPlanTab, CreditsScreen.tsx).

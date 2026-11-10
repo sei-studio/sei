@@ -85,7 +85,8 @@ export function ChatgptTab({ active, cfg, persist, signedIn, onUsePlan }: Chatgp
       <section className={styles.section} aria-label={t('Brain')}>
         <div className={styles.sectionHead}>
           <h3 className={styles.sectionTitle}>{t('Brain')}</h3>
-          {activeAcc?.signedIn ? (
+          {/* The recovery rows below name the account themselves. */}
+          {healthy && activeAcc?.signedIn ? (
             <span className={styles.aside} title={activeAcc.label}>
               {activeAcc.label}
             </span>
