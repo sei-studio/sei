@@ -1,5 +1,7 @@
 /* McSetupModal — Minecraft setup window body (scrim + panel come from
- * ModalShell). Flat: a bare text tab row, the step list, no boxes. */
+ * ModalShell). Flat: a bare text tab row, the step list, no boxes.
+ * Quiet register (261110, pass 2): sans tabs at the body step, body steps,
+ * meta helper lines. */
 
 .tabs {
   display: flex;
@@ -11,12 +13,10 @@
   appearance: none;
   border: none;
   background: transparent;
-  padding: 0 0 6px;
-  font-family: var(--mono);
-  font-size: 11px;
+  padding: 0 0 var(--space-sm);
+  font-family: var(--sans);
+  font-size: var(--fs-body);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--muted);
   cursor: pointer;
   border-bottom: 2px solid transparent;
@@ -38,39 +38,41 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gap-stack);
 }
 
 .step {
   display: flex;
-  gap: 16px;
+  gap: var(--space-md);
   align-items: baseline;
 }
 
 .stepNumber {
-  /* Design system §3: tracked uppercase mono micro-label. */
-  font-family: var(--mono);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  /* Quiet register (261110, pass 2): a sans numeral at the body step. */
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--accent);
-  width: 22px;
+  width: 24px;
   flex-shrink: 0;
 }
 
 .stepBody {
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--text);
 }
 
 .searching {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-family: var(--mono);
-  font-size: 12px;
+  gap: var(--space-sm);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
   margin: 0;
 }
@@ -122,8 +124,9 @@
 
 /* Muted version-guidance line under the steps; mirrors LanNotOpenModal's .hint. */
 .hint {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-meta);
   color: var(--muted);
   margin: 0;
 }
@@ -131,7 +134,8 @@
 .skinBody {
   margin: 0;
   font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--text);
 }

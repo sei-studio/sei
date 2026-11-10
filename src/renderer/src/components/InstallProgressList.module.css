@@ -1,28 +1,23 @@
 /* InstallProgressList.module.css — per-install progress rows.
  *
- * Sharp corners (D-28). All colors/spacing reference tokens; zero hex.
- * 4px progress bar — --rail base + --accent fill, matches UI-SPEC §Animation.
+ * Quiet register (261110, pass 2): rows are wash fills 2px apart, no frame
+ * or hairlines. 4px progress bar on the --track, --accent fill.
  */
 
 .list {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   margin-top: var(--space-md);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 .row {
   display: flex;
   align-items: center;
   gap: var(--space-md);
-  padding: var(--space-md-plus);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.list > .row:last-child {
-  border-bottom: none;
+  padding: var(--space-md) var(--space-md-plus);
+  background: var(--wash);
+  border-radius: var(--radius);
 }
 
 .text {
@@ -35,16 +30,17 @@
 
 .label {
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
+  font-weight: 600;
   color: var(--text);
-  line-height: 1.4;
+  line-height: var(--lh-body);
 }
 
 .path {
   font-family: var(--mono);
-  font-size: 12px;
-  color: var(--text-2);
-  line-height: 1.4;
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  line-height: var(--lh-meta);
   word-break: break-all;
 }
 
@@ -76,18 +72,16 @@
 
 .stageLabel {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   text-align: right;
 }
 
-/* 4px progress bar — neutral track, --accent fill. (Uses --bg4 rather than
-   --rail: in light the rail is now a saturated #7FB0FF chrome, which would
-   collide with the accent fill and hide the progress.) */
+/* 4px progress bar — the neutral --track, --accent fill. */
 .bar {
   height: 4px;
   width: 100%;
-  background: var(--bg4);
+  background: var(--track);
   border-radius: 0;
 }
 

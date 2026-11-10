@@ -2,17 +2,19 @@
  * a bot-backed game without a register of its own, plus the shared waiting
  * line. The registered games (Minecraft, Stardew Valley, Don't Starve
  * Together) pass their own skins from their launch-panel modules; only the
- * waiting-dots animation is shared, coloured through `--sw-dot`. */
+ * waiting-dots animation is shared, coloured through `--sw-dot`.
+ * Quiet register (261110, pass 2): the token skin is a step-1 fill with no
+ * frame, body/meta type, square fill dots and wash-filled nav buttons. */
 
 .window {
   width: min(520px, 100%);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: var(--gap-stack);
+  padding: var(--pad-card);
+  background: var(--step-1);
+  border-radius: var(--radius);
   text-align: center;
 }
 
@@ -26,17 +28,16 @@
 
 .count {
   grid-area: count;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
 }
 
 .title {
   grid-area: title;
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text);
 }
@@ -49,7 +50,7 @@
   background: transparent;
   padding: 0 var(--space-xs);
   font: inherit;
-  font-size: 18px;
+  font-size: var(--fs-title);
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
@@ -67,8 +68,9 @@
   max-height: 200px;
   overflow-y: auto;
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: var(--lh-body);
   color: var(--text);
 }
 
@@ -87,30 +89,35 @@
 .dot {
   width: 8px;
   height: 8px;
-  border: 1px solid var(--border);
-  background: transparent;
+  border-radius: 1px;
+  background: var(--track);
 }
 
 .dotDone {
   background: var(--accent);
-  border-color: var(--accent);
 }
 
 .dotNow {
-  outline: 1px solid var(--text);
-  outline-offset: 1px;
+  background: var(--text);
 }
 
 .navBtn {
   -webkit-appearance: none;
   appearance: none;
-  border: 1px solid var(--border);
-  background: transparent;
-  padding: var(--space-xs) var(--space-sm);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--wash);
+  min-height: var(--control-xs);
+  padding: 0 var(--space-md);
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
+  font-weight: 700;
   color: var(--text);
   cursor: pointer;
+}
+
+.navBtn:hover:not(:disabled) {
+  background: var(--wash-hi);
 }
 
 .navBtn:disabled {

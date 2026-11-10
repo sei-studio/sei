@@ -1,5 +1,7 @@
 /* IdTag.module.css — plain mono id mark next to a name (mockup .idtag).
- * No border, no fill: it reads as quiet metadata, not a chip. */
+ * No border, no fill: it reads as quiet metadata, not a chip. Mono is kept:
+ * it is a code. Quiet register (261110, pass 2): the meta step at both
+ * sizes; sm keeps a tighter track for the World card. */
 
 .tag {
   display: inline-flex;
@@ -14,9 +16,10 @@
 }
 
 .sm {
-  font-size: 10.5px;
+  font-size: var(--fs-meta);
+  letter-spacing: 0.02em;
 }
 
 .md {
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
