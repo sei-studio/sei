@@ -2473,4 +2473,7 @@ export const PT_BR: Record<string, string> = {
   "Stop sample": "Parar amostra",
   "Your settings": "Suas configurações",
   "by {name}": "por {name}",
+  "Today": "Hoje",
+  "Yesterday": "Ontem",
+  "Settings sections": "Seções das configurações",
 };

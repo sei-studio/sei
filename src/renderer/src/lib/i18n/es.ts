@@ -2473,4 +2473,7 @@ export const ES: Record<string, string> = {
   "Stop sample": "Detener muestra",
   "Your settings": "Tus ajustes",
   "by {name}": "de {name}",
+  "Today": "Hoy",
+  "Yesterday": "Ayer",
+  "Settings sections": "Secciones de ajustes",
 };

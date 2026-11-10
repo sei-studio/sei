@@ -2473,4 +2473,7 @@ export const RU: Record<string, string> = {
   "Stop sample": "Остановить образец",
   "Your settings": "Ваши настройки",
   "by {name}": "от {name}",
+  "Today": "Сегодня",
+  "Yesterday": "Вчера",
+  "Settings sections": "Разделы настроек",
 };
