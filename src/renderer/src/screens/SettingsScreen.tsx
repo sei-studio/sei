@@ -41,6 +41,7 @@ import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
 import { InfoTip, InfoTipInline } from '../components/InfoTip';
 import { SettingsSectionNav } from '../components/settings/SettingsSectionNav';
+import { useFieldGlow } from '../lib/fieldGlow';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
@@ -69,6 +70,7 @@ const THEME_SWATCHES: { value: ThemeName; label: string; colors: [string, string
 ];
 
 export function SettingsScreen(): React.ReactElement {
+  useFieldGlow('settings');
   // The scroller and the column, for the section menu (261110).
   const rootRef = useRef<HTMLDivElement | null>(null);
   const colRef = useRef<HTMLDivElement | null>(null);

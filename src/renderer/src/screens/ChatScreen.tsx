@@ -67,6 +67,7 @@ import { FirstMomentCard } from '../components/FirstMomentCard';
 import { ChatgptPlanBadge } from '../components/ChatgptPlanBadge';
 import { NoticeLine } from '../components/NoticeLine';
 import { retireGamesTip, useGamesTipVisible } from '../lib/useGamesTip';
+import { useFieldGlow } from '../lib/fieldGlow';
 import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import styles from './ChatScreen.module.css';
@@ -179,6 +180,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const load = useChatStore((s) => s.load);
   const send = useChatStore((s) => s.send);
 
+  useFieldGlow('chat');
   const [draft, setDraft] = useState('');
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   // #9 — reply quoting + copy feedback. replyTo holds the quoted author + text.

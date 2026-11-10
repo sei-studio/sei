@@ -1,8 +1,8 @@
 /* MacosWindow.module.css — terminal window chrome.
  *
  * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
- * traffic lights — no fake ones). Full-bleed, one flat --bg colour under
- * everything: no grain, dots or glow (plain background, product call 261110).
+ * traffic lights — no fake ones). Full-bleed dark; the dotted glow field
+ * (FieldBackdrop) paints under everything (the grain overlay is gone, 261110).
  */
 
 .window {
@@ -12,11 +12,10 @@
      in windowChrome.ts) so shrinking never clips or forces a scrollbar. */
   min-width: 1000px;
   min-height: 560px;
-  /* One flat --bg colour, no pattern and no glow (plain background, product
-     call 261110: the dotted glow field was too busy and hurt legibility).
-     --bg, not --window: light themes keep their white --step-1 cards on the
-     tinted page, as with the quiet register. */
-  background-color: var(--bg);
+  /* Flat near-black field — no accent bloom (the previous radial used
+     --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
+     blue gradient washed over the whole window). */
+  background-color: var(--window);
   border-radius: 0; /* D-28 */
   overflow: hidden;
   box-shadow: var(--shadow-window);

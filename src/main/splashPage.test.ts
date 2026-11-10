@@ -61,8 +61,8 @@ describe('splashHtml', () => {
       return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',');
     };
     expect(GLOW_RGB).toBe(hex('art-ink'));
-    // The wide glow keeps #101a2e (the dark theme's --bg3 when it was chosen,
-    // 261108); the plain-background restore (261110) lifted --bg3 but not the splash.
+    // --bg3 is defined per theme; the glow uses the dark theme's value.
+    expect(tokens).toMatch(/--bg3:\s*#101a2e/i);
     expect(GLOW_WIDE_RGB).toBe('16,26,46');
     const html = splashHtml('AAAA', { status: 'Updating…', style: 'glow' });
     expect(html).not.toContain('background:rgba(');

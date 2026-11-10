@@ -39,6 +39,7 @@
  *   Controls   --control-lg 56 (composer) / --control 48 / --control-sm 40 /
  *              --control-xs 32 (dense rows)
  *   Status     --live (online dot; idle is --muted)
+ *   Field      --field-* : the dotted glow background (FieldBackdrop.tsx).
  */
 
 :root {
@@ -254,6 +255,10 @@
   --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
   --track: color-mix(in srgb, var(--text) 16%, transparent);
   --live: var(--green);
+  --field-base: var(--bg);
+  --field-texture: color-mix(in srgb, var(--text) 5%, transparent);
+  --field-under: 0.3;
+  --field-dots: 0.42;
 }
 
 /* Explicit ice selector mirrors :root so applyTheme('ice') is unambiguous. */
@@ -309,6 +314,10 @@
   --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
   --track: color-mix(in srgb, var(--text) 16%, transparent);
   --live: var(--green);
+  --field-base: var(--bg);
+  --field-texture: color-mix(in srgb, var(--text) 5%, transparent);
+  --field-under: 0.3;
+  --field-dots: 0.42;
 }
 
 /*
@@ -316,21 +325,22 @@
  *   bg #09090b · txt #e9e7e1 · accent periwinkle #7FB0FF · sharp · overlays.
  */
 :root[data-theme="midnight"] {
-  /* Navy ramp in the hue of the periwinkle accent. Plain background (product
-     call 261110): back to the tones from before the 260707 darkening, so the
-     flat page reads a little lifted instead of near-black. */
-  --bg: #070c17;
-  --bg2: #0c1426;
-  --bg3: #142138;
-  --bg4: #1d2c49;
+  /* ── TEMP: dark-blue background experiment (hue of the #7fb0ff accent) ──
+     Navy ramp swapped in for the original near-blacks. To REVERT, restore each
+     value from the trailing comment (the /* was: … *​/ originals) and delete
+     this block header. */
+  --bg: #04070f;        /* very dark blue (darkened) */
+  --bg2: #080f1d;       /* very dark blue (darkened) */
+  --bg3: #101a2e;       /* very dark blue (darkened) */
+  --bg4: #18263f;       /* very dark blue (darkened) */
 
   /* App surface is a single very-dark-blue --bg; there is no lighter "window"
-     tone. Surfaces step up slightly so cards/inputs read against the page. */
-  --window: #070c17;
-  --desktop: #04070f;   /* deepest: what the window floats on */
-  --surface: #0c1426;
-  --surface-2: #142138;
-  --rail: #070c17;      /* one surface with --bg (the rail is transparent) */
+     tone. Surfaces step up slightly so cards/inputs read against the field. */
+  --window: #04070f;    /* very dark blue (darkened) */
+  --desktop: #02040a;   /* deepest — the field the window floats on (darkened) */
+  --surface: #080f1d;   /* very dark blue (darkened) */
+  --surface-2: #101a2e; /* very dark blue (darkened) */
+  --rail: #04070f;      /* very dark blue (darkened) */
   --rail-active: rgba(255, 255, 255, 0.045);
   /* Rounded content-corner backdrop — matches the chrome; the panel's own
      rounded border (App.tsx main) is what defines the corner. */
@@ -397,14 +407,17 @@
   --shadow-window: 0 0 0 1px rgba(0, 0, 0, .5), 0 24px 60px rgba(0, 0, 0, .55), 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -16px rgba(0, 0, 0, .80);
   --shadow-pop: 0 18px 40px -8px rgba(0, 0, 0, .70);
-  /* Quiet register fills (261110): the update window's midnight, kept the
-     same step above the restored --bg (were #0a111f / #121b2d over #04070f). */
-  --step-1: #0d1627;
-  --step-2: #152035;
+  /* Quiet register fills (261110): the update window's midnight. */
+  --step-1: #0a111f;
+  --step-2: #121b2d;
   --wash: rgba(255, 255, 255, 0.06);
   --wash-hi: rgba(255, 255, 255, 0.11);
   --track: rgba(255, 255, 255, 0.12);
   --live: #3ecf8e;
+  --field-base: var(--bg);
+  --field-texture: rgba(150, 176, 230, 0.05);
+  --field-under: 0.3;
+  --field-dots: 0.62;
 }
 
 /*
@@ -469,6 +482,10 @@
   --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
   --track: color-mix(in srgb, var(--text) 16%, transparent);
   --live: var(--green);
+  --field-base: var(--bg);
+  --field-texture: color-mix(in srgb, var(--text) 5%, transparent);
+  --field-under: 0.3;
+  --field-dots: 0.42;
 }
 
 /*
@@ -531,6 +548,10 @@
   --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
   --track: color-mix(in srgb, var(--text) 16%, transparent);
   --live: var(--green);
+  --field-base: var(--bg);
+  --field-texture: color-mix(in srgb, var(--text) 5%, transparent);
+  --field-under: 0.3;
+  --field-dots: 0.42;
 }
 
 /* ── Japanese and Chinese UI type (261104) ────────────────────────────

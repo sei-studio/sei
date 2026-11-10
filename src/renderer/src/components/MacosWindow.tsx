@@ -14,10 +14,10 @@
  *    dark chrome (the old native titleBarOverlay buttons clashed and sometimes
  *    went missing). Controls opt out of the drag region via no-drag.
  *
- * Quiet register (product call 261110): the window is ONE flat surface
- * (--bg, no dots, glow or grain). The drag strip and the rail are transparent
- * over it, and the tiny "Sei" title is gone (the pixel wordmark sits on the
- * rail).
+ * Quiet register (product call 261110): the window is ONE surface. The
+ * dotted glow field (FieldBackdrop) paints under everything, the drag strip
+ * and the rail are transparent over it, and the tiny "Sei" title is gone (the
+ * pixel wordmark sits on the rail). The grain overlay was retired with it.
  *
  * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
  */
@@ -26,6 +26,7 @@ import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useT } from '../lib/i18n';
+import { FieldBackdrop } from './FieldBackdrop';
 import styles from './MacosWindow.module.css';
 
 interface MacosWindowProps {
@@ -116,6 +117,8 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
 
   return (
     <div className={styles.window}>
+      {/* The field paints the window unless the player chose their own image. */}
+      {!bgImage ? <FieldBackdrop /> : null}
       {bgImage ? (
         <div
           className={styles.bgLayer}

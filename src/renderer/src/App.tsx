@@ -1241,8 +1241,8 @@ export function App(): React.ReactElement {
     minWidth: 0,
     minHeight: 0,
     overflow: 'auto',
-    // Quiet register (261110): one surface. With no custom image the window's
-    // flat background (MacosWindow) shows straight through; no framed panel.
+    // Quiet register (261110): one surface. With no custom image the field
+    // (MacosWindow's FieldBackdrop) shows straight through; no framed panel.
     background: backgroundImage
       ? `color-mix(in srgb, var(--window) ${tintPct}%, transparent)`
       : 'transparent',
