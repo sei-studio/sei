@@ -102,6 +102,52 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     welcomeSeen: true,
     models: [],
   };
+  // ?dashshot=playtime (261110): the Playtime page. &setup=cloud|chatgpt|mykeys
+  // (default cloud), &gpt=connected|none|limited (the ChatGPT sign-in; default
+  // connected on setup=chatgpt), &voice=sei|device|elevenlabs|fish,
+  // &provider=<kind> on mykeys (default anthropic), &nokey=1, &alert=1.
+  const playtimeMode = (params.get('dashshot') ?? '') === 'playtime';
+  const ptSetup = params.get('setup') === 'chatgpt' || params.get('setup') === 'mykeys' ? params.get('setup') : 'cloud';
+  const ptGpt = params.get('gpt') ?? (ptSetup === 'chatgpt' ? 'connected' : 'none');
+  const ptVoice = params.get('voice') ?? (ptSetup === 'chatgpt' ? 'sei' : 'device');
+  const ptConfig: Record<string, unknown> = {
+    ai_backend_kind: ptSetup === 'cloud' ? 'cloud-proxy' : 'local',
+    provider: ptSetup === 'chatgpt' ? 'chatgpt' : (params.get('provider') ?? 'anthropic'),
+    provider_config:
+      ptSetup === 'chatgpt'
+        ? { chatgpt: { model: 'gpt-6-luna' } }
+        : { [params.get('provider') ?? 'anthropic']: { model: 'claude-haiku-5-5' } },
+    tts_engine: ptVoice === 'sei' ? 'sei' : ptVoice === 'elevenlabs' ? 'elevenlabs' : 'local',
+    local_tts_model: ptVoice === 'fish' ? 'fish' : params.get('engine') === 'kokoro' ? 'kokoro' : 'fast',
+    stt_engine: 'whisper',
+    spend_alert_enabled: params.has('alert'),
+    spend_alert_usd: 20,
+  };
+  const ptGptStatus = {
+    accounts:
+      ptGpt === 'none'
+        ? []
+        : [{ id: 'acc1', email: 'robin@example.com', label: 'robin@example.com', signedIn: true, planEnabled: true }],
+    activeId: ptGpt === 'none' ? null : 'acc1',
+    signingIn: false,
+    usageLimited: ptGpt === 'limited',
+    blockedCode: null,
+    welcomeSeen: true,
+    models: [
+      { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+      { id: 'gpt-6-mini', label: 'GPT-6 mini' },
+    ],
+  };
+  const ptDays = (() => {
+    const replies = [12, 18, 9, 25, 16, 30, 10];
+    const spend = [0.41, 0.62, 0.18, 0.84, 0.73, 1.12, 0.21];
+    return replies.map((r, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { day, weekday: d.getDay(), chatgptReplies: r, spendUsd: spend[i], unpricedTokens: 0 };
+    });
+  })();
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -355,6 +401,73 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
                   ],
                 }
               : { status: 'unavailable', voices: [] },
+        }
+      : {}),
+    ...(playtimeMode
+      ? {
+          getConfig: async () => ({ ...ptConfig }),
+          saveConfig: async (next: Record<string, unknown>) => {
+            Object.assign(ptConfig, next);
+          },
+          proxyConfigure: async (kind: string) => {
+            ptConfig.ai_backend_kind = kind;
+            return { ok: true };
+          },
+          chatgptStatus: async () => ptGptStatus,
+          onChatgptStatus: () => () => {},
+          creditsGet: async () => ({
+            plan: params.get('plan') === 'quest' || params.get('plan') === 'party' ? params.get('plan') : 'free',
+            usage_pct: 35,
+            over_limit: false,
+            resets_at: new Date(now + 3 * 86_400_000).toISOString(),
+            extra_credits_used: 0,
+            extra_credits_total: 0,
+            renews_at: null,
+            ends_at: null,
+            subscription_status_raw: null,
+            ai_backend_kind: ptConfig.ai_backend_kind,
+            feedback_reward_available: false,
+          }),
+          hasApiKey: async () => !params.has('nokey'),
+          saveApiKey: async () => undefined,
+          voiceElevenKeyStatus: async () => ({ present: params.get('key') === '1' }),
+          voiceFishKeyStatus: async () => ({ present: false }),
+          speechPackStatus: async () => ({
+            packs: {
+              'tts-en': { state: 'ready', bytes: 64_000_000 },
+              'tts-zh': { state: 'absent', bytes: 71_000_000 },
+              'tts-kokoro': { state: params.get('engine') === 'kokoro' ? 'ready' : 'absent', bytes: 330_000_000 },
+              'stt-sensevoice': { state: 'absent', bytes: 240_000_000 },
+            },
+          }),
+          llmListModels: async (provider: string) =>
+            provider === 'chatgpt'
+              ? { models: ptGptStatus.models.map((m) => ({ id: m.id, label: m.label, vision: 'yes' })) }
+              : {
+                  models: [
+                    { id: 'claude-haiku-5-5', vision: 'yes' },
+                    { id: 'claude-sonnet-5', vision: 'yes' },
+                    { id: 'claude-opus-5-5', vision: 'yes' },
+                  ],
+                },
+          onSpendAlert: (cb: (e: { limitUsd: number; spendMonthUsd: number }) => void) => {
+            if (params.has('banner')) setTimeout(() => cb({ limitUsd: 20, spendMonthUsd: 21.4 }), 50);
+            return () => undefined;
+          },
+          usageSummary: async () => ({
+            days: ptDays,
+            chatgptRepliesWeek: ptDays.reduce((a, d) => a + d.chatgptReplies, 0),
+            spendWeekUsd: ptDays.reduce((a, d) => a + d.spendUsd, 0),
+            spendMonthUsd: 13.8,
+            unpricedTokensWeek: 0,
+            unpricedTokensMonth: 0,
+            tokensWeek: 1_240_000,
+            tokensMonth: 4_100_000,
+          }),
+          track: (event: string, props: unknown) => {
+            const dev = window as unknown as { __seiDevTrack?: Array<{ event: string; props: unknown }> };
+            (dev.__seiDevTrack ??= []).push({ event, props });
+          },
         }
       : {}),
     // The onboarding AuthPanel reuses the same ChatGPT stubs (?dashshot=onboard).

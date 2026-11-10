@@ -4487,6 +4487,24 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return creditsGet();
   });
 
+  // usage:summary — 261110 Playtime: the profile's own off-cloud usage ledger
+  // (ChatGPT plan replies, own-key tokens and spend estimate).
+  ipcMain.handle(IpcChannel.usage.summary, async () => {
+    const { readUsageSummary } = await import('./usage/llmUsageLedger');
+    return readUsageSummary();
+  });
+  // usage:spend-alert — the ledger checks the "Alert me at $N a month" setting
+  // after each own-key request; the notice goes to every window.
+  void import('./usage/llmUsageLedger')
+    .then(({ onSpendAlert }) =>
+      onSpendAlert((e) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.usage.spendAlert, e);
+        }
+      }),
+    )
+    .catch(() => undefined);
+
   // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
   // world-readable plan_config/topup_config tables (cached in
   // cloud/pricingCatalog); null lets the renderer keep its bundled fallback.

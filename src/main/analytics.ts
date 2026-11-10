@@ -573,6 +573,15 @@ export function surfaceForEvent(event: string): string | null {
   if (event === 'character_summoned' || event.startsWith('bot_session_') || event.startsWith('summon_')) return 'game';
   if (event.startsWith('onboarding_')) return 'onboarding';
   if (event === 'pricing_viewed' || event === 'checkout_opened' || event === 'credit_wall_action') return 'credits';
+  // 261110 Playtime page (docs/agents/playtime.md).
+  if (
+    event.startsWith('playtime_') ||
+    event === 'chatgpt_usage_link_clicked' ||
+    event === 'voice_trial_state' ||
+    event.startsWith('spend_alert_')
+  ) {
+    return 'credits';
+  }
   return null;
 }
 

@@ -6,12 +6,10 @@
  * using the shared Seg / Toggle primitives. Every prior row + behavior is
  * preserved:
  *  - preferred_name ("Name") → on-blur saveConfig (commit on focus-leave).
- *  - API key → inline "Set/Update" reveals a password field; Save persists,
- *    re-checks hasApiKey(), collapses.
- *  - Provider change wipes the stored key (prior key is a different vendor's).
- *  - Backend Seg (Cloud / My key) opens SwitchBackendConfirmModal; selection
- *    reverts on cancel because the Seg value is derived from ai_backend_kind,
- *    which only changes after a confirmed proxyConfigure.
+ *  - 261110: the AI group is one row, "Brain, voice and plan", that opens
+ *    the Playtime page. The backend switch, ChatGPT plan, provider / key /
+ *    model rows, Voice and the Account ChatGPT link row moved there
+ *    (PlaytimeScreen, components/playtime/).
  *  - Theme Seg persists theme_mode (midnight / ice / acorn / mint / system)
  *    via saveConfig; lives in its own Theme group (above Appearance) together
  *    with the custom background picker + sliders (260724).
@@ -21,13 +19,11 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
-import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, PROVIDER_REGION_TOKEN, regionProviderLabel } from '@shared/providerRegion';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
-import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { applyTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
 import { Button } from '../components/Button';
@@ -38,55 +34,23 @@ import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
 import { DeleteAccountModal } from '../components/DeleteAccountModal';
 import { VerifyEmailModal } from '../components/VerifyEmailModal';
 import { MigrateLocalCharsModal } from '../components/MigrateLocalCharsModal';
-import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { ResetAllMemoriesConfirmModal } from '../components/ResetAllMemoriesConfirmModal';
 import { FactoryResetConfirmModal } from '../components/FactoryResetConfirmModal';
 import { DmcaContactModal } from '../components/DmcaContactModal';
-import { ProviderSelect, type Provider } from '../components/ProviderSelect';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
-import { DownloadConfirmModal, formatMb } from '../components/DownloadConfirmModal';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
-import { DEFAULT_MODELS } from '@shared/llmCatalog';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
-import type { LlmListModelsResult, SpeechPackStatePush } from '@shared/ipc';
 import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 import { SearchSettingsSection } from '../components/settings/SearchSettingsSection';
 import { LocalImportRow } from '../components/settings/LocalImportRow';
-import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
-import { ChatgptPlanSettings, revealSettingsFocus, settingsFocusTargetClass } from '../components/ChatgptPlanSettings';
-import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
-import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
-import { chatgptPlanIntentStep } from '../lib/chatgptPlanIntent';
-import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
-import { elevenKeySettingMode } from '../lib/voicePicker';
-import { localTtsModel, type LocalTtsModel } from '@shared/ttsEngine';
 import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
-import { KOKORO_PACK_ID, localModelPickAction, showTtsPackRow } from '../lib/localVoiceChoice';
-
-const API_KEY_BULLET_LEN = 24;
-
-/**
- * W5 (china-compat, 260817; zh collapsed to one pack 260908): the local TTS
- * voice packs offered in the Voice group, in display order. Two PACKS carry
- * the four voices — each pack contains both the female and the male speaker,
- * so each language is one download. Ids match src/main/speech/packs.ts (the
- * renderer never imports main); the exact byte sizes arrive per pack on the
- * speech:pack-status push.
- */
-const TTS_PACK_ROWS: ReadonlyArray<{ id: string; label: string }> = [
-  { id: 'tts-kokoro', label: 'Kokoro voices' },
-  { id: 'tts-en', label: 'English voices, female and male' },
-  { id: 'tts-zh', label: 'Chinese voices, female and male' },
-];
-
-const SENSEVOICE_PACK_ID = 'stt-sensevoice';
 
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
@@ -154,57 +118,7 @@ export function SettingsScreen(): React.ReactElement {
   const allCharacters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
 
-  // Cloud AI toggle (PROXY-11 BYOK escape hatch). The Backend Seg drives the
-  // ai_backend_kind between cloud-proxy and local; symmetric BYOK ↔ cloud per
-  // CONTEXT D-57. Subscription cancel/manage lives on the Playtime screen →
-  // "Manage billing" (Polar portal), not here.
-  const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
-  // 261017 (issue #46): the ChatGPT-plan sign-in (main owns the tokens).
-  const chatgptStatus = useChatgptStore((s) => s.status);
-  // WR-05 follow-up: flipping the backend mid-bot applies LIVE — main's
-  // proxy.configure handler rebuilds the running utilityProcess's Anthropic SDK
-  // in place. This notice is a positive confirmation that the swap reached the
-  // running bot; it self-clears on the next bot lifecycle transition.
-  const [switchNotice, setSwitchNotice] = useState<null | 'switched-to-cloud' | 'switched-to-local'>(
-    null,
-  );
-  // Switching cloud ⇄ local is uncommon and consequential (it changes billing
-  // and applies to a running bot immediately), so the Seg opens a confirmation
-  // modal instead of toggling directly. Non-null = modal is open for that
-  // target backend; cancelling leaves ai_backend_kind (and the Seg) untouched.
-  const [pendingSwitch, setPendingSwitch] = useState<null | 'cloud-proxy' | 'local'>(null);
-  // 261017 (issue #46): a cloud -> local switch started from "Use your
-  // ChatGPT plan" also picks the ChatGPT plan as the provider, on confirm.
-  const [switchVia, setSwitchVia] = useState<null | 'chatgpt'>(null);
-  useEffect(() => {
-    if (!botRunning) setSwitchNotice(null);
-  }, [botRunning]);
-  const confirmSwitch = async (): Promise<void> => {
-    const target = pendingSwitch;
-    if (!target) return;
-    if (target === 'local' && switchVia === 'chatgpt') {
-      // Provider first, so the running bot's live switch (and the next
-      // summon) resolve the ChatGPT plan, never the old BYOK provider.
-      const base = cfg ?? (await sei.getConfig());
-      await sei.saveConfig({ ...base, provider: 'chatgpt', provider_config: base.provider_config ?? {} });
-      setEditingKey(false);
-    }
-    await window.sei.proxyConfigure(target);
-    // 260725: re-seed the local whole-config copy so later wholesale saves
-    // from this screen carry the new backend kind, not the mount-time value.
-    // (Main also refuses renderer writes to ai_backend_kind — this keeps the
-    // copy honest, that keeps the store authoritative.)
-    void sei.getConfig().then(setCfg).catch(() => {});
-    // Refresh credits store so the icon rail (plan 13-17) reacts on next tick.
-    await useCreditsStore.getState().refresh();
-    if (botRunning) {
-      setSwitchNotice(target === 'cloud-proxy' ? 'switched-to-cloud' : 'switched-to-local');
-    }
-    setPendingSwitch(null);
-    setSwitchVia(null);
-  };
   const [cfg, setCfg] = useState<UserConfig | null>(null);
-  const [hasKey, setHasKey] = useState<boolean>(false);
   // Phase 18/19 — the user's chat avatar (path ref '_user.png' or null), seeded
   // from sei.userGetProfile() on mount. PortraitImagePicker owns apply/remove
   // via the user-profile IPC overrides below.
@@ -228,45 +142,7 @@ export function SettingsScreen(): React.ReactElement {
 
   // Inline edit buffers — typing only updates these; commit happens on blur.
   const [preferredDraft, setPreferredDraft] = useState<string>('');
-  const [editingKey, setEditingKey] = useState<boolean>(false);
-  const [keyDraft, setKeyDraft] = useState<string>('');
-  const [keyError, setKeyError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  // 260725 BYOK voice: ElevenLabs API key (TTS + Scribe recognition). Same
-  // set/update/collapse rhythm as the LLM API key above; the key itself never
-  // comes back — voiceElevenKeyStatus only reports presence.
-  const [hasElevenKey, setHasElevenKey] = useState<boolean>(false);
-  const [editingElevenKey, setEditingElevenKey] = useState<boolean>(false);
-  const [elevenKeyDraft, setElevenKeyDraft] = useState<string>('');
-  const [elevenKeyError, setElevenKeyError] = useState<string | null>(null);
-
-  // ── W5 (china-compat, 260817): model picker + Test probe (local mode). ──
-  // The picker lists the selected provider's models live (llm:list-models,
-  // per-model vision verdicts + typed error tokens) and persists the choice
-  // to provider_config[provider].model — the exact field the main provider
-  // layer reads (resolveLocalModel) and the supervisor ships to the bot.
-  const [modelPickerOpen, setModelPickerOpen] = useState<boolean>(false);
-  const [modelList, setModelList] = useState<LlmListModelsResult | null>(null);
-  const [modelListLoading, setModelListLoading] = useState<boolean>(false);
-  // Test probe: idle → testing → last result. Cleared on provider/model moves.
-  const [testState, setTestState] = useState<
-    'idle' | 'testing' | { ok: true; latencyMs: number } | { ok: false; error: string }
-  >('idle');
-
-  // ── W5: local speech packs (TTS voices + SenseVoice STT). Seeded from
-  // speech:pack-status, kept live by the speech:pack-state push. ──
-  const [packStates, setPackStates] = useState<Record<string, SpeechPackStatePush>>({});
-  /** Pack awaiting the shared "Download? (XX MB)" confirm. `thenSensevoice`
-   * marks the STT flow: persist stt_engine once the download lands.
-   * `thenKokoro` (261102) is the same for the Local voice choice. */
-  const [pendingPack, setPendingPack] = useState<{
-    id: string;
-    name: string;
-    thenSensevoice?: boolean;
-    thenKokoro?: boolean;
-  } | null>(null);
-  const [packError, setPackError] = useState<string | null>(null);
-
   // Phase 10 (D-11) — Account panel state. Modals + transient action statuses.
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
   // WR-10: capture the account email at modal-open time so the modal can
@@ -317,14 +193,6 @@ export function SettingsScreen(): React.ReactElement {
       // Seed the advanced-updates channel toggle from persisted config.
       setAdvancedUpdates(c.advanced_updates === true);
     });
-    void sei.hasApiKey().then((b) => setHasKey(b));
-    // 260725: seed the ElevenLabs-key saved-state indicator (presence only).
-    void sei
-      .voiceElevenKeyStatus()
-      .then(({ present }) => setHasElevenKey(present))
-      .catch(() => {
-        /* non-fatal — the row just shows "Not set" */
-      });
     // Seed the user's profile picture for the chat-avatar section below.
     void sei
       .userGetProfile()
@@ -336,18 +204,6 @@ export function SettingsScreen(): React.ReactElement {
         /* non-fatal — section just shows the empty/NONE state */
       });
   }, [setDevConsoleVisible]);
-
-  // W5: seed the speech-pack snapshot and follow the push while mounted, so
-  // download progress renders live in the Voice group.
-  useEffect(() => {
-    void sei
-      .speechPackStatus()
-      .then(({ packs }) => setPackStates(packs))
-      .catch(() => {
-        /* non-fatal — pack rows just show no state until the first push */
-      });
-    return sei.onSpeechPackState(({ packs }) => setPackStates(packs));
-  }, []);
 
   // Updates section: load the current version once, and subscribe to updater
   // events while this screen is mounted so the inline status line reflects an
@@ -380,323 +236,6 @@ export function SettingsScreen(): React.ReactElement {
     if (!cfg) return;
     if ((cfg.preferred_name ?? '') === preferredDraft) return;
     void persistConfig({ ...cfg, preferred_name: preferredDraft });
-  };
-
-  const onSaveKey = async (): Promise<void> => {
-    const trimmed = keyDraft.trim();
-    if (!trimmed) {
-      setKeyError(t('API key cannot be empty.'));
-      return;
-    }
-    try {
-      await sei.saveApiKey(trimmed);
-      const has = await sei.hasApiKey();
-      setHasKey(has);
-      setKeyDraft('');
-      setEditingKey(false);
-      setKeyError(null);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveApiKey failed', err);
-      setKeyError(t('Failed to save key. Try again.'));
-    }
-  };
-
-  const onCancelKey = (): void => {
-    setKeyDraft('');
-    setEditingKey(false);
-    setKeyError(null);
-  };
-
-  // 260725 BYOK voice: ElevenLabs key save/remove. Mirrors onSaveKey; the key
-  // is write-only (never displayed back), presence drives the bullet readout.
-  const onSaveElevenKey = async (): Promise<void> => {
-    const trimmed = elevenKeyDraft.trim();
-    if (!trimmed) {
-      setElevenKeyError(t('Key cannot be empty.'));
-      return;
-    }
-    try {
-      await sei.voiceElevenKeySet({ key: trimmed });
-      const { present } = await sei.voiceElevenKeyStatus();
-      setHasElevenKey(present);
-      setElevenKeyDraft('');
-      setEditingElevenKey(false);
-      setElevenKeyError(null);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] voiceElevenKeySet failed', err);
-      setElevenKeyError(t('Failed to save key. Try again.'));
-    }
-  };
-
-  const onCancelElevenKey = (): void => {
-    setElevenKeyDraft('');
-    setEditingElevenKey(false);
-    setElevenKeyError(null);
-  };
-
-  // The ElevenLabs key row, shared by the BYOK Voice group and the Cloud
-  // "your own voices" group (261020, T158). Write-only: the raw key never
-  // comes back to the renderer, only its presence. On Cloud the key is
-  // optional, so "Not set" is a plain state there, not a warning.
-  const renderElevenKeyRow = (mode: 'byok' | 'cloud-optional'): React.ReactElement => (
-    <>
-      <div className={styles.row}>
-        <span className={styles.label}>
-          {t('ElevenLabs key')}
-          <InfoTip
-            label={t('About the ElevenLabs key')}
-            text={
-              mode === 'byok'
-                ? t('ElevenLabs voices need your own ElevenLabs API key. No key? Switch to the local voices.')
-                : t(
-                    "Only for voices in your own ElevenLabs account. Sei's voices and voice recognition keep running on Sei Cloud and never use this key.",
-                  )
-            }
-          />
-        </span>
-        {editingElevenKey ? (
-          <span className={styles.editor}>
-            <TextField
-              value={elevenKeyDraft}
-              onChange={setElevenKeyDraft}
-              type="password"
-              placeholder={t('Your ElevenLabs key')}
-              autoFocus
-              onEnter={() => void onSaveElevenKey()}
-              aria-label={t('ElevenLabs key')}
-            />
-            <Button kind="primary" size="sm" onClick={() => void onSaveElevenKey()}>
-              {t('Save')}
-            </Button>
-            <Button kind="quiet" size="sm" onClick={onCancelElevenKey}>
-              {t('Cancel')}
-            </Button>
-          </span>
-        ) : (
-          <>
-            <span
-              className={
-                hasElevenKey || mode === 'cloud-optional'
-                  ? styles.monoValue
-                  : `${styles.monoValue} ${styles.statusWarn}`
-              }
-            >
-              {hasElevenKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
-            </span>
-            <Button kind="ghost" size="sm" onClick={() => setEditingElevenKey(true)}>
-              {hasElevenKey ? t('Update') : t('Set')}
-            </Button>
-            {hasElevenKey ? (
-              <Button kind="quiet" size="sm" onClick={() => void onRemoveElevenKey()}>
-                {t('Remove')}
-              </Button>
-            ) : null}
-          </>
-        )}
-      </div>
-      {elevenKeyError ? <div className={styles.errorRow}>{elevenKeyError}</div> : null}
-    </>
-  );
-
-  const onRemoveElevenKey = async (): Promise<void> => {
-    try {
-      await sei.voiceElevenKeySet({ key: null });
-      setHasElevenKey(false);
-      setElevenKeyError(null);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] voiceElevenKeySet (clear) failed', err);
-      setElevenKeyError(t('Failed to remove key. Try again.'));
-    }
-  };
-
-  // 260725 BYOK voice recognition: Scribe (cloud, needs the ElevenLabs key)
-  // vs local Whisper. Absent means 'scribe'; applies from the next call.
-  // 260817 (W5): + SenseVoice — local like Whisper, main-side sherpa-onnx.
-  // Picking it while its pack is missing detours through the download confirm
-  // (persistSttEngine only runs once the pack is READY); scribe/whisper keep
-  // the exact pre-W5 write path.
-  const sttEngine: 'scribe' | 'whisper' | 'sensevoice' = cfg?.stt_engine ?? 'scribe';
-  const persistSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
-    if (!cfg || next === sttEngine) return;
-    const updated: UserConfig = { ...cfg, stt_engine: next };
-    setCfg(updated);
-    try {
-      await sei.saveConfig(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (stt_engine) failed', err);
-      setCfg(cfg);
-      setSaveError(t('Failed to save. Try again.'));
-    }
-  };
-  const onSelectSttEngine = async (next: 'scribe' | 'whisper' | 'sensevoice'): Promise<void> => {
-    if (next === 'sensevoice' && packStates[SENSEVOICE_PACK_ID]?.state !== 'ready') {
-      setPendingPack({ id: SENSEVOICE_PACK_ID, name: t('SenseVoice'), thenSensevoice: true });
-      return;
-    }
-    await persistSttEngine(next);
-  };
-
-  // ── W5: TTS engine (Voice group, local mode). 'local' routes companion
-  // speech through the sherpa-onnx voice packs in main; the per-character
-  // ElevenLabs voiceId is KEPT untouched underneath (it still names gender
-  // for the local mapping, and a later switch back needs it). ──
-  const ttsEngine: 'elevenlabs' | 'local' = cfg?.tts_engine ?? 'elevenlabs';
-  const onSelectTtsEngine = async (next: 'elevenlabs' | 'local'): Promise<void> => {
-    if (!cfg || next === ttsEngine) return;
-    const updated: UserConfig = { ...cfg, tts_engine: next };
-    setCfg(updated);
-    try {
-      await sei.saveConfig(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (tts_engine) failed', err);
-      setCfg(cfg);
-      setSaveError(t('Failed to save. Try again.'));
-    }
-  };
-
-  // ── 261102: which on-device model speaks under Local: Fast (the original
-  // voice packs, the default; absent = 'fast') or Kokoro. Picking Kokoro
-  // while its pack is missing detours through the download confirm, like
-  // SenseVoice above, and the choice is saved once the pack is READY. The
-  // save reads the LATEST cfg (cfgRef): the download takes a while and a
-  // wholesale save of the copy from before it would revert anything the user
-  // changed meanwhile. ──
-  const localModel: LocalTtsModel = localTtsModel(cfg);
-  const cfgRef = useRef(cfg);
-  cfgRef.current = cfg;
-  const persistLocalModel = async (next: LocalTtsModel): Promise<void> => {
-    const base = cfgRef.current;
-    if (!base || localTtsModel(base) === next) return;
-    const updated: UserConfig = { ...base, local_tts_model: next };
-    setCfg(updated);
-    try {
-      await sei.saveConfig(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (local_tts_model) failed', err);
-      setCfg(base);
-      setSaveError(t('Failed to save. Try again.'));
-    }
-  };
-  const onSelectLocalModel = async (next: LocalTtsModel): Promise<void> => {
-    if (localModelPickAction(next, packStates[KOKORO_PACK_ID]?.state) === 'offer-download') {
-      setPendingPack({ id: KOKORO_PACK_ID, name: t('Kokoro voices'), thenKokoro: true });
-      return;
-    }
-    await persistLocalModel(next);
-  };
-
-  // ── W5: pack download/remove. Download resolves when the pack is READY;
-  // progress arrives on the speech:pack-state push the effect above follows.
-  const startPackDownload = async (
-    packId: string,
-    thenSensevoice: boolean,
-    thenKokoro = false,
-  ): Promise<void> => {
-    setPendingPack(null);
-    setPackError(null);
-    try {
-      await sei.speechPackDownload({ packId });
-      if (thenSensevoice) await persistSttEngine('sensevoice');
-      if (thenKokoro) await persistLocalModel('kokoro');
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] speechPackDownload failed', err);
-      setPackError(t('Download failed. Check your connection and try again.'));
-    }
-  };
-  const onRemovePack = async (packId: string): Promise<void> => {
-    setPackError(null);
-    try {
-      await sei.speechPackRemove({ packId });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] speechPackRemove failed', err);
-      setPackError(t('Failed to uninstall. Try again.'));
-    }
-  };
-
-  // ── W5: model picker + Test probe handlers. ──
-  /** The model stored for a provider, or undefined when riding the default. */
-  const storedModelFor = (provider: Provider): string | undefined => {
-    const entry = (cfg?.provider_config as Record<string, unknown> | undefined)?.[provider];
-    const model =
-      entry && typeof entry === 'object' ? (entry as { model?: unknown }).model : undefined;
-    return typeof model === 'string' && model.trim() ? model.trim() : undefined;
-  };
-  /** Human string for a typed llm error token — every token gets a sentence. */
-  const llmErrorText = (token: string): string => {
-    if (token === 'no_api_key') return t('Add your API key first.');
-    // 261103 (T303): the provider refused this region (never a key problem).
-    if (token === PROVIDER_REGION_TOKEN) {
-      const name = regionProviderLabel(currentProvider);
-      return t(PROVIDER_REGION_COPY, { provider: name === PROVIDER_REGION_FALLBACK_NAME ? t(name) : name });
-    }
-    if (token === 'unauthorized')
-      return t('The provider rejected your key. Check that it is correct and active.');
-    if (token === 'timeout') return t('Timed out. Check your connection and try again.');
-    if (token === 'network') return t('Could not reach the provider. Check your connection.');
-    if (token === 'chatgpt_signed_out') return t('Sign in with ChatGPT first.');
-    if (token === 'chatgpt_plan_disabled') return t('Turn on ChatGPT plan use first.');
-    if (token === 'chatgpt_usage_limit') return t("You've reached your ChatGPT plan's usage limit.");
-    if (token === 'chatgpt_not_eligible' || token === 'chatgpt_forbidden')
-      return t("This ChatGPT account can't use its plan in Sei.");
-    if (token.startsWith('http_'))
-      return t('The provider returned an error (HTTP {status}).', { status: token.slice(5) });
-    return t('Something went wrong. Try again.');
-  };
-  const onOpenModelPicker = async (): Promise<void> => {
-    if (modelPickerOpen) {
-      setModelPickerOpen(false);
-      return;
-    }
-    setModelPickerOpen(true);
-    setModelListLoading(true);
-    setModelList(null);
-    try {
-      const res = await sei.llmListModels(currentProvider);
-      setModelList(res);
-    } catch {
-      setModelList({ models: [], error: 'unknown' });
-    } finally {
-      setModelListLoading(false);
-    }
-  };
-  const onPickModel = async (modelId: string): Promise<void> => {
-    if (!cfg) return;
-    const pc = { ...((cfg.provider_config as Record<string, unknown> | undefined) ?? {}) };
-    const prev = pc[currentProvider];
-    pc[currentProvider] = {
-      ...(prev && typeof prev === 'object' ? (prev as Record<string, unknown>) : {}),
-      model: modelId,
-    };
-    const updated: UserConfig = { ...cfg, provider_config: pc };
-    setCfg(updated);
-    setModelPickerOpen(false);
-    setTestState('idle');
-    try {
-      await sei.saveConfig(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (provider model) failed', err);
-      setCfg(cfg);
-      setSaveError(t('Failed to save. Try again.'));
-    }
-  };
-  const onRunTest = async (): Promise<void> => {
-    if (testState === 'testing') return;
-    setTestState('testing');
-    try {
-      const res = await sei.llmTest(currentProvider, storedModelFor(currentProvider) ?? '');
-      setTestState(res);
-    } catch {
-      setTestState({ ok: false, error: 'unknown' });
-    }
   };
 
   // App UI language (260730). Optimistic store flip (every subscribed
@@ -758,88 +297,6 @@ export function SettingsScreen(): React.ReactElement {
       background_brightness: brightness,
     });
   };
-
-  const currentProvider: Provider = (cfg?.provider ?? 'anthropic') as Provider;
-  /** The default a provider rides when no model is stored. The ChatGPT plan's
-   *  comes from the signed-in account's catalog (what main resolves too). */
-  const defaultModelFor = (provider: Provider): string =>
-    provider === 'chatgpt' && chatgptStatus?.models.length
-      ? pickDefaultChatgptModel(chatgptStatus.models)
-      : DEFAULT_MODELS[provider];
-
-  // ui-A1: provider tile click changes config.provider AND clears any existing
-  // api key (the prior key is for a different vendor; reusing it would silently
-  // 401 against the new baseURL). On clear we leave the editor open so the user
-  // can paste the new vendor's key next.
-  const onChangeProvider = async (next: Provider): Promise<void> => {
-    if (!cfg) return;
-    if (cfg.provider === next) return;
-    try {
-      await sei.saveConfig({ ...cfg, provider: next, provider_config: cfg.provider_config ?? {} });
-      setCfg({ ...cfg, provider: next });
-      // 261017: the ChatGPT plan uses no API key, so switching TO it leaves
-      // the saved key alone and opens no key editor. Switching away from it
-      // still clears, as before (the slot may hold another vendor's key).
-      if (next !== 'chatgpt') {
-        try {
-          await sei.saveApiKey('');
-          setHasKey(false);
-        } catch {
-          // best-effort
-        }
-      }
-      setEditingKey(next !== 'chatgpt');
-      setKeyDraft('');
-      setKeyError(null);
-      // W5: a different vendor lists different models — drop the open picker
-      // and any stale probe result (the stored per-provider model persists).
-      setModelPickerOpen(false);
-      setModelList(null);
-      setTestState('idle');
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (provider) failed', err);
-      setSaveError(t('Failed to save provider. Try again.'));
-    }
-  };
-
-  // 261023: Credits' "Use your ChatGPT plan" row signs in there, then lands
-  // here with view.useChatgptPlan so the switch runs through the same path as
-  // this screen's own button: the cloud -> local confirm (billing changes), or
-  // just the provider pick when already on the local backend. Handled once;
-  // the flag is cleared so a re-render or a later visit does not re-open it.
-  // 261029: cleared too when the plan turns out not to be ready (plan use
-  // declined at sign-in), so it can never wait around and fire later.
-  const chatgptPlanIntent = useUiStore((s) => s.view.kind === 'settings' && s.view.useChatgptPlan === true);
-  useEffect(() => {
-    if (!chatgptPlanIntent) return;
-    const step = chatgptPlanIntentStep(!!cfg, chatgptStatus, aiBackendKind);
-    if (step === 'wait') return;
-    useUiStore.setState({ view: { kind: 'settings' } });
-    if (step === 'drop') return;
-    if (step === 'confirm-cloud') {
-      setSwitchVia('chatgpt');
-      setPendingSwitch('local');
-    } else {
-      void onChangeProvider('chatgpt');
-    }
-    // onChangeProvider closes over cfg, which is a dependency already.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatgptPlanIntent, cfg, chatgptStatus, aiBackendKind]);
-
-  // 261029: view.focus (the startup popup's chatgpt-plan action) scrolls to
-  // the ChatGPT plan rows and flashes them. Cleared at once, keeping any
-  // useChatgptPlan intent, so a later visit does not scroll again.
-  // 261103: 'ai-backend' (the usage-limit popup's "own API key or local
-  // model" option) does the same for the Backend row, or the Provider row
-  // when there is no Backend switch (signed out).
-  const focusTarget = useUiStore((s) => (s.view.kind === 'settings' ? s.view.focus ?? null : null));
-  useEffect(() => {
-    if (!focusTarget) return;
-    const v = useUiStore.getState().view;
-    if (v.kind === 'settings') useUiStore.setState({ view: { ...v, focus: undefined } });
-    revealSettingsFocus(focusTarget);
-  }, [focusTarget]);
 
   // ui-A7: persist developer-console toggle. Update zustand FIRST so the UI
   // reacts immediately, then write through (roll back on failure).
@@ -1019,9 +476,6 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  const isCloud = aiBackendKind === 'cloud-proxy';
-  const backendSegValue: 'cloud' | 'mykey' = isCloud ? 'cloud' : 'mykey';
-
   // Version value: "v{x}" alone, or "v{x} · <status>" after a check. The
   // status word is color-coded (green ok / orange in progress / red failed).
   const versionStatus: { text: string; cls: string } | null =
@@ -1096,15 +550,6 @@ export function SettingsScreen(): React.ReactElement {
                 </Button>
               </div>
             ) : null}
-
-            {/* 261023: link a ChatGPT identity to this account, so "Continue
-                with ChatGPT" signs into it. */}
-            <ChatgptLinkRow
-              rowClassName={styles.row}
-              labelClassName={styles.label}
-              valueClassName={styles.monoValue}
-              errorClassName={styles.errorRow}
-            />
 
             {/* 260724: the Playtime row is gone. Weekly usage lives on the plan
                 screen (the rail's Plan icon), and there is no time estimate to
@@ -1183,459 +628,18 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         ) : null}
 
-        {/* ── AI ──────────────────────────────────────────────── */}
-        {/* The Chat language row was removed (260725): the conversation
-            language is auto-detected from the player's voice (Scribe STT →
-            main's voice/languageAutoSwitch.ts). */}
+        {/* ── AI (261110): every AI, model and voice setting moved to the
+            Playtime page (tabs Sei / ChatGPT / My keys); this row opens it.
+            Web search stays under Games & search. ── */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
-
-          {/* Backend switch — signed-in only (main rejects cloud-proxy for
-              signed-out callers; a signed-out user is always local). Selecting
-              the other option opens the confirm modal; the Seg value tracks
-              ai_backend_kind, so cancelling reverts the selection. */}
-          {/* 260725: aiBackendKind === null means main has not reported a mode
-              yet — render no Backend switch rather than a guessed selection.
-              (A guessed "My key" here is how the UI claimed BYOK over live
-              cloud billing.) */}
-          {authState.kind === 'signed_in' && aiBackendKind !== null ? (
-            <div className={`${styles.row} ${settingsFocusTargetClass}`} data-settings-focus="ai-backend">
-              <span className={styles.label}>
-                {t('Backend')}
-                <InfoTip
-                  label={t('About the AI backend')}
-                  text={
-                    isCloud
-                      ? t(
-                          'Switching to your own API key turns off managed billing and routes Sei through the key stored on this device. Your subscription keeps renewing until you cancel it.',
-                        )
-                      : t(
-                          'Cloud turns off your local API key and routes Sei through our managed cloud. Switch back any time.',
-                        )
-                  }
-                />
-              </span>
-              <Seg
-                aria-label={t('Backend')}
-                value={backendSegValue}
-                options={[
-                  { value: 'cloud', label: t('Cloud') },
-                  { value: 'mykey', label: t('My key') },
-                ]}
-                onChange={(v) => {
-                  const target = v === 'cloud' ? 'cloud-proxy' : 'local';
-                  if (target !== aiBackendKind) setPendingSwitch(target);
-                }}
-              />
-            </div>
-          ) : null}
-          {switchNotice !== null ? (
-            <p className={styles.helper} role="status">
-              {switchNotice === 'switched-to-cloud'
-                ? t('Switched. Your running bot now routes through Sei’s managed cloud.')
-                : t('Switched. Your running bot now uses your own API key.')}
-            </p>
-          ) : null}
-
-          {/* 261017 (issue #46): the ChatGPT plan is offered on every Sei plan,
-              Free included, so a cloud account sees the card too. Choosing it
-              switches the backend to local (with its own confirm) and picks
-              the ChatGPT plan as the provider. */}
-          {aiBackendKind === 'cloud-proxy' && authState.kind === 'signed_in' ? (
-            <ChatgptPlanSettings
-              active={false}
-              onUsePlan={() => {
-                setSwitchVia('chatgpt');
-                setPendingSwitch('local');
-              }}
-            />
-          ) : null}
-
-          {/* Provider + API key — local (BYOK) mode only. */}
-          {aiBackendKind === 'local' ? (
-            <>
-              <div className={`${styles.row} ${settingsFocusTargetClass}`} data-settings-focus="ai-backend">
-                <span className={styles.label}>{t('Provider')}</span>
-                <ProviderSelect
-                  value={currentProvider}
-                  onChange={(p) => void onChangeProvider(p)}
-                  compact
-                />
-              </div>
-              {/* Ollama is keyless (260915): no key row, no "Not set" warning —
-                  a local server authenticates nothing, so asking for a key
-                  read as a blocker to people setting up local models. */}
-              {currentProvider === 'chatgpt' ? (
-                <ChatgptPlanSettings active onUsePlan={() => undefined} />
-              ) : currentProvider === 'ollama' ? (
-                <p className={styles.helper}>{t('Ollama runs on your computer and needs no API key.')}</p>
-              ) : (
-              <div className={styles.row}>
-                <span className={styles.label}>{t('API key')}</span>
-                {editingKey ? (
-                  <span className={styles.editor}>
-                    <TextField
-                      value={keyDraft}
-                      onChange={setKeyDraft}
-                      type="password"
-                      placeholder="sk-…"
-                      autoFocus
-                      onEnter={() => void onSaveKey()}
-                      aria-label={t('API key')}
-                    />
-                    <Button kind="primary" size="sm" onClick={() => void onSaveKey()}>
-                      {t('Save')}
-                    </Button>
-                    <Button kind="quiet" size="sm" onClick={onCancelKey}>
-                      {t('Cancel')}
-                    </Button>
-                  </span>
-                ) : (
-                  <>
-                    <span
-                      className={hasKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}
-                    >
-                      {hasKey ? '•'.repeat(API_KEY_BULLET_LEN) : t('Not set')}
-                    </span>
-                    <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
-                      {hasKey ? t('Update') : t('Set')}
-                    </Button>
-                  </>
-                )}
-              </div>
-              )}
-              {keyError && currentProvider !== 'ollama' && currentProvider !== 'chatgpt' ? (
-                <div className={styles.errorRow}>{keyError}</div>
-              ) : null}
-
-              {/* W5 (260817): model picker. Shown once the provider can list
-                  models (a saved key, or Ollama which needs none). Persists to
-                  provider_config[provider].model — what resolveLocalModel and
-                  the bot init payload read. */}
-              {(currentProvider === 'chatgpt' ? chatgptReady(chatgptStatus) : hasKey || currentProvider === 'ollama') ? (
-                <>
-                  <div className={styles.row}>
-                    <span className={styles.label}>{t('Model')}</span>
-                    <span className={styles.monoValue}>
-                      {storedModelFor(currentProvider) ??
-                        `${defaultModelFor(currentProvider)} · ${t('default')}`}
-                    </span>
-                    <Button kind="ghost" size="sm" onClick={() => void onOpenModelPicker()}>
-                      {t('Choose model')}
-                    </Button>
-                  </div>
-                  {modelPickerOpen ? (
-                    <>
-                      {modelListLoading ? (
-                        <p className={styles.helper} role="status">
-                          {t('Loading models…')}
-                        </p>
-                      ) : modelList?.error ? (
-                        <p className={`${styles.helper} ${styles.helperError}`} role="alert">
-                          {llmErrorText(modelList.error)}
-                        </p>
-                      ) : (
-                        <>
-                          <div
-                            className={styles.modelList}
-                            role="listbox"
-                            aria-label={t('Model')}
-                          >
-                            {(modelList?.models ?? []).map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                role="option"
-                                aria-selected={m.id === storedModelFor(currentProvider)}
-                                className={[
-                                  styles.modelRow,
-                                  m.id === storedModelFor(currentProvider)
-                                    ? styles.modelRowOn
-                                    : '',
-                                ]
-                                  .filter(Boolean)
-                                  .join(' ')}
-                                onClick={() => void onPickModel(m.id)}
-                              >
-                                <span className={styles.monoValue}>{m.label ?? m.id}</span>
-                                {m.vision === 'no' ? (
-                                  <span className={styles.modelMark}>{t('no vision')}</span>
-                                ) : null}
-                              </button>
-                            ))}
-                            {(modelList?.models ?? []).length === 0 ? (
-                              <p className={styles.helper}>{t('No models listed.')}</p>
-                            ) : null}
-                          </div>
-                          <p className={styles.helper}>
-                            {t(
-                              'Models marked "no vision" cannot see images. Screen sharing and Draw! need a model that can see images.',
-                            )}
-                          </p>
-                        </>
-                      )}
-                    </>
-                  ) : null}
-
-                  {/* W5: Test probe — a 1-token completion through the same
-                      layer every surface runs. DeepSeek can queue for up to a
-                      minute at peak, hence the spinner copy. */}
-                  <div className={styles.row}>
-                    <span className={styles.label}>{t('Connection')}</span>
-                    {testState === 'testing' ? (
-                      <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
-                        {t('Testing…')}
-                      </span>
-                    ) : testState !== 'idle' && testState.ok ? (
-                      <span className={`${styles.monoValue} ${styles.statusOk}`} role="status">
-                        {t('Working. Replied in {s}s.', {
-                          s: (testState.latencyMs / 1000).toFixed(1),
-                        })}
-                      </span>
-                    ) : (
-                      <span className={styles.monoValue}>{'–'}</span>
-                    )}
-                    <Button
-                      kind="ghost"
-                      size="sm"
-                      disabled={testState === 'testing'}
-                      onClick={() => void onRunTest()}
-                    >
-                      {t('Test')}
-                    </Button>
-                  </div>
-                  {testState === 'testing' ? (
-                    <p className={styles.helper} role="status">
-                      {t('Testing your key and model. This can take up to a minute.')}
-                    </p>
-                  ) : null}
-                  {testState !== 'idle' && testState !== 'testing' && !testState.ok ? (
-                    <p className={`${styles.helper} ${styles.helperError}`} role="alert">
-                      {llmErrorText(testState.error)}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-
-              {/* 261017 (issue #46): the "Use your ChatGPT plan" card, offered
-                  beside every other local provider. */}
-              {currentProvider !== 'chatgpt' ? (
-                <ChatgptPlanSettings active={false} onUsePlan={() => onChangeProvider('chatgpt')} />
-              ) : null}
-            </>
-          ) : null}
+          <div className={styles.row} data-testid="settings-open-playtime">
+            <span className={styles.label}>{t('Brain, voice and plan')}</span>
+            <Button kind="secondary" size="sm" onClick={() => navigate({ kind: 'credits' })}>
+              {t('Open Playtime')}
+            </Button>
+          </div>
         </div>
-
-        {/* ── Voice (W5, 260817) — local (BYOK) mode only: TTS engine +
-            voice recognition. Cloud accounts keep their managed voice path
-            and never see this group. ─────────────────────────────────── */}
-        {aiBackendKind === 'local' ? (
-          <div className={styles.group}>
-            <h3 className={styles.groupTitle}>{t('Voice') /* >Voice< */}</h3>
-
-            {/* TTS engine: ElevenLabs (BYOK key) or the free local voices.
-                Persists tts_engine; companions KEEP their ElevenLabs voiceId
-                either way — local mode maps it to a local voice by gender and
-                chat language. */}
-            <div className={styles.row}>
-              <span className={styles.label}>
-                {t('Voices')}
-                <InfoTip
-                  label={t('About voice engines')}
-                  text={t(
-                    'What speaks your companions\' lines on calls. ElevenLabs uses your own key. Local voices run on this device and work offline.',
-                  )}
-                />
-              </span>
-              <Seg
-                aria-label={t('Voices')}
-                value={ttsEngine}
-                options={[
-                  { value: 'elevenlabs', label: t('ElevenLabs') },
-                  { value: 'local', label: t('Local') },
-                ]}
-                onChange={(v) => void onSelectTtsEngine(v)}
-              />
-            </div>
-
-            {ttsEngine === 'elevenlabs' ? (
-              <>
-                {/* ElevenLabs key (260725, relocated here by W5): powers TTS
-                    and Scribe recognition. Write-only, same UX as the API key
-                    row. 261020: the row is shared with the Cloud group. */}
-                {renderElevenKeyRow('byok')}
-                {/* 261019: the voice picker lists the account's own voices
-                    (cloned, designed, saved) through this key. */}
-                <p className={styles.helper}>
-                  {t('Your own ElevenLabs voices show up in the voice picker once your key is saved.')}
-                </p>
-                {/* Local backend + no ElevenLabs key: the cloud voice pool (and
-                    the "Let Sei pick" auto-assign) has nothing to play through.
-                    Say so here instead of letting companions go silent. */}
-                {!hasElevenKey ? (
-                  <p className={`${styles.helper} ${styles.statusWarn}`} role="alert">
-                    {t(
-                      'Not connected to Sei cloud or an ElevenLabs key. Custom voices will not play. Local voice packs still work.',
-                    )}
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <>
-                {/* 261102: which on-device model speaks. Fast is the original
-                    voice packs and the default; Kokoro is offered as a plain
-                    alternative to Fast (261102, product feedback: no beta badge), and picking it
-                    offers its download. */}
-                <div className={styles.row}>
-                  <span className={styles.label}>
-                    {t('Local voice')}
-                    <InfoTip
-                      label={t('About local voices')}
-                      text={t(
-                        "Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices. Fish Audio is an online service that needs your own free Fish Audio key. It sends your companions' lines to Fish Audio.",
-                      )}
-                    />
-                  </span>
-                  <Seg
-                    aria-label={t('Local voice')}
-                    value={localModel}
-                    options={[
-                      { value: 'fast', label: t('Fast') },
-                      { value: 'kokoro', label: 'Kokoro' },
-                      { value: 'fish', label: t('Fish Audio (online, free API key)') },
-                    ]}
-                    onChange={(v) => void onSelectLocalModel(v)}
-                  />
-                </div>
-                {/* 261103: Fish Audio, the user's own key, straight from main. */}
-                {localModel === 'fish' ? <FishAudioSettings /> : null}
-                <p className={styles.helper}>
-                  {localModel === 'fish' ? (
-                    t('If Fish Audio cannot speak a line, the Fast voices below speak it.')
-                  ) : localModel === 'kokoro' ? (
-                    t(
-                      'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.',
-                    )
-                  ) : (
-                    <>
-                      {t('Kokoro sounds more natural but is slower.')}
-                      {packStates[KOKORO_PACK_ID] && packStates[KOKORO_PACK_ID].state !== 'ready'
-                        ? ' ' +
-                          t('It is a {mb} MB download.', {
-                            mb: formatMb(packStates[KOKORO_PACK_ID].bytes),
-                          })
-                        : null}
-                    </>
-                  )}
-                </p>
-                {/* Local voice packs: the English and Chinese downloads carry
-                    the Fast voices (each pack holds both speakers); the Kokoro
-                    row shows while Kokoro is chosen, or while its pack is on
-                    disk so it can still be uninstalled after switching back.
-                    State rides the speech:pack-state push; sizes are the
-                    registry's exact bytes. */}
-                {TTS_PACK_ROWS.filter((row) =>
-                  showTtsPackRow(row.id, localModel, packStates[KOKORO_PACK_ID]?.state),
-                ).map((row) => {
-                  const st = packStates[row.id];
-                  return (
-                    <div className={styles.row} key={row.id}>
-                      <span className={styles.label}>{t(row.label)}</span>
-                      {st?.state === 'downloading' ? (
-                        <span className={`${styles.monoValue} ${styles.statusWarn}`} role="status">
-                          {t('Downloading… {pct}%', { pct: st.pct ?? 0 })}
-                        </span>
-                      ) : st?.state === 'ready' ? (
-                        <>
-                          <span className={`${styles.monoValue} ${styles.statusOk}`}>{t('Ready')}</span>
-                          <Button
-                            kind="quiet"
-                            size="sm"
-                            onClick={() => void onRemovePack(row.id)}
-                          >
-                            {t('Uninstall')}
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          kind="ghost"
-                          size="sm"
-                          disabled={!st}
-                          onClick={() => setPendingPack({ id: row.id, name: t(row.label) })}
-                        >
-                          {t('Download…')}
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-                <p className={styles.helper}>
-                  {t(
-                    'Voices that run on this device. Each companion speaks with the one matching their voice and chat language.',
-                  )}
-                </p>
-              </>
-            )}
-
-            {/* Voice recognition (260725, relocated here by W5): what
-                transcribes your mic on calls. Applies from the next call.
-                W5 adds SenseVoice (free local model, strongest on Chinese);
-                picking it downloads the model first. */}
-            <div className={styles.row}>
-              <span className={styles.label}>{t('Voice recognition')}</span>
-              <Seg
-                aria-label={t('Voice recognition')}
-                value={sttEngine}
-                options={[
-                  { value: 'scribe', label: t('ElevenLabs Scribe') },
-                  { value: 'whisper', label: t('Local Whisper') },
-                  { value: 'sensevoice', label: t('SenseVoice') },
-                ]}
-                onChange={(v) => void onSelectSttEngine(v)}
-              />
-            </div>
-            {packStates[SENSEVOICE_PACK_ID]?.state === 'downloading' ? (
-              <p className={`${styles.helper} ${styles.statusWarn}`} role="status">
-                {t('Downloading SenseVoice… {pct}%', {
-                  pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0,
-                })}
-              </p>
-            ) : (
-              <p className={styles.helper}>
-                {sttEngine === 'whisper'
-                  ? t('Offline. Downloads a small model on first call.')
-                  : sttEngine === 'sensevoice'
-                    ? t('Offline. Runs on this device. Strongest for Chinese; English is weaker.')
-                    : t('Better accuracy. Uses your ElevenLabs key.')}
-              </p>
-            )}
-            {packError ? (
-              <p className={`${styles.helper} ${styles.helperError}`} role="alert">
-                {packError}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* ── Voice on Sei Cloud (261020, T158): one OPTIONAL key, only for
-            voices from the user's own ElevenLabs account. Those speak direct
-            with the key and use the user's ElevenLabs credits; Sei's pool
-            voices and speech recognition stay on the proxy (never billed to
-            the key). The BYOK group above keeps its own key row. ───────── */}
-        {elevenKeySettingMode(aiBackendKind, ttsEngine) === 'cloud-optional' ? (
-          <div className={styles.group} data-testid="cloud-own-voices">
-            <h3 className={styles.groupTitle}>{t('Voice')}</h3>
-            <p className={styles.helper}>
-              <strong>{t('Use your own ElevenLabs voices')}</strong>
-            </p>
-            {renderElevenKeyRow('cloud-optional')}
-            <p className={styles.helper}>
-              {t(
-                "Optional. Only needed for voices from your own ElevenLabs account, like a clone of your voice. Those voices use your ElevenLabs credits. Sei's voices are included in your plan.",
-              )}
-            </p>
-          </div>
-        ) : null}
 
         {/* ── Games & search (game adapters, 260908): ONE group for every
             registered game. The left column picks the game, the right column
@@ -2156,17 +1160,6 @@ export function SettingsScreen(): React.ReactElement {
       {migrateModalOpen ? (
         <MigrateLocalCharsModal onClose={() => setMigrateModalOpen(false)} />
       ) : null}
-      {pendingSwitch ? (
-        <SwitchBackendConfirmModal
-          direction={pendingSwitch}
-          via={switchVia ?? undefined}
-          onCancel={() => {
-            setPendingSwitch(null);
-            setSwitchVia(null);
-          }}
-          onConfirm={confirmSwitch}
-        />
-      ) : null}
       {resetAllModalOpen ? (
         <ResetAllMemoriesConfirmModal
           characterCount={allCharacters.length}
@@ -2177,23 +1170,6 @@ export function SettingsScreen(): React.ReactElement {
       {dmcaModalOpen ? <DmcaContactModal onClose={() => setDmcaModalOpen(false)} /> : null}
       {factoryResetOpen ? (
         <FactoryResetConfirmModal onCancel={() => setFactoryResetOpen(false)} />
-      ) : null}
-      {/* W5: shared "Download? (XX MB)" confirm for voice packs + SenseVoice.
-          Size comes from the pack registry via the status push, never a
-          hardcoded number. */}
-      {pendingPack && packStates[pendingPack.id] ? (
-        <DownloadConfirmModal
-          name={pendingPack.name}
-          bytes={packStates[pendingPack.id].bytes}
-          onCancel={() => setPendingPack(null)}
-          onConfirm={() =>
-            void startPackDownload(
-              pendingPack.id,
-              pendingPack.thenSensevoice === true,
-              pendingPack.thenKokoro === true,
-            )
-          }
-        />
       ) : null}
     </div>
   );

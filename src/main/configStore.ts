@@ -886,6 +886,9 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'web_search_api_key',
   // 260909: "don't show again" on the Minecraft setup step (useMcSetupStore).
   'mc_setup_dismissed',
+  // 261110: Playtime > My keys > "Alert me at $N a month".
+  'spend_alert_enabled',
+  'spend_alert_usd',
 ];
 
 /**
@@ -922,6 +925,7 @@ export const MAIN_OWNED_KEYS: readonly (keyof UserConfig)[] = [
   'fish_voice_overrides', // voice:fish-override-set IPC (voice/fishTts.ts)
   'seilink_moved_in', // seilink/host/seilinkHost.ts
   'seilink_deafened', // seilink/desktopLines.ts (the dock's deafen button)
+  'spend_alert_fired_month', // usage/llmUsageLedger.ts
   'schema_version', // configStore itself, on every write
 ];
 

@@ -44,7 +44,7 @@ import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from './audioTags';
 import { resolveVoiceId, isPoolVoiceId, ownVoicePickOf, ownVoiceStandInId, previewVoiceIdFor } from './voiceAssign';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
-import { resolveElevenLabsRoute, resolveTtsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
+import { resolveSpeakRoute, resolveTtsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
 import { isOwnVoiceId } from './ownVoices';
 import type { SpeechPackId } from '../speech/packs';
 import { noteCreditWall } from '../creditWall';
@@ -407,7 +407,71 @@ export type TtsNotice =
       kind: 'own-voice-stand-in';
       characterId: string;
       reason: OwnVoiceStandInReason;
+    }
+  | {
+      /** 261110: "Sei voices" with the ChatGPT brain could not speak this
+       * line (the weekly allowance is out, the rate limit, no session, the
+       * service unreachable), so an on-device voice spoke it. */
+      kind: 'sei-voices-fallback';
+      characterId: string;
+      reason: SeiVoicesFallbackReason;
     };
+
+/** Why a "Sei voices" line was spoken on-device (see TtsNotice). */
+export type SeiVoicesFallbackReason = 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+
+/** After the allowance or rate limit refused a "Sei voices" line, lines go
+ * straight to the on-device voice for this long instead of asking again. */
+export const SEI_VOICES_PAUSE_MS = 10 * 60_000;
+let seiVoicesPausedUntil = 0;
+let seiVoicesPauseReason: SeiVoicesFallbackReason = 'no-credits';
+
+export function _resetSeiVoicesPauseForTests(): void {
+  seiVoicesPausedUntil = 0;
+}
+
+function isSeiVoicesRoute(route: ElevenLabsRoute): boolean {
+  return route.kind === 'proxy' && route.seiVoices === true;
+}
+
+/** The fallback reason for a failed "Sei voices" request, or null when the
+ * error is not one the on-device voice should cover (e.g. VOICE_DISABLED). */
+export function seiVoicesFallbackReason(err: unknown): SeiVoicesFallbackReason | null {
+  const msg = String((err as Error)?.message ?? err ?? '');
+  if (msg.startsWith('VOICE_NO_CREDITS')) return 'no-credits';
+  if (msg.startsWith('VOICE_RATE_LIMITED')) return 'rate-limited';
+  if (msg.startsWith('VOICE_NO_SESSION')) return 'no-session';
+  if (msg.startsWith('VOICE_NOT_CONFIGURED') || msg.startsWith('VOICE_TTS_FAILED')) return 'failed';
+  return null;
+}
+
+/**
+ * "Sei voices" could not speak a line: speak it with the on-device voice and
+ * say so. Allowance and rate-limit refusals pause the proxy for
+ * SEI_VOICES_PAUSE_MS. Returns null when no on-device voice can speak it
+ * either (the caller rethrows the original error).
+ */
+async function seiVoicesLocalFallback(
+  reason: SeiVoicesFallbackReason,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  characterId: string,
+  genderHint?: string,
+): Promise<ArrayBuffer | null> {
+  if (reason === 'no-credits' || reason === 'rate-limited') {
+    seiVoicesPausedUntil = Date.now() + SEI_VOICES_PAUSE_MS;
+    seiVoicesPauseReason = reason;
+  }
+  const clip = await tryLocalFallbackClip(text, voiceId, language, characterId, genderHint);
+  if (clip) emitTtsNotice({ kind: 'sei-voices-fallback', characterId, reason });
+  return clip;
+}
+
+/** The pause reason while "Sei voices" is paused, else null. */
+function seiVoicesPaused(): SeiVoicesFallbackReason | null {
+  return Date.now() < seiVoicesPausedUntil ? seiVoicesPauseReason : null;
+}
 
 /** Why an own voice was not spoken with the user's key (see TtsNotice). */
 export type OwnVoiceStandInReason = 'no-key' | 'key-invalid' | 'voice-missing' | 'quota' | 'plan';
@@ -704,6 +768,7 @@ async function fetchAudio(
   headers: Record<string, string>,
   body: unknown,
   direct = false,
+  wall = !direct,
 ): Promise<ArrayBuffer> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), TTS_TIMEOUT_MS);
@@ -730,7 +795,9 @@ async function fetchAudio(
     if (res.status === 402) {
       // 261005: the proxy's ledger is out. A direct (own ElevenLabs key) 402 is
       // the user's own account, not Sei's credit wall.
-      if (!direct) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      // 261110: nor is a "Sei voices" 402 (the ChatGPT brain still works,
+      // the line falls back to an on-device voice), so `wall` is false there.
+      if (wall) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
       throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
     }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
@@ -771,7 +838,7 @@ async function synthesize(
   // as `speed`.
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(stability);
-  const route = routeArg ?? (await resolveElevenLabsRoute());
+  const route = routeArg ?? (await resolveSpeakRoute());
   if (route.kind === 'direct') {
     return fetchAudio(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
@@ -789,6 +856,8 @@ async function synthesize(
     `${PROXY_BASE_URL}/tts/speech`,
     { Authorization: `Bearer ${jwt}` },
     { text, voice_id: voiceId, ...langField, ...(context ?? {}), ...(stability !== undefined ? { stability } : {}) },
+    false,
+    !isSeiVoicesRoute(route),
   );
 }
 
@@ -812,7 +881,7 @@ export function prewarmTts(): void {
   // Fire-and-forget: the route only picks the ORIGIN to warm, so the key
   // store read rides inside the async wrapper (callers stay synchronous).
   void (async () => {
-    const route = await resolveElevenLabsRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
+    const route = await resolveSpeakRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
     // Unconfigured BYOK: no request will follow, so nothing to warm.
     if (route.kind === 'unconfigured') return;
     const origin = route.kind === 'direct' ? 'https://api.elevenlabs.io' : PROXY_BASE_URL;
@@ -894,6 +963,25 @@ export async function voiceTts(args: {
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
   const context = ttsContextFor(text, language, prev, args.more === true);
   const stability = voiceStabilityFor(character);
+  // 261110: "Sei voices" with the ChatGPT brain. While the allowance or rate
+  // limit has paused it, and whenever a line fails, an on-device voice
+  // speaks the line instead (with a notice), never the credit wall.
+  if (isSeiVoicesRoute(route)) {
+    const paused = seiVoicesPaused();
+    if (paused) {
+      const clip = await seiVoicesLocalFallback(paused, spoken, voiceId, language, args.characterId, own?.gender);
+      if (clip) return clip;
+    }
+    try {
+      return await synthesize(text, plan.speakId, language, stability, route, context);
+    } catch (err) {
+      const reason = seiVoicesFallbackReason(err);
+      if (!reason) throw err;
+      const clip = await seiVoicesLocalFallback(reason, spoken, voiceId, language, args.characterId, own?.gender);
+      if (clip) return clip;
+      throw err;
+    }
+  }
   try {
     return await synthesize(text, plan.speakId, language, stability, route, context);
   } catch (err) {
@@ -973,7 +1061,9 @@ async function openTtsStream(
     if (directErr) throw new Error(directErr);
     if (res.status === 402) {
       // 261005: see fetchAudio; only the proxy route is Sei's credit wall.
-      if (route.kind !== 'direct') noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      if (route.kind !== 'direct' && !isSeiVoicesRoute(route)) {
+        noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      }
       throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
     }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
@@ -1090,6 +1180,33 @@ export async function voiceTtsStream(
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
   const more = args.more === true;
 
+  // 261110: "Sei voices" fallback (see voiceTts): a whole on-device clip
+  // delivered as one chunk + done; the renderer's stream player sniffs it.
+  if (isSeiVoicesRoute(route)) {
+    const deliver = (buf: ArrayBuffer): { streamId: string } => {
+      const streamId = `tts-${nextStreamSeq++}`;
+      queueMicrotask(() => {
+        sink({ streamId, chunk: buf });
+        sink({ streamId, done: true });
+      });
+      return { streamId };
+    };
+    const paused = seiVoicesPaused();
+    if (paused) {
+      const clip = await seiVoicesLocalFallback(paused, spoken, voiceId, language, args.characterId, own?.gender);
+      if (clip) return deliver(clip);
+    }
+    try {
+      const sOpened = await openTtsStream(route, plan.speakId, text, language, stability, ttsContextFor(text, language, prev, more));
+      return pumpTtsStream(sOpened, sink);
+    } catch (err) {
+      const reason = seiVoicesFallbackReason(err);
+      if (!reason) throw err;
+      const clip = await seiVoicesLocalFallback(reason, spoken, voiceId, language, args.characterId, own?.gender);
+      if (clip) return deliver(clip);
+      throw err;
+    }
+  }
   let opened: OpenedTtsStream;
   try {
     opened = await openTtsStream(route, plan.speakId, text, language, stability, ttsContextFor(text, language, prev, more));
@@ -1313,7 +1430,7 @@ export async function fishSampleTts(args: { voiceId?: string; speed?: number } =
  * click.
  */
 export async function voicePreviewAvailable(): Promise<boolean> {
-  const route = await resolveElevenLabsRoute();
+  const route = await resolveSpeakRoute();
   if (route.kind === 'direct') return true;
   if (route.kind === 'unconfigured') return false;
   return (await getJwtOrNull()) !== null;

@@ -51,8 +51,35 @@ export const SUPPORTED_PROVIDERS = [
   'chatgpt',
 ]
 
-export function createLlmProvider(config, deps = {}) {
-  const kind = config.llm?.provider ?? 'anthropic'
+// 261110 Playtime usage ledger: every completed request's usage goes up to
+// main ({type:'llm-usage'} on the init port, set in bot/index.js), which
+// records it for own-key / ChatGPT-plan sessions only (botSupervisor.ts).
+let usageSink = null
+
+/** Set (or clear with null) where completed-request usage is reported. */
+export function setLlmUsageSink(fn) {
+  usageSink = typeof fn === 'function' ? fn : null
+}
+
+/** Wrap `provider.call` in place so each completed call reports its usage. */
+export function meterProvider(provider, kind) {
+  if (!provider || typeof provider.call !== 'function' || provider.__usageMetered) return provider
+  const call = provider.call
+  provider.call = async function meteredCall(...args) {
+    const result = await call.apply(this, args)
+    if (usageSink) {
+      try {
+        const model = (args[0] && typeof args[0].model === 'string' && args[0].model) || provider.model || ''
+        usageSink({ type: 'llm-usage', provider: kind, model, usage: result?.usage ?? null })
+      } catch { /* reporting never breaks a turn */ }
+    }
+    return result
+  }
+  provider.__usageMetered = true
+  return provider
+}
+
+function createRawLlmProvider(config, deps, kind) {
   if (kind === 'anthropic') return createAnthropicProvider(config)
   if (kind === 'gemini')    return createGeminiProvider(config, deps)
   if (kind === 'ollama')    return createOllamaProvider(config, deps)
@@ -61,4 +88,9 @@ export function createLlmProvider(config, deps = {}) {
     return createOpenAICompatProvider(config, { ...deps, kind, defaultBaseURL: BASE_URLS[kind] })
   }
   throw new Error(`Unknown llm.provider: ${kind}. Supported: ${SUPPORTED_PROVIDERS.join(', ')}`)
+}
+
+export function createLlmProvider(config, deps = {}) {
+  const kind = config.llm?.provider ?? 'anthropic'
+  return meterProvider(createRawLlmProvider(config, deps, kind), kind)
 }

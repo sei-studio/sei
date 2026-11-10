@@ -334,11 +334,3 @@
 .railButton:hover .roundIconWrap {
   color: var(--rail-accent);
 }
-
-/* Switch-to-cloud confirm body (panel/scrim come from ModalShell). */
-.cloudPromptBody {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-2);
-  margin: 0;
-}

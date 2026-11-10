@@ -30,6 +30,7 @@ import { useFirstMomentStore } from './stores/useFirstMomentStore';
 import { useHomeNextStepStore } from './stores/useHomeNextStepStore';
 import { useChatgptStore } from './stores/useChatgptStore';
 import { useSeilinkStore } from './stores/useSeilinkStore';
+import { useUsageStore } from './stores/useUsageStore';
 import { clearAllFeedbackDrafts } from './feedbackDraft';
 import { useVoiceStore } from './stores/useVoiceStore';
 import { useBackseatStore } from './stores/useBackseatStore';
@@ -108,4 +109,6 @@ export function resetAccountScopedState(): void {
   useChatgptStore.getState().reset();
   // 261105 (T337): an open move-in sheet, room editor or first-link intro names a companion of the old account.
   useSeilinkStore.setState({ flow: null, intro: null, moveBusy: false });
+  // 261110: Playtime's usage summary is read from this profile's ledger.
+  useUsageStore.getState().reset();
 }

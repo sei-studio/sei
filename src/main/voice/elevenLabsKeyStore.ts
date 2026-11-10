@@ -119,8 +119,39 @@ export async function resolveElevenLabsKey(): Promise<string | null> {
  */
 export type ElevenLabsRoute =
   | { kind: 'direct'; key: string }
-  | { kind: 'proxy' }
+  /** `seiVoices`: the ChatGPT-plan "Sei voices" choice (261110), see
+   * resolveSpeakRoute. Its 402 is not Sei's credit wall: the line falls
+   * back to an on-device voice instead (voice/tts.ts). */
+  | { kind: 'proxy'; seiVoices?: boolean }
   | { kind: 'unconfigured' };
+
+/** The proxy route of the "Sei voices" choice (see resolveSpeakRoute). */
+export const SEI_VOICES_ROUTE: ElevenLabsRoute = { kind: 'proxy', seiVoices: true };
+
+/**
+ * 261110: the ChatGPT-plan user picked "Sei voices" on Playtime > ChatGPT >
+ * Voice (seiVoicesActive). Best-effort: an unreadable config is false.
+ */
+export async function seiVoicesSelected(): Promise<boolean> {
+  try {
+    const { loadConfig } = await import('../configStore');
+    const { seiVoicesActive } = await import('../../shared/ttsEngine');
+    return seiVoicesActive(await loadConfig());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The SPEECH route (TTS only; STT keeps resolveElevenLabsRoute): "Sei
+ * voices" goes through the proxy with the account's JWT, like a cloud call,
+ * even on the local (ChatGPT plan) backend; everything else is
+ * resolveElevenLabsRoute.
+ */
+export async function resolveSpeakRoute(): Promise<ElevenLabsRoute> {
+  if (await seiVoicesSelected()) return SEI_VOICES_ROUTE;
+  return resolveElevenLabsRoute();
+}
 
 export async function resolveElevenLabsRoute(): Promise<ElevenLabsRoute> {
   const key = await resolveElevenLabsKey();
@@ -175,7 +206,7 @@ export async function resolveTtsRoute(opts: { own: boolean }): Promise<{
   route: ElevenLabsRoute;
   ownKeyOnCloud: boolean;
 }> {
-  const base = await resolveElevenLabsRoute();
+  const base = await resolveSpeakRoute();
   if (!opts.own || base.kind !== 'proxy') return { route: base, ownKeyOnCloud: false };
   const key = await resolveOwnVoiceKey();
   return key ? { route: { kind: 'direct', key }, ownKeyOnCloud: true } : { route: base, ownKeyOnCloud: false };

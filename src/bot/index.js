@@ -37,6 +37,7 @@ import { normalizePalette } from './brain/faceExpressions.js'
 import { sessionActionStats, llmMetaFromConfig } from './brain/actionStats.js'
 import { sessionDigest } from './brain/sessionDigest.js'
 import { setChatgptTokenTransport, deliverChatgptToken } from './brain/llm/chatgptTokenBridge.js'
+import { setLlmUsageSink } from './brain/llm/index.js'
 import { snapshotResolver } from './net/proxyPac.js'
 
 // 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
@@ -1016,6 +1017,9 @@ if (process.parentPort) {
       // 261017 (issue #46): ChatGPT-plan token requests go up this port;
       // main answers with {type:'chatgpt-token'} (handled below).
       setChatgptTokenTransport((msg) => { initPort?.postMessage(msg) })
+      // 261110: completed-request usage for the Playtime ledger (main keeps
+      // it only for own-key / ChatGPT-plan sessions).
+      setLlmUsageSink((msg) => { try { initPort?.postMessage(msg) } catch {} })
       // 260926: boot-phase stamps go up as full snapshots (no stdout mirror:
       // main folds them into the summon diagnostics). The first post is the
       // init_received stamp in bootstrapWithInit, which carries the phases

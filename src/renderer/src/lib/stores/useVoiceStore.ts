@@ -54,7 +54,7 @@ import type { VoiceTtsNoticePush } from '@shared/ipc';
 import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createSentenceTts } from '../voice/sentenceTts';
-import { localTtsModel } from '@shared/ttsEngine';
+import { localTtsModel, seiVoicesActive } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
@@ -373,6 +373,8 @@ let kokoroTtsCall = false;
  * streaming path is open again (a Fast fallback arrives as one WAV chunk and
  * the stream player sniffs it). */
 let fishTtsCall = false;
+/** 261110: "Sei voices" with the ChatGPT brain this call (see localTtsCall). */
+let seiVoicesCall = false;
 /** Characters with their own Fish voice this call: played without the pitch
  * shift (the user picked that exact voice). */
 let fishOverrideIds = new Set<string>();
@@ -777,8 +779,15 @@ export function fishFallbackNotice(reason: FishFailureReason): string {
 }
 
 /** The call notice for one voice:tts-notice push. */
+/** 261110: a "Sei voices" line spoken on-device instead (ChatGPT brain). */
+export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed'): string {
+  if (reason === 'no-credits') return t('[Sei voices are used up this week, using voices on this device]');
+  return t('[Sei voices are unavailable right now, using voices on this device]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
+  if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
   if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
   return substitutePackNotice(push);
@@ -979,8 +988,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         turn,
         onDone,
         ...(stale ? { stale: () => stale('playhead') } : {}),
-        // A Fish line that falls back to the Fast voices arrives as one WAV.
-        ...(fishTtsCall ? { sniff: true } : {}),
+        // A Fish line that falls back to the Fast voices arrives as one WAV,
+        // and so does a "Sei voices" line spoken on-device (261110).
+        ...(fishTtsCall || seiVoicesCall ? { sniff: true } : {}),
       });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
@@ -1719,6 +1729,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           if (fishNoticeReasons.has(push.reason)) return;
           fishNoticeReasons.add(push.reason);
         }
+        // 261110: once per call, whatever the reason.
+        if (push.kind === 'sei-voices-fallback') {
+          if (fishNoticeReasons.has('sei-voices')) return;
+          fishNoticeReasons.add('sei-voices');
+        }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;
   } catch {
@@ -1954,7 +1969,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         /* status read failed → assume absent, which only costs streaming */
       }
       if (session !== mySession) return;
+      // 261110: "Sei voices" with the ChatGPT brain streams the proxy's mp3
+      // like a cloud call; a line it cannot speak arrives as one on-device
+      // WAV chunk, which the stream player sniffs (seiVoicesCall).
+      seiVoicesCall = seiVoicesActive(callCfg);
       localTtsCall =
+        !seiVoicesCall &&
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
         (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
       // 261102: Kokoro lines go sentence by sentence (slower synthesis, so

@@ -16,6 +16,7 @@
  *     http://localhost:5173/?dashshot=mcprofile&part=lan|unsupported|forge|setup|done  the Sei profile / Start Minecraft surfaces (DevMcProfileShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
+ *     http://localhost:5173/?dashshot=playtime&setup=cloud|chatgpt|mykeys&tab=...  the Playtime page (DevPlaytimeShot, 261110)
  *     http://localhost:5173/?dashshot=voicekey&part=settings|picker&backend=cloud|local&key=1  the ElevenLabs key
  *                                              field and the picker's add-your-key line (DevVoiceKeyShot, 261020);
  *                                              &backend=local&tts=fish&fishkey=1 shows the Fish Audio rows (261103)
@@ -61,6 +62,7 @@ import { DevCreditWallShot } from '../DevCreditWallShot';
 import { DevRobloxShot } from '../backseat/DevRobloxShot';
 import { DevMcProfileShot } from '../mcdash/DevMcProfileShot';
 import { DevPermsShot } from '../permissions/DevPermsShot';
+import { DevPlaytimeShot } from '../DevPlaytimeShot';
 import { DevVoiceKeyShot } from '../DevVoiceKeyShot';
 import { DevArtShot, devArtList } from '../DevArtShot';
 import { OnboardApp } from '../../onboard/OnboardApp';
@@ -78,7 +80,7 @@ import { VoiceCallScreen } from '../../screens/VoiceCallScreen';
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { AuthChoiceScreen } from '../../screens/AuthChoiceScreen';
 import { SignInModal } from '../SignInModal';
-import { CreditsScreen } from '../../screens/CreditsScreen';
+import { PlaytimeScreen } from '../../screens/PlaytimeScreen';
 import { CharactersScreen } from '../../screens/CharactersScreen';
 import { IconRail } from '../IconRail';
 import { GamesPickerModal } from '../GamesPickerModal';
@@ -280,6 +282,8 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
   if (which === 'perms') return <DevPermsShot />;
   // ?dashshot=voicekey&part=settings|picker&backend=cloud|local&key=1 (261020, T158).
   if (which === 'voicekey') return <DevVoiceKeyShot />;
+  // ?dashshot=playtime&setup=cloud|chatgpt|mykeys&tab=...&part=settings (261110).
+  if (which === 'playtime') return <DevPlaytimeShot />;
   // ?dashshot=art&part=browse|page|call&art=<url> (261023): names over character art.
   if (which === 'art') return <DevArtShot />;
   // ?dashshot=onboard (261012): the first-run scene, for the intro's stage
@@ -341,7 +345,7 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
         <IconRail />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           {/* &part=credits (261017): the pricing page's ChatGPT plan block. */}
-          {part === 'settings' ? <SettingsScreen /> : part === 'credits' ? <CreditsScreen /> : <ChatScreen characterId={SDV_ID} />}
+          {part === 'settings' ? <SettingsScreen /> : part === 'credits' ? <PlaytimeScreen /> : <ChatScreen characterId={SDV_ID} />}
         </div>
         {part === 'picker' ? <GamesPickerModal characterId={SDV_ID} /> : null}
         {update === 'updated' ? <UpdatedToast /> : null}

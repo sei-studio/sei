@@ -75,7 +75,8 @@ import { ShareScreenModal } from './components/backseat/ShareScreenModal';
 import { BackseatGameModal } from './components/backseat/BackseatGameModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { SettingsScreen } from './screens/SettingsScreen';
-import { CreditsScreen } from './screens/CreditsScreen';
+import { PlaytimeScreen } from './screens/PlaytimeScreen';
+import { SpendAlertBanner } from './components/playtime/SpendAlertBanner';
 import { ReceiptScreen } from './screens/ReceiptScreen';
 import { McSetupModal } from './components/McSetupModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
@@ -1322,6 +1323,8 @@ export function App(): React.ReactElement {
           {/* 260926: "Your free play is back", once, after the weekly reset
               lifts a credit wall this profile hit. Cloud accounts only. */}
           {authState.kind === 'signed_in' ? <FreePlayBackBanner /> : null}
+          {/* 261110: the own-key monthly spend alert (one line, never blocks). */}
+          <SpendAlertBanner />
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
             {/*
@@ -1376,7 +1379,7 @@ export function App(): React.ReactElement {
                 )}
                 {view.kind === 'draw' && <DrawScreen characterId={view.characterId} />}
                 {view.kind === 'settings' && <SettingsScreen />}
-                {view.kind === 'credits' && <CreditsScreen />}
+                {view.kind === 'credits' && <PlaytimeScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
                 {view.kind === 'coming-soon' && <ComingSoonScreen />}
                 {view.kind === 'unique-reveal' && (

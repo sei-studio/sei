@@ -148,8 +148,8 @@ export function wallFreeOptions(input: {
 /**
  * A "Keep playing free" click: track it, dismiss the popup (it would cover
  * Settings otherwise), then route. 'chatgpt' runs the same flow as the
- * startup popup's chatgpt-plan action; 'own_key' opens Settings at the AI
- * Backend row. Exported for the unit test.
+ * startup popup's chatgpt-plan action; 'own_key' opens Playtime on the My
+ * keys tab (261110; Settings' AI Backend row before). Exported for the unit test.
  */
 export function takeWallFreeOption(option: 'chatgpt' | 'own_key', reason: string | null, openedAt: number): void {
   trackWallAction(option, reason, openedAt);
@@ -158,10 +158,10 @@ export function takeWallFreeOption(option: 'chatgpt' | 'own_key', reason: string
     // Another chatgpt-plan run still in flight (a popup click a moment ago):
     // this one does nothing, so at least land on the row it is using.
     void startChatgptPlan().then((ran) => {
-      if (!ran) useUiStore.getState().navigate({ kind: 'settings', focus: 'chatgpt-plan' });
+      if (!ran) useUiStore.getState().navigate({ kind: 'credits', tab: 'chatgpt' });
     });
   } else {
-    useUiStore.getState().navigate({ kind: 'settings', focus: 'ai-backend' });
+    useUiStore.getState().navigate({ kind: 'credits', tab: 'mykeys' });
   }
 }
 
