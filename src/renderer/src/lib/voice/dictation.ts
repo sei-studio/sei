@@ -491,7 +491,7 @@ export function cloudPassText(res: { text: string; minWordLogprob?: number }, hi
 
 /** Conversation languages written in Latin script (chat_language, or the
  * base code of a Latin-script UI language such as pt-BR). */
-const LATIN_LANGUAGES = new Set(['en', 'fr', 'es', 'pt']);
+const LATIN_LANGUAGES = new Set(['en', 'fr', 'es', 'pt', 'it']);
 
 /**
  * The language a call's burst words are judged against (261101). chat_language
