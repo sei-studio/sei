@@ -12,8 +12,8 @@
 
 .rail {
   width: var(--rail-w);
-  /* The rail sits on the window's one field (FieldBackdrop), like the update
-     window's logo; no panel colour and no edge line. */
+  /* The rail sits on the window's one flat background; no panel colour and
+     no edge line. */
   background: transparent;
   display: flex;
   flex-direction: column;

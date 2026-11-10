@@ -55,7 +55,6 @@ import { portraitSrc } from '../lib/portraitSrc';
 import { mergeWorldEntries } from '../lib/worldList';
 import { Button } from '../components/Button';
 import { HomeNextStepCard } from '../components/HomeNextStepCard';
-import { useFieldGlow } from '../lib/fieldGlow';
 import { useHomeNextStepStore } from '../lib/stores/useHomeNextStepStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { chooseHomeNextStep } from '../lib/homeNextStep';
@@ -158,7 +157,6 @@ export function CharactersScreen(): React.ReactElement {
  */
 function HomeGrid(): React.ReactElement {
   const t = useT();
-  useFieldGlow('home');
   const characters = useDataStore((s) => s.characters);
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
   const summons = useDataStore((s) => s.summons);
