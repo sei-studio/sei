@@ -14,10 +14,7 @@
  *    dark chrome (the old native titleBarOverlay buttons clashed and sometimes
  *    went missing). Controls opt out of the drag region via no-drag.
  *
- * Quiet register (product call 261110): the window is ONE flat surface
- * (--bg, no dots, glow or grain). The drag strip and the rail are transparent
- * over it, and the tiny "Sei" title is gone (the pixel wordmark sits on the
- * rail).
+ * Mounts the HUD overlay layers (grain + vignette) once, above all content.
  *
  * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
  */
@@ -99,6 +96,16 @@ function WindowControls(): React.ReactElement {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function MacosWindow({ subtitle: _subtitle, railHidden = false, children }: MacosWindowProps): React.ReactElement {
+  // Track the real packaged version (app.getVersion via IPC) instead of a
+  // hardcoded literal — Settings reads the same source, so the two never drift.
+  const [version, setVersion] = useState<string>('');
+  useEffect(() => {
+    void sei
+      .getVersion()
+      .then(setVersion)
+      .catch(() => setVersion(''));
+  }, []);
+
   // Only Windows runs frameless with our custom controls (mark at far left,
   // min/max/close at right). macOS keeps native traffic lights + the
   // rail-cleared mark; Linux keeps its native window frame, so neither renders
@@ -132,9 +139,18 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
       <div
         className={`${styles.dragStrip} ${isWindows ? styles.dragStripCustom : ''} ${railHidden ? styles.fullDivider : ''}`}
       >
+        <span className={styles.titleLabel}>Sei</span>
+        <span className={styles.versionTag}>{version ? `v${version}` : ''}</span>
         {isWindows && <WindowControls />}
       </div>
       <div className={styles.body}>{children}</div>
+
+      {/* HUD atmosphere — mounted once, above all content, never interactive.
+          Grain + vignette only (the mockup's scanline + sweep layers are off). */}
+      <div className="hud-overlays" aria-hidden="true">
+        <div className="hud-grain" />
+        <div className="hud-vignette" />
+      </div>
     </div>
   );
 }

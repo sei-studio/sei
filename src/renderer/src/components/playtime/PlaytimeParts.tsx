@@ -1,6 +1,6 @@
 /**
  * Small pieces the Playtime tabs share (261110, product call 261110): the
- * borderless choice control, the panel row, the 7-day mini bars, the spend
+ * segmented choice control, the panel row, the 7-day mini bars, the spend
  * chart, the model select and the copy for a typed model-list error.
  * Styling: screens/PlaytimeScreen.module.css (tokens only).
  */
@@ -15,7 +15,7 @@ import styles from '../../screens/PlaytimeScreen.module.css';
 
 type Translate = (en: string, params?: Record<string, string | number>) => string;
 
-/** A borderless segmented choice (the shared Seg draws a border). */
+/** A segmented choice drawn like Seg, with a per-option disabled flag. */
 export function Choice<V extends string>(props: {
   value: V;
   options: ReadonlyArray<{ value: V; label: string; disabled?: boolean }>;

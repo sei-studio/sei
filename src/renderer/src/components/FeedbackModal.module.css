@@ -2,9 +2,8 @@
  * SetNewPasswordModal; tokens only. */
 
 .framing {
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-  color: var(--text-2);
+  font-size: 14px;
+  color: var(--muted);
   margin: 0;
 }
 
@@ -22,13 +21,13 @@
 }
 
 .fieldLabel {
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-2);
 }
 
 .errorText {
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }
@@ -44,7 +43,7 @@
 }
 
 .gameHintText {
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--accent);
   min-width: 0;
 }

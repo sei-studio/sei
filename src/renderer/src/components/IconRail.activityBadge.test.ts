@@ -117,12 +117,10 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(source.includes('useChessStore')).toBe(true);
   });
 
-  it('Test 6: CSS module defines the 14px badge with the surface-colored ring', () => {
+  it('Test 6: CSS module defines the 14px badge with the rail-colored ring', () => {
     const css = readFileSync(CSS_PATH, 'utf-8');
     expect(css.includes('.activityBadge')).toBe(true);
     expect(css.includes('width: 14px')).toBe(true);
-    // 261110: the rail has no panel of its own, so the ring cuts the badge out
-    // of the window's field colour (--bg), not the old rail chrome.
-    expect(css.includes('border: 2px solid var(--bg)')).toBe(true);
+    expect(css.includes('border: 2px solid var(--rail)')).toBe(true);
   });
 });

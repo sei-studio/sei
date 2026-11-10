@@ -7,8 +7,8 @@
 
 .body {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -20,7 +20,7 @@
 
 .status {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--text-2);
   margin: 0;
 }
@@ -28,7 +28,7 @@
 /* A failed action's one-line error, between the body and the footer. */
 .error {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }

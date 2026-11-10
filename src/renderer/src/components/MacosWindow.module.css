@@ -1,8 +1,8 @@
 /* MacosWindow.module.css — terminal window chrome.
  *
  * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
- * traffic lights — no fake ones). Full-bleed, one flat --bg colour under
- * everything: no grain, dots or glow (plain background, product call 261110).
+ * traffic lights — no fake ones). Full-bleed dark; the vignette/grain live
+ * in the .hud-overlays layer (global.css), mounted by MacosWindow.tsx.
  */
 
 .window {
@@ -12,11 +12,10 @@
      in windowChrome.ts) so shrinking never clips or forces a scrollbar. */
   min-width: 1000px;
   min-height: 560px;
-  /* One flat --bg colour, no pattern and no glow (plain background, product
-     call 261110: the dotted glow field was too busy and hurt legibility).
-     --bg, not --window: light themes keep their white --step-1 cards on the
-     tinted page, as with the quiet register. */
-  background-color: var(--bg);
+  /* Flat near-black field — no accent bloom (the previous radial used
+     --accent-soft at 16%, ~3× the mockup's faint 5% glow, and read as a
+     blue gradient washed over the whole window). */
+  background-color: var(--window);
   border-radius: 0; /* D-28 */
   overflow: hidden;
   box-shadow: var(--shadow-window);
@@ -43,7 +42,12 @@
  * the flat --window field, so there is no visible "bar". */
 .dragStrip {
   position: relative;
-  /* Sized so the macOS traffic lights get even clearance above and below. */
+  /* No z-index lift needed: the HUD vignette is inset to the content panel
+     (global.css .hud-vignette) so it never reaches the chrome. The top bar and
+     the IconRail both render their flat, uniform --rail fill and read as one
+     continuous background strip. */
+  /* Sized so the macOS traffic lights get even clearance above and below.
+     NOTE: kept in sync with the .hud-vignette top inset in global.css. */
   height: 34px;
   flex-shrink: 0;
   /* Top bar shares the IconRail's exact fill — flat --rail, no gradient — so the
@@ -51,9 +55,7 @@
      live on both, but its lightening faded over each strip's own height: the
      38px bar reached pure --rail by the seam while the ~700px rail was still
      lightened there, so the bar read darker right at the boundary.) */
-  /* Quiet register (261110): transparent over the field, so there is no
-     visible bar, only clearance for the OS controls and a drag handle. */
-  background-color: transparent;
+  background-color: var(--rail);
   display: flex;
   align-items: center;
   /* Label sits left, aligned with the main content's left edge (past the rail
@@ -132,17 +134,45 @@
    one uniform color. Keep the left padding: the "Sei" mark still needs the inset
    to clear the macOS traffic lights. (260625) */
 .dragStrip.fullDivider {
-  background-color: transparent;
+  background-color: var(--window);
 }
 
 /* 260724: with a custom background active, the chrome goes translucent so the
    image shows through the top strip too — same tint strength as the rail and
    the content panel (--app-bg-tint = inverse of the opacity slider). */
-:root[data-app-bg] .dragStrip,
+:root[data-app-bg] .dragStrip {
+  background-color: color-mix(in srgb, var(--rail) var(--app-bg-tint, 100%), transparent);
+}
+
 :root[data-app-bg] .dragStrip.fullDivider {
   background-color: color-mix(in srgb, var(--window) var(--app-bg-tint, 100%), transparent);
 }
 
+
+/* "Sei" mark — small Rajdhani (--sans) label. */
+.titleLabel {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--rail-fg);
+  text-transform: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Version tag — same label, one tone dimmer than the title. */
+.versionTag {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--rail-fg);
+  opacity: 0.7;
+  margin-left: var(--space-xs);
+  user-select: none;
+  pointer-events: none;
+}
 
 .body {
   flex: 1;

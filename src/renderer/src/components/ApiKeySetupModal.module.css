@@ -2,8 +2,8 @@
    animation come from ModalShell (stacked tier set via the `tier` prop). */
 .body {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
@@ -16,16 +16,15 @@
 }
 
 .fieldLabel {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--text-2);
-  font-weight: 600;
 }
 
 .error {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 13px;
   color: var(--red);
   margin: 0;
-  font-weight: 600;
 }

@@ -1,6 +1,6 @@
 /* KnowledgeDropZone.module.css — drag/drop upload zone for Knowledge files.
-   Same visual family as SkinUploadZone. Quiet register (261110): a --wash
-   fill with no dashed frame; hover and drag-over tint it. */
+   Same visual family as SkinUploadZone: sharp corners (D-28), dashed
+   --border-strong outline, --surface background, token colors only. */
 
 .wrap {
   display: flex;
@@ -16,11 +16,13 @@
   text-align: center;
   min-height: 280px;
   padding: var(--space-lg) var(--space-md-plus);
-  background: var(--wash);
-  border: 0;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 120ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .zone.compact {
@@ -47,17 +49,15 @@
   color: var(--accent);
 }
 
-.zone:hover {
-  background: var(--wash-hi);
-}
-
+.zone:hover,
 .zone.dragOver {
   background: var(--accent-soft);
+  border-color: var(--accent-strong);
 }
 
 .zone:focus-visible {
-  outline: none;
-  box-shadow: inset 0 -2px 0 var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .zone.disabled {
@@ -66,7 +66,8 @@
 }
 
 .zone.disabled:hover {
-  background: var(--wash);
+  background: var(--surface);
+  border-color: var(--border-strong);
 }
 
 .corner {
@@ -76,9 +77,9 @@
 }
 
 .secondary {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
   color: var(--muted);
   margin: 0;
 }
@@ -98,8 +99,7 @@
 }
 
 .errorRow {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 12px;
   color: var(--red);
 }

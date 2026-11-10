@@ -3,9 +3,8 @@
  * Tokens only. */
 
 .framing {
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-  color: var(--text-2);
+  font-size: 14px;
+  color: var(--muted);
   margin: 0;
 }
 
@@ -28,15 +27,15 @@
   align-items: center;
   gap: var(--gap-control);
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   color: var(--text);
   cursor: pointer;
   user-select: none;
 }
 
 .checkbox input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   cursor: pointer;
   accent-color: var(--accent);
   flex-shrink: 0;
@@ -49,13 +48,13 @@
 }
 
 .fieldLabel {
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-2);
 }
 
 .errorText {
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }

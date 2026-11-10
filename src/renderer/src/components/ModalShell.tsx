@@ -16,9 +16,9 @@ import React, { useEffect } from 'react';
 import styles from './ModalShell.module.css';
 
 interface ModalShellProps {
-  /** Accessible + visible title (Oswald, the title step). Pass null to omit the header. */
+  /** Accessible + visible title (Oswald 18px). Pass null to omit the header. */
   title: string | null;
-  /** Panel width in px (default 440; never narrower than 440 since 261110). */
+  /** Panel width in px (default 380 — the mockup's play-modal width). */
   width?: number;
   /** Esc closes (default true). Set false while submitting / for blocking gates. */
   escClose?: boolean;
@@ -33,8 +33,6 @@ interface ModalShellProps {
   'aria-label'?: string;
 }
 
-const MIN_WIDTH = 440;
-
 const TIER_Z: Record<'base' | 'stacked' | 'recovery', number> = {
   base: 1000,
   stacked: 1100,
@@ -43,7 +41,7 @@ const TIER_Z: Record<'base' | 'stacked' | 'recovery', number> = {
 
 export function ModalShell({
   title,
-  width = MIN_WIDTH,
+  width = 380,
   escClose = true,
   scrimClose = false,
   tier = 'base',
@@ -83,9 +81,7 @@ export function ModalShell({
     >
       <div
         className={[styles.panel, panelClassName ?? ''].filter(Boolean).join(' ')}
-        // Quiet register (261110): 440 is the narrowest panel; the body step
-        // (18px) wraps too often in the old 380-420 widths.
-        style={{ width: Math.max(width, MIN_WIDTH) }}
+        style={{ width }}
       >
         {title ? (
           <h3 id={titleId} className={styles.title}>

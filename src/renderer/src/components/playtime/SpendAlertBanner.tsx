@@ -9,7 +9,7 @@ import { formatUsd } from '@shared/llmUsage';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { useUiStore } from '../../lib/stores/useUiStore';
-import { NoticeLine } from '../NoticeLine';
+import { CloseIcon } from '../icons';
 import styles from '../../screens/PlaytimeScreen.module.css';
 
 export function SpendAlertBanner(): React.ReactElement | null {
@@ -20,18 +20,22 @@ export function SpendAlertBanner(): React.ReactElement | null {
   useEffect(() => sei.onSpendAlert?.((e) => setAlert({ limitUsd: e.limitUsd })) ?? undefined, []);
 
   if (!alert) return null;
-  // The quiet register's one-line notice: the line itself opens My keys.
+  // One line: the text opens My keys, the x dismisses it.
   return (
-    <div className={styles.alertBanner}>
-      <NoticeLine
-        text={t('Your own key spend passed {amount} this month.', { amount: formatUsd(alert.limitUsd) })}
-        onAction={() => {
+    <div className={styles.alertBanner} role="status" data-testid="spend-alert-banner">
+      <button
+        type="button"
+        className={styles.alertText}
+        onClick={() => {
           setAlert(null);
           navigate({ kind: 'credits', tab: 'mykeys' });
         }}
-        onDismiss={() => setAlert(null)}
-        dataAttrs={{ 'data-testid': 'spend-alert-banner' }}
-      />
+      >
+        {t('Your own key spend passed {amount} this month.', { amount: formatUsd(alert.limitUsd) })}
+      </button>
+      <button type="button" className={styles.alertClose} onClick={() => setAlert(null)} aria-label={t('Dismiss')}>
+        <CloseIcon size={14} />
+      </button>
     </div>
   );
 }

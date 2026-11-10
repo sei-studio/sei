@@ -1,11 +1,9 @@
 /* OnboardingScreen — inline error line under a QuestionShell field.
- * Quiet register: sans meta, tokens only. */
+ * Mono micro-label rhythm; tokens only. */
 
 .error {
-  margin-top: var(--space-md);
+  margin-top: 12px;
   color: var(--red);
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-family: var(--mono);
+  font-size: 13px;
 }

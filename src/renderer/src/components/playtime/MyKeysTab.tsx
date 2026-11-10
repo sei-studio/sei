@@ -160,7 +160,7 @@ function BrainSection({
       <div className={styles.panel}>
         <Row
           testId="mykeys-brain"
-          label={<ProviderSelect value={provider} onChange={(p) => void onChangeProvider(p)} compact quiet exclude={NO_CHATGPT} />}
+          label={<ProviderSelect value={provider} onChange={(p) => void onChangeProvider(p)} compact exclude={NO_CHATGPT} />}
         >
           {editing ? (
             <span className={styles.editor}>
@@ -204,7 +204,7 @@ function BrainSection({
                   <span className={hasKey ? styles.mono : `${styles.mono} ${styles.warn}`}>
                     {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
                   </span>
-                  <Button kind="secondary" size="sm" onClick={() => setEditing(true)}>
+                  <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>
                     {hasKey ? t('Change key') : t('Add key')}
                   </Button>
                 </>

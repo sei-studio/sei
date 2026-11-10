@@ -1,9 +1,8 @@
-/* IconRail.module.css — the sidebar rail.
+/* IconRail.module.css — terminal sidebar rail (mockup ui.jsx .rail).
  *
- * Quiet register (product call 261110): no panel of its own, the pixel Sei
- * wordmark on top, muted icons that light to --text on hover. Selection (nav
- * and companion faces alike) is a 2px x 24px accent bar at the rail's left
- * edge; no rings, no outlines.
+ * 74px strip: muted icons that light to --text on hover and --accent when
+ * active, the active nav marked by a 2px left accent bar. Character avatars
+ * are circular with a resting line border and an accent ring when active.
  * The avatar cluster scrolls; its scrollbar is hidden so the rail reads as a
  * continuous vertical strip.
  *
@@ -12,13 +11,17 @@
 
 .rail {
   width: var(--rail-w);
-  /* The rail sits on the window's one flat background; no panel colour and
-     no edge line. */
-  background: transparent;
+  /* Flat --rail (no top-lightening gradient) so the rail and the top drag strip
+     read as one continuous chrome strip — see MacosWindow.module.css .dragStrip. */
+  background: var(--rail);
+  /* No visible right hairline — the content panel's own rounded border (App.tsx
+     main) draws the chrome/content edge, so the rail blends to its own color
+     here (a separate hairline would re-form the old square corner). */
+  border-right: 1px solid var(--rail);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 0 var(--space-lg);
+  padding: var(--space-md) 0;
   gap: var(--space-sm);
   flex-shrink: 0;
   min-height: 0;
@@ -32,14 +35,7 @@
    the image shows through the chrome, continuous with the top drag strip. */
 :root[data-app-bg] .rail {
   background: color-mix(in srgb, var(--rail) var(--app-bg-tint, 100%), transparent);
-}
-
-/* The pixel Sei wordmark at the top of the rail. */
-.wordmark {
-  flex-shrink: 0;
-  margin: var(--space-xs) 0 var(--space-lg);
-  pointer-events: none;
-  user-select: none;
+  border-right-color: transparent;
 }
 
 
@@ -71,10 +67,12 @@
   height: 0;
 }
 
-/* Space, not a line, between the nav and the companions. */
 .divider {
-  height: var(--space-md);
+  height: 1px;
+  width: 30px;
+  background: var(--rail-border);
   flex-shrink: 0;
+  margin: var(--space-sm) 0;
 }
 
 .spacer {
@@ -85,8 +83,8 @@
 /* ── Nav buttons (home / world / cloud / settings) ───────────────────── */
 .railButton {
   position: relative;
-  width: var(--control);
-  height: var(--control);
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
   background: transparent;
@@ -118,13 +116,13 @@
   color: var(--rail-fg-strong);
 }
 
-/* Selection: a 2px x 24px accent bar at the rail's left edge. */
+/* Active nav gets a 3px left bar (mockup .rail-btn.active::before). */
 .activeBar {
   position: absolute;
-  left: calc((var(--rail-w) - var(--control)) / -2);
-  top: calc((var(--control) - var(--space-lg)) / 2);
-  width: 2px;
-  height: var(--space-lg);
+  left: -15px;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
   background: var(--rail-accent);
   display: block;
 }
@@ -137,6 +135,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--rail-accent);
+  border: 1px solid var(--rail);
 }
 
 .muted {
@@ -169,15 +168,9 @@
   outline-offset: 2px;
 }
 
-/* Selected socket: the same accent bar as the nav. */
-.avatarActive::before {
-  content: '';
-  position: absolute;
-  left: calc((var(--rail-w) - 46px) / -2);
-  top: calc((46px - var(--space-lg)) / 2);
-  width: 2px;
-  height: var(--space-lg);
-  background: var(--rail-accent);
+/* Selected socket: accent double ring (mockup .socket.sel .face). */
+.avatarActive .avatarClip {
+  box-shadow: 0 0 0 2px var(--rail), 0 0 0 4px var(--rail-accent);
 }
 
 .avatarClip {
@@ -192,34 +185,34 @@
   /* Backing fill behind the avatar art. Transparent PNG portraits let this
    * show through, so it must be theme-aware: near-black in dark, white in
    * light (a hardcoded #000 left a dark hole in the light-mode rail). */
-  background: var(--step-1);
-  transition: opacity 0.2s ease;
+  background: var(--surface-2);
+  filter: saturate(0.9);
+  transition: box-shadow 0.2s ease;
 }
 
-/* Faces not on screen sit back a little; hover and the selected one are full. */
-.avatarButton:not(.avatarActive) .avatarClip {
-  opacity: 0.8;
-}
-.avatarButton:hover .avatarClip {
-  opacity: 1;
+/* The resting line sits UNDER the avatar art (product call 261110): an
+ * opaque portrait covers it edge to edge, so it reads as a clean square,
+ * while a transparent PNG still shows the line around it. */
+.avatarClip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--rail-border);
+  pointer-events: none;
 }
 
 .avatarClip > * {
   position: relative;
 }
 
-/* Summoned socket: a pulsing live dot on the face's corner (no ring). */
+/* Summoned socket: pulsing green ring (mockup .socket.summoned::after). */
 .avatarSummoned::after {
   content: '';
   position: absolute;
-  right: 1px;
-  bottom: 1px;
-  width: 10px;
-  height: 10px;
-  box-sizing: border-box;
-  border-radius: 50%;
-  background: var(--live);
-  border: 2px solid var(--bg);
+  inset: 2px;
+  border-radius: var(--radius);
+  border: 2px solid var(--green);
   animation: socket-pulse 2.6s var(--ease) infinite;
   pointer-events: none;
 }
@@ -255,8 +248,8 @@
   box-sizing: border-box;
   border-radius: var(--radius-sm);
   background: var(--rail-accent);
-  color: var(--accent-text);
-  border: 2px solid var(--bg);
+  color: var(--rail);
+  border: 2px solid var(--rail);
   display: grid;
   place-items: center;
   pointer-events: none;
@@ -277,13 +270,13 @@
   position: fixed;
   left: 84px;
   transform: translateY(-50%);
-  background: var(--step-2);
+  background: var(--surface-2);
   color: var(--text);
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
-  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  padding: 6px 10px;
   white-space: nowrap;
   pointer-events: none;
   z-index: 9999;
@@ -297,21 +290,23 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius);
-  border: 0;
-  background: var(--wash);
-  color: var(--rail-fg);
+  border: 1px solid rgb(var(--acc) / 0.4);
+  background: transparent;
+  color: rgb(var(--acc) / 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
   flex-shrink: 0;
 }
 
 .circleButton:hover {
-  color: var(--rail-fg-strong);
-  background: var(--wash-hi);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
 }
 
 .circleButton:focus-visible {
@@ -320,8 +315,8 @@
 }
 
 .circleActive {
-  color: var(--rail-fg-strong);
-  background: var(--wash-hi);
+  color: var(--rail-accent);
+  border-color: var(--rail-accent);
 }
 
 .roundIconWrap {

@@ -11,6 +11,7 @@
   display: flex;
   gap: 8px;
   padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
@@ -35,6 +36,7 @@
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 

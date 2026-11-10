@@ -337,6 +337,15 @@ function HomeGrid(): React.ReactElement {
 
   return (
     <div className={homeStyles.root}>
+      {nextStep && nextStepCharacter ? (
+        <HomeNextStepCard
+          step={nextStep}
+          name={nextStepCharacter.name}
+          portraitImage={nextStepCharacter.portrait_image}
+          theme={theme}
+          onDismiss={dismissNextStep}
+        />
+      ) : null}
       <section className={homeStyles.panels} aria-label={t('Party')}>
         {slotCharacters.map((c) => {
           const isPlaceholder = placeholderIds.has(c.id);
@@ -500,17 +509,6 @@ function HomeGrid(): React.ReactElement {
           );
         })}
       </section>
-      {/* Quiet register (261110): the Up next line is the status row under
-          the wall (the update window's progress-row slot), not a top bar. */}
-      {nextStep && nextStepCharacter ? (
-        <HomeNextStepCard
-          step={nextStep}
-          name={nextStepCharacter.name}
-          portraitImage={nextStepCharacter.portrait_image}
-          theme={theme}
-          onDismiss={dismissNextStep}
-        />
-      ) : null}
       {createLimit ? (
         <CreationLimitModal
           resetsAt={createLimit.resetsAt}

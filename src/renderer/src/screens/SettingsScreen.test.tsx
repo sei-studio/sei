@@ -168,7 +168,7 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
   it('A1.4: ProviderSelect is rendered compact on My keys, without the ChatGPT plan (its own tab)', () => {
     const src = readFileSync(MYKEYS_TSX, 'utf-8');
     expect(src.includes("from '../ProviderSelect'")).toBe(true);
-    expect(src.includes('compact quiet exclude={NO_CHATGPT}')).toBe(true);
+    expect(src.includes('compact exclude={NO_CHATGPT}')).toBe(true);
     expect(src.includes("const NO_CHATGPT: readonly Provider[] = ['chatgpt'];")).toBe(true);
   });
 

@@ -51,9 +51,9 @@
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   font-weight: 400;
-  line-height: var(--lh-meta);
+  line-height: 1.4;
   letter-spacing: normal;
   text-transform: none;
   padding: 8px 12px;
@@ -83,21 +83,4 @@
   .dot:focus-visible + .tip {
     opacity: 0;
   }
-}
-
-/* Inline mode (InfoTipInline, 261110): the help text as a line under the
- * label. flex-basis 100% drops it onto its own line inside a wrapping flex
- * label; display:block does the same in normal flow. */
-.inlineHelp {
-  display: block;
-  flex-basis: 100%;
-  margin-top: var(--space-xs);
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-meta);
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: normal;
-  white-space: normal;
 }

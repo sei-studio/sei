@@ -61,8 +61,8 @@ describe('splashHtml', () => {
       return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(',');
     };
     expect(GLOW_RGB).toBe(hex('art-ink'));
-    // The wide glow keeps #101a2e (the dark theme's --bg3 when it was chosen,
-    // 261108); the plain-background restore (261110) lifted --bg3 but not the splash.
+    // --bg3 is defined per theme; the glow uses the dark theme's value.
+    expect(tokens).toMatch(/--bg3:\s*#101a2e/i);
     expect(GLOW_WIDE_RGB).toBe('16,26,46');
     const html = splashHtml('AAAA', { status: 'Updating…', style: 'glow' });
     expect(html).not.toContain('background:rgba(');
@@ -73,7 +73,7 @@ describe('splashHtml', () => {
 
   it("uses Sei's light blue from the theme tokens, not a new color", () => {
     const tokens = readFileSync(resolve(ROOT, 'src/renderer/src/styles/tokens.css'), 'utf-8');
-    const rail = /--sei-light-blue:\s*#([0-9a-f]{6})/i.exec(tokens)?.[1];
+    const rail = /--rail:\s*#([0-9a-f]{6})/i.exec(tokens)?.[1];
     expect(rail).toBeTruthy();
     const rgb = [0, 2, 4].map((i) => parseInt(rail!.slice(i, i + 2), 16)).join(',');
     expect(SEI_LIGHT_BLUE_RGB).toBe(rgb);

@@ -1,9 +1,8 @@
 /* BrowseCard.module.css — World scouting card, v0.3 overlay style (260709).
  * Full-bleed 3:4 portrait with the name + creator overlaid on a bottom dark
- * gradient (no solid meta section below the art). Quiet register (261110,
- * pass 2): cards sit on the field with a small gap; hover stays the v0.3
- * portrait zoom, clipped by the card. Name at the title step, the rest at
- * the meta step. */
+ * gradient (no solid meta section below the art). Cards butt edge-to-edge in
+ * the World grid (gap 0), so hover feedback is the v0.3 portrait zoom rather
+ * than a lift that would split the seams. */
 
 .card {
   position: relative;
@@ -16,8 +15,8 @@
 }
 
 .card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
 }
 
 /* Portrait still streaming: hide the real content (it keeps layout AND the
@@ -38,26 +37,25 @@
 .skelArt {
   position: absolute;
   inset: 0;
-  background: var(--step-1);
+  background: var(--bg3);
 }
 
 .skelName,
 .skelBy {
   position: absolute;
-  left: var(--space-md-plus);
-  height: 16px;
+  left: 12px;
+  height: 12px;
   width: 60%;
-  background: var(--wash-hi);
-  border-radius: var(--radius-sm);
+  background: var(--border);
 }
 
 .skelName {
-  bottom: 40px;
+  bottom: 30px;
 }
 
 .skelBy {
-  bottom: var(--space-md-plus);
-  height: 10px;
+  bottom: 13px;
+  height: 8px;
   width: 40%;
 }
 
@@ -96,17 +94,17 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: var(--space-md) var(--space-md-plus) var(--space-md-plus);
+  padding: 10px 12px 11px;
   display: flex;
   flex-direction: column;
-  gap: var(--gap-tight);
+  gap: 2px;
   min-width: 0;
 }
 
 .nameRow {
   display: flex;
   align-items: baseline;
-  gap: var(--space-sm);
+  gap: 7px;
   min-width: 0;
   /* IdTag colors itself with --muted-2, which is too dim over the dark
    * gradient — lighten it locally (card overlay only). */
@@ -116,8 +114,7 @@
 .name {
   font-family: var(--display);
   font-weight: 600;
-  font-size: var(--fs-title);
-  line-height: var(--lh-title);
+  font-size: 16px;
   color: #fff;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
@@ -139,9 +136,7 @@
   min-width: 0;
   color: rgba(255, 255, 255, 0.72);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  line-height: var(--lh-meta);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

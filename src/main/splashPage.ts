@@ -26,7 +26,7 @@ export const SPLASH_STATUS_STYLE: SplashStatusStyle = 'glow';
 
 /** Sei's light blue: the light theme's chrome periwinkle (--rail / --elbow #7fb0ff in tokens.css). */
 export const SEI_LIGHT_BLUE_RGB = '127,176,255';
-/** Sei's near-black blues for the 'glow' style (product call 261108, "very dark almost black"): --art-ink (#0e1624) for the tight edge, #101a2e (the dark theme's --bg3 at the time) for the wide glow. */
+/** Sei's near-black blues for the 'glow' style (product call 261108, "very dark almost black"): --art-ink (#0e1624) for the tight edge, the dark theme's --bg3 (#101a2e) for the wide glow. */
 export const GLOW_RGB = '14,22,36';
 export const GLOW_WIDE_RGB = '16,26,46';
 

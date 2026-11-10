@@ -615,7 +615,7 @@ export function EditCharacterModal({
                           (it gates sign-in itself). 261110: labelled Versions,
                           since a user-made companion's image is an upload and
                           the popup offers no Regenerate for one. */}
-                      <Button kind="secondary" size="md" onClick={() => setPortraitVersionsOpen(true)}>
+                      <Button kind="ghost" size="sm" onClick={() => setPortraitVersionsOpen(true)}>
                         {t('Versions')}
                       </Button>
                     </div>

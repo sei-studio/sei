@@ -2472,9 +2472,6 @@ export const PT_BR: Record<string, string> = {
   // profile v2 section menu (product call 261110)
   "More": "Mais",
   "by {name}": "por {name}",
-  "Today": "Hoje",
-  "Yesterday": "Ontem",
-  "Settings sections": "Seções das configurações",
   // ── playtime 261110 ──
   "Playtime": "Tempo de jogo",
   "My keys": "Minhas chaves",

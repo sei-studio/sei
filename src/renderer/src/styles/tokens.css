@@ -25,20 +25,6 @@
  *   Corners    --radius (chrome: buttons, fields, cards, popups)
  *              --radius-sm (small controls: chips, tags, icon buttons)
  *   Motion     --ease --ease-pop --flux (motion multiplier) --scan (scanline α)
- *
- * "Quiet" register (product call 261110, the Windows update window's look):
- *   Type       --fs-display 44 / --fs-title 26 / --fs-body 18 / --fs-meta 15.
- *              Four sizes. Oswald for display + title, Rajdhani for body + meta,
- *              mono only for codes and IDs.
- *   Fill steps --step-1 (the ONE raised surface: rows, inputs, cards)
- *              --step-2 (pressed / selected inside step-1)
- *              --wash / --wash-hi (quiet button + seg fills over any surface)
- *              --track (toggle-off track, slider track)
- *              No 1px border lines between things: a 2px gap that shows the
- *              field, or a fill step.
- *   Controls   --control-lg 56 (composer) / --control 48 / --control-sm 40 /
- *              --control-xs 32 (dense rows)
- *   Status     --live (online dot; idle is --muted)
  */
 
 :root {
@@ -84,28 +70,6 @@
   --page-top: var(--space-lg);
   --page-gutter: var(--space-xl);
 
-  /* ── Quiet register (product call 261110) ────────────────────
-   * Four type sizes, all large for the window (the update window's
-   * 31 / 16.5 / 15.5 / 13.5 scaled to the app). Pick the step, never a
-   * literal size, in new or swept CSS. */
-  --fs-display: 44px;   /* page titles, names on art */
-  --fs-title: 26px;     /* group titles, the Up next line, chat name, modal titles */
-  --fs-body: 18px;      /* messages, row labels, descriptions, buttons */
-  --fs-meta: 15px;      /* eyebrows, timestamps, helper lines, status */
-  --lh-display: 1.05;
-  --lh-title: 1.2;
-  --lh-body: 1.45;
-  --lh-meta: 1.35;
-  --space-2xl-plus: 48px;
-  --space-4xl: 64px;
-  /* Control heights: 48 default, 40 small, 56 the composer, 32 dense. */
-  --control-lg: 56px;
-  --control: 48px;
-  --control-sm: 40px;
-  --control-xs: 32px;
-  /* Page inset from the rail on swept screens. */
-  --page-inset: var(--space-2xl-plus);
-
   /* ── Corner radius ───────────────────────────────────────────
    * 2px (261103, picked over 0 and 4): sharp-ish, not severe. Was 0
    * (D-28). Every rectangular piece of chrome reads these, never a literal:
@@ -133,14 +97,6 @@
 
   /* ── Layout ───────────────────────────────────────────────── */
   --rail-w: 74px;
-  /* The reading column cap: chat messages, the Settings column (261110). */
-  --measure-col: 780px;
-  /* The Settings section menu column (261110). */
-  --nav-w: 220px;
-
-  /* Sei's light blue, the brand periwinkle (the ice chrome until 261110;
-     the splash page's pill reads it). Not a surface colour. */
-  --sei-light-blue: #7fb0ff;
 
   /* ── Typography stacks (mockup: Oswald + Rajdhani + JetBrains Mono) ── */
   --display: 'Oswald', 'Noto Sans', system-ui, sans-serif;
@@ -154,10 +110,9 @@
   /*
    * ── ICE theme (light) — "Nurture sky" ─────────────────────────
    * Pastel skies + technology (Porter Robinson's Nurture, visualized): a
-   * cloud-white field. (Until 261110 the IconRail and top strip were a solid
-   * #7FB0FF inverted-L; the quiet register makes the window one surface, so
-   * the on-rail tokens below now map to the neutral text ramp.) A fresh
-   * spring-green complements the periwinkle on status accents. Sharp
+   * cloud-white field with a periwinkle #7FB0FF chrome. The IconRail AND the
+   * shared top strip are a solid #7FB0FF inverted-L framing offwhite content;
+   * a fresh spring-green complements the periwinkle on status accents. Sharp
    * edges, condensed Oswald display, mono labels. Default when the OS / user
    * prefers light; dark is the hero.
    *
@@ -178,17 +133,17 @@
   --desktop: #dce9fb;         /* soft sky the window floats on */
   --surface: #f3f8ff;
   --surface-2: #ffffff;
-  --rail: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --rail: #7fb0ff;            /* the periwinkle chrome (rail + top strip) */
   --rail-active: #e3edfb;   /* soft sky chip fill (NOT the rail's own hover — see --rail-hover) */
-  --elbow: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --elbow: #7fb0ff;         /* rounded content-corner backdrop — chrome blue in light */
   --heading: #7fb0ff;       /* thematic periwinkle for screen titles (Companions/World/…); body stays --text */
 
   /* On-rail foregrounds — content that sits on the #7FB0FF chrome. */
-  --rail-fg: var(--muted);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-fg-strong: var(--text);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-accent: var(--accent);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-border: var(--border-strong);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-hover: var(--wash);  /* quiet 261110: one surface, no coloured chrome */
+  --rail-fg: rgba(255, 255, 255, 0.80);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
 
   /* Card portrait backing (cloud-white mirror of --card-top/--card-bottom). */
   --card-top: #ffffff;
@@ -246,14 +201,6 @@
   --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
   --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
   --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
-  /* Quiet register fills (261110). Light: the raised step is the white
-     card on the tinted field; washes are the text colour at low alpha. */
-  --step-1: #ffffff;
-  --step-2: #e7f0fd;
-  --wash: color-mix(in srgb, var(--text) 6%, transparent);
-  --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
-  --track: color-mix(in srgb, var(--text) 16%, transparent);
-  --live: var(--green);
 }
 
 /* Explicit ice selector mirrors :root so applyTheme('ice') is unambiguous. */
@@ -266,15 +213,15 @@
   --desktop: #dce9fb;
   --surface: #f3f8ff;
   --surface-2: #ffffff;
-  --rail: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --rail: #7fb0ff;
   --rail-active: #e3edfb;   /* soft sky chip fill (NOT the rail's own hover — see --rail-hover) */
-  --elbow: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --elbow: #7fb0ff;         /* rounded content-corner backdrop — chrome blue in light */
   --heading: #7fb0ff;       /* thematic periwinkle for screen titles (Companions/World/…); body stays --text */
-  --rail-fg: var(--muted);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-fg-strong: var(--text);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-accent: var(--accent);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-border: var(--border-strong);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-hover: var(--wash);  /* quiet 261110: one surface, no coloured chrome */
+  --rail-fg: rgba(255, 255, 255, 0.80);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
   --card-top: #ffffff;
   --card-bottom: #eaf3ff;
   --art-fg: #ffffff;
@@ -301,14 +248,6 @@
   --shadow-window: 0 0 0 1px rgba(34, 60, 110, .08), 0 24px 60px rgba(34, 60, 110, .18), 0 4px 16px rgba(34, 60, 110, .07);
   --shadow-card: 0 1px 2px rgba(34, 60, 110, .05), 0 4px 12px rgba(34, 60, 110, .06);
   --shadow-pop: 0 12px 32px rgba(34, 60, 110, .12);
-  /* Quiet register fills (261110). Light: the raised step is the white
-     card on the tinted field; washes are the text colour at low alpha. */
-  --step-1: #ffffff;
-  --step-2: #e7f0fd;
-  --wash: color-mix(in srgb, var(--text) 6%, transparent);
-  --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
-  --track: color-mix(in srgb, var(--text) 16%, transparent);
-  --live: var(--green);
 }
 
 /*
@@ -316,21 +255,22 @@
  *   bg #09090b · txt #e9e7e1 · accent periwinkle #7FB0FF · sharp · overlays.
  */
 :root[data-theme="midnight"] {
-  /* Navy ramp in the hue of the periwinkle accent. Plain background (product
-     call 261110): back to the tones from before the 260707 darkening, so the
-     flat page reads a little lifted instead of near-black. */
-  --bg: #070c17;
-  --bg2: #0c1426;
-  --bg3: #142138;
-  --bg4: #1d2c49;
+  /* ── TEMP: dark-blue background experiment (hue of the #7fb0ff accent) ──
+     Navy ramp swapped in for the original near-blacks. To REVERT, restore each
+     value from the trailing comment (the /* was: … *​/ originals) and delete
+     this block header. */
+  --bg: #04070f;        /* very dark blue (darkened) */
+  --bg2: #080f1d;       /* very dark blue (darkened) */
+  --bg3: #101a2e;       /* very dark blue (darkened) */
+  --bg4: #18263f;       /* very dark blue (darkened) */
 
   /* App surface is a single very-dark-blue --bg; there is no lighter "window"
-     tone. Surfaces step up slightly so cards/inputs read against the page. */
-  --window: #070c17;
-  --desktop: #04070f;   /* deepest: what the window floats on */
-  --surface: #0c1426;
-  --surface-2: #142138;
-  --rail: #070c17;      /* one surface with --bg (the rail is transparent) */
+     tone. Surfaces step up slightly so cards/inputs read against the field. */
+  --window: #04070f;    /* very dark blue (darkened) */
+  --desktop: #02040a;   /* deepest — the field the window floats on (darkened) */
+  --surface: #080f1d;   /* very dark blue (darkened) */
+  --surface-2: #101a2e; /* very dark blue (darkened) */
+  --rail: #04070f;      /* very dark blue (darkened) */
   --rail-active: rgba(255, 255, 255, 0.045);
   /* Rounded content-corner backdrop — matches the chrome; the panel's own
      rounded border (App.tsx main) is what defines the corner. */
@@ -352,13 +292,13 @@
   --card-bottom: #0d1423;  /* was: #08080a */
 
   /* Home-wall names keep the normal light body text on the dark theme. */
-  --art-fg: #f4f2ec;
+  --art-fg: #e9e7e1;
   --art-ink: #04070f;
 
-  --text: #f4f2ec;     /* quiet 261110: the update window text (was #e9e7e1) */
-  --text-2: #c6cee0;   /* (was #a8a6a0) */
-  --muted: #8a93a8;    /* (was #82807a) */
-  --muted-2: #5a6276;  /* (was #56544e) */
+  --text: #e9e7e1;
+  --text-2: #a8a6a0;
+  --muted: #82807a;
+  --muted-2: #56544e;
 
   /* 261027 (product feedback: "making all of the light blue brighter in dark theme",
      then "do the middle one"): halfway between the 260929 periwinkle
@@ -373,7 +313,7 @@
   /* Text/icon on an accent fill — the mockup hardcodes #1a1206 on the CTA
      regardless of accent hue; near-black on the periwinkle fill (white
      would be 2.5:1). */
-  --accent-text: #0b1222;  /* quiet 261110: navy ink on the blue (was #1a1206, read brown-black) */
+  --accent-text: #1a1206;
   --acc: 118 166 240;
   --acc-c: rgb(var(--acc));
   /* PlanButton fill: midnight's plan buttons follow the brighter global
@@ -397,14 +337,6 @@
   --shadow-window: 0 0 0 1px rgba(0, 0, 0, .5), 0 24px 60px rgba(0, 0, 0, .55), 0 4px 16px rgba(0, 0, 0, .35);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .25), 0 18px 40px -16px rgba(0, 0, 0, .80);
   --shadow-pop: 0 18px 40px -8px rgba(0, 0, 0, .70);
-  /* Quiet register fills (261110): the update window's midnight, kept the
-     same step above the restored --bg (were #0a111f / #121b2d over #04070f). */
-  --step-1: #0d1627;
-  --step-2: #152035;
-  --wash: rgba(255, 255, 255, 0.06);
-  --wash-hi: rgba(255, 255, 255, 0.11);
-  --track: rgba(255, 255, 255, 0.12);
-  --live: #3ecf8e;
 }
 
 /*
@@ -421,15 +353,15 @@
   --desktop: #ece0cc;
   --surface: #f8f3ea;
   --surface-2: #fffbf4;
-  --rail: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --rail: #ad8a63;          /* acorn-brown chrome (rail + top strip) */
   --rail-active: #f3e9da;
-  --elbow: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --elbow: #ad8a63;
   --heading: #a07d55;
-  --rail-fg: var(--muted);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-fg-strong: var(--text);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-accent: var(--accent);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-border: var(--border-strong);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-hover: var(--wash);  /* quiet 261110: one surface, no coloured chrome */
+  --rail-fg: rgba(255, 255, 255, 0.82);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
   --card-top: #fffbf4;
   --card-bottom: #f3e9d8;
   --art-fg: #f9f1e2;      /* warm offwhite of the acorn cream, not pure white */
@@ -461,14 +393,6 @@
   --shadow-window: 0 0 0 1px rgba(90, 66, 34, .08), 0 24px 60px rgba(90, 66, 34, .18), 0 4px 16px rgba(90, 66, 34, .07);
   --shadow-card: 0 1px 2px rgba(90, 66, 34, .05), 0 4px 12px rgba(90, 66, 34, .06);
   --shadow-pop: 0 12px 32px rgba(90, 66, 34, .12);
-  /* Quiet register fills (261110). Light: the raised step is the white
-     card on the tinted field; washes are the text colour at low alpha. */
-  --step-1: #fffbf4;
-  --step-2: #f0e6d5;
-  --wash: color-mix(in srgb, var(--text) 6%, transparent);
-  --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
-  --track: color-mix(in srgb, var(--text) 16%, transparent);
-  --live: var(--green);
 }
 
 /*
@@ -485,15 +409,15 @@
   --desktop: #d8ecdf;
   --surface: #eff8f2;
   --surface-2: #ffffff;
-  --rail: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --rail: #57b47c;          /* mint-green chrome (rail + top strip) */
   --rail-active: #e2f2e8;
-  --elbow: var(--bg);  /* quiet 261110: one surface, no coloured chrome */
+  --elbow: #57b47c;
   --heading: #3f9c66;
-  --rail-fg: var(--muted);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-fg-strong: var(--text);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-accent: var(--accent);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-border: var(--border-strong);  /* quiet 261110: one surface, no coloured chrome */
-  --rail-hover: var(--wash);  /* quiet 261110: one surface, no coloured chrome */
+  --rail-fg: rgba(255, 255, 255, 0.82);
+  --rail-fg-strong: #ffffff;
+  --rail-accent: #ffffff;
+  --rail-border: rgba(255, 255, 255, 0.30);
+  --rail-hover: rgba(255, 255, 255, 0.16);
   --card-top: #ffffff;
   --card-bottom: #e6f4eb;
   --art-fg: #edf9f1;      /* minty offwhite, not pure white */
@@ -523,14 +447,6 @@
   --shadow-window: 0 0 0 1px rgba(28, 74, 48, .08), 0 24px 60px rgba(28, 74, 48, .18), 0 4px 16px rgba(28, 74, 48, .07);
   --shadow-card: 0 1px 2px rgba(28, 74, 48, .05), 0 4px 12px rgba(28, 74, 48, .06);
   --shadow-pop: 0 12px 32px rgba(28, 74, 48, .12);
-  /* Quiet register fills (261110). Light: the raised step is the white
-     card on the tinted field; washes are the text colour at low alpha. */
-  --step-1: #ffffff;
-  --step-2: #e0f0e6;
-  --wash: color-mix(in srgb, var(--text) 6%, transparent);
-  --wash-hi: color-mix(in srgb, var(--text) 11%, transparent);
-  --track: color-mix(in srgb, var(--text) 16%, transparent);
-  --live: var(--green);
 }
 
 /* ── Japanese and Chinese UI type (261104) ────────────────────────────

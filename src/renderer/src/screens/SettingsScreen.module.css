@@ -1,80 +1,57 @@
-/* SettingsScreen.module.css — Settings.
- * Quiet register (product call 261110): a left section menu
- * (SettingsSectionNav) beside a 760px column of groups. Each group is an
- * Oswald title over rows; rows are --step-1 fills 2px apart (the field shows
- * through the gap), never hairlines. Labels are body size with their help
- * line under them (InfoTipInline). Seg + Toggle primitives own their own CSS.
+/* SettingsScreen.module.css — "Party" restyle.
+ * Centered 780px column, Oswald group headers (sentence case), label|value|control
+ * rows with hairline bottom borders. Seg + Toggle primitives own their own CSS.
+ * Source: docs/design/UI-REDESIGN-PARTY.md §4.7; mockup .set-col / .set-row.
  */
 
-/* Scroll body: the section menu (sticky) and the column, side by side. */
+/* Scroll body — fills the surface; the column centers within it. */
 .root {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-4xl);
-  padding: var(--space-2xl-plus) var(--space-2xl-plus) var(--space-4xl) var(--space-4xl);
+  padding: var(--page-top) 0 var(--space-2xl);
 }
 
 .col {
-  flex: 1;
-  min-width: 0;
-  max-width: var(--measure-col);
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 var(--page-gutter);
   display: flex;
   flex-direction: column;
 }
 
-/* Narrow window: the menu goes, the column takes the width. */
-@media (max-width: 980px) {
-  .root > nav {
-    display: none;
-  }
-  .root {
-    padding: var(--space-xl) var(--space-lg) var(--space-2xl);
-  }
-  .col {
-    margin: 0 auto;
-  }
-}
-
-/* Groups are page sections, 44px apart (261110). */
+/* 261103 spacing pass: groups are page sections, one --gap-section apart
+   (was 4 above + 24 below, so a group's title sat nearer the previous
+   group than the T262 explore's rhythm). Title to first row stays a group
+   step (4 + the row's 12). */
 .group {
-  padding: 0 0 calc(var(--space-2xl) + var(--space-xs));
+  padding: 0 0 var(--gap-section);
 }
 
 .groupTitle {
   font-family: var(--display);
   font-weight: 600;
-  font-size: var(--fs-title);
-  line-height: var(--lh-title);
-  color: var(--text);
-  margin: 0 0 var(--space-md-plus);
-  /* The section menu scrolls a title to the top with a little air above. */
-  scroll-margin-top: var(--space-lg);
+  font-size: 16px;
+  color: var(--text-2);
+  margin: 0 0 var(--space-xs);
 }
 
-/* label | (value) | control. A raised fill, 2px from its neighbours. */
+/* label | (value) | control */
 .row {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
-  min-height: calc(var(--space-4xl) + var(--space-md));
-  box-sizing: border-box;
-  padding: var(--space-md) var(--space-lg);
-  margin-bottom: 2px;
-  background: var(--step-1);
-  border-radius: var(--radius);
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
 }
 
-/* Profile portrait + name field, one raised row like the others. */
+/* Profile portrait + name field — taller for the avatar; no hairline, the
+   group is a single row so a rule under it reads as clutter (260907). */
 .profileRow {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
-  padding: var(--space-md-plus) var(--space-lg);
-  background: var(--step-1);
-  border-radius: var(--radius);
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
 }
 
 .profileName {
@@ -82,18 +59,14 @@
   min-width: 0;
 }
 
-/* The label wraps so an inline help line (InfoTipInline) drops under it. */
 .label {
   flex: 1;
   min-width: 0;
   display: inline-flex;
-  flex-wrap: wrap;
   align-items: center;
-  column-gap: var(--space-sm);
+  gap: var(--space-xs);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: 14px;
   color: var(--text);
 }
 
@@ -101,22 +74,15 @@
    voice picker's. */
 .langSelect {
   flex: 0 0 auto;
-  min-width: 180px;
-  height: var(--control-sm);
-  padding: 0 var(--space-md);
+  min-width: 160px;
+  padding: 6px var(--space-md);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 600;
-  background: var(--wash);
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
   color: var(--text);
-  border: 0;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   cursor: pointer;
-}
-
-.langSelect option {
-  background: var(--bg2);
-  color: var(--text);
 }
 
 .langSelect:focus-visible {
@@ -126,14 +92,14 @@
 
 .value {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-size: 13px;
   color: var(--muted);
 }
 
 .monoValue {
   font-family: var(--mono);
-  font-size: var(--fs-meta);
+  font-size: 13px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -157,18 +123,16 @@
    No border — they belong to the row above. */
 .helper {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
   color: var(--muted);
-  margin: var(--space-sm) 0 var(--space-sm);
-  padding: 0 var(--space-lg);
+  margin: var(--space-xs) 0 0;
 }
 
 /* 261103: inline confirm that opens under a row (Experimental updates ON).
    The row drops its hairline so the confirm reads as part of it; the confirm
    carries the hairline instead. Text left, actions right. */
 .rowOpen {
-  margin-bottom: 0;
+  border-bottom: none;
 }
 
 .inlineConfirm {
@@ -187,7 +151,7 @@
   min-width: 0;
   margin: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text);
 }
 
@@ -229,13 +193,13 @@
 
 .statusInline {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--text-2);
 }
 
 .errorRow {
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--red);
   padding: var(--space-xs) 0;
 }
@@ -279,18 +243,17 @@
 .slider {
   -webkit-appearance: none;
   appearance: none;
-  width: 200px;
-  height: 4px;
-  background: var(--track);
-  border-radius: var(--radius-sm);
+  width: 180px;
+  height: 2px;
+  background: var(--border-strong);
   outline: none;
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   background: var(--accent);
   border: none;
   cursor: pointer;
@@ -320,8 +283,8 @@
   border-radius: var(--radius-sm);
 }
 .copyBtn:hover {
-  color: var(--text);
-  background: var(--wash);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .copyBtn:focus-visible {
   outline: 1.5px solid var(--accent);
@@ -348,7 +311,8 @@
 .modelList {
   max-height: 240px;
   overflow-y: auto;
-  background: var(--step-2);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   margin-top: var(--space-xs);
   border-radius: var(--radius);
 }
@@ -362,14 +326,19 @@
   gap: var(--space-md);
   width: 100%;
   border: none;
+  border-bottom: 1px solid var(--border);
   background: transparent;
   padding: var(--space-sm) var(--space-md);
   text-align: left;
   cursor: pointer;
 }
 
+.modelRow:last-child {
+  border-bottom: none;
+}
+
 .modelRow:hover {
-  background: var(--wash);
+  background: var(--accent-soft);
 }
 
 .modelRowOn {
@@ -381,9 +350,10 @@
 }
 
 .modelMark {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--red);
   white-space: nowrap;
 }
@@ -403,6 +373,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  border-right: 1px solid var(--border);
   padding: var(--space-xs) var(--space-md) var(--space-xs) 0;
   position: sticky;
   top: 0;
@@ -417,7 +388,7 @@
   padding: var(--space-sm) var(--space-md);
   text-align: left;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
@@ -431,6 +402,7 @@
 .gamesNavItemOn {
   color: var(--text);
   border-left-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .gamesNavItem:focus-visible,
@@ -443,10 +415,11 @@
   min-width: 0;
 }
 
-/* 261023: the break between the games and the non-game tabs (Web search):
-   space, not a line (261110). */
+/* 261023: the thin rule between the games and the non-game tabs (Web search). */
 .gamesNavRule {
-  height: var(--space-sm);
+  height: 1px;
+  margin: var(--space-xs) var(--space-md);
+  background: var(--border);
 }
 
 @media (max-width: 560px) {
@@ -456,6 +429,8 @@
   .gamesNav {
     flex-direction: row;
     flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
     padding: 0 0 var(--space-xs);
     position: static;
   }
@@ -468,7 +443,8 @@
     border-bottom-color: var(--accent);
   }
   .gamesNavRule {
-    width: var(--space-sm);
+    width: 1px;
     height: auto;
+    margin: var(--space-xs) var(--space-xs);
   }
 }

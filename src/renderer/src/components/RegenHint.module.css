@@ -22,10 +22,9 @@
   max-width: 260px;
   box-sizing: border-box;
   padding: var(--space-sm) var(--space-sm) var(--space-md) var(--space-md);
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  /* An opaque fill step (a popover over content), no frame line (261110). */
-  background: var(--step-2);
+  background: var(--surface-2);
   box-shadow: var(--shadow-pop);
   text-align: left;
   z-index: 45;
@@ -61,6 +60,8 @@
   margin-top: -5px;
   transform: rotate(45deg);
   background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .row {
@@ -81,9 +82,9 @@
   min-width: 0;
   margin: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   font-weight: 700;
-  line-height: var(--lh-meta);
+  line-height: 1.3;
   color: var(--text);
 }
 
@@ -126,7 +127,7 @@
   background: var(--accent);
   color: var(--accent-text);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
   transition: background 140ms var(--ease);
@@ -164,6 +165,8 @@
   margin-bottom: -5px;
   border-right: 0;
   border-bottom: 0;
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
 }
 
 @media (prefers-reduced-motion: reduce) {

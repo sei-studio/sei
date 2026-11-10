@@ -20,10 +20,6 @@ body,
 
 body {
   font-family: var(--sans);
-  /* Quiet register (261110): body copy is the 18px step, Rajdhani 500.
-     Components still set their own sizes; this is what un-styled text gets. */
-  font-size: var(--fs-body);
-  font-weight: 500;
   background: var(--desktop);
   color: var(--text);
   transition: background 240ms ease, color 240ms ease;
@@ -130,7 +126,7 @@ input[type='range'] {
 
 input[type='range']::-webkit-slider-runnable-track {
   height: 2px;
-  background: var(--track);
+  background: var(--border-strong);
 }
 
 input[type='range']::-webkit-slider-thumb {
@@ -169,7 +165,7 @@ input[type='range']:disabled {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--wash-hi);
+  background: var(--border-strong);
   border-radius: var(--radius-sm);
 }
 
@@ -187,10 +183,9 @@ input[type='range']:disabled {
 /* Mono micro-label — the workhorse caption (mockup .label). Regular case,
  * quiet tracking; write labels in sentence case, the class no longer shouts. */
 .u-lbl {
-  /* Quiet register (261110): no mono labels; the meta step instead. */
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -224,6 +219,57 @@ input[type='range']:disabled {
 .u-brk.bl { bottom: 0; left: 0; border-bottom: 1.5px solid; border-left: 1.5px solid; }
 .u-brk.br { bottom: 0; right: 0; border-bottom: 1.5px solid; border-right: 1.5px solid; }
 
+/* ─────────────────────────────────────────────────────────────────────
+ * HUD overlay layers — mounted once by MacosWindow above all content.
+ * pointer-events:none throughout so they never intercept input.
+ *
+ * The mockup ships only TWO atmosphere layers: a faint film grain and a soft
+ * vignette. Its scanline layer is disabled (--scan:0) and its accent "sweep"
+ * band is `display:none` — both are intentionally absent here too (they read
+ * as a distracting moving scan over the UI).
+ * ───────────────────────────────────────────────────────────────────── */
+.hud-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.hud-grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-scheme="dark"] .hud-grain {
+  opacity: 0.04;
+}
+
+.hud-vignette {
+  position: absolute;
+  /* Confine the vignette to the content panel so it never darkens the chrome
+     (top bar + IconRail). The chrome stays a flat, uniform --rail fill so the
+     two strips read as one continuous background, while the vignette belongs to
+     the overlaid content. Top inset = drag-strip height (34px); left inset =
+     rail width. (When the rail is hidden — onboarding/auth — the 74px left
+     inset is visually negligible: the vignette only darkens past 55% radius.) */
+  top: 34px;
+  left: var(--rail-w);
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  /* Vignette darkening removed — no dark gradient at the bottom of the content
+     panel (grain overlay is kept for texture). */
+  background: none;
+}
+
+:root[data-scheme="dark"] .hud-vignette {
+  background: none;
+}
+
 /* ── Fast tooltip (data-tip) ─────────────────────────────────────────────
  * Native `title` tooltips take ~1.5s to appear. This CSS tooltip shows on a
  * short standard delay (~300ms). Add `data-tip="Label"` to any element (keep
@@ -239,19 +285,16 @@ input[type='range']:disabled {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* Quiet register (261110): a fill step, no frame; the meta type step. */
-  background: var(--step-2);
+  background: var(--surface-2);
   color: var(--text);
-  border: 0;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  letter-spacing: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   line-height: 1;
-  padding: 7px 10px;
+  padding: 5px 7px;
   /* display:none at rest — an invisible (opacity:0) tooltip box still counts
    * toward ancestors' scrollable overflow, so tooltips hanging off elements
    * near a pane edge (e.g. the chat header's right-side icon buttons) grew a

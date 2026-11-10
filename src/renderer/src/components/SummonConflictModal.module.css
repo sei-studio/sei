@@ -2,22 +2,22 @@
  * Scrim + panel + title come from ModalShell; this styles the copy only. */
 
 .body {
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
 
 .username {
   font-family: var(--mono);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   letter-spacing: 0.04em;
   color: var(--accent);
 }
 
 .hint {
-  font-size: var(--fs-meta);
-  line-height: var(--lh-meta);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--muted);
   margin: 0;
 }

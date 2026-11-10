@@ -133,7 +133,8 @@
   cursor: pointer;
   color: inherit;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
   opacity: 0.6;
 }
 .langItem:hover {
@@ -440,12 +441,12 @@
 
 /* FLAT rule (260729, replaced the brief neumorphic pass): no shadows, no
    depth illusion anywhere. Every window and button is a flat grainy
-   translucent white; fields are the same surface. Quiet register (261110):
-   no hairline borders, a picked pill reads by its brighter fill alone. */
+   translucent white defined by a single hairline white border; fields are
+   the same surface without the border. */
 
 .pill {
   appearance: none;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.6);
   border-radius: 14px;
   padding: 10px 24px;
   background-color: rgba(255, 255, 255, 0.42);
@@ -476,22 +477,22 @@
   text-align: center;
 }
 
-.pillPicked,
-.pillPicked:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.85);
+.pillPicked {
+  background-color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.95);
 }
 
 .rankBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   margin-right: 8px;
   border-radius: 50%;
   background: #23283a;
   color: #ffffff;
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .quietLink {
@@ -565,17 +566,6 @@
   transition: transform 120ms ease;
 }
 
-/* Picked marker: a short white bar under the tile (selection is a bar, never
-   a ring). Every tile reserves the bar's space so picking does not shift. */
-.artTile::after {
-  content: '';
-  width: 40%;
-  height: 3px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: transparent;
-}
-
 .artTile:hover {
   transform: translateY(-2px) scale(1.04);
 }
@@ -584,6 +574,7 @@
   display: flex;
   border-radius: 14px;
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 /* 260731: down from 58x78 so the five tiles still fit one row inside the
@@ -597,9 +588,12 @@
 
 /* Selected art style. The first-run flow never needed one (nothing is
    prefilled there), but the in-app retake opens on the player's stored answer
-   and has to show it. Quiet register: the white bar under the tile (above). */
-.artTilePicked::after {
-  background: #ffffff;
+   and has to show it. A flat outline ring, not a shadow: the FLAT rule above
+   holds here too, and an outline is the one ring that costs no layout. */
+.artTilePicked .artImgs {
+  border-color: #ffffff;
+  outline: 3px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
 }
 
 /* ── Panels (sign-in / local setup / progress) ─────────────────────────── */
@@ -621,6 +615,7 @@
   flex-direction: column;
   gap: 13px;
   align-items: stretch;
+  border: 1px solid rgba(255, 255, 255, 0.55);
   animation: panelIn 500ms ease both;
   z-index: 20;
 }
@@ -652,7 +647,7 @@
 .panelNote {
   margin: 0;
   color: #ffffff;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   text-align: center;
   opacity: 0.85;
@@ -690,15 +685,6 @@
   background-color: rgba(255, 255, 255, 0.55);
 }
 
-/* CodeInput paints focus and invalid as an inset underline box-shadow (quiet
-   register). The frosted panel shows focus by fill and errors by text, so
-   clear it. Three classes beat CodeInput's `.invalid .cell` (two) outright;
-   the row carries both .codeRow and .invalid. */
-.codeRow .codeCell.codeCell,
-.codeRow .codeCell.codeCell:focus {
-  box-shadow: none;
-}
-
 .panelLink {
   color: #ffffff;
   text-decoration: underline;
@@ -710,7 +696,7 @@
   background: rgba(255, 255, 255, 0.75);
   border-radius: 10px;
   padding: 6px 10px;
-  font-size: 15px;
+  font-size: 14px;
   text-align: center;
 }
 
@@ -725,7 +711,7 @@
   background-color: rgba(255, 255, 255, 0.38);
   color: #23283a;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
 }
 
@@ -746,7 +732,7 @@
   background-color: rgba(255, 255, 255, 0.38);
   color: #23283a;
   font-family: inherit;
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 500;
   flex: 1;
   min-width: 0;
@@ -808,7 +794,7 @@
   gap: 8px;
   align-items: flex-start;
   color: #ffffff;
-  font-size: 15px;
+  font-size: 14px;
   text-shadow: 0 1px 6px rgba(35, 40, 58, 0.35);
   cursor: pointer;
 }

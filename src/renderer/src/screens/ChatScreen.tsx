@@ -11,13 +11,10 @@
  * the game down over the chat; its bottom-right "x" is the unified end
  * control.
  *
- * Quiet register (product call 261110): the old right-hand presence panel is
- * gone. Play / Disconnect live in the header (ChatTopBar), Call sits next to
- * the composer, the one-time games notice is a one-line NoticeLine above it,
- * and the companion's portrait is ambient art at the right edge of a wide
- * window (behind nothing that is text). Messages are body size in a capped
- * column; timestamps are HH:MM with the full date on hover, and day labels
- * say Today / Yesterday. A companion author name opens their profile.
+ * Party redesign (§4.5): the header name toggles a collapsible 260px presence
+ * side panel (portrait art + kind + Presence line + live action verb + an action
+ * stack). Clicking a message author's name swaps the panel between the companion
+ * card and the "You" (user) card; clicking the same author again closes it.
  *
  * Per-message hover affordances (copy / reply). Reply quotes the message: the
  * quote shows as a line above the composer and is prepended to the outgoing
@@ -50,8 +47,14 @@ import { sei } from '../lib/ipcClient';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
+import { useDominantColor } from '../lib/useDominantColor';
+import { presenceOf, useMinuteTick } from '../lib/presence';
+import { actionVerb } from '../lib/actionVerb';
+import { connectingLabel } from '../lib/summonProgress';
 import { readGameLayout, writeGameLayout } from '../lib/gameLayoutPref';
 import { PixelPortrait } from '../components/PixelPortrait';
+import { Presence } from '../components/Presence';
+import { Button } from '../components/Button';
 import {
   GamepadIcon,
   UserIcon,
@@ -60,13 +63,12 @@ import {
   CopyIcon,
   ReplyIcon,
 } from '../components/icons';
+import { IdTag } from '../components/IdTag';
 import { CHAT_TEXT_MAX, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
 import { ClipCard } from '../components/backseat/ClipCard';
 import { FirstMomentCard } from '../components/FirstMomentCard';
 import { ChatgptPlanBadge } from '../components/ChatgptPlanBadge';
-import { NoticeLine } from '../components/NoticeLine';
-import { retireGamesTip, useGamesTipVisible } from '../lib/useGamesTip';
 import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
 import styles from './ChatScreen.module.css';
@@ -74,6 +76,9 @@ import styles from './ChatScreen.module.css';
 export interface ChatScreenProps {
   characterId: string;
 }
+
+/** Which resident the presence side panel is showing. */
+type PanelCard = 'companion' | 'user';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -95,13 +100,7 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** "11:33" — 24-hour, locale-independent (the row's visible stamp). */
-function fmtTime(ts: number): string {
-  const d = new Date(ts);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-/** "17/04/2026, 11:33" — DD/MM/YYYY, 24-hour, locale-independent (hover title). */
+/** "17/04/2026, 11:33" — DD/MM/YYYY, 24-hour, locale-independent. */
 function fmtTimestamp(ts: number): string {
   const d = new Date(ts);
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}, ${pad2(
@@ -109,16 +108,9 @@ function fmtTimestamp(ts: number): string {
   )}:${pad2(d.getMinutes())}`;
 }
 
-/** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese); today and
- *  yesterday read as words (261110). */
-function fmtDay(ts: number, t: (key: string) => string): string {
+/** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese). */
+function fmtDay(ts: number): string {
   const d = new Date(ts);
-  const today = dayKey(Date.now());
-  const k = dayKey(ts);
-  if (k === today) return t('Today');
-  const y = new Date();
-  y.setDate(y.getDate() - 1);
-  if (k === dayKey(y.getTime())) return t('Yesterday');
   const lang = uiLanguage();
   if (lang === 'zh') {
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
@@ -152,6 +144,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     s.characters.find((c) => c.id === characterId),
   );
   const summon = useDataStore((s) => s.summons[characterId]);
+  const action = useDataStore((s) => s.actions[characterId]);
 
   const messages = useChatStore((s) => s.messages[characterId]) ?? EMPTY;
   // Voice-call lines (transcribed utterances / spoken replies) are persisted
@@ -184,6 +177,23 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // #9 — reply quoting + copy feedback. replyTo holds the quoted author + text.
   const [replyTo, setReplyTo] = useState<ChatReplyRef | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // §4.5 — presence side panel: default OPEN (260705 revision); hiding it is a
+  // sticky preference across companions and app restarts (useUiStore, persisted
+  // via UserConfig.chat_panel_hidden). Which card shows stays per-screen state.
+  const panelHidden = useUiStore((s) => s.chatPanelHidden);
+  const setChatPanelHidden = useUiStore((s) => s.setChatPanelHidden);
+  const panelOpen = !panelHidden;
+  const setPanelOpen = (open: boolean): void => {
+    setChatPanelHidden(!open);
+    // Persist best-effort: read-modify-write the config off the current value.
+    void sei
+      .getConfig()
+      .then((cfg) => sei.saveConfig({ ...cfg, chat_panel_hidden: !open }))
+      .catch(() => {
+        /* preference still applies for this session */
+      });
+  };
+  const [panelCard, setPanelCard] = useState<PanelCard>('companion');
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -284,14 +294,57 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     [],
   );
 
+  // Re-render each minute so the Presence line decays online → idle (§2).
+  useMinuteTick();
 
   const theme: 'light' | 'dark' = resolvedScheme();
 
   const companionName = character?.name ?? t('Companion');
   const userName = userProfile?.preferredName?.trim() || t('You');
-  // Ambient art (261110): the portrait at the window's right edge, only when
-  // there is a real portrait image (a procedural face would read as noise).
-  const ambientSrc = portraitSrc(character?.portrait_image ?? null);
+  // Panel kind line: the character's one-line description with the leading
+  // "<Name>, " appositive and trailing period stripped ("A wolf-person"),
+  // replacing the generic "Companion" label. Long descriptions (hand-written
+  // customs can be paragraphs) fall back to the generic label so the panel
+  // never floods.
+  const kindLine = useMemo(() => {
+    let d = (character?.description ?? '').replace(/\s+/g, ' ').trim();
+    const name = (character?.name ?? '').trim();
+    if (name) {
+      const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Only strip the leading name when it's the "<Name>, ..." appositive form
+      // (comma REQUIRED). Without the comma the name is the sentence subject
+      // ("Sui is the OG...") and stripping it drops the subject, leaving a
+      // mangled "Is the OG..." — so leave those intact.
+      d = d.replace(new RegExp(`^${esc},\\s+`, 'i'), '');
+    }
+    d = d.replace(/[.\s]+$/, '');
+    if (!d || d.length > 80) return 'Companion';
+    return d.charAt(0).toUpperCase() + d.slice(1);
+  }, [character?.description, character?.name]);
+
+  const panelPalette = useMemo(
+    () => pickPalette((character?.id ?? '') + (character?.name ?? ''), theme),
+    [character?.id, character?.name, theme],
+  );
+  const userArtSrc = portraitSrc(userProfile?.profilePicture);
+  // §4.5 (260705) — tint the presence panel with the portrait's main color.
+  // Null (no portrait / extraction blocked) falls back to the plain surface.
+  const panelTint = useDominantColor(
+    portraitSrc(character?.portrait_image ?? null),
+    character?.cloud_updated_at ?? null,
+  );
+
+  const presence = character
+    ? presenceOf(character, summon)
+    : ({ category: 'idle', label: t('Idle') } as const);
+  const online = summon?.kind === 'online';
+  const connecting = summon?.kind === 'connecting';
+  // Game adapters (M0): a non-Minecraft game's verb is its dashboard activity
+  // line; Minecraft keeps the verb table.
+  const gameActivity = useMcDashboardStore((s) => s.gameSnapshots[characterId]?.activity ?? null);
+  const nowVerb = presence.category === 'in-game'
+    ? actionVerb(action, { game: summon?.game ?? 'minecraft', activity: gameActivity })
+    : null;
 
   const doSend = (): void => {
     const text = draft.trim();
@@ -332,6 +385,22 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     startOrOpenCall(characterId);
   };
 
+  const onDisconnect = (): void => {
+    // Instant: drop the entry from the store immediately so the panel flips to
+    // "Play"; `stop` still tears down any live session (idempotent).
+    useDataStore.getState().setStatus({ kind: 'idle', characterId });
+    void sei.stop(characterId);
+  };
+
+  /** Show a resident's card in the side panel; clicking the same one closes it. */
+  const showCard = (who: PanelCard): void => {
+    if (panelOpen && panelCard === who) {
+      setPanelOpen(false);
+      return;
+    }
+    setPanelCard(who);
+    setPanelOpen(true);
+  };
 
   const onCopy = (m: ChatMessage): void => {
     void navigator.clipboard
@@ -376,9 +445,11 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     </div>
   );
 
+  const showingUser = panelCard === 'user';
+
   // Chess (260710): the game area is open whenever this character has a game
   // (or a pre-game setup card was requested). While open it takes the top of
-  // the screen. One area, one
+  // the screen and force-collapses the presence panel (CSS). One area, one
   // game at a time; chess wins a tie.
   const chessOpen = useChessStore((s) => isChessOpen(s, characterId));
   const chessGame = useChessStore((s) => s.games[characterId] ?? null);
@@ -410,8 +481,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const gameSurface = getGameSurface(surfaceGame);
   const gameSurfaceName = botGameName(surfaceGame);
   const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
-  // The one-time games notice (one line above the composer, 261110).
-  const gamesTip = useGamesTipVisible(gameOpen);
 
   // Unified end control (260721): every surface ends from GameSurface's
   // bottom-right "x", through its existing end path. `confirmGameEnd` gates
@@ -429,7 +498,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       return;
     }
     if (mcDashOpen || summon?.kind === 'connecting') {
-      // Same instant-disconnect path as the header's Disconnect; the
+      // Same instant-disconnect path as the presence panel button; the
       // !mcOnline effect above clears the dashboard state afterwards.
       useDataStore.getState().setStatus({ kind: 'idle', characterId });
       void sei.stop(characterId);
@@ -558,7 +627,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   return (
     <div
-      className={`${styles.root} ${
+      className={`${styles.root} ${panelOpen ? styles.presOpen : ''} ${
         gameOpen ? styles.gameOpen : ''
       } ${chatHidden ? styles.gameExpanded : ''} ${splitDragging ? styles.splitDragging : ''} ${
         gameFit ? styles.gameFit : ''
@@ -716,7 +785,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             const isLead = newDay || !!m.replyTo || !prev || prev.role !== m.role;
             const separator = newDay ? (
               <div className={styles.daySeparator}>
-                <span className={styles.daySeparatorLabel}>{fmtDay(m.ts, t)}</span>
+                <span className={styles.daySeparatorLabel}>{fmtDay(m.ts)}</span>
               </div>
             ) : null;
 
@@ -750,16 +819,14 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 </div>
                 <div className={styles.msgBody}>
                   <div className={styles.msgHeader}>
-                    {m.role === 'user' ? (
-                      <span className={styles.authorName}>{userName}</span>
-                    ) : (
-                      <button type="button" className={styles.authorName} onClick={onProfile}>
-                        {companionName}
-                      </button>
-                    )}
-                    <span className={styles.timestamp} title={fmtTimestamp(m.ts)}>
-                      {fmtTime(m.ts)}
-                    </span>
+                    <button
+                      type="button"
+                      className={styles.authorName}
+                      onClick={() => showCard(m.role === 'user' ? 'user' : 'companion')}
+                    >
+                      {m.role === 'user' ? userName : companionName}
+                    </button>
+                    <span className={styles.timestamp}>{fmtTimestamp(m.ts)}</span>
                   </div>
                   <div className={styles.msgText}>{m.text}</div>
                   {m.clip ? <ClipCard clip={m.clip} /> : null}
@@ -820,23 +887,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               {t('Copied to clipboard')}
             </div>
           ) : null}
-          {gamesTip ? (
-            <NoticeLine
-              className={styles.notice}
-              tag={t('NEW')}
-              text={t('{first} and {second} are here. Play them with {name}.', {
-                first: t('Stardew Valley'),
-                second: t("Don't Starve Together"),
-                name: companionName,
-              })}
-              onAction={() => {
-                retireGamesTip();
-                openModal({ kind: 'games-picker', characterId });
-              }}
-              onDismiss={retireGamesTip}
-            />
-          ) : null}
-          <div className={styles.composerRow}>
           <div className={styles.composer} data-tutorial="composer">
             <textarea
               ref={inputRef}
@@ -863,19 +913,6 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               </button>
             ) : null}
           </div>
-          {/* Call sits beside the input (261110); the header keeps the phone
-              only on the call view. */}
-          <button
-            type="button"
-            className={styles.callBtn}
-            onClick={onVoiceCall}
-            aria-label={t('Voice call')}
-            data-tutorial="call-btn"
-          >
-            <PhoneIcon size={20} />
-            <span>{t('Call')}</span>
-          </button>
-          </div>
           {/* 261017 (issue #46): "Using ChatGPT plan" + Manage usage. */}
           <ChatgptPlanBadge />
         </div>
@@ -883,11 +920,100 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           </div>
         </div>
 
-        {/* ── Ambient portrait (261110): right edge, behind nothing that is
-            text; CSS shows it only on a wide window with no game open. ── */}
-        {ambientSrc && !gameOpen ? (
-          <img className={styles.ambientArt} src={ambientSrc} alt="" aria-hidden="true" />
-        ) : null}
+        {/* ── Presence side panel (§4.5) ── */}
+        <aside
+        className={styles.presPanel}
+        style={
+          !showingUser && panelTint
+            ? ({ '--pres-tint': panelTint } as React.CSSProperties)
+            : undefined
+        }
+        aria-label={showingUser ? t('You') : t('{name} details', { name: companionName })}
+        aria-hidden={!panelOpen}
+      >
+        <div className={styles.presInner}>
+          <div className={styles.presArt}>
+            {showingUser ? (
+              userArtSrc ? (
+                <img src={userArtSrc} alt="" className={styles.presArtImg} />
+              ) : (
+                <span className={styles.presArtFallback}>
+                  <UserIcon size={72} />
+                </span>
+              )
+            ) : character ? (
+              <PixelPortrait
+                seed={character.id + character.name}
+                palette={panelPalette}
+                size={190}
+                portraitImage={character.portrait_image}
+                style={{ width: '100%', height: '100%' }}
+              />
+            ) : (
+              <span className={styles.presArtFallback}>
+                <UserIcon size={72} />
+              </span>
+            )}
+            <span className={styles.presFade} aria-hidden="true" />
+            {/* Close "x" pinned to the panel's top-right corner. Same path as
+                clicking an author name again: hides the panel and persists the
+                preference (setPanelOpen -> chat_panel_hidden). */}
+            <button
+              type="button"
+              className={styles.presClose}
+              onClick={() => setPanelOpen(false)}
+              aria-label={t('Close profile')}
+              title={t('Close profile')}
+            >
+              ×
+            </button>
+          </div>
+          <div className={styles.presBody}>
+            {/* 261103: who and what they are doing, one tight group; the
+                actions are the next group below. */}
+            <div className={styles.presIdentity}>
+              <div className={styles.presNameRow}>
+                <span className={styles.presName}>{showingUser ? userName : companionName}</span>
+                {showingUser
+                  ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
+                  : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+              </div>
+              <div className={styles.presKind}>
+                {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
+              </div>
+              {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
+              {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
+            </div>
+            {!showingUser ? (
+              <div className={styles.presActions}>
+                {online ? (
+                  <Button kind="danger" fullWidth onClick={onDisconnect}>
+                    {t('Disconnect')}
+                  </Button>
+                ) : connecting ? (
+                  <Button kind="ghost" fullWidth disabled>
+                    {connectingLabel(summon, t)}
+                  </Button>
+                ) : (
+                  <Button
+                    kind="primary"
+                    fullWidth
+                    onClick={() => openModal({ kind: 'games-picker', characterId })}
+                  >
+                    {t('Play')}
+                  </Button>
+                )}
+                <Button kind="ghost" fullWidth onClick={onVoiceCall}>
+                  {t('Call')}
+                </Button>
+                <Button kind="ghost" fullWidth onClick={onProfile}>
+                  {t('Profile')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </aside>
       </div>
     </div>
   );

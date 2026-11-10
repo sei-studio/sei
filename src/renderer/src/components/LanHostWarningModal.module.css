@@ -1,17 +1,16 @@
 /* LanHostWarningModal.module.css — pre-summon compatibility disclaimer body.
  * Scrim + panel + title come from ModalShell; this styles the copy only
- * (mirrors SummonConflictModal.module.css). Quiet register (261110, pass 2):
- * body/meta steps. */
+ * (mirrors SummonConflictModal.module.css). */
 
 .body {
-  font-size: var(--fs-body);
+  font-size: 15px;
   line-height: 1.5;
   color: var(--text-2);
   margin: 0;
 }
 
 .hint {
-  font-size: var(--fs-meta);
+  font-size: 13px;
   line-height: 1.5;
   color: var(--muted);
   margin: 0;
@@ -21,18 +20,17 @@
 .checkbox {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 10px;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--text-2);
+  font-size: 13px;
+  color: var(--muted);
   cursor: pointer;
   user-select: none;
 }
 
 .checkbox input[type='checkbox'] {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   cursor: pointer;
   accent-color: var(--accent);
   flex-shrink: 0;
