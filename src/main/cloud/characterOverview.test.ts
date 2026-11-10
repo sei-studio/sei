@@ -25,6 +25,10 @@ describe('characterOverviewInfo (profile Overview, 261110)', () => {
     expect(await characterOverviewInfo(ID, deps())).toEqual({ creatorName: 'kitsune', addCount: 72, stardewLook: false, sampleVoiceId: 'v-sarah' });
   });
 
+  it('no count read while the counts are hidden (addCounts null)', async () => {
+    expect((await characterOverviewInfo(ID, deps({ addCounts: null }))).addCount).toBeNull();
+  });
+
   it('no author name for your own companions or a built-in, and no lookup', async () => {
     const own = deps({ character: { id: ID, owner: ME, is_default: false } });
     expect((await characterOverviewInfo(ID, own)).creatorName).toBeNull();

@@ -62,6 +62,7 @@
 
 import { create } from 'zustand';
 import { DEFAULT_BROWSE_SORT, type BrowseEntry, type BrowsePage, type BrowseSort } from '@shared/ipc';
+import { SHOW_ADD_COUNTS } from '@shared/addCounts';
 import { sei } from '../ipcClient';
 
 export const PAGE_SIZE = 24;
@@ -154,7 +155,10 @@ function trackPage(props: {
       server_sorted: props.page?.sorted ? 1 : 0,
       searching: props.searching ? 1 : 0,
       counts_known: entries.some((e) => e.addCount !== null) ? 1 : 0,
+      // Entries with a positive count (what a card would show); counts_displayed
+      // says whether cards show it at all (hidden since product call 261110).
       counts_shown: entries.filter((e) => (e.addCount ?? 0) > 0).length,
+      counts_displayed: SHOW_ADD_COUNTS ? 1 : 0,
       outcome: props.failure ? 'error' : 'ok',
       failure_class: props.failure ?? 'none',
     });

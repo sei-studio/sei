@@ -340,6 +340,7 @@ describe('useBrowseStore', () => {
       searching: 0,
       counts_known: 1,
       counts_shown: 1,
+      counts_displayed: 0,
       outcome: 'ok',
       failure_class: 'none',
     });

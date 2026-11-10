@@ -1,22 +1,22 @@
 /**
  * ProfileOverview (product call 261110): what a player sees first on a
  * companion they do not own (a built-in like Sui, or someone else's World
- * companion). Settings rows were the wrong first impression for someone
- * deciding whether to invite a companion, so this leads with who it is:
+ * companion). It leads with who it is, not with settings rows:
  *
- *   - the description (the big portrait is the page's hero layer, and the
- *     name, share code, creator, add count and created date are the page
- *     header above this),
- *   - its voice, with a play button (VoiceSample: the bundled clip, no TTS
- *     spend, for every pool voice),
+ *   - ProfileIntro: the description and its voice, with a play button
+ *     (VoiceSample: the bundled clip, no TTS spend, for every pool voice).
+ *     The page passes it as `intro`, at the top of this tab.
  *   - the games it already has a look for (a Minecraft skin, a Stardew
- *     farmer, the Don't Starve Together survivor you picked),
- *   - its public avatars,
+ *     farmer, the Don't Starve Together survivor you picked), as cover
+ *     tiles,
+ *   - its public avatars, as portrait tiles,
  *   - a quiet Report link for someone else's companion.
  *
- * Nothing here edits the companion: an owner's controls never show on a
- * companion you do not own. The few settings that are yours for it live on
- * the page's "Your settings" tab (ProfileSettings, foreign view).
+ * The big portrait is the page's art, and the name, share code, creator and
+ * created date are the page header. Nothing here edits the companion: an
+ * owner's controls never show on a companion you do not own. The few
+ * settings that are yours for it live on the "Your settings" and More tabs
+ * (ProfileSettings).
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
@@ -32,6 +32,38 @@ import { useVoiceLabel } from './ProfileSettings';
 import { VoiceSampleButton, type SampleResult } from './VoiceSample';
 import styles from './ProfileOverview.module.css';
 
+export interface ProfileIntroProps {
+  character: Character;
+  /** chars:overview-info; null while loading or when it failed. */
+  info: CharacterOverviewInfo | null;
+  onSample: (r: SampleResult) => void;
+}
+
+/** The description, then the voice line (play button + who it sounds like). */
+export function ProfileIntro(p: ProfileIntroProps): React.ReactElement {
+  const { character } = p;
+  const description = character.description?.trim() || '';
+  // Someone else's own ElevenLabs voice cannot play for you: the label names
+  // the Sei voice you hear instead (the sample plays that one too).
+  const label = useVoiceLabel(character, { borrowed: !!ownVoiceOf(character.metadata) });
+  const silent = character.metadata?.voiceId === NO_VOICE_ID;
+  return (
+    <div className={styles.intro} data-ov="intro">
+      {description ? (
+        <p className={styles.desc} data-ov="description">
+          {description}
+        </p>
+      ) : null}
+      <div className={styles.voice} data-ov="voice">
+        {silent ? null : (
+          <VoiceSampleButton character={character} sampleVoiceId={p.info?.sampleVoiceId} onResult={p.onSample} />
+        )}
+        <span className={styles.voiceLabel}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
 export interface ProfileOverviewProps {
   character: Character;
   /** chars:overview-info; null while loading or when it failed. */
@@ -41,25 +73,20 @@ export interface ProfileOverviewProps {
   /** Show the Report link (someone else's companion). */
   canReport: boolean;
   onReport: () => void;
-  onSample: (r: SampleResult) => void;
+  /** ProfileIntro, which this tab leads with. */
+  intro?: React.ReactNode;
 }
 
 export function ProfileOverview(p: ProfileOverviewProps): React.ReactElement {
   const t = useT();
   const { character } = p;
-  const description = character.description?.trim() || '';
   return (
     <div className={styles.overview} data-overview="true">
-      {description ? (
-        <p className={styles.desc} data-ov="description">
-          {description}
-        </p>
-      ) : null}
-      <dl className={styles.facts}>
-        <VoiceFact {...p} />
-        <GamesFact {...p} />
-        <AvatarsFact character={character} />
-      </dl>
+      {p.intro ?? null}
+      <div className={styles.shelves}>
+        <GamesShelf {...p} />
+        <AvatarsShelf character={character} />
+      </div>
       {p.canReport ? (
         <button
           type="button"
@@ -75,33 +102,13 @@ export function ProfileOverview(p: ProfileOverviewProps): React.ReactElement {
   );
 }
 
-function VoiceFact(p: ProfileOverviewProps): React.ReactElement {
-  const t = useT();
-  const { character } = p;
-  // Someone else's own ElevenLabs voice cannot play for you: the label names
-  // the Sei voice you hear instead (the sample plays that one too).
-  const label = useVoiceLabel(character, { borrowed: !!ownVoiceOf(character.metadata) });
-  const silent = character.metadata?.voiceId === NO_VOICE_ID;
-  return (
-    <div className={styles.fact} data-ov="voice">
-      <dt>{t('Voice')}</dt>
-      <dd className={styles.voice}>
-        {silent ? null : (
-          <VoiceSampleButton character={character} sampleVoiceId={p.info?.sampleVoiceId} onResult={p.onSample} />
-        )}
-        <span className={styles.voiceLabel}>{label}</span>
-      </dd>
-    </div>
-  );
-}
-
 interface GameLook {
   id: 'minecraft' | 'stardew' | 'dontstarve';
   name: string;
   detail: string;
 }
 
-function GamesFact(p: ProfileOverviewProps): React.ReactElement {
+function GamesShelf(p: ProfileOverviewProps): React.ReactElement {
   const t = useT();
   const { character } = p;
   const [dstPick, setDstPick] = useState<{ id: string; prefab: string | null } | null>(null);
@@ -140,37 +147,40 @@ function GamesFact(p: ProfileOverviewProps): React.ReactElement {
   }
 
   return (
-    <div className={styles.fact} data-ov="games">
-      <dt>{t('Games')}</dt>
-      <dd>
-        {games.length === 0 ? (
-          <span className={styles.none}>{t('No game looks yet. They are made on the first launch.')}</span>
-        ) : (
-          <ul className={styles.games}>
-            {games.map((g) => (
-              <li key={g.id} className={styles.game} data-game={g.id}>
-                <GameThumb id={g.id} />
-                <span className={styles.gameText}>
-                  <span className={styles.gameName}>{g.name}</span>
-                  <span className={styles.gameDetail}>{g.detail}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </dd>
-    </div>
+    <section className={styles.shelf} data-ov="games" aria-labelledby="profile-ov-games">
+      <h2 className={styles.shelfHead} id="profile-ov-games">
+        {t('Games')}
+      </h2>
+      {games.length === 0 ? (
+        <p className={styles.none}>{t('No game looks yet. They are made on the first launch.')}</p>
+      ) : (
+        <ul className={styles.tiles}>
+          {games.map((g) => (
+            <li key={g.id} className={styles.game} data-game={g.id}>
+              <GameCover id={g.id} />
+              <span className={styles.tileName}>{g.name}</span>
+              <span className={styles.tileDetail}>{g.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function GameThumb({ id }: { id: string }): React.ReactElement | null {
+function GameCover({ id }: { id: string }): React.ReactElement {
   const image = GAMES.find((g) => g.id === id)?.image;
-  if (!image) return null;
-  return <span className={styles.gameThumb} style={{ backgroundImage: `url("${image}")` }} aria-hidden="true" />;
+  return (
+    <span
+      className={styles.cover}
+      style={image ? { backgroundImage: `url("${image}")` } : undefined}
+      aria-hidden="true"
+    />
+  );
 }
 
-/** Its public avatars (beyond the card image, which is the hero portrait). */
-function AvatarsFact({ character }: { character: Character }): React.ReactElement | null {
+/** Its public avatars (beyond the card image, which is the page's portrait). */
+function AvatarsShelf({ character }: { character: Character }): React.ReactElement | null {
   const t = useT();
   const [avatars, setAvatars] = useState<{ id: string; list: AvatarItem[] } | null>(null);
   useEffect(() => {
@@ -192,27 +202,29 @@ function AvatarsFact({ character }: { character: Character }): React.ReactElemen
   const extra = (avatars && avatars.id === character.id ? avatars.list : []).filter((a) => a.source !== 'card');
   if (extra.length === 0) return null;
   return (
-    <div className={styles.fact} data-ov="avatars">
-      <dt>{t('Avatars')}</dt>
-      <dd>
-        <ul className={styles.avatars}>
-          {extra.map((a) => {
-            const kindLabel = a.kind === 'live2d' ? 'Live2D' : a.kind === 'rig' ? t('Rigged model') : t('Image');
-            return (
-              <li key={a.id} className={styles.avatar} title={a.name ?? kindLabel}>
-                <span className={styles.avatarThumb}>
-                  {a.kind === 'portrait' && a.url ? (
-                    <img src={a.url} alt="" draggable={false} />
-                  ) : (
-                    <span className={styles.avatarKind}>{kindLabel}</span>
-                  )}
-                </span>
-                <span className={styles.avatarName}>{a.name ?? kindLabel}</span>
-              </li>
-            );
-          })}
-        </ul>
-      </dd>
-    </div>
+    <section className={styles.shelf} data-ov="avatars" aria-labelledby="profile-ov-avatars">
+      <h2 className={styles.shelfHead} id="profile-ov-avatars">
+        {t('Avatars')}
+      </h2>
+      <ul className={styles.tiles}>
+        {extra.map((a) => {
+          const kindLabel = a.kind === 'live2d' ? 'Live2D' : a.kind === 'rig' ? t('Rigged model') : t('Image');
+          // Most avatars arrive without a name: the tile is the picture (or
+          // its kind), with a caption only when there is a name.
+          return (
+            <li key={a.id} className={styles.avatar} title={a.name ?? kindLabel}>
+              <span className={styles.avatarArt}>
+                {a.kind === 'portrait' && a.url ? (
+                  <img src={a.url} alt={a.name ?? kindLabel} draggable={false} />
+                ) : (
+                  <span className={styles.avatarKind}>{kindLabel}</span>
+                )}
+              </span>
+              {a.name ? <span className={styles.tileDetail}>{a.name}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

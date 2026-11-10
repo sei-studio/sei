@@ -1,6 +1,7 @@
 /**
  * ProfileSettings (product call 261110), server-rendered: your own companion
- * is one page of sections in use order, someone else's shows only the rows
+ * shows one section menu tab at a time (More holds Sharing, WorldLink and the
+ * Danger zone under headings), someone else's shows only the rows
  * that are yours for it (no locked owner rows), and no row carries a
  * subtext line. Effects (IPC reads) do not run under renderToStaticMarkup,
  * so values that come from IPC (and rows that wait on one) are not checked.
@@ -13,11 +14,16 @@ import { renderToStaticMarkup } from 'react-dom/server';
   sei: {},
   addEventListener: () => undefined,
   removeEventListener: () => undefined,
-  matchMedia: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }),
+  matchMedia: () => ({
+    matches: false,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }),
 };
 
 const { ProfileSettings } = await import('./ProfileSettings');
-const { profileAccess } = await import('../../lib/profileRows');
+const { profileAccess, profileTabs } = await import('../../lib/profileRows');
+type Tab = Parameters<typeof ProfileSettings>[0]['tab'];
 type Kind = Parameters<typeof profileAccess>[0]['kind'];
 
 const character = {
@@ -34,14 +40,25 @@ const character = {
   created: '2026-09-28T00:00:00Z',
   last_launched: null,
   playtime_ms: 0,
-  skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: null },
+  skin: {
+    source: 'none',
+    mojang_username: null,
+    png_sha256: null,
+    applied_at: null,
+  },
   username: null,
   owner: null,
 } as unknown as Parameters<typeof ProfileSettings>[0]['character'];
 
 const noop = (): void => undefined;
 
-function render(kind: Kind, extra: Partial<Parameters<typeof profileAccess>[0]> = {}, metadata?: object): string {
+/** One tab, or (no `tab`) every settings tab of the page in order, concatenated. */
+function render(
+  kind: Kind,
+  extra: Partial<Parameters<typeof profileAccess>[0]> = {},
+  metadata?: object,
+  tab?: Tab,
+): string {
   const access = profileAccess({
     kind,
     inLibrary: true,
@@ -51,25 +68,31 @@ function render(kind: Kind, extra: Partial<Parameters<typeof profileAccess>[0]> 
     noVoice: false,
     ...extra,
   });
-  return renderToStaticMarkup(
-    React.createElement(ProfileSettings, {
-      character: metadata ? ({ ...character, metadata } as typeof character) : character,
-      access,
-      onAction: noop,
-      onTipOpen: noop,
-      openEdit: noop,
-      openCardImage: noop,
-      openKnowledge: noop,
-      openSkinEdit: noop,
-      openAvatars: noop,
-      openFloating: noop,
-      onToggleShared: noop,
-      shareToggleDisabled: false,
-      onResetMemory: noop,
-      onUnbind: noop,
-      refreshKey: 0,
-    }),
-  );
+  const tabs = tab ? [tab] : profileTabs(access).filter((t) => t !== 'overview');
+  return tabs
+    .map((one) =>
+      renderToStaticMarkup(
+        React.createElement(ProfileSettings, {
+          character: metadata ? ({ ...character, metadata } as typeof character) : character,
+          access,
+          tab: one,
+          onAction: noop,
+          onTipOpen: noop,
+          openEdit: noop,
+          openCardImage: noop,
+          openKnowledge: noop,
+          openSkinEdit: noop,
+          openAvatars: noop,
+          openFloating: noop,
+          onToggleShared: noop,
+          shareToggleDisabled: false,
+          onResetMemory: noop,
+          onUnbind: noop,
+          refreshKey: 0,
+        }),
+      ),
+    )
+    .join('');
 }
 
 const rows = (html: string): string[] => [...html.matchAll(/data-row="([^"]+)"/g)].map((m) => m[1]);
@@ -78,12 +101,20 @@ const locked = (html: string): string[] =>
   [...html.matchAll(/data-row="([^"]+)" data-locked="true"/g)].map((m) => m[1]);
 
 describe('ProfileSettings, your own companion', () => {
-  it('one page: every section in use order, with headings', () => {
+  it('one tab at a time: a single-group tab has no heading, More heads Sharing and the Danger zone', () => {
+    const look = render('custom', { seilinkOn: true }, undefined, 'look');
+    expect(rows(look)).toEqual(['card-image', 'skin', 'avatar', 'floating-avatar']);
+    expect(sectionsOf(look)).toEqual([]);
+    const more = render('custom', { seilinkOn: true }, undefined, 'more');
+    expect(sectionsOf(more)).toEqual(['sharing', 'danger']);
+    for (const h of ['>Sharing<', '>Danger zone<']) expect(more).toContain(h);
+    expect(rows(more)).toEqual(['public', 'reset-memory', 'unbind']);
+    const worldlink = render('custom', { seilinkOn: true }, undefined, 'worldlink');
+    expect(rows(worldlink)).toEqual(['desktop-room', 'room', 'intro']);
+  });
+
+  it('every row once, in tab order', () => {
     const html = render('custom', { seilinkOn: true });
-    expect(sectionsOf(html)).toEqual(['look', 'voice', 'personality', 'games', 'sharing', 'worldlink', 'danger']);
-    for (const h of ['>Look<', '>Voice<', '>Personality<', '>Games<', '>Sharing<', '>WorldLink<', '>Danger zone<']) {
-      expect(html).toContain(h);
-    }
     expect(rows(html)).toEqual([
       'card-image',
       'skin',
@@ -96,10 +127,10 @@ describe('ProfileSettings, your own companion', () => {
       'knowledge',
       'chess',
       'dst',
-      'public',
       'desktop-room',
       'room',
       'intro',
+      'public',
       'reset-memory',
       'unbind',
     ]);
@@ -122,12 +153,24 @@ describe('ProfileSettings, your own companion', () => {
   });
 
   it('an uploaded card image has no Regenerate (product call 261110)', () => {
-    const upload = { voiceId: 'v-sarah', portrait_versions: [{ file: 'c1.png', created_at: '', source: 'upload' }], portrait_active: 'c1.png' };
+    const upload = {
+      voiceId: 'v-sarah',
+      portrait_versions: [{ file: 'c1.png', created_at: '', source: 'upload' }],
+      portrait_active: 'c1.png',
+    };
     const withImage = { ...character, portrait_image: 'c1.png' };
     const html = renderToStaticMarkup(
       React.createElement(ProfileSettings, {
         character: { ...withImage, metadata: upload } as typeof character,
-        access: profileAccess({ kind: 'custom', inLibrary: true, seilinkOn: false, movedInHere: false, ownVoice: false, noVoice: false }),
+        tab: 'look',
+        access: profileAccess({
+          kind: 'custom',
+          inLibrary: true,
+          seilinkOn: false,
+          movedInHere: false,
+          ownVoice: false,
+          noVoice: false,
+        }),
         onAction: noop,
         onTipOpen: noop,
         openEdit: noop,
@@ -145,11 +188,27 @@ describe('ProfileSettings, your own companion', () => {
     );
     expect(html).toContain('>Custom image<');
     expect(html).not.toContain('Regenerate');
-    const regen = { voiceId: 'v-sarah', portrait_versions: [{ file: 'c1-v2.png', created_at: '', source: 'regen' }], portrait_active: 'c1-v2.png' };
+    const regen = {
+      voiceId: 'v-sarah',
+      portrait_versions: [{ file: 'c1-v2.png', created_at: '', source: 'regen' }],
+      portrait_active: 'c1-v2.png',
+    };
     const html2 = renderToStaticMarkup(
       React.createElement(ProfileSettings, {
-        character: { ...withImage, portrait_image: 'c1-v2.png', metadata: regen } as typeof character,
-        access: profileAccess({ kind: 'custom', inLibrary: true, seilinkOn: false, movedInHere: false, ownVoice: false, noVoice: false }),
+        character: {
+          ...withImage,
+          portrait_image: 'c1-v2.png',
+          metadata: regen,
+        } as typeof character,
+        tab: 'look',
+        access: profileAccess({
+          kind: 'custom',
+          inLibrary: true,
+          seilinkOn: false,
+          movedInHere: false,
+          ownVoice: false,
+          noVoice: false,
+        }),
         onAction: noop,
         onTipOpen: noop,
         openEdit: noop,
@@ -182,7 +241,16 @@ describe("ProfileSettings, someone else's companion (Your settings)", () => {
       const html = render(kind, { seilinkOn: true });
       expect(locked(html)).toEqual([]);
       // Avatar waits on its library read (and only shows with two or more).
-      expect(rows(html)).toEqual(['floating-avatar', 'knowledge', 'dst', 'desktop-room', 'room', 'intro', 'reset-memory', 'unbind']);
+      expect(rows(html)).toEqual([
+        'floating-avatar',
+        'knowledge',
+        'dst',
+        'desktop-room',
+        'room',
+        'intro',
+        'reset-memory',
+        'unbind',
+      ]);
       for (const owner of ['card-image', 'skin', 'voice', 'persona', 'about', 'chess', 'public']) {
         expect(rows(html)).not.toContain(owner);
       }
@@ -200,7 +268,11 @@ describe('copy rules', () => {
   it('no row has a subtext line: explanations are tooltips, not text', () => {
     for (const kind of ['custom', 'builtin', 'world', 'awakened'] as const) {
       // Visible text only (the Locked marker's aria-label carries its reason).
-      const html = render(kind, { seilinkOn: true, movedInHere: true, ownVoice: true }).replace(/="[^"]*"/g, '');
+      const html = render(kind, {
+        seilinkOn: true,
+        movedInHere: true,
+        ownVoice: true,
+      }).replace(/="[^"]*"/g, '');
       expect(html, kind).not.toContain('Companions you create can change all of it.');
       expect(html).not.toContain('Wipes chats and memories');
       expect(html).not.toContain('—');

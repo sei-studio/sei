@@ -8,7 +8,8 @@
  *     own companions, built-ins (the renderer says "by Sei") and authors with
  *     no name.
  *   - addCount: how many accounts have it in their library (the World
- *     card's number, `character_library_counts`). Null when unknown.
+ *     card's number, `character_library_counts`). Null when unknown, and
+ *     not read at all while the counts are hidden (shared/addCounts.ts).
  *   - stardewLook: a Stardew Valley farmer look exists for it, on this
  *     device or shared through the cloud (character_game_profiles).
  *
@@ -31,7 +32,8 @@ export interface OverviewDeps {
   loadConfig: () => Promise<UserConfig | null>;
   currentUserId: () => string | null;
   profileNames: (ids: string[]) => Promise<Map<string, string>>;
-  addCounts: (ids: string[]) => Promise<Map<string, number> | null>;
+  /** Omitted (null) while the counts are hidden (shared/addCounts.ts): no read, addCount null. */
+  addCounts: ((ids: string[]) => Promise<Map<string, number> | null>) | null;
   readStardewProfile: (id: string) => Promise<GameProfileRead>;
   hasLocalStardewLook: (cfg: UserConfig | null, id: string) => boolean;
   /** The pool voice a sample plays, or null (see sampleVoiceId above). */
@@ -55,7 +57,7 @@ export async function characterOverviewInfo(id: string, deps: OverviewDeps): Pro
   const foreignAuthor = !character.is_default && owner !== null && owner !== deps.currentUserId();
   const [names, counts, cloudLook, cfg] = await Promise.all([
     foreignAuthor ? settle(deps.profileNames([owner]), new Map<string, string>()) : Promise.resolve(new Map<string, string>()),
-    settle(deps.addCounts([id]), null),
+    deps.addCounts ? settle(deps.addCounts([id]), null) : Promise.resolve(null),
     settle(deps.readStardewProfile(id), { ok: false, reason: 'error' } as GameProfileRead),
     settle(deps.loadConfig(), null),
   ]);

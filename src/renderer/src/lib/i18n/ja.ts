@@ -2472,5 +2472,7 @@ export const JA: Record<string, string> = {
   "Skin ready": "スキン完成",
   "Stop sample": "サンプルを停止",
   "Your settings": "あなたの設定",
+  // profile v2 section menu (product call 261110)
+  "More": "その他",
   "by {name}": "{name}制作",
 };
