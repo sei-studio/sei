@@ -66,7 +66,10 @@ describe('defend prompt framing', () => {
     expect(t).toContain('zombie')
     expect(t).toContain('4 blocks')
     expect(t).toMatch(/ALREADY swinging/)
-    expect(t).toMatch(/turn on YOU/)
+    // 261110 (pass 50): no claim that the mob is now on her; she said it as
+    // fact while it was still on the player.
+    expect(t).not.toMatch(/turn on YOU/)
+    expect(t).not.toContain('—')
     // It must not tell the model to re-issue the swing the body is running.
     expect(t).toMatch(/do not need to call attackEntity/i)
   })

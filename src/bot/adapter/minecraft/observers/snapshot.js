@@ -92,6 +92,50 @@ export function ownerHealthClause(hp) {
   return `, hp ${hp}/20${hp <= OWNER_LOW_HP ? ' (low)' : ''}`
 }
 
+// 261110 (quality pass 50): the owner's death on their snapshot line. The
+// death reaches her as a chat line, but the owner line kept the dying body's
+// stale health ("hp 16/20" a tenth of a second after the creeper killed them)
+// and, after the respawn, a fresh 20/20 with nothing saying why. combat_night
+// evals 261109: "that one's gone, i'm still right here" right after the
+// player died, "you're fine, you're at full hp" after a drowning, "eat some
+// bread" to a player whose bread lay where they died, and "you're at 0 hp,
+// not dead yet". `death` is what behaviors/chat.js recordOwnerDeath keeps
+// ({ text, at, pos, entity }); the note stays for OWNER_DEATH_NOTE_MS, so a
+// session without a death adds nothing.
+export const OWNER_DEATH_NOTE_MS = 180_000
+// Right after the death message the dying body is still the same entity and
+// its health metadata can lag; a respawn replaces the entity.
+const OWNER_DEATH_STALE_BODY_MS = 5_000
+function agoText(ms) {
+  const s = Math.round(ms / 1000)
+  if (s < 2) return 'just now'
+  if (s < 90) return `${s}s ago`
+  return `${Math.round(s / 60)} min ago`
+}
+/**
+ * The health clause of the owner line, with their recent death when there is
+ * one. Pure; exported for tests.
+ * @param {number|null} hp  ownerHealth()
+ * @param {{text?:string, at:number, pos?:{x:number,y:number,z:number}|null, entity?:any}|null|undefined} death
+ * @param {any} ownerEnt  the owner's current entity object
+ * @param {{x:number,y:number,z:number}|null} [selfPos]  her position, for the distance to their things
+ * @param {number} [nowMs]
+ */
+export function ownerStateClause(hp, death, ownerEnt, selfPos = null, nowMs = Date.now()) {
+  const age = death && Number.isFinite(death.at) ? nowMs - death.at : NaN
+  const recent = age >= 0 && age <= OWNER_DEATH_NOTE_MS ? death : null
+  if (!recent) return hp === 0 ? ', hp 0/20: dead, has not respawned yet' : ownerHealthClause(hp)
+  const cause = typeof recent.text === 'string' && recent.text ? ` (${recent.text})` : ''
+  const sameBody = ownerEnt != null && recent.entity === ownerEnt
+  if (hp === 0 || (sameBody && (hp == null || age <= OWNER_DEATH_STALE_BODY_MS))) {
+    return `: dead, died ${agoText(age)}${cause} and has not respawned yet`
+  }
+  // A distance, not coordinates: read out in chat, coordinates sound like a bot.
+  const d = ownerDistanceBlocks(recent.pos, selfPos)
+  const where = d != null ? `where they died, ${d} blocks from you` : 'where they died'
+  return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Their old things dropped ${where}, unless they have picked them up since`
+}
+
 // 261012: how far a hostile is from you and from the player, on its
 // `nearby entities` line. Quality eval protect_player: at the order the two
 // zombies were listed with coords only, 21 blocks from a 10 hp player, and
@@ -424,7 +468,7 @@ export function composeSnapshot(bot, opts = {}) {
       // (otherwise it can read them as two different people).
       const liveName = owner?.username && owner.username !== pinUsername ? ` (in-game ${owner.username})` : ''
       let hpClause = ''
-      try { hpClause = ownerHealthClause(ownerHealth(bot.registry, ownerEnt)) } catch { /* leave it out */ }
+      try { hpClause = ownerStateClause(ownerHealth(bot.registry, ownerEnt), bot._seiOwnerDeath, ownerEnt, me.position) } catch { /* leave it out */ }
       lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}${hpClause}`)
       // Who the hostiles are on (260731). Only worth printing when the two of
       // us are close enough for it to be ONE fight — see AGGRO_PAIR_RANGE. Not
@@ -443,7 +487,14 @@ export function composeSnapshot(bot, opts = {}) {
         } catch { /* an inference line never breaks a snapshot tick */ }
       }
     } else {
-      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)`)
+      // 261110 (pass 50): a dead player's body leaves view before they respawn.
+      let died = ''
+      try {
+        const d = bot._seiOwnerDeath
+        const age = d && Number.isFinite(d.at) ? Date.now() - d.at : NaN
+        if (age >= 0 && age <= OWNER_DEATH_NOTE_MS) died = ` They died ${agoText(age)}${d.text ? ` (${d.text})` : ''}.`
+      } catch { /* leave it out */ }
+      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)${died}`)
     }
   }
 
