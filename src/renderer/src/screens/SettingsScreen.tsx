@@ -19,7 +19,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
@@ -39,7 +39,9 @@ import { FactoryResetConfirmModal } from '../components/FactoryResetConfirmModal
 import { DmcaContactModal } from '../components/DmcaContactModal';
 import { PortraitImagePicker } from '../components/PortraitImagePicker';
 import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
-import { InfoTip } from '../components/InfoTip';
+import { InfoTip, InfoTipInline } from '../components/InfoTip';
+import { SettingsSectionNav } from '../components/settings/SettingsSectionNav';
+import { useFieldGlow } from '../lib/fieldGlow';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import type { AvatarMode, UserConfig } from '@shared/characterSchema';
@@ -68,6 +70,10 @@ const THEME_SWATCHES: { value: ThemeName; label: string; colors: [string, string
 ];
 
 export function SettingsScreen(): React.ReactElement {
+  useFieldGlow('settings');
+  // The scroller and the column, for the section menu (261110).
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const colRef = useRef<HTMLDivElement | null>(null);
   const navigate = useUiStore((s) => s.navigate);
   const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
@@ -502,13 +508,18 @@ export function SettingsScreen(): React.ReactElement {
       : t('Reset all memories…');
 
   return (
-    <div className={styles.root}>
-      <div className={styles.col}>
+    <div className={styles.root} ref={rootRef}>
+      {/* Quiet register (261110): a left section menu built from the group
+          titles below, and help text shown under each label (InfoTipInline)
+          instead of behind an "i". */}
+      <SettingsSectionNav scrollRef={rootRef} columnRef={colRef} />
+      <InfoTipInline>
+      <div className={styles.col} ref={colRef}>
         {saveError ? <div className={styles.errorRow}>{saveError}</div> : null}
 
         {/* ── Profile ─────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Profile') /* >Profile< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Profile') /* >Profile< */}</h3>
           <div className={styles.profileRow} onBlur={onPreferredBlur}>
             <PortraitImagePicker
               variant="avatar"
@@ -531,7 +542,7 @@ export function SettingsScreen(): React.ReactElement {
         {/* ── Account (signed-in only) ────────────────────────── */}
         {authState.kind === 'signed_in' ? (
           <div className={styles.group}>
-            <h3 className={styles.groupTitle}>{t('Account') /* >Account< */}</h3>
+            <h3 className={styles.groupTitle} data-settings-section="">{t('Account') /* >Account< */}</h3>
 
             <div className={styles.row}>
               <span className={styles.label}>{t('Email')}</span>
@@ -643,7 +654,7 @@ export function SettingsScreen(): React.ReactElement {
             Playtime page (tabs Sei / ChatGPT / My keys); this row opens it.
             Web search stays under Games & search. ── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('AI') /* >AI< */}</h3>
           <div className={styles.row} data-testid="settings-open-playtime">
             <span className={styles.label}>{t('Brain, voice and plan')}</span>
             <Button kind="secondary" size="sm" onClick={() => navigate({ kind: 'credits' })}>
@@ -659,7 +670,7 @@ export function SettingsScreen(): React.ReactElement {
             as the last tab; it was its own "Search" group above About. Shown
             in both cloud and local mode: none of it depends on the backend. ── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Games & search') /* >Games & search< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Games & search') /* >Games & search< */}</h3>
           <GamesSettingsGroup
             config={cfg}
             writeConfig={writeVisionConfig}
@@ -675,7 +686,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Language (260730) — app UI language, its own section ── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Language')}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Language')}</h3>
           <div className={styles.row}>
             <span className={styles.label}>
               {t('App language')}
@@ -714,7 +725,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Theme (260724) — named themes + custom background ── */}
         <div className={styles.group} data-tutorial="theme-group">
-          <h3 className={styles.groupTitle}>{t('Theme')}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Theme')}</h3>
           <div className={styles.row}>
             <span className={styles.label}>{t('Theme')}</span>
             {/* Swatch circles instead of a Seg; System was retired from the UI
@@ -815,7 +826,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Appearance ──────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Appearance') /* >Appearance< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Appearance') /* >Appearance< */}</h3>
           {/* Appearance & feel: "Realistic typing" pacing. On by default. */}
           <div className={styles.row}>
             <span className={styles.label}>
@@ -935,7 +946,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── About ───────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('About') /* >About< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('About') /* >About< */}</h3>
           <div className={styles.row}>
             <span className={styles.label}>{t('Version')}</span>
             <span className={styles.value}>
@@ -1082,7 +1093,7 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* ── Danger ──────────────────────────────────────────── */}
         <div className={styles.group}>
-          <h3 className={styles.groupTitle}>{t('Danger') /* >Danger< */}</h3>
+          <h3 className={styles.groupTitle} data-settings-section="">{t('Danger') /* >Danger< */}</h3>
           <div className={styles.row}>
             <span className={styles.label}>{t('Reset all companion memories')}</span>
             <Button
@@ -1138,6 +1149,7 @@ export function SettingsScreen(): React.ReactElement {
           </p>
         </div>
       </div>
+      </InfoTipInline>
 
       {verifyModalOpen && authState.kind === 'signed_in' ? (
         <VerifyEmailModal

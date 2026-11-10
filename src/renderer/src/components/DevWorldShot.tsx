@@ -190,7 +190,6 @@ function seed(): void {
       return {
         creatorName: f && !f.isDefault ? f.author : null,
         addCount: f ? f.adds : null,
-        stardewLook: f?.name === 'Aria',
         sampleVoiceId: 'v-sarah',
       };
     },
@@ -206,8 +205,8 @@ function seed(): void {
       const f = FIXTURES.find((x) => x.id === id);
       const avatars = [item(`${id}-card`, 'portrait', 'card', null, f?.art ?? null)];
       if (f?.name === 'Aria') {
-        avatars.push(item(`${id}-a1`, 'portrait', 'upload', 'Festival outfit', f.art));
-        avatars.push(item(`${id}-a2`, 'live2d', 'upload', 'Stage', null));
+        avatars.push(item(`${id}-a1`, 'portrait', 'upload', null, f.art));
+        avatars.push(item(`${id}-a2`, 'live2d', 'upload', null, null));
       }
       return { state: 'ready', list: { is_owner: false, avatars, default_id: `${id}-card` }, pick_id: null, effective_id: `${id}-card` };
     },

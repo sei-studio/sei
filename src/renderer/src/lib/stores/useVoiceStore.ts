@@ -1733,6 +1733,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         if (push.kind === 'sei-voices-fallback') {
           if (fishNoticeReasons.has('sei-voices')) return;
           fishNoticeReasons.add('sei-voices');
+          // Playtime funnel (261110): the free Sei voices ran out (or failed)
+          // and the call fell back to on-device voices. Once per call.
+          sei.track('voice_trial_state', {
+            state: push.reason === 'no-credits' ? 'used_up' : 'fallback',
+            reason: push.reason,
+          });
         }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;

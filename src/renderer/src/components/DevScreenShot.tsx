@@ -27,10 +27,12 @@
  *                    on the Look tab's card image Regenerate button
  *                    (261107); without it the hint is marked seen so other
  *                    character shots stay as they were.
- *     &tab=overview|settings   (character, someone else's companion) the
- *                    tab to open on; &tab=look|voice|personality|games|
- *                    sharing|worldlink|danger scrolls your own companion's
- *                    page to that section (product call 261110)
+ *     &tab=overview|settings|worldlink|more   (character, someone else's
+ *                    companion) the tab to open on; &tab=look|voice|
+ *                    personality|games|worldlink|more opens that tab of your
+ *                    own companion's section menu (worldlink needs
+ *                    &seilink=on), and a row group (sharing|danger) opens
+ *                    the tab that holds it (product call 261110)
  *     &who=own|builtin|world   (character) Sui as your own companion
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on
@@ -234,13 +236,13 @@ function seed(): void {
             regenCount: 1,
             regenLimit: 3,
           },
-    // The profile's cloud facts (261110): author, add count, Stardew look, sample voice.
+    // The profile's cloud facts (261110): author, add count, sample voice.
     charsOverviewInfo: async () =>
       who === 'world'
-        ? { creatorName: 'kitsune', addCount: 72, stardewLook: true, sampleVoiceId: 'v-sarah' }
+        ? { creatorName: 'kitsune', addCount: 72, sampleVoiceId: 'v-sarah' }
         : who === 'builtin'
-          ? { creatorName: null, addCount: 1840, stardewLook: true, sampleVoiceId: 'v-lily' }
-          : { creatorName: null, addCount: 12, stardewLook: false, sampleVoiceId: 'v-sarah' },
+          ? { creatorName: null, addCount: 1840, sampleVoiceId: 'v-lily' }
+          : { creatorName: null, addCount: 12, sampleVoiceId: 'v-sarah' },
     // Someone else's companion shows its public avatars; your own has the card only.
     avatarLibraryList: async (id: string) => {
       const item = (aid: string, kind: string, source: string, name: string | null, url: string | null) => ({
@@ -249,8 +251,8 @@ function seed(): void {
       });
       const avatars = [item(`${id}-card`, 'portrait', 'card', null, suiArt)];
       if (who !== 'own') {
-        avatars.push(item(`${id}-a1`, 'portrait', 'upload', 'Winter cloak', suiArt));
-        avatars.push(item(`${id}-a2`, 'live2d', 'upload', 'Desk buddy', null));
+        avatars.push(item(`${id}-a1`, 'portrait', 'upload', null, suiArt));
+        avatars.push(item(`${id}-a2`, 'live2d', 'upload', null, null));
       }
       return {
         state: 'ready',
@@ -387,19 +389,8 @@ export function DevScreenShot(): React.ReactElement {
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <IconRail />
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
-              <main
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  minHeight: 0,
-                  overflow: 'auto',
-                  background: 'var(--window)',
-                  borderTopLeftRadius: 'var(--radius)',
-                  borderTop: '1px solid var(--border)',
-                  borderLeft: '1px solid var(--border)',
-                }}
-              >
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+              <main style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', background: 'transparent' }}>
                 {body}
               </main>
             </div>

@@ -5,12 +5,16 @@
  * accessible label. Renders nothing for 0 or an unknown count.
  *
  * Not a button and no border (house rule): it is a label.
+ *
+ * Hidden everywhere while SHOW_ADD_COUNTS (shared/addCounts.ts) is false
+ * (product call 261110): flip that one constant to bring it back.
  */
 
 import React from 'react';
 import { useLangStore, useT } from '../lib/i18n';
 import { uiLocaleTag } from '@shared/uiLanguage';
 import { formatAddCount } from '../lib/worldList';
+import { SHOW_ADD_COUNTS } from '@shared/addCounts';
 import { UserIcon } from './icons';
 import styles from './AddCount.module.css';
 
@@ -24,7 +28,7 @@ export function AddCount({ count, variant }: AddCountProps): React.ReactElement 
   const t = useT();
   const lang = useLangStore((s) => s.lang);
   const shown = formatAddCount(count, uiLocaleTag(lang));
-  if (shown === null || count == null) return null;
+  if (!SHOW_ADD_COUNTS || shown === null || count == null) return null;
   const n = Math.floor(count);
   const label = n === 1 ? t('Added by 1 player') : t('Added by {n} players', { n });
   return (

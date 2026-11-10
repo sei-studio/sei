@@ -189,6 +189,7 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/instrumenting-surfaces.md`](docs/agents/instrumenting-surfaces.md) | REQUIRED before adding or changing a game or timed surface: analytics events and limits |
 | [`docs/agents/continuity-surfaces.md`](docs/agents/continuity-surfaces.md) | REQUIRED for a game or timed surface: continuity and resume |
 | [`docs/agents/in-app-fullscreen.md`](docs/agents/in-app-fullscreen.md) | In-app fullscreen for game surfaces |
+| [`docs/agents/playtime.md`](docs/agents/playtime.md) | Playtime page: Sei / ChatGPT / My keys tabs, switching, usage ledger and spend alert, Sei voices on the ChatGPT plan, analytics |
 | [`docs/agents/build-release.md`](docs/agents/build-release.md) | Build and release: CI, signing, notarization, feeds, rollout |
 
 ## Directory map

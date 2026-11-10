@@ -1,14 +1,14 @@
 /**
  * ProfileSettings: a companion's settings rows.
  *
- *  - Your own companion (access.view 'owner'): ONE scrolling page with
- *    section headings (Look, Voice, Personality, Games, Sharing, WorldLink,
- *    Danger zone), in the order people reach for them (product call 261110;
- *    261107 split the same rows over six tabs and hid too much).
- *  - Someone else's companion in your library ('foreign'): the short "Your
- *    settings" list (avatar pick, floating avatar, Knowledge, the DST
- *    survivor, WorldLink, Reset memory, Unbind). Its look, voice and
- *    personality are on the Overview (ProfileOverview), not here.
+ *  - Your own companion (access.view 'owner'): one tab of the page's
+ *    section menu (Look, Voice, Personality, Games, WorldLink, More), shown
+ *    one at a time with no long scroll (product call 261110, second pass).
+ *    More holds Sharing and the Danger zone under small headings.
+ *  - Someone else's companion in your library ('foreign'): "Your settings"
+ *    (avatar pick, floating avatar, Knowledge, the DST survivor), WorldLink,
+ *    or More (Reset memory, Unbind). Its look, voice and personality are
+ *    on the Overview (ProfileOverview), not here.
  *
  * Every row is label + value + action(s). The actions open the existing
  * editors (the page owns those popups and passes openers in); which rows
@@ -29,13 +29,12 @@ import { portraitSrc } from '../../lib/portraitSrc';
 import { effectiveSharedVoice, poolVoiceLabel } from '../../lib/sharedVoice';
 import { useSharedVoiceInfo } from '../SharedVoiceChoice';
 import {
-  foreignSettingsRows,
   lockTipKey,
-  ownerSections,
-  sectionOf,
+  tabGroups,
   type ProfileAccess,
   type ProfileAction,
   type ProfileSection,
+  type ProfileTab,
   type RowKey,
 } from '../../lib/profileRows';
 import type { Character, CardImageOrigin } from '@shared/characterSchema';
@@ -53,11 +52,14 @@ import { useSkinGenerate } from '../SkinGenerateButton';
 import { HoverTip } from './HoverTip';
 import { ActionChip, ProfileRow, RowValue } from './ProfileRow';
 import { VoiceSampleButton, type SampleResult } from './VoiceSample';
+import { UserText } from './UserText';
 import styles from './Profile.module.css';
 
 export interface ProfileSettingsProps {
   character: Character;
   access: ProfileAccess;
+  /** The section menu tab whose rows to show. */
+  tab: ProfileTab;
   /** A row's button was used (analytics; the page maps the row to its section or tab). */
   onAction: (action: ProfileAction, row: RowKey) => void;
   onTipOpen: (key: string) => void;
@@ -93,66 +95,38 @@ export const SECTION_LABEL: Record<ProfileSection, string> = {
   danger: 'Danger zone',
 };
 
+/**
+ * One tab of the section menu: its rows; More puts a small heading over each
+ * group (Sharing, Danger zone).
+ */
 export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement {
-  return props.access.view === 'owner' ? <OwnerSettings {...props} /> : <ForeignSettings {...props} />;
-}
-
-function OwnerSettings(p: ProfileSettingsProps): React.ReactElement {
   const t = useT();
+  const groups = tabGroups(props.access, props.tab);
   return (
-    <div className={styles.sections}>
-      {ownerSections(p.access).map(({ section, rows }) => (
+    <div className={styles.sections} data-tab-body={props.tab}>
+      {groups.map((g, i) => (
         <section
-          key={section}
+          key={g.section ?? `rows-${i}`}
           className={styles.section}
-          data-section={section}
-          id={`profile-section-${section}`}
-          aria-labelledby={`profile-section-${section}-h`}
+          data-section={g.section ?? undefined}
+          id={g.section ? `profile-section-${g.section}` : undefined}
+          aria-labelledby={g.section ? `profile-section-${g.section}-h` : undefined}
         >
-          <h2
-            id={`profile-section-${section}-h`}
-            className={`${styles.sectionHead} ${section === 'danger' ? styles.sectionHeadDanger : ''}`}
-          >
-            {t(SECTION_LABEL[section])}
-          </h2>
+          {g.section ? (
+            <h2
+              id={`profile-section-${g.section}-h`}
+              className={`${styles.sectionHead} ${g.section === 'danger' ? styles.sectionHeadDanger : ''}`}
+            >
+              {t(SECTION_LABEL[g.section])}
+            </h2>
+          ) : null}
           <div className={styles.rows}>
-            {rows.map((row) => (
-              <Row key={row} row={row} {...p} />
+            {g.rows.map((row) => (
+              <Row key={row} row={row} {...props} />
             ))}
           </div>
         </section>
       ))}
-    </div>
-  );
-}
-
-/** A foreign companion's settings: plain rows, then WorldLink and the Danger zone under headings. */
-function ForeignSettings(p: ProfileSettingsProps): React.ReactElement {
-  const t = useT();
-  const rows = foreignSettingsRows(p.access);
-  const groups: { head: ProfileSection | null; rows: RowKey[] }[] = [
-    { head: null, rows: rows.filter((r) => !['worldlink', 'danger'].includes(sectionOf(r))) },
-    { head: 'worldlink', rows: rows.filter((r) => sectionOf(r) === 'worldlink') },
-    { head: 'danger', rows: rows.filter((r) => sectionOf(r) === 'danger') },
-  ];
-  return (
-    <div className={styles.sections}>
-      {groups
-        .filter((g) => g.rows.length > 0)
-        .map((g) => (
-          <section key={g.head ?? 'yours'} className={styles.section} data-section={g.head ?? 'yours'}>
-            {g.head ? (
-              <h2 className={`${styles.sectionHead} ${g.head === 'danger' ? styles.sectionHeadDanger : ''}`}>
-                {t(SECTION_LABEL[g.head])}
-              </h2>
-            ) : null}
-            <div className={styles.rows}>
-              {g.rows.map((row) => (
-                <Row key={row} row={row} {...p} />
-              ))}
-            </div>
-          </section>
-        ))}
     </div>
   );
 }
@@ -687,12 +661,15 @@ function AboutRow(p: RowProps): React.ReactElement {
       label={t('Name and description')}
       tall
       value={
-        <span className={styles.about}>
+        <div className={styles.about}>
           <span className={styles.aboutName}>{character.name}</span>
-          <span className={styles.clamp} title={description || undefined}>
-            {description || t('No description yet.')}
-          </span>
-        </span>
+          {/* The description is the creator's words: boxed as user text. */}
+          {description ? (
+            <UserText text={description} lines={3} />
+          ) : (
+            <span className={styles.clamp}>{t('No description yet.')}</span>
+          )}
+        </div>
       }
       lockedTip={access.about === 'locked' ? lockTip : null}
       actions={

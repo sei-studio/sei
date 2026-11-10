@@ -105,18 +105,26 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 | `seilink_intro_link` | once per intro, when it ends (or is unmounted): how the WorldLink status lines went (261106 v6, `lib/seilink/worldLink.ts` linkReport) | outcome `success` (the success line landed)/`failed` (the failure line showed and was closed)/`abandoned` (skipped or closed before either), failure `offline`/`network`/`timeout`/`bake_failed`/`install`/`http`/`auth`/`host`/`error` (failed only), trigger, reduced_motion, lines_shown (0 to 9), line_1_ms .. line_9_ms (how long each line was on screen), total_ms, slowest (the milestone that took longest after the one before: `sent`/`answered`/`running`/`baked`/`installed`/`host`) + slowest_ms, anima_start (her bake's `AnimaStage` when the intro started, or `none`). No character id, no text | Is the link fast enough, which stage is slow, how often it fails and why |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
 
-Profile page (261107, v0.7; reorganized by product call 261110): the gear
-menu is gone. Its WorldLink items are rows in the profile's WorldLink section
-(your own companion's one-page settings) or on the "Your settings" tab (a
-built-in or World companion in your library): Move onto/off desktop, Edit room
-and Replay intro. They still send `source`/`opened_from`/`entry` = `gear`, so
-the series stays continuous; read `gear` as "the profile page". The same
-section has an Idle lines toggle (IPC `seilink:set-idle-lines`,
-`setSeilinkIdleLines` in the host), shown only while she is on this desktop.
-The page's own events (`profile_viewed`, `profile_tab_viewed`,
-`profile_action_clicked` whose `tab` is now the owner section or the foreign
-tab, `profile_tooltip_opened`, `profile_voice_sample_played`,
-`profile_cta_clicked`) are in `src/renderer/src/lib/profileRows.ts`.
+Profile page (261107, v0.7; reorganized by product call 261110, then split
+into a section menu on 261110 v2): the gear menu is gone. Its WorldLink items
+are rows on the profile's WorldLink tab (your own companion, and a built-in or
+World companion in your library; the tab shows only where WorldLink is
+available): Move onto/off desktop, Edit room and Replay intro. They still send
+`source`/`opened_from`/`entry` = `gear`, so the series stays continuous; read
+`gear` as "the profile page". The same tab has an Idle lines toggle (IPC
+`seilink:set-idle-lines`, `setSeilinkIdleLines` in the host), shown only while
+she is on this desktop. The page's own events are in
+`src/renderer/src/lib/profileRows.ts`: `profile_viewed`, `profile_tab_viewed`
+(since v2 it carries `view` and fires for the owner tabs too: owner tabs
+`look`/`voice`/`personality`/`games`/`worldlink`/`more`, others
+`overview`/`settings`/`worldlink`/`more`), `profile_action_clicked` (its `tab`
+is the page tab the row sits on, so Sharing and Danger zone rows report
+`more`), `profile_tooltip_opened`, `profile_voice_sample_played` and
+`profile_cta_clicked`. Add counts are hidden everywhere since v2
+(`SHOW_ADD_COUNTS` in `src/shared/addCounts.ts`): the World list still fetches
+them for the popular sort, and `world_page_loaded` gains `counts_displayed`
+(0 while hidden; `counts_shown` still counts the entries that have a
+count, whether or not it is on screen).
 
 ## First room on the desktop (261106)
 

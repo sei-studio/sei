@@ -1718,15 +1718,13 @@ export interface BrowseEntry {
 /**
  * The cloud facts behind a profile's Overview (product call 261110), from
  * chars:overview-info (main/cloud/characterOverview.ts). Every field is
- * best-effort: null / false = unknown, and the Overview leaves it out.
+ * best-effort: null = unknown, and the Overview leaves it out.
  */
 export interface CharacterOverviewInfo {
   /** The author's public display name; null for your own, built-ins and unnamed authors. */
   creatorName: string | null;
   /** Accounts with it in their library (the World card's number); null when unknown. */
   addCount: number | null;
-  /** A Stardew Valley farmer look exists (this device or the shared cloud row). */
-  stardewLook: boolean;
   /**
    * The curated-pool voice its sample plays (bundled clip, no TTS call).
    * Null for "no voice", or an own ElevenLabs voice you can hear (that one

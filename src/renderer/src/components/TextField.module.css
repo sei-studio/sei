@@ -1,27 +1,29 @@
-/* TextField.module.css — borderless underline input.
- * Source: 04-UI-SPEC.md §Component Inventory → TextField + D-31.
- */
+/* TextField.module.css — the text input (quiet register, 261110).
+ * A --wash fill (it reads one step up on any surface: the field, a row, a
+ * modal), no frame line; focus and errors draw a 2px inset rule
+ * along the bottom so the box never grows. */
 
 .field {
   width: 100%;
-  background: transparent;
+  box-sizing: border-box;
+  background: var(--wash);
   border: none;
-  border-bottom: 1px solid var(--border-strong);
-  border-radius: 0; /* D-28 */
+  border-radius: var(--radius);
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--fs-body);
+  font-weight: 500;
   font-family: var(--sans);
   outline: none;
-  transition: border-color 140ms ease;
+  transition: box-shadow 140ms ease, background 140ms ease;
 }
 
 .single {
-  height: 48px;
-  padding: 0;
+  height: var(--control);
+  padding: 0 var(--space-md-plus);
 }
 
 .multi {
-  padding: var(--space-md) 0;
+  padding: var(--space-md) var(--space-md-plus);
   resize: vertical;
 }
 
@@ -30,16 +32,15 @@
 }
 
 .field:focus {
-  border-bottom-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .field[aria-invalid='true'] {
-  border-bottom-color: var(--red);
+  box-shadow: inset 0 -2px 0 var(--red);
 }
 
 .field:disabled {
   opacity: 0.5;
-  border-bottom-color: var(--border);
   cursor: not-allowed;
 }
 

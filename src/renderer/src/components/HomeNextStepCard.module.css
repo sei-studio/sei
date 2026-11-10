@@ -1,27 +1,27 @@
-/* HomeNextStepCard (261013): the "up next" strip above the Home party wall.
- * In flow, full width, borderless except the hairline that separates it
- * from the panels. Tokens only.
- * 261103: one colour only, the portrait. The strip sits on the page itself
- * (no tinted band), the label is the one quiet gray, the plan line is body
- * text, the button is the neutral secondary and the dismiss stays gray. */
+/* HomeNextStepCard (261013): the "up next" line on Home.
+ * Quiet register (product call 261110): the status row UNDER the party wall,
+ * in the update window's progress-row slot. Face, a meta kicker, a title-size
+ * sentence, the screen's one accent button and a bare close. No band, no
+ * hairline; it sits on the field's glow. Tokens only. */
 
 .root {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-sm) var(--space-lg);
+  gap: var(--space-lg);
+  padding: var(--space-lg) 0;
+  min-height: calc(var(--space-4xl) + 2 * var(--space-lg));
+  box-sizing: border-box;
   background: transparent;
-  border-bottom: 1px solid var(--border);
   animation: fade-up 280ms var(--ease-pop) both;
 }
 
 .face {
   flex: none;
-  width: 44px;
-  height: 44px;
+  width: var(--space-4xl);
+  height: var(--space-4xl);
   overflow: hidden;
-  background: var(--surface-2);
+  background: var(--step-1);
   border-radius: var(--radius);
 }
 
@@ -30,17 +30,15 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-xs);
 }
 
-/* 261014: the same type as the "Idle" line under the party tile names
-   (Presence.module.css: body sans, 13px, --text-2), so the label reads as
-   part of Home instead of a code font. */
 .kicker {
   font-family: var(--sans);
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--text-2);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: var(--lh-meta);
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -48,9 +46,9 @@
 
 .text {
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-title);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: var(--lh-title);
   color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -63,7 +61,7 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
 }
 
 .dismiss {
@@ -72,20 +70,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control);
+  height: var(--control);
   padding: 0;
   border: none;
   background: none;
-  color: var(--text-2);
+  color: var(--muted);
   cursor: pointer;
   transition: color 140ms var(--ease), background-color 140ms var(--ease);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
 }
 
 .dismiss:hover {
   color: var(--text);
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--wash);
 }
 
 .dismiss:focus-visible {
@@ -93,14 +91,21 @@
   outline-offset: 2px;
 }
 
+@media (max-width: 900px) {
+  .text {
+    font-size: var(--fs-body);
+    line-height: var(--lh-body);
+  }
+}
+
 @media (max-width: 560px) {
   .root {
     flex-wrap: wrap;
-    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-md);
   }
 
   .copy {
-    flex-basis: calc(100% - 44px - var(--space-md));
+    flex-basis: calc(100% - var(--space-4xl) - var(--space-md));
   }
 
   .actions {

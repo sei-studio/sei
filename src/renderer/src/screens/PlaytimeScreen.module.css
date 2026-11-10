@@ -1,27 +1,30 @@
 /**
  * PlaytimeScreen (261110, product call 261110): the page frame, the tab bar
  * and the panels the ChatGPT and My keys tabs share. Mocks: Playtime v3
- * (01 Sei, 02/03 ChatGPT, 04/05 My keys). Big text, few words, quiet panels
- * on --bg3, no borders on buttons or tabs, 2px corners through the tokens.
+ * (01 Sei, 02/03 ChatGPT, 04/05 My keys). Big text, few words, no borders
+ * on buttons or tabs, 2px corners through the tokens. Quiet register (dev
+ * restyle 261110): the four --fs-* sizes, rows and tiles are --step-1 fills
+ * 2px apart (the field shows through the gap, never a hairline), tracks and
+ * selects are --wash with the selected option on --wash-hi.
  * The Sei tab body keeps its own sheet (CreditsScreen.module.css).
  */
 
 .root {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: var(--page-top) 0 var(--space-2xl);
+  padding: var(--space-2xl-plus) var(--page-inset) var(--space-4xl);
   display: flex;
   flex-direction: column;
 }
 
 .col {
   width: 100%;
-  max-width: 860px;
+  max-width: var(--measure-col);
   margin: 0 auto;
-  padding: 0 var(--page-gutter);
   display: flex;
   flex-direction: column;
-  gap: var(--gap-section);
+  gap: calc(var(--space-2xl) + var(--space-xs));
 }
 
 /* ── Header: the page title and the three tabs ── */
@@ -36,17 +39,17 @@
 .title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 34px;
-  line-height: 1.1;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
   color: var(--text);
   margin: 0;
 }
 
 .tabs {
   display: inline-flex;
-  gap: var(--space-xs);
-  padding: var(--space-xs);
-  background: var(--bg3);
+  gap: 2px;
+  padding: 3px;
+  background: var(--wash);
   border-radius: var(--radius);
 }
 
@@ -55,17 +58,18 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-family: var(--display);
+  font-family: var(--sans);
   font-weight: 600;
-  font-size: 19px;
-  padding: var(--space-sm) var(--space-md-plus);
+  font-size: var(--fs-body);
+  min-height: calc(var(--control-sm) - 4px);
+  padding: 0 var(--space-lg);
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 120ms var(--ease), color 120ms var(--ease);
 }
 
 .tab:hover {
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .tab:focus-visible {
@@ -75,15 +79,15 @@
 
 .tabOn,
 .tabOn:hover {
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--wash-hi);
+  color: var(--text);
 }
 
 /* ── Sections: a title (and an optional aside) over a panel ── */
 .section {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-stack);
+  gap: var(--space-md-plus);
 }
 
 .sectionHead {
@@ -96,14 +100,15 @@
 .sectionTitle {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 21px;
-  color: var(--text-2);
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  color: var(--text);
   margin: 0;
 }
 
 .aside {
-  font-family: var(--mono);
-  font-size: 13px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -114,23 +119,20 @@
 .panel {
   display: flex;
   flex-direction: column;
-  padding: var(--space-xs) var(--space-lg);
-  background: var(--bg3);
-  border-radius: var(--radius);
+  gap: 2px;
 }
 
-/* A panel row: label left, controls right; rows inside a panel are divided
-   by a hairline. */
+/* A row: label left, controls right. A raised fill, 2px from its neighbours
+   (the Settings row of the quiet register). */
 .row {
   display: flex;
   align-items: center;
-  gap: var(--gap-group);
-  min-height: 64px;
-  padding: var(--space-sm) 0;
-}
-
-.row + .row {
-  border-top: 1px solid var(--line);
+  gap: var(--space-lg);
+  min-height: calc(var(--space-4xl) + var(--space-md));
+  box-sizing: border-box;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--step-1);
+  border-radius: var(--radius);
 }
 
 .rowLabel {
@@ -138,7 +140,8 @@
   min-width: 0;
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 17px;
+  font-size: var(--fs-body);
+  line-height: 1.25;
   color: var(--text);
   display: inline-flex;
   align-items: center;
@@ -160,7 +163,7 @@
 
 .mono {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: var(--fs-meta);
   letter-spacing: 0.04em;
   color: var(--muted);
 }
@@ -176,8 +179,10 @@
 /* One line under a panel: errors, the switch heads-up, a status. */
 .note {
   margin: 0;
+  padding: 0 var(--space-lg);
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--muted);
 }
 
@@ -192,7 +197,7 @@
   padding: 0;
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-meta);
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -213,15 +218,21 @@
   flex: 0 1 auto;
   min-width: 0;
   max-width: 280px;
-  padding: var(--space-sm) var(--space-md);
+  height: var(--control-sm);
+  padding: 0 var(--space-md);
   font-family: var(--mono);
-  font-size: 14px;
-  background: var(--bg4);
+  font-size: var(--fs-meta);
+  background: var(--wash);
   color: var(--text);
   border: 0;
   border-radius: var(--radius);
   cursor: pointer;
   text-overflow: ellipsis;
+}
+
+.select option {
+  background: var(--bg2);
+  color: var(--text);
 }
 
 .select:focus-visible {
@@ -242,9 +253,9 @@
 /* ── The choice control (voice source): borderless segmented buttons ── */
 .choice {
   display: inline-flex;
-  gap: var(--space-xs);
-  padding: var(--space-xs);
-  background: var(--bg4);
+  gap: 2px;
+  padding: 3px;
+  background: var(--wash);
   border-radius: var(--radius);
   flex-wrap: wrap;
 }
@@ -255,14 +266,15 @@
   color: var(--muted);
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 15px;
-  padding: var(--space-sm) var(--space-md);
+  font-size: var(--fs-meta);
+  min-height: calc(var(--control-sm) - 4px);
+  padding: 0 var(--space-md);
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .choiceOpt:hover {
-  color: var(--text-2);
+  color: var(--text);
 }
 
 .choiceOpt:focus-visible {
@@ -272,8 +284,8 @@
 
 .choiceOptOn,
 .choiceOptOn:hover {
-  background: var(--accent-soft);
-  color: var(--accent-text);
+  background: var(--wash-hi);
+  color: var(--text);
 }
 
 /* The engine folded into "On this device" (founder feedback 261110): a small
@@ -289,7 +301,7 @@
   flex: 0 1 240px;
   min-width: 80px;
   height: 6px;
-  background: var(--bg4);
+  background: var(--track);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -304,7 +316,7 @@
 .meterValue {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--fs-meta);
   color: var(--text);
   white-space: nowrap;
 }
@@ -335,14 +347,14 @@
 .spendGrid {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 2.4fr;
-  gap: var(--gap-stack);
+  gap: 2px;
   align-items: stretch;
 }
 
 .stats {
   display: grid;
   grid-template-rows: 1fr 1fr;
-  gap: var(--gap-stack);
+  gap: 2px;
 }
 
 .stat {
@@ -351,32 +363,30 @@
   justify-content: center;
   gap: var(--space-xs);
   padding: var(--space-md) var(--space-lg);
-  background: var(--bg3);
+  background: var(--step-1);
   border-radius: var(--radius);
   min-width: 0;
 }
 
 .statLabel {
   font-family: var(--sans);
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 600;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
 .statValue {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 30px;
-  line-height: 1.1;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
   color: var(--text);
   overflow-wrap: anywhere;
 }
 
 .statSub {
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
@@ -385,7 +395,7 @@
   flex-direction: column;
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
-  background: var(--bg3);
+  background: var(--step-1);
   border-radius: var(--radius);
   min-width: 0;
 }
@@ -393,8 +403,8 @@
 .chartTitle {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 15px;
-  color: var(--text-2);
+  font-size: var(--fs-meta);
+  color: var(--muted);
 }
 
 .chartBars {
@@ -419,7 +429,7 @@
 .chartValue {
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   white-space: nowrap;
 }
@@ -446,7 +456,7 @@
 
 .chartDay {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
@@ -459,7 +469,7 @@
 .tiles {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--gap-stack);
+  gap: 2px;
   align-items: stretch;
 }
 
@@ -468,7 +478,7 @@
   flex-direction: column;
   gap: var(--space-sm);
   padding: var(--space-md-plus);
-  background: var(--bg3);
+  background: var(--step-1);
   border-radius: var(--radius);
 }
 
@@ -490,7 +500,8 @@
   margin: 0;
   font-family: var(--sans);
   font-weight: 600;
-  font-size: 20px;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
   color: var(--text);
 }
 
@@ -503,18 +514,9 @@
   justify-content: flex-end;
 }
 
-/* The one-line spend alert notice (App.tsx). */
+/* The spend alert (App.tsx): NoticeLine, set in from the window edges. */
 .alertBanner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--gap-group);
-  padding: var(--space-sm) var(--space-lg);
-  background: var(--bg3);
-  color: var(--text);
-  font-family: var(--sans);
-  font-weight: 600;
-  font-size: 15px;
+  padding: var(--space-sm) var(--page-inset) 0;
 }
 
 @media (max-width: 720px) {

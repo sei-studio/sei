@@ -1,26 +1,51 @@
-/* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6;
- * profile v0.7 "Option A", 261107). Portrait bleeds off the right behind a
- * left→right scrim; a left content panel carries the crumb, name + IdTag,
- * the meta line, the section tabs, the active tab's rows (they scroll inside
- * .panel) and the pinned Chat + Play deploy row. Row styles live in
- * components/profile/Profile.module.css. */
+/* CharacterPage.module.css: a companion's profile (Party redesign §4.6;
+ * profile v2, product call 261110). The content (header with the actions
+ * beside the name, the section menu, the active tab) is on the left; the
+ * portrait is a panel on the right whose inner edge fades into the page.
+ *
+ * One dark surface, no boxed panels, few type sizes: the name (display),
+ * 16-17px reading text, 15px controls and tabs, 13-14px quiet details. Row
+ * styles live in components/profile/Profile.module.css, the Overview's in
+ * ProfileOverview.module.css. */
 
 .root {
   position: relative;
   height: 100%;
   overflow: hidden;
   background: var(--window);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
 }
 
-/* ── Portrait layer (right, behind the scrim) ────────────────────────── */
+/* ── Art: the portrait panel (+ the expand button) ───────────────────── */
+.art {
+  position: relative;
+  margin: var(--page-top) var(--page-gutter) var(--page-top) 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg3);
+  min-height: 0;
+  /* The inner (left) edge fades into the page instead of a hard frame
+     line: an eased ramp over the first fifth, so the art itself stays
+     whole. */
+  --art-fade: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, black 22%, transparent) 6%,
+    color-mix(in srgb, black 60%, transparent) 13%,
+    color-mix(in srgb, black 88%, transparent) 19%,
+    black 24%
+  );
+  -webkit-mask-image: var(--art-fade);
+  mask-image: var(--art-fade);
+}
+
 .portraitLayer {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(660px, 56%);
+  inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
 }
 
 .portraitTint {
@@ -33,7 +58,9 @@
   position: absolute !important;
   inset: 0;
   z-index: 1;
-  filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
+  /* The panel's own backing shows through a cut-out portrait (and the tint
+     glow with it), so the panel reads as one piece. */
+  background: transparent;
   /* Portrait rises + fades in on open. */
   animation: picRise 0.7s var(--ease) both;
 }
@@ -70,26 +97,24 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  /* Softened 260729: fainter wash, shorter reach — the art carries the right
-     half of the page uncovered; the left band stays strong enough for text. */
-  background:
-    linear-gradient(
-      90deg,
-      var(--window) 3%,
-      color-mix(in srgb, var(--window) 74%, transparent) 24%,
-      color-mix(in srgb, var(--window) 22%, transparent) 46%,
-      transparent 62%
-    ),
-    linear-gradient(0deg, color-mix(in srgb, var(--window) 45%, transparent), transparent 20%);
+  /* A soft fade at the panel's foot, under the expand button. */
+  background: linear-gradient(0deg, color-mix(in srgb, var(--window) 40%, transparent), transparent 22%);
 }
 
-/* Expand-art corner button (260729): floats over the portrait's bottom-right,
-   reusing the game surface's fullscreen glyph. Quiet, borderless chip. */
-.artExpandBtn {
+/* The portrait's bottom-right corner: the Avatars button (profile v3) beside
+   the expand-art one (260729). */
+.artCorner {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: var(--space-md-plus);
+  bottom: var(--space-md-plus);
   z-index: 4;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* A corner button: quiet, borderless chip (the expand-art one reuses the
+   game surface's fullscreen glyph). */
+.artExpandBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -125,24 +150,26 @@
   word-break: break-all;
 }
 
-/* ── Left content panel ──────────────────────────────────────────────── */
+/* ── Content column ──────────────────────────────────────────────────── */
 .content {
   position: relative;
   z-index: 3;
   height: 100%;
-  /* 261107: wider for the settings rows (label | value | actions). */
-  width: min(600px, 58%);
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 261103 spacing pass: the header (crumb, title, tabs) and the pane are
-     groups. Insets are the page tokens (was 18 / 22 / 24 / 34). */
   gap: var(--gap-group);
-  padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
-  /* The page never scrolls as a whole: only the tab panel does. */
+  /* The page never scrolls as a whole: only the tab panel does, and only
+     when a small window cannot fit the tab. */
   overflow: hidden;
-  /* Content panel slides in from the right when the page opens. Clipped by
+  /* Content slides in from the right when the page opens. Clipped by
      .root's overflow:hidden so it never triggers a horizontal scrollbar. */
   animation: detailIn 0.5s var(--ease) both;
+}
+
+.content {
+  padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
+  max-width: 860px;
 }
 
 @keyframes detailIn {
@@ -175,19 +202,38 @@
   /* Pull left by the quiet/sm button's horizontal padding so the back button's
      icon lines up with the title + content left edge. */
   margin-left: calc(-1 * var(--space-md));
+  margin-bottom: calc(-1 * var(--space-xs));
   align-self: flex-start;
+}
+
+/* Header: the name block, the actions beside it. */
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-group);
+  flex-wrap: wrap;
+}
+
+.headMain {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
 }
 
 .titleRow {
   display: flex;
   align-items: baseline;
-  gap: var(--space-sm);
+  flex-wrap: wrap;
+  column-gap: var(--gap-stack);
+  row-gap: var(--gap-tight);
 }
 
 .title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 38px;
+  font-size: 46px;
   line-height: 1.05;
   color: var(--text);
   margin: 0;
@@ -196,26 +242,20 @@
   word-break: break-word;
 }
 
-/* Header: title row + meta line, a control gap apart. */
-.head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-control);
-}
-
 .kindChip {
-  align-self: center;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  padding: 3px 8px;
+  align-self: baseline;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--muted) 14%, transparent);
   color: var(--text-2);
   white-space: nowrap;
 }
 
-/* One meta line: Bonded / Played / Last launch (was three stat boxes). */
+/* One meta line: "by <author>", Created / Bonded, Played, Last launch. Same
+   face and size for label and value; the label is just quieter. */
 .meta {
   display: flex;
   flex-wrap: wrap;
@@ -231,9 +271,8 @@
 }
 
 .metaItem dt {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-size: 14px;
   color: var(--muted);
 }
 
@@ -246,13 +285,31 @@
   white-space: nowrap;
 }
 
-/* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
-/* 261103: the labels sit on the content's left edge (they were inset 14px
-   from the title) with the underline under the word, like the edit
-   modal's persona mode tabs. */
-.tabs {
+/* "by Sei" / "by <author>" on someone else's companion (261110). */
+.metaItem dd.byline {
+  font-size: 15px;
+  color: var(--text);
+}
+
+/* ── Actions: Chat + Play, or Invite to party ────────────────────────── */
+/* Near the content, natural width (no full-width bar pinned to the foot). */
+.deploy {
+  flex: none;
   display: flex;
-  gap: var(--space-lg);
+  gap: var(--gap-control);
+}
+
+.deployBig {
+  min-width: 148px;
+  justify-content: center;
+}
+
+/* ── Section menu (one row of tabs, underline on the active one) ─────── */
+.tabs {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-lg);
   border-bottom: 1px solid var(--border);
 }
 
@@ -263,12 +320,13 @@
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: var(--space-sm) 0;
+  padding: var(--space-sm) 0 var(--space-sm);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
+  white-space: nowrap;
   transition: color 140ms ease;
 }
 
@@ -281,44 +339,22 @@
   border-bottom-color: var(--accent);
 }
 
-/* "by Sei" / "by <author>" on someone else's companion (261110). */
-.metaItem dd.byline {
-  font-weight: 500;
-  color: var(--text);
-}
-
-/* ── Body panel ────────────────────────────────────────────────────────
-   The owner's settings page, or a foreign companion's active tab. It
-   scrolls INSIDE this area: the
-   .content column shrinks it (min-height: 0) to fit above the pinned deploy
-   row, so one section never scrolls into the next. The negative margin +
-   padding keep the scrollbar off the rows' right edge. */
+/* ── The active tab ─────────────────────────────────────────────────────
+   Fills the rest of the column and scrolls inside it only when a small
+   window cannot fit the tab. The negative margin + padding keep the
+   scrollbar off the rows' right edge. */
 .panel {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  margin: calc(-1 * var(--space-sm)) calc(-1 * var(--space-md)) 0 0;
-  padding: 0 var(--space-md) var(--space-sm) 0;
-}
-
-/* ── Deploy row (mockup .deploy) — pinned to the bottom ──────────────── */
-.deploy {
-  margin-top: auto;
-  flex: none;
-  display: flex;
-  gap: var(--gap-control);
-}
-
-.deployBig {
-  flex: 1;
-  min-width: 0;
-  justify-content: center;
+  margin-right: calc(-1 * var(--space-md));
+  padding: var(--space-xs) var(--space-md) var(--space-sm) 0;
 }
 
 .addError {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--red);
   margin: 0;
 }
@@ -431,7 +467,7 @@
 
 .skelTitle {
   width: 200px;
-  height: 34px;
+  height: 44px;
   background: var(--bg3);
 }
 
@@ -439,9 +475,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--gap-control);
-  padding: var(--pad-control) var(--pad-card);
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  max-width: 520px;
 }
 
 .skelLine {
@@ -467,28 +501,19 @@
 }
 
 .skelDeploy {
-  margin-top: auto;
   flex: none;
   display: flex;
   gap: var(--gap-control);
 }
 
 .skelBtn {
-  flex: 1;
-  height: 44px;
+  width: 148px;
+  height: 40px;
   background: var(--bg3);
 }
 
 .skelBtnSm {
-  width: 52px;
-  height: 44px;
+  width: 148px;
+  height: 40px;
   background: var(--bg3);
-}
-
-
-/* The owner's one-page settings start right under the meta line (no tab
-   bar above them, so no pull-up). */
-.panelOwner {
-  margin-top: 0;
-  padding-top: var(--space-xs);
 }
