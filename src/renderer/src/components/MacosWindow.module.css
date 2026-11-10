@@ -1,8 +1,8 @@
 /* MacosWindow.module.css — terminal window chrome.
  *
  * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell + D-32 (real macOS
- * traffic lights — no fake ones). Full-bleed dark; the vignette/grain live
- * in the .hud-overlays layer (global.css), mounted by MacosWindow.tsx.
+ * traffic lights — no fake ones). Full-bleed dark; the dotted glow field
+ * (FieldBackdrop) paints under everything (the grain overlay is gone, 261110).
  */
 
 .window {
@@ -42,12 +42,7 @@
  * the flat --window field, so there is no visible "bar". */
 .dragStrip {
   position: relative;
-  /* No z-index lift needed: the HUD vignette is inset to the content panel
-     (global.css .hud-vignette) so it never reaches the chrome. The top bar and
-     the IconRail both render their flat, uniform --rail fill and read as one
-     continuous background strip. */
-  /* Sized so the macOS traffic lights get even clearance above and below.
-     NOTE: kept in sync with the .hud-vignette top inset in global.css. */
+  /* Sized so the macOS traffic lights get even clearance above and below. */
   height: 34px;
   flex-shrink: 0;
   /* Top bar shares the IconRail's exact fill — flat --rail, no gradient — so the
