@@ -106,13 +106,15 @@ export function recordLlmUsage(entry: { provider: string; model: string; usage: 
 }
 
 async function checkSpendAlert(scope: string, ledger: UsageLedger, now: Date): Promise<void> {
-  const { loadConfig, updateConfig } = await import('../configStore');
+  // Members are read where used, not destructured up front: updateConfig is
+  // only needed once the alert fires.
+  const configStore = await import('../configStore');
   if (getActiveScope() !== scope) return;
-  const cfg = await loadConfig();
+  const cfg = await configStore.loadConfig();
   const spend = summarizeUsage(ledger, now).spendMonthUsd;
   if (!shouldFireSpendAlert(cfg, spend, now)) return;
   const month = monthKey(now);
-  await updateConfig((c) => ({ ...c, spend_alert_fired_month: month }), { scope });
+  await configStore.updateConfig((c) => ({ ...c, spend_alert_fired_month: month }), { scope });
   const limitUsd = cfg.spend_alert_usd ?? 0;
   try {
     alertSink?.({ limitUsd, spendMonthUsd: spend });

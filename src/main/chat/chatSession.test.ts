@@ -32,8 +32,31 @@ vi.mock('../homeNextStep', async (importOriginal) => ({
   noteHomeNextStepChanged: changedSpy,
 }));
 vi.mock('../paths', () => ({ paths: { memoryDir: (id: string) => `/mem/${id}` } }));
+// An idle end of a longer chat starts the model check in the background
+// (chatNextStep.ts, never awaited). The real one reads config and the
+// transcript from disk, so on a loaded CI runner its `next_step_checked`
+// landed several tests later and broke an exact event list there. Its own
+// suites (chatNextStep / playerEndNextStep tests) cover it; here only the
+// session wiring is under test.
+vi.mock('../playerEndNextStep', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../playerEndNextStep')>()),
+  startPlayerEndNextStep: vi.fn(),
+  yieldToNewSession: vi.fn(),
+}));
 
 import { noteChatMessage, endChatSession, endAllChatSessions } from './chatSession';
+// chatSession.ts reaches these through dynamic import() (a chat send never
+// waits on them). Load them here so those imports are cache hits: a cold load
+// is real disk and transform work that `advanceTimersByTimeAsync(0)` does not
+// wait for, so a test that ran first (shuffle) or on a starved CPU saw the
+// consume spy uncalled.
+import '../analytics';
+import '../homeNextStep';
+import '../profile/scopeBarrier';
+import '../playerEndNextStep';
+import '../chatNextStep';
+import '../quitNextStep';
+import './chatStore';
 
 /** Mirrors IDLE_TIMEOUT_MS in the module. */
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
