@@ -419,7 +419,15 @@ export const SURVIVAL_ADDENDUM = (label, data) => {
 // the player, not you. Two variants by whether the body already engaged —
 // combat.js swings automatically when the mob is safe to melee, and the line
 // has to match what the player is watching happen on their screen.
-export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it — that is automatic, you do not need to call attackEntity for this one. Hitting a mob is what makes it turn on YOU instead of them, which is the whole point. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
+// 261110 (quality pass 50): "Hitting a mob is what makes it turn on YOU
+// instead of them" came back as fact the moment the turn was written:
+// "zombie's on me not you", "got the spider on me, hitting it", while her
+// snapshot's aggro line still had the mob on the player (combat_night evals
+// 261109, 6 of the wrong-fact labels). The sentence is gone. A version that
+// said instead "it is still going for them until your hits draw it away"
+// made it worse in the pass 50 probe (5 of 16 "zombie's on me" vs 1 of 16
+// for the old text); with neither, 0 of 16.
+export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it on reflex, so you do not need to call attackEntity for this one. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
 export const DEFEND_ADDENDUM_HELD = `{owner} is being hit by {label}{dist}. You are NOT engaging it automatically (it is a mob melee cannot safely answer, or you are already in your own fight). Decide and act in the SAME turn: attackEntity it to pull it off them (a mob turns on whoever hits it), place a block between them, or warn them in ONE short line and get clear. Do not just narrate.`
 // 261012: added to the defend turn when other hostiles are on the player
 // besides the one the body swings at (the automatic swing covers ONE mob), and

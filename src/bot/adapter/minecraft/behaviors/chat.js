@@ -36,6 +36,22 @@ function sameName(a, b) {
   return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
 }
 
+/**
+ * Keep the owner's latest death on the bot for the snapshot owner line
+ * (observers/snapshot.js ownerStateClause): when, the world's wording, where
+ * the body was, and the entity object that died (mineflayer replaces it when
+ * the player respawns). Exported for tests.
+ */
+export function recordOwnerDeath(bot, death, nowMs = Date.now()) {
+  let entity = null
+  try { entity = bot.players?.[death.subject]?.entity ?? null } catch { entity = null }
+  const p = entity?.position
+  const pos = p && [p.x, p.y, p.z].every(Number.isFinite)
+    ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }
+    : null
+  bot._seiOwnerDeath = { text: death.text, at: nowMs, pos, entity }
+}
+
 // The subject of a translated death message is its first `with` argument (a
 // nested ChatMessage for the player name); fall back to the first word of the
 // flattened line, which is the subject in every vanilla death string.
@@ -127,6 +143,14 @@ export function startChat(bot, config, orchestrator = null) {
     const who = isOwner
       ? (config.player_display_name || config.player_username || death.subject)
       : death.subject
+    // 261110 (quality pass 50): the snapshot's owner line reads this, so the
+    // very next turn (even a mid-action one this line has not reached yet)
+    // sees that they died, and later turns see that they respawned with
+    // nothing. Before, the owner line kept the dying body's stale health and
+    // then a fresh 20/20: "that one's gone, i'm still right here" right after
+    // the creeper killed them, and "you're fine, you're at full hp" after a
+    // drowning (combat_night evals 261109).
+    if (isOwner) recordOwnerDeath(bot, death)
     const labeled = `just DIED in-game. This is the world's own death message, not something they said to you, and it names the cause: ${death.text}`
     logChatIn(who, labeled)
     _deathHandled = death.text
