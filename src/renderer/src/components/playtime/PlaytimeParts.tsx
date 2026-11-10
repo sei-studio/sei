@@ -145,7 +145,8 @@ export function llmErrorText(token: string, provider: Provider, t: Translate): s
 /**
  * The model select: the provider's live list (llm:list-models), the stored
  * model (or the default) selected. Writes provider_config[provider].model
- * through onPick. Models that cannot see images are marked in the option.
+ * through onPick. Models that cannot see images are marked in the option,
+ * and a picked one says why that matters on hover.
  */
 export function ModelSelect(props: {
   provider: Provider;
@@ -183,10 +184,12 @@ export function ModelSelect(props: {
   const options = models.some((m) => m.id === props.value)
     ? models
     : [{ id: props.value, label: props.value, vision: 'unknown' as const }, ...models];
+  const blind = options.find((m) => m.id === props.value)?.vision === 'no';
   return (
     <select
       className={styles.select}
       aria-label={t('Model')}
+      title={blind ? t('This model cannot see images. Screen sharing and Draw! need a vision model.') : undefined}
       value={props.value}
       disabled={!enabled || models.length === 0}
       onChange={(e) => props.onPick(e.target.value)}

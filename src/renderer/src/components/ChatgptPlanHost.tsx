@@ -106,7 +106,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
       <ModalShell title={t('Sign in to ChatGPT again')} width={420} onClose={closeBlockDialog} tier="stacked">
         <p className={styles.body}>
           {t(
-            "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Settings.",
+            "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Playtime.",
           )}
         </p>
         <ModalFooter>
@@ -132,7 +132,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
       <ModalShell title={t('ChatGPT rejected the request')} width={420} onClose={closeBlockDialog} tier="stacked">
         <p className={styles.body}>
           {t(
-            "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Settings.",
+            "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Playtime.",
           )}
         </p>
         <ModalFooter>

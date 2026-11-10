@@ -18,7 +18,7 @@
  *   7. Playtime icon — StarIcon (4-point). 261110: opens the Playtime page on
  *      every backend (it has the Sei / ChatGPT / My keys tabs and every
  *      switch, with the sign-in a signed-out "Switch to Sei" needs). Before,
- *      the local backend's star opened a "Switch to cloud?" prompt.
+ *      the local backend's star opened its own cloud-switch prompt.
  *   8. Settings icon
  *   9. "Update Sei" (UpdateRailButton, 261023): only while an update is
  *      downloading or ready; full rail width, flush with the bottom edge
@@ -486,7 +486,7 @@ export function IconRail(): React.ReactElement {
         <div className={styles.cluster}>
           {/* 260725: three-state. UNKNOWN (null) renders NEITHER button — the
               rail must never claim a mode main hasn't reported (a guessed
-              "Switch to cloud" here painted BYOK over live cloud billing). */}
+              cloud switch here painted BYOK over live cloud billing). */}
           {aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local' ? (
             <RailButton
               active={view.kind === 'credits'}

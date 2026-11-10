@@ -662,7 +662,7 @@ function friendlyError(err: unknown): string {
     return t('Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.');
   }
   if (/VOICE_ELEVEN_QUOTA/.test(msg)) return t('Your ElevenLabs account is out of credits.');
-  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Settings.');
+  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Playtime.');
   if (/VOICE_NO_CREDITS/.test(msg)) {
     // 260926: say when free play comes back, not just that it is gone.
     const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
@@ -715,21 +715,21 @@ function isZhPack(packId: string | undefined): boolean {
  * "the local voice pack". */
 function missingPackNotice(packId: string | undefined): string {
   if (isZhPack(packId)) {
-    return t('[voice unavailable, download the Chinese voice pack in Settings]');
+    return t('[voice unavailable, download the Chinese voice pack in Playtime]');
   }
-  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Settings]');
+  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Playtime]');
   if (packId === 'tts-en') {
-    return t('[voice unavailable, download the English voice pack in Settings]');
+    return t('[voice unavailable, download the English voice pack in Playtime]');
   }
-  return t('[voice unavailable, download the local voice pack in Settings]');
+  return t('[voice unavailable, download the local voice pack in Playtime]');
 }
 
 /** Notice copy when a line WAS spoken, but with a substitute pack because the
  * language-matching one is not installed (260908, voice:tts-notice push). */
 function substitutePackNotice(push: { missingPackId: string; spokenPackId: string }): string {
   return isZhPack(push.missingPackId)
-    ? t('[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]')
-    : t('[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]');
+    ? t('[spoken with the English voice, download the Chinese voice pack in Playtime for a better fit]')
+    : t('[spoken with the Chinese voice, download the English voice pack in Playtime for a better fit]');
 }
 
 /** Notice copy when a cloud line for the user's OWN ElevenLabs voice was
@@ -739,7 +739,7 @@ export function ownVoiceStandInNotice(
 ): string {
   switch (reason) {
     case 'no-key':
-      return t('[speaking with a Sei voice, add your ElevenLabs key in Settings to hear their own voice]');
+      return t('[speaking with a Sei voice, add your ElevenLabs key in Playtime to hear their own voice]');
     case 'key-invalid':
       return t('[speaking with a Sei voice, ElevenLabs rejected your key]');
     case 'voice-missing':
@@ -755,7 +755,7 @@ export function ownVoiceStandInNotice(
  * spoke the line instead (261102, kokoro-fallback push). */
 export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string {
   return reason === 'pack-missing'
-    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Settings]')
+    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Playtime]')
     : t('[spoken with the Fast voice, the Kokoro voice could not load]');
 }
 
@@ -764,7 +764,7 @@ export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string 
 export function fishFallbackNotice(reason: FishFailureReason): string {
   switch (reason) {
     case 'no-key':
-      return t('[spoken with the Fast voice, add your Fish Audio key in Settings]');
+      return t('[spoken with the Fast voice, add your Fish Audio key in Playtime]');
     case 'key-invalid':
       return t('[spoken with the Fast voice, Fish Audio rejected your key]');
     case 'no-credit':

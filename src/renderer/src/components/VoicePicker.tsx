@@ -386,7 +386,7 @@ export function VoicePicker({
       } else if (/VOICE_ELEVEN_QUOTA/.test(msg)) {
         setError(t('Your ElevenLabs account is out of credits.'));
       } else if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) {
-        setError(t('ElevenLabs rejected your key. Check it in Settings.'));
+        setError(t('ElevenLabs rejected your key. Check it in Playtime.'));
       } else {
         setError(t('Sample unavailable right now.'));
       }
@@ -433,7 +433,7 @@ export function VoicePicker({
       if (!aliveRef.current) return;
       const msg = String((err as Error)?.message ?? '');
       if (/VOICE_PACK_MISSING/.test(msg)) {
-        setError(t('Download a voice pack in Settings to hear a sample.'));
+        setError(t('Download a voice pack in Playtime to hear a sample.'));
       } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
         setError(t('Local speech cannot run on this install.'));
       } else {
@@ -593,14 +593,14 @@ export function VoicePicker({
 
       {elevenKeyHintShown(hasElevenKey, localTtsMode) ? (
         <div className={styles.hint} data-testid="eleven-key-hint">
-          {t('Have your own ElevenLabs voices? Add your ElevenLabs key in Settings, under Voice.')}
+          {t('Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.')}
         </div>
       ) : null}
 
       {ownView === 'hint' ? (
         <div className={styles.hint} role="status">
           {ownList?.status === 'bad_key'
-            ? t('Could not read your ElevenLabs voices. Check your ElevenLabs key in Settings.')
+            ? t('Could not read your ElevenLabs voices. Check your ElevenLabs key in Playtime.')
             : t('Could not load your ElevenLabs voices right now.')}
         </div>
       ) : null}

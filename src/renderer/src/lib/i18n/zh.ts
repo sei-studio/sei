@@ -26,6 +26,7 @@ import { ZH_SEILINK } from './zh/seilink';
 import { ZH_SETUP_261104 } from './zh/setup261104';
 import { ZH_AVATARS_261106 } from './zh/avatars261106';
 import { ZH_PROFILE_261107 } from './zh/profile261107';
+import { ZH_PLAYTIME_261110 } from './zh/playtime261110';
 
 export const ZH: Record<string, string> = {
   ...ZH_COMMON,
@@ -43,6 +44,7 @@ export const ZH: Record<string, string> = {
   ...ZH_SETUP_261104,
   ...ZH_AVATARS_261106,
   ...ZH_PROFILE_261107,
+  ...ZH_PLAYTIME_261110,
 
   // W5 settings (china-compat)
   // Model picker + Test probe (SettingsScreen)

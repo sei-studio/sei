@@ -49,7 +49,7 @@ export type ChatgptPlanStep =
   | { kind: 'sign-in'; opts?: { accountId?: string | null; enablePlan?: boolean } };
 
 /**
- * Pure: mirror what the ChatGPT row in Settings offers for this status (see
+ * Pure: mirror what Playtime's ChatGPT tab offers for this status (see
  * ChatgptPlanSettings). `provider` is the local provider in use
  * (useUiStore.llmProvider), 'chatgpt' when the plan is already picked.
  */

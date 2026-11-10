@@ -1,6 +1,6 @@
 /**
  * Startup popup actions, renderer side (261029): the chatgpt-plan action
- * mirrors what the ChatGPT row in Settings offers, and an unknown name does
+ * mirrors what Playtime's ChatGPT tab offers, and an unknown name does
  * nothing at all.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -106,35 +106,35 @@ describe('runPopupAction', () => {
     expect(h.signInCalls).toEqual([]);
   });
 
-  it('chatgpt-plan, not connected: Settings at the row, starts the sign-in, then the switch', async () => {
+  it('chatgpt-plan, not connected: the Playtime ChatGPT tab, starts the sign-in, then the switch', async () => {
     h.status = status();
     h.signInResult = { ok: true, status: ready, planEnabled: true };
     expect(await runPopupAction('chatgpt-plan')).toBe(true);
     expect(h.signInCalls).toEqual([undefined]);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', useChatgptPlan: true });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true });
   });
 
-  it('chatgpt-plan, sign-in cancelled: stays on the row, no switch', async () => {
+  it('chatgpt-plan, sign-in cancelled: stays on the tab, no switch', async () => {
     h.status = status();
     h.signInResult = { ok: false, reason: 'cancelled' };
     await runPopupAction('chatgpt-plan');
     expect(h.signInCalls).toHaveLength(1);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', focus: 'chatgpt-plan' });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt' });
   });
 
   it('chatgpt-plan, already signed in: the switch, no sign-in', async () => {
     h.status = ready;
     await runPopupAction('chatgpt-plan');
     expect(h.signInCalls).toEqual([]);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', focus: 'chatgpt-plan', useChatgptPlan: true });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true });
   });
 
-  it('chatgpt-plan, already using it: just shows the row', async () => {
+  it('chatgpt-plan, already using it: just shows the tab', async () => {
     h.status = ready;
     useUiStore.setState({ llmProvider: 'chatgpt' });
     await runPopupAction('chatgpt-plan');
     expect(h.signInCalls).toEqual([]);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', focus: 'chatgpt-plan' });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt' });
   });
 
   it('chatgpt-plan, plan use declined again: no switch intent is left behind', async () => {
@@ -143,7 +143,7 @@ describe('runPopupAction', () => {
     h.signInResult = { ok: true, status: declined, planEnabled: false };
     await runPopupAction('chatgpt-plan');
     expect(h.signInCalls).toEqual([{ accountId: 'a1', enablePlan: true }]);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', focus: 'chatgpt-plan' });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt' });
   });
 
   it('a double click starts ONE sign-in: the second action is ignored while the first runs', async () => {
@@ -182,7 +182,7 @@ describe('runPopupAction', () => {
     h.signInResult = { ok: true, status: ready, planEnabled: true };
     expect(await startChatgptPlan()).toBe(true);
     expect(h.signInCalls).toEqual([undefined]);
-    expect(useUiStore.getState().view).toEqual({ kind: 'settings', useChatgptPlan: true });
+    expect(useUiStore.getState().view).toEqual({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true });
   });
 
   it('startChatgptPlan shares the latch: it does nothing (false) while a popup action runs', async () => {
@@ -236,7 +236,7 @@ describe('runPopupAction', () => {
     }
   });
 
-  it('does not switch a player who left Settings during the browser step', async () => {
+  it('does not switch a player who left Playtime during the browser step', async () => {
     h.status = status();
     h.signInResult = { ok: true, status: ready, planEnabled: true };
     const origSignIn = useChatgptStore.getState().signIn;

@@ -64,7 +64,7 @@ export function SwitchBackendConfirmModal({
   const line = toCloud
     ? t('Your companions will think and speak with Sei, on your Sei plan.')
     : toChatgpt
-      ? t('Your companions will think with ChatGPT and use voices on this device.')
+      ? t('Your companions will think with ChatGPT.')
       : t('Your companions will think with your own key or model.');
   const renewNote = !toCloud && plan !== 'free' ? t('Your Sei plan keeps renewing until you cancel it.') : null;
   const ctaLabel = submitting

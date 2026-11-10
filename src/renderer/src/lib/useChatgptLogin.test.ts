@@ -101,12 +101,12 @@ describe('ChatGPT login surfaces', () => {
     expect(s).toMatch(/phaseRef\.current !== 'idle'\) void sei\.cancelChatgptLogin\(\)/);
   });
 
-  it('the plan offer reuses the Settings switch intent (existing confirm semantics)', () => {
+  it('the plan offer reuses the Playtime switch intent (existing confirm semantics)', () => {
     const s = src('components/ChatgptPlanHost.tsx');
     expect(s.includes('takeChatgptPlanOffer()')).toBe(true);
-    expect(s.includes("navigate({ kind: 'settings', useChatgptPlan: true })")).toBe(true);
+    expect(s.includes("navigate({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true })")).toBe(true);
     // Only on calm screens, never over the tour or onboarding.
-    expect(s.includes("viewKind !== 'home' && viewKind !== 'settings'")).toBe(true);
+    expect(s.includes("viewKind !== 'home' && viewKind !== 'settings' && viewKind !== 'credits'")).toBe(true);
     expect(s.includes('tourActive')).toBe(true);
   });
 

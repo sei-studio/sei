@@ -176,20 +176,20 @@ describe('HardStopModal: free options at the wall', () => {
     expect(navigations).toEqual([]);
   });
 
-  it('F.3: a ChatGPT flow already in flight still lands on the ChatGPT plan row', async () => {
+  it('F.3: a ChatGPT flow already in flight still lands on the Playtime ChatGPT tab', async () => {
     h.startRan = false;
     render();
     button('Use your ChatGPT plan').onClick?.();
     await new Promise((r) => setTimeout(r, 0));
-    expect(navigations).toEqual([{ kind: 'settings', focus: 'chatgpt-plan' }]);
+    expect(navigations).toEqual([{ kind: 'credits', tab: 'chatgpt' }]);
   });
 
-  it('F.3: "Use your own API key or a local model" tracks, dismisses first, then opens Settings at the backend row', () => {
+  it('F.3: "Use your own API key or a local model" tracks, dismisses first, then opens the Playtime My keys tab', () => {
     render();
     button('Use your own API key or a local model').onClick?.();
     expect(h.order).toEqual(['track:own_key', 'acknowledge', 'navigate']);
     expect(h.track[0].props).toMatchObject({ action: 'own_key', reason: 'depleted' });
-    expect(navigations).toEqual([{ kind: 'settings', focus: 'ai-backend' }]);
+    expect(navigations).toEqual([{ kind: 'credits', tab: 'mykeys' }]);
   });
 
   it('F.4: the ChatGPT option is never hidden by region (the provider decides, like Settings)', () => {
