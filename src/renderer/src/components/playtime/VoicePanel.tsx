@@ -226,7 +226,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
                     </>
                   ) : (
                     <Button
-                      kind="secondary"
+                      kind="ghost"
                       size="sm"
                       disabled={!st}
                       onClick={() => setPendingPack({ id: row.id, name: t(row.label) })}

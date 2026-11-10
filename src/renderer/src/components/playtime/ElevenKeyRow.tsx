@@ -124,7 +124,7 @@ export function ElevenKeyRow({ mode }: { mode: 'byok' | 'cloud-optional' }): Rea
                 {t('Remove')}
               </Button>
             ) : null}
-            <Button kind="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>
               {hasKey ? t('Change key') : t('Set')}
             </Button>
           </>

@@ -646,7 +646,7 @@ export function SettingsScreen(): React.ReactElement {
           <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
           <div className={styles.row} data-testid="settings-open-playtime">
             <span className={styles.label}>{t('Brain, voice and plan')}</span>
-            <Button kind="secondary" size="sm" onClick={() => navigate({ kind: 'credits' })}>
+            <Button kind="ghost" size="sm" onClick={() => navigate({ kind: 'credits' })}>
               {t('Open Playtime')}
             </Button>
           </div>

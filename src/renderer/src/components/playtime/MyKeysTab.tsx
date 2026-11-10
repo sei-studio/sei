@@ -204,7 +204,7 @@ function BrainSection({
                   <span className={hasKey ? styles.mono : `${styles.mono} ${styles.warn}`}>
                     {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
                   </span>
-                  <Button kind="secondary" size="sm" onClick={() => setEditing(true)}>
+                  <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>
                     {hasKey ? t('Change key') : t('Add key')}
                   </Button>
                 </>
