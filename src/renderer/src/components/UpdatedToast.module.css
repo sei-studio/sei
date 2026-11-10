@@ -32,15 +32,15 @@
 .title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 13px;
-  line-height: 1.2;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--text);
 }
 
 .body {
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
-  line-height: 1.4;
+  line-height: var(--lh-meta);
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;

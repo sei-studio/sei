@@ -27,7 +27,7 @@
   height: 232px;
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   background: var(--surface-2);
   display: flex;
   align-items: center;
@@ -74,7 +74,7 @@
 .tileAvatar {
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   background: var(--surface-2);
   display: flex;
   align-items: center;
@@ -103,7 +103,7 @@
 
 .tileName {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   max-width: 150px;
   overflow: hidden;
@@ -120,8 +120,9 @@
   -webkit-appearance: none;
   appearance: none;
   border-radius: var(--radius);
-  border: 1px dashed var(--border-strong);
-  background: transparent;
+  /* Quiet register (261110): a wash fill, no dashed frame. */
+  border: 0;
+  background: var(--wash);
   color: var(--text-2);
   cursor: pointer;
   display: flex;
@@ -131,7 +132,7 @@
 }
 
 .addBtn:hover {
-  border-color: var(--accent);
+  background: var(--wash-hi);
   color: var(--accent);
 }
 
@@ -161,7 +162,7 @@
 
 .pickerTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-title);
   color: var(--text);
   text-align: left;
 }
@@ -200,12 +201,12 @@
   flex: 0 0 auto;
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   background: var(--window);
 }
 
 .pickerRowName {
-  font-size: 14px;
+  font-size: var(--fs-body);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -214,14 +215,14 @@
 .pickerEmpty {
   margin: 0;
   padding: var(--space-sm);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   text-align: left;
 }
 
 .name {
   font-family: var(--display);
-  font-size: 30px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text);
@@ -233,7 +234,7 @@
   align-items: center;
   gap: var(--gap-control);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   margin-top: calc(-1 * var(--space-sm));
   font-variant-numeric: tabular-nums;
@@ -261,7 +262,7 @@
   color: var(--red);
   text-transform: none;
   letter-spacing: 0.04em;
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 /* Caption lines — reserve height so the layout doesn't jump when they appear. */
@@ -275,13 +276,13 @@
 
 .captionCompanion {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--text);
 }
 
 .captionUser {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
@@ -290,7 +291,7 @@
    deliberately apart from .captionCompanion so it never reads as speech. */
 .captionNotice {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-meta);
   font-style: italic;
   color: var(--muted);
   max-width: 520px;
@@ -311,8 +312,8 @@
 
 .fallbackText {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
   text-align: left;
 }
@@ -334,7 +335,7 @@
 
 .controlLabel {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted);
 }
 
@@ -364,14 +365,14 @@
 
 .installTitle {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-title);
   color: var(--text);
 }
 
 .installBody {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   color: var(--text-2);
   font-variant-numeric: tabular-nums;
 }
@@ -384,8 +385,8 @@
 
 .installBar {
   height: 6px;
-  border: 1px solid var(--border-strong);
-  background: var(--window);
+  border: 0;
+  background: var(--track);
   overflow: hidden;
   border-radius: var(--radius-sm);
 }
@@ -490,7 +491,7 @@
  * whatever picture is behind it. The parent's drop-shadow does the separating. */
 .artChromeName {
   font-family: var(--display);
-  font-size: 16px;
+  font-size: var(--fs-body);
   font-weight: 600;
   letter-spacing: 0.02em;
   color: white;
@@ -501,7 +502,7 @@
   align-items: center;
   gap: var(--gap-control);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: rgb(255 255 255 / 0.78);
   font-variant-numeric: tabular-nums;
 }
@@ -536,7 +537,7 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   /* Deliberately near-black rather than surface-2: this is a letterboxed
      picture, and the bars have to read as bars and not as a panel. */
   background: #0b0d0f;
@@ -558,7 +559,6 @@
   background:
     radial-gradient(ellipse at 50% 40%, var(--accent-soft), transparent 65%),
     var(--surface);
-  border-style: dashed;
 }
 
 /* What is being shared, over the top-left corner of the picture. */
@@ -575,7 +575,7 @@
   background: rgb(0 0 0 / 0.55);
   color: #fff;
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -612,7 +612,7 @@
   height: 34px;
   overflow: hidden;
   border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  border: 1px solid transparent;
   background: var(--surface-2);
   display: flex;
   align-items: center;
@@ -631,7 +631,7 @@
 
 .miniSubtitle {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   margin-left: var(--space-xs);
 }

@@ -51,9 +51,9 @@
   background: var(--surface-2);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   font-weight: 400;
-  line-height: 1.4;
+  line-height: var(--lh-meta);
   letter-spacing: normal;
   text-transform: none;
   padding: 8px 12px;

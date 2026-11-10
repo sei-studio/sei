@@ -35,7 +35,7 @@
   gap: var(--space-xs);
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   text-align: left;
   color: var(--text);
@@ -117,7 +117,7 @@
   background: transparent;
   padding: var(--space-xs) 0;
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--muted);
   cursor: pointer;
 }

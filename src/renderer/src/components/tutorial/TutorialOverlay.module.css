@@ -68,7 +68,7 @@
   background: none;
   color: rgba(255, 255, 255, 0.65);
   font-family: var(--mono, monospace);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   padding: 6px 8px;
   cursor: pointer;
 }
@@ -130,8 +130,8 @@
   background: rgba(255, 255, 255, 0.94);
   color: #23283a;
   font-family: 'Architects Daughter', 'Comic Sans MS', cursive;
-  font-size: 19px;
-  line-height: 1.4;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
   box-shadow: 0 6px 26px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   user-select: none;
@@ -164,7 +164,7 @@
   background: rgba(35, 40, 58, 0.08);
   color: #23283a;
   font-family: var(--sans);
-  font-size: 15px;
+  font-size: var(--fs-body);
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
