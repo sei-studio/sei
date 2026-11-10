@@ -2475,4 +2475,7 @@ export const PT_BR: Record<string, string> = {
   // profile v2 section menu (product call 261110)
   "More": "Mais",
   "by {name}": "por {name}",
+  "Today": "Hoje",
+  "Yesterday": "Ontem",
+  "Settings sections": "Seções das configurações",
 };

@@ -2475,4 +2475,7 @@ export const RU: Record<string, string> = {
   // profile v2 section menu (product call 261110)
   "More": "Ещё",
   "by {name}": "от {name}",
+  "Today": "Сегодня",
+  "Yesterday": "Вчера",
+  "Settings sections": "Разделы настроек",
 };

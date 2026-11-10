@@ -70,7 +70,7 @@ export function HomeNextStepCard({
         <span className={styles.text}>{step.text}</span>
       </div>
       <div className={styles.actions}>
-        <Button kind="secondary" size="md" onClick={() => launchHomeNextStep(step)}>
+        <Button kind="primary" size="lg" onClick={() => launchHomeNextStep(step)}>
           {nextStepButtonLabel(target, name, t)}
         </Button>
         <button
@@ -80,7 +80,7 @@ export function HomeNextStepCard({
           title={t('Dismiss')}
           onClick={() => onDismiss(step)}
         >
-          <CloseIcon size={16} />
+          <CloseIcon size={18} />
         </button>
       </div>
     </section>

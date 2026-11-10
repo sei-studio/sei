@@ -1,9 +1,9 @@
-/* Button.module.css — Party button system.
+/* Button.module.css — the button system.
  *
- * Mockup language (sei-roster-concept .btn): Rajdhani semibold, regular case,
- * bordered secondaries that light to the accent, accent-filled primaries.
- * The old mono/uppercase/tracked language and the notched clip-path are
- * retired. Corners on --radius (2px, 261103).
+ * Quiet register (product call 261110): buttons are FILLS, never borders.
+ * Rajdhani bold at the body size, fixed control heights, corners on --radius.
+ * The accent fill (primary) is the screen's one action; everything else is a
+ * neutral wash of the text colour, or bare text (quiet).
  *
  * Source: docs/design/UI-REDESIGN-PARTY.md §1.
  */
@@ -15,11 +15,12 @@
   justify-content: center;
   gap: var(--space-sm);
   font-family: var(--sans);
-  font-weight: 600;
-  border: 1px solid transparent;
+  font-weight: 700;
+  line-height: 1;
+  border: 0;
+  box-sizing: border-box;
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease,
-    box-shadow 160ms ease;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
   outline: none;
   white-space: nowrap;
 }
@@ -34,23 +35,24 @@
   cursor: not-allowed;
 }
 
-/* ── Sizes (padding-driven, no fixed heights) ────────────────────────── */
-/* The vertical padding sets each size's height (sizing, not rhythm); the
-   side padding and the icon gap are on the spacing scale (261103: md was
-   14px a side, the T262 explore's 16 reads less cramped). */
+/* ── Sizes (control heights from tokens, 261110): sm 32 for dense lists,
+   md 40 (the mock's small button), lg 48 (the mock's button). ──────── */
 .sm {
-  padding: 5px var(--space-md);
-  font-size: 12px;
+  min-height: var(--control-xs);
+  padding: 0 var(--space-md);
+  font-size: var(--fs-meta);
   gap: var(--space-xs);
 }
 .md {
-  padding: 7px var(--space-md-plus);
-  font-size: 13px;
+  min-height: var(--control-sm);
+  padding: 0 var(--space-md-plus);
+  font-size: var(--fs-body);
   gap: var(--space-sm);
 }
 .lg {
-  padding: 10px var(--space-lg);
-  font-size: 14px;
+  min-height: var(--control);
+  padding: 0 var(--space-lg);
+  font-size: var(--fs-body);
   gap: var(--space-sm);
 }
 
@@ -58,20 +60,15 @@
   width: 100%;
 }
 
-/* ── The border rule (261103) ─────────────────────────────────────
-   A button whose fill differs from the surface it sits on has NO visible
-   border: the fill already marks it. A button with no fill of its own
-   (ghost, danger) keeps its border, since that line is the only thing that
-   says "button". The border stays 1px transparent on filled kinds so every
-   kind has the same box size. */
+/* ── No borders (261110) ──────────────────────────────────────────
+   Every kind is a fill or bare text. ghost and danger, the old bordered
+   kinds, are now the neutral wash and the red-tinted fill. */
 
 /* ── Kind: primary / accent — accent fill (accent kept as alias) ─────── */
 .primary,
 .accent {
   background: var(--accent);
   color: var(--accent-text);
-  border-color: transparent;
-  font-weight: 600;
 }
 .primary:hover:not(:disabled),
 .accent:hover:not(:disabled) {
@@ -83,13 +80,11 @@
    that should not add a colour to its surface. Lights to the accent on
    hover like the other kinds. */
 .secondary {
-  background: color-mix(in srgb, var(--text) 7%, transparent);
+  background: var(--wash);
   color: var(--text);
-  border-color: transparent;
 }
 .secondary:hover:not(:disabled) {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--wash-hi);
 }
 
 /* ── Kind: soft — accent-tinted fill, so no border (261107) ───────────
@@ -98,27 +93,23 @@
 .soft {
   background: var(--accent-soft);
   color: var(--accent);
-  border-color: transparent;
 }
 .soft:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
-/* ── Kind: ghost — no fill, so bordered; lights up to accent ─────────── */
+/* ── Kind: ghost — the neutral wash, a step quieter than secondary ───── */
 .ghost {
-  background: none;
+  background: var(--wash);
   color: var(--text-2);
-  border-color: var(--border-strong);
 }
 .ghost:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--wash-hi);
+  color: var(--text);
 }
 /* Selected state for toggle/segmented ghost buttons (aria-pressed). */
 .ghost[aria-pressed='true'] {
   background: var(--accent-soft);
-  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -126,22 +117,18 @@
 .quiet {
   background: transparent;
   color: var(--muted);
-  border-color: transparent;
 }
 .quiet:hover:not(:disabled) {
-  color: var(--accent);
+  color: var(--text);
 }
 
-/* ── Kind: danger — bordered, red affordance at rest, full red on hover ── */
+/* ── Kind: danger — a faint red fill, deeper on hover ──────────────── */
 .danger {
-  background: none;
+  background: color-mix(in srgb, var(--red) 10%, transparent);
   color: var(--red-strong);
-  border-color: color-mix(in srgb, var(--red) 40%, transparent);
 }
 .danger:hover:not(:disabled) {
-  border-color: var(--red);
-  color: var(--red-strong);
-  background: color-mix(in srgb, var(--red) 9%, transparent);
+  background: color-mix(in srgb, var(--red) 18%, transparent);
 }
 
 /* ── Kind: dangerSoft — red-tinted fill, so no border (261107) ─────────
@@ -150,7 +137,6 @@
 .dangerSoft {
   background: color-mix(in srgb, var(--red) 14%, transparent);
   color: var(--red-strong);
-  border-color: transparent;
 }
 .dangerSoft:hover:not(:disabled) {
   background: color-mix(in srgb, var(--red) 22%, transparent);

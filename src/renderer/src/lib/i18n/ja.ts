@@ -2475,4 +2475,7 @@ export const JA: Record<string, string> = {
   // profile v2 section menu (product call 261110)
   "More": "その他",
   "by {name}": "{name}制作",
+  "Today": "今日",
+  "Yesterday": "昨日",
+  "Settings sections": "設定のセクション",
 };

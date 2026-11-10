@@ -238,4 +238,8 @@ export const ZH_CHATUI: Record<string, string> = {
   'Call me': '给我打电话',
   // 261023: Backseat leads the card (a screen share, over any game).
   'Show me your game': '让我看你玩游戏',
+  // 261110 quiet restyle: chat day labels, settings section menu.
+  'Today': '今天',
+  'Yesterday': '昨天',
+  'Settings sections': '设置分区',
 };
