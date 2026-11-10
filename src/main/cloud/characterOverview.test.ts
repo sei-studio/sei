@@ -9,12 +9,9 @@ function deps(over: Partial<OverviewDeps> & { character?: Record<string, unknown
   const { character = { id: ID, owner: AUTHOR, is_default: false }, ...rest } = over;
   return {
     getCharacter: async () => character as never,
-    loadConfig: async () => null,
     currentUserId: () => ME,
     profileNames: vi.fn(async () => new Map([[AUTHOR, 'kitsune']])),
     addCounts: async () => new Map([[ID, 72]]),
-    readStardewProfile: async () => ({ ok: true, profile: null }),
-    hasLocalStardewLook: () => false,
     sampleVoiceId: () => 'v-sarah',
     ...rest,
   };
@@ -22,7 +19,7 @@ function deps(over: Partial<OverviewDeps> & { character?: Record<string, unknown
 
 describe('characterOverviewInfo (profile Overview, 261110)', () => {
   it("someone else's companion: the author's name and the add count", async () => {
-    expect(await characterOverviewInfo(ID, deps())).toEqual({ creatorName: 'kitsune', addCount: 72, stardewLook: false, sampleVoiceId: 'v-sarah' });
+    expect(await characterOverviewInfo(ID, deps())).toEqual({ creatorName: 'kitsune', addCount: 72, sampleVoiceId: 'v-sarah' });
   });
 
   it('no count read while the counts are hidden (addCounts null)', async () => {
@@ -37,26 +34,12 @@ describe('characterOverviewInfo (profile Overview, 261110)', () => {
     expect((await characterOverviewInfo(ID, builtin)).creatorName).toBeNull();
   });
 
-  it('a Stardew look from the cloud row or this device', async () => {
-    const cloud = deps({
-      readStardewProfile: async () => ({
-        ok: true,
-        profile: { characterId: ID, game: 'stardew', kind: 'appearance', data: {}, source: 'auto', version: 2 },
-      }),
-    });
-    expect((await characterOverviewInfo(ID, cloud)).stardewLook).toBe(true);
-    expect((await characterOverviewInfo(ID, deps({ hasLocalStardewLook: () => true }))).stardewLook).toBe(true);
-  });
-
   it('never throws: failures read as unknown', async () => {
     const broken = deps({
       profileNames: async () => {
         throw new Error('offline');
       },
       addCounts: async () => {
-        throw new Error('offline');
-      },
-      readStardewProfile: async () => {
         throw new Error('offline');
       },
       sampleVoiceId: () => {
@@ -66,13 +49,11 @@ describe('characterOverviewInfo (profile Overview, 261110)', () => {
     expect(await characterOverviewInfo(ID, broken)).toEqual({
       creatorName: null,
       addCount: null,
-      stardewLook: false,
       sampleVoiceId: null,
     });
     expect(await characterOverviewInfo(ID, deps({ character: null }))).toEqual({
       creatorName: null,
       addCount: null,
-      stardewLook: false,
       sampleVoiceId: null,
     });
   });

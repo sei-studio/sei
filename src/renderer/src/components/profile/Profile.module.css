@@ -348,11 +348,44 @@
 .about {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--gap-control);
   min-width: 0;
 }
 
 .aboutName {
   color: var(--text);
   font-weight: 500;
+}
+
+/* ── User-written text (profile v3): a creator's words in a quiet box, so
+   they read as quoted content and not as the app's text. The hairline and
+   fill are the old description card's (pre profile v0.7). ───────────────── */
+.userText {
+  align-self: stretch;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  padding: var(--pad-control) var(--pad-card);
+  border-radius: var(--radius);
+}
+
+.userTextBody {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.userTextBody[data-clamp='true'] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.userTextLg .userTextBody {
+  font-size: 17px;
+  line-height: 1.55;
 }

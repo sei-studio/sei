@@ -2462,14 +2462,11 @@ export const RU: Record<string, string> = {
   // ── profile Overview + one-page settings (product call 261110) ──
   "Companion profile": "Профиль компаньона",
   "Custom image": "Своё изображение",
-  "Farmer look ready": "Облик фермера готов",
   "Hear voice": "Послушать голос",
   "How {name} looks in Minecraft, and the name they use in your worlds.": "Как {name} выглядит в Minecraft и какое имя использует в ваших мирах.",
   "Loading sample...": "Загрузка образца...",
-  "No game looks yet. They are made on the first launch.": "Игровых обликов пока нет. Они создаются при первом запуске.",
   "Overview": "Обзор",
   "Play voice sample": "Воспроизвести образец голоса",
-  "Skin ready": "Скин готов",
   "Stop sample": "Остановить образец",
   "Your settings": "Ваши настройки",
   // profile v2 section menu (product call 261110)

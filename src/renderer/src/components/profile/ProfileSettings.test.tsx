@@ -58,6 +58,7 @@ function render(
   extra: Partial<Parameters<typeof profileAccess>[0]> = {},
   metadata?: object,
   tab?: Tab,
+  base: typeof character = character,
 ): string {
   const access = profileAccess({
     kind,
@@ -73,7 +74,7 @@ function render(
     .map((one) =>
       renderToStaticMarkup(
         React.createElement(ProfileSettings, {
-          character: metadata ? ({ ...character, metadata } as typeof character) : character,
+          character: metadata ? ({ ...base, metadata } as typeof character) : base,
           access,
           tab: one,
           onAction: noop,
@@ -111,6 +112,14 @@ describe('ProfileSettings, your own companion', () => {
     expect(rows(more)).toEqual(['public', 'reset-memory', 'unbind']);
     const worldlink = render('custom', { seilinkOn: true }, undefined, 'worldlink');
     expect(rows(worldlink)).toEqual(['desktop-room', 'room', 'intro']);
+  });
+
+  it("the description is the creator's words, boxed as user text; the placeholder is not", () => {
+    const html = render('custom', {}, undefined, 'personality');
+    expect(html).toMatch(/data-user-text="true"[^>]*><p[^>]*>A teasing, sunny gremlin\.<\/p>/);
+    const none = render('custom', {}, undefined, 'personality', { ...character, description: '' } as typeof character);
+    expect(none).not.toContain('data-user-text');
+    expect(none).toContain('No description yet.');
   });
 
   it('every row once, in tab order', () => {

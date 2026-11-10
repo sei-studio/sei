@@ -340,6 +340,7 @@ export type ProfileAction =
   | 'manage_avatars'
   | 'change_avatar'
   | 'floating_avatar'
+  | 'view_avatars'
   | 'edit_voice'
   | 'voice_sample'
   | 'pitch'

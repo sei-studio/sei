@@ -2462,14 +2462,11 @@ export const PT_BR: Record<string, string> = {
   // ── profile Overview + one-page settings (product call 261110) ──
   "Companion profile": "Perfil do companion",
   "Custom image": "Imagem personalizada",
-  "Farmer look ready": "Visual de fazendeiro pronto",
   "Hear voice": "Ouvir voz",
   "How {name} looks in Minecraft, and the name they use in your worlds.": "Como {name} aparece no Minecraft e o nome que usa nos seus mundos.",
   "Loading sample...": "Carregando amostra...",
-  "No game looks yet. They are made on the first launch.": "Ainda sem visuais de jogo. Eles são criados na primeira vez que o jogo abre.",
   "Overview": "Visão geral",
   "Play voice sample": "Tocar amostra de voz",
-  "Skin ready": "Skin pronta",
   "Stop sample": "Parar amostra",
   "Your settings": "Suas configurações",
   // profile v2 section menu (product call 261110)

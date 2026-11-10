@@ -190,7 +190,6 @@ function seed(): void {
       return {
         creatorName: f && !f.isDefault ? f.author : null,
         addCount: f ? f.adds : null,
-        stardewLook: f?.name === 'Aria',
         sampleVoiceId: 'v-sarah',
       };
     },

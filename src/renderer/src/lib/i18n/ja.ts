@@ -2462,14 +2462,11 @@ export const JA: Record<string, string> = {
   // ── profile Overview + one-page settings (product call 261110) ──
   "Companion profile": "コンパニオンのプロフィール",
   "Custom image": "カスタム画像",
-  "Farmer look ready": "農家の見た目が完成",
   "Hear voice": "声を聞く",
   "How {name} looks in Minecraft, and the name they use in your worlds.": "Minecraftでの{name}の見た目と、ワールドで使う名前。",
   "Loading sample...": "サンプルを読み込み中...",
-  "No game looks yet. They are made on the first launch.": "ゲーム用の見た目はまだありません。初めて起動したときに作られます。",
   "Overview": "概要",
   "Play voice sample": "ボイスサンプルを再生",
-  "Skin ready": "スキン完成",
   "Stop sample": "サンプルを停止",
   "Your settings": "あなたの設定",
   // profile v2 section menu (product call 261110)

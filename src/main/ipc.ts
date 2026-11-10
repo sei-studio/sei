@@ -1291,8 +1291,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { characterOverviewInfo } = await import('./cloud/characterOverview');
     const { getProfileNames } = await import('./cloud/cloudCharacterClient');
     const { fetchAddCounts } = await import('./cloud/browseQuery');
-    const { readGameProfile } = await import('./cloud/gameProfileClient');
-    const { CLOUD_GAME, CLOUD_KIND, readStoredAppearance } = await import('./games/stardew/appearance');
     const { getCurrentAuthState } = await import('./auth/authState');
     const { getClient } = await import('./auth/supabaseClient');
     const { previewVoiceIdFor } = await import('./voice/voiceAssign');
@@ -1301,7 +1299,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { SHOW_ADD_COUNTS } = await import('../shared/addCounts');
     return await characterOverviewInfo(id, {
       getCharacter,
-      loadConfig,
       currentUserId: () => {
         const auth = getCurrentAuthState();
         return auth.kind === 'signed_in' ? auth.user.id : null;
@@ -1309,8 +1306,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       profileNames: getProfileNames,
       // Nothing shows the count while it is hidden, so it is not read.
       addCounts: SHOW_ADD_COUNTS ? (ids) => fetchAddCounts(getClient(), ids) : null,
-      readStardewProfile: (cid) => readGameProfile(cid, CLOUD_GAME, CLOUD_KIND),
-      hasLocalStardewLook: (cfg, cid) => readStoredAppearance(cfg, cid, { anyVersion: true }) !== null,
       sampleVoiceId: (c) => {
         if (c.metadata?.voiceId === NO_VOICE_ID) return null;
         const voice = previewVoiceIdFor(c);
