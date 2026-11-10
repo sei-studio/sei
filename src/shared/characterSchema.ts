@@ -1009,6 +1009,16 @@ export const UserConfigSchema = z.object({
   web_search_provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).optional(),
   web_search_api_key: z.string().optional(),
   /**
+   * 261110 Playtime > My keys: "Alert me at $N a month". When on, a one-line
+   * notice shows once a calendar month after the own-key spend ESTIMATE
+   * (shared/llmUsage.ts) reaches spend_alert_usd. It only warns, never
+   * blocks. spend_alert_fired_month (`YYYY-MM`, main-owned) remembers that
+   * this month's notice already went out. All optional, no defaults.
+   */
+  spend_alert_enabled: z.boolean().optional(),
+  spend_alert_usd: z.number().positive().max(100_000).optional(),
+  spend_alert_fired_month: z.string().optional(),
+  /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside
    * the per-character `playtime_ms`) so the total survives a character being
@@ -1106,8 +1116,10 @@ export const UserConfigSchema = z.object({
    * pool id); the local engine maps that voice's gender + the conversation
    * language to a local voice pack at synthesis time, and
    * metadata.voicePitch still applies through the pitch shifter.
+   * 261110: 'sei' = Sei's cloud voices while the brain is the ChatGPT plan
+   * (seiVoicesActive in shared/ttsEngine.ts); read only in that setup.
    */
-  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
+  tts_engine: z.enum(['elevenlabs', 'local', 'sei']).optional(),
   /**
    * 261102: which on-device model speaks when local TTS is in use (Settings
    * > Voice > Local voice). 'fast' = the sherpa-onnx Piper/icefall voice

@@ -29,7 +29,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { applyTheme } from '../lib/theme';
 import { HardStopModal } from './HardStopModal';
 import { Banner } from './Banner';
-import { CreditsScreen } from '../screens/CreditsScreen';
+import { PlaytimeScreen } from '../screens/PlaytimeScreen';
 import { DrawScreen } from './draw/DrawScreen';
 import { useT } from '../lib/i18n';
 import { isUiLanguage } from '@shared/uiLanguage';
@@ -106,7 +106,7 @@ export function DevCreditWallShot(): React.ReactElement {
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)', overflow: 'auto' }}>
       {part === 'banner' ? <BannerPart /> : null}
-      {part === 'credits' || part === 'modal' || part === 'topup' ? <CreditsScreen /> : null}
+      {part === 'credits' || part === 'modal' || part === 'topup' ? <PlaytimeScreen /> : null}
       {part === 'draw' ? <DrawScreen characterId={CHAR} /> : null}
       <HardStopModal />
     </div>

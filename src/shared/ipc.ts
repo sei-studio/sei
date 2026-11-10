@@ -38,6 +38,7 @@ import type { OverlayPointerSample } from './overlayPointer';
 import type { UiLanguage } from './uiLanguage';
 import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from './chatgptPlan';
 import type { RegionStatus } from './regionGate';
+import type { UsageSummary } from './llmUsage';
 import type { PopupAction } from './popupActions';
 import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
@@ -677,6 +678,13 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
+/** usage:spend-alert push (261110): this month's own-key spend estimate
+ * reached the user's alert amount. Only a notice; nothing is blocked. */
+export interface SpendAlertPush {
+  limitUsd: number;
+  spendMonthUsd: number;
+}
+
 /** One voice:tts-notice push (260908): local TTS spoke a line with a
  * SUBSTITUTE voice pack because the pack matching the line's language (the
  * conversation language, or the line's own script when it is predominantly
@@ -716,6 +724,13 @@ export type VoiceTtsNoticePush =
       kind: 'kokoro-fallback';
       characterId: string;
       reason: 'pack-missing' | 'failed';
+    }
+  | {
+      /** 261110: "Sei voices" with the ChatGPT brain could not speak this
+       * line, so an on-device voice spoke it (main/voice/tts.ts). */
+      kind: 'sei-voices-fallback';
+      characterId: string;
+      reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
     };
 
 /**
@@ -3154,6 +3169,14 @@ export interface RendererApi {
    */
   creditsGet: () => Promise<CreditsStatus>;
   /**
+   * 261110 Playtime: this profile's own count of off-cloud LLM use (ChatGPT
+   * plan replies, own-key tokens and estimated spend) for the last 7 days and
+   * this month. Never throws to the caller beyond IPC failure.
+   */
+  usageSummary?: () => Promise<UsageSummary>;
+  /** 261110: the "Alert me at $N a month" notice fired (once a month). */
+  onSpendAlert?: (cb: (e: SpendAlertPush) => void) => Unsubscribe;
+  /**
    * 260725 — read the server-driven pricing catalog (plan cards + top up
    * packages) from the proxy's world-readable config tables. Cached in main;
    * null when the read fails and no cached copy exists (the renderer then
@@ -4385,6 +4408,11 @@ export const IpcChannel = {
     changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',
     hardStop: 'credits:hard-stop',
+  },
+  // 261110 Playtime: own-key / ChatGPT-plan usage ledger (main/usage/).
+  usage: {
+    summary: 'usage:summary',
+    spendAlert: 'usage:spend-alert',
   },
   subscription: {
     status: 'subscription:status',

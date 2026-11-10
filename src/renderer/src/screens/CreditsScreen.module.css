@@ -1,7 +1,9 @@
 /**
- * CreditsScreen — plan + weekly usage surface (260724, 260725 sketch layout).
+ * SeiPlanTab (CreditsScreen.tsx) — the Playtime page's Sei tab: plan + weekly
+ * usage (260724, 260725 sketch layout; 261110 restyle to the Playtime mock 01,
+ * the page frame lives in PlaytimeScreen.module.css).
  *
- * A single centered 860px column. USAGE section: two aligned label/bar/value
+ * Inside the Playtime column. USAGE section: two aligned label/bar/value
  * rows ("{Plan} plan / Resets in Xd Yh" + allowance bar + "{pct}%", then
  * "Extra credits / x/y used" + muted bar + Top up), with the carry-over note
  * directly beneath. PLANS section: three solid-surface cards (light surface in
@@ -17,67 +19,55 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.8 + the 260725 sketch.
  */
 
-.root {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--page-top) 0 var(--space-2xl);
+/* The tab body: page sections 44px apart, like the Settings groups
+   (quiet register, dev restyle 261110: --fs-* sizes, --step-1 fills, no
+   frame lines). */
+.tab {
   display: flex;
   flex-direction: column;
-}
-
-.col {
-  width: 100%;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 0 var(--page-gutter);
-  display: flex;
-  flex-direction: column;
-  /* 261103 spacing pass: Usage, Plan, the ChatGPT row and the footer are
-     page sections, one --gap-section apart (was 28, plus 24 more above
-     the ChatGPT row). */
-  gap: var(--gap-section);
-}
-
-.backRow {
-  /* Pull left by the quiet/sm button's horizontal padding so the icon lines up
-     with the column's content edge. */
-  margin-left: calc(-1 * var(--space-md));
+  gap: calc(var(--space-2xl) + var(--space-xs));
 }
 
 /* ── Usage: two aligned label / bar / value rows (260725 sketch) ── */
 .usage {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-group);
+  gap: var(--space-md-plus);
 }
 
-/* Shared section heading ("Usage" / "Plan") + the quiet refresh beside it. */
-.usageHead {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-control);
-}
-
-/* Oswald's tall ascender space makes the centered refresh button read as
-   floating high next to the title; nudge it down to the text's optical
-   center (260725). */
-.usageHead > button {
-  margin-top: 3px;
-}
-
+/* Section heading ("Usage" / "Plan"), the Playtime section title size. */
 .sectionTitle {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 16px;
-  color: var(--text-2);
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  color: var(--text);
   margin: 0;
+}
+
+/* The two usage rows on one quiet panel (mock 01). */
+.usagePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+  padding: var(--space-md-plus) var(--space-lg);
+  background: var(--step-1);
+  border-radius: var(--radius);
 }
 
 /* Label column | flexible bar | fixed-ish right slot, vertically centered.
    The two rows share the grid so their bars start and end on the same lines. */
 .usageRow {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) 1fr minmax(64px, auto);
+  grid-template-columns: minmax(150px, 190px) 1fr auto;
+  align-items: center;
+  gap: var(--gap-group);
+  min-height: 36px;
+}
+
+/* The extra-credits row's end: what is left, then Top up. */
+.usageEnd {
+  display: inline-flex;
   align-items: center;
   gap: var(--gap-group);
 }
@@ -90,28 +80,25 @@
 }
 
 .usageName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text);
 }
 
-.usageSub {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .usageSubWarn {
   font-family: var(--sans);
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--warn);
 }
 
 /* Flat track + fill. Square ends: the Summoning Terminal look stays sharp. */
 .usageTrack {
   height: 8px;
-  background: var(--bg4);
+  background: var(--track);
   overflow: hidden;
   border-radius: var(--radius-sm);
 }
@@ -138,21 +125,11 @@
 /* Left-aligned to the right column's start so it lines up with the Top up
    button below it (260725). */
 .usagePct {
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-meta);
   color: var(--text);
-  justify-self: start;
-}
-
-/* Carry-over note, directly under the extra-credits row. Indented to the bar
-   column so it reads as a caption for the bars, not a new section. */
-.usageNote {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted-2);
-  /* Pulled toward the bars it captions: a tight step, not the group gap. */
-  margin: calc(var(--gap-tight) - var(--gap-group)) 0 0;
+  justify-self: end;
 }
 
 /* 260926: the credit wall's pause line ("Free play resets in 3 days
@@ -168,13 +145,13 @@
 }
 
 .resetCalloutLine {
-  font-size: 14px;
+  font-size: var(--fs-body);
   font-weight: 600;
   color: var(--text);
 }
 
 .resetCalloutHint {
-  font-size: 12px;
+  font-size: var(--fs-meta);
   color: var(--muted-2);
 }
 
@@ -183,23 +160,20 @@
   display: flex;
   flex-direction: column;
   /* Title to content as in Usage. */
-  gap: var(--gap-group);
+  gap: var(--space-md-plus);
 }
 
 .plansRow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: var(--gap-stack);
+  gap: 2px;
 }
 
-/* Solid surface: var(--bg4) is a visible step off the window in every theme
-   (soft periwinkle tint in ice, elevated navy in midnight, warm sand in
-   acorn), so the cards read light in light mode and dark in dark mode. Quiet
-   border keeps the edge crisp. */
+/* The raised step of the quiet register (--step-1), no frame line: the
+   cards sit 2px apart and the field shows through the gap. */
 .planCard {
   position: relative;
-  background: var(--bg4);
-  border: 1px solid var(--border);
+  background: var(--step-1);
   padding: var(--pad-card);
   display: flex;
   flex-direction: column;
@@ -209,9 +183,8 @@
   border-radius: var(--radius);
 }
 
-/* Active subscription — accent edge on the solid surface. */
+/* Active subscription: an accent edge along the top. */
 .planCardActive {
-  border-color: var(--accent);
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
@@ -219,7 +192,6 @@
    A thicker accent edge, a wash of the accent from the top, and a lift, so
    the eye lands on it first. The tag sits on the top edge. */
 .planCardRecommended {
-  border-color: var(--accent);
   background-image: linear-gradient(180deg, var(--accent-soft), transparent 70%);
   box-shadow:
     inset 0 3px 0 var(--accent),
@@ -235,10 +207,8 @@
   background: var(--accent);
   color: var(--accent-text);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--fs-meta);
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
   border-radius: var(--radius-sm);
@@ -246,85 +216,34 @@
 
 .planName {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-body);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
+  color: var(--text-2);
 }
 
 .planPrice {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 30px;
-  line-height: 1;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
   color: var(--text);
   margin-top: 2px;
 }
 
 .planPriceQualifier {
-  font-family: var(--display);
-  font-size: 13px;
-  font-weight: 400;
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  font-weight: 600;
   color: var(--muted);
   margin-left: 3px;
 }
 
 .planBlurb {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
   color: var(--text-2);
   margin: 2px 0 0;
-}
-
-/* 261017: "Use your ChatGPT plan", its own block under the plan cards. */
-.chatgptPlan {
-  min-width: 0;
-}
-
-.chatgptPlanRow {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-stack);
-  padding: var(--pad-control);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: var(--radius);
-}
-
-.chatgptPlanText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* Not .planName: that one uppercases, and "ChatGPT" is a brand name. */
-.chatgptPlanName {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.planFeatureLink {
-  -webkit-appearance: none;
-  appearance: none;
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: var(--muted);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.planFeatureLink:hover {
-  color: var(--accent);
 }
 
 .planCardActions {
@@ -335,7 +254,7 @@
 /* "Your Party plan renews on …" / "… will not renew" note under the cards. */
 .planRenewalNote {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--text-2);
   margin: 0;
 }
@@ -358,7 +277,7 @@
 
 .manageError {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: var(--fs-meta);
   color: var(--warn);
   margin: 0;
 }
@@ -399,7 +318,7 @@
 
 .checkoutMsg {
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   color: var(--muted);
   margin: 0;
 }

@@ -267,8 +267,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Billed monthly until you cancel.': '按月计费，直到你取消为止。',
   'Next billing date: {date}.': '下次扣款日期：{date}。',
   'in 30 days': '30 天后',
-  'Cancel anytime in Settings → Cloud AI → Cancel subscription.':
-    '可随时在「设置 → 云端 AI → 取消订阅」中取消。',
+  'Cancel anytime in Playtime → Sei → Manage billing.':
+    '可随时在「游玩时长 → Sei → 管理账单」中取消。',
   'Back to Sei': '返回 Sei',
 
   // ── SkinSetupScreen ───────────────────────────────────────────────
@@ -412,8 +412,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   "You've used the ChatGPT plan usage available to Sei for now. Check Manage usage to see when it resets. Sei pauses ChatGPT requests until then.":
     '你目前可供 Sei 使用的 ChatGPT 套餐用量已用完。查看「管理用量」了解何时重置。在此之前，Sei 会暂停 ChatGPT 请求。',
   'Sign in to ChatGPT again': '重新登录 ChatGPT',
-  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Settings.":
-    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的 ChatGPT 套餐，或在设置中选择其他 AI 选项。',
+  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Playtime.":
+    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的 ChatGPT 套餐，或在「游玩时长」中选择其他 AI 选项。',
   'ChatGPT rejected the request': 'ChatGPT 拒绝了请求',
   "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your plan.":
     'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的套餐。',
@@ -421,6 +421,6 @@ export const ZH_SCREENS_B: Record<string, string> = {
     'ChatGPT 不接受 Sei 的上一个请求，所以 ChatGPT 请求已暂停。',
   "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan.":
     '目前无法在这里使用 ChatGPT 套餐，可能受你所在地区或套餐的限制。',
-  "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Settings.":
-    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴停了下来，没有反复重试。请重试，或在设置中选择其他 AI 选项。',
+  "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Playtime.":
+    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴停了下来，没有反复重试。请重试，或在「游玩时长」中选择其他 AI 选项。',
 };

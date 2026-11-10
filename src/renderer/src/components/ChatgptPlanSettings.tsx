@@ -35,7 +35,6 @@ import { CHATGPT_USAGE_URL } from '@shared/chatgptPlan';
 import { useT } from '../lib/i18n';
 import { sei } from '../lib/ipcClient';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
-import type { SettingsFocus } from '../lib/stores/useUiStore';
 import { Button } from './Button';
 import { ChatgptLogo } from './ChatgptLogo';
 import { ContinueWithChatGPTButton } from './ContinueWithChatGPTButton';
@@ -86,7 +85,7 @@ export function chatgptPlanDisclosure(t: (s: string) => string): string {
  * the config, so this waits for them for a moment; gives up quietly. The
  * first marked element wins.
  */
-export function revealSettingsFocus(target: SettingsFocus, waitMs = 3000): void {
+export function revealSettingsFocus(target: string, waitMs = 3000): void {
   const deadline = Date.now() + waitMs;
   const tick = (): void => {
     const el = document.querySelector<HTMLElement>(`[data-settings-focus="${target}"]`);

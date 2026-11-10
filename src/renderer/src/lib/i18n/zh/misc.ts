@@ -57,15 +57,15 @@ export const ZH_MISC: Record<string, string> = {
     '暂不支持这个游戏版本。请把游戏更新到受支持的版本，然后再次点击「一起玩」。',
   "Couldn't download the files this game needs. Check your connection and press Play again.":
     '无法下载这个游戏所需的文件。请检查网络连接，然后再次点击「一起玩」。',
-  "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.":
-    '本周的额度已用完。你可以在方案页面升级或充值，或在设置中切换为自己的 API 密钥。',
+  "You've used this week's credits. Upgrade or top up in Playtime, or switch to your own API key there.":
+    '本周的额度已用完。你可以在「游玩时长」中升级或充值，或在那里切换为自己的 API 密钥。',
   'Too many requests right now. Wait a little and try again.': '当前请求过多。请稍等片刻再试。',
   "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.":
     'Sei 连接不到 Ollama。请启动 Ollama 应用，并在设置中检查 Ollama 地址，然后再次点击启动。',
-  "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.":
-    'Ollama 里没有设置中选择的模型。请在 Ollama 中下载它（ollama pull 加上模型名），或换一个模型，然后再次点击启动。',
-  "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.":
-    '这个 Ollama 模型不支持工具调用，而你的伙伴在游戏里说话和行动都需要它。请在设置中选择支持工具的模型，例如 qwen3 或 qwen3-vl，然后再次点击启动。',
+  "Ollama doesn't have the model picked in Playtime. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.":
+    'Ollama 里没有「游玩时长」中选择的模型。请在 Ollama 中下载它（ollama pull 加上模型名），或换一个模型，然后再次点击启动。',
+  "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Playtime, like qwen3 or qwen3-vl, then press Launch again.":
+    '这个 Ollama 模型不支持工具调用，而你的伙伴在游戏里说话和行动都需要它。请在「游玩时长」中选择支持工具的模型，例如 qwen3 或 qwen3-vl，然后再次点击启动。',
   "Sei doesn't know your name yet. Open Settings, type it into the Name field, then press Launch again.":
     'Sei 还不知道你的名字。打开设置，在“名字”一栏填写，然后再次点击启动。',
   'Detected MC {version}. Sei needs MC 1.14 or newer. Pick a newer profile or switch to a supported version such as {latest} before continuing.':
@@ -129,8 +129,8 @@ export const ZH_MISC: Record<string, string> = {
   '[voice unavailable, ElevenLabs rejected your key]': '[语音不可用，ElevenLabs 拒绝了你的密钥]',
   // 261020 (T158): a cloud line for an own ElevenLabs voice spoken with the
   // character's stand-in Sei voice instead.
-  '[speaking with a Sei voice, add your ElevenLabs key in Settings to hear their own voice]':
-    '[正在使用 Sei 的声音，在设置中添加你的 ElevenLabs 密钥即可听到 TA 自己的声音]',
+  '[speaking with a Sei voice, add your ElevenLabs key in Playtime to hear their own voice]':
+    '[正在使用 Sei 的声音，在「游玩时长」中添加你的 ElevenLabs 密钥即可听到 TA 自己的声音]',
   '[speaking with a Sei voice, ElevenLabs rejected your key]':
     '[正在使用 Sei 的声音，ElevenLabs 拒绝了你的密钥]',
   '[speaking with a Sei voice, their voice is no longer in your ElevenLabs account]':
@@ -140,29 +140,29 @@ export const ZH_MISC: Record<string, string> = {
   '[speaking with a Sei voice, your ElevenLabs plan cannot use their voice]':
     '[正在使用 Sei 的声音，你的 ElevenLabs 套餐无法使用 TA 的声音]',
   // 260816 local speech: the sherpa voice pack for this call is not downloaded.
-  '[voice unavailable, download the local voice pack in Settings]':
-    '[语音不可用，请在设置中下载本地语音包]',
+  '[voice unavailable, download the local voice pack in Playtime]':
+    '[语音不可用，请在「游玩时长」中下载本地语音包]',
   // 260908: the sentinel now names WHICH pack fits the conversation language,
   // and a line spoken with a substitute pack gets its own notice.
-  '[voice unavailable, download the Chinese voice pack in Settings]':
-    '[语音不可用，请在设置中下载中文语音包]',
-  '[voice unavailable, download the English voice pack in Settings]':
-    '[语音不可用，请在设置中下载英文语音包]',
-  '[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]':
-    '[已用英文语音代读，在设置中下载中文语音包效果更好]',
-  '[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]':
-    '[已用中文语音代读，在设置中下载英文语音包效果更好]',
+  '[voice unavailable, download the Chinese voice pack in Playtime]':
+    '[语音不可用，请在「游玩时长」中下载中文语音包]',
+  '[voice unavailable, download the English voice pack in Playtime]':
+    '[语音不可用，请在「游玩时长」中下载英文语音包]',
+  '[spoken with the English voice, download the Chinese voice pack in Playtime for a better fit]':
+    '[已用英文语音代读，在「游玩时长」中下载中文语音包效果更好]',
+  '[spoken with the Chinese voice, download the English voice pack in Playtime for a better fit]':
+    '[已用中文语音代读，在「游玩时长」中下载英文语音包效果更好]',
   // 261102 Kokoro local voice: missing pack, or a line the Fast voice spoke
   // because Kokoro could not.
-  '[voice unavailable, download the Kokoro voice pack in Settings]':
-    '[语音不可用，请在设置中下载 Kokoro 语音包]',
-  '[spoken with the Fast voice, download the Kokoro voice pack in Settings]':
-    '[已用快速语音代读，请在设置中下载 Kokoro 语音包]',
+  '[voice unavailable, download the Kokoro voice pack in Playtime]':
+    '[语音不可用，请在「游玩时长」中下载 Kokoro 语音包]',
+  '[spoken with the Fast voice, download the Kokoro voice pack in Playtime]':
+    '[已用快速语音代读，请在「游玩时长」中下载 Kokoro 语音包]',
   '[spoken with the Fast voice, the Kokoro voice could not load]':
     '[已用快速语音代读，Kokoro 语音无法加载]',
   // 261103 Fish Audio local voice: a line the Fast voice spoke instead.
-  '[spoken with the Fast voice, add your Fish Audio key in Settings]':
-    '[已用快速语音代读，请在设置中添加 Fish Audio 密钥]',
+  '[spoken with the Fast voice, add your Fish Audio key in Playtime]':
+    '[已用快速语音代读，请在「游玩时长」中添加 Fish Audio 密钥]',
   '[spoken with the Fast voice, Fish Audio rejected your key]':
     '[已用快速语音代读，Fish Audio 拒绝了你的密钥]',
   '[spoken with the Fast voice, the Fish Audio free model may have ended, or your account needs credit]':
@@ -386,7 +386,7 @@ export const ZH_MISC: Record<string, string> = {
     '声音更高或更低。语速保持不变。按播放试听。',
   'Hear the pitch': '试听音高',
   'Stop the pitch sample': '停止试听',
-  'Download a voice pack in Settings to hear a sample.': '先在设置中下载语音包，才能试听。',
+  'Download a voice pack in Playtime to hear a sample.': '先在「游玩时长」中下载语音包，才能试听。',
   'Local speech cannot run on this install.': '本地语音无法在此安装上运行。',
   'Calmness': '平稳度',
   'Higher is steadier and more even. Lower is more dramatic.':
@@ -409,17 +409,17 @@ export const ZH_MISC: Record<string, string> = {
   // 261020 (T158): cloud users with no key hear the stand-in Sei voice.
   'From your ElevenLabs account. Without your ElevenLabs key, a Sei voice speaks for them.':
     '来自你的 ElevenLabs 账户。没有你的 ElevenLabs 密钥时，会由一个 Sei 的声音代为说话。',
-  'Have your own ElevenLabs voices? Add your ElevenLabs key in Settings, under Voice.':
-    '有自己的 ElevenLabs 声音？请在设置的“声音”中添加你的 ElevenLabs 密钥。',
-  'Could not read your ElevenLabs voices. Check your ElevenLabs key in Settings.':
-    '无法读取你的 ElevenLabs 声音。请在设置中检查你的 ElevenLabs 密钥。',
+  'Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.':
+    '有自己的 ElevenLabs 声音？请在「游玩时长」中添加你的 ElevenLabs 密钥。',
+  'Could not read your ElevenLabs voices. Check your ElevenLabs key in Playtime.':
+    '无法读取你的 ElevenLabs 声音。请在「游玩时长」中检查你的 ElevenLabs 密钥。',
   'Could not load your ElevenLabs voices right now.': '暂时无法加载你的 ElevenLabs 声音。',
   "Sei's voices play through your ElevenLabs key on paid ElevenLabs plans. On a free plan, use your own voices.":
     'Sei 的声音在 ElevenLabs 付费套餐下可通过你的密钥播放。免费套餐请使用你自己的声音。',
   'Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.':
     'ElevenLabs 免费套餐无法通过你的密钥播放这个声音。请选择你自己的声音。',
   'Your ElevenLabs account is out of credits.': '你的 ElevenLabs 账户额度已用完。',
-  'ElevenLabs rejected your key. Check it in Settings.': 'ElevenLabs 拒绝了你的密钥。请在设置中检查。',
+  'ElevenLabs rejected your key. Check it in Playtime.': 'ElevenLabs 拒绝了你的密钥。请在「游玩时长」中检查。',
 
   // ── Small components (BrowseCard, IdTag, InfoTip, chrome, buttons) ─────
   'Open {name}': '打开 {name}',
@@ -439,22 +439,22 @@ export const ZH_MISC: Record<string, string> = {
   'You': '你',
 
   // ── 261017 (issue #46): ChatGPT plan ERROR_COPY rows ──────────────────
-  "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.":
-    '你已达到 ChatGPT 套餐的用量上限。在 ChatGPT 的「管理用量」中查看何时重置，或在设置中换用其他 AI 选项。',
-  "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Settings.":
-    '这个 ChatGPT 账户无法在 Sei 中使用其套餐。套餐用量需要 ChatGPT Plus 或 Pro。请换一个账户登录，或在设置中选择其他 AI 选项。',
-  "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Settings.":
-    '目前无法在这里使用 ChatGPT 套餐，可能受你所在地区或套餐的限制。请在设置中选择其他 AI 选项。',
-  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Settings to sign in again.":
-    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请在设置中点击「通过 ChatGPT 继续」重新登录。',
-  "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Settings.":
-    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴已停下。请重试，或在设置中选择其他 AI 选项。',
-  "The ChatGPT model picked in Settings can't handle this request. Pick another model in Settings and try again.":
-    '设置中选择的 ChatGPT 模型无法处理这个请求。请在设置中换一个模型后重试。',
-  'Your ChatGPT sign-in ended. Continue with ChatGPT in Settings to sign in again.':
-    '你的 ChatGPT 登录已失效。请在设置中点击「通过 ChatGPT 继续」重新登录。',
-  "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Settings, then try again.":
-    '这次登录没有开启 ChatGPT 套餐使用权限。请在设置中开启后重试。',
+  "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Playtime.":
+    '你已达到 ChatGPT 套餐的用量上限。在 ChatGPT 的「管理用量」中查看何时重置，或在「游玩时长」中换用其他 AI 选项。',
+  "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Playtime.":
+    '这个 ChatGPT 账户无法在 Sei 中使用其套餐。套餐用量需要 ChatGPT Plus 或 Pro。请换一个账户登录，或在「游玩时长」中选择其他 AI 选项。',
+  "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Playtime.":
+    '目前无法在这里使用 ChatGPT 套餐，可能受你所在地区或套餐的限制。请在「游玩时长」中选择其他 AI 选项。',
+  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Playtime to sign in again.":
+    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请在「游玩时长」中点击「通过 ChatGPT 继续」重新登录。',
+  "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Playtime.":
+    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴已停下。请重试，或在「游玩时长」中选择其他 AI 选项。',
+  "The ChatGPT model picked in Playtime can't handle this request. Pick another model there and try again.":
+    '「游玩时长」中选择的 ChatGPT 模型无法处理这个请求。请在那里换一个模型后重试。',
+  'Your ChatGPT sign-in ended. Continue with ChatGPT in Playtime to sign in again.':
+    '你的 ChatGPT 登录已失效。请在「游玩时长」中点击「通过 ChatGPT 继续」重新登录。',
+  "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Playtime, then try again.":
+    '这次登录没有开启 ChatGPT 套餐使用权限。请在「游玩时长」中开启后重试。',
   // 261019: own ElevenLabs voice on a shared character ("Others will hear").
   "Your voice is from your ElevenLabs account, so others can't play it. Others will hear:":
     '这个声音来自你的 ElevenLabs 账号，其他人无法播放。其他人会听到：',

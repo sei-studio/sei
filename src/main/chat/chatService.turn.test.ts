@@ -13,6 +13,7 @@
  *     the cloud). Mirrors the last_launched stamp in botSupervisor.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { drainScopedWrites } from '../profile/scopeBarrier';
 import { mkdtemp, mkdir, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -102,6 +103,10 @@ beforeEach(async () => {
   captureSpy.mockReset();
 });
 afterEach(async () => {
+  // 261110: a finished turn records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later; let those writes land before
+  // the profile dir is removed (they would race the rm: ENOTEMPTY).
+  await drainScopedWrites();
   _setUserDataOverride(null);
   // callState is module-level; clear it so a test that opened a call never
   // leaks the flag into the next one.

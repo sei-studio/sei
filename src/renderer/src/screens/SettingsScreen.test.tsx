@@ -10,9 +10,9 @@
  * Structural invariants (Party restyle):
  *   S.1  — sentence-case Oswald group headers (Profile / Account / AI /
  *          Games / Appearance / About / Danger); no all-caps eyebrows.
- *   S.2  — Backend switch is a <Seg> (Cloud / My key) that drives the
- *          SwitchBackendConfirmModal; cancel reverts because the value tracks
- *          ai_backend_kind.
+ *   S.2  — 261110: Settings has no backend switch. One "Brain, voice and
+ *          plan" row opens Playtime, whose tabs drive the
+ *          SwitchBackendConfirmModal.
  *   S.3  — Theme is a <Seg> with the added System option.
  *   S.4  — Realistic typing + developer console are <Toggle>s.
  *   S.5  — Danger actions use the shared Button danger kind (no bespoke
@@ -40,6 +40,13 @@ const EDIT_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components'
 const VOICE_PICKER_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'VoicePicker.tsx');
 const DOWNLOAD_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'DownloadConfirmModal.tsx');
 const ZH_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'i18n', 'zh.ts');
+// 261110: every AI and voice control moved from Settings to the Playtime page.
+const PLAYTIME_TSX = resolve(__dirname, 'PlaytimeScreen.tsx');
+const PT_DIR = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'playtime');
+const MYKEYS_TSX = resolve(PT_DIR, 'MyKeysTab.tsx');
+const PARTS_TSX = resolve(PT_DIR, 'PlaytimeParts.tsx');
+const VOICE_PANEL_TSX = resolve(PT_DIR, 'VoicePanel.tsx');
+const ELEVEN_ROW_TSX = resolve(PT_DIR, 'ElevenKeyRow.tsx');
 
 beforeEach(() => {
   (globalThis as unknown as { window: unknown }).window = {
@@ -61,29 +68,30 @@ describe('SettingsScreen (Party restyle structure)', () => {
     }
   });
 
-  it('S.2: backend switch is a Seg wired to SwitchBackendConfirmModal', () => {
+  it('S.2: the AI group is one row that opens Playtime; Playtime owns the switch (261110)', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("from '../components/Seg'")).toBe(true);
-    expect(src.includes("aria-label={t('Backend')}")).toBe(true);
-    // Both directional intents route through the confirm modal — the Seg maps
-    // its value to the target backend, then arms the pending switch.
-    expect(src.includes('SwitchBackendConfirmModal')).toBe(true);
-    expect(src.includes("v === 'cloud' ? 'cloud-proxy' : 'local'")).toBe(true);
-    expect(src.includes('setPendingSwitch(target)')).toBe(true);
-    // The old danger-styled inline switch buttons are retired.
-    expect(src.includes('Switch to managed billing')).toBe(false);
-    expect(src.includes('Switch to your own API key')).toBe(false);
+    expect(src.includes("t('Brain, voice and plan')")).toBe(true);
+    expect(src.includes("navigate({ kind: 'credits' })")).toBe(true);
+    // Nothing of the old AI and voice config is left in Settings.
+    for (const gone of ['SwitchBackendConfirmModal', '<ProviderSelect', 'llmListModels', 'speechPackStatus', "t('Backend')"]) {
+      expect(src.includes(gone)).toBe(false);
+    }
+    const pt = readFileSync(PLAYTIME_TSX, 'utf-8');
+    expect(pt.includes('<SwitchBackendConfirmModal')).toBe(true);
+    expect(pt.includes('setPendingSwitch(target)')).toBe(true);
+    expect(pt.includes("direction={pendingSwitch === 'sei' ? 'cloud-proxy' : 'local'}")).toBe(true);
+    // The old danger-styled inline switch buttons stay retired.
+    expect(pt.includes('Switch to managed billing')).toBe(false);
+    expect(pt.includes('Switch to your own API key')).toBe(false);
   });
 
-  it('S.2b: the API key row is hidden for Ollama, which is keyless (260915)', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("currentProvider === 'ollama' ? (")).toBe(true);
-    expect(src.includes("t('Ollama runs on your computer and needs no API key.')")).toBe(true);
-    // The row itself sits on the other branch of that conditional.
-    const from = src.indexOf("currentProvider === 'ollama' ? (");
+  it('S.2b: the API key controls are hidden for Ollama, which is keyless (260915)', () => {
+    const src = readFileSync(MYKEYS_TSX, 'utf-8');
+    expect(src.includes("const keyless = provider === 'ollama';")).toBe(true);
+    const from = src.indexOf('{keyless ? (');
+    expect(from).toBeGreaterThan(-1);
     const block = src.slice(from, from + 600);
-    expect(block.includes("{t('API key')}")).toBe(true);
-    expect(block.indexOf('needs no API key') < block.indexOf("{t('API key')}")).toBe(true);
+    expect(block.indexOf("t('No key needed')") < block.indexOf("t('Change key')")).toBe(true);
   });
 
   it('S.3: theme picker is four color swatches, no System option', () => {
@@ -129,16 +137,17 @@ describe('SettingsScreen (Party restyle structure)', () => {
 });
 
 describe('SettingsScreen (ui-A1 mode gating)', () => {
-  it('A1.1: reads ai_backend_kind from useCreditsStore', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+  it('A1.1: Playtime reads ai_backend_kind from useCreditsStore', () => {
+    const src = readFileSync(PLAYTIME_TSX, 'utf-8');
     expect(src.includes('useCreditsStore((s) => s.ai_backend_kind)')).toBe(true);
   });
 
-  it('A1.2: provider + api-key rows gated on aiBackendKind === local', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("aiBackendKind === 'local'")).toBe(true);
-    const providerIdx = src.indexOf('ProviderSelect');
-    expect(providerIdx).toBeGreaterThan(0);
+  it('A1.2: provider + api-key rows live on the My keys tab, shown only while it is the setup in use', () => {
+    const src = readFileSync(MYKEYS_TSX, 'utf-8');
+    expect(src.includes('if (!active) {')).toBe(true);
+    expect(src.indexOf('<ProviderSelect')).toBeGreaterThan(src.indexOf('if (!active) {'));
+    const pt = readFileSync(PLAYTIME_TSX, 'utf-8');
+    expect(pt.includes('isActiveSetupTab(tab, backend, provider)')).toBe(true);
   });
 
   it('A1.3: GAMES section is shown in BOTH cloud and local mode', () => {
@@ -156,11 +165,11 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
     expect(preamble.includes("aiBackendKind === 'local'")).toBe(false);
   });
 
-  it('A1.4: ProviderSelect is imported + rendered in compact mode', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("from '../components/ProviderSelect'")).toBe(true);
-    expect(src.includes('<ProviderSelect')).toBe(true);
-    expect(src.includes('compact')).toBe(true);
+  it('A1.4: ProviderSelect is rendered compact on My keys, without the ChatGPT plan (its own tab)', () => {
+    const src = readFileSync(MYKEYS_TSX, 'utf-8');
+    expect(src.includes("from '../ProviderSelect'")).toBe(true);
+    expect(src.includes('compact quiet exclude={NO_CHATGPT}')).toBe(true);
+    expect(src.includes("const NO_CHATGPT: readonly Provider[] = ['chatgpt'];")).toBe(true);
   });
 
   it('A1.5: ProviderSelect offers the catalog SHOWN list; grandfathered only when current (260816)', () => {
@@ -286,83 +295,70 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
   });
 });
 
-describe('SettingsScreen (W5 china-compat: model picker + Test probe)', () => {
-  it('W5.1: model list + probe ride the typed llm IPC', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('sei.llmListModels(currentProvider)')).toBe(true);
-    expect(src.includes('sei.llmTest(currentProvider')).toBe(true);
+// 261110: the model picker moved to Playtime (PlaytimeParts' ModelSelect,
+// used by the ChatGPT and My keys tabs). The Test probe row was dropped with
+// the move: a bad key or model shows its error line under the Brain row.
+describe('Playtime model picker (W5 china-compat, moved 261110)', () => {
+  it('W5.1: the model list rides the typed llm IPC', () => {
+    const src = readFileSync(PARTS_TSX, 'utf-8');
+    expect(src.includes('sei.llmListModels(provider)')).toBe(true);
   });
 
   it('W5.2: the picked model persists to provider_config[provider].model — the field resolveLocalModel reads', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('model: modelId')).toBe(true);
+    const src = readFileSync(MYKEYS_TSX, 'utf-8');
+    expect(src.includes('model: id }')).toBe(true);
     expect(src.includes('provider_config: pc')).toBe(true);
-    // The current-model readout falls back to the catalog default (the
-    // ChatGPT plan's default comes from its live model list first).
-    expect(src.includes('defaultModelFor(currentProvider)')).toBe(true);
-    expect(src.includes(': DEFAULT_MODELS[provider]')).toBe(true);
+    // The current-model readout falls back to the catalog default.
+    expect(src.includes('stored ?? DEFAULT_MODELS[provider]')).toBe(true);
   });
 
   it('W5.3: every typed error token maps to a human string', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    const src = readFileSync(PARTS_TSX, 'utf-8');
     for (const token of ["'no_api_key'", "'unauthorized'", "'timeout'", "'network'", "startsWith('http_')"]) {
       expect(src.includes(token)).toBe(true);
     }
-    // The unknown-token fallback sentence exists.
     expect(src.includes('Something went wrong. Try again.')).toBe(true);
   });
 
-  it('W5.4: the probe spinner warns it can take up to a minute (DeepSeek queues)', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('This can take up to a minute.')).toBe(true);
-  });
-
-  it('W5.5: non-vision models are marked and the hint names the image surfaces', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+  it('W5.5: non-vision models are marked, and a picked one says why on hover', () => {
+    const src = readFileSync(PARTS_TSX, 'utf-8');
     expect(src.includes("m.vision === 'no'")).toBe(true);
-    expect(src.includes('Screen sharing and Draw! need a model that can see images.')).toBe(true);
+    expect(src.includes('Screen sharing and Draw! need a vision model.')).toBe(true);
   });
 });
 
-describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)', () => {
-  it('V.1: a Voice group exists after AI, gated to local (BYOK) mode', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    const aiIdx = src.indexOf('>AI<');
-    const voiceIdx = src.indexOf('>Voice<');
-    expect(voiceIdx).toBeGreaterThan(aiIdx);
-    // The group's opening conditional is the local-mode gate.
-    const preamble = src.slice(Math.max(0, voiceIdx - 400), voiceIdx);
-    expect(preamble.includes("aiBackendKind === 'local'")).toBe(true);
+// 261110: voice moved to Playtime (VoicePanel on the ChatGPT and My keys tabs).
+describe('Playtime voice panel (W5 china-compat: TTS packs + SenseVoice, moved 261110)', () => {
+  it('V.1: Settings has no Voice group; the voice panel sits on the ChatGPT and My keys tabs', () => {
+    expect(readFileSync(SETTINGS_TSX, 'utf-8').includes('>Voice<')).toBe(false);
+    expect(readFileSync(resolve(PT_DIR, 'ChatgptTab.tsx'), 'utf-8').includes('<VoicePanel mode="chatgpt"')).toBe(true);
+    expect(readFileSync(MYKEYS_TSX, 'utf-8').includes('<VoicePanel mode="mykeys"')).toBe(true);
   });
 
-  it('V.2: the engine Seg is ElevenLabs / Local; under Local a Fast / Kokoro choice', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes('tts_engine: next')).toBe(true);
-    expect(src.includes("{ value: 'elevenlabs', label: t('ElevenLabs') }")).toBe(true);
-    expect(src.includes("{ value: 'local', label: t('Local') }")).toBe(true);
-    // 261102: the model choice is its own key, Fast first (the default).
-    expect(src.includes("{ value: 'fast', label: t('Fast') }")).toBe(true);
-    expect(src.includes("{ value: 'kokoro', label: 'Kokoro' }")).toBe(true);
-    expect(src.includes('local_tts_model: next')).toBe(true);
+  it('V.2: voice sources per tab; the device engine (Fast / Kokoro) is inline, never its own row', () => {
+    const src = readFileSync(VOICE_PANEL_TSX, 'utf-8');
+    expect(src.includes("{ value: 'device', label: t('On this device') }")).toBe(true);
+    expect(src.includes("{ value: 'elevenlabs', label: t('ElevenLabs key') }")).toBe(true);
+    expect(src.includes("{ value: 'fish', label: t('Fish Audio key') }")).toBe(true);
+    expect(src.includes("{ value: 'sei' as const, label: t('Sei voices') }")).toBe(true);
+    // Sei voices and its "Free this week" meter stay behind the flag (review 261110).
+    expect(src.includes("...(SEI_VOICES_FOR_CHATGPT_ENABLED && (signedIn || source === 'sei')")).toBe(true);
+    expect(src.includes('const showTrial = SEI_VOICES_FOR_CHATGPT_ENABLED &&')).toBe(true);
+    expect(src.includes('<option value="fast">{t(\'Fast\')}</option>')).toBe(true);
+    expect(src.includes('<option value="kokoro">Kokoro</option>')).toBe(true);
     expect(src.includes('local_tts_voice')).toBe(false);
-    expect(src.includes('id="local-tts-voice"')).toBe(false);
     // Picking Kokoro without its pack offers the download, then saves.
     expect(src.includes("if (thenKokoro) await persistLocalModel('kokoro')")).toBe(true);
-    // Never labelled experimental (261102). The About row's own
-    // "Experimental updates" (261103) is the one allowed use.
-    expect(/experimental/i.test(src.replace(/ExperimentalUpdatesRow|Experimental updates/g, ''))).toBe(false);
+    expect(/experimental/i.test(src)).toBe(false);
   });
 
   it('V.3: the two TTS pack rows carry the registry pack ids and an uninstall affordance', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    const src = readFileSync(VOICE_PANEL_TSX, 'utf-8');
     for (const id of ["'tts-en'", "'tts-zh'"]) {
       expect(src.includes(id)).toBe(true);
     }
-    // The chaowen pack is gone (260908 licensing): no third row.
     expect(src.includes("'tts-zh-f'")).toBe(false);
     expect(src.includes("'tts-zh-m'")).toBe(false);
-    // 260907: the decorative "(free)" badge is gone, and deleting a downloaded
-    // pack says "Uninstall" (never "Remove", which is for library actions).
     expect(src.includes("t('(free)')")).toBe(false);
     expect(src.includes("t('Uninstall')")).toBe(true);
     expect(src.includes('onRemovePack')).toBe(true);
@@ -370,26 +366,22 @@ describe('SettingsScreen (W5 china-compat: Voice group, TTS packs + SenseVoice)'
   });
 
   it('V.4: pack state rides the speech IPC and sizes come from the push, never hardcoded', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
+    const src = readFileSync(VOICE_PANEL_TSX, 'utf-8');
     expect(src.includes('.speechPackStatus()')).toBe(true);
     expect(src.includes('sei.onSpeechPackState')).toBe(true);
     expect(src.includes('bytes={packStates[pendingPack.id].bytes}')).toBe(true);
-    // No literal MB sizes in the settings source — the registry owns them.
     for (const literal of ['78 MB', '30 MB', '13 MB', '155 MB', '158 MB']) {
       expect(src.includes(literal)).toBe(false);
     }
   });
 
-  it('V.5: the STT Seg gains SenseVoice beside the unchanged scribe/whisper rows, download-gated', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    // Existing options byte-identical.
-    expect(src.includes("{ value: 'scribe', label: t('ElevenLabs Scribe') }")).toBe(true);
-    expect(src.includes("{ value: 'whisper', label: t('Local Whisper') }")).toBe(true);
-    expect(src.includes("{ value: 'sensevoice', label: t('SenseVoice') }")).toBe(true);
-    // Picking SenseVoice with the pack absent detours through the confirm and
-    // only persists once the download resolved.
+  it('V.5: voice recognition offers scribe / whisper / SenseVoice, download-gated', () => {
+    const src = readFileSync(VOICE_PANEL_TSX, 'utf-8');
+    expect(src.includes('<option value="scribe">{t(\'ElevenLabs Scribe\')}</option>')).toBe(true);
+    expect(src.includes('<option value="whisper">{t(\'Local Whisper\')}</option>')).toBe(true);
+    expect(src.includes('<option value="sensevoice">{t(\'SenseVoice\')}</option>')).toBe(true);
     expect(src.includes("packStates[SENSEVOICE_PACK_ID]?.state !== 'ready'")).toBe(true);
-    expect(src.includes("if (thenSensevoice) await persistSttEngine('sensevoice')")).toBe(true);
+    expect(src.includes("if (thenSensevoice) await persistStt('sensevoice')")).toBe(true);
   });
 });
 
@@ -404,23 +396,20 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
     expect(elevenKeySettingMode(null, 'elevenlabs')).toBe('hidden');
   });
 
-  it('OV.2: the Cloud group renders the shared key row in optional mode with the credits copy', () => {
-    const src = readFileSync(SETTINGS_TSX, 'utf-8');
-    expect(src.includes("elevenKeySettingMode(aiBackendKind, ttsEngine) === 'cloud-optional'")).toBe(true);
-    expect(src.includes("renderElevenKeyRow('cloud-optional')")).toBe(true);
-    expect(src.includes("renderElevenKeyRow('byok')")).toBe(true);
-    // One key editor in the source: both groups share it.
-    expect((src.match(/placeholder=\{t\('Your ElevenLabs key'\)\}/g) ?? []).length).toBe(1);
-    expect(src.includes("t('Use your own ElevenLabs voices')")).toBe(true);
-    expect(src.includes('Those voices use your ElevenLabs credits.')).toBe(true);
+  it('OV.2: the Sei tab renders the shared key row in optional mode; one key editor in the source', () => {
+    const pt = readFileSync(PLAYTIME_TSX, 'utf-8');
+    expect(pt.includes('<ElevenKeyRow mode="cloud-optional" />')).toBe(true);
+    expect(readFileSync(VOICE_PANEL_TSX, 'utf-8').includes('<ElevenKeyRow mode="byok" />')).toBe(true);
+    const row = readFileSync(ELEVEN_ROW_TSX, 'utf-8');
+    expect((row.match(/placeholder=\{t\('Your ElevenLabs key'\)\}/g) ?? []).length).toBe(1);
     // "Not set" is a warning only in BYOK mode.
-    expect(src.includes("hasElevenKey || mode === 'cloud-optional'")).toBe(true);
+    expect(row.includes("hasKey || mode === 'cloud-optional'")).toBe(true);
   });
 
   it('OV.3: the picker points to the key field when none is saved, on either backend', () => {
     const src = readFileSync(VOICE_PICKER_TSX, 'utf-8');
     expect(src.includes('elevenKeyHintShown(hasElevenKey, localTtsMode)')).toBe(true);
-    expect(src.includes("t('Have your own ElevenLabs voices? Add your ElevenLabs key in Settings, under Voice.')")).toBe(
+    expect(src.includes("t('Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.')")).toBe(
       true,
     );
     // The free-plan pool hint is a local-backend thing only.
@@ -500,38 +489,29 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(games).toContain('extraTabs');
   });
 
-  it('Credits drops the wordy block and hands the switch to Settings with the intent flag', () => {
+  it('the ChatGPT plan intent flag now opens Playtime on its ChatGPT tab (261110)', () => {
     expect(credits).not.toContain('ChatGPT plan, separate from Sei plans');
     expect(credits).not.toContain('Have ChatGPT Plus or Pro?');
-    expect(credits).toContain("navigate({ kind: 'settings', useChatgptPlan: true })");
-    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("{ kind: 'settings'; useChatgptPlan?: boolean; focus?: SettingsFocus }");
+    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain(
+      "{ kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean }",
+    );
+    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).not.toContain('SettingsFocus');
+    expect(settings).not.toContain('chatgptPlanIntent');
+    expect(settings).not.toContain('data-settings-focus');
   });
 
-  it('Settings runs the intent once through the normal switch paths, then clears it', () => {
-    const at = settings.indexOf('const chatgptPlanIntent');
+  it('Playtime runs the intent once through the normal switch paths, then clears it', () => {
+    const pt = readFileSync(PLAYTIME_TSX, 'utf8');
+    const at = pt.indexOf('if (!chatgptPlanIntent) return;');
     expect(at).toBeGreaterThan(-1);
-    const body = settings.slice(at, at + 1200);
-    // Waits only while config, plan status or backend are loading (the
-    // decision itself is chatgptPlanIntentStep, tested in its own file).
-    expect(body).toContain('chatgptPlanIntentStep(!!cfg, chatgptStatus, aiBackendKind)');
+    const body = pt.slice(at, at + 700);
+    expect(body).toContain('chatgptPlanIntentStep(!!cfg, chatgptStatus, backend)');
     expect(body).toContain("if (step === 'wait') return;");
-    // Clears the flag before anything else, so it never fires later: not
-    // even when the plan turned out not to be ready ('drop').
-    expect(body).toMatch(/if \(step === 'wait'\) return;\s*useUiStore\.setState\(\{ view: \{ kind: 'settings' \} \}\);\s*if \(step === 'drop'\) return;/);
-    // Cloud: the same confirm modal as this screen's own button. Local: provider pick.
-    expect(body).toContain("setSwitchVia('chatgpt')");
-    expect(body).toContain("setPendingSwitch('local')");
-    expect(body).toContain("onChangeProvider('chatgpt')");
-  });
-
-  it("view.focus 'ai-backend' (the usage-limit popup's own-key option) reveals the Backend row, else Provider", () => {
-    expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain("export type SettingsFocus = 'chatgpt-plan' | 'ai-backend';");
-    expect(settings).toContain('revealSettingsFocus(focusTarget)');
-    // Both rows are marked; the Backend row comes first in the DOM, so it wins
-    // whenever it renders (signed in), and Provider is the signed-out fallback.
-    const marks = [...settings.matchAll(/data-settings-focus="ai-backend"/g)].map((m) => m.index ?? -1);
-    expect(marks).toHaveLength(2);
-    expect(settings.slice(marks[0], marks[0] + 200)).toContain("t('Backend')");
-    expect(settings.slice(marks[1], marks[1] + 200)).toContain("t('Provider')");
+    // Clears the flag before anything else, so it never fires later.
+    expect(body).toMatch(
+      /if \(step === 'wait'\) return;\s*useUiStore\.setState\(\{ view: \{ kind: 'credits', tab: 'chatgpt' \} \}\);\s*setTab\('chatgpt'\);\s*if \(step === 'drop'\) return;/,
+    );
+    // Both backends confirm through the same modal as the tab's own button.
+    expect(body).toContain("setPendingSwitch('chatgpt')");
   });
 });

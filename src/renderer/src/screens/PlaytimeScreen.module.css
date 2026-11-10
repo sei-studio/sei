@@ -1,0 +1,530 @@
+/**
+ * PlaytimeScreen (261110, product call 261110): the page frame, the tab bar
+ * and the panels the ChatGPT and My keys tabs share. Mocks: Playtime v3
+ * (01 Sei, 02/03 ChatGPT, 04/05 My keys). Big text, few words, no borders
+ * on buttons or tabs, 2px corners through the tokens. Quiet register (dev
+ * restyle 261110): the four --fs-* sizes, rows and tiles are --step-1 fills
+ * 2px apart (the field shows through the gap, never a hairline), tracks and
+ * selects are --wash with the selected option on --wash-hi.
+ * The Sei tab body keeps its own sheet (CreditsScreen.module.css).
+ */
+
+.root {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-2xl-plus) var(--page-inset) var(--space-4xl);
+  display: flex;
+  flex-direction: column;
+}
+
+.col {
+  width: 100%;
+  max-width: var(--measure-col);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-2xl) + var(--space-xs));
+}
+
+/* ── Header: the page title and the three tabs ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-group);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  color: var(--text);
+  margin: 0;
+}
+
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--wash);
+  border-radius: var(--radius);
+}
+
+/* Selection is the selected fill only (no dot, founder feedback 261110). */
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-body);
+  min-height: calc(var(--control-sm) - 4px);
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabOn,
+.tabOn:hover {
+  background: var(--wash-hi);
+  color: var(--text);
+}
+
+/* ── Sections: a title (and an optional aside) over a panel ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md-plus);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-group);
+}
+
+.sectionTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  color: var(--text);
+  margin: 0;
+}
+
+.aside {
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* A row: label left, controls right. A raised fill, 2px from its neighbours
+   (the Settings row of the quiet register). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  min-height: calc(var(--space-4xl) + var(--space-md));
+  box-sizing: border-box;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--step-1);
+  border-radius: var(--radius);
+}
+
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-body);
+  line-height: 1.25;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.rowEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-group);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.ok {
+  color: var(--green);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+/* One line under a panel: errors, the switch heads-up, a status. */
+.note {
+  margin: 0;
+  padding: 0 var(--space-lg);
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-meta);
+  color: var(--muted);
+}
+
+.noteError {
+  color: var(--red);
+}
+
+/* A link-styled action (Manage usage). */
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--accent-strong);
+}
+
+.link:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Borderless select (model, local engine, alert amount, recognition). */
+.select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 280px;
+  height: var(--control-sm);
+  padding: 0 var(--space-md);
+  font-family: var(--mono);
+  font-size: var(--fs-meta);
+  background: var(--wash);
+  color: var(--text);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.select option {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.select:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.selectSans {
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+/* ── The choice control (voice source): borderless segmented buttons ── */
+.choice {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--wash);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.choiceOpt {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  min-height: calc(var(--control-sm) - 4px);
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.choiceOpt:hover {
+  color: var(--text);
+}
+
+.choiceOpt:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.choiceOptOn,
+.choiceOptOn:hover {
+  background: var(--wash-hi);
+  color: var(--text);
+}
+
+/* The engine folded into "On this device" (founder feedback 261110): a small
+   inline select right after the choice. */
+.inlineEngine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* ── Meter (Free this week) ── */
+.meter {
+  flex: 0 1 240px;
+  min-width: 80px;
+  height: 6px;
+  background: var(--track);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.meterValue {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Mini bars: replies per day (ChatGPT tab) ── */
+.miniBars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  height: 28px;
+}
+
+.miniBar {
+  width: 12px;
+  min-height: 3px;
+  background: var(--accent);
+  opacity: 0.55;
+  border-radius: var(--radius-sm);
+}
+
+.miniBarToday {
+  opacity: 1;
+}
+
+/* ── Spend: stat tiles beside the per-day chart. The grid row stretches both
+   columns to the taller one, and the two tiles split the stat column, so the
+   tiles' top and bottom edges match the chart's (founder feedback 261110). ── */
+.spendGrid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 2.4fr;
+  gap: 2px;
+  align-items: stretch;
+}
+
+.stats {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--step-1);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.statLabel {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+.statValue {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.statSub {
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--step-1);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.chartTitle {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+.chartBars {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-md);
+  align-items: end;
+  min-height: 150px;
+}
+
+.chartCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  height: 100%;
+  min-width: 0;
+}
+
+.chartValue {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.chartBarTrack {
+  flex: 1;
+  width: 100%;
+  max-width: 40px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chartBar {
+  width: 100%;
+  min-height: 3px;
+  background: var(--accent);
+  opacity: 0.55;
+  border-radius: var(--radius-sm);
+}
+
+.chartBarToday {
+  opacity: 1;
+}
+
+.chartDay {
+  font-family: var(--sans);
+  font-size: var(--fs-meta);
+  color: var(--muted);
+}
+
+.chartDayToday {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ── Voice plan tiles (UI only, behind VOICE_PLAN_UI_ENABLED) ── */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  align-items: stretch;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md-plus);
+  background: var(--step-1);
+  border-radius: var(--radius);
+}
+
+.tile > button {
+  margin-top: auto;
+}
+
+/* ── Not-in-use tabs: one centered line and one action ── */
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-group);
+  padding: var(--space-3xl) 0;
+  text-align: center;
+}
+
+.inviteLine {
+  margin: 0;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: var(--fs-title);
+  line-height: var(--lh-title);
+  color: var(--text);
+}
+
+/* The key editor inside a row. */
+.editor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The spend alert (App.tsx): NoticeLine, set in from the window edges. */
+.alertBanner {
+  padding: var(--space-sm) var(--page-inset) 0;
+}
+
+@media (max-width: 720px) {
+  .spendGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tiles {
+    grid-template-columns: 1fr;
+  }
+}

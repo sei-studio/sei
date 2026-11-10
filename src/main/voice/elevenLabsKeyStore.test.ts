@@ -39,7 +39,11 @@ import {
   resolveElevenLabsRoute,
   resolveOwnVoiceKey,
   resolveTtsRoute,
+  resolveSpeakRoute,
+  seiVoicesSelected,
 } from './elevenLabsKeyStore';
+import { updateConfig } from '../configStore';
+import { SEI_VOICES_FOR_CHATGPT_ENABLED } from '../../shared/ttsEngine';
 
 let tmp: string;
 const savedEnvKey = process.env.SEI_TTS_DEV_KEY;
@@ -192,5 +196,39 @@ describe('resolveOwnVoiceKey', () => {
     expect(await resolveOwnVoiceKey()).toBe('own-key-123');
     process.env.SEI_TTS_DEV_KEY = 'env-key-456';
     expect(await resolveOwnVoiceKey()).toBe('env-key-456');
+  });
+});
+
+describe('Sei voices for ChatGPT-plan users stay off (review 261110)', () => {
+  // The proxy does not meter voice yet, so a ChatGPT-plan user on the proxy
+  // TTS route would get unlimited cloud speech at Sei's cost.
+  const chatgptWithSeiVoices = async (): Promise<void> => {
+    await setAiBackendKind('local');
+    await updateConfig((c) => ({ ...c, provider: 'chatgpt', tts_engine: 'sei' }));
+  };
+
+  it('the flag ships false', () => {
+    expect(SEI_VOICES_FOR_CHATGPT_ENABLED).toBe(false);
+  });
+
+  it('a saved tts_engine "sei" on the ChatGPT plan never resolves to the proxy', async () => {
+    await chatgptWithSeiVoices();
+    expect(await seiVoicesSelected()).toBe(false);
+    expect(await resolveSpeakRoute()).toEqual({ kind: 'unconfigured' });
+    for (const own of [false, true]) {
+      const { route } = await resolveTtsRoute({ own });
+      expect(route.kind).not.toBe('proxy');
+    }
+  });
+
+  it('with an ElevenLabs key it speaks direct, never through the proxy', async () => {
+    await chatgptWithSeiVoices();
+    await setElevenLabsKey('sk-eleven-abc123');
+    expect(await resolveSpeakRoute()).toEqual({ kind: 'direct', key: 'sk-eleven-abc123' });
+  });
+
+  it('the Sei (cloud) setup keeps its proxy route', async () => {
+    await setAiBackendKind('cloud-proxy');
+    expect(await resolveSpeakRoute()).toEqual({ kind: 'proxy' });
   });
 });

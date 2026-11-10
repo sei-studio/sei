@@ -83,7 +83,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   SKIN_FILE_INVALID: "That doesn't look like a Minecraft skin PNG. Skins must be 64×64 pixels.",
   SKIN_SERVER_PORT_TAKEN: "Sei couldn't reserve a local port for serving skins. Restart Sei and try again.",
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
-  CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.",
+  CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up in Playtime, or switch to your own API key there.",
   DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
   // 260828: pre-gate refusal — onboarding never captured a name. Previously
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
@@ -115,19 +115,19 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // 261010: local Ollama backend. Before these, a model that could not run the
   // game brain joined the world and then never said or did anything.
   OLLAMA_NOT_RUNNING: "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.",
-  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
+  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Playtime. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
   // 261103 (T303): {provider} comes from the status message (errorCopyText).
   PROVIDER_REGION_UNSUPPORTED: PROVIDER_REGION_COPY,
-  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
+  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Playtime, like qwen3 or qwen3-vl, then press Launch again.",
   // 261017 (issue #46): ChatGPT plan.
-  CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.",
-  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Settings.",
-  CHATGPT_FORBIDDEN: "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Settings.",
-  CHATGPT_AUTH_REJECTED: "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Settings to sign in again.",
-  CHATGPT_REQUEST_REJECTED: "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Settings.",
-  CHATGPT_UNSUPPORTED: "The ChatGPT model picked in Settings can't handle this request. Pick another model in Settings and try again.",
-  CHATGPT_SIGNED_OUT: "Your ChatGPT sign-in ended. Continue with ChatGPT in Settings to sign in again.",
-  CHATGPT_PLAN_DISABLED: "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Settings, then try again.",
+  CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Playtime.",
+  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Playtime.",
+  CHATGPT_FORBIDDEN: "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Playtime.",
+  CHATGPT_AUTH_REJECTED: "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Playtime to sign in again.",
+  CHATGPT_REQUEST_REJECTED: "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Playtime.",
+  CHATGPT_UNSUPPORTED: "The ChatGPT model picked in Playtime can't handle this request. Pick another model there and try again.",
+  CHATGPT_SIGNED_OUT: "Your ChatGPT sign-in ended. Continue with ChatGPT in Playtime to sign in again.",
+  CHATGPT_PLAN_DISABLED: "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Playtime, then try again.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
   // 261104: SMAPI failures by cause.
   SMAPI_NETWORK_FAILED: "Couldn't download SMAPI, the mod loader Stardew Valley needs. Check your internet connection, then try the setup again.",

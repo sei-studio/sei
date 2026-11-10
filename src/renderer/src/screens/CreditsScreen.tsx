@@ -1,6 +1,12 @@
 /**
- * CreditsScreen — plan + weekly usage surface (260724 subscription model,
- * 260725 sketch layout).
+ * SeiPlanTab — the Sei tab of the Playtime page (screens/PlaytimeScreen.tsx):
+ * plan + weekly usage (260724 subscription model, 260725 sketch layout).
+ *
+ * 261110 (product call 261110): moved into the Playtime tabs and restyled
+ * (mock 01): no Back or Refresh buttons (the page polls), the usage rows sit
+ * in one panel, the extra-credits row shows what is left, the carry-over
+ * note moved into an info tip, and the ChatGPT plan row moved to the ChatGPT
+ * tab.
  *
  * Layout: a centered column —
  *   - BackRow + a USAGE section (sketch 260725): two label/bar/value rows.
@@ -46,17 +52,14 @@
 import React, { useEffect, useState } from 'react';
 import type { PlanTier } from '@shared/ipc';
 import { useCreditsStore, type CheckoutKind } from '../lib/stores/useCreditsStore';
-import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from '../components/Button';
 import { PlanButton, PlanCheckIcon } from '../components/PlanButton';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
-import { BackIcon, RefreshIcon } from '../components/icons';
 import { sei } from '../lib/ipcClient';
 import { TopUpModal } from '../components/TopUpModal';
 import { FeedbackRewardCard } from '../components/FeedbackRewardCard';
 import { FeedbackModal } from '../components/FeedbackModal';
 import { formatRenewal } from '../lib/formatRenewal';
-import { formatResetsIn, resetsInLine } from '../lib/formatResetsIn';
 import { useResetLine } from '../lib/useResetLine';
 import {
   RECOMMENDED_TIER,
@@ -69,13 +72,9 @@ import {
 } from '../lib/planCatalog';
 import { t, uiLocale, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
-import { ChatgptLogo } from '../components/ChatgptLogo';
-import { ChatgptPlanSettings, chatgptPlanDisclosure } from '../components/ChatgptPlanSettings';
 import { InfoTip } from '../components/InfoTip';
-import { CHATGPT_HELP_URL, CHATGPT_USAGE_URL } from '@shared/chatgptPlan';
-import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 
-/** Note under the extra-credits bar: what carries over and what does not (SPEC §2). */
+/** What carries over and what does not (SPEC §2): the extra-credits info tip. */
 const CARRY_OVER_NOTE =
   'Unused weekly credits do not carry over. Extra credits never expire.';
 
@@ -122,15 +121,13 @@ function changeErrorCopy(code: string): string {
   }
 }
 
-export function CreditsScreen(): React.ReactElement {
+export function SeiPlanTab(): React.ReactElement {
   const t = useT();
   // Separate selectors so React only re-subscribes the slices we read.
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const overLimit = useCreditsStore((s) => s.over_limit);
-  const resetsAt = useCreditsStore((s) => s.resets_at);
   const extraUsed = useCreditsStore((s) => s.extra_credits_used);
   const extraTotal = useCreditsStore((s) => s.extra_credits_total);
-  const loading = useCreditsStore((s) => s.loading);
   // Last snapshot fetch failed and nothing fresher landed: the store's zeros
   // are placeholders, so the hero must not present "0% used" as account truth.
   const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
@@ -151,7 +148,6 @@ export function CreditsScreen(): React.ReactElement {
   const clearTopUpRequest = useCreditsStore((s) => s.clearTopUpRequest);
   // 260725: server-driven catalog (bundled fallback until loadCatalog lands).
   const planCards = useCreditsStore((s) => s.planCards);
-  const navigate = useUiStore((s) => s.navigate);
   const [showTopUp, setShowTopUp] = useState(false);
   // "Manage billing" portal request: pending label + inline error so a failed
   // (or no-op) portal open is visible instead of silently doing nothing.
@@ -182,29 +178,6 @@ export function CreditsScreen(): React.ReactElement {
   // session, and the reward is a server-side usage reset. BYOK/local users never
   // see the banner or the standing button.
   const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
-  // 261023: already on the ChatGPT plan (local backend, provider chatgpt, a
-  // signed-in account) -> the row says so and offers Manage usage instead of
-  // the sign-in button.
-  const chatgptStatus = useChatgptStore((s) => s.status);
-  const [providerIsChatgpt, setProviderIsChatgpt] = useState(false);
-  useEffect(() => {
-    if (cloudMode) {
-      setProviderIsChatgpt(false);
-      return;
-    }
-    let live = true;
-    void sei
-      .getConfig()
-      .then((c) => {
-        if (live) setProviderIsChatgpt(c?.provider === 'chatgpt');
-      })
-      .catch(() => {});
-    void useChatgptStore.getState().load();
-    return () => {
-      live = false;
-    };
-  }, [cloudMode]);
-  const usingChatgptPlan = !cloudMode && providerIsChatgpt && chatgptReady(chatgptStatus);
   // Analytics (260707): pricing/plan surface viewed — top of the monetization
   // funnel (pairs with checkout_opened downstream).
   useEffect(() => {
@@ -304,17 +277,8 @@ export function CreditsScreen(): React.ReactElement {
     void beginResume();
   };
 
-  // 60s tick so the "Resets in Xd Yh" countdown stays fresh while the screen
-  // is open (matches the refresh poll cadence; no 1Hz re-render).
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 60_000);
-    return () => clearInterval(id);
-  }, []);
-
   const renewalText = formatRenewal(renewsAt);
   const endsText = formatRenewal(endsAt);
-  const resetsIn = resetsAt ? formatResetsIn(resetsAt, nowMs) : '';
   // 260926: at the wall, spell out when free play comes back, right above the
   // plans and next to Top up. Re-evaluated on the 60s tick above. Gated on
   // over_limit only: at 100% of the allowance with extra credits left the
@@ -326,28 +290,15 @@ export function CreditsScreen(): React.ReactElement {
   // "To be cancelled": still on the paid tier but set to cancel at period end.
   const cancelScheduled = isSubscribed && subscriptionStatusRaw === 'cancelled';
 
-  // Extra credits: the bar fills as the non-expiring bucket is spent. An account
-  // that never topped up shows an empty bar and the Top up button.
+  // Extra credits: the bar fills as the non-expiring bucket is spent; the
+  // number beside it is what is left. An account that never topped up shows
+  // an empty bar, 0 and the Top up button.
   const extraPct = extraTotal > 0 ? (extraUsed / extraTotal) * 100 : 0;
-  const extraLabel = t('{used}/{total} credits used', {
-    used: extraUsed.toLocaleString(uiLocale()),
-    total: extraTotal.toLocaleString(uiLocale()),
-  });
+  const extraLeft = Math.max(0, extraTotal - extraUsed).toLocaleString(uiLocale());
 
   return (
-    <div className={styles.root}>
-      <div className={styles.col}>
-        <div className={styles.backRow}>
-          <Button
-            kind="quiet"
-            size="sm"
-            icon={<BackIcon size={14} />}
-            onClick={() => navigate({ kind: 'home' })}
-          >
-            {t('Back')}
-          </Button>
-        </div>
-
+    <>
+      <div className={styles.tab}>
         {/* One-time feedback banner: appears once a quarter of the weekly
             allowance is spent, retires permanently once submitted (260706).
             260726: the SERVER decides whether the reward is still there
@@ -364,70 +315,59 @@ export function CreditsScreen(): React.ReactElement {
           <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
         ) : null}
 
-        {/* Usage — two label/bar/value rows per the 260725 sketch. */}
+        {/* Usage — two label/bar/value rows per the 260725 sketch, in one
+            panel (261110, mock 01). */}
         <div className={styles.usage}>
-          <div className={styles.usageHead}>
-            <h3 className={styles.sectionTitle}>{t('Usage')}</h3>
-            {/* Immediate creditsGet() on top of the 60s poll. */}
-            <Button
-              kind="quiet"
-              size="sm"
-              icon={<RefreshIcon size={14} />}
-              disabled={loading}
-              title={t('Refresh')}
-              aria-label={t('Refresh plan usage')}
-              onClick={() => void refresh()}
-            />
-          </div>
-
-          {/* Row 1: the weekly allowance. */}
-          <div className={styles.usageRow}>
-            <div className={styles.usageLabel}>
-              <span className={styles.usageName}>
-                {planLabel(planCards, plan)}
-              </span>
-              {snapshotFailed ? (
-                <span className={styles.usageSubWarn}>
-                  {t("Couldn't check your account. Refresh to try again.")}
+          <h3 className={styles.sectionTitle}>{t('Usage')}</h3>
+          <div className={styles.usagePanel}>
+            {/* Row 1: the weekly allowance. */}
+            <div className={styles.usageRow}>
+              <div className={styles.usageLabel}>
+                <span className={styles.usageName}>
+                  {planLabel(planCards, plan)}
                 </span>
-              ) : resetsIn ? (
-                <span className={styles.usageSub}>{resetsInLine(resetsIn)}</span>
-              ) : null}
+                {snapshotFailed ? (
+                  <span className={styles.usageSubWarn}>{t("Couldn't check your account.")}</span>
+                ) : null}
+              </div>
+              <div className={styles.usageTrack}>
+                <i
+                  className={atLimit && !snapshotFailed ? styles.usageFillOver : undefined}
+                  style={{ width: snapshotFailed ? '0%' : `${usedPct}%` }}
+                />
+              </div>
+              {/* 260725: the percentage stays the normal text color at 100. The
+                  bar fill still turns red, which is signal enough. */}
+              <span className={styles.usagePct}>{snapshotFailed ? '–%' : `${usedPct}%`}</span>
             </div>
-            <div className={styles.usageTrack}>
-              <i
-                className={atLimit && !snapshotFailed ? styles.usageFillOver : undefined}
-                style={{ width: snapshotFailed ? '0%' : `${usedPct}%` }}
-              />
-            </div>
-            {/* 260725: the percentage stays the normal text color at 100. The
-                bar fill still turns red, which is signal enough. */}
-            <span className={styles.usagePct}>{snapshotFailed ? '–%' : `${usedPct}%`}</span>
-          </div>
 
-          {/* Row 2: the separate, non-expiring extra-credits bucket. */}
-          <div className={styles.usageRow}>
-            <div className={styles.usageLabel}>
-              <span className={styles.usageName}>{t('Extra credits')}</span>
-              <span className={styles.usageSub}>{extraLabel}</span>
+            {/* Row 2: the separate, non-expiring extra-credits bucket. */}
+            <div className={styles.usageRow}>
+              <div className={styles.usageLabel}>
+                <span className={styles.usageName}>
+                  {t('Extra credits')}
+                  <InfoTip label={t('About extra credits')} text={t(CARRY_OVER_NOTE)} />
+                </span>
+              </div>
+              <div className={styles.usageTrack}>
+                <i
+                  className={styles.usageFillMuted}
+                  style={{ width: snapshotFailed ? '0%' : `${Math.max(0, Math.min(100, extraPct))}%` }}
+                />
+              </div>
+              <span className={styles.usageEnd}>
+                <span className={styles.usagePct}>{snapshotFailed ? '–' : extraLeft}</span>
+                <Button
+                  kind="ghost"
+                  size="md"
+                  disabled={checkoutActive}
+                  onClick={() => setShowTopUp(true)}
+                >
+                  {t('Top up')}
+                </Button>
+              </span>
             </div>
-            <div className={styles.usageTrack}>
-              <i
-                className={styles.usageFillMuted}
-                style={{ width: snapshotFailed ? '0%' : `${Math.max(0, Math.min(100, extraPct))}%` }}
-              />
-            </div>
-            <Button
-              kind="ghost"
-              size="md"
-              disabled={checkoutActive}
-              onClick={() => setShowTopUp(true)}
-            >
-              {t('Top up')}
-            </Button>
           </div>
-
-          <p className={styles.usageNote}>{t(CARRY_OVER_NOTE)}</p>
 
           {showResetCallout ? (
             <div className={styles.resetCallout} role="status">
@@ -552,47 +492,6 @@ export function CreditsScreen(): React.ReactElement {
           {changeError ? <p className={styles.manageError}>{changeError}</p> : null}
         </div>
 
-        {/* 261017 (issue #46): "Use your ChatGPT plan". OpenAI's guidelines
-            ask the pricing page to say which plans support it (every Sei plan,
-            Free included) and to keep it apart from the app's own
-            subscription, so it is its own row under the plan cards, never a
-            feature inside a paid card. 261023 (product feedback: too much text): one
-            line plus the sign-in button; the "not a Sei charge" disclosure
-            sits in the info tip. The button signs in right here, then Settings
-            opens on the switch confirmation (view.useChatgptPlan). */}
-        <div className={styles.chatgptPlan}>
-          <div className={styles.chatgptPlanRow}>
-            <ChatgptLogo size={18} />
-            <div className={styles.chatgptPlanText}>
-              <span className={styles.chatgptPlanName}>
-                {usingChatgptPlan ? t('Using ChatGPT plan') : t('Use your ChatGPT plan')}
-                <InfoTip label={t('About the ChatGPT plan')} text={chatgptPlanDisclosure(t)} />
-              </span>
-              <span className={styles.planBlurb}>
-                {t('Works with your ChatGPT Plus or Pro account.')}{' '}
-                <button
-                  type="button"
-                  className={styles.planFeatureLink}
-                  onClick={() => void sei.openExternal(CHATGPT_HELP_URL)}
-                >
-                  {t('Learn more')}
-                </button>
-              </span>
-            </div>
-            {usingChatgptPlan ? (
-              <Button kind="ghost" size="sm" onClick={() => void sei.openExternal(CHATGPT_USAGE_URL)}>
-                {t('Manage usage')}
-              </Button>
-            ) : (
-              <ChatgptPlanSettings
-                active={false}
-                compact
-                onUsePlan={() => navigate({ kind: 'settings', useChatgptPlan: true })}
-              />
-            )}
-          </div>
-        </div>
-
         {/*
           Footer: "Manage billing" (Polar customer-portal flow via handleManage,
           shown for everyone; never-subscribed users no-op gracefully — FTC
@@ -663,7 +562,7 @@ export function CreditsScreen(): React.ReactElement {
       {/* Standing feedback form (260706) — reachable once the reward banner
           has been used. */}
       {showFeedbackModal ? <FeedbackModal onClose={() => setShowFeedbackModal(false)} /> : null}
-    </div>
+    </>
   );
 }
 

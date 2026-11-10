@@ -198,7 +198,9 @@ export async function buildLlmProvider(): Promise<LlmProvider> {
   const backend = await getAiBackendKind();
   if (backend === 'cloud-proxy') return createAnthropicProvider('cloud-proxy');
   const kind = await localProviderKind();
-  return buildLocalProviderFor(kind);
+  // 261110 Playtime: count own-key / ChatGPT-plan requests (usage ledger).
+  const { withUsageMeter } = await import('../usage/llmUsageLedger');
+  return withUsageMeter(await buildLocalProviderFor(kind));
 }
 
 /**

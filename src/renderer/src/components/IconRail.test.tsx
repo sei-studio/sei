@@ -14,8 +14,8 @@
  *   4. Source surfaces the round + button → add-character navigation.
  *   5. Source surfaces the CompassIcon → World tab gateway and writes
  *      homeTab='world' before navigating.
- *   6. Source surfaces the CloudIcon branch when ai_backend_kind === 'local'
- *      and mounts a confirm dialog → SignInModal.
+ *   6. The StarIcon opens the Playtime page on both backends (261110; the
+ *      local "Switch to cloud?" prompt moved to Playtime's Sei tab).
  *   7. Source preserves the cloud-proxy PricingIcon branch + Settings link.
  *   8. CSS module hides the scrollbar on the avatar cluster.
  */
@@ -75,16 +75,15 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(source.includes("navigate({ kind: 'home' })")).toBe(true);
   });
 
-  it('Test 6: local backend renders StarIcon + confirm dialog mounting SignInModal', () => {
+  it('Test 6: the StarIcon opens Playtime on both backends (261110)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    // Item 5: the rail's credits/cloud button uses StarIcon in BOTH the
-    // cloud-proxy and local states for consistent iconography; CloudIcon is
-    // gone. The local branch still opens the "Switch to cloud?" confirm dialog
-    // that mounts SignInModal.
+    // Item 5: StarIcon in both states, CloudIcon gone. 261110: the local
+    // backend no longer opens a "Switch to cloud?" prompt; the Playtime page
+    // (its Sei tab) owns the switch and the sign-in it may need.
     expect(source.includes('CloudIcon')).toBe(false);
-    expect(source.includes("aiBackendKind === 'cloud-proxy'")).toBe(true);
-    expect(source.includes('Switch to cloud?')).toBe(true);
-    expect(source.includes('SignInModal')).toBe(true);
+    expect(source.includes("aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local'")).toBe(true);
+    expect(source.includes('Switch to cloud?')).toBe(false);
+    expect(source.includes('SignInModal')).toBe(false);
   });
 
   it('Test 7: preserves the cloud-proxy StarIcon credits branch and Settings link', () => {

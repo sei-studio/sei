@@ -17,8 +17,8 @@
  *
  * 261023: after "Continue with ChatGPT" as an ACCOUNT sign-in (or Settings'
  * Link ChatGPT) granted plan usage, main holds a one-shot plan offer. The host
- * takes it on a calm screen (Home or Settings, no tour running) and routes to
- * Settings with view.useChatgptPlan, which runs the existing switch path: the
+ * takes it on a calm screen (Home, Settings or Playtime, no tour running) and routes to
+ * Playtime's ChatGPT tab with view.useChatgptPlan, which runs the switch path: the
  * cloud -> local confirm when Sei credits are in use (the user can say no),
  * or just the provider pick on the local backend. Nothing switches silently
  * away from Sei credits.
@@ -67,7 +67,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
   // Plan offer after a ChatGPT account sign-in (see header).
   useEffect(() => {
     if (!signedIn || !ready || tourActive) return;
-    if (viewKind !== 'home' && viewKind !== 'settings') return;
+    if (viewKind !== 'home' && viewKind !== 'settings' && viewKind !== 'credits') return;
     // No cleanup-cancel: the offer is one-shot in main, so a re-run of this
     // effect while the answer is in flight must not drop it.
     void sei
@@ -75,7 +75,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
       .then((offer) => {
         if (!offer) return;
         if (useUiStore.getState().llmProvider === 'chatgpt') return;
-        useUiStore.getState().navigate({ kind: 'settings', useChatgptPlan: true });
+        useUiStore.getState().navigate({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true });
       })
       .catch(() => undefined);
   }, [signedIn, ready, tourActive, viewKind, status?.activeId]);
@@ -106,7 +106,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
       <ModalShell title={t('Sign in to ChatGPT again')} width={420} onClose={closeBlockDialog} tier="stacked">
         <p className={styles.body}>
           {t(
-            "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Settings.",
+            "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Playtime.",
           )}
         </p>
         <ModalFooter>
@@ -132,7 +132,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
       <ModalShell title={t('ChatGPT rejected the request')} width={420} onClose={closeBlockDialog} tier="stacked">
         <p className={styles.body}>
           {t(
-            "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Settings.",
+            "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Playtime.",
           )}
         </p>
         <ModalFooter>

@@ -175,10 +175,10 @@ export function isChatgptPlanError(err: unknown): boolean {
 /** The companion line shown when a chat turn fails for real. */
 export function chatFailureLine(err: unknown): string {
   if (isLocalNoApiKey(err)) {
-    return "i can't reply: you're in local mode but no API key is saved. add one in Settings, or switch to managed billing.";
+    return "i can't reply: you're in local mode but no API key is saved. add one in Playtime, or switch to managed billing.";
   }
   if (isLlmTimeout(err)) {
-    return 'sorry, the model took too long to answer. try again, or pick a faster model in Settings.';
+    return 'sorry, the model took too long to answer. try again, or pick a faster model in Playtime.';
   }
   // 261010: local Ollama setup problems, tagged in main/llm/ollama.ts.
   const msg = String((err as { message?: string })?.message ?? err);
@@ -186,7 +186,7 @@ export function chatFailureLine(err: unknown): string {
     return "i can't reach Ollama. make sure the Ollama app is running, then try again.";
   }
   if (/OLLAMA_MODEL_MISSING/.test(msg)) {
-    return "Ollama doesn't have the model picked in Settings. download it in Ollama or pick another model.";
+    return "Ollama doesn't have the model picked in Playtime. download it in Ollama or pick another model.";
   }
   // 261103 (T303): a BYOK provider refused the caller's region (tagged in
   // main/llm/index.ts withRegionRefusal). Its own plain line, no retry.
@@ -194,22 +194,22 @@ export function chatFailureLine(err: unknown): string {
   if (regionProvider) return `${regionProvider} does not support your region.`;
   // 261017 (issue #46): ChatGPT plan, tagged in bot/brain/llm/responsesWire.js.
   if (/CHATGPT_USAGE_LIMIT/.test(msg)) {
-    return "i can't reply: your ChatGPT plan's usage limit is reached. check Manage usage in ChatGPT, or pick another AI option in Settings.";
+    return "i can't reply: your ChatGPT plan's usage limit is reached. check Manage usage in ChatGPT, or pick another AI option in Playtime.";
   }
   if (/CHATGPT_AUTH_REJECTED/.test(msg)) {
-    return "i can't reply: ChatGPT needs you to sign in again. use Continue with ChatGPT in the popup or in Settings.";
+    return "i can't reply: ChatGPT needs you to sign in again. use Continue with ChatGPT in the popup or in Playtime.";
   }
   if (/CHATGPT_SIGNED_OUT|CHATGPT_PLAN_DISABLED/.test(msg)) {
-    return "i can't reply: your ChatGPT sign-in needs attention. continue with ChatGPT in Settings to fix it.";
+    return "i can't reply: your ChatGPT sign-in needs attention. continue with ChatGPT in Playtime to fix it.";
   }
   if (/CHATGPT_NOT_ELIGIBLE/.test(msg)) {
-    return "i can't reply: this ChatGPT account can't be used here (it needs Plus or Pro). try another account or AI option in Settings.";
+    return "i can't reply: this ChatGPT account can't be used here (it needs Plus or Pro). try another account or AI option in Playtime.";
   }
   if (/CHATGPT_FORBIDDEN/.test(msg)) {
-    return "i can't reply: ChatGPT plan use isn't available here right now, maybe because of your region or plan. pick another AI option in Settings.";
+    return "i can't reply: ChatGPT plan use isn't available here right now, maybe because of your region or plan. pick another AI option in Playtime.";
   }
   if (/CHATGPT_REQUEST_REJECTED/.test(msg)) {
-    return "i can't reply: ChatGPT didn't accept the request, so requests are paused. press Try again in the popup or in Settings, or pick another AI option.";
+    return "i can't reply: ChatGPT didn't accept the request, so requests are paused. press Try again in the popup or in Playtime, or pick another AI option.";
   }
   return "sorry, i couldn't reply just now. try again in a moment?";
 }

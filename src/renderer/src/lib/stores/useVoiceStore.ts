@@ -54,7 +54,7 @@ import type { VoiceTtsNoticePush } from '@shared/ipc';
 import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createSentenceTts } from '../voice/sentenceTts';
-import { localTtsModel } from '@shared/ttsEngine';
+import { localTtsModel, seiVoicesActive } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
@@ -373,6 +373,8 @@ let kokoroTtsCall = false;
  * streaming path is open again (a Fast fallback arrives as one WAV chunk and
  * the stream player sniffs it). */
 let fishTtsCall = false;
+/** 261110: "Sei voices" with the ChatGPT brain this call (see localTtsCall). */
+let seiVoicesCall = false;
 /** Characters with their own Fish voice this call: played without the pitch
  * shift (the user picked that exact voice). */
 let fishOverrideIds = new Set<string>();
@@ -660,7 +662,7 @@ function friendlyError(err: unknown): string {
     return t('Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.');
   }
   if (/VOICE_ELEVEN_QUOTA/.test(msg)) return t('Your ElevenLabs account is out of credits.');
-  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Settings.');
+  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Playtime.');
   if (/VOICE_NO_CREDITS/.test(msg)) {
     // 260926: say when free play comes back, not just that it is gone.
     const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
@@ -713,21 +715,21 @@ function isZhPack(packId: string | undefined): boolean {
  * "the local voice pack". */
 function missingPackNotice(packId: string | undefined): string {
   if (isZhPack(packId)) {
-    return t('[voice unavailable, download the Chinese voice pack in Settings]');
+    return t('[voice unavailable, download the Chinese voice pack in Playtime]');
   }
-  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Settings]');
+  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Playtime]');
   if (packId === 'tts-en') {
-    return t('[voice unavailable, download the English voice pack in Settings]');
+    return t('[voice unavailable, download the English voice pack in Playtime]');
   }
-  return t('[voice unavailable, download the local voice pack in Settings]');
+  return t('[voice unavailable, download the local voice pack in Playtime]');
 }
 
 /** Notice copy when a line WAS spoken, but with a substitute pack because the
  * language-matching one is not installed (260908, voice:tts-notice push). */
 function substitutePackNotice(push: { missingPackId: string; spokenPackId: string }): string {
   return isZhPack(push.missingPackId)
-    ? t('[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]')
-    : t('[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]');
+    ? t('[spoken with the English voice, download the Chinese voice pack in Playtime for a better fit]')
+    : t('[spoken with the Chinese voice, download the English voice pack in Playtime for a better fit]');
 }
 
 /** Notice copy when a cloud line for the user's OWN ElevenLabs voice was
@@ -737,7 +739,7 @@ export function ownVoiceStandInNotice(
 ): string {
   switch (reason) {
     case 'no-key':
-      return t('[speaking with a Sei voice, add your ElevenLabs key in Settings to hear their own voice]');
+      return t('[speaking with a Sei voice, add your ElevenLabs key in Playtime to hear their own voice]');
     case 'key-invalid':
       return t('[speaking with a Sei voice, ElevenLabs rejected your key]');
     case 'voice-missing':
@@ -753,7 +755,7 @@ export function ownVoiceStandInNotice(
  * spoke the line instead (261102, kokoro-fallback push). */
 export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string {
   return reason === 'pack-missing'
-    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Settings]')
+    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Playtime]')
     : t('[spoken with the Fast voice, the Kokoro voice could not load]');
 }
 
@@ -762,7 +764,7 @@ export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string 
 export function fishFallbackNotice(reason: FishFailureReason): string {
   switch (reason) {
     case 'no-key':
-      return t('[spoken with the Fast voice, add your Fish Audio key in Settings]');
+      return t('[spoken with the Fast voice, add your Fish Audio key in Playtime]');
     case 'key-invalid':
       return t('[spoken with the Fast voice, Fish Audio rejected your key]');
     case 'no-credit':
@@ -777,8 +779,15 @@ export function fishFallbackNotice(reason: FishFailureReason): string {
 }
 
 /** The call notice for one voice:tts-notice push. */
+/** 261110: a "Sei voices" line spoken on-device instead (ChatGPT brain). */
+export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed'): string {
+  if (reason === 'no-credits') return t('[Sei voices are used up this week, using voices on this device]');
+  return t('[Sei voices are unavailable right now, using voices on this device]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
+  if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
   if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
   return substitutePackNotice(push);
@@ -979,8 +988,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         turn,
         onDone,
         ...(stale ? { stale: () => stale('playhead') } : {}),
-        // A Fish line that falls back to the Fast voices arrives as one WAV.
-        ...(fishTtsCall ? { sniff: true } : {}),
+        // A Fish line that falls back to the Fast voices arrives as one WAV,
+        // and so does a "Sei voices" line spoken on-device (261110).
+        ...(fishTtsCall || seiVoicesCall ? { sniff: true } : {}),
       });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
@@ -1719,6 +1729,17 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           if (fishNoticeReasons.has(push.reason)) return;
           fishNoticeReasons.add(push.reason);
         }
+        // 261110: once per call, whatever the reason.
+        if (push.kind === 'sei-voices-fallback') {
+          if (fishNoticeReasons.has('sei-voices')) return;
+          fishNoticeReasons.add('sei-voices');
+          // Playtime funnel (261110): the free Sei voices ran out (or failed)
+          // and the call fell back to on-device voices. Once per call.
+          sei.track('voice_trial_state', {
+            state: push.reason === 'no-credits' ? 'used_up' : 'fallback',
+            reason: push.reason,
+          });
+        }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;
   } catch {
@@ -1954,7 +1975,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         /* status read failed → assume absent, which only costs streaming */
       }
       if (session !== mySession) return;
+      // 261110: "Sei voices" with the ChatGPT brain streams the proxy's mp3
+      // like a cloud call; a line it cannot speak arrives as one on-device
+      // WAV chunk, which the stream player sniffs (seiVoicesCall).
+      seiVoicesCall = seiVoicesActive(callCfg);
       localTtsCall =
+        !seiVoicesCall &&
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
         (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
       // 261102: Kokoro lines go sentence by sentence (slower synthesis, so

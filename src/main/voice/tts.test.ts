@@ -34,6 +34,9 @@ vi.mock('../auth/authState', () => ({
 }));
 vi.mock('./elevenLabsKeyStore', () => ({
   resolveElevenLabsRoute: mockResolveRoute,
+  // 261110: the speech route (Sei voices on the ChatGPT plan, else the
+  // ElevenLabs route); these tests drive both through the same mock.
+  resolveSpeakRoute: mockResolveRoute,
   resolveElevenLabsKey: mockResolveKey,
   resolveTtsRoute: mockResolveTtsRoute,
 }));

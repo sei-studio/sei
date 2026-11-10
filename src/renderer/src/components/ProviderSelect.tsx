@@ -41,9 +41,19 @@ export interface ProviderSelectProps {
   onChange: (next: Provider) => void;
   /** Denser trigger sizing for inline use (Settings / modal). */
   compact?: boolean;
+  /** Providers not offered here (Playtime > My keys leaves out the ChatGPT plan, its own tab). */
+  exclude?: readonly Provider[];
+  /** Borderless filled trigger in the quiet register (Playtime > My keys). */
+  quiet?: boolean;
 }
 
-export function ProviderSelect({ value, onChange, compact = false }: ProviderSelectProps): React.ReactElement {
+export function ProviderSelect({
+  value,
+  onChange,
+  compact = false,
+  exclude,
+  quiet = false,
+}: ProviderSelectProps): React.ReactElement {
   const t = useT();
   const [open, setOpen] = useState(false);
   // The offered list: the 8 shown providers, plus the current value when it
@@ -52,12 +62,14 @@ export function ProviderSelect({ value, onChange, compact = false }: ProviderSel
   const PROVIDERS = useMemo<ProviderOption[]>(() => {
     // Labels ride t() (260817 W10): most are proper nouns that fall through
     // to English, but 'Ollama (local)' carries a translatable word.
-    const shown: ProviderOption[] = SHOWN_PROVIDERS.map((id) => ({ id, label: t(PROVIDER_LABELS[id]) }));
+    const shown: ProviderOption[] = SHOWN_PROVIDERS.filter((id) => id === value || !exclude?.includes(id)).map(
+      (id) => ({ id, label: t(PROVIDER_LABELS[id]) }),
+    );
     if (!SHOWN_PROVIDERS.includes(value)) {
       shown.push({ id: value, label: t(PROVIDER_LABELS[value] ?? value) });
     }
     return shown;
-  }, [value, t]);
+  }, [value, t, exclude]);
   const selectedIndex = Math.max(0, PROVIDERS.findIndex((p) => p.id === value));
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -144,7 +156,7 @@ export function ProviderSelect({ value, onChange, compact = false }: ProviderSel
   return (
     <div
       ref={rootRef}
-      className={[styles.root, compact ? styles.compact : '', open ? styles.open : '']
+      className={[styles.root, compact ? styles.compact : '', quiet ? styles.quiet : '', open ? styles.open : '']
         .filter(Boolean)
         .join(' ')}
     >

@@ -29,6 +29,7 @@ import {
   type SyncStatusPushEvent,
   type CreditsStatus,
   type CreditsHardStopEvent,
+  type SpendAlertPush,
   type ChatMessagePush,
   type CallOverlayState,
   type AvatarManifest,
@@ -618,6 +619,12 @@ const api: RendererApi = {
   // --- Proxy + billing + plan ---
   proxyConfigure: (kind) => ipcRenderer.invoke(IpcChannel.proxy.configure, { kind }),
   creditsGet: () => ipcRenderer.invoke(IpcChannel.credits.get),
+  usageSummary: () => ipcRenderer.invoke(IpcChannel.usage.summary),
+  onSpendAlert(cb: (e: SpendAlertPush) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: SpendAlertPush): void => cb(ev);
+    ipcRenderer.on(IpcChannel.usage.spendAlert, handler);
+    return () => ipcRenderer.off(IpcChannel.usage.spendAlert, handler);
+  },
   creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
   creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),

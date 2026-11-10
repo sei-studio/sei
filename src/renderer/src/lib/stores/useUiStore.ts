@@ -17,13 +17,7 @@ import type { BackseatGameSelection } from '@shared/backseatGames';
 import type { ErrorClass } from '@shared/errorClasses';
 import type { AvatarMode, AvatarPrefs } from '@shared/characterSchema';
 
-/**
- * A Settings row to scroll to and flash on arrival (view.focus). Each one is
- * an element marked `data-settings-focus="<name>"` in Settings.
- *   chatgpt-plan  the ChatGPT plan rows (startup popup action, usage-limit popup)
- *   ai-backend    the AI Backend / Provider row (usage-limit popup, 261103)
- */
-export type SettingsFocus = 'chatgpt-plan' | 'ai-backend';
+import type { PlaytimeTab } from '../playtimeTabs';
 
 export type View =
   | { kind: 'loading' }
@@ -62,14 +56,14 @@ export type View =
   // a handdrawn register, canvas beside chat, rather than the chat screen's
   // top/bottom game split.
   | { kind: 'draw'; characterId: string }
-  // useChatgptPlan (261023): opened from the Credits page's ChatGPT plan row
-  // after its sign-in; Settings runs the "Use ChatGPT plan" switch (with the
-  // cloud confirm) once, on arrival.
-  // focus (261029): scroll to and briefly highlight one row on arrival (the
-  // startup popup's chatgpt-plan action; 261103 the usage-limit popup's
-  // "own API key or local model" option, 'ai-backend'). Cleared once handled.
-  | { kind: 'settings'; useChatgptPlan?: boolean; focus?: SettingsFocus }
-  | { kind: 'credits' }
+  | { kind: 'settings' }
+  // The Playtime page (261110): brain, voice and plan. `tab` opens a tab
+  // (absent = the tab of the current setup, lib/playtimeTabs.ts).
+  // useChatgptPlan (261023, moved from Settings on 261110): arrived after a
+  // ChatGPT sign-in (the plan offer, the startup popup, the usage-limit
+  // popup); the page runs the "Use ChatGPT plan" switch once, with the cloud
+  // confirm. Cleared once handled.
+  | { kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean }
   | { kind: 'coming-soon' }
   // 260703 procgen — the "unique companion" (system-generated) flow. Both are
   // renderer-only full-page surfaces (rail hidden), routed from Awaken:

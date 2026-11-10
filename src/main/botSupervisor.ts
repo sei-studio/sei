@@ -1545,6 +1545,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         }
         return;
       }
+      // 261110 Playtime: a completed bot LLM request. Recorded only off the
+      // Sei cloud (own key / ChatGPT plan); cloud usage is the proxy's.
+      if ((data as { type?: string }).type === 'llm-usage') {
+        const s = sessions.get(characterId);
+        if (s && s.backendKind === 'local') {
+          const d = data as { provider?: unknown; model?: unknown; usage?: unknown };
+          void import('./usage/llmUsageLedger')
+            .then(({ recordLlmUsage }) =>
+              recordLlmUsage({
+                provider: s.llmProvider ?? (typeof d.provider === 'string' ? d.provider.slice(0, 40) : 'unknown'),
+                model: typeof d.model === 'string' ? d.model.slice(0, 200) : '',
+                usage: d.usage,
+              }),
+            )
+            .catch(() => undefined);
+        }
+        return;
+      }
       // The in-game bot is replying to a message that was routed in from the
       // in-app chat (task 4). Deliver it to the chat transcript + renderer. Not
       // a BotStatus event, so return before lifecycleToStatus.

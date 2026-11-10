@@ -12,8 +12,9 @@
  *   2. The charge line renders the TIER's exact amount (FTC 16 CFR §425.5
  *      plain-language charge acknowledgement).
  *   3. Source contains literal 'Billed monthly' (frequency).
- *   4. Source contains literal 'Cancel anytime in Settings → Cloud AI →
- *      Cancel subscription' (cancellation steps).
+ *   4. Source contains literal 'Cancel anytime in Playtime → Sei →
+ *      Manage billing' (cancellation steps; 261110 the billing button moved
+ *      from Settings to the Playtime page's Sei tab).
  *   5. Source contains literal 'Back to Sei' (primary CTA label).
  *   6. The source records why the dollar amount must render here.
  */
@@ -59,9 +60,7 @@ describe('ReceiptScreen', () => {
 
   it('Test 4: source contains cancellation-steps copy', () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('Cancel anytime in Settings')).toBe(true);
-    expect(source.includes('Cloud AI')).toBe(true);
-    expect(source.includes('Cancel subscription')).toBe(true);
+    expect(source.includes('Cancel anytime in Playtime → Sei → Manage billing.')).toBe(true);
   });
 
   it('Test 5: source contains "Back to Sei" CTA label', () => {
