@@ -68,6 +68,9 @@ describe('renderSafeModeHtml', () => {
     const pt = renderSafeModeHtml({ ...base, lang: 'pt-BR' });
     expect(pt).toContain('lang="pt-BR"');
     expect(pt).toContain(SAFE_MODE_COPY['pt-BR'].title);
+    const italian = renderSafeModeHtml({ ...base, lang: 'it' });
+    expect(italian).toContain('lang="it-IT"');
+    expect(italian).toContain(SAFE_MODE_COPY.it.title);
     expect(renderSafeModeHtml(base)).toContain(SAFE_MODE_COPY.en.bodyRepeated);
   });
 

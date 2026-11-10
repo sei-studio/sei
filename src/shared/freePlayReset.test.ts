@@ -125,7 +125,7 @@ describe('quietCompanionNotice', () => {
 });
 
 describe('the 261104 languages', () => {
-  const langs = ['ja', 'ru', 'pt-BR', 'es'] as const;
+  const langs = ['ja', 'ru', 'pt-BR', 'es', 'it'] as const;
 
   it('every line is filled, localized and free of placeholders', () => {
     for (const lang of langs) {
@@ -150,6 +150,8 @@ describe('the 261104 languages', () => {
     // 3 days: Russian "3 дня", Spanish "3 días".
     expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'ru' })).toContain('3 дня');
     expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'es' })).toContain('3 días');
+    expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'it' })).toContain('21:30');
+    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'it' })).toContain('3 giorni');
   });
 
   it('Japanese joins sentences without a space', () => {
