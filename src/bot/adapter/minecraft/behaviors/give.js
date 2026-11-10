@@ -81,13 +81,20 @@ export function resolveRecipient(bot, who, config) {
 // work_session-06 gave all 6 logs, and read after the give the frontier was
 // back at "gather wood" (no recipe), so the note was missing exactly when
 // she had nothing left for the table she had just said she would make.
+// 261110 (pass 49): and that what she gave stays given. work_session-01
+// (11-09 scorecard, 47% off) gave all 6 logs, read "you need 1 more", and
+// asked the player to toss one back four times, once in answer to "make a
+// crafting table" with oak trees in view (pass47 gather_craft-02-A: eight
+// times). The note stays on last_action_result until her next action, so it
+// is what those later turns read. pass49-probe ws01_table (her first ask
+// already said, then "make a crafting table"): asked again 10/10 -> 2/10.
 function nextStepNote(bot, item, given) {
   try {
     const state = readProgressionState(bot)
     const before = { ...state, items: { ...state.items, [item]: (Number(state.items?.[item]) || 0) + given } }
     const { node } = nextMilestone(before)
     const need = nextNeedAfterGive(node, state.items, item)
-    return need ? `. Note: ${need}` : ''
+    return need ? `. Note: ${need}. What you gave is theirs to keep, so get what you need yourself` : ''
   } catch {
     return ''
   }
