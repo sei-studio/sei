@@ -109,7 +109,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   const playtimeMode = (params.get('dashshot') ?? '') === 'playtime';
   const ptSetup = params.get('setup') === 'chatgpt' || params.get('setup') === 'mykeys' ? params.get('setup') : 'cloud';
   const ptGpt = params.get('gpt') ?? (ptSetup === 'chatgpt' ? 'connected' : 'none');
-  const ptVoice = params.get('voice') ?? (ptSetup === 'chatgpt' ? 'sei' : 'device');
+  const ptVoice = params.get('voice') ?? 'device';
   const ptConfig: Record<string, unknown> = {
     ai_backend_kind: ptSetup === 'cloud' ? 'cloud-proxy' : 'local',
     provider: ptSetup === 'chatgpt' ? 'chatgpt' : (params.get('provider') ?? 'anthropic'),

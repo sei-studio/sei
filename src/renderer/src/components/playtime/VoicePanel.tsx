@@ -2,9 +2,9 @@
  * Playtime > Voice (261110, product call 261110): where companions' voices
  * come from off the Sei cloud, moved here from Settings > Voice.
  *
- * - ChatGPT tab: Sei voices (signed in only; the existing free weekly
- *   allowance pays, see shared/ttsEngine.ts seiVoicesActive) / On this
- *   device / ElevenLabs key.
+ * - ChatGPT tab: On this device / ElevenLabs key. Sei voices (signed in
+ *   only, with the "Free this week" meter) is built but stays hidden until
+ *   SEI_VOICES_FOR_CHATGPT_ENABLED (shared/ttsEngine.ts) is turned on.
  * - My keys tab: On this device / ElevenLabs key / Fish Audio key.
  *
  * The on-device engine (Fast or Kokoro) is a small select inside the "On
@@ -15,7 +15,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { UserConfig } from '@shared/characterSchema';
 import type { SpeechPackStatePush } from '@shared/ipc';
-import { localTtsModel, voiceSourceOf, type LocalTtsModel, type VoiceSource } from '@shared/ttsEngine';
+import {
+  SEI_VOICES_FOR_CHATGPT_ENABLED,
+  localTtsModel,
+  voiceSourceOf,
+  type LocalTtsModel,
+  type VoiceSource,
+} from '@shared/ttsEngine';
 import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { useCreditsStore } from '../../lib/stores/useCreditsStore';
@@ -85,7 +91,9 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
   const options: Array<{ value: VoiceSource; label: string }> =
     mode === 'chatgpt'
       ? [
-          ...(signedIn || source === 'sei' ? [{ value: 'sei' as const, label: t('Sei voices') }] : []),
+          ...(SEI_VOICES_FOR_CHATGPT_ENABLED && (signedIn || source === 'sei')
+            ? [{ value: 'sei' as const, label: t('Sei voices') }]
+            : []),
           { value: 'device', label: t('On this device') },
           { value: 'elevenlabs', label: t('ElevenLabs key') },
         ]
@@ -97,7 +105,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
 
   const onPickSource = (next: VoiceSource): void => {
     void persist((c) => {
-      if (next === 'sei') return { ...c, tts_engine: 'sei' };
+      if (next === 'sei') return SEI_VOICES_FOR_CHATGPT_ENABLED ? { ...c, tts_engine: 'sei' } : c;
       if (next === 'elevenlabs') return { ...c, tts_engine: 'elevenlabs' };
       if (next === 'fish') return { ...c, tts_engine: 'local', local_tts_model: 'fish' };
       return { ...c, tts_engine: 'local', local_tts_model: localTtsModel(c) === 'fish' ? 'fast' : localTtsModel(c) };
@@ -154,7 +162,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
   // "Free this week": what is left of the account's weekly allowance, which
   // Sei voices draw from. A percent, never a reset time.
   const freeLeftPct = Math.max(0, Math.min(100, Math.round(100 - usagePct)));
-  const showTrial = source === 'sei' && signedIn && creditsKnown;
+  const showTrial = SEI_VOICES_FOR_CHATGPT_ENABLED && source === 'sei' && signedIn && creditsKnown;
   const trialTracked = useRef(false);
   useEffect(() => {
     if (!showTrial || trialTracked.current) return;

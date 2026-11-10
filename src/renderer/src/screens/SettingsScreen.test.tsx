@@ -341,6 +341,9 @@ describe('Playtime voice panel (W5 china-compat: TTS packs + SenseVoice, moved 2
     expect(src.includes("{ value: 'elevenlabs', label: t('ElevenLabs key') }")).toBe(true);
     expect(src.includes("{ value: 'fish', label: t('Fish Audio key') }")).toBe(true);
     expect(src.includes("{ value: 'sei' as const, label: t('Sei voices') }")).toBe(true);
+    // Sei voices and its "Free this week" meter stay behind the flag (review 261110).
+    expect(src.includes("...(SEI_VOICES_FOR_CHATGPT_ENABLED && (signedIn || source === 'sei')")).toBe(true);
+    expect(src.includes('const showTrial = SEI_VOICES_FOR_CHATGPT_ENABLED &&')).toBe(true);
     expect(src.includes('<option value="fast">{t(\'Fast\')}</option>')).toBe(true);
     expect(src.includes('<option value="kokoro">Kokoro</option>')).toBe(true);
     expect(src.includes('local_tts_voice')).toBe(false);

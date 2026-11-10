@@ -14,6 +14,18 @@ export function localTtsModel(config: { local_tts_model?: unknown } | null | und
 }
 
 /**
+ * Sei voices for ChatGPT-plan users: OFF until the proxy meters voice
+ * (review 261110). Today a ChatGPT-plan user never draws on the Sei
+ * allowance, so this choice would be unlimited cloud speech at Sei's cost.
+ * While false: Playtime > ChatGPT offers only On this device and ElevenLabs
+ * key, hides "Free this week", and a saved tts_engine 'sei' never routes
+ * speech to the proxy (seiVoicesActive is false, so main's
+ * resolveSpeakRoute never returns the Sei voices route). The Sei (cloud)
+ * tab's voices do not depend on it.
+ */
+export const SEI_VOICES_FOR_CHATGPT_ENABLED = false;
+
+/**
  * "Sei voices" with the ChatGPT brain (261110, product call 261110): a
  * ChatGPT-plan user (ai_backend_kind 'local' + provider 'chatgpt') can keep
  * Sei's cloud voices, billed to the account's existing weekly allowance like
@@ -23,9 +35,13 @@ export function localTtsModel(config: { local_tts_model?: unknown } | null | und
  */
 export function seiVoicesActive(
   config: { ai_backend_kind?: unknown; provider?: unknown; tts_engine?: unknown } | null | undefined,
+  enabled: boolean = SEI_VOICES_FOR_CHATGPT_ENABLED,
 ): boolean {
   return (
-    config?.ai_backend_kind === 'local' && config?.provider === 'chatgpt' && config?.tts_engine === 'sei'
+    enabled &&
+    config?.ai_backend_kind === 'local' &&
+    config?.provider === 'chatgpt' &&
+    config?.tts_engine === 'sei'
   );
 }
 

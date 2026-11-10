@@ -135,7 +135,9 @@ export const SEI_VOICES_ROUTE: ElevenLabsRoute = { kind: 'proxy', seiVoices: tru
 export async function seiVoicesSelected(): Promise<boolean> {
   try {
     const { loadConfig } = await import('../configStore');
-    const { seiVoicesActive } = await import('../../shared/ttsEngine');
+    const { seiVoicesActive, SEI_VOICES_FOR_CHATGPT_ENABLED } = await import('../../shared/ttsEngine');
+    // Off until the proxy meters voice: never even read the config.
+    if (!SEI_VOICES_FOR_CHATGPT_ENABLED) return false;
     return seiVoicesActive(await loadConfig());
   } catch {
     return false;

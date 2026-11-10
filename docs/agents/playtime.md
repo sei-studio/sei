@@ -54,11 +54,20 @@ stays in Settings > Account because it is an account setting).
 ## Voice
 
 `components/playtime/VoicePanel.tsx`, on the ChatGPT and My keys tabs:
-- ChatGPT: Sei voices (signed in) / On this device / ElevenLabs key.
+- ChatGPT: On this device / ElevenLabs key. Sei voices (signed in) and its
+  "Free this week" row are built but hidden behind
+  `SEI_VOICES_FOR_CHATGPT_ENABLED` (`shared/ttsEngine.ts`, false), see below.
 - My keys: On this device / ElevenLabs key / Fish Audio key.
 - "On this device" carries its engine (Fast / Kokoro) as a small inline
   select, never a row of its own. Kokoro and SenseVoice download first.
-- **Sei voices with the ChatGPT plan** is client-only (`tts_engine: 'sei'`,
+- **Sei voices with the ChatGPT plan** is OFF (`SEI_VOICES_FOR_CHATGPT_ENABLED`
+  false, review 261110): the proxy does not meter voice yet, and a ChatGPT-plan
+  user never spends the Sei allowance, so it would be unlimited cloud speech at
+  our cost. While off, `seiVoicesActive` is false for every config, so a saved
+  `tts_engine: 'sei'` reads as the ElevenLabs engine and `resolveSpeakRoute`
+  never returns the proxy route on the ChatGPT plan (pinned in
+  `main/voice/elevenLabsKeyStore.test.ts`). Turn it on only together with proxy
+  voice metering. When on, it is client-only (`tts_engine: 'sei'`,
   `seiVoicesActive` in `shared/ttsEngine.ts`): `resolveSpeakRoute` sends
   speech through the proxy's `/tts/speech` with the account JWT, which the
   proxy already accepts for any signed-in user. Voice metering on the proxy
@@ -67,7 +76,7 @@ stays in Settings > Account because it is an account setting).
   the line on the device instead and posts the `sei-voices-fallback` notice
   (`seiVoicesFallbackReason`, paused for a while after an allowance or rate
   refusal). No proxy change was needed.
-- "Free this week" shows what is left of the existing weekly allowance
+- "Free this week" (flag on only) shows what is left of the existing weekly allowance
   (the credits store, the same number the Sei tab shows).
 - Top-up tiles and the voice plan card are behind `VOICE_PLAN_UI_ENABLED`
   (false). No billing products exist for them.
@@ -81,7 +90,7 @@ All through `sei.track`; `main/analytics.ts` files them under the `credits` surf
 | `playtime_tab_viewed` | `tab`, `is_active_setup` | a tab is shown (once per tab and setup) |
 | `playtime_backend_switch` | `from`, `to`, `result` (`ok` / `failed` / `cancelled`) | a switch finishes or the confirm is cancelled |
 | `chatgpt_usage_link_clicked` | | Manage usage on the ChatGPT tab |
-| `voice_trial_state` | `state` (`shown` + `left_pct`; `used_up` / `fallback` + `reason`) | the free Sei-voices meter is shown; a call falls back to device voices |
+| `voice_trial_state` | `state` (`shown` + `left_pct`; `used_up` / `fallback` + `reason`) | the free Sei-voices meter is shown; a call falls back to device voices (both only with the flag on) |
 | `spend_alert_toggled` | `enabled`, `limit_usd` | the alert toggle or amount changes |
 | `spend_alert_fired` | `limit_usd`, `provider_kind` | main fires the monthly alert |
 

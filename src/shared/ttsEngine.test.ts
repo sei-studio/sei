@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { localTtsModel } from './ttsEngine';
+import { SEI_VOICES_FOR_CHATGPT_ENABLED, localTtsModel, seiVoicesActive, voiceSourceOf } from './ttsEngine';
 import { UserConfigSchema } from './characterSchema';
 
 describe('local TTS model setting', () => {
@@ -42,5 +42,21 @@ describe('local TTS model setting', () => {
   it('keeps tts_engine to the two engines', () => {
     expect(UserConfigSchema.safeParse({ tts_engine: 'kokoro' }).success).toBe(false);
     expect(UserConfigSchema.safeParse({ local_tts_model: 'piper' }).success).toBe(false);
+  });
+});
+
+describe('Sei voices on the ChatGPT plan (261110)', () => {
+  const cfg = { ai_backend_kind: 'local', provider: 'chatgpt', tts_engine: 'sei' };
+
+  it('is off while the flag is off: a saved choice reads as not active', () => {
+    expect(SEI_VOICES_FOR_CHATGPT_ENABLED).toBe(false);
+    expect(seiVoicesActive(cfg)).toBe(false);
+    expect(voiceSourceOf(cfg)).not.toBe('sei');
+  });
+
+  it('when enabled, only the ChatGPT plan setup reads it', () => {
+    expect(seiVoicesActive(cfg, true)).toBe(true);
+    expect(seiVoicesActive({ ...cfg, provider: 'openai' }, true)).toBe(false);
+    expect(seiVoicesActive({ ...cfg, ai_backend_kind: 'cloud-proxy' }, true)).toBe(false);
   });
 });
