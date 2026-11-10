@@ -10,8 +10,8 @@
   flex-shrink: 0;
   border-radius: var(--radius);
   overflow: hidden;
-  border: 0;
-  background: var(--wash);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
   padding: 0;
   cursor: pointer;
   display: inline-flex;

@@ -20,10 +20,6 @@ body,
 
 body {
   font-family: var(--sans);
-  /* Quiet register (261110): body copy is the 18px step, Rajdhani 500.
-     Components still set their own sizes; this is what un-styled text gets. */
-  font-size: var(--fs-body);
-  font-weight: 500;
   background: var(--desktop);
   color: var(--text);
   transition: background 240ms ease, color 240ms ease;
@@ -130,7 +126,7 @@ input[type='range'] {
 
 input[type='range']::-webkit-slider-runnable-track {
   height: 2px;
-  background: var(--track);
+  background: var(--border-strong);
 }
 
 input[type='range']::-webkit-slider-thumb {
@@ -169,7 +165,7 @@ input[type='range']:disabled {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--wash-hi);
+  background: var(--border-strong);
   border-radius: var(--radius-sm);
 }
 
@@ -187,10 +183,9 @@ input[type='range']:disabled {
 /* Mono micro-label — the workhorse caption (mockup .label). Regular case,
  * quiet tracking; write labels in sentence case, the class no longer shouts. */
 .u-lbl {
-  /* Quiet register (261110): no mono labels; the meta step instead. */
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
@@ -290,19 +285,16 @@ input[type='range']:disabled {
   top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  /* Quiet register (261110): a fill step, no frame; the meta type step. */
-  background: var(--step-2);
+  background: var(--surface-2);
   color: var(--text);
-  border: 0;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  letter-spacing: 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   line-height: 1;
-  padding: 7px 10px;
+  padding: 5px 7px;
   /* display:none at rest — an invisible (opacity:0) tooltip box still counts
    * toward ancestors' scrollable overflow, so tooltips hanging off elements
    * near a pane edge (e.g. the chat header's right-side icon buttons) grew a

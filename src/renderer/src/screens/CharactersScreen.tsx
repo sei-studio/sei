@@ -55,7 +55,6 @@ import { portraitSrc } from '../lib/portraitSrc';
 import { mergeWorldEntries } from '../lib/worldList';
 import { Button } from '../components/Button';
 import { HomeNextStepCard } from '../components/HomeNextStepCard';
-import { useFieldGlow } from '../lib/fieldGlow';
 import { useHomeNextStepStore } from '../lib/stores/useHomeNextStepStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { chooseHomeNextStep } from '../lib/homeNextStep';
@@ -158,7 +157,6 @@ export function CharactersScreen(): React.ReactElement {
  */
 function HomeGrid(): React.ReactElement {
   const t = useT();
-  useFieldGlow('home');
   const characters = useDataStore((s) => s.characters);
   const recentlyDeletedIds = useDataStore((s) => s.recentlyDeletedIds);
   const summons = useDataStore((s) => s.summons);
@@ -339,6 +337,15 @@ function HomeGrid(): React.ReactElement {
 
   return (
     <div className={homeStyles.root}>
+      {nextStep && nextStepCharacter ? (
+        <HomeNextStepCard
+          step={nextStep}
+          name={nextStepCharacter.name}
+          portraitImage={nextStepCharacter.portrait_image}
+          theme={theme}
+          onDismiss={dismissNextStep}
+        />
+      ) : null}
       <section className={homeStyles.panels} aria-label={t('Party')}>
         {slotCharacters.map((c) => {
           const isPlaceholder = placeholderIds.has(c.id);
@@ -502,17 +509,6 @@ function HomeGrid(): React.ReactElement {
           );
         })}
       </section>
-      {/* Quiet register (261110): the Up next line is the status row under
-          the wall (the update window's progress-row slot), not a top bar. */}
-      {nextStep && nextStepCharacter ? (
-        <HomeNextStepCard
-          step={nextStep}
-          name={nextStepCharacter.name}
-          portraitImage={nextStepCharacter.portrait_image}
-          theme={theme}
-          onDismiss={dismissNextStep}
-        />
-      ) : null}
       {createLimit ? (
         <CreationLimitModal
           resetsAt={createLimit.resetsAt}

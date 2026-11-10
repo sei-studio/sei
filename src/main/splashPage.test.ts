@@ -73,7 +73,7 @@ describe('splashHtml', () => {
 
   it("uses Sei's light blue from the theme tokens, not a new color", () => {
     const tokens = readFileSync(resolve(ROOT, 'src/renderer/src/styles/tokens.css'), 'utf-8');
-    const rail = /--sei-light-blue:\s*#([0-9a-f]{6})/i.exec(tokens)?.[1];
+    const rail = /--rail:\s*#([0-9a-f]{6})/i.exec(tokens)?.[1];
     expect(rail).toBeTruthy();
     const rgb = [0, 2, 4].map((i) => parseInt(rail!.slice(i, i + 2), 16)).join(',');
     expect(SEI_LIGHT_BLUE_RGB).toBe(rgb);

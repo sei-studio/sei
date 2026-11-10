@@ -55,9 +55,7 @@
      live on both, but its lightening faded over each strip's own height: the
      38px bar reached pure --rail by the seam while the ~700px rail was still
      lightened there, so the bar read darker right at the boundary.) */
-  /* Quiet register (261110): transparent over the field, so there is no
-     visible bar, only clearance for the OS controls and a drag handle. */
-  background-color: transparent;
+  background-color: var(--rail);
   display: flex;
   align-items: center;
   /* Label sits left, aligned with the main content's left edge (past the rail
@@ -136,17 +134,45 @@
    one uniform color. Keep the left padding: the "Sei" mark still needs the inset
    to clear the macOS traffic lights. (260625) */
 .dragStrip.fullDivider {
-  background-color: transparent;
+  background-color: var(--window);
 }
 
 /* 260724: with a custom background active, the chrome goes translucent so the
    image shows through the top strip too — same tint strength as the rail and
    the content panel (--app-bg-tint = inverse of the opacity slider). */
-:root[data-app-bg] .dragStrip,
+:root[data-app-bg] .dragStrip {
+  background-color: color-mix(in srgb, var(--rail) var(--app-bg-tint, 100%), transparent);
+}
+
 :root[data-app-bg] .dragStrip.fullDivider {
   background-color: color-mix(in srgb, var(--window) var(--app-bg-tint, 100%), transparent);
 }
 
+
+/* "Sei" mark — small Rajdhani (--sans) label. */
+.titleLabel {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--rail-fg);
+  text-transform: none;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Version tag — same label, one tone dimmer than the title. */
+.versionTag {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--rail-fg);
+  opacity: 0.7;
+  margin-left: var(--space-xs);
+  user-select: none;
+  pointer-events: none;
+}
 
 .body {
   flex: 1;

@@ -6,14 +6,9 @@
  * The tooltip is a CSS-only popover (no portal); it anchors to the dot's left
  * edge and grows rightward so it never overflows the left gutter. Pair it with
  * a label via `aria-label` (defaults to "More info").
- *
- * Inline mode (quiet register, product call 261110): inside an
- * `InfoTipInline` provider (Settings) the same text renders as a visible help
- * line under the label instead of behind an "i", so nothing is easy to miss.
- * Call sites stay the same; the screen decides.
  */
 
-import React, { createContext, useContext } from 'react';
+import React from 'react';
 import { useT } from '../lib/i18n';
 import styles from './InfoTip.module.css';
 
@@ -24,23 +19,8 @@ export interface InfoTipProps {
   label?: string;
 }
 
-const InlineContext = createContext(false);
-
-/** Render every InfoTip below as an always-visible help line. */
-export function InfoTipInline({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <InlineContext.Provider value={true}>{children}</InlineContext.Provider>;
-}
-
 export function InfoTip({ text, label = 'More info' }: InfoTipProps): React.ReactElement {
   const t = useT();
-  const inline = useContext(InlineContext);
-  if (inline) {
-    return (
-      <span className={styles.inlineHelp} data-infotip-inline="">
-        {text}
-      </span>
-    );
-  }
   return (
     <span className={styles.wrap}>
       <button type="button" className={styles.dot} aria-label={t(label)}>

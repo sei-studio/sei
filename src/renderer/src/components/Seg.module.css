@@ -1,27 +1,30 @@
-/* Seg.module.css — segmented control (quiet register, 261110).
- * A wash track with the selected option one step brighter; no frame lines. */
+/* Seg.module.css — mockup .seg segmented control. Sharp, bordered, quiet. */
 
 .seg {
   display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--wash);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
 }
 
 .opt {
-  min-height: calc(var(--control-sm) - 4px);
-  padding: 0 var(--space-md-plus);
+  padding: 5px 14px;
   font-family: var(--sans);
   font-weight: 600;
-  font-size: var(--fs-meta);
-  line-height: 1;
+  font-size: 12px;
   color: var(--muted);
   background: none;
   border: 0;
-  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: color 160ms var(--ease), background 160ms var(--ease);
+}
+
+/* Inner corners follow the frame so a filled option doesn't poke past it. */
+.opt:first-child {
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
+}
+
+.opt:last-child {
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
 }
 
 .opt:hover:not(:disabled) {
@@ -29,8 +32,8 @@
 }
 
 .opt.on {
-  background: var(--wash-hi);
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .opt:disabled {

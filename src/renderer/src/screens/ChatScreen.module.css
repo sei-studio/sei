@@ -1,19 +1,16 @@
-/* ChatScreen — in-app chat (Phase 18/19), no bubbles.
- * Quiet register (product call 261110): no surface of its own (the window's
- * field shows through), body-size messages in a capped column on the left,
- * the companion's portrait as ambient art on the right of a wide window, and
- * a filled composer with Call beside it. Tokens only. */
+/* ChatScreen — Discord-style in-app chat (Phase 18/19).
+ * "Summoning Terminal" look: sharp edges, periwinkle accent, no bubbles.
+ * All values from tokens.css — no literal hex/px colors. */
 
 /* 260721 top/bottom split: the shared ChatTopBar (its styles live in
- * ChatTopBar.module.css) sits above mainCol, which stacks the GAME AREA on
- * top of the chat column. */
+ * ChatTopBar.module.css) sits above a row of [mainCol | presence panel];
+ * mainCol stacks the GAME AREA on top of the chat column. */
 .root {
-  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: transparent;
+  background: var(--window);
 }
 
 /* 260724: with a custom background active, <main> already paints the tint the
@@ -23,10 +20,8 @@
   background: transparent;
 }
 
-/* Everything under the top bar. Above the ambient art. */
+/* Everything under the top bar: main column + the presence side panel. */
 .content {
-  position: relative;
-  z-index: 1;
   display: flex;
   flex-direction: row;
   flex: 1;
@@ -63,17 +58,12 @@
      over it), so the list ends where the dock begins and no message can sit
      under or beside the message box. A thin bottom pad keeps the latest row
      off the dock. */
-  padding: var(--space-lg) var(--space-lg) var(--space-sm) var(--space-4xl);
+  padding: var(--space-lg) var(--space-lg) var(--space-sm);
   display: flex;
   flex-direction: column;
   /* No inter-row gap — vertical rhythm comes from each row's own padding, so
      consecutive same-author "double texts" stack tightly like Discord (#4). */
   gap: 0;
-}
-
-/* The column cap: rows never run under the ambient art. */
-.list > * {
-  max-width: var(--measure-col);
 }
 
 /* (260917) .listTyping no longer needs extra bottom room: the dock is in-flow,
@@ -100,10 +90,10 @@
   margin: auto;
   text-align: center;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 14px;
   color: var(--muted);
-  max-width: 360px;
-  line-height: var(--lh-body);
+  max-width: 320px;
+  line-height: 1.5;
 }
 
 /* ── Loading skeleton ───────────────────────────────────────────────────── */
@@ -159,8 +149,8 @@
   position: relative;
   display: grid;
   grid-template-columns: 40px 1fr;
-  column-gap: var(--space-md-plus);
-  margin: var(--space-md-plus) calc(-1 * var(--space-lg)) 0;
+  column-gap: var(--space-md);
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
   /* Bottom pad matches .rowCont (1px) so the gap between the header line and the
    * first continuation line is the same as the gaps between later lines. The
    * 40px avatar sits alongside the header + first text (never taller than them),
@@ -174,15 +164,15 @@
   position: relative;
   display: grid;
   grid-template-columns: 40px 1fr;
-  column-gap: var(--space-md-plus);
+  column-gap: var(--space-md);
   margin: 0 calc(-1 * var(--space-lg));
   padding: 1px var(--space-lg);
 }
 
-/* Change #9 — hover shade on the whole row (a neutral wash, 261110). */
+/* Change #9 — hover shade on the whole row. */
 .rowLead:hover,
 .rowCont:hover {
-  background: var(--wash);
+  background: var(--accent-soft);
 }
 
 .avatarCell {
@@ -190,8 +180,7 @@
   height: 40px;
   overflow: hidden;
   border-radius: var(--radius);
-  background: var(--step-1);
-  color: var(--muted);
+  background: var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -212,10 +201,10 @@
   align-items: center;
   gap: var(--space-xs);
   margin-bottom: 2px;
-  padding-left: calc(40px + var(--space-md-plus));
+  padding-left: calc(40px + var(--space-md));
   min-width: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -226,9 +215,9 @@
   left: 19px;
   top: 50%;
   bottom: -12px;
-  width: calc(40px + var(--space-md-plus) - 19px);
-  border-left: 2px solid var(--track);
-  border-top: 2px solid var(--track);
+  width: calc(40px + var(--space-md) - 19px);
+  border-left: 2px solid var(--border-strong);
+  border-top: 2px solid var(--border-strong);
   border-top-left-radius: 8px;
 }
 
@@ -238,7 +227,7 @@
   flex-shrink: 0;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--step-1);
+  background: var(--surface-2);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -265,8 +254,8 @@
   margin-bottom: 2px;
 }
 
-/* Change #8 — companion name is white/text-colored, same as the user. The
-   companion's name is a button that opens their profile (261110). */
+/* Change #8 — companion name is white/text-colored, same as the user. §4.5 —
+   it is a button: clicking an author's name swaps the presence panel card. */
 .authorName {
   -webkit-appearance: none;
   appearance: none;
@@ -275,33 +264,27 @@
   padding: 0;
   cursor: pointer;
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-title);
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
 }
 
-span.authorName {
-  cursor: default;
-}
-
-button.authorName:hover {
+.authorName:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 .timestamp {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
 }
 
 .msgText {
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
@@ -314,8 +297,7 @@ button.authorName:hover {
   top: 6px;
   right: var(--space-md);
   display: inline-flex;
-  background: var(--step-2);
-  border-radius: var(--radius);
+  background: var(--surface-2);
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms var(--ease);
@@ -344,22 +326,29 @@ button.authorName:hover {
 }
 
 .rowActionBtn:hover {
-  color: var(--text);
-  background: var(--wash);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
-/* Change #7 — day label: a meta line ("Today", "17 Apr 2026"), no rules
-   (space instead of lines, 261110). */
+/* Change #7 — day separator: "───── 17 Apr 2026 ─────". */
 .daySeparator {
   display: flex;
   align-items: center;
-  margin: var(--space-xl) 0 var(--space-xs);
+  gap: var(--space-md);
+  margin: var(--space-md) 0 var(--space-xs);
+}
+
+.daySeparator::before,
+.daySeparator::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
 }
 
 .daySeparatorLabel {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -367,8 +356,9 @@ button.authorName:hover {
 /* Defensive: centered system note (none persisted today). */
 .systemRow {
   text-align: center;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
   color: var(--muted);
   padding: var(--space-sm) 0;
 }
@@ -379,14 +369,14 @@ button.authorName:hover {
 .playRow {
   display: grid;
   grid-template-columns: 40px 1fr;
-  column-gap: var(--space-md-plus);
+  column-gap: var(--space-md);
   align-items: center;
   text-align: left;
   font-family: var(--sans);
-  font-size: var(--fs-body);
+  font-size: 15px;
   letter-spacing: normal;
   color: var(--muted);
-  margin: var(--space-md-plus) calc(-1 * var(--space-lg)) 0;
+  margin: var(--space-sm) calc(-1 * var(--space-lg)) 0;
   /* 260725: same vertical rhythm as .rowLead (4px top, 1px bottom, 8px
      margin), so the gap between two consecutive session rows is the SAME 13px
      as the gap between a session row and a message, or between messages from
@@ -417,14 +407,14 @@ button.authorName:hover {
 }
 
 .playRowClickable:hover {
-  background: var(--wash);
+  background: var(--accent-soft);
   color: var(--text-2);
 }
 
 .replayHint {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
   color: var(--accent);
   opacity: 0;
   transition: opacity 120ms ease;
@@ -447,14 +437,11 @@ button.authorName:hover {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* Aligned with the message column (same left inset and cap). */
-  padding: var(--space-sm) var(--space-lg) var(--space-xl) var(--space-4xl);
-  background: transparent;
+  /* Slightly wider message box — tighter side padding than the list gutter;
+   * the thin top padding keeps the latest message close to the message box. */
+  padding: var(--space-sm) var(--space-md) var(--space-md);
+  background: var(--window);
   pointer-events: none;
-}
-
-.composerDock > * {
-  max-width: var(--measure-col);
 }
 
 .composerDock > * {
@@ -473,13 +460,12 @@ button.authorName:hover {
 .copiedToast {
   pointer-events: none;
   align-self: center;
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  color: var(--text-2);
-  background: var(--step-2);
-  border-radius: var(--radius);
-  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--surface-2);
+  padding: 3px var(--space-sm);
   margin-bottom: var(--space-xs);
   animation: copiedFade 160ms var(--ease);
 }
@@ -499,9 +485,9 @@ button.authorName:hover {
 .typingLine {
   pointer-events: none;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 12px;
   color: var(--muted);
-  padding: 2px 0;
+  padding: 2px var(--space-xs);
   margin-bottom: var(--space-xs);
 }
 
@@ -510,16 +496,15 @@ button.authorName:hover {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md-plus);
+  padding: 6px var(--space-md);
   color: var(--text-2);
-  background: var(--step-2);
-  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-2);
 }
 
 .replyName {
   flex-shrink: 0;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   font-weight: 700;
   color: var(--text-2);
 }
@@ -531,7 +516,7 @@ button.authorName:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -554,65 +539,16 @@ button.authorName:hover {
   color: var(--red);
 }
 
-/* The one-line games notice above the composer (NoticeLine). */
-.notice {
-  align-self: flex-start;
-  margin-bottom: var(--space-md-plus);
-}
-
-/* Input + Call, side by side. */
-.composerRow {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-sm);
-}
-
-/* The composer: a --step-1 fill, input + accent send glyph. Borderless: the
-   fill alone frames it. One control-lg tall at one line (261110). */
+/* §4.5 — the boxed composer: --bg2 fill, input + accent send glyph. Still
+   hovers over the list via .composerDock. Borderless (260729): the fill alone
+   frames it, matching the borderless popup treatment. */
 .composer {
-  flex: 1;
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--gap-control);
-  min-height: var(--control-lg);
-  box-sizing: border-box;
-  padding: var(--space-xs) var(--space-md) var(--space-xs) var(--space-lg);
-  background: var(--step-1);
-  border-radius: var(--radius);
-}
-
-/* Call, beside the input: the neutral wash (Play in the header is the accent). */
-.callBtn {
-  -webkit-appearance: none;
-  appearance: none;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-sm);
-  height: var(--control-lg);
-  padding: 0 var(--space-lg);
-  border: none;
-  border-radius: var(--radius);
-  background: var(--wash);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 140ms var(--ease);
-}
-
-.callBtn:hover {
-  background: var(--wash-hi);
-}
-
-.callBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
+  /* 261103: card padding, as the T262 explore's composer (was 11 / 14). */
+  padding: var(--pad-control) var(--pad-card);
+  background: var(--bg2);
 }
 
 .input {
@@ -620,11 +556,10 @@ button.authorName:hover {
   resize: none;
   min-height: 26px;
   max-height: 160px;
-  padding: var(--space-sm) 0;
+  padding: 6px var(--space-sm);
   font-family: var(--sans);
-  font-size: var(--fs-body);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  font-size: 15px;
+  line-height: 1.4;
   color: var(--text);
   background: transparent;
   border: none;
@@ -637,7 +572,7 @@ button.authorName:hover {
 }
 
 .input::placeholder {
-  color: var(--muted);
+  color: var(--muted-2);
 }
 
 /* §4.5 — the send button is a borderless accent GLYPH (mockup .send), mounted
@@ -648,8 +583,8 @@ button.authorName:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--control-sm);
-  height: var(--control-sm);
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   border: none;
   background: transparent;
@@ -667,32 +602,144 @@ button.authorName:hover {
   cursor: not-allowed;
 }
 
-/* ── Ambient portrait (261110) ───────────────────────────────────────────── */
-/* The companion at the window's right edge, under the content, faded in from
- * the left and up from the bottom so no edge reads as a box. Only on a wide
- * window, where the capped message column leaves the room. */
-.ambientArt {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-  height: min(88%, calc(var(--measure-col) - var(--space-xl)));
-  max-width: 40%;
-  object-fit: contain;
-  object-position: right bottom;
-  pointer-events: none;
-  user-select: none;
-  display: none;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, black 30%), linear-gradient(to top, transparent 0, black 22%);
-  -webkit-mask-composite: source-in;
-  mask-image: linear-gradient(to right, transparent 0, black 30%), linear-gradient(to top, transparent 0, black 22%);
-  mask-composite: intersect;
+/* ── Presence side panel (§4.5, mockup .pres-panel) ─────────────────────── */
+/* Collapsible 260px right column; width animates open/closed. Default CLOSED
+ * (260705). --pres-tint (set inline from the portrait's dominant color)
+ * washes the surface; unset → plain --bg2. */
+.presPanel {
+  width: 0;
+  flex: none;
+  background: color-mix(in srgb, var(--pres-tint, transparent) 20%, var(--bg2));
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  transition: width 300ms var(--ease);
 }
 
-@media (min-width: 1240px) {
-  .ambientArt {
-    display: block;
-  }
+.presOpen .presPanel {
+  width: 260px;
+  overflow-y: auto;
+}
+
+/* Fixed-width inner so content doesn't reflow during the width transition. */
+.presInner {
+  width: 260px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.presArt {
+  height: 190px;
+  flex: none;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.presArtImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Face-biased crop anchor, same 18% convention as IconRail avatars. */
+  object-position: 50% 18%;
+}
+
+.presArtFallback {
+  color: var(--muted);
+}
+
+/* Bottom fade of the portrait art down into the panel fill (tinted to match
+ * the .presPanel wash). */
+.presFade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent 50%,
+    color-mix(in srgb, var(--pres-tint, transparent) 20%, var(--bg2)) 100%
+  );
+}
+
+/* Close "x" pinned to the panel's top-right corner, above the portrait art
+ * (rendered after .presFade so it stacks on top). Same quiet glyph pattern as
+ * .replyClose / the chess panel's close button: muted at rest, red on hover. */
+.presClose {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.presClose:hover {
+  color: var(--red);
+}
+
+.presBody {
+  padding: var(--pad-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+}
+
+.presIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+
+.presNameRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.presName {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 23px;
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presKind {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.presNow {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.presActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  padding-top: var(--gap-stack);
+  border-top: 1px solid var(--border);
 }
 
 /* ── Game area (260721 top/bottom split) ────────────────────────────────── */
@@ -736,6 +783,13 @@ button.authorName:hover {
  * bottom leaves a sliver of chat, and the in-flow composer must not spill
  * out of it. */
 .gameOpen .chatCol {
+  overflow: hidden;
+}
+
+/* While a game is open the presence panel is force-collapsed (defined after
+ * `.presOpen .presPanel` on purpose: equal specificity, later rule wins). */
+.gameOpen .presPanel {
+  width: 0;
   overflow: hidden;
 }
 
@@ -809,6 +863,10 @@ button.authorName:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .presPanel {
+    transition: none;
+  }
+
   .gameArea {
     transition: none;
   }

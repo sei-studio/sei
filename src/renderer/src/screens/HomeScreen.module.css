@@ -1,7 +1,4 @@
 /* HomeScreen.module.css — the Home party wall (Party redesign §4.2).
- * Quiet register (product call 261110): the panels are cards with gaps on the
- * window's field (no hairlines between them), the names are display size,
- * and the Up next line sits under the wall as the screen's status row.
  * Full-height flex panels, one per companion slot (MAX_COMPANION_SLOTS).
  * Hover/focus expands a panel and reveals the lastline + action row; empty
  * slots are dormant panels with the gathering-pixels mark.
@@ -13,20 +10,12 @@
   flex: 1;
   min-height: 0;
   height: 100%;
-  box-sizing: border-box;
-  padding: var(--space-2xl);
-}
-
-/* With the Up next line under it, the wall ends where the line begins. */
-.root:has([data-home-next-step]) {
-  padding-bottom: 0;
 }
 
 .panels {
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: var(--space-md-plus);
 }
 
 .panel {
@@ -35,15 +24,19 @@
   position: relative;
   overflow: hidden;
   border: 0;
-  border-radius: var(--radius);
+  border-right: 1px solid var(--border);
   padding: 0;
-  background: var(--step-1);
+  background: none;
   text-align: left;
   cursor: pointer;
   transition: flex 0.34s var(--ease);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+}
+
+.panel:last-child {
+  border-right: 0;
 }
 
 /* Hover choreography: the hovered/focused panel grows, siblings shrink. */
@@ -143,8 +136,8 @@
 .name {
   font-family: var(--display);
   font-weight: 600;
-  font-size: var(--fs-display);
-  line-height: var(--lh-display);
+  font-size: 30px;
+  line-height: 1.05;
   /* 260724: names read as photo captions over the art — white/offwhite per
      theme (see --art-fg in tokens.css) instead of the dark body text. */
   color: var(--art-fg);
@@ -190,19 +183,19 @@
   text-shadow: 0 1px 3px color-mix(in srgb, var(--art-ink) 65%, transparent);
 }
 
-/* Meta line for the cloud-only placeholder state. */
+/* Mono micro-line for the cloud-only placeholder state. */
 .cloudNote {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
-/* Per-slot open-prepare failure — a red meta line inside the panel. */
+/* Per-slot open-prepare failure — small red mono line inside the panel. */
 .errLine {
-  font-family: var(--sans);
-  font-size: var(--fs-meta);
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
   color: var(--red-strong);
 }
 
@@ -231,7 +224,7 @@
 .lastline {
   color: var(--text-2);
   font-family: var(--sans);
-  font-size: var(--fs-meta);
+  font-size: 13px;
   font-style: italic;
   padding-top: var(--space-xs);
   white-space: nowrap;
@@ -255,9 +248,12 @@
 }
 
 /* ── Dormant (empty) slot ────────────────────────────────────────────── */
-/* The same raised step as a filled card, a little quieter (261110). */
 .dormant {
-  background: color-mix(in srgb, var(--step-1) 70%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg2) 50%, transparent),
+    color-mix(in srgb, var(--bg) 90%, transparent)
+  );
 }
 
 /* 260726: with a custom background active, the dormant fill (90% opaque at the
@@ -364,7 +360,7 @@
 /* Letter-spacing 0.12em retained deliberately from the mockup .awaken. */
 .awakenLabel {
   font-family: var(--display);
-  font-size: var(--fs-title);
+  font-size: 19px;
   letter-spacing: 0.12em;
   color: currentColor;
   opacity: 0;
@@ -379,14 +375,8 @@
 }
 
 @media (max-width: 900px) {
-  .root {
-    padding: var(--space-lg);
-  }
-  .panels {
-    gap: var(--space-sm);
-  }
   .name {
-    font-size: var(--fs-title);
+    font-size: 22px;
   }
 }
 

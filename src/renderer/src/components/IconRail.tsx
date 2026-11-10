@@ -43,7 +43,6 @@ import {
 } from './icons';
 import { PixelPortrait } from './PixelPortrait';
 import { UpdateRailButton } from './UpdateRailButton';
-import { SeiPixelMark } from './SeiPixelMark';
 import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
@@ -389,7 +388,6 @@ export function IconRail(): React.ReactElement {
   return (
     <>
       <nav className={styles.rail} aria-label={t('Primary')}>
-        <SeiPixelMark height={14} color="var(--text)" className={styles.wordmark} />
         <div className={styles.cluster}>
           <RailButton
             active={homeActive}
