@@ -1,6 +1,6 @@
 // 261110 (quality pass 50): the owner's death on the snapshot owner line.
 import { describe, it, expect } from 'vitest'
-import { ownerStateClause, ownerHealthClause, OWNER_DEATH_NOTE_MS } from './snapshot.js'
+import { ownerStateClause, ownerHealthClause, deathSpotFromYou, OWNER_DEATH_NOTE_MS } from './snapshot.js'
 import { recordOwnerDeath } from '../behaviors/chat.js'
 
 const T0 = 1_000_000
@@ -26,7 +26,7 @@ describe('ownerStateClause', () => {
 
   it('after the respawn names the death and where their things dropped', () => {
     const t = ownerStateClause(20, death, { id: 7 }, { x: 180, y: 64, z: 5 }, T0 + 12_000)
-    expect(t).toBe(', hp 20/20. They died 12s ago (Alex was blown up by Creeper) and respawned with an empty inventory, so they have no food or weapon unless you give them some. Their old things dropped where they died, 5 blocks from you, unless they have picked them up since')
+    expect(t).toBe(', hp 20/20. They died 12s ago (Alex was blown up by Creeper) and respawned with an empty inventory, so they have no food or weapon unless you give them some. Anything they carried dropped where they died, 5 blocks southeast of you, unless someone has picked it up since')
   })
 
   it('trusts fresh health on the same body after a few seconds', () => {
@@ -40,7 +40,24 @@ describe('ownerStateClause', () => {
   it('says minutes for an older death and copes without positions', () => {
     const t = ownerStateClause(18, { ...death, pos: null }, { id: 7 }, { x: 180, y: 64, z: 5 }, T0 + 150_000)
     expect(t).toContain('They died 3 min ago')
-    expect(t).toContain('dropped where they died')
+    expect(t).toContain('dropped where they died, unless someone')
+  })
+})
+
+describe('deathSpotFromYou', () => {
+  const me = { x: 0, y: 64, z: 0 }
+  it('names distance and an 8-way compass direction (north = -z, east = +x)', () => {
+    expect(deathSpotFromYou({ x: 0, y: 64, z: -9 }, me)).toBe('9 blocks north of you')
+    expect(deathSpotFromYou({ x: 8, y: 64, z: 0 }, me)).toBe('8 blocks east of you')
+    expect(deathSpotFromYou({ x: -5, y: 64, z: 5 }, me)).toBe('7 blocks southwest of you')
+  })
+  it('says right around you up close, above/below when straight up or down', () => {
+    expect(deathSpotFromYou({ x: 1, y: 64, z: 1 }, me)).toBe('right around you')
+    expect(deathSpotFromYou({ x: 0, y: 50, z: 1 }, me)).toBe('14 blocks below you')
+  })
+  it('is null without positions', () => {
+    expect(deathSpotFromYou(null, me)).toBeNull()
+    expect(deathSpotFromYou({ x: 1, y: 2, z: 3 }, null)).toBeNull()
   })
 })
 

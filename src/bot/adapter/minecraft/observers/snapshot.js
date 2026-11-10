@@ -130,10 +130,30 @@ export function ownerStateClause(hp, death, ownerEnt, selfPos = null, nowMs = Da
   if (hp === 0 || (sameBody && (hp == null || age <= OWNER_DEATH_STALE_BODY_MS))) {
     return `: dead, died ${agoText(age)}${cause} and has not respawned yet`
   }
-  // A distance, not coordinates: read out in chat, coordinates sound like a bot.
-  const d = ownerDistanceBlocks(recent.pos, selfPos)
-  const where = d != null ? `where they died, ${d} blocks from you` : 'where they died'
-  return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Their old things dropped ${where}, unless they have picked them up since`
+  // A distance and compass direction, not coordinates: read out in chat,
+  // coordinates sound like a bot. With the distance alone she made up a
+  // direction ("8 blocks east" for a spot to the north, pass 50 compare).
+  // "Anything they carried": the bot cannot see their inventory, and a
+  // player with nothing drops nothing ("i got your stuff" before any
+  // pickup, same compare).
+  const spot = deathSpotFromYou(recent.pos, selfPos)
+  const where = spot ? `where they died, ${spot}` : 'where they died'
+  return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Anything they carried dropped ${where}, unless someone has picked it up since`
+}
+
+// "9 blocks north of you", "right around you" within 2 blocks, or null
+// without positions. 8-way compass on the x/z offset
+// (north = -z, east = +x, as in facing.js).
+const COMPASS8 = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
+export function deathSpotFromYou(pos, selfPos) {
+  const d = ownerDistanceBlocks(pos, selfPos)
+  if (d == null) return null
+  if (d <= 2) return 'right around you'
+  const dx = pos.x - selfPos.x, dz = pos.z - selfPos.z
+  if (Math.hypot(dx, dz) < 2) return `${d} blocks ${pos.y > selfPos.y ? 'above' : 'below'} you`
+  // Clockwise angle from north (-z).
+  const deg = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360
+  return `${d} blocks ${COMPASS8[Math.round(deg / 45) % 8]} of you`
 }
 
 // 261012: how far a hostile is from you and from the player, on its
