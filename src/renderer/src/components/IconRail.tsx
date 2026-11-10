@@ -50,6 +50,7 @@ import { ModalShell, ModalFooter } from './ModalShell';
 import { SignInModal } from './SignInModal';
 import { SwitchBackendConfirmModal } from './SwitchBackendConfirmModal';
 import { UpdateRailButton } from './UpdateRailButton';
+import { SeiPixelMark } from './SeiPixelMark';
 import { sei } from '../lib/ipcClient';
 import { lastInteractionAt } from '../lib/lastInteraction';
 import { isHomeCharacter } from '../lib/homeLibrary';
@@ -437,6 +438,7 @@ export function IconRail(): React.ReactElement {
   return (
     <>
       <nav className={styles.rail} aria-label={t('Primary')}>
+        <SeiPixelMark height={14} color="var(--text)" className={styles.wordmark} />
         <div className={styles.cluster}>
           <RailButton
             active={homeActive}

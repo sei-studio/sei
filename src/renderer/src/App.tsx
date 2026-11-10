@@ -1240,12 +1240,11 @@ export function App(): React.ReactElement {
     minWidth: 0,
     minHeight: 0,
     overflow: 'auto',
+    // Quiet register (261110): one surface. With no custom image the field
+    // (MacosWindow's FieldBackdrop) shows straight through; no framed panel.
     background: backgroundImage
       ? `color-mix(in srgb, var(--window) ${tintPct}%, transparent)`
-      : 'var(--window)',
-    borderTopLeftRadius: 'var(--radius)',
-    borderTop: '1px solid var(--border)',
-    borderLeft: '1px solid var(--border)',
+      : 'transparent',
   };
   const elbowStyle: React.CSSProperties = {
     display: 'flex',
@@ -1253,9 +1252,9 @@ export function App(): React.ReactElement {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
-    background: backgroundImage
-      ? `color-mix(in srgb, var(--elbow) ${tintPct}%, transparent)`
-      : 'var(--elbow)',
+    // The rail and the drag strip carry the image tint themselves; the old
+    // content-corner backdrop is gone with the framed panel.
+    background: 'transparent',
   };
 
   return (
