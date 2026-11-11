@@ -1235,10 +1235,27 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const text = String(line ?? '').trim()
     if (!text || typeof caps.handOverDetail !== 'function') return
     const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
-    const items = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
+    const worked = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
+    // 261111 (pass 52): only the items their line asked for. Work that
+    // brings in none of them answers the line with her own plan ("yeah
+    // sounds good" -> craft(wooden_pickaxe)); that ask is `unnamed` and
+    // stays out of the hand-over notes unless a later action in this loop
+    // makes something the line named ("make me a table" -> logs, then the
+    // table). See itemsNamedIn (Minecraft observers/workItems.js).
+    const items = namedItemsOf(text, worked)
+    const unnamed = worked.length > 0 && items.length === 0
     // pass 38: the work a walk-only answer cuts off (see openAsks).
     const replaced = toPlayer && running ? workItemsOf(running.name, running.args ?? running.input) : []
-    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, delivering: false, loopId, replaced }].slice(-OPEN_ASK_MAX)
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, unnamed, delivering: false, loopId, replaced }].slice(-OPEN_ASK_MAX)
+  }
+  // pass 52: the items of `items` a player's line names (caps.namedItems),
+  // or all of them for a game without item words.
+  function namedItemsOf(line, items) {
+    if (!items.length || typeof caps.namedItems !== 'function') return items
+    try {
+      const out = caps.namedItems(line, items)
+      return Array.isArray(out) ? out.filter((n) => items.includes(n)) : items
+    } catch { return items }
   }
   // pass 37: see openAsks.
   function workItemsOf(name, args) {
@@ -1262,7 +1279,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const seen = new Set()
     const out = []
     for (const a of [...openAsks].reverse()) {
-      if (a.toPlayer || (deliveringOnly && !a.delivering)) continue
+      if (a.toPlayer || a.unnamed || (deliveringOnly && !a.delivering)) continue
       const items = carriedFor(a).filter((c) => !seen.has(c.item))
       for (const c of items) seen.add(c.item)
       if (items.length) out.unshift({ line: a.line, items, delivering: a.delivering, at: a.at })
@@ -1301,9 +1318,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const loopId = currentLoop?.id ?? null
     const ask = loopId ? [...openAsks].reverse().find((a) => a.loopId === loopId && !a.toPlayer) : null
     if (ask) {
-      const items = workItemsOf(name, args)
+      // pass 52: only what the line named, as in noteOpenAsk.
+      const items = namedItemsOf(ask.line, workItemsOf(name, args))
       if (items.length && MAKES_ITEMS.has(name)) ask.items = [...new Set([...(ask.items ?? []), ...items])]
       else if (items.length && !ask.items?.length && now - ask.at < OPEN_ASK_ITEMS_MS) ask.items = items
+      if (ask.items?.length) ask.unnamed = false
     }
     // Her walk back with the items. pass 38: also when the walk answers a
     // newer line that got only the walk (errands-04-B "hows it going"); its
@@ -1354,7 +1373,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // still has to be handed over (errands-02-B, pass 32 compare).
     if (taskHolds.size) return ''
     openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
-    if (!openAsks.some((a) => !a.toPlayer)) return ''
+    if (!openAsks.some((a) => !a.toPlayer && !a.unnamed)) return ''
     // Name the player she reached, not the newest asker (a teammate or a
     // second human may have spoken last).
     const who = config?.player_display_name || config?.player_username || null

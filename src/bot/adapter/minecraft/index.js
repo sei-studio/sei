@@ -27,7 +27,7 @@ import { closeContainerSession } from './behaviors/container.js'
 import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
-import { workItemsFor, carriedCounts } from './observers/workItems.js'
+import { workItemsFor, carriedCounts, itemsNamedIn } from './observers/workItems.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   describeAction,
@@ -303,6 +303,8 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // carries, so an open ask can name its items (observers/workItems.js).
     workItems: (name, args) => workItemsFor(bot, name, args),
     carriedCounts: (names) => carriedCounts(bot, names),
+    // 261111 (pass 52): which of them a player's line asked for.
+    namedItems: (line, items) => itemsNamedIn(line, items, { foods: bot.registry?.foodsByName }),
     surfaceBaseline: () => MINECRAFT_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ vision: ACTION_STUCK_NUDGE_VISION, noVision: ACTION_STUCK_NUDGE_NOVISION }),

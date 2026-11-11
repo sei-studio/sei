@@ -278,6 +278,11 @@
  *   Default: absent, asks carry no items.
  * @property {(names: string[]) => Record<string, number>}                 [carriedCounts]
  *   How many of each named item she carries now. Default: absent.
+ * @property {(line: string, items: string[]) => string[]}                [namedItems]
+ *   The items a player's line asks for, out of the ones her answering work
+ *   brings in; the rest are her own and stay off the ask (261111, pass 52).
+ *   Minecraft: item words, kinds and loose terms. Default: absent, the ask
+ *   keeps every item.
  * @property {() => string}                                                [surfaceBaseline]
  *   The game-surface half of the cached system block [0]. The brain composes
  *   `${UNIVERSAL_BASELINE}\n\n${surfaceBaseline()}`. Default MINECRAFT_BASELINE.
