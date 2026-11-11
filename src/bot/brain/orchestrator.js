@@ -1996,8 +1996,6 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       }
     }
   }
-  // 261011: when the bot last spoke during an attack turn, so the next hit in
-  // the same fight is told it already warned the player (NUDGES.fightAlreadyTold).
   // 261111 (pass 51): see the staleTurn check in runIterations.
   const STALE_TURN_MAX_PER_LOOP = 2
   function safeStaleTurn(toolUses, sinceMs) {
@@ -2010,6 +2008,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       return null
     }
   }
+  // 261011: when the bot last spoke during an attack turn, so the next hit in
+  // the same fight is told it already warned the player (NUDGES.fightAlreadyTold).
   let _lastFightLineAt = 0
   // 261111 (pass 51): the mob that turn was about (adapter entity id), so a
   // new mob after that one died is not "this fight" (caps.sameFight).
