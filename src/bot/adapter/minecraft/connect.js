@@ -544,6 +544,25 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
 }
 
 /**
+ * 261111: a coarse, allowlisted class for why the connection ended, for the
+ * session telemetry (user feedback ae9a758e: "Sui leaves the game and pops
+ * back in", and nothing recorded a drop or its cause). 'kick' = the server
+ * sent a disconnect; 'keepalive' = no keep-alive from the server for 30s
+ * (nmp ends the client with 'keepAliveError'); 'socket' = the socket closed
+ * with no reason; 'reset' = ECONNRESET / EPIPE; 'other' = anything else.
+ * @param {string} raw  the end reason text
+ * @param {string|null} kickCode
+ */
+export function dropClassFor(raw, kickCode) {
+  if (kickCode) return 'kick'
+  const r = String(raw ?? '')
+  if (/keepalive/i.test(r)) return 'keepalive'
+  if (/^\s*socketclosed\s*$/i.test(r)) return 'socket'
+  if (/ECONNRESET|EPIPE|reset/i.test(r)) return 'reset'
+  return 'other'
+}
+
+/**
  * Construct a mineflayer Bot, wire up the always-on adapter behaviors
  * (pathfinder plugin, posHealer, autoEat, combat, follow, chat) on first
  * spawn, and hand it back. The reconnect loop is owned here too — on `end`,
@@ -773,6 +792,7 @@ export function createBotInstance({
         modded: isModdedHostRejection(effective),
         onlineMode: isOnlineModeRejection(effective),
         kickCode,
+        dropClass: dropClassFor(raw, kickCode),
       })
     } catch {}
   })
