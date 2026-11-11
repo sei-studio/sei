@@ -64,6 +64,7 @@ import { create } from 'zustand';
 import { DEFAULT_BROWSE_SORT, type BrowseEntry, type BrowsePage, type BrowseSort } from '@shared/ipc';
 import { SHOW_ADD_COUNTS } from '@shared/addCounts';
 import { sei } from '../ipcClient';
+import { takeThumbStats } from '../worldThumbStats';
 
 export const PAGE_SIZE = 24;
 const DEBOUNCE_MS = 250;
@@ -144,6 +145,7 @@ function trackPage(props: {
 }): void {
   try {
     const entries = props.page?.entries ?? [];
+    const thumbs = takeThumbStats();
     sei.track('world_page_loaded', {
       trigger: props.trigger,
       page_index: props.pageIndex,
@@ -159,6 +161,12 @@ function trackPage(props: {
       // says whether cards show it at all (hidden since product call 261110).
       counts_shown: entries.filter((e) => (e.addCount ?? 0) > 0).length,
       counts_displayed: SHOW_ADD_COUNTS ? 1 : 0,
+      // 261111 World thumbnails: how many entries on this page offer one, and
+      // the cards' thumbnail loads / fallbacks to the full portrait since the
+      // previous page event (lib/worldThumbStats.ts).
+      thumbs_offered: entries.filter((e) => !!e.thumbUrl).length,
+      thumb_loads: thumbs.loads,
+      thumb_fallbacks: thumbs.fallbacks,
       outcome: props.failure ? 'error' : 'ok',
       failure_class: props.failure ?? 'none',
     });

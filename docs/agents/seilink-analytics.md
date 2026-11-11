@@ -124,7 +124,12 @@ is the page tab the row sits on, so Sharing and Danger zone rows report
 (`SHOW_ADD_COUNTS` in `src/shared/addCounts.ts`): the World list still fetches
 them for the popular sort, and `world_page_loaded` gains `counts_displayed`
 (0 while hidden; `counts_shown` still counts the entries that have a
-count, whether or not it is on screen).
+count, whether or not it is on screen). Since 261111 it also carries
+`thumbs_offered` (entries on the page with a World thumbnail URL) and
+`thumb_loads` / `thumb_fallbacks` (cards whose thumbnail loaded, or failed so
+the full portrait was loaded instead, since the previous `world_page_loaded`;
+`lib/worldThumbStats.ts`). A rising fallback share means thumbnails are
+missing and the grid is loading full portraits.
 
 ## First room on the desktop (261106)
 

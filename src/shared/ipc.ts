@@ -1700,8 +1700,17 @@ export interface BrowseEntry {
   creatorLabel: string;
   /** 4-char share code shown beside the name (null for pre-260703 rows). */
   publicId: string | null;
-  /** Public Storage URL (Pitfall 11: never round-trip to Mojang here). */
+  /**
+   * Public Storage URL of the full portrait (Pitfall 11: never round-trip to
+   * Mojang here), versioned `?v=<updated_at>` (shared/portraitUrls.ts).
+   */
   portraitUrl: string | null;
+  /**
+   * The small World-grid copy (`<owner>/<id>.thumb.webp`, versioned like
+   * portraitUrl). It may not exist yet for an older share: the card falls
+   * back to portraitUrl (browseArtSources). Null when there is no portrait.
+   */
+  thumbUrl: string | null;
   skinUrl: string | null;
   /** ISO timestamp. */
   updatedAt: string;

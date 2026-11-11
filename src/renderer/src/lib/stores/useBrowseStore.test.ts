@@ -34,6 +34,7 @@ function entry(id: string, name = `char-${id}`): BrowseEntry {
     personaSnippet: `${name} persona`,
     creatorLabel: 'by anonymous',
     portraitUrl: null,
+    thumbUrl: null,
     skinUrl: null,
     updatedAt: new Date(0).toISOString(),
     inMyLibrary: false,
@@ -341,6 +342,9 @@ describe('useBrowseStore', () => {
       counts_known: 1,
       counts_shown: 1,
       counts_displayed: 0,
+      thumbs_offered: 0,
+      thumb_loads: 0,
+      thumb_fallbacks: 0,
       outcome: 'ok',
       failure_class: 'none',
     });
@@ -348,5 +352,26 @@ describe('useBrowseStore', () => {
     await store.getState().loadMore();
     expect(store.getState().serverSorted).toBe(false);
     expect(store.getState().pages).toBe(2);
+  });
+
+  it('Test 16: world_page_loaded carries thumbnail offers and the cards\' loads / fallbacks since the last page event', async () => {
+    const { noteThumbLoaded, noteThumbFallback, takeThumbStats } = await import('../worldThumbStats');
+    takeThumbStats();
+    noteThumbLoaded();
+    noteThumbLoaded();
+    noteThumbFallback();
+    browseListMock.mockResolvedValueOnce({
+      entries: [{ ...entry('a'), thumbUrl: 'https://x/a.thumb.webp?v=1', portraitUrl: 'https://x/a.png?v=1' }, entry('b')],
+      hasMore: false,
+      sorted: true,
+    });
+    const store = await loadStore();
+    await store.getState().prefetch();
+    expect(trackMock).toHaveBeenLastCalledWith('world_page_loaded', expect.objectContaining({
+      thumbs_offered: 1,
+      thumb_loads: 2,
+      thumb_fallbacks: 1,
+    }));
+    expect(takeThumbStats()).toEqual({ loads: 0, fallbacks: 0 });
   });
 });

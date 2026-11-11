@@ -182,6 +182,14 @@ interface PixelPortraitProps {
   /** Optional image override path; falls back to procedural on load error. */
   portraitImage?: string | null;
   /**
+   * Tried when `portraitImage` fails to load, before the procedural sprite
+   * (261111: the World card loads the small thumbnail first and this full
+   * portrait when an older share has no thumbnail yet).
+   */
+  fallbackImage?: string | null;
+  /** Fires once when `portraitImage` failed and `fallbackImage` is tried. */
+  onFallback?: () => void;
+  /**
    * Fires once the portrait override has SETTLED — loaded, failed (procedural
    * fallback shown), or absent. Lets callers hold a wireframe until real
    * pixels are on screen (260705 World-card skeletons). Idempotent callers only.
@@ -196,13 +204,16 @@ export function PixelPortrait({
   seed,
   size = 220,
   portraitImage,
+  fallbackImage,
+  onFallback,
   onImageSettled,
   style,
   className,
   ...rest
 }: PixelPortraitProps): React.ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [imgFailed, setImgFailed] = useState(false);
+  // 0 = portraitImage, 1 = fallbackImage, 2 = procedural sprite.
+  const [stage, setStage] = useState<0 | 1 | 2>(0);
 
   // Lock the sprite to a theme-INDEPENDENT palette so it doesn't photo-negative
   // between light/dark (the two palette sets are luminance-reversed per index).
@@ -212,8 +223,14 @@ export function PixelPortrait({
 
   // Resolve the bare '<uuid>.png' reference (or pass a cloud URL through) into a
   // loadable src. Without this the override <img> 404s and silently falls back.
-  const resolvedSrc = portraitSrc(portraitImage);
-  const useImage = !!resolvedSrc && !imgFailed;
+  const primarySrc = portraitSrc(portraitImage);
+  const fallbackSrc = portraitSrc(fallbackImage);
+  const resolvedSrc = stage === 0 && primarySrc
+    ? primarySrc
+    : stage <= 1 && fallbackSrc
+      ? fallbackSrc
+      : null;
+  const useImage = !!resolvedSrc;
 
   // Paint canvas whenever grid changes, AND whenever the canvas (re)enters the
   // DOM. `useImage` is a dep because the <canvas> is conditionally rendered:
@@ -257,8 +274,18 @@ export function PixelPortrait({
   // Clear a prior load failure when the source changes (e.g. a re-upload or
   // switching characters) so a stale error doesn't pin us to the sprite.
   useEffect(() => {
-    setImgFailed(false);
-  }, [resolvedSrc]);
+    setStage(0);
+  }, [primarySrc, fallbackSrc]);
+
+  const handleError = (): void => {
+    if (resolvedSrc === primarySrc && fallbackSrc && fallbackSrc !== primarySrc) {
+      setStage(1);
+      onFallback?.();
+      return;
+    }
+    setStage(2);
+    onImageSettled?.();
+  };
 
   return (
     <div
@@ -273,10 +300,7 @@ export function PixelPortrait({
           src={resolvedSrc!}
           alt=""
           onLoad={() => onImageSettled?.()}
-          onError={() => {
-            setImgFailed(true);
-            onImageSettled?.();
-          }}
+          onError={handleError}
         />
       ) : (
         <canvas ref={canvasRef} className={styles.canvas} />

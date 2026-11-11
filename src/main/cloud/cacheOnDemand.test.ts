@@ -246,6 +246,75 @@ describe('ensureLocallyCached', () => {
   });
 });
 
+describe('per-version portrait cache (261111)', () => {
+  const V1 = '2026-11-11T10:00:00.000+00:00';
+  const V2 = '2026-11-11T11:00:00.000+00:00';
+
+  async function dropLocalFiles(uuid: string): Promise<void> {
+    // What the sign-in reconcile sweep does to a foreign character.
+    await rm(paths.characterPath(uuid), { force: true });
+    await rm(paths.portraitPath(uuid), { force: true });
+  }
+
+  it('a portrait already downloaded at this version is not downloaded again (already-cached skip)', async () => {
+    downloadCharacterMock.mockResolvedValue(makeCharacter({ portrait_image: 'x', cloud_updated_at: V1 }));
+    downloadSkinMock.mockResolvedValue(null);
+    downloadPortraitMock.mockResolvedValue(Buffer.from([7, 7, 7, 7, 7]));
+    const { ensureLocallyCached } = await import('./cacheOnDemand');
+
+    await ensureLocallyCached(UUID_A);
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(1);
+
+    // Local files gone (reconcile sweep), then the card is hovered again.
+    await dropLocalFiles(UUID_A);
+    await ensureLocallyCached(UUID_A);
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(1);
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(Buffer.from([7, 7, 7, 7, 7]))).toBe(true);
+  });
+
+  it('a new version downloads once and replaces the old cached copy', async () => {
+    downloadSkinMock.mockResolvedValue(null);
+    downloadCharacterMock.mockResolvedValue(makeCharacter({ portrait_image: 'x', cloud_updated_at: V1 }));
+    downloadPortraitMock.mockResolvedValue(Buffer.from([1]));
+    const { ensureLocallyCached } = await import('./cacheOnDemand');
+    await ensureLocallyCached(UUID_A);
+    await dropLocalFiles(UUID_A);
+
+    downloadCharacterMock.mockResolvedValue(makeCharacter({ portrait_image: 'x', cloud_updated_at: V2 }));
+    downloadPortraitMock.mockResolvedValue(Buffer.from([2, 2]));
+    await ensureLocallyCached(UUID_A);
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(2);
+    expect((await readFile(paths.portraitPath(UUID_A))).equals(Buffer.from([2, 2]))).toBe(true);
+    const { readdir } = await import('node:fs/promises');
+    const { versionTag } = await import('./portraitCache');
+    expect(await readdir(paths.portraitCacheDir())).toEqual([`${UUID_A}@${versionTag(V2)}.png`]);
+  });
+
+  it('concurrent fetches of one version share a single download', async () => {
+    let release!: (b: Buffer) => void;
+    downloadPortraitMock.mockReturnValue(new Promise<Buffer>((r) => (release = r)));
+    const { fetchPortraitOnce } = await import('./portraitCache');
+    const a = fetchPortraitOnce(downloadPortraitMock, OWNER, UUID_B, V1);
+    const b = fetchPortraitOnce(downloadPortraitMock, OWNER, UUID_B, V1);
+    release(Buffer.from([5, 5]));
+    const [ra, rb] = await Promise.all([a, b]);
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(1);
+    expect(ra).toEqual({ bytes: Buffer.from([5, 5]), downloaded: true });
+    expect(rb.bytes?.equals(Buffer.from([5, 5]))).toBe(true);
+    // Settled: the next call reads the cache.
+    expect(await fetchPortraitOnce(downloadPortraitMock, OWNER, UUID_B, V1)).toMatchObject({ downloaded: false });
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('no version: always downloads, nothing cached', async () => {
+    downloadPortraitMock.mockResolvedValue(Buffer.from([3]));
+    const { fetchPortraitOnce } = await import('./portraitCache');
+    await fetchPortraitOnce(downloadPortraitMock, OWNER, UUID_B, null);
+    await fetchPortraitOnce(downloadPortraitMock, OWNER, UUID_B, null);
+    expect(downloadPortraitMock).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('ensureLocallyCached — refresh-on-open', () => {
   const AUTHOR = '99999999-9999-4999-8999-999999999999';
 

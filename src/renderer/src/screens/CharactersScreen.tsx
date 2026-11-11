@@ -63,6 +63,7 @@ import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import type { BrowseEntry, BrowseSort } from '@shared/ipc';
 import { BROWSE_SORTS } from '@shared/ipc';
+import { browseArtSources } from '@shared/portraitUrls';
 import homeStyles from './HomeScreen.module.css';
 import styles from './CharactersScreen.module.css';
 
@@ -598,6 +599,7 @@ function WorldGrid(): React.ReactElement {
       // matching the cloud rows — surface it like any other World card.
       publicId: c.public_id ?? null,
       portraitUrl: c.portrait_image,
+      thumbUrl: null,
       skinUrl: null,
       updatedAt: c.created,
       // 260703 procgen: defaults are opt-in on Home — "in library" means the
@@ -695,12 +697,18 @@ function WorldGrid(): React.ReactElement {
   const firstRowsEntries = shownEntries.slice(0, firstRowsCount);
   // A stable key over the first-rows set: re-gate only when the actual cards
   // (or their portrait refs) change — not on every render.
+  // 261111: a card loads the small World thumbnail first and the full
+  // portrait only when the thumbnail fails (browseArtSources), so the group
+  // gate waits on the same sources in the same order.
   const firstRowsKey = firstRowsEntries
-    .map((e) => `${e.id}:${e.portraitUrl ?? ''}`)
+    .map((e) => `${e.id}:${e.thumbUrl ?? ''}:${e.portraitUrl ?? ''}`)
     .join('|');
   const firstRowsSrcs = firstRowsEntries
-    .map((e) => portraitSrc(e.portraitUrl))
-    .filter((s): s is string => !!s);
+    .map((e) => {
+      const art = browseArtSources(e);
+      return { primary: portraitSrc(art.primary), fallback: portraitSrc(art.fallback) };
+    })
+    .filter((s): s is { primary: string; fallback: string | null } => !!s.primary);
   const [firstRowsReady, setFirstRowsReady] = useState(false);
   useEffect(() => {
     // Nothing on screen yet (still fetching page 0) → stay gated so the
@@ -734,10 +742,19 @@ function WorldGrid(): React.ReactElement {
         finish();
       };
       // A broken image resolves via onerror — treated as "done" so it never
-      // holds the group.
+      // holds the group. A missing thumbnail retries with the full portrait
+      // first, as the card itself does.
+      let triedFallback = false;
       img.onload = once;
-      img.onerror = once;
-      img.src = src;
+      img.onerror = () => {
+        if (!triedFallback && src.fallback) {
+          triedFallback = true;
+          img.src = src.fallback;
+          return;
+        }
+        once();
+      };
+      img.src = src.primary;
       // A cached image can already be complete before the handlers attach.
       if (img.complete) once();
       return img;

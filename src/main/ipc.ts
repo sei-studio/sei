@@ -506,6 +506,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   async function runModerationGate(
     characterId: string,
   ): Promise<import('./cloud/moderationGate').PublishResult> {
+    const result = await runModerationGateInner(characterId);
+    // 261111: a published character gets its World grid thumbnail made by the
+    // proxy from the stored (now clean) portrait. Fire-and-forget; the grid
+    // falls back to the full portrait until it exists.
+    if (result.ok) {
+      void import('./cloud/portraitThumb')
+        .then((m) => m.requestPortraitThumb(characterId))
+        .catch(() => {});
+    }
+    return result;
+  }
+
+  async function runModerationGateInner(
+    characterId: string,
+  ): Promise<import('./cloud/moderationGate').PublishResult> {
     const { isCloudWriteAllowed } = await import('./auth/authState');
     if (!(await isCloudWriteAllowed())) {
       return {
@@ -4167,7 +4182,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<BrowsePage> => {
     const parsed = BrowseListSchema.parse(argsRaw);
     const { getClient } = await import('./auth/supabaseClient');
-    const { getStoragePublicUrl } = await import('./cloud/cloudCharacterClient');
+    const { getStoragePublicUrl, getStorageObjectPublicUrl } = await import('./cloud/cloudCharacterClient');
+    const { withVersion, portraitThumbPath } = await import('../shared/portraitUrls');
     const { fetchBrowseRows, fetchAddCounts } = await import('./cloud/browseQuery');
     const listing = await fetchBrowseRows(getClient(), parsed);
     if (listing.error !== null) {
@@ -4236,8 +4252,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // Use the same Storage layout as cloudCharacterClient.uploadPortrait /
       // uploadSkin (`<owner>/<id>.png`). getStoragePublicUrl is a sync,
       // network-free helper from supabase-js so we can call it inline.
-      const portraitUrl = row.portrait_image && ownerStr
-        ? getStoragePublicUrl('portraits', ownerStr, id)
+      //
+      // 261111: both portrait URLs carry `?v=<updated_at>` (portraits are
+      // overwritten in place and new uploads cache for a year, see
+      // shared/portraitUrls.ts), and the grid loads the small
+      // `<owner>/<id>.thumb.webp` first, falling back to the full portrait
+      // when a character has no thumbnail yet.
+      const version = typeof row.updated_at === 'string' ? row.updated_at : null;
+      const hasPortrait = !!(row.portrait_image && ownerStr);
+      const portraitUrl = hasPortrait
+        ? withVersion(getStoragePublicUrl('portraits', ownerStr, id), version)
+        : null;
+      const thumbUrl = hasPortrait
+        ? withVersion(getStorageObjectPublicUrl('portraits', portraitThumbPath(ownerStr, id)), version)
         : null;
       const skinUrl = row.skin_png_sha256 && ownerStr
         ? getStoragePublicUrl('skins', ownerStr, id)
@@ -4255,6 +4282,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // column rides along; older rows without one show no tag.
         publicId: typeof row.public_id === 'string' ? row.public_id : null,
         portraitUrl,
+        thumbUrl,
         skinUrl,
         updatedAt: typeof row.updated_at === 'string'
           ? row.updated_at

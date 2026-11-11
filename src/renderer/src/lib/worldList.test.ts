@@ -10,6 +10,7 @@ function entry(id: string, over: Partial<BrowseEntry> = {}): BrowseEntry {
     creatorLabel: 'by someone',
     publicId: null,
     portraitUrl: null,
+    thumbUrl: null,
     skinUrl: null,
     updatedAt: '2026-01-01T00:00:00Z',
     inMyLibrary: false,
