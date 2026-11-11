@@ -20,7 +20,7 @@ const zombie = (id = 7, x = 2) => ({ id, name: 'zombie', type: 'hostile', positi
 afterEach(() => { vi.useRealTimers() })
 
 describe('recent deaths (entities.js)', () => {
-  it('keeps a death after the corpse is gone, and forgets it after 30s', () => {
+  it('keeps a death after the corpse is gone, and forgets it after 60s', () => {
     vi.useFakeTimers()
     const bot = makeBot()
     const z = zombie()
@@ -34,6 +34,8 @@ describe('recent deaths (entities.js)', () => {
     vi.advanceTimersByTime(9000)
     expect(recentLossByName(bot, 'zombie')).toBeNull() // past the 10s name window
     vi.advanceTimersByTime(20000)
+    expect(msSinceDeath(bot, 7)).toBe(31000) // 261111 (pass 51): kept 60s
+    vi.advanceTimersByTime(30000)
     expect(msSinceDeath(bot, 7)).toBeNull()
   })
 

@@ -52,6 +52,10 @@ export {
   renderCompanions,
   voiceGroupGuidance,
   teammateVoiceGuidance,
+  // 261111 (pass 51): a turn written about a fight that ended meanwhile.
+  staleTurnText,
+  STALE_TURN_SAY_RESULT,
+  STALE_TURN_TOOL_RESULT,
 } from './promptLibrary.js'
 
 // 260615: per-tier idle-tick cadence (ms). NOT prompt text — these are the FSM

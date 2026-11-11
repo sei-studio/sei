@@ -132,9 +132,16 @@ export function weakWeaponNote(bot) {
 // combat_night eval she told the player a zombie or skeleton was dead five
 // times while it was still around. Death is now only what the server says:
 // the entity_status death event (mineflayer 'entityDead') for that entity id.
+// 261111 (pass 51): a creeper that leaves the entity table mid-fight blew up
+// (mobs this close to a player do not despawn, and the tracking range is far
+// past a fight). The result said "NOT confirmed dead, it may still be
+// around" while the event text for the same creeper said "it most likely
+// exploded" (staleGoneWhy), and the judge flagged her "creeper blew up".
 export function goneResult(name, hits, died) {
   if (died) return hits ? `killed ${name} (${hits} hits)` : `${name} died before you hit it`
-  const lost = `lost sight of ${name}: it moved out of range or despawned, NOT confirmed dead, it may still be around`
+  const lost = name === 'creeper'
+    ? `lost sight of creeper: ${staleGoneWhy('creeper')}, so it is gone`
+    : `lost sight of ${name}: it moved out of range or despawned, NOT confirmed dead, it may still be around`
   return hits ? `${hits} hits on ${name}, then ${lost}` : lost
 }
 

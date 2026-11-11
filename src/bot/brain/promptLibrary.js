@@ -499,6 +499,32 @@ export const STALE_ATTACKER_DIED = 'it has died since then'
 export const STALE_ATTACKER_GONE = 'it is not there anymore ({why})'
 export const STALE_GONE_CREEPER = 'it most likely exploded'
 export const STALE_GONE_OTHER = 'it despawned or moved out of range'
+// 261111 (quality pass 51): a turn written about a fight that ended while the
+// model call ran (adapter staleTurn). None of the turn runs; its tool results
+// say so and the next call gets this text with a fresh snapshot.
+export const STALE_TURN_DIED = 'the {label} you went for died {s}s ago'
+export const STALE_TURN_GONE = 'the {label} you went for left {s}s ago ({why})'
+export const STALE_TURN_TEXT = 'Nothing from your last turn ran, and the player did not hear its line: while you were writing it, {reason}, so that fight is over. Check your snapshot for what is around you now and decide again. If you speak, talk about how things are now.'
+export const STALE_TURN_SAY_RESULT = 'not said: this line was written before the fight changed (see below)'
+export const STALE_TURN_TOOL_RESULT = 'not run: this turn was written before the fight changed (see below)'
+export const staleTurnReason = (label, died, ageMs) => {
+  const s = String(Math.max(1, Math.round((Number(ageMs) || 0) / 1000)))
+  return died
+    ? fillTemplate(STALE_TURN_DIED, { label, s })
+    : fillTemplate(STALE_TURN_GONE, { label, s, why: staleGoneWhy(label) })
+}
+export const staleTurnText = (reason) => fillTemplate(STALE_TURN_TEXT, { reason })
+
+// 261111 (quality pass 51): a mob of the same kind as one that died moments
+// ago. In the combat_night evals her snapshot still said "killed zombie" while
+// a second zombie was on her, and she told the player "zombie's dead" or
+// "drowned's down" about the live one. The tag rides on the live mob's
+// nearby-entities line; the sentence on a hit or defend event about it.
+export const SAME_NAME_DEATH_TAG = 'not the {label} that died {s}s ago'
+export const SAME_NAME_DEATH_EVENT = 'This {label} is a different one from the {label} that died {s}s ago.'
+const secs = (ms) => String(Math.max(1, Math.round(ms / 1000)))
+export const sameNameDeathTag = (label, ageMs) => fillTemplate(SAME_NAME_DEATH_TAG, { label, s: secs(ageMs) })
+export const sameNameDeathEvent = (label, ageMs) => fillTemplate(SAME_NAME_DEATH_EVENT, { label, s: secs(ageMs) })
 export const staleGoneWhy = (label) => (label === 'creeper' ? STALE_GONE_CREEPER : STALE_GONE_OTHER)
 export const staleAttackerAddendum = (label, who, died) =>
   fillTemplate(STALE_ATTACKER_ADDENDUM_TEXT, { label, who, fate: died ? STALE_ATTACKER_DIED : fillTemplate(STALE_ATTACKER_GONE, { why: staleGoneWhy(label) }) })
