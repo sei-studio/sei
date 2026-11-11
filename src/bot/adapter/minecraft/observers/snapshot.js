@@ -7,7 +7,8 @@ import { airLine } from '../behaviors/air.js'
 import { inventory, heldItem } from './inventory.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
-import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths } from './entities.js'
+import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths, sameNameDeathAge } from './entities.js'
+import { sameNameDeathTag } from '../../../brain/promptLibrary.js'
 import { givenDropFor } from './givenDrops.js'
 import { HOSTILE_MOBS } from '../behaviors/hostiles.js'
 import { CRITICAL_HP, attackRunState, attackInFlightSuffix } from '../behaviors/attack.js'
@@ -428,7 +429,15 @@ export function composeSnapshot(bot, opts = {}) {
       const x = Math.round(e.position.x)
       const y = Math.round(e.position.y)
       const z = Math.round(e.position.z)
-      lines.push(`  ${tag} ${label} @${x},${y},${z}${hostileDistances(e, bot.entity, owner?.player?.entity, pinUsername)}`)
+      let dists = hostileDistances(e, bot.entity, owner?.player?.entity, pinUsername)
+      // 261111 (pass 51): a hostile that turned up after another one with
+      // its name died says so, on its own line (sameNameDeathAge).
+      const other = HOSTILE_MOBS.has(e.name) ? sameNameDeathAge(bot, e) : null
+      if (other != null) {
+        const note = sameNameDeathTag(e.name, other)
+        dists = dists ? `${dists.slice(0, -1)}; ${note})` : ` (${note})`
+      }
+      lines.push(`  ${tag} ${label} @${x},${y},${z}${dists}`)
       handles.push([tag, { kind: 'entity', entityId: e.id, expiresAt }])
     }
     if (ents.more > 0) lines.push(`  +${ents.more} more`)

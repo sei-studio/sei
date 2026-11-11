@@ -55,7 +55,10 @@ export function droppedItemName(entity) {
 // the stale attack-event text). A mob that left the entity table without a
 // death (a creeper that exploded, a despawn, out of range) is kept the same
 // way with died:false.
-const RECENT_LOSS_MS = 30_000
+// 261111 (pass 51): 60s (was 30s), so a mob that turns up after one with the
+// same name died can be told apart from it (sameNameDeathAge) for as long as
+// the kill is still the newest thing in her snapshot and her lines.
+export const RECENT_LOSS_MS = 60_000
 // Entity types that are never a mob she fought: dropped items, arrows, xp,
 // boats and the like ('other' and 'projectile' in minecraft-data 1.21,
 // 'object'/'orb'/'global' in older tables). Without this every item pickup
@@ -104,7 +107,7 @@ export function msSinceDeath(bot, id, withinMs = RECENT_LOSS_MS) {
  * within `withinMs`, within `maxDist` blocks of her when both positions are
  * known. Returns { id, age, died } or null.
  */
-export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } = {}) {
+export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16, diedOnly = false } = {}) {
   const want = String(name ?? '').toLowerCase()
   const recent = bot?._seiRecentLosses
   if (!want || !recent) return null
@@ -113,6 +116,7 @@ export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } 
   let best = null
   for (const [id, d] of recent) {
     if ((d.name ?? '').toLowerCase() !== want) continue
+    if (diedOnly && !d.died) continue
     const age = now - d.at
     if (age > withinMs) continue
     if (me && d.pos) {
@@ -122,6 +126,31 @@ export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } 
     if (!best || age < best.age) best = { id, age, died: d.died }
   }
   return best
+}
+
+/**
+ * 261111 (pass 51): how many ms ago ANOTHER mob with this entity's name died
+ * near her, or null. In the combat_night evals she called a fresh zombie "the
+ * zombie" she had just killed ("zombie's dead alex" with a live one 1 block
+ * away, "drowned's down" while a second drowned hit the player): her snapshot
+ * still said "killed zombie" and nothing told the two apart.
+ */
+export function sameNameDeathAge(bot, entity, { withinMs = RECENT_LOSS_MS, maxDist = 24 } = {}) {
+  if (!entity || entity.username || entity.name == null) return null
+  const d = recentLossByName(bot, entity.name, { withinMs, maxDist, diedOnly: true })
+  if (!d || d.id === entity.id) return null
+  return d.age
+}
+
+/**
+ * 261111 (pass 51): true when this entity id has died or left the entity
+ * table. Used to tell whether the fight she last spoke about is over.
+ */
+export function isGoneOrDead(bot, id) {
+  if (id == null) return false
+  if (bot?._seiDeadEntityIds?.has(id)) return true
+  if (bot?._seiRecentLosses?.has(id)) return true
+  return !bot?.entities?.[id]
 }
 
 /** True once the server has reported this entity dead (it may still be listed). */

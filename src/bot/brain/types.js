@@ -236,6 +236,17 @@
  *   toolUses[i]). May return a one-shot `nudge` appended to the next user
  *   turn (it outranks the brain's silence nudge). Minecraft: the per-loop
  *   goTo cant_reach dedup → cantReachNudge. Default: no nudge.
+ * @property {(prevMobId: any, data: any) => boolean}                    [sameFight]
+ *   261111 (pass 51): whether a hit event (`data`, with `data.attacker`)
+ *   belongs to the fight her last fight line was about (`prevMobId`, that
+ *   turn's attacker id). Minecraft: a different mob after the old one died is
+ *   a new fight. Default: always the same fight.
+ * @property {(toolUses: any[], sinceMs: number) => ({ reason: string } | null)} [staleTurn]
+ *   261111 (pass 51): checked on a response before any of it runs. Non-null
+ *   when the turn was written about something that changed while it was being
+ *   written (`sinceMs` = when its snapshot was taken); the brain then runs
+ *   none of the turn and asks again with the new state. Minecraft: an
+ *   attackEntity whose mob died during the call. Default: never.
  * @property {(running: {name: string, input?: any}, use: {id: string, name: string, input?: any}) => string | null} [continueRunningAction]
  *   Asked for each world tool in a batch while an action is running (not
  *   when the batch calls stop). A string means the call is the SAME work as

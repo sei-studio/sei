@@ -46,6 +46,9 @@ import {
   nextTimeGreeting,
   MEMORY_GOAL_TAIL,
   ACK_LINE,
+  staleTurnText,
+  STALE_TURN_SAY_RESULT,
+  STALE_TURN_TOOL_RESULT,
 } from './prompts.js'
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from './nextStep.js'
 import { buildAnthropicTools } from './schemaBridge.js'
@@ -1777,7 +1780,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 260703: track per-loop speech so a player-message loop can refuse to
     // end silently (see the end_loop deferral in the dispatch predicates).
     loop._spokeThisLoop = true
-    if ((loop._currentIterationTrigger ?? loop._triggerEvent) === 'sei:attacked') _lastFightLineAt = Date.now()
+    if ((loop._currentIterationTrigger ?? loop._triggerEvent) === 'sei:attacked') {
+      _lastFightLineAt = Date.now()
+      _lastFightMobId = loop._fightMobId ?? null
+    }
     // 260703: any line actually reaching the player counts as this session's
     // greeting — stop injecting the sticky GREETING_HINT from here on.
     greetedPlayer = true
@@ -1992,7 +1998,22 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
   // 261011: when the bot last spoke during an attack turn, so the next hit in
   // the same fight is told it already warned the player (NUDGES.fightAlreadyTold).
+  // 261111 (pass 51): see the staleTurn check in runIterations.
+  const STALE_TURN_MAX_PER_LOOP = 2
+  function safeStaleTurn(toolUses, sinceMs) {
+    if (!Array.isArray(toolUses) || toolUses.length === 0) return null
+    try {
+      const r = caps.staleTurn(toolUses, sinceMs)
+      return r && typeof r.reason === 'string' && r.reason ? r : null
+    } catch (err) {
+      logger.warn?.(`[sei/orch] staleTurn threw: ${err?.message ?? err}`)
+      return null
+    }
+  }
   let _lastFightLineAt = 0
+  // 261111 (pass 51): the mob that turn was about (adapter entity id), so a
+  // new mob after that one died is not "this fight" (caps.sameFight).
+  let _lastFightMobId = null
   const FIGHT_TOLD_WINDOW_MS = 30_000
   // 261018 (pass 17): a line from any other turn counts too. night_social-01
   // (pass 15 eval): her reply to "are you ok??" said "going after the zombie
@@ -2004,10 +2025,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // line a joke) from 6/6 to 0-3/6 spoken, because she counted "they can see
   // me fighting" as told (scripts/quality-eval/pass17-probe.mjs).
   const RECENT_LINE_TOLD_MS = 15_000
-  function fightToldSuffix() {
+  function fightToldSuffix(data = null) {
     const now = Date.now()
     const ago = now - _lastFightLineAt
-    if (_lastFightLineAt && ago < FIGHT_TOLD_WINDOW_MS) {
+    // 261111 (pass 51): "this fight" was any hit within 30s, so a second
+    // drowned 17s after she killed the first was read as the same fight
+    // ("already told ... skip the warning") and she said "drowned's down" to
+    // a player it was hitting. A new mob after the old one died is a new fight.
+    let same = true
+    try { same = caps.sameFight(_lastFightMobId, data) !== false } catch { same = true }
+    if (_lastFightLineAt && ago < FIGHT_TOLD_WINDOW_MS && same) {
       return ' ' + NUDGES.fightAlreadyTold(Math.max(1, Math.round(ago / 1000)))
     }
     const last = recentOwnTurns(convoMemory?.recentChat?._internal?.selfLines, { now, turns: 1, withinMs: RECENT_LINE_TOLD_MS })[0]
@@ -2609,7 +2636,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
 
   // ─── Snapshot helper ────────────────────────────────────────────────
+  // 261111 (pass 51): when the last snapshot was composed, i.e. what the
+  // next model call sees (caps.staleTurn compares against it).
+  let _lastSnapshotAt = 0
   function snapshotText({ playerRequestOwed = false } = {}) {
+    _lastSnapshotAt = Date.now()
     // 260725: the pause contract says NO Minecraft context reaches the model
     // while paused — this is the single choke point every turn's snapshot
     // (fresh seed, tool-result continuation, action tick) flows through, so
@@ -3498,7 +3529,8 @@ function maybeWarnByteCap(loop, warned) {
     // (greetCrossed), for the own_repeats note's 'greeted' form.
     let greetedTurn = false
     if (isSafetyEvent && typeof adapter.eventAddendum === 'function') {
-      eventText = adapter.eventAddendum(event, data).trim() + fightToldSuffix()
+      eventText = adapter.eventAddendum(event, data).trim() + fightToldSuffix(data)
+      loop._fightMobId = data?.attacker?.id ?? null
     } else {
       let eventAddendum = (typeof adapter.eventAddendum === 'function')
         ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
@@ -5128,8 +5160,9 @@ function maybeWarnByteCap(loop, warned) {
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
     const attackText = attack && typeof adapter.eventAddendum === 'function'
-      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix()}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
+      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
       : null
+    if (attack) loop._fightMobId = attack?.attacker?.id ?? null
     // 261013: the silent check-in that carries a waiting player order invites
     // an action that replaces hers, so the silent-tick drop must let it through.
     const tickWaitingAsk = (attackText == null && playerMessage == null && loop.inFlight?.selfStarted && loop.inFlight?.waitingAsk) || null
@@ -5429,6 +5462,9 @@ function maybeWarnByteCap(loop, warned) {
       attachPendingFrame(loop)
 
       let resp
+      // 261111 (pass 51): the snapshot this call reads was taken at or before
+      // this moment; anything that changes after it is news to the turn.
+      const turnSnapshotAt = Math.min(_lastSnapshotAt || Date.now(), Date.now())
       try {
         resp = await callPersonality(loop, signal)
       } catch (err) {
@@ -5618,6 +5654,28 @@ function maybeWarnByteCap(loop, warned) {
       // silence-cadence reset below.
       const respText = (resp.text ?? '').trim()
       if (respText) emitThinkIfFull(respText)
+      // 261111 (quality pass 51): the turn was written about a fight that
+      // ended during the call (its mob died or left). Like a turn written by
+      // a body that died (deathPending above), none of it runs: not its line
+      // ("i'm hitting it now" about a dead spider) and not its attack (a swing
+      // at nothing). Every tool gets a result saying so and the next call
+      // decides again on a fresh snapshot. A loop gets this at most twice.
+      const staleTurn = !loop._earlySay && (loop._staleTurns ?? 0) < STALE_TURN_MAX_PER_LOOP
+        ? safeStaleTurn(toolUses, turnSnapshotAt)
+        : null
+      if (staleTurn) {
+        loop._staleTurns = (loop._staleTurns ?? 0) + 1
+        logger.info?.(`[sei/orch] turn not run: written before the fight changed (${staleTurn.reason}) (loop=${loop.id})`)
+        try { sessionActionStats.noteLlmTurn({ said: false }) } catch {}
+        const results = toolUses.map((u) => ({
+          type: 'tool_result',
+          tool_use_id: u.id,
+          content: u.name === 'say' ? STALE_TURN_SAY_RESULT : STALE_TURN_TOOL_RESULT,
+          is_error: false,
+        }))
+        loop.appendToolResults(results, { snapshot: snapshotText(), eventText: staleTurnText(staleTurn.reason) })
+        continue
+      }
       const sayResults = emitSayCalls(loop, toolUses)
       const saySpokenThisTurn = sayResults.size > 0 || loop._searchLineSpoken === true
       if (sayResults.size > 0) loop._saidThisLoop = true

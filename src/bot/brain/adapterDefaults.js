@@ -41,6 +41,13 @@ export const ADAPTER_DEFAULTS = Object.freeze({
   // same fight) gets this result instead of replacing it. Needs the game's
   // runtime, so the default continues nothing.
   continueRunningAction: () => null,
+  // 261111 (pass 51): whether a hit belongs to the fight she last spoke
+  // about (prevMobId = that turn's attacker id). Needs the game's entity
+  // state, so the default keeps every hit in that fight.
+  sameFight: () => true,
+  // 261111 (pass 51): a turn written about a fight that ended while it was
+  // being written ({ reason } or null). Default: never.
+  staleTurn: () => null,
   // The actions whose run IS the answer to being hit: a hit that lands while
   // one runs never tears it down (handlePreempt).
   fightActions: Object.freeze(['attackEntity']),
@@ -122,6 +129,8 @@ export function resolveAdapterCaps(adapter, config) {
     prefilterToolBatch: pick('prefilterToolBatch'),
     postProcessToolBatch: pick('postProcessToolBatch'),
     continueRunningAction: pick('continueRunningAction'),
+    sameFight: pick('sameFight'),
+    staleTurn: pick('staleTurn'),
     fightActions: new Set(pick('fightActions')),
     handOverResult: pick('handOverResult'),
     handOverDetail: pick('handOverDetail'),
