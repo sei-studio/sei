@@ -108,6 +108,7 @@ function toEntry(f: Fixture) {
     creatorLabel: `by ${f.author}`,
     publicId: f.code,
     portraitUrl: f.art,
+    thumbUrl: null,
     skinUrl: null,
     updatedAt: new Date(now - f.daysAgo * DAY).toISOString(),
     inMyLibrary: false,

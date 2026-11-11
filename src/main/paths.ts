@@ -208,6 +208,11 @@ export const paths = {
   // normalization never has to defend against escape-attempting components.
   portraitPath: (uuid: string) => path.join(profileRootDir(), 'portraits', `${uuid}.png`),
   portraitsDir: () => path.join(profileRootDir(), 'portraits'),
+  // 261111: per-version copies of cloud portraits this profile has downloaded
+  // (cloud/portraitCache.ts), so a portrait is fetched at most once per
+  // version even after the character's own files are removed (reconcile
+  // sweep, re-open from the World tab).
+  portraitCacheDir: () => path.join(profileRootDir(), 'cache', 'portraits'),
 
   // Claude's Discretion (CONTEXT §sync retry queue shape):
   // JSON-file persistent queue mirroring apiKeyStore.ts atomic-write semantics.

@@ -32,6 +32,7 @@ import { getClient } from '../auth/supabaseClient';
 import { callEdgeFunction } from '../auth/edgeFunctionClient';
 import { paths } from '../paths';
 import type { Character } from '../../shared/characterSchema';
+import { PORTRAIT_CACHE_CONTROL } from '../../shared/portraitUrls';
 import {
   CLOUD_SYNC_REFUSED_DEFAULT,
   CLOUD_SYNC_REFUSED_DATA_URL,
@@ -465,13 +466,19 @@ async function writeUploadMarker(
   }
 }
 
+/**
+ * Upload one character asset through a signed upload URL. Resolves true when
+ * bytes were sent, false when the byte-identical object was already uploaded
+ * for this owner (marker hit, no network).
+ */
 async function uploadCharacterAsset(
   kind: 'portrait' | 'skin',
   characterId: string,
   bytes: Buffer,
   contentType: string,
   jwt: string,
-): Promise<void> {
+  cacheControl?: string,
+): Promise<boolean> {
   const md5 = createHash('md5').update(bytes).digest('hex');
   const owner = ownerFromJwt(jwt);
   if (owner) {
@@ -479,7 +486,7 @@ async function uploadCharacterAsset(
     if (marker && marker.owner === owner && marker.md5 === md5) {
       // Byte-identical to the last successful upload for this owner — the object
       // is already in Storage; skip the sign + PUT entirely.
-      return;
+      return false;
     }
   }
 
@@ -499,30 +506,43 @@ async function uploadCharacterAsset(
   const { error } = await getClient()
     .storage
     .from(signed.bucket)
-    .uploadToSignedUrl(signed.path, signed.token, bytes, { contentType, upsert: true });
+    .uploadToSignedUrl(signed.path, signed.token, bytes, {
+      contentType,
+      upsert: true,
+      ...(cacheControl ? { cacheControl } : {}),
+    });
   if (error) throw new Error(`${CLOUD_STORAGE_UPLOAD_FAILED}: ${signed.bucket} ${error.message}`);
 
   // Record what we just uploaded so an identical re-save skips the round-trip.
   if (owner) await writeUploadMarker(kind, characterId, owner, md5);
+  return true;
 }
 
 export async function uploadSkin(characterId: string, bytes: Buffer, jwt: string): Promise<void> {
+  // Skins keep the storage default cache (1 h): their URLs are not versioned
+  // everywhere they are read, so a long cache could pin old bytes.
   await uploadCharacterAsset('skin', characterId, bytes, 'image/png', jwt);
 }
 
 /**
  * Upload portrait bytes to `portraits/<owner>/<uuid>.png`. The format arg
  * controls the wire content-type — the renderer encodes to whichever the
- * source PortraitImagePicker produced (png/jpeg/webp).
+ * source PortraitImagePicker produced (png/jpeg/webp). The bytes are stored
+ * as given (never re-encoded).
+ *
+ * 261111: 7-day cache-control (PORTRAIT_CACHE_CONTROL). Every app URL for a portrait carries
+ * `?v=<updated_at>` (shared/portraitUrls.ts), so a repeat view costs 0 bytes
+ * and a changed portrait is a new URL. Resolves true when bytes were sent
+ * (false = unchanged, skipped), so callers can refresh the World thumbnail.
  */
 export async function uploadPortrait(
   characterId: string,
   bytes: Buffer,
   format: 'png' | 'jpeg' | 'webp',
   jwt: string,
-): Promise<void> {
+): Promise<boolean> {
   const contentType = format === 'jpeg' ? 'image/jpeg' : `image/${format}`;
-  await uploadCharacterAsset('portrait', characterId, bytes, contentType, jwt);
+  return await uploadCharacterAsset('portrait', characterId, bytes, contentType, jwt, PORTRAIT_CACHE_CONTROL);
 }
 
 /** Download skin PNG bytes. Returns null on 404 (object not found in bucket). */
@@ -582,7 +602,12 @@ export async function deleteStorageObjects(paths: { bucket: 'skins' | 'portraits
  * is enabled.
  */
 export function getStoragePublicUrl(bucket: 'skins' | 'portraits', ownerUuid: string, characterUuid: string): string {
+  return getStorageObjectPublicUrl(bucket, `${ownerUuid}/${characterUuid}.png`);
+}
+
+/** Public URL of any object path in a public bucket (sync, no network). */
+export function getStorageObjectPublicUrl(bucket: 'skins' | 'portraits', objectPath: string): string {
   const supabase = getClient();
-  const { data } = supabase.storage.from(bucket).getPublicUrl(`${ownerUuid}/${characterUuid}.png`);
+  const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
   return data.publicUrl;
 }

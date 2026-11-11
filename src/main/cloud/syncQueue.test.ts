@@ -35,7 +35,7 @@ vi.mock('../auth/authState', () => ({
 const upsertCharacterMock = vi.fn(async (_c: unknown, _o: string) => undefined);
 const deleteCharacterMock = vi.fn(async (_u: string) => undefined);
 const uploadSkinMock = vi.fn(async (_u: string, _b: Buffer, _jwt: string) => undefined);
-const uploadPortraitMock = vi.fn(async (_u: string, _b: Buffer, _f: string, _jwt: string) => undefined);
+const uploadPortraitMock = vi.fn(async (_u: string, _b: Buffer, _f: string, _jwt: string) => undefined as boolean | undefined);
 const deleteStorageObjectsMock = vi.fn(async (_p: unknown) => undefined);
 vi.mock('./cloudCharacterClient', () => ({
   upsertCharacter: upsertCharacterMock,
@@ -43,6 +43,11 @@ vi.mock('./cloudCharacterClient', () => ({
   uploadSkin: uploadSkinMock,
   uploadPortrait: uploadPortraitMock,
   deleteStorageObjects: deleteStorageObjectsMock,
+}));
+
+const requestPortraitThumbMock = vi.fn(async (_id: string) => undefined);
+vi.mock('./portraitThumb', () => ({
+  requestPortraitThumb: requestPortraitThumbMock,
 }));
 
 const getSessionMock = vi.fn(async () => ({
@@ -112,6 +117,8 @@ beforeEach(async () => {
   uploadSkinMock.mockResolvedValue(undefined);
   uploadPortraitMock.mockReset();
   uploadPortraitMock.mockResolvedValue(undefined);
+  requestPortraitThumbMock.mockReset();
+  requestPortraitThumbMock.mockResolvedValue(undefined);
   deleteStorageObjectsMock.mockReset();
   deleteStorageObjectsMock.mockResolvedValue(undefined);
   getSessionMock.mockReset();
@@ -405,5 +412,42 @@ describe('syncQueue', () => {
     expect(upsertCharacterMock).not.toHaveBeenCalled();
     const q = await readQueueFile();
     expect(q).toHaveLength(1);
+  });
+
+  describe('World thumbnail refresh (261111)', () => {
+    async function drainWithPortrait(shared: boolean, sent: boolean): Promise<void> {
+      await mkdir(path.dirname(paths.portraitPath('abc')), { recursive: true });
+      await writeFile(paths.portraitPath('abc'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      getCharacterMock.mockResolvedValue({
+        id: 'abc',
+        name: 'Test',
+        shared,
+        persona: { source: 'hi', expanded: 'world' },
+        skin: { source: 'none', mojang_username: null, png_sha256: null, applied_at: '2026-05-21T00:00:00Z' },
+        username: null,
+      } as unknown);
+      uploadPortraitMock.mockResolvedValue(sent);
+      await enqueueUpsert('abc');
+      await processNext();
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    it('asks the proxy for a new thumbnail when a SHARED character\'s portrait bytes went up', async () => {
+      await drainWithPortrait(true, true);
+      expect(uploadPortraitMock).toHaveBeenCalledTimes(1);
+      expect(requestPortraitThumbMock).toHaveBeenCalledWith('abc');
+    });
+
+    it('no thumbnail request when the portrait was unchanged (upload skipped)', async () => {
+      await drainWithPortrait(true, false);
+      expect(uploadPortraitMock).toHaveBeenCalledTimes(1);
+      expect(requestPortraitThumbMock).not.toHaveBeenCalled();
+    });
+
+    it('no thumbnail request for a private character', async () => {
+      await drainWithPortrait(false, true);
+      expect(requestPortraitThumbMock).not.toHaveBeenCalled();
+    });
   });
 });

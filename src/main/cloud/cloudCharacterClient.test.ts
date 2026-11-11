@@ -32,6 +32,7 @@ interface CapturedStorageUpload {
   path: string;
   contentType: string | undefined;
   upsert: boolean | undefined;
+  cacheControl?: string | undefined;
 }
 interface MockState {
   upsert: CapturedUpsert;
@@ -151,13 +152,14 @@ function makeStorageBucket(bucket: string) {
       path: string,
       _token: string,
       _bytes: Buffer,
-      opts: { contentType?: string; upsert?: boolean },
+      opts: { contentType?: string; upsert?: boolean; cacheControl?: string },
     ) {
       state.storageUploads.push({
         bucket,
         path,
         contentType: opts?.contentType,
         upsert: opts?.upsert,
+        cacheControl: opts?.cacheControl,
       });
       return Promise.resolve({ error: state.storageUploadError });
     },
@@ -326,6 +328,14 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     expect(state.storageUploads[0].contentType).toBe('image/jpeg');
   });
 
+  it('uploadPortrait sends a 7-day cacheControl (versioned URLs, 261111); uploadSkin keeps the default', async () => {
+    const { uploadPortrait, uploadSkin } = await import('./cloudCharacterClient');
+    await expect(uploadPortrait(CHAR_ID, Buffer.from([1]), 'png', 'jwt-token')).resolves.toBe(true);
+    await uploadSkin(CHAR_ID, Buffer.from([1]), 'jwt-token');
+    expect(state.storageUploads[0].cacheControl).toBe('604800');
+    expect(state.storageUploads[1].cacheControl).toBeUndefined();
+  });
+
   it('uploadPortrait webp → image/webp content-type', async () => {
     const { uploadPortrait } = await import('./cloudCharacterClient');
     await uploadPortrait(CHAR_ID, Buffer.from([0]), 'webp', 'jwt-token');
@@ -369,8 +379,8 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
       await uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt);
       expect(state.storageUploads).toHaveLength(1);
       expect(state.edgeCalls).toHaveLength(1);
-      // Same bytes → no sign, no PUT.
-      await uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt);
+      // Same bytes → no sign, no PUT (and false: nothing to re-thumbnail).
+      await expect(uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt)).resolves.toBe(false);
       expect(state.storageUploads).toHaveLength(1);
       expect(state.edgeCalls).toHaveLength(1);
     });

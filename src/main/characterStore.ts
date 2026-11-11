@@ -603,6 +603,8 @@ export async function deleteCharacter(id: string): Promise<void> {
             // Same path used in both buckets — the cron iterates both per
             // storage_purge_extend's `bucket_id in ('skins','portraits')`.
             `${owner}/${id}.png`,
+            // 261111: the World grid thumbnail the proxy made at publish.
+            `${owner}/${id}.thumb.webp`,
           ]);
         } catch (err) {
           console.warn(`[sei] deletion_queue insert failed for ${id}: ${(err as Error).message}`);
@@ -616,6 +618,7 @@ export async function deleteCharacter(id: string): Promise<void> {
         await enqueueDelete(id, [
           { bucket: 'skins',     name: `${owner}/${id}.png` },
           { bucket: 'portraits', name: `${owner}/${id}.png` },
+          { bucket: 'portraits', name: `${owner}/${id}.thumb.webp` },
         ]);
         void processNext();
       } catch (err) {
