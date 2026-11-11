@@ -18,6 +18,8 @@ import { startFollow, stopFollow } from './behaviors/follow.js'
 import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
 import { startAutoEat } from './behaviors/autoEat.js'
+import { startAutoArmor } from './behaviors/armor.js'
+import { fixToolMaterials } from './registryFixes.js'
 import { startCombat } from './behaviors/combat.js'
 import { startReflex } from './behaviors/reflex.js'
 import { startGaze } from './behaviors/gaze.js'
@@ -544,6 +546,25 @@ export async function resolveServerVersion({ host, port, timeoutMs = PING_TIMEOU
 }
 
 /**
+ * 261111: a coarse, allowlisted class for why the connection ended, for the
+ * session telemetry (user feedback ae9a758e: "Sui leaves the game and pops
+ * back in", and nothing recorded a drop or its cause). 'kick' = the server
+ * sent a disconnect; 'keepalive' = no keep-alive from the server for 30s
+ * (nmp ends the client with 'keepAliveError'); 'socket' = the socket closed
+ * with no reason; 'reset' = ECONNRESET / EPIPE; 'other' = anything else.
+ * @param {string} raw  the end reason text
+ * @param {string|null} kickCode
+ */
+export function dropClassFor(raw, kickCode) {
+  if (kickCode) return 'kick'
+  const r = String(raw ?? '')
+  if (/keepalive/i.test(r)) return 'keepalive'
+  if (/^\s*socketclosed\s*$/i.test(r)) return 'socket'
+  if (/ECONNRESET|EPIPE|reset/i.test(r)) return 'reset'
+  return 'other'
+}
+
+/**
  * Construct a mineflayer Bot, wire up the always-on adapter behaviors
  * (pathfinder plugin, posHealer, autoEat, combat, follow, chat) on first
  * spawn, and hand it back. The reconnect loop is owned here too — on `end`,
@@ -673,6 +694,13 @@ export function createBotInstance({
       safeStart('installFaceOnDig', () => installFaceOnDig(bot))
       safeStart('startPosHealer', () => startPosHealer(bot))
       safeStart('startAutoEat', () => startAutoEat(bot))
+      // 261111: the tool speed table is misnumbered on 26.3 and has copper
+      // tools at hand speed (registryFixes.js).
+      safeStart('fixToolMaterials', () => {
+        const r = fixToolMaterials(bot.registry, minecraftData)
+        if (r.remapped || r.copper) logger.info?.(`[sei] tool speed table fixed: ${r.remapped} ids renumbered, ${r.copper} copper speeds`)
+      })
+      safeStart('startAutoArmor', () => startAutoArmor(bot, { logger }))
       safeStart('startCombat', () => startCombat(bot, config))
       safeStart('startReflex', () => startReflex(bot, config))
       safeStart('startSurvival', () => startSurvival(bot, config))
@@ -696,6 +724,7 @@ export function createBotInstance({
       // respawn after death — restart follow + re-arm the reflex/survival/gaze
       // loops (their disposers tear down on death, so respawn must re-arm).
       safeStart('startReflex(respawn)', () => startReflex(bot, config))
+      safeStart('startAutoArmor(respawn)', () => startAutoArmor(bot, { logger }))
       safeStart('startSurvival(respawn)', () => startSurvival(bot, config))
       safeStart('startGaze(respawn)', () => startGaze(bot, config))
       safeStart('startFollow(respawn)', () => startFollow(bot, config))
@@ -773,6 +802,7 @@ export function createBotInstance({
         modded: isModdedHostRejection(effective),
         onlineMode: isOnlineModeRejection(effective),
         kickCode,
+        dropClass: dropClassFor(raw, kickCode),
       })
     } catch {}
   })

@@ -54,6 +54,15 @@ const COUNTER_KEYS = [
   'replied',
   'reply_ms_total',
   'pending_chats',
+  // 261111: Minecraft connection drops after spawn (bot actionStats noteBodyDrop).
+  'body_drops',
+  'body_rejoins',
+  'drop_kick',
+  'drop_keepalive',
+  'drop_socket',
+  'drop_reset',
+  'drop_other',
+  'drop_ping_failed',
 ] as const;
 
 const count = z.number().int().nonnegative().catch(0);

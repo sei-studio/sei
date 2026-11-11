@@ -687,7 +687,8 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     'equip',
     z.object({
       item: z.string(),
-      destination: z.enum(['hand', 'off-hand', 'head', 'torso', 'legs', 'feet']),
+      // 261111: optional; armor always goes to its own slot (equip.js).
+      destination: z.enum(['hand', 'off-hand', 'head', 'torso', 'legs', 'feet']).optional(),
     }),
     equipAction
   )

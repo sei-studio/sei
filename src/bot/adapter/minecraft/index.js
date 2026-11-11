@@ -172,7 +172,12 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       const label = (config?.world_label && String(config.world_label).trim()) || `spawn ${x},${z}`
       return { fingerprint: `${dim}@${x},${y},${z}`, label }
     },
-    worldPrimer,
+    // 261111: the copper gear fact only when this version has copper armor.
+    worldPrimer: () => {
+      let copperGear = false
+      try { copperGear = !!bot.registry?.itemsByName?.copper_helmet } catch { copperGear = false }
+      return worldPrimer({ copperGear })
+    },
     capabilityParagraph: () => capabilityParagraph(config?.vision?.mode),
     actionRules: () => actionRules(config?.vision?.mode),
     cuboidGrammar,

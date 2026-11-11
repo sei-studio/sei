@@ -44,7 +44,8 @@ import { OWN_STATIONS, ownStationPositions } from './ownStations.js'
 
 // Pickaxe material → tool tier. A milestone gated on `pickaxe: N` is satisfied
 // when the bot's BEST pickaxe is tier ≥ N. Gold mines like wood, so it is tier 1.
-const PICKAXE_TIER = { wooden: 1, golden: 1, stone: 2, iron: 3, diamond: 4, netherite: 5 }
+// copper (1.21.9+) mines what stone mines.
+const PICKAXE_TIER = { wooden: 1, golden: 1, stone: 2, copper: 2, iron: 3, diamond: 4, netherite: 5 }
 
 // ── The spine ────────────────────────────────────────────────────────────────
 // The spine literal lives in progression.json (D-04/D-07). Each node:

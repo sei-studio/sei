@@ -113,6 +113,27 @@ inventory can harvest the block the dig still runs and the result string SAYS
 the drop was lost, the same "tell the model" pattern as `weakWeaponNote`. The
 `dig`/`gather` tool descriptions now tell the model NOT to call equip first.
 
+**Armor, copper gear and the tool speed table (261111).** User feedback on
+Minecraft 26.3 ("won't put on what I give her", "doesn't know what copper
+armor is"). `behaviors/armor.js` puts on armor the way `weaponSelect.js` and
+`toolSelect.js` handle weapons and tools: when the bag + worn count of some
+armor piece goes UP and a bag piece beats the worn one (armor points, then
+toughness; unknown worn items like an elytra stay on; binding curse skipped),
+she puts it on, waiting while paused, eating, digging or with a container
+open. Only a gain triggers it, so `takeOffWorn` (used by `drop`, and so by
+`give`) can hand a worn piece over without it going straight back on. The
+snapshot shows `wearing: ...; off-hand: ...` when filled, the inventory diff
+counts worn items (equipping is no longer an unexplained "-1"), and a gain she
+put on reads `+1 copper_helmet (put on)`. `equip` sends armor to its own slot
+whatever destination was passed and answers "already wearing X".
+Haiku 5.5 believes copper armor is not in vanilla Minecraft, so the world
+primer gets `COPPER_GEAR_FACT` when the connected registry has
+`copper_helmet` (1.21.9+). `registryFixes.js` runs at spawn and rebuilds
+`bot.registry.materials` (a copy; the require-cached JSON is shared): our 26.3
+backport points materials at pc/26.2, whose numeric item ids do not match 26.3
+(the pickaxe row named minecart and harness items, so every tool dug at hand
+speed), and minecraft-data 3.114 has every copper tool at speed 1 instead of 5.
+
 **The curiosity mandate (260731).** `CURIOSITY_CLAUSE` in `promptLibrary.js` is
 appended to all three gameplay `PROACTIVENESS_DIRECTIVES`. Before it, the only
 "stay genuinely curious about the player" text in the repo lived in

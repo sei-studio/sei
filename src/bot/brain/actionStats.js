@@ -31,6 +31,8 @@ export const FAIL_REASONS = Object.freeze([
 
 /** Closed LLM error classes. */
 export const LLM_ERROR_CLASSES = Object.freeze(['429', '401', '402', '5xx', 'timeout', 'other'])
+/** 261111: connection drop classes (adapter/minecraft/connect.js dropClassFor). */
+export const DROP_CLASSES = Object.freeze(['kick', 'keepalive', 'socket', 'reset', 'other'])
 
 /** A player line with no say() and no world action within this window counts as unanswered. */
 export const UNANSWERED_MS = 20_000
@@ -265,6 +267,18 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
     },
     noteStuck() { bump('stuck') },
     noteDeath() { bump('deaths') },
+    /**
+     * 261111: the Minecraft connection dropped after spawn. `cls` is the
+     * allowlisted dropClassFor() class; `rejoin` = the world still answered
+     * and she is rejoining; `pingFailed` = no status ping answered, so the
+     * session ends as world_closed.
+     */
+    noteBodyDrop({ cls = 'other', rejoin = false, pingFailed = false } = {}) {
+      bump('body_drops')
+      bump(`drop_${DROP_CLASSES.includes(cls) ? cls : 'other'}`)
+      if (rejoin) bump('body_rejoins')
+      if (pingFailed) bump('drop_ping_failed')
+    },
     /**
      * A player line that should get a response. `voice` lines are counted but
      * not timed (the app's voice clock times calls). `origin` 'app' = a Sei

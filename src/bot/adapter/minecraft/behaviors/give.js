@@ -12,6 +12,7 @@
 
 import { goTo as realGoTo } from './pathfind.js'
 import { dropItemAction as realDrop } from './drop.js'
+import { wornArmor } from './armor.js'
 import { resolveOwner } from '../observers/snapshot.js'
 import { beginGivenToss } from '../observers/givenDrops.js'
 import { nextMilestone, readProgressionState, nextNeedAfterGive } from '../observers/progression.js'
@@ -27,7 +28,11 @@ const FACE_MS = 800
 function countOf(bot, item) {
   let items = []
   try { items = bot?.inventory?.items?.() ?? [] } catch { items = [] }
-  return items.filter((i) => i?.name === item).reduce((s, i) => s + (i.count ?? 1), 0)
+  // 261111: worn armor counts too; drop() takes it off before the toss.
+  let worn = []
+  try { worn = wornArmor(bot) } catch { worn = [] }
+  return items.filter((i) => i?.name === item).reduce((s, i) => s + (i.count ?? 1), 0) +
+    worn.filter((w) => w.item.name === item).length
 }
 
 function distance(a, b) {

@@ -9,6 +9,7 @@
 // or inventory is exhausted, returning "only N available" if undercount.
 
 import { reason } from '../../../brain/errStrings.js'
+import { takeOffWorn } from './armor.js'
 
 export const DEFAULT_TIMEOUT_MS = 2000
 
@@ -18,6 +19,9 @@ export async function dropItemAction(args, bot, config) {
 
   const { item } = args
   const requested = args.count ?? 1
+  // 261111: armor she wears is not in items(); take it off first so it can
+  // be dropped or handed over (give() drops through here).
+  try { await takeOffWorn(bot, item, requested) } catch { /* drop what the bag has */ }
   const matching = bot.inventory.items().filter((i) => i.name === item)
   if (matching.length === 0) return `no ${item} in inventory`
 

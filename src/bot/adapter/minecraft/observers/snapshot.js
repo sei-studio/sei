@@ -5,6 +5,7 @@ import { world } from './world.js'
 import { facingLine } from '../facing.js'
 import { airLine } from '../behaviors/air.js'
 import { inventory, heldItem } from './inventory.js'
+import { wornArmor, offHandItem, wornCounts } from '../behaviors/armor.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
 import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths, sameNameDeathAge } from './entities.js'
@@ -343,6 +344,10 @@ export function composeSnapshot(bot, opts = {}) {
   // 261012 (pass 4a): "N of 36 slots used", not "N/36": a fraction next to
   // item counts read as a count of items.
   lines.push(`inventory (${slotsUsed} of 36 slots used): ${invStr}`)
+  // 261111: what she wears. Armor slots are not in the inventory line, so a
+  // piece she put on used to vanish from her view. Only shown when filled.
+  const wornLine = wornLineFor(bot)
+  if (wornLine) lines.push(wornLine)
   try { lines.push(pickaxeLine(inv)) } catch { /* best-effort */ }
   try { const f = furnaceLine(bot._seiFurnaceCooking); if (f) lines.push(f) } catch { /* best-effort */ }
   // 261101 (pass 35): only while she holds raw metal or ore and no furnace is
@@ -578,6 +583,18 @@ const FALLBACK_FOODS = new Set([
   'rotten_flesh', 'spider_eye',
 ])
 
+/** "wearing: a b; off-hand: c", or null when she wears and holds nothing there. */
+export function wornLineFor(bot) {
+  let armor = []
+  let off = null
+  try { armor = wornArmor(bot).map((w) => w.item.name) } catch { armor = [] }
+  try { off = offHandItem(bot)?.name ?? null } catch { off = null }
+  const parts = []
+  if (armor.length) parts.push(`wearing: ${armor.join(' ')}`)
+  if (off) parts.push(`off-hand: ${off}`)
+  return parts.length ? parts.join('; ') : null
+}
+
 /** Is this item something to equip or eat (a gift worth reacting to)? */
 export function isGearOrFood(item, isFood) {
   if (typeof item !== 'string') return false
@@ -731,7 +748,9 @@ export function createSnapshotComposer({ bot }) {
     const died = diedSinceTick || looksLikeWholeInventoryLost(prevInventory, currInv)
     const { own, ownNames, other: unexplained } = splitOwnInventoryChanges(deltas, recentActions, prevTickAt, now, { died, isFood })
     const cap = 6
-    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}`
+    let wornNow = new Set()
+    try { wornNow = new Set(wornArmor(bot).map((w) => w.item.name)) } catch { wornNow = new Set() }
+    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}${d.n > 0 && wornNow.has(d.item) ? ' (put on)' : ''}`
     const capList = (list) => {
       const out = list.map(fmt)
       return out.length > cap ? [...out.slice(0, cap), `(+${out.length - cap} more)`] : out
@@ -758,7 +777,13 @@ export function createSnapshotComposer({ bot }) {
   return {
     next(opts = {}) {
       const base = composeSnapshot(bot, { ...opts, sessionStartedAtMs })
+      // 261111: worn armor and the off hand count as hers, so putting a piece
+      // on (by hand or automatically, behaviors/armor.js) is not a loss, and a
+      // gifted helmet she put on at once still shows as a gain.
       const currInv = inventory(bot)
+      let worn = {}
+      try { worn = wornCounts(bot) } catch { worn = {} }
+      for (const [k, n] of Object.entries(worn)) currInv[k] = (currInv[k] ?? 0) + n
       const currHp = Math.round(bot.health ?? 0)
       const now = Date.now()
       const { inv, own, ownNames, other, unexplained } = computeEvents(currInv, currHp, opts.recentActions, now)
