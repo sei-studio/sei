@@ -53,6 +53,8 @@ export const ADAPTER_DEFAULTS = Object.freeze({
   // arrival note stays the general one.
   workItems: null,
   carriedCounts: null,
+  // 261111 (pass 52): no item words, so an ask keeps its work's items.
+  namedItems: null,
   surfaceBaseline: () => MINECRAFT_BASELINE,
   sessionEndClause: () => SESSION_END_CLAUSE,
   // The mid-action check-in's "path is not working" instruction. With Looking
@@ -127,6 +129,7 @@ export function resolveAdapterCaps(adapter, config) {
     handOverDetail: pick('handOverDetail'),
     workItems: pick('workItems'),
     carriedCounts: pick('carriedCounts'),
+    namedItems: pick('namedItems'),
     surfaceBaseline: pick('surfaceBaseline'),
     sessionEndClause: pick('sessionEndClause'),
     stuckNudges: pick('stuckNudges'),
