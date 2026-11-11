@@ -181,6 +181,22 @@ describe('staleFightTurn: an attack on a mob that died while the turn was writte
     expect(staleFightTurn(bot, [{ id: 's', name: 'say', input: { text: 'hi' } }], since)).toBeNull()
   })
 
+  it('find() for a mob that died during the call is stale; a block name or a live mob of that name is not', () => {
+    vi.useFakeTimers()
+    const spider = mob(5, 'spider', 4)
+    const far = mob(6, 'zombie', 40)
+    const bot = makeBot([spider, far])
+    const since = Date.now()
+    vi.advanceTimersByTime(600)
+    kill(bot, spider)
+    const findTurn = (name) => [{ id: 's', name: 'say', input: { text: 'on it' } }, { id: 'f', name: 'find', input: { name } }]
+    expect(staleFightTurn(bot, findTurn('spider'), since)).toEqual({ reason: 'the spider you went for died 1s ago' })
+    expect(staleFightTurn(bot, findTurn('oak_log'), since)).toBeNull()
+    expect(staleFightTurn(bot, findTurn('zombie'), since)).toBeNull()
+    bot.entities[9] = mob(9, 'spider', 30)
+    expect(staleFightTurn(bot, findTurn('spider'), since)).toBeNull()
+  })
+
   it('a creeper that blew up during the call reads as gone, not dead', () => {
     vi.useFakeTimers()
     const c = mob(4, 'creeper', 3)

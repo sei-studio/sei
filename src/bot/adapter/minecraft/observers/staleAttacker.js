@@ -83,7 +83,7 @@ export function sameFight(bot, prevMobId, data) {
  * "i'm hitting it now" and its attackEntity came back "no zombie within 16
  * blocks" (combat_night evals 11-06 to 11-10: 10 such calls in 18 runs, 7 of
  * them and 4 of their lines judged off). Returns { reason } for the first
- * attackEntity in the batch whose target is gone and whose loss happened
+ * attackEntity (or find of a mob name) in the batch whose target is gone and whose loss happened
  * after `sinceMs` (when the turn's snapshot was taken), else null. A name
  * that still finds a live mob in range is not stale.
  *
@@ -98,8 +98,23 @@ export function staleFightTurn(bot, toolUses, sinceMs) {
   const window = now - sinceMs
   if (!(window >= 0)) return null
   for (const u of toolUses) {
+    const args = u?.input && typeof u.input === 'object' ? u.input : {}
+    // find() looks for blocks, but a turn that answers "spider!!" with
+    // find({name:'spider'}) + "on it" is about the mob all the same (pass 51
+    // probe: 4/16 such turns after the spider died during the call). Only a
+    // mob name with a loss in the window counts, and any live mob of that name
+    // in view keeps the turn.
+    if (u?.name === 'find' && typeof args.name === 'string') {
+      const want = args.name.toLowerCase()
+      const alive = Object.values(bot?.entities ?? {}).some((e) => e && e !== bot.entity
+        && String(e.name ?? '').toLowerCase() === want && !isDeadEntity(bot, e))
+      if (alive) continue
+      let loss = null
+      try { loss = recentLossByName(bot, want, { withinMs: window }) } catch { loss = null }
+      if (loss) return { reason: staleTurnReason(want, loss.died, loss.age) }
+      continue
+    }
     if (u?.name !== 'attackEntity') continue
-    const args = u.input && typeof u.input === 'object' ? u.input : {}
     let live = null
     try { live = resolveEntity(args, bot) } catch { live = null }
     if (live && !isDeadEntity(bot, live)) continue
