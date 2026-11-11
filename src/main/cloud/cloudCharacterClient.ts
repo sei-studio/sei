@@ -530,7 +530,7 @@ export async function uploadSkin(characterId: string, bytes: Buffer, jwt: string
  * source PortraitImagePicker produced (png/jpeg/webp). The bytes are stored
  * as given (never re-encoded).
  *
- * 261111: one-year cache-control. Every app URL for a portrait carries
+ * 261111: 7-day cache-control (PORTRAIT_CACHE_CONTROL). Every app URL for a portrait carries
  * `?v=<updated_at>` (shared/portraitUrls.ts), so a repeat view costs 0 bytes
  * and a changed portrait is a new URL. Resolves true when bytes were sent
  * (false = unchanged, skipped), so callers can refresh the World thumbnail.

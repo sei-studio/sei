@@ -24,7 +24,7 @@ describe('portrait URL versioning (261111)', () => {
 
   it('thumbnail path is derived from owner + id; uploads cache for a year', () => {
     expect(portraitThumbPath('own', 'cid')).toBe('own/cid.thumb.webp');
-    expect(PORTRAIT_CACHE_CONTROL).toBe('31536000');
+    expect(PORTRAIT_CACHE_CONTROL).toBe('604800');
   });
 });
 

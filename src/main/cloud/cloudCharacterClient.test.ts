@@ -328,11 +328,11 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     expect(state.storageUploads[0].contentType).toBe('image/jpeg');
   });
 
-  it('uploadPortrait sends a one-year cacheControl (versioned URLs, 261111); uploadSkin keeps the default', async () => {
+  it('uploadPortrait sends a 7-day cacheControl (versioned URLs, 261111); uploadSkin keeps the default', async () => {
     const { uploadPortrait, uploadSkin } = await import('./cloudCharacterClient');
     await expect(uploadPortrait(CHAR_ID, Buffer.from([1]), 'png', 'jwt-token')).resolves.toBe(true);
     await uploadSkin(CHAR_ID, Buffer.from([1]), 'jwt-token');
-    expect(state.storageUploads[0].cacheControl).toBe('31536000');
+    expect(state.storageUploads[0].cacheControl).toBe('604800');
     expect(state.storageUploads[1].cacheControl).toBeUndefined();
   });
 
