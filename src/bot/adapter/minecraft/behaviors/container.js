@@ -5,6 +5,7 @@
 import mcDataLib from 'minecraft-data'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { reason } from '../../../brain/errStrings.js'
+import { wornArmor } from './armor.js'
 
 export const OPEN_TIMEOUT_MS = 6000
 export const TRANSFER_TIMEOUT_MS = 4000
@@ -117,7 +118,11 @@ export async function depositItemAction(args, bot, config) {
   const { item } = args
   const count = args.count ?? 1
   const invItem = bot.inventory.items().find((i) => i.name === item)
-  if (!invItem) return `no ${item} to deposit`
+  if (!invItem) {
+    // 261111: armor is put on automatically, so say where it is.
+    if (wornArmor(bot).some((w) => w.item.name === item)) return `no ${item} to deposit: you are wearing it`
+    return `no ${item} to deposit`
+  }
 
   const itemId = invItem.type ?? itemIdByName(bot, item)
   if (itemId == null) return `no ${item} to deposit`

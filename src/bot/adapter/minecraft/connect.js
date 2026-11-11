@@ -18,6 +18,8 @@ import { startFollow, stopFollow } from './behaviors/follow.js'
 import { startPosHealer, stopPosHealer } from './observers/posHealer.js'
 import { startChat } from './behaviors/chat.js'
 import { startAutoEat } from './behaviors/autoEat.js'
+import { startAutoArmor } from './behaviors/armor.js'
+import { fixToolMaterials } from './registryFixes.js'
 import { startCombat } from './behaviors/combat.js'
 import { startReflex } from './behaviors/reflex.js'
 import { startGaze } from './behaviors/gaze.js'
@@ -692,6 +694,13 @@ export function createBotInstance({
       safeStart('installFaceOnDig', () => installFaceOnDig(bot))
       safeStart('startPosHealer', () => startPosHealer(bot))
       safeStart('startAutoEat', () => startAutoEat(bot))
+      // 261111: the tool speed table is misnumbered on 26.3 and has copper
+      // tools at hand speed (registryFixes.js).
+      safeStart('fixToolMaterials', () => {
+        const r = fixToolMaterials(bot.registry, minecraftData)
+        if (r.remapped || r.copper) logger.info?.(`[sei] tool speed table fixed: ${r.remapped} ids renumbered, ${r.copper} copper speeds`)
+      })
+      safeStart('startAutoArmor', () => startAutoArmor(bot, { logger }))
       safeStart('startCombat', () => startCombat(bot, config))
       safeStart('startReflex', () => startReflex(bot, config))
       safeStart('startSurvival', () => startSurvival(bot, config))
@@ -715,6 +724,7 @@ export function createBotInstance({
       // respawn after death — restart follow + re-arm the reflex/survival/gaze
       // loops (their disposers tear down on death, so respawn must re-arm).
       safeStart('startReflex(respawn)', () => startReflex(bot, config))
+      safeStart('startAutoArmor(respawn)', () => startAutoArmor(bot, { logger }))
       safeStart('startSurvival(respawn)', () => startSurvival(bot, config))
       safeStart('startGaze(respawn)', () => startGaze(bot, config))
       safeStart('startFollow(respawn)', () => startFollow(bot, config))

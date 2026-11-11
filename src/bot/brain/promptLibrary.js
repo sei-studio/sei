@@ -276,7 +276,7 @@ export const ACTION_DESCRIPTIONS = {
     'Place one block beside you (`{block}`); optionally aim it with `against`. Use build for multi-cell shapes.',
 
   equip:
-    'Equip an item to a slot: `{item, destination:"hand"|"off-hand"|"head"|"torso"|"legs"|"feet"}`.',
+    'Equip an item: `{item, destination?:"hand"|"off-hand"}`. Armor goes to its own slot. Better armor you get is put on automatically.',
 
   craft:
     'Craft `{item, count?}`; consumes materials. Makes the planks and sticks it needs from your wood on the way, and 3x3 recipes walk to a crafting_table within 16 blocks.',
@@ -1805,7 +1805,16 @@ export function renderCompanions(companionNames, playerName = 'the player') {
 
 // ── Minecraft surface text assembly (Looking-mode aware) ─────────────────────
 
-export function worldPrimer() { return WORLD_PRIMER }
+// 261111 (user feedback ae9a758e): Haiku 5.5 says copper armor is not in
+// vanilla Minecraft ("copper is only used for blocks"), so a player who
+// handed her a copper chestplate on 26.3 was told it must be from a mod.
+// Copper tools and armor came in 1.21.9; the line is added only when the
+// connected version's registry has them.
+export const COPPER_GEAR_FACT = 'This version of the game has copper tools and copper armor, made from copper ingots. Copper sits between stone and iron: a copper pickaxe mines what a stone one does, and copper armor protects less than iron and more than leather.'
+
+export function worldPrimer({ copperGear = false } = {}) {
+  return copperGear ? `${WORLD_PRIMER} ${COPPER_GEAR_FACT}` : WORLD_PRIMER
+}
 
 // With Looking 'off' the capability paragraph drops every look() instruction
 // (the tool isn't offered in that mode).

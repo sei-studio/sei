@@ -13,12 +13,14 @@
 // 1000-1250ms and deal a fraction of their listed damage, so any sword beats
 // any axe and an axe beats bare hands.
 
+// 261111: copper (1.21.9+) was missing, so a copper sword scored 0 and she
+// fought bare-handed with one in her bag.
 const SWORD_DAMAGE = {
-  wooden_sword: 4, golden_sword: 4, stone_sword: 5,
+  wooden_sword: 4, golden_sword: 4, stone_sword: 5, copper_sword: 5,
   iron_sword: 6, diamond_sword: 7, netherite_sword: 8,
 }
 const AXE_DAMAGE = {
-  wooden_axe: 7, golden_axe: 7, stone_axe: 9,
+  wooden_axe: 7, golden_axe: 7, stone_axe: 9, copper_axe: 9,
   iron_axe: 9, diamond_axe: 9, netherite_axe: 10,
 }
 const EQUIP_TIMEOUT_MS = 1500

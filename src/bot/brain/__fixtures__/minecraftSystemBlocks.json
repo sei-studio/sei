@@ -566,7 +566,7 @@
       },
       {
         "name": "equip",
-        "description": "Equip an item to a slot: `{item, destination:\"hand\"|\"off-hand\"|\"head\"|\"torso\"|\"legs\"|\"feet\"}`.",
+        "description": "Equip an item: `{item, destination?:\"hand\"|\"off-hand\"}`. Armor goes to its own slot. Better armor you get is put on automatically.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -586,8 +586,7 @@
             }
           },
           "required": [
-            "item",
-            "destination"
+            "item"
           ],
           "additionalProperties": false
         }
@@ -1618,7 +1617,7 @@
       },
       {
         "name": "equip",
-        "description": "Equip an item to a slot: `{item, destination:\"hand\"|\"off-hand\"|\"head\"|\"torso\"|\"legs\"|\"feet\"}`.",
+        "description": "Equip an item: `{item, destination?:\"hand\"|\"off-hand\"}`. Armor goes to its own slot. Better armor you get is put on automatically.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -1638,8 +1637,7 @@
             }
           },
           "required": [
-            "item",
-            "destination"
+            "item"
           ],
           "additionalProperties": false
         }
@@ -2669,7 +2667,7 @@
       },
       {
         "name": "equip",
-        "description": "Equip an item to a slot: `{item, destination:\"hand\"|\"off-hand\"|\"head\"|\"torso\"|\"legs\"|\"feet\"}`.",
+        "description": "Equip an item: `{item, destination?:\"hand\"|\"off-hand\"}`. Armor goes to its own slot. Better armor you get is put on automatically.",
         "input_schema": {
           "type": "object",
           "properties": {
@@ -2689,8 +2687,7 @@
             }
           },
           "required": [
-            "item",
-            "destination"
+            "item"
           ],
           "additionalProperties": false
         }
