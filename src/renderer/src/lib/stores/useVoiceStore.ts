@@ -73,6 +73,7 @@ import {
   type MicEchoInfo,
 } from '../voice/echoGate';
 import { createInterruptStats } from '../voice/interruptStats';
+import { createCutTracker } from '../voice/bargeCut';
 import { createVoiceReplyClock } from '../voice/replyClock';
 import type { CallInterruptCounts } from '@shared/callInterrupts';
 import { sttPolicy } from '../voice/sttPolicy';
@@ -331,6 +332,8 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
 let session = 0;
 /** 261030: interrupt diagnostics for voice_call_ended (interruptStats.ts). */
 const interruptStats = createInterruptStats();
+/** 261112: the companion line a voice barge-in cut, for the words that cut it (bargeCut.ts). */
+const cutTracker = createCutTracker();
 
 /** 261106: utterance -> first audible reply, sent as reply_latency (replyClock.ts). */
 const replyClock = createVoiceReplyClock({
@@ -1209,7 +1212,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   async function runCompanionTurn(
     mySeq: number,
     speakerId: string,
-    incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
+    incoming:
+      | { from: 'player'; text: string; interrupted?: { line: string } }
+      | { from: 'companion'; fromName: string; text: string },
     depth: number,
     opts?: { capture?: boolean },
   ): Promise<void> {
@@ -1231,7 +1236,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   async function runCompanionTurnInner(
     mySeq: number,
     speakerId: string,
-    incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
+    incoming:
+      | { from: 'player'; text: string; interrupted?: { line: string } }
+      | { from: 'companion'; fromName: string; text: string },
     depth: number,
     peers: string[],
     capture: boolean = true,
@@ -1266,7 +1273,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             directorSendFailed.delete(speakerId);
             directorSendSeq.set(speakerId, mySeq);
             try {
-              await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+              await useChatStore
+                .getState()
+                .send(speakerId, incoming.text, undefined, peers, incoming.interrupted ? { interrupted: incoming.interrupted } : undefined);
             } finally {
               directorSendSeq.delete(speakerId);
             }
@@ -1532,10 +1541,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   function dispatchUserTurn(text: string, span?: { t0: number; t1: number }): void {
     const parts = get().participants;
     if (!parts.length || get().status !== 'live') return;
+    // 261112: the first utterance after a confirmed barge-in is the one that
+    // cut the companion off (consumed even when it turns out to be junk).
+    const cut = cutTracker.take(Date.now(), span);
     // Reject Whisper hallucinations (echo/breath/silence → "hhhhh", "you",
     // "[BLANK_AUDIO]") before they become a turn: otherwise they inject lines
     // the player never said and, via supersede, delay the real reply.
     if (isJunkTranscript(text)) return;
+    if (cut && parts.includes(cut.speakerId)) interruptStats.note('cut_lines');
     // A confirmed, dispatched utterance is real presence (junk and echo-gated
     // transcripts never reach this line, so phantom audio cannot keep an
     // unattended call alive).
@@ -1610,7 +1623,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // capture slot is single and the replies stream back through
       // onCompanionText, which speaks and mirrors them regardless (the first
       // responder to actually produce a line takes the floor there).
-      directTurns.push(runCompanionTurn(mySeq, id, { from: 'player', text }, 0, { capture: parts.length === 1 }));
+      // 261112: only the companion whose line was cut hears this as an
+      // interruption; everyone else on the call gets a normal line.
+      const interrupted = cut && cut.speakerId === id ? { line: cut.line } : undefined;
+      directTurns.push(
+        runCompanionTurn(mySeq, id, { from: 'player', text, ...(interrupted ? { interrupted } : {}) }, 0, {
+          capture: parts.length === 1,
+        }),
+      );
     }
     const settles = !inGame && !capture;
     void Promise.allSettled(directTurns).then(() => {
@@ -1815,6 +1835,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const dialStart = Date.now();
       liveSince.clear();
       interruptStats.reset();
+      cutTracker.clear();
       replyClock.reset();
       pendingTts = 0;
       pendingCompanionLines = [];
@@ -2129,6 +2150,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           onBargeIn: () => {
             if (session !== mySession) return;
             interruptStats.note('cuts');
+            // 261112: remember whose line was audible (read before
+            // cutCompanions clears the caption), so the words that cut it
+            // reach that companion marked as an interruption.
+            {
+              const s = get();
+              const speaker = s.speaking ? s.speakingId : null;
+              cutTracker.note(speaker, s.lastSpokenId === speaker ? s.lastSpoken : '', Date.now());
+            }
             cutCompanions();
           },
           // 261030: during a share the room floor is mostly the game's audio,

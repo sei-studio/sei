@@ -78,6 +78,8 @@ interface ChatState {
     replyTo?: ChatReplyRef,
     /** Multi-companion voice (260706): names of other companions on the call. */
     voicePeers?: string[],
+    /** 261112: this voice line cut the companion off mid-line (see bargeCut.ts). */
+    opts?: { interrupted?: { line: string } },
   ) => Promise<ChatSendResult | null>;
   /**
    * 260705: drop the local cache for a character so the next load() refetches.
@@ -522,7 +524,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
   },
 
-  send: async (characterId, text, replyTo, voicePeers) => {
+  send: async (characterId, text, replyTo, voicePeers, opts) => {
     const epoch = scopeEpoch;
     const put = setIn(epoch);
     // #9 — claim this character's latest-send slot. A follow-up send bumps this,
@@ -584,6 +586,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       text,
       replyTo,
       ...(effectivePeers.length ? { voicePeers: effectivePeers } : {}),
+      ...(opts?.interrupted ? { interrupted: opts.interrupted } : {}),
     });
     try {
       if (realism) {

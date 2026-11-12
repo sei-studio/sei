@@ -523,6 +523,15 @@ export function isBareStopLine(text, { wordsOnly = false } = {}) {
 // 261012 (pass 5): the player's line asks her to stop or wait (not "don't
 // stop"). Gates the idle hold, so her OWN stop() while switching to a new
 // order ("can you smelt this" answered with stop + say "on it") is no hold.
+// 261112: a voice line that cut her off mid-line (the app's barge-in, carried
+// by deliverSeiChat as interrupted + cutLine). Returns { line } or null. Such a
+// line skips the forced stop rules below (the bare-stop backstops and the
+// player stop hold): "stop" or "wait" said over her voice is usually about
+// the talking, so the model decides from the cut-off note in its turn.
+export function cutInOf(data) {
+  if (!data || data.interrupted !== true || data.playerSpoke === false) return null
+  return { line: String(data.cutLine ?? '').trim().slice(0, 300) }
+}
 const ASKS_STOP_RE = /(?<!\b(?:dont|don't|do not|never|not|cant|can't|wont|won't)\s+)\b(?:stop|halt|cancel|nevermind|never mind|enough|pause|freeze|hold on|hold up|wait|quit it)\b/
 export function asksToStop(text) {
   return ASKS_STOP_RE.test(String(text ?? '').toLowerCase())
@@ -1486,7 +1495,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // start. A player task stamped before it was given in an earlier session.
   const sessionStartedAt = Date.now()
   const PLAYER_STOP_HOLD_MS = config?.memory?.player_stop_hold_ms ?? 120_000
-  const playerStopHeld = () => playerStopAt > 0 && Date.now() - playerStopAt < PLAYER_STOP_HOLD_MS
+  // 261112: the hold after a stop she chose on a line that cut her off
+  // mid-line. Her stop() is honoured, but the line was ambiguous (it may have
+  // been about her talking), and the player is usually mid-activity: a two
+  // minute silence mid-chase was the reported failure. The short hold still
+  // keeps the next idle tick (5 s at the agentic cadence) from restarting her
+  // own goal right after she stopped, and matches the reply window.
+  const INTERRUPT_STOP_HOLD_MS = config?.memory?.interrupt_stop_hold_ms ?? 20_000
+  let playerStopHoldMs = PLAYER_STOP_HOLD_MS
+  const playerStopHeld = () => playerStopAt > 0 && Date.now() - playerStopAt < playerStopHoldMs
   // 261018 (pass 15): set when she herself answered a player's line with stop
   // or unfollow and started nothing new: { at, who, line }. Later turns see a
   // short note in the snapshot (NUDGES.stayNote) so a completion or idle turn
@@ -2825,7 +2842,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return playerLabel(name)
   }
 
-  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false) {
+  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false, cutIn = null) {
     // 260921: "mid-action" only when something is actually running.
     // extractPriorTask returns the last tool call in the history whether or
     // not it has finished, so a line that landed BETWEEN actions (the gather
@@ -2862,7 +2879,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // 260921: the unanswered-line retry (see runIterations) re-presents the
       // SAME line; only a genuinely new one re-arms it.
       if (!unanswered) {
-        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null, at: Date.now() }
+        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null, at: Date.now(), ...(cutIn ? { interrupted: true } : {}) }
         loop._unansweredRetried = false
         loop._unansweredNudgeText = null
       }
@@ -2912,7 +2929,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       peers: companions,
       fromTeammate: teammate === true,
       ownAction,
-    })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '')
+    })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '') +
+      // 261112: their line cut her off mid-line (see cutInOf).
+      (humanLine && cutIn && !unanswered ? `\n\n${NUDGES.cutOff(cutIn.line)}` : '')
   }
 
   // 261023 (pass 25): NUDGES.goodbyeNotStarted for a player line that opens a
@@ -3322,7 +3341,7 @@ function maybeWarnByteCap(loop, warned) {
           const delivering = { event, data }
           tickLoop._deliveringLine = delivering
           try {
-            await handleActionTick(tickLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true })
+            await handleActionTick(tickLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true, cutIn: cutInOf(data) })
           } finally {
             if (tickLoop._deliveringLine === delivering) tickLoop._deliveringLine = null
           }
@@ -3345,6 +3364,8 @@ function maybeWarnByteCap(loop, warned) {
             // 260910: any part typed in the Sei app keeps the reply on the app
             // surface too (see the mirror gate in emitSay).
             seiChat: pendingInterrupt?.seiChat === true || data?.seiChat === true,
+            // 261112: any part that cut her off mid-line (cutInOf).
+            cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
           }
         }
         if (currentLoop.inFlight) {
@@ -3411,7 +3432,7 @@ function maybeWarnByteCap(loop, warned) {
         // loop. The priority queue runs P0 before P1, so the attack opens a
         // fresh loop first; the chat then arrives as a normal P1 dispatch.
         let preservedInterrupt = pendingInterrupt
-          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true }
+          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true, cutIn: pendingInterrupt.cutIn ?? null }
           : null
         // 260708: a chat-TRIGGERED loop that has not completed a single
         // iteration is itself an undelivered player message — the attack
@@ -3429,6 +3450,7 @@ function maybeWarnByteCap(loop, warned) {
               who: trig.username ?? 'player',
               seiChat: trig.seiChat === true,
               voice: trig.voice === true,
+              cutIn: cutInOf(trig),
             }
           }
         }
@@ -3610,7 +3632,10 @@ function maybeWarnByteCap(loop, warned) {
             : `your teammate ${speakerName} just spoke to you`)
           : isVoiceLine ? 'the player just said this on the voice call' : 'the player just spoke to you'
         // 260921: kept for the unanswered-line retry (runIterations).
-        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null, at: Date.now() }
+        // 261112: a line that cut her off mid-line (cutInOf) is marked, so the
+        // forced stop rules leave the decision to the model.
+        const cutIn = fromTeammate ? null : cutInOf(data)
+        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null, at: Date.now(), ...(cutIn ? { interrupted: true } : {}) }
         // 261017 (quality pass 11): their line comes after the instructions,
         // labelled the way the transcript labels it ("Their line, player
         // (Alex): cool"), instead of as a bare quoted string right under the
@@ -3642,6 +3667,7 @@ function maybeWarnByteCap(loop, warned) {
               (fromTeammate ? '' : MEMORY_GOAL_TAIL)) +
           (fromTeammate ? '' : goodbyeNotStartedTail()) +
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
+          (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
@@ -4051,6 +4077,7 @@ function maybeWarnByteCap(loop, warned) {
           text: pi.chatText,
           message: pi.chatText,
           playerSpoke: true,
+          ...(pi.cutIn ? { interrupted: true, cutLine: pi.cutIn.line } : {}),
         }
         drainSpared.add(redo)
         reenqueue('sei:chat_received', redo, 1 /* Priority.P1_CHAT */)
@@ -4089,6 +4116,7 @@ function maybeWarnByteCap(loop, warned) {
             // so its late reply still goes to the call / chat surface.
             ...(pa.preservedInterrupt.seiChat === true ? { seiChat: true } : {}),
             ...(pa.preservedInterrupt.voice === true ? { voice: true } : {}),
+            ...(pa.preservedInterrupt.cutIn ? { interrupted: true, cutLine: pa.preservedInterrupt.cutIn.line } : {}),
           }
           // Spoken before the drained batch was cut loose: not a new preempt.
           drainSpared.add(preserved)
@@ -4801,7 +4829,7 @@ function maybeWarnByteCap(loop, warned) {
     let extraEventText = null
     if (pendingInterrupt && data.aborted) {
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)
+      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true, false, pendingInterrupt.cutIn)
       if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -5053,7 +5081,7 @@ function maybeWarnByteCap(loop, warned) {
       // so a text-only response terminates naturally after the bot replies; a
       // text+action response re-suspends via R2.
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
+      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, false, false, pendingInterrupt.cutIn)
       pendingInterrupt = null
       loop._currentIterationTrigger = 'sei:chat_received'
       logger.info?.(`[sei/orch] action_complete (tick-claimed) + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -5077,7 +5105,7 @@ function maybeWarnByteCap(loop, warned) {
       // completion (no action running, so it could not ride an action tick)
       // is answered in the same turn as the result.
       if (pendingInterrupt && !pendingAttack) {
-        eventText = `${eventText}\n\n${interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)}`
+        eventText = `${eventText}\n\n${interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true, false, pendingInterrupt.cutIn)}`
         if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
         pendingInterrupt = null
         loop._currentIterationTrigger = 'sei:chat_received'
@@ -5189,7 +5217,7 @@ function maybeWarnByteCap(loop, warned) {
     const tickEventText = attackText != null
       ? attackText
       : playerMessage != null
-      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered)
+      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered, data?.cutIn ?? null)
       : withGreetingHint(NUDGES.actionTurn({
           action,
           stopTool: stopToolForAction(action),
@@ -5889,8 +5917,20 @@ function maybeWarnByteCap(loop, warned) {
         const line = loop._lastPlayerLine.text
         // The idle hold keeps its pre-pass-14 trigger: any action but unfollow
         // ends it. The stay note below lets stationary actions through.
+        // 261112: a line that cut her off mid-line (cutInOf) starts no hold by
+        // its words alone; only her own stop() on it does, and then the short
+        // INTERRUPT_STOP_HOLD_MS.
+        const cutInLine = loop._lastPlayerLine.interrupted === true
         if (actingTools.some(u => u.name !== 'unfollow') || setsGoal) playerStopAt = 0
-        else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) playerStopAt = Date.now()
+        else if (cutInLine) {
+          if (hasStop && asksToStop(line)) { playerStopAt = Date.now(); playerStopHoldMs = INTERRUPT_STOP_HOLD_MS }
+        } else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) { playerStopAt = Date.now(); playerStopHoldMs = PLAYER_STOP_HOLD_MS }
+        // 261112 analytics: a cut-in line she answered by stopping her action.
+        if (cutInLine && !loop._lastPlayerLine.stopNoted && !loop._groupVoiceLine &&
+            (hasStop || actingTools.some(u => u.name === 'unfollow'))) {
+          loop._lastPlayerLine.stopNoted = true
+          try { sessionActionStats.noteInterruptStop() } catch {}
+        }
         // pass 32: a line she acted on stays open until a hand-over. pass 37:
         // a stop closes the asks whose work it ended (closeAsksOnStop).
         if (!loop._groupVoiceLine) {
@@ -6020,8 +6060,11 @@ function maybeWarnByteCap(loop, warned) {
       // action is cancelled and no completion turn is owed after it.
       // Not on a group call's line to someone else ("lyra stop"): that turn
       // is often silent on purpose (_groupVoiceLine, as the unanswered retry).
+      // 261112: not on a line that cut her off mid-line (cutInOf): there a
+      // bare "stop" is often about her talking, and her reply decides.
       const unheededPlayerStop = !hasStop && !hasEndLoop && actingTools.length === 0 &&
-        _p1Trigger && !loop._groupVoiceLine && isBareStopLine(loop._lastPlayerLine?.text, { wordsOnly: true })
+        _p1Trigger && !loop._groupVoiceLine && !loop._lastPlayerLine?.interrupted &&
+        isBareStopLine(loop._lastPlayerLine?.text, { wordsOnly: true })
       if (unheededPlayerStop) logger.info?.(`[sei/orch] player said stop and the reply started nothing: treating it as stop (loop=${loop.id}, in_flight=${loop.inFlight?.name ?? loop._settleOwed ?? 'none'})`)
       // 261016: a reply that started nothing while an action runs (or just
       // finished during the call) leaves the player's line for the
@@ -6071,12 +6114,14 @@ function maybeWarnByteCap(loop, warned) {
           terminateLoop(loop, 'R3-stop')
         }
       } else if (hasEndLoop && newSuspendingTools.length === 0 && (inFlightIsForeground || loopAwaitsSettle(loop)) &&
-                 !(_p1Trigger && !loop._groupVoiceLine && isBareStopLine(loop._lastPlayerLine?.text))) {
+                 !(_p1Trigger && !loop._groupVoiceLine && !loop._lastPlayerLine?.interrupted && isBareStopLine(loop._lastPlayerLine?.text))) {
         // (A bare "stop" from the player answered with end_loop instead of
         // stop falls through to R3 below and cancels the action as end_loop
         // did before the split, so a model that misses the stop tool cannot
         // keep working against the player. Not on a group call, where
-        // end_loop is how she yields "lyra stop" to Lyra.)
+        // end_loop is how she yields "lyra stop" to Lyra. 261112: and not
+        // on a line that cut her off mid-line, where end_loop means she took
+        // it as being about her talking.)
         // 261011 R1-end — end_loop while a foreground action runs ends the
         // TURN, not the action: the model is done talking and the gather /
         // build / dig carries on, exactly like a text-only keep-alive turn.
@@ -6356,7 +6401,7 @@ function maybeWarnByteCap(loop, warned) {
             }
           }
           // 260608-tik: unified mid-action interrupt framing (Change 2).
-          const interruptEventText = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who)
+          const interruptEventText = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, false, false, pendingInterrupt?.cutIn)
           loop.appendToolResults(results, { snapshot: snapshotText(), eventText: interruptEventText })
           maybeWarnByteCap(loop, byteWarn)
           pendingInterrupt = null
@@ -6569,7 +6614,7 @@ function maybeWarnByteCap(loop, warned) {
     // 260608-tik: unified mid-action interrupt framing (Change 2). The action
     // kept running across the aborted Haiku call, so this reads like a tick that
     // carries the player's words.
-    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, pendingInterrupt?.teammate === true)
+    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, pendingInterrupt?.teammate === true, false, pendingInterrupt?.cutIn)
 
     if (aborted.length > 0) {
       loop.appendToolResults(aborted, { snapshot: snapshotText(), eventText: eventTextWithHint })
@@ -6815,6 +6860,8 @@ function maybeWarnByteCap(loop, warned) {
         // is always a player line — but derive it rather than assume, and let
         // any player part of an accumulated batch win over teammate framing.
         teammate: (prevText ? pendingInterrupt?.teammate === true : true) && data?.playerSpoke === false,
+        // 261112: any part that cut her off mid-line (cutInOf).
+        cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
       }
       try { loop.abortController.abort() } catch {}
       // Claimed events never reach handleDispatch, so its drain preempt check

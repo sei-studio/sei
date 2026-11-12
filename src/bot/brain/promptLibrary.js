@@ -1061,6 +1061,16 @@ export const NUDGES = {
   // reply was told its say() "keeps the current action going" and she said
   // "still mining stone for you" with nothing running.
   replyWhileRunning: `One say() without a new action keeps the current action going.`,
+  // 261112: the player's voice line cut her off mid-line (a barge-in on the
+  // call). Rides only those turns. "stop" or "wait" said over her voice is
+  // usually about the talking; the model decides, nothing is forced.
+  cutOff: (line) => {
+    const said = clipNote(line, 200)
+    const what = said
+      ? `They said this while you were still talking, so your line "${said}" was cut off and they did not hear all of it.`
+      : 'They said this while you were still talking, which cut your line off.'
+    return `${what} Their words may be about your talking, not about what you are doing. If they only wanted you to stop talking, keep doing what you were doing, and stop your action only if they want it stopped.`
+  },
   replyWhileIdle: `No action is running right now, so a reply on its own starts nothing. If you tell them you are doing something, start it with its action in this same turn.`,
 
   // 261016 (quality pass 9c): appended to the completion turn of an action

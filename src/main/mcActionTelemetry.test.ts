@@ -23,7 +23,8 @@ function snap(over: Record<string, unknown> = {}) {
     },
     counters: {
       llm_turns: 40, silent_turns: 25, say_turns: 15, stuck: 2, deaths: 1,
-      player_msgs: 8, voice_msgs: 0, unanswered: 3, replied: 5, reply_ms_total: 20_000, pending_chats: 0,
+      player_msgs: 8, voice_msgs: 4, unanswered: 3, replied: 5, reply_ms_total: 20_000, pending_chats: 0,
+      voice_interrupt_msgs: 2, voice_interrupt_stops: 1,
     },
     llm_errors: { '429': 2, timeout: 1 },
     ...over,
@@ -65,6 +66,9 @@ describe('mcSessionActionsProps', () => {
       actions_truncated: 0,
       fail_no_path: 3,
       fail_partial: 3,
+      // 261112: cut-in voice lines and the stops after them.
+      voice_interrupt_msgs: 2,
+      voice_interrupt_stops: 1,
       fail_timeout: 1,
       a_gather_n: 10,
       a_gather_ok: 6,

@@ -254,6 +254,32 @@ the player speaks first (it is now in her transcript, so the reply that follows
 is coherent with it). Unverified live; the numbers above are a replay of the
 log's timing, not a new session.
 
+**A voice line that cut her off (261112).** A player on a voice call while she
+followed them in Minecraft reported that cutting her off now and then left her
+quiet for a long time, mid-chase. A barge-in only cut the audio
+in the renderer; the bot never knew, so "stop", "wait" or "hold on" said over
+her line read as an order. A bare stop line (or a stop() on an asks-to-stop
+line) cancelled the follow and started the 120 s player stop hold, so she
+stood still and said nothing on her own for two minutes. Now:
+
+- The renderer pairs a confirmed barge-in with the utterance that caused it
+  (`lib/voice/bargeCut.ts`, read in `onBargeIn` before `cutCompanions` clears
+  the caption) and sends it to the companion that was audible as
+  `chatSend({interrupted: {line}})` -> `routeToBot` -> `sei-chat`
+  `{interrupted, cutLine}` -> `deliverSeiChat` -> `voiceLineEvent`.
+- The orchestrator (`cutInOf`) marks `_lastPlayerLine.interrupted`, adds
+  `NUDGES.cutOff` to that turn only (seed `playerMessageText` or
+  `interruptTurnText`), and skips the forced stop rules for it: the
+  words-only bare-stop backstop (`unheededPlayerStop`), the end_loop
+  bare-stop backstop, and the player stop hold. Her own stop() still stops
+  the action, with `INTERRUPT_STOP_HOLD_MS` (20 s,
+  `memory.interrupt_stop_hold_ms`) instead of 120 s.
+- Typed lines and voice lines with nothing being said are unchanged.
+- Analytics: `mc_session_actions` `voice_interrupt_msgs` /
+  `voice_interrupt_stops`; `voice_call_ended` `interrupt_cut_lines` (cuts
+  whose words reached the cut companion; `interrupt_cuts` minus it is cuts
+  whose words never became a turn). Pinned by `bargeInCut.test.js`.
+
 **Memory.** Per-character memory directory.
 - **Writes are LLM-driven:** the model calls `remember()` / `forget()` to
   maintain an append-only `MEMORY.md`; `PLAYER.md` tracks the other player.

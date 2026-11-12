@@ -50,6 +50,10 @@ const COUNTER_KEYS = [
   'deaths',
   'player_msgs',
   'voice_msgs',
+  // 261112: voice lines that cut her off mid-line, and how many of those she
+  // answered by stopping her action (stop or unfollow).
+  'voice_interrupt_msgs',
+  'voice_interrupt_stops',
   'unanswered',
   'replied',
   'reply_ms_total',

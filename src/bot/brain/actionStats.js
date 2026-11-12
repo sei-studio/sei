@@ -167,6 +167,8 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
       deaths: 0,
       player_msgs: 0,
       voice_msgs: 0,
+      voice_interrupt_msgs: 0,
+      voice_interrupt_stops: 0,
       unanswered: 0,
       replied: 0,
       reply_ms_total: 0,
@@ -283,15 +285,22 @@ export function createActionStats({ now = () => Date.now(), unansweredMs = UNANS
      * A player line that should get a response. `voice` lines are counted but
      * not timed (the app's voice clock times calls). `origin` 'app' = a Sei
      * chat message routed into this session (deliverSeiChat).
+     * 261112: `interrupted` = a voice line that cut her off mid-line.
      */
-    notePlayerChat({ voice = false, origin = 'game' } = {}) {
+    notePlayerChat({ voice = false, origin = 'game', interrupted = false } = {}) {
       sweep()
-      if (voice) { bump('voice_msgs'); return }
+      if (voice) {
+        bump('voice_msgs')
+        if (interrupted) bump('voice_interrupt_msgs')
+        return
+      }
       bump('player_msgs')
       const o = origin === 'app' ? 'app' : 'game'
       turns[o] += 1
       pendingChats.push({ at: now(), origin: o, turn: turns[o] })
     },
+    /** 261112: she stopped her action (stop or unfollow) in answer to a cut-in line. Once per line. */
+    noteInterruptStop() { bump('voice_interrupt_stops') },
     /** The bot spoke (say() reached chat or the call). */
     noteReply() { answer('say') },
     /**

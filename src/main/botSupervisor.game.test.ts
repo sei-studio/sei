@@ -64,7 +64,12 @@ function mkChar(id: string, username: string): unknown {
   return { id, name: username, username, persona: { source: 's', expanded: 'e' }, metadata: {} };
 }
 
-function armFakeChild(): { postMessage: ReturnType<typeof vi.fn>; emitSpawn: () => void; emitPortMessage: (d: unknown) => void } {
+function armFakeChild(): {
+  postMessage: ReturnType<typeof vi.fn>;
+  portPost: ReturnType<typeof vi.fn>;
+  emitSpawn: () => void;
+  emitPortMessage: (d: unknown) => void;
+} {
   const handlers: Record<string, Array<(...a: never[]) => void>> = {};
   const add = (ev: string, cb: (...a: never[]) => void): void => { (handlers[ev] ??= []).push(cb); };
   const postMessage = vi.fn();
@@ -90,6 +95,7 @@ function armFakeChild(): { postMessage: ReturnType<typeof vi.fn>; emitSpawn: () 
   });
   return {
     postMessage,
+    portPost: port1.postMessage,
     emitSpawn: () => handlers['spawn']?.forEach((f) => (f as () => void)()),
     emitPortMessage: (data: unknown) => msgHandlers.forEach((f) => f({ data })),
   };
@@ -312,5 +318,29 @@ describe('summon(id, "stardew") through a registered GameModule', () => {
     fakeB.emitPortMessage({ type: 'summon-ready' });
     await pB;
     expect(sup.getActiveIds().sort()).toEqual([A, B].sort());
+  });
+});
+
+// 261112: a voice line that cut her off mid-line rides the sei-chat command
+// as interrupted + cutLine (bot/index.js -> deliverSeiChat).
+describe('sendSeiChat carries the barge-in mark (261112)', () => {
+  it('posts interrupted + cutLine on a voice line, nothing extra otherwise', async () => {
+    const { sup } = makeSupervisor();
+    const fake = armFakeChild();
+    const p = sup.summon(A);
+    await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
+    fake.emitSpawn();
+    await vi.waitFor(() => expect(fake.postMessage).toHaveBeenCalledTimes(1));
+    fake.emitPortMessage({ type: 'summon-ready' });
+    await p;
+    expect(sup.sendSeiChat(A, { from: 'Player', text: 'wait', voice: true, interrupted: { line: 'the cave is' } })).toBe(true);
+    expect(sup.sendSeiChat(A, { from: 'Player', text: 'stop', voice: true })).toBe(true);
+    expect(sup.sendSeiChat(A, { from: 'Player', text: 'stop', interrupted: { line: 'x' } })).toBe(true);
+    const sent = fake.portPost.mock.calls.map((c) => c[0]).filter((m) => (m as { type?: string }).type === 'sei-chat');
+    expect(sent).toEqual([
+      { type: 'sei-chat', from: 'Player', text: 'wait', voice: true, interrupted: true, cutLine: 'the cave is' },
+      { type: 'sei-chat', from: 'Player', text: 'stop', voice: true },
+      { type: 'sei-chat', from: 'Player', text: 'stop', voice: false },
+    ]);
   });
 });

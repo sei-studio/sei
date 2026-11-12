@@ -1409,6 +1409,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           .optional(),
         // Multi-companion voice (260706): names of the other companions on the call.
         voicePeers: z.array(z.string()).optional(),
+        // 261112: the voice line cut the companion off mid-line (bargeCut.ts).
+        interrupted: z.object({ line: z.string().max(CHAT_TEXT_MAX).catch('') }).optional(),
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
@@ -1469,7 +1471,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const turnPromise = sendChatMessage(
       // voiceCall (260705): while a call is open the reply is spoken aloud, so
       // the prompt leads with the voice-call primer (spoken register).
-      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
+      {
+        characterId: args.characterId,
+        text: args.text,
+        replyTo: args.replyTo,
+        voiceCall: inCall,
+        voicePeers: args.voicePeers,
+        interrupted: args.interrupted,
+      },
       {
         getLanState: deps.getLanState,
         getWorldStates: deps.getWorldStates,
@@ -2255,6 +2264,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             // 261031: absent from a renderer that predates them = 0.
             no_voice: z.number().int().nonnegative().default(0),
             no_word: z.number().int().nonnegative().default(0),
+            // 261112: absent from an older renderer = 0.
+            cut_lines: z.number().int().nonnegative().default(0),
           })
           .optional(),
       })

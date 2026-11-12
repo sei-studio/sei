@@ -1223,3 +1223,32 @@ describe('single-shot voice turns keep their note after the cache breakpoint (26
     expect(tail).not.toContain('System note, not the player speaking: the current');
   });
 });
+
+// 261112: a voice line that cut the companion off mid-line reaches the live
+// game session marked, so the bot frames it as a cut-in, not a stop order.
+describe('in-game route carries the barge-in mark (261112)', () => {
+  it('a voice line passes interrupted to the bot', async () => {
+    const routeToBot = vi.fn(() => true);
+    const d: ChatDeps = { ...deps(), isInGame: () => true, routeToBot };
+    const r = await sendChatMessage(
+      { characterId: CHAR, text: 'wait', voiceCall: true, interrupted: { line: 'ok so the cave is right' } },
+      d,
+    );
+    expect(r).toEqual({ replies: [], routed: true });
+    expect(routeToBot).toHaveBeenCalledWith(CHAR, {
+      from: 'Player',
+      text: 'wait',
+      voice: true,
+      interrupted: { line: 'ok so the cave is right' },
+    });
+  });
+
+  it('a plain voice line and a typed line carry no mark', async () => {
+    const routeToBot = vi.fn(() => true);
+    const d: ChatDeps = { ...deps(), isInGame: () => true, routeToBot };
+    await sendChatMessage({ characterId: CHAR, text: 'stop', voiceCall: true }, d);
+    await sendChatMessage({ characterId: CHAR, text: 'stop', interrupted: { line: 'x' } }, d);
+    expect(routeToBot).toHaveBeenNthCalledWith(1, CHAR, { from: 'Player', text: 'stop', voice: true });
+    expect(routeToBot).toHaveBeenNthCalledWith(2, CHAR, { from: 'Player', text: 'stop', voice: false });
+  });
+});

@@ -498,7 +498,10 @@ export interface BotSupervisor {
    * brain + prompt cache). Returns false if no session is live (caller falls
    * back to the standalone chat brain).
    */
-  sendSeiChat(characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean;
+  sendSeiChat(
+    characterId: string,
+    payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+  ): boolean;
   /**
    * 260708: record-only mirror of a group-call line into a live session's chat
    * history (context, no reply turn). Returns false if no session is live.
@@ -2483,7 +2486,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
      * event and replies back over the `type:'chat'` lifecycle. Returns false
      * (caller falls back to the standalone chat brain) if no session is live.
      */
-    sendSeiChat: (characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean => {
+    sendSeiChat: (
+      characterId: string,
+      payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+    ): boolean => {
       const session = sessions.get(characterId);
       if (!session) return false;
       try {
@@ -2494,6 +2500,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // 260708: a live voice-call utterance, not an out-of-band app text.
           // The bot frames it as in-game speech instead of "Sei chat".
           voice: payload.voice === true,
+          // 261112: the voice line cut her off mid-line (renderer bargeCut.ts).
+          // The bot frames it as a cut-in instead of a stop order.
+          ...(payload.voice === true && payload.interrupted
+            ? { interrupted: true, cutLine: String(payload.interrupted.line ?? '') }
+            : {}),
         });
         return true;
       } catch {

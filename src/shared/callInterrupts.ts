@@ -16,6 +16,9 @@
  *                  like a voice followed it (no transcription was run)
  *   no_word        (261031) a duck was retracted because the confirming
  *                  transcription found no word
+ *   cut_lines      (261112) the words that made a cut reached the companion
+ *                  that was cut, marked as an interruption (cuts minus this
+ *                  is cuts whose words never became a turn)
  */
 export interface CallInterruptCounts {
   ducks: number;
@@ -24,12 +27,13 @@ export interface CallInterruptCounts {
   manual: number;
   no_voice: number;
   no_word: number;
+  cut_lines: number;
 }
 
-export const CALL_INTERRUPT_KEYS = ['ducks', 'cuts', 'echo_rejected', 'manual', 'no_voice', 'no_word'] as const;
+export const CALL_INTERRUPT_KEYS = ['ducks', 'cuts', 'echo_rejected', 'manual', 'no_voice', 'no_word', 'cut_lines'] as const;
 
 export function zeroInterruptCounts(): CallInterruptCounts {
-  return { ducks: 0, cuts: 0, echo_rejected: 0, manual: 0, no_voice: 0, no_word: 0 };
+  return { ducks: 0, cuts: 0, echo_rejected: 0, manual: 0, no_voice: 0, no_word: 0, cut_lines: 0 };
 }
 
 /** The `voice_call_ended` props, prefixed so they group in the dashboard. */
@@ -40,6 +44,7 @@ export function callInterruptProps(c: CallInterruptCounts): {
   interrupt_manual: number;
   interrupt_no_voice: number;
   interrupt_no_word: number;
+  interrupt_cut_lines: number;
 } {
   return {
     interrupt_ducks: c.ducks,
@@ -48,5 +53,6 @@ export function callInterruptProps(c: CallInterruptCounts): {
     interrupt_manual: c.manual,
     interrupt_no_voice: c.no_voice,
     interrupt_no_word: c.no_word,
+    interrupt_cut_lines: c.cut_lines,
   };
 }
