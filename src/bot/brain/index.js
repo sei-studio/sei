@@ -85,6 +85,25 @@ function assertAdapter(adapter) {
  * @param {{info?:Function,warn?:Function,error?:Function,debug?:Function}} [args.logger]
  * @returns {Promise<{ stop: () => Promise<void> }>}
  */
+/**
+ * The P1 event for a live voice-call line routed into this session
+ * (deliverSeiChat). 261112: a line that cut her off mid-line carries
+ * interrupted + cutLine, so the orchestrator tells the model it was cut off
+ * and skips the forced stop rules for it (orchestrator cutInOf).
+ */
+export function voiceLineEvent({ who, raw, interrupted = false, cutLine = '' }) {
+  return {
+    username: who,
+    message: raw,
+    text: raw,
+    addressed: true,
+    playerSpoke: true,
+    seiChat: true,
+    voice: true,
+    ...(interrupted === true ? { interrupted: true, cutLine: String(cutLine ?? '').trim().slice(0, 300) } : {}),
+  }
+}
+
 export async function start({ config, adapter, logger = console, onTerminalError = null, onAuthExpired = null, onSeiChatReply = null, onQuitRequested = null, onCallEndRequested = null, onAction = null, onFace = null }) {
   assertAdapter(adapter)
 
@@ -438,12 +457,14 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // in-game) as a priority chat event on THIS session, framed so the bot knows
     // it's out-of-band and that quit() leaves the game. Its reply routes back to
     // the chat surface via onSeiChatReply (see orchestrator._emitSayLine).
-    deliverSeiChat({ from, text, voice } = {}) {
+    deliverSeiChat({ from, text, voice, interrupted, cutLine } = {}) {
       const raw = String(text ?? '').trim()
       if (!raw) return
       const who = String(from || 'The player')
       try { orchestrator.recordIncomingChat?.(who, raw, { companion: false }) } catch {}
-      try { sessionActionStats.notePlayerChat({ voice: voice === true, origin: 'app' }) } catch {}
+      // 261112: a voice line that cut her off mid-line (the renderer's barge-in).
+      const cutIn = voice === true && interrupted === true
+      try { sessionActionStats.notePlayerChat({ voice: voice === true, origin: 'app', interrupted: cutIn }) } catch {}
       // 260708: a live voice-call utterance while the bot is in-game is NOT an
       // out-of-band text message, and the old framing ("NOT in the game with
       // you right now") was factually wrong on every line of a play-while-
@@ -454,15 +475,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // guidance instead of a wrapper baked into the message text.
       if (voice === true) {
         try {
-          queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', {
-            username: who,
-            message: raw,
-            text: raw,
-            addressed: true,
-            playerSpoke: true,
-            seiChat: true,
-            voice: true,
-          })
+          queue.enqueue(Priority.P1_CHAT, 'sei:chat_received', voiceLineEvent({ who, raw, interrupted: cutIn, cutLine }))
         } catch (err) {
           logger.warn?.(`[sei/brain] deliverSeiChat enqueue failed: ${err.message}`)
         }

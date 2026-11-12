@@ -1039,7 +1039,16 @@ if (process.parentPort) {
             // in-game. Inject it into the brain as an out-of-band chat event so
             // it runs on the SAME session (brain + prompt cache) and replies
             // back to the chat surface (see onSeiChatReply above).
-            try { _running?.deliverSeiChat?.({ from: data.from, text: data.text, voice: data.voice === true }) } catch {}
+            // 261112: interrupted = this voice line cut her off mid-line.
+            try {
+              _running?.deliverSeiChat?.({
+                from: data.from,
+                text: data.text,
+                voice: data.voice === true,
+                interrupted: data.voice === true && data.interrupted === true,
+                cutLine: typeof data.cutLine === 'string' ? data.cutLine : '',
+              })
+            } catch {}
           } else if (data && data.type === 'sei-chat-observe') {
             // 260708: a group-call line this bot HEARD but is not the routed
             // recipient of (a sibling companion spoke, or the player line went

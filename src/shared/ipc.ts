@@ -2203,8 +2203,16 @@ export interface RendererApi {
   chatHistoryBefore(characterId: string, beforeId: string): Promise<ChatMessage[]>;
   /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game).
    * `voicePeers` (multi-companion voice, 260706): names of the OTHER companions
-   * on the same call, so the reply is framed for a group call. Absent = solo. */
-  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef; voicePeers?: string[] }): Promise<ChatSendResult>;
+   * on the same call, so the reply is framed for a group call. Absent = solo.
+   * `interrupted` (261112): this voice line cut the companion off; `line` is
+   * what she was saying. Only an in-game companion uses it (deliverSeiChat). */
+  chatSend(args: {
+    characterId: string;
+    text: string;
+    replyTo?: ChatReplyRef;
+    voicePeers?: string[];
+    interrupted?: { line: string };
+  }): Promise<ChatSendResult>;
   /**
    * Multi-companion voice (260706): silently record a line spoken on the call
    * into `characterId`'s transcript WITHOUT generating a reply, so a companion

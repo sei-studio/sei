@@ -92,7 +92,10 @@ export interface ChatDeps {
    * cache). Returns false if no session took it, so the caller can fall back to
    * the standalone chat brain.
    */
-  routeToBot?: (characterId: string, payload: { from: string; text: string; voice?: boolean }) => boolean;
+  routeToBot?: (
+    characterId: string,
+    payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+  ) => boolean;
   /** The (non-blocking) join kicked off by launch() failed — report it to the
    * player in the companion's own voice (index.ts sendLaunchFailedTurn). */
   onLaunchFailed?: (characterId: string, reason: string) => void;
@@ -927,6 +930,9 @@ async function sendChatMessageImpl(
     /** Multi-companion voice (260706): names of the OTHER companions on the same
      * call, so the prompt frames the group. Absent/empty = a solo call. */
     voicePeers?: string[];
+    /** 261112: a voice line that cut the companion off mid-line. Only the
+     * in-game route carries it (the bot frames the turn as a cut-in). */
+    interrupted?: { line: string };
   },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
@@ -968,7 +974,15 @@ async function sendChatMessageImpl(
       // not an out-of-band app text. The voice flag switches the bot-side
       // framing (deliverSeiChat) from the "Sei chat / NOT in the game" wrapper
       // to in-game voice delivery.
-      if (deps.routeToBot(args.characterId, { from, text: args.text, voice: args.voiceCall === true })) {
+      const voice = args.voiceCall === true;
+      if (
+        deps.routeToBot(args.characterId, {
+          from,
+          text: args.text,
+          voice,
+          ...(voice && args.interrupted ? { interrupted: args.interrupted } : {}),
+        })
+      ) {
         // In-game chatter appends to the transcript without ever running a
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
