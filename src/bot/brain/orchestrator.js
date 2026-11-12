@@ -1518,6 +1518,37 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (ms >= STAY_NOTE_MS) { stayNote = null; return '' }
     return NUDGES.stayNote({ who: stayNote.who, line: stayNote.line, secs: Math.max(1, Math.round(ms / 1000)) })
   }
+  // 261112 (pass 53): the player's lines she answered in words while an
+  // action ran (loop._replyDeferred), kept past the completion turn that
+  // brought them back (NUDGES.deferredReplies) when that turn went to a
+  // hand-over first ({ line, at }, oldest first). In errands-03 (11-12
+  // scorecard) the walk back with the coal ended, its turn carried "get me
+  // like 8 logs" and the arrival note, she gave the coal first as that note
+  // asks, and the order was gone: an order answered in words has no task
+  // and no open ask. The next idle tick read only her own furnace goal and
+  // the `next:` furnace line ("8 cobble for the furnace first, then i go get
+  // your logs"). Only lines a give put off are kept: carrying every one
+  // brought answered questions back ("ok so caves, you're into them?",
+  // pass53-probe q_only). They ride the snapshot while nothing is running
+  // (deferredNoteText) and end when she starts other work (a world action
+  // that is not a hand-over or a walk to the player), when a player line
+  // gets an action or a stop, when she sets a task for the player, or after
+  // DEFERRED_LINE_MS. deferredCarry: the lines of the completion turn in
+  // this loop, until she starts a world action.
+  let deferredLines = []
+  let deferredCarry = null
+  const DEFERRED_LINE_MS = config?.memory?.deferred_line_note_ms ?? 300_000
+  // `shown`: lines this turn's event text already brings back.
+  function deferredNoteText(shown = []) {
+    if (!deferredLines.length) return ''
+    deferredLines = deferredLines.filter((d) => Date.now() - d.at < DEFERRED_LINE_MS)
+    const cur = inflight.current()
+    if (cur && !caps.backgroundActions?.[cur.name]) return ''
+    const lines = deferredLines.filter((d) => !shown.includes(d.line))
+    if (!lines.length) return ''
+    const who = config?.player_display_name || config?.player_username || null
+    return NUDGES.deferredNote({ who, lines: lines.map((d) => d.line) })
+  }
   // 17-04 (D-08): node ids whose known-good `procedure` has already been written
   // to per-world memory this session — dedupes the procedural write-back so a
   // milestone records its procedure at most once.
@@ -2675,7 +2706,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // 261111 (pass 51): when the last snapshot was composed, i.e. what the
   // next model call sees (caps.staleTurn compares against it).
   let _lastSnapshotAt = 0
-  function snapshotText({ playerRequestOwed = false } = {}) {
+  function snapshotText({ playerRequestOwed = false, deferredShown = [] } = {}) {
     _lastSnapshotAt = Date.now()
     // 260725: the pause contract says NO Minecraft context reaches the model
     // while paused — this is the single choke point every turn's snapshot
@@ -2689,6 +2720,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       const note = stayNoteText()
       // 261102 (pass 37): the items she set off to hand over.
       const delivery = deliveryNoteText()
+      // 261112 (pass 53): lines she put off while busy.
+      const deferred = deferredNoteText(deferredShown)
       const text = snapshotComposer.next({
         lastActionResult,
         inFlight: inflight.current(),
@@ -2714,7 +2747,8 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // nothing running).
         // 261102 (pass 37): and so does a hand-over she set off on (errands-03
         // left the coal in her bag for "next: crafting table" with no wood).
-        hideNext: playerRequestOwed || playerTaskInGoals || !!note || !!delivery,
+        // 261112 (pass 53): and so do lines she put off while busy.
+        hideNext: playerRequestOwed || playerTaskInGoals || !!note || !!delivery || !!deferred,
         // 261018 (pass 16): items that arrived without an action of hers go
         // into the conversation record (sessionEvents.describeInventoryGain).
         // A run of them with nothing said in between is one line.
@@ -2723,7 +2757,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       if (typeof text === 'string') _repeatsContext.snapshot = text
       if (typeof text !== 'string') return text
       const tasks = taskNoteText()
-      return [text, note, tasks, delivery].filter(Boolean).join('\n')
+      return [text, note, tasks, delivery, deferred].filter(Boolean).join('\n')
     } catch (err) {
       logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
       return '(snapshot unavailable)'
@@ -3048,6 +3082,27 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (stayNote && !ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name) && !walksToOwner({ name, input: args })) {
       logger.info?.(`[sei/orch] stay note cleared: she started ${name}`)
       stayNote = null
+    }
+    // 261112 (pass 53): a hand-over keeps the lines her completion turn
+    // brought back, since that is the earlier ask being finished first. A
+    // walk to the player keeps the ones already kept but adds none: walking
+    // back after her own completion turn carried answered questions along
+    // ("ok so caves, you're into them?", pass53-probe q_only). Other work
+    // ends them (see deferredLines).
+    if (!ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+      if (isHandOver(name)) {
+        if (deferredCarry && deferredCarry.loopId === currentLoop?.id) {
+          const kept = deferredLines.filter((d) => !deferredCarry.lines.includes(d.line))
+          deferredLines = [...kept, ...deferredCarry.lines.map((line) => ({ line, at: Date.now() }))].slice(-DEFERRED_REPLY_MAX)
+          logger.info?.(`[sei/orch] deferred lines kept past ${name}: ${deferredCarry.lines.length}`)
+        }
+      } else if (walksOrFollowsOwner(name, args)) {
+        // neither kept nor ended
+      } else if (deferredLines.length) {
+        logger.info?.(`[sei/orch] deferred lines cleared: she started ${name}`)
+        deferredLines = []
+      }
+      deferredCarry = null
     }
     releaseTaskHolds(name, args)
     noteTaskStarted(name, args)
@@ -4387,6 +4442,9 @@ function maybeWarnByteCap(loop, warned) {
         // 261022 (pass 22): when this task was set, and setting it again
         // picks a held task back up.
         if (forPlayer) {
+          // 261112 (pass 53): the task carries what she put off.
+          deferredLines = []
+          deferredCarry = null
           const key = goalKey(text.replace(/\s*\n+\s*/g, ' '))
           // 261022 (pass 22c): stamped when the line that asked for it came
           // in, so a quick "nvm" sent while she was still answering counts as
@@ -5098,6 +5156,8 @@ function maybeWarnByteCap(loop, warned) {
       // brought them (arrivalAskText), ahead of the next order.
       const arrival = arrivalAskText(data, { deferred: !!replyDeferred?.length })
       if (arrival) eventText = `${eventText}\n\n${arrival}`
+      // 261112 (pass 53): kept if this turn hands something over first.
+      deferredCarry = replyDeferred?.length ? { lines: [...replyDeferred], loopId: loop.id } : null
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
       else if (!pendingInterrupt) eventText += resultRepeatsTail(loop)
@@ -5114,7 +5174,7 @@ function maybeWarnByteCap(loop, warned) {
     try {
       loop.appendUserTurn([
         { type: 'text', name: 'event',    text: eventText },
-        { type: 'text', name: 'snapshot', text: snapshotText({ playerRequestOwed: !!replyDeferred?.length }) },
+        { type: 'text', name: 'snapshot', text: snapshotText({ playerRequestOwed: !!replyDeferred?.length, deferredShown: replyDeferred ?? [] }) },
       ])
     } catch (err) {
       logger.warn?.(`[sei/orch] action_complete (tick-claimed) appendUserTurn failed: ${err.message}`)
@@ -6074,7 +6134,9 @@ function maybeWarnByteCap(loop, warned) {
       // unanswered-line nudge covers it, so no "you answered" claim here.
       // 261017 (pass 14): a list, oldest first. A later question answered in
       // words ("whats ur favorite block") used to replace the order before it.
-      if (_p1Trigger && (actingTools.length > 0 || hasStop || unheededPlayerStop)) loop._replyDeferred = null
+      // 261112 (pass 53): a line answered with work or a stop also ends the
+      // lines a hand-over kept (deferredLines).
+      if (_p1Trigger && (actingTools.length > 0 || hasStop || unheededPlayerStop)) { loop._replyDeferred = null; deferredLines = []; deferredCarry = null }
       else if (_p1Trigger && !loop._groupVoiceLine && loop._spokeThisLoop && loop._lastPlayerLine?.text &&
                (loop.inFlight || loopAwaitsSettle(loop))) {
         const text = loop._lastPlayerLine.text

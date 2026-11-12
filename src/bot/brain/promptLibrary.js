@@ -1090,6 +1090,18 @@ export const NUDGES = {
     return `While it ran, the player said ${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}, and you answered without starting anything. If one of them asked you to do something you have not started, start it now, before your own plan.`
   },
 
+  // 261112 (quality pass 53): the same lines on the turns after that
+  // completion turn, as a snapshot line while nothing is running
+  // (orchestrator deferredNoteText). The completion turn showed them once,
+  // and in errands-03 (11-12 scorecard) that turn went to handing the coal
+  // over, as the arrival note asks; the log order was gone after it and the
+  // next idle tick went to her own furnace.
+  deferredNote: ({ who, lines }) => {
+    const quoted = (Array.isArray(lines) ? lines : [lines]).map((l) => clipNote(l, 200)).filter(Boolean).map((l) => `"${l}"`)
+    const said = quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}` : quoted[0]
+    return `asked earlier: while you were busy, ${who || 'the player'} said ${said} and you answered without starting anything. If they asked you to do something there and have not called it off, it comes before your own goal: start it now.`
+  },
+
   // 261031 (quality pass 32): the completion turn of a walk that reached the
   // player, when she acted on a line of theirs since her last hand-over
   // (orchestrator arrivalAskText). Without it the arrival turn carried only
