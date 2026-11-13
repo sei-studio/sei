@@ -345,6 +345,10 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.dst.installProgress, handler);
     return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
   },
+  // Factorio (261113; src/shared/factorioIpc.ts)
+  factorioSetupState: () => ipcRenderer.invoke(IpcChannel.factorio.setupState),
+  factorioInstall: () => ipcRenderer.invoke(IpcChannel.factorio.install),
+  factorioLaunch: () => ipcRenderer.invoke(IpcChannel.factorio.launch),
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

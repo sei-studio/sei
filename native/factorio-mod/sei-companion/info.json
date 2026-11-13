@@ -1,0 +1,10 @@
+{
+  "name": "sei-companion",
+  "version": "0.1.0",
+  "title": "Sei Companion",
+  "author": "Sei",
+  "homepage": "https://sei.gg",
+  "factorio_version": "2.1",
+  "dependencies": ["base >= 2.1"],
+  "description": "The in-game body for a Sei AI companion: a real character that walks beside you, fights biters, gathers, crafts, hands things over and builds your ghosts. Driven by the Sei desktop app over localhost UDP (start Factorio with --enable-lua-udp)."
+}

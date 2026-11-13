@@ -123,6 +123,19 @@ const ASSET_PACKS = {
     // What must exist after the build for the pack to be usable.
     mustExist: [path.join('assets', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.dll'), path.join('assets', 'stardew-mod', 'SeiCompanion', 'manifest.json')],
     build: { cmd: 'bash', args: [path.join('scripts', 'build-stardew-mod.sh')] },
+    dryRunInput: path.join('native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj'),
+  },
+  // 261113: the Factorio pack is the plain Lua mod, copied from its source
+  // folder (no build step). ONLY native/factorio-mod/sei-companion ships;
+  // native/factorio-mod/sei-testkit is a test helper and never goes in.
+  // src/main/games/factorio/install.ts MOD_SOURCE_RELATIVE reads the same
+  // two paths (packaged: assets/..., dev: native/...).
+  factorio: {
+    assetsDir: path.join('assets', 'factorio-mod', 'sei-companion'),
+    sourceDir: path.join('native', 'factorio-mod', 'sei-companion'),
+    mustExist: [path.join('assets', 'factorio-mod', 'sei-companion', 'info.json'), path.join('assets', 'factorio-mod', 'sei-companion', 'control.lua')],
+    build: null,
+    dryRunInput: path.join('native', 'factorio-mod', 'sei-companion', 'info.json'),
   },
 };
 
@@ -131,24 +144,26 @@ async function buildAssetPack(opts) {
   const spec = ASSET_PACKS[opts.game];
   const rootPkg = readJson(path.join(ROOT, 'package.json'));
   const version = rootPkg.version;
-  const sourceDir = opts.assetsFrom ?? path.join(ROOT, spec.assetsDir);
+  const sourceDir = opts.assetsFrom ?? path.join(ROOT, spec.sourceDir ?? spec.assetsDir);
   log(`${opts.game}: asset pack, app ${version}, target any-any`);
 
   if (opts.dryRun) {
     // No game on CI: the dry run only checks that the build inputs exist.
-    const modProj = path.join(ROOT, 'native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj');
+    const modProj = path.join(ROOT, spec.dryRunInput);
     if (!existsSync(modProj)) throw new Error(`missing ${modProj}`);
     log(`dry run OK: mod sources present; the pack is built with the game installed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     return;
   }
 
-  if (!opts.skipBuild && !opts.assetsFrom) {
+  if (spec.build && !opts.skipBuild && !opts.assetsFrom) {
     log(`building the mod: ${spec.build.cmd} ${spec.build.args.join(' ')}`);
     const res = spawnSync(spec.build.cmd, spec.build.args, { cwd: ROOT, stdio: 'inherit', shell: isWin });
     if (res.status !== 0) throw new Error(`mod build exited ${res.status}`);
   }
   for (const rel of spec.mustExist) {
-    const p = opts.assetsFrom ? path.join(opts.assetsFrom, path.relative(spec.assetsDir, rel)) : path.join(ROOT, rel);
+    // Each required path is named under assetsDir; look for it in the folder
+    // the copy below reads (for Stardew that is assetsDir itself).
+    const p = path.join(sourceDir, path.relative(spec.assetsDir, rel));
     if (!existsSync(p)) throw new Error(`asset pack input missing: ${p} (build the mod first, see native/stardew-mod/README.md)`);
   }
 

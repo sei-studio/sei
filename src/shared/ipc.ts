@@ -94,6 +94,7 @@ export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './g
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
 import type { DstInstallState, DstSurvivorPick } from './dstIpc';
 import { DstChannel } from './dstIpc';
+import { FactorioChannel, type FactorioActionResult, type FactorioSetupState } from './factorioIpc';
 export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
@@ -2040,6 +2041,14 @@ export interface RendererApi {
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
   /** Push: install progress while dstInstall runs. */
   onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
+
+  // Factorio (261113) — see src/shared/factorioIpc.ts.
+  /** Detect the game, the mod and the Sei link port (no writes). */
+  factorioSetupState(): Promise<FactorioSetupState>;
+  /** Copy the mod from the game pack into Factorio's mods folder and enable it (refused while Factorio runs). */
+  factorioInstall(): Promise<FactorioActionResult>;
+  /** Install or update the mod as needed, then start Factorio with the Sei link. */
+  factorioLaunch(): Promise<FactorioActionResult>;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -4034,6 +4043,8 @@ export const IpcChannel = {
   },
   /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
   dst: DstChannel,
+  /** Factorio setup / install / launch (261113; src/shared/factorioIpc.ts). */
+  factorio: FactorioChannel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
