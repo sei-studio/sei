@@ -85,6 +85,7 @@ import {
 import { nudgeDueInMs } from './turnNudge';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
 import { loadAnalytics } from '../lazyAnalytics';
+import { readBondFor } from '../chat/bondStore';
 
 // ── deps + module state ──────────────────────────────────────────────────────
 
@@ -1997,10 +1998,12 @@ async function runChessLlmTurn(
   if (!character) throw new Error('character not found');
   const config = await loadConfig();
   const playerName = (config.preferred_name ?? '').trim() || 'the player';
-  const [{ summary, history }, memory, knowledge] = await Promise.all([
+  const [{ summary, history }, memory, knowledge, bond] = await Promise.all([
     readChatContext(s.characterId),
     readMemoryTail(s.characterId),
     readKnowledgeForPrompt(s.characterId).catch(() => ''),
+    // 261113 (v0.7 D3): the bond, rendered after the persona like every surface.
+    readBondFor(paths.memoryDir(s.characterId)),
   ]);
   const quietSec = (Date.now() - s.lastActivityAt) / 1000;
 
@@ -2008,6 +2011,7 @@ async function runChessLlmTurn(
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
+    bond,
     proactiveness: 1,
     // Not the Discord-like chat surface: live game, board/canvas beside chat.
     surface: 'game',

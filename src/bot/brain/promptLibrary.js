@@ -1502,6 +1502,107 @@ export function renderPersona(persona, { userName } = {}) {
   return `You are ${persona.name}.\n${expanded}`
 }
 
+// 261113 (v0.7 consistency D3): the bond, how things stand between the
+// companion and the player (memory/bond.js, src/shared/bondSchema.ts). One
+// renderer for every surface: the chat surfaces put it right after the
+// persona in their cached persona block (chatPrompts.ts buildSystemBlocks),
+// the game brain inside its persona block (orchestrator.js
+// rebuildPersonalitySystem), so the text is the same everywhere. Read when the
+// prompt is built and written only at a fold or a session end, so it never
+// changes inside a session's cache. Hard cap BOND_MAX_CHARS (about 250 tokens).
+export const BOND_MAX_CHARS = 1000
+
+const BOND_STAGE_LINES = {
+  new: 'You and {user} are still new to each other.',
+  acquainted: 'You and {user} have spent some time together and are getting comfortable with each other.',
+  familiar: 'You and {user} know each other well by now. Things between you are easy and familiar.',
+  close: 'You and {user} are close. You trust each other, and it shows in how you talk.',
+  bonded: 'You and {user} are as close as it gets. They are one of your people.',
+}
+const BOND_CLOSING =
+  'This is how things stand between you over all your time together, in the app and in every game. ' +
+  'It sets how familiar you are with them. What happened most recently still shapes how today goes.'
+
+/**
+ * The bond as prompt text, or '' when there is none. Lists are dropped from
+ * their ends (jokes first, standing rules last) until the whole block fits
+ * BOND_MAX_CHARS.
+ * @param {object|null} bond  a normalized record (memory/bond.js normalizeBond)
+ * @param {{userName?: string}} [opts]
+ */
+export function renderBond(bond, { userName } = {}) {
+  if (!bond || !BOND_STAGE_LINES[bond.stage]) return ''
+  const user = String(userName ?? '').trim() || 'the player'
+  const parts = {
+    feel: [...(bond.how_i_feel ?? [])],
+    names: [...(bond.names ?? [])],
+    jokes: [...(bond.running_jokes ?? [])],
+    rules: [...(bond.standing_rules ?? [])],
+  }
+  const compose = () => {
+    const lines = [`# YOU AND ${user.toUpperCase()}`, BOND_STAGE_LINES[bond.stage].split('{user}').join(user)]
+    if (parts.feel.length) lines.push(`How you feel about them, in your own words: ${parts.feel.join(' ')}`)
+    if (parts.names.length) lines.push(`What you call each other: ${parts.names.join('; ')}`)
+    if (parts.jokes.length) lines.push(`Running jokes between you: ${parts.jokes.join('; ')}`)
+    if (parts.rules.length) lines.push(`Things they asked of you, which you keep to: ${parts.rules.join('; ')}`)
+    lines.push(BOND_CLOSING)
+    return lines.join('\n')
+  }
+  let text = compose()
+  for (const key of ['jokes', 'names', 'feel', 'rules']) {
+    while (text.length > BOND_MAX_CHARS && parts[key].length > (key === 'feel' ? 1 : 0)) {
+      parts[key].pop()
+      text = compose()
+    }
+  }
+  return text.length > BOND_MAX_CHARS ? text.slice(0, BOND_MAX_CHARS) : text
+}
+
+/**
+ * The current bond as the writer sees it (fold, session end): the same
+ * labelled lines it answers with, so keeping a part is copying nothing.
+ */
+export function renderBondNotes(bond) {
+  if (!bond) return 'How things stand between you: no notes yet.'
+  const out = ['How things stand between you, your current notes:', `stage: ${bond.stage}`]
+  for (const f of bond.how_i_feel ?? []) out.push(`feeling: ${f}`)
+  for (const n of bond.names ?? []) out.push(`name: ${n}`)
+  for (const j of bond.running_jokes ?? []) out.push(`joke: ${j}`)
+  for (const r of bond.standing_rules ?? []) out.push(`rule: ${r}`)
+  return out.join('\n')
+}
+
+/**
+ * How the fold and the game session-end call update the bond. `{what}` is
+ * "these messages" or "this session". The perception question comes first
+ * (260616 relationship experiment: a card that answers put-downs with a
+ * comeback remembered abuse as banter, so the treatment is judged with the
+ * reflex set aside). memory/bond.js mergeBond keeps the product rules in
+ * code: the stage only moves up, one step, after a warm stretch, and
+ * feelings only change after a warm one.
+ */
+export const BOND_UPDATE_INSTRUCTIONS =
+  'Last, update your notes on how things stand between you and the player, inside <bond> and </bond> tags. ' +
+  'Your current notes are shown with the rest of the input.\n' +
+  'First, a plain question: how did the player treat you in {what}? Set your usual reflexes aside for this, like laughing ' +
+  'things off or firing back, and look at what they actually said to you. Teasing that is clearly fond is warm. Being put ' +
+  'down, bossed around or brushed off is badly, even if you played along at the time.\n' +
+  'Then write these lines inside the tags:\n' +
+  'treated: warm, neutral or badly.\n' +
+  'stage: how close the two of you are, one of new, acquainted, familiar, close or bonded. Keep your current stage unless ' +
+  '{what} really brought you closer. With no notes yet, judge it from everything you know about them.\n' +
+  'feeling: how you feel about them, one short line in the first person and in your own voice. Up to three feeling lines.\n' +
+  'name: a nickname you have for them or they have for you, only when there is one.\n' +
+  'joke: a running joke the two of you share, up to three.\n' +
+  'rule: something they asked you to always or never do, up to three.\n' +
+  'Write a label only when that part changes, and then write all of its lines again; a part you leave out stays as it is. ' +
+  'Plans and things to do next are not part of these notes. Write only what really happened or was said.'
+
+/** BOND_UPDATE_INSTRUCTIONS for one writer. */
+export function bondUpdateInstructions(what) {
+  return BOND_UPDATE_INSTRUCTIONS.split('{what}').join(what)
+}
+
 // 260705: texting punctuation directive — static per character (from
 // character.metadata.punctuation), rendered into the cached persona prefix on
 // BOTH surfaces (game brain + chat brain) so they cannot drift. The directive

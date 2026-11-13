@@ -64,6 +64,40 @@ matches an entry anywhere in the file. A fact that changed is written with
 "now" wording, and `COMPACTION_SYSTEM` keeps only the newest of two entries
 that disagree.
 
+**The bond (261113, v0.7 consistency D3).** One small record per character,
+`<memoryDir>/bond.json`: a closeness stage (new, acquainted, familiar, close,
+bonded) plus up to three lines each of how she feels about the player, what
+they call each other, running jokes and rules they asked her to keep. Schema
+`src/shared/bondSchema.ts`; read, merge and write in
+`src/bot/brain/memory/bond.js` (the bot cannot import shared TS); main's side
+`chat/bondStore.ts`.
+- Rendered by `promptLibrary.js renderBond` right after the persona, inside
+  the persona block (the bot's cached block 1, the chat surfaces' persona
+  block), the same text on every surface, at most `BOND_MAX_CHARS` (about 250
+  tokens). No bond, no text: the prompt is byte-identical to before.
+- Read when a prompt is built (the bot once at session start, chat, call,
+  chess, Draw! and Backseat per turn through `readBondFor`). Written only at
+  consolidation, so it never changes inside a session's cache: the fold (every
+  transcript surface, and the only path for free chat-only users, whose chat
+  session-end check is skipped) and the game session-end call
+  (`startSessionEnd` with `bond: true`, player-ended bot game sessions only;
+  the companion-goodbye route runs no check and does not update it). Game
+  session lines inside a fold are not weighed again.
+- Both writers return a `<bond>` block of labelled lines
+  (`BOND_UPDATE_INSTRUCTIONS`), parsed first by `parseBondBlock`. The writer
+  first judges how the player treated her (`treated: warm|neutral|badly`,
+  the perception step: she sets her own reflex to read rudeness as banter
+  aside). `mergeBond` keeps the product rules (product call 261113): the stage
+  never drops and rises at most one step, only after a warm stretch; a first
+  write starts at most at `close`; feelings change only after a warm stretch;
+  names, jokes and rules update either way. No cooling for now.
+- Plans and open threads are memory's, not the bond's: a first version kept
+  three threads and the fold replaced an older open plan with newer chat ideas.
+- Never synced to the cloud, never shown to the player. Reset memory wipes it
+  with the memory dir; the local-to-account import moves it as derived state.
+- Analytics, shape only: `bond_updated {character_id, source, outcome, stage,
+  prev_stage, stage_changed, treated}` (`bondUpdatedProps`).
+
 `continuityCore.ts` is the pure half of `continuity.ts` (selection, fold call,
 reads, handoff, no electron): the consistency eval
 (`scripts/quality-eval/consistency`) runs it from the checkout it measures, so

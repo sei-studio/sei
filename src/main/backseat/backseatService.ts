@@ -88,6 +88,7 @@ import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
 import type { ActOutcome } from '../computerUse/actLoop';
 import { loadAnalytics } from '../lazyAnalytics';
 import { WatchedTally, classifyWatched, watchedProps } from './watchedGame';
+import { readBondFor } from '../chat/bondStore';
 
 /**
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
@@ -1121,10 +1122,12 @@ async function runTurn(
   const character = await getCharacter(s.characterId);
   if (!character) return;
   const config = await loadConfig();
-  const [{ summary, history }, memory, knowledge] = await Promise.all([
+  const [{ summary, history }, memory, knowledge, bond] = await Promise.all([
     readChatContext(s.characterId),
     readMemoryTail(s.characterId),
     readKnowledgeForPrompt(s.characterId).catch(() => ''),
+    // 261113 (v0.7 D3): the bond, rendered after the persona like every surface.
+    readBondFor(paths.memoryDir(s.characterId)),
   ]);
 
   const voiceCall = requireDeps().isCallActive?.(s.characterId) === true;
@@ -1134,6 +1137,7 @@ async function runTurn(
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
+    bond,
     proactiveness: BACKSEAT_PROACTIVENESS,
     punctuation:
       character.metadata?.punctuation === 'deliberate' ? 'deliberate' : 'casual',

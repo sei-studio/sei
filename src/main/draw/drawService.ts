@@ -117,6 +117,7 @@ import {
   turnEndLine,
   type DrawRestart,
 } from './drawPrompts';
+import { readBondFor } from '../chat/bondStore';
 
 // ── deps + module state ──────────────────────────────────────────────────────
 
@@ -2217,10 +2218,12 @@ async function prepareCall(s: Session): Promise<{
   const character = await getCharacter(s.characterId);
   if (!character) throw new Error('character not found');
   const config = await loadConfig();
-  const [{ summary }, memory, knowledge] = await Promise.all([
+  const [{ summary }, memory, knowledge, bond] = await Promise.all([
     readChatContext(s.characterId),
     readMemoryTail(s.characterId),
     readKnowledgeForPrompt(s.characterId).catch(() => ''),
+    // 261113 (v0.7 D3): the bond, rendered after the persona like every surface.
+    readBondFor(paths.memoryDir(s.characterId)),
   ]);
 
   const punctuation: 'casual' | 'deliberate' =
@@ -2230,6 +2233,7 @@ async function prepareCall(s: Session): Promise<{
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
+    bond,
     proactiveness: 1,
     // Not the Discord-like chat surface: live game, board/canvas beside chat.
     surface: 'game',

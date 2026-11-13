@@ -60,6 +60,7 @@ import { isModelRequestRejection } from './modelRejection';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { memoryForFold, saveFacts, type FactSave } from './memoryFacts';
 import { capture } from '../analytics';
+import { bondUpdatedProps, readBondFor, saveBondFor } from './bondStore';
 import { resolvePersonaText } from './personaText';
 
 // Re-export for the existing consumers (chatService and friends import it from
@@ -302,7 +303,12 @@ async function foldIntoSummary(
     // 261113 (v0.7 D2): the fold also returns the durable facts of the batch
     // that memory does not have yet (memoryFacts.ts). It is shown the memory
     // the chat reads, and the path is fixed here, in the scope the fold began.
-    const memoryFile = path.join(paths.memoryDir(id), 'MEMORY.md');
+    const memoryDir = paths.memoryDir(id);
+    const memoryFile = path.join(memoryDir, 'MEMORY.md');
+    // 261113 (v0.7 D3): the bond, updated by the same call. For a free cloud
+    // account that only texts, the fold is the only consolidation that runs
+    // (the chat session-end check skips free cloud), so the bond lives here.
+    const bond = await readBondFor(memoryDir);
     let memoryBody = '';
     try {
       memoryBody = await readFile(memoryFile, 'utf8');
@@ -325,6 +331,7 @@ async function foldIntoSummary(
       summary: bridge.summary,
       msgs: newMsgs,
       memory: memoryForFold(memoryBody),
+      bond,
       persona: personaExpanded,
       model: SUMMARY_MODEL,
       extra: SUMMARY_EXTRA,
@@ -382,6 +389,12 @@ async function foldIntoSummary(
       saved: facts.saved,
       dupes: facts.dupes,
     });
+    // The bond after the facts, with the same checks as the bridge write below.
+    const bondRes = await saveBondFor(memoryDir, res.bond ?? null, {
+      mayWrite: () => clearEpoch(id) === epoch && getActiveScope() === scope,
+      now: lastTs || undefined,
+    });
+    capture('bond_updated', bondUpdatedProps(id, 'fold', bondRes));
     const next: BridgeState = {
       summary: res.summary,
       summarizedCount: bridge.summarizedCount + counted,

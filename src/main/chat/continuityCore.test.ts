@@ -141,4 +141,21 @@ describe('runFold', () => {
     expect(seen).toEqual(['model not allowed']);
     await expect(runFold({ llm: llm(new Error('500')), summary: '', msgs, model: 'big', fallbackModel: () => 'small', isRejection: () => false })).rejects.toThrow('500');
   });
+
+  it('with a bond (261113 D3): shows the notes, asks for the block and keeps it out of the summary', async () => {
+    const l = llm('<summary>we fished</summary>\n<remember>\nAlex likes trout\n</remember>\n<bond>\ntreated: warm\nstage: acquainted\njoke: the trout\n</bond>');
+    const r = await runFold({ llm: l, summary: '', msgs, memory: '', bond: null, model: 'm' });
+    expect(r).toMatchObject({ status: 'ok', summary: 'we fished', facts: ['Alex likes trout'], bond: { treated: 'warm', stage: 'acquainted', lists: { running_jokes: ['the trout'] } } });
+    expect(String(l.calls[0].system)).toContain('<bond>');
+    expect(String(l.calls[0].system)).toContain('Game session line was already weighed');
+    expect(String(l.calls[0].system)).not.toMatch(/[\u2014\u2013]/);
+    expect(String((l.calls[0].messages as Array<{ content: string }>)[0].content)).toContain('no notes yet');
+    // An untagged summary never stores the bond block either.
+    expect(await runFold({ llm: llm('we fished\n<bond>\nstage: new\n</bond>'), summary: '', msgs, bond: null, model: 'm' })).toMatchObject({ summary: 'we fished', bond: { stage: 'new' } });
+    // Without the bond input the prompt and result are as before.
+    const plain = llm('<summary>s</summary><bond>stage: new</bond>');
+    const r2 = await runFold({ llm: plain, summary: '', msgs, model: 'm' });
+    expect(String(plain.calls[0].system)).not.toContain('<bond>');
+    expect(r2).not.toHaveProperty('bond');
+  });
 });

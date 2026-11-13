@@ -18,6 +18,11 @@
 import type { ChatMessage } from '../../shared/ipc';
 import { buildFoldSystem, buildFoldUserText, extractRememberTag, extractSummaryTag, type FoldMsg } from './foldPrompt';
 import { playStoryText } from './playSummary';
+import { parseBondBlock } from '../../bot/brain/memory/bond.js';
+import type { Bond } from '../../shared/bondSchema';
+
+/** A parsed `<bond>` block (memory/bond.js parseBondBlock), merged by saveBondUpdate. */
+export type BondUpdate = NonNullable<ReturnType<typeof parseBondBlock>['update']>;
 
 /** Verbatim tail preserved after a fold. */
 export const RECENT_WINDOW = 50;
@@ -180,7 +185,7 @@ export interface FoldLlm {
 
 export type FoldResult =
   // 261113 (v0.7 D2): `facts`, the <remember> lines, saved by the caller.
-  | { status: 'ok'; summary: string; facts: string[]; raw: string }
+  | { status: 'ok'; summary: string; facts: string[]; raw: string; bond?: BondUpdate | null }
   | { status: 'max_tokens' | 'empty'; raw: string };
 
 /**
@@ -195,6 +200,11 @@ export async function runFold(p: {
   msgs: FoldMsg[];
   /** The memory notes as the chat reads them, so the facts skip what is saved (D2). */
   memory?: string;
+  /**
+   * 261113 (D3): the current bond (null = none yet). When set (even null) the
+   * fold also returns a bond update; undefined leaves the bond out entirely.
+   */
+  bond?: Bond | null;
   persona?: string;
   model: string;
   extra?: Record<string, unknown>;
@@ -203,8 +213,9 @@ export async function runFold(p: {
   isRejection?: (msg: string) => boolean;
   onFallback?: (msg: string) => void;
 }): Promise<FoldResult> {
-  const system = buildFoldSystem(p.persona);
-  const userText = buildFoldUserText(p.summary, p.msgs, p.memory);
+  const withBond = p.bond !== undefined;
+  const system = buildFoldSystem(p.persona, { bond: withBond });
+  const userText = buildFoldUserText(p.summary, p.msgs, p.memory, withBond ? (p.bond ?? null) : undefined);
   const once = (model: string, extra?: Record<string, unknown>) =>
     p.llm.call({
       model,
@@ -226,6 +237,10 @@ export async function runFold(p: {
   }
   const raw = res.content.map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : '')).join('');
   if (res.stopReason === 'max_tokens') return { status: 'max_tokens', raw };
-  const summary = extractSummaryTag(raw);
-  return summary ? { status: 'ok', summary, facts: extractRememberTag(raw), raw } : { status: 'empty', raw };
+  // The <bond> block comes out first, so neither the summary nor the facts read it.
+  const { update, rest } = withBond ? parseBondBlock(raw) : { update: null, rest: raw };
+  const summary = extractSummaryTag(rest);
+  return summary
+    ? { status: 'ok', summary, facts: extractRememberTag(rest), raw, ...(withBond ? { bond: update } : {}) }
+    : { status: 'empty', raw };
 }

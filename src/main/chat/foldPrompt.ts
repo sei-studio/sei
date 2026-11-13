@@ -13,6 +13,8 @@
  * NOTHING in this file may import from continuity.ts, paths.ts, sdk.ts, or
  * anything else that touches electron — plain `npx tsx` must be able to load it.
  */
+import { bondUpdateInstructions, renderBondNotes } from '../../bot/brain/promptLibrary.js';
+import type { Bond } from '../../shared/bondSchema';
 
 export interface FoldMsg {
   /**
@@ -117,13 +119,21 @@ export function buildFoldCalendar(msgs: FoldMsg[]): string {
  * calendar line. Shared by continuity.ts and the offline evals so both send
  * the same text.
  */
-export function buildFoldUserText(summary: string, msgs: FoldMsg[], memory?: string): string {
+export function buildFoldUserText(
+  summary: string,
+  msgs: FoldMsg[],
+  memory?: string,
+  // 261113 (v0.7 D3): the current bond (memory/bond.js), null = none yet.
+  // undefined = the fold does not update the bond (callers that predate it).
+  bond?: Bond | null,
+): string {
   const calendar = buildFoldCalendar(msgs);
   // 261113 (v0.7 D2): the memory notes, so the fold's <remember> lines skip
   // what is already saved. Omitted (undefined) by callers that predate it.
   const notes = memory === undefined ? '' : `Your memory notes, already saved:\n${memory.trim() || '(none yet)'}\n\n`;
+  const bondNotes = bond === undefined ? '' : `${renderBondNotes(bond ?? null)}\n\n`;
   return (
-    `${notes}Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
+    `${notes}${bondNotes}Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
     (calendar ? `\n\n${calendar}` : '')
   );
 }
@@ -157,7 +167,7 @@ export function extractRememberTag(text: string, max = FOLD_MAX_FACTS): string[]
  * example noise line — quoting a phrase inside a ban has been measured on this
  * project (backseat 260807) to FEED the phrase back into outputs.
  */
-export function buildFoldSystem(personaExpanded?: string): string {
+export function buildFoldSystem(personaExpanded?: string, opts: { bond?: boolean } = {}): string {
   const personaBlock =
     personaExpanded && personaExpanded.trim()
       ? "\n\nWrite the summary in the companion's own voice. The companion's persona:\n" +
@@ -205,6 +215,12 @@ export function buildFoldSystem(personaExpanded?: string): string {
     'newer one. Leave out anything your notes already say, small talk, passing moods, game state, anything from low-signal ' +
     `material, and anything nobody actually said. Put the lines inside <remember> and </remember> tags, one per line, at most ${FOLD_MAX_FACTS}, and leave the tags ` +
     'empty when there is nothing new.' +
+    // 261113 (v0.7 D3): the bond, from the same call. A game session was
+    // weighed when it ended (playerEndNextStep.ts), so the fold judges the
+    // conversation lines only and no stretch of time counts twice.
+    (opts.bond
+      ? `\n\n${bondUpdateInstructions('these messages')} A Game session line was already weighed when that game ended, so judge the conversation lines for this.`
+      : '') +
     personaBlock
   );
 }
@@ -222,5 +238,7 @@ export function buildFoldSystem(personaExpanded?: string): string {
 export function extractSummaryTag(text: string): string {
   const m = /<summary>([\s\S]*?)<\/summary>/i.exec(text);
   // 261113: the untagged fallback must not store the <remember> block (D2).
-  return (m ? m[1] : text.replace(/<remember>[\s\S]*?(?:<\/remember>|$)/gi, '')).trim();
+  return (
+    m ? m[1] : text.replace(/<remember>[\s\S]*?(?:<\/remember>|$)/gi, '').replace(/<bond>[\s\S]*?(?:<\/bond>|$)/gi, '')
+  ).trim();
 }

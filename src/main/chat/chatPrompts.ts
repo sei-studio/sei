@@ -30,7 +30,9 @@ import {
   NEXT_TIME_GAME_FIELD,
   NEXT_TIME_GOODBYE,
   NEXT_TIME_SPOKEN,
+  renderBond,
 } from '../../bot/brain/promptLibrary.js';
+import type { Bond } from '../../shared/bondSchema';
 import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
 import { FACE_PROMPT } from '../../bot/brain/faceExpressions.js';
@@ -41,6 +43,12 @@ export interface BuildSystemArgs {
   persona: Persona;
   name: string;
   preferredName: string;
+  /**
+   * 261113 (v0.7 D3): the bond (memory/bond.js readBond), rendered by
+   * renderBond right after the persona, the same text the game brain caches.
+   * Null or absent: nothing is added, so the prompt is byte-identical.
+   */
+  bond?: Bond | null;
   /** Proactiveness tier for the chat directive. 260725: no longer a
    *  per-character dial — callers pass a surface constant (chat and chess
    *  both use 1, the reactive tier). */
@@ -374,6 +382,9 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     ),
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
+  // 261113 (D3): how things stand between you, after the persona on every surface.
+  const bond = renderBond(args.bond ?? null, { userName: args.preferredName });
+  if (bond) personaParts.push(bond);
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
   // Punctuation register (260729): a call is SPOKEN, so the texting directive is
   // replaced rather than added to — see VOICE_PUNCTUATION_DIRECTIVE. The persona

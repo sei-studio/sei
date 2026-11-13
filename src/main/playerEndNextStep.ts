@@ -54,7 +54,16 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { LlmProvider } from './llm/types';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine } from '../bot/brain/nextStep.js';
-import { PLAYER_END_NEXT_STEP_SYSTEM, PLAYER_END_RECAP_ADDENDUM } from '../bot/brain/promptLibrary.js';
+import {
+  PLAYER_END_NEXT_STEP_SYSTEM,
+  PLAYER_END_RECAP_ADDENDUM,
+  bondUpdateInstructions,
+  renderBondNotes,
+} from '../bot/brain/promptLibrary.js';
+import { parseBondBlock } from '../bot/brain/memory/bond.js';
+import type { Bond } from '../shared/bondSchema';
+import { bondUpdatedProps, type BondSaveResult } from './chat/bondStore';
+import type { BondUpdate } from './chat/continuityCore';
 import { gameDisplayName, gameIdFromName, nameInSentence } from '../shared/homeNextStep';
 import { GAME_IDS, isGameId, type GameId } from '../shared/gameIpc';
 
@@ -85,6 +94,8 @@ export const PLAYER_END_MAX_TOKENS = 150;
  * (50 words or less, about 80 tokens) ahead of the plan lines.
  */
 export const PLAYER_END_RECAP_MAX_TOKENS = 400;
+/** 261113 (v0.7 D3): the bond block's room on top of the recap (about 150 tokens out). */
+export const PLAYER_END_BOND_EXTRA_TOKENS = 250;
 /** A second end for the same character inside this window is skipped. */
 export const DEDUPE_WINDOW_MS = 60_000;
 
@@ -238,9 +249,15 @@ export function buildPlayerEndPrompt(p: {
   memories: Array<string | MemoryEntry>;
   /** 261113: also ask for the session's recap (game sessions, see runSessionEnd). */
   recap?: boolean;
+  /**
+   * 261113 (v0.7 D3): the current bond (null = none yet): also ask for the
+   * bond update. undefined = no bond block.
+   */
+  bond?: Bond | null;
 }): { system: string; user: string } {
   // {card_name}: the name as the Home card shows it ("red" reads "Red").
-  const base = p.recap ? `${PLAYER_END_NEXT_STEP_SYSTEM}\n\n${PLAYER_END_RECAP_ADDENDUM}` : PLAYER_END_NEXT_STEP_SYSTEM;
+  const withRecap = p.recap ? `${PLAYER_END_NEXT_STEP_SYSTEM}\n\n${PLAYER_END_RECAP_ADDENDUM}` : PLAYER_END_NEXT_STEP_SYSTEM;
+  const base = p.bond !== undefined ? `${withRecap}\n\n${bondUpdateInstructions('this session')}` : withRecap;
   const system = base.split('{card_name}')
     .join(nameInSentence(p.name))
     .split('{name}')
@@ -258,10 +275,12 @@ export function buildPlayerEndPrompt(p: {
   );
   const memories = renderMemories(p.memories, p.recap ? RECAP_MAX_MEMORIES : MAX_MEMORIES);
   if (memories) parts.push(memories);
+  if (p.bond !== undefined) parts.push(renderBondNotes(p.bond ?? null));
+  const bondTail = p.bond !== undefined ? ', and last the <bond> block' : '';
   parts.push(
     p.recap
-      ? 'Reply with the recap: line first, then any remember: lines, then the three lines (note:, player: and game:) or the word none.'
-      : 'Reply with the three lines (note:, player: and game:), or with none.',
+      ? `Reply with the recap: line first, then any remember: lines, then the three lines (note:, player: and game:) or the word none${bondTail}.`
+      : `Reply with the three lines (note:, player: and game:), or with none${bondTail}.`,
   );
   return { system, user: parts.join('\n\n') };
 }
@@ -535,6 +554,13 @@ export interface PlayerEndInput {
    * a chat's already do (and fold from there).
    */
   recap?: boolean;
+  /**
+   * 261113 (v0.7 D3): also update the bond (memory/bond.js) from the same
+   * call. Game sessions only, like the recap: everything else reaches the
+   * transcript, and the fold updates the bond from there, so no stretch of
+   * time is weighed twice.
+   */
+  bond?: boolean;
 }
 
 /** runSessionEnd's answer: the check's outcome, plus the recap when one was asked for and given. */
@@ -543,6 +569,8 @@ export interface SessionEndResult {
   recap: string | null;
   /** 261113 (D2): the session's remember: lines and what was saved; null when none came back. */
   facts?: FactSave | null;
+  /** 261113 (D3): the bond update's result; null when none was asked for or the call never ran. */
+  bond?: BondSaveResult | null;
 }
 
 export type PlayerEndOutcome =
@@ -586,6 +614,12 @@ export interface PlayerEndDeps {
    * saveFacts), filed like the plan line. Optional: without it they are dropped.
    */
   saveFacts?(characterId: string, facts: string[], opts?: { inGame?: boolean }): Promise<FactSave>;
+  /**
+   * 261113 (v0.7 D3): read and update the bond (chat/bondStore.ts).
+   * Optional: without both, inputs with `bond` run without the bond block.
+   */
+  readBond?(characterId: string): Promise<Bond | null>;
+  saveBond?(characterId: string, update: BondUpdate | null): Promise<BondSaveResult>;
   /**
    * 261013 (T119): record where a just-saved plan came from, for the Home
    * "up next" card (homeNextStep.ts). Optional; best-effort. 261014: plus
@@ -656,7 +690,9 @@ export async function runSessionEnd(
 ): Promise<SessionEndResult> {
   let recap: string | null = null;
   let facts: FactSave | null = null;
+  let bondRes: BondSaveResult | null = null;
   const { characterId } = input;
+  const withBond = input.bond === true && !!deps.readBond && !!deps.saveBond;
   const short = characterId.slice(0, 8);
   let provider: LlmProvider | null = null;
   let reachedModel = false;
@@ -689,6 +725,14 @@ export async function runSessionEnd(
           } catch {
             /* no memory yet */
           }
+          let bond: Bond | null = null;
+          if (withBond) {
+            try {
+              bond = await deps.readBond!(characterId);
+            } catch {
+              /* none yet */
+            }
+          }
           const prompt = buildPlayerEndPrompt({
             name,
             activity: input.activity,
@@ -697,19 +741,34 @@ export async function runSessionEnd(
             goals,
             memories,
             recap: input.recap === true,
+            ...(withBond ? { bond } : {}),
           });
           reachedModel = true;
           const res = await provider!.call({
-            maxTokens: input.recap ? PLAYER_END_RECAP_MAX_TOKENS : PLAYER_END_MAX_TOKENS,
+            maxTokens:
+              (input.recap ? PLAYER_END_RECAP_MAX_TOKENS : PLAYER_END_MAX_TOKENS) +
+              (withBond ? PLAYER_END_BOND_EXTRA_TOKENS : 0),
             system: prompt.system,
             messages: [{ role: 'user', content: prompt.user }],
             timeoutMs: budget,
             signal: ctrl.signal,
           });
           if (ctrl.signal.aborted) return 'cancelled';
+          // 261113 (D3): the <bond> block comes out first, so the recap and plan parsers never read it.
+          const { update: bondUpdate, rest: replyText } = withBond
+            ? parseBondBlock(res.text)
+            : { update: null, rest: res.text };
+          if (withBond) {
+            bondRes = await deps.saveBond!(characterId, bondUpdate);
+            try {
+              deps.capture('bond_updated', bondUpdatedProps(characterId, 'session_end', bondRes));
+            } catch {
+              /* analytics is never load-bearing */
+            }
+          }
           const parsed = input.recap
-            ? parseSessionEndReply(res.text)
-            : { recap: null, plan: parsePlayerEndReply(res.text), facts: [] as string[] };
+            ? parseSessionEndReply(replyText)
+            : { recap: null, plan: parsePlayerEndReply(replyText), facts: [] as string[] };
           const plan = parsed.plan;
           recap = parsed.recap;
           if (parsed.facts.length && deps.saveFacts) {
@@ -752,7 +811,7 @@ export async function runSessionEnd(
   if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
   // A recap read before a timeout or cancel is not used: the row may already
   // have been written without it, and a cancelled turn must not write.
-  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null, facts };
+  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null, facts, ...(withBond ? { bond: bondRes } : {}) };
 }
 
 /**
@@ -993,6 +1052,15 @@ function defaultDeps(): PlayerEndDeps {
       return trackScopedWrite(
         saveFacts(path.join(memoryDirOf(characterId), 'MEMORY.md'), facts, opts?.inGame ? {} : { section: 'app' }),
       );
+    },
+    async readBond(characterId) {
+      const { readBondFor } = await import('./chat/bondStore');
+      return readBondFor(memoryDirOf(characterId));
+    },
+    async saveBond(characterId, update) {
+      const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');
+      const { saveBondFor } = await import('./chat/bondStore');
+      return trackScopedWrite(saveBondFor(memoryDirOf(characterId), update, { mayWrite: () => scopedTurnCurrent() }));
     },
     async tagPlan(characterId, surface, game, line) {
       const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');

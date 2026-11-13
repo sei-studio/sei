@@ -34,7 +34,9 @@ vi.mock('../adapter/minecraft/behaviors/visualize.js', () => ({
   captureFrame: vi.fn(async () => ({ ok: true, mediaType: 'image/jpeg', dataBase64: 'AAAA' })),
 }))
 
-import { buildMinecraftSystemFixture, buildMinecraftFacesCapture } from './systemBlocks.minecraft.build.js'
+import { buildMinecraftSystemFixture, buildMinecraftFacesCapture, buildMinecraftBondCapture } from './systemBlocks.minecraft.build.js'
+import { mergeBond, writeBond } from './memory/bond.js'
+import { renderBond } from './promptLibrary.js'
 import { FACE_OFFERED_NAMES } from './faceExpressions.js'
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__', 'minecraftSystemBlocks.json')
@@ -95,5 +97,28 @@ describe('facepack dev flag', () => {
       return { ...t, input_schema: { ...t.input_schema, properties: rest } }
     }
     expect(faces.tools.map(strip)).toEqual(base.tools)
+  })
+})
+
+// 261113 (v0.7 D3): a bond in the memory dir rides INSIDE the persona block
+// (index 1), as renderBond renders it for the chat surfaces too; the other
+// blocks, their indices and the tools are unchanged.
+describe('bond block', () => {
+  it('appends the rendered bond to the persona block only', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'sei-sysblocks-bond-'))
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-03T12:00:00Z') })
+    let base, withBond
+    try {
+      base = (await buildMinecraftSystemFixture(dir)).base
+      const bond = mergeBond(null, { treated: 'warm', stage: 'close', lists: { how_i_feel: ['steve is my favourite'] } }, Date.now())
+      await writeBond(dir, bond)
+      withBond = await buildMinecraftBondCapture(dir)
+      expect(withBond.blocks[1]).toBe(`${base.blocks[1]}\n\n${renderBond(bond, { userName: 'Steve' })}`)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(withBond.blocks.length).toBe(base.blocks.length)
+    expect(withBond.blocks.filter((_, i) => i !== 1)).toEqual(base.blocks.filter((_, i) => i !== 1))
+    expect(withBond.tools).toEqual(base.tools)
   })
 })

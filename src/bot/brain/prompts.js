@@ -41,6 +41,7 @@ export {
   FIRST_CONTACT,
   // Render functions (interpolate runtime values into the prompt text).
   renderPersona,
+  renderBond,
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,

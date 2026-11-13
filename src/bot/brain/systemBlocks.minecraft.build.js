@@ -68,3 +68,9 @@ export async function buildMinecraftFacesCapture(memDir) {
   faces._seiFaces = true
   return capture(faces, bot)
 }
+
+/** 261113 (v0.7 D3): the base session with a bond.json in its memory dir. */
+export async function buildMinecraftBondCapture(memDir) {
+  const bot = { chat() {}, username: 'Sui', players: {}, on() {}, off() {}, removeListener() {}, once() {} }
+  return capture(ConfigSchema.parse(rawConfig(memDir)), bot)
+}

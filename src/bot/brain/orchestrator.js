@@ -26,6 +26,7 @@ import {
   SPEAK_REMINDER,
   GREETING_HINT,
   renderPersona,
+  renderBond,
   renderHeartbeat,
   memoryGameScope,
   chatContinuityGameScope,
@@ -69,6 +70,8 @@ import { createHeartbeatLog, readHeartbeatForSeed, isPlayerTask, hasPlayerTask, 
 import { countsAsGoalWork, goalNotStarted, goalStampMs } from './goalProgress.js'
 import { createMemoryCompactor } from './memory/compactor.js'
 import { createWorldRegistry } from './memory/worlds.js'
+import { readBondSync } from './memory/bond.js'
+import { dirname } from 'node:path'
 import { resolveAdapterCaps } from './adapterDefaults.js'
 import { createWebSession, electronFetchProvider, botWebTools, isWebTool, runServerSearch } from '../web/webTools.js'
 import { sessionActionStats } from './actionStats.js'
@@ -2422,6 +2425,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return merged
   }
 
+  // 261113 (v0.7 D3): the bond, read ONCE at session start (main writes it
+  // only at a fold or a session end), rendered by the same renderBond as the
+  // chat surfaces and carried inside the persona block, so the block indices
+  // log.js reads stay put and the cached prefix never changes mid-session.
+  const bondText = config?.memory?.memory_md_path
+    ? renderBond(readBondSync(dirname(config.memory.memory_md_path)), { userName: config.player_display_name })
+    : ''
+
   let cachedSystemBlocks = null
   function rebuildPersonalitySystem() {
     // Static blocks composed from brain (game-agnostic) + adapter (game-specific).
@@ -2438,7 +2449,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // composition is what BASELINE_INSTRUCTIONS used to be, byte for byte.
         `${UNIVERSAL_BASELINE}\n\n${caps.surfaceBaseline()}`,
         // 261013: fills card {{user}}/{{char}} placeholders (session-stable).
-        renderPersona(config.persona, { userName: config.player_display_name }),
+        renderPersona(config.persona, { userName: config.player_display_name }) + (bondText ? `\n\n${bondText}` : ''),
         adapter.capabilityParagraph(),
         adapter.worldPrimer(),
         adapter.actionRules(),

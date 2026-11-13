@@ -907,3 +907,55 @@ describe('session-end facts', () => {
     expect(factCalls).toBe(0);
   });
 });
+
+describe('the bond block (261113, v0.7 D3)', () => {
+  it('asks for the bond only when the input and deps have it, with more room', async () => {
+    const llm = provider('recap: we fished\nnone\n<bond>\ntreated: warm\nstage: familiar\nfeeling: i like fishing with them\n</bond>');
+    const saves: unknown[] = [];
+    const { d, events } = deps(
+      {
+        readBond: async () => null,
+        saveBond: async (_id, update) => {
+          saves.push(update);
+          return { outcome: 'saved', stage: 'familiar', prevStage: null, treated: 'warm' };
+        },
+      },
+      llm,
+    );
+    const r = await runSessionEnd(input({ recap: true, bond: true }), d);
+    expect(r.recap).toBe('we fished');
+    expect(r.outcome).toBe('none');
+    expect(r.bond?.outcome).toBe('saved');
+    expect(saves).toEqual([
+      { treated: 'warm', stage: 'familiar', lists: { how_i_feel: ['i like fishing with them'] } },
+    ]);
+    expect(llm.calls[0].system).toContain('<bond>');
+    expect(JSON.stringify(llm.calls[0].messages)).toContain('no notes yet');
+    expect(llm.calls[0].maxTokens).toBeGreaterThan(PLAYER_END_RECAP_MAX_TOKENS);
+    const ev = events.find(([e]) => e === 'bond_updated');
+    expect(ev?.[1]).toMatchObject({ source: 'session_end', outcome: 'saved', stage: 'familiar', stage_changed: false });
+    expect(JSON.stringify(ev?.[1])).not.toContain('fishing');
+
+    // A plan after the block still parses; without the input flag nothing is asked.
+    const plain = provider('recap: we fished\nnone');
+    const p2 = deps({ readBond: async () => null, saveBond: async () => ({ outcome: 'saved', stage: null, prevStage: null, treated: null }) }, plain);
+    const r2 = await runSessionEnd(input({ recap: true }), p2.d);
+    expect(plain.calls[0].system).not.toContain('<bond>');
+    expect(r2).not.toHaveProperty('bond');
+  });
+
+  it('a reply with no block reports missing and the plan still saves', async () => {
+    const llm = provider('recap: we built\nnote: finish the roof\nplayer: Finish the roof\ngame: minecraft');
+    const { d, saved } = deps(
+      {
+        readBond: async () => null,
+        saveBond: async (_id, update) => ({ outcome: update ? 'saved' : 'missing', stage: null, prevStage: null, treated: null }),
+      },
+      llm,
+    );
+    const r = await runSessionEnd(input({ recap: true, bond: true }), d);
+    expect(r.outcome).toBe('saved');
+    expect(r.bond?.outcome).toBe('missing');
+    expect(saved.length).toBe(1);
+  });
+});

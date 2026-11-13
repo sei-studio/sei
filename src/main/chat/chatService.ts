@@ -68,6 +68,7 @@ import {
   thoughtFirstMoment,
   THOUGHT_JOINING_GAME,
 } from './thoughts';
+import { readBondFor } from './bondStore';
 
 export interface ChatDeps {
   getLanState: () => LanState;
@@ -746,10 +747,12 @@ async function prepareChatTurn(
   // Watermark-based context (260702): every not-yet-summarized message verbatim
   // (50-99 between folds) + the rolling summary. Pure read — the batch fold runs
   // in the background AFTER the reply (see foldIfDue).
-  const [{ summary, history, base }, memory, knowledge] = await Promise.all([
+  const [{ summary, history, base }, memory, knowledge, bond] = await Promise.all([
     readChatContext(characterId),
     readMemoryTail(characterId),
     readKnowledgeForPrompt(characterId).catch(() => ''),
+    // 261113 (v0.7 D3): the bond, rendered after the persona like every surface.
+    readBondFor(paths.memoryDir(characterId)),
   ]);
   // Same source the bot uses (character.metadata.punctuation), so the character
   // texts with the same register in-app as in-game.
@@ -768,6 +771,7 @@ async function prepareChatTurn(
     persona: character.persona,
     name: character.name,
     preferredName: config.preferred_name ?? '',
+    bond,
     proactiveness: CHAT_PROACTIVENESS,
     punctuation,
     memory,

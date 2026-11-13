@@ -727,6 +727,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
       playerLines: digest?.playerLines ?? 0,
       goalsGame: started.game,
       recap: true,
+      // 261113 (v0.7 D3): and updates the bond (game sessions only; the fold covers the rest).
+      bond: true,
     });
     recap = awaitRecap(ended, { onSwitch: onScopeSwitchStart, switchPending: isScopeSwitchPending });
   }
