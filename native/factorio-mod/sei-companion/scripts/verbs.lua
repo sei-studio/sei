@@ -523,6 +523,9 @@ local function clutter_in(surface, area)
   return surface.find_entities_filtered { area = area, type = { "tree", "simple-entity", "item-entity" } }
 end
 
+-- Snap a coordinate to the building grid: odd sizes sit on tile centres, even sizes on tile corners.
+local function grid(v, n) return n % 2 == 1 and (math.floor(v) + 0.5) or math.floor(v + 0.5) end
+
 H.build = {
   start = function(c, job)
     local item = item_proto(job.args.item)
@@ -535,8 +538,7 @@ H.build = {
     local dir = util.parse_dir(job.args.direction)
     local w, h = ent.tile_width or 1, ent.tile_height or 1
     if dir == defines.direction.east or dir == defines.direction.west then w, h = h, w end
-    local function grid(v, n) return n % 2 == 1 and (math.floor(v) + 0.5) or math.floor(v + 0.5) end
-    job.entity, job.item, job.dir = ent.name, item.name, dir
+    job.entity, job.item, job.dir, job.w, job.h = ent.name, item.name, dir, w, h
     job.pos = { x = grid(p.x, w), y = grid(p.y, h) }
   end,
   tick = function(c, job)
@@ -567,7 +569,27 @@ H.build = {
         end
         if secs > 0 then job.pause = game.tick + math.ceil(secs * 60) return nil end
       end
-      return fail("cannot place " .. job.entity .. " at " .. at(job.pos) .. ": something is in the way or the ground is wrong")
+      -- Say what blocks it and offer the nearest spot that works, so the next try lands.
+      local proto = prototypes.entity[job.entity]
+      local bb = proto.collision_box
+      local area = { { job.pos.x + bb.left_top.x, job.pos.y + bb.left_top.y }, { job.pos.x + bb.right_bottom.x, job.pos.y + bb.right_bottom.y } }
+      local why = "something is in the way or the ground is wrong"
+      for _, e in pairs(surface.find_entities_filtered { area = area, limit = 4 }) do
+        if e.valid and e ~= ch and e.type ~= "resource" and e.type ~= "character-corpse" then why = "a " .. e.name .. " is in the way" break end
+      end
+      if why:sub(1, 2) ~= "a " then
+        local okT, t = pcall(surface.get_tile, math.floor(job.pos.x), math.floor(job.pos.y))
+        if okT and t and t.valid and t.collides_with and t.collides_with("water_tile") then why = "that is water" end
+      end
+      local okF, free = pcall(surface.find_non_colliding_position, job.entity, job.pos, 10, 1, true)
+      local hint = ""
+      if okF and free then
+        local fx, fy = grid(free.x, job.w or 1), grid(free.y, job.h or 1)
+        if surface.can_place_entity { name = job.entity, position = { fx, fy }, direction = job.dir, force = ch.force, build_check_type = defines.build_check_type.manual } then
+          hint = "; the nearest free spot is " .. at({ x = fx, y = fy })
+        end
+      end
+      return fail("cannot place " .. job.entity .. " at " .. at(job.pos) .. ": " .. why .. hint)
     end
     local e = surface.create_entity { name = job.entity, position = job.pos, direction = job.dir, force = ch.force,
       raise_built = true, create_build_effect_smoke = true }
@@ -831,6 +853,16 @@ local function list_contents(inv, max)
   return #parts > 0 and table.concat(parts, ", ") or "empty"
 end
 
+local INVS_BY_TYPE = {
+  furnace = { "crafter_input", "crafter_output" },
+  ["assembling-machine"] = { "crafter_input", "crafter_output" },
+  ["rocket-silo"] = { "crafter_input", "crafter_output" },
+  container = { "chest" },
+  ["logistic-container"] = { "chest" },
+  ["ammo-turret"] = { "turret_ammo" },
+  lab = { "lab_input" },
+}
+
 function verbs.describe(e)
   local parts = { e.name .. " #" .. tostring(e.unit_number or "?") .. " at " .. at(e.position) }
   local okS, st = pcall(function() return e.status end)
@@ -843,10 +875,12 @@ function verbs.describe(e)
   end
   local fuel = e.get_fuel_inventory and e.get_fuel_inventory()
   if fuel then parts[#parts + 1] = "fuel: " .. list_contents(fuel) end
-  for _, k in ipairs { "crafter_input", "crafter_output", "chest", "turret_ammo", "lab_input" } do
-    local idx = defines.inventory[k]
-    local okI, inv = pcall(e.get_inventory, idx)
-    if okI and inv and inv.valid then parts[#parts + 1] = k:gsub("crafter_", ""):gsub("_", " ") .. ": " .. list_contents(inv) end
+  -- Inventory indices overlap between entity types (chest and fuel are both 1), so ask only for the ones this
+  -- type really has.
+  local kinds = INVS_BY_TYPE[e.type]
+  for _, k in ipairs(kinds or {}) do
+    local okI, inv = pcall(e.get_inventory, defines.inventory[k])
+    if okI and inv and inv.valid then parts[#parts + 1] = (k:gsub("crafter_", ""):gsub("_", " ")) .. ": " .. list_contents(inv) end
   end
   if e.is_entity_with_health and e.max_health and e.max_health > 0 and e.health < e.max_health then
     parts[#parts + 1] = "health " .. math.floor(e.health / e.max_health * 100) .. "%"

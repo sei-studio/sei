@@ -77,6 +77,7 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
   let pollInFlight = false
   let cursor = 0
   let lastReplyAt = 0
+  let lastRefusedAt = 0
 
   function onMessage(msg) {
     const f = parseFrame(msg)
@@ -106,16 +107,28 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
       socket.once('error', (err) => { state = 'closed'; reject(err) })
       socket.on('message', onMessage)
       socket.bind(0, host, () => {
-        state = 'open'
-        socket.removeAllListeners('error')
-        socket.on('error', (err) => emitter.emit('socket-error', err))
-        resolve(socket.address().port)
+        // Connected, so the OS reports a closed game port (ICMP unreachable)
+        // as ECONNREFUSED (ECONNRESET on Windows): the game has quit. A
+        // paused game keeps its socket and just stops answering.
+        socket.connect(gamePort, host, () => {
+          state = 'open'
+          socket.removeAllListeners('error')
+          socket.on('error', (err) => {
+            if (err?.code === 'ECONNREFUSED' || err?.code === 'ECONNRESET') {
+              lastRefusedAt = Date.now()
+              emitter.emit('unreachable', err)
+              return
+            }
+            emitter.emit('socket-error', err)
+          })
+          resolve(socket.address().port)
+        })
       })
     })
   }
 
   function sendRaw(id, body) {
-    for (const dg of frames(id, body)) socket.send(dg, gamePort, host)
+    for (const dg of frames(id, body)) socket.send(dg)
   }
 
   /**
@@ -146,6 +159,15 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
     })
   }
 
+  // A job that ends within a tick can have its result polled before command()
+  // has registered its waiter; keep such results for a short while.
+  const earlyResults = new Map()
+  function rememberEarly(id, ev) {
+    const now = Date.now()
+    for (const [k, v] of earlyResults) if (now - v.at > 30_000) earlyResults.delete(k)
+    if (earlyResults.size < 32) earlyResults.set(id, { ev, at: now })
+  }
+
   // ---------------------------------------------------------------- feed
   function startPolling(cid, { intervalMs = POLL_MS, since = 0 } = {}) {
     stopPolling()
@@ -162,6 +184,7 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
           if (ev.t === 'result' && ev.id != null) {
             const w = jobs.get(String(ev.id))
             if (w) { jobs.delete(String(ev.id)); w(ev) }
+            else rememberEarly(String(ev.id), ev)
           }
           emitter.emit('event', ev)
           emitter.emit(ev.t, ev)
@@ -190,7 +213,15 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
    * {success, msg}. Aborting cancels the job in the mod.
    */
   async function command(cid, verb, args = {}, { signal = null, timeoutMs = JOB_TIMEOUT_MS } = {}) {
-    const r = await request({ op: 'cmd', cid, verb, args }, { signal })
+    let r
+    try {
+      r = await request({ op: 'cmd', cid, verb, args }, { signal })
+    } catch (err) {
+      // Aborted before the reply landed: the mod may already have started
+      // the job, so cancel it anyway (a no-op when nothing runs).
+      if (signal?.aborted) void request({ op: 'cancel', cid, reason: 'stopped by the app' }).catch(() => {})
+      throw err
+    }
     if (!r.ok) return { success: false, msg: r.error || 'the game refused that' }
     if (r.done) return { success: !!r.success, msg: r.msg ?? '' }
     const jobId = String(r.id ?? r._id)
@@ -207,7 +238,10 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
         if (signal.aborted) { onAbort(); return }
         signal.addEventListener('abort', onAbort, { once: true })
       }
-      jobs.set(jobId, (ev) => { cleanup(); resolve({ success: !!ev.ok, msg: ev.detail ?? '' }) })
+      const finish = (ev) => { cleanup(); resolve({ success: !!ev.ok, msg: ev.detail ?? '' }) }
+      const early = earlyResults.get(jobId)
+      if (early) { earlyResults.delete(jobId); finish(early.ev); return }
+      jobs.set(jobId, finish)
     })
   }
 
@@ -234,6 +268,8 @@ export function createFactorioClient({ gamePort, host = '127.0.0.1', logger = co
     get state() { return state },
     get cursor() { return cursor },
     get lastReplyAt() { return lastReplyAt },
+    /** When the OS last said nothing listens on the game port (0 = never). */
+    get lastRefusedAt() { return lastRefusedAt },
     get localPort() { return socket && state === 'open' ? socket.address().port : null },
   }
 }

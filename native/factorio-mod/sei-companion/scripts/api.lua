@@ -74,7 +74,7 @@ function OPS.hello(req, ctx)
   for _, p in pairs(game.connected_players) do players[#players + 1] = { i = p.index, name = p.name } end
   return { ok = true, mod = script.active_mods["sei-companion"], game = script.active_mods["base"], protocol = api.PROTOCOL,
     tick = game.tick, player_index = ctx.player_index, players = players, multiplayer = game.is_multiplayer(),
-    paused = game.tick_paused or nil }
+    paused = game.tick_paused or nil, world = storage.world_id, seed = storage.seed }
 end
 
 function OPS.players()

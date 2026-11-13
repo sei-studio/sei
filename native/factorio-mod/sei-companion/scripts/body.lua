@@ -269,6 +269,10 @@ function body.say(c, text)
   local col = c.color
   game.print({ "", "[color=" .. string.format("%.2f,%.2f,%.2f", col.r, col.g, col.b) .. "]" .. c.name .. "[/color]: " .. text },
     { sound = defines.print_sound.never, skip = defines.print_skip.never })
+  -- Sibling companions hear her (their brains keep it as history, not as the player talking).
+  for _, other in pairs(storage.companions) do
+    if other ~= c and not other.gone then body.push(other, { t = "chat", from = c.name, companion = true, text = text }) end
+  end
   if body.alive(c) then
     if c.bubble and c.bubble.valid then c.bubble.destroy() end
     local short = (text:gsub("%[[^%]]*%]", ""))

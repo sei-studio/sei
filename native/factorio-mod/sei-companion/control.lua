@@ -16,6 +16,13 @@ local function init()
   link.init()
   movement.init()
   body.init()
+  -- A per-save id the app keys her world memory on. Seed plus the tick the mod first ran, so two maps from
+  -- the same seed still differ.
+  if not storage.world_id then
+    local nauvis = game.surfaces["nauvis"]
+    storage.seed = nauvis and nauvis.map_gen_settings.seed or 0
+    storage.world_id = string.format("%d-%d", storage.seed, game.tick)
+  end
 end
 
 script.on_init(init)
@@ -95,6 +102,11 @@ end)
 
 -- For the headless test harness (never needed in play): a stand-in owner entity, and a direct way to look.
 remote.add_interface("sei_companion", {
+  -- Test seam: a chat line as if a player typed it (a headless server has no player to type).
+  inject_chat = function(from, text)
+    body.push_all { t = "chat", from = tostring(from), text = util.clamp_text(tostring(text or ""), 500) }
+    return true
+  end,
   set_test_owner = function(cid, unit_number)
     local e = unit_number and game.get_entity_by_unit_number(unit_number)
     storage.test_owner[cid] = e

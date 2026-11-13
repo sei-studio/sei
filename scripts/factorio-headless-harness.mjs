@@ -19,30 +19,16 @@
 // --registry runs each check through the adapter's tool registry and prints the
 // snapshot the model would read, instead of calling the mod directly.
 
-import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
-import { tmpdir, homedir } from 'node:os'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import net from 'node:net'
 import { createFactorioClient } from '../src/bot/adapter/factorio/client.js'
-import { connectRcon } from './lib/factorioRcon.mjs'
+import { startFactorioServer, defaultBin, sleep } from './lib/factorioServer.mjs'
+import { existsSync } from 'node:fs'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const MOD_DIR = join(here, '..', 'native', 'factorio-mod', 'sei-companion')
 const args = process.argv.slice(2)
 const opt = (name, d = null) => {
   const i = args.indexOf(`--${name}`)
   return i >= 0 && i + 1 < args.length ? args[i + 1] : d
 }
 const flag = (name) => args.includes(`--${name}`)
-
-function defaultBin() {
-  const root = join(homedir(), '.cache', 'sei-factorio')
-  if (!existsSync(root)) return null
-  const vers = readdirSync(root).filter((d) => /^2\.1\.\d+$/.test(d)).sort((a, b) => Number(a.split('.')[2]) - Number(b.split('.')[2]))
-  return vers.length ? join(root, vers.at(-1), 'factorio', 'bin', 'x64', 'factorio') : null
-}
 
 const BIN = opt('factorio', defaultBin())
 const ONLY = opt('only') ? new Set(opt('only').split(',')) : null
@@ -54,67 +40,10 @@ if (!BIN || !existsSync(BIN)) {
   process.exit(2)
 }
 
-function freePort(type = 'tcp') {
-  return new Promise((resolve, reject) => {
-    if (type === 'udp') {
-      import('node:dgram').then(({ default: dgram }) => {
-        const s = dgram.createSocket('udp4')
-        s.bind(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) })
-      }, reject)
-      return
-    }
-    const s = net.createServer()
-    s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => resolve(p)) })
-  })
-}
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-
 // ---------------------------------------------------------------- server
-const run = mkdtempSync(join(tmpdir(), 'sei-factorio-'))
-mkdirSync(join(run, 'mods'))
-symlinkSync(MOD_DIR, join(run, 'mods', 'sei-companion'))
-writeFileSync(join(run, 'mods', 'mod-list.json'), JSON.stringify({
-  mods: [
-    { name: 'base', enabled: true }, { name: 'sei-companion', enabled: true },
-    { name: 'space-age', enabled: false }, { name: 'quality', enabled: false }, { name: 'elevated-rails', enabled: false },
-  ],
-}))
-writeFileSync(join(run, 'server-settings.json'), JSON.stringify({
-  name: 'sei-test', description: '', visibility: { public: false, lan: false }, require_user_verification: false,
-  auto_pause: false, autosave_interval: 0, max_players: 4,
-}))
-// A fixed seed keeps the starting area the same between runs.
-const save = join(run, 'test.zip')
-execFileSync(BIN, ['--create', save, '--mod-directory', join(run, 'mods'), '--map-gen-seed', '424242'], { cwd: run, stdio: 'ignore', timeout: 120_000 })
-
-const udpPort = await freePort('udp')
-const rconPort = await freePort()
-const gamePort = await freePort('udp')
-const server = spawn(BIN, ['--start-server', save, '--mod-directory', join(run, 'mods'), '--server-settings', join(run, 'server-settings.json'),
-  `--enable-lua-udp=${udpPort}`, '--port', String(gamePort), '--rcon-bind', `127.0.0.1:${rconPort}`, '--rcon-password', 'seitest'],
-{ cwd: run, stdio: ['ignore', 'pipe', 'pipe'] })
-let serverLog = ''
-server.stdout.on('data', (d) => { serverLog += d })
-server.stderr.on('data', (d) => { serverLog += d })
-const killServer = () => { try { server.kill('SIGTERM') } catch {} }
-const hardStop = setTimeout(() => { console.error('harness timed out'); killServer(); process.exit(3) }, 20 * 60_000)
-process.on('exit', killServer)
-
-for (let i = 0; i < 100 && !/Starting RCON interface/.test(serverLog); i++) await sleep(200)
-if (!/Starting RCON interface/.test(serverLog)) { console.error(serverLog.slice(-3000)); killServer(); process.exit(4) }
-
-const rc = await connectRcon({ port: rconPort, password: 'seitest' })
-await rc.lua('rcon.print(1)') // the first /sc only warns about achievements
-/** Run Lua that rcon.print()s a JSON value; returns it parsed. */
-async function lua(code) {
-  const out = await rc.lua(code)
-  if (!out) return null
-  try { return JSON.parse(out) } catch { return out }
-}
-const J = (expr) => `rcon.print(helpers.table_to_json({v = ${expr}}))`
-const L = async (code, expr) => (await lua(`${code} ${J(expr)}`))?.v
-
-await lua(`game.speed = ${SPEED} game.forces.enemy.set_cease_fire('player', false) ${J('1')}`)
+const srv = await startFactorioServer({ bin: BIN, speed: SPEED, keep: KEEP })
+const { udpPort, rc, lua, J, L } = srv
+const hardStop = setTimeout(() => { console.error('harness timed out'); srv.stop(); process.exit(3) }, 20 * 60_000)
 
 const client = createFactorioClient({ gamePort: udpPort, logger: console })
 await client.open()
@@ -147,12 +76,18 @@ const count = (item) => L(companionLua(''), `ch.get_item_count("${item}")`)
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
 const sinceEv = (n) => events.slice(n)
 
-let registry = null
+let adapter = null
 let composer = null
+let toolOf = null
 async function verb(name, a = {}, opts = {}) {
-  if (registry) {
-    const r = await registry.execute(name, a, opts)
-    return { success: !!r?.ok, msg: r?.text ?? r?.message ?? JSON.stringify(r) }
+  // --registry: the check goes through the real adapter (Zod schema, the
+  // tool name the brain sees, the result string the brain reads). Verbs the
+  // brain reaches some other way (say, stop) stay on the raw client.
+  const tool = toolOf?.[name] ?? name
+  if (adapter && adapter.listActions().includes(tool)) {
+    const text = await adapter.executeAction(tool, a, { signal: opts.signal ?? null })
+    const failed = /^failed:|^aborted$|^paused:/.test(String(text))
+    return { success: !failed, msg: failed ? String(text).replace(/^failed:\s*/, '') : String(text) }
   }
   return client.command(CID, name, a, opts)
 }
@@ -274,6 +209,18 @@ check('build', async () => {
   if (!r.success) throw new Error(r.msg)
   furnace = Number(/#(\d+)/.exec(r.msg)?.[1])
   return r.msg
+})
+
+check('build_blocked', async () => {
+  // On top of the furnace she just built: an honest reason and a spot that works.
+  const at = await L(`local e = remote.call('sei_companion', 'entity', ${furnace})`, 'e and e.position')
+  const r = await verb('build', { item: 'stone-furnace', x: at.x, y: at.y })
+  if (r.success || !/stone-furnace is in the way; the nearest free spot is \(-?\d+,-?\d+\)/.test(r.msg)) throw new Error(r.msg)
+  const [, fx, fy] = /free spot is \((-?\d+),(-?\d+)\)/.exec(r.msg)
+  const r2 = await verb('build', { item: 'stone-furnace', x: Number(fx), y: Number(fy) })
+  if (!r2.success) throw new Error(`the suggested spot failed: ${r2.msg}`)
+  await L(`local e = remote.call('sei_companion', 'entity', ${Number(/#(\d+)/.exec(r2.msg)?.[1])}) if e then e.destroy() end`, '1')
+  return `${r.msg}; building there worked`
 })
 
 check('look_diagnose', async () => {
@@ -435,11 +382,14 @@ check('observe_size', async () => {
 
 // ---------------------------------------------------------------- run
 if (USE_REGISTRY) {
-  const { createFactorioRegistry } = await import('../src/bot/adapter/factorio/registry.js')
-  const { createSnapshotComposer } = await import('../src/bot/adapter/factorio/observers/snapshot.js')
-  const link = { client, cid: CID, events: { on: (...a) => client.on(...a), off: (...a) => client.off(...a) } }
-  registry = createFactorioRegistry({ link, logger: { info() {}, warn() {}, error() {}, debug() {} } })
-  composer = createSnapshotComposer({ link })
+  const { createFactorioAdapter } = await import('../src/bot/adapter/factorio/index.js')
+  const { MOD_VERB } = await import('../src/bot/adapter/factorio/registry.js')
+  toolOf = Object.fromEntries(Object.entries(MOD_VERB).map(([tool, mod]) => [mod, tool]))
+  const quiet = { info() {}, warn() {}, error() {}, debug() {} }
+  const hello = await client.request({ op: 'hello' })
+  adapter = createFactorioAdapter({ client, cid: CID, config: {}, botUsername: 'Sui', hello, logger: quiet })
+  const inner = adapter.createSnapshotComposer()
+  composer = { next: async (o) => { await adapter.refreshObservation(); return inner.next(o) } }
 }
 
 let pass = 0
@@ -458,19 +408,23 @@ for (const c of checks) {
   if (composer && !ONLY) {
     const snap = await composer.next({})
     console.log(`  snapshot (${snap.length} chars)`)
+    // FCT_DUMP_AFTER=<check> writes the raw observation after that check (test fixtures).
+    if (process.env.FCT_DUMP_AFTER === c.name && process.env.FCT_DUMP_TO) {
+      const { writeFileSync } = await import('node:fs')
+      writeFileSync(process.env.FCT_DUMP_TO, JSON.stringify(adapter.getLatestObservation(), null, 2) + '\n')
+      console.log(`  observation written to ${process.env.FCT_DUMP_TO}`)
+    }
   }
 }
 
 if (composer) console.log('\n--- snapshot ---\n' + await composer.next({}))
 console.log(`\n${pass}/${results.length} passed (game speed ${SPEED}x)`)
-const errs = serverLog.split('\n').filter((l) => /Error|error/.test(l) && !/EOF on stdin/.test(l))
+const errs = srv.log().split('\n').filter((l) => /Error|error/.test(l) && !/EOF on stdin/.test(l))
 if (errs.length) console.log('server errors:\n' + errs.slice(0, 20).join('\n'))
 
 client.close()
-rc.close()
 clearTimeout(hardStop)
-killServer()
+srv.stop()
 await sleep(500)
-if (!KEEP) rmSync(run, { recursive: true, force: true })
-else console.log(`kept ${run}`)
+if (KEEP) console.log(`kept ${srv.run}`)
 process.exit(pass === results.length ? 0 : 1)

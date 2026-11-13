@@ -70,10 +70,17 @@ function util.split_quality(key)
   return tostring(key), "normal"
 end
 
+-- At most n bytes, never ending inside a UTF-8 character (the JSON reply must stay valid text).
 function util.clamp_text(s, n)
   s = tostring(s or "")
-  if #s > n then return s:sub(1, n) end
-  return s
+  if #s <= n then return s end
+  local i = n
+  while i > 0 do
+    local b = s:byte(i + 1)
+    if b < 0x80 or b >= 0xC0 then break end
+    i = i - 1
+  end
+  return s:sub(1, i)
 end
 
 -- The trees and rocks whose mining gives `item` (serf: lichen on Vulcanus is a tree that gives carbon, not wood).
