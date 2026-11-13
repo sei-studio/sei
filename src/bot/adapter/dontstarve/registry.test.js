@@ -61,6 +61,19 @@ describe('DST registry', () => {
     ])
   })
 
+  it('adds dig for a 0.3.0 helper: one DIG action on a handle or the nearest diggable', async () => {
+    const { link, sent, state } = fakeLink()
+    expect(createDefaultRegistry({ link }).list()).not.toContain('dig')
+    link.hasCaps = true
+    const reg = createDefaultRegistry({ link })
+    expect(reg.list()).toContain('dig')
+    expect(await reg.execute('dig', {}, null, {})).toMatch(/^no stump matching/)
+    const frame = createFakeMod({ botPort: 1, token: 'x' }).frame(true)
+    state.apply({ ...frame, full: false, ents: [{ g: 7101, p: 'evergreen', x: 3, z: 1, f: ['dig'] }] })
+    expect(await reg.execute('dig', {}, null, {})).toBe('ok:action')
+    expect(sent.at(-1)).toEqual({ kind: 'action', name: 'DIG', target: 7101 })
+  })
+
   it('adds give for a 0.3.0 helper and hands an inventory item to the player', async () => {
     const { link, sent } = fakeLink()
     link.hasCaps = true

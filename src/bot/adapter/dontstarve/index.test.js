@@ -54,6 +54,35 @@ describe('DST adapter: mod 0.3.0 wiring', () => {
     reactive.adapter.detach()
   })
 
+  // A tool named in the prompt but missing from the tool list is a dead end:
+  // the 0.3.0 prompt promised dig with no dig verb (report 261113).
+  it('every world verb the prompt text names exists in the tool list, on either helper', () => {
+    const nonWorld = new Set(['say', 'remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'stop', 'search', 'visit'])
+    for (const hasCaps of [false, true]) {
+      const { adapter } = adapterWith({ hasCaps })
+      const tools = new Set(adapter.listActions())
+      const listed = adapter.surfaceBaseline().match(/tool list \(([^)]*)\)/)[1].split(',').map((s) => s.trim())
+      for (const name of listed) expect(tools.has(name), `hasCaps ${hasCaps}: ${name} listed but not a tool`).toBe(true)
+      if (hasCaps) expect(listed).toEqual(expect.arrayContaining(['dig', 'give']))
+      const texts = [adapter.surfaceBaseline(), adapter.capabilityParagraph(), adapter.actionRules(),
+        ...[...tools].map((n) => adapter.getActionDescription(n)),
+        adapter.eventAddendum('sei:idle', { quietMs: 9000 }), adapter.eventAddendum('sei:loop_end', {}),
+        adapter.eventAddendum('sei:attacked', { attackerKind: 'mob', attackerLabel: 'spider' }),
+        adapter.eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'dark', phase: 'night' }),
+        adapter.eventAddendum('sei:attacked', { attackerKind: 'mob', darkness: true })]
+      for (const text of texts) {
+        for (const m of text.matchAll(/\b([a-zA-Z_]+)\((?=[^)]*\))/g)) {
+          if (nonWorld.has(m[1])) continue
+          expect(tools.has(m[1]), `hasCaps ${hasCaps}: "${m[1]}(" in prompt text but not a tool`).toBe(true)
+        }
+      }
+      // "your tools are used automatically when you chop, mine or dig" needs all three.
+      if (/when you chop, mine or dig/.test(adapter.capabilityParagraph())) {
+        for (const v of ['chop', 'mine', 'dig']) expect(tools.has(v), v).toBe(true)
+      }
+    }
+  })
+
   it('describes chop for the helper it is talking to', () => {
     expect(adapterWith({ hasCaps: true }).adapter.getActionDescription('chop')).toMatch(/your body equips for you/)
     expect(adapterWith({ hasCaps: false }).adapter.getActionDescription('chop')).toMatch(/Equip an axe first/)

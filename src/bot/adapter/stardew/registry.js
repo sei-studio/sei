@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { createRegistry } from '../../registry.js'
 import { ACTION_DESCRIPTIONS } from './prompts.js'
-import { modHasChores, CHORES_VERBS } from './modVersion.js'
+import { modHasChores, modHasVerb, modIsFarmhand } from './modVersion.js'
 
 const Handle = z.string().regex(/^#?\d+$/, 'a #N handle from the snapshot')
 const Tile = { x: z.number().int(), y: z.number().int() }
@@ -88,7 +88,7 @@ export const VERB_SCHEMAS = {
   interact: z.object({ x: Tile.x.optional(), y: Tile.y.optional(), target: Handle.optional() })
     .refine((a) => a.target || (a.x != null && a.y != null), { message: 'give x and y or a #N target' }),
   sleep: z.object({}),
-  // Mod 0.1.3 (CHORES_VERBS): hidden from the tool list for an older mod.
+  // Mod 0.1.3+ verbs (VERB_MIN_MOD): hidden from the tool list for an older mod.
   ship: z.object({
     item: z.string().min(1).max(64).optional(),
     count: z.number().int().min(1).max(999).optional(),
@@ -98,6 +98,13 @@ export const VERB_SCHEMAS = {
     count: z.number().int().min(1).max(999).optional(),
     player: z.string().max(32).optional(),
   }),
+  // Mod 0.1.4.
+  load: z.object({
+    x: Tile.x.optional(),
+    y: Tile.y.optional(),
+    target: Handle.optional(),
+    item: z.string().min(1).max(64).optional(),
+  }).refine((a) => a.target || (a.x != null && a.y != null), { message: 'give the machine as a #N target or x and y' }),
 }
 
 export const VERB_NAMES = Object.keys(VERB_SCHEMAS)
@@ -202,11 +209,12 @@ export function createStardewRegistry({ send, getModVersion = () => null }) {
       VERB_SCHEMAS[name],
       async (args, _bot, config) => {
         const signal = config?.signal
-        const chores = modHasChores(getModVersion())
-        // ship / give do not exist before mod 0.1.3; they are hidden from the
-        // tool list then, so this only answers a stale or invented call.
-        if (!chores && CHORES_VERBS.includes(name)) {
-          return `failed: ${name} needs a newer Sei helper mod in the game; use a chest for now`
+        const version = getModVersion()
+        const chores = modHasChores(version)
+        // Verbs newer than the connected mod are hidden from the tool list,
+        // so this only answers a stale or invented call.
+        if (!modHasVerb(version, name)) {
+          return `failed: ${name} needs a newer Sei helper mod in the game; ask the player to do it for now`
         }
         // Normalise "#3" / "3" to "#3" for the mod.
         const clean = { ...args }
@@ -217,7 +225,14 @@ export function createStardewRegistry({ send, getModVersion = () => null }) {
           return tillPatch(clean, send, { signal, onProgress: config?.onProgress })
         }
         if (name === 'till') { delete clean.width; delete clean.height }
-        return send(name, clean, { signal })
+        const out = await send(name, clean, { signal })
+        // Mod 0.1.3 answers interact on an empty machine with "place(item) an
+        // input into it", and place cannot load a machine (place only places
+        // objects). Until the 0.1.4 DLL is installed, say what is true.
+        if (name === 'interact' && !modIsFarmhand(version) && typeof out === 'string' && out.includes('place(item) an input into it')) {
+          return out.replace('place(item) an input into it', 'you cannot load machines with this version of the helper mod, so the player has to put the input in')
+        }
+        return out
       },
       ACTION_DESCRIPTIONS[name] ?? '',
     )

@@ -12,7 +12,7 @@ import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createProgressionFlags, getProgression } from './observers/progression.js'
 import { classifyConnectError } from './errors.js'
-import { modHasChores, CHORES_VERBS } from './modVersion.js'
+import { modHasVerb } from './modVersion.js'
 import {
   STARDEW_BASELINE,
   SESSION_END_CLAUSE,
@@ -94,11 +94,9 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
     // ── Action surface ────────────────────────────────────────────────
-    // ship / give exist from mod 0.1.3; an older mod would answer "unknown action".
-    listActions: () => {
-      const all = registry.list()
-      return modHasChores(modVersion()) ? all : all.filter((n) => !CHORES_VERBS.includes(n))
-    },
+    // ship / give exist from mod 0.1.3, load from 0.1.4 (VERB_MIN_MOD); an
+    // older mod would answer "unknown action", so the model never sees them.
+    listActions: () => registry.list().filter((n) => modHasVerb(modVersion(), n)),
     getActionSchema: (name) => registry.schema(name),
     getActionDescription: (name) => describeAction(name, modVersion()) || registry.description?.(name) || '',
     executeAction: async (name, args, ctx = {}) => {

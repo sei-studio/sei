@@ -115,7 +115,7 @@ namespace SeiCompanion.Actions
                         yield return Result.Success($"the {obj.DisplayName} is working: {obj.MinutesUntilReady} minutes left");
                         yield break;
                     }
-                    yield return Result.Success($"the {obj.DisplayName} is empty; place(item) an input into it");
+                    yield return Result.Success($"the {obj.DisplayName} is empty; load(item) puts an input into it");
                     yield break;
                 }
             }

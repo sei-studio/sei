@@ -195,6 +195,9 @@ export function createDefaultRegistry({ link }) {
   work('mine', 'MINE', 'mine', 'boulder')
   work('pick', 'PICK', 'pick', 'plant')
   work('pickup', 'PICKUP', 'pickup', 'item on the ground')
+  // dig (helper 0.3.0+, which equips the shovel itself). The prompt has told
+  // the model its tools work when it digs since 0.3.0; this is the verb.
+  if (link.hasCaps) work('dig', 'DIG', 'dig', 'stump')
 
   registry.register('craft', z.object({ recipe: z.string().min(1) }), async (args, _bot, cfg) =>
     link.send({ kind: 'build', recipe: recipeId(args.recipe) }, execOpts(cfg)))

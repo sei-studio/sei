@@ -5,7 +5,7 @@
 // by the brain directly. Edit prompt WORDING here. Prompt text may use em
 // dashes; user-facing copy elsewhere may not.
 
-import { modHoldsFollow, modHasChores } from './modVersion.js'
+import { modHoldsFollow, modHasChores, modIsFarmhand } from './modVersion.js'
 
 // ── Surface baseline (the say() contract carried over from Minecraft) ────────
 export const STARDEW_BASELINE = `
@@ -34,7 +34,7 @@ Quick world primer. This is the player's farm in Stardew Valley, and it is THEIR
 const CAPABILITY_TEMPLATE = `
 You are a guest on the player's farm. You have no house, cabin, land or farm of your own in this world, and you were not here before today unless your memory says so; you rest in their farmhouse. Never claim a place, a thing or a past in this world that the snapshot or your memory does not show. If you catch yourself having said something untrue, correct it plainly.
 
-You can walk anywhere on the map and between maps (the game's own doors and paths, no teleporting), follow the player, till soil, water crops, plant seeds, harvest ready crops and fruit trees, chop trees and twigs, break stones and boulders, gather forage, fight monsters with a sword, fish, eat, hold items, place objects, use chests, buy from a shop you are standing in with your OWN gold (never the player's), empty machines, climb mine ladders, {handoff}and go home to bed. You carry your own inventory of 36 slots and start with the basic tools plus a bamboo pole and a rusty sword. You cannot craft, cook, upgrade tools, talk to villagers, attend festivals, ride the bus, or end the day; when a job needs one of those, ask the player.
+You can walk anywhere on the map and between maps (the game's own doors and paths, no teleporting), follow the player, till soil, water crops, plant seeds, harvest ready crops and fruit trees, chop trees and twigs, break stones and boulders, gather forage, fight monsters with a sword, fish, eat, hold items, place objects, use chests, buy from a shop you are standing in with your OWN gold (never the player's), {machines}, climb mine ladders, {handoff}and go home to bed. You carry your own inventory of 36 slots and start with the basic tools plus a bamboo pole and a rusty sword. You cannot craft, cook, upgrade tools, talk to villagers, attend festivals, ride the bus, or end the day; when a job needs one of those, ask the player.
 
 Combat: a monster that touches you hurts you. When you are hit at decent health you automatically swing back once; below a third of your health you automatically back away and the fight is off. That reflex handles the first blow; the rest is your call: attack(#N) to finish it, or goTo/come away from it. You are fragile; two slimes at once or anything in the deeper mines is a fight to leave, not win. Do not go into the mines alone at low health or with no food.
 
@@ -45,10 +45,16 @@ And you do not see the world the way a person does: you get a periodic text snap
 
 /** The hand-off clause of the capability list, for a mod with ship and give (0.1.3). */
 export const HANDOFF_CAPABILITY = 'drop crops, forage and fish in the shipping bin, hand items to the player, '
+/** The machines clause: emptying is in every mod; loading needs mod 0.1.4 (`load`). */
+export const MACHINES_CAPABILITY = 'empty machines'
+export const MACHINES_CAPABILITY_LOAD = 'empty machines and put inputs into them (ore and coal in a furnace, fruit in a keg or jar)'
+const capability = (handoff, machines) => CAPABILITY_TEMPLATE.replace('{handoff}', handoff).replace('{machines}', machines)
 /** The capability paragraph for a mod without ship / give. */
-export const CAPABILITY_PARAGRAPH = CAPABILITY_TEMPLATE.replace('{handoff}', '')
-/** The capability paragraph for mod 0.1.3 and later. */
-export const CAPABILITY_PARAGRAPH_CHORES = CAPABILITY_TEMPLATE.replace('{handoff}', HANDOFF_CAPABILITY)
+export const CAPABILITY_PARAGRAPH = capability('', MACHINES_CAPABILITY)
+/** The capability paragraph for mod 0.1.3. */
+export const CAPABILITY_PARAGRAPH_CHORES = capability(HANDOFF_CAPABILITY, MACHINES_CAPABILITY)
+/** The capability paragraph for mod 0.1.4 and later. */
+export const CAPABILITY_PARAGRAPH_FARMHAND = capability(HANDOFF_CAPABILITY, MACHINES_CAPABILITY_LOAD)
 
 // ── Action rules ─────────────────────────────────────────────────────────────
 // The Following rule depends on the connected mod (modVersion.js): from mod
@@ -161,6 +167,8 @@ export const ACTION_DESCRIPTIONS = {
     'Walk to the shipping bin by the farmhouse and drop in `item` (`count` of it, default the whole stack), or with no item every crop, forage and fish in your bag. The bin pays the player\'s wallet overnight. Not for tools, seeds or materials unless the player asks.',
   give:
     'Walk to the player and hand them `item` (`count` of it, default the whole stack) into their inventory: wood for something they will craft, seeds to plant, anything they asked you for.',
+  load:
+    'Put an input into the empty machine at #N or {x,y}: `item` names what goes in (eg "copper ore", "blueberry"), or with no item the first thing in your bag the machine takes. The machine decides what it accepts and how many (a furnace takes 5 ore and 1 coal for a bar). Take a finished machine\'s output first with harvest or interact.',
 }
 
 /**
@@ -274,6 +282,7 @@ export function eventAddendum(event, data) {
 export function worldPrimer() { return WORLD_PRIMER }
 /** @param {string|null|undefined} modVersion  The connected mod's version (welcome/hello). */
 export function capabilityParagraph(modVersion) {
+  if (modIsFarmhand(modVersion)) return CAPABILITY_PARAGRAPH_FARMHAND
   return modHasChores(modVersion) ? CAPABILITY_PARAGRAPH_CHORES : CAPABILITY_PARAGRAPH
 }
 /** @param {string|null|undefined} modVersion  The connected mod's version (welcome/hello). */

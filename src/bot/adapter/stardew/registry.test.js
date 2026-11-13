@@ -3,10 +3,10 @@ import { createStardewRegistry, VERB_NAMES, VERB_SCHEMAS, patchTiles, tillPatch,
 import { ACTION_DESCRIPTIONS } from './prompts.js'
 
 describe('stardew registry', () => {
-  it('registers the 22 verbs (20 world verbs + follow/unfollow) with a description each', () => {
+  it('registers the 23 verbs (21 world verbs + follow/unfollow) with a description each', () => {
     const reg = createStardewRegistry({ send: vi.fn(async () => 'ok') })
     expect(reg.list().sort()).toEqual([...VERB_NAMES].sort())
-    expect(VERB_NAMES).toHaveLength(22)
+    expect(VERB_NAMES).toHaveLength(23)
     for (const name of VERB_NAMES) {
       expect(ACTION_DESCRIPTIONS[name], `description for ${name}`).toBeTruthy()
       expect(reg.description(name)).toBe(ACTION_DESCRIPTIONS[name])
@@ -125,6 +125,22 @@ describe('stardew registry', () => {
     expect(await reg.execute('give', { item: 'Wood', count: 50 }, null, {})).toBe('did give')
     await expect(reg.execute('give', {}, null, {})).rejects.toThrow()
     await expect(reg.execute('water', { scope: 'world' }, null, {})).rejects.toThrow()
+  })
+
+  it('load is gated on mod 0.1.4 and a 0.1.3 interact result stops pointing at place()', async () => {
+    let version = '0.1.3'
+    const send = vi.fn(async (name) => (name === 'interact' ? 'the Furnace is empty; place(item) an input into it' : `did ${name}`))
+    const reg = createStardewRegistry({ send, getModVersion: () => version })
+    expect(await reg.execute('load', { target: '#4' }, null, {})).toMatch(/^failed: load needs a newer Sei helper mod/)
+    expect(send).not.toHaveBeenCalled()
+    const old = await reg.execute('interact', { target: '#4' }, null, {})
+    expect(old).not.toMatch(/place\(/)
+    expect(old).toMatch(/the player has to put the input in/)
+    version = '0.1.4'
+    expect(await reg.execute('load', { target: '4', item: 'Copper Ore' }, null, {})).toBe('did load')
+    expect(send).toHaveBeenLastCalledWith('load', { target: '#4', item: 'Copper Ore' }, { signal: undefined })
+    expect(await reg.execute('load', { x: 3, y: 9 }, null, {})).toBe('did load')
+    await expect(reg.execute('load', { item: 'Wood' }, null, {})).rejects.toThrow()
   })
 
   it('stops a patch on the mod\'s safety interrupts instead of sending the next tile', async () => {

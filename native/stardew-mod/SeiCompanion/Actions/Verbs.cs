@@ -34,6 +34,8 @@ namespace SeiCompanion.Actions
                 // 0.1.3
                 ["ship"] = Shipping.Ship,
                 ["give"] = Shipping.Give,
+                // 0.1.4
+                ["load"] = Machines.Load,
             };
 
         public static Func<ActionContext, IEnumerable<object>> Resolve(string name)

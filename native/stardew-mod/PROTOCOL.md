@@ -144,12 +144,13 @@ latest Observation and stay valid ~90 s.
 | `fish` | `{x?, y?, casts?}` | stand by water, wait out a bite, catch |
 | `eat` | `{item?}` | eat the named or best food |
 | `equip` | `{item}` | hold an item |
-| `place` | `{item, x, y}` | place an object (chest, scarecrow, machine input goes through `interact`) |
+| `place` | `{item, x, y}` | place an object (chest, scarecrow, sprinkler). Not for machine inputs: those go through `load` |
 | `chest` | `{action: put\|take, item, count?, x?, y?, target?}` | move items with a chest |
 | `buy` | `{item, qty?, shop?}` | buy from the shop the body is standing in, paid from its own wallet |
 | `interact` | `{target:"#N"}` / `{x,y}` | warps and doors, mine ladders, chests (lists contents), machines (empties when ready), forage, villagers (faces them) |
 | `sleep` | | walk home and lie down; the day ends when the player sleeps |
 | `ship` | `{item?, count?}` | (0.1.3) walk to the Farm's shipping bin and drop the named item (`count` of it, default the whole stack), or with no item every crop, forage and fish in the bag. The bin pays the farm overnight. Refuses tools and anything the bin does not buy. |
+| `load` | `{target:"#N"}` / `{x,y}`, `item?` | (0.1.4) put an input into an empty processing machine (furnace, keg, jar, seed maker, ...). With no item, the first thing in the bag the machine takes. Uses the machine's own probe and `AttemptAutoLoad`, so extra fuel (coal for a furnace) comes out of the bag too. Fails with the reason (busy, finished, needs fuel, does not take it). |
 | `give` | `{item, count?, player?}` | (0.1.3) walk to the player and hand them `count` of an item (default the whole stack) into their inventory. Host only; a farmhand's bag lives on their machine. Nothing leaves the companion's bag until the player's bag has taken it. |
 
 ## Observation

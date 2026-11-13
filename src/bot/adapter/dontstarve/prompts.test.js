@@ -15,7 +15,7 @@ describe('DST prompts', () => {
     // With a 0.3.0 helper the registry is the full set (give included).
     const link = { events: new EventEmitter(), state: createObservationState(), handles: createHandleRegistry(), body: {}, playerName: () => null, send: async () => '', hasCaps: true }
     const reg = createDefaultRegistry({ link })
-    for (const name of reg.list()) expect(ACTION_DESCRIPTIONS[name], name).toBeTruthy()
+    for (const name of reg.list()) expect(describeAction(name, true), name).toBeTruthy()
     for (const name of Object.keys(ACTION_DESCRIPTIONS)) expect(reg.list(), name).toContain(name)
   })
 

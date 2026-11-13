@@ -16,6 +16,20 @@ export const CHORES_MIN_MOD = '0.1.3'
 /** Verbs an older mod answers with "unknown action"; hidden from the tool list until the mod has them. */
 export const CHORES_VERBS = Object.freeze(['ship', 'give'])
 
+/**
+ * Mod 0.1.4 (261113, needs the Mac build): `load` puts an input into a
+ * processing machine. Before it, interact told the model to place() an input,
+ * which place cannot do.
+ */
+export const FARMHAND_MIN_MOD = '0.1.4'
+
+/** The first mod version that runs each verb added after 0.1.2. */
+export const VERB_MIN_MOD = Object.freeze({
+  ship: CHORES_MIN_MOD,
+  give: CHORES_MIN_MOD,
+  load: FARMHAND_MIN_MOD,
+})
+
 function parts(version) {
   const m = /^\s*v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(version ?? ''))
   return m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : null
@@ -44,4 +58,15 @@ export function modHoldsFollow(version) {
 /** Does this mod have ship / give / farm-wide chores (see CHORES_MIN_MOD)? */
 export function modHasChores(version) {
   return modVersionAtLeast(version, CHORES_MIN_MOD)
+}
+
+/** Does this mod run the 0.1.4 verbs and observations (see FARMHAND_MIN_MOD)? */
+export function modIsFarmhand(version) {
+  return modVersionAtLeast(version, FARMHAND_MIN_MOD)
+}
+
+/** Can the connected mod run `verb`? Verbs older than 0.1.3 always can. */
+export function modHasVerb(version, verb) {
+  const min = VERB_MIN_MOD[verb]
+  return min ? modVersionAtLeast(version, min) : true
 }

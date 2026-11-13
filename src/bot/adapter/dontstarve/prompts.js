@@ -10,7 +10,7 @@
 // intent: the text output is a private scratchpad, only say() speaks.
 
 const LEGACY_TOOLS = 'goTo, come, follow, gather, chop, mine, pick, pickup, craft, build, eat, equip, attack, flee, lightFire, cook, store, take, sleep, drop'
-const CAPS_TOOLS = `${LEGACY_TOOLS}, give`
+const CAPS_TOOLS = `${LEGACY_TOOLS.replace('mine, ', 'mine, dig, ')}, give`
 
 const DST_BASELINE_TEMPLATE = `
 You play Don't Starve Together through tool calls in turn-based loops. Each loop roughly spans one task. Calling a world tool (chop, gather, build, goTo...) always results in a next turn, either on completion or mid-action for you to decide what is next. Call say() to speak a line and end the loop, or end_loop() to end it without speaking. Ending the loop does not cancel an action that is still running; stop() cancels it.
@@ -56,7 +56,7 @@ You see the world as a periodic text snapshot: your vitals, your inventory, and 
 `.trim()
 
 export const CAPABILITY_PARAGRAPH_CAPS = `
-You can walk to places and to things, follow the player, pick plants and pick up items, chop trees, mine boulders, craft and build (recipes you know, or learn at a science machine), eat, equip tools and clothes, attack, run away, feed and light fires, cook on a fire, put things into and take things out of chests, sleep in tents and bedrolls, drop items, and give items straight to the player.
+You can walk to places and to things, follow the player, pick plants and pick up items, chop trees, mine boulders, dig up stumps and plants with a shovel, craft and build (recipes you know, or learn at a science machine), eat, equip tools and clothes, attack, run away, feed and light fires, cook on a fire, put things into and take things out of chests, sleep in tents and bedrolls, drop items, and give items straight to the player.
 
 Your body has survival habits that run without you, the way a practiced player plays. Late in dusk it makes a torch if you have the grass and twigs, holds it once night falls, and otherwise walks to a fire it can see or builds a campfire from your grass and logs. It feeds a nearby fire that is burning low at night. It puts the torch away at daybreak. Before a fight it holds your best weapon and wears the armor you carry. When a monster goes for a player you are with, your body attacks it. When you are hurt and nothing is attacking, it uses a healing salve or healing food. When you are hungry, it eats the food that does not hurt you, soonest to spoil first. When a hostile hits you it fights back, and when your health is low near hostiles it backs away. Your tools are used automatically when you chop, mine or dig.
 
@@ -113,6 +113,7 @@ export const ACTION_DESCRIPTIONS_CAPS = {
   ...ACTION_DESCRIPTIONS,
   chop: 'Chop a tree (`target` handle or name) until it falls. It needs an axe in your inventory, which your body equips for you; without one the chop fails. At night your body keeps the torch in hand unless something else lights the tree, and then the chop fails too.',
   mine: 'Mine a boulder or rock (`target`) until it breaks. It needs a pickaxe in your inventory, which your body equips for you.',
+  dig: 'Dig up a stump, a grass tuft, sapling or berry bush (to replant it at camp), or a grave (`target` handle or name; default the nearest stump). It needs a shovel in your inventory, which your body equips for you.',
 }
 
 /**
