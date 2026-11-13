@@ -118,7 +118,7 @@ import {
   publishGameDashboardSnapshot,
   clearGameDashboard,
 } from './games/gameDashboardService';
-import { createMcSessionReporter } from './mcActionTelemetry';
+import { createMcSessionReporter, isActionStatsGame } from './mcActionTelemetry';
 import { createDstLivesReporter } from './games/dontstarve/sessionLives';
 import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
@@ -639,7 +639,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   // per live session for every end path (stop, quit(), kick/error, crash exit,
   // app quit, account switch), so mc_session_actions goes out exactly once;
   // its compact summary also rides on bot_session_ended.
-  const actionSummary = started.game === 'minecraft' ? mcSessionReporter.close(id, end.reason) : {};
+  // 261113: Stardew and DST report the same shape as game_session_actions.
+  const actionSummary = isActionStatsGame(started.game) ? mcSessionReporter.close(id, end.reason) : {};
   const digest = takeSessionDigest(id);
   const goodbye = consumeGoodbye(id, 'game');
   // 261013 (T119): the companion's goodbye left a plan, so record that it came
@@ -831,6 +832,8 @@ function broadcastStatus(status: BotStatus): void {
           hostClient: lanHost?.client ?? null,
           modded: hostWarning === 'modded' || hostWarning === 'forge',
         });
+      } else if (isActionStatsGame(game)) {
+        mcSessionReporter.online(id, { hostClient: null, modded: false }, game);
       }
       // Analytics (260707): first-online is the "bot reached the world" signal.
       // 260926: the attempt's boot-phase breakdown (supervisor onSummonReady,

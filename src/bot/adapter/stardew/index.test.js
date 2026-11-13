@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { createActionStats } from '../../brain/actionStats.js'
 import { createStardewAdapter } from './index.js'
 import { CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CHORES, CAPABILITY_PARAGRAPH_FARMHAND, ACTION_RULES, ACTION_RULES_CHORES, STARDEW_BASELINE, eventAddendum } from './prompts.js'
 import { VERB_NAMES } from './registry.js'
@@ -73,5 +74,23 @@ describe('stardew adapter mod-version gating', () => {
     expect(out).toMatch(/^tilled 2 tiles of the 2x1 patch/)
     expect(onProgress).toHaveBeenLastCalledWith({ dug: 2, total: 2 })
     expect(await a.executeAction('ship', {})).toBe('did ship')
+  })
+})
+
+describe('stardew adapter action stats (261113)', () => {
+  it('records each verb: "failed:" results with their class, the rest as successes', async () => {
+    const stats = createActionStats()
+    const client = fakeClient('0.1.4')
+    client.request = vi.fn(async (frame) => {
+      if (frame.t === 'observe') return { ok: true, obs: null }
+      if (frame.name === 'water') return { ok: false, detail: 'no path to (3, 4)' }
+      return { ok: true, detail: `did ${frame.name}` }
+    })
+    const adapter = createStardewAdapter({ client, config: {}, botUsername: 'Sui', logger: { warn() {} }, actionStats: stats })
+    await adapter.executeAction('water', { x: 3, y: 4 })
+    await adapter.executeAction('harvest', { x: 1, y: 1 })
+    const a = stats.snapshot().actions
+    expect(a.water).toMatchObject({ n: 1, ok: 0, fail: 1, reasons: { no_path: 1 } })
+    expect(a.harvest).toMatchObject({ n: 1, ok: 1, fail: 0 })
   })
 })

@@ -24,6 +24,14 @@ import { z } from 'zod';
 import { DEFAULT_MODELS } from '../shared/llmCatalog';
 
 export const MC_SESSION_ACTIONS_EVENT = 'mc_session_actions';
+/** 261113: the same shape for Stardew Valley and Don't Starve Together (`game` says which). */
+export const GAME_SESSION_ACTIONS_EVENT = 'game_session_actions';
+/** Games whose bot posts action-stats (src/bot/index.js startActionStats). */
+export const ACTION_STATS_GAMES = ['minecraft', 'stardew', 'dontstarve'] as const;
+export type ActionStatsGame = (typeof ACTION_STATS_GAMES)[number];
+export function isActionStatsGame(game: unknown): game is ActionStatsGame {
+  return (ACTION_STATS_GAMES as readonly unknown[]).includes(game);
+}
 /** Per-action keys are emitted for at most this many actions (most attempted first). */
 export const MAX_ACTIONS = 25;
 
@@ -141,6 +149,8 @@ export interface McSessionContext {
   hostClient: string | null;
   /** lanHostWarning() said 'modded' or 'forge'. */
   modded: boolean;
+  /** 261113: which game; Minecraft when absent. */
+  game?: ActionStatsGame;
 }
 
 /**
@@ -154,7 +164,7 @@ export function mcSessionActionsProps(
 ): Record<string, string | number | boolean | null> {
   const out: Record<string, string | number | boolean | null> = {
     character_id: ctx.characterId,
-    game: 'minecraft',
+    game: ctx.game ?? 'minecraft',
     session_minutes: Math.round(Math.max(0, ctx.durationMs) / 6000) / 10,
     host_client: ctx.hostClient,
     modded: ctx.modded,
@@ -287,7 +297,7 @@ type CaptureFn = (event: string, props: Record<string, unknown>) => void;
  */
 export function createMcSessionReporter(capture: CaptureFn, now: () => number = () => Date.now()) {
   const store = createActionStatsStore();
-  const live = new Map<string, { at: number; hostClient: string | null; modded: boolean }>();
+  const live = new Map<string, { at: number; hostClient: string | null; modded: boolean; game: ActionStatsGame }>();
   return {
     stats(characterId: string, raw: unknown): void {
       // Snapshots are cumulative per bot process, so one that lands outside a
@@ -297,21 +307,22 @@ export function createMcSessionReporter(capture: CaptureFn, now: () => number = 
       if (!live.has(characterId)) return;
       store.put(characterId, raw);
     },
-    online(characterId: string, host: { hostClient: string | null; modded: boolean }): void {
+    online(characterId: string, host: { hostClient: string | null; modded: boolean }, game: ActionStatsGame = 'minecraft'): void {
       if (live.has(characterId)) return;
-      live.set(characterId, { at: now(), ...host });
+      live.set(characterId, { at: now(), ...host, game });
     },
     close(characterId: string, reason: string): Record<string, number> {
       const ctx = live.get(characterId);
       if (!ctx) return {};
       live.delete(characterId);
       const stats = store.take(characterId);
-      capture(MC_SESSION_ACTIONS_EVENT, {
+      capture(ctx.game === 'minecraft' ? MC_SESSION_ACTIONS_EVENT : GAME_SESSION_ACTIONS_EVENT, {
         ...mcSessionActionsProps(stats, {
           characterId,
           durationMs: now() - ctx.at,
           hostClient: ctx.hostClient,
           modded: ctx.modded,
+          game: ctx.game,
         }),
         reason,
       });

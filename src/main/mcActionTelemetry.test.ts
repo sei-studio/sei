@@ -9,6 +9,8 @@ import {
   sessionEndActionSummary,
   MAX_ACTIONS,
   MC_SESSION_ACTIONS_EVENT,
+  GAME_SESSION_ACTIONS_EVENT,
+  isActionStatsGame,
 } from './mcActionTelemetry';
 
 function snap(over: Record<string, unknown> = {}) {
@@ -317,5 +319,32 @@ describe('ChatGPT plan sessions (261017, issue #46)', () => {
     expect(props.llm_provider).toBe('chatgpt');
     expect(props.model_id).toBe('gpt-6-luna');
     expect(reportableModelId('chatgpt', 'chatgpt', 'someone/odd:tag')).toBe('custom');
+  });
+});
+
+describe('game_session_actions (261113): Stardew and DST report the same shape', () => {
+  it('a Stardew session closes into one game_session_actions event tagged with the game', () => {
+    const capture = vi.fn();
+    let t = 0;
+    const reporter = createMcSessionReporter(capture, () => t);
+    reporter.online('s', { hostClient: null, modded: false }, 'stardew');
+    reporter.stats('s', snap());
+    t += 120_000;
+    const summary = reporter.close('s', 'user_stop');
+    expect(capture).toHaveBeenCalledTimes(1);
+    const [event, props] = capture.mock.calls[0];
+    expect(event).toBe(GAME_SESSION_ACTIONS_EVENT);
+    expect(props).toMatchObject({ game: 'stardew', reason: 'user_stop', session_minutes: 2, stats_missing: false });
+    expect(summary).toMatchObject({ actions_total: 16 });
+    // Minecraft keeps its own event name.
+    reporter.online('m', { hostClient: 'vanilla', modded: false });
+    reporter.close('m', 'user_stop');
+    expect(capture.mock.calls[1][0]).toBe(MC_SESSION_ACTIONS_EVENT);
+    expect(capture.mock.calls[1][1]).toMatchObject({ game: 'minecraft' });
+  });
+
+  it('knows which games post action stats', () => {
+    expect(['minecraft', 'stardew', 'dontstarve'].every(isActionStatsGame)).toBe(true);
+    expect(isActionStatsGame('factorio')).toBe(false);
   });
 });

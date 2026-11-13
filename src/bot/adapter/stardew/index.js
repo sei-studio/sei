@@ -12,6 +12,8 @@ import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createProgressionFlags, getProgression } from './observers/progression.js'
 import { classifyConnectError } from './errors.js'
+import { withActionStats } from '../gameActionStats.js'
+import { sessionActionStats } from '../../brain/actionStats.js'
 import { modHasVerb } from './modVersion.js'
 import {
   STARDEW_BASELINE,
@@ -32,7 +34,7 @@ import {
  * @param {object} [args.logger]
  * @returns {import('../../brain/types.js').Adapter}
  */
-export function createStardewAdapter({ client, config, botUsername, logger = console }) {
+export function createStardewAdapter({ client, config, botUsername, logger = console, actionStats = sessionActionStats }) {
   if (!client) throw new Error('createStardewAdapter: client required')
   if (!config) throw new Error('createStardewAdapter: config required')
 
@@ -102,7 +104,17 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     executeAction: async (name, args, ctx = {}) => {
       if (paused) return 'paused: the player paused the game'
       const execConfig = { ...config, ...ctx }
-      return registry.execute(name, args, null, execConfig)
+      // Outcome telemetry (gameActionStats.js): the mod and the registry
+      // start every failure with "failed:"; "aborted" is a preempt.
+      return withActionStats(name, Boolean(registry.schema(name)), () => registry.execute(name, args, null, execConfig), {
+        signal: execConfig.signal ?? null,
+        stats: actionStats,
+        failed: (res) => {
+          const text = String(res ?? '')
+          if (/^aborted\b/i.test(text)) return 'aborted'
+          return /^failed:/i.test(text) ? text.replace(/^failed:\s*/i, '') : null
+        },
+      })
     },
 
     // ── Perception + prompt blocks ────────────────────────────────────

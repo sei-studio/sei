@@ -374,12 +374,12 @@ function postActionStats({ force = false } = {}) {
     initPort.postMessage({ type: 'action-stats', stats: sessionActionStats.snapshot() })
   } catch {}
 }
-function startActionStats(config) {
+function startActionStats(config, { latency = true } = {}) {
   _actionStatsEnabled = true
   sessionActionStats.setMetaProvider(() => llmMetaFromConfig(config))
   // 261106: per-turn reply_latency samples (shape only); main samples and
-  // sends them (src/main/replyLatency.ts).
-  sessionActionStats.setLatencySink((sample) => {
+  // sends them (src/main/replyLatency.ts), labelled minecraft.
+  if (latency) sessionActionStats.setLatencySink((sample) => {
     if (!initPort) return
     try { initPort.postMessage({ type: 'reply-latency', ...sample }) } catch {}
   })
@@ -721,8 +721,11 @@ async function bootstrapWithInit(initData) {
     return
   }
 
-  // 261011: per-action outcome telemetry (Minecraft only; see postActionStats).
+  // 261011: per-action outcome telemetry (see postActionStats). 261113:
+  // Stardew and DST too (adapter/gameActionStats.js), without the reply
+  // latency samples, which main reports as Minecraft.
   if (game === 'minecraft') startActionStats(config)
+  else if (game === 'stardew' || game === 'dontstarve') startActionStats(config, { latency: false })
   startSessionDigest()
 
   // 260618: stash the initial companion roster on the (mutable) parsed config
