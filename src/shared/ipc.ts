@@ -94,6 +94,7 @@ export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './g
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
 import type { DstInstallState, DstSurvivorPick } from './dstIpc';
 import { DstChannel } from './dstIpc';
+import { TerrariaChannel, type TerrariaActionResult, type TerrariaSetupState } from './terrariaIpc';
 export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
@@ -2040,6 +2041,14 @@ export interface RendererApi {
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
   /** Push: install progress while dstInstall runs. */
   onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
+
+  // Terraria (261113): see src/shared/terrariaIpc.ts.
+  /** Detect tModLoader, the mod and its link (no writes). */
+  terrariaSetupState(): Promise<TerrariaSetupState>;
+  /** Copy the mod from the game pack into the tModLoader save folder, enable it and write the link. */
+  terrariaInstall(): Promise<TerrariaActionResult>;
+  /** Install or update the mod as needed, then start tModLoader through Steam. */
+  terrariaLaunch(): Promise<TerrariaActionResult>;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -4034,6 +4043,8 @@ export const IpcChannel = {
   },
   /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
   dst: DstChannel,
+  /** Terraria setup / install / launch (261113; src/shared/terrariaIpc.ts). */
+  terraria: TerrariaChannel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',

@@ -345,6 +345,10 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.dst.installProgress, handler);
     return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
   },
+  // Terraria (261113; src/shared/terrariaIpc.ts)
+  terrariaSetupState: () => ipcRenderer.invoke(IpcChannel.terraria.setupState),
+  terrariaInstall: () => ipcRenderer.invoke(IpcChannel.terraria.install),
+  terrariaLaunch: () => ipcRenderer.invoke(IpcChannel.terraria.launch),
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

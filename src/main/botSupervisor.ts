@@ -405,6 +405,12 @@ export interface BotSupervisorOptions {
    */
   onDstLives?: (characterId: string, raw: unknown) => void;
   /**
+   * 261113: the Terraria bot's session counters ({type:'terraria-stats'}
+   * about every 30 s and at the end). Forwarded RAW; main validates
+   * (games/terraria/sessionStats.ts). Optional.
+   */
+  onTerrariaStats?: (characterId: string, raw: unknown) => void;
+  /**
    * 261011: the session's recent conversation ({type:'session-digest'} port
    * message, every ~15s while changing plus once before any terminal
    * lifecycle), for the player-end "next time" check. Forwarded RAW;
@@ -1668,6 +1674,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
       if ((data as { type?: string }).type === 'dst-lives') {
         try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
+        return;
+      }
+      // 261113: Terraria verb / reflex / alert counters, for bot_session_ended. Not a status.
+      if ((data as { type?: string }).type === 'terraria-stats') {
+        try { opts.onTerrariaStats?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle

@@ -123,6 +123,17 @@ const ASSET_PACKS = {
     // What must exist after the build for the pack to be usable.
     mustExist: [path.join('assets', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.dll'), path.join('assets', 'stardew-mod', 'SeiCompanion', 'manifest.json')],
     build: { cmd: 'bash', args: [path.join('scripts', 'build-stardew-mod.sh')] },
+    dryRunInput: path.join('native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj'),
+  },
+  // 261113: the Terraria pack is the CHECKED-IN SeiCompanion.tmod
+  // (scripts/build-terraria-mod.sh builds it against a tModLoader install;
+  // CI has none, so release builds pass --skip-build). Read by
+  // src/main/games/terraria/install.ts TERRARIA_MOD_PACK_PATH.
+  terraria: {
+    assetsDir: path.join('assets', 'terraria-mod'),
+    mustExist: [path.join('assets', 'terraria-mod', 'SeiCompanion.tmod')],
+    build: { cmd: 'bash', args: [path.join('scripts', 'build-terraria-mod.sh')] },
+    dryRunInput: path.join('native', 'terraria-mod', 'SeiCompanion', 'SeiCompanion.csproj'),
   },
 };
 
@@ -136,7 +147,7 @@ async function buildAssetPack(opts) {
 
   if (opts.dryRun) {
     // No game on CI: the dry run only checks that the build inputs exist.
-    const modProj = path.join(ROOT, 'native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj');
+    const modProj = path.join(ROOT, spec.dryRunInput);
     if (!existsSync(modProj)) throw new Error(`missing ${modProj}`);
     log(`dry run OK: mod sources present; the pack is built with the game installed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     return;

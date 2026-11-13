@@ -48,6 +48,7 @@ import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
 import { createDontStarveGameModule } from './games/dontstarve';
 import { createStardewGameModule } from './games/stardew';
+import { createTerrariaGameModule } from './games/terraria';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls, liveCallsNow } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
@@ -120,6 +121,7 @@ import {
 } from './games/gameDashboardService';
 import { createMcSessionReporter } from './mcActionTelemetry';
 import { createDstLivesReporter } from './games/dontstarve/sessionLives';
+import { createTerrariaStatsReporter } from './games/terraria/sessionStats';
 import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // The app name + userData (and the SEI_DEV_USERDATA dev override) are set in
@@ -186,6 +188,9 @@ registerGameModule(dontstarveModule);
 // Registering does not light the picker tile (GAME_CATALOG.available flips
 // after the live checklist).
 registerGameModule(createStardewGameModule({ logger }));
+// Terraria (261113): sideloaded tModLoader mod + Steam launch + hello watcher.
+// GAME_CATALOG keeps the tile unlit until the live checklist passes.
+registerGameModule(createTerrariaGameModule({ logger }));
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
@@ -511,6 +516,8 @@ const playStartedAt = new Map<string, { at: number; game: GameId }>();
 const mcSessionReporter = createMcSessionReporter(capture);
 // 261104: DST deaths and respawns, folded into bot_session_ended.
 const dstLivesReporter = createDstLivesReporter();
+// 261113: Terraria verb / reflex / alert counters, folded into bot_session_ended.
+const terrariaStatsReporter = createTerrariaStatsReporter();
 /** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
 const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
@@ -627,6 +634,7 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   // Taken before the live check so a session that never went live leaves
   // nothing behind for the next one.
   const dstLives = dstLivesReporter.take(id);
+  const terrariaStats = terrariaStatsReporter.take(id);
   const started = playStartedAt.get(id);
   if (started === undefined) return;
   playStartedAt.delete(id);
@@ -664,6 +672,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     ...actionSummary,
     // 261104: respawns, deaths and last_death_cause (a game id).
     ...(started.game === 'dontstarve' ? dstLives : {}),
+    // 261113: trr_* verb / failure-class / reflex / alert counts (shape only).
+    ...(started.game === 'terraria' ? terrariaStats : {}),
     ...end,
     // 261008: did the companion's goodbye set up a next session (retention).
     ...gameEndHookProps(goodbye),
@@ -1338,6 +1348,7 @@ async function bootstrap(): Promise<void> {
     onDashboard: publishGameDashboardSnapshot,
     onActionStats: (characterId, stats) => mcSessionReporter.stats(characterId, stats),
     onDstLives: (characterId, raw) => dstLivesReporter.note(characterId, raw),
+    onTerrariaStats: (characterId, raw) => terrariaStatsReporter.note(characterId, raw),
     // 261011: the session's recent conversation, kept in memory for the
     // player-end next-step check (never sent to analytics).
     onSessionDigest: (id, raw) => {

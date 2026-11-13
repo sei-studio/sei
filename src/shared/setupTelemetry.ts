@@ -24,7 +24,7 @@ import type { McInstall, McScanExtras } from './ipc';
 
 export const GAME_SETUP_EVENT = 'game_setup_step';
 
-export type SetupGame = 'minecraft' | 'stardew';
+export type SetupGame = 'minecraft' | 'stardew' | 'terraria';
 export type SetupOutcome = 'start' | 'ok' | 'fail';
 
 export const MC_SETUP_STEPS = [
@@ -57,9 +57,22 @@ export const STARDEW_SETUP_STEPS = [
   'farm_seen',
 ] as const;
 
+/** Terraria (261113, src/main/games/terraria). find_game, mod_copy and launch are shared with Stardew. */
+export const TERRARIA_SETUP_STEPS = [
+  /** Detection answered (once per distinct answer): tModLoader in a Steam library. */
+  'find_game',
+  /** The companion mod copied into the tModLoader save folder and enabled. */
+  'mod_copy',
+  /** Sei asked Steam to start tModLoader. */
+  'launch',
+  /** The mod answered a hello with a world loaded (first per process). */
+  'world_seen',
+] as const;
+
 export type McSetupStep = (typeof MC_SETUP_STEPS)[number];
 export type StardewSetupStep = (typeof STARDEW_SETUP_STEPS)[number];
-export type SetupStep = McSetupStep | StardewSetupStep;
+export type TerrariaSetupStep = (typeof TERRARIA_SETUP_STEPS)[number];
+export type SetupStep = McSetupStep | StardewSetupStep | TerrariaSetupStep;
 
 /** Where the game came from: Stardew's store, or Minecraft's launcher type. */
 export const SETUP_STORES = [
@@ -165,7 +178,7 @@ export interface SetupStepInput {
 }
 
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
-const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS]);
+const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS, ...TERRARIA_SETUP_STEPS]);
 const STORES = new Set<string>(SETUP_STORES);
 
 /** An error code, or UNKNOWN for anything that is not one. */
@@ -181,7 +194,7 @@ export function setupErrorCode(code: string | null | undefined): string {
  */
 export function setupStepProps(input: SetupStepInput): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {
-    game: input.game === 'stardew' ? 'stardew' : 'minecraft',
+    game: input.game === 'stardew' || input.game === 'terraria' ? input.game : 'minecraft',
     step: STEPS.has(input.step) ? input.step : 'unknown',
     outcome: input.outcome === 'ok' || input.outcome === 'fail' ? input.outcome : 'start',
   };

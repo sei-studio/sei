@@ -88,6 +88,15 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
+  // 261113: the sideloaded tModLoader mod, one .tmod for every OS.
+  // Measured 261113: the 0.1.0 .tmod is 88 KB.
+  terraria: {
+    id: 'terraria',
+    name: 'Terraria',
+    platformSpecific: false,
+    sizeHintBytes: 96 * 1024,
+    requiredPaths: ['assets/terraria-mod/SeiCompanion.tmod'],
+  },
 };
 
 // ── Asset naming ────────────────────────────────────────────────────────────
