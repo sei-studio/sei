@@ -58,7 +58,8 @@ const KEY_FILE = path.join(os.homedir(), '.sei-dev', 'anthropic-test-key');
 const PRICE = { in: 0.10, out: 0.50, cw: 0.125, cr: 0.01 }; // claude-haiku-5-5, report.mjs PRICES
 const SPEND_LOG = path.join(OUT, 'spend.log');
 
-const ALL = ['night_dusk', 'night_dark', 'night_hostlight', 'hostiles', 'follow', 'errand_twigs', 'errand_grass', 'hunger', 'errand_chat'];
+const T435 = ['dig_tuft', 'cook_crockpot', 'stash_chest', 'wormhole_follow', 'assist_chop', 'boss_flee'];
+const ALL = [...T435, 'night_dusk', 'night_dark', 'night_hostlight', 'hostiles', 'follow', 'errand_twigs', 'errand_grass', 'hunger', 'errand_chat'];
 const scenarioNames = (arg('scenarios') ?? ALL.join(',')).split(',').filter(Boolean);
 const repsFor = (name: string) => Number(arg(`reps-${name}`, String(REPS)));
 
@@ -180,14 +181,15 @@ const RESOURCES = ['QE_RING("grass",5,5,14,false)', 'QE_RING("sapling",5,5,14,fa
 function sumBodies(probes: Probe[]) {
   const by = new Map<number, any>();
   for (const p of probes) if (p?.guid != null && p.qe) by.set(p.guid, p.qe);
-  let dmg = 0, grue = 0, hits = 0, kills = 0, eats = 0, crafts = 0;
+  let dmg = 0, grue = 0, hits = 0, kills = 0, eats = 0, crafts = 0, works = 0;
   const causes: Record<string, number> = {};
   for (const q of by.values()) {
+    works += q.works || 0;
     dmg += q.dmg || 0; grue += q.grue || 0; hits += q.hits || 0; kills += q.kills || 0; eats += q.eats || 0; crafts += q.crafts || 0;
     for (const [k, v] of Object.entries(q.causes || {})) causes[k] = (causes[k] || 0) + Number(v);
   }
   const deaths = Math.max(probes.some((p) => p?.dead) ? 1 : 0, by.size - 1, curLives?.deaths ?? 0);
-  return { bodies: by.size, deaths, death_cause: curLives?.lastDeathCause ?? null, dmg: Math.round(dmg), grue, hits, kills, eats, crafts, causes };
+  return { bodies: by.size, deaths, death_cause: curLives?.lastDeathCause ?? null, dmg: Math.round(dmg), grue, hits, kills, eats, crafts, works, causes };
 }
 
 async function nightRun(c: Ctx, maxMs: number) {
@@ -234,7 +236,140 @@ async function errandRun(c: Ctx, line: string, prefab: string, need: number, max
   return { pass: doneMs != null, done_ms: doneMs, delivered: delivered(last, prefab), her_inv: last?.inv?.[prefab] ?? 0, ...s, askAt };
 }
 
+/** Poll a tagged console probe once a second until `done` or `maxMs`; returns every reading. */
+async function pollTagged(c: Ctx, call: string, tag: string, maxMs: number, done: (o: any) => boolean) {
+  const out: any[] = [];
+  const t = Date.now();
+  let n = 0;
+  while (Date.now() - t < maxMs) {
+    const id = `${tag}${++n}`;
+    const w = srv.waitTagged(tag, 3000, (o) => o.tag === id);
+    srv.con(`${call}("${id}")`);
+    const o = await w;
+    await c.tick();
+    if (o) { out.push({ ...o, ms: Date.now() - t }); if (done(o)) break; }
+    await sleep(1000);
+  }
+  return out;
+}
+const aliveOf = (c: Ctx) => { const last = c.probes[c.probes.length - 1]; const s = sumBodies(c.probes); return { alive: !!last && last.dead === false && s.deaths === 0, ...s }; };
+
 const SCENARIOS: Record<string, Scenario> = {
+  // ── T435 (helper 0.4.0) jobs: the new verbs and the habits they unlock ──
+  dig_tuft: {
+    phase: 'day', setup: () => ['QE_RING("grass",2,4,7,false)'],
+    run: async (c) => {
+      await sleep(3000);
+      srv.con('QE_GIVE("shovel",1)');
+      await sleep(1000);
+      c.say('Sui, can you dig up one of those grass tufts for me? I want to replant it at camp');
+      const t = Date.now();
+      let doneMs: number | null = null;
+      while (Date.now() - t < 120_000) {
+        const p = await c.tick();
+        if (p && ((p.inv?.dug_grass ?? 0) + delivered(p, 'dug_grass')) >= 1) { doneMs = Date.now() - t; break; }
+        await sleep(1000);
+      }
+      return { pass: doneMs != null, done_ms: doneMs, ...aliveOf(c) };
+    },
+  },
+  cook_crockpot: {
+    phase: 'day', setup: () => ['QE_PUT("QE_POTE","cookpot",3,0)'],
+    run: async (c) => {
+      await sleep(3000);
+      srv.con('QE_GIVE("meat",1)'); srv.con('QE_GIVE("berries",3)');
+      await sleep(1000);
+      c.say('Sui, can you cook us something in the crock pot? use what you have');
+      // Wait for the meal to be OUT of the pot (or 20 s past done): ending
+      // the rep at "done" despawned her mid-harvest and her cookpot result
+      // read as a failure (seen 261113, the despawn clears the action).
+      let doneAt: number | null = null;
+      const rs = await pollTagged(c, 'QE_POTSTATE', 'qe-pot', 150_000, (o) => {
+        if (o.done && doneAt == null) doneAt = Date.now();
+        return o.dish > 0 || (doneAt != null && Date.now() - doneAt > 20_000);
+      });
+      const first = rs.find((o) => o.cooking || o.done || o.dish > 0);
+      const last = rs[rs.length - 1] ?? {};
+      return { pass: !!first, start_ms: first?.ms ?? null, cooked: rs.some((o) => o.done || o.dish > 0), took_out: (last.dish ?? 0) > 0, product: rs.find((o) => o.product)?.product ?? null, ...aliveOf(c) };
+    },
+  },
+  stash_chest: {
+    phase: 'day', setup: () => ['QE_PUT("QE_CHESTE","treasurechest",3,2)'],
+    run: async (c) => {
+      await sleep(3000);
+      // The camp chest already holds one of each (the stash use case: tidy
+      // into the chest that has the same things). 4 items to start.
+      srv.con('local c=rawget(_G,"QE_CHESTE"); if c then for _,p in ipairs({"rocks","flint","twigs","cutgrass"}) do c.components.container:GiveItem(SpawnPrefab(p)) end end');
+      for (const [p, n] of [['rocks', 8], ['flint', 5], ['twigs', 6], ['cutgrass', 6], ['berries', 4]] as const) srv.con(`QE_GIVE("${p}",${n})`);
+      await sleep(1000);
+      // Every chest within 16 of the camp chest counts (the pinned world
+      // has older chests nearby); pass = 10 or more items put away.
+      const base = (await pollTagged(c, 'QE_CHESTN', 'qe-chest', 1, () => true))[0]?.items ?? 4;
+      c.say('Sui, can you put your stuff away in the camp chest? keep your food on you');
+      const rs = await pollTagged(c, 'QE_CHESTN', 'qe-chest', 90_000, (o) => o.items - base >= 10);
+      const hit = rs.find((o) => o.items - base >= 10);
+      const last = rs[rs.length - 1] ?? {};
+      const p = c.probes[c.probes.length - 1];
+      return { pass: !!hit, done_ms: hit?.ms ?? null, stored: (last.items ?? base) - base, chests: last.chests ?? 0, kept_berries: p?.inv?.berries ?? 0, ...aliveOf(c) };
+    },
+  },
+  wormhole_follow: {
+    phase: 'day', setup: () => ['QE_WORM(100)'],
+    run: async (c) => {
+      await sleep(3000);
+      c.say('Sui, follow me');
+      await sleep(12_000);
+      srv.con('QE_JUMP()');
+      const t = Date.now();
+      let rejoinMs: number | null = null;
+      let at15: number | null = null;
+      while (Date.now() - t < 40_000) {
+        const p = await c.tick();
+        const d = dist(p);
+        if (Date.now() - t > 4000 && d != null && d <= 12 && rejoinMs == null) rejoinMs = Date.now() - t;
+        if (at15 == null && Date.now() - t >= 15_000) at15 = d;
+        if (rejoinMs != null && Date.now() - t >= 15_000) break;
+        if (Date.now() - t >= 30_000 && rejoinMs == null) break;
+        await sleep(1000);
+      }
+      const end = dist(c.probes[c.probes.length - 1]);
+      return { pass: rejoinMs != null && rejoinMs <= 30_000, rejoin_ms: rejoinMs, dist_15s: at15 != null ? +at15.toFixed(1) : null, end_dist: end != null ? +end.toFixed(1) : null, ...aliveOf(c) };
+    },
+  },
+  assist_chop: {
+    phase: 'day', setup: () => ['QE_RING("evergreen",6,3,9,false)', 'QE_SAXE()'],
+    run: async (c) => {
+      await sleep(3000);
+      srv.con('QE_GIVE("axe",1)');
+      await sleep(1000);
+      c.say('Sui, help me chop these trees');
+      const t = Date.now();
+      let k = 0;
+      while (Date.now() - t < 60_000) { srv.con('QE_SCHOP()'); await sleep(1200); if (++k % 3 === 0) await c.tick(); }
+      await c.tick();
+      const s = aliveOf(c);
+      const p = c.probes[c.probes.length - 1];
+      return { pass: s.works >= 3, her_logs: p?.inv?.log ?? 0, ...s };
+    },
+  },
+  boss_flee: {
+    phase: 'day',
+    run: async (c) => {
+      await sleep(4000);
+      srv.con('local b=QE_BODY(); if b then local x,_,z=b.Transform:GetWorldPosition(); local d=SpawnPrefab("bearger"); d.Transform:SetPosition(x+10,0,z); d.entity:SetCanSleep(false); d.qe_spawned=true; d.components.combat:SetTarget(b); rawset(_G,"QE_BOSS",d) end');
+      const t = Date.now();
+      let minD = 1e9;
+      while (Date.now() - t < 45_000) {
+        const p = await c.tick();
+        const boss = (p?.hostiles ?? []).find((h: any) => h.p === 'bearger');
+        if (boss) minD = Math.min(minD, boss.d);
+        await sleep(1000);
+      }
+      const s = aliveOf(c);
+      return { pass: s.alive, min_boss_dist: minD < 1e9 ? minD : null, ...s };
+    },
+  },
+
   night_dusk: {
     phase: 'dusk', segs: { day: 10, dusk: 4, night: 2 }, setup: () => RESOURCES,
     run: (c) => nightRun(c, 230_000),
@@ -424,10 +559,15 @@ for (const name of scenarioNames) {
     appendFileSync(SPEND_LOG, `${new Date().toISOString()} arm=${ARM} rep=${repId} turns=${bot.turns()} usd=${cost.toFixed(5)}\n`);
     const says = bot.events.filter((e) => e.kind === 'chat_out').length;
     const acts = bot.events.filter((e) => e.kind === 'action_call').map((e) => e.name);
-    const full = { arm: ARM, scenario: name, rep, ...row, turns: bot.turns(), usd: +cost.toFixed(5), says, acts, lives: bot.lives, bot_error: bot.ended?.error ?? null };
+    const llm = bot.events.filter((e) => e.kind === 'llm_turn');
+    const tokIn = llm.reduce((s, e) => s + (e.usage?.input_tokens || 0) + (e.usage?.cache_creation_input_tokens || 0) + (e.usage?.cache_read_input_tokens || 0), 0);
+    const tokOut = llm.reduce((s, e) => s + (e.usage?.output_tokens || 0), 0);
+    const results = bot.events.filter((e) => e.kind === 'action_result').map((e) => ({ a: e.action, r: String(e.result).slice(0, 120) }));
+    const full = { arm: ARM, scenario: name, rep, ...row, turns: bot.turns(), tok_in: tokIn, tok_out: tokOut, usd: +cost.toFixed(5), says, acts, results, lives: bot.lives, bot_error: bot.ended?.error ?? null };
     appendFileSync(rowsPath, JSON.stringify(full) + '\n');
     log(`--- ${repId} ${row.pass ? 'PASS' : 'FAIL'} ${JSON.stringify(row).slice(0, 400)} turns=${bot.turns()} $${cost.toFixed(4)} total=$${spent.toFixed(3)}`);
     srv.con('QE_CLEARBODY()');
+    srv.con('QE_CLEANUP()');
     await sleep(3000);
   }
 }

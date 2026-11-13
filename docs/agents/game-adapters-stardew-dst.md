@@ -976,6 +976,49 @@ a Milk Pail and Shears; give her one), summon a companion.
 11. Snapshot size: the debug snapshot in a busy town square stays within a
     few lines of 0.1.3's (only 3 villagers carry hearts and gifts).
 
+**A/B against dev (261113).** DST: `scripts/quality-eval/dst/run.ts` with
+the T435 scenarios (`dig_tuft`, `cook_crockpot`, `stash_chest`,
+`wormhole_follow`, `assist_chop`, `boss_flee`) at 4 reps plus `hostiles`,
+`errand_twigs`, `follow` at 3, both arms on one pinned world, table from
+`scripts/quality-eval/ab-stats.mjs dev.jsonl branch.jsonl`. Pooled pass
+9/33 on dev, 29/33 on the branch; dig, cookpot, wormhole and boss flee went
+0/4 to 4/4, stash 2/4 to 4/4, assist 4/4 on both (Haiku already helps by
+chopping), follow 0/3 on both (the console stand-in teleports, a known
+harness limit). Cached prompt prefix is about 3,000 tokens larger with
+helper 0.4.0, uncached input about 110 tokens more per turn; she needed
+about half as many turns for the same scenarios. `cook_crockpot` now waits
+for the meal to come out: ending the rep at "done" despawned her mid-harvest
+and the result read as a failure. Stardew goal list:
+`scripts/quality-eval/stardew-goal-ab.mjs` (one idle tick per rep,
+proactiveness 2, no goal, real adapter and prompts, Haiku judge), 10 reps
+per scene: a stale pick (already done or out of season) went from 27/30 to
+15/30 pooled; on a re-summon in summer, 8/10 to 1/10. A first session after
+the upgrade (empty store) is no better than dev: the wood and copper rungs
+cannot see a chest or a past session, so they stay listed until the store
+has them.
+
+**A/B for the 0.1.4 batch (before merge).** Same save copy, same character,
+same lines typed, once with the dev build and mod 0.1.3 (arm A) and once
+with the branch build and 0.1.4 (arm B); keep both save copies so a rerun
+starts from the same day. 5 tries per task per arm, a try passes from what
+the game shows, not from what she says:
+| task (typed line) | pass |
+|---|---|
+| "can you load the furnace" (empty furnace, 5 copper ore and coal in her bag) | furnace running within 60 s |
+| "pet the chickens" (coop, 3+ animals not petted) | every animal petted within 90 s |
+| "grab the eggs" (2+ eggs on the coop floor) | eggs in her bag within 60 s |
+| "pick the berries off that bush" (salmonberry season) | berries in her bag within 60 s |
+| "clear the dead crops" (season change save) | dead crops gone, soil tilled |
+| walk into mines 1 to 10 and let a slime reach you, do not ask for help | she hits it within 10 s of it reaching you |
+| stand inside a closed gated pen, "come here" | she is inside within 30 s, gate closed after her |
+Also record per arm: her deaths and faints in the mines run, input tokens
+per turn from the bot log (expected: about +150 to +180 per turn on 0.1.4,
+cached capability text +177, snapshot +0 to +150), and every verb result
+that is not a success, by its first words. Arm A is expected to fail most
+tasks (the verbs do not exist there; she should say so, not pretend). Drop
+or fix any 0.1.4 piece whose arm B pass rate is not clearly above A's, or
+that raises deaths, or that she never picks when it fits.
+
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.
