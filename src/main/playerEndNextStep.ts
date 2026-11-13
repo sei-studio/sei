@@ -53,7 +53,7 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { LlmProvider } from './llm/types';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine } from '../bot/brain/nextStep.js';
-import { PLAYER_END_NEXT_STEP_SYSTEM } from '../bot/brain/promptLibrary.js';
+import { PLAYER_END_NEXT_STEP_SYSTEM, PLAYER_END_RECAP_ADDENDUM } from '../bot/brain/promptLibrary.js';
 import { gameDisplayName, gameIdFromName, nameInSentence } from '../shared/homeNextStep';
 import { GAME_IDS, isGameId, type GameId } from '../shared/gameIpc';
 
@@ -79,10 +79,20 @@ export const PLAYER_END_MIN_MS = 2 * 60_000;
 export const PLAYER_END_TIMEOUT_MS = 15_000;
 /** The plan is a few words; this caps a runaway reply. */
 export const PLAYER_END_MAX_TOKENS = 150;
+/**
+ * 261113 (v0.7 D1): a game session's check also writes the session's recap
+ * (50 words or less, about 80 tokens) ahead of the plan lines.
+ */
+export const PLAYER_END_RECAP_MAX_TOKENS = 400;
 /** A second end for the same character inside this window is skipped. */
 export const DEDUPE_WINDOW_MS = 60_000;
 
-const MAX_LINES = 16;
+/**
+ * Digest lines the check reads (and keeps from the bot's report). 261113:
+ * 16 -> 40 with the bot's DIGEST_MAX_LINES, so a recap covers more than the
+ * goodbye at the end of a session.
+ */
+const MAX_LINES = 40;
 const LINE_CHARS = 200;
 const MAX_GOALS = 5;
 const MAX_MEMORIES = 8;
@@ -219,9 +229,12 @@ export function buildPlayerEndPrompt(p: {
   lines: DigestLine[];
   goals: string[];
   memories: Array<string | MemoryEntry>;
+  /** 261113: also ask for the session's recap (game sessions, see runSessionEnd). */
+  recap?: boolean;
 }): { system: string; user: string } {
   // {card_name}: the name as the Home card shows it ("red" reads "Red").
-  const system = PLAYER_END_NEXT_STEP_SYSTEM.split('{card_name}')
+  const base = p.recap ? `${PLAYER_END_NEXT_STEP_SYSTEM}\n\n${PLAYER_END_RECAP_ADDENDUM}` : PLAYER_END_NEXT_STEP_SYSTEM;
+  const system = base.split('{card_name}')
     .join(nameInSentence(p.name))
     .split('{name}')
     .join(p.name)
@@ -238,7 +251,11 @@ export function buildPlayerEndPrompt(p: {
   );
   const memories = renderMemories(p.memories);
   if (memories) parts.push(memories);
-  parts.push('Reply with the three lines (note:, player: and game:), or with none.');
+  parts.push(
+    p.recap
+      ? 'Reply with the recap: line first, then the three lines (note:, player: and game:) or the word none.'
+      : 'Reply with the three lines (note:, player: and game:), or with none.',
+  );
   return { system, user: parts.join('\n\n') };
 }
 
@@ -405,6 +422,56 @@ export function parsePlayerEndReply(text: string): PlayerEndPlan | null {
   return { step, line, game: parseGameAnswer(game) };
 }
 
+const RECAP_LABEL = /^\s*[*_-]*\s*recap\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+/** A plan label opening later on the recap's own line ("recap: ... note: ..."). */
+const INLINE_NOTE = /\s+(?=[*_]*\s*note\s*[*_]*\s*[:：])/i;
+const BARE_NONE = /^[\s*_"'“”‘’`]*(none|nothing|no|n\/a|无|没有|なし|없음)[\s*_"'“”‘’`.。]*$/i;
+
+/**
+ * 261113 (v0.7 D1): a reply that leads with `recap: ...` (game sessions,
+ * buildPlayerEndPrompt `recap`), split into the recap and the plan. The recap
+ * runs from its label to the next labeled line, a bare "none" or a blank line
+ * (a model that wraps it over two lines keeps both), and what is left is read
+ * by parsePlayerEndReply exactly as before, so a recap line is never taken as
+ * the plan note. No recap label: recap null, the whole reply is the plan.
+ * This parses the labeled format the prompt asks for, not speech.
+ */
+export function parseSessionEndReply(text: string): { recap: string | null; plan: PlayerEndPlan | null } {
+  const lines = String(text ?? '').split('\n');
+  const at = lines.findIndex((l) => RECAP_LABEL.test(l));
+  if (at < 0) return { recap: null, plan: parsePlayerEndReply(text) };
+  let first = RECAP_LABEL.exec(lines[at])![1];
+  const rest: string[] = [...lines.slice(0, at)];
+  const split = first.search(INLINE_NOTE);
+  if (split > 0) {
+    rest.push(first.slice(split).trim());
+    first = first.slice(0, split);
+  }
+  const parts = [first];
+  let i = at + 1;
+  if (split <= 0) {
+    for (; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.trim()) {
+        if (parts.join('').trim()) break;
+        continue;
+      }
+      if (LABELED.test(l) || BARE_NONE.test(l)) break;
+      parts.push(l);
+    }
+  }
+  rest.push(...lines.slice(i));
+  const recap = parts
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`]+$/g, '')
+    .trim();
+  return {
+    recap: recap && !BARE_NONE.test(recap) ? recap : null,
+    plan: parsePlayerEndReply(rest.join('\n')),
+  };
+}
+
 /** The plan note alone (see parsePlayerEndReply), or null for "none". */
 export function parseNextStepReply(text: string): string | null {
   return parsePlayerEndReply(text)?.step ?? null;
@@ -439,6 +506,18 @@ export interface PlayerEndInput {
    * with `skip_reason: 'free_cloud'`.
    */
   skipOnFreeCloud?: boolean;
+  /**
+   * 261113 (v0.7 D1): also write the session's recap (runSessionEnd). Game
+   * sessions only: their lines never reach the transcript, while a call's or
+   * a chat's already do (and fold from there).
+   */
+  recap?: boolean;
+}
+
+/** runSessionEnd's answer: the check's outcome, plus the recap when one was asked for and given. */
+export interface SessionEndResult {
+  outcome: PlayerEndOutcome;
+  recap: string | null;
 }
 
 export type PlayerEndOutcome =
@@ -529,6 +608,23 @@ export async function runPlayerEndNextStep(
   deps: PlayerEndDeps,
   ctrl: AbortController = new AbortController(),
 ): Promise<PlayerEndOutcome> {
+  return (await runSessionEnd(input, deps, ctrl)).outcome;
+}
+
+/**
+ * The session-end call (261113, v0.7 D1): the "next time" check, plus, for an
+ * input with `recap`, the session's short first-person recap from the same
+ * call (no second call; PLAYER_END_RECAP_MAX_TOKENS instead of 150). The
+ * recap comes back even when there is no plan; it is null when the call was
+ * skipped, failed, timed out or was cancelled, and the caller falls back to
+ * the digest lines (playSummary.ts playStory). Never throws.
+ */
+export async function runSessionEnd(
+  input: PlayerEndInput,
+  deps: PlayerEndDeps,
+  ctrl: AbortController = new AbortController(),
+): Promise<SessionEndResult> {
+  let recap: string | null = null;
   const { characterId } = input;
   const short = characterId.slice(0, 8);
   let provider: LlmProvider | null = null;
@@ -569,21 +665,25 @@ export async function runPlayerEndNextStep(
             lines: input.lines,
             goals,
             memories,
+            recap: input.recap === true,
           });
           reachedModel = true;
           const res = await provider!.call({
-            maxTokens: PLAYER_END_MAX_TOKENS,
+            maxTokens: input.recap ? PLAYER_END_RECAP_MAX_TOKENS : PLAYER_END_MAX_TOKENS,
             system: prompt.system,
             messages: [{ role: 'user', content: prompt.user }],
             timeoutMs: budget,
             signal: ctrl.signal,
           });
           if (ctrl.signal.aborted) return 'cancelled';
-          const plan = parsePlayerEndReply(res.text);
+          const parsed = input.recap ? parseSessionEndReply(res.text) : { recap: null, plan: parsePlayerEndReply(res.text) };
+          const plan = parsed.plan;
+          recap = parsed.recap;
           const step = plan?.step ?? null;
           const u = res.usage ?? {};
           deps.log(
-            `[sei/next-step] ${short} player-end check: ${step ? `plan (${step.length} chars${plan?.line ? `, line ${plan.line.length}` : ', no line'})` : 'none'}, ` +
+            `[sei/next-step] ${short} player-end check: ${step ? `plan (${step.length} chars${plan?.line ? `, line ${plan.line.length}` : ', no line'})` : 'none'}` +
+              `${input.recap ? `, recap ${recap ? `${recap.length} chars` : 'none'}` : ''}, ` +
               `in ${u.input_tokens ?? 0} / out ${u.output_tokens ?? 0} tokens`,
           );
           if (!step) return 'none';
@@ -613,7 +713,9 @@ export async function runPlayerEndNextStep(
   // A cancelled check (a new session, or an account switch that may already
   // have re-identified analytics) sends nothing, as before.
   if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
-  return outcome;
+  // A recap read before a timeout or cancel is not used: the row may already
+  // have been written without it, and a cancelled turn must not write.
+  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null };
 }
 
 /**
@@ -745,6 +847,15 @@ export function startPlayerEndNextStep(
   deps?: PlayerEndDeps,
   opts: { yieldAlways?: boolean } = {},
 ): Promise<PlayerEndOutcome> {
+  return startSessionEnd(input, deps, opts).then((r) => r.outcome);
+}
+
+/** startPlayerEndNextStep with the recap (261113): what closePlaySession waits on. Never rejects. */
+export function startSessionEnd(
+  input: PlayerEndInput,
+  deps?: PlayerEndDeps,
+  opts: { yieldAlways?: boolean } = {},
+): Promise<SessionEndResult> {
   const { characterId } = input;
   const d = deps ?? defaultDeps();
   const now = d.now();
@@ -752,7 +863,7 @@ export function startPlayerEndNextStep(
   if (inflight.has(characterId) || (prev !== undefined && now - prev < DEDUPE_WINDOW_MS)) {
     // 261107: visible too (a backseat share ending with its call lands here).
     reportCheckOutcome(d.capture, input, 'busy', false);
-    return Promise.resolve('busy');
+    return Promise.resolve({ outcome: 'busy', recap: null });
   }
   lastRun.set(characterId, now);
   const ctrl = new AbortController();
@@ -767,8 +878,8 @@ export function startPlayerEndNextStep(
     },
   };
   return d
-    .scoped(() => runPlayerEndNextStep(input, tracked, ctrl))
-    .catch((): PlayerEndOutcome => 'cancelled')
+    .scoped(() => runSessionEnd(input, tracked, ctrl))
+    .catch((): SessionEndResult => ({ outcome: 'cancelled', recap: null }))
     .finally(() => {
       if (inflight.get(characterId) === entry) inflight.delete(characterId);
     });

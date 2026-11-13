@@ -800,9 +800,10 @@ export async function composeSeedBlocks({
         if (typeof config._seiContinuityLead === 'string') {
           lead = config._seiContinuityLead
         } else {
-          const newestTs = (cont.recent ?? [])
-            .map((m) => (typeof m?.ts === 'number' ? m.ts : 0))
-            .reduce((a, b) => Math.max(a, b), 0)
+          const newest = (cont.recent ?? [])
+            .filter((m) => typeof m?.ts === 'number')
+            .reduce((a, m) => (!a || m.ts >= a.ts ? m : a), null)
+          const newestTs = newest ? newest.ts : 0
           if (newestTs > 0) {
             const gapMin = Math.max(0, Math.round((Date.now() - newestTs) / 60_000))
             const gapPhrase =
@@ -810,12 +811,16 @@ export async function composeSeedBlocks({
               : gapMin < 60 ? `about ${gapMin} minutes`
               : gapMin < 1_440 ? `about ${Math.round(gapMin / 60)} hour${Math.round(gapMin / 60) === 1 ? '' : 's'}`
               : `about ${Math.round(gapMin / 1_440)} day${Math.round(gapMin / 1_440) === 1 ? '' : 's'}`
+            // 261113 (v0.7 D1): the handoff now carries game sessions too, so
+            // the last time together may have been a game, not a text chat.
             lead =
-              `You were texting with the player in the app ${gapPhrase} before joining this world. ` +
-              'Continue as the same person — do not act like you only just met.' +
-              (gapMin < 3
-                ? ' That conversation is only moments old — pick it up mid-thread; do not greet or reminisce like time has passed.'
-                : '')
+              newest.role === 'session'
+                ? `The last time you and the player were together was a game session that ended ${gapPhrase} ago (below). Continue as the same person who was there, not as if you only just met.`
+                : `You were texting with the player in the app ${gapPhrase} before joining this world. ` +
+                  'Continue as the same person — do not act like you only just met.' +
+                  (gapMin < 3
+                    ? ' That conversation is only moments old — pick it up mid-thread; do not greet or reminisce like time has passed.'
+                    : '')
           }
           config._seiContinuityLead = lead
         }
@@ -835,11 +840,18 @@ export async function composeSeedBlocks({
           const mm = String(d.getMinutes()).padStart(2, '0')
           return ` (${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm})`
         }
-        const lines = cont.recent
-          .filter((m) => m && typeof m.text === 'string')
-          .map((m) => `${m.role === 'user' ? 'Player' : 'You'}${stamp(m.ts)}: ${m.text}`)
-          .join('\n')
-        if (lines) parts.push('\nThe last things you said to each other:\n' + lines)
+        // 261113: a 'session' row is a finished game session with what
+        // happened in it (main chat/continuityCore.ts launchContinuityFrom).
+        const who = (role) => (role === 'user' ? 'Player' : role === 'session' ? 'Game session' : 'You')
+        const rows = cont.recent.filter((m) => m && typeof m.text === 'string')
+        const lines = rows.map((m) => `${who(m.role)}${stamp(m.ts)}: ${m.text}`).join('\n')
+        if (lines) {
+          parts.push(
+            rows.some((m) => m.role === 'session')
+              ? '\nWhat the two of you said and played most recently, oldest first:\n' + lines
+              : '\nThe last things you said to each other:\n' + lines,
+          )
+        }
       }
       blocks.push({ type: 'text', name: 'chat_continuity', text: parts.join('\n') })
     }

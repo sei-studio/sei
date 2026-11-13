@@ -29,6 +29,35 @@ had it from the start. The contract is three things.
    fire-and-forget. Without the fold the surface's rows are the ones that never
    make it into the rolling summary.
 
+**What happened in a game session (261113, v0.7 consistency D1).** A play row
+(`chat/playSummary.ts buildPlayRow`) may carry a story in its event: `recap`,
+the companion's own first-person recap, or `lines`, the last few digest lines
+when there is no recap. Model-facing only; the renderer shows `text`. Where it
+is read:
+- the chat transcript (`toMessages`, appended inside the shared-history note);
+- the fold: a play row inside a fold's batch is folded as a "Game session"
+  line (`chat/continuityCore.ts selectFold`). Play rows never move the
+  watermark; a row sits in the batch when its position is inside it, so each
+  folds exactly once and leaves the chat history in the same fold its
+  neighbours do;
+- the MC launch handoff (`launchContinuityFrom`, role `'session'`), which the
+  bot's seed reads as "Game session" rows (orchestrator `chat_continuity`).
+
+The bot games' recap comes from the session-end call that already runs when
+the PLAYER ends the session (`playerEndNextStep.ts startSessionEnd` with
+`recap: true`: the same call, 400 max tokens, a `recap:` line before the plan
+lines). `closePlaySession` waits for it at most `RECAP_WAIT_MS` (20 s) and
+stops waiting when an account switch begins (`playRecap.ts awaitRecap`,
+`scopeBarrier.onScopeSwitchStart`); every other route writes the `lines`
+fallback, no LLM. Analytics: `play_recap` (shape only, `playRecapProps`). A
+new game surface whose end call could write a recap should pass it to
+`buildPlayRow` the same way.
+
+`continuityCore.ts` is the pure half of `continuity.ts` (selection, fold call,
+reads, handoff, no electron): the consistency eval
+(`scripts/quality-eval/consistency`) runs it from the checkout it measures, so
+keep electron and anything that imports it out of that file.
+
 Deliberately NOT persisted: the surface's own per-line chat. A guessing turn is
 a wall of "cat? dog? is that a house?" that would bury real conversation in the
 transcript and re-bill it in every future prompt. Summarize the session in the

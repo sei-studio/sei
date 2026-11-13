@@ -11,8 +11,8 @@ describe('sessionDigest', () => {
     expect(snap.lines).toHaveLength(DIGEST_MAX_LINES)
     expect(snap.lines.at(-1)).toEqual({ who: 'other', text: 'x'.repeat(DIGEST_LINE_CHARS) })
     expect(snap.lines[0].text).toBe('line 5')
-    expect(snap.playerLines).toBe(10)
-    expect(snap.selfLines).toBe(10)
+    expect(snap.playerLines).toBe((DIGEST_MAX_LINES + 4) / 2)
+    expect(snap.selfLines).toBe((DIGEST_MAX_LINES + 4) / 2)
   })
 
   it('tracks dirtiness so the bot only posts when something changed', () => {

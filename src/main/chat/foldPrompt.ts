@@ -15,7 +15,12 @@
  */
 
 export interface FoldMsg {
-  role: 'user' | 'companion';
+  /**
+   * 261113: 'session' is a finished game session (a play row), folded with
+   * the conversation around it. Its text is the row's line plus its story
+   * (playSummary.ts playStoryText): the recap, or the last lines said.
+   */
+  role: 'user' | 'companion' | 'session';
   text: string;
   ts?: number;
 }
@@ -63,7 +68,7 @@ const PEER_LINE_RE = /^\(\s*([^()\n]{1,60}?),\s*on the call\s*\)\s*:\s*/i;
 export function buildFoldTranscript(msgs: FoldMsg[]): string {
   return msgs
     .map((m) => {
-      let who = m.role === 'user' ? 'Player' : 'You';
+      let who = m.role === 'user' ? 'Player' : m.role === 'session' ? 'Game session' : 'You';
       let text = m.text;
       if (m.role === 'user') {
         const peer = PEER_LINE_RE.exec(text);
@@ -147,6 +152,8 @@ export function buildFoldSystem(personaExpanded?: string): string {
     'Each stamp has the weekday, and a calendar of the days around the messages follows them. When someone says yesterday, last night, tomorrow, a weekday, or next week, find the date on that calendar, counting from the stamp of that message. ' +
     'If you cannot tell the date for sure, keep the words they used instead of a date. ' +
     'Each line starts with who said it: Player is the player, You is you, and any other name is another companion on the call. ' +
+    // 261113 (D1): a game session's play row, with its recap or last lines.
+    'A line starting with Game session is a game the two of you played together, with your own recap of it or the last things said in it; keep what happened in it the same way. ' +
     'Keep track of who said what, and never give another companion\'s facts, likes, or lines to the player or to yourself. ' +
     'Keep the certainty the speaker had: a maybe stays a maybe, a joke or a bit stays a joke, an offer stays an offer until it is accepted, ' +
     'a plan that changed keeps only its latest version, and something that happened once is not a habit. ' +

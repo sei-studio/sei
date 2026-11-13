@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPlayDuration, playSummaryText } from './playSummary';
+import { buildPlayRow, formatPlayDuration, PLAY_FALLBACK_LINES, PLAY_RECAP_MAX_CHARS, playStory, playStoryText, playSummaryText } from './playSummary';
 
 describe('formatPlayDuration', () => {
   it('collapses anything under a minute', () => {
@@ -48,5 +48,43 @@ describe('playSummaryText', () => {
 
   it('has no em dash, like all user-facing copy', () => {
     expect(playSummaryText('Marv', 'Chess', 60_000)).not.toContain('—');
+  });
+});
+
+// 261113 (v0.7 consistency D1): what happened in a game session, on its row.
+describe('play story', () => {
+  const lines = Array.from({ length: 12 }, (_, i) => ({ who: (i % 2 ? 'you' : 'player') as 'you' | 'player', text: ` line  ${i} ` }));
+
+  it('keeps the recap when there is one, trimmed and capped', () => {
+    expect(playStory('  we built a  cabin ', lines)).toEqual({ recap: 'we built a cabin' });
+    expect(playStory('x'.repeat(2000), null).recap).toHaveLength(PLAY_RECAP_MAX_CHARS);
+  });
+
+  it('falls back to the last digest lines, then to nothing', () => {
+    const r = playStory(null, lines);
+    expect(r.recap).toBeUndefined();
+    expect(r.lines).toHaveLength(PLAY_FALLBACK_LINES);
+    expect(r.lines?.[0]).toEqual({ who: 'player', text: 'line 4' });
+    expect(playStory('   ', [{ who: 'player', text: '  ' }])).toEqual({});
+    expect(playStory(undefined, undefined)).toEqual({});
+  });
+
+  it('reads a recap, else the lines on one line, else nothing', () => {
+    expect(playStoryText({ recap: 'we tamed Turnip' })).toBe('Your own recap of it afterwards: we tamed Turnip');
+    const t = playStoryText({ lines: [{ who: 'player', text: 'bye' }, { who: 'you', text: 'see ya' }, { who: 'other', text: 'hi' }] });
+    expect(t).toBe('The last things said in the game: Player: "bye" / You: "see ya" / Another companion: "hi"');
+    expect(t).not.toContain('\n');
+    expect(playStoryText({})).toBe('');
+    expect(playStoryText(undefined)).toBe('');
+  });
+
+  it('builds the play row with the sentence and the story', () => {
+    const row = buildPlayRow({ name: 'Sui', gameName: 'Minecraft', game: 'minecraft', durationMs: 1_800_000, recap: 'we fished' });
+    expect(row).toEqual({
+      role: 'system',
+      text: 'You and Sui played Minecraft for 30 minutes.',
+      event: { kind: 'play', game: 'minecraft', durationMs: 1_800_000, recap: 'we fished' },
+    });
+    expect(buildPlayRow({ name: 'Sui', gameName: 'Chess', game: 'chess', durationMs: 60_000 }).event).toEqual({ kind: 'play', game: 'chess', durationMs: 60_000 });
   });
 });

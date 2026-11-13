@@ -51,7 +51,7 @@ import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls, liveCallsNow } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
-import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrier';
+import { trackScopedWrite, isAccountTeardownActive, isScopeSwitchPending, onScopeSwitchStart } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
@@ -65,9 +65,12 @@ import {
   reportGoodbyePlanSaved,
   reportNextStepNotRun,
   startPlayerEndNextStep,
+  startSessionEnd,
   takeSessionDigest,
   yieldToNewSession,
+  type SessionDigest,
 } from './playerEndNextStep';
+import { awaitRecap, playRecapProps, type RecapWait } from './playRecap';
 import { bindHomeNextStepNotifier, consumeNextStep, noteHomeNextStepChanged, readPendingPlan, tagLatestPlan } from './homeNextStep';
 import { readPlayerLineNames } from './playerLineNames';
 import {
@@ -79,7 +82,7 @@ import {
   refreshQuitDigest,
   runPendingQuitNextSteps,
 } from './quitNextStep';
-import { formatPlayDuration, playSummaryText } from './chat/playSummary';
+import { buildPlayRow, formatPlayDuration } from './chat/playSummary';
 import { flushUpdatePushes, handOffUpdatesToMigration, isUpdateReadyToInstall } from './updater';
 import {
   markProfileScopeReady,
@@ -516,7 +519,17 @@ const pendingBootProps = new Map<string, Record<string, number | string | null>>
 
 /** Post the "You and <name> played <game> for <duration>" system row, then
  *  fire the rolling-summary fold like every other game surface does. */
-async function emitPlaySession(characterId: string, durationMs: number, game: GameId): Promise<void> {
+async function emitPlaySession(
+  characterId: string,
+  durationMs: number,
+  game: GameId,
+  // 261113 (v0.7 D1): what happened in the session. The row waits for the
+  // session end's recap when one is coming (playRecap.ts), else carries the
+  // digest's last lines (playSummary.ts playStory).
+  story: { digest?: SessionDigest | null; recap?: Promise<RecapWait> } = {},
+): Promise<void> {
+  const endedAt = Date.now();
+  const wait: RecapWait = story.recap ? await story.recap : { recap: null, outcome: 'not_run' };
   let name = 'your companion';
   let rowLanguage: 'zh' | undefined;
   let personaExpanded: string | undefined;
@@ -532,13 +545,17 @@ async function emitPlaySession(characterId: string, durationMs: number, game: Ga
   }
   // The game's proper name comes from its module (Minecraft: 'Minecraft').
   const gameName = getGameModule(game)?.displayName ?? (game === 'minecraft' ? 'Minecraft' : game);
-  await appendChatMessage(characterId, {
-    id: randomUUID(),
-    role: 'system',
-    text: playSummaryText(name, gameName, durationMs, rowLanguage),
-    ts: Date.now(),
-    event: { kind: 'play', game, durationMs },
+  const row = buildPlayRow({
+    name,
+    gameName,
+    game,
+    durationMs,
+    language: rowLanguage,
+    recap: wait.recap,
+    lines: story.digest?.lines ?? null,
   });
+  await appendChatMessage(characterId, { id: randomUUID(), ...row, ts: endedAt });
+  capture('play_recap', playRecapProps({ characterId, game, event: row.event, checkOutcome: wait.outcome }));
   // Continuity OUT (CLAUDE.md contract): chess/draw/backseat fold after their
   // play row; the bot session was the one surface that never did, so its rows
   // only reached the rolling summary on the chat surface's next fold.
@@ -632,9 +649,6 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   playStartedAt.delete(id);
   const durationMs = Date.now() - started.at;
   const durationS = Math.round(durationMs / 1000);
-  // Tracked (260926): an account switch stops the bots and then drains
-  // this, so the row lands in the outgoing account's transcript.
-  void trackScopedWrite(emitPlaySession(id, durationMs, started.game)).catch(() => {});
   // 261011: Minecraft per-action outcome telemetry. This function runs once
   // per live session for every end path (stop, quit(), kick/error, crash exit,
   // app quit, account switch), so mc_session_actions goes out exactly once;
@@ -698,9 +712,12 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   // set up a next session. One small background check after teardown decides
   // if there is a plan worth saving (playerEndNextStep.ts). Fire and forget:
   // it never delays this close, the bot's exit or the next summon.
+  // 261113 (v0.7 D1): the same call also writes the session's recap, and the
+  // play row waits for it (bounded, playRecap.ts) so it carries what happened.
+  let recap: Promise<RecapWait> | undefined;
   if (route.kind === 'check') {
     const gameName = getGameModule(started.game)?.displayName ?? started.game;
-    void startPlayerEndNextStep({
+    const ended = startSessionEnd({
       characterId: id,
       surface: 'game',
       game: started.game,
@@ -709,8 +726,14 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
       lines: digest?.lines ?? [],
       playerLines: digest?.playerLines ?? 0,
       goalsGame: started.game,
-    }).catch(() => {});
+      recap: true,
+    });
+    recap = awaitRecap(ended, { onSwitch: onScopeSwitchStart, switchPending: isScopeSwitchPending });
   }
+  // Tracked (260926): an account switch stops the bots and then drains
+  // this, so the row lands in the outgoing account's transcript. Registered
+  // here, in the same tick as before, even when it waits for the recap.
+  void trackScopedWrite(emitPlaySession(id, durationMs, started.game, { digest, recap })).catch(() => {});
 }
 
 /**

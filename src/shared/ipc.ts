@@ -575,9 +575,20 @@ export interface ChatMessage {
    * called for Y"), rendered with a phone icon.
    * A chess row additionally carries `chess` (the recorded moves + result), so
    * the row is clickable and opens a board replay of that game.
+   * A game session's row (261113) also carries what happened in it, for the
+   * model only: `recap`, the companion's own short recap from the session-end
+   * call, or, when there is none, `lines`, the last few lines said in the game
+   * (chat/playSummary.ts playStory). The renderer shows `text` either way.
    */
   event?:
-    | { kind: 'play'; game: string; durationMs: number; chess?: ChessReplayData }
+    | {
+        kind: 'play';
+        game: string;
+        durationMs: number;
+        chess?: ChessReplayData;
+        recap?: string;
+        lines?: Array<{ who: 'player' | 'you' | 'other'; text: string }>;
+      }
     | { kind: 'call'; durationMs: number };
 }
 

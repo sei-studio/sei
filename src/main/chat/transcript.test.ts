@@ -154,3 +154,20 @@ describe('toMessages appendOnly', () => {
     expect(after.slice(0, before.length)).not.toEqual(before);
   });
 });
+
+// 261113 (v0.7 consistency D1): a play row carries what happened in it.
+describe('play row story', () => {
+  const play = (event: Record<string, unknown>): ChatMessage =>
+    ({ id: 'p', role: 'system', text: 'You and Sui played Minecraft for 30 minutes.', ts: 1_700_000_000_000, event: { kind: 'play', ...event } }) as unknown as ChatMessage;
+
+  it('reads the recap inside the shared-history note', () => {
+    const [m] = toMessages([play({ recap: 'a creeper took the roof' })]);
+    expect(String(m.content)).toContain('[Shared history: You and Sui played Minecraft for 30 minutes.');
+    expect(String(m.content)).toMatch(/Your own recap of it afterwards: a creeper took the roof\]$/);
+  });
+
+  it('reads the last lines when there is no recap, and nothing extra on an old row', () => {
+    expect(String(toMessages([play({ lines: [{ who: 'player', text: 'night' }] })])[0].content)).toContain('The last things said in the game: Player: "night"');
+    expect(String(toMessages([play({})])[0].content)).toMatch(/not a plan\.\]$/);
+  });
+});

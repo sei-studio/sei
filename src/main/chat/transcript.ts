@@ -6,6 +6,7 @@
  */
 import type { ChatMessage } from '../../shared/ipc';
 import { formatChatTimestamp } from './foldPrompt';
+import { playStoryText } from './playSummary';
 
 /**
  * Voice-call transcript window (261024). A call sends only the recent rows
@@ -102,8 +103,11 @@ export function toMessages(
       // (the game→chat memory gap — otherwise chat only sees MEMORY.md, which may
       // never have captured the session). Framed so the model doesn't read it as
       // the player speaking or as a still-hypothetical plan.
+      // 261113: plus what happened in it (its recap, or its last lines), so a
+      // chat right after a game knows the creeper took the roof.
       role = 'user';
-      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`;
+      const story = playStoryText(m.event);
+      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.${story ? ` ${story}` : ''}]`;
     } else if (m.role === 'system' && m.event?.kind === 'call') {
       // A finished voice call is shared history the same way a play session is
       // (260705): without it, a later turn only sees the transcript lines and

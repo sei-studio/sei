@@ -12,8 +12,10 @@
  * sequencing that lives in electron-bound files (continuity.ts foldIfDue,
  * index.ts closePlaySession, chatService prepareChatTurn), copied from dev
  * at 5663eb0d as the `dev*` functions below. A checkout that exports the pure
- * versions (src/main/chat/continuityCore.ts, runSessionEnd, buildPlayRow) is
- * driven through those instead, so a branch is measured on its real code.
+ * versions (src/main/chat/continuityCore.ts selectFold / runFold /
+ * chatContextFrom / launchContinuityFrom, playerEndNextStep runSessionEnd,
+ * playSummary buildPlayRow) is driven through those instead, so a branch is
+ * measured on its real code.
  *
  * build: lives the character's scripted life (life.mjs) into --state:
  *   MEMORY.md seed (two weeks ago), a text chat (5 days ago), the Minecraft
@@ -194,23 +196,24 @@ function memoryTail(): string {
 }
 
 // ── the arm's fold / session end / play row ───────────────────────────────
-const foldStats = { folds: 0, factsSaved: 0, dupes: 0 };
+const foldStats = { folds: 0, factsSaved: 0, dupes: 0, sessionRows: 0 };
 async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Bridge> {
+  void now;
   for (let i = 0; i < 4; i++) {
     let next: Bridge | null;
-    if (core?.foldStep) {
-      const r = await core.foldStep({
-        raw: rows,
-        bridge,
-        persona: ch.expanded,
+    if (core?.selectFold && core?.runFold) {
+      const batch = core.selectFold(rows, bridge);
+      if (!batch) return bridge;
+      const res = await core.runFold({
         llm: provider('fold'),
-        readMemory: async () => (fs.existsSync(memFile) ? fs.readFileSync(memFile, 'utf8') : ''),
-        appendMemory: (text: string) => memoryLog.appendMemory(memFile, text, new Date(now), { section: 'app' }),
+        summary: batch.bridge.summary,
+        msgs: batch.msgs,
+        persona: ch.expanded,
+        model: MODEL,
+        extra: { thinking: { type: 'adaptive' } },
       });
-      if (!r) return bridge;
-      foldStats.factsSaved += r.saved ?? 0;
-      foldStats.dupes += r.dupes ?? 0;
-      next = r.bridge;
+      foldStats.sessionRows += batch.msgs.filter((m: any) => m.role === 'session').length;
+      next = res.status === 'ok' ? { summary: res.summary, summarizedCount: batch.bridge.summarizedCount + batch.counted } : batch.bridge;
     } else {
       next = await devFold(rows, bridge, ch.expanded);
     }
@@ -237,6 +240,7 @@ async function sessionEnd(
     durationMs,
     lines,
     playerLines,
+    ...(surface === 'game' ? { recap: true } : {}),
   };
   const deps = {
     buildProvider: async () => provider(`session_end_${surface}`),
@@ -272,7 +276,7 @@ function playRow(durationMs: number, endedAt: number, end: Record<string, any>, 
   if (playSummary.buildPlayRow) {
     return {
       id: `play-${endedAt}`,
-      ...playSummary.buildPlayRow({ name: ch.name, gameName: 'Minecraft', game: 'minecraft', durationMs, recap: end.recap ?? null, digest }),
+      ...playSummary.buildPlayRow({ name: ch.name, gameName: 'Minecraft', game: 'minecraft', durationMs, recap: end.recap ?? null, lines: digest?.lines ?? null }),
       ts: endedAt,
     };
   }
@@ -362,7 +366,7 @@ async function chatProbe(text: string, voice: boolean): Promise<{ says: string[]
   const rows = readRows();
   const bridge = readBridge();
   rows.push({ id: 'probe', role: 'user', text, ts: Date.now(), ...(voice ? { voice: true } : {}) });
-  const ctx = core?.chatContext ? core.chatContext(rows, bridge) : devChatContext(rows, bridge);
+  const ctx = core?.chatContextFrom ? core.chatContextFrom(rows, bridge) : devChatContext(rows, bridge);
   const system = chatPrompts.buildSystemBlocks({
     persona: { source: ch.source ?? '', expanded: ch.expanded },
     name: ch.name,
@@ -415,7 +419,7 @@ async function chatProbe(text: string, voice: boolean): Promise<{ says: string[]
 async function mcProbe(text: string): Promise<{ says: string[]; tools: string[] }> {
   const rows = readRows();
   const bridge = readBridge();
-  const continuity = core?.launchContinuity ? core.launchContinuity(rows, bridge) : devLaunchContinuity(rows, bridge);
+  const continuity = core?.launchContinuityFrom ? core.launchContinuityFrom(rows, bridge) : devLaunchContinuity(rows, bridge);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `ce-mc-${CHAR}-`));
   try {
     fs.cpSync(memDir, dir, { recursive: true });

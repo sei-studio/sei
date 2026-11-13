@@ -39,6 +39,7 @@ let teardownDepth = 0;
 let switchPending = 0;
 let scopeGeneration = 0;
 const turnScope = new AsyncLocalStorage<number>();
+const switchListeners = new Set<() => void>();
 
 /** Upper bound on ending the outgoing account's sessions. */
 export const ACCOUNT_TEARDOWN_CEILING_MS = 10_000;
@@ -133,11 +134,31 @@ export function isAccountTeardownActive(): boolean {
  */
 export function beginScopeSwitch(): () => void {
   switchPending++;
+  for (const fn of [...switchListeners]) {
+    try {
+      fn();
+    } catch {
+      /* a listener never blocks the switch */
+    }
+  }
   let released = false;
   return () => {
     if (released) return;
     released = true;
     switchPending--;
+  };
+}
+
+/**
+ * Call `fn` when a scope switch begins (261113). A write that waits on
+ * something slow before it starts (the play row waiting for its recap) uses it
+ * to stop waiting and write now, so the drain finds it and it lands in the
+ * outgoing account. Returns the unsubscribe.
+ */
+export function onScopeSwitchStart(fn: () => void): () => void {
+  switchListeners.add(fn);
+  return () => {
+    switchListeners.delete(fn);
   };
 }
 
@@ -190,6 +211,7 @@ export function scopedTurnCurrent(): boolean {
 /** TEST-ONLY. */
 export function _resetScopeBarrierForTests(): void {
   pending.clear();
+  switchListeners.clear();
   teardownDepth = 0;
   switchPending = 0;
   scopeGeneration = 0;

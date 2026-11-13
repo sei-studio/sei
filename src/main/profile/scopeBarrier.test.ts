@@ -16,6 +16,7 @@ import {
   withScopedTurn,
   scopedTurnCurrent,
   ACCOUNT_SWITCHING,
+  onScopeSwitchStart,
   _resetScopeBarrierForTests,
 } from './scopeBarrier';
 
@@ -161,5 +162,22 @@ describe('chat turn scope', () => {
     expect(scopedTurnCurrent()).toBe(false);
     release();
     expect(scopedTurnCurrent()).toBe(true);
+  });
+});
+
+describe('onScopeSwitchStart (261113)', () => {
+  it('fires when a switch begins, survives a throwing listener, and unsubscribes', () => {
+    const seen: string[] = [];
+    const off = onScopeSwitchStart(() => seen.push('a'));
+    onScopeSwitchStart(() => {
+      throw new Error('boom');
+    });
+    const release = beginScopeSwitch();
+    expect(seen).toEqual(['a']);
+    expect(isScopeSwitchPending()).toBe(true);
+    release();
+    off();
+    beginScopeSwitch()();
+    expect(seen).toEqual(['a']);
   });
 });
