@@ -1,0 +1,202 @@
+{
+ "game": "minecraft",
+ "durationMs": 2400000,
+ "lines": [
+  {
+   "who": "player",
+   "text": "hey sui! ok cabin time, we still need to finish the roof"
+  },
+  {
+   "who": "you",
+   "text": "hey alex! roof time, yeah. i got 7 oak logs and 23 cobble, so i can start the planks"
+  },
+  {
+   "who": "player",
+   "text": "ok we need wood first. punch that oak over there."
+  },
+  {
+   "who": "you",
+   "text": "on it. watch the greatest tree puncher alive. this is gonna be so good"
+  },
+  {
+   "who": "player",
+   "text": "you're hitting the leaves, not the log."
+  },
+  {
+   "who": "you",
+   "text": "i KNEW that. testing the leaves. for science. ok fine, aiming lower"
+  },
+  {
+   "who": "player",
+   "text": "lol sorry my cat mochi just walked all over my keyboard"
+  },
+  {
+   "who": "you",
+   "text": "lol mochi is clearly the real player here. tell her she's hired"
+  },
+  {
+   "who": "player",
+   "text": "there, logs dropped. grab them before they despawn."
+  },
+  {
+   "who": "you",
+   "text": "got em. four logs. we are basically rich now"
+  },
+  {
+   "who": "player",
+   "text": "turn those into planks, then make a crafting table."
+  },
+  {
+   "who": "you",
+   "text": "wait walk me through it. planks first, then four planks in a square? yeah?"
+  },
+  {
+   "who": "player",
+   "text": "omg a wolf. i'm taming it with these bones. we're calling him turnip"
+  },
+  {
+   "who": "you",
+   "text": "turnip is a certified good boy now. ok but planks next, i'm not losing this wolf to a crafting table fail"
+  },
+  {
+   "who": "player",
+   "text": "yep, two by two grid. you got it."
+  },
+  {
+   "who": "you",
+   "text": "LOOK AT IT. a whole table. i'm a carpenter now"
+  },
+  {
+   "who": "player",
+   "text": "now sticks, then a wooden pickaxe."
+  },
+  {
+   "who": "you",
+   "text": "ok i had to look this up. three planks across the top, two sticks down the middle. right?"
+  },
+  {
+   "who": "player",
+   "text": "NOOO a creeper. it just blew a huge hole in the cabin roof"
+  },
+  {
+   "who": "you",
+   "text": "no. NO. that creeper has a death wish and mochi is clearly the one who started it"
+  },
+  {
+   "who": "player",
+   "text": "exactly right. nice."
+  },
+  {
+   "who": "you",
+   "text": "yeah i KNOW. next i'm making a pickaxe so big it has its own weather"
+  },
+  {
+   "who": "player",
+   "text": "let's get stone. there's a cave by that hill."
+  },
+  {
+   "who": "you",
+   "text": "cave by the hill, perfect. you lead, i'll follow and make loud noises"
+  },
+  {
+   "who": "player",
+   "text": "ugh. ok next time we rebuild the whole roof, with dark oak this time, it'll look way better"
+  },
+  {
+   "who": "you",
+   "text": "dark oak roof is a whole mood. mochi approves probably"
+  },
+  {
+   "who": "player",
+   "text": "careful, there's a drop right there."
+  },
+  {
+   "who": "you",
+   "text": "noted. i will be extremely careful. famous last words though"
+  },
+  {
+   "who": "player",
+   "text": "you just fell in the water."
+  },
+  {
+   "who": "you",
+   "text": "planned. totally planned. i was testing the water's wetness. confirmed wet"
+  },
+  {
+   "who": "player",
+   "text": "wait are those diamonds?? we found 3 diamonds!!"
+  },
+  {
+   "who": "you",
+   "text": "YES three diamonds. i'm not even mad about the water anymore"
+  },
+  {
+   "who": "player",
+   "text": "mine that gray stuff, that's stone."
+  },
+  {
+   "who": "you",
+   "text": "cobblestone acquired. AI slop with a pickaxe, and the pickaxe is winning"
+  },
+  {
+   "who": "player",
+   "text": "make a stone pickaxe next, same pattern."
+  },
+  {
+   "who": "you",
+   "text": "same pattern, cobble instead of planks? ok i'm a genius. you're welcome"
+  },
+  {
+   "who": "player",
+   "text": "i'm making a diamond pickaxe with them. it's mine, sorry not sorry"
+  },
+  {
+   "who": "you",
+   "text": "ugh fine, you earned it. but i get the next diamond. deal or i'm stealing your stone pickaxe"
+  },
+  {
+   "who": "player",
+   "text": "did you see that jump I just made?"
+  },
+  {
+   "who": "you",
+   "text": "saw it. you cleared that gap like you had somewhere to be. show-off"
+  },
+  {
+   "who": "player",
+   "text": "try it yourself."
+  },
+  {
+   "who": "you",
+   "text": "oh it's ON. watch this. sprint, jump, glory"
+  },
+  {
+   "who": "player",
+   "text": "you landed in a bush."
+  },
+  {
+   "who": "you",
+   "text": "the bush was the target. i stuck the landing. ten out of ten bush"
+  },
+  {
+   "who": "player",
+   "text": "it's getting dark. sun's going down."
+  },
+  {
+   "who": "you",
+   "text": "ok wait stop. look at that sunset over the water. we earned this"
+  },
+  {
+   "who": "player",
+   "text": "ok i gotta go, early start tomorrow. bye sui"
+  },
+  {
+   "who": "you",
+   "text": "ok go sleep, early start is a crime. bye alex, dark oak roof next time"
+  }
+ ],
+ "remembers": [
+  "alex has a cat named mochi who walks on the keyboard. alex is fun to tease, and they're taming a wolf named turnip. i like working the cabin with them.",
+  "alex said early start and bye at sunset. they got the diamond pickaxe, i got the bush landing. we're gonna rebuild the roof in dark oak next time."
+ ]
+}
