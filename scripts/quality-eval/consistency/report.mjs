@@ -47,6 +47,40 @@ export function units(graded) {
   return out
 }
 
+// 261113 (D3): tics, from the raw answers (answers/<arm>-<char>-<rep>.jsonl).
+// A set is one surface's twelve answers to twelve different questions, so a
+// word that keeps coming back in them is the character's tic, not the topic.
+//   tic_opener: share of answers whose first word opens another answer too
+//   tic_term:   share of answers holding a word (3+ letters, not a stop word
+//               or a name) that at least a third of the set uses
+const STOP = new Set('the and you your for that this what with are was but not just its it\'s have can all out about too get got like one some yeah yes okay kinda then them they their when how who why did does was were has had our ours his her she him from into will would could should there here been being very really also only still even more most much any many dont don\'t cant can\'t thats that\'s im i\'m ive i\'ve youre you\'re gonna wanna last time remember know think mean right well now day today ago again'.split(' '))
+const words = (t) => String(t).toLowerCase().match(/[a-z][a-z']+/g) ?? []
+export function ticUnits(dir, names = []) {
+  const out = []
+  const ad = path.join(dir, 'answers')
+  if (!fs.existsSync(ad)) return out
+  const skip = new Set(names.map((n) => String(n).toLowerCase()))
+  for (const f of fs.readdirSync(ad).filter((f) => /^[AB]-.+-\d+\.jsonl$/.test(f))) {
+    const [arm, char] = f.split('-')
+    const rows = fs.readFileSync(path.join(ad, f), 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    for (const surface of [...new Set(rows.map((r) => r.surface))]) {
+      const set = rows.filter((r) => r.surface === surface).map((r) => r.says.join(' ')).filter((t) => t.trim())
+      if (set.length < 4) continue
+      const firsts = set.map((t) => words(t)[0] ?? '')
+      const terms = set.map((t) => new Set(words(t).filter((w) => w.length >= 3 && !STOP.has(w) && !skip.has(w))))
+      const df = new Map()
+      for (const ts of terms) for (const w of ts) df.set(w, (df.get(w) ?? 0) + 1)
+      const ticWords = new Set([...df].filter(([, n]) => n >= Math.max(3, Math.ceil(set.length / 3))).map(([w]) => w))
+      set.forEach((_, i) => {
+        const stratum = `${char}/${surface}`
+        out.push({ arm, cat: 'tic_opener', stratum, score: firsts[i] && firsts.some((w, j) => j !== i && w === firsts[i]) ? 1 : 0 })
+        out.push({ arm, cat: 'tic_term', stratum, score: [...terms[i]].some((w) => ticWords.has(w)) ? 1 : 0 })
+      })
+    }
+  }
+  return out
+}
+
 const meanOf = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN)
 
 export function compare(us, cat, armA, armB, iters = 4000) {
@@ -83,12 +117,18 @@ const sgn = (x) => `${x >= 0 ? '+' : ''}${(100 * x).toFixed(0)}`
 export function render(dir) {
   const graded = JSON.parse(fs.readFileSync(path.join(dir, 'graded.json'), 'utf8'))
   const config = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'))
-  const us = units(graded)
+  const us = [...units(graded), ...ticUnits(dir, ['alex', ...config.chars])]
   const arms = config.arms.map((a) => a.label)
   const lines = [`# Consistency eval: ${config.mode} mode, history-n ${config.historyN}, reps ${config.reps}, chars ${config.chars.join(',')}`]
   lines.push(`arms: ${config.arms.map((a) => `${a.label}=${a.ref}@${String(a.sha).slice(0, 9)}`).join('  ')}`)
-  const cats = [...Object.keys(CATEGORIES), 'invented', 'tone']
-  const label = (c) => (CATEGORIES[c] ? `${c} ${CATEGORIES[c]}` : c === 'invented' ? 'invented (lower is better)' : 'tone over all answers')
+  const cats = [...Object.keys(CATEGORIES), 'invented', 'tone', 'tic_opener', 'tic_term']
+  const LABELS = {
+    invented: 'invented (lower is better)',
+    tone: 'tone over all answers',
+    tic_opener: 'tic: repeated opener (lower is better)',
+    tic_term: 'tic: recurring word (lower is better)',
+  }
+  const label = (c) => (CATEGORIES[c] ? `${c} ${CATEGORIES[c]}` : LABELS[c])
   if (arms.length === 2) {
     lines.push('', 'category | A | B | B-A [95% CI] | units')
     for (const c of cats) {

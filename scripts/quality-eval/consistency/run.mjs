@@ -5,7 +5,7 @@
 //   node scripts/quality-eval/consistency/run.mjs --compare <refA> <refB>
 //        [--mode pipeline|static] [--reps 3] [--history-n 20]
 //        [--chars sui,roger] [--surfaces text,voice,mc] [--probes A1,C1]
-//        [--concurrency 4] [--out DIR]
+//        [--concurrency 4] [--out DIR] [--chars-dir DIR] [--chars-dir-b DIR]
 //   node scripts/quality-eval/consistency/run.mjs --ref <ref> ...   (one arm)
 //
 // Each character lives a scripted life (life.mjs): old memory notes, a text
@@ -50,6 +50,8 @@ const SURFACES = opt('surfaces', 'text,voice,mc')
 const PROBES = opt('probes', null)
 const CONC = Number(opt('concurrency', 4))
 const CHARS_DIR = opt('chars-dir', path.join(os.homedir(), 'suisei/eval/characters'))
+// --chars-dir-b: arm B plays these cards instead (a card change, same code); the judge keeps --chars-dir.
+const CHARS_DIR_B = opt('chars-dir-b', null)
 const date = new Date().toISOString().slice(0, 10)
 const OUT = path.resolve(opt('out', path.join(os.homedir(), 'suisei', 'reports', 'quality', `${date}-consistency-${MODE}`)))
 const log = (m) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${m}`)
@@ -97,19 +99,19 @@ async function main() {
   const refs = cmpI >= 0 ? [prepareRef(argv[cmpI + 1]), prepareRef(argv[cmpI + 2])] : [prepareRef(opt('ref', 'WORKTREE'))]
   refs.forEach((r, i) => { r.label = refs.length === 2 ? 'AB'[i] : 'A' })
   fs.mkdirSync(OUT, { recursive: true })
-  const config = { started: new Date().toISOString(), mode: MODE, reps: REPS, historyN: HISTORY_N, chars: CHARS, surfaces: SURFACES, probes: PROBES, arms: refs }
+  const config = { started: new Date().toISOString(), charsDirB: CHARS_DIR_B, mode: MODE, reps: REPS, historyN: HISTORY_N, chars: CHARS, surfaces: SURFACES, probes: PROBES, arms: refs }
   fs.writeFileSync(path.join(OUT, 'config.json'), JSON.stringify(config, null, 2))
   log(`out ${OUT}; ${refs.map((r) => `${r.label}=${r.ref}@${r.sha.slice(0, 9)}`).join(' ')}; ${MODE}, reps ${REPS}, history-n ${HISTORY_N}`)
   const logFile = path.join(OUT, 'arms.log')
   const stateDir = (arm, ch, rep) => path.join(OUT, 'state', `${arm}-${ch}-${rep}`)
-  const common = ['--history-n', String(HISTORY_N), '--chars-dir', CHARS_DIR]
+  const commonFor = (label) => ['--history-n', String(HISTORY_N), '--chars-dir', label === 'B' && CHARS_DIR_B ? CHARS_DIR_B : CHARS_DIR]
 
   // 1. build each life (static: arm A's build is shared by both arms)
   const builds = []
   for (const ch of CHARS) for (let rep = 0; rep < REPS; rep++) {
     for (const r of MODE === 'static' ? [refs[0]] : refs) {
       builds.push(async () => {
-        await runArm(['--src', r.repo, '--phase', 'build', '--state', stateDir(r.label, ch, rep), '--char', ch, ...common], logFile)
+        await runArm(['--src', r.repo, '--phase', 'build', '--state', stateDir(r.label, ch, rep), '--char', ch, ...commonFor(r.label)], logFile)
         log(`built ${r.label} ${ch} rep ${rep}`)
       })
     }
@@ -125,7 +127,7 @@ async function main() {
     probes.push(async () => {
       const out = path.join(OUT, 'answers', `${r.label}-${ch}-${rep}.jsonl`)
       fs.mkdirSync(path.dirname(out), { recursive: true })
-      await runArm(['--src', r.repo, '--phase', 'probe', '--state', stateDir(r.label, ch, rep), '--char', ch, '--out', out, '--surfaces', SURFACES, ...(PROBES ? ['--probes', PROBES] : []), ...common], logFile)
+      await runArm(['--src', r.repo, '--phase', 'probe', '--state', stateDir(r.label, ch, rep), '--char', ch, '--out', out, '--surfaces', SURFACES, ...(PROBES ? ['--probes', PROBES] : []), ...commonFor(r.label)], logFile)
       log(`probed ${r.label} ${ch} rep ${rep}`)
     })
   }

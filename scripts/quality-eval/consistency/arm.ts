@@ -94,6 +94,8 @@ const [transcript, chatPrompts, foldPrompt, playSummary, playerEnd, memoryLog, d
 const core = await tryImp('src/main/chat/continuityCore.ts');
 // 261113 (D2): the arm's fact saves (fold and session end), when it has them.
 const memoryFacts = await tryImp('src/main/chat/memoryFacts.ts');
+// 261113 (D3): the arm's bond store (read for prompts, written by the fold and the game session end), when it has one.
+const bondStore = await tryImp('src/main/chat/bondStore.ts');
 const MODEL: string = llmCatalog.COMPANION_MODEL;
 
 // ── provider: the main-process Anthropic provider's call (llm/anthropic.ts) ──
@@ -199,6 +201,7 @@ function memoryTail(): string {
 
 // ── the arm's fold / session end / play row ───────────────────────────────
 const foldStats = { folds: 0, factsSaved: 0, dupes: 0, sessionRows: 0 };
+const bondLog: Array<Record<string, unknown>> = [];
 const foldFacts: string[] = [];
 async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Bridge> {
   void now;
@@ -213,6 +216,7 @@ async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Brid
         summary: batch.bridge.summary,
         msgs: batch.msgs,
         ...(memoryFacts ? { memory: memoryFacts.memoryForFold(body) } : {}),
+        ...(bondStore ? { bond: await bondStore.readBondFor(memDir) } : {}),
         persona: ch.expanded,
         model: MODEL,
         extra: { thinking: { type: 'adaptive' } },
@@ -225,6 +229,12 @@ async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Brid
         foldStats.factsSaved += f.saved;
         foldStats.dupes += f.dupes;
         foldFacts.push(...res.facts);
+      }
+      // continuity.ts foldIntoSummary: the bond after the facts.
+      if (res.status === 'ok' && bondStore) {
+        const lastTs = batch.msgs.reduce((t: number, m: any) => (typeof m.ts === 'number' && m.ts > t ? m.ts : t), 0);
+        const r = await bondStore.saveBondFor(memDir, res.bond ?? null, { now: lastTs || undefined });
+        bondLog.push({ source: 'fold', ...r });
       }
       next = res.status === 'ok' ? { summary: res.summary, summarizedCount: batch.bridge.summarizedCount + batch.counted } : batch.bridge;
     } else {
@@ -253,7 +263,7 @@ async function sessionEnd(
     durationMs,
     lines,
     playerLines,
-    ...(surface === 'game' ? { recap: true } : {}),
+    ...(surface === 'game' ? { recap: true, bond: true } : {}),
   };
   const deps = {
     buildProvider: async () => provider(`session_end_${surface}`),
@@ -271,6 +281,16 @@ async function sessionEnd(
       ? {
           saveFacts: async (_id: string, facts: string[], o?: { inGame?: boolean }) =>
             memoryFacts.saveFacts(memFile, facts, o?.inGame ? { when: endedAt } : { section: 'app', when: endedAt }),
+        }
+      : {}),
+    ...(bondStore
+      ? {
+          readBond: async () => bondStore.readBondFor(memDir),
+          saveBond: async (_id: string, update: unknown) => {
+            const r = await bondStore.saveBondFor(memDir, update, { now: endedAt });
+            bondLog.push({ source: 'session_end', ...r });
+            return r;
+          },
         }
       : {}),
     capture: () => {},
@@ -368,7 +388,14 @@ async function build(): Promise<void> {
   fs.writeFileSync(bridgeFile, JSON.stringify(bridge));
   fs.writeFileSync(
     path.join(STATE, 'build.json'),
-    JSON.stringify({ t0, src: SRC, historyN: HISTORY_N, rows: rows.length, bridge, foldStats, foldFacts, sessionEnds, usage }, null, 1),
+    JSON.stringify(
+      {
+        t0, src: SRC, historyN: HISTORY_N, rows: rows.length, bridge, foldStats, foldFacts, sessionEnds, bondLog,
+        bond: bondStore ? await bondStore.readBondFor(memDir) : null, usage,
+      },
+      null,
+      1,
+    ),
   );
 }
 
@@ -396,6 +423,8 @@ async function chatProbe(text: string, voice: boolean): Promise<{ says: string[]
     memoryGuide: true,
     searchGuide: true,
     clockInTail: voice,
+    // 261113 (D3): an arm without a bond store passes nothing (byte-identical prompt).
+    ...(bondStore ? { bond: await bondStore.readBondFor(memDir) } : {}),
   });
   const history = voice ? ctx.history.slice(transcript.voiceWindowStart(ctx.history, ctx.base ?? 0, 10, 10)) : ctx.history;
   const messages: any[] = transcript.toMessages(history);
