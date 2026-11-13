@@ -635,3 +635,13 @@ the analytics:track handler, so no path, username or free text can ride.
   `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
   (game up 15 s with the helper silent), `farm_seen` (first open farm per
   process).
+- Factorio steps (261113, `src/main/games/factorio/index.ts`): `find_game`
+  (once per distinct answer; `version_ok` = the game is 2.1, `store` steam /
+  standalone), `mod_copy`, `launch` (fail codes `FACTORIO_<REASON>`:
+  GAME_RUNNING, NOT_FOUND, UNSUPPORTED_VERSION, MOD_MISSING, NO_FREE_PORT,
+  FAILED), `link_port` (Factorio logged that the link port was taken), and
+  `world_seen` (first loaded game per process, `wait_ms` since Sei started
+  Factorio). Factorio sessions also fold flat `fct_*` counters into
+  `bot_session_ended` (`src/main/factorioSessionStats.ts`: verb totals,
+  `fct_fail_<class>`, `fct_reflex_<kind>`, `fct_v_<verb>_n/_ok`, link
+  timeouts, app respawns).

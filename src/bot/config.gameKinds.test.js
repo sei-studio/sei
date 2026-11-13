@@ -12,8 +12,7 @@ const mc = { host: '127.0.0.1', auth: 'offline', username: 'Sui' }
 
 describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
   it('lists the games, minecraft first', () => {
-    expect(GAME_KINDS.slice(0, 3)).toEqual(['minecraft', 'stardew', 'dontstarve'])
-    expect(GAME_KINDS).toContain('terraria')
+    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve', 'factorio', 'terraria'])
   })
 
   it('parses a terraria session with defaults and requires its block', () => {
@@ -22,6 +21,12 @@ describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
     const bad = ConfigSchema.parse({ ...base, adapter: { kind: 'terraria', terraria: { username: 'Sui', appearance: 'nope' } } })
     expect(bad.adapter.terraria.appearance).toBeUndefined()
     expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'terraria' } })).toThrow(/adapter\.terraria is required/)
+  })
+
+  it('parses a factorio session with defaults and requires its block', () => {
+    const f = ConfigSchema.parse({ ...base, adapter: { kind: 'factorio', factorio: { port: 34990, username: 'Sui' } } })
+    expect(f.adapter.factorio).toMatchObject({ host: '127.0.0.1', port: 34990, username: 'Sui', quiet_ms: 15000 })
+    expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'factorio' } })).toThrow(/adapter\.factorio is required/)
   })
 
   it('defaults to minecraft and keeps the minecraft block mandatory for it', () => {

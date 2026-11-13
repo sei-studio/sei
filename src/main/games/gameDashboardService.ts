@@ -32,7 +32,7 @@ const MAX_SNAPSHOT_BYTES = 65_536;
 
 const GenericSnapshotSchema = z
   .object({
-    game: z.enum(['stardew', 'dontstarve', 'terraria']),
+    game: z.enum(['stardew', 'dontstarve', 'factorio', 'terraria']),
     ts: z.number().finite(),
     activity: z.string().max(120).default('idle'),
     actionName: z.string().max(64).nullable().default(null),

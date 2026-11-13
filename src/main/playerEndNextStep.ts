@@ -297,10 +297,12 @@ function inlineLabelAt(label: string, value: string, ownLine: ReadonlySet<string
   return -1;
 }
 
-/** "Minecraft, Stardew Valley or Don't Starve Together" for the prompt's {games}. */
+/**
+ * "Minecraft, Stardew Valley or Don't Starve Together" for the prompt's
+ * {games}. 261113: only games the catalog lists as available, so a bot game
+ * that is still a coming-soon tile (Factorio) is not offered as a plan's game.
+ */
 function gameList(): string {
-  // 261113: only games the catalog lists as available, so a bot game that is
-  // still a coming-soon tile (Terraria) is not offered as a plan's game.
   const names = GAME_IDS.filter((id) => GAME_CATALOG.find((g) => g.id === id)?.available !== false).map(gameDisplayName);
   return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : (names[0] ?? '');
 }

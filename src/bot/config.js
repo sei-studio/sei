@@ -165,7 +165,7 @@ const StardewAdapterSchema = z.object({
 // only that game's sub-tree is required. `dontstarve` is a passthrough
 // PLACEHOLDER until its adapter lands. Keep the member list in sync with
 // GAME_KINDS below and GameId in src/shared/gameIpc.ts.
-export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve', 'terraria']
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve', 'factorio', 'terraria']
 
 // Don't Starve Together (game-adapters M2, 260908). Built by
 // src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
@@ -196,6 +196,23 @@ export const DontStarveAdapterSchema = z.object({
   death_grace_ms: z.number().int().min(0).default(8_000),
 })
 
+// Factorio (261113): the localhost UDP link to the sei-companion Lua mod
+// (native/factorio-mod/PROTOCOL.md). Built by adapter/factorio/runtime.js
+// adapterConfigFrom from main's FactorioJoinTarget {port, label?, color?};
+// `port` is the one main launched the game with (--enable-lua-udp).
+export const FactorioAdapterSchema = z.object({
+  host: z.string().default('127.0.0.1'),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().min(1).max(32),
+  label: z.string().optional(),
+  color: z.object({ r: z.number().min(0).max(1), g: z.number().min(0).max(1), b: z.number().min(0).max(1) }).optional().catch(undefined),
+  reconnect_delay_ms: z.number().int().min(0).default(3000),
+  /** No answer for this long = the game is paused or in a menu: hold the brain. */
+  quiet_ms: z.number().int().min(1000).default(15_000),
+  /** Still no answer after this long = end the session. */
+  idle_end_ms: z.number().int().min(10_000).default(30 * 60_000),
+})
+
 // Terraria (261113): the loopback WebSocket link to the SeiCompanion
 // tModLoader mod (native/terraria-mod/PROTOCOL.md, same frame shape as the
 // Stardew link). Built by adapter/terraria/runtime.js adapterConfigFrom from
@@ -219,10 +236,14 @@ const AdapterSchema = z.object({
   minecraft: MinecraftAdapterSchema.optional(),
   stardew: StardewAdapterSchema.optional(),
   dontstarve: DontStarveAdapterSchema.optional(),
+  factorio: FactorioAdapterSchema.optional(),
   terraria: TerrariaAdapterSchema.optional(),
 }).superRefine((a, ctx) => {
   if (a.kind === 'terraria' && !a.terraria) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['terraria'], message: 'adapter.terraria is required when adapter.kind is "terraria"' })
+  }
+  if (a.kind === 'factorio' && !a.factorio) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['factorio'], message: 'adapter.factorio is required when adapter.kind is "factorio"' })
   }
   if (a.kind === 'dontstarve' && !a.dontstarve) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })

@@ -231,6 +231,7 @@ export const summonFlows: Record<GameId, SummonFlow> = {
   minecraft: minecraftFlow,
   stardew: makeDefaultSummonFlow('stardew'),
   dontstarve: makeDefaultSummonFlow('dontstarve'),
+  factorio: makeDefaultSummonFlow('factorio'),
   terraria: makeDefaultSummonFlow('terraria'),
 };
 

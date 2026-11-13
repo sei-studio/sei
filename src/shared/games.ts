@@ -80,6 +80,15 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     available: true,
     aliases: ["Don't Starve", 'DST', '饥荒联机版', '饥荒', 'ドントスターブ'],
   },
+  // 261113: Factorio (src/main/games/factorio). The module is registered and
+  // the launch surface exists, but the tile stays unlit until the live
+  // checklist passes on a real Mac and Windows install.
+  {
+    id: 'factorio',
+    name: 'Factorio',
+    available: false,
+    aliases: ['异星工厂', 'ファクトリオ', 'Факторио'],
+  },
   // 261113: Terraria through tModLoader (src/main/games/terraria). The module
   // is registered and the launch surface exists, but the tile stays unlit
   // until the live checklist passes on a real Mac and Windows install.

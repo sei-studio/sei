@@ -345,6 +345,10 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.dst.installProgress, handler);
     return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
   },
+  // Factorio (261113; src/shared/factorioIpc.ts)
+  factorioSetupState: () => ipcRenderer.invoke(IpcChannel.factorio.setupState),
+  factorioInstall: () => ipcRenderer.invoke(IpcChannel.factorio.install),
+  factorioLaunch: () => ipcRenderer.invoke(IpcChannel.factorio.launch),
   // Terraria (261113; src/shared/terrariaIpc.ts)
   terrariaSetupState: () => ipcRenderer.invoke(IpcChannel.terraria.setupState),
   terrariaInstall: () => ipcRenderer.invoke(IpcChannel.terraria.install),

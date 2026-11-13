@@ -88,6 +88,15 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
+  // 261113: the sei-companion Lua mod only (never sei-testkit), any-any.
+  // Measured 261113: the 0.1.0 zip is 36 KB (13 files, 98 KB unpacked).
+  factorio: {
+    id: 'factorio',
+    name: 'Factorio',
+    platformSpecific: false,
+    sizeHintBytes: 36 * 1024,
+    requiredPaths: ['assets/factorio-mod/sei-companion/info.json', 'assets/factorio-mod/sei-companion/control.lua'],
+  },
   // 261113: the sideloaded tModLoader mod, one .tmod for every OS.
   // Measured 261113: the 0.1.0 .tmod is 88 KB.
   terraria: {

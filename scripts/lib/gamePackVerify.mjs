@@ -27,6 +27,7 @@ export const REQUIRED_PAYLOAD = {
   minecraft: ['node_modules/mineflayer/package.json', 'node_modules/minecraft-data/package.json'],
   stardew: ['assets/stardew-mod/SeiCompanion/SeiCompanion.dll', 'assets/stardew-mod/SeiCompanion/manifest.json'],
   dontstarve: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
+  factorio: ['assets/factorio-mod/sei-companion/info.json', 'assets/factorio-mod/sei-companion/control.lua'],
   terraria: ['assets/terraria-mod/SeiCompanion.tmod'],
 };
 

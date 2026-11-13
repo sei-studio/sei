@@ -195,7 +195,7 @@ export function sanitizeRendererSetupProps(
   const lanFail = p.step === 'lan_wait' && p.outcome === 'fail' && lanDiagnosis != null;
   return setupStepProps({
     ...(lanFail ? { discovery: lanDiagnosis.discovery, win_state0: lanDiagnosis.brokenStateSeen } : {}),
-    game: p.game === 'stardew' ? 'stardew' : 'minecraft',
+    game: p.game === 'stardew' || p.game === 'factorio' ? p.game : 'minecraft',
     step: (str(p.step) ?? 'unknown') as SetupStepInput['step'],
     outcome: (str(p.outcome) ?? 'start') as SetupStepInput['outcome'],
     error_code: str(p.error_code),
