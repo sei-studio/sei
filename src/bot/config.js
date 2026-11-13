@@ -165,7 +165,7 @@ const StardewAdapterSchema = z.object({
 // only that game's sub-tree is required. `dontstarve` is a passthrough
 // PLACEHOLDER until its adapter lands. Keep the member list in sync with
 // GAME_KINDS below and GameId in src/shared/gameIpc.ts.
-export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve', 'terraria']
 
 // Don't Starve Together (game-adapters M2, 260908). Built by
 // src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
@@ -196,12 +196,34 @@ export const DontStarveAdapterSchema = z.object({
   death_grace_ms: z.number().int().min(0).default(8_000),
 })
 
+// Terraria (261113): the loopback WebSocket link to the SeiCompanion
+// tModLoader mod (native/terraria-mod/PROTOCOL.md, same frame shape as the
+// Stardew link). Built by adapter/terraria/runtime.js adapterConfigFrom from
+// main's TerrariaJoinTarget {port, token, label, owner?, appearance?}.
+export const TerrariaAdapterSchema = z.object({
+  host: z.string().default('localhost'),
+  port: z.number().int().min(1).max(65535).optional(),
+  // The per-install secret in the mod's link.json; the upgrade is refused without it.
+  token: z.string().default(''),
+  username: z.string().min(1).max(32),
+  // The player the companion spawns beside and follows first (in-game name).
+  owner: z.string().max(32).optional(),
+  reconnect_delay_ms: z.number().int().min(0).default(3000),
+  // Looks for the player renderer (skin, hair, colors), clamped by the mod.
+  // Loose on purpose: a malformed block is dropped, never fatal to a summon.
+  appearance: z.record(z.string(), z.union([z.number(), z.string()])).optional().catch(undefined),
+})
+
 const AdapterSchema = z.object({
   kind: z.enum(GAME_KINDS).default('minecraft'),
   minecraft: MinecraftAdapterSchema.optional(),
   stardew: StardewAdapterSchema.optional(),
   dontstarve: DontStarveAdapterSchema.optional(),
+  terraria: TerrariaAdapterSchema.optional(),
 }).superRefine((a, ctx) => {
+  if (a.kind === 'terraria' && !a.terraria) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['terraria'], message: 'adapter.terraria is required when adapter.kind is "terraria"' })
+  }
   if (a.kind === 'dontstarve' && !a.dontstarve) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })
   }

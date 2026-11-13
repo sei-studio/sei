@@ -554,7 +554,7 @@ describe('261020: the game a plan is for', () => {
     expect(parseGameAnswer('"stardew valley"')).toBe('stardew');
     expect(parseGameAnswer('dont starve together')).toBe('dontstarve');
     expect(parseGameAnswer('None.')).toBe('none');
-    expect(parseGameAnswer('Terraria')).toBeNull();
+    expect(parseGameAnswer('Hollow Knight')).toBeNull();
     expect(parseGameAnswer('Minecraft or Stardew Valley')).toBeNull();
     expect(parseGameAnswer('')).toBeNull();
     expect(parseGameAnswer(null)).toBeNull();

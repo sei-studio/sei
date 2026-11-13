@@ -50,7 +50,7 @@ describe('plan parsing', () => {
       [NOW - 3 * HOUR, 'Plan for next time in Minecraft: get copper for the lighthouse'],
       [NOW - 2 * HOUR, "Plan for next time in Don't Starve Together: build a crock pot"],
       [NOW - HOUR, 'Plan for next time: ask how the interview went'],
-      [NOW - 30_000, 'Plan for next time in Terraria: beat the eye'],
+      [NOW - 30_000, 'Plan for next time in Hollow Knight: beat the eye'],
     );
     expect(planEntries(body).map((e) => [e.text, e.game])).toEqual([
       ['get copper for the lighthouse', 'minecraft'],

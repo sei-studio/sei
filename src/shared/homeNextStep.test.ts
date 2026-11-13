@@ -31,7 +31,7 @@ describe('gameIdFromName (261020)', () => {
   it('is null for no game, an unknown one, or two at once', () => {
     expect(gameIdFromName(null)).toBeNull();
     expect(gameIdFromName('')).toBeNull();
-    expect(gameIdFromName('Terraria')).toBeNull();
+    expect(gameIdFromName('Hollow Knight')).toBeNull();
     expect(gameIdFromName('Chess')).toBeNull();
     expect(gameIdFromName('Minecraft and Stardew Valley')).toBeNull();
   });

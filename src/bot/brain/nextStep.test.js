@@ -234,7 +234,7 @@ describe('next_time_game field (261020 review)', () => {
   })
 
   it('anything else is left out: unknown games, two games, non-strings', () => {
-    expect(parsePlanGameField('Terraria')).toBeNull()
+    expect(parsePlanGameField('Hollow Knight')).toBeNull()
     expect(parsePlanGameField('Minecraft or Stardew Valley')).toBeNull()
     expect(parsePlanGameField('game')).toBeNull()
     expect(parsePlanGameField('')).toBeNull()

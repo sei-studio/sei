@@ -11,8 +11,17 @@ const base = {
 const mc = { host: '127.0.0.1', auth: 'offline', username: 'Sui' }
 
 describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
-  it('lists the three games', () => {
-    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve'])
+  it('lists the games, minecraft first', () => {
+    expect(GAME_KINDS.slice(0, 3)).toEqual(['minecraft', 'stardew', 'dontstarve'])
+    expect(GAME_KINDS).toContain('terraria')
+  })
+
+  it('parses a terraria session with defaults and requires its block', () => {
+    const t = ConfigSchema.parse({ ...base, adapter: { kind: 'terraria', terraria: { port: 27460, token: 'abc', username: 'Sui', appearance: { hair: 3, hairColor: '#ffffff' } } } })
+    expect(t.adapter.terraria).toMatchObject({ host: 'localhost', port: 27460, token: 'abc', username: 'Sui', reconnect_delay_ms: 3000, appearance: { hair: 3 } })
+    const bad = ConfigSchema.parse({ ...base, adapter: { kind: 'terraria', terraria: { username: 'Sui', appearance: 'nope' } } })
+    expect(bad.adapter.terraria.appearance).toBeUndefined()
+    expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'terraria' } })).toThrow(/adapter\.terraria is required/)
   })
 
   it('defaults to minecraft and keeps the minecraft block mandatory for it', () => {

@@ -1,0 +1,15 @@
+{
+  "self": { "name": "Sui", "x": 2092, "y": 208, "hp": 100, "maxHp": 100, "defense": 2, "knockedOut": 0, "stance": "defensive", "following": "Ouen", "job": null, "weapon": "Wooden Sword", "armor": ["Wood Helmet"], "potionCooldown": 0, "paused": false },
+  "bag": ["Copper Shortsword", "Wood x45", "Copper Coin x102", "Hasty Wooden Bow", "Stone Block x9", "Wooden Arrow x14", "Copper Pickaxe", "Copper Axe", "Acorn x2"],
+  "time": "6:40 AM",
+  "day": true,
+  "events": [],
+  "world": { "name": "SeiSpike", "hardmode": false, "bossesDown": [] },
+  "place": { "layer": "surface", "depthFt": -198, "biomes": ["forest"] },
+  "players": [{ "name": "Ouen", "x": 2088, "y": 208, "dist": 4, "hp": 200, "maxHp": 200, "dead": false, "holding": "Iron Pickaxe" }],
+  "hostiles": [{ "id": 3, "name": "Blue Slime", "x": 2106, "y": 208, "hp": 25, "maxHp": 25, "dist": 13, "boss": false }],
+  "items": [],
+  "trees": [{ "x": 2095, "y": 207, "dist": 4 }, { "x": 2099, "y": 207, "dist": 8 }],
+  "ores": [],
+  "stations": []
+}
