@@ -94,3 +94,32 @@ describe('stardew adapter action stats (261113)', () => {
     expect(a.harvest).toMatchObject({ n: 1, ok: 1, fail: 0 })
   })
 })
+
+describe('stardew adapter progression across a re-summon (261113)', () => {
+  it('a new adapter on the same farm starts from what the last one reached', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const path = (await import('node:path')).default
+    const dir = mkdtempSync(path.join(tmpdir(), 'sei-sdv-adapter-'))
+    try {
+      const config = { memory: { memory_md_path: path.join(dir, 'MEMORY.md') } }
+      const client = () => {
+        const c = fakeClient('0.1.4')
+        c.welcome = { hello: { version: '0.1.4', save: { uniqueId: '424242', farmName: 'Moon' } } }
+        return c
+      }
+      const c1 = client()
+      const a1 = createStardewAdapter({ client: c1, config, botUsername: 'Sui', logger: { warn() {} } })
+      const onObs = c1.on.mock.calls.find(([ev]) => ev === 'obs')[1]
+      onObs({ obs: { location: 'UndergroundMine21', inventory: [], daysPlayed: 9, season: 'spring', year: 1 } })
+      expect(a1.getProgression().done.has('mines_20')).toBe(true)
+
+      const a2 = createStardewAdapter({ client: client(), config, botUsername: 'Sui', logger: { warn() {} } })
+      const prog = a2.getProgression()
+      expect(prog.done.has('mines_20')).toBe(true)
+      expect(prog.frontier.map((n) => n.id)).toContain('mines_40')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})

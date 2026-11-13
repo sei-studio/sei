@@ -11,6 +11,7 @@ import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireStardewEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { createProgressionFlags, getProgression } from './observers/progression.js'
+import { createProgressionStore, progressionFileFor } from './observers/progressionStore.js'
 import { classifyConnectError } from './errors.js'
 import { withActionStats } from '../gameActionStats.js'
 import { sessionActionStats } from '../../brain/actionStats.js'
@@ -49,13 +50,25 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   // 260910: the progression frontier's one-way latches (visited town, deepest
   // mine level, cleared / foraged / harvested / fished / bought), fed by
   // every observation and every verb result.
-  const latches = createProgressionFlags()
-  const onObs = (f) => { if (f?.obs) { latestObs = f.obs; latches.observe(f.obs) } }
-  const onSave = (f) => { if (f) save = { ...f } }
-  const onWelcome = (f) => { if (f?.hello?.save) save = f.hello.save }
+  // 261113: saved per farm (observers/progressionStore.js) and restored the
+  // first time the save's id is known, so a re-summon keeps them.
+  const progressStore = createProgressionStore(progressionFileFor(config))
+  let progressFarm = null
+  const latches = createProgressionFlags({ onChange: () => { if (progressFarm) progressStore.save(progressFarm, latches.toJSON()) } })
+  const bindProgressFarm = () => {
+    if (progressFarm) return
+    const id = save?.uniqueId ?? latestObs?.saveId ?? null
+    if (!id) return
+    progressFarm = String(id)
+    latches.restore(progressStore.load(progressFarm))
+  }
+  const onObs = (f) => { if (f?.obs) { latestObs = f.obs; bindProgressFarm(); latches.observe(f.obs) } }
+  const onSave = (f) => { if (f) { save = { ...f }; bindProgressFarm() } }
+  const onWelcome = (f) => { if (f?.hello?.save) { save = f.hello.save; bindProgressFarm() } }
   client.on('obs', onObs)
   client.on('save', onSave)
   client.on('welcome', onWelcome)
+  bindProgressFarm()
 
   /**
    * The connected mod's version, from the welcome frame's hello. Prompt and
@@ -140,7 +153,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
      * heartbeat's "reachable next" list. The brain's `flags` argument is the
      * Minecraft dimension latches; Stardew keeps its own in `latches`.
      */
-    getProgression: () => getProgression(latestObs, latches),
+    getProgression: () => { bindProgressFarm(); return getProgression(latestObs, latches) },
 
     // ── Session lifecycle ─────────────────────────────────────────────
     attach(handlers) {
