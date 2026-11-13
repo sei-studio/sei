@@ -13,6 +13,9 @@
 //   devTeleport {x, y}           move her
 //   devTiles {r?}                ASCII map around her (# solid, = platform, D door, ~ water, L lava, T tree, o ore)
 //   devFakePlayer / devFakePlayerCheck   fake-player-slot experiment (does a Player in an empty slot survive?)
+//   devChat {from, text, dist?}  a chat line from a pretend player, sent to every session
+// Any frame may carry {companion: name} to act on another session's companion,
+// so a driver connection can steer the body a real bot session spawned.
 
 using System;
 using System.Collections.Generic;
@@ -37,8 +40,22 @@ namespace SeiCompanion.Dev
 
 		public static void Handle(Session s, Companion c, string id, string type, JsonObject a)
 		{
+			string target = Json.Str(a, "companion");
+			if (!string.IsNullOrEmpty(target))
+				c = SeiSystem.All.FirstOrDefault(x => string.Equals(x.Name, target, StringComparison.OrdinalIgnoreCase));
 			switch (type)
 			{
+				case "devChat":
+				{
+					string text = Json.Str(a, "text");
+					if (string.IsNullOrWhiteSpace(text)) { s.SendResult(id, false, "missing text"); return; }
+					var fields = new Dictionary<string, object> { ["from"] = Json.Str(a, "from") ?? "Ouen", ["text"] = text.Trim(), ["kind"] = "player" };
+					int? dist = Json.IntOrNull(a, "dist");
+					if (dist.HasValue) fields["dist"] = dist.Value;
+					SeiMod.Bridge?.Broadcast("chat", fields);
+					s.SendResult(id, true, "sent");
+					return;
+				}
 				case "devState":
 					s.SendResult(id, true, "ok", new Dictionary<string, object>
 					{

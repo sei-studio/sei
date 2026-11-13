@@ -169,8 +169,14 @@ describe('terraria game module', () => {
     const e = await env();
     const events: SetupStepInput[] = [];
     const opened: string[] = [];
+    // Only the fake mod's port answers, so a real tModLoader on this machine
+    // (the default link port) cannot leak into the test.
+    let fakePort = -1;
+    const onlyFake: typeof fetch = (input, init) =>
+      String(input).includes(`:${fakePort}/`) ? fetch(input, init) : Promise.reject(new Error('refused'));
     const mod = createTerrariaGameModule({
       env: e,
+      fetch: onlyFake,
       openExternal: async (u) => void opened.push(u),
       track: (i) => void events.push(i),
       logger: { info: () => {}, warn: () => {} },
@@ -186,6 +192,7 @@ describe('terraria game module', () => {
     const link = parseLink(await readFile(paths.link(tmlSaveDir(e)), 'utf8'))!;
     const fake = createFakeTerrariaMod({ obsHz: 0, token: link.token });
     const port = await fake.ready;
+    fakePort = port;
     closers.push(() => fake.close());
     await writeFile(paths.link(tmlSaveDir(e)), JSON.stringify({ port, token: link.token }));
     expect((await mod.watcher.checkNow()).kind).toBe('open');
