@@ -309,6 +309,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
         addressed: evt.addressed,
         playerSpoke: evt.playerSpoke,
         ...(evt.gameEvent ? { gameEvent: true } : {}),
+        ...(typeof evt.noticeShownAt === 'function' ? { noticeShownAt: evt.noticeShownAt } : {}),
       })
     },
     onAttacked: (evt) => {

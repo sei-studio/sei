@@ -62,9 +62,13 @@
  * @property {(player: Player) => void}                                              onPlayerLeft
  * @property {(evt: { username: string, text: string, playerSpoke: boolean,
  *                    addressed: boolean, nearby: boolean,
- *                    suppressInterrupt?: boolean }) => void}                        onChat
+ *                    suppressInterrupt?: boolean,
+ *                    noticeShownAt?: () => number|null }) => void}                 onChat
  *   `suppressInterrupt: true` records the line in chat history WITHOUT waking
  *   the brain (a line aimed at a sibling companion, or a sibling's own chatter).
+ *   `noticeShownAt` (a game notice, e.g. the player's death): when a turn's
+ *   snapshot first showed what it reports. If she has spoken since, the wake
+ *   is skipped (she already reacted); the line stays recorded.
  * @property {(evt: { attacker: Player|null, attackerLabel: string,
  *                    attackerKind: AttackerKind, pvp?: boolean,
  *                    [k: string]: any }) => void}                                  onAttacked

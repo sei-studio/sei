@@ -42,6 +42,9 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
         // wake on it (message aimed at a sibling companion, or a sibling's own
         // chatter). See behaviors/chat.js.
         suppressInterrupt: !!payload.suppressInterrupt,
+        // 261113 (pass 54): a game notice another turn may already have
+        // answered (the player's death, behaviors/chat.js).
+        ...(typeof payload.noticeShownAt === 'function' ? { noticeShownAt: payload.noticeShownAt } : {}),
       })
     } catch (err) {
       // Swallow listener errors so a brain-side throw doesn't crash mineflayer.

@@ -11,6 +11,7 @@ import { surveyBlocks } from './veins.js'
 import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths, sameNameDeathAge } from './entities.js'
 import { sameNameDeathTag } from '../../../brain/promptLibrary.js'
 import { givenDropFor } from './givenDrops.js'
+import { trackItemSources, pickupSourcesSince } from './itemSources.js'
 import { HOSTILE_MOBS } from '../behaviors/hostiles.js'
 import { CRITICAL_HP, attackRunState, attackInFlightSuffix } from '../behaviors/attack.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
@@ -147,6 +148,16 @@ export function ownerStateClause(hp, death, ownerEnt, selfPos = null, nowMs = Da
   const spot = deathSpotFromYou(recent.pos, selfPos)
   const where = spot ? `where they died, ${spot}` : 'where they died'
   return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Anything they carried dropped ${where}, unless someone has picked it up since`
+}
+
+// 261113 (pass 54): when a turn's snapshot first showed the player's death.
+// The world's death message also wakes a turn (behaviors/chat.js); when a
+// turn that already saw the death has spoken since, that second turn only
+// made her react twice ("oof alex. creeper got you" then "oof alex. you
+// alright? the creeper got you fast", combat_night-01 11-12).
+function markOwnerDeathShown(bot) {
+  const d = bot?._seiOwnerDeath
+  if (d && !Number.isFinite(d.shownAt)) d.shownAt = Date.now()
 }
 
 // "9 blocks north of you", "right around you" within 2 blocks, or null
@@ -510,6 +521,7 @@ export function composeSnapshot(bot, opts = {}) {
       let hpClause = ''
       try { hpClause = ownerStateClause(ownerHealth(bot.registry, ownerEnt), bot._seiOwnerDeath, ownerEnt, me.position) } catch { /* leave it out */ }
       lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}${hpClause}`)
+      if (/\bdied\b/.test(hpClause)) markOwnerDeathShown(bot)
       // Who the hostiles are on (260731). Only worth printing when the two of
       // us are close enough for it to be ONE fight — see AGGRO_PAIR_RANGE. Not
       // line-of-sight filtered like `nearby entities`: a zombie hitting the
@@ -535,6 +547,7 @@ export function composeSnapshot(bot, opts = {}) {
         if (age >= 0 && age <= OWNER_DEATH_NOTE_MS) died = ` They died ${agoText(age)}${d.text ? ` (${d.text})` : ''}.`
       } catch { /* leave it out */ }
       lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)${died}`)
+      if (died) markOwnerDeathShown(bot)
     }
   }
 
@@ -650,6 +663,29 @@ export function splitOwnInventoryChanges(deltas, actions, sinceMs, nowMs, opts =
 }
 
 /**
+ * 261113 (pass 54): the gains her pickups explain. Gains she picked up off a
+ * mob that died go to `drops` (with `from`); gains a player tossed stay in
+ * `other` with `from` set; the rest are unchanged.
+ * @param {Array<{item:string, n:number}>} changes  unexplained deltas
+ * @param {Map<string, {kind:string, name:string}>} sources  pickupSourcesSince
+ */
+export function attributePickups(changes, sources) {
+  const drops = []
+  const other = []
+  for (const d of Array.isArray(changes) ? changes : []) {
+    const from = d.n > 0 ? sources?.get?.(d.item) : null
+    if (from?.kind === 'mob') drops.push({ ...d, from })
+    else if (from?.kind === 'player') other.push({ ...d, from })
+    else other.push(d)
+  }
+  return { drops, other }
+}
+
+function joinAnd(list) {
+  return list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+}
+
+/**
  * Does this change look like the whole inventory going at once (a death the
  * composer did not see, e.g. it was created after it)? Two or more kinds lost
  * and nothing left.
@@ -676,6 +712,8 @@ export function looksLikeWholeInventoryLost(prevInv, currInv) {
  */
 export function createSnapshotComposer({ bot }) {
   trackEntityDeaths(bot)
+  // 261113 (pass 54): where her pickups came from (a mob's drops, a toss).
+  trackItemSources(bot)
   let prevInventory = null
   let prevHp = null
   let prevTickAt = null
@@ -746,17 +784,25 @@ export function createSnapshotComposer({ bot }) {
     // 261014: changes her own actions explain (a gather's logs, a craft's
     // planks) are split from the rest, so they are not read as a gift.
     const died = diedSinceTick || looksLikeWholeInventoryLost(prevInventory, currInv)
-    const { own, ownNames, other: unexplained } = splitOwnInventoryChanges(deltas, recentActions, prevTickAt, now, { died, isFood })
+    const split = splitOwnInventoryChanges(deltas, recentActions, prevTickAt, now, { died, isFood })
+    const { own, ownNames } = split
+    // 261113 (pass 54): a gain she picked up off a mob that died is hers, not
+    // a gift ("thanks for the rotten flesh lol" after her own zombie kill,
+    // combat_night 11-12). It leaves the banner for a quiet line naming the
+    // mob; a gain the player tossed carries their name. See itemSources.js.
+    const { drops, other: unexplained } = attributePickups(split.other, pickupSourcesSince(bot, prevTickAt == null ? null : prevTickAt - OWN_ACTION_SLACK_MS))
     const cap = 6
     let wornNow = new Set()
     try { wornNow = new Set(wornArmor(bot).map((w) => w.item.name)) } catch { wornNow = new Set() }
-    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}${d.n > 0 && wornNow.has(d.item) ? ' (put on)' : ''}`
+    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}${d.from?.kind === 'player' ? ` (${d.from.name} tossed it)` : ''}${d.n > 0 && wornNow.has(d.item) ? ' (put on)' : ''}`
     const capList = (list) => {
       const out = list.map(fmt)
       return out.length > cap ? [...out.slice(0, cap), `(+${out.length - cap} more)`] : out
     }
     const invCapped = capList(unexplained)
     const ownCapped = capList(own)
+    const dropsCapped = capList(drops)
+    const dropMobs = [...new Set(drops.map((d) => d.from.name))]
 
     const other = []
     // 2. Real creature deaths near the bot (from entityDead — see above). No
@@ -771,7 +817,7 @@ export function createSnapshotComposer({ bot }) {
       other.push(`hp -${prevHp - currHp}`)
     }
 
-    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained }
+    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained, drops, dropsCapped, dropMobs }
   }
 
   return {
@@ -786,7 +832,7 @@ export function createSnapshotComposer({ bot }) {
       for (const [k, n] of Object.entries(worn)) currInv[k] = (currInv[k] ?? 0) + n
       const currHp = Math.round(bot.health ?? 0)
       const now = Date.now()
-      const { inv, own, ownNames, other, unexplained } = computeEvents(currInv, currHp, opts.recentActions, now)
+      const { inv, own, ownNames, other, unexplained, drops, dropsCapped, dropMobs } = computeEvents(currInv, currHp, opts.recentActions, now)
       // 261018 (pass 16): items that came in without an action of hers (a
       // gift, a pickup) go to the caller too, so the brain can write them into
       // the conversation record. The banner below is shown on this one
@@ -796,7 +842,7 @@ export function createSnapshotComposer({ bot }) {
       // knocks loose (dirt, cobblestone) also count as unexplained and filled
       // the 12 event lines that recall answers rely on (pass 16 review).
       if (typeof opts.onUnexplainedGains === 'function') {
-        const gains = unexplained.filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
+        const gains = [...unexplained, ...drops].filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
         if (gains.length > 0) { try { opts.onUnexplainedGains(gains) } catch { /* never break a snapshot */ } }
       }
 
@@ -807,7 +853,7 @@ export function createSnapshotComposer({ bot }) {
       diedSinceTick = false
       deaths = new Map()   // drain the death buffer for the next window
 
-      if (inv.length === 0 && own.length === 0 && other.length === 0) return base
+      if (inv.length === 0 && own.length === 0 && other.length === 0 && dropsCapped.length === 0) return base
       const lines = base.split('\n')
       const invIdx = () => lines.findIndex(l => l.startsWith('inventory ('))
 
@@ -822,13 +868,22 @@ export function createSnapshotComposer({ bot }) {
         else lines.unshift(ownLine)
       }
 
+      // 261113 (pass 54): what she picked up off a mob that died, quiet like
+      // her own haul.
+      if (dropsCapped.length > 0) {
+        const dropLine = `since last tick you picked up what the ${joinAnd(dropMobs)} that died dropped: ${dropsCapped.join(', ')} (already counted on the inventory line above)`
+        const i = invIdx()
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0), 0, dropLine)
+        else lines.unshift(dropLine)
+      }
+
       // Inventory changes get a LOUD, dedicated section right under the
       // inventory line — the bot reads inventory there, so a handoff / pickup /
       // drop is impossible to miss, and it knows to act on what just arrived.
       if (inv.length > 0) {
         const invLine = `*** INVENTORY JUST CHANGED ***: ${inv.join(', ')}  <- items entered or left your inventory since last tick (the player handed you something, you picked it up, or you used/dropped it). React to it: equip a new tool, eat new food, build with new blocks. If you were waiting on something you asked for, this is it arriving.`
         const i = invIdx()
-        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0), 0, invLine)
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0) + (dropsCapped.length > 0 ? 1 : 0), 0, invLine)
         else lines.unshift(invLine)
       }
 
