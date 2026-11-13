@@ -14,6 +14,12 @@
 //   devTiles {r?}                ASCII map around her (# solid, = platform, D door, ~ water, L lava, T tree, o ore)
 //   devFakePlayer / devFakePlayerCheck   fake-player-slot experiment (does a Player in an empty slot survive?)
 //   devChat {from, text, dist?}  a chat line from a pretend player, sent to every session
+//   devFill {x0, x1, y0, y1}     put dirt in every empty tile of the box (undo a test's digging)
+//   devClear                     remove every hostile NPC (between test runs)
+//   devStrip                     take off her armor and weapon (they are not put in the bag)
+//   devKillTile {x, y, x1?, y1?, keep?}  remove a tile or a box, no drop (undo a test's placing)
+//   devTree {x}                  grow a tree on the surface at x (replace what tests chopped)
+//   devReflex {retreatAt?, retreatEvery?, retreatTicks?}   retreat-reflex tuning for A/B runs
 // Any frame may carry {companion: name} to act on another session's companion,
 // so a driver connection can steer the body a real bot session spawned.
 
@@ -45,6 +51,103 @@ namespace SeiCompanion.Dev
 				c = SeiSystem.All.FirstOrDefault(x => string.Equals(x.Name, target, StringComparison.OrdinalIgnoreCase));
 			switch (type)
 			{
+				case "devFill":
+				{
+					int x0 = Math.Clamp(Json.Int(a, "x0"), 1, Main.maxTilesX - 2), x1 = Math.Clamp(Json.Int(a, "x1"), x0, Math.Min(x0 + 80, Main.maxTilesX - 2));
+					int y0 = Math.Clamp(Json.Int(a, "y0"), 1, Main.maxTilesY - 2), y1 = Math.Clamp(Json.Int(a, "y1"), y0, Math.Min(y0 + 40, Main.maxTilesY - 2));
+					int n = 0;
+					for (int x = x0; x <= x1; x++)
+						for (int y = y0; y <= y1; y++)
+							if (!Main.tile[x, y].HasTile && WorldGen.PlaceTile(x, y, TileID.Dirt, mute: true, forced: true)) n++;
+					if (n > 0 && Main.netMode == NetmodeID.Server) NetMessage.SendTileSquare(-1, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+					s.SendResult(id, true, $"filled {n}");
+					return;
+				}
+				case "devClear":
+				{
+					int n = 0;
+					for (int i = 0; i < Main.maxNPCs; i++)
+					{
+						var npc = Main.npc[i];
+						if (!npc.active || npc.friendly || npc.townNPC || SeiSystem.ForNpc(i) != null) continue;
+						npc.active = false;
+						if (Main.netMode == NetmodeID.Server) NetMessage.SendData(MessageID.SyncNPC, -1, -1, null, i);
+						n++;
+					}
+					s.SendResult(id, true, $"cleared {n}");
+					return;
+				}
+				case "devKillTile":
+				{
+					// One tile, or a box up to (x1, y1); keep:"trees" leaves tree tiles alone.
+					int x0 = Json.Int(a, "x"), y0 = Json.Int(a, "y");
+					int x1 = Math.Min(Json.Int(a, "x1", x0), x0 + 60), y1 = Math.Min(Json.Int(a, "y1", y0), y0 + 30);
+					bool keepTrees = Json.Str(a, "keep") == "trees";
+					if (x0 < 1 || y0 < 1 || x1 >= Main.maxTilesX - 1 || y1 >= Main.maxTilesY - 1) { s.SendResult(id, false, "out of the world"); return; }
+					int n = 0;
+					for (int x = x0; x <= x1; x++)
+						for (int y = y0; y <= y1; y++)
+						{
+							var t = Main.tile[x, y];
+							if (!t.HasTile || keepTrees && (t.TileType == TileID.Trees || t.TileType == TileID.Saplings)) continue;
+							WorldGen.KillTile(x, y, noItem: true);
+							n++;
+						}
+					if (n > 0 && Main.netMode == NetmodeID.Server) NetMessage.SendTileSquare(-1, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+					s.SendResult(id, true, $"removed {n}");
+					return;
+				}
+				case "devTree":
+				{
+					int x = Math.Clamp(Json.Int(a, "x", Main.spawnTileX), 10, Main.maxTilesX - 10);
+					int y = Surface(x);
+					if (Main.tile[x, y].HasTile && TileID.Sets.IsATreeTrunk[Main.tile[x, y].TileType]) { s.SendResult(id, true, "a tree is already there"); return; }
+					var below = Main.tile[x, y + 1];
+					if (!below.HasTile) { s.SendResult(id, false, "no ground"); return; }
+					below.TileType = TileID.Grass;
+					bool ok = false;
+					for (int i = 0; i < 20 && !ok; i++)
+					{
+						if (!Main.tile[x, y].HasTile) WorldGen.PlaceTile(x, y, TileID.Saplings, mute: true, forced: true);
+						ok = WorldGen.GrowTree(x, y);
+					}
+					if (!ok)
+					{
+						// GrowTree refused (it is picky about space and walls): stand up a plain trunk.
+						if (Main.tile[x, y].HasTile && Main.tile[x, y].TileType == TileID.Saplings) WorldGen.KillTile(x, y, noItem: true);
+						for (int k = 0; k < 8; k++)
+						{
+							var t = Main.tile[x, y - k];
+							if (t.HasTile) break;
+							t.HasTile = true;
+							t.TileType = TileID.Trees;
+							t.TileFrameX = 0;
+							t.TileFrameY = (short)(22 * (k % 3));
+							ok = true;
+						}
+					}
+					if (Main.netMode == NetmodeID.Server) NetMessage.SendTileSquare(-1, x - 2, y - 30, 5, 32);
+					s.SendResult(id, ok, ok ? $"tree at ({x},{y})" : $"the tree did not grow (ground {Main.tile[x, y + 1].TileType}, here {(Main.tile[x, y].HasTile ? Main.tile[x, y].TileType : -1)})");
+					return;
+				}
+				case "devStrip":
+				{
+					if (c == null) { s.SendResult(id, false, "not spawned"); return; }
+					for (int i = 0; i < c.Armor.Length; i++) c.Armor[i] = null;
+					c.EquippedWeapon = null;
+					if (c.Npc != null) c.Npc.netUpdate = true;
+					s.SendResult(id, true, "stripped");
+					return;
+				}
+				case "devReflex":
+				{
+					if (c == null) { s.SendResult(id, false, "not spawned"); return; }
+					if (a.ContainsKey("retreatAt")) c.RetreatAt = Math.Clamp(Json.Int(a, "retreatAt", 25), 0, 90) / 100f;
+					c.RetreatEvery = Math.Clamp(Json.Int(a, "retreatEvery", c.RetreatEvery), 30, 60 * 60);
+					c.RetreatTicks = Math.Clamp(Json.Int(a, "retreatTicks", c.RetreatTicks), 30, 60 * 30);
+					s.SendResult(id, true, $"retreat below {(int)(c.RetreatAt * 100)}% for {c.RetreatTicks} ticks, every {c.RetreatEvery}");
+					return;
+				}
 				case "devChat":
 				{
 					string text = Json.Str(a, "text");
@@ -117,6 +220,7 @@ namespace SeiCompanion.Dev
 				{
 					if (c?.Npc == null) { s.SendResult(id, false, "not spawned"); return; }
 					c.Npc.life = Math.Clamp(Json.Int(a, "hp", c.Npc.lifeMax), 1, c.Npc.lifeMax);
+					if (Json.Bool(a, "clearCooldown", false)) c.PotionCooldown = 0;
 					c.Npc.netUpdate = true;
 					s.SendResult(id, true, $"hp {c.Npc.life}/{c.Npc.lifeMax}");
 					return;

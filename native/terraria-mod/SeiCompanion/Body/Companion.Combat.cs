@@ -46,6 +46,10 @@ namespace SeiCompanion.Body
 		public string LastKill;
 		private int _retreat;
 		private ulong _lastRetreat;
+		/// <summary>Retreat reflex tuning: below this share of max health with a threat close, back off.</summary>
+		public float RetreatAt = 0.25f;
+		/// <summary>Ticks between retreats, and how long one lasts.</summary>
+		public int RetreatEvery = 60 * 10, RetreatTicks = 150;
 
 		public static WeaponKind KindOf(Item i)
 		{
@@ -283,8 +287,8 @@ namespace SeiCompanion.Body
 		private void SurvivalReflex(NPC me)
 		{
 			if (PotionCooldown > 0) PotionCooldown--;
-			if (me.life >= me.lifeMax * 0.4f) return;
-			if (PotionCooldown <= 0)
+			if (me.life >= me.lifeMax * Math.Max(0.4f, RetreatAt)) return;
+			if (PotionCooldown <= 0 && me.life < me.lifeMax * 0.4f)
 			{
 				var pot = Bag.Items.Where(i => i.potion && i.healLife > 0).OrderBy(i => i.healLife).FirstOrDefault(i => i.healLife >= me.lifeMax - me.life)
 					?? Bag.Items.Where(i => i.potion && i.healLife > 0).OrderByDescending(i => i.healLife).FirstOrDefault();
@@ -295,10 +299,10 @@ namespace SeiCompanion.Body
 					return;
 				}
 			}
-			if (me.life < me.lifeMax * 0.25f && (_lastRetreat == 0 || _ticks - _lastRetreat > 60 * 10) && Verbs_NearestThreat(me, 5) >= 0)
+			if (me.life < me.lifeMax * RetreatAt && (_lastRetreat == 0 || _ticks - _lastRetreat > (ulong)RetreatEvery) && Verbs_NearestThreat(me, 5) >= 0)
 			{
 				_lastRetreat = _ticks;
-				_retreat = 150;
+				_retreat = RetreatTicks;
 				Session?.SendEvent("survival", new Dictionary<string, object> { ["kind"] = "retreating", ["hp"] = me.life, ["maxHp"] = me.lifeMax });
 			}
 			if ((_lowWarned == 0 || _ticks - _lowWarned > 60 * 30) && me.life < me.lifeMax * 0.3f)
