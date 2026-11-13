@@ -405,12 +405,6 @@ export interface BotSupervisorOptions {
    */
   onDstLives?: (characterId: string, raw: unknown) => void;
   /**
-   * 261113: the Factorio bot's session counters ({type:'factorio-stats'}
-   * about every 30 s and at the end). Forwarded RAW; main validates
-   * (factorioSessionStats.ts). Optional.
-   */
-  onFactorioStats?: (characterId: string, raw: unknown) => void;
-  /**
    * 261011: the session's recent conversation ({type:'session-digest'} port
    * message, every ~15s while changing plus once before any terminal
    * lifecycle), for the player-end "next time" check. Forwarded RAW;
@@ -1674,11 +1668,6 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
       if ((data as { type?: string }).type === 'dst-lives') {
         try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
-        return;
-      }
-      // 261113: Factorio verb / reflex counters, for bot_session_ended. Not a status.
-      if ((data as { type?: string }).type === 'factorio-stats') {
-        try { opts.onFactorioStats?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle

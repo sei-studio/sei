@@ -72,7 +72,6 @@ export const PLAN_GAMES = Object.freeze({
   minecraft: 'Minecraft',
   stardew: 'Stardew Valley',
   dontstarve: "Don't Starve Together",
-  factorio: 'Factorio',
 })
 
 // Whole answers that name one game: its id, its name, a leading part of the
@@ -82,7 +81,6 @@ const PLAN_GAME_ALIASES = Object.freeze({
   minecraft: ['minecraft', 'mc'],
   stardew: ['stardew valley', 'stardew', 'sdv'],
   dontstarve: ['dont starve together', 'dont starve', 'dontstarve', 'dst'],
-  factorio: ['factorio'],
 })
 
 /** Lowercase words, apostrophes dropped ("Don't" -> "dont"), no leading "the". */
@@ -99,7 +97,7 @@ function gameWords(s) {
  * The tool field as a game id, 'none' (not about playing a game), or null
  * when it is missing or names no known game.
  * @param {unknown} raw
- * @returns {'minecraft' | 'stardew' | 'dontstarve' | 'factorio' | 'none' | null}
+ * @returns {'minecraft' | 'stardew' | 'dontstarve' | 'none' | null}
  */
 export function parsePlanGameField(raw) {
   if (typeof raw !== 'string') return null

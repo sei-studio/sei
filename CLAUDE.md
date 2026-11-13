@@ -186,7 +186,6 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/backseat.md`](docs/agents/backseat.md) | Backseat: screen watching, looks, chatter pacing |
 | [`docs/agents/minecraft-setup-wizard.md`](docs/agents/minecraft-setup-wizard.md) | Minecraft setup wizard and target version |
 | [`docs/agents/game-adapters-stardew-dst.md`](docs/agents/game-adapters-stardew-dst.md) | Game adapters: Stardew Valley and Don't Starve Together (helper mods, IPC, eval) |
-| [`docs/agents/game-adapter-factorio.md`](docs/agents/game-adapter-factorio.md) | Game adapter: Factorio (Lua mod, UDP link, launch flag, harnesses) |
 | [`docs/agents/instrumenting-surfaces.md`](docs/agents/instrumenting-surfaces.md) | REQUIRED before adding or changing a game or timed surface: analytics events and limits |
 | [`docs/agents/continuity-surfaces.md`](docs/agents/continuity-surfaces.md) | REQUIRED for a game or timed surface: continuity and resume |
 | [`docs/agents/in-app-fullscreen.md`](docs/agents/in-app-fullscreen.md) | In-app fullscreen for game surfaces |

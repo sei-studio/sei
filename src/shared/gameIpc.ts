@@ -17,12 +17,11 @@ import type { LanState } from './ipc';
 import type { McDashboardSnapshot } from './mcDashboardIpc';
 import type { DstJoinTarget, DstWorldState, DstDashboardSnapshot } from './dstIpc';
 import type { StardewJoinTarget, StardewWorldState, StardewDashboardSnapshot } from './stardewIpc';
-import type { FactorioJoinTarget, FactorioWorldState, FactorioDashboardSnapshot } from './factorioIpc';
 
 /** The bot-backed games. Mirrors GAME_KINDS in src/bot/config.js (the bot is
  *  plain ESM JS and cannot import this file) — keep both lists in sync. */
-export type GameId = 'minecraft' | 'stardew' | 'dontstarve' | 'factorio';
-export const GAME_IDS: readonly GameId[] = Object.freeze(['minecraft', 'stardew', 'dontstarve', 'factorio']);
+export type GameId = 'minecraft' | 'stardew' | 'dontstarve';
+export const GAME_IDS: readonly GameId[] = Object.freeze(['minecraft', 'stardew', 'dontstarve']);
 
 export function isGameId(v: unknown): v is GameId {
   return typeof v === 'string' && (GAME_IDS as readonly string[]).includes(v);
@@ -48,8 +47,7 @@ export type GenericJoinTarget = Record<string, unknown>;
 export type JoinTarget =
   | { game: 'minecraft'; target: MinecraftJoinTarget }
   | { game: 'stardew'; target: StardewJoinTarget }
-  | { game: 'dontstarve'; target: DstJoinTarget }
-  | { game: 'factorio'; target: FactorioJoinTarget };
+  | { game: 'dontstarve'; target: DstJoinTarget };
 
 /* ── World state (main → renderer, world:state) ─────────────────────────── */
 
@@ -72,10 +70,7 @@ export type WorldState =
   // M2 (260908): DST refines its member (worldName/day/season/phase/caves/
   // players on `open`, plus `not_installed`); `open` still carries `label`
   // for the generic consumers. See src/shared/dstIpc.ts.
-  | DstWorldState
-  // 261113: Factorio (src/shared/factorioIpc.ts): `open` carries the mod's
-  // hello detail; `no_game` = the link answers nothing (main menu / paused).
-  | FactorioWorldState;
+  | DstWorldState;
 
 /** All games' current world states, keyed by game (the world:get snapshot). */
 export type WorldStates = Partial<Record<GameId, WorldState>>;
@@ -89,7 +84,7 @@ export type WorldStates = Partial<Record<GameId, WorldState>>;
  * behind it (null = idle). Games add their own fields.
  */
 export interface GenericGameDashboardSnapshot {
-  game: 'stardew' | 'dontstarve' | 'factorio';
+  game: 'stardew' | 'dontstarve';
   characterId: string;
   ts: number;
   activity: string;
@@ -101,7 +96,6 @@ export type GameDashboardSnapshot =
   | (McDashboardSnapshot & { game: 'minecraft' })
   | DstDashboardSnapshot
   | StardewDashboardSnapshot
-  | FactorioDashboardSnapshot
   | GenericGameDashboardSnapshot;
 
 /* ── Channels ───────────────────────────────────────────────────────────── */
