@@ -3089,20 +3089,31 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // back after her own completion turn carried answered questions along
     // ("ok so caves, you're into them?", pass53-probe q_only). Other work
     // ends them (see deferredLines).
+    // 261113 (pass 54): a walk to the player carries them on to the give at
+    // the end of it. The completion turn often walks first (goTo the player)
+    // and gives on the walk's own completion turn, and the carry was dropped
+    // at the walk, so the order was gone by the give (the goTo-then-give
+    // path pass 53 left open). Only a give after the walk keeps them.
     if (!ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+      const carryLive = deferredCarry &&
+        (deferredCarry.loopId === currentLoop?.id || (deferredCarry.viaWalk && Date.now() - deferredCarry.at < DEFERRED_LINE_MS))
       if (isHandOver(name)) {
-        if (deferredCarry && deferredCarry.loopId === currentLoop?.id) {
+        if (carryLive) {
           const kept = deferredLines.filter((d) => !deferredCarry.lines.includes(d.line))
           deferredLines = [...kept, ...deferredCarry.lines.map((line) => ({ line, at: Date.now() }))].slice(-DEFERRED_REPLY_MAX)
           logger.info?.(`[sei/orch] deferred lines kept past ${name}: ${deferredCarry.lines.length}`)
         }
       } else if (walksOrFollowsOwner(name, args)) {
-        // neither kept nor ended
+        // neither kept nor ended; a carry rides the walk to the give
+        if (carryLive) {
+          deferredCarry = { ...deferredCarry, viaWalk: true, at: Date.now() }
+          logger.info?.(`[sei/orch] deferred lines carried on ${name}: ${deferredCarry.lines.length}`)
+        }
       } else if (deferredLines.length) {
         logger.info?.(`[sei/orch] deferred lines cleared: she started ${name}`)
         deferredLines = []
       }
-      deferredCarry = null
+      if (!(walksOrFollowsOwner(name, args) && carryLive)) deferredCarry = null
     }
     releaseTaskHolds(name, args)
     noteTaskStarted(name, args)
@@ -3251,6 +3262,21 @@ function maybeWarnByteCap(loop, warned) {
       logger.info?.('[sei/orch] player line held until the death turn')
       deathHeld.push({ event, data })
       return
+    }
+    // 261113 (pass 54): a game notice (the player's death) that a turn's
+    // snapshot already showed, with a line of hers decided since: she has
+    // reacted, and waking again made her say it twice ("oof alex. creeper
+    // got you" then "oof alex. you alright? the creeper got you fast",
+    // combat_night-01 11-12). The line is already in the record (index.js).
+    if (event === 'sei:chat_received' && typeof data?.noticeShownAt === 'function') {
+      let shownAt = null
+      try { shownAt = data.noticeShownAt() } catch { shownAt = null }
+      let last = null
+      try { last = convoMemory.recentChat.lastSelf?.() ?? null } catch { last = null }
+      if (Number.isFinite(shownAt) && Number.isFinite(last?.at) && last.at >= shownAt) {
+        logger.info?.('[sei/orch] game notice already answered: a turn saw it and she spoke since')
+        return
+      }
     }
 
     // 261011: a NEW player line, attack or death preempts whatever is left of
@@ -5157,7 +5183,10 @@ function maybeWarnByteCap(loop, warned) {
       const arrival = arrivalAskText(data, { deferred: !!replyDeferred?.length })
       if (arrival) eventText = `${eventText}\n\n${arrival}`
       // 261112 (pass 53): kept if this turn hands something over first.
-      deferredCarry = replyDeferred?.length ? { lines: [...replyDeferred], loopId: loop.id } : null
+      // 261113 (pass 54): a carry on its way to a give keeps going through
+      // the walk's own completion turn.
+      if (replyDeferred?.length) deferredCarry = { lines: [...replyDeferred], loopId: loop.id }
+      else if (!deferredCarry?.viaWalk) deferredCarry = null
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
       else if (!pendingInterrupt) eventText += resultRepeatsTail(loop)
