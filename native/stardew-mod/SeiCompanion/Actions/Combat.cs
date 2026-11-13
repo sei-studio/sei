@@ -111,6 +111,40 @@ namespace SeiCompanion.Actions
                 : Result.Success($"hit {label} {swings} times; it has {Math.Max(0, monster.Health)} hp left");
         }
 
+        /// <summary>How far from the player a monster can be before the guard lets it go.</summary>
+        public const float GuardLetGoTiles = 6f;
+
+        /// <summary>
+        /// The protect-the-player reflex's fight (mod 0.1.4, Reflexes.Guard):
+        /// close in on a monster that is on the player and swing until it is
+        /// down, it leaves the player alone, the player changes map, or her
+        /// own health drops below the retreat line. At most about 12 seconds;
+        /// anything longer is the brain's call (attack). After the fight
+        /// radius and leash of the 2019 MIT snapshot of NPC Adventures
+        /// (FightController); no code copied.
+        /// </summary>
+        public static IEnumerable<object> Defend(ActionContext ctx, Monster monster, Farmer player, float retreatBelow)
+        {
+            SeiBody body = ctx.Body;
+            for (int i = 0; i < 24; i++)
+            {
+                if (ctx.Cancelled) yield break;
+                GameLocation loc = body.Npc.currentLocation;
+                if (monster.Health <= 0 || monster.currentLocation != loc || player.currentLocation != loc) yield break;
+                if (Vector2.Distance(monster.Tile, player.Tile) > GuardLetGoTiles) yield break;
+                if (body.Shadow.maxHealth > 0 && body.Shadow.health < body.Shadow.maxHealth * retreatBelow) yield break;
+                if (Vector2.Distance(monster.Tile, body.Npc.Tile) > 1.6f)
+                {
+                    var walk = new Outcome();
+                    yield return Movement.WalkTo(ctx, monster.TilePoint, true, walk);
+                    if (!walk.Ok) yield break;
+                    continue;
+                }
+                Swing(body, monster);
+                yield return WaitTicks.Ms(SwingIntervalMs);
+            }
+        }
+
         public static Monster Nearest(SeiBody body, float maxTiles)
         {
             GameLocation loc = body.Npc?.currentLocation;

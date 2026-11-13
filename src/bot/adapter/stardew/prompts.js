@@ -47,14 +47,25 @@ And you do not see the world the way a person does: you get a periodic text snap
 export const HANDOFF_CAPABILITY = 'drop crops, forage and fish in the shipping bin, hand items to the player, '
 /** The machines clause: emptying is in every mod; loading needs mod 0.1.4 (`load`). */
 export const MACHINES_CAPABILITY = 'empty machines'
-export const MACHINES_CAPABILITY_LOAD = 'empty machines and put inputs into them (ore and coal in a furnace, fruit in a keg or jar)'
-const capability = (handoff, machines) => CAPABILITY_TEMPLATE.replace('{handoff}', handoff).replace('{machines}', machines)
+export const MACHINES_CAPABILITY_LOAD = 'empty machines and put inputs into them (ore and coal in a furnace, fruit in a keg or jar), pet the farm animals and collect their eggs, milk and wool (milking and shearing need your own milk pail or shears), shake berry bushes and trees, clear dead crops'
+/**
+ * Mod 0.1.4: the body defends the player (Reflexes.Guard) and opens gates.
+ * Appended to the combat paragraph of the 0.1.4 capability text only.
+ */
+export const PROTECT_CAPABILITY = ' When a monster goes for the player while you are close to them and healthy, your body steps in and fights it on its own; whether to keep fighting after that is your call. Gates open for you as you walk through and close behind you.'
+/** Mod 0.1.4: villagers in the snapshot carry the player's hearts, birthdays and what they would love from either bag. */
+export const SOCIAL_CAPABILITY = ' The snapshot shows whose birthday is coming, how many hearts the player has with the villagers near you, and what in either bag they love or like. You cannot give villagers gifts yourself, so point the player to a good one when it fits.'
+const COMBAT_END = 'Do not go into the mines alone at low health or with no food.'
+const capability = (handoff, machines, extra = '') => CAPABILITY_TEMPLATE
+  .replace('{handoff}', handoff)
+  .replace('{machines}', machines)
+  .replace(COMBAT_END, COMBAT_END + extra)
 /** The capability paragraph for a mod without ship / give. */
 export const CAPABILITY_PARAGRAPH = capability('', MACHINES_CAPABILITY)
 /** The capability paragraph for mod 0.1.3. */
 export const CAPABILITY_PARAGRAPH_CHORES = capability(HANDOFF_CAPABILITY, MACHINES_CAPABILITY)
 /** The capability paragraph for mod 0.1.4 and later. */
-export const CAPABILITY_PARAGRAPH_FARMHAND = capability(HANDOFF_CAPABILITY, MACHINES_CAPABILITY_LOAD)
+export const CAPABILITY_PARAGRAPH_FARMHAND = capability(HANDOFF_CAPABILITY, MACHINES_CAPABILITY_LOAD, PROTECT_CAPABILITY + SOCIAL_CAPABILITY)
 
 // ── Action rules ─────────────────────────────────────────────────────────────
 // The Following rule depends on the connected mod (modVersion.js): from mod
@@ -169,6 +180,12 @@ export const ACTION_DESCRIPTIONS = {
     'Walk to the player and hand them `item` (`count` of it, default the whole stack) into their inventory: wood for something they will craft, seeds to plant, anything they asked you for.',
   load:
     'Put an input into the empty machine at #N or {x,y}: `item` names what goes in (eg "copper ore", "blueberry"), or with no item the first thing in your bag the machine takes. The machine decides what it accepts and how many (a furnace takes 5 ore and 1 coal for a bar). Take a finished machine\'s output first with harvest or interact.',
+  pet:
+    'Pet farm animal #N, or with no target every animal within reach that has not been petted today (up to `count`). Petting every day raises their friendship and the quality of what they give. Animals asleep for the night (after 7 PM, lying still) cannot be petted.',
+  collect:
+    'Do the barn and coop pickup where you are: pick up the eggs, wool and feathers lying on the floor, then milk or shear every animal within reach whose produce is ready (or just animal #N). Milking needs your own Milk Pail and shearing your own Shears; the result says if you lack one. What you collect stays in your bag.',
+  shake:
+    'Shake the bush or tree at #N or {x,y}, or with no target the nearest berry bush or fruit tree that has something on it, and pick up what falls (salmonberries, blackberries, tea leaves, fruit, a tree seed or a hazelnut).',
 }
 
 /**
@@ -183,12 +200,19 @@ export const ACTION_DESCRIPTIONS_CHORES = {
     'Harvest the ready crop at {x,y} or #N, or with no target everything ready within reach; scope "farm" walks to the farm first and harvests every ready crop on it. Also shakes fruit trees, picks forage and empties a ready machine at the tile. What you pick stays in your bag: ship() or give() it afterwards.',
 }
 
+/** Descriptions that change with mod 0.1.4 (modIsFarmhand): gather can clear dead crops. */
+export const ACTION_DESCRIPTIONS_FARMHAND = {
+  gather:
+    'Collect `kind` until you hold `count` more of it: forage (free food lying around), wood (trees and twigs), stone (rocks), fiber (weeds), debris (clear twigs, weeds and stones near you; count = pieces cleared), or dead (pull dead crops out of their soil so it can be replanted; count = crops cleared). Walks to each target itself. Default count 5.',
+}
+
 // ── Event framing (the ONLY source of event prose for this surface) ──────────
 export const ATTACKED_ADDENDUM = `Interrupted — {label} hit you ({health}/{maxHealth} health). TELL THE PLAYER: one short in-character line naming what is on you, right now, in this same turn; they cannot see your health and may not be looking at you. {reflex} Then decide: attack(#N) to finish it if you are healthy and it is alone, or goTo/come away from it. Do not just narrate.`
 export const REFLEX_REACTED = 'You already swung back on reflex.'
 export const REFLEX_NOT_REACTED = 'You have not hit it yet.'
 export const RETREAT_ADDENDUM = `Heads up — your health is LOW ({health}/{maxHealth}) and {label} is on you, so you are AUTOMATICALLY backing away; the retreat is on reflex, you do not need to move manually. Do NOT fight at this health. Warn the player in ONE short in-character line, then make the call: come to them, eat something if you have it, or leave the area with goTo. Don't say you were knocked out — you weren't.`
 export const ATE_ADDENDUM = `Heads up — your energy ran very low and you ate on reflex: {detail}. Nothing to do; mention it only if it fits your character, or keep working.`
+export const PROTECT_ADDENDUM = `Heads up: {label} went for the player, and your body stepped in and is fighting it on its own ({health}/{maxHealth} health). One short in-character line fits if you have something to say. Then make the call: attack(#N) to finish it, stay by the player, or back off if you are hurt. Your body only steps in like this when a monster is right on the player and you are close and healthy, and it stops once the monster is down or leaves the player alone, or when you get hurt.`
 export const BEDTIME_ADDENDUM = `It is almost 2 AM and you are automatically walking home to bed, because at 2 AM you pass out where you stand. You do not need to move manually. If the player is still up, one short line to say goodnight or to nudge them to sleep fits; then end the loop.`
 export const DEATH_ADDENDUM = `\n\nYou were KNOCKED OUT{cause} in {where} and woke up at the farm with half your health. You kept your inventory. React in character in ONE short say() line, and decide what to do now (eat if you can, stay near the player, avoid the place that did it).`
 export const IDLE_STUCK_NUDGE = `walk somewhere else with goTo (a different part of the farm, or the player) and look again`
@@ -262,6 +286,7 @@ export function eventAddendum(event, data) {
         switch (data?.survivalKind) {
           case 'ate': return fill(ATE_ADDENDUM, { detail: data?.detail ?? 'you ate' })
           case 'bedtime': return BEDTIME_ADDENDUM
+          case 'protect': return fill(PROTECT_ADDENDUM, { label, health, maxHealth })
           default: return fill(RETREAT_ADDENDUM, { label, health, maxHealth })
         }
       }
@@ -295,6 +320,7 @@ export function actionRules(modVersion) {
  * @param {string|null|undefined} [modVersion]
  */
 export function describeAction(name, modVersion) {
+  if (modIsFarmhand(modVersion) && ACTION_DESCRIPTIONS_FARMHAND[name]) return ACTION_DESCRIPTIONS_FARMHAND[name]
   if (modHasChores(modVersion) && ACTION_DESCRIPTIONS_CHORES[name]) return ACTION_DESCRIPTIONS_CHORES[name]
   return ACTION_DESCRIPTIONS[name] ?? ''
 }

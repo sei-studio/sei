@@ -363,6 +363,7 @@ namespace SeiCompanion.Body
             this.Reflex.Tick(tick);
             if (!this.Runner.Busy && !this.Background.Busy)
                 this.FollowTick();
+            this.GateTick();
             this.BarrierHop();
             if (tick % 12 == 0)
                 this.CollectDebris(3);
@@ -650,6 +651,11 @@ namespace SeiCompanion.Body
                             path = detour;
                     }
                 }
+                // No way round as a farmer: a closed gate may be all that is in
+                // the way (an animal pen, a fenced field). GateTick opens it on
+                // the step before it and closes it behind the body.
+                if ((path == null || path.Count == 0) && this.HasGates(loc))
+                    path = this.GatePath(loc, target);
                 PathFindController controller;
                 if (path != null && path.Count > 0)
                 {
@@ -678,6 +684,113 @@ namespace SeiCompanion.Body
                 this.Npc.controller = null;
                 return false;
             }
+        }
+
+        /*********
+        ** Gates (mod 0.1.4)
+        *********/
+        // A closed gate is a wall to the farmer collision the path search
+        // uses, so a pen or a fenced field had no way in or out. Approach
+        // after the 2019 MIT snapshot of NPC Adventures (FollowController:
+        // open the gate on the tile ahead, close the ones left behind;
+        // gatePosition 0 is closed, 88 open). Only gates the body opened
+        // itself are closed again, and never while someone stands in them.
+        private const int GateOpenPosition = 88;
+        private const int GateClosedPosition = 0;
+        private readonly List<(GameLocation Loc, Vector2 Tile)> _openedGates = new List<(GameLocation Loc, Vector2 Tile)>();
+
+        public static Fence GateAt(GameLocation loc, Vector2 tile)
+        {
+            if (loc == null || !loc.objects.TryGetValue(tile, out SObject o)) return null;
+            return o is Fence f && f.isGate.Value ? f : null;
+        }
+
+        private bool HasGates(GameLocation loc)
+        {
+            try
+            {
+                foreach (SObject o in loc.objects.Values)
+                    if (o is Fence f && f.isGate.Value) return true;
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>A path to `target` that may cross gates (open or closed), as a stack in the game's shape; null when none.</summary>
+        private Stack<Point> GatePath(GameLocation loc, Point target)
+        {
+            try
+            {
+                Point start = this.Npc.TilePoint;
+                List<(int X, int Y)> tiles = GridPath.Find(
+                    (start.X, start.Y),
+                    (target.X, target.Y),
+                    (x, y) => this.IsWalkable(loc, new Vector2(x, y)) || GateAt(loc, new Vector2(x, y)) != null);
+                if (tiles == null || tiles.Count == 0)
+                    return null;
+                var stack = new Stack<Point>();
+                for (int i = tiles.Count - 1; i >= 0; i--)
+                    stack.Push(new Point(tiles[i].X, tiles[i].Y));
+                return stack;
+            }
+            catch (Exception ex)
+            {
+                this.Monitor.Log($"{this.Name}: gate path search threw: {ex.Message}", LogLevel.Trace);
+                return null;
+            }
+        }
+
+        /// <summary>Open a closed gate on the next step of the walk; close the ones the body opened once it is clear of them.</summary>
+        private void GateTick()
+        {
+            GameLocation loc = this.Npc.currentLocation;
+            PathFindController ctl = this.Npc.controller;
+            if (ctl?.pathToEndPoint != null && ctl.pathToEndPoint.Count > 0)
+            {
+                Point here = this.Npc.TilePoint;
+                int looked = 0;
+                foreach (Point p in ctl.pathToEndPoint)
+                {
+                    if (p == here) continue;
+                    if (++looked > 1) break;
+                    var v = new Vector2(p.X, p.Y);
+                    Fence gate = GateAt(loc, v);
+                    if (gate == null || gate.gatePosition.Value == GateOpenPosition) continue;
+                    gate.gatePosition.Value = GateOpenPosition;
+                    try { loc.playSound("doorOpen", v); } catch { }
+                    this._openedGates.Add((loc, v));
+                }
+            }
+            if (this._openedGates.Count == 0)
+                return;
+            for (int i = this._openedGates.Count - 1; i >= 0; i--)
+            {
+                (GameLocation gl, Vector2 tile) = this._openedGates[i];
+                Fence gate = GateAt(gl, tile);
+                if (gate == null || gate.gatePosition.Value != GateOpenPosition) { this._openedGates.RemoveAt(i); continue; }
+                if (gl == loc && Vector2.Distance(this.Npc.Tile, tile) < 2f) continue;
+                if (this.SomeoneIn(gl, tile)) continue;
+                gate.gatePosition.Value = GateClosedPosition;
+                try { gl.playSound("doorClose", tile); } catch { }
+                this._openedGates.RemoveAt(i);
+            }
+        }
+
+        /// <summary>A farmer, an animal or a character overlaps the tile.</summary>
+        private bool SomeoneIn(GameLocation loc, Vector2 tile)
+        {
+            var cell = new Rectangle((int)tile.X * 64, (int)tile.Y * 64, 64, 64);
+            try
+            {
+                if (this.FarmerOn(loc, tile)) return true;
+                foreach (NPC c in loc.characters)
+                    if (c != null && c.GetBoundingBox().Intersects(cell)) return true;
+                if (loc.animals != null)
+                    foreach (KeyValuePair<long, FarmAnimal> pair in loc.animals.Pairs)
+                        if (pair.Value != null && pair.Value.GetBoundingBox().Intersects(cell)) return true;
+            }
+            catch { return true; }
+            return false;
         }
 
         /// <summary>Move the NPC (and the shadow) into another location at a tile.</summary>
@@ -892,8 +1005,9 @@ namespace SeiCompanion.Body
             // A background follow-travel would keep walking (and warping) the
             // body under the command: buying seeds in Town while the player
             // steps into the FarmHouse got warped mid-purchase. The command
-            // owns the body; FollowTick starts a fresh trip once it ends.
-            if (this.Background.Busy && this.Background.ActionName == FollowTravel)
+            // owns the body; FollowTick starts a fresh trip once it ends. The
+            // protect-the-player fight (0.1.4) gives way the same way.
+            if (this.Background.Busy && (this.Background.ActionName == FollowTravel || this.Background.ActionName == Reflexes.GuardAction))
             {
                 this.Background.Abort("a command took over");
                 if (this.Npc != null) this.Npc.controller = null;

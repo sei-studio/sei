@@ -42,6 +42,19 @@ describe('stardew adapter mod-version gating', () => {
     expect(farmhand.getActionDescription('load')).toMatch(/machine/)
   })
 
+  it('shows the 0.1.4 ranch, shake and protect text only to a 0.1.4 mod', () => {
+    const chores = createStardewAdapter({ client: fakeClient('0.1.3'), config: {}, botUsername: 'Sui', logger: { warn() {} } })
+    for (const name of ['pet', 'collect', 'shake']) expect(chores.listActions()).not.toContain(name)
+    expect(chores.capabilityParagraph()).not.toMatch(/pet the farm animals|steps in|birthday/)
+    expect(chores.getActionDescription('gather')).not.toMatch(/dead/)
+    const farmhand = createStardewAdapter({ client: fakeClient('0.1.4'), config: {}, botUsername: 'Sui', logger: { warn() {} } })
+    for (const name of ['pet', 'collect', 'shake']) expect(farmhand.listActions()).toContain(name)
+    expect(farmhand.capabilityParagraph()).toMatch(/pet the farm animals/)
+    expect(farmhand.capabilityParagraph()).toMatch(/your body steps in/)
+    expect(farmhand.capabilityParagraph()).toMatch(/cannot give villagers gifts yourself/)
+    expect(farmhand.getActionDescription('gather')).toMatch(/dead/)
+  })
+
   // The prompt may only point the model at verbs the connected mod runs: a
   // tool named in the text but missing from the tool list is a dead end
   // (the 0.1.3 interact result sent her to place(), which cannot load).
@@ -51,7 +64,8 @@ describe('stardew adapter mod-version gating', () => {
       const a = createStardewAdapter({ client: fakeClient(version), config: {}, botUsername: 'Sui', logger: { warn() {} } })
       const tools = new Set(a.listActions())
       const texts = [a.capabilityParagraph(), a.actionRules(), ...a.listActions().map((n) => a.getActionDescription(n)),
-        eventAddendum('sei:idle', { quietMs: 10_000 }), eventAddendum('sei:attacked', { attackerKind: 'monster', attackerLabel: 'Bat', health: 50, maxHealth: 100 })]
+        eventAddendum('sei:idle', { quietMs: 10_000 }), eventAddendum('sei:attacked', { attackerKind: 'monster', attackerLabel: 'Bat', health: 50, maxHealth: 100 }),
+        eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'protect', attackerLabel: 'Green Slime', health: 80, maxHealth: 100 })]
       for (const text of texts) {
         for (const m of text.matchAll(/\b([a-zA-Z]+)\((?=[^)]*\))/g)) {
           const name = m[1]

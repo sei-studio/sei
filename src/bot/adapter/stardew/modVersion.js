@@ -18,8 +18,12 @@ export const CHORES_VERBS = Object.freeze(['ship', 'give'])
 
 /**
  * Mod 0.1.4 (261113, needs the Mac build): `load` puts an input into a
- * processing machine. Before it, interact told the model to place() an input,
- * which place cannot do.
+ * processing machine (before it, interact told the model to place() an input,
+ * which place cannot do); `pet` / `collect` do the barn and coop chores;
+ * `shake` shakes bushes and trees; gather kind "dead" clears dead crops. The
+ * body also steps in when a monster is on the player, opens and closes gates
+ * on its way, and the observation carries animal chores, berry bushes,
+ * birthdays and villagers' hearts and gift ideas.
  */
 export const FARMHAND_MIN_MOD = '0.1.4'
 
@@ -28,6 +32,14 @@ export const VERB_MIN_MOD = Object.freeze({
   ship: CHORES_MIN_MOD,
   give: CHORES_MIN_MOD,
   load: FARMHAND_MIN_MOD,
+  pet: FARMHAND_MIN_MOD,
+  collect: FARMHAND_MIN_MOD,
+  shake: FARMHAND_MIN_MOD,
+})
+
+/** gather kinds an older mod answers with "unknown kind"; the first mod that has each. */
+export const GATHER_KIND_MIN_MOD = Object.freeze({
+  dead: FARMHAND_MIN_MOD,
 })
 
 function parts(version) {
@@ -68,5 +80,11 @@ export function modIsFarmhand(version) {
 /** Can the connected mod run `verb`? Verbs older than 0.1.3 always can. */
 export function modHasVerb(version, verb) {
   const min = VERB_MIN_MOD[verb]
+  return min ? modVersionAtLeast(version, min) : true
+}
+
+/** Can the connected mod gather this kind? The original five always can. */
+export function modHasGatherKind(version, kind) {
+  const min = GATHER_KIND_MIN_MOD[kind]
   return min ? modVersionAtLeast(version, min) : true
 }

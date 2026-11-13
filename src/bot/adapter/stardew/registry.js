@@ -7,7 +7,7 @@
 import { z } from 'zod'
 import { createRegistry } from '../../registry.js'
 import { ACTION_DESCRIPTIONS } from './prompts.js'
-import { modHasChores, modHasVerb, modIsFarmhand } from './modVersion.js'
+import { modHasChores, modHasGatherKind, modHasVerb, modIsFarmhand } from './modVersion.js'
 
 const Handle = z.string().regex(/^#?\d+$/, 'a #N handle from the snapshot')
 const Tile = { x: z.number().int(), y: z.number().int() }
@@ -57,7 +57,8 @@ export const VERB_SCHEMAS = {
   mine: z.object({ x: Tile.x.optional(), y: Tile.y.optional(), target: Handle.optional() })
     .refine((a) => a.target || (a.x != null && a.y != null), { message: 'give x and y or a #N target' }),
   gather: z.object({
-    kind: z.enum(['forage', 'wood', 'stone', 'fiber', 'debris']),
+    // 'dead' (mod 0.1.4) clears dead crops; refused below for an older mod.
+    kind: z.enum(['forage', 'wood', 'stone', 'fiber', 'debris', 'dead']),
     count: z.number().int().min(1).max(40).default(5),
   }),
   attack: z.object({
@@ -105,6 +106,19 @@ export const VERB_SCHEMAS = {
     target: Handle.optional(),
     item: z.string().min(1).max(64).optional(),
   }).refine((a) => a.target || (a.x != null && a.y != null), { message: 'give the machine as a #N target or x and y' }),
+  pet: z.object({
+    target: Handle.optional(),
+    count: z.number().int().min(1).max(40).optional(),
+  }),
+  collect: z.object({
+    target: Handle.optional(),
+    count: z.number().int().min(1).max(60).optional(),
+  }),
+  shake: z.object({
+    x: Tile.x.optional(),
+    y: Tile.y.optional(),
+    target: Handle.optional(),
+  }),
 }
 
 export const VERB_NAMES = Object.keys(VERB_SCHEMAS)
@@ -215,6 +229,9 @@ export function createStardewRegistry({ send, getModVersion = () => null }) {
         // so this only answers a stale or invented call.
         if (!modHasVerb(version, name)) {
           return `failed: ${name} needs a newer Sei helper mod in the game; ask the player to do it for now`
+        }
+        if (name === 'gather' && !modHasGatherKind(version, args.kind)) {
+          return `failed: gather kind "${args.kind}" needs a newer Sei helper mod in the game; ask the player to do it for now`
         }
         // Normalise "#3" / "3" to "#3" for the mod.
         const clean = { ...args }

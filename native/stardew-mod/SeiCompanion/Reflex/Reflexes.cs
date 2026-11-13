@@ -37,6 +37,16 @@ namespace SeiCompanion.Reflex
         private long _lastRetreatEvent;
         private bool _retreating;
         private long _lastDamagedEvent;
+        private long _lastGuardEvent;
+        private Monster _lastGuardThreat;
+
+        /// <summary>The background routine name of the protect-the-player fight.</summary>
+        public const string GuardAction = "guard";
+        /// <summary>A monster this close to the player is going for them.</summary>
+        private const float GuardThreatTiles = 3.5f;
+        /// <summary>She only steps in when she is this close to the player.</summary>
+        private const float GuardLeashTiles = 9f;
+        private const int GuardEventCooldownMs = 15_000;
 
         public Reflexes(SeiBody body)
         {
@@ -47,6 +57,7 @@ namespace SeiCompanion.Reflex
         {
             this._lastContact.Clear();
             this._retreating = false;
+            this._lastGuardThreat = null;
         }
 
         public void Tick(int tick)
@@ -56,6 +67,8 @@ namespace SeiCompanion.Reflex
             if (tick % 3 != 0)
                 return;
             this.ContactDamage();
+            if (tick % 6 == 0)
+                this.Guard();
             if (tick % 30 == 0)
                 this.AutoEat();
         }
@@ -129,11 +142,66 @@ namespace SeiCompanion.Reflex
             }
         }
 
+        /// <summary>
+        /// Protect the player (mod 0.1.4). Monsters never target the body (it
+        /// is not in location.farmers), so it can only defend the player by
+        /// going for what is on THEM: a monster within 3.5 tiles of the host
+        /// while the body is idle or following within 9 tiles, at or above the
+        /// retreat line, on the same map. The fight itself is Combat.Defend in
+        /// the background slot, so any command from the brain takes over at
+        /// once. One survival "protect" event per new monster (at most every
+        /// 15 s) lets the brain speak and decide what comes next.
+        /// </summary>
+        private void Guard()
+        {
+            SeiBody body = this._body;
+            if (body.Paused || body.Runner.Busy || body.Background.Busy)
+                return;
+            if (body.Shadow.maxHealth > 0 && (float)body.Shadow.health / body.Shadow.maxHealth < RetreatBelow)
+                return;
+            GameLocation loc = body.Npc.currentLocation;
+            Farmer host = Game1.player;
+            if (host?.currentLocation == null || host.currentLocation != loc)
+                return;
+            if (Game1.eventUp || Game1.isFestival())
+                return;
+            if (Vector2.Distance(host.Tile, body.Npc.Tile) > GuardLeashTiles)
+                return;
+            Monster threat = null;
+            float best = GuardThreatTiles;
+            foreach (NPC c in loc.characters)
+            {
+                if (!(c is Monster m) || m.Health <= 0 || m.IsInvisible || m.DamageToFarmer <= 0)
+                    continue;
+                float d = Vector2.Distance(m.Tile, host.Tile);
+                if (d <= best) { best = d; threat = m; }
+            }
+            if (threat == null)
+                return;
+            var ctx = new ActionContext(body, null, default);
+            body.Background.Start(ctx, GuardAction, Combat.Defend(ctx, threat, host, RetreatBelow));
+            long now = Environment.TickCount64;
+            if (!ReferenceEquals(threat, this._lastGuardThreat) && now - this._lastGuardEvent > GuardEventCooldownMs)
+            {
+                this._lastGuardEvent = now;
+                this._lastGuardThreat = threat;
+                body.Session?.SendEvent("survival", new Dictionary<string, object>
+                {
+                    ["kind"] = "protect",
+                    ["attacker"] = threat.displayName ?? threat.Name,
+                    ["health"] = body.Shadow.health,
+                    ["maxHealth"] = body.Shadow.maxHealth,
+                });
+            }
+        }
+
         private void Retreat(Monster from)
         {
             long now = Environment.TickCount64;
             SeiBody body = this._body;
             body.Runner.Abort("retreating: health is low");
+            if (body.Background.ActionName == GuardAction)
+                body.Background.Abort("retreating: health is low");
             Vector2 away = body.Npc.Tile - from.Tile;
             if (away == Vector2.Zero) away = new Vector2(1, 0);
             away.Normalize();

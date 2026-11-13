@@ -882,6 +882,100 @@ it found and what changed:
   "cancelled" result. `locomotor:Clear()` fails it and ends the node. Any
   code that cancels mid-walk owes the same.
 
+**Stardew + DST action gaps (261113, T435).** Gap report:
+`~/suisei/reports/stardew-dst-gaps-2026-11-13.md`. Rule kept throughout: every
+game decision is the model's; the bodies only add survival and follow-type
+habits.
+- **No verb the prompt cannot back.** Stardew `load` (mod 0.1.4,
+  `Actions/Machines.cs`) puts inputs into machines through the machine's own
+  probe and `AttemptAutoLoad`; before it, an empty machine sent the model to
+  `place`, which cannot load. DST `dig` is registered for helper 0.3.0+ (the
+  prompt already promised it). Both games have a test that every `name(` in
+  the prompt text is a tool for every mod version; keep it passing.
+- **Stardew gating is per verb** (`VERB_MIN_MOD`, `GATHER_KIND_MIN_MOD` in
+  `modVersion.js`): `listActions` hides a verb the mod is too old for, the
+  registry refuses it with "needs a newer Sei helper mod", and
+  `describeAction` / `capabilityParagraph` pick the text for the mod version
+  (`ACTION_DESCRIPTIONS_FARMHAND`, `CAPABILITY_PARAGRAPH_FARMHAND`).
+- **DST helper 0.4.0**: dig (stumps, graves), hammer, net, harvest, plant,
+  trap, dry, cookpot, stash; habits in `tactics.lua` (wormhole follow,
+  hit-and-run kiting, assist with the player's chop/mine, boss flee). Tested
+  on the headless server (`scripts/dst-headless-scenarios/chores-040.txt`,
+  `habits-040.txt`).
+- **Action outcome stats** for both games (`adapter/gameActionStats.js`,
+  `game_session_actions`, shape only).
+- **Stardew progression** runs into summer and fall of year one (22 nodes)
+  and its latches persist per farm in `stardew-progress.json` next to the
+  character's memory, so a re-summon does not restart the list.
+- **Stardew mod 0.1.4 quick wins (unverified in game, needs the Mac build):**
+  - `pet` / `collect` (`Actions/Ranch.cs`): petting goes through
+    `FarmAnimal.pet` with the shadow farmer (fallback: set `wasPet`, +15
+    friendship). `collect` picks floor produce up in a barn or coop, then
+    milks or shears with HER OWN Milk Pail / Shears (she starts without
+    them; the result says so). Produce is taken directly
+    (`currentProduce`, `produceQuality`), not through `MilkPail.DoFunction`,
+    which needs a real farmer's animation state.
+  - `shake` (`Actions/Shake.cs`): bushes (also the large ones in
+    `largeTerrainFeatures`), fruit trees and wild trees, then sweeps up the
+    debris and reports what it got.
+  - `gather kind "dead"` (`Tools.ClearDeadAt`): `HoeDirt.destroyCrop(true)`.
+  - Protect reflex (`Reflexes.Guard` + `Combat.Defend` on the Background
+    runner): a monster within 3.5 tiles of the host while she is idle,
+    healthy and within 9 tiles; lets go at 6 tiles or on a map change.
+    Raises survival `protect` once per new monster, at most every 15 s; the
+    app frames it with `PROTECT_ADDENDUM` and the model decides what next.
+    Monsters never aggro the shadow farmer, so without this she only fought
+    what hit her NPC body.
+  - Gates (`SeiBody.GateTick` / `GatePath`): when the farmer path finder
+    returns nothing and the map has gates, she paths through closed gates,
+    opens them as she reaches them and closes the ones she opened once she
+    is clear. Approach after NPC Adventures (MIT).
+  - Observation (`Observe/Social.cs`, `Snapshot.cs`): birthdays today and
+    tomorrow, farm animal counts, bushes with berries, per-animal
+    `petted`/`produce`/`tool`, per-villager hearts, gifts this week and up to
+    two gift ideas from either bag (cached 300 ticks per villager). The app
+    renders hearts and gift ideas for the nearest 3 villagers only.
+  - Game APIs assumed (compile on the Mac): `FarmAnimal.pet(Farmer, bool)`,
+    `wasPet`, `currentProduce`, `produceQuality`, `GetAnimalData().HarvestTool`,
+    `GetHarvestType()`, `Farm.getAllFarmAnimals()`, `AnimalHouse`,
+    `TerrainFeature.performUseAction(Vector2)`, `FruitTree.shake`,
+    `Bush.tileSheetOffset` / `size`, `LargeTerrainFeature.getBoundingBox()`,
+    `Fence.isGate` / `gatePosition`, `NPC.getGiftTasteForThisItem`,
+    `isBirthday`, `Birthday_Season` / `Birthday_Day`, `CanSocialize`,
+    `CanReceiveGifts`, `Utility.getAllVillagers`, `Item.canBeGivenAsGift`.
+
+**Mac batch test for Stardew mod 0.1.4.** One session. Build with
+`scripts/build-stardew-mod.sh`, commit the DLL and the 0.1.4 manifest under
+`assets/stardew-mod/`, install, open a save with a coop or barn (Marnie sells
+a Milk Pail and Shears; give her one), summon a companion.
+1. The build compiles. Any API above that does not exist is the fix list.
+2. `/hello` and the dashboard report 0.1.4; the tool list has load, pet,
+   collect and shake.
+3. load: ask her to put copper ore in an empty furnace (with coal in her
+   bag), then fruit in a keg. The machine starts; the result names what went in.
+4. pet: in the coop, "pet the animals". Every animal shows a heart; the
+   snapshot's `not petted today` disappears; after 7 PM sleeping animals are
+   skipped and named.
+5. collect: eggs on the coop floor end up in her bag; with a Milk Pail, a
+   cow with milk is milked (quality as in the game, sound plays); without the
+   pail the result says she needs one.
+6. shake: a salmonberry bush in season and a fruit tree with fruit; what fell
+   lands in her bag. A tea bush if the save has one.
+7. gather dead: let a crop die at the season change (or use a dead crop
+   save); `gather kind dead` clears it and the soil stays tilled.
+8. Protect: walk her into the mines (level 1 to 10) and let a slime come
+   at you. She steps in without being told, one `protect` event reaches the
+   app (log), she lets go when you walk away and is not stuck fighting
+   when you give her a new command. Check she still retreats at low health.
+9. Gates: fence a pen with a gate, close it, stand inside and ask her to
+   come. She opens the gate, walks through, and closes it behind her. Leave
+   an animal in the gateway: she does not close it on the animal.
+10. Social: on a villager's birthday (or the day before) the `birthdays:`
+    line shows; next to a villager the snapshot shows hearts and a gift idea
+    from either bag; ask "what should I give Abigail" and the answer uses it.
+11. Snapshot size: the debug snapshot in a busy town square stays within a
+    few lines of 0.1.3's (only 3 villagers carry hearts and gifts).
+
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.

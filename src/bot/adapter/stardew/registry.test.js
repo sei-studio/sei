@@ -3,10 +3,10 @@ import { createStardewRegistry, VERB_NAMES, VERB_SCHEMAS, patchTiles, tillPatch,
 import { ACTION_DESCRIPTIONS } from './prompts.js'
 
 describe('stardew registry', () => {
-  it('registers the 23 verbs (21 world verbs + follow/unfollow) with a description each', () => {
+  it('registers the 26 verbs (24 world verbs + follow/unfollow) with a description each', () => {
     const reg = createStardewRegistry({ send: vi.fn(async () => 'ok') })
     expect(reg.list().sort()).toEqual([...VERB_NAMES].sort())
-    expect(VERB_NAMES).toHaveLength(23)
+    expect(VERB_NAMES).toHaveLength(26)
     for (const name of VERB_NAMES) {
       expect(ACTION_DESCRIPTIONS[name], `description for ${name}`).toBeTruthy()
       expect(reg.description(name)).toBe(ACTION_DESCRIPTIONS[name])
@@ -141,6 +141,28 @@ describe('stardew registry', () => {
     expect(send).toHaveBeenLastCalledWith('load', { target: '#4', item: 'Copper Ore' }, { signal: undefined })
     expect(await reg.execute('load', { x: 3, y: 9 }, null, {})).toBe('did load')
     await expect(reg.execute('load', { item: 'Wood' }, null, {})).rejects.toThrow()
+  })
+
+  it('pet, collect, shake and gather "dead" are gated on mod 0.1.4', async () => {
+    let version = '0.1.3'
+    const send = vi.fn(async (name) => `did ${name}`)
+    const reg = createStardewRegistry({ send, getModVersion: () => version })
+    for (const name of ['pet', 'collect', 'shake']) {
+      expect(await reg.execute(name, {}, null, {})).toMatch(new RegExp(`^failed: ${name} needs a newer Sei helper mod`))
+    }
+    expect(await reg.execute('gather', { kind: 'dead' }, null, {})).toMatch(/^failed: gather kind "dead" needs a newer Sei helper mod/)
+    expect(await reg.execute('gather', { kind: 'wood' }, null, {})).toBe('did gather')
+    expect(send).toHaveBeenCalledTimes(1)
+    version = '0.1.4'
+    expect(await reg.execute('pet', {}, null, {})).toBe('did pet')
+    expect(await reg.execute('pet', { target: '7', count: 3 }, null, {})).toBe('did pet')
+    expect(send).toHaveBeenLastCalledWith('pet', { target: '#7', count: 3 }, { signal: undefined })
+    expect(await reg.execute('collect', {}, null, {})).toBe('did collect')
+    expect(await reg.execute('shake', { x: 4, y: 12 }, null, {})).toBe('did shake')
+    expect(await reg.execute('shake', { target: '#2' }, null, {})).toBe('did shake')
+    expect(await reg.execute('gather', { kind: 'dead', count: 4 }, null, {})).toBe('did gather')
+    await expect(reg.execute('pet', { count: 0 }, null, {})).rejects.toThrow()
+    await expect(reg.execute('pet', { count: 99 }, null, {})).rejects.toThrow()
   })
 
   it('stops a patch on the mod\'s safety interrupts instead of sending the next tile', async () => {

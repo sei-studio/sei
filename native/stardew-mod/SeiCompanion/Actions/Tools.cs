@@ -467,8 +467,10 @@ namespace SeiCompanion.Actions
             SeiBody body = ctx.Body;
             string kind = (ctx.Str("kind") ?? "forage").Trim().ToLowerInvariant();
             int count = Math.Clamp(ctx.Int("count") ?? 5, 1, 40);
-            var known = new HashSet<string> { "forage", "wood", "stone", "fiber", "debris" };
-            if (!known.Contains(kind)) { yield return Result.Fail($"unknown kind {kind}; use forage, wood, stone, fiber or debris"); yield break; }
+            // "dead" (0.1.4): clear dead crops off their soil (count = crops cleared).
+            var known = new HashSet<string> { "forage", "wood", "stone", "fiber", "debris", "dead" };
+            if (!known.Contains(kind)) { yield return Result.Fail($"unknown kind {kind}; use forage, wood, stone, fiber, debris or dead"); yield break; }
+            bool clearing = kind == "debris" || kind == "dead";
             int before = InventoryCount(body);
             int cleared = 0;
             var tried = new HashSet<Point>();
@@ -476,7 +478,7 @@ namespace SeiCompanion.Actions
             {
                 if (ctx.Cancelled) yield break;
                 int gained = InventoryCount(body) - before;
-                int progress = kind == "debris" ? cleared : gained;
+                int progress = clearing ? cleared : gained;
                 if (progress >= count) break;
                 Point? next = NearestGatherTarget(body, kind, tried);
                 if (next == null) break;
@@ -484,18 +486,22 @@ namespace SeiCompanion.Actions
                 var o = new Outcome();
                 GameLocation loc = body.Npc.currentLocation;
                 Vector2 v = new Vector2(next.Value.X, next.Value.Y);
-                if (loc.objects.TryGetValue(v, out SObject obj) && (obj.IsSpawnedObject || obj.isForage()))
+                if (kind == "dead")
+                    yield return ClearDeadAt(ctx, next.Value, o);
+                else if (loc.objects.TryGetValue(v, out SObject obj) && (obj.IsSpawnedObject || obj.isForage()))
                     yield return PickUp(ctx, next.Value, o);
                 else if (RockAt(loc, next.Value))
                     yield return MineAt(ctx, next.Value, o);
                 else
                     yield return ChopAt(ctx, next.Value, o);
                 if (o.Ok) cleared++;
-                ctx.Progress($"gathering {kind}: {(kind == "debris" ? cleared : InventoryCount(body) - before)}/{count}");
+                ctx.Progress($"gathering {kind}: {(clearing ? cleared : InventoryCount(body) - before)}/{count}");
                 if (!o.Ok && o.Detail.Contains("energy")) { yield return Result.Fail(o.Detail); yield break; }
             }
             int total = InventoryCount(body) - before;
-            if (kind == "debris")
+            if (kind == "dead")
+                yield return cleared > 0 ? Result.Success($"cleared {cleared} dead crop{(cleared == 1 ? "" : "s")}; the soil is free to replant") : Result.Fail($"no dead crops within {ScanRadius} tiles");
+            else if (kind == "debris")
                 yield return cleared > 0 ? Result.Success($"cleared {cleared} pieces of debris, picked up {total} items") : Result.Fail("no debris (weeds, twigs, stones) within reach");
             else
                 yield return total > 0 ? Result.Success($"gathered {total} items of {kind}") : Result.Fail($"found no {kind} to gather within {ScanRadius} tiles");
@@ -513,6 +519,15 @@ namespace SeiCompanion.Actions
                 if (skip.Contains(p)) return;
                 float d = Vector2.Distance(tile, me);
                 if (d <= ScanRadius && d < bestDist) { bestDist = d; best = p; }
+            }
+            if (kind == "dead")
+            {
+                foreach (KeyValuePair<Vector2, TerrainFeature> pair in loc.terrainFeatures.Pairs)
+                {
+                    if (pair.Value is HoeDirt dirt && dirt.crop != null && dirt.crop.dead.Value)
+                        Consider(pair.Key);
+                }
+                return best;
             }
             foreach (KeyValuePair<Vector2, SObject> pair in loc.objects.Pairs)
             {
@@ -546,6 +561,36 @@ namespace SeiCompanion.Actions
                     if (c != null && !IsStumpOrLog(c)) Consider(c.Tile);
             }
             return best;
+        }
+
+        /// <summary>
+        /// Pull a dead crop out of its soil (0.1.4). A player does it with any
+        /// tool swing or the scythe; the soil stays tilled for replanting.
+        /// </summary>
+        public static IEnumerable<object> ClearDeadAt(ActionContext ctx, Point tile, Outcome o)
+        {
+            SeiBody body = ctx.Body;
+            GameLocation loc = body.Npc.currentLocation;
+            var v = new Vector2(tile.X, tile.Y);
+            if (!loc.terrainFeatures.TryGetValue(v, out TerrainFeature tf) || !(tf is HoeDirt dirt) || dirt.crop == null || !dirt.crop.dead.Value)
+            {
+                o.Fail($"no dead crop at {Targets.Fmt(tile)}");
+                yield break;
+            }
+            var walk = new Outcome();
+            yield return Movement.WalkTo(ctx, tile, true, walk);
+            if (!walk.Ok) { o.Fail(walk.Detail); yield break; }
+            if (dirt.crop == null || !dirt.crop.dead.Value) { o.Pass("already cleared"); yield break; }
+            body.SyncShadow();
+            body.Shadow.FaceToward(v);
+            body.Npc.faceDirection(body.Shadow.FacingDirection);
+            MeleeWeapon scythe = body.FindScythe();
+            int slot = scythe != null ? body.SlotOf(scythe) : -1;
+            if (slot >= 0) body.Shadow.CurrentToolIndex = slot;
+            dirt.destroyCrop(true);
+            try { loc.playSound("cut", v); } catch { }
+            try { body.Npc.jump(3f); } catch { }
+            o.Pass("cleared");
         }
 
         /// <summary>Pick up a forage item or a dropped-looking object at a tile.</summary>

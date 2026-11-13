@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewValley;
+using StardewValley.Buildings;
 using StardewValley.Characters;
 using StardewValley.Locations;
 using StardewValley.Monsters;
@@ -75,6 +76,9 @@ namespace SeiCompanion.Observe
             obs["entities"] = Entities(body, loc, me);
             obs["warps"] = Warps(body, loc, me);
             obs["player"] = PlayerInfo(body, loc, me);
+            // 0.1.4: whose birthday is today or tomorrow (omitted when nobody's).
+            Dictionary<string, object> birthdays = Social.Birthdays();
+            if (birthdays != null) obs["birthdays"] = birthdays;
             return obs;
         }
 
@@ -121,6 +125,24 @@ namespace SeiCompanion.Observe
                     else if (o.IsBreakableStone() || o.Name == "Stone") stones++;
                 }
                 if (farm.resourceClumps != null) clumps = farm.resourceClumps.Count;
+                // 0.1.4: the barn and coop chores, farm-wide.
+                int animals = 0, unpetted = 0, toolProduce = 0, floorProduce = 0;
+                try
+                {
+                    foreach (FarmAnimal a in farm.getAllFarmAnimals())
+                    {
+                        if (a == null) continue;
+                        animals++;
+                        if (!a.wasPet.Value) unpetted++;
+                        if (Ranch.HasToolProduce(a)) toolProduce++;
+                    }
+                    foreach (Building b in farm.buildings)
+                    {
+                        if (b?.indoors.Value is AnimalHouse house)
+                            floorProduce += Ranch.FloorProduce(house, Vector2.Zero).Count;
+                    }
+                }
+                catch { }
                 int shipped = 0;
                 try { shipped = farm.getShippingBin(Game1.player)?.Count ?? 0; } catch { }
                 _farmCache = new Dictionary<string, object>
@@ -130,6 +152,13 @@ namespace SeiCompanion.Observe
                     ["debris"] = twigs + weeds + stones, ["bigClumps"] = clumps, ["grownTrees"] = trees,
                     ["shippingBinItems"] = shipped,
                 };
+                if (animals > 0)
+                {
+                    _farmCache["animals"] = animals;
+                    _farmCache["unpettedAnimals"] = unpetted;
+                    _farmCache["animalsToMilkOrShear"] = toolProduce;
+                    _farmCache["animalProduceOnFloor"] = floorProduce;
+                }
                 _farmTick = Game1.ticks;
                 return _farmCache;
             }
@@ -240,6 +269,7 @@ namespace SeiCompanion.Observe
             var chests = new List<Dictionary<string, object>>();
             var machines = new List<Dictionary<string, object>>();
             var ladders = new List<Dictionary<string, object>>();
+            var bushes = new List<Dictionary<string, object>>();
             int twigs = 0, weeds = 0, stones = 0, dryCrops = 0, readyCrops = 0, allCrops = 0;
             Point? water = null;
             float waterDist = float.MaxValue;
@@ -296,6 +326,13 @@ namespace SeiCompanion.Observe
                                         ["stage"] = tree.growthStage.Value,
                                         ["dist"] = (int)dist,
                                     });
+                                }
+                                break;
+                            case Bush teaBush when Shake.HasBerries(teaBush):
+                                if (bushes.Count < 4)
+                                {
+                                    string id = body.Handles.Register(new Handle { Kind = "bush", Label = Shake.Label(teaBush), Tile = new Point(x, y), LocationName = loc.NameOrUniqueName });
+                                    bushes.Add(new Dictionary<string, object> { ["handle"] = id, ["x"] = x, ["y"] = y, ["name"] = Shake.Label(teaBush), ["dist"] = (int)dist });
                                 }
                                 break;
                             case FruitTree ft:
@@ -397,7 +434,24 @@ namespace SeiCompanion.Observe
                 }
             }
 
-            foreach (var list in new[] { crops, soil, trees, rocks, forage, chests, machines, ladders })
+            // Berry bushes (0.1.4) are large terrain features, not per-tile ones.
+            try
+            {
+                foreach (LargeTerrainFeature lt in loc.largeTerrainFeatures)
+                {
+                    if (bushes.Count >= 4) break;
+                    if (!(lt is Bush b) || !Shake.HasBerries(b)) continue;
+                    Rectangle box = b.getBoundingBox();
+                    var at = new Point(box.X / 64, box.Y / 64);
+                    float dist = Vector2.Distance(at.ToVector2(), me);
+                    if (dist > r) continue;
+                    string id = body.Handles.Register(new Handle { Kind = "bush", Label = Shake.Label(b), Tile = at, LocationName = loc.NameOrUniqueName });
+                    bushes.Add(new Dictionary<string, object> { ["handle"] = id, ["x"] = at.X, ["y"] = at.Y, ["name"] = Shake.Label(b), ["dist"] = (int)dist });
+                }
+            }
+            catch { }
+
+            foreach (var list in new[] { crops, soil, trees, rocks, forage, chests, machines, ladders, bushes })
                 list.Sort((a, b) => ((int)a["dist"]).CompareTo((int)b["dist"]));
 
             return new Dictionary<string, object>
@@ -411,6 +465,7 @@ namespace SeiCompanion.Observe
                 ["chests"] = chests,
                 ["machines"] = machines,
                 ["ladders"] = ladders,
+                ["bushes"] = bushes,
                 ["water"] = water.HasValue ? new Dictionary<string, object> { ["x"] = water.Value.X, ["y"] = water.Value.Y, ["dist"] = (int)waterDist } : null,
                 ["counts"] = new Dictionary<string, object>
                 {
@@ -465,6 +520,10 @@ namespace SeiCompanion.Observe
                     row["health"] = m.Health;
                     row["maxHealth"] = m.MaxHealth;
                 }
+                else if (kind == "villager")
+                {
+                    Social.Describe(c, row, body);
+                }
                 list.Add(row);
             }
             foreach (KeyValuePair<long, FarmAnimal> pair in loc.animals.Pairs)
@@ -474,11 +533,19 @@ namespace SeiCompanion.Observe
                 float dist = Vector2.Distance(a.Tile, me);
                 if (dist > EntityRadius) continue;
                 string id = body.Handles.Register(new Handle { Kind = "animal", Label = a.displayName, Character = a, LocationName = loc.NameOrUniqueName });
-                list.Add(new Dictionary<string, object>
+                var arow = new Dictionary<string, object>
                 {
                     ["handle"] = id, ["kind"] = "animal", ["name"] = $"{a.displayName} ({a.type.Value})",
                     ["x"] = (int)a.Tile.X, ["y"] = (int)a.Tile.Y, ["dist"] = (int)dist,
-                });
+                    // 0.1.4: today's barn chores for this animal.
+                    ["petted"] = a.wasPet.Value,
+                };
+                if (Ranch.HasToolProduce(a))
+                {
+                    arow["produce"] = Ranch.ProduceName(a);
+                    arow["tool"] = Ranch.ToolLabel(Ranch.HarvestToolOf(a));
+                }
+                list.Add(arow);
             }
             list.Sort((a, b) =>
             {

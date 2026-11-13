@@ -64,7 +64,7 @@ expects an answer, `id` (any string; the answer echoes it).
 | `progress` | `id`, `text` | a running command reports a step |
 | `chat` | `from`, `text`, `kind` (`public`/`private`), `farmerId`, `isHost`, `sameLocation` | a player typed in the game chat |
 | `damaged` | `attacker`, `attackerKind`, `damage`, `health`, `maxHealth`, `retaliated`, `retreating` | a monster hit the body (at most once per second) |
-| `survival` | `kind` (`retreat` / `ate` / `bedtime`), plus `attacker`/`detail`/`time` | a reflex acted on its own |
+| `survival` | `kind` (`retreat` / `ate` / `bedtime` / `protect`), plus `attacker`/`detail`/`time` (`protect` also `health`/`maxHealth`) | a reflex acted on its own. `protect` (0.1.4): a monster came within 3.5 tiles of the host while the body was within 9 tiles of them, healthy and idle, and the body started fighting it in the background (`Combat.Defend`: lets go when the monster dies, either of them changes map, the monster is over 6 tiles from the host, or the body drops to its retreat line; at most 24 swings). Sent once per new monster, at most every 15 s. Any command takes over. |
 | `death` | `cause`, `where`, `location` | the body was knocked out; it wakes at the farm with half health |
 | `day_started` | `day`, `season`, `year`, `weather` | a new day |
 | `night_soon` | `time` | 10 PM |
@@ -139,7 +139,7 @@ latest Observation and stay valid ~90 s.
 | `harvest` | `{x,y}` / `{target}` or `{count?, scope?}` for every ready crop nearby | crops, fruit trees, forage, ready machines. `scope: "farm"` (0.1.3) as for `water`. A crop that would not fit in the bag stays in the ground and the round stops with "your bag is full" (0.1.3) |
 | `chop` | `{x,y}` / `{target:"#N"}` | axe a tree, stump, log or twig until it is gone |
 | `mine` | `{x,y}` / `{target:"#N"}` | pickaxe a stone, ore node or boulder until it is gone |
-| `gather` | `{kind: forage\|wood\|stone\|fiber\|debris, count?}` | loop: nearest matching target, walk, act, until `count` items (or targets for debris) |
+| `gather` | `{kind: forage\|wood\|stone\|fiber\|debris\|dead, count?}` | loop: nearest matching target, walk, act, until `count` items (or targets for debris and dead). `dead` (0.1.4) pulls dead crops out of their soil (scythe, `HoeDirt.destroyCrop`) so it can be replanted |
 | `attack` | `{target:"#N", times?}` | walk adjacent and swing `times` (default 5) |
 | `fish` | `{x?, y?, casts?}` | stand by water, wait out a bite, catch |
 | `eat` | `{item?}` | eat the named or best food |
@@ -151,6 +151,9 @@ latest Observation and stay valid ~90 s.
 | `sleep` | | walk home and lie down; the day ends when the player sleeps |
 | `ship` | `{item?, count?}` | (0.1.3) walk to the Farm's shipping bin and drop the named item (`count` of it, default the whole stack), or with no item every crop, forage and fish in the bag. The bin pays the farm overnight. Refuses tools and anything the bin does not buy. |
 | `load` | `{target:"#N"}` / `{x,y}`, `item?` | (0.1.4) put an input into an empty processing machine (furnace, keg, jar, seed maker, ...). With no item, the first thing in the bag the machine takes. Uses the machine's own probe and `AttemptAutoLoad`, so extra fuel (coal for a furnace) comes out of the bag too. Fails with the reason (busy, finished, needs fuel, does not take it). |
+| `pet` | `{target?:"#N", count?}` | (0.1.4) pet farm animal #N, or with no target every unpetted animal within 20 tiles (up to `count`, default 20). Skips animals asleep for the night (after 7 PM, lying still). Uses `FarmAnimal.pet` with the body's farmer, so friendship and the daily flag move as for a player. |
+| `collect` | `{target?:"#N", count?}` | (0.1.4) inside a barn or coop, pick up the produce lying on the floor (eggs, wool, feathers), then milk or shear every animal within 20 tiles whose produce is ready (or #N). Milking and shearing need the body's own Milk Pail or Shears; animals it cannot handle are named in the result. |
+| `shake` | `{target?:"#N"}` / `{x,y}` | (0.1.4) shake a bush (berry, tea) or a tree (fruit tree, wild tree) and pick up what falls. With no target, the nearest bush with berries or fruit tree with fruit within 20 tiles. |
 | `give` | `{item, count?, player?}` | (0.1.3) walk to the player and hand them `count` of an item (default the whole stack) into their inventory. Host only; a farmhand's bag lives on their machine. Nothing leaves the companion's bag until the player's bag has taken it. |
 
 ## Observation
@@ -186,6 +189,24 @@ latest Observation and stay valid ~90 s.
   "player": {"name": "Ouen", "location": "Farm", "x": 63, "y": 18, "sameLocation": true, "dist": 1}
 }
 ```
+
+0.1.4 additions (an older mod omits them):
+
+- `birthdays`: `{"today": ["Abigail"], "tomorrow": []}`, only when someone
+  has a birthday today or tomorrow.
+- `farm.animals`, `farm.unpettedAnimals`, `farm.animalsToMilkOrShear`,
+  `farm.animalProduceOnFloor` (only when the farm has animals).
+- `tiles.bushes`: `[{"handle": "#20", "x": 70, "y": 12, "name": "berry bush", "dist": 3}]`,
+  bushes with berries or tea leaves on them (at most 4).
+- `animal` entity rows: `petted` (today), and `produce` + `tool` when an
+  animal has milk or wool ready (`"tool": "Milk Pail"` / `"Shears"`).
+- `villager` entity rows: `hearts` (the host's, points / 250),
+  `giftsThisWeek`, `giftedToday`, `birthday`, and `gifts`: up to two
+  `{"item", "taste": "love"|"like", "bag": "player"|"yours"}` from either bag.
+
+Gates (0.1.4): when the body's path is blocked only by a closed farm gate it
+paths through the gate, opens it on the way and closes the gates it opened once
+it is 2 tiles past them and nobody stands in them.
 
 `host.holding` / `host.menu` (the active menu's type name, eg `ShopMenu`,
 `LetterViewerMenu`) / `host.inEvent` (a cutscene is playing) and `tomorrow`

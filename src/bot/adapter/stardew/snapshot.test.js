@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { composeSnapshot, createSnapshotComposer, followLine, farmChores, hostActivity, forecastWord } from './observers/snapshot.js'
+import { composeSnapshot, createSnapshotComposer, followLine, farmChores, hostActivity, forecastWord, birthdayLine } from './observers/snapshot.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const obs = () => JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'obs-farm.json'), 'utf8'))
@@ -122,6 +122,51 @@ describe('stardew snapshot composer', () => {
     ])
     expect(farmChores(null)).toEqual([])
     expect(farmChores({ farm: { dryCrops: 0, readyCrops: 0 } }, { modVersion: '0.1.3' })).toEqual([])
+  })
+
+  it('adds the barn round and dead crops to the chores only for a 0.1.4 mod', () => {
+    const farm = { crops: 10, dryCrops: 0, readyCrops: 0, deadCrops: 3, animals: 4, unpettedAnimals: 4, animalsToMilkOrShear: 1, animalProduceOnFloor: 2 }
+    const o = { ...obs(), farm, tiles: { ...obs().tiles, machines: [] }, inventory: [] }
+    expect(farmChores(o, { modVersion: '0.1.4' })).toEqual([
+      '4 farm animals not petted today (pet in the barn or coop)',
+      '2 eggs or other produce on the barn and coop floors (collect inside)',
+      '1 animal ready to milk or shear (collect, needs a Milk Pail or Shears)',
+      '3 dead crops (gather kind "dead" clears them)',
+    ])
+    expect(farmChores(o, { modVersion: '0.1.3' })).toEqual([])
+  })
+
+  it('renders 0.1.4 animal, villager, bush and birthday detail, and nothing extra without it', () => {
+    const base = obs()
+    const o = {
+      ...base,
+      birthdays: { today: ['Abigail'], tomorrow: [] },
+      tiles: { ...base.tiles, bushes: [{ handle: '#20', name: 'berry bush', x: 70, y: 12, dist: 3 }] },
+      entities: [
+        { handle: '#30', kind: 'animal', name: 'Daisy (White Cow)', x: 60, y: 14, dist: 2, petted: false, produce: 'Milk', tool: 'Milk Pail' },
+        { handle: '#31', kind: 'animal', name: 'Puff (White Chicken)', x: 61, y: 14, dist: 3, petted: true },
+        { handle: '#32', kind: 'villager', name: 'Abigail', x: 62, y: 15, dist: 4, hearts: 3, birthday: true, gifts: [{ item: 'Amethyst', taste: 'love', bag: 'yours' }] },
+        { handle: '#33', kind: 'villager', name: 'Pierre', x: 63, y: 15, dist: 5, hearts: 1, giftsThisWeek: 2 },
+      ],
+    }
+    const text = composeSnapshot(o, { modVersion: '0.1.4' })
+    expect(text).toMatch(/^ {2}bushes to shake: #20 berry bush @70,12$/m)
+    expect(text).toMatch(/^birthdays: Abigail today$/m)
+    expect(text).toMatch(/#30 Daisy \(White Cow\) \(animal, not petted today, Milk ready \(needs Milk Pail\)\) @60,14/)
+    expect(text).toMatch(/#31 Puff \(White Chicken\) \(animal\) @61,14/)
+    expect(text).toMatch(/#32 Abigail @62,15 \(4 tiles\) \(player's hearts 3, birthday today, would love Amethyst \(your bag\)\)$/m)
+    expect(text).toMatch(/#33 Pierre @63,15 \(5 tiles\) \(player's hearts 1, had both gifts this week\)$/m)
+    const plain = composeSnapshot(base, { modVersion: '0.1.3' })
+    expect(plain).not.toMatch(/bushes to shake|birthdays:|hearts/)
+  })
+
+  it('describes at most three villagers and drops an empty birthdays block', () => {
+    const vill = (i) => ({ handle: `#${40 + i}`, kind: 'villager', name: `V${i}`, x: i, y: 0, dist: i, hearts: i })
+    const text = composeSnapshot({ ...obs(), entities: [0, 1, 2, 3, 4].map(vill) }, { modVersion: '0.1.4' })
+    expect((text.match(/player's hearts/g) ?? []).length).toBe(3)
+    expect(birthdayLine({ today: [], tomorrow: [] })).toBeNull()
+    expect(birthdayLine(null)).toBeNull()
+    expect(birthdayLine({ today: [], tomorrow: ['Pam', 'Gus'] })).toBe('birthdays: Pam, Gus tomorrow')
   })
 
   it('renders the chores line after the player line, and none when there is nothing to do', () => {

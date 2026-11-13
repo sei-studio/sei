@@ -22,6 +22,8 @@ Sei is not affiliated with Mojang, Microsoft, ConcernedApe, Klei Entertainment, 
 - [JunimoServer](https://github.com/stardew-valley-dedicated-server/server) (MIT): the chat-box postfix the Stardew companion listens through
 - [luy-0/StardewValley-MCP](https://github.com/luy-0/StardewValley-MCP) (Apache-2.0): the mod-as-listener transport and per-install token design, used as a reference
 - [SMAPI](https://smapi.io) (LGPL-3.0): the Stardew Valley mod loader, downloaded from its official release at install time, never vendored; its game-folder detection logic is ported in TypeScript. Its build package `Pathoschild.Stardew.ModBuildConfig` and the bundled Harmony library are MIT
+- [NPC Adventures](https://github.com/CallMeFoxie/PurrplingMod) (MIT, 2019 snapshot): the companion fight leash and gate handling the Stardew body's protect reflex and gate opening follow (approach only, no code copied)
+- [StardewAutoPilot](https://github.com/578287897/StardewAutoPilot) and [CSXizhang/star](https://github.com/CSXizhang/star) (Apache-2.0), and [Automate](https://github.com/Pathoschild/StardewMods) (MIT): references for loading machines, petting animals and reading birthdays and gift tastes in the Stardew helper (approach only, no code copied)
 - [tldraw](https://github.com/tldraw/tldraw) agent template (MIT): the `PenAction` the Draw! companion's pen tool is adapted from
 
 **Libraries, engines, and downloaded components**

@@ -6,7 +6,7 @@
 // about 1.2k tokens; every list is already capped by the mod.
 
 import { getInFlightLineForSnapshot } from '../../../brain/inflight.js'
-import { modHoldsFollow, modHasChores } from '../modVersion.js'
+import { modHoldsFollow, modHasChores, modIsFarmhand } from '../modVersion.js'
 
 const MAX_INV = 20
 
@@ -79,6 +79,18 @@ export function farmChores(obs, { modVersion = null } = {}) {
   }
   const machines = Array.isArray(obs.tiles?.machines) ? obs.tiles.machines.filter((m) => m?.ready) : []
   if (machines.length) out.push(`${machines.map((m) => `${m.handle} ${m.name}`).slice(0, 3).join(', ')} ready to empty (harvest with its #N)`)
+  // Mod 0.1.4 (pet / collect / gather "dead"): the barn and coop round and
+  // dead crops. The keys only exist on a 0.1.4 mod, which has the verbs.
+  if (fm && modIsFarmhand(modVersion)) {
+    const unpetted = n(fm.unpettedAnimals)
+    const floor = n(fm.animalProduceOnFloor)
+    const tool = n(fm.animalsToMilkOrShear)
+    const dead = n(fm.deadCrops)
+    if (unpetted > 0) out.push(`${unpetted} farm animal${unpetted === 1 ? '' : 's'} not petted today (pet in the barn or coop)`)
+    if (floor > 0) out.push(`${floor} egg${floor === 1 ? '' : 's'} or other produce on the barn and coop floors (collect inside)`)
+    if (tool > 0) out.push(`${tool} animal${tool === 1 ? '' : 's'} ready to milk or shear (collect, needs a Milk Pail or Shears)`)
+    if (dead > 0) out.push(`${dead} dead crop${dead === 1 ? '' : 's'} (gather kind "dead" clears them)`)
+  }
   if (chores) {
     const produce = new Map()
     for (const it of Array.isArray(obs.inventory) ? obs.inventory : []) {
@@ -97,6 +109,43 @@ export function farmChores(obs, { modVersion = null } = {}) {
     }
   }
   return out
+}
+
+/** Villager rows that carry hearts and gift ideas (mod 0.1.4). */
+const SOCIAL_ROWS = 3
+
+/** ", not petted today, Milk ready (needs Milk Pail)" for a 0.1.4 animal row. */
+function animalNote(e) {
+  const parts = []
+  if (e.petted === false) parts.push('not petted today')
+  if (e.produce) parts.push(`${e.produce} ready${e.tool ? ` (needs ${e.tool})` : ''}`)
+  return parts.length ? `, ${parts.join(', ')}` : ''
+}
+
+/** " (player's hearts 3, birthday today, would love: Daffodil in the player's bag)" for a 0.1.4 villager row. */
+function villagerNote(e) {
+  const parts = []
+  if (e.hearts != null) parts.push(`player's hearts ${n(e.hearts)}`)
+  if (e.birthday) parts.push('birthday today')
+  if (e.giftedToday) parts.push('already got a gift today')
+  else if (n(e.giftsThisWeek) >= 2) parts.push('had both gifts this week')
+  const gifts = Array.isArray(e.gifts) ? e.gifts.filter((g) => g && g.item).slice(0, 2) : []
+  if (gifts.length) {
+    parts.push(gifts.map((g) => `would ${g.taste === 'love' ? 'love' : 'like'} ${g.item} (${g.bag === 'yours' ? 'your bag' : 'player\'s bag'})`).join(', '))
+  }
+  return parts.length ? ` (${parts.join(', ')})` : ''
+}
+
+/** "birthdays: Abigail today; Pam tomorrow" from mod 0.1.4 `birthdays`, or null. */
+export function birthdayLine(b) {
+  if (!b || typeof b !== 'object') return null
+  const names = (v) => (Array.isArray(v) ? v.filter(Boolean).slice(0, 3) : [])
+  const today = names(b.today)
+  const tomorrow = names(b.tomorrow)
+  const parts = []
+  if (today.length) parts.push(`${today.join(', ')} today`)
+  if (tomorrow.length) parts.push(`${tomorrow.join(', ')} tomorrow`)
+  return parts.length ? `birthdays: ${parts.join('; ')}` : null
 }
 
 /** The active menu's type name (mod `host.menu`) as a few plain words. */
@@ -185,6 +234,7 @@ export function composeSnapshot(obs, opts = {}) {
   if (Array.isArray(t.chests) && t.chests.length) lines.push(`  chests: ${tileList(t.chests, (r) => `${r.handle} chest (${n(r.items)} items) @${r.x},${r.y}`)}`)
   if (Array.isArray(t.machines) && t.machines.length) lines.push(`  machines: ${tileList(t.machines, (r) => `${r.handle} ${r.name}${r.ready ? ' READY' : n(r.minutes) > 0 ? ` (${r.minutes} min)` : ' (empty)'} @${r.x},${r.y}`)}`)
   if (Array.isArray(t.ladders) && t.ladders.length) lines.push(`  ladders: ${tileList(t.ladders, (r) => `${r.handle} ${r.kind} @${r.x},${r.y}`)}`)
+  if (Array.isArray(t.bushes) && t.bushes.length) lines.push(`  bushes to shake: ${tileList(t.bushes, (r) => `${r.handle} ${r.name} @${r.x},${r.y}`, 4)}`)
 
   // The whole farm and the host (mod `farm` / `host`, 260910): the 8-tile
   // scan cannot say what the farm's next job is from inside the house.
@@ -199,18 +249,26 @@ export function composeSnapshot(obs, opts = {}) {
   }
   const chores = farmChores(obs, { modVersion })
   if (chores.length) lines.push(`chores: ${chores.join('; ')}`)
+  const bday = birthdayLine(obs.birthdays)
+  if (bday) lines.push(bday)
 
   const compSet = new Set((companions ?? []).map((s) => String(s).toLowerCase()))
   const ents = Array.isArray(obs.entities) ? obs.entities : []
   lines.push('nearby entities:')
   if (!ents.length) lines.push('  (none)')
+  let villagersDescribed = 0
   for (const e of ents.slice(0, 12)) {
     let label = e.name
     if (e.kind === 'monster') label = `${e.name} (monster${e.health != null ? ` ${e.health}/${e.maxHealth} hp` : ''})`
     else if (e.kind === 'player') label = `${e.name} (player${e.isHost ? ', host' : ''})`
     else if (e.kind === 'companion' || compSet.has(String(e.name).toLowerCase())) label = `${e.name} (companion)`
+    else if (e.kind === 'animal') label = `${e.name} (animal${animalNote(e)})`
     else if (e.kind !== 'villager') label = `${e.name} (${e.kind})`
-    lines.push(`  ${e.handle} ${label} @${e.x},${e.y} (${n(e.dist)} tiles)`)
+    // Hearts and gift ideas only for the nearest few villagers (entities
+    // arrive nearest first), so a crowded town square stays small.
+    const social = e.kind === 'villager' && villagersDescribed < SOCIAL_ROWS ? villagerNote(e) : ''
+    if (social) villagersDescribed++
+    lines.push(`  ${e.handle} ${label} @${e.x},${e.y} (${n(e.dist)} tiles)${social}`)
   }
 
   const warps = Array.isArray(obs.warps) ? obs.warps : []
