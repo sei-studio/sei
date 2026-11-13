@@ -39,10 +39,10 @@ import type { GameId } from '@shared/gameIpc';
 
 /** The launchable games (the picker's coming-soon tiles are never active).
  *  Game adapters (M0, 260908): + the two bot-backed games. */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'factorio' | 'terraria';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'terraria';
 
 /** The bot-backed ("summon") games: one utilityProcess bot per character. */
-export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve', 'factorio', 'terraria'];
+export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve', 'terraria'];
 
 export function isBotGame(id: string | null | undefined): id is GameId {
   return typeof id === 'string' && (BOT_GAME_IDS as readonly string[]).includes(id);

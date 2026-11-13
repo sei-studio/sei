@@ -42,7 +42,6 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
-import { registerFactorioIpc } from './games/factorio/ipc';
 import { registerTerrariaIpc } from './games/terraria/ipc';
 import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
@@ -2026,7 +2025,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // with GamePackState (zod strips undeclared keys silently).
   // Every game with a pack (src/shared/gamePacks.ts); the renderer's pack
   // card asks for each GAME_ID at boot.
-  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve', 'factorio', 'terraria']);
+  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve', 'terraria']);
   let gamePackPushWired = false;
   const wireGamePackPush = async (): Promise<void> => {
     if (gamePackPushWired) return;
@@ -2119,9 +2118,6 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { setSurvivor } = await import('./games/dontstarve/survivorPick');
     return setSurvivor(args.characterId, args.prefab);
   });
-
-  // ── Factorio setup / install / launch (261113, games/factorio/ipc.ts) ────
-  registerFactorioIpc(ipcMain, { worldCheckNow: deps.worldCheckNow });
 
   // ── Terraria setup / install / launch (261113, games/terraria/ipc.ts) ────
   registerTerrariaIpc(ipcMain, { worldCheckNow: deps.worldCheckNow });

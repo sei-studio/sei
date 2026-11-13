@@ -22,7 +22,6 @@ import { createTerrariaGameModule, effectiveTerrariaName } from './index';
 import { createTerrariaStatsReporter, flattenTerrariaStats } from './sessionStats';
 import { FAIL_CLASSES, REFLEX_KINDS, ALERT_KINDS } from '../../../bot/adapter/terraria/stats.js';
 import { botUsernameFor } from '../../../bot/adapter/terraria/runtime.js';
-// @ts-expect-error plain ESM test helper without types
 import { createFakeTerrariaMod } from '../../../../scripts/fake-terraria-mod.mjs';
 import type { SetupStepInput } from '../../../shared/setupTelemetry';
 import type { TerrariaHello } from '../../../shared/terrariaIpc';

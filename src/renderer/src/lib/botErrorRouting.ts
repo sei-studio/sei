@@ -84,7 +84,6 @@ export const BOT_ERROR_ROUTES: Record<GameId, Partial<Record<ErrorClass, Route>>
     DST_DIED_TOO_OFTEN: genericRoute,
     DST_DANGEROUS_SPOT: genericRoute,
   },
-  factorio: GENERIC_ROUTES,
   terraria: GENERIC_ROUTES,
 };
 

@@ -94,7 +94,6 @@ export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './g
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
 import type { DstInstallState, DstSurvivorPick } from './dstIpc';
 import { DstChannel } from './dstIpc';
-import { FactorioChannel, type FactorioActionResult, type FactorioSetupState } from './factorioIpc';
 import { TerrariaChannel, type TerrariaActionResult, type TerrariaSetupState } from './terrariaIpc';
 export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
@@ -2042,14 +2041,6 @@ export interface RendererApi {
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
   /** Push: install progress while dstInstall runs. */
   onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
-
-  // Factorio (261113) — see src/shared/factorioIpc.ts.
-  /** Detect the game, the mod and the Sei link port (no writes). */
-  factorioSetupState(): Promise<FactorioSetupState>;
-  /** Copy the mod from the game pack into Factorio's mods folder and enable it (refused while Factorio runs). */
-  factorioInstall(): Promise<FactorioActionResult>;
-  /** Install or update the mod as needed, then start Factorio with the Sei link. */
-  factorioLaunch(): Promise<FactorioActionResult>;
 
   // Terraria (261113): see src/shared/terrariaIpc.ts.
   /** Detect tModLoader, the mod and its link (no writes). */
@@ -4052,8 +4043,6 @@ export const IpcChannel = {
   },
   /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
   dst: DstChannel,
-  /** Factorio setup / install / launch (261113; src/shared/factorioIpc.ts). */
-  factorio: FactorioChannel,
   /** Terraria setup / install / launch (261113; src/shared/terrariaIpc.ts). */
   terraria: TerrariaChannel,
   voice: {

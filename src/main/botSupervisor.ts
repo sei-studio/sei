@@ -405,12 +405,6 @@ export interface BotSupervisorOptions {
    */
   onDstLives?: (characterId: string, raw: unknown) => void;
   /**
-   * 261113: the Factorio bot's session counters ({type:'factorio-stats'}
-   * about every 30 s and at the end). Forwarded RAW; main validates
-   * (factorioSessionStats.ts). Optional.
-   */
-  onFactorioStats?: (characterId: string, raw: unknown) => void;
-  /**
    * 261113: the Terraria bot's session counters ({type:'terraria-stats'}
    * about every 30 s and at the end). Forwarded RAW; main validates
    * (games/terraria/sessionStats.ts). Optional.
@@ -1680,11 +1674,6 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
       if ((data as { type?: string }).type === 'dst-lives') {
         try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
-        return;
-      }
-      // 261113: Factorio verb / reflex counters, for bot_session_ended. Not a status.
-      if ((data as { type?: string }).type === 'factorio-stats') {
-        try { opts.onFactorioStats?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // 261113: Terraria verb / reflex / alert counters, for bot_session_ended. Not a status.

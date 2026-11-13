@@ -91,8 +91,6 @@ import { GameErrorModal } from './components/GameErrorModal';
 import './components/dontstarve/register';
 // Stardew Valley (game adapters M1): registers its panels, summon flow, error routes, settings group and setup modal.
 import './components/stardew/registerStardew';
-// Factorio (261113): registers its launch panel, setup-modal body and summon flow.
-import './components/factorio/register';
 // Terraria (261113): registers its launch panel, setup-modal body and summon flow.
 import './components/terraria/register';
 import { BotCrashModal } from './components/BotCrashModal';

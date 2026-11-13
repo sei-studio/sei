@@ -44,7 +44,7 @@ describe('game catalog', () => {
     // call. If this grows, it is because someone started describing games.
     const text = renderGamesDirective();
     expect(text.split('\n')).toHaveLength(5);
-    // 420 since 261113: the coming-soon line names Factorio (a title, 10 chars).
+    // 420 (261113): room for Terraria in the coming-soon line.
     expect(text.length).toBeLessThan(420);
   });
 });

@@ -71,7 +71,6 @@ jobs:
         run: |
           node scripts/build-game-pack.mjs dontstarve --platform any --arch any --out "$RUNNER_TEMP/packs"
           node scripts/build-game-pack.mjs stardew --platform any --arch any --skip-build --out "$RUNNER_TEMP/packs"
-          node scripts/build-game-pack.mjs factorio --platform any --arch any --out "$RUNNER_TEMP/packs"
           node scripts/build-game-pack.mjs terraria --platform any --arch any --skip-build --out "$RUNNER_TEMP/packs"
           ls -la "$RUNNER_TEMP/packs"
 
