@@ -27,6 +27,7 @@ const CASES = [
   ['paused: the player paused the game', 'aborted'],
   ['failed: error: attempt to index nil', 'error'],
   ['failed: cannot place stone-furnace at 3,4: something is in the way or the ground is wrong', 'refused'],
+  ['failed: the stone-furnace still holds 1 stone in its input, so it will not take iron-ore until that is taken out', 'refused'],
 ]
 
 describe('classifyFactorioResult', () => {

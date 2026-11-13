@@ -240,6 +240,14 @@ check('tend', async () => {
   return r.msg
 })
 
+check('deposit_held_input', async () => {
+  // tend just loaded iron-ore: stone cannot go in on top of it, and the reason says so.
+  await give('stone', 5)
+  const r = await verb('deposit', { item: 'stone', count: 5, target: furnace })
+  if (r.success || !/still holds \d+ iron-ore in its input/.test(r.msg)) throw new Error(r.msg)
+  return r.msg
+})
+
 let chest = null
 check('deposit_take', async () => {
   const p = await herPos()

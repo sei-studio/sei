@@ -388,7 +388,22 @@ H.deposit = {
     if r == nil then return nil end
     if r ~= true then return r end
     local moved = move_items(c.char, e, job.args.item, job.count)
-    if moved == 0 then return fail("the " .. e.name .. " does not take " .. job.args.item .. " (or it is full)") end
+    if moved == 0 then
+      -- A furnace or machine keeps its last input: name it, so she can take it out first.
+      if e.type == "furnace" or e.type == "assembling-machine" then
+        local okI, inv = pcall(e.get_inventory, defines.inventory.crafter_input)
+        if okI and inv and not inv.is_empty() then
+          local held = {}
+          for _, it in ipairs(inv.get_contents()) do
+            if it.name ~= job.args.item then held[#held + 1] = it.count .. " " .. it.name end
+          end
+          if #held > 0 then
+            return fail("the " .. e.name .. " still holds " .. table.concat(held, ", ") .. " in its input, so it will not take " .. job.args.item .. " until that is taken out")
+          end
+        end
+      end
+      return fail("the " .. e.name .. " does not take " .. job.args.item .. " (or it is full)")
+    end
     return ok("put " .. moved .. " " .. job.args.item .. " into the " .. e.name)
   end,
 }
