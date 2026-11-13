@@ -33,7 +33,7 @@ import { EventEmitter } from 'node:events'
 import { createDontStarveAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
 import { createObservationState, createHandleRegistry, CMD_HOLD_MS, CMD_RESULT_TIMEOUT_MS, HEARTBEAT_LOSS_MS } from './protocol.js'
-import { modHasCaps } from './modVersion.js'
+import { modHasCaps, modHasChores } from './modVersion.js'
 import { isDarknessHit } from './darkness.js'
 import { createRespawnPolicy, describeDeathCause, sanitizeDeathCause, MAX_RESPAWNS, QUICK_DEATH_MS } from './respawn.js'
 
@@ -159,6 +159,9 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
   // send none and read as legacy). Registered before any other listener so
   // everything reacting to `spawned` already sees it.
   let modVersion = null
+  // The last command result and the helper's ok flag for it (action-outcome
+  // telemetry; send() resolves with the text alone).
+  let lastResult = null
   let bodyGuid = null
   events.on('spawned', (ev) => {
     modVersion = typeof ev?.mod === 'string' && ev.mod ? ev.mod : null
@@ -178,6 +181,9 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
     get modVersion() { return modVersion },
     /** Does the connected helper run the 0.3.0 capability set (give, reflexes, richer perception)? */
     get hasCaps() { return modHasCaps(modVersion) },
+    /** Does the connected helper run the 0.4.0 chores and habits (cookpot, stash, wormholes...)? */
+    get hasChores() { return modHasChores(modVersion) },
+    get lastResult() { return lastResult },
     /** The body's entity guid in the world (from `spawned`), or null. */
     get guid() { return bodyGuid },
     session: dst?.session ?? '',
@@ -301,7 +307,9 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
         const kind = typeof ev?.kind === 'string' ? ev.kind : ''
         if (kind === 'result') {
           const p = pending.get(ev.id)
-          if (p) p.resolve(ev.text ?? (ev.ok ? 'ok' : 'failed'))
+          const text = ev.text ?? (ev.ok ? 'ok' : 'failed')
+          lastResult = { text, ok: ev.ok === true }
+          if (p) p.resolve(text)
         } else if (kind) {
           events.emit(kind, ev)
         }

@@ -118,4 +118,30 @@ describe('DST snapshot composer', () => {
     const c3 = createSnapshotComposer({ state: st3, handles: createHandleRegistry(), getBodyState: () => ({ fight: true, followLabel: 'Steve' }) })
     expect(c3.next({})).not.toContain('out of sight')
   })
+
+  it('helper 0.4.0: stumps and graves to dig, traps, a boss, a busy crock pot and jerky on the rack', () => {
+    const st = createObservationState()
+    const mod = createFakeMod({ botPort: 1, token: 'x' })
+    const frame = mod.frame(true)
+    frame.ents.push(
+      { g: 5001, p: 'evergreen', x: 3, z: 3, f: ['dig', 'stump'] },
+      { g: 5002, p: 'grass', x: 1, z: 1, f: ['dig'] },
+      { g: 5003, p: 'trap', x: 2, z: -2, f: ['trap', 'sprung', 'pickup'] },
+      { g: 5004, p: 'bearger', x: 14, z: 0, f: ['hostile', 'epic', 'combat'], h: 1 },
+      { g: 5005, p: 'cookpot', x: -2, z: 2, f: ['stewer', 'container', 'cooking'] },
+      { g: 5006, p: 'meatrack', x: -3, z: 2, f: ['container', 'rack', 'dried'] },
+    )
+    st.apply(frame)
+    const composer = createSnapshotComposer({ state: st, handles: createHandleRegistry(), dst: { prefab: 'wilson' }, getBodyState: () => ({ fight: true }) })
+    const text = composer.next({ lastActionResult: null })
+    expect(text).toMatch(/diggable: evergreen #\d+ \([\d.]+m, stump\)\n/)
+    expect(text).not.toMatch(/diggable:[^\n]*grass/)
+    expect(text).toMatch(/traps: trap #\d+ \([\d.]+m, caught something\)/)
+    expect(text).toMatch(/bearger #\d+ \([\d.]+m, 100% hp, BOSS/)
+    expect(text).toMatch(/cookpot #\d+ \([\d.]+m, cooking\)/)
+    expect(text).toMatch(/meatrack #\d+ \([\d.]+m, jerky ready\)/)
+    // A 0.2.x/0.3.x helper without the dig verb gets no diggable line.
+    const old = createSnapshotComposer({ state: st, handles: createHandleRegistry(), dst: { prefab: 'wilson' }, getBodyState: () => ({ fight: true }), hasDig: () => false })
+    expect(old.next({ lastActionResult: null })).not.toContain('diggable')
+  })
 })

@@ -9,6 +9,12 @@
 
 /** Mod 0.3.0: give command, night/combat/self-care reflexes, richer perception. */
 export const CAPS_MIN_MOD = '0.3.0'
+/**
+ * Mod 0.4.0 (261113): camp chores (hammer, harvest, plant, trap, net, dry,
+ * cookpot, stash), follow({help}) assist, and the body habits for wormholes,
+ * dodging slow swings and running from bosses.
+ */
+export const CHORES_MIN_MOD = '0.4.0'
 
 function parts(version) {
   const m = /^\s*v?(\d+)\.(\d+)(?:\.(\d+))?/.exec(String(version ?? ''))
@@ -32,4 +38,9 @@ export function modVersionAtLeast(version, min) {
 /** Does this mod run the 0.3.0 capability set (see CAPS_MIN_MOD)? */
 export function modHasCaps(version) {
   return modVersionAtLeast(version, CAPS_MIN_MOD)
+}
+
+/** Does this mod run the 0.4.0 chores and habits (see CHORES_MIN_MOD)? */
+export function modHasChores(version) {
+  return modVersionAtLeast(version, CHORES_MIN_MOD)
 }

@@ -23,6 +23,12 @@ const BUCKETS = [
   { key: 'chop', label: 'choppable', test: (e) => e.flags.includes('chop') },
   { key: 'mine', label: 'mineable', test: (e) => e.flags.includes('mine') },
   { key: 'pick', label: 'pickable', test: (e) => e.flags.includes('pick') || e.flags.includes('harvest') },
+  // Stumps and graves (helper 0.4.0 flags them). Grass, saplings and bushes
+  // can be dug too, but listing every one of them flooded this line with 160+
+  // plants on the test server; the dig verb still takes them by name.
+  { key: 'dig', label: 'diggable', test: (e) => e.flags.includes('dig') && (e.flags.includes('stump') || e.flags.includes('grave')) },
+  // Helper 0.4.0: set traps (a trap on the ground is also an item).
+  { key: 'traps', label: 'traps', test: (e) => e.flags.includes('trap') },
   { key: 'pickup', label: 'on the ground', test: (e) => e.flags.includes('pickup') },
   { key: 'food', label: 'food (eatable)', test: (e) => e.flags.includes('eat') && !e.flags.includes('pickup') },
   { key: 'containers', label: 'chests', test: (e) => e.flags.includes('container') || e.flags.includes('chest') },
@@ -73,6 +79,8 @@ export function createSnapshotComposer({
   getBodyState = () => ({ fight: true, followLabel: null }),
   getSelfGuid = () => null,
   getHabits = () => [],
+  // The diggable bucket only for a helper with the dig verb (0.3.0+).
+  hasDig = () => true,
 }) {
   let prevHp = null
   let prevInv = null
@@ -83,6 +91,12 @@ export function createSnapshotComposer({
     if (e.qty && e.qty > 1) parts.push(`x${e.qty}`)
     if (withHp && e.hp != null) parts.push(`${Math.round(e.hp * 100)}% hp`)
     if (e.flags.includes('burning')) parts.push('burning')
+    // Helper 0.4.0 states.
+    if (e.flags.includes('epic')) parts.push('BOSS')
+    if (e.flags.includes('stump')) parts.push('stump')
+    if (e.flags.includes('sprung')) parts.push('caught something')
+    if (e.flags.includes('cooking')) parts.push('cooking')
+    if (e.flags.includes('dried')) parts.push('jerky ready')
     // mod 0.3.0: who a creature is after, and what a player is up to.
     if (e.target != null && !e.flags.includes('player')) {
       const selfGuid = getSelfGuid()
@@ -158,6 +172,7 @@ export function createSnapshotComposer({
       lines.push(`nearby (within ${PERCEPTION_RADIUS}m, ${all.length} things${state.truncated ? ', list was cut' : ''}):`)
       const pin = String(opts.pinUsername ?? '').toLowerCase()
       for (const b of BUCKETS) {
+        if (b.key === 'dig' && !hasDig()) continue
         const members = all.filter((e) => !used.has(e.guid) && b.test(e))
         if (!members.length) continue
         let chosen = members.slice(0, BUCKET_CAP)

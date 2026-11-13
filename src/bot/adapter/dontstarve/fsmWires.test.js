@@ -40,6 +40,17 @@ describe('DST fsm wires: survival routing', () => {
     expect(calls[2]).toMatchObject({ attackerLabel: 'spider', player: 'Steve' })
   })
 
+  it('helper 0.4.0: wormhole, kite and assist stay quiet; running from a boss wakes the brain', () => {
+    const { link, handlers } = setup({ hasCaps: true })
+    link.emit('survival', { what: 'wormhole', player: 'Steve' })
+    link.emit('survival', { what: 'kite', threat: 'hound' })
+    link.emit('survival', { what: 'assist', work: 'chop', player: 'Steve' })
+    expect(handlers.onAttacked).not.toHaveBeenCalled()
+    link.emit('survival', { what: 'boss', threat: 'bearger', guid: 9 })
+    expect(handlers.onAttacked).toHaveBeenCalledTimes(1)
+    expect(handlers.onAttacked.mock.calls[0][0]).toMatchObject({ attackerKind: 'reflex', survivalKind: 'boss', attackerLabel: 'bearger' })
+  })
+
   it('dispose unhooks everything', () => {
     const { link, handlers, dispose } = setup({ hasCaps: true })
     dispose()

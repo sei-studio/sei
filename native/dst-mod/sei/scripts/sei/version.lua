@@ -3,4 +3,4 @@
 -- tools that depend on new mod behaviour on it (src/bot/adapter/dontstarve/
 -- modVersion.js). Keep in step with modinfo.lua `version` (a unit test in
 -- the app checks the two match).
-return "0.3.2"
+return "0.4.0"

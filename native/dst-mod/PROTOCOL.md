@@ -125,6 +125,10 @@ body (`x`, `z` = dx, dz, one decimal); the bot stores them absolute.
   `sa` (hunger and sanity fractions). A delta re-sends the whole entity, so
   an absent field means cleared. `world.seasondays` = days left in the
   season.
+- Mod 0.4.0 adds entity flags `net` (NET_workable), `trap`, `sprung` (a trap
+  with a catch), `epic` (a boss), `wormhole`, `stump`, `grave`, `cooking` (a
+  crock pot at work), `rack` (a drying rack) and `dried` (a rack holding
+  finished jerky).
 
 Response: `{"full": <bool>}`.
 
@@ -146,7 +150,7 @@ Command kinds (`sei/commands.lua` dispatch):
 | `stop` | `unfollow?` | immediate | `stopped` |
 | `pause` | `paused` | immediate | `paused` / `resumed` |
 | `fight` | `enabled` | immediate | `will fight back when hit` |
-| `follow` | `guid` or `userid`, `dist?` | immediate | `following Steve` |
+| `follow` | `guid` or `userid`, `dist?`, `help?` (0.4.0) | immediate | `following Steve` / `following Steve and helping when they chop or mine` |
 | `unfollow` | | immediate | `stopped following` |
 | `equip` | `guid` (inventory item) | immediate | `equipped axe` |
 | `drop` | `guid` | immediate | `dropped log` |
@@ -159,11 +163,18 @@ Command kinds (`sei/commands.lua` dispatch):
 | `container` | `op` (store/take), `container`, `item`, `count` | slotted | `stored 2 log` |
 | `lightfire` | `recipe?` | slotted (ADDFUEL, else build campfire) | `fed the campfire with log` |
 | `give` (0.3.0) | `item` (prefab), `count?`, `guid` or `userid` (player) | slotted (walks over, then gives) | `gave 2 berries to Steve` / `no berries in inventory` |
+| `harvest` (0.4.0) | `target` (crock pot, crop, bee box, drying rack) | slotted | `harvested the cookpot; got 1 meatballs` / `took 1 smallmeat_dried off the rack` |
+| `plant` (0.4.0) | `item` (prefab), `count`, `pos?` | slotted (DEPLOY on the first free spot) | `planted 3 dug_grass` |
+| `trap` (0.4.0) | `op` (set/collect), `target?`, `pos?` | slotted | `set a trap at (x, z)` / `collected the trap; got 1 rabbit` |
+| `dry` (0.4.0) | `rack`, `items?` (prefabs) | slotted | `took ... off the rack; hung 2 meat to dry` |
+| `cookpot` (0.4.0) | `pot`, `items` (4 prefabs, or none to cook what is in it), `preview?` | slotted, 150 s | `those 4 would make meatballs` / `cooked meatballs and took it: got 1 meatballs` |
+| `stash` (0.4.0) | `item?`, `pickup?` | slotted | `picked up 13 things; stored 7 rocks; kept flint (no chest nearby holds that yet)` |
 | `resync` | | immediate | `ok` |
 | `despawn` | | immediate; body removed | `despawning`, then `despawned` event |
 
-Work actions (CHOP/MINE/DIG/HAMMER) are re-issued until the target's
-`*_workable` tag drops. A slotted command replaces the previous one (its
+Work actions (CHOP/MINE/DIG/HAMMER, and NET from 0.4.0) are re-issued until the target's
+`*_workable` tag drops. From 0.4.0, DIG/HAMMER/NET results add what landed
+in the inventory (`; got 1 butterfly`) or say the drops are on the ground. A slotted command replaces the previous one (its
 result is `replaced by <kind>`). Every slotted command has a deadline
 (`CMD_TIMEOUT_S` 90 s; goto 30 s; attack 25 s; gather scaled by count).
 
@@ -183,7 +194,7 @@ result is `replaced by <kind>`). Every slotted command has a deadline
 | `enterdark` / `enterlight` | `phase?` |
 | `actionfailed` | `action`, `reason` |
 | `phase` | `phase`, `day` (world phase change) |
-| `survival` | `what` (`retreat` / `dark` / `ate`), `threat?`, `healthpct?`, `phase?`, `item?`, `hunger?` (the safety layer acted). Mod 0.3.0 habits add: `light` + `did` (`prepared` / `crafted` / `equipped` / `built` / `stowed`) + `item`; `fuel` + `item`, `fire`; `equip` + `items[]`, `target?`; `heal` + `item`, `healthpct`; `defend` + `threat`, `guid`, `player`, `userid` |
+| `survival` | `what` (`retreat` / `dark` / `ate`), `threat?`, `healthpct?`, `phase?`, `item?`, `hunger?` (the safety layer acted). Mod 0.3.0 habits add: `light` + `did` (`prepared` / `crafted` / `equipped` / `built` / `stowed`) + `item`; `fuel` + `item`, `fire`; `equip` + `items[]`, `target?`; `heal` + `item`, `healthpct`; `defend` + `threat`, `guid`, `player`, `userid`. Mod 0.4.0 (`sei/tactics.lua`) adds: `wormhole` + `player` (followed them through); `kite` + `threat` (stepped back from a slow swing; once per target); `assist` + `work`, `player` (helped with their chopping or mining); `boss` + `threat`, `guid` (running from a boss; the app wakes the brain) |
 
 Response: `{}`.
 

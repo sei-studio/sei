@@ -5,7 +5,8 @@
 -- PriorityNode whose command slot runs BufferedActions the external brain
 -- asked for. The layers, top to bottom (first that wants to run wins):
 --
---   1. safety   fire panic (unless fire-immune), run from hostiles below the
+--   1. safety   fire panic (unless fire-immune), run from a boss that is close
+--               or after her (0.4.0, sei/tactics.lua), run from hostiles below the
 --               survivor's flee threshold; in the dark hold a carried light,
 --               craft a torch, walk to a visible light or build a campfire
 --               (sei/reflexes.lua); walk to a fire when freezing; heal when
@@ -14,13 +15,16 @@
 --   2. flee     an explicit flee command (RunAway for a few seconds)
 --   3. attack   an explicit attack command, fighting back when hit, or
 --               defending a player a monster is attacking (ChaseAndAttack,
---               best weapon and armor put on first)
+--               best weapon and armor put on first); 0.4.0: step out of a
+--               slow creature's swing first (dodge), then back in
 --   4. fire     at dusk/night, feed a nearby fire running low
 --   5. goto     walk to a point/entity (custom node; arrival supervised by
 --               Commands.Tick)
 --   6. command  DoAction over Commands.NextAction (chop/mine/pick/eat/build/
 --               gather/container/light fire/give), re-issued until done
---   7. follow   trail the leader (Follow) when nothing else is running
+--   7. follow   trail the leader (Follow) when nothing else is running;
+--               0.4.0: jump into the wormhole after them, and with
+--               follow({help}) work the next tree or boulder beside them
 --   8. stand    still. The brain decides; the body does not wander.
 --
 -- Reflexes here never wait on the LLM (plan decision 4). What they did is
@@ -39,6 +43,7 @@ local Events = require("sei/events")
 local Reflexes = require("sei/reflexes")
 local Survivors = require("sei/survivors")
 local Util = require("sei/util")
+local Tactics = require("sei/tactics")
 
 local RUN_AWAY_DIST = 10
 local STOP_RUN_AWAY_DIST = 16
@@ -136,6 +141,24 @@ function SeiSeekLight:Visit()
     end
     self.inst.components.locomotor:GoToPoint(self.inst:GetPositionAdjacentTo(self.targ, 1), nil, true)
     self:Sleep(0.5)
+end
+
+-- ── custom node: step out of a creature's swing (0.4.0 dodge) ───────────────
+
+local SeiDodge = Class(BehaviourNode, function(self, inst)
+    BehaviourNode._ctor(self, "SeiDodge")
+    self.inst = inst
+end)
+
+function SeiDodge:Visit()
+    if not Tactics.Dodging(self.inst) then
+        self.status = SUCCESS
+        return
+    end
+    local pt = Tactics.DodgePoint(self.inst)
+    if pt ~= nil then self.inst.components.locomotor:GoToPoint(pt, nil, true) end
+    self.status = RUNNING
+    self:Sleep(0.1)
 end
 
 -- ── predicates ──────────────────────────────────────────────────────────────
@@ -344,13 +367,17 @@ function SeiBrain:OnStart()
                 elseif t == nil then
                     self.gearTarget = nil
                 end
+                Tactics.WatchTarget(inst, t)
             end
+            if inst.sei ~= nil then Tactics.Watch(inst) end
         end, require("sei/net").ReportError)
     end)
 
     local root = PriorityNode({
         -- 1. safety
         WhileNode(function() return onFire(inst) end, "OnFire", Panic(inst)),
+        WhileNode(function() return Tactics.BossThreat(inst) ~= nil end, "BossRunAway",
+            RunAway(inst, function(guy) return Tactics.IsBoss(guy) end, 20, 26)),
         WhileNode(function() return shouldRunAway(inst) end, "LowHealthRunAway",
             RunAway(inst, function(guy) return guy:HasTag("_combat") and guy:HasTag("hostile") and not guy:HasTag("player") end, RUN_AWAY_DIST, STOP_RUN_AWAY_DIST)),
         IfNode(function() return lightDue(inst) end, "MakeLight", DoAction(inst, function() return lightStep(inst) end, "Light", true)),
@@ -361,7 +388,8 @@ function SeiBrain:OnStart()
         -- 2. flee (explicit)
         WhileNode(function() return fleeing(inst) end, "Flee",
             RunAway(inst, function(guy) return guy:HasTag("_combat") and not guy:HasTag("player") and not guy:HasTag("companion") end, 14, 20)),
-        -- 3. attack / fight back
+        -- 3. attack / fight back (dodging a slow creature's swing first)
+        WhileNode(function() return attacking(inst) and Tactics.Dodging(inst) end, "Dodge", SeiDodge(inst)),
         WhileNode(function() return attacking(inst) end, "Attack", ChaseAndAttack(inst, 20, 30)),
         -- 4. tend a fire running low (dusk/night)
         DoAction(inst, function() return fuelStep(inst) end, "Fuel", true),
@@ -370,7 +398,11 @@ function SeiBrain:OnStart()
         -- 6. the command slot
         WhileNode(function() return actionSlot(inst) end, "Command",
             DoAction(inst, function() return Commands.NextAction(inst) end, "SeiCommand", true)),
-        -- 7. follow
+        -- 7. follow: through a wormhole after them, helping with their work
+        WhileNode(function() return Tactics.HoleWanted(inst) end, "Wormhole",
+            DoAction(inst, function() return Tactics.HoleAction(inst) end, "Wormhole", true)),
+        WhileNode(function() return Tactics.AssistWanted(inst) end, "Assist",
+            DoAction(inst, function() return Tactics.AssistAction(inst) end, "Assist", true)),
         WhileNode(function() return followTarget(inst) ~= nil end, "Follow",
             Follow(inst, function() return followTarget(inst) end, 2, inst.sei.followDist or 4, 14, true)),
         -- 8. stand still
@@ -389,7 +421,9 @@ function SeiBrain:Defend(now)
     if sei.cmd ~= nil and (sei.cmd.kind == "attack" or sei.cmd.kind == "goto") then return end
     if healthPct(inst) <= Survivors.FleeHealthPct(sei.prefab) + DEFEND_MARGIN then return end
     local threat = Reflexes.ThreatToPlayer(inst)
-    if threat == nil then return end
+    -- A boss is not a fight to join on her own (0.4.0): the safety layer
+    -- runs from it unless the model sends her in with attack.
+    if threat == nil or Tactics.IsBoss(threat) then return end
     inst.components.combat:SetTarget(threat)
     if threat ~= self.lastDefendThreat or now - self.lastDefendReport > DEFEND_REPORT_S then
         self.lastDefendThreat = threat

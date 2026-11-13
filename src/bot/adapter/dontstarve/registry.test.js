@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
-import { createDefaultRegistry, itemPrefab, recipeId, gatherSource } from './registry.js'
+import { createDefaultRegistry, itemPrefab, recipeId, gatherSource, COOKPOT_TIMEOUT_MS } from './registry.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
 import { createFakeMod } from '../../../../scripts/fake-dst-mod.mjs'
 
@@ -61,7 +61,7 @@ describe('DST registry', () => {
     ])
   })
 
-  it('adds dig for a 0.3.0 helper: one DIG action on a handle or the nearest diggable', async () => {
+  it('adds dig for a 0.3.0 helper: one DIG action on a handle or the nearest stump', async () => {
     const { link, sent, state } = fakeLink()
     expect(createDefaultRegistry({ link }).list()).not.toContain('dig')
     link.hasCaps = true
@@ -69,9 +69,99 @@ describe('DST registry', () => {
     expect(reg.list()).toContain('dig')
     expect(await reg.execute('dig', {}, null, {})).toMatch(/^no stump matching/)
     const frame = createFakeMod({ botPort: 1, token: 'x' }).frame(true)
-    state.apply({ ...frame, full: false, ents: [{ g: 7101, p: 'evergreen', x: 3, z: 1, f: ['dig'] }] })
+    // A grass tuft can be dug too, but a dig with no target means a stump.
+    state.apply({ ...frame, full: false, ents: [
+      { g: 7100, p: 'grass', x: 1, z: 1, f: ['dig', 'pick'] },
+      { g: 7101, p: 'evergreen', x: 3, z: 1, f: ['dig', 'stump'] },
+    ] })
     expect(await reg.execute('dig', {}, null, {})).toBe('ok:action')
     expect(sent.at(-1)).toEqual({ kind: 'action', name: 'DIG', target: 7101 })
+    expect(await reg.execute('dig', { target: 'grass' }, null, {})).toBe('ok:action')
+    expect(sent.at(-1)).toEqual({ kind: 'action', name: 'DIG', target: 7100 })
+  })
+
+  describe('camp chores (helper 0.4.0)', () => {
+    function choresLink(extra = []) {
+      const f = fakeLink()
+      f.link.hasCaps = true
+      f.link.hasChores = true
+      const frame = createFakeMod({ botPort: 1, token: 'x' }).frame(true)
+      f.state.apply({ ...frame, full: false, ents: [
+        { g: 7201, p: 'cookpot', x: 2, z: 2, f: ['stewer', 'container', 'structure', 'hammer'] },
+        { g: 7202, p: 'meatrack', x: 3, z: -2, f: ['container', 'rack', 'structure', 'hammer'] },
+        { g: 7203, p: 'butterfly', x: 4, z: 0, f: ['net', 'combat'], h: 1 },
+        ...extra,
+      ] })
+      return { ...f, reg: createDefaultRegistry({ link: f.link }) }
+    }
+
+    it('registers the chore verbs only for a helper that runs them', () => {
+      const { link } = fakeLink()
+      link.hasCaps = true
+      const caps = createDefaultRegistry({ link }).list()
+      for (const v of ['hammer', 'net', 'harvest', 'plant', 'trap', 'dry', 'cookpot', 'stash']) expect(caps).not.toContain(v)
+      link.hasChores = true
+      const chores = createDefaultRegistry({ link }).list()
+      for (const v of ['hammer', 'net', 'harvest', 'plant', 'trap', 'dry', 'cookpot', 'stash']) expect(chores).toContain(v)
+    })
+
+    it('hammer needs a named structure; net takes the nearest butterfly', async () => {
+      const { reg, sent } = choresLink()
+      await expect(reg.execute('hammer', {}, null, {})).rejects.toThrow()
+      expect(await reg.execute('hammer', { target: 'meatrack' }, null, {})).toBe('ok:action')
+      expect(sent.at(-1)).toEqual({ kind: 'action', name: 'HAMMER', target: 7202 })
+      expect(await reg.execute('net', {}, null, {})).toBe('ok:action')
+      expect(sent.at(-1)).toEqual({ kind: 'action', name: 'NET', target: 7203 })
+    })
+
+    it('harvest picks what is ready, including a rack with jerky on it', async () => {
+      const { reg, sent } = choresLink()
+      expect(await reg.execute('harvest', {}, null, {})).toBe('nothing ready to harvest nearby')
+      const ready = choresLink([{ g: 7204, p: 'meatrack', x: 1, z: 0, f: ['container', 'rack', 'dried'] }])
+      expect(await ready.reg.execute('harvest', {}, null, {})).toBe('ok:harvest')
+      expect(ready.sent.at(-1)).toEqual({ kind: 'harvest', target: 7204 })
+      expect(sent).toHaveLength(0)
+    })
+
+    it('plant, trap and dry send one command each', async () => {
+      const { reg, sent, link } = choresLink()
+      link.state.self.inv.push({ guid: 3010, prefab: 'pinecone', qty: 3, flags: [] })
+      expect(await reg.execute('plant', { item: 'pine cone', count: 2 }, null, {})).toBe('ok:plant')
+      expect(sent.at(-1)).toEqual({ kind: 'plant', item: 'pinecone', count: 2, pos: undefined })
+      expect(await reg.execute('plant', { item: 'acorn' }, null, {})).toBe('no "acorn" in your inventory')
+      expect(await reg.execute('trap', { x: 5, z: 6 }, null, {})).toBe('ok:trap')
+      expect(sent.at(-1)).toEqual({ kind: 'trap', op: 'set', pos: { x: 5, z: 6 } })
+      expect(await reg.execute('trap', { collect: true }, null, {})).toBe('ok:trap')
+      expect(sent.at(-1)).toEqual({ kind: 'trap', op: 'collect' })
+      expect(await reg.execute('dry', { item: 'meat' }, null, {})).toBe('ok:dry')
+      expect(sent.at(-1)).toEqual({ kind: 'dry', rack: 7202, items: ['meat'] })
+    })
+
+    it('cookpot takes exactly 4 ingredients and waits long enough for the stew', async () => {
+      const { reg, sent, link } = choresLink()
+      await expect(reg.execute('cookpot', { ingredients: ['meat', 'berries'] }, null, {})).rejects.toThrow()
+      expect(await reg.execute('cookpot', { ingredients: ['morsel', 'berries', 'berries', 'berries'], preview: true }, null, { timeoutMs: 30_000 })).toBe('ok:cookpot')
+      expect(sent.at(-1)).toEqual({ kind: 'cookpot', pot: 7201, items: ['smallmeat', 'berries', 'berries', 'berries'], preview: true })
+      expect(link.send.mock.calls.at(-1)[1].timeoutMs).toBe(COOKPOT_TIMEOUT_MS)
+      expect(await reg.execute('cookpot', {}, null, {})).toBe('ok:cookpot')
+      expect(sent.at(-1)).toEqual({ kind: 'cookpot', pot: 7201, items: [] })
+    })
+
+    it('stash picks up loot by default and can stay on one item', async () => {
+      const { reg, sent } = choresLink()
+      expect(await reg.execute('stash', {}, null, {})).toBe('ok:stash')
+      expect(sent.at(-1)).toEqual({ kind: 'stash', pickup: true })
+      expect(await reg.execute('stash', { item: 'rocks', pickup: false }, null, {})).toBe('ok:stash')
+      expect(sent.at(-1)).toEqual({ kind: 'stash', item: 'rocks', pickup: false })
+    })
+
+    it('follow can ask to help with the player\'s chopping and mining', async () => {
+      const { reg, sent } = choresLink()
+      expect(await reg.execute('follow', { help: true }, null, {})).toBe('ok:follow')
+      expect(sent.at(-1)).toMatchObject({ kind: 'follow', guid: 2001, help: true })
+      expect(await reg.execute('follow', {}, null, {})).toBe('ok:follow')
+      expect(sent.at(-1).help).toBeUndefined()
+    })
   })
 
   it('adds give for a 0.3.0 helper and hands an inventory item to the player', async () => {

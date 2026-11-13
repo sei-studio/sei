@@ -17,6 +17,10 @@ const ITEM_ALIASES = {
   meat: 'meat', monster_meat: 'monstermeat', small_meat: 'smallmeat', morsel: 'smallmeat', cooked_meat: 'cookedmeat',
   charcoal: 'charcoal', flint: 'flint', nitre: 'nitre', spider_silk: 'silk', silk: 'silk', honey: 'honey',
   petal: 'petals', flower: 'petals', science_machine: 'researchlab', torch: 'torch',
+  egg: 'bird_egg', eggs: 'bird_egg', frog_legs: 'froglegs', frog_leg: 'froglegs', butterfly_wings: 'butterflywings',
+  butterfly_wing: 'butterflywings', jerky: 'meat_dried', small_jerky: 'smallmeat_dried', drumsticks: 'drumstick',
+  pine_cones: 'pinecone', birch_nut: 'acorn', birchnut: 'acorn', crock_pot: 'cookpot', crockpot: 'cookpot',
+  drying_rack: 'meatrack', bug_net: 'bugnet',
 }
 
 /** What a gather() of a product should work on when none lies around. */
@@ -50,6 +54,9 @@ export function recipeId(name) {
 export function gatherSource(prefab) {
   return GATHER_SOURCE[prefab] ?? null
 }
+
+/** The helper gives a crock pot 150 s (walk, fill, cook, take); wait a bit longer. */
+export const COOKPOT_TIMEOUT_MS = 165_000
 
 const Target = z.string().min(1).describe('an entity handle like "#4" from the snapshot, or a name like "evergreen"')
 
@@ -160,15 +167,17 @@ export function createDefaultRegistry({ link }) {
     return link.send({ kind: 'goto', userid: far.userid, range: 3 }, execOpts(cfg))
   })
 
-  registry.register('follow', z.object({ player: z.string().optional(), distance: z.number().min(2).max(10).default(4) }), async (args, _bot, cfg) => {
+  // help (helper 0.4.0): work the next tree or boulder while they chop or mine.
+  const followSchema = z.object({ player: z.string().optional(), distance: z.number().min(2).max(10).default(4) })
+  registry.register('follow', link.hasChores ? followSchema.extend({ help: z.boolean().optional() }) : followSchema, async (args, _bot, cfg) => {
     const p = resolvePlayer(args.player)
     if (p) {
-      const r = await link.send({ kind: 'follow', guid: p.guid, dist: args.distance }, execOpts(cfg))
+      const r = await link.send({ kind: 'follow', guid: p.guid, dist: args.distance, ...(args.help ? { help: true } : {}) }, execOpts(cfg))
       link.body.followLabel = p.name ?? p.prefab
       return r
     }
     const far = playerByUserid()
-    const r = await link.send({ kind: 'follow', userid: far.userid, dist: args.distance }, execOpts(cfg))
+    const r = await link.send({ kind: 'follow', userid: far.userid, dist: args.distance, ...(args.help ? { help: true } : {}) }, execOpts(cfg))
     link.body.followLabel = far.name ?? 'the player'
     return r
   })
@@ -183,10 +192,12 @@ export function createDefaultRegistry({ link }) {
     return link.send({ kind: 'gather', prefab, count: args.count, source: gatherSource(prefab) }, execOpts(cfg))
   })
 
-  const work = (name, action, flag, what) => {
+  // pickDefault: which entity a call with no target means (dig: a stump or a
+  // grave, not the nearest grass tuft).
+  const work = (name, action, flag, what, pickDefault = (e) => e.flags.includes(flag)) => {
     registry.register(name, z.object({ target: Target.optional() }), async (args, _bot, cfg) => {
       const spec = args.target ?? what
-      const guid = resolveEntity(spec, flag) ?? (args.target == null ? state.nearby((e) => e.flags.includes(flag))[0]?.guid ?? null : null)
+      const guid = resolveEntity(spec, flag) ?? (args.target == null ? state.nearby(pickDefault)[0]?.guid ?? null : null)
       if (guid == null) return notFound(spec, what)
       return link.send({ kind: 'action', name: action, target: guid }, execOpts(cfg))
     })
@@ -197,7 +208,7 @@ export function createDefaultRegistry({ link }) {
   work('pickup', 'PICKUP', 'pickup', 'item on the ground')
   // dig (helper 0.3.0+, which equips the shovel itself). The prompt has told
   // the model its tools work when it digs since 0.3.0; this is the verb.
-  if (link.hasCaps) work('dig', 'DIG', 'dig', 'stump')
+  if (link.hasCaps) work('dig', 'DIG', 'dig', 'stump', (e) => e.flags.includes('dig') && (e.flags.includes('stump') || e.flags.includes('grave')))
 
   registry.register('craft', z.object({ recipe: z.string().min(1) }), async (args, _bot, cfg) =>
     link.send({ kind: 'build', recipe: recipeId(args.recipe) }, execOpts(cfg)))
@@ -277,11 +288,81 @@ export function createDefaultRegistry({ link }) {
     })
   }
 
+  // Camp chores (helper 0.4.0, sei/chores.lua). Registered only for a helper
+  // that runs them, like give.
+  if (link.hasChores) registerChores()
+
   registry.register('sleep', z.object({ target: Target.optional() }), async (args, _bot, cfg) => {
     const guid = args.target != null ? resolveEntity(args.target) : (state.nearby((e) => e.flags.includes('sleep'))[0]?.guid ?? null)
     if (guid == null) return 'no tent or bedroll nearby'
     return link.send({ kind: 'action', name: 'SLEEPIN', target: guid }, execOpts(cfg))
   })
+
+  function registerChores() {
+    // hammer knocks a structure down for part of its materials, so it never
+    // picks a target on its own.
+    registry.register('hammer', z.object({ target: Target }), async (args, _bot, cfg) => {
+      const guid = resolveEntity(args.target, 'hammer')
+      if (guid == null) return notFound(args.target, 'structure')
+      return link.send({ kind: 'action', name: 'HAMMER', target: guid }, execOpts(cfg))
+    })
+    work('net', 'NET', 'net', 'butterfly')
+
+    registry.register('harvest', z.object({ target: Target.optional() }), async (args, _bot, cfg) => {
+      const ready = (e) => e.flags.includes('harvest') || e.flags.includes('dried')
+      const guid = args.target != null ? resolveEntity(args.target) : (state.nearby(ready)[0]?.guid ?? null)
+      if (guid == null) return args.target != null ? notFound(args.target) : 'nothing ready to harvest nearby'
+      return link.send({ kind: 'harvest', target: guid }, execOpts(cfg))
+    })
+
+    registry.register('plant', z.object({
+      item: z.string().min(1),
+      count: z.number().int().min(1).max(10).default(1),
+      x: z.number().optional(),
+      z: z.number().optional(),
+    }), async (args, _bot, cfg) => {
+      const it = resolveInventory(args.item)
+      if (!it) return `no "${args.item}" in your inventory`
+      const pos = args.x != null && args.z != null ? { x: args.x, z: args.z } : undefined
+      return link.send({ kind: 'plant', item: it.prefab, count: args.count, pos }, execOpts(cfg))
+    })
+
+    registry.register('trap', z.object({
+      collect: z.boolean().optional(),
+      target: Target.optional(),
+      x: z.number().optional(),
+      z: z.number().optional(),
+    }), async (args, _bot, cfg) => {
+      if (args.collect || args.target != null) {
+        const guid = args.target != null ? resolveEntity(args.target, 'trap') : null
+        if (args.target != null && guid == null) return notFound(args.target, 'trap')
+        return link.send({ kind: 'trap', op: 'collect', ...(guid != null ? { target: guid } : {}) }, execOpts(cfg))
+      }
+      const pos = args.x != null && args.z != null ? { x: args.x, z: args.z } : undefined
+      return link.send({ kind: 'trap', op: 'set', pos }, execOpts(cfg))
+    })
+
+    registry.register('dry', z.object({ item: z.string().min(1).optional(), rack: Target.optional() }), async (args, _bot, cfg) => {
+      const guid = args.rack != null ? resolveEntity(args.rack, 'rack') : (state.nearby((e) => e.flags.includes('rack'))[0]?.guid ?? null)
+      if (guid == null) return args.rack != null ? notFound(args.rack, 'drying rack') : 'no drying rack nearby; build(meatrack) makes one'
+      return link.send({ kind: 'dry', rack: guid, ...(args.item ? { items: [itemPrefab(args.item)] } : {}) }, execOpts(cfg))
+    })
+
+    registry.register('cookpot', z.object({
+      ingredients: z.array(z.string().min(1)).length(4).optional(),
+      pot: Target.optional(),
+      preview: z.boolean().optional(),
+    }), async (args, _bot, cfg) => {
+      const guid = args.pot != null ? resolveEntity(args.pot, 'stewer') : (state.nearby((e) => e.flags.includes('stewer'))[0]?.guid ?? null)
+      if (guid == null) return args.pot != null ? notFound(args.pot, 'crock pot') : 'no crock pot nearby; build(cookpot) makes one'
+      const items = (args.ingredients ?? []).map((n) => itemPrefab(n))
+      return link.send({ kind: 'cookpot', pot: guid, items, ...(args.preview ? { preview: true } : {}) },
+        { signal: cfg?.signal, timeoutMs: Math.max(cfg?.timeoutMs ?? 0, COOKPOT_TIMEOUT_MS) })
+    })
+
+    registry.register('stash', z.object({ item: z.string().min(1).optional(), pickup: z.boolean().optional() }), async (args, _bot, cfg) =>
+      link.send({ kind: 'stash', ...(args.item ? { item: itemPrefab(args.item) } : {}), pickup: args.pickup !== false }, execOpts(cfg)))
+  }
 
   return registry
 }

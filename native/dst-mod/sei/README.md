@@ -41,6 +41,8 @@ modinfo.lua                 api_version 10, dst_compatible, all_clients_require_
 modmain.lua                 server-only guard, Networking_Say chat capture, the /hello heartbeat, summon
 scripts/brains/seibrain.lua the behaviour tree: safety layer, habits, flee, attack, goto, command slot, follow
 scripts/sei/reflexes.lua    survival habits (0.3.0): dusk torch, night light, fire tending, gear, defend, heal, food choice
+scripts/sei/tactics.lua     follow and fight habits (0.4.0): through wormholes after the player, step back from slow swings, run from bosses, help with the player's chopping and mining
+scripts/sei/chores.lua      camp chores (0.4.0): harvest, plant, trap, dry, cookpot, stash
 scripts/sei/version.lua     the helper's version, reported in /hello and `spawned` (keep in step with modinfo.lua)
 scripts/sei/companion.lua   spawn / despawn of the survivor body
 scripts/sei/perception.lua  3 Hz delta-compressed observations (POST /obs, <= 8 KB)
@@ -79,7 +81,13 @@ cluster token:
    with a scenario on stdin (`tool`, `tool&` to run a verb without waiting
    for it, `snap`, `obs`, `lua`, `wait`, `events`).
    Scenarios for the 0.3.0 habits are in `scripts/dst-headless-scenarios/`
-   (chop near a fire at night, a night alone, holds/defend/give).
+   (chop near a fire at night, a night alone, holds/defend/give), and for
+   0.4.0 `chores-040.txt` (every chore verb) and `habits-040.txt` (help
+   with chopping, a wormhole, a hound fight, a bearger). A console-made
+   player does not walk on its own, so the wormhole case puts it beside the
+   hole before it jumps; a spawned butterfly flies home and is removed unless
+   its brain is stopped; Deerclops removes itself outside its season, so the
+   boss case uses Bearger.
 5. Respawn after death (261104) needs a cluster with caves (`shard_enabled =
    true`, a Master and a Caves shard, the mod enabled in both) and the
    stand-in on Master: `DST_MASTER_FIFO=<fifo> npx tsx

@@ -55,6 +55,14 @@ local TAG_FLAGS = {
     { "wall", "wall" },
     { "spider", "spider" },
     { "chest", "chest" },
+    -- 0.4.0
+    { "NET_workable", "net" },
+    { "trap", "trap" },
+    { "trapsprung", "sprung" },
+    { "epic", "epic" },
+    { "wormhole", "wormhole" },
+    { "stump", "stump" },
+    { "grave", "grave" },
 }
 
 local state = {
@@ -79,6 +87,13 @@ local function flagsOf(inst, v)
         if ok and can and Survivors.DietAllows(inst.sei and inst.sei.prefab or nil, v) then f[#f + 1] = "eat" end
     end
     if v.components.stewer ~= nil and v.components.stewer:IsDone() then f[#f + 1] = "harvest" end
+    -- 0.4.0: a crock pot at work, and a drying rack with finished food on it.
+    if v.components.stewer ~= nil and v.components.stewer:IsCooking() then f[#f + 1] = "cooking" end
+    if v.components.dryingrack ~= nil and v.components.container ~= nil then
+        f[#f + 1] = "rack"
+        local done = v.components.container:FindItem(function(i) return not i:HasTag("dryable") end)
+        if done ~= nil then f[#f + 1] = "dried" end
+    end
     return f
 end
 

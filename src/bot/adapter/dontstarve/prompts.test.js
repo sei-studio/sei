@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   eventAddendum, worldPrimer, DST_BASELINE, DST_BASELINE_CAPS, dstBaseline, ACTION_DESCRIPTIONS, ACTION_DESCRIPTIONS_CAPS, describeAction, ALERT_HINTS,
   CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CAPS, capabilityParagraph, ACTION_RULES, ACTION_RULES_CAPS, actionRules,
+  DST_BASELINE_CHORES, CAPABILITY_PARAGRAPH_CHORES, ACTION_RULES_CHORES, ACTION_DESCRIPTIONS_CHORES, SURVIVAL_BOSS,
 } from './prompts.js'
 import { createDefaultRegistry } from './registry.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
@@ -17,6 +18,24 @@ describe('DST prompts', () => {
     const reg = createDefaultRegistry({ link })
     for (const name of reg.list()) expect(describeAction(name, true), name).toBeTruthy()
     for (const name of Object.keys(ACTION_DESCRIPTIONS)) expect(reg.list(), name).toContain(name)
+  })
+
+  it('helper 0.4.0: describes every chore verb, the new habits and the boss run', () => {
+    const link = { events: new EventEmitter(), state: createObservationState(), handles: createHandleRegistry(), body: {}, playerName: () => null, send: async () => '', hasCaps: true, hasChores: true }
+    const reg = createDefaultRegistry({ link })
+    for (const name of reg.list()) expect(describeAction(name, true, true), name).toBeTruthy()
+    for (const name of Object.keys(ACTION_DESCRIPTIONS_CHORES)) expect(reg.list(), name).toContain(name)
+    expect(dstBaseline(true, true)).toBe(DST_BASELINE_CHORES)
+    expect(dstBaseline(true, false)).toBe(DST_BASELINE_CAPS)
+    expect(capabilityParagraph(true, true)).toBe(CAPABILITY_PARAGRAPH_CHORES)
+    expect(actionRules(true, true)).toBe(ACTION_RULES_CHORES)
+    expect(CAPABILITY_PARAGRAPH_CHORES).toMatch(/wormhole/)
+    expect(CAPABILITY_PARAGRAPH_CHORES).toMatch(/boss/)
+    expect(describeAction('follow', true, true)).toMatch(/help/)
+    expect(eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'boss', attackerLabel: 'bearger' }, { hasCaps: true, hasChores: true }))
+      .toBe(SURVIVAL_BOSS.replace('{label}', 'bearger'))
+    const all = [DST_BASELINE_CHORES, CAPABILITY_PARAGRAPH_CHORES, ACTION_RULES_CHORES, SURVIVAL_BOSS, ...Object.values(ACTION_DESCRIPTIONS_CHORES)].join('\n')
+    expect(all).not.toContain('\u2014')
   })
 
   it('names give in the tool list only for a 0.3.0 helper', () => {

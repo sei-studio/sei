@@ -34,6 +34,11 @@ export function habitPhrase(ev) {
     case 'ate': return `ate ${item ?? 'something'}`
     case 'defend': return `went after the ${ev?.threat ?? 'creature'} attacking ${ev?.player || 'the player'}`
     case 'retreat': return `backed away from ${ev?.threat ?? 'danger'} (health low)`
+    // Helper 0.4.0 (sei/tactics.lua).
+    case 'wormhole': return `jumped into the wormhole after ${ev?.player || 'the player'}`
+    case 'kite': return `stepped back from the ${ev?.threat ?? 'creature'}'s swings`
+    case 'assist': return `helped ${ev?.player || 'the player'} ${ev?.work === 'mine' ? 'mine' : 'chop'}`
+    case 'boss': return `ran from the ${ev?.threat ?? 'boss'}`
     default: return null
   }
 }

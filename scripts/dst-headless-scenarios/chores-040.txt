@@ -1,0 +1,61 @@
+# Headless DST scenario for the helper 0.4.0 camp chores (dig, hammer, net,
+# plant, trap, dry, harvest, cookpot, stash). Needs the stand-in STEVE
+# (userid KU_test) spawned first; run with --near KU_test. [test] lines print
+# to the server log.
+lua TheWorld:PushEvent("ms_setclocksegs",{day=16,dusk=0,night=0}); TheWorld:PushEvent("ms_setphase","day"); local c=require("sei/companion").inst; c.components.health:SetInvincible(true); c.components.hunger:SetPercent(1); rawset(_G,"C",c); rawset(_G,"AT",function(p,dx,dz) local x,y,z=C.Transform:GetWorldPosition(); local e=SpawnPrefab(p); e.Transform:SetPosition(x+dx,0,z+dz); return e end); rawset(_G,"GIVE",function(p,n) for i=1,(n or 1) do C.components.inventory:GiveItem(SpawnPrefab(p)) end end); rawset(_G,"INV",function(tag) local t={}; C.components.inventory:ForEachItem(function(v) t[#t+1]=v.prefab.."x"..(v.components.stackable and v.components.stackable:StackSize() or 1) end); print("[test] inv", tag, table.concat(t,",")) end); print("[test] setup")
+tool unfollow {}
+wait 1500
+# ===== dig: a sapling, shovel in the bag =====
+lua GIVE("shovel"); rawset(_G,"SAP",AT("sapling",3,0)); INV("before dig")
+wait 800
+tool dig {"target":"sapling"}
+lua INV("after dig"); print("[test] sapling valid", SAP:IsValid())
+# ===== hammer: a chest =====
+lua GIVE("hammer"); rawset(_G,"CH",AT("treasurechest",-3,0))
+wait 800
+tool hammer {"target":"treasurechest"}
+lua INV("after hammer"); print("[test] chest valid", CH:IsValid())
+# ===== net: a butterfly (brain stopped: with no real client nearby it flies home and is removed) =====
+lua GIVE("bugnet"); local b=AT("butterfly",3,3); b.entity:SetCanSleep(false); b:StopBrain(); rawset(_G,"BF",b)
+wait 800
+tool net {"target":"butterfly"}
+lua INV("after net")
+# ===== plant: 3 grass tufts =====
+lua GIVE("dug_grass",3)
+wait 800
+tool plant {"item":"dug_grass","count":3}
+lua local n=0; local x,y,z=C.Transform:GetWorldPosition(); for _,v in ipairs(TheSim:FindEntities(x,y,z,10)) do if v.prefab=="grass" then n=n+1 end end; print("[test] grass planted near", n); INV("after plant")
+# ===== trap: set one, spring it with a rabbit, collect =====
+lua GIVE("trap",1)
+wait 800
+tool trap {}
+lua local x,y,z=C.Transform:GetWorldPosition(); for _,v in ipairs(TheSim:FindEntities(x,y,z,6,{"trap"})) do if not v.components.inventoryitem:IsHeld() then rawset(_G,"TR",v) end end; print("[test] trap on ground", TR and TR.GUID, TR and TR.components.trap.isset); local r=SpawnPrefab("rabbit"); local tx,ty,tz=TR.Transform:GetWorldPosition(); r.Transform:SetPosition(tx,0,tz); TR.components.trap:DoTriggerOn(r)
+wait 3000
+lua print("[test] trap sprung", TR:HasTag("trapsprung"), TR.components.trap.issprung)
+snap
+tool trap {"collect":true}
+lua INV("after trap collect")
+# ===== dry: rack with meat + morsel; then a finished jerky to harvest =====
+lua GIVE("meat",2); GIVE("smallmeat",1); rawset(_G,"RK",AT("meatrack",4,-3))
+wait 800
+tool dry {}
+lua local t={}; for k,v in pairs(RK.components.container.slots) do t[#t+1]=v.prefab end; print("[test] rack holds", table.concat(t,",")); INV("after dry")
+lua local cnt=RK.components.container; for k,v in pairs(cnt.slots) do if v.prefab=="smallmeat" then cnt:RemoveItem(v,true):Remove() ; cnt:GiveItem(SpawnPrefab("smallmeat_dried"), k) end end; local t={}; for k,v in pairs(cnt.slots) do t[#t+1]=v.prefab end; print("[test] rack now", table.concat(t,","))
+wait 1500
+snap
+tool harvest {}
+lua local t={}; for k,v in pairs(RK.components.container.slots) do t[#t+1]=v.prefab end; print("[test] rack after harvest", table.concat(t,",")); INV("after harvest rack")
+# ===== cookpot: preview, a bad mix, then meatballs =====
+lua GIVE("smallmeat",1); GIVE("berries",3); GIVE("twigs",1); rawset(_G,"CP",AT("cookpot",-4,-3))
+wait 800
+tool cookpot {"ingredients":["morsel","berries","berries","berries"],"preview":true}
+tool cookpot {"ingredients":["twigs","twigs","twigs","twigs"]}
+tool cookpot {"ingredients":["morsel","berries","berries","berries"]}
+lua INV("after cookpot"); print("[test] pot cooking", CP.components.stewer:IsCooking(), "done", CP.components.stewer:IsDone())
+# ===== stash: a chest that holds rocks; rocks, twigs and flint on the ground =====
+lua rawset(_G,"ST",AT("treasurechest",0,-5)); ST.components.container:GiveItem(SpawnPrefab("rocks")); for i=1,4 do AT("rocks",1+i*0.4,1) end; AT("flint",-1,1); AT("twigs",-1,2); GIVE("rocks",3); INV("before stash")
+wait 800
+tool stash {}
+lua local t={}; for k,v in pairs(ST.components.container.slots) do t[#t+1]=v.prefab.."x"..(v.components.stackable and v.components.stackable:StackSize() or 1) end; print("[test] chest holds", table.concat(t,",")); INV("after stash")
+events
+quit

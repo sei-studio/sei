@@ -11,6 +11,8 @@
 
 const LEGACY_TOOLS = 'goTo, come, follow, gather, chop, mine, pick, pickup, craft, build, eat, equip, attack, flee, lightFire, cook, store, take, sleep, drop'
 const CAPS_TOOLS = `${LEGACY_TOOLS.replace('mine, ', 'mine, dig, ')}, give`
+/** Helper 0.4.0 adds the camp chores (sei/chores.lua). */
+const CHORES_TOOLS = `${CAPS_TOOLS.replace('dig, ', 'dig, hammer, net, ')}, harvest, plant, trap, dry, cookpot, stash`
 
 const DST_BASELINE_TEMPLATE = `
 You play Don't Starve Together through tool calls in turn-based loops. Each loop roughly spans one task. Calling a world tool (chop, gather, build, goTo...) always results in a next turn, either on completion or mid-action for you to decide what is next. Call say() to speak a line and end the loop, or end_loop() to end it without speaking. Ending the loop does not cancel an action that is still running; stop() cancels it.
@@ -34,8 +36,15 @@ export const DST_BASELINE = DST_BASELINE_TEMPLATE.replace('{tools}', LEGACY_TOOL
 /** The surface baseline for helper mod 0.3.0+ (modVersion.js CAPS_MIN_MOD). */
 export const DST_BASELINE_CAPS = DST_BASELINE_TEMPLATE.replace('{tools}', CAPS_TOOLS)
 
-/** @param {boolean} hasCaps  does the connected helper run mod 0.3.0+? */
-export function dstBaseline(hasCaps) {
+/** The surface baseline for helper mod 0.4.0+ (modVersion.js CHORES_MIN_MOD). */
+export const DST_BASELINE_CHORES = DST_BASELINE_TEMPLATE.replace('{tools}', CHORES_TOOLS)
+
+/**
+ * @param {boolean} hasCaps  does the connected helper run mod 0.3.0+?
+ * @param {boolean} [hasChores]  does it run mod 0.4.0+?
+ */
+export function dstBaseline(hasCaps, hasChores = false) {
+  if (hasCaps && hasChores) return DST_BASELINE_CHORES
   return hasCaps ? DST_BASELINE_CAPS : DST_BASELINE
 }
 
@@ -65,8 +74,19 @@ What the habits cannot do is plan. They only work with what you carry, so keepin
 You see the world as a periodic text snapshot: your vitals, your inventory, and nearby things grouped by what you can do to them with #N handles (chop, mine, pick, pickup, threats, fires, chests, food, players). For each player you also see what they are doing, what they hold, and their hunger and sanity; for creatures, who they are attacking. your_habits lists what your body did on its own lately, and heads_up lists what may need attention. Refer to things by their handle (#4) or by name (evergreen, sapling). The snapshot lists only what is within about 24 meters; a short list does not mean nothing exists further out. To find something, walk somewhere new with goTo and look again. You cannot actually see the game as an image and have no camera; if the player asks you to look at something, say plainly that you go by the snapshot.
 `.trim()
 
-/** @param {boolean} hasCaps */
-export function capabilityParagraph(hasCaps) {
+// Helper 0.4.0: the chores in the list, and three more habits.
+const CAPS_LIST = 'pick plants and pick up items, chop trees, mine boulders, dig up stumps and plants with a shovel, craft and build (recipes you know, or learn at a science machine), eat, equip tools and clothes, attack, run away, feed and light fires, cook on a fire, put things into and take things out of chests, sleep in tents and bedrolls, drop items, and give items straight to the player.'
+const CHORES_LIST = 'pick plants and pick up items, chop trees, mine boulders, dig up stumps and plants with a shovel, hammer structures down, catch butterflies with a bug net, craft and build (recipes you know, or learn at a science machine), eat, equip tools and clothes, attack, run away, feed and light fires, cook on a fire, cook meals in a crock pot, hang meat on a drying rack, harvest what is ready, plant pine cones, saplings and other things you carry, set traps and collect them, put things into and take things out of chests, stash your loot into the chests that already hold the same things, sleep in tents and bedrolls, drop items, and give items straight to the player. While you follow the player you can also help: follow with help on and you chop or mine beside them whenever they do.'
+const CAPS_HABITS_END = 'Your tools are used automatically when you chop, mine or dig.'
+const CHORES_HABITS_END = 'Your tools are used automatically when you chop, mine, dig, hammer or catch bugs. When you are following the player and they jump into a wormhole, you jump in after them. In a fight with a creature that swings slowly, you step out of its reach as it winds up and step back in after. When a boss (Deerclops, Bearger, a Treeguard and the like) comes close or goes for you, your body runs from it, unless you were told to attack it.'
+export const CAPABILITY_PARAGRAPH_CHORES = CAPABILITY_PARAGRAPH_CAPS.replace(CAPS_LIST, CHORES_LIST).replace(CAPS_HABITS_END, CHORES_HABITS_END)
+
+/**
+ * @param {boolean} hasCaps
+ * @param {boolean} [hasChores]  helper 0.4.0+
+ */
+export function capabilityParagraph(hasCaps, hasChores = false) {
+  if (hasCaps && hasChores) return CAPABILITY_PARAGRAPH_CHORES
   return hasCaps ? CAPABILITY_PARAGRAPH_CAPS : CAPABILITY_PARAGRAPH
 }
 
@@ -78,8 +98,16 @@ export const ACTION_RULES_CAPS = `
 Action rules. One world action at a time; each returns a short result string and your next turn shows the new snapshot. gather(item, count) is a whole job in one call (it picks, picks up, chops or mines until it has the count or runs out within about 40 meters); prefer it over chaining chop/pickup by hand. Crafting: craft(recipe) makes something from your inventory (axe, pickaxe, torch, campfire, rope, boards, spear...); if the recipe must be learned, stand near a science machine and craft again, or build(researchlab) first. build(recipe) places a structure next to you on open ground (campfire, firepit, researchlab, treasurechest, tent). When a result says "missing ingredients", gather them first; when it says "cant_reach", the way is blocked by water or walls: goTo a different point, then try again. Do not retry the same failed call more than once without changing something. Night light is your habits' job as long as you carry the makings: 2 grass + 2 twigs for a torch, or 3 grass + 2 logs for a campfire. Before dusk, make sure you do. Eat before hunger drops below a quarter. Do not attack players. In a fight you cannot win (low health, several enemies, night), call flee() and run toward the player or a fire. When the player is short of something you carry (food when they are hungry, a torch at dusk, logs for their fire), give(item) hands it to them.
 `.trim()
 
-/** @param {boolean} hasCaps */
-export function actionRules(hasCaps) {
+/** Helper 0.4.0: the meal and camp tools in one more paragraph. */
+export const CHORES_RULE = 'Meals and camp: cookpot(ingredients) puts 4 ingredients into a crock pot, waits for the meal (up to about 40 seconds) and takes it out; with preview it only tells you what those 4 would make. No matching recipe makes wet goop, which the tool refuses. Meat on a drying rack (dry) turns into jerky over a day or two and keeps far longer; dry() also takes finished jerky off. stash() picks up the loot lying around you and puts what you carry into the chests that already hold the same thing; it keeps your tools, weapons, armor and food unless you name an item.'
+export const ACTION_RULES_CHORES = `${ACTION_RULES_CAPS}\n\n${CHORES_RULE}`
+
+/**
+ * @param {boolean} hasCaps
+ * @param {boolean} [hasChores]  helper 0.4.0+
+ */
+export function actionRules(hasCaps, hasChores = false) {
+  if (hasCaps && hasChores) return ACTION_RULES_CHORES
   return hasCaps ? ACTION_RULES_CAPS : ACTION_RULES
 }
 
@@ -116,11 +144,27 @@ export const ACTION_DESCRIPTIONS_CAPS = {
   dig: 'Dig up a stump, a grass tuft, sapling or berry bush (to replant it at camp), or a grave (`target` handle or name; default the nearest stump). It needs a shovel in your inventory, which your body equips for you.',
 }
 
+/** Helper 0.4.0 tools and the descriptions that change with them. */
+export const ACTION_DESCRIPTIONS_CHORES = {
+  ...ACTION_DESCRIPTIONS_CAPS,
+  follow: 'Continuously trail the player (or a named player); persists through other actions and stops only on unfollow. With `help` on, whenever they chop or mine you chop or mine the next tree or boulder beside them (needs an axe or pickaxe in your inventory).',
+  hammer: 'Hammer a structure (`target` handle) down; it drops part of what it was made of. It needs a hammer in your inventory. Never knock down the player\'s things unless they ask.',
+  net: 'Catch a butterfly or other bug (`target`; default the nearest) with a bug net from your inventory.',
+  harvest: 'Take what is ready (`target`; default the nearest ready thing): a finished crock pot meal, a grown crop, honey from a bee box, finished jerky on a drying rack.',
+  plant: 'Plant or place `count` (default 1) of an `item` you carry: a pine cone or birchnut (grows a tree), a dug grass tuft, sapling or berry bush, fence or wall pieces. Plants near you, or near `x`,`z`, on the first free spot.',
+  trap: 'Set a trap you carry where you stand (or at `x`,`z`); rabbits and birds walk into it. With `collect` (or a `target` handle) collect a sprung trap: you get the catch and the trap back.',
+  dry: 'Hang meat, morsels or fish (`item`, default everything that dries) on a drying rack (`rack`, default the nearest) and take any finished jerky off it first.',
+  cookpot: 'Cook a meal in a crock pot (`pot`, default the nearest): `ingredients` is a list of exactly 4 item names from your inventory (repeats allowed, eg ["meat","berries","berries","twigs"]). Waits for the meal and takes it out. `preview` only says what those 4 would make. With no ingredients it cooks what is already in the pot.',
+  stash: 'Tidy up: pick up the loot lying around you (unless `pickup` is false), then put what you carry into the chests within about 24 meters that already hold the same item. Keeps your tools, weapons, armor and food unless you name an `item`.',
+}
+
 /**
  * @param {string} name
  * @param {boolean} [hasCaps]  does the connected helper run mod 0.3.0+?
+ * @param {boolean} [hasChores]  does it run mod 0.4.0+?
  */
-export function describeAction(name, hasCaps = false) {
+export function describeAction(name, hasCaps = false, hasChores = false) {
+  if (hasCaps && hasChores) return ACTION_DESCRIPTIONS_CHORES[name] ?? ''
   return (hasCaps ? ACTION_DESCRIPTIONS_CAPS : ACTION_DESCRIPTIONS)[name] ?? ''
 }
 
@@ -141,6 +185,8 @@ export const SURVIVAL_ATE = 'Note: you were hungry and ate {item} from your inve
 export const SURVIVAL_DARK_CAPS = 'Heads up: it is {phase}, you are in the dark, and your body has nothing to make light with (a torch needs 2 grass + 2 twigs, a campfire 3 grass + 2 logs) and no fire in sight. The darkness kills within seconds. Act in this same turn: goTo the player if they have a light, or gather grass and twigs if they are right beside you. Say one short line so the player knows.'
 export const DEFEND_ADDENDUM = 'Heads up: {label} went for {player}, and your body is fighting it. Tell them in one short in-character line that you are on it. Your body keeps fighting while it has the health; if it turns bad (you are low, more of them arrive), call flee() and goTo the player.'
 export const ALERT_ADDENDUM = 'Heads up: {text}. {hint}'
+// Helper 0.4.0: the body runs from a boss on its own (sei/tactics.lua).
+export const SURVIVAL_BOSS = 'Heads up: {label} is here. It is a boss, far stronger than you, so your body is running from it on its own. Let the player know in one short in-character line, then make the call: keep away, stay with the player, or attack(#N) if you two are ready for it, since your body only fights a boss when you tell it to.'
 // Facts for the decision, not orders: what the brain does with an alert is
 // up to the character and its proactiveness rule.
 export const ALERT_HINTS = Object.freeze({
@@ -228,6 +274,7 @@ export function eventAddendum(event, data, opts = {}) {
       if (data?.survivalKind === 'alert') return fill(ALERT_ADDENDUM, { text: data?.alertText ?? label, hint: alertHint(data?.alert) }).trim()
       if (data?.survivalKind === 'dark') return fill(caps ? SURVIVAL_DARK_CAPS : SURVIVAL_DARK, { phase: data?.phase ?? 'night' })
       if (data?.survivalKind === 'ate') return fill(SURVIVAL_ATE, { item: data?.item ?? 'food' })
+      if (data?.survivalKind === 'boss') return fill(SURVIVAL_BOSS, { label })
       return fill(SURVIVAL_RETREAT, { label })
     }
     if (kind === 'player') return fill(ATTACKED_ADDENDUM_PLAYER, { label })

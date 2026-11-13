@@ -112,6 +112,17 @@ export function wireLinkEvents(link, handlers, opts) {
         })
         return
       }
+      // Helper 0.4.0: the body is running from a boss; that needs a decision.
+      if (what === 'boss') {
+        handlers.onAttacked?.({
+          attacker: null,
+          attackerLabel: String(p.threat ?? 'a boss'),
+          attackerKind: 'reflex',
+          survivalKind: 'boss',
+          count: 1,
+        })
+        return
+      }
       if (what === 'dark') {
         if (opts?.darkNeedsBrain && !opts.darkNeedsBrain()) return
       } else if (what !== 'retreat') {

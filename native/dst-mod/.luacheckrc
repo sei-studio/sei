@@ -13,7 +13,7 @@ read_globals = {
   "TheSim", "TheNet", "TheWorld", "AllPlayers", "Ents", "SpawnPrefab", "GetTime",
   "Vector3", "BufferedAction", "ACTIONS", "EQUIPSLOTS", "TUNING", "STRINGS",
   "GetValidRecipe", "AllRecipes", "json", "Class", "Brain", "BT", "APP_VERSION",
-  "unpack",
+  "unpack", "FOODTYPE",
   -- behaviourtree
   "BehaviourNode", "PriorityNode", "SequenceNode", "WhileNode", "IfNode", "ActionNode",
   "ConditionNode", "DoAction", "Follow", "RunAway", "FindLight", "ChaseAndAttack",

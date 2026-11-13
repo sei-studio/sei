@@ -1,0 +1,46 @@
+# Headless DST scenario for the helper 0.4.0 follow and fight habits: help
+# with the player's chopping, follow through a wormhole, step back from a
+# slow swing, run from a boss. Needs the stand-in STEVE (userid KU_test);
+# run with --near KU_test. [test] lines print to the server log.
+lua TheWorld:PushEvent("ms_setclocksegs",{day=16,dusk=0,night=0}); TheWorld:PushEvent("ms_setphase","day"); local c=require("sei/companion").inst; c.components.health:SetInvincible(true); rawset(_G,"C",c); rawset(_G,"NEARS",function(p,dx,dz) local x,y,z=STEVE.Transform:GetWorldPosition(); local e=SpawnPrefab(p); e.Transform:SetPosition(x+dx,0,z+dz); return e end); C.components.inventory:GiveItem(SpawnPrefab("axe")); C.components.inventory:GiveItem(SpawnPrefab("spear")); local a=SpawnPrefab("axe"); STEVE.components.inventory:Equip(a); print("[test] setup")
+# ===== A: follow with help while Steve chops =====
+tool follow {"help":true}
+lua rawset(_G,"T1",NEARS("evergreen",3,0)); rawset(_G,"T2",NEARS("evergreen",5,3)); rawset(_G,"T3",NEARS("evergreen",4,-4)); for _,t in ipairs({T1,T2,T3}) do t.entity:SetCanSleep(false) end; print("[test] A trees", T1.components.workable:GetWorkLeft(), T2.components.workable:GetWorkLeft(), T3.components.workable:GetWorkLeft())
+lua STEVE.components.locomotor:PushAction(BufferedAction(STEVE, T1, ACTIONS.CHOP), true)
+wait 1500
+lua if T1:IsValid() and T1.components.workable then STEVE.components.locomotor:PushAction(BufferedAction(STEVE, T1, ACTIONS.CHOP), true) end; print("[test] A steve state", STEVE.sg.currentstate.name)
+wait 1500
+lua if T1:IsValid() and T1.components.workable then STEVE.components.locomotor:PushAction(BufferedAction(STEVE, T1, ACTIONS.CHOP), true) end
+wait 1500
+lua if T1:IsValid() and T1.components.workable then STEVE.components.locomotor:PushAction(BufferedAction(STEVE, T1, ACTIONS.CHOP), true) end; print("[test] A sui state", C.sg.currentstate.name)
+wait 3000
+lua local function wl(t) return t:IsValid() and t.components.workable and t.components.workable:GetWorkLeft() or "gone" end; print("[test] A trees after", wl(T1), wl(T2), wl(T3), "sui", C.sg.currentstate.name)
+events
+# ===== B: Steve jumps into a wormhole =====
+lua local x,y,z=STEVE.Transform:GetWorldPosition(); local w1=NEARS("wormhole",4,0); local w2=SpawnPrefab("wormhole"); w2.Transform:SetPosition(x+60,0,z+20); w1.components.teleporter:Target(w2); w2.components.teleporter:Target(w1); w1.entity:SetCanSleep(false); w2.entity:SetCanSleep(false); rawset(_G,"W1",w1); rawset(_G,"W2",w2); print("[test] B holes", w1.GUID, w2.GUID)
+wait 1000
+# (a console-made player does not walk on its own, so it starts beside the hole)
+lua local x,y,z=W1.Transform:GetWorldPosition(); STEVE.Transform:SetPosition(x+1,0,z); STEVE.components.locomotor:Stop(); STEVE.sg:GoToState("idle"); STEVE:DoTaskInTime(0.2, function() STEVE.components.locomotor:PushAction(BufferedAction(STEVE, W1, ACTIONS.JUMPIN), true) end)
+wait 6000
+lua print("[test] B steve to w2", STEVE:GetDistanceSqToInst(W2)^0.5, "sui to w2", C:GetDistanceSqToInst(W2)^0.5, "sui state", C.sg.currentstate.name)
+wait 10000
+lua print("[test] B later steve to w2", STEVE:GetDistanceSqToInst(W2)^0.5, "sui to w2", C:GetDistanceSqToInst(W2)^0.5, "sui to steve", C:GetDistanceSqToInst(STEVE)^0.5)
+events
+# ===== C: fight a hound (a 2 s swing): count its swings and the hits she takes =====
+tool unfollow {}
+lua C.components.health:SetInvincible(false); C.components.health:SetMaxHealth(1000); C.components.health:SetPercent(1); rawset(_G,"HITS",0); C:ListenForEvent("attacked", function() HITS = HITS + 1 end); local x,y,z=C.Transform:GetWorldPosition(); local s=SpawnPrefab("hound"); s.Transform:SetPosition(x+5,0,z); s.entity:SetCanSleep(false); s.components.health:SetMaxHealth(600); s.components.health:SetPercent(1); rawset(_G,"ATT",0); s:ListenForEvent("newstate", function(_,d) if d.statename=="attack" then ATT = ATT + 1 end end); rawset(_G,"SP",s); print("[test] C spider", s.GUID)
+wait 500
+tool equip {"item":"spear"}
+tool attack {"target":"hound"}
+lua print("[test] C spider swings", ATT, "hits taken", HITS, "spider alive", SP:IsValid() and not SP.components.health:IsDead(), "sui hp", C.components.health.currenthealth)
+events
+# ===== D: a boss (bearger) comes at her =====
+lua C.components.health:SetInvincible(true); local x,y,z=C.Transform:GetWorldPosition(); local d=SpawnPrefab("bearger"); d.Transform:SetPosition(x+9,0,z); d.entity:SetCanSleep(false); d.components.combat:SetTarget(C); rawset(_G,"DC",d); print("[test] D bearger", d.GUID)
+wait 2000
+snap
+lua print("[test] D dist 2s", C:GetDistanceSqToInst(DC)^0.5, C.sg.currentstate.name)
+wait 6000
+lua print("[test] D dist 8s", C:GetDistanceSqToInst(DC)^0.5, C.sg.currentstate.name)
+events
+lua if DC:IsValid() then DC:Remove() end; print("[test] D done")
+quit

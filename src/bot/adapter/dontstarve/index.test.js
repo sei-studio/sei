@@ -4,7 +4,7 @@ import { createDontStarveAdapter } from './index.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
 import { createFakeMod } from '../../../../scripts/fake-dst-mod.mjs'
 
-function adapterWith({ hasCaps, proactiveness }) {
+function adapterWith({ hasCaps, hasChores = false, proactiveness }) {
   const state = createObservationState()
   const mod = createFakeMod({ botPort: 1, token: 'x' })
   const frame = mod.frame(true)
@@ -13,7 +13,7 @@ function adapterWith({ hasCaps, proactiveness }) {
   const link = {
     events: new EventEmitter(), state, handles: createHandleRegistry(), botName: 'Sui', body: { fight: true },
     playerName: () => 'Steve', playerUserid: () => 'KU_steve', send: vi.fn(async () => 'built firepit'),
-    say: vi.fn(), setPaused: vi.fn(), paused: false, hasCaps, guid: 9001, modVersion: hasCaps ? '0.3.0' : null,
+    say: vi.fn(), setPaused: vi.fn(), paused: false, hasCaps, hasChores, guid: 9001, modVersion: hasChores ? '0.4.0' : hasCaps ? '0.3.0' : null,
   }
   const persona = proactiveness == null ? undefined : { name: 'Sui', expanded: '', proactiveness }
   const adapter = createDontStarveAdapter({ link, config: { adapter: { dontstarve: { prefab: 'wilson' } }, persona } })
@@ -58,18 +58,21 @@ describe('DST adapter: mod 0.3.0 wiring', () => {
   // the 0.3.0 prompt promised dig with no dig verb (report 261113).
   it('every world verb the prompt text names exists in the tool list, on either helper', () => {
     const nonWorld = new Set(['say', 'remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'stop', 'search', 'visit'])
-    for (const hasCaps of [false, true]) {
-      const { adapter } = adapterWith({ hasCaps })
+    for (const [hasCaps, hasChores] of [[false, false], [true, false], [true, true]]) {
+      const { adapter } = adapterWith({ hasCaps, hasChores })
       const tools = new Set(adapter.listActions())
       const listed = adapter.surfaceBaseline().match(/tool list \(([^)]*)\)/)[1].split(',').map((s) => s.trim())
       for (const name of listed) expect(tools.has(name), `hasCaps ${hasCaps}: ${name} listed but not a tool`).toBe(true)
       if (hasCaps) expect(listed).toEqual(expect.arrayContaining(['dig', 'give']))
+      if (hasChores) expect(listed).toEqual(expect.arrayContaining(['hammer', 'net', 'harvest', 'plant', 'trap', 'dry', 'cookpot', 'stash']))
+      else expect(listed).not.toContain('cookpot')
       const texts = [adapter.surfaceBaseline(), adapter.capabilityParagraph(), adapter.actionRules(),
         ...[...tools].map((n) => adapter.getActionDescription(n)),
         adapter.eventAddendum('sei:idle', { quietMs: 9000 }), adapter.eventAddendum('sei:loop_end', {}),
         adapter.eventAddendum('sei:attacked', { attackerKind: 'mob', attackerLabel: 'spider' }),
         adapter.eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'dark', phase: 'night' }),
-        adapter.eventAddendum('sei:attacked', { attackerKind: 'mob', darkness: true })]
+        adapter.eventAddendum('sei:attacked', { attackerKind: 'mob', darkness: true }),
+        adapter.eventAddendum('sei:attacked', { attackerKind: 'reflex', survivalKind: 'boss', attackerLabel: 'bearger' })]
       for (const text of texts) {
         for (const m of text.matchAll(/\b([a-zA-Z_]+)\((?=[^)]*\))/g)) {
           if (nonWorld.has(m[1])) continue

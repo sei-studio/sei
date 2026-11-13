@@ -11,6 +11,8 @@ import { createSnapshotComposer } from './observers/snapshot.js'
 import { wireLinkEvents } from './fsmWires.js'
 import { createDashboardTelemetry } from './dashboard/telemetry.js'
 import { classifyConnectError } from './errors.js'
+import { withActionStats } from '../gameActionStats.js'
+import { sessionActionStats } from '../../brain/actionStats.js'
 import { createAlertWatcher, lightMeans, nudgesAllowed } from './observers/alerts.js'
 import { createHabitLog } from './observers/habits.js'
 import { createProgressionLatches, getProgression } from './observers/progression.js'
@@ -33,7 +35,7 @@ export const DST_CHAT_MAX_CHARS = 160
  * @param {import('./runtime.js').Link} args.link
  * @param {object} args.config  Parsed bot config (adapter.kind === 'dontstarve').
  */
-export function createDontStarveAdapter({ link, config }) {
+export function createDontStarveAdapter({ link, config, actionStats = sessionActionStats }) {
   if (!link) throw new Error('createDontStarveAdapter: link required')
   if (!config) throw new Error('createDontStarveAdapter: config required')
   const dst = config.adapter?.dontstarve ?? {}
@@ -43,6 +45,7 @@ export function createDontStarveAdapter({ link, config }) {
   // here and in the cached system prefix; an older helper keeps the 0.2
   // prompts, wake routing and verb set.
   const hasCaps = () => link.hasCaps === true
+  const hasChores = () => link.hasChores === true
   const habits = createHabitLog(link.events)
   const latches = createProgressionLatches()
   const players = () => {
@@ -61,10 +64,24 @@ export function createDontStarveAdapter({ link, config }) {
     // ─── Action surface ───────────────────────────────────────────────
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
-    getActionDescription: (name) => describeAction(name, hasCaps()) || registry.description(name),
+    getActionDescription: (name) => describeAction(name, hasCaps(), hasChores()) || registry.description(name),
     executeAction: async (name, args, ctx = {}) => {
       const execConfig = { ...config, ...ctx }
-      const result = await registry.execute(name, args, null, execConfig)
+      // Outcome telemetry (gameActionStats.js): a result the helper sent
+      // carries its ok flag; every other result is the registry refusing
+      // before anything reached the game (no such item, nothing nearby).
+      const fromHelper = (result) => {
+        const r = link.lastResult
+        return r != null && r.text === String(result) ? r : null
+      }
+      const result = await withActionStats(name, Boolean(registry.schema(name)), () => registry.execute(name, args, null, execConfig), {
+        signal: execConfig.signal ?? null,
+        stats: actionStats,
+        failed: (res) => {
+          const r = fromHelper(res)
+          return r ? (r.ok ? null : r.text) : String(res)
+        },
+      })
       latches.result(name, result)
       return result
     },
@@ -77,11 +94,12 @@ export function createDontStarveAdapter({ link, config }) {
       getBodyState: () => link.body,
       getSelfGuid: () => link.guid ?? null,
       getHabits: () => (hasCaps() ? habits.recent() : []),
+      hasDig: hasCaps,
     }),
     worldPrimer: () => worldPrimer(dst.survivorBrief),
-    capabilityParagraph: () => capabilityParagraph(hasCaps()),
-    actionRules: () => actionRules(hasCaps()),
-    eventAddendum: (event, data) => eventAddendum(event, data, { hasCaps: hasCaps() }),
+    capabilityParagraph: () => capabilityParagraph(hasCaps(), hasChores()),
+    actionRules: () => actionRules(hasCaps(), hasChores()),
+    eventAddendum: (event, data) => eventAddendum(event, data, { hasCaps: hasCaps(), hasChores: hasChores() }),
     /** The DST spine (observers/progression.js) for the heartbeat frontier. */
     getProgression: () => getProgression(link.state, latches),
 
@@ -158,7 +176,7 @@ export function createDontStarveAdapter({ link, config }) {
     backgroundActions: { follow: 'unfollow' },
     progressActions: ['gather', 'build'],
     visionActions: [],
-    surfaceBaseline: () => dstBaseline(hasCaps()),
+    surfaceBaseline: () => dstBaseline(hasCaps(), hasChores()),
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ ...STUCK_NUDGES }),
     getWorldIdentity: () => {

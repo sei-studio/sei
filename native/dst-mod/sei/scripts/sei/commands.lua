@@ -22,6 +22,7 @@ local Speak = require("sei/speak")
 local Events = require("sei/events")
 local Survivors = require("sei/survivors")
 local Reflexes = require("sei/reflexes")
+local Chores = require("sei/chores")
 
 local Commands = {}
 
@@ -41,9 +42,15 @@ local BLOCKED_TICKS = 6
 local UNREACHABLE_S = 60
 -- Gather gives up after walking into this many blocked targets in a row.
 local MAX_BLOCKED = 3
-local WORK_ACTIONS = { CHOP = true, MINE = true, DIG = true, HAMMER = true }
-local WORK_TAG = { CHOP = "CHOP_workable", MINE = "MINE_workable", DIG = "DIG_workable", HAMMER = "HAMMER_workable" }
-local WORK_TOOL = { CHOP = "an axe", MINE = "a pickaxe", DIG = "a shovel", HAMMER = "a hammer" }
+-- NET (0.4.0): a bug net catches butterflies and the like the same way.
+local WORK_ACTIONS = { CHOP = true, MINE = true, DIG = true, HAMMER = true, NET = true }
+local WORK_TAG = { CHOP = "CHOP_workable", MINE = "MINE_workable", DIG = "DIG_workable", HAMMER = "HAMMER_workable", NET = "NET_workable" }
+local WORK_TOOL = { CHOP = "an axe", MINE = "a pickaxe", DIG = "a shovel", HAMMER = "a hammer", NET = "a bug net" }
+-- What a finished work action reports (0.4.0): what landed in the bag.
+local WORK_REPORTS_GAINS = { NET = true, DIG = true, HAMMER = true }
+-- How long a crock pot command may run: walk, fill, cook (up to ~40 s for
+-- the slow recipes), harvest. The app waits a little longer (registry.js).
+local COOKPOT_TIMEOUT_S = 150
 -- In the dark the body walks to the work with its light in hand and only
 -- then decides torch or tool, by the light where it will stand.
 local WORK_JUDGE_DIST = 3
@@ -173,6 +180,14 @@ local function actionFor(inst, cmd)
     end
     local target = cmd.target ~= nil and Util.Ent(cmd.target) or nil
     if cmd.target ~= nil and target == nil then
+        -- A caught butterfly or a dug-up grave item is gone by design.
+        if cmd.state.started and WORK_REPORTS_GAINS[name] and cmd.state.before ~= nil then
+            local got = Chores.Gains(cmd.state.before, Chores.InvCounts(inst))
+            if #got > 0 then
+                Commands.Finish(inst, cmd, true, string.lower(name) .. " done; got " .. table.concat(got, ", "))
+                return nil
+            end
+        end
         Commands.Finish(inst, cmd, cmd.state.done == true, cmd.state.done and cmd.state.text or "target is gone")
         return nil
     end
@@ -190,8 +205,18 @@ local function actionFor(inst, cmd)
         end
     end
     local pos = cmd.pos ~= nil and Vector3(cmd.pos.x or 0, 0, cmd.pos.z or 0) or nil
+    if WORK_REPORTS_GAINS[name] and cmd.state.before == nil then cmd.state.before = Chores.InvCounts(inst) end
+    local function doneText()
+        local text = string.lower(name) .. " done: " .. (target and target.prefab or "target")
+        if cmd.state.before ~= nil then
+            local got = Chores.Gains(cmd.state.before, Chores.InvCounts(inst))
+            if #got > 0 then text = text .. "; got " .. table.concat(got, ", ")
+            elseif name ~= "NET" then text = text .. "; what it dropped is on the ground" end
+        end
+        return text
+    end
     if WORK_ACTIONS[name] and cmd.state.started and not keepWorking(name, target) then
-        Commands.Finish(inst, cmd, true, string.lower(name) .. " done: " .. (target and target.prefab or "target"))
+        Commands.Finish(inst, cmd, true, doneText())
         return nil
     end
     local b = BufferedAction(inst, target, act, invobject, pos, cmd.recipe)
@@ -216,7 +241,7 @@ local function actionFor(inst, cmd)
     b:AddSuccessAction(function()
         if WORK_ACTIONS[name] then
             if not keepWorking(name, target) then
-                Commands.Finish(inst, cmd, true, string.lower(name) .. " done: " .. (target and target.prefab or "target"))
+                Commands.Finish(inst, cmd, true, doneText())
             end
             return
         end
@@ -495,6 +520,16 @@ local function giveNext(inst, cmd)
     return nil
 end
 
+-- The shared helpers the 0.4.0 chores (sei/chores.lua) walk and finish with.
+Chores.Init({
+    Finish = function(inst, cmd, ok, text) Commands.Finish(inst, cmd, ok, text) end,
+    walkTo = walkTo,
+    nearestWith = nearestWith,
+    countOf = countOf,
+    unreachable = unreachable,
+    takeOne = takeOne,
+})
+
 --- The command slot's getactionfn (brains/seibrain.lua). Returns a
 --- BufferedAction or nil (nil also when the command just finished).
 function Commands.NextAction(inst)
@@ -513,6 +548,7 @@ function Commands.NextAction(inst)
         elseif cmd.kind == "container" then action = containerNext(inst, cmd)
         elseif cmd.kind == "lightfire" then action = lightFireNext(inst, cmd)
         elseif cmd.kind == "give" then action = giveNext(inst, cmd)
+        elseif Chores.Handles(cmd.kind) then action = Chores.Next(inst, cmd)
         end
     end, function(msg)
         Net.ReportError(msg)
@@ -526,7 +562,7 @@ end
 --- which the brain runs with dedicated nodes)?
 function Commands.IsActionSlot(cmd)
     return cmd ~= nil and (cmd.kind == "action" or cmd.kind == "gather" or cmd.kind == "build" or cmd.kind == "container"
-        or cmd.kind == "lightfire" or cmd.kind == "give")
+        or cmd.kind == "lightfire" or cmd.kind == "give" or Chores.Handles(cmd.kind))
 end
 
 -- ── dispatch ────────────────────────────────────────────────────────────────
@@ -547,7 +583,7 @@ local function dispatch(inst, cmd)
     elseif kind == "stop" then
         cancelCurrent(inst, "stopped")
         inst.sei.flee = nil
-        if cmd.unfollow then inst.sei.follow = nil end
+        if cmd.unfollow then inst.sei.follow = nil inst.sei.followHelp = false end
         result(cmd.id, true, "stopped")
     elseif kind == "despawn" then
         result(cmd.id, true, "despawning")
@@ -569,10 +605,15 @@ local function dispatch(inst, cmd)
         else
             inst.sei.follow = target
             inst.sei.followDist = cmd.dist or 4
-            result(cmd.id, true, "following " .. (target.name or target.prefab))
+            -- 0.4.0: help with their chopping and mining while trailing them.
+            inst.sei.followHelp = cmd.help == true
+            inst.sei.leaderWork = nil
+            result(cmd.id, true, "following " .. (target.name or target.prefab)
+                .. (inst.sei.followHelp and " and helping when they chop or mine" or ""))
         end
     elseif kind == "unfollow" then
         inst.sei.follow = nil
+        inst.sei.followHelp = false
         result(cmd.id, true, "stopped following")
     elseif kind == "equip" then
         local item = invItem(inst, cmd.guid)
@@ -634,6 +675,9 @@ local function dispatch(inst, cmd)
         result(cmd.id, true, "running from danger")
     elseif kind == "action" or kind == "gather" or kind == "build" or kind == "container" or kind == "lightfire" or kind == "give" then
         slot(inst, cmd)
+    elseif Chores.Handles(kind) then
+        if kind == "cookpot" then cmd.timeoutS = COOKPOT_TIMEOUT_S end
+        slot(inst, cmd)
     elseif kind == "resync" then
         require("sei/perception").RequestFull()
         result(cmd.id, true, "ok")
@@ -677,7 +721,8 @@ local function superviseWalk(inst, cmd)
     local what = target ~= nil and target.prefab or "there"
     local d = target ~= nil and target:IsValid() and (" (" .. Util.Round1(Util.DistXZ(inst, target)) .. " away)") or ""
     print("[sei] blocked walk: " .. cmd.kind .. " to " .. what .. d .. " in " .. tostring(inst.sg ~= nil and inst.sg.currentstate.name))
-    if cmd.kind == "gather" then
+    if cmd.kind == "gather" or cmd.kind == "stash" then
+        -- Both go for the next target (chores.lua skips unreachable ones).
         markUnreachable(inst, target)
         st.blockedTotal = (st.blockedTotal or 0) + 1
     else
