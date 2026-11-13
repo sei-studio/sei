@@ -1,0 +1,144 @@
+/* Terraria surfaces (261113). Tokens only, the "Summoning Terminal" look;
+ * the same layout as the Factorio panel (factorio.module.css). */
+
+/* ── launch panel ── */
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  gap: var(--space-md);
+  height: 100%;
+  box-sizing: border-box;
+  padding: var(--space-lg);
+  overflow: auto;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.worldLine {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.failLine {
+  margin: 0;
+  max-width: 40ch;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--red);
+}
+
+.helpLink {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.helpLink:hover {
+  color: var(--text);
+}
+
+/* ── setup steps ── */
+
+.mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.step {
+  display: flex;
+  gap: var(--space-md);
+  align-items: baseline;
+}
+
+.stepNumber {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.sub {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.link {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.stepDone .stepBody {
+  color: var(--text-2);
+}
+
+.stepLater .stepNumber {
+  color: var(--muted);
+}
+
+.stepLater .stepBody {
+  color: var(--muted);
+}
+
+.link:hover {
+  color: var(--text);
+}

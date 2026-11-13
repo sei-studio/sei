@@ -28,6 +28,7 @@ import { ZH_AVATARS_261106 } from './zh/avatars261106';
 import { ZH_PROFILE_261107 } from './zh/profile261107';
 import { ZH_PLAYTIME_261110 } from './zh/playtime261110';
 import { ZH_FACTORIO } from './zh/factorio';
+import { ZH_TERRARIA } from './zh/terraria';
 
 export const ZH: Record<string, string> = {
   ...ZH_COMMON,
@@ -47,6 +48,7 @@ export const ZH: Record<string, string> = {
   ...ZH_PROFILE_261107,
   ...ZH_PLAYTIME_261110,
   ...ZH_FACTORIO,
+  ...ZH_TERRARIA,
 
   // W5 settings (china-compat)
   // Model picker + Test probe (SettingsScreen)
