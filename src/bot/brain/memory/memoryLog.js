@@ -169,8 +169,10 @@ async function archiveAppend(filePath, chunk) {
 }
 
 // Loose near-duplicate key: lowercase, letters/digits/spaces only, collapsed
-// whitespace. Same idea as the heartbeat's normalizeGoal.
-function normalizeEntry(text) {
+// whitespace. Same idea as the heartbeat's normalizeGoal. 261113: exported
+// for main's fact saves (chat/memoryFacts.ts), which dedupe against the whole
+// file rather than this append path's 10-minute window.
+export function normalizeEntry(text) {
   return String(text ?? '')
     .toLowerCase()
     .replace(/[^\p{L}\p{N} ]+/gu, '')

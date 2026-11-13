@@ -58,6 +58,8 @@ import {
 } from './continuityCore';
 import { isModelRequestRejection } from './modelRejection';
 import { maybeCompactChatMemory } from './memoryCompaction';
+import { memoryForFold, saveFacts, type FactSave } from './memoryFacts';
+import { capture } from '../analytics';
 import { resolvePersonaText } from './personaText';
 
 // Re-export for the existing consumers (chatService and friends import it from
@@ -297,6 +299,16 @@ async function foldIntoSummary(
 ): Promise<BridgeState> {
   try {
     const llm = await buildLlmProvider();
+    // 261113 (v0.7 D2): the fold also returns the durable facts of the batch
+    // that memory does not have yet (memoryFacts.ts). It is shown the memory
+    // the chat reads, and the path is fixed here, in the scope the fold began.
+    const memoryFile = path.join(paths.memoryDir(id), 'MEMORY.md');
+    let memoryBody = '';
+    try {
+      memoryBody = await readFile(memoryFile, 'utf8');
+    } catch {
+      /* no memory yet */
+    }
     // Prompt text + transcript formatting live in foldPrompt.ts (pure) so the
     // offline eval harness runs the byte-identical prompt. The 260810
     // noise-robustness instruction (low-signal batches must not displace
@@ -312,6 +324,7 @@ async function foldIntoSummary(
       llm,
       summary: bridge.summary,
       msgs: newMsgs,
+      memory: memoryForFold(memoryBody),
       persona: personaExpanded,
       model: SUMMARY_MODEL,
       extra: SUMMARY_EXTRA,
@@ -355,6 +368,20 @@ async function foldIntoSummary(
       console.warn(`[sei] chat summary fold for ${id} returned empty output — keeping watermark, will retry`);
       return bridge;
     }
+    // Facts first: the summary about to be written is the lossy copy.
+    // Stamped with the newest message of the batch, when they were last said.
+    const lastTs = newMsgs.reduce((t, m) => (typeof m.ts === 'number' && m.ts > t ? m.ts : t), 0);
+    const facts: FactSave = await saveFacts(memoryFile, res.facts, { section: 'app', when: lastTs || undefined });
+    if (facts.saved > 0) void maybeCompactChatMemory(id).catch(() => {});
+    // Shape only (no text): how much each fold saves and how often it repeats memory.
+    capture('fold_facts', {
+      character_id: id,
+      batch: counted,
+      session_rows: newMsgs.length - counted,
+      returned: facts.returned,
+      saved: facts.saved,
+      dupes: facts.dupes,
+    });
     const next: BridgeState = {
       summary: res.summary,
       summarizedCount: bridge.summarizedCount + counted,

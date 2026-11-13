@@ -53,6 +53,17 @@ fallback, no LLM. Analytics: `play_recap` (shape only, `playRecapProps`). A
 new game surface whose end call could write a recap should pass it to
 `buildPlayRow` the same way.
 
+**Facts before the summary (261113, v0.7 consistency D2).** The fold is
+shown the memory notes (the chat's 12000-byte tail) and returns, next to its
+`<summary>`, a `<remember>` block of durable facts memory does not have yet
+(`foldPrompt.ts extractRememberTag`, at most `FOLD_MAX_FACTS`); the bot game's
+session-end call returns `remember:` lines the same way (at most three, shown
+30 memories). `chat/memoryFacts.ts saveFacts` writes them (fold: app section,
+stamped with the batch's newest message) and drops any whose normalized text
+matches an entry anywhere in the file. A fact that changed is written with
+"now" wording, and `COMPACTION_SYSTEM` keeps only the newest of two entries
+that disagree.
+
 `continuityCore.ts` is the pure half of `continuity.ts` (selection, fold call,
 reads, handoff, no electron): the consistency eval
 (`scripts/quality-eval/consistency`) runs it from the checkout it measures, so

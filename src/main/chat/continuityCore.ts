@@ -16,7 +16,7 @@
  * line in the fold transcript) and rides in the launch handoff's `recent`.
  */
 import type { ChatMessage } from '../../shared/ipc';
-import { buildFoldSystem, buildFoldUserText, extractSummaryTag, type FoldMsg } from './foldPrompt';
+import { buildFoldSystem, buildFoldUserText, extractRememberTag, extractSummaryTag, type FoldMsg } from './foldPrompt';
 import { playStoryText } from './playSummary';
 
 /** Verbatim tail preserved after a fold. */
@@ -179,7 +179,8 @@ export interface FoldLlm {
 }
 
 export type FoldResult =
-  | { status: 'ok'; summary: string; raw: string }
+  // 261113 (v0.7 D2): `facts`, the <remember> lines, saved by the caller.
+  | { status: 'ok'; summary: string; facts: string[]; raw: string }
   | { status: 'max_tokens' | 'empty'; raw: string };
 
 /**
@@ -192,6 +193,8 @@ export async function runFold(p: {
   llm: FoldLlm;
   summary: string;
   msgs: FoldMsg[];
+  /** The memory notes as the chat reads them, so the facts skip what is saved (D2). */
+  memory?: string;
   persona?: string;
   model: string;
   extra?: Record<string, unknown>;
@@ -201,7 +204,7 @@ export async function runFold(p: {
   onFallback?: (msg: string) => void;
 }): Promise<FoldResult> {
   const system = buildFoldSystem(p.persona);
-  const userText = buildFoldUserText(p.summary, p.msgs);
+  const userText = buildFoldUserText(p.summary, p.msgs, p.memory);
   const once = (model: string, extra?: Record<string, unknown>) =>
     p.llm.call({
       model,
@@ -224,5 +227,5 @@ export async function runFold(p: {
   const raw = res.content.map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : '')).join('');
   if (res.stopReason === 'max_tokens') return { status: 'max_tokens', raw };
   const summary = extractSummaryTag(raw);
-  return summary ? { status: 'ok', summary, raw } : { status: 'empty', raw };
+  return summary ? { status: 'ok', summary, facts: extractRememberTag(raw), raw } : { status: 'empty', raw };
 }

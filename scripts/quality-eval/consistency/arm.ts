@@ -92,6 +92,8 @@ const [transcript, chatPrompts, foldPrompt, playSummary, playerEnd, memoryLog, d
     imp('src/shared/llmCatalog.ts'),
   ]);
 const core = await tryImp('src/main/chat/continuityCore.ts');
+// 261113 (D2): the arm's fact saves (fold and session end), when it has them.
+const memoryFacts = await tryImp('src/main/chat/memoryFacts.ts');
 const MODEL: string = llmCatalog.COMPANION_MODEL;
 
 // ── provider: the main-process Anthropic provider's call (llm/anthropic.ts) ──
@@ -197,6 +199,7 @@ function memoryTail(): string {
 
 // ── the arm's fold / session end / play row ───────────────────────────────
 const foldStats = { folds: 0, factsSaved: 0, dupes: 0, sessionRows: 0 };
+const foldFacts: string[] = [];
 async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Bridge> {
   void now;
   for (let i = 0; i < 4; i++) {
@@ -204,15 +207,25 @@ async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Brid
     if (core?.selectFold && core?.runFold) {
       const batch = core.selectFold(rows, bridge);
       if (!batch) return bridge;
+      const body = fs.existsSync(memFile) ? fs.readFileSync(memFile, 'utf8') : '';
       const res = await core.runFold({
         llm: provider('fold'),
         summary: batch.bridge.summary,
         msgs: batch.msgs,
+        ...(memoryFacts ? { memory: memoryFacts.memoryForFold(body) } : {}),
         persona: ch.expanded,
         model: MODEL,
         extra: { thinking: { type: 'adaptive' } },
       });
       foldStats.sessionRows += batch.msgs.filter((m: any) => m.role === 'session').length;
+      // continuity.ts foldIntoSummary: facts first, stamped with the batch's newest message.
+      if (res.status === 'ok' && memoryFacts && res.facts?.length) {
+        const lastTs = batch.msgs.reduce((t: number, m: any) => (typeof m.ts === 'number' && m.ts > t ? m.ts : t), 0);
+        const f = await memoryFacts.saveFacts(memFile, res.facts, { section: 'app', when: lastTs || undefined });
+        foldStats.factsSaved += f.saved;
+        foldStats.dupes += f.dupes;
+        foldFacts.push(...res.facts);
+      }
       next = res.status === 'ok' ? { summary: res.summary, summarizedCount: batch.bridge.summarizedCount + batch.counted } : batch.bridge;
     } else {
       next = await devFold(rows, bridge, ch.expanded);
@@ -253,13 +266,13 @@ async function sessionEnd(
     characterName: async () => ch.name,
     save: async (_id: string, line: string, o?: { inGame?: boolean }) =>
       (await memoryLog.appendMemory(memFile, line, new Date(endedAt), o?.inGame ? { world: { num: 1, label: 'Meadow', game: 'Minecraft' } } : { section: 'app' })) > 0,
-    saveFacts: async (facts: string[], o?: { inGame?: boolean }) => {
-      let saved = 0;
-      for (const f of facts) {
-        saved += await memoryLog.appendMemory(memFile, f, new Date(endedAt), o?.inGame ? { world: { num: 1, label: 'Meadow', game: 'Minecraft' } } : { section: 'app' });
-      }
-      return saved;
-    },
+    // playerEndNextStep defaultDeps.saveFacts (the game's world is the file's last section here).
+    ...(memoryFacts
+      ? {
+          saveFacts: async (_id: string, facts: string[], o?: { inGame?: boolean }) =>
+            memoryFacts.saveFacts(memFile, facts, o?.inGame ? { when: endedAt } : { section: 'app', when: endedAt }),
+        }
+      : {}),
     capture: () => {},
     timeoutMs: () => 45_000,
     scoped: <T>(fn: () => Promise<T>) => fn(),
@@ -267,7 +280,7 @@ async function sessionEnd(
     log: () => {},
   };
   const r = playerEnd.runSessionEnd ? await playerEnd.runSessionEnd(input, deps) : { outcome: await playerEnd.runPlayerEndNextStep(input, deps) };
-  sessionEnds.push({ surface, outcome: r.outcome, recap: r.recap ?? null, facts: r.factsSaved ?? null });
+  sessionEnds.push({ surface, outcome: r.outcome, recap: r.recap ?? null, facts: r.facts ?? null });
   return r;
 }
 
@@ -355,7 +368,7 @@ async function build(): Promise<void> {
   fs.writeFileSync(bridgeFile, JSON.stringify(bridge));
   fs.writeFileSync(
     path.join(STATE, 'build.json'),
-    JSON.stringify({ t0, src: SRC, historyN: HISTORY_N, rows: rows.length, bridge, foldStats, sessionEnds, usage }, null, 1),
+    JSON.stringify({ t0, src: SRC, historyN: HISTORY_N, rows: rows.length, bridge, foldStats, foldFacts, sessionEnds, usage }, null, 1),
   );
 }
 

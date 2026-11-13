@@ -17,9 +17,11 @@
  *
  * Analytics (shape only, never the recap or any line): `play_recap` once per
  * play row of a bot game: {character_id, game, saved, source: 'recap' |
- * 'lines' | 'none', recap_chars, recap_words, lines, check_outcome}.
+ * 'lines' | 'none', recap_chars, recap_words, lines, check_outcome}, plus the
+ * same call's durable facts (D2): facts_returned, facts_saved, fact_dupes.
  */
 import type { PlayerEndOutcome, SessionEndResult } from './playerEndNextStep';
+import type { FactSave } from './chat/memoryFacts';
 
 export const RECAP_WAIT_MS = 20_000;
 
@@ -28,6 +30,8 @@ export type RecapWaitOutcome = PlayerEndOutcome | 'waited_out' | 'scope_switch' 
 export interface RecapWait {
   recap: string | null;
   outcome: RecapWaitOutcome;
+  /** 261113 (D2): the session end's remember: lines, when it returned any. */
+  facts?: FactSave | null;
 }
 
 /**
@@ -56,7 +60,7 @@ export function awaitRecap(
     timer.unref?.();
     const off = opts.onSwitch(() => finish({ recap: null, outcome: 'scope_switch' }));
     ended.then(
-      (r) => finish({ recap: r.recap, outcome: r.outcome }),
+      (r) => finish({ recap: r.recap, outcome: r.outcome, facts: r.facts ?? null }),
       () => finish({ recap: null, outcome: 'error' }),
     );
   });
@@ -68,6 +72,7 @@ export function playRecapProps(p: {
   game: string;
   event: { recap?: string; lines?: unknown[] };
   checkOutcome: RecapWaitOutcome;
+  facts?: FactSave | null;
 }): Record<string, string | number | boolean> {
   const recap = typeof p.event.recap === 'string' ? p.event.recap : '';
   const lines = Array.isArray(p.event.lines) ? p.event.lines.length : 0;
@@ -80,5 +85,8 @@ export function playRecapProps(p: {
     recap_words: recap ? recap.split(/\s+/).filter(Boolean).length : 0,
     lines,
     check_outcome: p.checkOutcome,
+    facts_returned: p.facts?.returned ?? 0,
+    facts_saved: p.facts?.saved ?? 0,
+    fact_dupes: p.facts?.dupes ?? 0,
   };
 }

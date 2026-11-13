@@ -49,6 +49,7 @@
  * keeps `next_step_hook` and gains `next_step_source: 'companion'` on the
  * `_ended` event itself (sessionGoodbye.ts).
  */
+import type { FactSave } from './chat/memoryFacts';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { LlmProvider } from './llm/types';
@@ -96,6 +97,12 @@ const MAX_LINES = 40;
 const LINE_CHARS = 200;
 const MAX_GOALS = 5;
 const MAX_MEMORIES = 8;
+/**
+ * 261113 (v0.7 D2): memories the recap call is shown. It also writes the
+ * session's new facts, and leaving out what memory already has needs more
+ * than the last few entries (about 1.5k tokens, once per session end).
+ */
+const RECAP_MAX_MEMORIES = 30;
 const MEMORY_CHARS = 200;
 
 /** Game end reasons that mean the player ended it. */
@@ -195,8 +202,8 @@ export function memoryEntries(body: string): MemoryEntry[] {
 }
 
 /** The memories block: entries grouped under the place they are from, in order. */
-function renderMemories(memories: Array<string | MemoryEntry>): string {
-  const items = memories.slice(-MAX_MEMORIES).map((m) => (typeof m === 'string' ? { text: m, place: null } : m));
+function renderMemories(memories: Array<string | MemoryEntry>, max = MAX_MEMORIES): string {
+  const items = memories.slice(-max).map((m) => (typeof m === 'string' ? { text: m, place: null } : m));
   if (!items.length) return '';
   const hasPlaces = items.some((m) => m.place);
   const out: string[] = [hasPlaces ? 'Some of your recent memories, under the heading of where each is from:' : 'Some of your recent memories:'];
@@ -249,11 +256,11 @@ export function buildPlayerEndPrompt(p: {
       ? `The end of the conversation, oldest first:\n${lines.map((l) => `${speaker(l)}: ${l.text}`).join('\n')}`
       : 'Nobody said anything near the end.',
   );
-  const memories = renderMemories(p.memories);
+  const memories = renderMemories(p.memories, p.recap ? RECAP_MAX_MEMORIES : MAX_MEMORIES);
   if (memories) parts.push(memories);
   parts.push(
     p.recap
-      ? 'Reply with the recap: line first, then the three lines (note:, player: and game:) or the word none.'
+      ? 'Reply with the recap: line first, then any remember: lines, then the three lines (note:, player: and game:) or the word none.'
       : 'Reply with the three lines (note:, player: and game:), or with none.',
   );
   return { system, user: parts.join('\n\n') };
@@ -423,6 +430,10 @@ export function parsePlayerEndReply(text: string): PlayerEndPlan | null {
 }
 
 const RECAP_LABEL = /^\s*[*_-]*\s*recap\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+/** 261113 (v0.7 D2): a durable fact line of the session-end reply. */
+const REMEMBER_LABEL = /^\s*[*_-]*\s*remember\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+/** Most remember: lines one session end saves. */
+export const SESSION_END_MAX_FACTS = 3;
 /** A plan label opening later on the recap's own line ("recap: ... note: ..."). */
 const INLINE_NOTE = /\s+(?=[*_]*\s*note\s*[*_]*\s*[:：])/i;
 const BARE_NONE = /^[\s*_"'“”‘’`]*(none|nothing|no|n\/a|无|没有|なし|없음)[\s*_"'“”‘’`.。]*$/i;
@@ -436,10 +447,21 @@ const BARE_NONE = /^[\s*_"'“”‘’`]*(none|nothing|no|n\/a|无|没有|な�
  * the plan note. No recap label: recap null, the whole reply is the plan.
  * This parses the labeled format the prompt asks for, not speech.
  */
-export function parseSessionEndReply(text: string): { recap: string | null; plan: PlayerEndPlan | null } {
-  const lines = String(text ?? '').split('\n');
+export function parseSessionEndReply(text: string): { recap: string | null; plan: PlayerEndPlan | null; facts: string[] } {
+  // 261113 (D2): remember: lines are the session's durable facts; they are
+  // taken out first, so neither the recap nor the plan reads them.
+  const facts: string[] = [];
+  const lines = String(text ?? '')
+    .split('\n')
+    .filter((l) => {
+      const m = REMEMBER_LABEL.exec(l);
+      if (!m) return true;
+      const f = m[1].replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`]+$/g, '').replace(/\s+/g, ' ').trim();
+      if (f && !BARE_NONE.test(f) && facts.length < SESSION_END_MAX_FACTS) facts.push(f.slice(0, 300));
+      return false;
+    });
   const at = lines.findIndex((l) => RECAP_LABEL.test(l));
-  if (at < 0) return { recap: null, plan: parsePlayerEndReply(text) };
+  if (at < 0) return { recap: null, plan: parsePlayerEndReply(lines.join('\n')), facts };
   let first = RECAP_LABEL.exec(lines[at])![1];
   const rest: string[] = [...lines.slice(0, at)];
   const split = first.search(INLINE_NOTE);
@@ -469,6 +491,7 @@ export function parseSessionEndReply(text: string): { recap: string | null; plan
   return {
     recap: recap && !BARE_NONE.test(recap) ? recap : null,
     plan: parsePlayerEndReply(rest.join('\n')),
+    facts,
   };
 }
 
@@ -518,6 +541,8 @@ export interface PlayerEndInput {
 export interface SessionEndResult {
   outcome: PlayerEndOutcome;
   recap: string | null;
+  /** 261113 (D2): the session's remember: lines and what was saved; null when none came back. */
+  facts?: FactSave | null;
 }
 
 export type PlayerEndOutcome =
@@ -556,6 +581,11 @@ export interface PlayerEndDeps {
    * is filed under the app section (memoryLog APP_SECTION_HEADER).
    */
   save(characterId: string, line: string, opts?: { inGame?: boolean }): Promise<boolean>;
+  /**
+   * 261113 (v0.7 D2): save the session's durable facts (chat/memoryFacts.ts
+   * saveFacts), filed like the plan line. Optional: without it they are dropped.
+   */
+  saveFacts?(characterId: string, facts: string[], opts?: { inGame?: boolean }): Promise<FactSave>;
   /**
    * 261013 (T119): record where a just-saved plan came from, for the Home
    * "up next" card (homeNextStep.ts). Optional; best-effort. 261014: plus
@@ -625,6 +655,7 @@ export async function runSessionEnd(
   ctrl: AbortController = new AbortController(),
 ): Promise<SessionEndResult> {
   let recap: string | null = null;
+  let facts: FactSave | null = null;
   const { characterId } = input;
   const short = characterId.slice(0, 8);
   let provider: LlmProvider | null = null;
@@ -676,14 +707,20 @@ export async function runSessionEnd(
             signal: ctrl.signal,
           });
           if (ctrl.signal.aborted) return 'cancelled';
-          const parsed = input.recap ? parseSessionEndReply(res.text) : { recap: null, plan: parsePlayerEndReply(res.text) };
+          const parsed = input.recap
+            ? parseSessionEndReply(res.text)
+            : { recap: null, plan: parsePlayerEndReply(res.text), facts: [] as string[] };
           const plan = parsed.plan;
           recap = parsed.recap;
+          if (parsed.facts.length && deps.saveFacts) {
+            facts = await deps.saveFacts(characterId, parsed.facts, { inGame: input.surface === 'game' });
+          }
           const step = plan?.step ?? null;
           const u = res.usage ?? {};
           deps.log(
             `[sei/next-step] ${short} player-end check: ${step ? `plan (${step.length} chars${plan?.line ? `, line ${plan.line.length}` : ', no line'})` : 'none'}` +
-              `${input.recap ? `, recap ${recap ? `${recap.length} chars` : 'none'}` : ''}, ` +
+              `${input.recap ? `, recap ${recap ? `${recap.length} chars` : 'none'}` : ''}` +
+              `${facts ? `, facts ${facts.saved}/${facts.returned} saved (${facts.dupes} known)` : ''}, ` +
               `in ${u.input_tokens ?? 0} / out ${u.output_tokens ?? 0} tokens`,
           );
           if (!step) return 'none';
@@ -715,7 +752,7 @@ export async function runSessionEnd(
   if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
   // A recap read before a timeout or cancel is not used: the row may already
   // have been written without it, and a cancelled turn must not write.
-  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null };
+  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null, facts };
 }
 
 /**
@@ -948,6 +985,14 @@ function defaultDeps(): PlayerEndDeps {
         }
       }
       return written > 0;
+    },
+    async saveFacts(characterId, facts, opts) {
+      const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');
+      if (!scopedTurnCurrent()) return { returned: facts.length, saved: 0, dupes: 0 };
+      const { saveFacts } = await import('./chat/memoryFacts');
+      return trackScopedWrite(
+        saveFacts(path.join(memoryDirOf(characterId), 'MEMORY.md'), facts, opts?.inGame ? {} : { section: 'app' }),
+      );
     },
     async tagPlan(characterId, surface, game, line) {
       const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');

@@ -117,12 +117,35 @@ export function buildFoldCalendar(msgs: FoldMsg[]): string {
  * calendar line. Shared by continuity.ts and the offline evals so both send
  * the same text.
  */
-export function buildFoldUserText(summary: string, msgs: FoldMsg[]): string {
+export function buildFoldUserText(summary: string, msgs: FoldMsg[], memory?: string): string {
   const calendar = buildFoldCalendar(msgs);
+  // 261113 (v0.7 D2): the memory notes, so the fold's <remember> lines skip
+  // what is already saved. Omitted (undefined) by callers that predate it.
+  const notes = memory === undefined ? '' : `Your memory notes, already saved:\n${memory.trim() || '(none yet)'}\n\n`;
   return (
-    `Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
+    `${notes}Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
     (calendar ? `\n\n${calendar}` : '')
   );
+}
+
+/** Most lines one fold's <remember> block may save. */
+export const FOLD_MAX_FACTS = 8;
+/** Longest saved fact line (characters). */
+export const FACT_MAX_CHARS = 300;
+
+/**
+ * The lines of the fold's <remember> block (261113, v0.7 D2): one fact per
+ * line, list bullets dropped, at most FOLD_MAX_FACTS. [] when the block is
+ * missing or empty. Only the tag is read, like extractSummaryTag.
+ */
+export function extractRememberTag(text: string, max = FOLD_MAX_FACTS): string[] {
+  const m = /<remember>([\s\S]*?)<\/remember>/i.exec(text);
+  if (!m) return [];
+  return m[1]
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s+/, '').replace(/\s+/g, ' ').trim().slice(0, FACT_MAX_CHARS))
+    .filter(Boolean)
+    .slice(0, max);
 }
 
 /**
@@ -168,7 +191,20 @@ export function buildFoldSystem(personaExpanded?: string): string {
     'crowd out established facts about the player; if a new message seems to contradict an established fact but reads like ' +
     'screen narration or background media, keep the established fact. ' +
     'Wrap the updated summary in <summary> and </summary> tags. Only what is inside the tags is stored and re-read by ' +
-    'every future prompt; anything outside the tags is discarded, so never put summary content outside them.' +
+    'every future prompt; anything outside the tags is discarded, so never put summary content outside them. ' +
+    // 261113 (v0.7 D2): durable facts go to memory before the summary
+    // compresses them away. Measured with the consistency eval (A, B, D) and
+    // scripts/remember-eval.ts --fold.
+    'The summary gets shorter as it is folded again, so a fact that lives only in the summary can be lost. After the summary, ' +
+    'pick out the durable facts in the new messages that your memory notes do not have yet: things about the player (names, ' +
+    'the people and pets in their life, their job or school, dates and plans they told you, what they like or dislike, rules ' +
+    'they asked you to keep) and plans or promises the two of you made. Write each as one short line in the first person, ' +
+    'like your own memory notes, with its date in the sentence when it is tied to one (not a stamp in brackets: each note is ' +
+    'stamped when it is saved). When a new message changes something in your notes ' +
+    '(a new job, a new favourite, a plan that moved), write the new fact and say that it is now different, so it reads as the ' +
+    'newer one. Leave out anything your notes already say, small talk, passing moods, game state, anything from low-signal ' +
+    `material, and anything nobody actually said. Put the lines inside <remember> and </remember> tags, one per line, at most ${FOLD_MAX_FACTS}, and leave the tags ` +
+    'empty when there is nothing new.' +
     personaBlock
   );
 }
@@ -185,5 +221,6 @@ export function buildFoldSystem(personaExpanded?: string): string {
  */
 export function extractSummaryTag(text: string): string {
   const m = /<summary>([\s\S]*?)<\/summary>/i.exec(text);
-  return (m ? m[1] : text).trim();
+  // 261113: the untagged fallback must not store the <remember> block (D2).
+  return (m ? m[1] : text.replace(/<remember>[\s\S]*?(?:<\/remember>|$)/gi, '')).trim();
 }

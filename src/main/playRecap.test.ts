@@ -24,7 +24,7 @@ describe('awaitRecap', () => {
   it('resolves with the recap and the outcome', async () => {
     const s = switches();
     const r = await awaitRecap(Promise.resolve<SessionEndResult>({ outcome: 'saved', recap: 'we fished' }), { onSwitch: s.onSwitch, switchPending: () => false });
-    expect(r).toEqual({ recap: 'we fished', outcome: 'saved' });
+    expect(r).toEqual({ recap: 'we fished', outcome: 'saved', facts: null });
     expect(s.size()).toBe(0);
   });
 
@@ -56,7 +56,8 @@ describe('playRecapProps', () => {
   it('reports the shape of the row, never its text', () => {
     const recap = 'we tamed a wolf named Turnip';
     const p = playRecapProps({ characterId: 'c', game: 'minecraft', event: { recap }, checkOutcome: 'saved' });
-    expect(p).toEqual({ character_id: 'c', game: 'minecraft', saved: true, source: 'recap', recap_chars: recap.length, recap_words: 6, lines: 0, check_outcome: 'saved' });
+    expect(p).toEqual({ character_id: 'c', game: 'minecraft', saved: true, source: 'recap', recap_chars: recap.length, recap_words: 6, lines: 0, check_outcome: 'saved', facts_returned: 0, facts_saved: 0, fact_dupes: 0 });
+    expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: { recap }, checkOutcome: 'saved', facts: { returned: 3, saved: 2, dupes: 1 } })).toMatchObject({ facts_returned: 3, facts_saved: 2, fact_dupes: 1 });
     expect(Object.values(p)).not.toContain(recap);
     expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: { lines: [1, 2] }, checkOutcome: 'waited_out' })).toMatchObject({ saved: false, source: 'lines', lines: 2 });
     expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: {}, checkOutcome: 'not_run' })).toMatchObject({ source: 'none', recap_words: 0 });

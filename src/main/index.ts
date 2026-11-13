@@ -555,7 +555,7 @@ async function emitPlaySession(
     lines: story.digest?.lines ?? null,
   });
   await appendChatMessage(characterId, { id: randomUUID(), ...row, ts: endedAt });
-  capture('play_recap', playRecapProps({ characterId, game, event: row.event, checkOutcome: wait.outcome }));
+  capture('play_recap', playRecapProps({ characterId, game, event: row.event, checkOutcome: wait.outcome, facts: wait.facts }));
   // Continuity OUT (CLAUDE.md contract): chess/draw/backseat fold after their
   // play row; the bot session was the one surface that never did, so its rows
   // only reached the rolling summary on the chat surface's next fold.

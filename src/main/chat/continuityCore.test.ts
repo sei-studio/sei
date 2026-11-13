@@ -107,15 +107,28 @@ describe('runFold', () => {
 
   it('returns the summary tag', async () => {
     const l = llm('<summary>we fished</summary>');
-    expect(await runFold({ llm: l, summary: '', msgs, model: 'm' })).toEqual({ status: 'ok', summary: 'we fished', raw: '<summary>we fished</summary>' });
+    expect(await runFold({ llm: l, summary: '', msgs, model: 'm' })).toEqual({ status: 'ok', summary: 'we fished', facts: [], raw: '<summary>we fished</summary>' });
     expect(l.calls[0].maxTokens).toBe(SUMMARY_MAX_TOKENS);
     expect(String((l.calls[0].messages as Array<{ content: string }>)[0].content)).toContain('Game session');
+  });
+
+  it('returns the <remember> facts and shows the fold the memory notes (261113 D2)', async () => {
+    const l = llm('<summary>we fished</summary>\n<remember>\n- Alex has a cat named Mochi\n\n2. Alex now works at the library, not the bakery\n</remember>');
+    const r = await runFold({ llm: l, summary: 'old', msgs, memory: '- [5 Oct 2026, 20:11] alex plays on weekends', model: 'm' });
+    expect(r).toMatchObject({ status: 'ok', summary: 'we fished', facts: ['Alex has a cat named Mochi', 'Alex now works at the library, not the bakery'] });
+    const user = String((l.calls[0].messages as Array<{ content: string }>)[0].content);
+    expect(user.indexOf('Your memory notes, already saved:\n- [5 Oct 2026, 20:11] alex plays on weekends')).toBe(0);
+    expect(String(l.calls[0].system)).toContain('<remember>');
+    expect(String(l.calls[0].system)).not.toMatch(/[\u2014\u2013]/);
+    expect((await runFold({ llm: llm('<summary>s</summary><remember></remember>'), summary: '', msgs, model: 'm' })).status === 'ok').toBe(true);
   });
 
   it('reports max_tokens and empty replies; an untagged reply is the summary', async () => {
     expect((await runFold({ llm: llm('<summary>cut', 'max_tokens'), summary: '', msgs, model: 'm' })).status).toBe('max_tokens');
     expect((await runFold({ llm: llm('  '), summary: '', msgs, model: 'm' })).status).toBe('empty');
     expect(await runFold({ llm: llm('no tag'), summary: '', msgs, model: 'm' })).toMatchObject({ status: 'ok', summary: 'no tag' });
+    // An untagged summary never stores the remember block as summary text.
+    expect(await runFold({ llm: llm('we fished\n<remember>\nAlex likes trout\n</remember>'), summary: '', msgs, model: 'm' })).toMatchObject({ summary: 'we fished', facts: ['Alex likes trout'] });
   });
 
   it('retries a rejected model once on the fallback, without extras', async () => {
