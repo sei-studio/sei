@@ -36,6 +36,7 @@ export const GAME_SURFACES: Record<GameId, GameSurface> = {
   minecraft: { LaunchPanel: McLaunchPanel, DashboardPanel: McDashboardPanel },
   stardew: withGame('stardew'),
   dontstarve: withGame('dontstarve'),
+  factorio: withGame('factorio'),
 };
 
 export function registerGameSurface(game: GameId, surface: GameSurface): void {

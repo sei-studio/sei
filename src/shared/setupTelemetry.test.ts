@@ -27,6 +27,22 @@ describe('setupStepProps (game_setup_step shape)', () => {
     });
   });
 
+  it('carries the Factorio game and its steps (261113)', () => {
+    expect(setupStepProps({ game: 'factorio', step: 'link_port', outcome: 'fail', error_code: 'FACTORIO_UDP_PORT_IN_USE', store: 'standalone' })).toEqual({
+      game: 'factorio',
+      step: 'link_port',
+      outcome: 'fail',
+      error_code: 'FACTORIO_UDP_PORT_IN_USE',
+      store: 'standalone',
+    });
+    expect(setupStepProps({ game: 'factorio', step: 'world_seen', outcome: 'ok', wait_ms: 12_345.6 })).toEqual({
+      game: 'factorio',
+      step: 'world_seen',
+      outcome: 'ok',
+      wait_ms: 12_346,
+    });
+  });
+
   it('always carries an error_code on a fail', () => {
     expect(setupStepProps({ game: 'minecraft', step: 'fabric', outcome: 'fail' })).toMatchObject({ error_code: 'UNKNOWN' });
     expect(setupStepProps({ game: 'minecraft', step: 'fabric', outcome: 'fail', error_code: 'FABRIC_INSTALL_FAILED', reason: 'network' })).toEqual({

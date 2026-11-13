@@ -1,6 +1,6 @@
 /**
  * Setup telemetry (261104): one shape-only event, `game_setup_step`, for the
- * Minecraft and Stardew Valley setup flows.
+ * Minecraft, Stardew Valley and (261113) Factorio setup flows.
  *
  * Before this neither flow sent anything: the first data point was a summon,
  * so the 30% of new users whose Minecraft scan found nothing, the 59% with
@@ -24,7 +24,7 @@ import type { McInstall, McScanExtras } from './ipc';
 
 export const GAME_SETUP_EVENT = 'game_setup_step';
 
-export type SetupGame = 'minecraft' | 'stardew';
+export type SetupGame = 'minecraft' | 'stardew' | 'factorio';
 export type SetupOutcome = 'start' | 'ok' | 'fail';
 
 export const MC_SETUP_STEPS = [
@@ -57,9 +57,24 @@ export const STARDEW_SETUP_STEPS = [
   'farm_seen',
 ] as const;
 
+/** Factorio (261113, src/main/games/factorio). find_game is shared with Stardew. */
+export const FACTORIO_SETUP_STEPS = [
+  /** Detection answered (once per distinct answer; version_ok on a found game). */
+  'find_game',
+  /** The Sei mod copied into mods/ and enabled. */
+  'mod_copy',
+  /** Sei started Factorio with the link flag. */
+  'launch',
+  /** Factorio logged that it could not open the link port. */
+  'link_port',
+  /** The mod answered a hello: a game is loaded (first per process). */
+  'world_seen',
+] as const;
+
 export type McSetupStep = (typeof MC_SETUP_STEPS)[number];
 export type StardewSetupStep = (typeof STARDEW_SETUP_STEPS)[number];
-export type SetupStep = McSetupStep | StardewSetupStep;
+export type FactorioSetupStep = (typeof FACTORIO_SETUP_STEPS)[number];
+export type SetupStep = McSetupStep | StardewSetupStep | FactorioSetupStep;
 
 /** Where the game came from: Stardew's store, or Minecraft's launcher type. */
 export const SETUP_STORES = [
@@ -68,6 +83,8 @@ export const SETUP_STORES = [
   'gog',
   'xbox',
   'manual',
+  // Factorio's non-Steam install (261113)
+  'standalone',
   'unknown',
   // Minecraft launchers
   'vanilla',
@@ -165,7 +182,7 @@ export interface SetupStepInput {
 }
 
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
-const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS]);
+const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS, ...FACTORIO_SETUP_STEPS]);
 const STORES = new Set<string>(SETUP_STORES);
 
 /** An error code, or UNKNOWN for anything that is not one. */
@@ -181,7 +198,7 @@ export function setupErrorCode(code: string | null | undefined): string {
  */
 export function setupStepProps(input: SetupStepInput): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {
-    game: input.game === 'stardew' ? 'stardew' : 'minecraft',
+    game: input.game === 'stardew' || input.game === 'factorio' ? input.game : 'minecraft',
     step: STEPS.has(input.step) ? input.step : 'unknown',
     outcome: input.outcome === 'ok' || input.outcome === 'fail' ? input.outcome : 'start',
   };

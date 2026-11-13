@@ -11,8 +11,14 @@ const base = {
 const mc = { host: '127.0.0.1', auth: 'offline', username: 'Sui' }
 
 describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
-  it('lists the three games', () => {
-    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve'])
+  it('lists the four games', () => {
+    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve', 'factorio'])
+  })
+
+  it('parses a factorio session with defaults and requires its block', () => {
+    const f = ConfigSchema.parse({ ...base, adapter: { kind: 'factorio', factorio: { port: 34990, username: 'Sui' } } })
+    expect(f.adapter.factorio).toMatchObject({ host: '127.0.0.1', port: 34990, username: 'Sui', quiet_ms: 15000 })
+    expect(() => ConfigSchema.parse({ ...base, adapter: { kind: 'factorio' } })).toThrow(/adapter\.factorio is required/)
   })
 
   it('defaults to minecraft and keeps the minecraft block mandatory for it', () => {
