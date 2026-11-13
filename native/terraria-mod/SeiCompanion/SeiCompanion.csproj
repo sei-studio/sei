@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Sei companion tModLoader mod (MIT). Built by scripts/build-terraria-mod.sh,
+    which points TmlDir at an unpacked tModLoader release (the GitHub
+    tModLoader.zip; no Steam needed). tMLMod.targets compiles against
+    tModLoader.dll and then runs `dotnet tModLoader.dll -server -build` to pack
+    SeiCompanion.tmod.
+  -->
+  <PropertyGroup>
+    <TmlDir Condition="'$(TmlDir)' == ''">$(MSBuildThisFileDirectory)../.tml/current</TmlDir>
+  </PropertyGroup>
+  <Import Project="$(TmlDir)/tMLMod.targets" />
+  <PropertyGroup>
+    <AssemblyName>SeiCompanion</AssemblyName>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+</Project>

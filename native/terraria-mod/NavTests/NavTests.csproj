@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Game-free tests for SeiCompanion/Body/Nav.cs, the path finder. It only
+    talks to the world through ITileQuery, so it builds and runs on any
+    machine with the .NET SDK:
+
+      dotnet run (project native/terraria-mod/NavTests)
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../SeiCompanion/Body/Nav.cs" Link="Nav.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+</Project>

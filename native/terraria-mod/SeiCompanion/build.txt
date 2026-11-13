@@ -1,0 +1,6 @@
+displayName = Sei Companion
+author = Sei
+version = 0.1.0
+side = Both
+homepage = https://sei.gg
+buildIgnore = *.md, bin/*, obj/*, Tests/*
