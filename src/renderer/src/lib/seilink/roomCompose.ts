@@ -39,6 +39,11 @@ import { mipTile, type MipTile } from '@shared/seilinkPatterns';
 import { ctx2d, loadPatternTileGrey, loadRoomGlow, loadRoomGlowGrey, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
 import { patternColour } from './roomPattern';
 
+/**
+ * Loaded files of one pack, keyed by pack-relative path (the plan's
+ * frame.src). Two packs use the same names, so a set is only valid with the
+ * resolver that filled it: never reuse one across packs.
+ */
 export interface RoomAssets {
   images: Map<string, ImageBitmap>;
   masks: Map<string, ImageBitmap>;
@@ -256,8 +261,12 @@ function drawPlain(ctx: AnyContext2D, l: SlotLayer | ItemLayer, img: ImageBitmap
 }
 
 let sinkScratch: { c: AnyCanvas; ctx: AnyContext2D } | null = null;
-/** Base span of each sprite at each sink look, measured once (sprite alpha read back once per frame file). */
-const baseCache = new Map<string, [number, number] | null>();
+/**
+ * Base span of each sprite at each sink look, measured once (sprite alpha read
+ * back once per frame file). Keyed by the bitmap first: a pack-relative path
+ * names a different file in each pack.
+ */
+const baseCache = new WeakMap<ImageBitmap, Map<string, [number, number] | null>>();
 const alphaCache = new WeakMap<ImageBitmap, { w: number; h: number; data: Uint8ClampedArray } | null>();
 
 function spriteAlpha(img: ImageBitmap): { w: number; h: number; data: Uint8ClampedArray } | null {
@@ -280,12 +289,14 @@ function spriteAlpha(img: ImageBitmap): { w: number; h: number; data: Uint8Clamp
 }
 
 function baseOf(l: ItemLayer, look: SinkLook, img: ImageBitmap, rect: RoomBox): [number, number] | null {
-  const key = `${l.frame.src}:${l.flip ? 1 : 0}:${rect.map((v) => v.toFixed(1)).join(',')}:${look.contact.toFixed(1)}:${look.fadeTop.toFixed(1)}`;
-  if (baseCache.has(key)) return baseCache.get(key)!;
+  const key = `${l.flip ? 1 : 0}:${rect.map((v) => v.toFixed(1)).join(',')}:${look.contact.toFixed(1)}:${look.fadeTop.toFixed(1)}`;
+  let spans = baseCache.get(img);
+  if (!spans) baseCache.set(img, (spans = new Map()));
+  if (spans.has(key)) return spans.get(key)!;
   const a = spriteAlpha(img);
   const span = a ? baseSpan(l, look, [a.w, a.h], rect, (u, v) => a.data[(v * a.w + u) * 4 + 3]) : null;
-  if (baseCache.size > 256) baseCache.clear();
-  baseCache.set(key, span);
+  if (spans.size > 64) spans.clear();
+  spans.set(key, span);
   return span;
 }
 
