@@ -39,7 +39,8 @@ Rules that follow from the existing implementations:
   (`public/app.js`). That is the only dashboard change needed.
 
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
-`voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`.
+`voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`,
+`ktane_session_ended` (KTANE expert mode, branch only; see `docs/agents/ktane.md`).
 
 **`bot_session_ended` says why (260929).** It used to carry no reason, so a
 player pressing Stop looked exactly like a kick loop, and 10 of 36 Minecraft
