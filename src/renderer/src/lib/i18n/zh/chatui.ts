@@ -228,8 +228,6 @@ export const ZH_CHATUI: Record<string, string> = {
     '在鹈鹕镇并肩务农。{name} 会加入你的合作农场，和你一起种地、挖矿，聊着天度过四季。',
   'Survive the Constant together. {name} gathers, fights, and keeps the fire going with you through the night.':
     '一起在永恒大陆求生。{name} 会采集、战斗，和你一起守着火堆熬过黑夜。',
-  'A quiet co-working session. {name} keeps you company while you get things done.':
-    '一段安静的共同工作时光。{name} 会在你做事时陪伴你。',
   'Tell us what you want to play together. Suggestions go straight to the team.':
     '告诉我们你想一起玩什么。建议会直接送达团队。',
   // Guided first moment (260926): the next-step card under the first greeting.

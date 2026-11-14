@@ -173,6 +173,36 @@ export const ZH_GAMES: Record<string, string> = {
     '玩任意 Roblox 游戏，{name}会通过语音通话看着你的屏幕陪你聊天。',
   'Roblox is available via Backseat: your companion can watch you play through your screen.':
     'Roblox 通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Elden Ring (Backseat)': '艾尔登法环（Backseat）',
+  'Elden Ring': '艾尔登法环',
+  'Fight through the Lands Between while {name} watches your screen and talks with you on a voice call.':
+    '在交界地一路闯荡，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Elden Ring is available via Backseat: your companion can watch you play through your screen.':
+    '艾尔登法环通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Silksong (Backseat)': '丝之歌（Backseat）',
+  'Hollow Knight: Silksong': '空洞骑士：丝之歌',
+  'Climb through Pharloom as Hornet while {name} watches your screen and talks with you on a voice call.':
+    '扮演大黄蜂攀登法鲁姆，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Silksong is available via Backseat: your companion can watch you play through your screen.':
+    '丝之歌通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Valheim (Backseat)': '英灵神殿（Backseat）',
+  'Valheim': '英灵神殿',
+  'Build, sail and survive while {name} watches your screen and talks with you on a voice call.':
+    '建造、航海、求生，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Valheim is available via Backseat: your companion can watch you play through your screen.':
+    '英灵神殿通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Genshin Impact (Backseat)': '原神（Backseat）',
+  'Genshin Impact': '原神',
+  'Explore Teyvat and open your wishes while {name} watches your screen and talks with you on a voice call.':
+    '探索提瓦特、进行祈愿，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Genshin Impact is available via Backseat: your companion can watch you play through your screen.':
+    '原神通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
+  'Escape the Backrooms (Backseat)': '逃离后室（Backseat）',
+  'Escape the Backrooms': '逃离后室',
+  'Search for the way out while {name} watches your screen and talks with you on a voice call.':
+    '寻找出口，{name}会通过语音通话看着你的屏幕陪你聊天。',
+  'Escape the Backrooms is available via Backseat: your companion can watch you play through your screen.':
+    '逃离后室通过 Backseat 支持：你的伙伴可以通过屏幕共享看你玩。',
   // The pick step (261004): a plain title, the cards, one line when there are none.
   'Play {game}': '玩 {game}',
   "No games found. Try pasting the game's link.": '没有找到游戏。试试粘贴游戏链接。',

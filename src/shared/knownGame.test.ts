@@ -60,9 +60,22 @@ describe('matchKnownGame', () => {
   });
 
   it('says nothing for games we do not have', () => {
-    for (const t of ['', '   ', 'COD MODER WARFARE 2', 'Rainbow six seige', 'fortnite', 'Focus', 'Suggest a game', 'valheim']) {
+    for (const t of ['', '   ', 'COD MODER WARFARE 2', 'Rainbow six seige', 'fortnite', 'Focus', 'Suggest a game', 'hades']) {
       expect(id(t), t).toBeNull();
     }
+  });
+
+  it('knows the backseat games sei.gg has pages for, but not the coming-soon tiles (261115)', () => {
+    expect(id('elden ring')).toBe('eldenring');
+    expect(id('Elden Ring Nightreign')).toBeNull();
+    expect(id('silksong')).toBe('silksong');
+    expect(id('Hollow Knight: Silksong')).toBe('silksong');
+    expect(id('valheim')).toBe('valheim');
+    expect(id('原神')).toBe('genshin');
+    expect(id('genshin impact')).toBe('genshin');
+    expect(id('escape the backrooms')).toBe('backrooms');
+    expect(id('factorio')).toBeNull();
+    expect(id('terraria')).toBeNull();
   });
 
   it('the game named first wins', () => {

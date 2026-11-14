@@ -918,7 +918,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
   const dstSrc = readFileSync(join(root, 'src/renderer/public/img/game-dontstarve.jpg'));
   const dstFrame = (dx: number) => sharp(dstSrc).extract({ left: 40 + dx, top: 20, width: 1840, height: 1040 }).toBuffer();
   // A code editor with a README open (not a game at all).
-  const codeFrame = () => sharp(readFileSync(join(root, 'src/renderer/public/img/game-focus.jpg'))).toBuffer();
+  const codeFrame = () => sharp(readFileSync(join(root, 'scripts/fixtures/backseat/code-editor.jpg'))).toBuffer();
   /** Things the probe's memory holds (a Minecraft cabin plan, chess wins) that do not belong in a line about another screen. */
   const MEMORY_BLEED = /\b(chess|smug|cabin|river)\b/i;
 

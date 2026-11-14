@@ -490,7 +490,9 @@ export function renderBackseatGameBlock(
         `<${GAME_FENCE}>\n${lines.join('\n')}\n</${GAME_FENCE}>\n` +
         'If the screen shows a different game, they switched: go by the screen and by what they tell you.',
     );
-  } else {
+  } else if (def.lookup) {
+    // Only a platform of many games (Roblox) has a "which one" to ask about;
+    // for a single game (Elden Ring, 261115) the line would make no sense.
     parts.push(
       `They did not say which ${def.name} game they are playing. Work it out from the window title ` +
         'and the screen, or ask them.',
