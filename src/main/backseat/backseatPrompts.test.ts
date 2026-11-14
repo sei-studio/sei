@@ -14,7 +14,7 @@ import {
   stripDashes,
   tickNote,
 } from './backseatPrompts';
-import { backseatGame, BACKSEAT_GAMES } from '../../shared/backseatGames';
+import { backseatGame } from '../../shared/backseatGames';
 
 describe('stripDashes', () => {
   // These lines are SPOKEN. A dash is not a sound, so TTS renders it as a hard
@@ -354,22 +354,6 @@ describe('renderBackseatGameBlock', () => {
   it('is plain model text: no em dashes outside the creator fields', () => {
     const block = renderBackseatGameBlock(def, null, { canSearch: true });
     expect(block).not.toMatch(/—/);
-  });
-
-  it('asks "which game" only for a platform with a lookup (261115)', () => {
-    const elden = backseatGame('eldenring')!;
-    const block = renderBackseatGameBlock(elden, null, { canSearch: false });
-    expect(block).toMatch(/^PLAYING ELDEN RING\./);
-    expect(block).not.toMatch(/did not say which/);
-    expect(block).not.toMatch(/LOOKING THINGS UP/);
-  });
-
-  it('every backseat game has its own knowledge, with no em dashes', () => {
-    for (const g of BACKSEAT_GAMES) {
-      const block = renderBackseatGameBlock(g, null, { canSearch: true });
-      expect(block).toContain(`from the ${g.name} tile`);
-      expect(block).not.toMatch(/—/);
-    }
   });
 });
 

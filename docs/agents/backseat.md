@@ -352,19 +352,6 @@ The design and its measurements are committed at
   (never the typed search), and `backseat_started/_ended` carry `game`.
   Verify with `?dashshot=roblox&part=picker|intro|pick|share` (+`&lang=zh`) or
   `scripts/roblox-backseat-shots.ts`.
-- **The sei.gg Backseat games are tiles too (261115).** Elden Ring, Silksong,
-  Valheim, Genshin Impact and Escape the Backrooms (ids `eldenring`,
-  `silksong`, `valheim`, `genshin`, `backrooms`) are registry entries with no
-  lookup and no `autoShare`: intro, then the share picker with their window
-  preselected. Their knowledge is short (what the game is, what the screen
-  shows, how to be good company, no spoilers); `renderBackseatGameBlock` adds
-  the "which game are you playing" line only for a game with a `lookup`.
-  Tile art is original (`public/img/game-<id>.jpg`, scenes in the sei.gg
-  illustration style, drawn by `scripts/game-tile-art.mjs`), never the
-  game's key art or logo. In the # GAMES prompt block they share one
-  "By screen share" line. No Rockstar/Take-Two game may be added (its terms
-  bar use with generative AI; a test checks). Intro for one of them:
-  `?dashshot=roblox&part=intro&game=<id>`.
 - **Suggest a game says when a game already works (261109, T379).** Players
   kept sending "roblox" through the picker's Suggest-a-game form, one row
   under the Roblox tile (PostHog: 2 of the 3 found the tile within a minute

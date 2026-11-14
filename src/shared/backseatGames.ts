@@ -2,7 +2,7 @@
  * Backseat games (260929): games Sei supports by WATCHING, not by joining.
  *
  * Some games are asked for far more often than we can build a real adapter
- * for (Roblox first; 261115 added the games sei.gg has Backseat pages for). Backseat already works with any window,
+ * for (Roblox first, Valorant next). Backseat already works with any window,
  * but a player looking at the games picker has no way to know that, so a
  * backseat game is a picker tile that leads into the ordinary screen share
  * with three extras:
@@ -37,6 +37,8 @@ export interface BackseatGameDef {
   tileName: string;
   /** Other names players type for it (see GameCatalogEntry.aliases). */
   aliases?: readonly string[];
+  /** How the # GAMES prompt line names it, so the companion knows it watches. */
+  promptName: string;
   /** Tile + info popup art, renderer-relative (served from public/). */
   image: string;
   /** Info popup body (English, `{name}` = the companion). */
@@ -164,102 +166,6 @@ const ROBLOX_KNOWLEDGE = [
     'in the game asks them for those, or offers free Robux, tell them it is a scam.',
 ].join('\n\n');
 
-/** The opening every backseat game's knowledge shares: who plays, who watches. */
-function watching(name: string): string {
-  return (
-    `PLAYING ${name.toUpperCase()}. The player opened this session from the ${name} tile, so what ` +
-    `you are watching is most likely their ${name} window. They play and you watch their screen ` +
-    'and talk with them. You cannot press anything or move in their game.'
-  );
-}
-
-/** What every story-heavy single-player game needs said once. */
-const NO_SPOILERS =
-  'Do not spoil story, bosses or places they have not reached unless they ask. When they are ' +
-  'stuck, ask whether they want a tip before giving one. What you know about exact item ' +
-  'locations and numbers can be wrong, so say when you are not sure.';
-
-// 261115: the five games sei.gg has Backseat landing pages for. Kept short on
-// purpose: the model already knows these games; the blocks say what the
-// screen shows and how to be good company, which it cannot work out alone.
-
-const ELDEN_RING_KNOWLEDGE = [
-  watching('Elden Ring'),
-  'What Elden Ring is. A single-player open-world action RPG by FromSoftware, set in the Lands ' +
-    'Between. Fights are hard and dying is routine. When they die they drop the runes they carried ' +
-    'and can win them back by reaching the spot where they fell. Sites of Grace are the checkpoints ' +
-    'where they rest, level up and travel. A boss often takes many tries.',
-  'What the screen usually shows. Health, focus and stamina bars at the top left, the rune count ' +
-    'at the bottom right, equipped weapons and items at the bottom left, and a boss name and health ' +
-    'bar along the bottom during a boss fight. Glowing messages on the ground were left by other ' +
-    'players, and red bloodstains show where other players died. A golden or blue ghostly figure ' +
-    'is a summon or a co-op player; a red one is an invader.',
-  'Being good company here. React to close calls and deaths the way someone on the call would, ' +
-    'notice when they keep dying to the same thing, and celebrate a boss going down. ' +
-    NO_SPOILERS,
-].join('\n\n');
-
-const SILKSONG_KNOWLEDGE = [
-  watching('Hollow Knight: Silksong'),
-  'What Silksong is. A hard 2D action platformer by Team Cherry, the sequel to Hollow Knight. ' +
-    'They play Hornet, climbing through the kingdom of Pharloom. Benches are where she rests and ' +
-    'the game saves. Rosaries are the money; when she dies she leaves them behind and can get them ' +
-    'back by returning to that spot. Silk fills as she hits enemies and is spent to heal. Characters ' +
-    'speak in made-up sounds, so what they say is the text box on screen. Bosses and tricky jumps ' +
-    'often take many tries.',
-  'Being good company here. Notice the jump that keeps going wrong, react to the close calls, and ' +
-    'cheer when a boss finally falls. What you know about this game may be thin, so go by the ' +
-    'screen and say when you are unsure. ' +
-    NO_SPOILERS,
-].join('\n\n');
-
-const VALHEIM_KNOWLEDGE = [
-  watching('Valheim'),
-  'What Valheim is. A survival and building game by Iron Gate, set in a Viking afterlife. They ' +
-    'gather wood, stone and metal, build a base and boats, eat food to raise their health and ' +
-    'stamina, and call up each boss at its altar with an offering. The world is made of biomes that ' +
-    'get more dangerous as they go, from the Meadows and Black Forest to the Swamp, Mountains, Plains ' +
-    'and beyond. Night is more dangerous than day. When they die they drop everything in a tombstone ' +
-    'and have to go back for it. Up to ten players can share a world, so other Vikings on screen may ' +
-    'be their friends.',
-  'What the screen usually shows. The hotbar at the top left, health and the food they have eaten ' +
-    'at the bottom left, and the minimap at the top right.',
-  'Being good company here. Notice when it is getting dark or the weather turns, have opinions ' +
-    'about what they build, and keep them company on the walk back to a tombstone. Version 1.0 is ' +
-    'recent, so newer content may be thin in what you know: go by the screen and say when you are ' +
-    'unsure.',
-].join('\n\n');
-
-const GENSHIN_KNOWLEDGE = [
-  watching('Genshin Impact'),
-  'What Genshin Impact is. A free-to-play open-world action RPG by HoYoverse, set in Teyvat. They ' +
-    'control a party of four characters, switching between them in a fight and mixing elements into ' +
-    'reactions. Wishes are the gacha: they spend Primogems on banners for characters and weapons, and ' +
-    'pity guarantees a 5-star after enough pulls. Resin limits the rewards from domains and bosses. ' +
-    'Daily commissions, events and the Archon Quest story are the usual things to do. Up to four ' +
-    'players can share a world in co-op.',
-  'What the screen usually shows. The minimap at the top left, the party list on the right, and ' +
-    'the active character with their health along the bottom. Small numbers such as artifact stats ' +
-    'are often too small for you to read, so ask them when it matters.',
-  'Being good company here. Cheer or wince with them on a wish, notice the chest on the cliff they ' +
-    'flew past, and talk about the story when they want to. Never push them to spend money on ' +
-    'wishes. The game updates often, so new characters, regions and events may be newer than what ' +
-    'you know: say when you are unsure.',
-].join('\n\n');
-
-const BACKROOMS_KNOWLEDGE = [
-  watching('Escape the Backrooms'),
-  'What Escape the Backrooms is. A co-op horror exploration game for one to four players, based on ' +
-    'the internet legend of the Backrooms: endless empty rooms with yellow walls, damp carpet and ' +
-    'buzzing lights. Each level has its own look, puzzle and way out, and in many of them entities ' +
-    'hunt the players. There is no fighting back: hiding, running and listening are how they survive. ' +
-    'Other players on screen are their teammates. The game has proximity voice chat, and some ' +
-    'entities can hear voices.',
-  'Being good company here. Help them keep track of where they have been, since every hallway ' +
-    'looks the same, think through codes and notes with them, and react with them when something ' +
-    'shows up. What you know about the newer levels can be wrong, so say when you are unsure.',
-].join('\n\n');
-
 /** Order is the picker's tile order (after the native games). */
 export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
   {
@@ -267,6 +173,7 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     name: 'Roblox',
     tileName: 'Roblox (Backseat)',
     aliases: ['罗布乐思', 'ロブロックス', 'Роблокс'],
+    promptName: 'Roblox (by screen share)',
     // Original Sei art (261003): Sui watching a generic obby on a monitor,
     // generated from her own sprites. It replaced the Roblox press-kit render,
     // which Roblox's brand guidelines do not allow in a commercial product.
@@ -281,72 +188,6 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     knowledge: ROBLOX_KNOWLEDGE,
     lookup: 'roblox',
     autoShare: true,
-  },
-  // 261115: original Sei art for each (a scene in the sei.gg Backseat
-  // illustration style), never the game's own key art or logo.
-  {
-    id: 'eldenring',
-    name: 'Elden Ring',
-    tileName: 'Elden Ring (Backseat)',
-    aliases: ['艾尔登法环', '老头环', 'エルデンリング', 'Элден Ринг'],
-    image: './img/game-eldenring.jpg',
-    tileDescription:
-      'Fight through the Lands Between while {name} watches your screen and talks with you on a voice call.',
-    introCopy:
-      'Elden Ring is available via Backseat: your companion can watch you play through your screen.',
-    windowNames: ['ELDEN RING™', 'ELDEN RING'],
-    knowledge: ELDEN_RING_KNOWLEDGE,
-  },
-  {
-    id: 'silksong',
-    name: 'Hollow Knight: Silksong',
-    tileName: 'Silksong (Backseat)',
-    aliases: ['Silksong', 'Hollow Knight Silksong', '丝之歌', '空洞骑士：丝之歌', 'シルクソング'],
-    image: './img/game-silksong.jpg',
-    tileDescription:
-      'Climb through Pharloom as Hornet while {name} watches your screen and talks with you on a voice call.',
-    introCopy:
-      'Silksong is available via Backseat: your companion can watch you play through your screen.',
-    windowNames: ['Hollow Knight Silksong', 'Hollow Knight: Silksong', 'Silksong'],
-    knowledge: SILKSONG_KNOWLEDGE,
-  },
-  {
-    id: 'valheim',
-    name: 'Valheim',
-    tileName: 'Valheim (Backseat)',
-    aliases: ['英灵神殿', 'ヴァルヘイム', 'Вальхейм'],
-    image: './img/game-valheim.jpg',
-    tileDescription:
-      'Build, sail and survive while {name} watches your screen and talks with you on a voice call.',
-    introCopy:
-      'Valheim is available via Backseat: your companion can watch you play through your screen.',
-    windowNames: ['Valheim'],
-    knowledge: VALHEIM_KNOWLEDGE,
-  },
-  {
-    id: 'genshin',
-    name: 'Genshin Impact',
-    tileName: 'Genshin Impact (Backseat)',
-    aliases: ['Genshin', '原神', 'Геншин'],
-    image: './img/game-genshin.jpg',
-    tileDescription:
-      'Explore Teyvat and open your wishes while {name} watches your screen and talks with you on a voice call.',
-    introCopy:
-      'Genshin Impact is available via Backseat: your companion can watch you play through your screen.',
-    windowNames: ['Genshin Impact', '原神'],
-    knowledge: GENSHIN_KNOWLEDGE,
-  },
-  {
-    id: 'backrooms',
-    name: 'Escape the Backrooms',
-    tileName: 'Escape the Backrooms (Backseat)',
-    image: './img/game-backrooms.jpg',
-    tileDescription:
-      'Search for the way out while {name} watches your screen and talks with you on a voice call.',
-    introCopy:
-      'Escape the Backrooms is available via Backseat: your companion can watch you play through your screen.',
-    windowNames: ['Escape the Backrooms', 'EscapeTheBackrooms'],
-    knowledge: BACKROOMS_KNOWLEDGE,
   },
 ];
 

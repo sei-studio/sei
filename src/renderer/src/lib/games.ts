@@ -1,7 +1,7 @@
 /**
  * Games catalog (Phase 18/19) — the tiles shown in the chat "Play together"
  * picker. The native games and the Backseat games are live; the coming-soon
- * tiles (Factorio, Terraria) preview what is next, and the "Suggest a game"
+ * tiles (games being built now) preview what is next, and the "Suggest a game"
  * tile opens the feedback form (same submit path as the Playtime screen's
  * form).
  *
@@ -94,10 +94,13 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
     ]),
   ),
   // Coming-soon previews (product call 261115). A soon tile is dimmed and has
-  // no (i) popup, so it carries art only. Original Sei art in the Backseat
-  // illustration style, not the games' own key art.
+  // no (i) popup, so it carries art only: the game's own Steam library hero,
+  // cropped to 16:9 without its logo (the tile caption names it), the way
+  // the other games' tiles use their store art.
   factorio: { image: './img/game-factorio.jpg', description: () => '' },
   terraria: { image: './img/game-terraria.jpg', description: () => '' },
+  sts2: { image: './img/game-sts2.jpg', description: () => '' },
+  ktane: { image: './img/game-ktane.jpg', description: () => '' },
 };
 
 export const GAMES: GameDef[] = [

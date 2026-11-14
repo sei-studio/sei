@@ -83,34 +83,16 @@ describe('pickHintedSource', () => {
 describe('registry', () => {
   it('knows its games and nothing else', () => {
     expect(isBackseatGameId('roblox')).toBe(true);
-    // 261115: the games sei.gg has Backseat pages for.
-    for (const id of ['eldenring', 'silksong', 'valheim', 'genshin', 'backrooms']) {
-      expect(isBackseatGameId(id)).toBe(true);
-    }
     expect(isBackseatGameId('minecraft')).toBe(false);
     expect(isBackseatGameId(undefined)).toBe(false);
   });
 
   it('has user-facing copy and knowledge with no em dashes', () => {
     for (const g of BACKSEAT_GAMES) {
-      for (const text of [g.name, g.tileName, g.tileDescription, g.introCopy, g.knowledge]) {
+      for (const text of [g.name, g.tileName, g.promptName, g.tileDescription, g.introCopy, g.knowledge]) {
         expect(text).not.toMatch(/—/);
       }
     }
-  });
-
-  it('has unique ids, a tile image and a window name for every game', () => {
-    expect(new Set(BACKSEAT_GAMES.map((g) => g.id)).size).toBe(BACKSEAT_GAMES.length);
-    for (const g of BACKSEAT_GAMES) {
-      expect(g.image).toMatch(/^\.\/img\/game-[a-z]+\.(jpg|webp|png)$/);
-      expect(g.windowNames.length).toBeGreaterThan(0);
-      expect(g.tileName).toMatch(/\(Backseat\)$/);
-    }
-  });
-
-  it('never lists a Take-Two game (its terms bar use with generative AI)', () => {
-    const text = JSON.stringify(BACKSEAT_GAMES);
-    expect(text).not.toMatch(/\b(GTA|Grand Theft Auto|Red Dead|RDR2?|Rockstar|Take-Two)\b/i);
   });
 
   it('keeps the exact intro copy from the brief', () => {

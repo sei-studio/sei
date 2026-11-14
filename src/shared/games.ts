@@ -39,8 +39,7 @@ export interface GameCatalogEntry {
    * its tile into the share flow instead of a launch.
    */
   backseat?: boolean;
-  /** The name the # GAMES prompt lines use, when it differs from the tile's
-   *  (a backseat tile says "Roblox (Backseat)", the prompt says "Roblox"). */
+  /** The name the # GAMES prompt line uses, when it differs from the tile's. */
   promptName?: string;
   /**
    * 261109: other names players type for this game (short forms, the name in
@@ -90,17 +89,19 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     name: g.tileName,
     available: true,
     backseat: true,
-    // The # GAMES line names it by its proper name, on the screen-share line.
-    promptName: g.name,
+    promptName: g.promptName,
     // The proper name ("Roblox"), not only the tile's "Roblox (Backseat)".
     aliases: [g.name, ...(g.aliases ?? [])],
   })),
-  // Coming-soon tiles (product call 261115): adapters in progress on their own
-  // branches. The picker shows them dimmed; the prompt names them as not out
-  // yet. "Focus" (a co-working session) was dropped here: it was Backseat
-  // under another name, and people come to Sei to game.
+  // Coming-soon tiles (product call 261115): games being built right now on
+  // their own branches, which will replace these rows with their full entries.
+  // The picker shows them dimmed; the prompt names them only as not out yet.
+  // "Focus" (a co-working session) was dropped: it was Backseat under another
+  // name, and people come to Sei to game.
   { id: 'factorio', name: 'Factorio', available: false },
   { id: 'terraria', name: 'Terraria', available: false },
+  { id: 'sts2', name: 'Slay the Spire 2', available: false },
+  { id: 'ktane', name: 'Keep Talking and Nobody Explodes', available: false },
 ];
 
 /**
@@ -115,16 +116,9 @@ export function renderGamesDirective(): string {
     list.map((g) => g.promptName ?? g.name).join(', ');
   const live = GAME_CATALOG.filter((g) => g.available);
   const soon = GAME_CATALOG.filter((g) => !g.available);
-  // 261115: the backseat games get a line of their own, so the list says once
-  // how they are played instead of "(by screen share)" after every title.
-  const joined = live.filter((g) => !g.backseat);
-  const watched = live.filter((g) => g.backseat);
   const mine = live.filter((g) => g.selfLaunch);
   const theirs = live.filter((g) => !g.selfLaunch);
-  const lines = ['# GAMES', `Games you and the player can play in this app: ${named(joined)}.`];
-  if (watched.length) {
-    lines.push(`By screen share, where they play and you watch: ${named(watched)}.`);
-  }
+  const lines = ['# GAMES', `Games you and the player can play in this app: ${named(live)}.`];
   if (theirs.length) {
     lines.push(
       'The player starts any of them from the games menu beside the chat box. ' +

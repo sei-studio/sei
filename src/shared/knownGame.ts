@@ -40,9 +40,6 @@ export interface KnownGameMatch {
  */
 const DIFFERENT_GAME_AFTER: Record<string, readonly string[]> = {
   minecraft: ['dungeons', 'legends', 'story', 'earth', 'bedrock', 'pe', 'pocket', 'education'],
-  // A separate co-op game; Backseat would still watch it, but the knowledge
-  // block is about the main game.
-  eldenring: ['nightreign'],
 };
 
 /** Words around an experience name that are not part of it ("forsaken ON roblox"). */

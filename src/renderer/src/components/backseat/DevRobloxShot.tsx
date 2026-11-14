@@ -10,9 +10,7 @@
  *   waiting the call's share area waiting for Roblox to open (261004);
  *           &resumed=1 after the window closed, &stalled=1 after failed starts
  *
- * Add `&lang=zh` for the Chinese copy, and `&game=<id>` (intro) for another
- * backseat game's popup (261115: eldenring, silksong, valheim, genshin,
- * backrooms). window.sei is stubbed by
+ * Add `&lang=zh` for the Chinese copy. window.sei is stubbed by
  * devHarnessStubs.ts; its backseat game lookups call through to
  * `window.__seiDevRoblox*` when a test driver exposed them (the screenshot
  * script backs them with the real main-side Roblox client), else fixtures.
@@ -30,8 +28,7 @@ import { VoiceCallScreen } from '../../screens/VoiceCallScreen';
 import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'dashshot-roblox';
-const GAME = new URLSearchParams(window.location.search).get('game') ?? 'roblox';
-const INTRO_KEY = `sei.backseatGameIntro.v1.${GAME}.local`;
+const INTRO_KEY = 'sei.backseatGameIntro.v1.roblox.local';
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
@@ -78,7 +75,7 @@ export function DevRobloxShot(): React.ReactElement {
   const [started] = React.useState(() => {
     if (part === 'picker') useUiStore.getState().openModal({ kind: 'games-picker', characterId: CHAR });
     if (part === 'intro' || part === 'pick') {
-      useUiStore.getState().openModal({ kind: 'backseat-game', characterId: CHAR, gameId: GAME });
+      useUiStore.getState().openModal({ kind: 'backseat-game', characterId: CHAR, gameId: 'roblox' });
     }
     if (part === 'share') {
       useUiStore.getState().openModal({
