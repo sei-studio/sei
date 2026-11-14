@@ -160,7 +160,8 @@ export async function createRuntime(config, hooks) {
   }
 
   function checkSeat(s) {
-    if (s.game && s.game !== GAME_NAME) {
+    // Upstream neuro-sts2 says "Slay The Spire 2"; the Sei fork "Slay the Spire 2".
+    if (s.game && s.game.toLowerCase() !== GAME_NAME.toLowerCase()) {
       return `GAME_NOT_ANSWERING: Something connected to the Sei link that is not Slay the Spire 2 (${String(s.game).slice(0, 40)}).`
     }
     if (s.hello && s.hello.protocol !== SEI_PROTOCOL) {

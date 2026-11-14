@@ -162,6 +162,28 @@ describe('adapter', () => {
     expect(composeSnapshot({ seat: null })).toMatch(/not connected/)
   })
 
+  it('words choice screens from the context that came with the force', () => {
+    const actions = new Map([['choose_reward', { name: 'choose_reward', schema: { type: 'object', properties: { index: { type: 'integer' } } } }]])
+    const force = { state: null, query: 'Pick a reward.', actionNames: ['choose_reward'], at: 100_000 }
+    const contexts = [
+      { message: 'Old shop screen', silent: false, at: 10_000 },
+      { message: 'Rewards: [0] 25 gold [1] Card: Pommel Strike', silent: false, at: 99_990 },
+    ]
+    // Upstream mod: no structured state, no force.state.
+    const up = composeSnapshot({ seat: { open: true, seiState: null, force, actions, contexts } })
+    expect(up).toContain('Pommel Strike')
+    expect(up).not.toContain('Old shop')
+    // Sei mod out of combat with no options: the context adds the choices.
+    const sei = composeSnapshot({ seat: { open: true, seiState: { screen: 'rewards', options: [], hand: [] }, force, actions, contexts } })
+    expect(sei).toContain('screen: rewards')
+    expect(sei).toContain('Pommel Strike')
+    // In a fight the structured state is enough.
+    const fight = composeSnapshot({ seat: { open: true, seiState: { screen: 'combat', hand: [{ name: 'Strike' }] }, force, actions, contexts } })
+    expect(fight).not.toContain('Pommel Strike')
+    // A context from an earlier screen is not shown.
+    expect(composeSnapshot({ seat: { open: true, seiState: null, force, actions, contexts: contexts.slice(0, 1) } })).not.toContain('Old shop')
+  })
+
   it('speech and pause go to the game windows', async () => {
     const { conn, adapter } = await setup()
     adapter.chat('  nice  ')

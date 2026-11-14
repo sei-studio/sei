@@ -24,6 +24,9 @@ export function createFakeMod(opts) {
     WebSocketImpl = globalThis.WebSocket,
   } = opts
   const scenario = opts.scenario ?? createScenario({ seed, coop, playerName, structured })
+  // Unmodified upstream neuro-sts2 capitalizes "The" and never fills force.state:
+  // its ActionWindow sends the screen as a `context` right before the force.
+  const gameName = structured ? GAME : 'Slay The Spire 2'
   const received = []
   const said = []
   let ws = null
@@ -36,7 +39,7 @@ export function createFakeMod(opts) {
 
   const send = (command, data) => {
     if (!ws || ws.readyState !== 1) return
-    ws.send(JSON.stringify(data === undefined ? { command, game: GAME } : { command, game: GAME, data }))
+    ws.send(JSON.stringify(data === undefined ? { command, game: gameName } : { command, game: gameName, data }))
   }
 
   function flushEvents() {
@@ -59,7 +62,8 @@ export function createFakeMod(opts) {
     }
     registered = d.actions.map((a) => a.name)
     send('actions/register', { actions: d.actions })
-    const force = { state: scenario.stateText(), query: d.query, ephemeral_context: false, priority: 'low', action_names: registered }
+    if (!structured) send('context', { message: scenario.stateText(), silent: false })
+    const force = { state: structured ? scenario.stateText() : null, query: d.query, ephemeral_context: false, priority: 'low', action_names: registered }
     if (structured) force.sei_state = scenario.seiState()
     send('actions/force', force)
     // In a co-op fight the player plays at the same time as the companion.

@@ -148,8 +148,12 @@ describe('sts2 runtime against the fake mod', () => {
     const ok = await until(() => sc.run.floor >= 2 || sc.phase === 'won' || sc.phase === 'lost', 20_000)
     if (!ok) console.log(sc.phase, sc.run, t.brain.results.slice(-15), sc.log?.slice?.(-10), t.brain.chats.length)
     expect(ok).toBe(true)
+    // The screen comes from the context sent with the force (upstream has no force.state).
+    await until(() => !!t.handle.link?.seat?.force)
     const snap = t.handle.adapter.createSnapshotComposer().next()
-    expect(typeof snap === 'string' ? snap : JSON.stringify(snap)).toBeTruthy()
+    expect(snap).toContain('YOUR MOVE:')
+    expect(snap).not.toMatch(/^your game window is not connected/)
+    expect(snap.split('YOUR MOVE:')[0].trim().length).toBeGreaterThan(20)
   }, 30_000)
 
   it('speech and pause reach the game window', async () => {

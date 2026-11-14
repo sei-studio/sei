@@ -54,7 +54,8 @@ export function renderSeiState(s) {
     const energy = me.energy != null ? `, energy ${num(me.energy)}/${num(me.max_energy, 3)}` : ''
     const ended = me.ended_turn ? ', turn ENDED (waiting for others)' : ''
     lines.push(`you: ${str(me.character, 24) || 'your character'}, ${body(me)}, gold ${num(me.gold)}${energy}${ended}${powers(me.powers)}`)
-    const pots = arr(me.potions).map((p, i) => `[${i}] ${str(p?.name ?? p, 40)}`)
+    // Empty slots keep their place so [i] stays the game's potion_index.
+    const pots = arr(me.potions).map((p, i) => (p?.empty ? '' : `[${i}] ${str(p?.name ?? p, 40)}`)).filter(Boolean)
     if (pots.length) lines.push(`your potions: ${pots.join(', ')}`)
     const relics = arr(me.relics).map((r) => str(r?.name ?? r, 40)).filter(Boolean)
     if (relics.length) lines.push(`your relics: ${relics.slice(0, 14).join(', ')}${relics.length > 14 ? `, +${relics.length - 14} more` : ''}`)
@@ -69,7 +70,7 @@ export function renderSeiState(s) {
   if (enemies.length) {
     lines.push('enemies:')
     enemies.slice(0, 8).forEach((e, i) => {
-      const intent = str(e?.intent, 60)
+      const intent = str(e?.intent, 160)
       lines.push(`  [${i}] ${str(e?.name, 40)}: ${body(e)}${intent ? `, intends ${intent}` : ''}${powers(e?.powers)}`)
     })
   }
@@ -175,7 +176,7 @@ export function resolveArgs(action, args, seiState) {
     if (typeof src.potion === 'number') data.potion_index = src.potion
     else {
       const pots = arr(seiState?.me?.potions)
-      const i = pots.findIndex((p) => fold(p?.name ?? p) === fold(src.potion) || fold(p?.name ?? p).startsWith(fold(src.potion)))
+      const i = pots.findIndex((p) => !p?.empty && (fold(p?.name ?? p) === fold(src.potion) || fold(p?.name ?? p).startsWith(fold(src.potion))))
       if (i < 0) return { error: `you have no potion called ${src.potion}` }
       data.potion_index = i
     }

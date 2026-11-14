@@ -58,3 +58,20 @@ describe('name resolution', () => {
     expect(resolveArgs(PLAY, { card: 'Strike' }, null).error).toMatch(/index/)
   })
 })
+
+describe('potions and intents (Sei mod contract)', () => {
+  const POTION = { name: 'use_potion', schema: { type: 'object', properties: { potion_index: { type: 'integer' }, enemy_index: { type: 'integer' } }, required: ['potion_index'] } }
+  const st = { ...STATE, me: { ...STATE.me, potions: [{ name: '(empty slot)', empty: true }, { name: 'Fire Potion' }] }, enemies: [{ name: 'Louse', hp: 10, max_hp: 12, intent: `Attack: ${'x'.repeat(120)}` }] }
+
+  it('skips empty slots in the list but keeps the game indexes', () => {
+    const text = renderSeiState(st).join('\n')
+    expect(text).toContain('your potions: [1] Fire Potion')
+    expect(text).not.toContain('empty slot')
+    expect(resolveArgs(POTION, { potion: 'fire' }, st)).toEqual({ data: { potion_index: 1 } })
+    expect(resolveArgs(POTION, { potion: '(empty' }, st).error).toMatch(/no potion/)
+  })
+
+  it('keeps long intents (the mod sends Title: Description)', () => {
+    expect(renderSeiState(st).join('\n')).toContain(`intends Attack: ${'x'.repeat(100)}`)
+  })
+})

@@ -5,10 +5,29 @@
 
 import { renderSeiState, clipUpstreamState, actionSignature } from '../state.js'
 
+/** With the structured state already shown, the context only adds the choices. */
+export const CONTEXT_WITH_STATE_MAX = 1_200
+const arr = (v) => (Array.isArray(v) ? v : [])
+
+/** A context older than this before the force belongs to an earlier screen. */
+export const CONTEXT_FRESH_MS = 10_000
+
+/**
+ * The context that came with the open force (the mod's ActionWindow sends
+ * context, register, force back to back): the newest one not older than
+ * CONTEXT_FRESH_MS before it, non-silent first.
+ */
+function lastContext(seat) {
+  const forceAt = Number(seat?.force?.at)
+  const list = arr(seat?.contexts).filter((c) => c?.message && (!Number.isFinite(forceAt) || !Number.isFinite(Number(c.at)) || Number(c.at) >= forceAt - CONTEXT_FRESH_MS))
+  for (let i = list.length - 1; i >= 0; i--) if (!list[i].silent) return list[i].message
+  return list.length ? list[list.length - 1].message : ''
+}
+
 /**
  * Pure: the session view as snapshot text.
  * @param {{ seat: object|null, paused?: boolean, recent?: string[] }} view
- *   seat = { seiState, force, actions: Map, open }
+ *   seat = { seiState, force, actions: Map, open, contexts?: {message, silent}[] }
  * @param {{ lastActionResult?: string|null }} [opts]
  */
 export function composeSnapshot(view, opts = {}) {
@@ -23,6 +42,15 @@ export function composeSnapshot(view, opts = {}) {
   if (st.length) lines.push(...st)
   const force = seat.force
   if (!st.length && force?.state) lines.push(clipUpstreamState(force.state))
+  else if (force) {
+    // The game's own words for the screen: upstream neuro-sts2 sends no
+    // force.state, only `context` messages; the Sei fork fills `options` for
+    // character select and the map only, so rewards, events, shop, rest and
+    // card picks are described in the latest context too.
+    const ctx = lastContext(seat)
+    const needs = !st.length || (!arr(seat.seiState?.options).length && !arr(seat.seiState?.hand).length)
+    if (ctx && needs) lines.push(clipUpstreamState(ctx, st.length ? CONTEXT_WITH_STATE_MAX : undefined))
+  }
   const recent = Array.isArray(view.recent) ? view.recent.filter(Boolean).slice(-4) : []
   if (recent.length) lines.push(`recent: ${recent.join(' | ')}`)
 
