@@ -48,6 +48,7 @@ import { registerGameModule, getGameModule, listGameModules } from './games';
 import { createMinecraftGameModule } from './games/minecraft';
 import { createDontStarveGameModule } from './games/dontstarve';
 import { createStardewGameModule } from './games/stardew';
+import { createSts2GameModule } from './games/sts2';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls, liveCallsNow } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
@@ -120,6 +121,7 @@ import {
 } from './games/gameDashboardService';
 import { createMcSessionReporter } from './mcActionTelemetry';
 import { createDstLivesReporter } from './games/dontstarve/sessionLives';
+import { createSts2StatsReporter } from './sts2SessionStats';
 import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
 // The app name + userData (and the SEI_DEV_USERDATA dev override) are set in
@@ -186,6 +188,10 @@ registerGameModule(dontstarveModule);
 // Registering does not light the picker tile (GAME_CATALOG.available flips
 // after the live checklist).
 registerGameModule(createStardewGameModule({ logger }));
+// Slay the Spire 2 (261115): mod install, Steam start, heartbeat watcher and
+// the companion's own game window per session. GAME_CATALOG keeps the tile
+// unlit until the live checklist passes on a real game.
+registerGameModule(createSts2GameModule());
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
@@ -511,6 +517,8 @@ const playStartedAt = new Map<string, { at: number; game: GameId }>();
 const mcSessionReporter = createMcSessionReporter(capture);
 // 261104: DST deaths and respawns, folded into bot_session_ended.
 const dstLivesReporter = createDstLivesReporter();
+// 261115: Slay the Spire 2 move / failure counters, folded into bot_session_ended.
+const sts2StatsReporter = createSts2StatsReporter();
 /** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
 const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
@@ -627,6 +635,7 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   // Taken before the live check so a session that never went live leaves
   // nothing behind for the next one.
   const dstLives = dstLivesReporter.take(id);
+  const sts2Stats = sts2StatsReporter.take(id);
   const started = playStartedAt.get(id);
   if (started === undefined) return;
   playStartedAt.delete(id);
@@ -664,6 +673,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     ...actionSummary,
     // 261104: respawns, deaths and last_death_cause (a game id).
     ...(started.game === 'dontstarve' ? dstLives : {}),
+    // 261115: sts2_* move / failure-class / run counters (shape only).
+    ...(started.game === 'sts2' ? sts2Stats : {}),
     ...end,
     // 261008: did the companion's goodbye set up a next session (retention).
     ...gameEndHookProps(goodbye),
@@ -847,6 +858,11 @@ function broadcastStatus(status: BotStatus): void {
       capture('character_summoned', { character_id: id, game, ...bootProps, ...hostProps });
     }
   } else if (status.kind === 'error' || status.kind === 'idle') {
+    // 261115: per-game session teardown in main (StS2 closes the companion's
+    // game window it started). Each module ignores characters it has nothing for.
+    for (const m of listGameModules()) {
+      try { m.onSessionEnd?.(id); } catch { /* never breaks the status path */ }
+    }
     closePlaySession(id, sessionEndProps(status, { accountTeardown: isAccountTeardownActive() }), isSessionFailure(status));
     // 261011: a summon that never went live leaves no session to report; drop
     // any snapshot it posted so it cannot leak into the next session.
@@ -1338,6 +1354,7 @@ async function bootstrap(): Promise<void> {
     onDashboard: publishGameDashboardSnapshot,
     onActionStats: (characterId, stats) => mcSessionReporter.stats(characterId, stats),
     onDstLives: (characterId, raw) => dstLivesReporter.note(characterId, raw),
+    onSts2Stats: (characterId, raw) => sts2StatsReporter.note(characterId, raw),
     // 261011: the session's recent conversation, kept in memory for the
     // player-end next-step check (never sent to analytics).
     onSessionDigest: (id, raw) => {

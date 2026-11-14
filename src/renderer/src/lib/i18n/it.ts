@@ -1,4 +1,6 @@
 /** Italian UI dictionary. English keys and interpolation tokens match the shared reference. */
+import { STS2_ADDED } from './sts2';
+
 export const IT: Record<string, string> = {
   "Cancel": "Annulla",
   "Close": "Chiudi",
@@ -2319,4 +2321,7 @@ export const IT: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[voci di Sei non disponibili al momento, in uso le voci di questo dispositivo]",
   "[Sei voices are used up this week, using voices on this device]": "[voci di Sei esaurite per questa settimana, in uso le voci di questo dispositivo]",
   "About extra credits": "Informazioni sui crediti extra",
+
+  // Slay the Spire 2 launch surface (261115), spread so it merges cleanly beside other game branches.
+  ...STS2_ADDED.it,
 };

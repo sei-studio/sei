@@ -6,6 +6,8 @@
  * outside the repo, in Suisei's reports). Plural forms use the ICU-lite
  * syntax formatMessage understands.
  */
+import { STS2_ADDED } from './sts2';
+
 export const RU: Record<string, string> = {
   // ── screens-a ──
   "Cancel": "Отмена",
@@ -2520,4 +2522,7 @@ export const RU: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[голоса Sei сейчас недоступны, говорят голоса этого устройства]",
   "[Sei voices are used up this week, using voices on this device]": "[голоса Sei на этой неделе закончились, говорят голоса этого устройства]",
   "About extra credits": "О дополнительных кредитах",
+
+  // Slay the Spire 2 launch surface (261115), spread so it merges cleanly beside other game branches.
+  ...STS2_ADDED.ru,
 };

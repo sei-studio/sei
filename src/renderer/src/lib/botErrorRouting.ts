@@ -84,6 +84,7 @@ export const BOT_ERROR_ROUTES: Record<GameId, Partial<Record<ErrorClass, Route>>
     DST_DIED_TOO_OFTEN: genericRoute,
     DST_DANGEROUS_SPOT: genericRoute,
   },
+  sts2: GENERIC_ROUTES,
 };
 
 /**

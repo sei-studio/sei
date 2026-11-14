@@ -81,6 +81,11 @@ export interface GameModule {
    */
   prepareJoin?(args: { characterId: string; character: Character }): Promise<Record<string, unknown> | null>;
   install?: GameInstall;
+  /**
+   * 261115: a session of this game ended (any reason). Slay the Spire 2
+   * closes the companion's game window Sei started for it. Must not throw.
+   */
+  onSessionEnd?(characterId: string): void;
 }
 
 const registry = new Map<GameId, GameModule>();

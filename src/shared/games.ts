@@ -93,6 +93,9 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     // The proper name ("Roblox"), not only the tile's "Roblox (Backseat)".
     aliases: [g.name, ...(g.aliases ?? [])],
   })),
+  // 261115: Slay the Spire 2 co-op companion (feat/sts2-companion). A
+  // coming-soon tile until the live checklist passes on a real game.
+  { id: 'sts2', name: 'Slay the Spire 2', available: false, aliases: ['StS2', 'Slay the Spire', '杀戮尖塔2', 'スレイ・ザ・スパイア2'] },
   { id: 'focus', name: 'Focus', available: false },
 ];
 

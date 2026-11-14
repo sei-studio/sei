@@ -42,6 +42,7 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
+import { registerSts2Ipc } from './games/sts2/ipc';
 import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
@@ -2024,7 +2025,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // with GamePackState (zod strips undeclared keys silently).
   // Every game with a pack (src/shared/gamePacks.ts); the renderer's pack
   // card asks for each GAME_ID at boot.
-  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve']);
+  const GameIdSchema = z.enum(['minecraft', 'stardew', 'dontstarve', 'sts2']);
   let gamePackPushWired = false;
   const wireGamePackPush = async (): Promise<void> => {
     if (gamePackPushWired) return;
@@ -2116,6 +2117,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     IdSchema.parse(args.characterId);
     const { setSurvivor } = await import('./games/dontstarve/survivorPick');
     return setSurvivor(args.characterId, args.prefab);
+  });
+
+  // ── Slay the Spire 2 setup / install / start (261115, games/sts2/ipc.ts) ──
+  registerSts2Ipc(ipcMain, {
+    worldCheckNow: deps.worldCheckNow,
+    uiLanguage: () => loadConfig().then((c) => String(c.ui_language ?? 'en')),
   });
 
   // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────

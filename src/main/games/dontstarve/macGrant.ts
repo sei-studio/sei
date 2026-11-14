@@ -77,8 +77,22 @@ async function fileModes(dir: string): Promise<{ rel: string; mode: number }[]> 
   return out;
 }
 
-export function createMacGrant(opts: { window: BrowserWindow | null; language: UiLanguage }): MacGrant {
-  const copy = GRANT_COPY[opts.language];
+export type GrantCopy = { message: string; hint: string; button: string };
+
+/**
+ * 261115: the same panel for another game whose mods folder is inside its
+ * .app (Slay the Spire 2). The copy names the game; every language's DST
+ * line is reused with the game's name swapped in (the rest of the sentence is
+ * game-neutral).
+ */
+export function grantCopyFor(language: UiLanguage, gameName: string, gameNameZh: string = gameName): GrantCopy {
+  const base = GRANT_COPY[language] as GrantCopy;
+  const name = language === 'zh' ? gameNameZh : gameName;
+  return { ...base, message: base.message.replace(/《饥荒联机版》|Don['’]t Starve Together/g, name) };
+}
+
+export function createMacGrant(opts: { window: BrowserWindow | null; language: UiLanguage; copy?: GrantCopy; tempPrefix?: string }): MacGrant {
+  const copy = opts.copy ?? GRANT_COPY[opts.language];
   return {
     async pickFolder({ defaultPath, hint }) {
       const { dialog } = await import('electron');
@@ -100,7 +114,7 @@ export function createMacGrant(opts: { window: BrowserWindow | null; language: U
         });
       }),
     realpath: (p) => realpath(p),
-    makeTempDir: () => mkdtemp(path.join(tmpdir(), 'sei-dst-')),
+    makeTempDir: () => mkdtemp(path.join(tmpdir(), opts.tempPrefix ?? 'sei-dst-')),
     fileModes,
     chmod: (p, mode) => chmod(p, mode),
   };

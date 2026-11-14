@@ -94,6 +94,7 @@ export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './g
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
 import type { DstInstallState, DstSurvivorPick } from './dstIpc';
 import { DstChannel } from './dstIpc';
+import { Sts2Channel, type Sts2ActionResult, type Sts2SetupState } from './sts2Ipc';
 export type { GamePackProgressPush, GamePackState } from './gamePacks';
 export type {
   McDashboardSnapshot,
@@ -2040,6 +2041,14 @@ export interface RendererApi {
   dstSurvivorSet(characterId: string, prefab: string | null): Promise<DstSurvivorPick>;
   /** Push: install progress while dstInstall runs. */
   onDstInstallProgress(cb: (state: DstInstallState) => void): Unsubscribe;
+
+  // Slay the Spire 2 (261115) — see src/shared/sts2Ipc.ts.
+  /** Detect the game, the Sei mod and the player's window (no writes). */
+  sts2SetupState(): Promise<Sts2SetupState>;
+  /** Copy the Sei mod into the game's mods folder (refused while the game runs). */
+  sts2Install(): Promise<Sts2ActionResult>;
+  /** Install or update the mod as needed, then start the game through Steam. */
+  sts2StartGame(): Promise<Sts2ActionResult>;
 
   // Character CRUD
   listCharacters(): Promise<Character[]>;
@@ -4034,6 +4043,8 @@ export const IpcChannel = {
   },
   /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
   dst: DstChannel,
+  /** Slay the Spire 2 setup / install / start (261115; src/shared/sts2Ipc.ts). */
+  sts2: Sts2Channel,
   voice: {
     /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',

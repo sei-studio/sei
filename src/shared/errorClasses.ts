@@ -78,6 +78,8 @@ export type ErrorClass =
   // brainless survivor), so the supervisor refuses it and the launch panel
   // says who is already there.
   | 'DST_ONE_COMPANION'
+  // 261115: one companion window per Slay the Spire 2 run (MVP).
+  | 'STS2_ONE_COMPANION'
   // Stardew Valley (M1, 260908): the two failures whose copy must differ from
   // the generic GAME_* classes. A farmhand without the mod cannot be shown a
   // custom-sprite NPC, so the mod refuses to spawn; SMAPI's own installer
@@ -153,6 +155,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_DIED_TOO_OFTEN',
   'DST_DANGEROUS_SPOT',
   'DST_ONE_COMPANION',
+  'STS2_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
   'SMAPI_NETWORK_FAILED',

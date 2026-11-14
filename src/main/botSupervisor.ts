@@ -405,6 +405,12 @@ export interface BotSupervisorOptions {
    */
   onDstLives?: (characterId: string, raw: unknown) => void;
   /**
+   * 261115: the Slay the Spire 2 bot's session counters ({type:'sts2-stats'}
+   * about every 30 s and at the end). Forwarded RAW; main validates
+   * (sts2SessionStats.ts). Optional.
+   */
+  onSts2Stats?: (characterId: string, raw: unknown) => void;
+  /**
    * 261011: the session's recent conversation ({type:'session-digest'} port
    * message, every ~15s while changing plus once before any terminal
    * lifecycle), for the player-end "next time" check. Forwarded RAW;
@@ -1666,6 +1672,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         return;
       }
       // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
+      // 261115: StS2 move / failure-class counters, for bot_session_ended. Not a status.
+      if ((data as { type?: string }).type === 'sts2-stats') {
+        try { opts.onSts2Stats?.(characterId, data); } catch { /* telemetry never breaks the session */ }
+        return;
+      }
       if ((data as { type?: string }).type === 'dst-lives') {
         try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;

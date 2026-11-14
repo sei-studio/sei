@@ -88,6 +88,15 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
+  // 261115: the Sei StS2 mod (a fork of neuro-sts2), the CHECKED-IN build in
+  // assets/sts2-mod like Stardew's: it compiles only against the game's DLLs.
+  sts2: {
+    id: 'sts2',
+    name: 'Slay the Spire 2',
+    platformSpecific: false,
+    sizeHintBytes: 200 * 1024,
+    requiredPaths: ['assets/sts2-mod/sei-sts2/sei-sts2.dll', 'assets/sts2-mod/sei-sts2/sei-sts2.json'],
+  },
 };
 
 // ── Asset naming ────────────────────────────────────────────────────────────

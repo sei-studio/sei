@@ -231,6 +231,7 @@ export const summonFlows: Record<GameId, SummonFlow> = {
   minecraft: minecraftFlow,
   stardew: makeDefaultSummonFlow('stardew'),
   dontstarve: makeDefaultSummonFlow('dontstarve'),
+  sts2: makeDefaultSummonFlow('sts2'),
 };
 
 /** Replace a game's flow (the game agents' seam). */

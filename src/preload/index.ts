@@ -345,6 +345,10 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.dst.installProgress, handler);
     return () => ipcRenderer.off(IpcChannel.dst.installProgress, handler);
   },
+  // Slay the Spire 2 (261115; src/shared/sts2Ipc.ts)
+  sts2SetupState: () => ipcRenderer.invoke(IpcChannel.sts2.setupState),
+  sts2Install: () => ipcRenderer.invoke(IpcChannel.sts2.install),
+  sts2StartGame: () => ipcRenderer.invoke(IpcChannel.sts2.startGame),
   // Local speech packs + SenseVoice STT (260816, china-compat W3+W4)
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),

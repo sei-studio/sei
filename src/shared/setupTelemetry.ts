@@ -24,7 +24,7 @@ import type { McInstall, McScanExtras } from './ipc';
 
 export const GAME_SETUP_EVENT = 'game_setup_step';
 
-export type SetupGame = 'minecraft' | 'stardew';
+export type SetupGame = 'minecraft' | 'stardew' | 'sts2';
 export type SetupOutcome = 'start' | 'ok' | 'fail';
 
 export const MC_SETUP_STEPS = [
@@ -57,9 +57,26 @@ export const STARDEW_SETUP_STEPS = [
   'farm_seen',
 ] as const;
 
+/** Slay the Spire 2 (261115, src/main/games/sts2). find_game and mod_copy are shared with Stardew. */
+export const STS2_SETUP_STEPS = [
+  /** Detection answered (once per distinct answer). */
+  'find_game',
+  /** The Sei mod copied into the game's mods folder. */
+  'mod_copy',
+  /** Sei asked Steam to start the player's game. */
+  'start_game',
+  /** The mod wrote its first heartbeat: the player turned it on in the game. */
+  'mod_loaded',
+  /** A Sei co-op lobby opened in the player's window (first per process). */
+  'lobby_seen',
+  /** Sei started the companion's game window. */
+  'companion_window',
+] as const;
+
 export type McSetupStep = (typeof MC_SETUP_STEPS)[number];
 export type StardewSetupStep = (typeof STARDEW_SETUP_STEPS)[number];
-export type SetupStep = McSetupStep | StardewSetupStep;
+export type Sts2SetupStep = (typeof STS2_SETUP_STEPS)[number];
+export type SetupStep = McSetupStep | StardewSetupStep | Sts2SetupStep;
 
 /** Where the game came from: Stardew's store, or Minecraft's launcher type. */
 export const SETUP_STORES = [
@@ -165,7 +182,7 @@ export interface SetupStepInput {
 }
 
 const CODE_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
-const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS]);
+const STEPS = new Set<string>([...MC_SETUP_STEPS, ...STARDEW_SETUP_STEPS, ...STS2_SETUP_STEPS]);
 const STORES = new Set<string>(SETUP_STORES);
 
 /** An error code, or UNKNOWN for anything that is not one. */
@@ -181,7 +198,7 @@ export function setupErrorCode(code: string | null | undefined): string {
  */
 export function setupStepProps(input: SetupStepInput): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {
-    game: input.game === 'stardew' ? 'stardew' : 'minecraft',
+    game: input.game === 'stardew' || input.game === 'sts2' ? input.game : 'minecraft',
     step: STEPS.has(input.step) ? input.step : 'unknown',
     outcome: input.outcome === 'ok' || input.outcome === 'fail' ? input.outcome : 'start',
   };

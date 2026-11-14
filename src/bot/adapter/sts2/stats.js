@@ -4,6 +4,10 @@
 // the end (runtime.js); main folds them in with an `sts2_` prefix
 // (src/main/sts2SessionStats.ts). Pure, no I/O.
 
+/** Every action family (actionFamily) and failure class (failureClass): closed sets for main's props. */
+export const ACTION_FAMILIES = Object.freeze(['play_card', 'end_turn', 'potion', 'map', 'reward', 'event', 'shop', 'lobby', 'query', 'other'])
+export const FAIL_CLASSES = Object.freeze(['invalid_action', 'bad_args', 'timeout', 'no_link', 'paused', 'rejected'])
+
 /** Action families, so a mod that renames an action does not explode the props. */
 export function actionFamily(name) {
   const n = String(name ?? '')
@@ -57,6 +61,7 @@ export function createSts2Stats({ now = () => Date.now() } = {}) {
   }
   const bump = (obj, k) => { obj[k] = (obj[k] ?? 0) + 1 }
   return {
+    /** @param {string} name @param {boolean} ok @param {string|null} [failText] */
     act(name, ok, failText = null) {
       dirty = true
       s.acts += 1

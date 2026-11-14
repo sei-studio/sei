@@ -91,6 +91,8 @@ import { GameErrorModal } from './components/GameErrorModal';
 import './components/dontstarve/register';
 // Stardew Valley (game adapters M1): registers its panels, summon flow, error routes, settings group and setup modal.
 import './components/stardew/registerStardew';
+// Slay the Spire 2 (261115): registers its launch panel, setup-modal body and summon flow.
+import './components/sts2/register';
 import { BotCrashModal } from './components/BotCrashModal';
 import { SetupWizardModal } from './components/SetupWizardModal';
 import { LogsBar } from './components/LogsBar';

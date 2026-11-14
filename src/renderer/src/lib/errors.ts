@@ -110,6 +110,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   DST_DIED_TOO_OFTEN: "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.",
   DST_DANGEROUS_SPOT: "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.",
   DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
+  STS2_ONE_COMPANION: 'Slay the Spire 2 fits one companion at a time for now. Stop the companion already in your run, then press Play.',
   // Stardew Valley (game-adapters M1, 260908).
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
   // 261010: local Ollama backend. Before these, a model that could not run the
