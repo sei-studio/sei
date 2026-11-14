@@ -1,6 +1,8 @@
 /* GamesPickerModal — tiled game grid (Phase 18/19).
- * Sharp, borderless tiles (per UI-DESIGN-SYSTEM): a surface fill that lights to
- * accent-soft on hover, no boxy outlines, no status badges. Token colors only. */
+ * 261115 (product call): the World page's mosaic. Wide 16:9 tiles butting
+ * edge to edge, full-bleed art under a bottom scrim with the name over it,
+ * and the World cards' slow zoom on hover instead of a fill change. No
+ * outlines. Token colors only, except the white-on-art name (as World). */
 
 .scrim {
   position: fixed;
@@ -13,8 +15,10 @@
   animation: fade 220ms ease both;
 }
 
+/* Wide enough for four 236px tiles at the default 1180px window; narrower
+ * windows lose a column rather than squeezing the art (see .grid). */
 .modal {
-  width: 560px;
+  width: 1040px;
   max-width: calc(100vw - 64px);
   max-height: calc(100vh - 64px);
   background: var(--surface);
@@ -26,8 +30,11 @@
   border-radius: var(--radius);
 }
 
+/* Title row. A search field can sit here later; the grid scrolls on its own
+ * below it, so the header never moves. */
 .header {
-  padding: var(--space-lg) var(--space-lg) var(--space-sm);
+  flex-shrink: 0;
+  padding: var(--space-lg) var(--space-lg) var(--space-md-plus);
 }
 
 .title {
@@ -46,17 +53,37 @@
   margin: var(--space-xs) 0 0;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-lg) var(--space-lg);
+/* Edge-to-edge mosaic (World grid, gap 0). auto-fill on a 236px minimum:
+ * 4 across at the default window, 3 near the minimum window width, fewer on
+ * anything smaller. */
+/* The scroll box is its own element so the grid inside keeps its natural
+ * height: a grid that is itself the shrinking flex child squeezes its rows
+ * below the tiles' 16:9 height and the tiles overlap. */
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  padding: 0 var(--space-lg) var(--space-lg);
+  scrollbar-width: none;
 }
 
-/* Tile = borderless surface card; the (i) hint overlays its bottom-right. */
+.scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 0;
+}
+
+/* Tile = a 16:9 cell; the art, the scrim, the button and the corner marks
+ * are stacked inside it. */
 .tile {
   position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
   background: var(--surface-2);
   transition: background 140ms var(--ease);
   border-radius: var(--radius);
@@ -66,64 +93,72 @@
   background: var(--accent-soft);
 }
 
-/* Image tile (e.g. Minecraft) — full-bleed art with a bottom scrim so the name
- * stays legible, matching the character cards. */
-.tileImage {
+/* Full-bleed art, zoomed on hover inside the tile's clip (World cards). */
+.tileArt {
+  position: absolute;
+  inset: 0;
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
+  transition: transform 0.45s var(--ease), filter 0.45s ease;
 }
 
-.tileImage::after {
-  content: '';
+.tileImage:not(.tileLocked):hover .tileArt,
+.tileImage:not(.tileLocked):focus-within .tileArt {
+  transform: scale(1.05);
+  filter: saturate(1.12) brightness(1.04);
+}
+
+/* Bottom scrim so the name stays legible over any art, dark in both themes. */
+.tileScrim {
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 60%;
+  background: linear-gradient(180deg, transparent, rgba(6, 6, 8, 0.85));
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(8, 8, 10, 0.2) 0%,
-    transparent 38%,
-    rgba(6, 6, 8, 0.88) 100%
-  );
-}
-
-.tileImage:hover {
-  filter: brightness(1.08);
-}
-
-.tileImage.tileLocked:hover {
-  opacity: 1;
-}
-
-/* Name pinned bottom-left over the scrim, white regardless of theme. */
-.tileImage .tileMain {
-  position: relative;
-  z-index: 1;
-  justify-content: flex-end;
-  align-items: flex-start;
-  padding: var(--space-md);
-}
-
-.tileImage .tileName {
-  color: #fff;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
 }
 
 .tileMain {
   -webkit-appearance: none;
   appearance: none;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-lg) var(--space-md-plus);
-  min-height: 128px;
   justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-md-plus);
   border: none;
   background: transparent;
   color: var(--text);
+  text-align: left;
   cursor: pointer;
+}
+
+.tileMain:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+/* Name pinned bottom-left over the scrim, white regardless of theme. The
+ * right padding keeps a long name ("Escape the Backrooms (Backseat)") clear of
+ * the (i) mark; it wraps to a second line rather than running under it. */
+.tileImage .tileMain {
+  justify-content: flex-end;
+  align-items: flex-start;
+  padding: 10px 40px 11px 12px;
+}
+
+.tileImage .tileName {
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.2;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
 
 .tileLocked {
@@ -159,13 +194,13 @@
   opacity: 0.82;
 }
 
-/* "SOON" tag on placeholder tiles: same corner box as the (i) affordance
- * (26px tall, space-sm insets) so its bottom and left line up with the
- * tooltip across tiles. Rides above the image scrim. */
+/* "SOON" tag on placeholder tiles: right-aligned in the corner the (i) mark
+ * uses on live tiles (26px tall, space-sm insets), so a longer translation
+ * grows leftwards instead of out of the tile. Rides above the image scrim. */
 .soonTag {
   position: absolute;
   bottom: var(--space-sm);
-  left: calc(100% - 26px - var(--space-sm));
+  right: var(--space-sm);
   height: 26px;
   display: inline-flex;
   align-items: center;
@@ -186,6 +221,7 @@
   position: absolute;
   bottom: var(--space-sm);
   right: var(--space-sm);
+  z-index: 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -201,9 +237,8 @@
   color: var(--accent);
 }
 
-/* Over art, the (i) sits above the scrim and reads white. */
+/* Over art, the (i) reads white. */
 .tileImage .infoHint {
-  z-index: 2;
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
@@ -268,5 +303,9 @@
 @media (prefers-reduced-motion: reduce) {
   .infoPop {
     animation: none;
+  }
+
+  .tileArt {
+    transition: none;
   }
 }

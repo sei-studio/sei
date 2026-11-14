@@ -11,6 +11,13 @@
  * the feedback form (same submit path as the Playtime screen's form).
  * Scrim-click / ESC closes (ESC hides the popup first when one is showing).
  *
+ * Layout (product call 261115): the World page's mosaic. Wide 16:9 tiles
+ * butting edge to edge (no gaps), full-bleed art under a bottom scrim with the
+ * name over it, and a slow zoom on hover. Columns are auto-fill with a minimum
+ * tile width, so the grid is 4 across at the default window size and drops to
+ * 3 as the window narrows. The header and the grid are separate rows, so a
+ * search field can go in the header later without touching the grid.
+ *
  * Source: docs/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
  */
 
@@ -178,64 +185,77 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
           <h2 id="games-picker-title" className={styles.title}>
             {t('Play together')}
           </h2>
+          {/* A search field goes here when the list needs one; the grid below
+              scrolls on its own, so the header stays put. */}
         </div>
-        <div className={styles.grid}>
-          {GAMES.map((g) => {
-            const visionLocked = isVisionLocked(g);
-            return (
-              <div
-                key={g.id}
-                className={`${styles.tile} ${g.available && !visionLocked ? '' : styles.tileLocked} ${
-                  g.image ? styles.tileImage : ''
-                }`}
-                style={g.image ? { backgroundImage: `url(${g.image})` } : undefined}
-                // A locked tile explains itself on hover anywhere (there is no
-                // live (i) affordance to find), through the same info popup.
-                onMouseEnter={
-                  visionLocked
-                    ? (e) => scheduleInfo(g, e.currentTarget.firstElementChild as HTMLElement)
-                    : undefined
-                }
-                onMouseLeave={hideInfo}
-              >
-                <button
-                  type="button"
-                  className={styles.tileMain}
-                  disabled={!g.available || visionLocked}
-                  aria-disabled={!g.available || visionLocked}
-                  aria-label={visionLocked ? lockReason(g) : undefined}
-                  onClick={() => onPlay(g)}
+        <div className={styles.scroll}>
+          <div className={styles.grid}>
+            {GAMES.map((g) => {
+              const visionLocked = isVisionLocked(g);
+              return (
+                <div
+                  key={g.id}
+                  className={`${styles.tile} ${g.available && !visionLocked ? '' : styles.tileLocked} ${
+                    g.image ? styles.tileImage : ''
+                  }`}
+                  // A locked tile explains itself on hover anywhere (there is no
+                  // live (i) affordance to find), through the same info popup.
+                  onMouseEnter={
+                    visionLocked
+                      ? (e) => scheduleInfo(g, e.currentTarget.firstElementChild as HTMLElement)
+                      : undefined
+                  }
+                  onMouseLeave={hideInfo}
                 >
-                  {g.image ? null : (
-                    <span className={styles.tileIcon}>
-                      {g.id === 'minecraft' ? (
-                        <MCBlock size={40} />
-                      ) : g.id === 'suggest' ? (
-                        <PlusIcon size={30} />
-                      ) : (
-                        <GamepadIcon size={30} />
-                      )}
-                    </span>
-                  )}
-                  <span className={styles.tileName}>{t(g.name)}</span>
-                </button>
-                {g.soon ? <span className={styles.soonTag}>{t('SOON')}</span> : null}
-                {g.available && !visionLocked ? (
-                  <span
-                    className={styles.infoHint}
-                    tabIndex={0}
-                    aria-label={t('About {name}', { name: t(g.name) })}
-                    onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
-                    onMouseLeave={hideInfo}
-                    onFocus={(e) => scheduleInfo(g, e.currentTarget)}
-                    onBlur={hideInfo}
+                  {g.image ? (
+                    <>
+                      <div
+                        className={styles.tileArt}
+                        style={{ backgroundImage: `url(${g.image})` }}
+                        aria-hidden="true"
+                      />
+                      <div className={styles.tileScrim} aria-hidden="true" />
+                    </>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={styles.tileMain}
+                    disabled={!g.available || visionLocked}
+                    aria-disabled={!g.available || visionLocked}
+                    aria-label={visionLocked ? lockReason(g) : undefined}
+                    onClick={() => onPlay(g)}
                   >
-                    <InfoIcon size={16} />
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
+                    {g.image ? null : (
+                      <span className={styles.tileIcon}>
+                        {g.id === 'minecraft' ? (
+                          <MCBlock size={40} />
+                        ) : g.id === 'suggest' ? (
+                          <PlusIcon size={30} />
+                        ) : (
+                          <GamepadIcon size={30} />
+                        )}
+                      </span>
+                    )}
+                    <span className={styles.tileName}>{t(g.name)}</span>
+                  </button>
+                  {g.soon ? <span className={styles.soonTag}>{t('SOON')}</span> : null}
+                  {g.available && !visionLocked ? (
+                    <span
+                      className={styles.infoHint}
+                      tabIndex={0}
+                      aria-label={t('About {name}', { name: t(g.name) })}
+                      onMouseEnter={(e) => scheduleInfo(g, e.currentTarget)}
+                      onMouseLeave={hideInfo}
+                      onFocus={(e) => scheduleInfo(g, e.currentTarget)}
+                      onBlur={hideInfo}
+                    >
+                      <InfoIcon size={16} />
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
       {popup ? (
