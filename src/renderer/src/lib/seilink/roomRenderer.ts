@@ -171,11 +171,11 @@ function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
-/** Dev only: the live renderers, for the perf harness (`globalThis.__seilinkRenderers`). */
 function emptyAssets(): RoomAssets {
   return { images: new Map(), masks: new Map(), glows: new Map() };
 }
 
+/** Dev only: the live renderers, for the perf harness (`globalThis.__seilinkRenderers`). */
 function devRenderers(): Set<RoomRenderer> {
   const g = globalThis as { __seilinkRenderers?: Set<RoomRenderer> };
   return (g.__seilinkRenderers ??= new Set());
