@@ -37,7 +37,9 @@
     "predist:win": "node scripts/build-seilink-addon.mjs && node scripts/fetch-live2d-core.mjs",
     "predist:linux": "node scripts/fetch-live2d-core.mjs",
     "fetch:live2d": "node scripts/fetch-live2d-core.mjs",
-    "quality:scorecard": "node scripts/quality-eval/scorecard.mjs"
+    "quality:scorecard": "node scripts/quality-eval/scorecard.mjs",
+    "build:sts2-mod": "bash scripts/build-sts2-mod.sh",
+    "sts2:fake-game": "node scripts/sts2-fake-game.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

@@ -38,7 +38,7 @@ Needs the **.NET 9 SDK** and the game installed: the mod compiles against the
 game's `sts2.dll`, `GodotSharp.dll` and `0Harmony.dll` from its data folder.
 
 ```bash
-npm run build:sts2-mod   # if package.json has it, else:
+npm run build:sts2-mod   # same as:
 scripts/build-sts2-mod.sh --data-path "<data folder>"
 ```
 
@@ -68,9 +68,12 @@ Copy `sei-sts2.dll` and `sei-sts2.json` into the game's mods folder, then the
 player enables the mod once in the game (Settings, Mods).
 
 - Windows: `<game>/mods/`
-- macOS: `SlayTheSpire2.app/Contents/MacOS/mods/` per community docs, but this
-  is **unverified**: upstream's build copied into `Contents/Resources/mods/`
-  (`$(SlayTheSpireDataPath)/../mods/`). Main should check both until confirmed.
+- macOS: `SlayTheSpire2.app/Contents/MacOS/mods/`, as community mod docs say
+  (STS2MCP's README gives exactly this path) and where Sei installs. Upstream's
+  build copied into `Contents/Resources/mods/` (`$(SlayTheSpireDataPath)/../mods/`)
+  instead, so the first Mac test checks that the game lists the mod from
+  `Contents/MacOS/mods/`; if it does not, `modsDirFor` in
+  `src/main/games/sts2/install.ts` changes to the Resources path.
 
 ## Dev without Sei
 

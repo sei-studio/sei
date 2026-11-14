@@ -186,6 +186,7 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/backseat.md`](docs/agents/backseat.md) | Backseat: screen watching, looks, chatter pacing |
 | [`docs/agents/minecraft-setup-wizard.md`](docs/agents/minecraft-setup-wizard.md) | Minecraft setup wizard and target version |
 | [`docs/agents/game-adapters-stardew-dst.md`](docs/agents/game-adapters-stardew-dst.md) | Game adapters: Stardew Valley and Don't Starve Together (helper mods, IPC, eval) |
+| [`docs/agents/game-adapter-sts2.md`](docs/agents/game-adapter-sts2.md) | Slay the Spire 2 (experimental): second game window as her own co-op seat, Neuro SDK mod fork, fake-game testing, live test plan, plan gating |
 | [`docs/agents/instrumenting-surfaces.md`](docs/agents/instrumenting-surfaces.md) | REQUIRED before adding or changing a game or timed surface: analytics events and limits |
 | [`docs/agents/continuity-surfaces.md`](docs/agents/continuity-surfaces.md) | REQUIRED for a game or timed surface: continuity and resume |
 | [`docs/agents/in-app-fullscreen.md`](docs/agents/in-app-fullscreen.md) | In-app fullscreen for game surfaces |

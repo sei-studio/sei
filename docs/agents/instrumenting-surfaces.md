@@ -635,3 +635,9 @@ the analytics:track handler, so no path, username or free text can ride.
   `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
   (game up 15 s with the helper silent), `farm_seen` (first open farm per
   process).
+- Slay the Spire 2 steps (experimental branch, `STS2_SETUP_STEPS`):
+  `find_game`, `mod_copy`, `start_game`, `mod_loaded` (first host
+  heartbeat), `lobby_seen` (first open "Play with Sei" lobby),
+  `companion_window` (Sei started her game window). Its
+  `bot_session_ended` folds the shape-only `sts2_*` counters listed in
+  `docs/agents/game-adapter-sts2.md`.
