@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <!-- Original tile art for KTANE expert mode (261115): a generic bomb case
+       with a countdown and three modules. No game logos, marks or screenshots. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2433"/>
+      <stop offset="1" stop-color="#0b0f16"/>
+    </linearGradient>
+    <linearGradient id="case" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a6270"/>
+      <stop offset="1" stop-color="#363c47"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ff3b30" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ff3b30" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="360" fill="url(#bg)"/>
+  <!-- case -->
+  <rect x="110" y="70" width="420" height="230" rx="10" fill="url(#case)"/>
+  <rect x="122" y="82" width="396" height="206" rx="6" fill="#2a2f38"/>
+  <!-- module slots -->
+  <rect x="134" y="94" width="120" height="88" rx="4" fill="#3d434e"/>
+  <rect x="260" y="94" width="120" height="88" rx="4" fill="#3d434e"/>
+  <rect x="386" y="94" width="120" height="88" rx="4" fill="#3d434e"/>
+  <rect x="134" y="188" width="120" height="88" rx="4" fill="#3d434e"/>
+  <rect x="260" y="188" width="120" height="88" rx="4" fill="#3d434e"/>
+  <rect x="386" y="188" width="120" height="88" rx="4" fill="#3d434e"/>
+  <!-- timer module (center top) -->
+  <ellipse cx="320" cy="138" rx="90" ry="50" fill="url(#glow)"/>
+  <rect x="272" y="116" width="96" height="44" rx="3" fill="#120607"/>
+  <g fill="#ff3b30">
+    <!-- 7-segment "1:07" drawn with bars -->
+    <rect x="290" y="122" width="4" height="14"/>
+    <rect x="290" y="140" width="4" height="14"/>
+    <rect x="304" y="130" width="3" height="3"/>
+    <rect x="304" y="144" width="3" height="3"/>
+    <rect x="314" y="121" width="12" height="3"/>
+    <rect x="312" y="123" width="3" height="14"/>
+    <rect x="325" y="123" width="3" height="14"/>
+    <rect x="312" y="140" width="3" height="14"/>
+    <rect x="325" y="140" width="3" height="14"/>
+    <rect x="314" y="153" width="12" height="3"/>
+    <rect x="336" y="121" width="13" height="3"/>
+    <rect x="347" y="123" width="3" height="14"/>
+    <rect x="347" y="140" width="3" height="14"/>
+  </g>
+  <!-- strike lights -->
+  <circle cx="300" cy="172" r="4" fill="#5a1512"/>
+  <circle cx="320" cy="172" r="4" fill="#5a1512"/>
+  <circle cx="340" cy="172" r="4" fill="#5a1512"/>
+  <!-- wires module (left top) -->
+  <g stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M150 108 C180 104 205 116 236 110" stroke="#e8433a"/>
+    <path d="M150 124 C180 128 205 120 236 126" stroke="#f4f4f4"/>
+    <path d="M150 140 C182 136 204 146 236 142" stroke="#3a7bff"/>
+    <path d="M150 156 C176 160 210 150 236 158" stroke="#f2c230"/>
+    <path d="M150 172 C180 168 204 176 236 172" stroke="#111"/>
+  </g>
+  <circle cx="242" cy="102" r="4" fill="#38d26b"/>
+  <!-- button module (right top) -->
+  <circle cx="440" cy="140" r="30" fill="#2f6bf0"/>
+  <circle cx="440" cy="140" r="30" fill="none" stroke="#1b3f94" stroke-width="4"/>
+  <rect x="482" y="108" width="12" height="62" rx="3" fill="#f2c230"/>
+  <circle cx="494" cy="102" r="4" fill="#38d26b"/>
+  <!-- keypad module (left bottom) -->
+  <g fill="#d9d2bd">
+    <rect x="152" y="200" width="38" height="30" rx="2"/>
+    <rect x="198" y="200" width="38" height="30" rx="2"/>
+    <rect x="152" y="238" width="38" height="30" rx="2"/>
+    <rect x="198" y="238" width="38" height="30" rx="2"/>
+  </g>
+  <g stroke="#2a2a2a" stroke-width="3" fill="none" stroke-linecap="round">
+    <path d="M163 222 L171 206 L179 222"/>
+    <circle cx="217" cy="215" r="7"/>
+    <path d="M163 246 L179 262 M179 246 L163 262"/>
+    <path d="M209 260 C209 244 225 244 225 260"/>
+  </g>
+  <!-- simon module (center bottom) -->
+  <g transform="translate(320 232) rotate(45)">
+    <rect x="-30" y="-30" width="28" height="28" rx="3" fill="#e8433a"/>
+    <rect x="2" y="-30" width="28" height="28" rx="3" fill="#3a7bff"/>
+    <rect x="-30" y="2" width="28" height="28" rx="3" fill="#38d26b"/>
+    <rect x="2" y="2" width="28" height="28" rx="3" fill="#f2c230"/>
+  </g>
+  <!-- maze module (right bottom) -->
+  <rect x="404" y="198" width="84" height="68" rx="2" fill="#0f1a12"/>
+  <g stroke="#3fae5a" stroke-width="2">
+    <path d="M412 210 H480 M412 226 H452 M436 242 H480 M412 258 H468"/>
+    <path d="M428 210 V226 M452 226 V258"/>
+  </g>
+  <circle cx="420" cy="250" r="4" fill="#fff"/>
+  <path d="M470 214 l6 10 h-12 z" fill="#e8433a"/>
+  <!-- battery and indicator on the case edge -->
+  <rect x="140" y="300" width="44" height="14" rx="2" fill="#c9a227"/>
+  <rect x="196" y="300" width="56" height="14" rx="2" fill="#1e2229"/>
+  <circle cx="208" cy="307" r="4" fill="#fff6c8"/>
+</svg>

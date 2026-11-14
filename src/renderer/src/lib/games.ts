@@ -83,6 +83,15 @@ const TILES: Record<string, { image?: string; description: (companionName: strin
         { name },
       ),
   },
+  // 261115: original art (no game marks); the player owns and runs the game.
+  ktane: {
+    image: './img/game-ktane.svg',
+    description: (name) =>
+      t(
+        'You defuse the bomb in Keep Talking and Nobody Explodes and {name} is your expert. Describe what you see on a call and {name} talks you through the manual.',
+        { name },
+      ),
+  },
   // Backseat games (260929): tiles derived from the registry, so a new one
   // (Valorant) needs no entry here. Their copy is translated by its English
   // text like every other description.

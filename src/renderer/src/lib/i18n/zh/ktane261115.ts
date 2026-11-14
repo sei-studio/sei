@@ -1,0 +1,21 @@
+/** KTANE expert mode (261115). See ../zh.ts for the dictionary rules. */
+export const ZH_KTANE_261115: Record<string, string> = {
+  "You defuse the bomb in Keep Talking and Nobody Explodes and {name} is your expert. Describe what you see on a call and {name} talks you through the manual.": "在 Keep Talking and Nobody Explodes 里由你拆弹，{name} 当你的专家。通话时描述你看到的东西，{name} 会照着手册一步步带你。",
+  "Manual by Steel Crate Games, free at bombmanual.com": "手册由 Steel Crate Games 制作，可在 bombmanual.com 免费查看",
+  "Play the game on your screen as the Defuser. {name} has the manual but cannot see the bomb, so read out what you see.": "在你的屏幕上以拆弹者的身份玩游戏。{name} 有手册但看不到炸弹，所以请把你看到的读出来。",
+  "Start call": "开始通话",
+  "Type instead": "改用打字",
+  "{name}'s notes": "{name} 的笔记",
+  "Bomb {n}": "第 {n} 颗炸弹",
+  "Tell {name} what is on the bomb. Start with the serial number or the first module.": "告诉 {name} 炸弹上有什么。先说序列号或第一个模块。",
+  "New bomb": "新炸弹",
+  "not asked yet": "还没问",
+  "none": "无",
+  "Serial": "序列号",
+  "Batteries": "电池",
+  "Indicators": "指示灯",
+  "Ports": "接口",
+  "Strikes": "失误",
+  "Working on": "正在处理",
+  "Solved": "已解除",
+};

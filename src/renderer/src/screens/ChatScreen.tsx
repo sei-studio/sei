@@ -37,6 +37,8 @@ import { useChatStore } from '../lib/stores/useChatStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
+import { KtanePanel } from '../components/ktane/KtanePanel';
+import { useKtaneStore, isKtaneLive } from '../lib/stores/useKtaneStore';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { getGameSurface } from '../lib/gameSurfaces';
@@ -480,7 +482,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const surfaceGame = mcOnline ? (summon?.game ?? 'minecraft') : (launchGame ?? 'minecraft');
   const gameSurface = getGameSurface(surfaceGame);
   const gameSurfaceName = botGameName(surfaceGame);
-  const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
+  // 261115: KTANE expert mode panel (below chess, above the bot surfaces).
+  const ktaneOpen = useKtaneStore((s) => s.open[characterId] === true);
+  const ktaneLive = useKtaneStore((s) => isKtaneLive(s, characterId));
+  const gameOpen = chessReplayOpen || chessOpen || ktaneOpen || mcDashOpen || mcLaunchOpen;
 
   // Unified end control (260721): every surface ends from GameSurface's
   // bottom-right "x", through its existing end path. `confirmGameEnd` gates
@@ -497,6 +502,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       void useChessStore.getState().end(characterId);
       return;
     }
+    if (ktaneOpen) {
+      void useKtaneStore.getState().end(characterId);
+      return;
+    }
     if (mcDashOpen || summon?.kind === 'connecting') {
       // Same instant-disconnect path as the presence panel button; the
       // !mcOnline effect above clears the dashboard state afterwards.
@@ -509,6 +518,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     ? false
     : chessOpen
     ? chessGame?.status === 'active'
+    : ktaneOpen
+    ? ktaneLive
     : mcDashOpen
       ? true
       : summon?.kind === 'connecting';
@@ -608,7 +619,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       : undefined;
   // 260917: a dashboard with no dragged split sizes the game area to its
   // content (.gameFit in the module css), so its rows never scroll.
-  const gameFit = gameOpen && !gameExpanded && gameSplit === null && mcDashOpen && !chessOpen && !chessReplayOpen;
+  const gameFit = gameOpen && !gameExpanded && gameSplit === null && mcDashOpen && !chessOpen && !chessReplayOpen && !ktaneOpen;
   // Unread dot: a companion (or system) line that lands WHILE chat is hidden
   // lights a red dot on the toggle; showing chat again clears it. Derived from
   // the store's message list length, so pushed and awaited replies both count;
@@ -656,6 +667,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 ? t('Chess replay')
                 : chessOpen
                 ? t('Chess')
+                : ktaneOpen
+                ? 'Keep Talking and Nobody Explodes'
                 : surfaceGame === 'minecraft'
                   ? (mcDashOpen ? t('Minecraft dashboard') : t('Minecraft'))
                   : (mcDashOpen ? t('{game} dashboard', { game: gameSurfaceName }) : gameSurfaceName)
@@ -685,6 +698,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   <ChessReplayPanel characterId={characterId} />
                 ) : chessOpen ? (
                   <ChessPanel characterId={characterId} />
+                ) : ktaneOpen ? (
+                  <KtanePanel characterId={characterId} />
                 ) : mcDashOpen ? (
                   <gameSurface.DashboardPanel characterId={characterId} />
                 ) : (

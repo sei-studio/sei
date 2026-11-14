@@ -1,0 +1,100 @@
+/* KtanePanel (261115): KTANE expert mode in the chat game area. Token colors
+ * only; borderless buttons (the shared Button). Quiet, list-like sheet. */
+
+.panel {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+  padding: var(--pad-card) var(--page-gutter);
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.intro {
+  margin: auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-stack);
+  max-width: 520px;
+}
+
+.title {
+  font-family: var(--display);
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--heading);
+}
+
+.lede {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-2);
+  max-width: 560px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--red);
+}
+
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-control);
+}
+
+.bomb {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-lg);
+  row-gap: var(--space-sm);
+  font-size: 14px;
+}
+
+.key {
+  color: var(--muted);
+}
+
+.value {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.credit {
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.credit:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}

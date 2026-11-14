@@ -28,6 +28,7 @@ import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
 import { useDrawStore } from './stores/useDrawStore';
+import { useKtaneStore, isKtaneLive } from './stores/useKtaneStore';
 import { useBackseatStore } from './stores/useBackseatStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useWizardStore } from './stores/useWizardStore';
@@ -39,7 +40,7 @@ import type { GameId } from '@shared/gameIpc';
 
 /** The launchable games (the picker's coming-soon tiles are never active).
  *  Game adapters (M0, 260908): + the two bot-backed games. */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'ktane';
 
 /** The bot-backed ("summon") games: one utilityProcess bot per character. */
 export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve'];
@@ -76,6 +77,10 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: t('Draw!') };
   }
+  // 261115: a KTANE expert session (the player's game runs outside Sei).
+  if (isKtaneLive(useKtaneStore.getState(), characterId)) {
+    return { id: 'ktane', name: GAME_CATALOG.find((g) => g.id === 'ktane')?.name ?? 'KTANE' };
+  }
   // A screen share is not launched from the picker any more (260803: it is a
   // call control), but it still counts as active here, because the gate's real
   // job is the one exclusion that is physical: a companion cannot be watching
@@ -108,6 +113,10 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
   }
   if (id === 'backseat') {
     await useBackseatStore.getState().end(characterId);
+    return;
+  }
+  if (id === 'ktane') {
+    await useKtaneStore.getState().end(characterId);
     return;
   }
   // Any bot-backed game (Minecraft, Stardew, Don't Starve): same
@@ -180,8 +189,14 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
     if (!g || g.status === 'ended') void chess.end(characterId);
   }
   if (!isBotGame(gameId)) dash.setLaunch(characterId, false);
+  // 261115: the KTANE panel shares the slot; another game's open hides it
+  // (a live session was already ended by the cross-launch confirm).
+  const ktane = useKtaneStore.getState();
+  if (gameId !== 'ktane' && ktane.open[characterId] && !isKtaneLive(ktane, characterId)) void ktane.end(characterId);
 
-  if (gameId === 'chess') {
+  if (gameId === 'ktane') {
+    void ktane.openPanel(characterId);
+  } else if (gameId === 'chess') {
     chess.openPanel(characterId);
   } else if (isBotGame(gameId)) {
     if (useDataStore.getState().summons[characterId]?.kind !== 'online') {

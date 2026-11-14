@@ -141,7 +141,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     // or the live dashboard when the bot is already online).
     // Game adapters (M0): the bot-backed games (stardew, dontstarve) route
     // through the same gate and open their registered launch panel.
-    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw' || isBotGame(g.id)) {
+    if (g.id === 'chess' || g.id === 'minecraft' || g.id === 'draw' || g.id === 'ktane' || isBotGame(g.id)) {
       const id = g.id as LaunchGameId;
       closeModal();
       requestGameLaunch(characterId, { id, name: g.name }, () => openGame(characterId, id));

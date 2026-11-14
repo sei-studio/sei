@@ -21,6 +21,7 @@ import { useDataStore } from './stores/useDataStore';
 import { useChessStore, isChessOpen } from './stores/useChessStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 import { useDrawStore, isDrawActive } from './stores/useDrawStore';
+import { useKtaneStore } from './stores/useKtaneStore';
 import { isVoiceModelReady } from './voice/modelPrefetch';
 
 /**
@@ -38,6 +39,8 @@ export function isGameSurfaceOpen(characterId: string): boolean {
   if (isChessOpen(useChessStore.getState(), characterId)) return true;
   if (useDataStore.getState().summons[characterId]?.kind === 'online') return true;
   if (isDrawActive(useDrawStore.getState(), characterId)) return true;
+  // 261115: the KTANE panel is the place the call is for.
+  if (useKtaneStore.getState().open[characterId]) return true;
   return useMcDashboardStore.getState().launch[characterId] != null;
 }
 
