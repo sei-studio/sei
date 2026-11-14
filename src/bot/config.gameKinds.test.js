@@ -12,7 +12,7 @@ const mc = { host: '127.0.0.1', auth: 'offline', username: 'Sui' }
 
 describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
   it('lists the three games', () => {
-    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve'])
+    expect(GAME_KINDS).toEqual(['minecraft', 'stardew', 'dontstarve', 'sts2'])
   })
 
   it('defaults to minecraft and keeps the minecraft block mandatory for it', () => {

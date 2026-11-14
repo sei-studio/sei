@@ -165,7 +165,7 @@ const StardewAdapterSchema = z.object({
 // only that game's sub-tree is required. `dontstarve` is a passthrough
 // PLACEHOLDER until its adapter lands. Keep the member list in sync with
 // GAME_KINDS below and GameId in src/shared/gameIpc.ts.
-export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve']
+export const GAME_KINDS = ['minecraft', 'stardew', 'dontstarve', 'sts2']
 
 // Don't Starve Together (game-adapters M2, 260908). Built by
 // src/bot/adapter/dontstarve/runtime.js adapterConfigFrom from main's
@@ -196,12 +196,33 @@ export const DontStarveAdapterSchema = z.object({
   death_grace_ms: z.number().int().min(0).default(8_000),
 })
 
+// Slay the Spire 2 (261115): the localhost WebSocket the Sei StS2 mod
+// connects to (native/sts2-mod/PROTOCOL.md, Neuro SDK protocol + sei/*).
+// Built by adapter/sts2/runtime.js adapterConfigFrom from main's
+// Sts2JoinTarget {port, token, label?}; the bot is the SERVER on `port`.
+export const Sts2AdapterSchema = z.object({
+  host: z.string().default('127.0.0.1'),
+  port: z.number().int().min(1).max(65535),
+  /** Shared secret in the mod's link file; checked when the mod sends one. */
+  token: z.string().max(128).nullable().default(null),
+  /** Refuse a connection without the token (off: upstream neuro-sts2 sends none). */
+  require_token: z.boolean().default(false),
+  username: z.string().min(1).max(32),
+  label: z.string().optional(),
+  /** The companion's window dropped: how long to hold for it to reconnect. */
+  seat_grace_ms: z.number().int().min(1000).default(90_000),
+})
+
 const AdapterSchema = z.object({
   kind: z.enum(GAME_KINDS).default('minecraft'),
   minecraft: MinecraftAdapterSchema.optional(),
   stardew: StardewAdapterSchema.optional(),
   dontstarve: DontStarveAdapterSchema.optional(),
+  sts2: Sts2AdapterSchema.optional(),
 }).superRefine((a, ctx) => {
+  if (a.kind === 'sts2' && !a.sts2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['sts2'], message: 'adapter.sts2 is required when adapter.kind is "sts2"' })
+  }
   if (a.kind === 'dontstarve' && !a.dontstarve) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dontstarve'], message: 'adapter.dontstarve is required when adapter.kind is "dontstarve"' })
   }
