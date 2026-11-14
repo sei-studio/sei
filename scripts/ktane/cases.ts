@@ -182,7 +182,25 @@ export const CASES: KCase[] = [
     notes: { serial: 'AL5GF3', batteries: 2, indicators: ['lit FRK', 'unlit BOB'], ports: ['parallel'] } },
   { id: 'E2', module: 'edgework', expect: 'notes', sheet: sheet({ serial: ODD, strikes: 0, module: 'simon' }), user: 'ugh, we got a strike',
     key: 'Brief reaction; bomb_notes strikes 1 (and remind that Simon mapping changes is fine).', notes: { strikes: 1 } },
+
+  // ── Moments (261115): a module line with feeling in it, where a character
+  // has room to react in its own way. Scored on the action like any case;
+  // the character-voice judge reads these most closely.
+  { id: 'V1', module: 'button', expect: 'answer', user: 'oh no oh no, like thirty seconds left and theres a button. its blue and it says abort',
+    key: `${S.button({ color: 'blue', label: 'abort', batteries: 0, lit: [] }) === 'hold' ? 'Hold the button down' : 'Tap it'} (asking for the strip color is expected).` },
+  { id: 'V2', module: 'simon', expect: 'answer', sheet: sheet({ serial: ODD, strikes: 0, module: 'simon' }),
+    user: 'it buzzed, we got a strike. sorry, my fault. now it flashed red',
+    key: `The strike makes it 1 strike now (serial has a vowel): press ${S.simon(['red'], true, 1).join(', ')}.` },
+  { id: 'V3', module: 'reaction', expect: 'answer', sheet: sheet({ serial: ODD, batteries: 2, module: 'wires' }),
+    user: 'the light went green and the timer stopped, it says defused!! we did it',
+    key: 'The bomb is defused. Any reaction to the win passes; no instruction is needed. FAIL only if it gives a bomb instruction as if the bomb were still live.' },
+  { id: 'V4', module: 'wires', expect: 'answer', sheet: sheet({ serial: ODD }),
+    user: 'uh ok wires, i think theres four? red, blue, wait no. ok. four wires: red, red, blue, yellow. sorry',
+    key: `Cut the ${ord[S.wires(['red', 'red', 'blue', 'yellow'], 7) - 1]} wire (the last red one).` },
 ];
+
+/** The subset the character-voice comparison runs (--subset voice). */
+export const VOICE_SUBSET = ['W1', 'W3', 'B6', 'K1', 'F1', 'M2', 'C1', 'Z1', 'P1', 'V1', 'V2', 'V3', 'V4'];
 
 export const CHAINS: KChain[] = [
   (() => {

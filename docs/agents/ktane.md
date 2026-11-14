@@ -18,19 +18,26 @@ not a separate turn runner.
   bomb sheet), its analytics, idle end, and the play row. Every per-turn hook
   returns nothing when no session is on, so the normal chat is unchanged.
 - `src/main/ktane/ktanePrompts.ts`: the contract, `bomb_notes` tool,
-  `BOMB_NOTES_RESULT`, `KTANE_THINKING` and `KTANE_MAX_TOKENS`.
+  `BOMB_NOTES_RESULT`, `KTANE_THINKING`, `KTANE_MAX_TOKENS` and the per-turn
+  voice cue (`KTANE_TURN_CUE`, `ktaneTurnTail`). Direction (product call
+  261115): the character leads, not speed or accuracy. The contract asks each
+  character to guide in its own voice and keeps only the rules that keep the
+  game playable. Keep it that way: no uniform length rule, no "jokes only
+  between modules".
 - `src/shared/ktaneManual.ts`: the compact manual (about 20k chars). It is
   our own restatement: no flavour text, images or logos from the official
   manual. The panel credits and links bombmanual.com.
 - `src/shared/ktaneSheet.ts`: the bomb sheet and `applyBombNotes` (pure, used
   by main, the panel and the eval).
 - `chatService.ts` while a session is on:
-  - `extraStable` = contract + manual, inside the cached system prompt.
+  - `extraStable` = manual, then contract (contract last so the voice rules
+    are not buried under the manual), inside the cached system prompt.
   - `bomb_notes` rides LAST in `chatTools` on every turn kind (user, greeting,
     reaction, desktop), so the tool list and the cache prefix match.
-  - The sheet note goes in the uncached tail before the clock note, on every
-    `appendUncachedTail` site. It is how a long bomb survives the 10-row call
-    window.
+  - The sheet note plus the voice cue (`ktaneTurnNote`) goes in the uncached
+    tail before the clock note, on every `appendUncachedTail` site. The note
+    is how a long bomb survives the 10-row call window; the cue is what keeps
+    the character's voice inside a module (without it Haiku went neutral).
   - The player's turn runs adaptive thinking with `maxTokens` 3000 on
     Anthropic only. Without it Haiku works mazes, Morse, keypads and
     passwords out loud, and on a call that working is spoken (eval: 57%
@@ -73,7 +80,10 @@ turn. A session with no turns writes no play row.
 ## Eval
 
 `npx tsx scripts/ktane-eval.ts --arms h55a --reps 2 --concurrency 8 --out f.json`
-(dev key from `~/.sei-dev/anthropic-test-key`). Cases in
+(dev key from `~/.sei-dev/anthropic-test-key`). Character voice, old vs new
+contract: `--chars sui,lyra,marv --persona-dir <live cards> --contracts v1,new
+--subset voice --chains off` adds an in-character score per reply and a
+distinctness check per case (accuracy is a floor there). Cases in
 `scripts/ktane/cases.ts`, answer keys from the eval-only solver
 `scripts/ktane/solver.ts` (never imported by the app). Arms: `h55` (what a
 normal Haiku call sends), `h55a` (what a KTANE turn sends), `s5`. Keep runs

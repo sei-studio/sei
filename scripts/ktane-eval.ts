@@ -20,10 +20,24 @@
  *
  * Latency: TTFT (first text token) and full turn time, per sample.
  *
+ * Character voice (261115, product call: KTANE is a bonding game, the
+ * character leads): --chars runs the same cases as several characters, and
+ * --contracts runs the old speed-first contract (v1, scripts/ktane/contractV1.ts)
+ * against the current one (new). With --voice on (the default for more than
+ * one character) every reply also gets:
+ *   in-character   a judge scores 1-5 how much it sounds like THIS character
+ *                  rather than a generic bomb expert (from the character's
+ *                  own description).
+ *   distinctness   per case, the replies of all characters are shuffled and
+ *                  a judge matches each to its character (chance = 1/chars).
+ * Accuracy is a floor in this mode, not the target.
+ *
  * Key (dev-only): ANTHROPIC_API_KEY env wins, else ~/.sei-dev/anthropic-test-key.
  *
  * Usage: npx tsx scripts/ktane-eval.ts [--reps 1] [--arms h55] [--case W1,K2]
  *          [--module wires] [--chains on|off|only] [--concurrency 4] [--out f.json]
+ *          [--chars sui,lyra,marv] [--persona-dir <dir of <name>.json cards>]
+ *          [--contracts v1,new] [--subset voice] [--voice on|off]
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -34,10 +48,11 @@ import { fileURLToPath } from 'node:url';
 
 import { buildSystemBlocks, chatSurfaceTools } from '../src/main/chat/chatPrompts';
 import { webToolsFor } from '../src/bot/web/webTools.js';
-import { ktaneStableBlock, BOMB_NOTES_TOOL, BOMB_NOTES_RESULT, KTANE_MAX_TOKENS, KTANE_THINKING } from '../src/main/ktane/ktanePrompts';
+import { KTANE_CONTRACT, ktaneStableBlock, ktaneTurnTail, BOMB_NOTES_TOOL, BOMB_NOTES_RESULT, KTANE_MAX_TOKENS, KTANE_THINKING } from '../src/main/ktane/ktanePrompts';
 import { applyBombNotes, emptySheet, renderSheetNote, type KtaneSheet } from '../src/shared/ktaneSheet';
-import { parseMaze, MAZES } from '../src/shared/ktaneManual';
-import { CASES, CHAINS, type KCase } from './ktane/cases';
+import { parseMaze, MAZES, renderKtaneManual } from '../src/shared/ktaneManual';
+import { CASES, CHAINS, VOICE_SUBSET, type KCase } from './ktane/cases';
+import { KTANE_CONTRACT_V1 } from './ktane/contractV1';
 import { maze as solveMaze, mazeIndexFor } from './ktane/solver';
 
 type Price = { in: number; cw: number; cr: number; out: number };
@@ -60,12 +75,16 @@ const flag = (n: string, d: string | null = null) => {
   return i >= 0 ? (argv[i + 1] ?? d) : d;
 };
 const REPS = Number(flag('--reps', '1')) || 1;
-const ONLY = flag('--case')?.split(',') ?? null;
+const ONLY = flag('--case')?.split(',') ?? (flag('--subset') === 'voice' ? VOICE_SUBSET : null);
 const ONLY_MODULE = flag('--module');
 const CHAIN_MODE = flag('--chains', 'on');
 const CONCURRENCY = Number(flag('--concurrency', '4')) || 4;
 const OUT = flag('--out');
 const ARM_KEYS = (flag('--arms') ?? 'h55').split(',').filter((k) => ARMS[k]);
+const CONTRACTS: Record<string, string> = { new: KTANE_CONTRACT, v1: KTANE_CONTRACT_V1 };
+const CONTRACT_KEYS = (flag('--contracts') ?? 'new').split(',').filter((k) => CONTRACTS[k]);
+const CHAR_KEYS = (flag('--chars') ?? 'sui').split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
+const VOICE = (flag('--voice') ?? (CHAR_KEYS.length > 1 ? 'on' : 'off')) === 'on';
 
 function resolveApiKey(): string | undefined {
   if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
@@ -82,43 +101,66 @@ if (!apiKey) {
 }
 const client = new Anthropic({ apiKey, maxRetries: 2 });
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-// The Sui persona: --persona <file> (a character JSON), else the demo fixture
-// from git history (the demo tree left the repo in 30aa8c8c; defaults are
-// cloud rows now).
-function loadPersona(): unknown {
-  const p = flag('--persona');
-  const raw = p
-    ? readFileSync(p, 'utf8')
-    : execFileSync('git', ['show', '30aa8c8c^:demo/fixtures/default-characters/sui.json'], { cwd: root, encoding: 'utf8' });
-  return JSON.parse(raw).persona;
+// Characters: --persona-dir <dir> reads <dir>/<name>.json (a character JSON
+// with persona {source, expanded}, or a cloud row with persona_source /
+// persona_expanded); else the demo fixture from git history (the demo tree
+// left the repo in 30aa8c8c; defaults are cloud rows now, so pass the live
+// cards for a realistic run). --persona <file> still sets the first character.
+interface EvalChar {
+  key: string;
+  name: string;
+  persona: { source: string; expanded: string };
 }
-const SUI = loadPersona();
+function loadChar(key: string, i: number): EvalChar {
+  const dir = flag('--persona-dir');
+  const file = i === 0 && flag('--persona') ? flag('--persona')! : dir ? join(dir, `${key}.json`) : null;
+  const raw = file
+    ? readFileSync(file, 'utf8')
+    : execFileSync('git', ['show', `30aa8c8c^:demo/fixtures/default-characters/${key}.json`], { cwd: root, encoding: 'utf8' });
+  let j = JSON.parse(raw);
+  if (Array.isArray(j)) j = j[0];
+  const source = String(j.persona?.source ?? j.persona_source ?? '');
+  const expanded = String(j.persona?.expanded ?? j.persona_expanded ?? '');
+  return { key, name: String(j.name ?? key), persona: { source, expanded } };
+}
+const CHARS = CHAR_KEYS.map(loadChar);
 const STOP = ['\nHuman:', '\nAssistant:', '\nPlayer:', '\n(game)'];
 const STAMP = '[15 Nov 21:04]';
 
-const SYSTEM = buildSystemBlocks({
-  persona: SUI,
-  name: 'Sui',
-  preferredName: 'Ouen',
-  proactiveness: 1,
-  punctuation: 'casual',
-  memory: '',
-  summary: '',
-  knowledge: '',
-  openWorldDetected: false,
-  inGame: false,
-  voiceCall: true,
-  language: 'en',
-  memoryGuide: true,
-  searchGuide: true,
-  clockInTail: true,
-  extraStable: ktaneStableBlock(),
-} as Parameters<typeof buildSystemBlocks>[0]);
+const systemCache = new Map<string, ReturnType<typeof buildSystemBlocks>>();
+function systemFor(ch: EvalChar, contract: string): ReturnType<typeof buildSystemBlocks> {
+  const k = `${ch.key}/${contract}`;
+  if (!systemCache.has(k))
+    systemCache.set(
+      k,
+      buildSystemBlocks({
+        persona: ch.persona,
+        name: ch.name,
+        preferredName: 'Ouen',
+        proactiveness: 1,
+        punctuation: 'casual',
+        memory: '',
+        summary: '',
+        knowledge: '',
+        openWorldDetected: false,
+        inGame: false,
+        voiceCall: true,
+        language: 'en',
+        memoryGuide: true,
+        searchGuide: true,
+        clockInTail: true,
+        // new = the app's ktaneStableBlock(); v1 = the old block (contract first, then the manual).
+        extraStable: contract === 'new' ? ktaneStableBlock() : `${CONTRACTS[contract]}\n\n${renderKtaneManual()}`,
+      } as Parameters<typeof buildSystemBlocks>[0]),
+    );
+  return systemCache.get(k)!;
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TOOLS: any[] = [...(chatSurfaceTools(true, webToolsFor({ serverWebSearch: true })) as any[]), BOMB_NOTES_TOOL];
 
 interface Turn {
   text: string;
+  thinking: string;
   notes: Record<string, unknown>[];
   ttftMs: number | null;
   totalMs: number;
@@ -137,29 +179,31 @@ function cost(model: string, u: Record<string, number | null | undefined>): numb
   );
 }
 
-async function callExpert(armKey: string, history: [('user' | 'assistant'), string][], sheet: KtaneSheet): Promise<Turn> {
+async function callExpert(armKey: string, contract: string, who: EvalChar, history: [('user' | 'assistant'), string][], sheet: KtaneSheet): Promise<Turn> {
   const arm = ARMS[armKey];
   const messages: Anthropic.Messages.MessageParam[] = history.map(([role, text]) => ({
     role,
     content: role === 'user' ? `${STAMP} ${text}` : text,
   }));
-  // Uncached tail exactly as chatService builds it: sheet note, then the clock.
+  // Uncached tail exactly as chatService builds it: ktaneTurnNote (new: sheet
+  // note + voice cue; v1: sheet note only), then the clock.
   const last = messages[messages.length - 1];
   last.content = [
     { type: 'text', text: last.content as string, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: `${renderSheetNote(sheet)}\n[now: Sun 15 Nov 2026, 21:04]` },
+    { type: 'text', text: `${contract === 'new' ? ktaneTurnTail(sheet) : renderSheetNote(sheet)}\n[now: Sun 15 Nov 2026, 21:04]` },
   ];
   const t0 = Date.now();
   let ttft: number | null = null;
   const notes: Record<string, unknown>[] = [];
   let text = '';
+  let thinking = '';
   let usageSum: Record<string, number> = {};
   let stop: string | null = null;
   try {
     // Hops as chatService runs them: a hop that spoke and only took notes ends
     // the turn; a hop that took notes but said nothing gets one more round.
     for (let hop = 0; hop < 3; hop++) {
-      const body = { model: arm.model, max_tokens: arm.maxTokens ?? 200, system: SYSTEM, tools: TOOLS, stop_sequences: STOP, messages, ...arm.extra };
+      const body = { model: arm.model, max_tokens: arm.maxTokens ?? 200, system: systemFor(who, contract), tools: TOOLS, stop_sequences: STOP, messages, ...arm.extra };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const stream = client.messages.stream(body as any);
       for await (const ev of stream) {
@@ -170,6 +214,7 @@ async function callExpert(armKey: string, history: [('user' | 'assistant'), stri
       stop = msg.stop_reason;
       const hopText = msg.content.filter((b) => b.type === 'text').map((b) => (b as Anthropic.Messages.TextBlock).text).join(' ').trim();
       if (hopText) text = text ? `${text} ${hopText}` : hopText;
+      for (const b of msg.content) if (b.type === 'thinking') thinking += (b as Anthropic.Messages.ThinkingBlock).thinking;
       const uses = msg.content.filter((b) => b.type === 'tool_use') as Anthropic.Messages.ToolUseBlock[];
       for (const u of uses) if (u.name === 'bomb_notes') notes.push(u.input as Record<string, unknown>);
       if (!uses.length || hopText) break;
@@ -179,11 +224,20 @@ async function callExpert(armKey: string, history: [('user' | 'assistant'), stri
         content: uses.map((u) => ({ type: 'tool_result' as const, tool_use_id: u.id, content: u.name === 'bomb_notes' ? BOMB_NOTES_RESULT : 'Not available in this test.' })),
       });
     }
-    return { text, notes, ttftMs: ttft, totalMs: Date.now() - t0, usage: usageSum, cost: cost(arm.model, usageSum), stop };
+    return { text, thinking, notes, ttftMs: ttft, totalMs: Date.now() - t0, usage: usageSum, cost: cost(arm.model, usageSum), stop };
   } catch (err) {
-    return { text: '', notes: [], ttftMs: null, totalMs: Date.now() - t0, usage: {}, cost: 0, stop: null, error: (err as Error).message.slice(0, 200) };
+    return { text: '', thinking: '', notes: [], ttftMs: null, totalMs: Date.now() - t0, usage: {}, cost: 0, stop: null, error: (err as Error).message.slice(0, 200) };
   }
 }
+
+// Judge spend, summed over every judge call (list price).
+let judgeCost = 0;
+async function judgeCall(body: Record<string, unknown>): Promise<string> {
+  const r = (await client.messages.create(body as never)) as Anthropic.Messages.Message;
+  judgeCost += cost(JUDGE_MODEL, r.usage as unknown as Record<string, number>);
+  return r.content.filter((b) => b.type === 'text').map((b) => (b as Anthropic.Messages.TextBlock).text).join('');
+}
+const parseJson = (t: string) => JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
 
 interface Verdict {
   pass: boolean;
@@ -207,20 +261,75 @@ async function judge(c: { user: string; key: string; expect: string }, reply: st
     'Reply with JSON only: {"pass": true|false, "asked": true|false (did the reply ask the player a question), "moves": ["U","D","L","R",...] (maze only, else []), "why": "<short reason>"}';
   for (let i = 0; i < 3; i++) {
     try {
-      const r = await client.messages.create({
-        model: JUDGE_MODEL,
-        max_tokens: 4000,
-        thinking: { type: 'adaptive' },
-        messages: [{ role: 'user', content: prompt }],
-      } as never);
-      const t = (r as Anthropic.Messages.Message).content.filter((b) => b.type === 'text').map((b) => (b as Anthropic.Messages.TextBlock).text).join('');
-      const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1));
+      const t = await judgeCall({ model: JUDGE_MODEL, max_tokens: 4000, thinking: { type: 'adaptive' }, messages: [{ role: 'user', content: prompt }] });
+      const j = parseJson(t);
       return { pass: !!j.pass, asked: !!j.asked, why: String(j.why ?? ''), moves: Array.isArray(j.moves) ? j.moves.map(String) : [] };
     } catch {
       /* retry */
     }
   }
   return { pass: false, asked: false, why: 'judge failed' };
+}
+
+const describe = (ch: EvalChar) => ch.persona.source || ch.persona.expanded.slice(0, 1500);
+
+/** In-character score 1-5 for one reply, judged from the character's own description. */
+async function voiceJudge(ch: EvalChar, user: string, reply: string): Promise<{ score: number; why: string }> {
+  if (!reply) return { score: 1, why: 'no reply' };
+  const prompt =
+    `You judge whether a spoken line sounds like a specific character. The character, ${ch.name}, is on a voice call with the player and playing the Expert in Keep Talking and Nobody Explodes: the player describes a bomb and ${ch.name} reads the defusal manual and tells them what to do. ` +
+    `Talking about the bomb is expected and does not count against the character.\n` +
+    `${ch.name}'s character description: ${describe(ch)}\n\n` +
+    `The player said: "${user}"\n${ch.name} replied: "${reply}"\n\n` +
+    `Score how much the reply sounds like ${ch.name} in particular, rather than a generic, neutral bomb expert or assistant:\n` +
+    `5 = unmistakably ${ch.name}: their voice, attitude, humor or nerves are clearly there.\n4 = clearly in character, a little generic in places.\n3 = some of the character shows, but most of it could come from anyone.\n2 = a faint trace of the character.\n1 = generic; nothing of this character.\n` +
+    'Reply with JSON only: {"score": 1-5, "why": "<short reason>"}';
+  for (let i = 0; i < 3; i++) {
+    try {
+      const j = parseJson(await judgeCall({ model: JUDGE_MODEL, max_tokens: 300, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }));
+      const n = Number(j.score);
+      if (n >= 1 && n <= 5) return { score: n, why: String(j.why ?? '') };
+    } catch {
+      /* retry */
+    }
+  }
+  return { score: NaN, why: 'judge failed' };
+}
+
+/** Deterministic shuffle so a rerun shows the judge the same order. */
+function shuffled<T>(xs: T[], seed: string): T[] {
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  const out = xs.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    h = Math.imul(h ^ (h >>> 13), 1597334677) >>> 0;
+    const j = h % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Distinctness: anonymized replies to the same line, matched back to their characters. Returns how many were matched right. */
+async function distinctJudge(user: string, replies: { ch: EvalChar; text: string }[], seed: string): Promise<{ correct: number; of: number }> {
+  const order = shuffled(replies, seed);
+  const letters = order.map((_, i) => String.fromCharCode(65 + i));
+  const prompt =
+    `${replies.length} characters each played the Expert in Keep Talking and Nobody Explodes on a voice call, and each answered the same player line. ` +
+    `Match every reply to the character who said it. Each character said exactly one reply.\n\nCharacters:\n` +
+    replies.map((r) => `- ${r.ch.name}: ${describe(r.ch)}`).join('\n') +
+    `\n\nThe player said: "${user}"\n\nReplies (order shuffled):\n` +
+    order.map((r, i) => `${letters[i]}: "${r.text}"`).join('\n') +
+    `\n\nReply with JSON only, mapping each letter to a character name: {${letters.map((l) => `"${l}": "<name>"`).join(', ')}}`;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const j = parseJson(await judgeCall({ model: JUDGE_MODEL, max_tokens: 3000, thinking: { type: 'adaptive' }, messages: [{ role: 'user', content: prompt }] }));
+      const correct = order.filter((r, k) => String(j[letters[k]] ?? '').trim().toLowerCase() === r.ch.name.toLowerCase()).length;
+      return { correct, of: order.length };
+    } catch {
+      /* retry */
+    }
+  }
+  return { correct: 0, of: 0 };
 }
 
 function scoreMaze(c: KCase, moves: string[]): { pass: boolean; why: string } {
@@ -261,6 +370,9 @@ function scoreNotes(c: KCase, notes: Record<string, unknown>[]): { pass: boolean
 
 interface Row {
   arm: string;
+  contract: string;
+  char: string;
+  user: string;
   id: string;
   module: string;
   expect: string;
@@ -268,17 +380,21 @@ interface Row {
   pass: boolean;
   why: string;
   reply: string;
+  thinking?: string;
   notes: Record<string, unknown>[];
   ttftMs: number | null;
   totalMs: number;
   cost: number;
   judgeAsked?: boolean;
+  /** In-character score 1-5 (--voice on). */
+  voice?: number;
+  voiceWhy?: string;
 }
 
-async function runCase(arm: string, c: KCase, rep: number): Promise<Row> {
+async function runCase(arm: string, contract: string, ch: EvalChar, c: KCase, rep: number): Promise<Row> {
   const sheet = { ...emptySheet(), ...(c.sheet ?? {}) } as KtaneSheet;
   const history: [('user' | 'assistant'), string][] = [...(c.history ?? []), ['user', c.user]];
-  const t = await callExpert(arm, history, sheet);
+  const t = await callExpert(arm, contract, ch, history, sheet);
   let pass = false;
   let why = t.error ?? '';
   let asked: boolean | undefined;
@@ -294,10 +410,11 @@ async function runCase(arm: string, c: KCase, rep: number): Promise<Row> {
       asked = v.asked;
     }
   }
-  return { arm, id: c.id, module: c.module, expect: c.expect, rep, pass, why, reply: t.text, notes: t.notes, ttftMs: t.ttftMs, totalMs: t.totalMs, cost: t.cost, judgeAsked: asked };
+  const v = VOICE && !t.error ? await voiceJudge(ch, c.user, t.text) : null;
+  return { arm, contract, char: ch.name, user: c.user, id: c.id, module: c.module, expect: c.expect, rep, pass, why, reply: t.text, thinking: t.thinking, notes: t.notes, ttftMs: t.ttftMs, totalMs: t.totalMs, cost: t.cost, judgeAsked: asked, voice: v?.score, voiceWhy: v?.why };
 }
 
-async function runChain(arm: string, ch: (typeof CHAINS)[number], rep: number): Promise<Row[]> {
+async function runChain(arm: string, contract: string, who: EvalChar, ch: (typeof CHAINS)[number], rep: number): Promise<Row[]> {
   let sheet = { ...emptySheet(), ...(ch.sheet ?? {}) } as KtaneSheet;
   const transcript: [('user' | 'assistant'), string][] = [];
   const rows: Row[] = [];
@@ -308,11 +425,12 @@ async function runChain(arm: string, ch: (typeof CHAINS)[number], rep: number): 
     let win = transcript.slice(-10);
     while (win.length && win[0][0] !== 'user') win = win.slice(1);
     const before = sheet;
-    const t = await callExpert(arm, win, sheet);
+    const t = await callExpert(arm, contract, who, win, sheet);
     for (const n of t.notes) sheet = applyBombNotes(sheet, n).sheet;
     transcript.push(['assistant', t.text || '(silence)']);
     const v = t.error ? { pass: false, why: t.error, asked: false } : await judge({ user: turn.user, key: turn.key, expect: turn.expect }, t.text, before);
-    rows.push({ arm, id: `${ch.id}.${i + 1}`, module: ch.module, expect: turn.expect, rep, pass: v.pass, why: v.why, reply: t.text, notes: t.notes, ttftMs: t.ttftMs, totalMs: t.totalMs, cost: t.cost, judgeAsked: v.asked });
+    const vv = VOICE && !t.error ? await voiceJudge(who, turn.user, t.text) : null;
+    rows.push({ arm, contract, char: who.name, user: turn.user, voice: vv?.score, voiceWhy: vv?.why, id: `${ch.id}.${i + 1}`, module: ch.module, expect: turn.expect, rep, pass: v.pass, why: v.why, reply: t.text, notes: t.notes, ttftMs: t.ttftMs, totalMs: t.totalMs, cost: t.cost, judgeAsked: v.asked });
   }
   return rows;
 }
@@ -336,32 +454,77 @@ const pct = (xs: number[], p: number) => {
   return s.length ? s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))] : NaN;
 };
 
+const mean = (xs: number[]) => {
+  const f = xs.filter(Number.isFinite);
+  return f.length ? f.reduce((a, b) => a + b, 0) / f.length : NaN;
+};
+const words = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
+
 async function main(): Promise<void> {
   const cases = CASES.filter((c) => (!ONLY || ONLY.includes(c.id)) && (!ONLY_MODULE || c.module === ONLY_MODULE));
   const jobs: (() => Promise<Row[]>)[] = [];
   for (const arm of ARM_KEYS) {
-    for (let rep = 0; rep < REPS; rep++) {
-      if (CHAIN_MODE !== 'only') for (const c of cases) jobs.push(async () => [await runCase(arm, c, rep)]);
-      if (CHAIN_MODE !== 'off' && !ONLY) for (const ch of CHAINS) jobs.push(() => runChain(arm, ch, rep));
+    for (const contract of CONTRACT_KEYS) {
+      for (const ch of CHARS) {
+        for (let rep = 0; rep < REPS; rep++) {
+          if (CHAIN_MODE !== 'only') for (const c of cases) jobs.push(async () => [await runCase(arm, contract, ch, c, rep)]);
+          if (CHAIN_MODE !== 'off' && !ONLY) for (const chain of CHAINS) jobs.push(() => runChain(arm, contract, ch, chain, rep));
+        }
+      }
     }
   }
   const rows = (await pool(jobs, CONCURRENCY)).flat();
-  for (const arm of ARM_KEYS) {
-    const rs = rows.filter((r) => r.arm === arm);
-    console.log(`\n=== ${arm} (${ARMS[arm].model}) ===`);
-    const byModule = new Map<string, Row[]>();
-    for (const r of rs) byModule.set(r.module, [...(byModule.get(r.module) ?? []), r]);
-    for (const [m, list] of byModule) console.log(`${m.padEnd(18)} ${list.filter((r) => r.pass).length}/${list.length}`);
-    const pass = rs.filter((r) => r.pass).length;
-    console.log(`TOTAL ${pass}/${rs.length} = ${((100 * pass) / rs.length).toFixed(1)}%`);
-    console.log(`TTFT p50/p90 ${pct(rs.map((r) => r.ttftMs ?? NaN), 50)}/${pct(rs.map((r) => r.ttftMs ?? NaN), 90)} ms; full turn p50/p90 ${pct(rs.map((r) => r.totalMs), 50)}/${pct(rs.map((r) => r.totalMs), 90)} ms`);
-    console.log(`cost per turn ${(rs.reduce((a, r) => a + r.cost, 0) / rs.length).toFixed(5)} USD (list price)`);
-    const notesRate = rs.filter((r) => r.notes.length).length;
-    console.log(`turns with bomb_notes: ${notesRate}/${rs.length}`);
-    for (const r of rs.filter((x) => !x.pass))
-      console.log(`  FAIL ${r.id} r${r.rep}: ${r.why} | "${r.reply.slice(0, 160)}"${r.notes.length ? ` notes=${JSON.stringify(r.notes).slice(0, 300)}` : ''}`);
+
+  // Distinctness: one judge call per (arm, contract, rep, case) with every
+  // character's reply to that same line.
+  const distinct: { arm: string; contract: string; id: string; rep: number; correct: number; of: number }[] = [];
+  if (VOICE && CHARS.length > 1) {
+    const groups = new Map<string, Row[]>();
+    for (const r of rows) {
+      const k = `${r.arm}|${r.contract}|${r.rep}|${r.id}`;
+      groups.set(k, [...(groups.get(k) ?? []), r]);
+    }
+    const djobs = [...groups.entries()]
+      .filter(([, g]) => g.length === CHARS.length && g.every((r) => r.reply))
+      .map(([k, g]) => async () => {
+        const [arm, contract, rep, id] = k.split('|');
+        const d = await distinctJudge(g[0].user, g.map((r) => ({ ch: CHARS.find((c) => c.name === r.char)!, text: r.reply })), k);
+        return { arm, contract, id, rep: Number(rep), ...d };
+      });
+    distinct.push(...(await pool(djobs, CONCURRENCY)));
   }
-  if (OUT) writeFileSync(OUT, JSON.stringify(rows, null, 2));
+
+  const expertCost = rows.reduce((a, r) => a + r.cost, 0);
+  for (const arm of ARM_KEYS) {
+    for (const contract of CONTRACT_KEYS) {
+      for (const ch of CHARS) {
+        const rs = rows.filter((r) => r.arm === arm && r.contract === contract && r.char === ch.name);
+        console.log(`\n=== ${arm} (${ARMS[arm].model}) / contract ${contract} / ${ch.name} ===`);
+        const byModule = new Map<string, Row[]>();
+        for (const r of rs) byModule.set(r.module, [...(byModule.get(r.module) ?? []), r]);
+        for (const [m, list] of byModule) console.log(`${m.padEnd(18)} ${list.filter((r) => r.pass).length}/${list.length}`);
+        const pass = rs.filter((r) => r.pass).length;
+        console.log(`TOTAL ${pass}/${rs.length} = ${((100 * pass) / rs.length).toFixed(1)}%`);
+        console.log(`TTFT p50/p90 ${pct(rs.map((r) => r.ttftMs ?? NaN), 50)}/${pct(rs.map((r) => r.ttftMs ?? NaN), 90)} ms; full turn p50/p90 ${pct(rs.map((r) => r.totalMs), 50)}/${pct(rs.map((r) => r.totalMs), 90)} ms`);
+        console.log(`words per reply mean ${mean(rs.map((r) => words(r.reply))).toFixed(1)}; cost per turn ${(rs.reduce((a, r) => a + r.cost, 0) / rs.length).toFixed(5)} USD (list price)`);
+        console.log(`turns with bomb_notes: ${rs.filter((r) => r.notes.length).length}/${rs.length}`);
+        if (VOICE) {
+          const vs = rs.map((r) => r.voice ?? NaN).filter(Number.isFinite);
+          console.log(`in-character mean ${mean(vs).toFixed(2)} / 5; >=4 on ${vs.filter((v) => v >= 4).length}/${vs.length}`);
+        }
+        for (const r of rs.filter((x) => !x.pass))
+          console.log(`  FAIL ${r.id} r${r.rep}: ${r.why} | "${r.reply.slice(0, 160)}"${r.notes.length ? ` notes=${JSON.stringify(r.notes).slice(0, 300)}` : ''}`);
+      }
+      const ds = distinct.filter((d) => d.arm === arm && d.contract === contract);
+      if (ds.length) {
+        const c = ds.reduce((a, d) => a + d.correct, 0);
+        const of = ds.reduce((a, d) => a + d.of, 0);
+        console.log(`\n--- distinctness ${arm}/${contract}: ${c}/${of} replies matched to their character = ${((100 * c) / of).toFixed(1)}% (chance ${(100 / CHARS.length).toFixed(0)}%)`);
+      }
+    }
+  }
+  console.log(`\nspend: expert ${expertCost.toFixed(3)} USD + judge ${judgeCost.toFixed(3)} USD = ${(expertCost + judgeCost).toFixed(3)} USD (list price)`);
+  if (OUT) writeFileSync(OUT, JSON.stringify({ rows, distinct, spend: { expert: expertCost, judge: judgeCost } }, null, 2));
 }
 
 void main();

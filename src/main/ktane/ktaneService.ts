@@ -7,7 +7,8 @@
  *   - the KTANE contract and the compact manual in the cached system prompt
  *     (ktaneStableFor -> buildSystemBlocks extraStable),
  *   - the bomb_notes tool (ktaneToolFor), answered by applyKtaneNotes,
- *   - the sheet as a note after the cache breakpoint (ktaneTurnNote),
+ *   - the sheet plus a one-line voice cue after the cache breakpoint
+ *     (ktaneTurnNote),
  *   - adaptive thinking on Anthropic (ktaneLlmOptions), so the companion
  *     works the manual out silently instead of out loud on the call.
  * So the voice stack, memory, the credit wall and the persona are the call's
@@ -26,7 +27,7 @@ import { playSummaryText } from '../chat/playSummary';
 import { surfaceLanguage } from '../../shared/chatLanguage';
 import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { loadAnalytics } from '../lazyAnalytics';
-import { applyBombNotes, emptySheet, renderSheetNote, type BombNotesInput, type KtaneSheet, type KtaneSessionTotals } from '../../shared/ktaneSheet';
+import { applyBombNotes, emptySheet, type BombNotesInput, type KtaneSheet, type KtaneSessionTotals } from '../../shared/ktaneSheet';
 import type { KtaneEndReason, KtaneStartSource, KtaneState } from '../../shared/ktaneIpc';
 import type { ChatMessage } from '../../shared/ipc';
 import type { LlmToolDef } from '../llm/types';
@@ -36,6 +37,7 @@ import {
   KTANE_MAX_TOKENS,
   KTANE_THINKING,
   ktaneStableBlock,
+  ktaneTurnTail,
 } from './ktanePrompts';
 
 /** The game's name in the play row and the catalog. */
@@ -131,7 +133,7 @@ export function ktaneStableFor(characterId: string): string | undefined {
 /** The per-turn sheet note (uncached tail), or '' with no session. */
 export function ktaneTurnNote(characterId: string): string {
   const s = sessions.get(characterId);
-  return s ? renderSheetNote(s.sheet) : '';
+  return s ? ktaneTurnTail(s.sheet) : '';
 }
 
 export function ktaneToolFor(characterId: string): LlmToolDef | null {

@@ -54,6 +54,7 @@ import {
   noteKtaneTurn,
   startKtaneSession,
 } from './ktaneService';
+import { KTANE_CONTRACT, KTANE_TURN_CUE } from './ktanePrompts';
 import type { KtaneState } from '../../shared/ktaneIpc';
 import { ACCOUNT_SWITCHING, _resetScopeBarrierForTests, beginScopeSwitch, pendingScopedWrites } from '../profile/scopeBarrier';
 
@@ -91,6 +92,12 @@ describe('ktane session', () => {
     expect(ktaneStableFor('sui')).toContain('# BOMB DEFUSAL MANUAL');
     expect(ktaneToolFor('sui')?.name).toBe('bomb_notes');
     expect(ktaneTurnNote('sui')).toContain('[your bomb notes, bomb 1]');
+    // The character leads (product call 261115): the voice cue rides last in
+    // the turn note, and the contract sits after the manual in the cache.
+    expect(ktaneTurnNote('sui').endsWith(KTANE_TURN_CUE)).toBe(true);
+    const stable = ktaneStableFor('sui')!;
+    expect(stable.indexOf('# BOMB DEFUSAL SESSION')).toBeGreaterThan(stable.indexOf('# BOMB DEFUSAL MANUAL'));
+    expect(`${KTANE_CONTRACT}\n${KTANE_TURN_CUE}`).not.toMatch(/[\u2013\u2014]/);
     expect(ktaneLlmOptions('sui', 'anthropic')).toEqual({ maxTokens: 3000, anthropicExtra: { thinking: { type: 'adaptive' } } });
     expect(ktaneLlmOptions('sui', 'openai')).toBeNull();
     expect(ktaneToolFor('lyra')).toBeNull();
