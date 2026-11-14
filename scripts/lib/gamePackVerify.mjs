@@ -27,6 +27,7 @@ export const REQUIRED_PAYLOAD = {
   minecraft: ['node_modules/mineflayer/package.json', 'node_modules/minecraft-data/package.json'],
   stardew: ['assets/stardew-mod/SeiCompanion/SeiCompanion.dll', 'assets/stardew-mod/SeiCompanion/manifest.json'],
   dontstarve: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
+  sts2: ['assets/sts2-mod/sei-sts2/sei-sts2.dll', 'assets/sts2-mod/sei-sts2/sei-sts2.json'],
 };
 
 /** Placeholder files that never count as payload. */

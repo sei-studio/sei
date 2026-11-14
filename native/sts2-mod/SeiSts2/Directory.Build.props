@@ -1,0 +1,10 @@
+<Project>
+  <Import Project="Directory.Build.props.user"
+          Condition="Exists('Directory.Build.props.user')" />
+
+  <PropertyGroup>
+    <SlayTheSpireDataPath Condition="'$(SlayTheSpireDataPath)' == ''">
+        C:\Program Files (x86)\Steam\steamapps\common\Slay the Spire 2\data_sts2_windows_x86_64
+    </SlayTheSpireDataPath>
+  </PropertyGroup>
+</Project>

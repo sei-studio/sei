@@ -1,0 +1,11 @@
+{
+    "id": "sei-sts2",
+    "name": "Sei Companion",
+    "author": "Sei",
+    "description": "Lets your Sei companion join your co-op run in her own window and play her own character. Based on the MIT neuro-sts2 mod.",
+    "version": "0.1.0",
+    "has_pck": false,
+    "has_dll": true,
+    "dependencies": [],
+    "affects_gameplay": false
+}

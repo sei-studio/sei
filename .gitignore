@@ -70,6 +70,12 @@ mirror-out/
 # with the game and commit the result whenever native/stardew-mod changes.
 native/stardew-mod/**/bin/
 native/stardew-mod/**/obj/
+# Same for the Slay the Spire 2 mod (scripts/build-sts2-mod.sh): assets/sts2-mod/
+# is TRACKED, only the intermediate build output is ignored. Never commit the
+# game's sts2.dll / GodotSharp.dll / 0Harmony.dll (Private=false keeps them out).
+native/sts2-mod/**/bin/
+native/sts2-mod/**/obj/
+native/sts2-mod/**/Directory.Build.props.user
 
 # Local planning scratch (the old GSD tree, removed 261030). Durable design
 # docs go in docs/design/.

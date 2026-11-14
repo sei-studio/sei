@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <!--
+      Sei's fork of VedalAI/neuro-sts2 (MIT). Builds sei-sts2.dll for Slay the
+      Spire 2. It references the GAME's assemblies (sts2.dll, GodotSharp.dll,
+      0Harmony.dll) from SlayTheSpireDataPath, so it only builds on a machine
+      with the game installed: scripts/build-sts2-mod.sh. Those DLLs are
+      Mega Crit's / third-party files and are never copied into this repo or
+      the output (Private=false).
+
+      Upstream copied the DLL into the game after every build (PostBuild);
+      Sei builds into assets/sts2-mod/sei-sts2 instead and the app installs it.
+    -->
+    <PropertyGroup>
+        <OutputType>Library</OutputType>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AssemblyName>sei-sts2</AssemblyName>
+        <RootNamespace>Sts2Agent</RootNamespace>
+        <Version>0.1.0</Version>
+        <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Compile Remove="sts2-decompiled/**" />
+      <None Remove="UPSTREAM_README.md" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Reference Include="sts2">
+        <HintPath>$(SlayTheSpireDataPath)/sts2.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="GodotSharp">
+        <HintPath>$(SlayTheSpireDataPath)/GodotSharp.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+      <Reference Include="0Harmony">
+        <HintPath>$(SlayTheSpireDataPath)/0Harmony.dll</HintPath>
+        <Private>false</Private>
+      </Reference>
+    </ItemGroup>
+
+    <!-- The manifest ships next to the DLL (the game reads <id>.json). -->
+    <ItemGroup>
+      <None Include="sei-sts2.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+</Project>

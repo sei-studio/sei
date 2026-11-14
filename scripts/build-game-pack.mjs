@@ -124,6 +124,14 @@ const ASSET_PACKS = {
     mustExist: [path.join('assets', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.dll'), path.join('assets', 'stardew-mod', 'SeiCompanion', 'manifest.json')],
     build: { cmd: 'bash', args: [path.join('scripts', 'build-stardew-mod.sh')] },
   },
+  // 261115: the Sei Slay the Spire 2 mod (fork of neuro-sts2, MIT). Like Stardew's it compiles
+  // only against the game's own DLLs, so the built DLL is checked in under assets/sts2-mod.
+  sts2: {
+    assetsDir: path.join('assets', 'sts2-mod'),
+    mustExist: [path.join('assets', 'sts2-mod', 'sei-sts2', 'sei-sts2.dll'), path.join('assets', 'sts2-mod', 'sei-sts2', 'sei-sts2.json')],
+    build: { cmd: 'bash', args: [path.join('scripts', 'build-sts2-mod.sh')] },
+    dryRunInput: path.join('native', 'sts2-mod', 'SeiSts2', 'sei-sts2.csproj'),
+  },
 };
 
 async function buildAssetPack(opts) {
@@ -136,7 +144,7 @@ async function buildAssetPack(opts) {
 
   if (opts.dryRun) {
     // No game on CI: the dry run only checks that the build inputs exist.
-    const modProj = path.join(ROOT, 'native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj');
+    const modProj = path.join(ROOT, spec.dryRunInput ?? path.join('native', 'stardew-mod', 'SeiCompanion', 'SeiCompanion.csproj'));
     if (!existsSync(modProj)) throw new Error(`missing ${modProj}`);
     log(`dry run OK: mod sources present; the pack is built with the game installed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
     return;
