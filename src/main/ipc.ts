@@ -1463,7 +1463,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // 261106: same choke point for reply_latency (surface chat): a mid-call
     // line is timed by the renderer's voice clock instead.
     let replyClock: ChatReplyClock | null = null;
-    if (!inCall) {
+    // 261115: a typed line to a KTANE session is that surface's time
+    // (ktane_session_ended), not a chat session's.
+    const ktaneOn = (await import('./ktane/ktaneService')).isKtaneActive(args.characterId);
+    if (!inCall && !ktaneOn) {
       const { noteChatMessage } = await import('./chat/chatSession');
       const turn = noteChatMessage(args.characterId);
       if (turn > 0) replyClock = startChatReplyClock({ turn, startedAt: sentAt });
@@ -1513,6 +1516,34 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       turnPromise.then((r) => clock.settle(r), (err) => clock.settle(null, err));
     }
     return await turnPromise;
+  });
+
+  // ── KTANE expert mode (261115) ───────────────────────────────────────────
+  // Thin wrappers over src/main/ktane/ktaneService (pushes wired in index.ts).
+  ipcMain.handle(IpcChannel.ktane.open, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const ktane = await import('./ktane/ktaneService');
+    ktane.noteKtanePanelOpened(id);
+    return ktane.getKtaneState(id);
+  });
+  ipcMain.handle(IpcChannel.ktane.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, source: z.enum(['picker', 'panel']), onCall: z.boolean() })
+      .parse(argsRaw);
+    const ktane = await import('./ktane/ktaneService');
+    return await ktane.startKtaneSession(args.characterId, args.source, { onCall: args.onCall });
+  });
+  ipcMain.handle(IpcChannel.ktane.newBomb, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    return (await import('./ktane/ktaneService')).newKtaneBomb(id);
+  });
+  ipcMain.handle(IpcChannel.ktane.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    await (await import('./ktane/ktaneService')).endKtaneSession(id, 'user_end');
+  });
+  ipcMain.handle(IpcChannel.ktane.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    return (await import('./ktane/ktaneService')).getKtaneState(id);
   });
 
   // ── Chess minigame (260710) ──────────────────────────────────────────────

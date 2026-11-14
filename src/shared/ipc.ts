@@ -45,6 +45,8 @@ import type { CallInterruptCounts } from './callInterrupts';
 import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type { KtaneStartSource, KtaneState } from './ktaneIpc';
+export type { KtaneEndReason, KtaneStartSource, KtaneState } from './ktaneIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 import type {
   DrawAiStroke,
@@ -2520,6 +2522,18 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
+  // --- KTANE expert mode (261115) --- see src/shared/ktaneIpc.ts.
+  /** The panel opened (funnel event); returns the live session, if any. */
+  ktaneOpen(characterId: string): Promise<KtaneState | null>;
+  /** Start expert mode for this character (no-op when already on). */
+  ktaneStart(characterId: string, source: KtaneStartSource, onCall: boolean): Promise<KtaneState>;
+  /** The player started another bomb: clears the companion's notes. */
+  ktaneNewBomb(characterId: string): Promise<KtaneState | null>;
+  /** End expert mode (play row + ktane_session_ended). */
+  ktaneEnd(characterId: string): Promise<void>;
+  ktaneGetState(characterId: string): Promise<KtaneState | null>;
+  onKtaneState(cb: (state: KtaneState) => void): Unsubscribe;
+
   // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
   /** Current OS access status for the microphone or (macOS) Screen Recording. */
   permissionsStatus(kind: OsPermissionKind): Promise<OsPermissionStatus>;
@@ -3960,6 +3974,16 @@ export const IpcChannel = {
     aiStroke: 'draw:ai-stroke',
     /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
     snapshotRequest: 'draw:snapshot-request',
+  },
+  // KTANE expert mode (261115). Protocol in src/shared/ktaneIpc.ts.
+  ktane: {
+    open: 'ktane:open',
+    start: 'ktane:start',
+    newBomb: 'ktane:new-bomb',
+    end: 'ktane:end',
+    getState: 'ktane:get-state',
+    /** Push: KtaneState on every change (active:false on the last one). */
+    state: 'ktane:state',
   },
   // Backseat (260728) — the companion watches a shared window and comments.
   // Protocol details in src/shared/backseatIpc.ts. `tick`, `gate` and

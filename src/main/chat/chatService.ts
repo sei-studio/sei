@@ -58,6 +58,17 @@ import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForS
 import type { RoomImage } from '../seilink/roomRender';
 import { roomChangeTurnNote } from '../seilink/roomChangeNote';
 import { callPictureDecision, DECORATE_TOOL_NAME, decorateToolFor, editorTurnNote, notePictureSent, runDecorate } from '../seilink/editorTogether';
+import {
+  applyKtaneNotes,
+  applyKtaneNotesFromContent,
+  isKtaneActive,
+  ktaneLlmOptions,
+  ktaneStableFor,
+  ktaneToolFor,
+  ktaneTurnNote,
+  noteKtaneTurn,
+} from '../ktane/ktaneService';
+import { BOMB_NOTES_TOOL_NAME } from '../ktane/ktanePrompts';
 import { DECORATE_MAX_CHANGES } from '../../shared/seilinkDecorate';
 import * as chatStore from './chatStore';
 import {
@@ -142,7 +153,10 @@ const MAX_HOPS = 6;
  * see the "answered" guard in the hop loop. Web tools and launch() are absent
  * on purpose: their results change what the reply should say.
  */
-export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember']);
+// 261115: bomb_notes (KTANE expert mode) is bookkeeping beside the spoken
+// answer, so a hop that answered and only took notes ends the turn: one model
+// call per player line.
+export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember', BOMB_NOTES_TOOL_NAME]);
 
 /**
  * 260917: ONE tool list per surface shape, built here so the four voice turn
@@ -152,15 +166,23 @@ export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember']);
  * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
  * visit; other providers get our search + visit (webToolsFor).
  */
-function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false, decorate: LlmToolDef | null = null): LlmToolDef[] {
+function chatTools(
+  llm: Pick<LlmProvider, 'kind'>,
+  voice: boolean,
+  room = false,
+  decorate: LlmToolDef | null = null,
+  ktane: LlmToolDef | null = null,
+): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
   // 261104 SeiLink: look() rides every turn kind while she has a room, so
   // the list stays identical across the voice turn kinds (prepareChatTurn
   // decides `room` once per turn, from the same source).
   // 261105 (T336): decorate() rides last, on every turn kind too, while the
   // player has her room editor open (editorTogether.ts decorateToolFor).
+  // 261115: bomb_notes rides last on every turn kind while a KTANE session is
+  // on (ktaneService.ktaneToolFor), for the same cache reason.
   const tools = chatSurfaceTools(voice, web, room) as LlmToolDef[];
-  return decorate ? [...tools, decorate] : tools;
+  return [...tools, ...(decorate ? [decorate] : []), ...(ktane ? [ktane] : [])];
 }
 
 /**
@@ -796,6 +818,8 @@ async function prepareChatTurn(
     // 261028 facepack pilot: dev flag only (unpackaged + SEI_FACEPACK_DIR).
     faceGuide: facesEnabled(),
     roomLine,
+    // 261115: KTANE expert mode, the contract + compact manual (cached).
+    extraStable: ktaneStableFor(characterId),
   });
   // Voice: only the recent rows go to the model (VOICE_RECENT_CAP, stepped by
   // VOICE_WINDOW_STEP so the cached transcript prefix holds across turns; see
@@ -1005,6 +1029,10 @@ async function sendChatMessageImpl(
     //     model decide launch() vs. open-to-LAN instructions.
     //   inGame — usually false here (a live session routes messages in-game), but
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
+    // 261115: KTANE expert mode, timed from here (the player's line is in).
+    const ktaneOn = isKtaneActive(args.characterId);
+    const turnStartedAt = Date.now();
+    let firstLineAt: number | null = null;
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
       otherWorlds: otherWorldStatus(deps),
@@ -1031,7 +1059,7 @@ async function sendChatMessageImpl(
     // 261105 SeiLink: room edits she did not react to ride once, here too (roomChangeNote.ts).
     // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
     const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
-    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
+    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, ktaneTurnNote(args.characterId), prep.clockNote);
     const llm = await buildLlmProvider();
     if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
@@ -1072,6 +1100,7 @@ async function sendChatMessageImpl(
     let prevSpoken: string | undefined;
     /** `moreAfter`: text of this same reply is ALREADY known to follow. */
     const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
+      if (firstLineAt === null) firstLineAt = Date.now();
       // The silence-filler and peer-impersonation drops stay VOICE-scoped
       // (matching persistReplies): typed chat never prompts the "(silence)"
       // convention, so a filler-shaped line there is a real reply. Resolved up
@@ -1133,7 +1162,9 @@ async function sendChatMessageImpl(
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     // Same list on every voice turn kind for the cache prefix (chatTools).
-    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room), decorateToolFor(args.characterId, prep.room));
+    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room), decorateToolFor(args.characterId, prep.room), ktaneToolFor(args.characterId));
+    // 261115: KTANE turns think before they speak (ktanePrompts KTANE_THINKING).
+    const ktaneOpts = ktaneLlmOptions(args.characterId, llm.kind);
     /** 261105 (T336): decorate() changes left this turn (DECORATE_MAX_CHANGES per request). */
     let decorateLeft = DECORATE_MAX_CHANGES;
     // 260909: per-character web session (lettered results survive across
@@ -1193,13 +1224,14 @@ async function sendChatMessageImpl(
         : undefined;
       // #9 — abortable: a follow-up send aborts this signal.
       const res = await llm.call({
-        maxTokens: replyMaxTokens(tools),
+        maxTokens: ktaneOpts?.maxTokens ?? replyMaxTokens(tools),
         system,
         tools,
         stopSequences: TRANSCRIPT_STOP_SEQUENCES,
         messages,
         timeoutMs: CHAT_TIMEOUT_MS,
         signal: ctrl.signal,
+        ...(ktaneOpts ? { anthropicExtra: ktaneOpts.anthropicExtra } : {}),
         ...(onTextDelta ? { onTextDelta } : {}),
       });
       if (isStreaming) {
@@ -1324,6 +1356,9 @@ async function sendChatMessageImpl(
             `[sei/chat] decorate char=${args.characterId.slice(0, 8)} mode=${r.result?.mode ?? '-'} ops=${r.result?.ops.length ?? 0} rejected=${r.result?.rejected.length ?? 0}`,
           );
           note = r.text;
+        } else if (toolUse.name === BOMB_NOTES_TOOL_NAME) {
+          // 261115: KTANE expert mode, the companion's own bomb notes.
+          note = applyKtaneNotes(args.characterId, toolUse.input);
         } else if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
@@ -1486,6 +1521,16 @@ async function sendChatMessageImpl(
           })
         : [];
 
+    if (ktaneOn) {
+      const said = isStreaming ? streamedReplies.length > 0 : replies.length > 0;
+      const at = firstLineAt ?? (said ? Date.now() : null);
+      noteKtaneTurn(args.characterId, {
+        voice: isVoice,
+        firstLineMs: at === null ? null : at - turnStartedAt,
+        thinking: ktaneOpts !== null,
+      });
+    }
+
     // Background compaction (260702): the reply is persisted, so if 50+
     // messages have aged past the window, fold them NOW — while the player is
     // typing — rather than making some future turn (or a summon) pay for it.
@@ -1535,7 +1580,10 @@ async function sendChatMessageImpl(
     void (async () => {
       try {
         const { captureSurfaceError, surfaceErrorClass } = await import('../analytics');
-        captureSurfaceError('chat', surfaceErrorClass(err), args.characterId);
+        const errorClass = surfaceErrorClass(err);
+        captureSurfaceError('chat', errorClass, args.characterId);
+        // 261115: a failed KTANE turn counts toward the session's health.
+        noteKtaneTurn(args.characterId, { voice: args.voiceCall === true, firstLineMs: null, thinking: false, errorClass });
       } catch { /* analytics is never load-bearing */ }
     })();
     throw err;
@@ -1762,8 +1810,8 @@ async function sendVoiceGreetingTurnImpl(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
-    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', ktaneTurnNote(characterId), prep.clockNote);
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room), ktaneToolFor(characterId));
     const first = await llm.call({
       maxTokens: replyMaxTokens(tools),
       system,
@@ -1778,6 +1826,7 @@ async function sendVoiceGreetingTurnImpl(
     const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
+    applyKtaneNotesFromContent(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
     if (!replyText) return [];
@@ -1907,10 +1956,10 @@ async function sendCompanionVoiceTurnImpl(
     // in before the breakpoint, every group-call reaction wrote a prefix that
     // no turn ever read back.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', ktaneTurnNote(characterId), prep.clockNote);
 
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room), ktaneToolFor(characterId));
     const first = await llm.call({
       maxTokens: replyMaxTokens(tools),
       system,
@@ -1925,6 +1974,7 @@ async function sendCompanionVoiceTurnImpl(
     const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
+    applyKtaneNotesFromContent(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
     // the caller (ipc) gates it on a live open world and fires the summon.
     if (ctx.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
@@ -1990,6 +2040,8 @@ async function sendVoiceIdleTurnImpl(
   } catch {
     /* no backseat module: nothing to defer to */
   }
+  // 261115: no idle chatter while the player is defusing a bomb with her.
+  if (isKtaneActive(characterId)) return { messages: [] };
   if (inflight.has(characterId)) return { messages: [] };
   const ctrl = new AbortController();
   inflight.set(characterId, ctrl);
@@ -2024,9 +2076,9 @@ async function sendVoiceIdleTurnImpl(
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', ktaneTurnNote(characterId), prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room), ktaneToolFor(characterId));
     const first = await llm.call({
       maxTokens: replyMaxTokens(tools),
       system,
@@ -2041,6 +2093,7 @@ async function sendVoiceIdleTurnImpl(
     const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
+    applyKtaneNotesFromContent(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:
     // "well, I'll let you go, bye" must actually hang up, not just be spoken
     // while later nudges keep firing. 260708: launch() is now honored too (via
@@ -2315,10 +2368,10 @@ async function sendDesktopLineTurnImpl(
     // A reaction carries its own change list; a poke or an idle line takes any unseen room edits.
     if (kind === 'react') {
       if (!reactNote) return skip('error');
-      appendUncachedTail(messages, reactNote, prep.clockNote);
-    } else appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], roomChangeTurnNote(characterId, prep.room), prep.clockNote);
+      appendUncachedTail(messages, reactNote, ktaneTurnNote(characterId), prep.clockNote);
+    } else appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], roomChangeTurnNote(characterId, prep.room), ktaneTurnNote(characterId), prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, false, true, decorateToolFor(characterId, prep.room));
+    const tools = chatTools(llm, false, true, decorateToolFor(characterId, prep.room), ktaneToolFor(characterId));
     const res = await llm.call({
       maxTokens: 120,
       system,
@@ -2330,6 +2383,7 @@ async function sendDesktopLineTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return skip('aborted');
     await honorRememberCalls(characterId, res.content);
+    applyKtaneNotesFromContent(characterId, res.content);
     const replyText = textOf(res.content).trim();
     if (!replyText || isSilenceFiller(replyText)) return skip('silence');
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');

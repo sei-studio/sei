@@ -80,6 +80,15 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     available: true,
     aliases: ["Don't Starve", 'DST', '饥荒联机版', '饥荒', 'ドントスターブ'],
   },
+  // 261115: KTANE expert mode. The player plays the game on their own screen
+  // and describes the bomb; the companion reads the manual. No mod, no launch:
+  // the tile opens the panel (src/main/ktane/ktaneService.ts).
+  {
+    id: 'ktane',
+    name: 'Keep Talking and Nobody Explodes',
+    available: true,
+    aliases: ['KTANE', 'Keep Talking', '完全爆弾解除マニュアル'],
+  },
   // 260929: backseat games, derived from their registry so adding one there is
   // all it takes. The 260803 rule above still holds for the share button
   // itself; these tiles are GAMES the player plays while the companion

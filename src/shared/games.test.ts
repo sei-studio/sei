@@ -42,8 +42,9 @@ describe('game catalog', () => {
     // Five lines, no descriptions: the character knows what chess is, and
     // explaining it would be paid for on every cached turn of every chat and
     // call. If this grows, it is because someone started describing games.
+    // 261115: 400 -> 460 for one more title (Keep Talking and Nobody Explodes).
     const text = renderGamesDirective();
     expect(text.split('\n')).toHaveLength(5);
-    expect(text.length).toBeLessThan(400);
+    expect(text.length).toBeLessThan(460);
   });
 });

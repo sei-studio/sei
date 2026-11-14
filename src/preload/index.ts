@@ -192,6 +192,11 @@ const api: RendererApi = {
   drawSaveGallery: (characterId, pngDataUrl) =>
     ipcRenderer.invoke(IpcChannel.draw.saveGallery, { characterId, pngDataUrl }),
   drawEnd: (characterId) => ipcRenderer.invoke(IpcChannel.draw.end, characterId),
+  ktaneOpen: (characterId) => ipcRenderer.invoke(IpcChannel.ktane.open, characterId),
+  ktaneStart: (characterId, source, onCall) => ipcRenderer.invoke(IpcChannel.ktane.start, { characterId, source, onCall }),
+  ktaneNewBomb: (characterId) => ipcRenderer.invoke(IpcChannel.ktane.newBomb, characterId),
+  ktaneEnd: (characterId) => ipcRenderer.invoke(IpcChannel.ktane.end, characterId),
+  ktaneGetState: (characterId) => ipcRenderer.invoke(IpcChannel.ktane.getState, characterId),
   drawResume: (characterId) => ipcRenderer.invoke(IpcChannel.draw.resume, characterId),
   drawFinish: (characterId) => ipcRenderer.invoke(IpcChannel.draw.finish, characterId),
 
@@ -274,6 +279,11 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
     ipcRenderer.on(IpcChannel.draw.state, handler);
     return () => ipcRenderer.off(IpcChannel.draw.state, handler);
+  },
+  onKtaneState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.ktane.state, handler);
+    return () => ipcRenderer.off(IpcChannel.ktane.state, handler);
   },
   onDrawAiStroke(cb) {
     const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);

@@ -928,6 +928,7 @@ async function endGameSurfacesForQuit(): Promise<void> {
     (async () => (await import('./chess/chessService')).endAllChess('app_quit'))(),
     (async () => (await import('./draw/drawService')).endAllDraw('app_quit'))(),
     (async () => (await import('./backseat/backseatService')).endAllBackseat('app_quit'))(),
+    (async () => (await import('./ktane/ktaneService')).endAllKtane('app_quit'))(),
   ]);
   await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
 }
@@ -1478,6 +1479,18 @@ async function bootstrap(): Promise<void> {
       pushChatMessage,
       isSummoned: (id) => supervisor?.isActive(id) ?? false,
       pushLog: broadcastLog,
+    });
+  }
+
+  // KTANE expert mode (261115): the session flag + bomb sheet; the turns are
+  // ordinary chat / call turns (chatService).
+  {
+    const { initKtaneService } = await import('./ktane/ktaneService');
+    initKtaneService({
+      pushState: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.ktane.state, state);
+      },
+      pushChatMessage,
     });
   }
 
