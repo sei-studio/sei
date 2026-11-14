@@ -109,7 +109,7 @@ describe('placeBlockAction spot search', () => {
     const w = flat().fill(-10, 64, -10, 10, 64, 10, 'short_grass')
     const bot = placingBot(w)
     const r = await placeBlockAction({ block: 'crafting_table' }, bot, {})
-    expect(r).toMatch(/^placed crafting_table on grass_block @/)
+    expect(r).toBe('placed crafting_table on grass_block')
     expect(bot.placeBlock).toHaveBeenCalledTimes(1)
   })
 
@@ -131,14 +131,15 @@ describe('placeBlockAction spot search', () => {
     goTo.mockImplementationOnce(async (b, x, y, z) => { b.entity.position = new Vec3(x + 0.5, y, z + 0.5); return 'reached' })
     const r = await placeBlockAction({ block: 'crafting_table' }, bot, {})
     expect(goTo).toHaveBeenCalledTimes(1)
-    expect(r).toMatch(/^placed crafting_table on grass_block @.* \(stepped to .* first: no open spot right beside you\)$/)
+    expect(r).toMatch(/^placed crafting_table on grass_block \(stepped to .* first: no open spot right beside you\)$/)
   })
 
   it('uses her own aim when it names an open cell, even a tuft', async () => {
     const w = flat().fill(-10, 64, -10, 10, 64, 10, 'short_grass')
     const bot = placingBot(w)
     const r = await placeBlockAction({ block: 'crafting_table', against: { x: -2, y: 64, z: 1 } }, bot, {})
-    expect(r).toBe('placed crafting_table on grass_block @-2,63,1')
+    // 261114 (pass 55): no coordinates on a placed block (read out in chat).
+    expect(r).toBe('placed crafting_table on grass_block')
   })
 
   it('fails honestly when there is nowhere at all', async () => {

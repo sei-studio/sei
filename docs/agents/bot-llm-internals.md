@@ -134,6 +134,21 @@ backport points materials at pc/26.2, whose numeric item ids do not match 26.3
 (the pickaxe row named minecart and harness items, so every tool dug at hand
 speed), and minecraft-data 3.114 has every copper tool at speed 1 instead of 5.
 
+**Where things are, in words (261114, pass 55).** She used to read raw
+coordinates out in chat ("already got one down at 174,70,-2 lol", "found iron
+at 206,66,0"), because the numbers were the only location she had. Every
+`nearby blocks` line and non-hostile `nearby entities` line now ends with
+`whereFromYou` (`observers/whereFromYou.js`): "(14 blocks southwest, 6 down)",
+"(right by you)", plus ", by <player>" within 4 blocks of them. The
+coordinates stay on the line because goTo, dig, gather and build take x,y,z.
+The placeBlock success result no longer carries the coordinates of the block
+under it (the most quoted source); failures keep them for aiming a retry. Do
+not put relative words into tool results: they stay in the history after she
+moves and she repeats them ("the table's right by me" 14 blocks away), while
+the snapshot is rebuilt every turn. The chat rule in `ACTION_RULES` says to use
+those words or a landmark and keep the numbers for tools unless the player asks
+for coordinates. Probe: `scripts/quality-eval/pass55-probe.mjs`.
+
 **The curiosity mandate (260731).** `CURIOSITY_CLAUSE` in `promptLibrary.js` is
 appended to all three gameplay `PROACTIVENESS_DIRECTIVES`. Before it, the only
 "stay genuinely curious about the player" text in the repo lived in
