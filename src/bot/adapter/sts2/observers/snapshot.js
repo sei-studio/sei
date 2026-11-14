@@ -64,6 +64,8 @@ export function composeSnapshot(view, opts = {}) {
       lines.push(`  ${actionSignature(a)}${desc}`)
     }
     if (!names.length) lines.push('  (the game asked for a move but listed none it accepts yet; wait a moment)')
+    // Without the structured state there is no hand to look names up in.
+    if (!st.length && names.includes('play_card')) lines.push('  this game window only gives the text above: use card_index and enemy_index numbers, one play_card per response, since the numbers shift after each play')
   } else if (!view.paused) {
     const always = [...(seat.actions?.values?.() ?? [])].filter((a) => /^query|info$/.test(a.name))
     lines.push(`no move needed from you right now (waiting on the player or the game)${always.length ? `; you may still use ${always.map((a) => a.name).join(', ')}` : ''}`)

@@ -173,6 +173,9 @@ describe('adapter', () => {
     const up = composeSnapshot({ seat: { open: true, seiState: null, force, actions, contexts } })
     expect(up).toContain('Pommel Strike')
     expect(up).not.toContain('Old shop')
+    expect(up).not.toContain('use card_index')
+    const upFight = composeSnapshot({ seat: { open: true, seiState: null, force: { ...force, actionNames: ['play_card'] }, actions: new Map([['play_card', { name: 'play_card' }]]), contexts } })
+    expect(upFight).toContain('use card_index and enemy_index numbers')
     // Sei mod out of combat with no options: the context adds the choices.
     const sei = composeSnapshot({ seat: { open: true, seiState: { screen: 'rewards', options: [], hand: [] }, force, actions, contexts } })
     expect(sei).toContain('screen: rewards')

@@ -166,7 +166,7 @@ export function resolveArgs(action, args, seiState) {
   if (src.card != null && 'card_index' in props && data.card_index == null) {
     if (typeof src.card === 'number') data.card_index = src.card
     else {
-      if (!seiState?.hand) return { error: 'name the card by its [index] from the hand list' }
+      if (!seiState?.hand) return { error: 'this game window sends no card list to match names against: give card_index (the number from the state text) instead' }
       const r = findCard(seiState.hand, src.card)
       if (r.error) return { error: `${r.error}. Your hand: ${arr(seiState.hand).map((c) => str(c?.name, 40)).join(', ') || 'empty'}` }
       data.card_index = r.index
@@ -188,7 +188,7 @@ export function resolveArgs(action, args, seiState) {
     else if ('enemy_index' in props) {
       if (typeof t === 'number') data.enemy_index = t
       else {
-        if (!seiState?.enemies) return { error: 'name the target by its [index] from the enemies list' }
+        if (!seiState?.enemies) return { error: 'this game window sends no enemy list to match names against: give enemy_index (the number from the state text) instead' }
         const r = findEnemy(seiState.enemies, t)
         if (r.error) return { error: r.error }
         data.enemy_index = r.index
