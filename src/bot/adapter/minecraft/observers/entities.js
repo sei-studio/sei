@@ -212,8 +212,13 @@ export function nearbyEntities(bot, opts = {}) {
     // human + AI teammates) bypass it: the bot needs their coords for
     // goTo/follow even through cover, and the owner-whereabouts line handles an
     // out-of-view owner separately.
+    // 261115 (quality pass 56): other entities do not hide one here. A mob
+    // hitting the player stands right by them, often straight behind them
+    // from where she is, and the player's own body hid it: in the 11-14
+    // scorecard (night_social-03) the zombie on Alex, 5 blocks from her, was
+    // missing from this list while the aggro line had it on Alex.
     if (requireLOS && !isPinned(e) &&
-        !hasClearLineOfSight(bot, e, { maxRange: radius, stepsPerBlock: 2 })) continue
+        !hasClearLineOfSight(bot, e, { maxRange: radius, stepsPerBlock: 2, entitiesOcclude: false })) continue
     all.push({ entity: e, distance: d })
   }
   all.sort((a, b) => a.distance - b.distance)

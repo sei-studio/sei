@@ -4624,10 +4624,27 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   function attachSettleHandler(loop, runner, use, inflightEntry) {
+    // 261115 (quality pass 56): any other action she starts after a fight
+    // was handed a busy action (handleActionTick) settles what became of it.
+    if (loop._fightCut && !caps.fightActions.has(use.name)) loop._fightCut = null
     runner.promise
       .then(r => {
         const aborted = runner.abortController.signal.aborted
-        const result = formatToolResult(use.name, r)
+        let result = formatToolResult(use.name, r)
+        // 261115 (quality pass 56): a fight that replaced her long action
+        // says so in its result, so the turn after the kill goes back to it.
+        // Pass 56 probe (resume): after the kill she called shelter again in
+        // 7 of 12 runs; the rest said "come sit by me while i build this"
+        // and built nothing.
+        const cut = loop._fightCut
+        if (cut && !aborted) {
+          if (caps.fightActions.has(use.name) && Number.isFinite(runner.startedAt) && runner.startedAt >= cut.at) {
+            result = `${result} ${NUDGES.fightCutAction(cut.label)}`
+            loop._fightCut = null
+          } else if (use.name === cut.name) {
+            loop._fightCut = null
+          }
+        }
         try { logActionResult(use.name, r) } catch {}
         noteActionEvent(use.name, r)
         // 260517-fix: capture _tickClaimed BEFORE clearing/nulling, so the
@@ -5295,10 +5312,23 @@ function maybeWarnByteCap(loop, warned) {
     // sticky greet hint. The extra args below are dead in that variant —
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
+    // 261115 (quality pass 56): a long foreground action of hers (shelter,
+    // gather, build...) is in the way of the fight: it keeps moving her and
+    // holding its own item, so the body's reflex swings do not win it. The
+    // hit / defend text says so and hands the fight to the fight action.
+    // Not for a background action (follow: the reflex pauses the trail and
+    // fights with the weapon) or the fight action itself. 11-14 scorecard
+    // night_social-03: told the reflex had it and the shelter keeps running,
+    // she kept building through a kill order and the zombie's hits.
+    const inFlightName = loop.inFlight?.name ?? null
+    const busyAction = attack && inFlightName && !caps.fightActions.has(inFlightName) && !caps.backgroundActions[inFlightName]
+      ? (action || inFlightName)
+      : null
     const attackText = attack && typeof adapter.eventAddendum === 'function'
-      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
+      ? `${String(adapter.eventAddendum('sei:attacked', busyAction ? { ...attack, busyAction } : attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action), busy: !!busyAction })}`
       : null
     if (attack) loop._fightMobId = attack?.attacker?.id ?? null
+    if (busyAction) loop._fightCut = { label: busyAction, name: inFlightName, at: Date.now() }
     // 261013: the silent check-in that carries a waiting player order invites
     // an action that replaces hers, so the silent-tick drop must let it through.
     const tickWaitingAsk = (attackText == null && playerMessage == null && loop.inFlight?.selfStarted && loop.inFlight?.waitingAsk) || null
