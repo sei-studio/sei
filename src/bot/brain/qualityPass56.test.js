@@ -205,6 +205,33 @@ describe('pass 56 fight that replaced a long action', () => {
     expect(kill).toContain('This fight cut short your gather oak_log before it was done')
   })
 
+  async function orderDuring(name, input) {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      start(name, input),
+      { text: '', toolUses: [{ id: 'k1', name: 'attackEntity', input: { entity: 'zombie' } }] },
+      { text: '', toolUses: [] },
+      { text: '', toolUses: [] },
+    ])
+    const orch = createOrchestrator({ adapter: makeFightAdapter(), config: config(), reenqueue: (e, d) => { if (e === 'sei:action_complete') queueMicrotask(() => orch.handleDispatch(e, d)) }, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:chat_received', chat('go'))
+    await orch.handleDispatch('sei:chat_received', chat('theres a zombie, kill it'))
+    for (let i = 0; i < 10; i++) await flush()
+    return toolResultTexts(provider.calls).find((t) => t.includes('killed zombie'))
+  }
+
+  it('a kill order that replaces the gather (no hit) also says it was cut short', async () => {
+    const kill = await orderDuring('gather', { name: 'oak_log' })
+    expect(kill).toBeTruthy()
+    expect(kill).toContain('This fight cut short your gather oak_log before it was done')
+  })
+
+  it('a kill order that replaces follow (a background action) gets no note', async () => {
+    const kill = await orderDuring('follow', { player: 'Steve' })
+    expect(kill).toBeTruthy()
+    expect(kill).not.toContain('cut short')
+  })
+
   it('a fight with no busy action behind it gets no note', async () => {
     _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([

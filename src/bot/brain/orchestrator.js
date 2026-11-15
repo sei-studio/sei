@@ -6330,6 +6330,15 @@ function maybeWarnByteCap(loop, warned) {
         // happens in the per-tool for-loop below. Loop stays alive.
         if (loop.inFlight) {
           if (hasStop) loop._stoppedAction = loop.inFlight.name
+          // 261115 (quality pass 56): a fight that replaces a long action of
+          // hers (a kill order mid-shelter, not only a hit) owes the same
+          // "go back to it" note as the attack-tick path. Compare run
+          // night_social-04-B: "kill it" replaced shelter, nothing was built
+          // and she never went back to it.
+          const old = loop.inFlight
+          if (!hasStop && caps.fightActions.has(newSuspendingTools[0].name) && !caps.fightActions.has(old.name) && !caps.backgroundActions[old.name]) {
+            loop._fightCut = { label: extractPriorTask(loop) || old.name, name: old.name, at: Date.now() }
+          }
           logger.debug?.(`[sei/orch] R2/suppress new action — aborting old in_flight=${loop.inFlight.name} new=${newSuspendingTools.map(u => u.name).join(',')} trigger=${loop._currentIterationTrigger ?? loop._triggerEvent}`)
           // 260516-0yw: clear the 10s action-tick BEFORE aborting on R2.
           clearActionTick(loop.inFlight)

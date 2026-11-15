@@ -156,6 +156,13 @@ const CASES = {
       return { ok: resumed, resumed, fight: tools.some((t) => FIGHT.has(t.name)), away: false, stop: false, spoke: tools.some((t) => t.name === 'say') }
     },
   },
+  // the same, when the player's kill order (not a hit) replaced the shelter
+  // (compare run night_social-04-B).
+  resume_order: {
+    steps: [...upToShelter, { ...killOrder, uses: [['say', { text: 'on it, going for the zombie now' }], ['attackEntity', { entity: 'zombie', times: 8 }, { hold: true }]] },
+      { t: 30, gone: true, resolve: 'killed zombie (4 hits). Nothing hurt you in this fight: you are at 20/20 health.', live: 1 }],
+    judge: (r) => CASES.resume.judge(r),
+  },
 }
 
 // ---- runner ---------------------------------------------------------------
