@@ -136,8 +136,8 @@ const WS = [
   { t: 8, player: 'can you get some wood? like 6 logs', uses: [['say', { text: 'on it. 8 logs coming, you\'ll get your 6 and i keep the rest' }], ['gather', { name: 'oak_log', count: 8 }, { result: 'gathered 8/8 oak_log', inv: [['oak_log', 8]] }]], then: [['say', { text: 'one more log and i\'m done, then you can see what i do with the stone' }]] },
   { t: 30, player: 'what should we build first?', uses: [['say', { text: 'a little stone hut by the table. you bring the logs, i\'ll do the stone' }]] },
   { t: 40, player: 'yeah sounds good', uses: [['end_loop', {}]] },
-  { t: 52, player: 'go get more wood, like 10 more', uses: [['say', { text: 'on it. stone pickaxe first, then the wood at the oak trees to the east' }], ['gather', { name: 'oak_log', count: 10 }, { result: 'aborted after 0/10 oak_log', inv: WOOD.inv }]] },
-  { t: 62, player: 'actually stop', uses: [['say', { text: 'ok stopping. what\'s up, you need something?' }]] },
+  { t: 52, player: 'go get more wood, like 10 more', uses: [['say', { text: 'on it. stone pickaxe first, then the wood at the oak trees to the east' }], ['gather', { name: 'oak_log', count: 10 }, { hold: true }]] },
+  { t: 62, player: 'actually stop', uses: [['stop', {}], ['say', { text: 'ok stopping. what\'s up, you need something?' }]] },
   { t: 72, player: 'lol ur kinda slow', uses: [['say', { text: 'lol i literally just got a stone pickaxe, be nice. i\'m faster than the trees at least' }]] },
   { t: 82, player: 'whats your favorite mob', uses: [['say', { text: 'enderman. tall creepy guy, teleports at you, and i\'m not even scared of him. mostly' }]] },
 ]
