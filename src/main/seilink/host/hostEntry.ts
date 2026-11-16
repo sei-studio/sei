@@ -323,6 +323,9 @@ function onCommand(m: ToHost): void {
       // Answered straight from the pipe read (main's liveness check), not from a timer.
       send({ type: 'pong', seq: Number(m.seq) || 0 });
       break;
+    case 'test-probe':
+      if (ARGS.test) void testProbe(Number(m.id) || 0);
+      break;
     case 'test-hang': {
       if (!ARGS.test) break;
       // CI: wedge this process's main thread (no heartbeats, no IPC) so main's hang detection fires.
@@ -684,7 +687,14 @@ function applyHitRect(): void {
 const HOVER_POLL_MS = 150;
 let hovering = false;
 
+/** CI probe (--seilink-test): the longest gap between two cursor polls since the last probe. */
+let lastPollAt = 0;
+let maxPollGap = 0;
+
 function pollHover(): void {
+  const now = Date.now();
+  if (lastPollAt) maxPollGap = Math.max(maxPollGap, now - lastPollAt);
+  lastPollAt = now;
   let next = false;
   try {
     if (dock && attached && pageReady && activity.current.fps > 0) {
@@ -698,6 +708,32 @@ function pollHover(): void {
   if (next === hovering) return;
   hovering = next;
   toPage(CH.hover, next);
+}
+
+/** CI self-test only: what the dock and the cursor feed look like right now (test-probe). */
+async function testProbe(id: number): Promise<void> {
+  let page: { awake: boolean; pressed: boolean } | null = null;
+  try {
+    if (pageWin && !pageWin.isDestroyed())
+      page = (await pageWin.webContents.executeJavaScript(
+        `(() => { const d = document.querySelector('[data-dock-awake]'); return d ? { awake: d.getAttribute('data-dock-awake') === '1', pressed: !!d.querySelector('[data-dock-pressed]') } : null })()`,
+      )) as { awake: boolean; pressed: boolean } | null;
+  } catch {
+    page = null;
+  }
+  const a = activity.current;
+  send({
+    type: 'test-probe',
+    id,
+    hover: hovering,
+    fps: a.fps,
+    reason: a.reason,
+    pageAwake: page ? page.awake : null,
+    pagePressed: page ? page.pressed : null,
+    cursorSamples: 0,
+    maxPollGapMs: maxPollGap,
+  });
+  maxPollGap = 0;
 }
 
 // ── Attach ──────────────────────────────────────────────────────────────────

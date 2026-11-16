@@ -45,6 +45,8 @@ const IS_MAC = !FAKE && process.platform === 'darwin';
 
 interface TestAddon {
   testClick(x: number, y: number, count?: number): unknown;
+  /** 261116: move the cursor, no button (Windows physical px, mac global top-left points). */
+  testMove?(x: number, y: number): unknown;
   /** macOS only: size another app's first window through Accessibility. */
   axSetWindowFrame?(bundleId: string, x: number, y: number, w: number, h: number): string;
 }
@@ -347,8 +349,85 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         checks.dock = { ok: false, detail: testAddon ? 'no dock reported' : 'no test addon' };
       }
 
+      // ── hover (261116): the dock wakes near the cursor and goes quiet when it leaves, also after a
+      //    press on it and after a click or double click on her (with Sei's window up, then hidden);
+      //    her cursor feed keeps coming. Product call (261116): it stayed lit after a click. ──
+      const herNow = ([...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen?: unknown }).screen)?.m as { screen: { x: number; y: number; w: number; h: number } } | undefined)?.screen;
+      if (testAddon?.testMove && deafenBtn && herNow) {
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const wa = d.workArea;
+        const near = { x: Math.round((deafenBtn.x + deafenBtn.w / 2) * s), y: Math.round((deafenBtn.y + deafenBtn.h / 2) * s) };
+        // Far: the top-left quarter of the work area, clear of her and of the dock.
+        const far = { x: Math.round((wa.x + wa.width * 0.25) * s), y: Math.round((wa.y + wa.height * 0.3) * s) };
+        const her = { x: Math.round((herNow.x + herNow.w / 2) * s), y: Math.round((herNow.y + herNow.h * 0.6) * s) };
+        type Probe = { hover: boolean; fps: number; reason: string; pageAwake: boolean | null; pagePressed: boolean | null; cursorSamples: number; maxPollGapMs: number };
+        let probeId = 0;
+        const probe = async (label: string): Promise<Probe | null> => {
+          const id = ++probeId;
+          const t1 = Date.now();
+          sendToSeilinkHostForTest({ type: 'test-probe', id });
+          const got = await waitFor(since(t1, 'test-probe', (m) => m.id === id), 3000);
+          const p = (got?.m ?? null) as Probe | null;
+          log(`probe ${label}: ${JSON.stringify(p)}`);
+          return p;
+        };
+        const moveTo = async (pt: { x: number; y: number }, settleMs = 900): Promise<void> => {
+          testAddon.testMove?.(pt.x, pt.y);
+          await sleep(settleMs);
+        };
+        const steps: string[] = [];
+        let ok = true;
+        const expect = async (label: string, hover: boolean, opts2: { feed?: boolean } = {}): Promise<void> => {
+          const p = await probe(label);
+          const good = !!p && p.hover === hover && p.pageAwake === hover && p.pagePressed === false && (!opts2.feed || p.cursorSamples > 0);
+          if (!good) ok = false;
+          steps.push(`${label}:${good ? 'ok' : 'FAIL'}(${p ? `h${+p.hover} a${p.pageAwake === null ? '-' : +p.pageAwake} p${p.pagePressed === null ? '-' : +p.pagePressed} fps${p.fps} feed${p.cursorSamples} gap${p.maxPollGapMs}` : 'no answer'})`);
+        };
+        // The dock step's caption and press glow lapse first.
+        await moveTo(far, 3200);
+        await expect('far', false);
+        await moveTo(near);
+        await expect('near', true);
+        // Deafen twice (it ends where it started) with the cursor resting on it, then leave.
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        await moveTo(far, 3200);
+        await expect('pressed-then-far', false, { feed: true });
+        await moveTo(near);
+        await expect('pressed-then-near', true);
+        await moveTo(far, 1800);
+        // A click on her (Sei's window comes up and stays up), then her window hidden.
+        testAddon.testClick(her.x, her.y, 1);
+        await sleep(1800);
+        await shot('06-hover-her-clicked');
+        await moveTo(near);
+        const withWin = await probe('her-clicked-window-up-near');
+        steps.push(`window-up-near:${withWin ? `h${+withWin.hover} a${withWin.pageAwake === null ? '-' : +withWin.pageAwake} fps${withWin.fps} ${withWin.reason}` : 'no answer'}`);
+        await moveTo(far, 1800);
+        hideMain();
+        await sleep(1500);
+        await expect('her-clicked-far', false, { feed: true });
+        await moveTo(near);
+        await expect('her-clicked-near', true);
+        await moveTo(far, 1800);
+        await expect('her-clicked-back-far', false, { feed: true });
+        // A double click on her (her quick reaction), then the same.
+        testAddon.testClick(her.x, her.y, 2);
+        await sleep(1800);
+        await moveTo(near);
+        await expect('her-dbl-near', true);
+        await moveTo(far, 1800);
+        await expect('her-dbl-far', false, { feed: true });
+        hideMain();
+        checks.hover = { ok, detail: steps.join(' ') };
+      } else {
+        checks.hover = { ok: false, detail: !testAddon?.testMove ? 'no testMove in the test addon' : 'no dock or box reported' };
+      }
+
     } else {
-      for (const k of ['cover', 'uncover', 'click', 'dock']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
+      for (const k of ['cover', 'uncover', 'click', 'dock', 'hover']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
     }
 
     // ── kill ──

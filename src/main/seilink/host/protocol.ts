@@ -50,7 +50,9 @@ export type ToHost =
    */
   | { type: 'ping'; seq: number }
   /** CI self-test hosts only (--seilink-test): wedge the main thread for `ms`. */
-  | { type: 'test-hang'; ms: number };
+  | { type: 'test-hang'; ms: number }
+  /** CI self-test hosts only (--seilink-test): report the dock hover and cursor feed state (test-probe). */
+  | { type: 'test-probe'; id: number };
 
 /**
  * 261110: counts the host adds to the session (taps on her, how presses went, GPU process
@@ -141,7 +143,23 @@ export type FromHost =
   | { type: 'pong'; seq: number }
   | { type: 'log'; level: 'info' | 'warn'; msg: string }
   /** An avatar bridge call from the page (see SEILINK_HOST_AVATAR_METHODS). */
-  | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] };
+  | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] }
+  /**
+   * 261116, CI self-test hosts only: answer to `test-probe`. `hover` is the host's dock hover,
+   * `pageAwake` / `pagePressed` what the page's dock shows, `cursorSamples` how many cursor
+   * samples went to her since the last probe, `maxPollGapMs` the longest gap between cursor polls.
+   */
+  | {
+      type: 'test-probe';
+      id: number;
+      hover: boolean;
+      fps: number;
+      reason: string;
+      pageAwake: boolean | null;
+      pagePressed: boolean | null;
+      cursorSamples: number;
+      maxPollGapMs: number;
+    };
 
 export function encodeLine(msg: ToHost | FromHost): string {
   return JSON.stringify(msg) + '\n';
