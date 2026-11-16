@@ -83,7 +83,10 @@ describe('owner page (section menu, one tab at a time, product call 261110)', ()
     expect(OWNER_TABS).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
     expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
     expect(profileTabs(profileAccess({ ...base, kind: 'custom' }))).toEqual(['look', 'voice', 'personality', 'games', 'more']);
-    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'skin', 'avatar', 'floatingAvatar'] }]);
+    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'avatar', 'floatingAvatar'] }]);
+    // The Minecraft skin is a game setting (product call 261116).
+    expect(tabGroups(a, 'games')).toEqual([{ section: null, rows: ['skin', 'chess', 'dst'] }]);
+    expect(sectionOf('skin')).toBe('games');
     expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
     expect(tabGroups(a, 'more')).toEqual([
       { section: 'sharing', rows: ['publicToggle'] },
@@ -107,10 +110,10 @@ describe('owner page (section menu, one tab at a time, product call 261110)', ()
 describe('owner row groups (sections in use order)', () => {
   it('custom: Look, Voice, Personality, Games, Sharing, Danger zone, every row live', () => {
     expect(sections({ ...base, kind: 'custom' })).toEqual({
-      look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
+      look: ['cardImage', 'avatar', 'floatingAvatar'],
       voice: ['voice', 'pitch'],
       personality: ['about', 'persona', 'knowledge'],
-      games: ['chess', 'dst'],
+      games: ['skin', 'chess', 'dst'],
       sharing: ['publicToggle'],
       danger: ['resetMemory', 'unbind'],
     });

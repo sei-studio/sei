@@ -990,6 +990,8 @@ export const ES: Record<string, string> = {
   "Start fresh": "Empezar de cero",
   "Bring it over": "Traerlo",
   "Not everything came over. Try again, or later from Settings.": "No se pudo traer todo. Reintenta ahora o hazlo luego desde Ajustes.",
+  "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "Tu equipo está completo, así que tus compis de este dispositivo se quedaron aquí. Libera un hueco y luego tráelos desde Ajustes.",
+  "Your party is full. Free a slot to bring them over.": "Tu equipo está completo. Libera un hueco para traerlos.",
   "{name}'s knowledge": "Conocimiento de {name}",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "Aquí puedes añadir a mano cosas que la IA debe saber. La IA guarda sus recuerdos por separado.",
   "No knowledge yet. Upload files or add text context.": "Todavía no hay conocimiento. Sube archivos o añade contexto en texto.",

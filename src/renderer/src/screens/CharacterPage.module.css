@@ -1,6 +1,6 @@
 /* CharacterPage.module.css: a companion's profile (Party redesign §4.6;
  * profile v2, product call 261110). The content (header with the actions
- * beside the name, the section menu, the active tab) is on the left; the
+ * under the stats, the section menu, the active tab) is on the left; the
  * portrait is a panel on the right whose inner edge fades into the page.
  *
  * One dark surface, no boxed panels, few type sizes: the name (display),
@@ -206,20 +206,23 @@
   align-self: flex-start;
 }
 
-/* Header: the name block, the actions beside it. */
+/* Header: the name block, then Chat + Play across its full width under the
+   stats (product call 261116: the buttons used to sit beside the name and
+   squeezed the stats into a wrap). */
 .head {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--gap-group);
-  flex-wrap: wrap;
 }
 
 .headMain {
-  flex: 1 1 260px;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--gap-control);
+  /* The stats line picks its layout from the column's width (below). */
+  container-type: inline-size;
 }
 
 .titleRow {
@@ -254,26 +257,37 @@
   white-space: nowrap;
 }
 
-/* One meta line: "by <author>", Created / Bonded, Played, Last launch. Same
-   face and size for label and value; the label is just quieter. */
+/* One stats line: "by <author>", Created / Bonded, Played, Last launch.
+   Same face and size for label and value; the label is just quieter. The
+   items never wrap one by one (an orphan "Last launch" on its own line,
+   261116): they stay on one row, the author name giving way first, and a
+   column too narrow for the row lays them out as an even two-column grid. */
 .meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   column-gap: var(--space-lg);
   row-gap: var(--space-xs);
   margin: 0;
+  min-width: 0;
 }
 
 .metaItem {
   display: flex;
   align-items: baseline;
   gap: var(--space-sm);
+  flex: none;
+  min-width: 0;
+}
+
+.metaItem[data-meta='by'] {
+  flex: 0 1 auto;
 }
 
 .metaItem dt {
   font-family: var(--sans);
   font-size: 14px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .metaItem dd {
@@ -289,18 +303,31 @@
 .metaItem dd.byline {
   font-size: 15px;
   color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container (max-width: 520px) {
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ── Actions: Chat + Play, or Invite to party ────────────────────────── */
-/* Near the content, natural width (no full-width bar pinned to the foot). */
+/* Under the stats, filling the header's width: two equal buttons (one
+   full-width button for Invite to party). */
 .deploy {
-  flex: none;
-  display: flex;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   gap: var(--gap-control);
 }
 
 .deployBig {
-  min-width: 148px;
+  width: 100%;
+  min-width: 0;
   justify-content: center;
 }
 
@@ -327,7 +354,9 @@
   color: var(--muted);
   cursor: pointer;
   white-space: nowrap;
-  transition: color 140ms ease;
+  /* No color fade on the labels: the one that was active used to fade out over
+     140ms while the new tab's body was already showing, so for a few frames
+     the old tab still looked selected over the new content (261116). */
 }
 
 .tab:hover {

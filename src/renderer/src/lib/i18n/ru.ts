@@ -990,6 +990,8 @@ export const RU: Record<string, string> = {
   "Start fresh": "Начать с нуля",
   "Bring it over": "Перенести",
   "Not everything came over. Try again, or later from Settings.": "Перенеслось не всё. Попробуй ещё раз или позже в настройках.",
+  "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "Команда заполнена, поэтому компаньоны с этого компьютера остались здесь. Освободи место, а потом перенеси их в настройках.",
+  "Your party is full. Free a slot to bring them over.": "Команда заполнена. Освободи место, чтобы перенести их.",
   "{name}'s knowledge": "Знания: {name}",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "Здесь можно вручную добавить то, что должен знать AI. Внутренняя память у AI хранится отдельно.",
   "No knowledge yet. Upload files or add text context.": "Пока пусто. Загрузи файлы или добавь текст.",

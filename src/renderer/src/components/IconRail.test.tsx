@@ -100,9 +100,29 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(css.includes('.avatarCluster')).toBe(true);
   });
 
-  it('Test 9: sorts characters by last_launched desc then created desc', () => {
+  it('Test 9: the rail lists every party member, most recently active first, then newest', async () => {
+    const { railParty } = await import('../lib/homeLibrary');
+    const mk = (id: string, created: string, last_launched: string | null = null, last_chatted: string | null = null) =>
+      ({ id, name: id, created, last_launched, last_chatted }) as unknown as import('@shared/characterSchema').Character;
+    const party = [
+      mk('old', '2026-01-01T00:00:00Z'),
+      mk('chatted', '2026-01-02T00:00:00Z', null, '2026-11-10T00:00:00Z'),
+      mk('launched', '2026-01-03T00:00:00Z', '2026-11-12T00:00:00Z'),
+      mk('new', '2026-03-01T00:00:00Z'),
+      mk('newest', '2026-04-01T00:00:00Z'),
+    ];
+    expect(railParty(party).map((c) => c.id)).toEqual(['launched', 'chatted', 'newest', 'new', 'old']);
+  });
+
+  it('Test 10: a party over the slot cap stays on the rail (not capped, 261116)', async () => {
+    const { railParty } = await import('../lib/homeLibrary');
+    const { MAX_COMPANION_SLOTS } = await import('@shared/characterSchema');
+    const party = Array.from({ length: MAX_COMPANION_SLOTS + 2 }, (_, i) =>
+      ({ id: `c${i}`, name: `c${i}`, created: `2026-01-0${i + 1}T00:00:00Z` }) as unknown as import('@shared/characterSchema').Character,
+    );
+    expect(railParty(party)).toHaveLength(MAX_COMPANION_SLOTS + 2);
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('last_launched')).toBe(true);
-    expect(source.includes('created')).toBe(true);
+    expect(source.includes('railParty(homeCharacters)')).toBe(true);
+    expect(source.includes('slice(0, MAX_COMPANION_SLOTS)')).toBe(false);
   });
 });

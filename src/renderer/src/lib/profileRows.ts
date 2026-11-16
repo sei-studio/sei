@@ -186,10 +186,12 @@ export function profileAccess(input: ProfileAccessInput): ProfileAccess {
 }
 
 const SECTION_ROWS: Record<ProfileSection, readonly RowKey[]> = {
-  look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
+  look: ['cardImage', 'avatar', 'floatingAvatar'],
   voice: ['voice', 'pitch'],
   personality: ['about', 'persona', 'knowledge'],
-  games: ['chess', 'dst'],
+  // The Minecraft skin is a game setting, not part of the look (product
+  // call 261116): it sits with the other games' rows, first.
+  games: ['skin', 'chess', 'dst'],
   sharing: ['publicToggle', 'othersHear'],
   worldlink: ['desktopRoom', 'room', 'idleLines', 'intro'],
   danger: ['resetMemory', 'unbind'],
