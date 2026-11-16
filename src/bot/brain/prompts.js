@@ -44,6 +44,7 @@ export {
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   CHAT_LANGUAGE_NAMES,
   renderCore,
   renderHeartbeat,
