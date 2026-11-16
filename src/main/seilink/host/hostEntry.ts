@@ -49,7 +49,7 @@ import {
   type SeilinkPokeKind,
 } from '../../../shared/seilinkHost';
 import { AvatarRelay } from './avatarRelay';
-import { dockHover, dragSlopPhysical, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
+import { dockHover, dragSlopPhysical, gazeMoved, gazeSample, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
 import type { SeilinkHostCountKey } from './protocol';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
@@ -681,33 +681,65 @@ function applyHitRect(): void {
   }
 }
 
-// ── Dock hover (261110) ─────────────────────────────────────────────────────
+// ── Dock hover (261110) and her gaze (261116) ───────────────────────────────
 
-/** How often the cursor is checked against the dock while the room draws. */
+/** How often the cursor is checked against the dock and her face. */
 const HOVER_POLL_MS = 150;
+/**
+ * Product call (261116): the dock stayed lit after a click and she stopped following the cursor.
+ * The page only hears changes, so one lost or early message (a press, Sei's window coming up
+ * over her) left it in the wrong state until the cursor crossed the dock again. The host now
+ * says the hover state again every HOVER_REASSERT_MS (a boolean, cheap), and keeps checking
+ * while the room is covered (macOS: Sei's window over her box stops her frames but the dock in
+ * the corner can still be seen), only not while the screen is locked or asleep.
+ */
+const HOVER_REASSERT_MS = 1000;
+/** The gaze feed is sent again at least this often while she draws (the views drop it after 2 s). */
+const GAZE_KEEPALIVE_MS = 700;
 let hovering = false;
+let hoverSentAt = 0;
+let lastGaze: { x: number; y: number } | null = null;
+let gazeSentAt = 0;
 
 /** CI probe (--seilink-test): the longest gap between two cursor polls since the last probe. */
 let lastPollAt = 0;
 let maxPollGap = 0;
+/** CI probe: gaze samples sent to the page since the last probe. */
+let gazeSamples = 0;
 
 function pollHover(): void {
   const now = Date.now();
   if (lastPollAt) maxPollGap = Math.max(maxPollGap, now - lastPollAt);
   lastPollAt = now;
-  let next = false;
+  if (!attached || !pageReady) return;
+  const a = activity.current;
+  let cursor: { x: number; y: number } | null = null;
   try {
-    if (dock && attached && pageReady && activity.current.fps > 0) {
+    if (!a.paused) {
       const c = screen.getCursorScreenPoint();
       const b = primaryDisplay().bounds;
-      next = dockHover({ x: c.x - b.x, y: c.y - b.y }, dock);
+      cursor = { x: c.x - b.x, y: c.y - b.y };
     }
   } catch {
-    next = false;
+    cursor = null;
   }
-  if (next === hovering) return;
-  hovering = next;
-  toPage(CH.hover, next);
+  const next = !!cursor && !!dock && dockHover(cursor, dock);
+  if (next !== hovering || now - hoverSentAt >= HOVER_REASSERT_MS) {
+    hovering = next;
+    hoverSentAt = now;
+    toPage(CH.hover, next);
+  }
+  // Her gaze: only while she draws (a still picture cannot look anywhere).
+  if (cursor && a.fps > 0) {
+    const b = primaryDisplay().bounds;
+    const g = gazeSample(cursor, box, { w: b.width, h: b.height });
+    if (g && (gazeMoved(lastGaze, g) || now - gazeSentAt >= GAZE_KEEPALIVE_MS)) {
+      lastGaze = g;
+      gazeSentAt = now;
+      gazeSamples++;
+      toPage(CH.cursor, g);
+    }
+  }
 }
 
 /** CI self-test only: what the dock and the cursor feed look like right now (test-probe). */
@@ -730,10 +762,11 @@ async function testProbe(id: number): Promise<void> {
     reason: a.reason,
     pageAwake: page ? page.awake : null,
     pagePressed: page ? page.pressed : null,
-    cursorSamples: 0,
+    cursorSamples: gazeSamples,
     maxPollGapMs: maxPollGap,
   });
   maxPollGap = 0;
+  gazeSamples = 0;
 }
 
 // ── Attach ──────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@
  * used to ride beside her and crept with her sway). Faint at rest, it wakes
  * when the cursor comes near it (`hover`, the host polls the cursor), while
  * it asks or answers something, and for a moment after a press: edit her room,
- * deafen (mute her idle lines; a reply to a double click still shows), and
+ * deafen (mute her idle lines; a reply to a click still shows), and
  * move out. The room-editor design deck puts these shortcuts in "the bottom
  * dock" of the room itself, so it lives on the wallpaper next to her rather
  * than in the app or the tray.

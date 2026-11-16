@@ -137,6 +137,7 @@ import { useChessStore } from './lib/stores/useChessStore';
 import { useDrawStore } from './lib/stores/useDrawStore';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 import { usePermissionResume } from './lib/permissions/usePermissionResume';
+import { requestComposerFocus } from './lib/composerFocus';
 
 export function App(): React.ReactElement {
   const t = useT();
@@ -154,6 +155,8 @@ export function App(): React.ReactElement {
   useEffect(
     () =>
       sei.onSeilinkOpenChat?.((characterId) => {
+        // Product call (261116): a double click on her; her chat comes up ready to type.
+        requestComposerFocus(characterId);
         useUiStore.getState().navigate({ kind: 'chat', characterId });
       }),
     [],

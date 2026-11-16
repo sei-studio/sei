@@ -205,11 +205,14 @@ describe('seilink host start / stop / restore', () => {
       { type: 'first-frame', sinceStartMs: 900, verified: true, hidden: false, covered: false, paused: false, reasons: [] },
       hb,
       { type: 'attached', reattach: true, reason: 'validate:taskbarCreated:no-workerw', layout: 'raised', attachMs: 7 },
+      // Product call (261116): a click is her reaction on the desktop, a double click opens her chat.
       { type: 'click', kind: 'click' },
+      { type: 'click', kind: 'dblclick' },
       { type: 'verify-failed', reasons: ['hidden'], trigger: 'timer' },
     ];
     const opened: string[] = [];
-    host.initSeilinkHost({ pushStatus: () => {}, openChat: (id) => (opened.push(id), 'focused') });
+    const clicked: string[] = [];
+    host.initSeilinkHost({ pushStatus: () => {}, openChat: (id) => (opened.push(id), 'focused'), onClick: (id) => clicked.push(id) });
     await host.startSeilinkHost(SUI);
     await settle();
     await host.stopSeilinkHost('user_stop');
@@ -229,8 +232,9 @@ describe('seilink host start / stop / restore', () => {
     expect(by('seilink_reattached')).toMatchObject({ cause: 'explorer_restart', detail: 'workerw_lost', shown: true });
     expect(by('seilink_verify_failed')).toMatchObject({ reasons: 'hidden', trigger: 'timer' });
     expect(opened).toEqual([SUI]);
+    expect(clicked).toEqual([SUI]);
     const ended = by('seilink_ended');
-    expect(ended).toMatchObject({ shown: true, clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
+    expect(ended).toMatchObject({ shown: true, clicks: 1, double_clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
     expect(typeof ended?.first_frame_ms).toBe('number');
     expect(by('seilink_not_shown')).toBeUndefined();
   });

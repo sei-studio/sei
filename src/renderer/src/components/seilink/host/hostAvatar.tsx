@@ -23,9 +23,10 @@
  *   `visibility: hidden` (she walked out of the frame) counts as no area.
  * - `busy`: the player is chatting with her (main says so) or just clicked
  *   her. Hold her in her seat.
- * - `poke` changes on every click on her (`n` counts up). 'click' also opens
- *   her chat in Sei; 'dblclick' asks her for a short reply (M4,
- *   desktopLines.ts in main); 'drag' is a stroke across her (macOS only for
+ * - `poke` changes on every click on her (`n` counts up). Product call
+ *   (261116): 'click' is her reaction on the desktop (RoomAvatarHost bounces
+ *   her; main may ask her for a short bubble, desktopLines.ts); 'dblclick'
+ *   opens her chat in Sei; 'drag' is a stroke across her (macOS only for
  *   now).
  * - `speaking` (M4): one of her lines is on screen as a bubble. Move her
  *   mouth and hold her in her seat. No audio plays in the host, so there is
@@ -138,6 +139,29 @@ export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
     return () => anim.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pressSeq]);
+
+  // Product call (261116): a single click is her reaction on the desktop, so she gives a little
+  // hop (feet back on the floor at the end; a bubble may follow from main).
+  useEffect(() => {
+    if (!poke || poke.kind !== 'click' || slot.fps === 0) return;
+    const fig = ref.current?.querySelector<HTMLElement>('[data-seilink-hit]');
+    if (!fig || typeof fig.animate !== 'function') return;
+    const h = fig.getBoundingClientRect().height || 200;
+    const up = Math.round(Math.max(6, Math.min(18, h * 0.05)));
+    fig.style.transformOrigin = '50% 100%';
+    const anim = fig.animate(
+      [
+        { transform: 'translateY(0) scale(1, 1)' },
+        { transform: 'translateY(0) scale(1.03, 0.96)', offset: 0.15 },
+        { transform: `translateY(-${up}px) scale(0.98, 1.03)`, offset: 0.45 },
+        { transform: 'translateY(0) scale(1.02, 0.98)', offset: 0.75 },
+        { transform: 'translateY(0) scale(1, 1)' },
+      ],
+      { duration: 420, easing: 'ease-out', composite: 'add' },
+    );
+    return () => anim.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poke]);
 
   useEffect(() => {
     if (!poke) return;

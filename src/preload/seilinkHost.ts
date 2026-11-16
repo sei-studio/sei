@@ -10,7 +10,8 @@
  * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts),
  * and a small `window.sei` with only the avatar calls RoomAvatar's views make
  * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
- * facepackManifest, facepackFile, and seilinkAnimaShown for analytics). The
+ * facepackManifest, facepackFile, and seilinkAnimaShown for analytics), and
+ * onAvatarOverlayCursor (the host's cursor feed, so her gaze follows it). The
  * host relays each one to main, which answers for the moved-in character only. Every other RendererApi method is
  * absent here; the views call these with `?.` or only after avatarGet /
  * facepackForCharacter found something.
@@ -38,6 +39,7 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   level: 'seilink-host:level',
   hover: 'seilink-host:hover',
   press: 'seilink-host:press',
+  cursor: 'seilink-host:cursor',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -87,6 +89,9 @@ if (process.contextIsolated) {
     avatarGet: (characterId: string) => call('avatarGet', characterId),
     avatarModelFiles: (characterId: string) => call('avatarModelFiles', characterId),
     onAvatarManifest: (cb: (update: unknown) => void) => listen(C.avatarManifest, cb),
+    // Product call (261116): the cursor for her gaze, the same feed the call overlay gives its tiles.
+    onAvatarOverlayCursor: (cb: (pt: { x: number; y: number }) => void) =>
+      listen<{ x?: unknown; y?: unknown } | null>(C.cursor, (v) => cb({ x: num(v?.x), y: num(v?.y) })),
     facepackForCharacter: (characterId: string) => call('facepackForCharacter', characterId),
     facepackManifest: (id: string) => call('facepackManifest', id),
     facepackFile: (id: string, path: string) => call('facepackFile', id, path),

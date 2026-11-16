@@ -160,7 +160,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
     setLine(null);
     setSpeaking(false);
     setLook(toNeutral);
-    setDockHover(false);
+    // The dock's hover is the host's to say (it keeps checking while her frames are stopped and
+    // says it again every second; product call (261116): a reset here could leave it wrong).
   }, [fps]);
 
   const onDockAction = useCallback((action: SeilinkDockAction) => bridge?.dockAction?.(action), [bridge]);

@@ -550,6 +550,13 @@ export interface ChatMessage {
    */
   voice?: boolean;
   /**
+   * WorldLink (product call (261116)): a line she said on the desktop as a
+   * speech bubble (a click on her, an idle line, a reaction to her room).
+   * Persisted so she remembers saying it, but HIDDEN in the chat UI like a
+   * voice row: desktop lines stay desktop bubbles.
+   */
+  desktop?: boolean;
+  /**
    * Backseat (260728): a clip the companion saved off the screen share while
    * watching the player. `path` is an absolute path to the .webm under
    * <profileRoot>/clips/<characterId>/; `reason` is the companion's own short

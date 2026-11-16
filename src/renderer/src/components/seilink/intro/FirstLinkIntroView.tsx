@@ -29,12 +29,13 @@
  *    stage) only the captions fade: the last frame is her on the plain
  *    background (or in her room) full screen, the same picture the
  *    wallpaper draws, so the window can step aside without a visible cut.
- *  - skipped: the Skip button or Esc. Fades out fast; with `holdEnd` it
+ *  - skipped: Esc (a quiet way out; there is no Skip button since the
+ *    product call (261116), the lines type fast instead). Fades out fast; with `holdEnd` it
  *    crossfades into the solid (before the success line) and plays her
  *    entrance, rushing the settle (SKIP_RUSH) once the solid has cleared, so
  *    a skip also ends on her room. The climax and the solid are never played fast.
  *  - aborted: the link failed (the failure line). The light stays with the
- *    line and no her; the button turns into Close, and Close or Esc fades
+ *    line and no her; a Close button comes up, and Close or Esc fades
  *    the overlay out (the move-in sheet's retry shows when the host failed).
  * onReport gets the status lines' analytics once: at the end, or when it is
  * unmounted before one.
@@ -501,9 +502,12 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
           </div>
           <p ref={liveRef} className={styles.live} aria-live="polite" />
         </div>
-        <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
-          {failedShown ? t('Close') : t('Skip')}
-        </button>
+        {/* No Skip button (product call (261116): it was unclear; the lines type twice as fast instead). Close shows on the failure line only. */}
+        {failedShown ? (
+          <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
+            {t('Close')}
+          </button>
+        ) : null}
       </div>
     </div>
   );
