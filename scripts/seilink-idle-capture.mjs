@@ -145,12 +145,14 @@ async function main() {
       if (face) await page.waitForSelector('[data-avatar-kind="facepack"]', { timeout: 30_000 }).catch(() => console.log('  face set never showed'));
       // The portrait-to-face-set crossfade and the first texture uploads.
       await page.waitForTimeout(2500);
+      const renderer = await page.evaluate(() => document.querySelector('[data-renderer]')?.getAttribute('data-renderer') ?? null);
+      if (renderer) console.log(`  face renderer: ${renderer}`);
     };
 
     if (flag('shot')) {
       const page = await browser.newPage({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
       page.on('pageerror', (e) => console.log(`  [page error] ${e.message.slice(0, 300)}`));
-      await page.goto(url, { waitUntil: 'load' });
+      await page.goto(url, { waitUntil: 'load', timeout: 120_000 });
       await settle(page);
       const file = path.join(OUT, `${NAME}.png`);
       await page.screenshot({ path: file });
@@ -166,7 +168,7 @@ async function main() {
       const page = await ctx.newPage();
       page.on('pageerror', (e) => console.log(`  [page error] ${e.message.slice(0, 300)}`));
       const t0 = Date.now();
-      await page.goto(url, { waitUntil: 'load' });
+      await page.goto(url, { waitUntil: 'load', timeout: 120_000 });
       await settle(page);
       const start = (Date.now() - t0) / 1000;
       await page.waitForTimeout(SECONDS * 1000);
@@ -186,7 +188,7 @@ async function main() {
     if (!flag('no-cpu')) {
       const ctx = await browser.newContext({ viewport: { width: VW, height: VH }, deviceScaleFactor: 1 });
       const page = await ctx.newPage();
-      await page.goto(url, { waitUntil: 'load' });
+      await page.goto(url, { waitUntil: 'load', timeout: 120_000 });
       await settle(page);
       await page.waitForTimeout(2000);
       const cdp = await ctx.newCDPSession(page);

@@ -85,11 +85,11 @@ export interface IdleMotionConfig {
 
 export const DEFAULT_IDLE_CONFIG: IdleMotionConfig = {
   breathPeriodMs: 4_600,
-  breathAmp: 0.005,
+  breathAmp: 0.007,
   swayLeanDeg: 0.7,
   swayDrift: 0.003,
   shiftMinGapMs: 9_000,
-  shiftMeanGapMs: 38_000,
+  shiftMeanGapMs: 26_000,
   shiftRange: 0.045,
   shiftStep: 0.028,
   shiftMinMs: 1_400,
@@ -411,11 +411,15 @@ export class IdleScheduler {
 /** Her rest pose, for reduced motion and a still room. */
 export const REST_POSE: IdlePose = { x: 0, lift: 0, lean: 0, scale: 1, breath: 1, phase: 'seated', present: true };
 
+/** How much of a breath widens her (the shoulders and chest), as a share of how much it lifts her (261116). */
+export const BREATH_WIDTH = 0.3;
+
 /** CSS transform for a pose, about her bottom centre, in px of a slot `height` tall. */
 export function poseTransform(p: IdlePose, height: number): string {
   const tx = p.x * height;
   const ty = -p.lift * height;
-  return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${p.scale.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
+  const sx = p.scale * (1 + (p.breath - 1) * BREATH_WIDTH);
+  return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${sx.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
 }
 
 // ── frame pacing (261110) ───────────────────────────────────────────────────
