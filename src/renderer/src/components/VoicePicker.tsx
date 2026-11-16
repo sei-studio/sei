@@ -76,6 +76,7 @@ import { useT } from '../lib/i18n';
 import { PlayIcon, StopIcon } from './icons';
 import { clipMimeType } from '../lib/fishVoice';
 import styles from './VoicePicker.module.css';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 export interface VoicePickerProps {
   /** Selected pool voice id, NO_VOICE_ID ('none') for silent, or null for Auto. */
@@ -204,7 +205,7 @@ export function VoicePicker({
     void sei
       .getConfig()
       .then((c) => {
-        langRef.current = c.chat_language ?? 'en';
+        langRef.current = userChatLanguage(c);
       })
       .catch(() => {
         /* keep 'en' */

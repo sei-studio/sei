@@ -107,4 +107,21 @@ describe('noteDetectedLanguage', () => {
     await noteDetectedLanguage(detection('ja'));
     await expect(noteDetectedLanguage(detection('ja'))).resolves.toBeUndefined();
   });
+
+  // 261116: chat_language absent now means the UI language, not English.
+  it('a player heard in their UI language is not written', async () => {
+    mockLoadConfig.mockResolvedValue({ ui_language: 'es' });
+    await noteDetectedLanguage(detection('spa'));
+    await noteDetectedLanguage(detection('spa'));
+    expect(mockUpdateConfig).not.toHaveBeenCalled();
+  });
+
+  it('an English speaker on a Japanese UI gets en written', async () => {
+    mockLoadConfig.mockResolvedValue({ ui_language: 'ja' });
+    await noteDetectedLanguage(detection('eng', 0.95, 'a long enough english sentence'));
+    await noteDetectedLanguage(detection('eng', 0.95, 'a long enough english sentence'));
+    expect(mockUpdateConfig).toHaveBeenCalledTimes(1);
+    expect(mockUpdateConfig.mock.calls[0][0]({ ui_language: 'ja' })).toEqual({ ui_language: 'ja', chat_language: 'en' });
+  });
 });
+

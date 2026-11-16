@@ -25,6 +25,7 @@ import {
   renderPunctuationDirective,
   VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   NEXT_TIME_FIELD,
   NEXT_TIME_FOR_PLAYER_FIELD,
   NEXT_TIME_GAME_FIELD,
@@ -138,6 +139,13 @@ export interface BuildSystemArgs {
    * used") is what lets a player switch languages mid-call.
    */
   language?: ChatLanguage;
+  /**
+   * 261116: someone else wrote her (a World companion, chatLanguage.ts
+   * companionLanguage). The persona block then ends with a note that a
+   * language named in her description was her creator's choice and she talks
+   * to this player in `language`. Static per character, so it stays cached.
+   */
+  adoptedLanguage?: boolean;
   /**
    * 260724: a STATIC surface contract (the chess table-talk rules, the watch
    * viewing rules) that holds for a whole session. Inserted after memory/summary
@@ -374,6 +382,10 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     ),
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
+  if (args.adoptedLanguage) {
+    const note = renderAdoptedLanguageNote(args.language ?? 'en');
+    if (note) personaParts.push(note);
+  }
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
   // Punctuation register (260729): a call is SPOKEN, so the texting directive is
   // replaced rather than added to — see VOICE_PUNCTUATION_DIRECTIVE. The persona

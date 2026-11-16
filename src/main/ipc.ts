@@ -2231,8 +2231,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       let chatLanguage: string | undefined;
       try {
         const { loadConfig } = await import('./configStore');
-        const { clampChatLanguage } = await import('../shared/chatLanguage');
-        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+        const { userChatLanguage } = await import('../shared/chatLanguage');
+        // 261116: the player's language (chat_language, else the UI language).
+        chatLanguage = userChatLanguage(await loadConfig());
       } catch {
         /* auto-detect */
       }

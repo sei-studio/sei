@@ -38,7 +38,8 @@ import { loadConfig } from '../configStore';
 import { localTtsModel } from '../../shared/ttsEngine';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
-import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import { userChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from './audioTags';
 import { resolveVoiceId, isPoolVoiceId, ownVoicePickOf, ownVoiceStandInId, previewVoiceIdFor } from './voiceAssign';
@@ -163,11 +164,21 @@ async function loadConfigOrNull(): Promise<Awaited<ReturnType<typeof loadConfig>
   }
 }
 
+/** The player's language (261116: heard on calls, else the UI language): previews. */
 async function ttsLanguage(): Promise<ChatLanguage> {
   try {
-    return clampChatLanguage((await loadConfig()).chat_language);
+    return userChatLanguage(await loadConfig());
   } catch {
     return 'en';
+  }
+}
+
+/** The language she speaks to this player (261116, companionLanguage): her own pin, else the player's. */
+async function characterTtsLanguage(character: Parameters<typeof companionLanguageFor>[0]): Promise<ChatLanguage> {
+  try {
+    return companionLanguageFor(character, await loadConfig()).language;
+  } catch {
+    return companionLanguageFor(character, null).language;
   }
 }
 
@@ -264,6 +275,9 @@ const TTS_NEXT_TEXT: Record<ChatLanguage, string> = {
   ko: '아무튼, 그 얘기는 아직 더 하고 싶은 게 남았어.',
   fr: " enfin, j'ai encore des choses à dire là-dessus.",
   es: ' en fin, todavía tengo más que decir sobre eso.',
+  ru: ' в общем, я ещё хотела кое-что об этом сказать.',
+  pt: ' enfim, ainda tenho mais coisa pra dizer sobre isso.',
+  it: " comunque, ho ancora qualcosa da dire su questo.",
 };
 /** Keep the conditioning tail short (and under the proxy's 1000-char field cap). */
 const TTS_PREVIOUS_TEXT_MAX = 500;
@@ -916,7 +930,7 @@ export async function voiceTts(args: {
   // character-pinned language (metadata.language, 260730) beats auto-detect.
   const language = ttsLanguageForText(
     args.text,
-    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+    await characterTtsLanguage(character),
   );
   // Local TTS route (see localTtsSelected): same register conversion, no
   // proxy clip cap (the IPC boundary already bounds text length), WAV bytes
@@ -1112,7 +1126,7 @@ export async function voiceTtsStream(
   // Per-message pin (see ttsLanguageForText and voiceTts).
   const language = ttsLanguageForText(
     args.text,
-    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+    await characterTtsLanguage(character),
   );
   // Local TTS route (260816): the renderer's voice store never picks the
   // streaming path while local TTS is selected (a WAV clip cannot ride the
@@ -1297,6 +1311,9 @@ const PREVIEW_LINES: Record<ChatLanguage, string> = {
   ko: '안녕, 이게 내 목소리야.',
   fr: 'Salut, voici ma voix.',
   es: 'Hola, así es como sueno.',
+  ru: 'Привет, вот так звучит мой голос.',
+  pt: 'Oi, essa é a minha voz.',
+  it: 'Ciao, questa è la mia voce.',
 };
 
 /**

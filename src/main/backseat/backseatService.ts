@@ -60,7 +60,7 @@ import { readChatContext, foldIfDue } from '../chat/continuity';
 import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { surfaceLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
 import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
@@ -625,7 +625,7 @@ async function endBackseatSession(
         // language the two of them talk in, not the current UI language.
         // playSummaryText only has a zh wording; every other language falls
         // back to the English sentence, same as Draw!.
-        surfaceLanguage(character?.metadata, (await loadConfig()).chat_language) === 'zh'
+        companionLanguageFor(character ?? {}, await loadConfig()).language === 'zh'
           ? 'zh'
           : undefined,
       ),
@@ -1151,7 +1151,11 @@ async function runTurn(
     // A character pinned to a language speaks it on EVERY surface, so this
     // reads the pin first and falls back to the auto-detected conversation
     // language, the same as chat, voice, chess and Draw!.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    ...(() => {
+      // 261116: the player's language by default (companionLanguage).
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // 261010: the notes are about the player's real life, not the screen.
     memoryNote: BACKSEAT_MEMORY_NOTE,
     // 261102: the minute clock rides after the last breakpoint, at the end

@@ -97,6 +97,7 @@ import {
 import { warm as warmPitchBus } from '../voice/pitchBus';
 import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
 import { callSetupFailureProps } from '../voice/callSetupFailure';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
  * 260929: a call held up by microphone access. MicAccessCard (mounted in
@@ -1981,7 +1982,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // local Whisper worker boots at all, and whether cloud Scribe is wired.
       const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
-      const chatLanguage = callCfg?.chat_language ?? 'en';
+      // 261116: the player's language (chat_language, else the UI language).
+      const chatLanguage = userChatLanguage(callCfg);
       // Local TTS route (260816): the same read decides how this call's clips
       // are synthesized. See localTtsCall.
       // 260908: BYOK on the ElevenLabs engine with NO key stored also counts —

@@ -525,8 +525,11 @@ async function emitPlaySession(characterId: string, durationMs: number, game: Ga
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
     personaExpanded = c?.persona?.expanded;
-    const { characterLanguage } = await import('../shared/chatLanguage');
-    if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
+    // 261116: the companion's resolved language (own pin, else the player's
+    // language); a World character's creator pin no longer leaks in.
+    const { companionLanguageFor } = await import('./companionLanguage');
+    const { loadConfig } = await import('./configStore');
+    if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') rowLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
@@ -560,8 +563,10 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
-    const { characterLanguage } = await import('../shared/chatLanguage');
-    if (characterLanguage(c?.metadata) === 'zh') callLanguage = 'zh';
+    // 261116: resolved like emitPlaySession above.
+    const { companionLanguageFor } = await import('./companionLanguage');
+    const { loadConfig } = await import('./configStore');
+    if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') callLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
