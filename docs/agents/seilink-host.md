@@ -301,6 +301,60 @@ face. Counted as `expressions` (seilink_health / seilink_ended) and
 app's chat do not change her desktop face (she is held still while you chat).
 Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 
+### Her size and idle life (261116, product call 261116)
+
+- **Size.** The wallpaper is framed on her, not on the room:
+  `shared/seilinkDraw.ts` `stageViewport` (RoomCanvas `stage`, the host and
+  the first-link intro pass `DESKTOP_STAGE`) scales the room so her slot is
+  about 70% of the screen height (`height` 0.7), at least `cover`, at most
+  `maxHeight` 0.8 unless cover needs more, with the floor line on the bottom
+  edge and her centred (clamped so the room never leaves a gap). Any 16:9,
+  16:10, 3:2, 4:3 or 21:9 display covers; a 32:9 one hits the cap and
+  letterboxes. The plain first room (`FallbackRoom`) uses the same height.
+  Every placement number is in canvas px through the viewport, so
+  seilinkPlace regions, the bubble and the click mask follow. The room
+  editor keeps whole-room `cover` (everything stays editable), so opening it
+  from the desktop zooms out. On macOS the Dock may cover her lower chest.
+- **Motion** (`lib/motion/organic.ts`, pure, tested): critically damped
+  springs (`springStep`, exact for any dt), minimum-jerk saccades,
+  `Wander` (incommensurate sines), `Blinker` (65 ms close, 45 ms hold,
+  105 ms open, 1.8 to 9 s gaps, some doubles, a blink on some big
+  saccades), `GazeDriver` (log-normal fixations of about 0.75 s; home,
+  cursor, room objects or a look around; the head follows on a spring with
+  its own sway and tilt; eyes = gaze minus head; it pursues a moving cursor).
+  Nothing is a linear tween or a timed cut.
+- **Per avatar kind** (honest: only what the art can show):
+  - face set, WebGL (`FacepackView life`, `glFaceLoop.ts`,
+    `facepackGl.ts`, `faceRig.ts`): the composite is warped on the GPU:
+    head tilt about the neck (fading out over the neck band), turn and nod
+    by sliding the features inside the face ellipse, irises moved inside
+    the eye openings that `findEyes` finds from the open/closed difference
+    (only when `irisVisible`: the flat chibi Sui eyes have no iris, so her
+    gaze shows through a slightly bigger head motion). Big turns move to the
+    baked l1/r1 (l2/r2) pose with hysteresis and a 1.4 s hold; the 460 ms
+    crossfade slides each picture's features toward the other (eye-centre
+    morph), so it glides. Lids swap patches on the lid curve (a dissolve of
+    the opaque patches showed the iris through the lid). No WebGL2, a failed
+    setup or a lost context falls back to the old 2D renderer.
+    `data-renderer="webgl"|"2d"` on the canvas says which.
+  - Live2D: `updateFocus` is replaced so eyes (ParamEyeBallX/Y) and head
+    (ParamAngleX/Y/Z, ParamBodyAngleX) move apart; EyeBlink set to the lid
+    timing. Cubism 2 models get the gaze through the focusController.
+  - rig: head translation from the GazeDriver's head, Blinker lids (no
+    separate irises).
+  - portrait cutout and silhouette: no eyes; breathing (now also widening
+    the shoulders, `BREATH_WIDTH`), sway, a weight shift at least 9 s apart (about every 35 s
+    on average), and a slight lean toward where she would look (`gazeLean`).
+- **Cursor.** The host gets no cursor feed (that lives in the hover code),
+  so on the wallpaper her eyes wander and glance around; the overlay's feed
+  still drives the cursor looks there.
+- **Cost.** The WebGL face draws one quad a frame at the cap (30, 15 on
+  battery, 0 covered); the composite uploads only on an expression or pose
+  change and the mouth box only on a viseme change. Measure with
+  `scripts/seilink-idle-capture.mjs` (video + CDP main-thread busy + per
+  process CPU; headless uses SwiftShader, so the GPU process number is not
+  what a real GPU costs).
+
 ### What RoomAvatar can read in the host
 
 - **Portrait.** The host has no `sei-portrait://`. Main resolves

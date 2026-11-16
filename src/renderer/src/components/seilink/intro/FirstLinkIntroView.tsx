@@ -44,6 +44,7 @@ import type { IntroBeat, IntroEndOn, LinkOutcome } from '@shared/seilinkIntroTel
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import type { SeilinkStageFrame } from '@shared/seilinkHost';
+import { DESKTOP_STAGE } from '@shared/seilinkDraw';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
 import type { FacepackSource } from '../../../lib/facepack/facepackSource';
@@ -476,6 +477,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
             state={room.state}
             resolveUrl={room.resolve}
             fit="cover"
+            // Framed on her like the wallpaper (261116), so the last frame is exactly the wallpaper.
+            stage={DESKTOP_STAGE}
             frame={frame}
             // 30 in the harness too: a face set draws nothing at 0 (a still).
             fps={30}

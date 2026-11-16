@@ -21,6 +21,12 @@
  *    the cursor when the overlay's cursor feed is fresh; 170 ms crossfade;
  *  - a 1-2 px idle bob in screen pixels.
  *
+ * With `life` (261116, WorldLink) the pack is drawn by WebGL instead
+ * (glFaceLoop.ts + facepackGl.ts): eyes that wander, a head that turns, nods
+ * and tilts on springs, blinks on a real lid curve, pose changes that glide.
+ * No WebGL2, a failed setup or a lost context falls back to the 2D path
+ * below, which is unchanged.
+ *
  * Rendering is cached: each base is pre-scaled once per view scale, and each
  * composite (base + patches + overlays) is cached per scale and state key, so
  * a steady frame is one drawImage and a dirty check skips frames with nothing
@@ -30,7 +36,7 @@
  * transparent-background sprite never dims or ghosts midway.
  * A new expression or pose is shown only once all its files have decoded.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { AvatarCamera } from '@shared/ipc';
 import type { FacepackManifest, FacepackViseme } from '@shared/facepack';
 import { sei } from '../ipcClient';
@@ -46,6 +52,10 @@ import {
 import { cueExpression, expressionBlinks, filesFor, layersFor, posesOf, resolveExpressionName } from './compose';
 import { FaceImageCache, type FacepackSource, ipcPackSource } from './facepackSource';
 import { FramePacer } from '../framePacer';
+import type { GazePoint } from '../motion/organic';
+import { FaceGl } from './facepackGl';
+import { faceRigFor } from './faceRig';
+import { runGlFace } from './glFaceLoop';
 
 export interface FaceDebugState {
   expression: string;
@@ -87,6 +97,14 @@ export interface FacepackViewProps {
   debugRef?: React.MutableRefObject<FaceDebugState | null>;
   /** Frame cap (261104, SeiLink): absent = every animation frame, 0 = paused (no frames at all), N = at most N a second. */
   fps?: number;
+  /**
+   * Idle life (261116, WorldLink): wandering eyes, head turn / nod / tilt,
+   * gliding pose changes, drawn with WebGL. Off = the 2D renderer. Changing
+   * it after mount only pauses or resumes the motion (the renderer is kept).
+   */
+  life?: boolean;
+  /** Points her eyes may glance at, in gaze units (x -1..1 viewer's right, y -1..1 down). */
+  interests?: readonly GazePoint[] | null;
 }
 
 const EXPRESSION_FADE_MS = 120;
@@ -129,10 +147,38 @@ export function FacepackView({
   decay = true,
   debugRef,
   fps,
+  life = false,
+  interests = null,
 }: FacepackViewProps): React.ReactElement {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const live = useRef({ speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay, fps });
-  live.current = { speaking, camera, expression, expressionSeq, pinnedPose, overlays, decay, fps };
+  const live = useRef({
+    speaking,
+    camera,
+    expression,
+    expressionSeq,
+    pinnedPose,
+    overlays,
+    decay,
+    fps,
+    life,
+    interests,
+  });
+  live.current = {
+    speaking,
+    camera,
+    expression,
+    expressionSeq,
+    pinnedPose,
+    overlays,
+    decay,
+    fps,
+    life,
+    interests,
+  };
+  // Chosen at mount: WebGL when `life` is on, until WebGL fails once (then 2D for good).
+  const [glFailed, setGlFailed] = useState(false);
+  const useGl = useRef(life);
+  if (glFailed) useGl.current = false;
   // Restarts a loop paused by fps 0.
   const resumeRef = useRef<(() => void) | null>(null);
   const onStatusRef = useRef(onStatus);
@@ -145,6 +191,8 @@ export function FacepackView({
     let offCursor: (() => void) | undefined;
     let offLevels: (() => void) | undefined;
     let cache: FaceImageCache | null = null;
+    let glRun: { resume(): void; stop(): void } | null = null;
+    let glr: FaceGl | null = null;
     const host = hostRef.current;
     if (!host) return undefined;
     onStatusRef.current?.('loading');
@@ -170,11 +218,77 @@ export function FacepackView({
         await c.load(filesFor(m, startExpr, startPose));
         if (cancelled) return;
 
-        const canvas = document.createElement('canvas');
+        let canvas = document.createElement('canvas');
         canvas.style.width = '100%';
         canvas.style.height = '100%';
         canvas.style.display = 'block';
         host.replaceChildren(canvas);
+
+        // ── WebGL path (idle life) ───────────────────────────────────────
+        const rig = useGl.current ? faceRigFor(m) : null;
+        glr = rig
+          ? FaceGl.create(canvas, rig, () => {
+              if (!cancelled) setGlFailed(true);
+            })
+          : null;
+        if (rig && glr) {
+          canvas.dataset.renderer = 'webgl';
+          const cursorFeed = { x: 0, y: 0, at: 0 };
+          offCursor = sei.onAvatarOverlayCursor?.((pt) => {
+            cursorFeed.x = pt.x;
+            cursorFeed.y = pt.y;
+            cursorFeed.at = Date.now();
+          });
+          const clipFeed = { sample: null as LevelSample | null, at: 0 };
+          offLevels = subscribeClipLevels((id, sample) => {
+            if (id !== characterId) return;
+            clipFeed.sample = sample;
+            clipFeed.at = sample ? performance.now() : 0;
+          });
+          try {
+            glRun = runGlFace({
+              canvas,
+              host,
+              m,
+              cache: c,
+              rig,
+              gl: glr,
+              subs,
+              startExpr,
+              startPose,
+              live: () => live.current,
+              cursor: cursorFeed,
+              clip: clipFeed,
+              levelRef,
+              bandsRef,
+              debugRef,
+              dpr: Math.min(2, window.devicePixelRatio || 1),
+              sampleFreshMs: SAMPLE_FRESH_MS,
+              cursorFreshMs: CURSOR_FRESH_MS,
+              levelGate: LEVEL_GATE,
+            });
+          } catch (err) {
+            console.warn('[FacepackView] WebGL loop failed, drawing in 2D', err);
+            glr.dispose();
+            if (!cancelled) setGlFailed(true);
+            return;
+          }
+          resumeRef.current = () => glRun?.resume();
+          onStatusRef.current?.('ready');
+          return;
+        }
+        if (useGl.current) {
+          // No WebGL2 here (or no rig for this pack): a fresh canvas for 2D, since a canvas that
+          // tried webgl2 may not hand out a 2d context.
+          canvas = document.createElement('canvas');
+          canvas.style.width = '100%';
+          canvas.style.height = '100%';
+          canvas.style.display = 'block';
+          host.replaceChildren(canvas);
+        }
+
+        // ── 2D path ──────────────────────────────────────────────────────
+        canvas.dataset.renderer = '2d';
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('2d context unavailable');
         const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -203,7 +317,10 @@ export function FacepackView({
         let devScale = 1;
         const scaledBases = new Map<string, HTMLCanvasElement>();
         const MAX_SCALED_BASES = 10;
-        const newCanvas = (): { cv: HTMLCanvasElement; g: CanvasRenderingContext2D } => {
+        const newCanvas = (): {
+          cv: HTMLCanvasElement;
+          g: CanvasRenderingContext2D;
+        } => {
           const cv = document.createElement('canvas');
           const g = cv.getContext('2d');
           if (!g) throw new Error('2d context unavailable');
@@ -301,13 +418,20 @@ export function FacepackView({
           const exprName = resolveExpressionName(m, timeline.current);
           const avail = posesOf(m, exprName);
           const pinned = live.current.pinnedPose;
-          if (pinned) return { expression: exprName, pose: avail.includes(pinned) ? pinned : avail[0] };
+          if (pinned)
+            return {
+              expression: exprName,
+              pose: avail.includes(pinned) ? pinned : avail[0],
+            };
           if (now >= poseAt) {
             const fresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
             idlePose = nextPose(idlePose, avail, fresh ? cursor.x : null);
             poseAt = now + nextPoseDelay();
           }
-          return { expression: exprName, pose: avail.includes(idlePose) ? idlePose : avail[0] };
+          return {
+            expression: exprName,
+            pose: avail.includes(idlePose) ? idlePose : avail[0],
+          };
         };
 
         // 261110: an even cadence under the cap (the old `now - last < 1000/cap - 1` check skipped
@@ -455,6 +579,8 @@ export function FacepackView({
       cancelled = true;
       resumeRef.current = null;
       cancelAnimationFrame(raf);
+      glRun?.stop();
+      glr?.dispose();
       offCursor?.();
       offLevels?.();
       resizeObserver?.disconnect();
@@ -463,7 +589,7 @@ export function FacepackView({
     };
     // Pack identity changes rebuild everything; the rest is read live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterId, source, packId, levelRef, bandsRef]);
+  }, [characterId, source, packId, levelRef, bandsRef, glFailed]);
 
   useEffect(() => {
     if (fps !== 0) resumeRef.current?.();
