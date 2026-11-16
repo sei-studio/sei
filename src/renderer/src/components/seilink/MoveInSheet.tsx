@@ -13,6 +13,8 @@
  *    room with a chair; the editor's Room step has the rooms.)
  *  - three short lines on what moving in means (wallpaper, pauses when
  *    covered, click her to chat, the dock);
+ *  - 261116: no "Preparing {name}'s look" line here any more (product call
+ *    261116); her face set still starts baking when the sheet opens.
  *  - Move in: saves the plain background when it is her first, then starts the
  *    host. Main swaps out whoever lived there (one companion at a time).
  *
@@ -58,8 +60,6 @@ export interface MoveInSheetViewProps {
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
-  /** 261105: her face set is being baked or downloaded (a quiet line, nothing on failure). */
-  preparingLook?: boolean;
 }
 
 export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
@@ -74,11 +74,6 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
       </div>
       {p.otherName ? (
         <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
-      ) : null}
-      {p.preparingLook ? (
-        <p className={styles.preparing} role="status">
-          {t("Preparing {name}'s look…", { name: p.name })}
-        </p>
       ) : null}
       {p.error ? (
         <p className={styles.error} role="alert">
@@ -115,7 +110,9 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 261105: SeiLink opened for her: her face set gets ready in the background while she moves in.
-  const look = useAnimaLook(characterId, 'move_in_sheet');
+  // 261116 (product call 261116): the sheet no longer says so (no "Preparing her look" line here);
+  // the first-link intro's status lines carry the wait.
+  useAnimaLook(characterId, 'move_in_sheet');
   // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
   const openedAt = useRef(Date.now());
   const sent = useRef(new Set<string>());
@@ -216,7 +213,6 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         onClose();
       }}
       onConfirm={() => void confirm()}
-      preparingLook={look === 'preparing'}
     />
   );
 }

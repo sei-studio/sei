@@ -1548,7 +1548,7 @@ async function bootstrap(): Promise<void> {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
     },
     openChat: openSeilinkChat,
-    onDoubleClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
+    onClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
     // 261106: the dock's edit button opens her editor ON the desktop (seilink/stageFlow.ts).
     openRoomEditor: (characterId) => openDesktopEditor(characterId, 'dock'),
     onOfferAnswer: (characterId, answer) => onDecorateOfferAnswer(characterId, answer),

@@ -94,10 +94,16 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   Chromium's `CalculateNativeWinOcclusion` (the room always sits under the
   icon window, and coverage.ts already sets the rate).
 - `clicks.ts` `ClickClassifier`: a single click waits for the OS double-click
-  interval (clamped 200 to 900 ms). Click on her → main `openChat` (restore,
-  show and focus the main window, navigate to her chat). Double click → a
-  poke: `desktopLines.onSeilinkPoke` asks her for a short reply, shown as a
-  bubble (see Desktop lines). Drag = a stroke.
+  interval (clamped 200 to 900 ms). Product call (261116), the two swapped:
+  click on her → she reacts on the desktop: the page bounces her
+  (`hostAvatar.tsx`, on a `click` poke) and `deps.onClick` →
+  `desktopLines.onSeilinkPoke` may add a short bubble (see Desktop lines),
+  never pushed into the app's chat. Double click → main `openChat` (restore,
+  show and focus the main window, navigate to her chat, and focus the
+  composer: App.tsx's `seilink:open-chat` handler calls
+  `lib/composerFocus.ts requestComposerFocus`, ChatScreen takes it). Drag = a
+  stroke. macOS: `app.focus({steal: true})` is cooperative on macOS 14+, so
+  the front-most app may keep focus in rare cases (hand-test).
 - Click area: the page measures `[data-seilink-hit]` (RoomAvatarHost marks
   her figure) 4 times a second; none while she is `visibility: hidden`
   (walked out of the frame). Windows: the host's raw-input hit test
@@ -135,7 +141,18 @@ all the time; now it never moves. It is faint (opacity 0.42, a thin glass)
 until the cursor comes near: the host polls the cursor every 150 ms
 (`dock.ts` `dockHover`, 28 px around the buttons) and sends `CH.hover`; a
 press, the move-out confirm, a caption or the offer wake it too
-(`dockAwake`). The product
+(`dockAwake`). Product call (261116), it stayed lit after a click: the host
+now says the hover state again every second (`HOVER_REASSERT_MS`), keeps
+polling while her frames are stopped (macOS: Sei's window over her box) and
+stops only while locked or asleep; the page no longer resets it on its own.
+The same poll feeds her gaze: `CH.cursor` (`dock.ts` `gazeSample`, [-1, 1]
+around her face, y up, the frame of the call overlay's
+`avatar:overlay-cursor-state`) while she draws, on change and at least every
+0.7 s, exposed to the page as `window.sei.onAvatarOverlayCursor`, so the
+facepack, Live2D and rig views follow the cursor on the desktop as they do in
+the call overlay (it used to have no feed at all, so she only wandered). The
+CI self-test checks both (the `hover` step: `test-probe` after presses, a
+click and a double click on her, with Sei's window up and hidden). The product
 room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
@@ -162,7 +179,7 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
 
 ## Desktop lines (M4, `seilink/desktopLines.ts`)
 
-- Poke (double click): one short reply, under the plan's own limits (a free
+- Poke (a click; a double click before 261116): one short reply, under the plan's own limits (a free
   account's weekly cap is the proxy's), at most 6 an hour, 20 s apart. The
   hourly counts live in main (one `LinePacer` per app session), so a host
   restart or a companion swap does not reset them.
@@ -648,26 +665,27 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
 
   | # | Line | Waits for | Dwell |
   |---|---|---|---|
-  | 1 | Initializing WorldLink… | 0.7 s after the start | 4 s |
-  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 6 s |
-  | 3 | Waiting for a reply… | (same) | 12 s |
-  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 4 s |
-  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 2.8 s |
-  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 2.8 s |
-  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 2.8 s |
-  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 2.8 s |
+  | 1 | Initializing WorldLink… | 0.7 s after the start | 2 s |
+  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 3 s |
+  | 3 | Awaiting response… | (same) | 6 s |
+  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 2 s |
+  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 1.7 s |
+  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 1.7 s |
+  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 1.7 s |
+  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 1.7 s |
   | 9 | Inviting {name}… | her face set installed (`ready`) and the host start answered ok | 3.2 s (`LAST_LINE_MS`) |
   | | WorldLink established between World 0 and World N. | `LAST_LINE_MS` after line 9, on the full solid | |
 
   A line never shows sooner than the line before has had its dwell (its
-  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 2.8 s; the first four
+  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 1.7 s; the first four
   are longer, product feedback (261106): sending a signal and waiting for a
-  reply should take a while). The milestone gates apply on top: a slow
-  proxy holds "Waiting for a reply…" until it answers. Measured: a 75 s
-  bake shows the lines at 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72 and 75 s,
-  success 78.2 s, end 88.2 s; a 20 s bake (and a cached look or a replay)
-  at 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1 and 37.9 s, success
-  41.1 s, end 51.1 s. On a slow stage the current line holds (no filler lines) while
+  reply should take a while. Product call (261116): every dwell and the typing
+  halved, in place of the Skip button). The milestone gates apply on top: a slow
+  proxy holds "Awaiting response…" until it answers. Measured: a 75 s
+  bake shows the lines at 0.7, 2.7, 5.7, 11.7, 30, 45, 60, 72 and 75 s,
+  success 78.2 s; a 20 s bake at 0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4,
+  22.1 and 23.8 s, success 27 s; a cached look or a replay at 0.7, 2.7,
+  5.7, 11.7, 13.7, 15.4, 17.1, 18.8 and 20.5 s, success 23.7 s. On a slow stage the current line holds (no filler lines) while
   the light keeps moving. The proxy says nothing finer than queued, running
   and ready, so lines 5 to 7 spread over the expected-duration curve, and an
   early finish plays the rest at the minimum dwell (`planLink`; a start
@@ -685,15 +703,16 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
 
   Failure ("WorldLink failed. Lost contact with World N. Come back later.",
   at the soonest `FAIL_BEAT_MS` (2.8 s) after the current line came up, so
-  a failure during the 12 s "Waiting for a reply…" shows after a short
+  a failure during the 6 s "Awaiting response…" shows after a short
   beat): offline (stage or the window offline for
   5 s), a request, bake or install error, no line 9 by `LINK_TIMEOUT_MS`
   (3.5 min; the bake goes on in the background), or the host start failing.
-  The light calms and stays, no her; Skip turns into Close (Esc too), which
+  The light calms and stays, no her; a Close button comes up (Esc too), which
   fades the overlay out as `aborted`. FirstLinkIntro then stops the host if
   it had started (`seilinkHostStop({reason: 'link_failed'})`, which also
   clears the move-in), gives the window back without a reveal, and leaves
-  the intro unseen, so the next WorldLink press plays it again. Skip before
+  the intro unseen, so the next WorldLink press plays it again. There is no
+  Skip button (product call (261116)); Esc before
   the success line (on the desktop stage) crossfades into the solid and
   plays her entrance, then rushes the settle. Reduced motion: the same
   lines, order and failure, calm (crossfades, no bloom). Once per account
@@ -706,13 +725,13 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
     success and failure lines too, types in letter by letter like a
     typewriter (`typeUnits`: grapheme clusters from Intl.Segmenter, so
     emoji and CJK stay whole; `Array.from` without it). Each letter takes
-    `TYPE_CHAR_MS` (34) give or take `TYPE_SPREAD_MS` (6), a fixed spread
-    hashed from the text so renders are stable, plus `TYPE_SPACE_MS` (12)
-    after a space and `TYPE_PUNCT_MS` (45) after punctuation
+    `TYPE_CHAR_MS` (17) give or take `TYPE_SPREAD_MS` (3), a fixed spread
+    hashed from the text so renders are stable, plus `TYPE_SPACE_MS` (6)
+    after a space and `TYPE_PUNCT_MS` (24) after punctuation
     (`typeDelays`), starting `TYPE_START_MS` (300) after the line's start
-    and capped at `TYPE_MAX_MS` (1.8 s, a long translation types faster),
+    and capped at `TYPE_MAX_MS` (0.9 s, a long translation types faster),
     so it always fits inside the shortest dwell and never moves line
-    timing. The newest letter comes up over `CHAR_IN_MS` (20). A trailing
+    timing. The newest letter comes up over `CHAR_IN_MS` (12). A trailing
     ellipsis ("…", "...", "。。。", "⋯", repeats) is not typed: once the
     letters are in it becomes dots cycling ".", "..", "..." every
     `DOT_STEP_MS` (400) until the next line (`splitEllipsis`; "。" dots
@@ -844,8 +863,11 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   page path.
 - Self-test (`selfTest.ts`, unpackaged + `SEI_SEILINK_SELFTEST=<outdir>`):
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
-  double click, a press on the dock's deafen button (twice, so it ends where
-  it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
+  double click (261116: the click leaves Sei hidden, the double click brings
+  it up), a press on the dock's deafen button (twice, so it ends where
+  it started; must not open her chat), the dock's hover and her cursor feed
+  (`hover`: `test-probe` near and far after presses, a double click with
+  Sei's window up and hidden, and a click; `testMove` in the CI test addon), kill → reattach, hang → detected and replaced, (Windows)
   Explorer restart survived by the same host, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
@@ -1108,12 +1130,25 @@ without them render as before.
   `unsupported`. Hand-test only.
 - **LiveCard** (`components/seilink/LiveCard.tsx`, `lib/seilink/liveHintPref.ts`):
   "{name} lives on your desktop now", the show-desktop shortcut (Win+D;
-  F11 / fn+F11), click = chat, double-click = a quick reply, and Minimize /
+  F11 / fn+F11), click = a quick hello, double-click = her chat (261116), and Minimize /
   Got it. Over the first link's held last frame before the window steps
   aside (FirstLinkIntro waits on it), or in the app after a move-in without
   the intro (`useSeilinkStore.liveHint`, SeilinkFlowHost; a fresh move-in
   steps aside once it is dismissed). Once per account (localStorage). The
   window going hidden while it is up (Win+D) counts as dismissed.
+- **DesktopHint** (product call (261116); `components/seilink/DesktopHint.tsx`,
+  `lib/seilink/desktopHint.ts`, `useSeilinkStore.desktopHint`): when
+  WorldLink opens the desktop (the host comes up running for a companion: a
+  move-in or a swap; not the move-in restored at launch, a host restart, or
+  under the intro, the LiveCard or the desktop editor) or updates it (the
+  in-app editor closes after a save while she lives there), one brief line
+  at the bottom of the app, "Your desktop was updated.", with "Hide windows":
+  `seilink:stage minimize_others {surface: 'desktop_hint', reveal: true}`
+  minimizes (Windows, SW_SHOWMINNOACTIVE) or hides (macOS, Hide Others)
+  every other app's windows, then Sei steps aside (`revealDesktop`). Nothing
+  is closed or quit. Hides itself after 6 s (hover keeps it), drops when the
+  window is hidden, or when it waited over 15 s behind a sheet.
+  `seilink_desktop_hint` (seilink-analytics.md).
 - Room editor: outlined placement areas (PlacementGuide, `.placeGuide`, no
   blur), sharp DPR-sized thumbnails (`roomThumbs.thumbScale`), a compact
   room step (`.roomCompact`), the items panel moves right when it would

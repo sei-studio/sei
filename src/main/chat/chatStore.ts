@@ -114,6 +114,8 @@ export async function readLast(characterId: string): Promise<ChatMessage | null>
     // Skip voice-call rows — the chat view hides them, so they must not surface
     // as the roster "last message" preview.
     if (msg.voice === true) continue;
+    // WorldLink desktop lines (ChatMessage.desktop) are hidden the same way.
+    if (msg.desktop === true) continue;
     return msg;
   }
   return null;

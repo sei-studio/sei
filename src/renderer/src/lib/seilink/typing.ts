@@ -9,8 +9,9 @@
  * character each) and a trailing ellipsis, which is not typed but turns into
  * dots that cycle ".", "..", "..." once the letters are in (`splitEllipsis`:
  * "…", "...", "。。。" or "⋯", in any locale's catalog; the catalogs keep
- * their text as it is). Each letter takes 28 to 40 ms (a fixed spread from
- * the text), a little longer after a space or punctuation (`typeDelays`),
+ * their text as it is). Each letter takes 14 to 20 ms (a fixed spread from
+ * the text; product call (261116): twice as fast as before, in place of
+ * the Skip button), a little longer after a space or punctuation (`typeDelays`),
  * the whole line at most TYPE_MAX_MS, after TYPE_START_MS (the line before
  * fading out), so typing always fits inside the shortest dwell and never
  * moves the line's timing.
@@ -19,16 +20,16 @@
 /** Typing starts this long after the line's start (the line before has faded out by then). */
 export const TYPE_START_MS = 300;
 /** One letter takes this long, give or take TYPE_SPREAD_MS. */
-export const TYPE_CHAR_MS = 34;
-export const TYPE_SPREAD_MS = 6;
+export const TYPE_CHAR_MS = 17;
+export const TYPE_SPREAD_MS = 3;
 /** Added after a space (the small beat between words). */
-export const TYPE_SPACE_MS = 12;
+export const TYPE_SPACE_MS = 6;
 /** Added after punctuation (",", ".", "、", "。" ...). */
-export const TYPE_PUNCT_MS = 45;
-/** A whole line types in within this (a long translation types faster). Under the 2.8 s dwell with TYPE_START_MS. */
-export const TYPE_MAX_MS = 1800;
+export const TYPE_PUNCT_MS = 24;
+/** A whole line types in within this (a long translation types faster). Under the 1.7 s dwell with TYPE_START_MS. */
+export const TYPE_MAX_MS = 900;
 /** A letter comes up over this (barely a fade, so it reads as typed but does not flicker). */
-export const CHAR_IN_MS = 20;
+export const CHAR_IN_MS = 12;
 /** The dots step every this long: ".", "..", "...", "." ... */
 export const DOT_STEP_MS = 400;
 
@@ -98,7 +99,7 @@ const SPACE_RE = /^\s+$/u;
 const PUNCT_RE = /^\p{P}+$/u;
 
 /**
- * Each letter's typing time (ms until the next one shows): 28 to 40, fixed
+ * Each letter's typing time (ms until the next one shows): 14 to 20, fixed
  * for the text, plus TYPE_SPACE_MS after a space and TYPE_PUNCT_MS after
  * punctuation, scaled so the whole line fits TYPE_MAX_MS.
  */

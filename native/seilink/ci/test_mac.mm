@@ -32,6 +32,13 @@ Napi::Value TestClick(const Napi::CallbackInfo& info) {
   return Napi::Boolean::New(info.Env(), AXIsProcessTrusted());
 }
 
+// testMove(x, y): move the cursor (global top-left points), no button. 261116: the dock hover check.
+Napi::Value TestMove(const Napi::CallbackInfo& info) {
+  CGPoint p = CGPointMake(info[0].As<Napi::Number>().DoubleValue(), info[1].As<Napi::Number>().DoubleValue());
+  Post(kCGEventMouseMoved, p, 0);
+  return Napi::Boolean::New(info.Env(), AXIsProcessTrusted());
+}
+
 // axSetWindowFrame(bundleId, x, y, w, h): move and size the app's first standard window
 // through Accessibility (Apple Events to the app need a separate Automation grant the
 // runner may not have). Returns "ok" or what failed.
@@ -88,6 +95,7 @@ Napi::Value AxSetWindowFrame(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("platform", "darwin");
   exports.Set("testClick", Napi::Function::New(env, TestClick));
+  exports.Set("testMove", Napi::Function::New(env, TestMove));
   exports.Set("axSetWindowFrame", Napi::Function::New(env, AxSetWindowFrame));
   return exports;
 }

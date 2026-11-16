@@ -268,7 +268,8 @@ export type SeilinkStageRequest =
   | { action: 'exit'; reveal: boolean }
   | { action: 'reveal'; purpose: SeilinkStagePurpose; characterId: string }
   // 261110: minimize (Windows) or hide (macOS) every other app's windows, so the desktop shows when Sei steps aside.
-  | { action: 'minimize_others'; surface?: 'live_card' | 'other' };
+  // 261116: `reveal` steps Sei aside too once they are (the desktop hint's "Hide windows").
+  | { action: 'minimize_others'; surface?: 'live_card' | 'desktop_hint' | 'other'; reveal?: boolean };
 
 /**
  * 261110: where the primary display (the wallpaper) sits in the staged window,

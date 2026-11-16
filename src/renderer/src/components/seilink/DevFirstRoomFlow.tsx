@@ -22,6 +22,8 @@
  *                   wallpaper (stage: as over the first link's last frame;
  *                   app: the dialog after a move-in without the intro);
  *                   os=windows|mac|linux picks the shortcut line
+ *   desktophint=1   261116: the "Your desktop was updated." line Sei shows in
+ *                   its window (os=linux drops the Hide windows action)
  *   phase=login     261107: the "Open on login" step the guided setup's Done
  *                   brings up (over the decorated room)
  *   loginitem=off|approval|fail  261107: the login item as a packaged mac/win
@@ -46,6 +48,7 @@ import { SeilinkHostView } from './host/SeilinkHostView';
 import { RoomEditor, type RoomTogetherCtx } from './RoomEditor';
 import { RoomTogether } from './RoomTogether';
 import { LiveCardView } from './LiveCard';
+import { DesktopHintView } from './DesktopHint';
 import { memoryRoomEditorSource, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
 import type { OpenAtLoginSource } from '../../lib/seilink/loginStep';
@@ -364,6 +367,9 @@ export function DevFirstRoomFlow(): React.ReactElement {
           onMinimize={params.get('os') === 'linux' ? undefined : () => undefined}
           onDismiss={() => undefined}
         />
+      ) : null}
+      {params.has('desktophint') ? (
+        <DesktopHintView leaving={false} busy={false} onHide={params.get('os') === 'linux' ? undefined : () => undefined} />
       ) : null}
     </>
   );

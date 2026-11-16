@@ -2,7 +2,8 @@
  * SeiLink desktop lines (261104, M4): the short things she says on the
  * wallpaper, shown as a speech bubble next to her.
  *
- *  - poke: a double click on her gets a short reply. The player asked for it,
+ *  - poke: a click on her gets a short reply (product call (261116): a single
+ *    click now; a double click opens her chat in Sei instead). The player asked for it,
  *    like sending a message, so it runs on every plan that can chat right
  *    now, inside the plan's own limits (a free account's weekly cap is
  *    enforced by the proxy; over the limit, nothing is sent). At most
@@ -18,9 +19,12 @@
  *    computer (no input for AWAY_AFTER_S).
  *
  * The turn itself is chatService.sendDesktopLineTurn (her context and room
- * line, the note after the cache breakpoint, saved to her chat). Analytics:
+ * line, the note after the cache breakpoint, saved to her chat as a hidden
+ * desktop row: product call (261116), a desktop line stays a desktop bubble and
+ * is never pushed into the app's chat; the "yo you found me..." line in the
+ * chat was a poke reply pushed there). Analytics:
  * seilink_line_shown {kind, chars, character_id}, shape only. 261105:
- * seilink_poke {outcome, latency_ms, budget} per double click (repeats of a
+ * seilink_poke {outcome, latency_ms, budget} per click (repeats of a
  * refused poke collapse, see pokeEventAllowed), and idle counts on the host
  * session (idle_due / idle_skip_<reason> once per due window / idle_attempted /
  * idle_shown / idle_none_<why>), sent with seilink_health and seilink_ended.
@@ -348,7 +352,7 @@ async function tick(): Promise<void> {
   pacer.noteIdle(Date.now(), r.outcome === 'ok');
 }
 
-/** A double click on her (hostEntry's click classifier, via seilinkHost deps.onDoubleClick). */
+/** A click on her (hostEntry's click classifier, via seilinkHost deps.onClick; a double click before 261116). */
 export async function onSeilinkPoke(characterId: string): Promise<void> {
   const now = Date.now();
   const outcome = await pokeOutcome(characterId, now);
@@ -418,7 +422,8 @@ export async function speakDecorateOffer(characterId: string, note: string): Pro
 /**
  * 261105 (T336): her live line while the player decorates her room in the
  * editor (decorateTogether.ts). Same turn as a reaction; the line goes to her
- * chat (and from there to the editor's bubble), not to the desktop host.
+ * chat (and from there to the editor's bubble), not to the desktop host. The
+ * one desktop-line kind that is pushed to the chat.
  */
 export async function speakEditorLine(characterId: string, note: string): Promise<{ outcome: PokeOutcome; chars?: number }> {
   if (!deps) return { outcome: 'not_live' };
@@ -434,6 +439,7 @@ export async function speakEditorLine(characterId: string, note: string): Promis
         skipped = why;
       },
       note,
+      'chat',
     ).catch(() => null);
     if (!line) return { outcome: skipped };
     for (const m of line.messages) deps?.pushChatMessage(characterId, m);
@@ -457,8 +463,8 @@ async function say(characterId: string, kind: 'idle' | 'poke' | 'react', note?: 
       note,
     ).catch(() => null);
     if (!line) return { outcome: skipped };
-    // Saved to her chat either way; the bubble only when she is still on the desktop.
-    for (const m of line.messages) deps?.pushChatMessage(characterId, m);
+    // Saved to her chat as a hidden desktop row (she remembers it) and never pushed to the app's
+    // chat (product call (261116)); the bubble only when she is still on the desktop.
     // The host bubble knows idle and poke; a reaction answers the player like a poke.
     const sent = sendSeilinkLine(characterId, line.text, kind === 'react' ? 'poke' : kind, line.face ?? null);
     if (!sent) return { outcome: 'not_shown' };
