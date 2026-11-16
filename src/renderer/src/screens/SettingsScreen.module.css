@@ -119,6 +119,14 @@
   max-width: 360px;
 }
 
+/* A label with a helper line under it, inside the row (261116: the own-key
+   import row says when the party is full). */
+.labelStack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
 /* Supplementary lines under a row (export path, switch notice, danger blurb).
    No border — they belong to the row above. */
 .helper {

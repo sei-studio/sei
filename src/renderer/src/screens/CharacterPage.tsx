@@ -4,8 +4,9 @@
  * Profile v2 (product call 261110, second pass): no long scroll, one tab of
  * a top section menu at a time, bigger type and the actions near the
  * content. The content is on the left: back crumb, name + share code
- * (+ Built-in chip) with Chat + Play (or Invite to party) beside it, one
- * meta line, the section menu and the active tab (the Overview leads with
+ * (+ Built-in chip), one stats line, Chat + Play (or Invite to party) as
+ * two equal buttons under it (261116), the section menu and the active
+ * tab (the Overview leads with
  * the description and voice). The portrait is a panel on the right whose
  * inner (left) edge fades into the page.
  *
@@ -35,7 +36,7 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.6 (frame), 261107 (rows).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -325,6 +326,11 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const view = profileView(kind);
   const tabs: ProfileTab[] = profileTabs(access);
   const tab = resolveProfileTab(tabs, wantedTab);
+  // A tab opens at its top, not at the offset the last one was scrolled to.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }, [tab]);
   const info = overview && overview.id === id ? overview.info : null;
 
   // The Overview's cloud facts (and the owner Voice row's sample voice). Re-read
@@ -753,7 +759,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   };
 
   // Chat + Play (or Invite to party for a preview). Static routes; neither
-  // reflects game state. They sit beside the name.
+  // reflects game state. They sit under the stats, two equal buttons across
+  // the header (product call 261116).
   const actions = (
     <div className={styles.deploy} data-actions="true">
       {isPreview ? (
@@ -856,7 +863,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                aria-controls="profile-tabpanel"
+                aria-controls={`profile-tabpanel-${key}`}
                 tabIndex={tab === key ? 0 : -1}
                 className={tab === key ? styles.tabActive : styles.tab}
                 onClick={() => selectTab(key)}
@@ -867,46 +874,60 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           </div>
         ) : null}
 
-        {/* The active tab. It scrolls inside this area only when a small
-            window cannot fit it. */}
+        {/* The tabs' bodies. Every tab is mounted when the page opens and
+            the inactive ones are hidden (product call 261116): a body that
+            mounted on click painted its rows before their reads landed, so
+            a switch showed a half-built tab that then jumped into place.
+            Mounted up front, each tab's values are already there when it is
+            picked. The area scrolls only when a small window cannot fit the
+            active tab. */}
         <div
+          ref={panelRef}
           id="profile-tabpanel"
           className={styles.panel}
           data-scroll="profile"
           data-view={view}
           data-tab={tab}
-          {...(tabs.length > 1 ? { role: 'tabpanel', 'aria-labelledby': `profile-tab-${tab}` } : {})}
         >
-          {tab === 'overview' ? (
-            <ProfileOverview
-              key={character.id}
-              character={character}
-              canReport={access.report}
-              intro={intro}
-              onReport={() => {
-                onAction('report');
-                setShowReport(true);
-              }}
-            />
-          ) : (
-            <ProfileSettings
-              key={`${character.id}:${tab}`}
-              {...settingsProps}
-              regenHint={
-                view === 'owner' && regenHint.show ? (
-                  <RegenHint
-                    placement="below"
-                    onClose={() => regenHint.dismiss('close')}
-                    onOutside={() => regenHint.dismiss('outside')}
-                    onRegenerate={() => {
-                      regenHint.regenerate();
-                      setCardImage({ regenerate: true });
-                    }}
-                  />
-                ) : null
-              }
-            />
-          )}
+          {tabs.map((key) => (
+            <div
+              key={`${character.id}:${key}`}
+              id={`profile-tabpanel-${key}`}
+              data-tab-panel={key}
+              hidden={key !== tab}
+              {...(tabs.length > 1 ? { role: 'tabpanel', 'aria-labelledby': `profile-tab-${key}` } : {})}
+            >
+              {key === 'overview' ? (
+                <ProfileOverview
+                  character={character}
+                  canReport={access.report}
+                  intro={intro}
+                  onReport={() => {
+                    onAction('report');
+                    setShowReport(true);
+                  }}
+                />
+              ) : (
+                <ProfileSettings
+                  {...settingsProps}
+                  tab={key}
+                  regenHint={
+                    key === tab && view === 'owner' && regenHint.show ? (
+                      <RegenHint
+                        placement="below"
+                        onClose={() => regenHint.dismiss('close')}
+                        onOutside={() => regenHint.dismiss('outside')}
+                        onRegenerate={() => {
+                          regenHint.regenerate();
+                          setCardImage({ regenerate: true });
+                        }}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+            </div>
+          ))}
         </div>
       </main>
 

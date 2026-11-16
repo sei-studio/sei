@@ -7,7 +7,7 @@
  * used to ride beside her and crept with her sway). Faint at rest, it wakes
  * when the cursor comes near it (`hover`, the host polls the cursor), while
  * it asks or answers something, and for a moment after a press: edit her room,
- * deafen (mute her idle lines; a reply to a double click still shows), and
+ * deafen (mute her idle lines; a reply to a click still shows), and
  * move out. The room-editor design deck puts these shortcuts in "the bottom
  * dock" of the room itself, so it lives on the wallpaper next to her rather
  * than in the app or the tray.
@@ -162,11 +162,13 @@ export function HostDock(props: HostDockProps): React.ReactElement {
   });
   useEffect(() => () => onButtons(null), [onButtons]);
 
+  // CI probe (selfTest.ts hover step) reads the pressed look from this attribute.
+  const flag = (id: SeilinkDockAction): Record<string, string> => (pressed === id ? { 'data-dock-pressed': '' } : {});
   const cls = (id: SeilinkDockAction, extra = ''): string => [styles.btn, extra, pressed === id ? styles.pressed : ''].filter(Boolean).join(' ');
 
   if (offer !== 'none') {
     return (
-      <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place}>
+      <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place} data-dock-awake={awake ? '1' : '0'}>
         {offer === 'prompt' ? (
           <div className={styles.ask} role="status">
             {props.plain
@@ -179,11 +181,11 @@ export function HostDock(props: HostDockProps): React.ReactElement {
           </div>
         ) : null}
         <div className={styles.dock}>
-          <span data-dock="decorate" className={cls('decorate', styles.textBtn + ' ' + styles.primary)}>
+          <span data-dock="decorate" {...flag('decorate')} className={cls('decorate', styles.textBtn + ' ' + styles.primary)}>
             <BrushIcon size={14} />
             {props.plain ? t('Set up together') : t('Decorate together')}
           </span>
-          <span data-dock="later" className={cls('later', styles.textBtn)}>
+          <span data-dock="later" {...flag('later')} className={cls('later', styles.textBtn)}>
             {t('Not now')}
           </span>
         </div>
@@ -192,20 +194,20 @@ export function HostDock(props: HostDockProps): React.ReactElement {
   }
 
   return (
-    <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place}>
+    <div ref={rootRef} className={awake ? `${styles.dockWrap} ${styles.awake}` : styles.dockWrap} style={place} data-dock-awake={awake ? '1' : '0'}>
       {caption ? (
         <div className={styles.caption} role="status">
           {caption.text}
         </div>
       ) : null}
       <div className={styles.dock}>
-        <span data-dock="edit" className={cls('edit')} aria-label={t('Edit room')}>
+        <span data-dock="edit" {...flag('edit')} className={cls('edit')} aria-label={t('Edit room')}>
           <BrushIcon size={15} />
         </span>
-        <span data-dock="deafen" className={cls('deafen', deafened ? styles.off : '')} aria-label={deafened ? t('Turn idle lines on') : t('Mute idle lines')}>
+        <span data-dock="deafen" {...flag('deafen')} className={cls('deafen', deafened ? styles.off : '')} aria-label={deafened ? t('Turn idle lines on') : t('Mute idle lines')}>
           {deafened ? <BubbleOffIcon size={15} /> : <BubbleIcon size={15} />}
         </span>
-        <span data-dock="moveout" className={cls('moveout', confirming ? styles.confirm : '')} aria-label={t('Move out')}>
+        <span data-dock="moveout" {...flag('moveout')} className={cls('moveout', confirming ? styles.confirm : '')} aria-label={t('Move out')}>
           <MoveOutIcon size={15} />
           {confirming ? <span className={styles.confirmText}>{t('Move out?')}</span> : null}
         </span>

@@ -29,7 +29,7 @@ import {
   type SeilinkHostLine,
   type SeilinkHostRoom,
 } from '@shared/seilinkHost';
-import type { RoomOverlay } from '@shared/seilinkDraw';
+import { DESKTOP_STAGE, type RoomOverlay } from '@shared/seilinkDraw';
 import { isUiLanguage, uiLanguageForLocale } from '@shared/uiLanguage';
 import { useLangStore } from '../../../lib/i18n';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
@@ -160,7 +160,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
     setLine(null);
     setSpeaking(false);
     setLook(toNeutral);
-    setDockHover(false);
+    // The dock's hover is the host's to say (it keeps checking while her frames are stopped and
+    // says it again every second; product call (261116): a reset here could leave it wrong).
   }, [fps]);
 
   const onDockAction = useCallback((action: SeilinkDockAction) => bridge?.dockAction?.(action), [bridge]);
@@ -311,6 +312,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
         state={room.state}
         resolveUrl={resolveUrl}
         fit="cover"
+        stage={DESKTOP_STAGE}
         fps={fps}
         avatar={renderAvatar}
         onReady={onSceneReady}
@@ -337,7 +339,8 @@ function FallbackRoom(props: {
   useEffect(() => {
     onReady();
   }, [onReady]);
-  const slot: RoomAvatarSlot = { x: size.w * 0.72, y: size.h * 0.86, height: size.h * 0.4, scale: 1, time: 'night', fps: props.fps };
+  // 261116: as tall as she is in a room (DESKTOP_STAGE), feet on the bottom edge.
+  const slot: RoomAvatarSlot = { x: size.w * 0.5, y: size.h, height: size.h * DESKTOP_STAGE.height, scale: 1, time: 'night', fps: props.fps };
   return (
     <div className={styles.root}>
       <div className={styles.fallback} />

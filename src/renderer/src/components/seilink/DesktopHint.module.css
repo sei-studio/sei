@@ -1,0 +1,103 @@
+/* The desktop hint (product call (261116)): one brief styled line at the
+ * bottom centre of the app, tokens only, no borders, 2px corners. */
+
+.wrap {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--space-lg);
+  z-index: 4400;
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-lg);
+  pointer-events: none;
+}
+
+.hint {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  max-width: 100%;
+  padding: 6px 6px 6px var(--pad-card);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  color: var(--text);
+  box-shadow:
+    var(--shadow-pop),
+    0 12px 32px rgba(0, 0, 0, 0.22);
+  animation: hintIn 260ms var(--ease-pop) both;
+  user-select: none;
+}
+
+.leaving {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 200ms var(--ease),
+    transform 200ms var(--ease);
+}
+
+.text {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A button is its background until pressed; no border lines. */
+.action {
+  flex: none;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}
+
+.action:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.action:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.action:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@keyframes hintIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hint {
+    animation: none;
+  }
+  .leaving {
+    transition: none;
+  }
+}

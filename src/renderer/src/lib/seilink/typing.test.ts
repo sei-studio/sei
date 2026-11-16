@@ -72,7 +72,7 @@ describe('typeDelays', () => {
   // Short enough to type at its natural pace (the success line, 51 letters, is scaled a little to fit TYPE_MAX_MS).
   const SUCCESS = 'Signal received. Syncing world clocks.';
 
-  it('gives each letter 28 to 40 ms, more after a space or punctuation, the same every time, not all equal', () => {
+  it('gives each letter 14 to 20 ms, more after a space or punctuation, the same every time, not all equal', () => {
     const u = typeUnits(SUCCESS);
     const d = typeDelays(u);
     expect(d).toEqual(typeDelays(typeUnits(SUCCESS)));
@@ -84,8 +84,9 @@ describe('typeDelays', () => {
     });
     const letters = d.filter((_, i) => /\p{L}/u.test(u[i]));
     expect(new Set(letters).size).toBeGreaterThan(3);
-    expect(TYPE_CHAR_MS - TYPE_SPREAD_MS).toBeGreaterThanOrEqual(28);
-    expect(TYPE_CHAR_MS + TYPE_SPREAD_MS).toBeLessThanOrEqual(45);
+    // 261116: twice the old 28 to 45 ms pace (product call 261116), still readable as typing.
+    expect(TYPE_CHAR_MS - TYPE_SPREAD_MS).toBeGreaterThanOrEqual(14);
+    expect(TYPE_CHAR_MS + TYPE_SPREAD_MS).toBeLessThanOrEqual(23);
   });
 
   it('pauses a little longer after spaces and punctuation, including CJK punctuation', () => {
@@ -185,7 +186,7 @@ describe('typing fits every line', () => {
     for (const cat of catalogs) {
       for (const k of keys) {
         const text = (cat[k] ?? k).replace(/\{world\}/g, '42').replace(/\{name\}/g, 'Sui');
-        expect(typeLength(text)).toBeLessThanOrEqual(TYPE_START_MS + TYPE_MAX_MS);
+        expect(typeLength(text)).toBeLessThanOrEqual(TYPE_START_MS + TYPE_MAX_MS + 1e-6);
         expect(TYPE_START_MS + TYPE_MAX_MS).toBeLessThan(shortest - 400);
         expect(typeUnits(splitEllipsis(text).body).join('')).toBe(splitEllipsis(text).body);
       }

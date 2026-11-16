@@ -44,9 +44,16 @@ Napi::Value TestClick(const Napi::CallbackInfo& info) {
   return Napi::Number::New(info.Env(), n);
 }
 
+// testMove(x, y): move the cursor (physical screen px), no button. 261116: the dock hover check.
+Napi::Value TestMove(const Napi::CallbackInfo& info) {
+  Move(info[0].As<Napi::Number>().Int32Value(), info[1].As<Napi::Number>().Int32Value());
+  return Napi::Boolean::New(info.Env(), true);
+}
+
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
   exports.Set("platform", "win32");
   exports.Set("testClick", Napi::Function::New(env, TestClick));
+  exports.Set("testMove", Napi::Function::New(env, TestMove));
   return exports;
 }
 

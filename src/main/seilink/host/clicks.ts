@@ -5,8 +5,9 @@
  * A double click always arrives with a click first (macOS: down, click,
  * down, dblclick; Windows raw input: two down/up pairs), so a single click
  * is held for the user's double-click interval and dropped if the second
- * one comes. Clicking her opens her chat; the double click is reserved
- * (a hook for the next milestone), so this wait is what keeps the two apart.
+ * one comes. Product call (261116): a click is her reaction on the desktop
+ * (a bounce, maybe a short bubble), a double click opens her chat in Sei;
+ * this wait is what keeps the two apart.
  *
  * Inputs:
  * - `press(down, up)` (Windows): one press that started on her, with where

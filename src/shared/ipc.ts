@@ -550,6 +550,13 @@ export interface ChatMessage {
    */
   voice?: boolean;
   /**
+   * WorldLink (product call (261116)): a line she said on the desktop as a
+   * speech bubble (a click on her, an idle line, a reaction to her room).
+   * Persisted so she remembers saying it, but HIDDEN in the chat UI like a
+   * voice row: desktop lines stay desktop bubbles.
+   */
+  desktop?: boolean;
+  /**
    * Backseat (260728): a clip the companion saved off the screen share while
    * watching the player. `path` is an absolute path to the .webm under
    * <profileRoot>/clips/<characterId>/; `reason` is the companion's own short
@@ -3592,6 +3599,25 @@ export interface PeekLocalProfileResult {
    * She alone does not earn the boot offer or the Settings row (261023).
    */
   untouchedSeedIds: string[];
+  /**
+   * 261116: whether bringing the local roster over fits the signed-in
+   * account's party (MAX_COMPANION_SLOTS). Absent when signed out (no account
+   * to fit into). `incoming` counts only companions the account's party does
+   * not already hold; memory-only companions take no slot.
+   */
+  party?: LocalImportPartyFit;
+}
+
+/** 261116: the party room an own-key import needs, in the signed-in account. */
+export interface LocalImportPartyFit {
+  /** Party members the account has now. */
+  count: number;
+  /** Local companions the import would add to the party. */
+  incoming: number;
+  /** The party limit (MAX_COMPANION_SLOTS). */
+  limit: number;
+  /** count + incoming stays within the limit (or nothing new comes in). */
+  fits: boolean;
 }
 
 /** Result of importing the `local` profile into the signed-in account (260603). */
@@ -3600,6 +3626,12 @@ export interface ImportLocalProfileResult {
   failed: string[];
   /** Whether mc_username / preferred_name were copied into the account profile. */
   copiedOnboarding: boolean;
+  /**
+   * 261116: 'party_full' = nothing was imported because the companions would
+   * not fit in the account's party; everything stays in the local profile,
+   * untouched, for a later import once a slot is free.
+   */
+  skipped?: 'party_full';
 }
 
 /** Payload pushed by main when an update is detected (quick/260604-uoy). */

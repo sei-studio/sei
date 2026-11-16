@@ -16,7 +16,7 @@ describe('LiveCardView (261110)', () => {
     const html = renderToStaticMarkup(<LiveCardView name="Sui" os="windows" placement="stage" onMinimize={noop} onDismiss={noop} />);
     expect(html).toContain('Sui lives on your desktop now');
     expect(html).toContain('Win+D');
-    expect(html).toContain('Click Sui to open your chat. Double-click for a quick reply.');
+    expect(html).toContain('Click Sui for a quick hello. Double-click to open your chat.');
     expect(html).toContain('Minimize other windows');
     expect(html).toContain('Got it');
     expect(html).toContain('data-live-card="stage"');

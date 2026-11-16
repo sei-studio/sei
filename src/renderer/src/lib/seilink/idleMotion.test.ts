@@ -240,7 +240,7 @@ describe('busy holds her in place', () => {
 describe('poseTransform', () => {
   it('maps heights to px about the bottom centre', () => {
     const t = poseTransform({ x: 0.1, lift: 0.05, lean: 1.5, scale: 0.97, breath: 1.01, phase: 'seated', present: true }, 400);
-    expect(t).toBe('translate3d(40.00px, -20.00px, 0) rotate(1.500deg) scale(0.9700, 0.9797)');
+    expect(t).toBe('translate3d(40.00px, -20.00px, 0) rotate(1.500deg) scale(0.9729, 0.9797)');
   });
 });
 

@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   staged: false,
   enter: { ok: true } as { ok: true; frame?: unknown } | { ok: false; error: string },
   reveal: true,
+  reveals: 0,
   minimize: { ok: true, minimized: 3 } as { ok: true; minimized?: number } | { ok: false; error: string },
 }));
 
@@ -28,7 +29,10 @@ vi.mock('./desktopStage', () => ({
     return { ok: true, stagedMs: 1234 };
   },
   isStaged: () => m.staged,
-  revealDesktop: () => m.reveal,
+  revealDesktop: () => {
+    m.reveals++;
+    return m.reveal;
+  },
 }));
 vi.mock('./minimizeOthers', () => ({ minimizeOtherWindows: async () => m.minimize }));
 
@@ -153,6 +157,23 @@ describe('stage flow', () => {
     m.enabled = false;
     expect(await handleMinimizeOthers({ action: 'minimize_others' })).toEqual({ ok: false, error: 'disabled' });
     m.enabled = true;
+    m.minimize = { ok: true, minimized: 3 };
+  });
+
+  it("261116: the desktop hint's Hide windows: others minimized, then Sei steps aside (never on a failure)", async () => {
+    m.events = [];
+    m.reveals = 0;
+    const win = fakeWindow(true);
+    expect(await handleMinimizeOthers({ action: 'minimize_others', surface: 'desktop_hint', reveal: true }, win as never)).toEqual({ ok: true, minimized: 3 });
+    await flush();
+    expect(m.reveals).toBe(1);
+    expect(m.events.at(-1)).toMatchObject({ event: 'seilink_minimize_windows', outcome: 'ok', surface: 'desktop_hint' });
+    // No reveal asked: Sei stays.
+    await handleMinimizeOthers({ action: 'minimize_others', surface: 'live_card' }, win as never);
+    expect(m.reveals).toBe(1);
+    m.minimize = { ok: false, error: 'failed' };
+    expect(await handleMinimizeOthers({ action: 'minimize_others', surface: 'desktop_hint', reveal: true }, win as never)).toEqual({ ok: false, error: 'failed' });
+    expect(m.reveals).toBe(1);
     m.minimize = { ok: true, minimized: 3 };
   });
 });

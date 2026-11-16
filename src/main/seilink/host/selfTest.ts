@@ -11,8 +11,9 @@
  *   shown       the first frame verified the attach and main sent seilink_shown (261105)
  *   cover       a maximized window (mac: a work-area window over her box) -> covered, 0 fps
  *   uncover     close it -> fps back
- *   click       a synthetic click on her box -> open-chat; on bare wallpaper -> nothing;
- *               a double click -> dblclick and no click
+ *   click       a synthetic click on her box -> click (her reaction; Sei stays hidden);
+ *               on bare wallpaper -> nothing; a double click -> dblclick and no click,
+ *               Sei comes up (her chat) (product call (261116))
  *   kill        kill the host -> a new host attaches and draws
  *   hang        wedge the host -> hang detected, a new host attaches
  *   explorer    (Windows) kill and restart Explorer -> the SAME host re-attaches behind the icons
@@ -45,6 +46,8 @@ const IS_MAC = !FAKE && process.platform === 'darwin';
 
 interface TestAddon {
   testClick(x: number, y: number, count?: number): unknown;
+  /** 261116: move the cursor, no button (Windows physical px, mac global top-left points). */
+  testMove?(x: number, y: number): unknown;
   /** macOS only: size another app's first window through Accessibility. */
   axSetWindowFrame?(bundleId: string, x: number, y: number, w: number, h: number): string;
 }
@@ -276,12 +279,16 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         const s = IS_WIN ? d.scaleFactor : 1;
         const cx = Math.round((b.x + b.w / 2) * s);
         const cy = Math.round((b.y + b.h * 0.6) * s);
+        // Product call (261116): a click is her reaction on the desktop (Sei stays where it is), a
+        // double click brings Sei up on her chat.
+        hideMain();
+        await sleep(500);
         t = Date.now();
         log(`click her at ${cx},${cy}: ${JSON.stringify(testAddon.testClick(cx, cy, 1))}`);
         const clicked = await waitFor(since(t, 'click', (m) => m.kind === 'click'), 5000);
         timings.clickMs = clicked ? clicked.t - t : -1;
         await sleep(800);
-        const mainShown = !!opts.getMainWindow()?.isVisible();
+        const mainAfterClick = !!opts.getMainWindow()?.isVisible();
         hideMain();
         await sleep(800);
         // Bare wallpaper: beside her on the wider side, a third of the way into the gap (clear of
@@ -307,12 +314,21 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         testAddon.testClick(cx, cy, 2);
         const dbl = await waitFor(since(t, 'click', (m) => m.kind === 'dblclick'), 3000);
         await sleep(1200);
+        const mainShown = !!opts.getMainWindow()?.isVisible();
         const singleAfterDbl = events.find((e) => e.t >= t && e.m.type === 'click' && (e.m as { kind?: string }).kind === 'click');
         hideMain();
+        // macOS: Sei's window was over her (box-occluded, her hit panel off) until the host sees it
+        // gone, about a second later; the dock step presses only once she is visible again.
+        const lastActivity = [...events].reverse().find((e) => e.m.type === 'activity')?.m as { covered?: boolean } | undefined;
+        if (lastActivity?.covered) {
+          const tHide = Date.now();
+          await waitFor(since(tHide, 'activity', (m) => m.covered === false), 6000);
+          await sleep(300);
+        }
         checks.click = {
-          ok: !!clicked && mainShown && !stray && !insideHer && !!dbl && !singleAfterDbl,
+          ok: !!clicked && !mainAfterClick && mainShown && !stray && !insideHer && !!dbl && !singleAfterDbl,
           ms: timings.clickMs,
-          detail: `click ${!!clicked} mainShown ${mainShown} stray ${!!stray} dbl ${!!dbl} singleAfterDbl ${!!singleAfterDbl}`,
+          detail: `click ${!!clicked} mainAfterClick ${mainAfterClick} stray ${!!stray} dbl ${!!dbl} mainShownAfterDbl ${mainShown} singleAfterDbl ${!!singleAfterDbl}`,
         };
       } else {
         checks.click = { ok: false, detail: testAddon ? 'no box reported' : 'no test addon' };
@@ -347,8 +363,85 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         checks.dock = { ok: false, detail: testAddon ? 'no dock reported' : 'no test addon' };
       }
 
+      // ── hover (261116): the dock wakes near the cursor and goes quiet when it leaves, also after a
+      //    press on it and after a click or double click on her (with Sei's window up, then hidden);
+      //    her cursor feed keeps coming. Product call (261116): it stayed lit after a click. ──
+      const herNow = ([...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen?: unknown }).screen)?.m as { screen: { x: number; y: number; w: number; h: number } } | undefined)?.screen;
+      if (testAddon?.testMove && deafenBtn && herNow) {
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const wa = d.workArea;
+        const near = { x: Math.round((deafenBtn.x + deafenBtn.w / 2) * s), y: Math.round((deafenBtn.y + deafenBtn.h / 2) * s) };
+        // Far: the top-left quarter of the work area, clear of her and of the dock.
+        const far = { x: Math.round((wa.x + wa.width * 0.25) * s), y: Math.round((wa.y + wa.height * 0.3) * s) };
+        const her = { x: Math.round((herNow.x + herNow.w / 2) * s), y: Math.round((herNow.y + herNow.h * 0.6) * s) };
+        type Probe = { hover: boolean; fps: number; reason: string; pageAwake: boolean | null; pagePressed: boolean | null; cursorSamples: number; maxPollGapMs: number };
+        let probeId = 0;
+        const probe = async (label: string): Promise<Probe | null> => {
+          const id = ++probeId;
+          const t1 = Date.now();
+          sendToSeilinkHostForTest({ type: 'test-probe', id });
+          const got = await waitFor(since(t1, 'test-probe', (m) => m.id === id), 3000);
+          const p = (got?.m ?? null) as Probe | null;
+          log(`probe ${label}: ${JSON.stringify(p)}`);
+          return p;
+        };
+        const moveTo = async (pt: { x: number; y: number }, settleMs = 900): Promise<void> => {
+          testAddon.testMove?.(pt.x, pt.y);
+          await sleep(settleMs);
+        };
+        const steps: string[] = [];
+        let ok = true;
+        const expect = async (label: string, hover: boolean, opts2: { feed?: boolean } = {}): Promise<void> => {
+          const p = await probe(label);
+          const good = !!p && p.hover === hover && p.pageAwake === hover && p.pagePressed === false && (!opts2.feed || p.cursorSamples > 0);
+          if (!good) ok = false;
+          steps.push(`${label}:${good ? 'ok' : 'FAIL'}(${p ? `h${+p.hover} a${p.pageAwake === null ? '-' : +p.pageAwake} p${p.pagePressed === null ? '-' : +p.pagePressed} fps${p.fps} feed${p.cursorSamples} gap${p.maxPollGapMs}` : 'no answer'})`);
+        };
+        // The dock step's caption and press glow lapse first.
+        await moveTo(far, 3200);
+        await expect('far', false);
+        await moveTo(near);
+        await expect('near', true);
+        // Deafen twice (it ends where it started) with the cursor resting on it, then leave.
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        await moveTo(far, 3200);
+        await expect('pressed-then-far', false, { feed: true });
+        await moveTo(near);
+        await expect('pressed-then-near', true);
+        await moveTo(far, 1800);
+        // A double click on her (Sei's window comes up on her chat and stays up), then hidden.
+        testAddon.testClick(her.x, her.y, 2);
+        await sleep(1800);
+        await shot('06-hover-her-dblclicked');
+        // macOS: Sei's window over her box stops her frames (box-occluded); the dock still wakes.
+        await moveTo(near);
+        await expect('her-dbl-window-up-near', true);
+        await moveTo(far, 1800);
+        hideMain();
+        await sleep(1500);
+        await expect('her-dbl-far', false, { feed: true });
+        await moveTo(near);
+        await expect('her-dbl-near', true);
+        await moveTo(far, 1800);
+        await expect('her-dbl-back-far', false, { feed: true });
+        // A single click on her (her reaction on the desktop; Sei stays hidden), then the same.
+        testAddon.testClick(her.x, her.y, 1);
+        await sleep(1800);
+        await moveTo(near);
+        await expect('her-clicked-near', true);
+        await moveTo(far, 1800);
+        await expect('her-clicked-far', false, { feed: true });
+        hideMain();
+        checks.hover = { ok, detail: steps.join(' ') };
+      } else {
+        checks.hover = { ok: false, detail: !testAddon?.testMove ? 'no testMove in the test addon' : 'no dock or box reported' };
+      }
+
     } else {
-      for (const k of ['cover', 'uncover', 'click', 'dock']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
+      for (const k of ['cover', 'uncover', 'click', 'dock', 'hover']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
     }
 
     // ── kill ──

@@ -117,3 +117,34 @@ export function hitAreas(
     dock: d,
   };
 }
+
+// ── Her gaze on the desktop (product call (261116)) ─────────────────────────
+
+/** Where her face is in her box (from the top): the cursor feed is measured from here. */
+export const GAZE_FACE_Y = 0.22;
+
+/**
+ * The cursor for her gaze, in the frame the avatar views read from
+ * `onAvatarOverlayCursor` (callOverlay.ts): [-1, 1] around her face, x right,
+ * y UP, scaled by half the page (the display she is on). Null without a box.
+ */
+export function gazeSample(
+  p: { x: number; y: number },
+  her: SeilinkBox | null,
+  page: { w: number; h: number },
+): { x: number; y: number } | null {
+  if (!her || her.w <= 0 || her.h <= 0) return null;
+  const halfW = Math.max(1, page.w / 2);
+  const halfH = Math.max(1, page.h / 2);
+  const clamp = (v: number): number => Math.max(-1, Math.min(1, v));
+  const round = (v: number): number => Math.round(v * 1000) / 1000;
+  return {
+    x: round(clamp((p.x - (her.x + her.w / 2)) / halfW)),
+    y: round(clamp((her.y + her.h * GAZE_FACE_Y - p.y) / halfH)),
+  };
+}
+
+/** A sample moved enough to send (the views glide toward it; a hair is noise). */
+export function gazeMoved(a: { x: number; y: number } | null, b: { x: number; y: number }, eps = 0.004): boolean {
+  return !a || Math.abs(a.x - b.x) > eps || Math.abs(a.y - b.y) > eps;
+}

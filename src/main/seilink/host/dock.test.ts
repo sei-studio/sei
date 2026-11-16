@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DOCK_HOVER_PX,
   dockHover,
+  gazeMoved,
+  gazeSample,
   dragSlopPhysical,
   HER_SLOP_PX,
   hitAreas,
@@ -88,5 +90,25 @@ describe('seilink dock geometry (M4)', () => {
     expect(toPagePoint({ x: 1500, y: 750 }, { bounds: { x: 0, y: 0 }, scaleFactor: 1.5 }, 'physical')).toEqual({ x: 1000, y: 500 });
     // mac: global top-left points, display not at the origin.
     expect(toPagePoint({ x: 1100, y: 520 }, { bounds: { x: 100, y: 20 }, scaleFactor: 2 }, 'points')).toEqual({ x: 1000, y: 500 });
+  });
+});
+
+describe('gazeSample (product call (261116): she follows the cursor on the desktop)', () => {
+  const page = { w: 2000, h: 1000 };
+  const her = { x: 900, y: 400, w: 200, h: 500 };
+  it('is 0 at her face, +x to the right, +y above, clamped to [-1, 1]', () => {
+    const faceY = 400 + 500 * 0.22;
+    expect(gazeSample({ x: 1000, y: faceY }, her, page)).toEqual({ x: 0, y: 0 });
+    expect(gazeSample({ x: 1500, y: faceY - 250 }, her, page)).toEqual({ x: 0.5, y: 0.5 });
+    expect(gazeSample({ x: -5000, y: 5000 }, her, page)).toEqual({ x: -1, y: -1 });
+  });
+  it('is null without her box', () => {
+    expect(gazeSample({ x: 1, y: 1 }, null, page)).toBeNull();
+    expect(gazeSample({ x: 1, y: 1 }, { x: 0, y: 0, w: 0, h: 10 }, page)).toBeNull();
+  });
+  it('a hair of movement is not sent again', () => {
+    expect(gazeMoved(null, { x: 0, y: 0 })).toBe(true);
+    expect(gazeMoved({ x: 0.1, y: 0.1 }, { x: 0.102, y: 0.1 })).toBe(false);
+    expect(gazeMoved({ x: 0.1, y: 0.1 }, { x: 0.12, y: 0.1 })).toBe(true);
   });
 });

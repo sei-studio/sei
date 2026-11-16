@@ -11,8 +11,10 @@
  *    the host starts;
  *  - `liveHint` (261110): the "lives on your desktop" card after a move-in
  *    without the intro (LiveCard); a fresh move-in steps aside once it is
- *    dismissed.
- * All three are lazy chunks: nothing loads until someone opens SeiLink.
+ *    dismissed;
+ *  - `desktopHint` (product call (261116)): one brief line after WorldLink
+ *    opened or updated the desktop, with "Hide windows" (DesktopHint).
+ * All of them are lazy chunks: nothing loads until someone opens SeiLink.
  */
 import React, { Suspense, lazy } from 'react';
 import { movedInId, useSeilinkStore } from '../../lib/stores/useSeilinkStore';
@@ -24,6 +26,7 @@ const CompanionRoomEditor = lazy(() => import('./CompanionRoomEditor'));
 const MoveInSheet = lazy(() => import('./MoveInSheet'));
 const FirstLinkIntro = lazy(() => import('./intro/FirstLinkIntro'));
 const LiveCard = lazy(() => import('./LiveCard').then((m) => ({ default: m.LiveCard })));
+const DesktopHint = lazy(() => import('./DesktopHint').then((m) => ({ default: m.DesktopHint })));
 
 export function SeilinkFlowHost(): React.ReactElement | null {
   const flow = useSeilinkStore((s) => s.flow);
@@ -34,7 +37,9 @@ export function SeilinkFlowHost(): React.ReactElement | null {
   const endIntro = useSeilinkStore((s) => s.endIntro);
   const liveHint = useSeilinkStore((s) => s.liveHint);
   const endLiveHint = useSeilinkStore((s) => s.endLiveHint);
-  if (!flow && !intro && !liveHint) return null;
+  const desktopHint = useSeilinkStore((s) => s.desktopHint);
+  const endDesktopHint = useSeilinkStore((s) => s.endDesktopHint);
+  if (!flow && !intro && !liveHint && !desktopHint) return null;
   const nameOf = (id: string): string | null => characters.find((c) => c.id === id)?.name ?? null;
   return (
     <Suspense fallback={null}>
@@ -72,6 +77,9 @@ export function SeilinkFlowHost(): React.ReactElement | null {
             else if (end === 'minimized') void sei.seilinkStage?.({ action: 'reveal', purpose: 'move_in', characterId: liveHint.characterId }).catch(() => null);
           }}
         />
+      ) : null}
+      {desktopHint && !intro && !liveHint && !flow ? (
+        <DesktopHint key={desktopHint.seq} hint={desktopHint} onDone={() => endDesktopHint(desktopHint.seq)} />
       ) : null}
     </Suspense>
   );

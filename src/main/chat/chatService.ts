@@ -875,7 +875,7 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean },
+  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean; desktop?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
   // Loop/cut-off guard first (tidyReply): repeated sentences and a max_tokens
@@ -919,6 +919,8 @@ async function persistReplies(
     ts: now + i,
     // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
+    // A WorldLink desktop bubble → hidden in the chat UI too (see ChatMessage.desktop).
+    ...(opts?.desktop ? { desktop: true } : {}),
   }));
   // Face cues go out BEFORE the replies return, so the renderer holds them
   // when the bubble is shown or its clip starts. No-op with the flag off.
@@ -2272,7 +2274,7 @@ function blockedReason(errorClass: string): string {
 /** Model-facing notes for a desktop line (plain, see the prompt style note). */
 export const DESKTOP_LINE_NOTES = {
   poke:
-    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, and they just double-clicked you there. " +
+    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, and they just clicked you there. " +
     'Say one short line back to them, under fifteen words, in your own voice. It shows as a small speech bubble next to you. Do not mention this note.]',
   idle:
     "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, while they use their computer. " +
@@ -2283,12 +2285,14 @@ export const DESKTOP_LINE_NOTES = {
 
 /**
  * One short line she says on the desktop (desktopLines.ts decides when and
- * who pays): `poke` answers a double click on her, `idle` is unprompted,
+ * who pays): `poke` answers a click on her (a double click before 261116), `idle` is unprompted,
  * `react` (261105) answers the player's room edits (roomReaction.ts).
  * Same context as a chat turn (persona, memory, summary, knowledge, her room
  * line), the note after the cache breakpoint, no tool loop. A remember() call
- * is honored. The line is saved to her chat like any reply, so the chat and
- * the fold see it. Skipped (null) while another turn for her is running, when
+ * is honored. The line is saved to her chat like any reply, so the fold and
+ * her next turns see it; product call (261116): as a desktop row
+ * (ChatMessage.desktop, hidden in the chat UI) unless `where` is 'chat' (her
+ * live line in the room editor, which shows in the chat). Skipped (null) while another turn for her is running, when
  * she has no room right now (a game surface), or when she stays silent.
  */
 /** Why a desktop line came back null (analytics, seilink_poke / idle counts). */
@@ -2301,6 +2305,8 @@ async function sendDesktopLineTurnImpl(
   onSkip?: (why: DesktopLineSkip) => void,
   /** 261105 (T335): the note for a 'react' turn (roomReactionNote: what the player changed in her room). */
   reactNote?: string,
+  /** Product call (261116): 'desktop' (a bubble only, hidden in the chat UI) or 'chat' (the editor's live line). */
+  where: 'desktop' | 'chat' = 'desktop',
 ): Promise<{ text: string; messages: ChatMessage[]; face: string | null } | null> {
   const skip = (why: DesktopLineSkip): null => {
     try {
@@ -2343,6 +2349,7 @@ async function sendDesktopLineTurnImpl(
       rememberCalled,
       truncated: res.stopReason === 'max_tokens',
       local: llm.backend === 'local',
+      desktop: where === 'desktop',
     });
     const text = saved
       .map((m) => m.text)

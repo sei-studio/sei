@@ -635,3 +635,24 @@ if (
 }
 
 export {};
+
+// &ipclatency=<ms> (261116): every async bridge answer arrives that much
+// later, like the real IPC round trip, so a harness can show what a screen
+// paints before its reads land (the profile tab switch was checked this way).
+if (import.meta.env.DEV && w && harnessParams?.has('dashshot') && Number(harnessParams.get('ipclatency')) > 0) {
+  const lag = Number(harnessParams.get('ipclatency'));
+  const inner = (w as { sei?: unknown }).sei as Record<string, unknown> | undefined;
+  if (inner) {
+    (w as { sei?: unknown }).sei = new Proxy(inner, {
+      get(target, key) {
+        const value = target[key as string];
+        if (typeof value !== 'function' || (typeof key === 'string' && key.startsWith('on'))) return value;
+        return (...args: unknown[]) => {
+          const out = (value as (...a: unknown[]) => unknown)(...args);
+          if (!out || typeof (out as Promise<unknown>).then !== 'function') return out;
+          return new Promise((resolve, reject) => setTimeout(() => (out as Promise<unknown>).then(resolve, reject), lag));
+        };
+      },
+    });
+  }
+}

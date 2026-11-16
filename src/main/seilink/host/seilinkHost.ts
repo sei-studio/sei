@@ -82,12 +82,17 @@ export interface SeilinkHostDeps {
   /** Status to the main window. */
   pushStatus(status: SeilinkHostStatus): void;
   /**
-   * She was clicked: open (or focus) her chat in Sei. 261105: returns how (analytics):
+   * She was double-clicked (product call (261116); a single click before): bring Sei to the
+   * front on her chat, composer focused. 261105: returns how (analytics):
    * 'focused' (the window was there), 'reopened' / 'deferred' (mac: no window, one is made).
    */
   openChat(characterId: string): SeilinkChatOpen | void;
-  /** Double click on her (M4: a poke, answered by desktopLines.ts). */
-  onDoubleClick?(characterId: string): void;
+  /**
+   * A single click on her (product call (261116); a double click before): she reacts on the
+   * desktop (the host page bounces her; desktopLines.ts may add a short bubble, inside the
+   * poke limits). Never pushed into the app's chat.
+   */
+  onClick?(characterId: string): void;
   /** M4: the dock's "edit room": her room editor (261106: on the desktop, desktopStage.ts). */
   openRoomEditor?(characterId: string): void;
   /** 261106: an answer to the decorate-together offer on the dock (decorateOffer.ts). */
@@ -795,13 +800,14 @@ function onHostMessage(s: Session, m: FromHost): void {
       emitWatchdog(s, s.watchdog.onActivity(Date.now(), { covered: m.covered === true, paused: m.paused === true }));
       break;
     case 'click':
+      // Product call (261116): a click is her reaction on the desktop, a double click opens her chat.
       if (m.kind === 'click') {
         s.counters.add('clicks');
-        const how = deps?.openChat(s.characterId);
-        s.counters.add(how ? `chat_open_${how}` : 'chat_open_unknown');
+        deps?.onClick?.(s.characterId);
       } else if (m.kind === 'dblclick') {
         s.counters.add('double_clicks');
-        deps?.onDoubleClick?.(s.characterId);
+        const how = deps?.openChat(s.characterId);
+        s.counters.add(how ? `chat_open_${how}` : 'chat_open_unknown');
       }
       break;
     case 'dock':

@@ -121,15 +121,17 @@ import { OfflineRetryModal } from './components/OfflineRetryModal';
 import { HardStopModal } from './components/HardStopModal';
 import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
-import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
+import { ImportLocalProfileModal, PARTY_FULL_LINE } from './components/ImportLocalProfileModal';
 import {
   BOOT_OFFER_FIRST_MS,
   BOOT_OFFER_POLL_MS,
   checkBootImportOffer,
   localImportOfferTiming,
   shouldOfferLocalImport,
+  importBlockedByParty,
   type BootOfferUi,
 } from './lib/localImportOffer';
+import { trackLocalImportPartyFull, type LocalImportEntry } from './lib/localImportTrack';
 import { liveSessionForRestart } from './components/UpdateRailButton';
 import { useVoiceStore } from './lib/stores/useVoiceStore';
 import { useBackseatStore } from './lib/stores/useBackseatStore';
@@ -137,6 +139,7 @@ import { useChessStore } from './lib/stores/useChessStore';
 import { useDrawStore } from './lib/stores/useDrawStore';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 import { usePermissionResume } from './lib/permissions/usePermissionResume';
+import { requestComposerFocus } from './lib/composerFocus';
 
 export function App(): React.ReactElement {
   const t = useT();
@@ -154,6 +157,8 @@ export function App(): React.ReactElement {
   useEffect(
     () =>
       sei.onSeilinkOpenChat?.((characterId) => {
+        // Product call (261116): a double click on her; her chat comes up ready to type.
+        requestComposerFocus(characterId);
         useUiStore.getState().navigate({ kind: 'chat', characterId });
       }),
     [],
@@ -242,7 +247,18 @@ export function App(): React.ReactElement {
     peek: PeekLocalProfileResult;
     existingAccount: boolean;
     after?: () => void;
+    entry: LocalImportEntry;
   } | null>(null);
+  // 261116: the local companions would not fit the account's party, so the
+  // import was not offered; one dismissible line says to free a slot and
+  // import from Settings. Shown at most once per offer moment.
+  const [importPartyFull, setImportPartyFull] = useState(false);
+  const notePartyFull = useCallback((entry: LocalImportEntry, peek: PeekLocalProfileResult): void => {
+    setImportPartyFull(true);
+    trackLocalImportPartyFull(entry, peek.party);
+    // Counts as this account's answer: the boot offer does not repeat it.
+    void sei.profileImportOffered('set').catch(() => undefined);
+  }, []);
   // A sign-in landed while the first-run scene was up: offer the import when
   // the scene hands off (handleOnboardComplete).
   const importAfterOnboardRef = useRef(false);
@@ -491,7 +507,12 @@ export function App(): React.ReactElement {
         if (stopped) return;
         if (res.kind === 'show') {
           // `after` keeps the player where they are (Home); only data reloads.
-          setImportOffer({ peek: res.peek, existingAccount: true, after: () => undefined });
+          setImportOffer({ peek: res.peek, existingAccount: true, after: () => undefined, entry: 'boot' });
+          stopped = true;
+          return;
+        }
+        if (res.kind === 'party_full') {
+          notePartyFull('boot', res.peek);
           stopped = true;
           return;
         }
@@ -780,8 +801,13 @@ export function App(): React.ReactElement {
             if (stale()) return;
             const existingAccount = Boolean(onboardedName);
             if (shouldOfferLocalImport(peek, existingAccount)) {
-              setImportOffer({ peek, existingAccount });
-              return;
+              // 261116: would not fit the party: no modal (it would import
+              // nothing), one line instead, then route as usual.
+              if (importBlockedByParty(peek)) notePartyFull('sign_in', peek);
+              else {
+                setImportOffer({ peek, existingAccount, entry: 'sign_in' });
+                return;
+              }
             }
           } catch { /* no offer; route as usual */ }
         }
@@ -1128,8 +1154,11 @@ export function App(): React.ReactElement {
           try {
             const peek = await sei.profilePeekLocal();
             if (useAuthStore.getState().state.kind === 'signed_in' && shouldOfferLocalImport(peek, true)) {
-              setImportOffer({ peek, existingAccount: true, after: () => void routeAfterOnboard() });
-              return;
+              if (importBlockedByParty(peek)) notePartyFull('onboarding', peek);
+              else {
+                setImportOffer({ peek, existingAccount: true, after: () => void routeAfterOnboard(), entry: 'onboarding' });
+                return;
+              }
             }
           } catch { /* no offer */ }
         }
@@ -1179,6 +1208,7 @@ export function App(): React.ReactElement {
     <ImportLocalProfileModal
       peek={importOffer.peek}
       existingAccount={importOffer.existingAccount}
+      entry={importOffer.entry}
       onDone={(d) => void handleImportOfferDone(d)}
     />
   ) : null;
@@ -1325,6 +1355,10 @@ export function App(): React.ReactElement {
           {authState.kind === 'signed_in' ? <FreePlayBackBanner /> : null}
           {/* 261110: the own-key monthly spend alert (one line, never blocks). */}
           <SpendAlertBanner />
+          {/* 261116: own-key companions not imported, the party is full. */}
+          {importPartyFull && authState.kind === 'signed_in' ? (
+            <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={() => setImportPartyFull(false)} />
+          ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
             {/*

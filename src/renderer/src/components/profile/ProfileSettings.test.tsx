@@ -104,7 +104,9 @@ const locked = (html: string): string[] =>
 describe('ProfileSettings, your own companion', () => {
   it('one tab at a time: a single-group tab has no heading, More heads Sharing and the Danger zone', () => {
     const look = render('custom', { seilinkOn: true }, undefined, 'look');
-    expect(rows(look)).toEqual(['card-image', 'skin', 'avatar', 'floating-avatar']);
+    expect(rows(look)).toEqual(['card-image', 'avatar', 'floating-avatar']);
+    // The Minecraft skin is a game setting, so it leads Games (product call 261116).
+    expect(rows(render('custom', { seilinkOn: true }, undefined, 'games'))).toEqual(['skin', 'chess', 'dst']);
     expect(sectionsOf(look)).toEqual([]);
     const more = render('custom', { seilinkOn: true }, undefined, 'more');
     expect(sectionsOf(more)).toEqual(['sharing', 'danger']);
@@ -126,7 +128,6 @@ describe('ProfileSettings, your own companion', () => {
     const html = render('custom', { seilinkOn: true });
     expect(rows(html)).toEqual([
       'card-image',
-      'skin',
       'avatar',
       'floating-avatar',
       'voice',
@@ -134,6 +135,7 @@ describe('ProfileSettings, your own companion', () => {
       'about',
       'persona',
       'knowledge',
+      'skin',
       'chess',
       'dst',
       'desktop-room',

@@ -56,7 +56,7 @@ describe('the copy', () => {
     expect(STATUS_LINES.map((l) => l.key)).toEqual([
       'Initializing WorldLink…',
       'Sending signal to World {world}…',
-      'Waiting for a reply…',
+      'Awaiting response…',
       'Signal received.',
       'Syncing world clocks…',
       'Matching physics constants…',
@@ -80,8 +80,8 @@ const dwellsKept = (xs: number[]): void => gaps(xs).forEach((g, i) => expect(g).
 const secs = (xs: number[]): number[] => xs.map((x) => Math.round(x / 100) / 10);
 
 describe('the dwells (product feedback (261106): the first lines take a while)', () => {
-  it('the first four lines stay up 4, 6, 12 and 4 s; the rest LINE_DWELL_MS', () => {
-    expect(STATUS_LINES.map((_, i) => lineDwell(i))).toEqual([4000, 6000, 12_000, 4000, ...Array(5).fill(LINE_DWELL_MS)]);
+  it('the first four lines stay up 2, 3, 6 and 2 s; the rest LINE_DWELL_MS (sped up about 2x, product call (261116))', () => {
+    expect(STATUS_LINES.map((_, i) => lineDwell(i))).toEqual([2000, 3000, 6000, 2000, ...Array(5).fill(LINE_DWELL_MS)]);
     expect(STATUS_LINES.slice(4, 7).map((l) => l.curve)).toEqual([0.4, 0.6, 0.8]);
     expect(STATUS_LINES.slice(4, 7).map((l) => l.cut)).toEqual(['baked', 'baked', 'baked']);
   });
@@ -93,9 +93,9 @@ describe('planLink', () => {
     expect(p.lines).toHaveLength(9);
     expect(p.lines[0]).toBe(FIRST_LINE_MS);
     gaps(p.lines).forEach((g, i) => expect(g).toBe(lineDwell(i)));
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 13.7, 15.4, 17.1, 18.8, 20.5]);
     expect(p.success).toBe(p.lines[8] + LAST_LINE_MS);
-    expect(p.success).toBe(41_100);
+    expect(p.success).toBe(23_700);
     expect(p.fail).toBeNull();
   });
 
@@ -108,7 +108,7 @@ describe('planLink', () => {
     expect(p.lines[4]).toBe(0.4 * EXPECTED_LINK_MS);
     expect(p.lines[5]).toBe(0.6 * EXPECTED_LINK_MS);
     expect(p.lines[6]).toBe(0.8 * EXPECTED_LINK_MS);
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72, 75]);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 30, 45, 60, 72, 75]);
     expect(p.lines[7]).toBe(log.at.baked);
     expect(p.lines[8]).toBe(log.at.installed);
     expect(p.success).toBe(75_000 + LAST_LINE_MS);
@@ -123,8 +123,8 @@ describe('planLink', () => {
     const doneAt = log.at.baked!;
     const firstAfter = p.lines.findIndex((s) => s >= doneAt);
     for (let i = firstAfter + 1; i < 9; i++) expect(p.lines[i] - p.lines[i - 1]).toBe(lineDwell(i - 1));
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
-    expect(p.success).toBe(41_100);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4, 22.1, 23.8]);
+    expect(p.success).toBe(27_000);
   });
 
   it('a past start never moves when more of the log arrives', () => {
@@ -169,18 +169,18 @@ describe('planLink', () => {
     expect(p.fail).toEqual({ at: FIRST_LINE_MS + FAIL_BEAT_MS, failure: 'offline' });
   });
 
-  it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 12 s', () => {
-    // The request went out, no answer, then the network gave up 1 s into "Waiting for a reply…".
-    const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 11_700, failure: 'network' } };
+  it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 6 s', () => {
+    // The request went out, no answer, then the network gave up 1 s into "Awaiting response…".
+    const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 6700, failure: 'network' } };
     const p = planLink(log);
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7]);
-    expect(p.fail).toEqual({ at: 10_700 + FAIL_BEAT_MS, failure: 'network' });
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7]);
+    expect(p.fail).toEqual({ at: 5700 + FAIL_BEAT_MS, failure: 'network' });
     expect(p.fail!.at - p.lines[2]).toBeLessThan(lineDwell(2) / 2);
     // Late in the line: at once.
-    expect(planLink({ ...log, failed: { at: 18_000, failure: 'network' } }).fail!.at).toBe(18_000);
+    expect(planLink({ ...log, failed: { at: 10_000, failure: 'network' } }).fail!.at).toBe(10_000);
   });
 
-  it('a slow proxy holds "Waiting for a reply…" until it answers', () => {
+  it('a slow proxy holds "Awaiting response…" until it answers', () => {
     const p = planLink({ at: { sent: 250, answered: 40_000, host: 2500 }, failed: null });
     expect(p.lines[3]).toBe(40_000);
     expect(p.lines[3] - p.lines[2]).toBeGreaterThan(lineDwell(2));

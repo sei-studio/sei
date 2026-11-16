@@ -21,7 +21,10 @@
  * `speaking` holds her in her seat. The frame cap is the slot's `fps`: 0
  * stops every loop (hers and the view's) and leaves a still picture; she is
  * also still under prefers-reduced-motion. Blink, gaze and mouth belong to
- * the view (the portrait has none, so it only breathes and sways).
+ * the view (the face set's wander, turn and tilt: FacepackView `life`). A
+ * portrait or the silhouette has no eyes to move, so it breathes, sways and
+ * leans a little toward where she would be looking (`gazeLean`, 261116);
+ * nothing pretends to blink or glance.
  *
  * Geometry: the stage is the slot box (bottom centre = the anchor). Her
  * figure hangs `SINK` of her height below that line and is clipped there, so
@@ -43,6 +46,7 @@ import type { FacepackSource } from '../../lib/facepack/facepackSource';
 import { portraitSrc } from '../../lib/portraitSrc';
 import { loadCutout, peekCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
 import { FramePacer } from '../../lib/framePacer';
+import { GazeDriver, type GazeInput } from '../../lib/motion/organic';
 import {
   IdleScheduler,
   REST_POSE,
@@ -110,6 +114,9 @@ export const SINK = 0.07;
 const BUST_CAMERA: AvatarCamera = { zoom: 1.35, x: 0, y: 0.175 };
 /** Motion never draws faster than this, whatever the room runs at. */
 const MOTION_FPS_MAX = 30;
+/** Gaze lean for faceless figures: degrees and body heights at a full head turn. */
+const GAZE_LEAN_DEG = 0.9;
+const GAZE_LEAN_X = 0.004;
 /** How often the frame edges are re-measured for a walk-off. */
 const EXIT_MEASURE_MS = 1_000;
 /** Portrait to face set: the fade, and how long the portrait waits for the face set to draw. */
@@ -200,6 +207,11 @@ interface MotionOpts {
   config: Partial<IdleMotionConfig>;
   /** Talking bounce for figures without a mouth. */
   bounce: boolean;
+  /**
+   * Figures with no face to move (a portrait cutout, the silhouette): her gaze
+   * shows as a slight lean of the whole body toward where she looks (261116).
+   */
+  gazeLean: boolean;
   levelRef?: React.MutableRefObject<number>;
   speaking: boolean;
   onPhase(phase: IdlePhase): void;
@@ -245,6 +257,9 @@ function useIdleMotion(
     let lastMeasure = -Infinity;
     let phase: IdlePhase | null = null;
     let talk = 0;
+    const gaze = new GazeDriver(clock.current);
+    const gazeIn: GazeInput = {};
+    const held: IdlePose = { ...REST_POSE };
     // 261110: an even cadence, and up to 60 fps while she walks (motionFps).
     const pacer = new FramePacer();
     const tick = (t: number): void => {
@@ -262,10 +277,18 @@ function useIdleMotion(
       const p = s.update(clock.current, { busy: L.busy || L.speaking, exits: exits.current });
       pose.current = p;
       let out = p;
+      if (L.gazeLean && p.phase === 'seated') {
+        gazeIn.engaged = L.speaking;
+        const g = gaze.update(clock.current, gazeIn);
+        Object.assign(held, p);
+        held.lean = p.lean + g.headX * GAZE_LEAN_DEG;
+        held.x = p.x + g.headX * GAZE_LEAN_X;
+        out = held;
+      }
       if (L.bounce) {
         const level = L.speaking ? Math.min(1, L.levelRef?.current ?? 0.35) : 0;
         talk += (level - talk) * (level > talk ? 0.45 : 0.15);
-        if (talk > 0.002) out = { ...p, lift: p.lift + 0.006 * talk, breath: p.breath * (1 + 0.008 * talk) };
+        if (talk > 0.002) out = { ...out, lift: out.lift + 0.006 * talk, breath: out.breath * (1 + 0.008 * talk) };
       }
       body.style.transform = poseTransform(out, L.height);
       if (p.phase !== phase) {
@@ -453,6 +476,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     enabled: motion !== false && !reduced,
     config: motion === false ? {} : motion,
     bounce: kind === 'portrait' || kind === 'placeholder',
+    gazeLean: kind === 'portrait' || kind === 'placeholder',
     levelRef,
     onPhase,
   });
@@ -502,6 +526,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
           expression={face !== undefined ? face : emotion}
           expressionSeq={faceSeq}
           fps={viewFps}
+          life={motion !== false && !reduced}
           className={styles.fill}
           onStatus={onViewStatus('facepack')}
         />
