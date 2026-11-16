@@ -32,6 +32,7 @@ import {
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   renderCore,
   renderCompanions,
   voiceGroupGuidance,
@@ -2441,6 +2442,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // character.metadata.language) beats the profile-wide setting.
         ...(renderLanguageDirective(config.persona?.language ?? config.chat_language)
           ? [renderLanguageDirective(config.persona?.language ?? config.chat_language)]
+          : []),
+        // 261116: someone else's character (from the World) whose description
+        // may name the creator's language. Appended after the directive so
+        // the player's language wins over the persona text (English gets no
+        // directive at all, so without this the persona's language won).
+        ...(config.persona?.language_adopted
+          ? [renderAdoptedLanguageNote(config.persona?.language ?? config.chat_language)]
           : []),
         // 260725 Knowledge: user-provided reference files (capped + sanitized
         // in main, shipped via the init payload). APPENDED (never inserted) for

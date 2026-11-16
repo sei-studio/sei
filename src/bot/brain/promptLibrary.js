@@ -1535,6 +1535,9 @@ export const CHAT_LANGUAGE_NAMES = {
   ko: 'Korean',
   fr: 'French',
   es: 'Spanish',
+  ru: 'Russian',
+  pt: 'Brazilian Portuguese',
+  it: 'Italian',
 }
 
 export function renderLanguageDirective(language) {
@@ -1544,6 +1547,17 @@ export function renderLanguageDirective(language) {
 The player's language is ${name}. Everything you say to the player is in ${name}: chat messages, spoken lines on voice calls, and say() lines in the game. Write it the way a native speaker actually chats, with natural everyday phrasing, not like a translation from English. You are an AI and speak multiple languages fluently: if the player writes to you in a different language, answer in the language they used. Never claim you cannot speak or understand a language, even if you said so earlier in the conversation.
 
 Only your words to the player change language. Your instructions, tool results, and tool names stay in English, and you keep calling tools exactly as documented. Protocol markers stay in English too: when an instruction tells you to reply with exactly (silence), output the literal text (silence), never a translation of it. Your private notes through remember() and setGoal() can be in ${name} or English, whichever comes naturally.`
+}
+
+// 261116 (product call 261116): a World companion's description was written by
+// whoever made her, and can name a language ("Speak primarily in natural, casual
+// Spanish"). Placed after her persona, so it outranks that line; the player's
+// own language (chatLanguage.ts companionLanguage) is the default. Only for
+// companions someone else wrote: a player's own description is their choice.
+export function renderAdoptedLanguageNote(language) {
+  const name = CHAT_LANGUAGE_NAMES[language]
+  if (!name) return ''
+  return `Someone else wrote your description. If it says you speak a certain language, that was their choice, not this player's: talk to this player in ${name}, keeping the rest of your personality. If the player writes to you in a different language, answer in that language.`
 }
 
 // 260618: the proactiveness directive is STATIC for a session — selected once by

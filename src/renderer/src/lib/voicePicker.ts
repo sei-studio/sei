@@ -16,7 +16,6 @@
  */
 import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import { NO_VOICE_ID, applyVoicePick, type OwnVoicePick } from '@shared/voiceIds';
-import { CHAT_LANGUAGE_CODES } from '@shared/chatLanguage';
 import { isPoolVoiceId } from '@shared/poolVoiceIds';
 
 export { NO_VOICE_ID, applyVoicePick };
@@ -87,8 +86,12 @@ export function isUnlistedVoice(selection: VoiceSelection, voices: Array<{ id: s
  * public assets are referenced (see lib/games.ts image paths). A language the
  * bundle does not cover falls back to the English sample.
  */
+/** Languages with bundled sample clips (resources/voice-previews). ru/pt/it
+ *  (261116) have none yet and play the English clip. */
+const PREVIEW_LANGUAGES = ['en', 'zh', 'ja', 'ko', 'fr', 'es'];
+
 export function assetPathFor(voiceId: string, lang: string): string {
-  const supported = (CHAT_LANGUAGE_CODES as string[]).includes(lang) ? lang : 'en';
+  const supported = PREVIEW_LANGUAGES.includes(lang) ? lang : 'en';
   return `./voice-previews/${voiceId}-${supported}.mp3`;
 }
 

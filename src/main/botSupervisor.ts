@@ -41,7 +41,7 @@ import type { CreditWallContext } from './creditWall';
 import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
 import type { DstGameModule, DstOfferResult } from './games/dontstarve';
-import { clampChatLanguage } from '../shared/chatLanguage';
+import { companionLanguageFor } from './companionLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
 import { botProxySnapshot, SYSTEM_PROXY_ENV } from './systemProxy';
 import { chatgptSession } from './chatgptPlan';
@@ -1150,7 +1150,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // 260709: bridge the conversation language into the bot's # LANGUAGE
     // directive. Fork-time like vision_mode — a Settings change applies at the
     // next summon (the chat surface re-reads it per turn).
-    const chatLanguage = clampChatLanguage(userCfg.chat_language);
+    // 261116: resolved per companion (own pin, else the player's language,
+    // else the UI language). A World character never carries its creator's
+    // pin and gets the adopted-language note in the bot prompt.
+    const companionLang = companionLanguageFor(character, userCfg);
+    const chatLanguage = companionLang.language;
+    const languageAdopted = companionLang.adopted;
     // 260816 (china-compat W2): bridge the Settings LLM provider picker into
     // the bot. UserConfig.provider + provider_config were written by Settings
     // and read by NOTHING until now — the init payload carried no llm config,
@@ -1911,6 +1916,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // 260709: conversation language (UserConfig.chat_language). The
               // bot's bootstrapWithInit reads this into config.chat_language.
               chatLanguage,
+              // 261116: World character; see bot/index.js languageAdopted.
+              languageAdopted,
               // 260618 (multi-agent): the OTHER AI companions already in this world,
               // so the new bot knows its teammates from its first tick. The new
               // session is already in `sessions` (added before this spawn handler),

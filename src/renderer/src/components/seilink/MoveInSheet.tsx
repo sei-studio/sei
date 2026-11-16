@@ -23,6 +23,10 @@
  *
  * A companion whose room is saved and nobody else moved in skips the sheet
  * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
+ *
+ * 261116: when WORLDLINK_UPLOADED_LOOKS keeps her uploaded look out
+ * (lib/seilink/uploadedLooks.ts, default off) the sheet says why in one
+ * line and Move in is off.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { plainRoomState, type RoomPresetId, type RoomState } from '@shared/seilinkRoom';
@@ -37,6 +41,9 @@ import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type Mo
 import type { SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
 import { startSeilinkHost } from '../../lib/seilink/seilinkFlow';
 import styles from './MoveInSheet.module.css';
+import { cardImageOrigin } from '@shared/characterSchema';
+import { useDataStore } from '../../lib/stores/useDataStore';
+import { worldlinkLookBlock, type LookBlock } from '../../lib/seilink/uploadedLooks';
 
 /**
  * Her first room: the plain background (no room yet), in the cozy pack's
@@ -57,6 +64,8 @@ export interface MoveInSheetViewProps {
   busy: boolean;
   /** Her room is still loading (Move in waits for it). */
   loading?: boolean;
+  /** 261116: her uploaded look keeps her out (uploadedLooks.ts): one line, Move in off. */
+  lookBlocked?: Exclude<LookBlock, 'none'> | null;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
@@ -80,11 +89,18 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
           {p.error}
         </p>
       ) : null}
+      {p.lookBlocked ? (
+        <p className={styles.line} role="status" data-look-blocked={p.lookBlocked}>
+          {p.lookBlocked === 'busy_background'
+            ? t("WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.", { name: p.name })
+            : t("For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.", { name: p.name })}
+        </p>
+      ) : null}
       <ModalFooter>
         <Button kind="quiet" size="md" disabled={p.busy} onClick={p.onCancel}>
           {t('Not now')}
         </Button>
-        <Button kind="primary" size="md" disabled={p.busy || p.loading === true} onClick={p.onConfirm}>
+        <Button kind="primary" size="md" disabled={p.busy || p.loading === true || Boolean(p.lookBlocked)} onClick={p.onConfirm}>
           {p.busy ? t('Moving in') : t('Move in')}
         </Button>
       </ModalFooter>
@@ -116,11 +132,15 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
   const openedAt = useRef(Date.now());
   const sent = useRef(new Set<string>());
+  // 261116: her uploaded look under WORLDLINK_UPLOADED_LOOKS (instant 'none' with the default 'all').
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
+  const [lookBlock, setLookBlock] = useState<LookBlock | null>(null);
+  const lookOrigin = character ? cardImageOrigin(character) : null;
   const firstRoom = saved ? !saved.saved : true;
   const first = packs ? firstRoomState(packs) : null;
   const report = (
     action: MoveInAction,
-    extra: { error_class?: MoveInFail; packs?: number; first?: boolean; preset?: RoomPresetId | null; plain?: boolean } = {},
+    extra: { error_class?: MoveInFail; packs?: number; first?: boolean; preset?: RoomPresetId | null; plain?: boolean; look?: LookBlock } = {},
   ): void => {
     const key = action === 'failed' ? `failed:${extra.error_class}` : action;
     if (sent.current.has(key) || (action !== 'failed' && action !== 'shown' && (sent.current.has('confirmed') || sent.current.has('dismissed')))) return;
@@ -144,6 +164,8 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         ...(entry ? { entry } : {}),
         ...(extra.packs !== undefined ? { packs_available: extra.packs } : {}),
         ...(extra.error_class ? { error_class: extra.error_class } : {}),
+        ...(lookOrigin ? { look_origin: lookOrigin } : {}),
+        ...(extra.look && extra.look !== 'none' ? { look_blocked: extra.look } : {}),
       });
     } catch {
       /* analytics must never disrupt the sheet */
@@ -152,14 +174,16 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
 
   useEffect(() => {
     let dead = false;
-    void Promise.all([sei.seilinkPacks?.() ?? Promise.resolve([]), sei.seilinkRoomGet?.(characterId) ?? Promise.resolve(null)]).then(
-      ([list, room]) => {
+    const look: Promise<LookBlock> = character ? worldlinkLookBlock(character).catch(() => 'none' as const) : Promise.resolve('none');
+    void Promise.all([sei.seilinkPacks?.() ?? Promise.resolve([]), sei.seilinkRoomGet?.(characterId) ?? Promise.resolve(null), look]).then(
+      ([list, room, block]) => {
         if (dead) return;
         setPacks(list);
+        setLookBlock(block);
         const was = room ? { saved: room.saved === true, preset: room.state.preset } : { saved: false, preset: 'cozy' as RoomPresetId };
         setSaved(was);
         const f = firstRoomState(list);
-        report('shown', { packs: list.length, first: !was.saved, preset: was.saved ? was.preset : (f?.state.preset ?? null), plain: !was.saved && f?.plain === true });
+        report('shown', { packs: list.length, first: !was.saved, preset: was.saved ? was.preset : (f?.state.preset ?? null), plain: !was.saved && f?.plain === true, look: block });
       },
       () => {
         if (dead) return;
@@ -207,6 +231,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
       firstRoom={firstRoom}
       busy={busy}
       loading={packs === null || saved === null}
+      lookBlocked={lookBlock && lookBlock !== 'none' ? lookBlock : null}
       error={error}
       onCancel={() => {
         report('dismissed');

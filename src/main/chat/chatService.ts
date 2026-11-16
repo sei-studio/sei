@@ -53,7 +53,7 @@ import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
 import { noteSeilinkChatTurn } from '../seilink/host/hostSignals';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { surfaceLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
 import { roomChangeTurnNote } from '../seilink/roomChangeNote';
@@ -782,7 +782,13 @@ async function prepareChatTurn(
     // Settings change applies from the very next message with no restart.
     // 260730: a character created under the Chinese UI carries
     // metadata.language, which pins its surfaces regardless of auto-detect.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    // 261116: the default is the player's UI language, a pin only counts on
+    // her own companions, and a World companion's description cannot pick
+    // the language (companionLanguage in shared/chatLanguage.ts).
+    ...(() => {
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // 261008: every chat and voice turn offers remember() (chatSurfaceTools),
     // so the status block carries the per-turn memory check.
     memoryGuide: true,

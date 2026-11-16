@@ -267,9 +267,11 @@ languages from `src/shared/addedLanguageCopy.ts`.
   component every surface uses) is translated like the Google button, with
   "ChatGPT" verbatim. The spec width is a `min-width` (242px): a longer label
   (ru, pt-BR) widens the button instead of overflowing its 20px gutters.
-- Only zh changes companion behavior (language pin at creation, SenseVoice,
-  zh voices, Draw! and chess character-language paths); the 261104 languages
-  translate the interface only.
+- Companions speak the player's language (261116): `companionLanguage()` in
+  `shared/chatLanguage.ts` = own character's pin, else `chat_language` (heard
+  on calls), else the UI language. World characters never take their creator's
+  pin and get `renderAdoptedLanguageNote` so their description's language
+  loses. Only zh still has extra paths (pin at creation, SenseVoice, zh voices).
 - Check layout with any `?dashshot=` harness plus `&lang=<code>`.
 
 ### UI / design system

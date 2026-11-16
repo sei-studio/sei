@@ -33,6 +33,8 @@ import { movedInId, useSeilinkStore } from '../stores/useSeilinkStore';
 import { moveInFailed, needsMoveInSheet } from './moveIn';
 import { introSeen, shouldPlayFirstLink } from './introPref';
 import { liveHintDismissed } from './liveHintPref';
+import { useDataStore } from '../stores/useDataStore';
+import { WORLDLINK_UPLOADED_LOOKS, worldlinkLookBlock } from './uploadedLooks';
 
 export function trackEntry(characterId: string, source: SeilinkEntrySource, action: EntryAction): void {
   try {
@@ -116,9 +118,12 @@ async function moveIn(characterId: string, source: SeilinkEntrySource): Promise<
   const store = useSeilinkStore.getState();
   const living = movedInId(store.status);
   const room = await sei.seilinkRoomGet?.(characterId).catch(() => null);
-  if (needsMoveInSheet({ saved: room?.saved === true, movedInId: living, characterId })) {
+  // 261116: her uploaded look may keep her out (WORLDLINK_UPLOADED_LOOKS, default 'all' = never, no reads).
+  const character = WORLDLINK_UPLOADED_LOOKS === 'all' ? undefined : useDataStore.getState().characters.find((c) => c.id === characterId);
+  const lookBlocked = character ? (await worldlinkLookBlock(character).catch(() => 'none' as const)) !== 'none' : false;
+  if (needsMoveInSheet({ saved: room?.saved === true, movedInId: living, characterId, lookBlocked })) {
     trackEntry(characterId, source, 'sheet');
-    store.openFlow({ kind: 'sheet', characterId, reason: room?.saved === true ? 'swap' : 'first_room', entry: source });
+    store.openFlow({ kind: 'sheet', characterId, reason: lookBlocked ? 'look' : room?.saved === true ? 'swap' : 'first_room', entry: source });
     return;
   }
   trackEntry(characterId, source, 'move_in');

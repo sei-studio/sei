@@ -8,9 +8,9 @@
  *
  * This is the APP UI language (`UserConfig.ui_language`), not the language a
  * companion talks in (`chat_language` / `metadata.language`, see
- * chatLanguage.ts). Only zh changes companion-side behavior today (character
- * language pin at creation, SenseVoice STT, the zh voice pack); the other
- * added languages translate the interface only.
+ * chatLanguage.ts). Since 261116 the UI language is also the fallback a
+ * companion talks in when the player has no chat_language (userChatLanguage);
+ * zh alone keeps extra paths (pin at creation, SenseVoice STT, zh voices).
  */
 
 export const UI_LANGUAGES = ['en', 'zh', 'ja', 'ru', 'pt-BR', 'es', 'it'] as const;

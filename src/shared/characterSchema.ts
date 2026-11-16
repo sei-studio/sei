@@ -608,7 +608,7 @@ export const UserConfigSchema = z.object({
    * CHAT_LANGUAGES (src/shared/chatLanguage.ts) and CHAT_LANGUAGE_NAMES
    * (src/bot/brain/promptLibrary.js — the bot can't import this module).
    */
-  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
+  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).optional(),
   /**
    * 260730: APP UI language (the list is UI_LANGUAGES in uiLanguage.ts;
    * 261104 added ja, ru, pt-BR and es, which translate the interface only).

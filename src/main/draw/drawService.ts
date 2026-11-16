@@ -95,7 +95,8 @@ import { splitReply } from '../chat/chatService';
 import { plainLine } from '../chat/plainLine';
 import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
-import { characterLanguage, surfaceLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import { type ChatLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { pickWords } from './wordBank';
 import { findWordMatch, matchesWord, saysWord } from './guessMatch';
 import { guessGate } from './guessSchedule';
@@ -633,7 +634,8 @@ async function newSession(
     aiName: character?.name ?? 'Companion',
     // 260730: the game runs in the character's language (word bank + the
     // language directive buildSystemBlocks already gets). null = English.
-    language: characterLanguage(character?.metadata) ?? null,
+    // 261116: the same language her prompts use (companionLanguage).
+    language: character ? companionLanguageFor(character, config).language : null,
     intro,
     firstDrawer: intro ? 'ai' : 'player',
     pickShownAt: 0,
@@ -2241,7 +2243,11 @@ async function prepareCall(s: Session): Promise<{
     inGame: false,
     voiceCall: false,
     // 260730: character-pinned language wins over the auto-detected one.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    ...(() => {
+      // 261116: the player's language by default (companionLanguage).
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // Session-pinned clock: keeps the system prefix (and the cached drawing
     // thread below it) from re-billing on every minute rollover.
     pinnedClock: s.clock,

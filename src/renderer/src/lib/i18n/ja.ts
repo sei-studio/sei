@@ -2298,6 +2298,8 @@ export const JA: Record<string, string> = {
   "{name} lives on your wallpaper, behind your windows and icons.": "{name}は壁紙の上、ウィンドウやアイコンの後ろで暮らします。",
   "The room pauses while windows cover it.": "ウィンドウで隠れている間、部屋は一時停止します。",
   "{other} moves out first. One companion lives on the desktop at a time.": "先に{other}が引っ越します。デスクトップに住めるのは一度に一人だけです。",
+  "WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.": "WorldLinkはまだこの画像から{name}を切り抜けません。背景が無地の画像なら使えます。",
+  "For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.": "今のところWorldLinkはSeiで作った見た目にだけ対応しています。{name}の画像はアップロードされたものです。",
   "Moving in": "引っ越し中",
   "Move in": "引っ越す",
   "Could not move in. Try again.": "引っ越せませんでした。もう一度お試しください。",
