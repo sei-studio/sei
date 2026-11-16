@@ -550,6 +550,54 @@ export function roomViewport(canvas: readonly [number, number], w: number, h: nu
   return { scale, left: (w - width) / 2, top: (h - height) / 2, width, height };
 }
 
+/**
+ * 261116 (product call 261116: "she is too small"): the desktop stage. The
+ * wallpaper is not a picture of the whole room any more; it is framed on HER.
+ * The room is scaled so her slot is `height` of the screen tall (her figure
+ * then fills about two thirds of it), with the room's floor line on the
+ * bottom edge and the room centred on her seat, clamped so the room still
+ * covers the screen. Furniture, floor and wall areas are all canvas px, so a
+ * uniform scale keeps every placement where the editor put it; only the crop
+ * changes (the room's far left and right edges and its ceiling fall outside).
+ *
+ *  - The scale is never below `cover` (no bars on a common screen).
+ *  - A very wide screen (wider than about 2.1:1 at the defaults) needs a
+ *    bigger scale to cover; she grows with it up to `maxHeight` of the
+ *    screen, so her head never reaches the menu bar. Wider still, the room
+ *    stops covering and the sides show the page background.
+ */
+export interface StageOptions {
+  /** Her slot height as a fraction of the screen height (her figure is about this tall). */
+  height: number;
+  /** Never taller than this fraction, whatever it takes to cover. */
+  maxHeight: number;
+}
+
+export const DESKTOP_STAGE: StageOptions = { height: 0.7, maxHeight: 0.8 };
+
+export function stageViewport(
+  canvas: readonly [number, number],
+  avatar: { x: number; y: number; height: number },
+  w: number,
+  h: number,
+  opts: StageOptions = DESKTOP_STAGE,
+): RoomViewport {
+  const [cw, ch] = canvas;
+  if (!(w > 0 && h > 0 && cw > 0 && ch > 0 && avatar.height > 0)) return roomViewport(canvas, w, h, 'cover');
+  const cover = Math.max(w / cw, h / ch);
+  const want = (opts.height * h) / avatar.height;
+  const cap = (Math.max(opts.height, opts.maxHeight) * h) / avatar.height;
+  const scale = Math.min(Math.max(want, cover), Math.max(cap, want));
+  const width = cw * scale;
+  const height = ch * scale;
+  // Her floor line on the bottom edge; the room's own bottom below it is cropped.
+  const top = Math.min(0, h - avatar.y * scale);
+  let left: number;
+  if (width <= w) left = (w - width) / 2;
+  else left = Math.min(0, Math.max(w - width, w / 2 - avatar.x * scale));
+  return { scale, left, top, width, height };
+}
+
 /** A box point (CSS px, e.g. a pointer) to canvas px. */
 export function viewportToCanvas(vp: RoomViewport, x: number, y: number): [number, number] {
   return vp.scale > 0 ? [(x - vp.left) / vp.scale, (y - vp.top) / vp.scale] : [0, 0];

@@ -33,7 +33,7 @@
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { resolveRoomTime, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
-import { roomTimeMix, roomViewport, type RoomFit, type RoomOverlay, type RoomTimeMix, type RoomViewport } from '@shared/seilinkDraw';
+import { roomTimeMix, roomViewport, stageViewport, type RoomFit, type StageOptions, type RoomOverlay, type RoomTimeMix, type RoomViewport } from '@shared/seilinkDraw';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomRenderer } from '../../lib/seilink/roomRenderer';
 import { PLAIN_COLOURS, plainOverlay, usePlainTone } from '../../lib/seilink/plainTone';
@@ -86,6 +86,12 @@ export interface RoomCanvasProps {
    * the wallpaper under it.
    */
   frame?: { x: number; y: number; width: number; height: number } | null;
+  /**
+   * 261116: frame the room on her (the desktop wallpaper): her slot is
+   * `stage.height` of the box tall, her floor line on the bottom edge
+   * (stageViewport in seilinkDraw.ts). Wins over `fit`.
+   */
+  stage?: StageOptions | null;
 }
 
 /** How often 'auto' time re-reads the clock. A clock fade lasts 30 minutes, so this is smooth. */
@@ -153,12 +159,14 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
 
   const { frame } = props;
   const fx = frame && frame.width > 0 && frame.height > 0 ? frame : null;
+  const stage = props.stage ?? null;
   const vp = useMemo(() => {
-    if (!fx || !box.w || !box.h) return roomViewport(manifest.canvas, box.w, box.h, fit);
-    const v = roomViewport(manifest.canvas, fx.width, fx.height, fit);
+    const view = (w: number, h: number): RoomViewport => (stage ? stageViewport(manifest.canvas, manifest.avatar, w, h, stage) : roomViewport(manifest.canvas, w, h, fit));
+    if (!fx || !box.w || !box.h) return view(box.w, box.h);
+    const v = view(fx.width, fx.height);
     return { ...v, left: v.left + fx.x, top: v.top + fx.y };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manifest.canvas, box.w, box.h, fit, fx?.x, fx?.y, fx?.width, fx?.height]);
+  }, [manifest.canvas, manifest.avatar, box.w, box.h, fit, fx?.x, fx?.y, fx?.width, fx?.height, stage?.height, stage?.maxHeight]);
 
   useEffect(() => {
     cb.current.onLayout?.(vp);

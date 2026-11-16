@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultRoomState, describeRoom, type RoomPresetManifest } from './seilinkRoom';
-import { glowAlpha, itemRect, planFiles, roomDrawPlan, roomOverlay, roomTimeMix, roomTimeMixAt, roomViewport, splitAtAvatar, viewportToCanvas } from './seilinkDraw';
+import { glowAlpha, itemRect, planFiles, roomDrawPlan, roomOverlay, roomTimeMix, roomTimeMixAt, roomViewport, splitAtAvatar, stageViewport, viewportToCanvas } from './seilinkDraw';
 import { isSafeRoomPackPath, parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
 
 const manifest: RoomPresetManifest = {
@@ -178,5 +178,46 @@ describe('glowAlpha', () => {
         expect(a).toBeLessThanOrEqual(1);
       }
     }
+  });
+});
+
+describe('stageViewport (261116)', () => {
+  const canvas = [2560, 1440] as const;
+  const seat = { x: 1300, y: 1440, height: 720 };
+  const herFraction = (vp: ReturnType<typeof stageViewport>, h: number): number => (seat.height * vp.scale) / h;
+  const covers = (vp: ReturnType<typeof stageViewport>, w: number, h: number): boolean =>
+    vp.left <= 1e-6 && vp.top <= 1e-6 && vp.left + vp.width >= w - 1e-6 && vp.top + vp.height >= h - 1e-6;
+
+  it.each([
+    ['16:9', 1920, 1080],
+    ['16:10 Mac', 1440, 900],
+    ['3:2', 1500, 1000],
+    ['4:3', 1024, 768],
+    ['21:9', 2560, 1080],
+  ])('frames her about 0.7 of a %s screen, floor line on the bottom edge, covering', (_n, w, h) => {
+    const vp = stageViewport(canvas, seat, w, h);
+    expect(covers(vp, w, h)).toBe(true);
+    expect(herFraction(vp, h)).toBeGreaterThanOrEqual(0.7 - 1e-9);
+    expect(herFraction(vp, h)).toBeLessThanOrEqual(0.8 + 1e-9);
+    // Her floor line (the seat's y) sits on the bottom edge.
+    expect(seat.y * vp.scale + vp.top).toBeCloseTo(h, 6);
+  });
+
+  it('centres her seat when the room is wide enough, else clamps to the room edge', () => {
+    const vp = stageViewport(canvas, seat, 1920, 1080);
+    expect(seat.x * vp.scale + vp.left).toBeCloseTo(960, 6);
+    const edge = stageViewport(canvas, { ...seat, x: 200 }, 1920, 1080);
+    expect(edge.left).toBe(0);
+  });
+
+  it('caps her height on a very wide screen and letterboxes the sides', () => {
+    const vp = stageViewport(canvas, seat, 5120, 1440);
+    expect(herFraction(vp, 1440)).toBeCloseTo(0.8, 6);
+    expect(vp.width).toBeLessThan(5120);
+    expect(vp.left).toBeCloseTo((5120 - vp.width) / 2, 6);
+  });
+
+  it('is the cover viewport for an empty box', () => {
+    expect(stageViewport(canvas, seat, 0, 0).scale).toBe(0);
   });
 });
