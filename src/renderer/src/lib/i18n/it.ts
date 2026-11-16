@@ -834,6 +834,8 @@ export const IT: Record<string, string> = {
   "Start fresh": "Ricomincia da zero",
   "Bring it over": "Trasferisci",
   "Not everything came over. Try again, or later from Settings.": "Non tutto è stato trasferito. Riprova ora o più tardi dalle Impostazioni.",
+  "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "Il tuo gruppo è al completo, quindi i personaggi di questo computer sono rimasti qui. Libera un posto, poi trasferiscili dalle Impostazioni.",
+  "Your party is full. Free a slot to bring them over.": "Il tuo gruppo è al completo. Libera un posto per trasferirli.",
   "{name}'s knowledge": "Conoscenze di {name}",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "Qui puoi aggiungere manualmente informazioni per l’IA. L’IA dispone anche di una memoria interna separata.",
   "No knowledge yet. Upload files or add text context.": "Nessuna conoscenza ancora. Carica file oppure aggiungi un contesto testuale.",

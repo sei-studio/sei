@@ -244,6 +244,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Start fresh': '重新开始',
   'Bring it over': '带过来',
   'Not everything came over. Try again, or later from Settings.': '没能全部带过来。可以再试一次，或稍后在设置里操作。',
+  'Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.': '你的队伍已满，这台电脑上的伙伴先留在这里。空出一个位置后，再到设置里把它们带过来。',
+  'Your party is full. Free a slot to bring them over.': '你的队伍已满。空出一个位置后才能带过来。',
 
   // ── KnowledgeModal / CompactKnowledgeModal ──
   "{name}'s knowledge": '{name} 的知识',

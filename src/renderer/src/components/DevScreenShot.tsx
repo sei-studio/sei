@@ -79,6 +79,10 @@ import { CharactersScreen } from '../screens/CharactersScreen';
 import { CharacterPage } from '../screens/CharacterPage';
 import { ChatScreen } from '../screens/ChatScreen';
 import { VoiceCallScreen } from '../screens/VoiceCallScreen';
+import { AwakenScreen } from '../screens/AwakenScreen';
+import { Banner } from './Banner';
+import { useT } from '../lib/i18n';
+import { PARTY_FULL_LINE } from './ImportLocalProfileModal';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
@@ -91,7 +95,7 @@ const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
 const MARV = 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e06';
 const PEBBLE = '6d0a3f0e-58a4-4d43-9a43-6c1f0d2b7e11';
 
-type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit';
+type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit' | 'awaken';
 
 const params = new URLSearchParams(window.location.search);
 const screen = (params.get('screen') ?? 'home') as Screen;
@@ -268,6 +272,25 @@ function seed(): void {
       { id: 'k2', title: 'Farm plan.md', bytes: 3100, added: new Date(now - 3 * 24 * HOUR).toISOString(), source: 'upload' },
     ],
     seilinkRoomGet: async () => ({ saved: true, state: { preset: 'cozy' } }),
+    // &localimport=ready|full (261116): Settings, Account's "Companions from
+    // before you signed in" row, with room in the party or with it full.
+    ...(params.get('localimport')
+      ? {
+          profilePeekLocal: async () => ({
+            migratableCharacterIds: ['5f0c0c4e-0000-4000-8000-00000000aa01', '5f0c0c4e-0000-4000-8000-00000000aa02'],
+            memoryOnlyCharacterIds: [],
+            mcUsername: null,
+            preferredName: null,
+            hasData: true,
+            hasCompanionData: true,
+            untouchedSeedIds: [],
+            party:
+              params.get('localimport') === 'full'
+                ? { count: 3, incoming: 2, limit: 4, fits: false }
+                : { count: 1, incoming: 2, limit: 4, fits: true },
+          }),
+        }
+      : {}),
   });
   useDataStore.setState({
     characters: CHARACTERS as unknown as ReturnType<typeof useDataStore.getState>['characters'],
@@ -311,6 +334,7 @@ function seed(): void {
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
+  if (screen === 'awaken') nav({ kind: 'awaken' });
   if (tourShot) {
     nav({ kind: 'home' });
     useTutorialStore.getState().startSeilink(SUI, params.get('audience') === 'new' ? 'new' : 'existing', 1);
@@ -320,6 +344,11 @@ function seed(): void {
 seed();
 
 const noop = (): void => undefined;
+
+function PartyFullLine(): React.ReactElement {
+  const t = useT();
+  return <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={noop} />;
+}
 
 /** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
 function MoveInShot(): React.ReactElement {
@@ -378,6 +407,8 @@ export function DevScreenShot(): React.ReactElement {
         return <VoiceCallScreen characterId={SUI} />;
       case 'settings':
         return <SettingsScreen />;
+      case 'awaken':
+        return <AwakenScreen />;
       default:
         return <CharactersScreen />;
     }
@@ -387,6 +418,8 @@ export function DevScreenShot(): React.ReactElement {
     <div style={{ position: 'fixed', inset: 0, display: 'flex' }}>
       <MacosWindow railHidden={false}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+          {/* &partyfull=1 (261116): App's own-key import line, party full. */}
+          {params.get('partyfull') === '1' ? <PartyFullLine /> : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <IconRail />
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>

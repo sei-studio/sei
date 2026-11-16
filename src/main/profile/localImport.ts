@@ -43,7 +43,14 @@
 import { access, mkdir, rename, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { profileRootFor, getActiveScope, SCOPE_LOCAL } from '../paths';
-import { CharacterSchema, UserConfigSchema, type Character } from '../../shared/characterSchema';
+import {
+  CharacterSchema,
+  MAX_COMPANION_SLOTS,
+  UserConfigSchema,
+  countsAsHomeSlot,
+  type Character,
+} from '../../shared/characterSchema';
+import type { LocalImportPartyFit } from '../../shared/ipc';
 import { mergeKnowledgeDir, mergeMemoryDir, dirHasFiles } from './memoryMerge';
 import { DEFAULT_CHARACTER_UUIDS } from '../defaultCharacters';
 import { atomicWrite } from '../../bot/brain/storage/atomicWrite.js';
@@ -253,6 +260,55 @@ export interface ImportLocalResult {
   failed: string[];
   /** Whether mc_username / preferred_name were copied into the account profile. */
   copiedOnboarding: boolean;
+  /** 'party_full' = nothing was imported: the companions would not fit the party (261116). */
+  skipped?: 'party_full';
+}
+
+/**
+ * Whether the local roster fits the account's party (261116). Pure, for the
+ * import guard and the peek.
+ *
+ * Importing used to ignore the party limit: two local companions into an
+ * account with three filled the party past MAX_COMPANION_SLOTS, and the Home
+ * wall (four panels) and the rail (then also capped) hid the extras. Now an
+ * import that would overflow imports nothing (the player frees a slot, then
+ * imports from Settings). A local companion the account's party already
+ * holds (same id) takes no new slot.
+ */
+export function partyFitFor(
+  accountCharacters: Pick<Character, 'id' | 'is_default' | 'owner'>[],
+  accountConfig: { added_default_ids?: string[] | null; added_world_ids?: string[] | null },
+  accountId: string,
+  localRosterIds: readonly string[],
+): LocalImportPartyFit {
+  const addedDefaultIds = new Set(accountConfig.added_default_ids ?? []);
+  const addedWorldIds = new Set(accountConfig.added_world_ids ?? []);
+  const party = new Set(
+    accountCharacters
+      .filter((c) => countsAsHomeSlot(c, { currentUserId: accountId, addedDefaultIds, addedWorldIds }))
+      .map((c) => c.id),
+  );
+  const incoming = new Set(localRosterIds.filter((id) => !party.has(id))).size;
+  return {
+    count: party.size,
+    incoming,
+    limit: MAX_COMPANION_SLOTS,
+    fits: incoming === 0 || party.size + incoming <= MAX_COMPANION_SLOTS,
+  };
+}
+
+/**
+ * The party fit of importing `localRosterIds` into the ACTIVE account scope
+ * (`accountId` must be it): its characters and roster as they are now.
+ */
+export async function localImportPartyFit(
+  accountId: string,
+  localRosterIds: readonly string[],
+): Promise<LocalImportPartyFit> {
+  const { listCharacters } = await import('../characterStore');
+  const { loadConfig } = await import('../configStore');
+  const [chars, cfg] = await Promise.all([listCharacters(), loadConfig()]);
+  return partyFitFor(chars, cfg, accountId, localRosterIds);
 }
 
 /**
@@ -284,6 +340,17 @@ export async function importLocalProfileInto(
   const roster = new Set(peek.migratableCharacterIds);
   const candidates = [...peek.migratableCharacterIds, ...peek.memoryOnlyCharacterIds];
   const ids = opts?.characterIds ? candidates.filter((id) => opts.characterIds!.includes(id)) : candidates;
+  // 261116: the companions must fit the account's party, or nothing comes
+  // across (the local profile is left exactly as it is, for a later import
+  // from Settings once a slot is free). The renderer checks first (the
+  // peek's `party`); this is the backstop for every entry point.
+  const fit = await localImportPartyFit(targetScope, ids.filter((id) => roster.has(id)));
+  if (!fit.fits) {
+    logger.info(
+      `skipped: ${fit.incoming} companion(s) would not fit the party (${fit.count}/${fit.limit}) of ${targetScope}`,
+    );
+    return { imported: [], failed: [], copiedOnboarding: false, skipped: 'party_full' };
+  }
 
   const imported: string[] = [];
   const failed: string[] = [];

@@ -4126,8 +4126,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // 260603 per-profile partitioning — anonymous(local)→account on-device import.
   ipcMain.handle(IpcChannel.profile.peekLocal, async () => {
-    const { peekLocalProfile } = await import('./profile/localImport');
-    return peekLocalProfile();
+    const { peekLocalProfile, localImportPartyFit } = await import('./profile/localImport');
+    const peek = await peekLocalProfile();
+    // 261116: signed in, also say whether the roster fits the account's party.
+    const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
+    const scope = getActiveScope();
+    if (scope === SCOPE_LOCAL) return peek;
+    try {
+      return { ...peek, party: await localImportPartyFit(scope, peek.migratableCharacterIds) };
+    } catch (err) {
+      // Unknown: the import itself still checks before it writes anything.
+      console.warn(`[sei] profile.peekLocal party fit failed: ${(err as Error).message}`);
+      return peek;
+    }
   });
 
   ipcMain.handle(IpcChannel.profile.importFromLocal, async (_event, idsArg: unknown) => {
