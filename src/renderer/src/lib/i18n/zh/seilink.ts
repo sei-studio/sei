@@ -108,6 +108,8 @@ export const ZH_SEILINK: Record<string, string> = {
   "{name} lives on your wallpaper, behind your windows and icons.": "{name} 住在你的壁纸上，在窗口和图标后面。",
   "The room pauses while windows cover it.": "窗口挡住房间时，房间会暂停。",
   "{other} moves out first. One companion lives on the desktop at a time.": "{other} 会先搬走。桌面上一次只住一位伙伴。",
+  "WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.": "WorldLink 暂时无法从这张图片中抠出{name}。背景为纯色的图片可以使用。",
+  "For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.": "WorldLink 目前只支持在 Sei 中生成的形象，{name} 的图片是上传的。",
   "Moving in": "正在搬入",
   "Move in": "搬进来",
   "Could not move in. Try again.": "没能搬进来，请再试一次。",

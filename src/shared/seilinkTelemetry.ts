@@ -85,10 +85,16 @@ export type EditorOutcome = (typeof EDITOR_OUTCOMES)[number];
 
 export const MOVEIN_ACTIONS = ['shown', 'confirmed', 'dismissed', 'failed'] as const;
 export type MoveInAction = (typeof MOVEIN_ACTIONS)[number];
-export const MOVEIN_REASONS = ['first_room', 'swap', 'retry'] as const;
+// 261116: 'look' = WORLDLINK_UPLOADED_LOOKS kept her out (lib/seilink/uploadedLooks.ts).
+export const MOVEIN_REASONS = ['first_room', 'swap', 'retry', 'look'] as const;
 export const MOVEIN_FAILS = ['start_failed', 'save_failed', 'unsupported', 'error'] as const;
 export type MoveInReason = (typeof MOVEIN_REASONS)[number];
 export type MoveInFail = (typeof MOVEIN_FAILS)[number];
+/** 261116: why her look kept her out of WorldLink (the sheet's one line, Move in off). */
+export const MOVEIN_LOOK_BLOCKS = ['busy_background', 'uploaded'] as const;
+export type MoveInLookBlock = (typeof MOVEIN_LOOK_BLOCKS)[number];
+/** 261116: where her card picture came from (shared/characterSchema.ts cardImageOrigin). */
+export const MOVEIN_LOOK_ORIGINS = ['generated', 'uploaded', 'none'] as const;
 
 const PRESETS = ROOM_PRESET_IDS;
 
@@ -487,6 +493,12 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   if (entry) out.entry = entry;
   // 261110: which notice the sheet showed (the one-line beta notice replaced the bulleted one).
   if (p.notice === 'beta_v1') out.notice = 'beta_v1';
+  // 261116: her picture's origin (how many uploaded looks move in) and, when
+  // WORLDLINK_UPLOADED_LOOKS kept her out, why.
+  const origin = oneOf(MOVEIN_LOOK_ORIGINS, p.look_origin);
+  if (origin) out.look_origin = origin;
+  const blocked = oneOf(MOVEIN_LOOK_BLOCKS, p.look_blocked);
+  if (blocked) out.look_blocked = blocked;
   return out;
 }
 

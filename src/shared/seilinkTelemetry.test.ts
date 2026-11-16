@@ -283,6 +283,17 @@ describe('261106 first-link flow fields', () => {
     expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', reason: 'first_room', plain_room: 1 })).not.toHaveProperty('plain_room');
   });
 
+  it('261116: carries her look origin and the uploaded-look block, closed shapes only', () => {
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'shown', reason: 'look', look_origin: 'uploaded', look_blocked: 'busy_background' })).toMatchObject({
+      reason: 'look',
+      look_origin: 'uploaded',
+      look_blocked: 'busy_background',
+    });
+    const junk = sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'shown', look_origin: 'https://x/y.png', look_blocked: 'yes' });
+    expect(junk).not.toHaveProperty('look_origin');
+    expect(junk).not.toHaveProperty('look_blocked');
+  });
+
   it('setting the plain room up counts as a room change', () => {
     const plain = { ...defaultRoomState('cozy'), plain: true as const };
     expect(classifyEdit(plain, defaultRoomState('cozy'))).toEqual(['preset_change']);

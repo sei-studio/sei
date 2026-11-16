@@ -2296,6 +2296,8 @@ export const PT_BR: Record<string, string> = {
   "{name} lives on your wallpaper, behind your windows and icons.": "{name} mora no seu papel de parede, atrás das janelas e dos ícones.",
   "The room pauses while windows cover it.": "O quarto pausa enquanto as janelas o cobrem.",
   "{other} moves out first. One companion lives on the desktop at a time.": "Antes, {other} se muda. Só um companion mora na área de trabalho por vez.",
+  "WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.": "O WorldLink ainda não consegue recortar {name} desta imagem. Imagens com fundo liso funcionam.",
+  "For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.": "Por enquanto o WorldLink só funciona com visuais criados no Sei, e a imagem de {name} foi enviada de fora do Sei.",
   "Moving in": "Mudando",
   "Move in": "Mudar",
   "Could not move in. Try again.": "Não deu para mudar. Tente de novo.",

@@ -2296,6 +2296,8 @@ export const RU: Record<string, string> = {
   "{name} lives on your wallpaper, behind your windows and icons.": "{name} живёт на обоях, за окнами и значками.",
   "The room pauses while windows cover it.": "Пока комнату закрывают окна, она на паузе.",
   "{other} moves out first. One companion lives on the desktop at a time.": "Сначала {other} съедет. На рабочем столе живёт только один компаньон.",
+  "WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.": "WorldLink пока не может вырезать {name} из этой картинки. Подойдёт картинка с однотонным фоном.",
+  "For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.": "Пока WorldLink работает только с образами, созданными в Sei, а картинка {name} загружена.",
   "Moving in": "Переезжаем",
   "Move in": "Переселить",
   "Could not move in. Try again.": "Не получилось переселить. Попробуй ещё раз.",

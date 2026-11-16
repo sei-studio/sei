@@ -321,14 +321,19 @@ seed();
 
 const noop = (): void => undefined;
 
-/** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
+/**
+ * The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already).
+ * 261116: &look=busy_background|uploaded = her uploaded look keeps her out (uploadedLooks.ts).
+ */
 function MoveInShot(): React.ReactElement {
+  const look = params.get('look');
   return (
     <MoveInSheetView
-      name="Sui"
+      name={params.get('name') ?? 'Sui'}
       otherName={params.get('swap') === '1' ? 'Lyra' : null}
       firstRoom={params.get('saved') !== '1'}
       busy={false}
+      lookBlocked={look === 'busy_background' || look === 'uploaded' ? look : null}
       error={null}
       onCancel={noop}
       onConfirm={noop}

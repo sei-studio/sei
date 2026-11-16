@@ -348,6 +348,30 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   quiet "Preparing {name}'s look…" line in the move-in sheet and the
   editor's avatar panel. Account switch: `anima.reset()` stops every poll.
 
+### Uploaded pictures (261116, product call 261116)
+
+With no imported avatar and no face set (the anima bake can refuse a
+picture: Aria #M5IR came back `no_pack`), WorldLink draws her card picture
+through `lib/seilink/portraitCutout.ts`. `keyAlpha` gives a clean figure
+when the background is flat (one colour round the top and sides), already
+transparent (its own alpha is used as is, `alphaOnly`), or a flat backdrop
+inside a thin frame (the frame is peeled first). Anything else (a painted
+room, a photo) falls to the vignette: an oval fade with her backdrop still in
+it, the "failed terribly" look. 9 of 22 public uploaded pictures keyed and
+13 fell to the vignette on 261116; the frame peel took one more (E2LS).
+`RoomAvatar` exposes the result as `data-cutout`, and
+`seilink-host-shots.mjs --portraits <dir>` shoots a whole folder of them.
+
+`WORLDLINK_UPLOADED_LOOKS` (`lib/seilink/uploadedLooks.ts`, default `'all'`)
+limits who moves in: `'clean_cutout'` keeps out an uploaded picture (card
+image origin `uploaded`, no avatar, no face set) that would fall to the
+vignette, `'sei_looks'` keeps out every such uploaded picture. A kept-out
+companion always gets the move-in sheet (`needsMoveInSheet` `lookBlocked`,
+reason `look`) with one line saying why and Move in off; the sheet event
+carries `look_origin` always and `look_blocked` when kept out. Built-ins and
+Sei-generated art are never limited. A real matte for busy backgrounds needs
+a segmentation model (not shipped).
+
 ## On/off, persistence, account switch
 
 - Start, stop, restore, the account-switch stop and the removal cleanup run

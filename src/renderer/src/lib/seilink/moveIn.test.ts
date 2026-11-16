@@ -10,6 +10,11 @@ describe('seilink move-in (M4)', () => {
     expect(needsMoveInSheet({ saved: true, movedInId: 'a', characterId: 'a' })).toBe(false);
   });
 
+  it('261116: shows the sheet when her uploaded look keeps her out, even for a plain return', () => {
+    expect(needsMoveInSheet({ saved: true, movedInId: null, characterId: 'a', lookBlocked: true })).toBe(true);
+    expect(needsMoveInSheet({ saved: true, movedInId: null, characterId: 'a', lookBlocked: false })).toBe(false);
+  });
+
   it('treats failed, unsupported and off as a start that did not take', () => {
     expect(moveInFailed({ ...SEILINK_HOST_OFF })).toBe(true);
     expect(moveInFailed({ ...SEILINK_HOST_OFF, state: 'unsupported' })).toBe(true);
