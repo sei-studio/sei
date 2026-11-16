@@ -317,6 +317,14 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         const mainShown = !!opts.getMainWindow()?.isVisible();
         const singleAfterDbl = events.find((e) => e.t >= t && e.m.type === 'click' && (e.m as { kind?: string }).kind === 'click');
         hideMain();
+        // macOS: Sei's window was over her (box-occluded, her hit panel off) until the host sees it
+        // gone, about a second later; the dock step presses only once she is visible again.
+        const lastActivity = [...events].reverse().find((e) => e.m.type === 'activity')?.m as { covered?: boolean } | undefined;
+        if (lastActivity?.covered) {
+          const tHide = Date.now();
+          await waitFor(since(tHide, 'activity', (m) => m.covered === false), 6000);
+          await sleep(300);
+        }
         checks.click = {
           ok: !!clicked && !mainAfterClick && mainShown && !stray && !insideHer && !!dbl && !singleAfterDbl,
           ms: timings.clickMs,
