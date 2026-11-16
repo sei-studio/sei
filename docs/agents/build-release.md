@@ -21,6 +21,20 @@ Packaging is **electron-builder** (`electron-builder.yml`):
 - `asar: true`, with `asarUnpack` for **`src/bot/**`**, **`node_modules/**`**
   (so the forked bot can resolve its native + ESM deps from outside the asar),
   and **`resources/skins/**`**.
+- **Unbundled code must link under plain Node ESM (261116).** `src/bot/**`
+  and the vendored `file:` deps (soulcaster, img2skin, cce-1) are never
+  bundled, so a named import the target does not export is a link-time
+  SyntaxError that kills the process at load. Vitest does not see it (a
+  missing export is just `undefined` there): v0.7.0-beta.5 shipped a bot that
+  never loaded because `orchestrator.js` imported a name the `prompts.js`
+  barrel did not re-export. `npm run check:esm`
+  (`scripts/check-esm-links.mjs`, logic in `scripts/lib/esmLinkCheck.mjs`)
+  checks it statically: Node resolution (exact relative files, package
+  `exports`), named imports through `export *` chains, JSON import
+  attributes, imports leaving the shipped tree, `"type": "module"`. It runs
+  in `npm test` (its own test), in ci.yml, and right after `npm ci` in
+  release.yml. Named imports from CommonJS packages are not checked. A new
+  unbundled runtime directory belongs in `DEFAULT_ROOTS`.
 - **macOS:** per-arch (`arm64`/`x64`) `dmg` + `zip`, `hardenedRuntime` +
   notarization (Apple Team ID from the `APPLE_TEAM_ID` env var). The `zip` is
   what electron-updater installs from; the `dmg` is manual download only.

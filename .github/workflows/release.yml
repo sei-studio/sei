@@ -52,6 +52,12 @@ jobs:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
 
+      # 261116: fail in seconds, not after a 45-minute signed build, when the
+      # unbundled bot (src/bot/**) or a vendored file: dep has an import plain
+      # Node ESM rejects at link time (v0.7.0-beta.5: the bot never loaded).
+      - name: ESM link check (unbundled runtime code)
+        run: npm run check:esm
+
       # 261104 SeiLink desktop host addon (native/seilink): mac universal, win x64,
       # into resources/seilink (electron-builder extraResources). predist runs the
       # same script again and finds it up to date. Not fatal while SeiLink is behind
