@@ -66,6 +66,8 @@ export interface HostAvatarStores {
   facepackFilePath(packId: string, rel: string): Promise<string | null>;
   /** What her RoomAvatar shows on the desktop (analytics). */
   noteShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261118: her cloud cut-out PNG on disk, or null (none, or not of her current picture). */
+  animaCutoutFile?(characterId: string): Promise<{ sha256: string; path: string } | null>;
 }
 
 /**
@@ -99,6 +101,11 @@ export async function answerHostAvatarCall(
     case 'avatarShown':
       if (a === characterId && isAnimaShownKind(b)) stores.noteShown?.(characterId, b);
       return null;
+    case 'animaCutout': {
+      if (a !== characterId) return null;
+      const found = (await stores.animaCutoutFile?.(characterId)) ?? null;
+      return found ? { file: found.path, sha256: found.sha256 } : null;
+    }
   }
   return null;
 }

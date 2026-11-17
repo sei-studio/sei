@@ -2,13 +2,22 @@
  * Anima pack store (261105): downloaded face sets on disk.
  *
  *   <root>/packs/<an-id>/facepack.json + frames   (an extracted pack.zip)
+ *   <root>/cutouts/<sha256>.png                    a cloud cut-out (261118)
  *   <root>/index.json                              which character uses which pack
+ *                                                  (`characters`) or cut-out (`cutouts`)
  *
  * The root is paths.animaDir() in the app (device-global). A pack is
  * installed from the archive the proxy signed for us: its sha256 must match
  * what the proxy said, every entry must be a safe pack path, and the result
  * must hold a readable sei-facepack v1 manifest. Extraction goes to a temp
  * dir that is renamed into place, so a half-written pack is never visible.
+ *
+ * Cut-outs (261118): a portrait with no face to animate gets a clean cut-out
+ * of its figure from the cloud instead of a pack (proxy no_pack + `cutout`).
+ * It is one PNG, checked against its sha256 and the PNG signature, written to
+ * a temp file and renamed. Its index map is separate (`cutouts`), so a build
+ * that only knows `characters` never mistakes it for a pack; such a build
+ * rewrites index.json without it, which only costs a re-download.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -23,6 +32,10 @@ export const ANIMA_FILE_MAX_BYTES = 16 * 1024 * 1024;
 /** A whole extracted pack (a THA3 pack is ~12 MB). */
 export const ANIMA_PACK_MAX_BYTES = 80 * 1024 * 1024;
 export const ANIMA_PACK_MAX_FILES = 4000;
+/** One cut-out PNG (the cloud trims it to 1280 px: ~1-3 MB). */
+export const ANIMA_CUTOUT_MAX_BYTES = 16 * 1024 * 1024;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const CUTOUT_FILE_RE = /^[0-9a-f]{64}\.png$/;
 
 export interface AnimaIndexEntry {
   /** sha256 of the pack.zip it came from (the pack id is derived from it). */
@@ -35,13 +48,25 @@ export interface AnimaIndexEntry {
   checked_at: number;
 }
 
+/** A cloud cut-out in use (261118). */
+export interface AnimaCutoutEntry {
+  /** sha256 of the PNG; the file is cutouts/<sha256>.png. */
+  sha256: string;
+  portrait_hash: string | null;
+  /** Her portrait ref when it was fetched: a cut-out of another picture is never shown. */
+  portrait_ref: string | null;
+  checked_at: number;
+}
+
 interface AnimaIndex {
   version: 1;
   characters: Record<string, AnimaIndexEntry>;
+  /** 261118. Absent in index files written before (or by builds without cut-outs). */
+  cutouts: Record<string, AnimaCutoutEntry>;
 }
 
 export class AnimaPackError extends Error {
-  constructor(public readonly code: 'hash_mismatch' | 'bad_archive' | 'bad_entry' | 'too_big' | 'no_manifest') {
+  constructor(public readonly code: 'hash_mismatch' | 'bad_archive' | 'bad_entry' | 'too_big' | 'no_manifest' | 'bad_image') {
     super(code);
     this.name = 'AnimaPackError';
   }
@@ -52,6 +77,10 @@ const CHAR_ID_RE = /^[0-9a-z_-]{1,64}$/i;
 
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
+}
+
+export function isPng(bytes: Uint8Array): boolean {
+  return bytes.byteLength > PNG_SIGNATURE.length && PNG_SIGNATURE.every((b, i) => bytes[i] === b);
 }
 
 export function isFacepackManifest(m: unknown): m is FacepackManifest {
@@ -73,13 +102,21 @@ export class AnimaPackStore {
     return isAnimaPackId(id) ? path.join(this.packsDir(), id) : null;
   }
 
+  cutoutsDir(): string {
+    return path.join(this.root(), 'cutouts');
+  }
+
+  cutoutPath(sha: string): string | null {
+    return SHA_RE.test(sha) ? path.join(this.cutoutsDir(), `${sha}.png`) : null;
+  }
+
   private indexPath(): string {
     return path.join(this.root(), 'index.json');
   }
 
   private async loadIndex(): Promise<AnimaIndex> {
     if (this.index) return this.index;
-    let out: AnimaIndex = { version: 1, characters: {} };
+    let out: AnimaIndex = { version: 1, characters: {}, cutouts: {} };
     try {
       const raw = JSON.parse(await readFile(this.indexPath(), 'utf8')) as Partial<AnimaIndex>;
       if (raw?.version === 1 && raw.characters && typeof raw.characters === 'object') {
@@ -93,9 +130,22 @@ export class AnimaPackStore {
             };
           }
         }
+        const cuts = (raw as { cutouts?: unknown }).cutouts;
+        if (cuts && typeof cuts === 'object') {
+          for (const [id, e] of Object.entries(cuts as Record<string, Partial<AnimaCutoutEntry> | null>)) {
+            if (CHAR_ID_RE.test(id) && e && SHA_RE.test(String(e.sha256))) {
+              out.cutouts[id] = {
+                sha256: String(e.sha256),
+                portrait_hash: typeof e.portrait_hash === 'string' ? e.portrait_hash : null,
+                portrait_ref: typeof e.portrait_ref === 'string' ? e.portrait_ref : null,
+                checked_at: Number(e.checked_at) || 0,
+              };
+            }
+          }
+        }
       }
     } catch {
-      out = { version: 1, characters: {} };
+      out = { version: 1, characters: {}, cutouts: {} };
     }
     this.index = out;
     return out;
@@ -125,6 +175,55 @@ export class AnimaPackStore {
     if (e) idx.characters[characterId] = e;
     else delete idx.characters[characterId];
     await this.saveIndex();
+  }
+
+  async cutoutEntry(characterId: string): Promise<AnimaCutoutEntry | null> {
+    return (await this.loadIndex()).cutouts[characterId] ?? null;
+  }
+
+  async setCutoutEntry(characterId: string, e: AnimaCutoutEntry | null): Promise<void> {
+    if (!CHAR_ID_RE.test(characterId)) return;
+    const idx = await this.loadIndex();
+    if (e) idx.cutouts[characterId] = e;
+    else if (idx.cutouts[characterId]) delete idx.cutouts[characterId];
+    else return;
+    await this.saveIndex();
+  }
+
+  async hasCutout(sha: string): Promise<boolean> {
+    const file = this.cutoutPath(sha);
+    if (!file) return false;
+    try {
+      return (await stat(file)).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  /** Her cut-out on disk ({sha256, path}), or null (no entry, or the file is gone). */
+  async cutoutFileFor(characterId: string): Promise<{ sha256: string; path: string; entry: AnimaCutoutEntry } | null> {
+    const e = await this.cutoutEntry(characterId);
+    if (!e || !(await this.hasCutout(e.sha256))) return null;
+    return { sha256: e.sha256, path: this.cutoutPath(e.sha256)!, entry: e };
+  }
+
+  /** Store a downloaded cut-out PNG whose sha256 the proxy gave as `sha`. Already there: nothing more. */
+  async installCutout(png: Uint8Array, sha: string): Promise<{ bytes: number }> {
+    if (!SHA_RE.test(sha) || sha256Hex(png) !== sha) throw new AnimaPackError('hash_mismatch');
+    if (png.byteLength > ANIMA_CUTOUT_MAX_BYTES) throw new AnimaPackError('too_big');
+    if (!isPng(png)) throw new AnimaPackError('bad_image');
+    if (await this.hasCutout(sha)) return { bytes: 0 };
+    await mkdir(this.cutoutsDir(), { recursive: true });
+    const file = this.cutoutPath(sha)!;
+    const tmp = path.join(this.cutoutsDir(), `.tmp-${sha.slice(0, 16)}-${randomBytes(4).toString('hex')}`);
+    try {
+      await writeFile(tmp, png);
+      await rename(tmp, file);
+    } catch (err) {
+      await rm(tmp, { force: true }).catch(() => {});
+      if (!(await this.hasCutout(sha))) throw err;
+    }
+    return { bytes: png.byteLength };
   }
 
   /** Her installed pack id, or null (no entry, or the pack dir is gone). */
@@ -228,7 +327,8 @@ export class AnimaPackStore {
 
   /**
    * Remove packs no character points at any more, and (`temps`, only before
-   * any install can be running) leftover temp dirs. Best effort.
+   * any install can be running) leftover temp dirs. Best effort. Cut-outs
+   * nobody points at go the same way.
    */
   async prune(temps = false): Promise<number> {
     const idx = await this.loadIndex();
@@ -237,13 +337,32 @@ export class AnimaPackStore {
     try {
       names = await readdir(this.packsDir());
     } catch {
-      return 0;
+      names = [];
     }
     let removed = 0;
     for (const name of names) {
       if (keep.has(name)) continue;
       if (!ANIMA_PACK_ID_RE.test(name) && !(temps && name.startsWith('.tmp-an-'))) continue;
       await rm(path.join(this.packsDir(), name), { recursive: true, force: true }).catch(() => {});
+      removed++;
+    }
+    return removed + (await this.pruneCutouts(temps));
+  }
+
+  private async pruneCutouts(temps: boolean): Promise<number> {
+    const idx = await this.loadIndex();
+    const keep = new Set(Object.values(idx.cutouts).map((e) => `${e.sha256}.png`));
+    let names: string[] = [];
+    try {
+      names = await readdir(this.cutoutsDir());
+    } catch {
+      return 0;
+    }
+    let removed = 0;
+    for (const name of names) {
+      if (keep.has(name)) continue;
+      if (!CUTOUT_FILE_RE.test(name) && !(temps && name.startsWith('.tmp-'))) continue;
+      await rm(path.join(this.cutoutsDir(), name), { force: true }).catch(() => {});
       removed++;
     }
     return removed;

@@ -43,6 +43,17 @@ describe('avatarShown (261105, analytics)', () => {
   });
 });
 
+describe('animaCutout (261118)', () => {
+  it('names her cloud cut-out file, for her only', async () => {
+    const sha = 'a'.repeat(64);
+    const s: HostAvatarStores = { ...stores, animaCutoutFile: async (id) => (id === 'her' ? { sha256: sha, path: '/anima/cutouts/x.png' } : null) };
+    await expect(answerHostAvatarCall('her', 'animaCutout', ['her'], s)).resolves.toEqual({ file: '/anima/cutouts/x.png', sha256: sha });
+    await expect(answerHostAvatarCall('her', 'animaCutout', ['other'], s)).resolves.toBeNull();
+    // A main without cut-outs wired answers null.
+    await expect(answerHostAvatarCall('her', 'animaCutout', ['her'], stores)).resolves.toBeNull();
+  });
+});
+
 describe('hostPortrait', () => {
   let dir = '';
   beforeAll(async () => {

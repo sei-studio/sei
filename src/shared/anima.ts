@@ -24,6 +24,8 @@ export function isAnimaPackId(id: unknown): id is string {
  *  - ready: her face set is on disk (RoomAvatar picks it up by itself);
  *  - idle: anything else (never asked, signed out, offline, no pack for this
  *    portrait, deferred, failed). The fallback avatar stays and nothing is shown.
+ *    Since 261118 that fallback can be the cloud's cut-out of her picture
+ *    (no face to animate): still 'idle', RoomAvatar picks it up by itself.
  */
 export type AnimaUiState = 'idle' | 'preparing' | 'ready';
 
@@ -36,7 +38,8 @@ export type AnimaUiState = 'idle' | 'preparing' | 'ready';
  *  - downloading: the bake is done, the pack is downloading;
  *  - ready: her face set is on disk;
  *  - unavailable: no pack will come for now (no_pack, deferred, unavailable,
- *    signed out, no such character): the fallback avatar is her look;
+ *    signed out, no such character): the fallback avatar is her look (since
+ *    261118 possibly the cloud's cut-out, downloaded before this stage);
  *  - offline: no network and no pack on disk;
  *  - failed: the request, the bake or the install failed (`failure`).
  */
@@ -60,10 +63,20 @@ export type AnimaTrigger = 'move_in_sheet' | 'editor' | 'host_start' | 'host_res
 
 export const ANIMA_TRIGGERS: readonly AnimaTrigger[] = ['move_in_sheet', 'editor', 'host_start', 'host_restore', 'portrait_changed'];
 
-/** The avatar kinds RoomAvatar can show (RoomAvatarKind), for the `shown` analytics event. */
-export const ANIMA_SHOWN_KINDS = ['live2d', 'rig', 'facepack', 'portrait', 'placeholder'] as const;
+/**
+ * The avatar kinds RoomAvatar can show (RoomAvatarKind), for the `shown` analytics event.
+ * 'cutout' (261118): the cloud's clean cut-out of her picture, for a portrait with no face to animate.
+ */
+export const ANIMA_SHOWN_KINDS = ['live2d', 'rig', 'facepack', 'cutout', 'portrait', 'placeholder'] as const;
 export type AnimaShownKind = (typeof ANIMA_SHOWN_KINDS)[number];
 
 export function isAnimaShownKind(v: unknown): v is AnimaShownKind {
   return typeof v === 'string' && (ANIMA_SHOWN_KINDS as readonly string[]).includes(v);
+}
+
+/** A downloaded cloud cut-out (261118): her picture's figure on transparency, PNG. */
+export interface AnimaCutout {
+  /** sha256 of the PNG (what the proxy signed), a cache key for the views. */
+  sha256: string;
+  png: Uint8Array;
 }

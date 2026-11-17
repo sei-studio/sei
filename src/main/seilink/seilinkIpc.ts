@@ -10,7 +10,7 @@ import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
 import { seilinkHostStatus, sendSeilinkVoice, setSeilinkIdleLines, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
-import { anima } from '../anima/animaRuntime';
+import { anima, readAnimaCutout } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
 import { onTogetherClosed, onTogetherOpened, onTogetherSync } from './decorateTogether';
 import { setTogetherSink } from './editorTogether';
@@ -96,6 +96,11 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.on(IpcChannel.seilink.voice, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; speaking?: unknown } | null;
     if (isRoomCharacterId(a?.characterId)) sendSeilinkVoice(a.characterId, a.speaking === true);
+  });
+  // 261118: her cloud cut-out (no face to animate), while it is still of her current picture.
+  ipcMain.handle(IpcChannel.seilink.animaCutout, async (_e, characterId: unknown) => {
+    if (!isRoomCharacterId(characterId)) return null;
+    return readAnimaCutout(characterId);
   });
   ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; kind?: unknown } | null;

@@ -21,6 +21,13 @@
  *   no_pack / failed / deferred / unavailable / 4xx: nothing shown, fallback
  *   kept; the next SeiLink open asks again (the proxy keeps no_pack final for
  *   that portrait, so asking again is cheap).
+ *   no_pack with `cutout` (261118, product call: every character shows as a
+ *   clean figure): her picture has no face to animate, but the cloud cut her
+ *   figure out cleanly. The PNG is downloaded (sha256 + PNG checked, kept in
+ *   the store's `cutouts`), and views re-resolve: RoomAvatar draws it in place
+ *   of its own cut-out of her picture (which can only fade an oval round her
+ *   on a busy background). The stage is still `unavailable` (no face set);
+ *   cutoutFor() only answers while her portrait is the one it was cut from.
  *
  * Avatar library (261106): when her effective avatar is a portrait avatar
  * from the library (avatarFor), the bake is asked for THAT avatar
@@ -38,7 +45,7 @@
  */
 import type { AnimaFailure, AnimaShownKind, AnimaStage, AnimaStatus, AnimaTrigger, AnimaUiState } from '../../shared/anima';
 import { animaPackId } from '../../shared/anima';
-import { AnimaPackError, type AnimaIndexEntry, type AnimaPackStore } from './animaPacks';
+import { ANIMA_CUTOUT_MAX_BYTES, AnimaPackError, type AnimaCutoutEntry, type AnimaIndexEntry, type AnimaPackStore } from './animaPacks';
 
 export const CHECK_TTL_MS = 12 * 60 * 60 * 1000;
 export const POLL_MAX_MS = 25 * 60 * 1000;
@@ -55,6 +62,8 @@ export interface ProxyReply {
   reason?: string;
   portrait_hash?: string;
   pack?: { url: string; sha256: string; bytes: number | null; expires_in: number };
+  /** no_pack only (261118): a clean cut-out of her figure, a PNG. */
+  cutout?: { url: string; sha256: string; bytes: number | null; expires_in: number };
   created?: boolean;
 }
 
@@ -162,6 +171,7 @@ export class AnimaClient {
       const { ref, avatarId } = found;
       const entry = await this.d.store.entry(characterId);
       const packId = entry ? await this.d.store.packIdFor(characterId) : null;
+      const cut = entry ? null : await this.d.store.cutoutEntry(characterId).catch(() => null);
       const fresh = entry && packId && entry.portrait_ref === ref && this.d.now() - entry.checked_at < CHECK_TTL_MS;
       if (fresh && trigger !== 'portrait_changed') {
         this.setUi(characterId, 'ready');
@@ -184,7 +194,7 @@ export class AnimaClient {
         polls: 0,
         waited: false,
         busy: false,
-        oldPortraitHash: trigger === 'portrait_changed' ? (entry?.portrait_hash ?? null) : null,
+        oldPortraitHash: trigger === 'portrait_changed' ? (entry?.portrait_hash ?? cut?.portrait_hash ?? null) : null,
         recheck: 0,
         avatarId,
       };
@@ -205,7 +215,7 @@ export class AnimaClient {
    * the local save). Only for characters that already went through SeiLink.
    */
   async portraitMaybeChanged(characterId: string): Promise<void> {
-    const entry = await this.d.store.entry(characterId).catch(() => null);
+    const entry = await this.lookEntry(characterId);
     if (!entry && !this.ui.has(characterId)) return;
     const found = await this.refFor(characterId).catch(() => null);
     if (!found || (entry && entry.portrait_ref === found.ref)) return;
@@ -221,12 +231,32 @@ export class AnimaClient {
    * card image): ask again now. Only for characters that went through SeiLink.
    */
   async avatarChanged(characterId: string): Promise<void> {
-    const entry = await this.d.store.entry(characterId).catch(() => null);
+    const entry = await this.lookEntry(characterId);
     if (!entry && !this.ui.has(characterId)) return;
     const found = await this.refFor(characterId).catch(() => null);
     if (!found || (entry && entry.portrait_ref === found.ref)) return;
     this.stop(characterId);
     await this.prepare(characterId, 'portrait_changed');
+  }
+
+  /** Her pack's index entry, else her cut-out's (both carry the portrait ref they were made for). */
+  private async lookEntry(characterId: string): Promise<{ portrait_ref: string | null } | null> {
+    const pack = await this.d.store.entry(characterId).catch(() => null);
+    return pack ?? (await this.d.store.cutoutEntry(characterId).catch(() => null));
+  }
+
+  /**
+   * Her cloud cut-out (261118) as {sha256, path}, only while her look is
+   * still the picture it was cut from (a new portrait or library avatar: null
+   * until the next SeiLink open fetches the new one). Null when she has none.
+   */
+  async cutoutFor(characterId: string): Promise<{ sha256: string; path: string } | null> {
+    if (!UUID_RE.test(characterId)) return null;
+    const found = await this.d.store.cutoutFileFor(characterId).catch(() => null);
+    if (!found) return null;
+    const now = await this.refFor(characterId).catch(() => null);
+    if (!now || now.ref !== found.entry.portrait_ref) return null;
+    return { sha256: found.sha256, path: found.path };
   }
 
   /**
@@ -417,6 +447,10 @@ export class AnimaClient {
           this.schedule(characterId, run, PORTRAIT_RECHECK_MS[run.recheck], ref);
           return;
         }
+        if (reply.state === 'no_pack' && reply.cutout) {
+          await this.installCutout(characterId, run, reply, ref);
+          return;
+        }
         const phase = reply.state === 'none' ? 'failed' : reply.state;
         this.once(`${phase}|${characterId}|${reply.portrait_hash ?? ''}`, {
           phase,
@@ -426,15 +460,19 @@ export class AnimaClient {
         });
         if (reply.state === 'failed') this.setStage(characterId, 'failed', 'bake_failed');
         else this.setStage(characterId, 'unavailable');
-        // Her old pack was for another portrait: it no longer shows her.
+        // Her old pack (or cut-out) was for another portrait: it no longer shows her.
         const entry = await this.d.store.entry(characterId).catch(() => null);
-        if (entry && reply.portrait_hash && entry.portrait_hash !== reply.portrait_hash) {
+        const cut = await this.d.store.cutoutEntry(characterId).catch(() => null);
+        const stalePack = !!entry && !!reply.portrait_hash && entry.portrait_hash !== reply.portrait_hash;
+        const staleCut = !!cut && !!reply.portrait_hash && cut.portrait_hash !== reply.portrait_hash;
+        if (staleCut) await this.d.store.setCutoutEntry(characterId, null).catch(() => {});
+        if (stalePack) {
           await this.d.store.setEntry(characterId, null).catch(() => {});
           this.setUi(characterId, 'idle');
-          this.notifyReady(characterId, '');
         } else {
           this.settleUi(characterId, run);
         }
+        if (stalePack || staleCut) this.notifyReady(characterId, '');
         this.finish(characterId, run);
         return;
       }
@@ -500,7 +538,10 @@ export class AnimaClient {
       checked_at: this.d.now(),
     };
     await this.d.store.setEntry(characterId, entry);
-    const changed = before?.pack_sha256 !== pack.sha256;
+    // A face set replaces her cut-out (RoomAvatar prefers it anyway); the file goes at the next prune.
+    const hadCut = !!(await this.d.store.cutoutEntry(characterId).catch(() => null));
+    if (hadCut) await this.d.store.setCutoutEntry(characterId, null).catch(() => {});
+    const changed = before?.pack_sha256 !== pack.sha256 || hadCut;
     this.setUi(characterId, 'ready');
     this.setStage(characterId, 'ready');
     this.once(`ready|${characterId}|${pack.sha256}`, {
@@ -516,6 +557,60 @@ export class AnimaClient {
       this.notifyReady(characterId, id);
       // Her old pack: removed once the views have moved to the new one.
       if (before) this.d.setTimeout(() => this.d.store.prune().then(() => undefined, () => undefined), PRUNE_DELAY_MS);
+    }
+  }
+
+  /**
+   * 261118: no_pack with a cut-out. Download it unless it is on disk, record
+   * it for her, and have the views re-resolve when it changed. Any failure is
+   * a plain no_pack for the user (her own cut-out of the picture stays).
+   */
+  private async installCutout(characterId: string, run: Run, reply: ProxyReply, ref: string | null): Promise<void> {
+    const cut = reply.cutout!;
+    this.setStage(characterId, 'unavailable');
+    const fail = (reason: string): void => {
+      this.once(`failed|cutout_${reason}|${characterId}`, { phase: 'failed', reason: `cutout_${reason}`, trigger: run.trigger });
+      this.d.log?.(`[anima] cutout failed (${reason})`);
+      this.settleUi(characterId, run);
+      this.finish(characterId, run);
+    };
+    if (!/^[0-9a-f]{64}$/.test(cut.sha256) || !/^https:\/\//i.test(cut.url)) return fail('bad_reply');
+    const before = await this.d.store.cutoutEntry(characterId).catch(() => null);
+    const had = await this.d.store.hasCutout(cut.sha256);
+    let bytes = 0;
+    if (!had) {
+      try {
+        const png = await this.d.download(cut.url, ANIMA_CUTOUT_MAX_BYTES);
+        bytes = png.byteLength;
+        await this.d.store.installCutout(png, cut.sha256);
+      } catch (err) {
+        return fail(err instanceof AnimaPackError ? err.code : 'download');
+      }
+    }
+    if (run.gen !== this.gen) return;
+    const entry: AnimaCutoutEntry = {
+      sha256: cut.sha256,
+      portrait_hash: reply.portrait_hash ?? null,
+      portrait_ref: ref,
+      checked_at: this.d.now(),
+    };
+    await this.d.store.setCutoutEntry(characterId, entry);
+    // A face set for another portrait no longer shows her: the cut-out is her look now.
+    const pack = await this.d.store.entry(characterId).catch(() => null);
+    const stalePack = !!pack && !!reply.portrait_hash && pack.portrait_hash !== reply.portrait_hash;
+    if (stalePack) await this.d.store.setEntry(characterId, null).catch(() => {});
+    this.once(`cutout|${characterId}|${cut.sha256}`, {
+      phase: 'cutout',
+      trigger: run.trigger,
+      source: had ? 'disk' : run.waited ? 'baked' : 'cloud_cache',
+      wait_ms: this.d.now() - run.startedAt,
+      ...(bytes ? { cutout_kb: Math.round(bytes / 1024) } : {}),
+    });
+    this.settleUi(characterId, run);
+    this.finish(characterId, run);
+    if (stalePack || before?.sha256 !== cut.sha256 || before?.portrait_ref !== ref) {
+      this.notifyReady(characterId, '');
+      if (before && before.sha256 !== cut.sha256) this.d.setTimeout(() => this.d.store.prune().then(() => undefined, () => undefined), PRUNE_DELAY_MS);
     }
   }
 }

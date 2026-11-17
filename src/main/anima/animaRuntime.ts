@@ -2,10 +2,10 @@
  * The app's one AnimaClient (261105), wired to the real proxy, disk, windows
  * and analytics. Logic and its tests live in animaClient.ts / animaPacks.ts.
  */
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { BrowserWindow, net } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
-import type { AnimaStatus } from '../../shared/anima';
+import type { AnimaCutout, AnimaStatus } from '../../shared/anima';
 import { getCharacter } from '../characterStore';
 import { onCharacterSaved } from '../characterSignals';
 import { downloadCapped as download, proxyJson } from '../cloud/proxyHttp';
@@ -13,6 +13,7 @@ import { loadAnalytics } from '../lazyAnalytics';
 import { noteSeilinkAvatarChanged } from '../seilink/host/hostSignals';
 import { avatarLibrary } from '../avatarLibrary/avatarLibraryRuntime';
 import { AnimaClient, AnimaNoSession } from './animaClient';
+import { ANIMA_CUTOUT_MAX_BYTES } from './animaPacks';
 import { animaStore } from './animaStore';
 import { paths } from '../paths';
 
@@ -84,6 +85,19 @@ export const anima = new AnimaClient({
   clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
   log,
 });
+
+/** 261118: her cloud cut-out's bytes for a view in this process (the desktop host reads the file itself). */
+export async function readAnimaCutout(characterId: string): Promise<AnimaCutout | null> {
+  const found = await anima.cutoutFor(characterId).catch(() => null);
+  if (!found) return null;
+  try {
+    const s = await stat(found.path);
+    if (!s.isFile() || s.size > ANIMA_CUTOUT_MAX_BYTES) return null;
+    return { sha256: found.sha256, png: new Uint8Array(await readFile(found.path)) };
+  } catch {
+    return null;
+  }
+}
 
 // Her portrait may have changed: re-check her face set (only characters that went through SeiLink).
 onCharacterSaved((id) => {

@@ -20,7 +20,7 @@ import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
-import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
+import type { AnimaCutout, AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
 import { z } from 'zod';
 import type {
@@ -2382,6 +2382,8 @@ export interface RendererApi {
   onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
   /** What a RoomAvatar ended up showing for her (analytics only). */
   seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261118: the cloud's clean cut-out of her picture (no face to animate), or null. Any build, like facepackForCharacter. */
+  seilinkAnimaCutout?(characterId: string): Promise<AnimaCutout | null>;
   /** 261110: a companion's voice (TTS) started or stopped here; main relays it to her desktop room when she is the one there. */
   seilinkVoice?(characterId: string, speaking: boolean): void;
   /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
@@ -4543,6 +4545,8 @@ export const IpcChannel = {
     animaChanged: 'seilink:anima-changed',
     /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
     animaShown: 'seilink:anima-shown',
+    /** Invoke (261118): characterId → AnimaCutout | null, her cloud cut-out PNG while it matches her picture. */
+    animaCutout: 'seilink:anima-cutout',
     /** Send (261110): a companion's voice started or stopped in this window ({characterId, speaking}); her mouth moves on the desktop. */
     voice: 'seilink:voice',
     /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */

@@ -10,7 +10,8 @@
  * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts),
  * and a small `window.sei` with only the avatar calls RoomAvatar's views make
  * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
- * facepackManifest, facepackFile, and seilinkAnimaShown for analytics), and
+ * facepackManifest, facepackFile, seilinkAnimaCutout (261118), and
+ * seilinkAnimaShown for analytics), and
  * onAvatarOverlayCursor (the host's cursor feed, so her gaze follows it). The
  * host relays each one to main, which answers for the moved-in character only. Every other RendererApi method is
  * absent here; the views call these with `?.` or only after avatarGet /
@@ -98,5 +99,7 @@ if (process.contextIsolated) {
     seilinkAnimaShown: (characterId: string, kind: string) => {
       void call('avatarShown', characterId, kind).catch(() => {});
     },
+    // 261118: her cloud cut-out ({sha256, png} or null).
+    seilinkAnimaCutout: (characterId: string) => call('animaCutout', characterId),
   });
 }
