@@ -85,6 +85,10 @@ const SHOTS = {
   // 261116: WORLDLINK_UPLOADED_LOOKS kept her uploaded look out (one line, Move in off).
   'movein-look-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&look=busy_background&name=Aria', act: 'thumb' },
   'movein-look-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark&look=uploaded&name=Aria', act: 'thumb' },
+  // 261118: a custom uploaded picture: the custom-image line, Move in on.
+  'movein-custom-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&custom=1&name=Aria', act: 'thumb' },
+  'movein-custom-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark&custom=1&name=Aria', act: 'thumb' },
+  'movein-custom-ja-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&custom=1&name=Aria&lang=ja', act: 'thumb' },
   // 261107: "Open on login": the step after the guided room setup's Done (the room's own tone: day = light
   // glass, night = dark), its macOS approval and refusal lines, and the Settings > Appearance row.
   'setup-login-light': { kind: 'flow', q: 'phase=login&time=day', act: 'login-step' },
