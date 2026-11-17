@@ -2003,6 +2003,7 @@ export const IT: Record<string, string> = {
   "{other} moves out first. One companion lives on the desktop at a time.": "Prima esce {other}. Sul desktop può vivere un solo personaggio alla volta.",
   "WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.": "WorldLink non riesce ancora a ritagliare {name} da questa immagine. Funzionano le immagini con sfondo uniforme.",
   "For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.": "Per ora WorldLink funziona solo con aspetti creati in Sei, e l'immagine di {name} è stata caricata.",
+  "{name} uses a custom image, which may not look as good here. Characters made in Sei work best.": "{name} usa un'immagine personalizzata, quindi qui potrebbe non rendere al meglio. I personaggi creati in Sei sono la scelta migliore.",
   "Moving in": "Trasferimento",
   "Move in": "Trasferisci qui",
   "Could not move in. Try again.": "Trasferimento non riuscito. Riprova.",

@@ -27,6 +27,11 @@
  * 261116: when WORLDLINK_UPLOADED_LOOKS keeps her uploaded look out
  * (lib/seilink/uploadedLooks.ts, default off) the sheet says why in one
  * line and Move in is off.
+ *
+ * 261118 (product call 261118): when her look is a custom uploaded picture
+ * (worldlinkCustomImage, the same rule as 'sei_looks') and nothing keeps her
+ * out, the sheet says in one line that it may not look as good and that
+ * characters made in Sei work best. Move in stays on.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { plainRoomState, type RoomPresetId, type RoomState } from '@shared/seilinkRoom';
@@ -37,13 +42,13 @@ import { Button } from '../Button';
 import { ModalShell, ModalFooter } from '../ModalShell';
 import { moveInFailed } from '../../lib/seilink/moveIn';
 import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
-import { SEILINK_MOVEIN_SHEET_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
+import { SEILINK_MOVEIN_SHEET_EVENT, WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
 import type { SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
 import { startSeilinkHost } from '../../lib/seilink/seilinkFlow';
 import styles from './MoveInSheet.module.css';
 import { cardImageOrigin } from '@shared/characterSchema';
 import { useDataStore } from '../../lib/stores/useDataStore';
-import { worldlinkLookBlock, type LookBlock } from '../../lib/seilink/uploadedLooks';
+import { worldlinkCustomImage, worldlinkLookBlock, type LookBlock } from '../../lib/seilink/uploadedLooks';
 
 /**
  * Her first room: the plain background (no room yet), in the cozy pack's
@@ -66,6 +71,8 @@ export interface MoveInSheetViewProps {
   loading?: boolean;
   /** 261116: her uploaded look keeps her out (uploadedLooks.ts): one line, Move in off. */
   lookBlocked?: Exclude<LookBlock, 'none'> | null;
+  /** 261118: her look is a custom uploaded picture: one line saying so (Move in stays on). Ignored when lookBlocked. */
+  customImage?: boolean;
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
@@ -94,6 +101,10 @@ export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
           {p.lookBlocked === 'busy_background'
             ? t("WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.", { name: p.name })
             : t("For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.", { name: p.name })}
+        </p>
+      ) : p.customImage ? (
+        <p className={styles.line} role="status" data-custom-image-notice="v1">
+          {t('{name} uses a custom image, which may not look as good here. Characters made in Sei work best.', { name: p.name })}
         </p>
       ) : null}
       <ModalFooter>
@@ -135,6 +146,9 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   // 261116: her uploaded look under WORLDLINK_UPLOADED_LOOKS (instant 'none' with the default 'all').
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
   const [lookBlock, setLookBlock] = useState<LookBlock | null>(null);
+  // 261118: her look is a custom uploaded picture (the custom-image line).
+  const [customImage, setCustomImage] = useState(false);
+  const customRef = useRef(false);
   const lookOrigin = character ? cardImageOrigin(character) : null;
   const firstRoom = saved ? !saved.saved : true;
   const first = packs ? firstRoomState(packs) : null;
@@ -166,6 +180,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
         ...(extra.error_class ? { error_class: extra.error_class } : {}),
         ...(lookOrigin ? { look_origin: lookOrigin } : {}),
         ...(extra.look && extra.look !== 'none' ? { look_blocked: extra.look } : {}),
+        ...(customRef.current ? { custom_image_notice: true } : {}),
       });
     } catch {
       /* analytics must never disrupt the sheet */
@@ -175,11 +190,22 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
   useEffect(() => {
     let dead = false;
     const look: Promise<LookBlock> = character ? worldlinkLookBlock(character).catch(() => 'none' as const) : Promise.resolve('none');
-    void Promise.all([sei.seilinkPacks?.() ?? Promise.resolve([]), sei.seilinkRoomGet?.(characterId) ?? Promise.resolve(null), look]).then(
-      ([list, room, block]) => {
+    // 261118: the custom-image line only when nothing keeps her out (that line says more).
+    const custom: Promise<boolean> = look.then((b) => (character && b === 'none' ? worldlinkCustomImage(character).catch(() => false) : false));
+    void Promise.all([sei.seilinkPacks?.() ?? Promise.resolve([]), sei.seilinkRoomGet?.(characterId) ?? Promise.resolve(null), look, custom]).then(
+      ([list, room, block, isCustom]) => {
         if (dead) return;
         setPacks(list);
         setLookBlock(block);
+        customRef.current = isCustom;
+        setCustomImage(isCustom);
+        if (isCustom) {
+          try {
+            sei.track(WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT, { character_id: characterId });
+          } catch {
+            /* analytics must never disrupt the sheet */
+          }
+        }
         const was = room ? { saved: room.saved === true, preset: room.state.preset } : { saved: false, preset: 'cozy' as RoomPresetId };
         setSaved(was);
         const f = firstRoomState(list);
@@ -232,6 +258,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
       busy={busy}
       loading={packs === null || saved === null}
       lookBlocked={lookBlock && lookBlock !== 'none' ? lookBlock : null}
+      customImage={customImage}
       error={error}
       onCancel={() => {
         report('dismissed');

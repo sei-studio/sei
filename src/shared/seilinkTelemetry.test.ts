@@ -294,6 +294,13 @@ describe('261106 first-link flow fields', () => {
     expect(junk).not.toHaveProperty('look_blocked');
   });
 
+  it('261118: the custom-image line, as a sheet prop and its own event, shape only', () => {
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'confirmed', custom_image_notice: true })).toMatchObject({ custom_image_notice: true });
+    expect(sanitizeSeilinkTrack('seilink_movein_sheet', { action: 'shown', custom_image_notice: 'yes' })).not.toHaveProperty('custom_image_notice');
+    expect(isSeilinkRendererEvent('worldlink_custom_image_notice_shown')).toBe(true);
+    expect(sanitizeSeilinkTrack('worldlink_custom_image_notice_shown', { character_id: 'not an id', name: 'Aria', url: 'https://x/y.png' })).toEqual({ character_id: null });
+  });
+
   it('setting the plain room up counts as a room change', () => {
     const plain = { ...defaultRoomState('cozy'), plain: true as const };
     expect(classifyEdit(plain, defaultRoomState('cozy'))).toEqual(['preset_change']);

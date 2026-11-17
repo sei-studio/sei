@@ -11,6 +11,8 @@
  *    event per frame.
  *  - seilink_editor_error {kind}: the editor could not load, save or import.
  *  - seilink_movein_sheet {action: shown|confirmed|dismissed|failed, ...}.
+ *  - worldlink_custom_image_notice_shown {character_id} (261118): the sheet
+ *    showed the custom-image line (once per sheet).
  *
  * Classification is a diff of two room states (classifyEdit), so the editor
  * needs no per-control tracking. Event table: docs/agents/seilink-analytics.md.
@@ -31,6 +33,8 @@ import {
 export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
 export const SEILINK_EDITOR_ERROR_EVENT = 'seilink_editor_error';
 export const SEILINK_MOVEIN_SHEET_EVENT = 'seilink_movein_sheet';
+/** 261118: the move-in sheet showed the custom-image line (her look is an uploaded picture). */
+export const WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT = 'worldlink_custom_image_notice_shown';
 
 /**
  * 261105 (T337): 'button' = the chat top bar's SeiLink button, 'tour' = the guide's SeiLink tour.
@@ -499,6 +503,8 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   if (origin) out.look_origin = origin;
   const blocked = oneOf(MOVEIN_LOOK_BLOCKS, p.look_blocked);
   if (blocked) out.look_blocked = blocked;
+  // 261118: the sheet showed the custom-image line (shown/confirmed = how often people move her in anyway).
+  if (p.custom_image_notice === true) out.custom_image_notice = true;
   return out;
 }
 
@@ -508,6 +514,7 @@ export function isSeilinkRendererEvent(event: string): boolean {
     event === SEILINK_EDITOR_SESSION_EVENT ||
     event === SEILINK_EDITOR_ERROR_EVENT ||
     event === SEILINK_MOVEIN_SHEET_EVENT ||
+    event === WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT ||
     event === SEILINK_EDITOR_TALK_EVENT ||
     event === SEILINK_HER_EDIT_EVENT
   );
@@ -518,6 +525,7 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
   const p = raw ?? {};
   if (event === SEILINK_EDITOR_SESSION_EVENT) return editorSessionProps(p);
   if (event === SEILINK_MOVEIN_SHEET_EVENT) return moveInProps(p);
+  if (event === WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT) return { character_id: charId(p.character_id) };
   if (event === SEILINK_EDITOR_TALK_EVENT) {
     return { character_id: charId(p.character_id), outcome: oneOf(EDITOR_TALK_OUTCOMES, p.outcome) ?? 'error' };
   }

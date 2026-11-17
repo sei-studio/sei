@@ -19,6 +19,12 @@
  *  - 'sei_looks': only looks made in Sei (generated card art, a face set or
  *    an imported avatar) move in; any other uploaded picture gets the line.
  * Built-in companions and Sei-generated card art are never limited.
+ *
+ * 261118 (product call 261118): under the default 'all' nobody is kept out,
+ * but a companion the 'sei_looks' rule would keep out (an uploaded picture,
+ * no avatar, no face set) gets one line in the move-in sheet saying her
+ * custom image may not look as good, and Move in stays on
+ * (worldlinkCustomImage).
  */
 import { cardImageOrigin, type CardImageOrigin, type Character } from '@shared/characterSchema';
 import { sei } from '../ipcClient';
@@ -80,4 +86,14 @@ export async function worldlinkLookBlock(
   // A face set can still arrive (the bake runs when WorldLink opens): only a clear pass is kept.
   if (block === 'none') done.set(memo, block);
   return block;
+}
+
+/**
+ * 261118: her WorldLink look is a custom uploaded picture (the same rule as
+ * 'sei_looks': origin `uploaded`, no avatar, no face set). The move-in sheet
+ * shows the custom-image line for her. Built-ins and Sei-made art: false,
+ * with no reads.
+ */
+export async function worldlinkCustomImage(c: Pick<Character, 'id' | 'kind' | 'is_default' | 'metadata' | 'portrait_image'>): Promise<boolean> {
+  return (await worldlinkLookBlock(c, 'sei_looks')) === 'uploaded';
 }

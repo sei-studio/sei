@@ -353,6 +353,7 @@ function PartyFullLine(): React.ReactElement {
 /**
  * The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already).
  * 261116: &look=busy_background|uploaded = her uploaded look keeps her out (uploadedLooks.ts).
+ * 261118: &custom=1 = her look is a custom uploaded picture (the custom-image line).
  */
 function MoveInShot(): React.ReactElement {
   const look = params.get('look');
@@ -363,6 +364,7 @@ function MoveInShot(): React.ReactElement {
       firstRoom={params.get('saved') !== '1'}
       busy={false}
       lookBlocked={look === 'busy_background' || look === 'uploaded' ? look : null}
+      customImage={params.get('custom') === '1'}
       error={null}
       onCancel={noop}
       onConfirm={noop}

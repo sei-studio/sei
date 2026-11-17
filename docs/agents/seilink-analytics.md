@@ -244,3 +244,9 @@ count, the character id). `seilink_minimize_windows` is sent by main itself
 
 `seilink_movein_sheet` also carries `notice: 'beta_v1'` since 261110: the
 sheet's bullets became one short beta notice.
+
+261118: `worldlink_custom_image_notice_shown {character_id}` fires once when
+the move-in sheet shows the custom-image line (her look is an uploaded
+picture with no avatar and no face set, `worldlinkCustomImage`), and every
+`seilink_movein_sheet` action of that sheet carries `custom_image_notice:
+true`. Proceed rate = `confirmed` / `shown` with that prop.

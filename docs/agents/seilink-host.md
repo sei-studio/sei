@@ -443,6 +443,17 @@ carries `look_origin` always and `look_blocked` when kept out. Built-ins and
 Sei-generated art are never limited. A real matte for busy backgrounds needs
 a segmentation model (not shipped).
 
+261118 (product call 261118): under the default `'all'`, a companion the
+`'sei_looks'` rule would keep out (uploaded picture, no avatar, no face set;
+`worldlinkCustomImage`) still moves in, but the move-in sheet shows one line:
+"{name} uses a custom image, which may not look as good here. Characters made
+in Sei work best." (`data-custom-image-notice="v1"`). It only shows when the
+sheet opens (first room, swap, retry); a companion with a saved room and
+nobody else moved in skips the sheet as before. Analytics:
+`worldlink_custom_image_notice_shown {character_id}` once per sheet, and
+`custom_image_notice: true` on every `seilink_movein_sheet` action of that
+sheet (`confirmed` = moved in anyway).
+
 ## On/off, persistence, account switch
 
 - Start, stop, restore, the account-switch stop and the removal cleanup run

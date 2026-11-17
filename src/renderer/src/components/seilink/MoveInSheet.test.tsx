@@ -53,3 +53,28 @@ describe('MoveInSheetView (261110: one short beta notice)', () => {
     expect(html).toContain('Lyra moves out first.');
   });
 });
+
+describe('MoveInSheetView (261118: custom-image line)', () => {
+  const view = (extra: Partial<React.ComponentProps<typeof MoveInSheetView>>): string =>
+    renderToStaticMarkup(<MoveInSheetView name="Aria" otherName={null} firstRoom busy={false} error={null} onCancel={() => {}} onConfirm={() => {}} {...extra} />);
+
+  it('shows one line for a custom uploaded picture, and Move in stays on', () => {
+    const html = view({ customImage: true });
+    expect(html).toContain('data-custom-image-notice="v1"');
+    expect(html).toContain('Aria uses a custom image, which may not look as good here. Characters made in Sei work best.');
+    expect(html).not.toMatch(/<button[^>]*disabled[^>]*>Move in</);
+    expect(html).not.toMatch(/<ul|<li|—/);
+    expect(html).not.toMatch(/friend/i);
+  });
+
+  it('is absent for a look made in Sei', () => {
+    expect(view({ customImage: false })).not.toContain('data-custom-image-notice');
+    expect(view({})).not.toContain('data-custom-image-notice');
+  });
+
+  it('gives way to the kept-out line when her look keeps her out', () => {
+    const html = view({ customImage: true, lookBlocked: 'uploaded' });
+    expect(html).toContain('data-look-blocked="uploaded"');
+    expect(html).not.toContain('data-custom-image-notice');
+  });
+});
