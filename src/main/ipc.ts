@@ -71,6 +71,7 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import { onSpeechRuntimeFailure } from './speech/runtimeStatus';
 import {
   REPLY_LATENCY_EVENT,
   recordReplyLatency,
@@ -2194,6 +2195,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await wireSpeechPush();
     const { packStatus } = await import('./speech');
     return { packs: await packStatus() };
+  });
+  // 261118: one event per process when the local speech runtime cannot load
+  // (code blocked_by_policy = Windows Smart App Control / WDAC). The loader
+  // message stays in the main log; it is localized and carries paths.
+  onSpeechRuntimeFailure((st) => {
+    trackAnalytics('local_speech_load_failed', { os: process.platform, code: st.code, sac: st.sac });
+  });
+  ipcMain.handle(IpcChannel.speech.runtimeStatus, async () => {
+    const { probeSpeechRuntime } = await import('./speech');
+    return probeSpeechRuntime();
   });
   ipcMain.handle(IpcChannel.speech.packDownload, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);

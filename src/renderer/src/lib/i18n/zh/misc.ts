@@ -177,6 +177,17 @@ export const ZH_MISC: Record<string, string> = {
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':
     '[语音不可用，本地语音无法在此安装上运行]',
+  // 261118: Windows Smart App Control blocked the local voice engine.
+  "[Windows blocked Sei's local voice engine, using your ElevenLabs voice]":
+    "[Windows 阻止了 Sei 的本地语音引擎，改用你的 ElevenLabs 声音]",
+  "[local voices cannot run on this install, using your ElevenLabs voice]":
+    "[本地语音无法在此安装上运行，改用你的 ElevenLabs 声音]",
+  "[voice unavailable, Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice]":
+    "[语音不可用，Windows 阻止了 Sei 的本地语音引擎。请更新 Sei，或使用 Sei Cloud 语音]",
+  "Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice.":
+    "Windows 阻止了 Sei 的本地语音引擎。请更新 Sei，或使用 Sei Cloud 语音。",
+  "Local voices cannot run on this install. Reinstall Sei, or use Sei Cloud voice.":
+    "本地语音无法在此安装上运行。请重新安装 Sei，或使用 Sei Cloud 语音。",
   // Backseat share errors (useBackseatStore) — these bypassed t() until 260817.
   '{name} is in your Minecraft world right now. End that session first.':
     '{name} 现在正在你的 Minecraft 世界里。请先结束那边的会话。',

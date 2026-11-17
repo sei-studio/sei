@@ -1455,6 +1455,12 @@ export const IT: Record<string, string> = {
   "[spoken with the Fast voice, the Fish Audio voice was not found]": "[voce Fast in uso, voce Fish Audio non trovata]",
   "[spoken with the Fast voice, Fish Audio could not be reached]": "[voce Fast in uso, impossibile raggiungere Fish Audio]",
   "[voice unavailable, local speech cannot run on this install]": "[voce non disponibile, la sintesi locale non può funzionare in questa installazione]",
+  // 261118: Windows Smart App Control blocked the local voice engine.
+  "[Windows blocked Sei's local voice engine, using your ElevenLabs voice]": "[Windows ha bloccato il motore vocale locale di Sei, uso la tua voce ElevenLabs]",
+  "[local voices cannot run on this install, using your ElevenLabs voice]": "[le voci locali non funzionano in questa installazione, uso la tua voce ElevenLabs]",
+  "[voice unavailable, Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice]": "[voce non disponibile, Windows ha bloccato il motore vocale locale di Sei. Aggiorna Sei o usa la voce di Sei Cloud]",
+  "Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice.": "Windows ha bloccato il motore vocale locale di Sei. Aggiorna Sei o usa la voce di Sei Cloud.",
+  "Local voices cannot run on this install. Reinstall Sei, or use Sei Cloud voice.": "Le voci locali non funzionano in questa installazione. Reinstalla Sei o usa la voce di Sei Cloud.",
   "{name} is in your Minecraft world right now. End that session first.": "{name} è nel tuo mondo Minecraft. Prima termina quella sessione.",
   "Could not start sharing. Try picking a different window.": "Impossibile avviare la condivisione. Prova un’altra finestra.",
   "Could not read that window.": "Impossibile leggere quella finestra.",

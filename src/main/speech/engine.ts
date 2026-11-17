@@ -38,6 +38,12 @@ import { LOCAL_VOICE_SPEC, type LocalVoiceId } from './localVoice';
 import { SPEECH_PACKS, type SpeechPackId } from './packs';
 import { packModelDir, packReady } from './packStore';
 import { sentenceCaseSttText } from './sentenceCase';
+import {
+  noteSpeechRuntimeFailure,
+  noteSpeechRuntimeOk,
+  speechRuntimeSettled,
+  type SpeechRuntimeStatus,
+} from './runtimeStatus';
 
 /** Renderer-facing sentinel: the voice pack is not downloaded. The suffix is
  * the pack id so the prompt can name the download. */
@@ -57,12 +63,68 @@ function loadSherpa(): SherpaModule {
   // Anchored to the bundle, NOT process.cwd(): a Finder-launched packaged app
   // runs from `/`, where a cwd-relative require finds no node_modules and every
   // local voice line failed with SPEECH_RUNTIME_FAILED (260915, v0.6.1).
+  //
+  // A load that failed once fails for the rest of the process (Node caches
+  // nothing for a failed dlopen, but the cause, a blocked or missing DLL, does
+  // not go away), so later calls throw the same error without retrying.
+  if (sherpaLoadError) throw sherpaLoadError;
   try {
     sherpa = bundleRequire()('sherpa-onnx-node');
   } catch (err) {
-    throw new Error(`SPEECH_RUNTIME_FAILED: sherpa-onnx-node load failed: ${(err as Error).message}`);
+    const probe = probeSherpaAddon();
+    // The loader message goes to the main log only (localized, has paths).
+    console.warn(
+      `[speech] sherpa-onnx-node load failed: ${(err as Error).message}` +
+        (probe.message ? ` | addon: ${probe.message}` : '') +
+        ` | addon present: ${probe.present}`,
+    );
+    noteSpeechRuntimeFailure({ message: `${(err as Error).message}\n${probe.message}`, addonPresent: probe.present });
+    sherpaLoadError = new Error(`SPEECH_RUNTIME_FAILED: sherpa-onnx-node load failed: ${(err as Error).message}`);
+    throw sherpaLoadError;
   }
+  noteSpeechRuntimeOk();
   return sherpa;
+}
+
+let sherpaLoadError: Error | null = null;
+
+/**
+ * sherpa-onnx-node's addon.js swallows the real loader error ("Could not find
+ * sherpa-onnx-node. Tried ..."), so after a failure require the platform
+ * addon directly to get the operating system's own message (on Windows this
+ * is where an Application Control block shows), and check it is on disk.
+ */
+function probeSherpaAddon(): { present: boolean; message: string } {
+  const platformArch = `${process.platform === 'win32' ? 'win' : process.platform}-${process.arch}`;
+  try {
+    const req = bundleRequire();
+    const pkgDir = path.dirname(req.resolve('sherpa-onnx-node'));
+    const addon = path.join(pkgDir, '..', `sherpa-onnx-${platformArch}`, 'sherpa-onnx.node');
+    const present = existsSync(addon);
+    if (!present) return { present, message: '' };
+    try {
+      req(addon);
+      return { present, message: '' };
+    } catch (e) {
+      return { present, message: (e as Error).message };
+    }
+  } catch (e) {
+    return { present: false, message: (e as Error).message };
+  }
+}
+
+/**
+ * Try to load the runtime and report whether it works, without throwing.
+ * Used by the voice settings (speech:runtime-status) and the call setup to
+ * learn about a blocked runtime BEFORE a voice line fails.
+ */
+export async function probeSpeechRuntime(): Promise<SpeechRuntimeStatus> {
+  try {
+    loadSherpa();
+  } catch {
+    /* recorded by loadSherpa */
+  }
+  return speechRuntimeSettled();
 }
 
 // ── TTS ─────────────────────────────────────────────────────────────────────

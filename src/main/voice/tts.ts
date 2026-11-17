@@ -429,6 +429,14 @@ export type TtsNotice =
       kind: 'sei-voices-fallback';
       characterId: string;
       reason: SeiVoicesFallbackReason;
+    }
+  | {
+      /** 261118: the local speech runtime cannot load on this install
+       * (`blocked_by_policy` = Windows Smart App Control), so the line was
+       * spoken with the user's own ElevenLabs key instead. */
+      kind: 'local-runtime-fallback';
+      characterId: string;
+      code: 'blocked_by_policy' | 'missing' | 'load_failed';
     };
 
 /** Why a "Sei voices" line was spoken on-device (see TtsNotice). */
@@ -634,6 +642,56 @@ async function synthesizeLocalClip(
   /** metadata.voiceOwn.gender for an own-account voice (261019). */
   genderHint?: string,
 ): Promise<ArrayBuffer> {
+  try {
+    return await synthesizeSherpaClip(text, voiceId, language, characterId, genderHint);
+  } catch (err) {
+    if (!String((err as Error)?.message ?? '').startsWith('SPEECH_RUNTIME_FAILED')) throw err;
+    return await runtimeFailedFallback(text, voiceId, language, characterId);
+  }
+}
+
+/**
+ * 261118: the sherpa-onnx runtime will not load (Windows Smart App Control
+ * blocked its DLLs on builds before 261118, or a broken install). Speak the
+ * line with the user's own ElevenLabs key when one is stored, with a notice;
+ * otherwise throw `SPEECH_RUNTIME_FAILED:<code>` so the call notice can say
+ * what happened (the renderer names Windows for blocked_by_policy).
+ *
+ * The OS voice is deliberately NOT a fallback here: SAPI from main needs
+ * PowerShell, and the policy that blocks the DLLs (SAC is a WDAC policy)
+ * also puts PowerShell in Constrained Language Mode, which refuses both
+ * Add-Type System.Speech and the SAPI.SpVoice COM object.
+ */
+async function runtimeFailedFallback(
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  characterId: string,
+): Promise<ArrayBuffer> {
+  const speech = await import('../speech');
+  const st = await speech.probeSpeechRuntime();
+  const code = st.state === 'failed' ? st.code : 'load_failed';
+  const route = await resolveSpeakRoute().catch((): ElevenLabsRoute => ({ kind: 'unconfigured' }));
+  if (route.kind === 'direct' && voiceId && voiceId !== NO_VOICE_ID) {
+    try {
+      const clip = await synthesize(clipForRoute(text, route), voiceId, language, undefined, route);
+      emitTtsNotice({ kind: 'local-runtime-fallback', characterId, code });
+      return clip;
+    } catch (err) {
+      console.warn(`[sei/voice] ElevenLabs stand-in for the blocked local voice failed: ${(err as Error).message}`);
+    }
+  }
+  throw new Error(`SPEECH_RUNTIME_FAILED:${code}`);
+}
+
+/** The sherpa-onnx synthesis behind synthesizeLocalClip (Kokoro, then Fast). */
+async function synthesizeSherpaClip(
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  characterId: string,
+  genderHint?: string,
+): Promise<ArrayBuffer> {
   const speech = await import('../speech');
   const effLanguage = speech.detectSpokenLanguage(text, language);
   const gender = speech.voiceGenderFor(voiceId, genderHint);
@@ -650,6 +708,9 @@ async function synthesizeLocalClip(
         return encodeWav(samples, sampleRate);
       } catch (err) {
         const msg = String((err as Error)?.message ?? err);
+        // The runtime itself cannot load: the Fast voices would fail the same
+        // way, so no Kokoro notice (synthesizeLocalClip handles it).
+        if (msg.startsWith('SPEECH_RUNTIME_FAILED')) throw err;
         kokoroFallback = msg.startsWith('VOICE_PACK_MISSING') ? 'pack-missing' : 'failed';
         console.warn(`[sei/voice] Kokoro unavailable, using the Fast voices: ${msg}`);
       }

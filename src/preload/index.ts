@@ -349,6 +349,7 @@ const api: RendererApi = {
   speechPackStatus: () => ipcRenderer.invoke(IpcChannel.speech.packStatus),
   speechPackDownload: (args) => ipcRenderer.invoke(IpcChannel.speech.packDownload, args),
   speechPackRemove: (args) => ipcRenderer.invoke(IpcChannel.speech.packRemove, args),
+  speechRuntimeStatus: () => ipcRenderer.invoke(IpcChannel.speech.runtimeStatus),
   onSpeechPackState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, push: Parameters<typeof cb>[0]) => cb(push);
     ipcRenderer.on(IpcChannel.speech.packState, handler);

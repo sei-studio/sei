@@ -1642,6 +1642,12 @@ export const JA: Record<string, string> = {
   "[spoken with the Fast voice, the Fish Audio voice was not found]": "[Fastボイスで読み上げました。Fish Audioのボイスが見つかりませんでした]",
   "[spoken with the Fast voice, Fish Audio could not be reached]": "[Fastボイスで読み上げました。Fish Audioに接続できませんでした]",
   "[voice unavailable, local speech cannot run on this install]": "[ボイス利用不可、このインストール環境ではローカルでの音声読み上げを使えません]",
+  // 261118: Windows Smart App Control blocked the local voice engine.
+  "[Windows blocked Sei's local voice engine, using your ElevenLabs voice]": "[WindowsがSeiのローカル音声エンジンをブロックしたため、ElevenLabsのボイスを使っています]",
+  "[local voices cannot run on this install, using your ElevenLabs voice]": "[このインストール環境ではローカルボイスを使えないため、ElevenLabsのボイスを使っています]",
+  "[voice unavailable, Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice]": "[ボイス利用不可、WindowsがSeiのローカル音声エンジンをブロックしました。Seiを更新するか、Sei Cloudのボイスを使ってください]",
+  "Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice.": "WindowsがSeiのローカル音声エンジンをブロックしました。Seiを更新するか、Sei Cloudのボイスを使ってください。",
+  "Local voices cannot run on this install. Reinstall Sei, or use Sei Cloud voice.": "このインストール環境ではローカルボイスを使えません。Seiを再インストールするか、Sei Cloudのボイスを使ってください。",
   "{name} is in your Minecraft world right now. End that session first.": "{name}は今Minecraftのワールドにいます。先にそのセッションを終了してください。",
   "Could not start sharing. Try picking a different window.": "共有を開始できませんでした。別のウィンドウを選んでみてください。",
   "Could not read that window.": "そのウィンドウを読み取れませんでした。",

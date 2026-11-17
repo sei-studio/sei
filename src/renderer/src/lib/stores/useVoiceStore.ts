@@ -59,6 +59,7 @@ import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
 import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
+import { inputCheckProps } from '../voice/inputHealth';
 import type { SttHint } from '../voice/sttArbiter';
 import {
   companionAudioGapMs,
@@ -221,6 +222,51 @@ interface VoiceState {
 
 /** Non-reactive session internals (torn down in endCall). */
 let dictation: Dictation | null = null;
+/**
+ * 261118: one `voice_call_input_check` per call (inputHealth.ts), at
+ * INPUT_CHECK_AT_MS of live time, or at hang-up for a call that ended
+ * sooner but lasted INPUT_CHECK_MIN_MS. Says WHY a call heard nothing
+ * (no frames, digital silence, quiet, ...). No UI: the in-call "can't hear
+ * you" hint was removed in the product call of 261118; this is analytics only.
+ */
+const INPUT_CHECK_AT_MS = 45_000;
+const INPUT_CHECK_MIN_MS = 10_000;
+let inputCheck: {
+  liveAt: number;
+  utterances: number;
+  sent: boolean;
+  timer: number | null;
+  backend: string;
+  sttMode: string;
+  cloudOff: () => string | null;
+} | null = null;
+
+function sendInputCheck(): void {
+  const check = inputCheck;
+  const d = dictation;
+  if (!check || check.sent || !d) return;
+  check.sent = true;
+  if (check.timer !== null) window.clearTimeout(check.timer);
+  check.timer = null;
+  const liveMs = Date.now() - check.liveAt;
+  const health = d.inputHealth();
+  const utterances = check.utterances;
+  const cloudSttOff = check.cloudOff();
+  const send = (inputDevices: number): void => {
+    sei.track('voice_call_input_check', {
+      ...inputCheckProps({ health, utterances, liveMs, inputDevices, cloudSttOff }),
+      backend: check.backend,
+      stt_mode: check.sttMode,
+    });
+  };
+  // Device count only (labels never leave): 0 means none visible at all.
+  const listing = navigator.mediaDevices?.enumerateDevices?.();
+  if (!listing) {
+    send(-1);
+    return;
+  }
+  listing.then((ds) => send(ds.filter((x) => x.kind === 'audioinput').length)).catch(() => send(-1));
+}
 let queue: AudioQueue | null = null;
 
 /**
@@ -789,7 +835,24 @@ export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 
   return t('[Sei voices are unavailable right now, using voices on this device]');
 }
 
+/** 261118: the local voice engine cannot load, so the user's ElevenLabs key
+ * spoke the line (local-runtime-fallback push). */
+export function localRuntimeFallbackNotice(code: 'blocked_by_policy' | 'missing' | 'load_failed'): string {
+  return code === 'blocked_by_policy'
+    ? t("[Windows blocked Sei's local voice engine, using your ElevenLabs voice]")
+    : t('[local voices cannot run on this install, using your ElevenLabs voice]');
+}
+
+/** 261118: call notice when the local voice engine cannot load and nothing
+ * else can speak (SPEECH_RUNTIME_FAILED[:code] from main). */
+export function localRuntimeFailedNotice(msg: string): string {
+  return /blocked_by_policy/.test(msg)
+    ? t("[voice unavailable, Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice]")
+    : t('[voice unavailable, local speech cannot run on this install]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
+  if (push.kind === 'local-runtime-fallback') return localRuntimeFallbackNotice(push.code);
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
   if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
@@ -923,7 +986,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
         // (e.g. a mac x64 build shipped without the platform package).
         // Without this branch the companion is silently mute on every line.
-        set({ callNotice: t('[voice unavailable, local speech cannot run on this install]') });
+        // 261118: blocked_by_policy names Windows (Smart App Control).
+        set({ callNotice: localRuntimeFailedNotice(msg) });
       }
     };
     const settleTts = (): void => {
@@ -2024,6 +2088,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       try {
         const status = await sei.speechPackStatus?.();
         sensevoiceReady = status?.packs?.['stt-sensevoice']?.state === 'ready';
+        // 261118: a pack on disk is not enough. When the local speech runtime
+        // cannot load (Windows Smart App Control blocked it), SenseVoice would
+        // fail every utterance; the policy then picks Whisper, which runs in
+        // the renderer with no native code.
+        if (sensevoiceReady) {
+          const rt = await sei.speechRuntimeStatus?.();
+          if (rt?.state === 'failed') sensevoiceReady = false;
+        }
       } catch {
         /* absent bridge / failed read → whisper behavior */
       }
@@ -2125,6 +2197,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           },
           onUtterance: (text, span) => {
             if (session !== mySession) return;
+            if (inputCheck) inputCheck.utterances += 1;
             const s = get();
             if (s.status !== 'live' || !s.participants.length) return;
             // The director handles addressing, mirroring, and the reply chain.
@@ -2263,6 +2336,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         stopAmbience = startAmbience();
       }
       set({ status: 'live', connectingDetail: null, liveAt: now });
+      if (inputCheck?.timer != null) window.clearTimeout(inputCheck.timer);
+      inputCheck = {
+        liveAt: now,
+        utterances: 0,
+        sent: false,
+        timer: null,
+        backend: callCfg?.ai_backend_kind ?? 'cloud-proxy',
+        sttMode: policy.useCloud ? (policy.localModel === 'none' ? 'cloud' : 'race') : 'local',
+        cloudOff: () => (cloudSttSilentOff ? 'no_credentials' : cloudSttOff ? 'upstream' : null),
+      };
+      inputCheck.timer = window.setTimeout(() => {
+        if (session === mySession) sendInputCheck();
+      }, INPUT_CHECK_AT_MS);
 
       // Idle conversation starter: the quiet clock starts at connect (the
       // greeting about to play immediately resets it anyway) and ticks for the
@@ -2395,6 +2481,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (participants.length) playHangupChime();
       ttsStreams.clear();
       ttsOrphans.clear();
+      if (inputCheck && !inputCheck.sent && Date.now() - inputCheck.liveAt >= INPUT_CHECK_MIN_MS) sendInputCheck();
+      if (inputCheck?.timer != null) window.clearTimeout(inputCheck.timer);
+      inputCheck = null;
       dictation?.stop();
       dictation = null;
       queue?.stop();

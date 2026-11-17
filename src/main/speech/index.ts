@@ -32,6 +32,9 @@
  *     auto-download mid-call.
  *   SPEECH_DOWNLOAD_FAILED: ...   pack download failed on every source.
  *   SPEECH_RUNTIME_FAILED: ...    sherpa-onnx runtime failed to load.
+ *     Classified once per process in runtimeStatus.ts (blocked_by_policy =
+ *     Windows Smart App Control / WDAC, missing, load_failed); the voice
+ *     settings read it through speech:runtime-status (261118).
  *
  * Pack ids: 'tts-en' (~78 MB, both en voices), 'tts-zh' (~30 MB, both zh
  * voices), 'stt-sensevoice' (~155 MB). Which packs a given character needs:
@@ -63,6 +66,14 @@ export {
   synthesizeLocal,
   transcribeLocal,
   packMissingError,
+  probeSpeechRuntime,
 } from './engine';
+export {
+  speechRuntimeStatus,
+  onSpeechRuntimeFailure,
+  type SpeechRuntimeStatus,
+  type SpeechRuntimeCode,
+  type SacState,
+} from './runtimeStatus';
 export { detectSpokenLanguage } from './spokenLanguage';
 export { pickKokoroVoice } from './kokoro';

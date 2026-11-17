@@ -14,7 +14,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import type { UserConfig } from '@shared/characterSchema';
-import type { SpeechPackStatePush } from '@shared/ipc';
+import type { SpeechPackStatePush, SpeechRuntimeStatusPush } from '@shared/ipc';
 import {
   SEI_VOICES_FOR_CHATGPT_ENABLED,
   localTtsModel,
@@ -83,6 +83,36 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
 
   const rawSource = voiceSourceOf(cfg);
   const localModel: LocalTtsModel = localTtsModel(cfg);
+  // 261118: a pack can say Ready while the engine that plays it cannot load
+  // (Windows Smart App Control blocked it on builds before 261118). Ask main
+  // once something local is in use and on disk; the first ask loads the
+  // runtime, so nobody without a local voice or SenseVoice pays for it.
+  const usesLocalRuntime =
+    (voiceSourceOf(cfg) === 'device' &&
+      Object.entries(packStates).some(([id, st]) => id.startsWith('tts-') && st.state === 'ready')) ||
+    (cfg.stt_engine === 'sensevoice' && packStates[SENSEVOICE_PACK_ID]?.state === 'ready');
+  const [runtime, setRuntime] = useState<SpeechRuntimeStatusPush>({ state: 'unknown' });
+  useEffect(() => {
+    if (!usesLocalRuntime || runtime.state !== 'unknown') return;
+    let live = true;
+    void sei
+      .speechRuntimeStatus?.()
+      .then((st) => {
+        if (live && st) setRuntime(st);
+      })
+      .catch(() => {
+        /* unknown: say nothing */
+      });
+    return () => {
+      live = false;
+    };
+  }, [usesLocalRuntime, runtime.state]);
+  const runtimeLine =
+    usesLocalRuntime && runtime.state === 'failed'
+      ? runtime.code === 'blocked_by_policy'
+        ? t("Windows blocked Sei's local voice engine. Update Sei, or use Sei Cloud voice.")
+        : t('Local voices cannot run on this install. Reinstall Sei, or use Sei Cloud voice.')
+      : null;
   // The ChatGPT tab offers no Fish choice: a Fish setup shows as "On this
   // device" with Fish Audio named in the engine select, so it stays honest.
   const source: VoiceSource = mode === 'chatgpt' && rawSource === 'fish' ? 'device' : rawSource;
@@ -268,6 +298,12 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
       {packError ? (
         <p className={`${styles.note} ${styles.noteError}`} role="alert">
           {packError}
+        </p>
+      ) : null}
+
+      {runtimeLine ? (
+        <p className={`${styles.note} ${styles.noteError}`} role="alert" data-testid="voice-runtime-blocked">
+          {runtimeLine}
         </p>
       ) : null}
 

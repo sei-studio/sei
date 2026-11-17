@@ -738,6 +738,28 @@ export type VoiceTtsNoticePush =
       kind: 'sei-voices-fallback';
       characterId: string;
       reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+    }
+  | {
+      /** 261118: the local speech runtime cannot load (`blocked_by_policy` =
+       * Windows Smart App Control), so the user's ElevenLabs key spoke it. */
+      kind: 'local-runtime-fallback';
+      characterId: string;
+      code: 'blocked_by_policy' | 'missing' | 'load_failed';
+    };
+
+/**
+ * Whether the local speech runtime (sherpa-onnx: Fast/Kokoro voices,
+ * SenseVoice) loads on this install (261118, main/speech/runtimeStatus.ts).
+ * `blocked_by_policy` = Windows Smart App Control or a WDAC policy refused
+ * its DLLs. `sac` is the Smart App Control state ('n/a' off Windows).
+ */
+export type SpeechRuntimeStatusPush =
+  | { state: 'unknown' }
+  | { state: 'ok' }
+  | {
+      state: 'failed';
+      code: 'blocked_by_policy' | 'missing' | 'load_failed';
+      sac: 'on' | 'eval' | 'off' | 'unknown' | 'n/a';
     };
 
 /**
@@ -2740,6 +2762,9 @@ export interface RendererApi {
   speechPackDownload(args: { packId: string }): Promise<void>;
   /** Remove one downloaded pack from disk. */
   speechPackRemove(args: { packId: string }): Promise<void>;
+  /** Can the local speech runtime load here (261118)? Loads it once to find
+   * out; 'failed' + 'blocked_by_policy' = Windows Smart App Control. */
+  speechRuntimeStatus(): Promise<SpeechRuntimeStatusPush>;
   /** Push: full pack-state snapshot, fired on every state/progress change. */
   onSpeechPackState(cb: (push: { packs: Record<string, SpeechPackStatePush> }) => void): Unsubscribe;
   /**
@@ -4136,6 +4161,8 @@ export const IpcChannel = {
     packState: 'speech:pack-state',
     /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
     sttTranscribe: 'speech:stt-transcribe',
+    /** Invoke: {} → SpeechRuntimeStatusPush; loads the runtime once to find out (261118). */
+    runtimeStatus: 'speech:runtime-status',
   },
   /** Avatar library (261106): server-stored avatars, public locks, default. */
   avatarLibrary: {

@@ -29,6 +29,7 @@ import { createSttArbiter, type SttHint } from './sttArbiter';
 import { whisperMirrorFirst } from './mirrorPref';
 import { tagCallSetupStage } from './callSetupFailure';
 import { isJunkTranscript } from './pfcSteer';
+import { ZERO_FRAME_RMS, type DictationInputHealth } from './inputHealth';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
 
@@ -52,6 +53,8 @@ export interface Dictation {
   armBargeGrace(): void;
   /** True once the mic level shows live speech (drives the UI level dot). */
   speechActive(): boolean;
+  /** 261118: capture counters for voice_call_input_check (inputHealth.ts). */
+  inputHealth(): DictationInputHealth;
   /** Tear down mic, audio graph, and worker. */
   stop(): void;
 }
@@ -845,6 +848,8 @@ export async function createDictation(opts: {
 
   let muted = false;
   let hold = false;
+  // 261118 capture counters (inputHealth.ts): why a call heard nothing.
+  const health = { frames: 0, unmutedFrames: 0, zeroFrames: 0, peakRms: 0, speechOpens: 0 };
   /** When the current companion clip became AUDIBLE (armBargeGrace); basis for
    * the barge-in grace window that stops a clip's own onset from self-barging.
    * Deliberately NOT set by setHold: a reserved slot waiting on synthesis is
@@ -1473,6 +1478,7 @@ export async function createDictation(opts: {
 
   function openSpeech(frameMs: number): void {
     inSpeech = true;
+    if (!hold) health.speechOpens += 1;
     speechMs = frameMs;
     silenceMs = 0;
     // Both call sites push the trigger frame into preRoll BEFORE opening, so
@@ -1488,6 +1494,7 @@ export async function createDictation(opts: {
   captureNode.port.onmessage = (e: MessageEvent) => {
     const frame = e.data as Float32Array;
     if (!(frame instanceof Float32Array) || frame.length === 0) return;
+    health.frames += 1;
     // Before the mute check: a barge whose utterance ended keeps her paused
     // until its transcript lands, and muting right after speaking must not
     // stretch that wait past its bound.
@@ -1510,6 +1517,9 @@ export async function createDictation(opts: {
     for (let i = 0; i < frame.length; i += 1) sum += frame[i] * frame[i];
     const rms = Math.sqrt(sum / frame.length);
     const frameMs = (frame.length / SAMPLE_RATE) * 1000;
+    health.unmutedFrames += 1;
+    if (rms <= ZERO_FRAME_RMS) health.zeroFrames += 1;
+    if (rms > health.peakRms) health.peakRms = rms;
 
     // Echo-gate contour: 4 sub-windows per frame ≈ the gate's 32ms grid. The
     // frame's audio ENDS now; its sub-windows are stamped back across it.
@@ -1692,6 +1702,17 @@ export async function createDictation(opts: {
   sink.connect(ctx.destination);
 
   return {
+    inputHealth() {
+      const track = stream.getAudioTracks()[0];
+      return {
+        ...health,
+        trackState: track?.readyState ?? 'none',
+        trackMuted: track?.muted === true,
+        ctxState: ctx.state,
+        sampleRate: ctx.sampleRate,
+        trackLabel: track?.label ?? '',
+      };
+    },
     setMuted(m) {
       muted = m;
       if (m && inSpeech) resetUtterance();

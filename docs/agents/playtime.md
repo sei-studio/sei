@@ -76,6 +76,20 @@ stays in Settings > Account because it is an account setting).
   the line on the device instead and posts the `sei-voices-fallback` notice
   (`seiVoicesFallbackReason`, paused for a while after an allowance or rate
   refusal). No proxy change was needed.
+- **Local engine blocked (261118).** A voice pack can say Ready while the
+  engine that plays it (sherpa-onnx, in main) cannot load, which is what
+  Windows Smart App Control did to unsigned builds. `speech:runtime-status`
+  (`main/speech/runtimeStatus.ts`) loads the runtime once and classifies a
+  failure as `blocked_by_policy` / `missing` / `load_failed` (reading the
+  SAC registry state). VoicePanel asks only when a local voice or SenseVoice
+  pack is in use and on disk, and shows ONE error line ("Windows blocked
+  Sei's local voice engine. Update Sei, or use Sei Cloud voice."). In a
+  call, a line that cannot be synthesized is spoken with the user's own
+  ElevenLabs key when one is stored (`local-runtime-fallback` notice),
+  otherwise the call notice names the block (`SPEECH_RUNTIME_FAILED:<code>`);
+  SenseVoice falls back to Whisper. There is no OS-voice fallback: the same
+  policy puts PowerShell in Constrained Language Mode (no System.Speech /
+  SAPI COM), and a Web Speech path would bypass the call's audio queue.
 - "Free this week" (flag on only) shows what is left of the existing weekly allowance
   (the credits store, the same number the Sei tab shows).
 - Top-up tiles and the voice plan card are behind `VOICE_PLAN_UI_ENABLED`
@@ -93,6 +107,8 @@ All through `sei.track`; `main/analytics.ts` files them under the `credits` surf
 | `voice_trial_state` | `state` (`shown` + `left_pct`; `used_up` / `fallback` + `reason`) | the free Sei-voices meter is shown; a call falls back to device voices (both only with the flag on) |
 | `spend_alert_toggled` | `enabled`, `limit_usd` | the alert toggle or amount changes |
 | `spend_alert_fired` | `limit_usd`, `provider_kind` | main fires the monthly alert |
+| `local_speech_load_failed` | `os`, `code` (`blocked_by_policy` / `missing` / `load_failed`), `sac` (`on` / `eval` / `off` / `unknown` / `n/a`) | main, once per process, the first time sherpa-onnx fails to load (261118) |
+| `voice_call_input_check` | `input_state` (`no_frames` / `muted` / `digital_silence` / `quiet` / `speech_no_utterance` / `heard`), `live_s`, `frames_per_s`, `zero_share`, `peak_db` (10 dB bucket), `speech_opens`, `utterances`, `track_state`, `track_muted`, `ctx_state`, `sample_rate`, `virtual_input`, `input_devices`, `cloud_stt_off`, `backend`, `stt_mode` | once per call at 45 s live, or at hang-up after 10 s (`lib/voice/inputHealth.ts`, 261118); no device labels |
 
 ## Checks
 
