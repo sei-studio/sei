@@ -29,8 +29,42 @@ import { createSttArbiter, type SttHint } from './sttArbiter';
 import { whisperMirrorFirst } from './mirrorPref';
 import { tagCallSetupStage } from './callSetupFailure';
 import { isJunkTranscript } from './pfcSteer';
+import { openMic } from './audioDevices';
 
 export type DictationStatus = 'loading-model' | 'ready' | 'error';
+
+/**
+ * The call's capture constraints. Shared with the Settings mic meter so the
+ * level it shows is the level the call's VAD reads.
+ */
+export const CALL_MIC_CONSTRAINTS: MediaTrackConstraints = {
+  channelCount: 1,
+  // Echo cancellation is load-bearing: it subtracts the companion's TTS
+  // (played by this same page) from the mic signal.
+  echoCancellation: true,
+  noiseSuppression: true,
+  // autoGainControl OFF (260706): AGC dynamically boosts a quiet mic, which
+  // makes our absolute-RMS energy VAD read "hotter" (ambient noise + speaker
+  // echo cross the thresholds) and fights AEC's convergence — the "mic feels
+  // too sensitive" report. Off gives a stable signal the fixed thresholds
+  // can trust, which is the standard choice for energy-based VAD pipelines.
+  autoGainControl: false,
+};
+
+/**
+ * The quietest frame RMS that counts as "Sei hears something" (261118): the
+ * level the VAD needs to open speech at all (START_RMS_FLOOR). A dead or wrong
+ * device reads digital silence or a faint hiss under it for the whole call.
+ */
+export const INPUT_SIGNAL_RMS = 0.012;
+
+/** What the mic has delivered since the call (or the last device switch) began. */
+export interface InputStats {
+  /** Some unmuted frame reached INPUT_SIGNAL_RMS. */
+  heard: boolean;
+  /** Milliseconds of unmuted audio received. */
+  listenedMs: number;
+}
 
 /** First-run model download is ~40MB; a stalled CDN must surface as an error
  * instead of an eternal "Connecting…" (260705 field report). */
@@ -52,6 +86,12 @@ export interface Dictation {
   armBargeGrace(): void;
   /** True once the mic level shows live speech (drives the UI level dot). */
   speechActive(): boolean;
+  /** 261118: input signal since start or the last switchInput (no-input hint). */
+  inputStats(): InputStats;
+  /** 261118: move capture to another mic mid-call (null = system default).
+   *  Resolves false when the new device could not be opened; the call then
+   *  keeps the mic it had. */
+  switchInput(deviceId: string | null): Promise<boolean>;
   /** Tear down mic, audio graph, and worker. */
   stop(): void;
 }
@@ -695,6 +735,10 @@ export async function createDictation(opts: {
    * reason — see startRingtone's caller.
    */
   onMicReady?: () => void;
+  /** 261118: the mic picked in Settings (null/absent = system default). */
+  inputDeviceId?: string | null;
+  /** 261118: that mic is gone; capture fell back to the default. */
+  onInputDeviceGone?: () => void;
 }): Promise<Dictation> {
   const useLocalModel = (opts.localModel ?? 'eager') !== 'none';
   // 260816: the SenseVoice engine runs in MAIN (sherpa), so no worker boots —
@@ -774,21 +818,12 @@ export async function createDictation(opts: {
 
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        // Echo cancellation is load-bearing: it subtracts the companion's TTS
-        // (played by this same page) from the mic signal.
-        echoCancellation: true,
-        noiseSuppression: true,
-        // autoGainControl OFF (260706): AGC dynamically boosts a quiet mic, which
-        // makes our absolute-RMS energy VAD read "hotter" (ambient noise + speaker
-        // echo cross the thresholds) and fights AEC's convergence — the "mic feels
-        // too sensitive" report. Off gives a stable signal the fixed thresholds
-        // can trust, which is the standard choice for energy-based VAD pipelines.
-        autoGainControl: false,
-      },
-    });
+    // 261118: on the mic picked in Settings, falling back to the system
+    // default (and resetting the setting) when that device is gone.
+    stream = (await openMic(CALL_MIC_CONSTRAINTS, opts.inputDeviceId, {
+      getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+      onDeviceGone: opts.onInputDeviceGone,
+    })).stream;
   } catch (err) {
     worker?.terminate();
     opts.onStatus('error', 'microphone permission denied');
@@ -840,7 +875,12 @@ export async function createDictation(opts: {
   }
   URL.revokeObjectURL(workletUrl);
   const ctx: AudioContext = graphCtx;
-  const source: MediaStreamAudioSourceNode = graphSource;
+  // Mutable since 261118: switchInput swaps the stream under a live call.
+  let source: MediaStreamAudioSourceNode = graphSource;
+  let inputHeard = false;
+  let stopped = false;
+  let switchSeq = 0;
+  let inputListenedMs = 0;
   const captureNode: AudioWorkletNode = graphNode;
 
   let muted = false;
@@ -1510,6 +1550,8 @@ export async function createDictation(opts: {
     for (let i = 0; i < frame.length; i += 1) sum += frame[i] * frame[i];
     const rms = Math.sqrt(sum / frame.length);
     const frameMs = (frame.length / SAMPLE_RATE) * 1000;
+    inputListenedMs += frameMs;
+    if (rms >= INPUT_SIGNAL_RMS) inputHeard = true;
 
     // Echo-gate contour: 4 sub-windows per frame ≈ the gate's 32ms grid. The
     // frame's audio ENDS now; its sub-windows are stamped back across it.
@@ -1751,7 +1793,46 @@ export async function createDictation(opts: {
       if (inSpeech && !suspect) flushUtterance();
     },
     speechActive: () => inSpeech,
+    inputStats: () => ({ heard: inputHeard, listenedMs: inputListenedMs }),
+    async switchInput(deviceId) {
+      // Quick successive picks: only the latest one may land.
+      const mySwitch = ++switchSeq;
+      let next: MediaStream;
+      try {
+        next = (await openMic(CALL_MIC_CONSTRAINTS, deviceId, {
+          getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+          onDeviceGone: opts.onInputDeviceGone,
+        })).stream;
+      } catch {
+        return false;
+      }
+      if (stopped || mySwitch !== switchSeq) {
+        next.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      let nextSource: MediaStreamAudioSourceNode;
+      try {
+        nextSource = ctx.createMediaStreamSource(next);
+        nextSource.connect(captureNode);
+      } catch {
+        next.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      try { source.disconnect(); } catch { /* already gone */ }
+      stream.getTracks().forEach((t) => t.stop());
+      stream = next;
+      source = nextSource;
+      // A new device has its own room: relearn the floor, and judge "heard"
+      // afresh so the no-input hint answers for THIS mic.
+      if (inSpeech) resetUtterance();
+      preRoll.length = 0;
+      noiseFloor = 0.008;
+      inputHeard = false;
+      inputListenedMs = 0;
+      return true;
+    },
     stop() {
+      stopped = true;
       emitSpeech(false);
       try { captureNode.port.onmessage = null; } catch { /* torn down */ }
       try { captureNode.disconnect(); source.disconnect(); sink.disconnect(); } catch { /* torn down */ }

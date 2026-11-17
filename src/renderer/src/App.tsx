@@ -27,6 +27,7 @@ import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
+import { useAudioDeviceStore } from './lib/stores/useAudioDeviceStore';
 import { movedInId, useSeilinkStore } from './lib/stores/useSeilinkStore';
 import { SeilinkFlowHost } from './components/seilink/SeilinkFlowHost';
 import { introSeen } from './lib/seilink/introPref';
@@ -709,6 +710,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+          // 261118: the saved microphone and speaker (null = system default).
+          useAudioDeviceStore.getState().hydrate(cfg);
           // Appearance & feel: avatar overlay mode (default OFF; folds in the
           // deprecated call_overlay_enabled boolean) + per-character prefs.
           useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));
@@ -966,6 +969,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF when absent).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
+          // 261118: the saved microphone and speaker (null = system default).
+          useAudioDeviceStore.getState().hydrate(cfg);
           // Appearance & feel: avatar overlay mode (default OFF when absent;
           // folds in the deprecated call_overlay_enabled) + per-character prefs.
           useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));

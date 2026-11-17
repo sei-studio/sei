@@ -26,6 +26,7 @@
  * unchanged — 1 is as recorded, >1 is higher.
  */
 import * as defaultPitchBus from './pitchBus';
+import { applyOutputSink } from './audioDevices';
 import { tapClipLevel } from './avatarLevelTap';
 
 export interface TtsStreamHandle {
@@ -316,6 +317,8 @@ export function createAudioQueue(
         : new Blob([buf, SILENCE_MP3], { type: 'audio/mpeg' }),
     );
     const el = new Audio(url);
+    // 261118: the speaker picked in Settings (no-op on the system default).
+    void applyOutputSink(el);
     el.muted = outputMuted;
     // A clip enqueued while a provisional barge-in is open must not start at
     // full volume: the player may still be mid-sentence. beginClip also holds
@@ -436,6 +439,8 @@ export function createAudioQueue(
     const ms = new MediaSource();
     const url = URL.createObjectURL(ms);
     const el = new Audio(url);
+    // 261118: the speaker picked in Settings (no-op on the system default).
+    void applyOutputSink(el);
     currentDone = item.onDone;
     el.muted = outputMuted;
     // A clip enqueued while a provisional barge-in is open must not start at

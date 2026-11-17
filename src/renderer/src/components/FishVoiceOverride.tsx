@@ -13,6 +13,7 @@ import { fishReasonText } from '../lib/fishVoice';
 import { Button } from './Button';
 import { TextField } from './TextField';
 import styles from './FishVoiceOverride.module.css';
+import { applyOutputSink } from '../lib/voice/audioDevices';
 
 export interface FishVoicePick {
   id: string;
@@ -87,6 +88,7 @@ export function FishVoiceOverride({
       }
       const url = URL.createObjectURL(new Blob([res.audio], { type: 'audio/mpeg' }));
       const el = new Audio(url);
+      void applyOutputSink(el); // 261118: the speaker picked in Settings
       audioRef.current = el;
       const release = (): void => URL.revokeObjectURL(url);
       el.addEventListener('ended', release, { once: true });

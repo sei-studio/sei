@@ -30,6 +30,7 @@ import { attach as attachPitch } from '../lib/voice/pitchBus';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './SharedVoiceChoice.module.css';
 import { userChatLanguage } from '@shared/chatLanguage';
+import { applyOutputSink } from '../lib/voice/audioDevices';
 
 /** The pool + the default close match for one character. `ownGender` stands
  * in for the stored own-voice gender while an own pick is still unsaved. */
@@ -147,6 +148,7 @@ export function SharedVoiceChoice({
   function play(url: string): Promise<boolean> {
     return new Promise((resolve) => {
       const el = new Audio(url);
+      void applyOutputSink(el); // 261118: the speaker picked in Settings
       detachRef.current = attachPitch(el, pitch);
       audioRef.current = el;
       el.addEventListener('ended', () => {

@@ -52,6 +52,7 @@ import { CallBackdrop } from '../components/call/CallBackdrop';
 import { hasCallScene, resolveCallScene } from '../lib/callScenes';
 import type { UserConfig } from '@shared/characterSchema';
 import styles from './VoiceCallScreen.module.css';
+import audioStyles from '../components/audio/AudioDevices.module.css';
 
 /**
  * Remember how this character's calls should open. Re-reads config first: a
@@ -125,6 +126,10 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const addParticipant = useVoiceStore((s) => s.addParticipant);
   // 260725: cloud STT failed on a model-less call — offer the local backup.
   const sttFallbackPrompt = useVoiceStore((s) => s.sttFallbackPrompt);
+  // 261118: "Can't hear you? Pick your mic" (useVoiceStore noInputTick).
+  const noInputHint = useVoiceStore((s) => s.noInputHint && s.status === 'live');
+  const micMenuOpen = useVoiceStore((s) => s.micMenuOpen);
+  const openMicPickerFromHint = useVoiceStore((s) => s.openMicPickerFromHint);
   const acceptSttFallback = useVoiceStore((s) => s.acceptSttFallback);
   const dismissSttFallback = useVoiceStore((s) => s.dismissSttFallback);
 
@@ -330,7 +335,13 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
     const timer = window.setTimeout(() => setIntroShown(false), left);
     return () => window.clearTimeout(timer);
   }, [liveAt]);
-  const chromeRevealed = !backdropShown || nearBottom || focusWithin || introShown || status !== 'live';
+  const chromeRevealed =
+    !backdropShown || nearBottom || focusWithin || introShown || status !== 'live' || micMenuOpen || noInputHint;
+  const noInputHintLine = noInputHint ? (
+    <button type="button" className={audioStyles.noInputHint} onClick={openMicPickerFromHint}>
+      {t("Can't hear you? Pick your mic")}
+    </button>
+  ) : null;
   const onStagePointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (!backdropShown) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -571,6 +582,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
                 {callNotice}
               </p>
             ) : null}
+            {noInputHintLine}
 
             {/* The demoted call cluster: small round tiles, no names, the same
                 compact pills the in-game chrome row uses. */}
@@ -758,6 +770,10 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           {callNotice}
         </p>
       ) : null}
+
+      {/* 261118: no input signal yet on a live call. One line that opens the
+          call's mic menu (MicMenu, next to the mute pill). */}
+      {noInputHintLine}
 
       {/* Cloud-STT hiccup on a model-less call: a non-blocking offer to install
           the local backup. Accepting persists stt_local_fallback and starts the

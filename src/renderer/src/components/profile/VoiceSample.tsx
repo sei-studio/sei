@@ -29,6 +29,7 @@ import { ownVoiceOf } from '@shared/voiceIds';
 import { PlayIcon, StopIcon } from '../icons';
 import styles from './ProfileOverview.module.css';
 import { userChatLanguage } from '@shared/chatLanguage';
+import { applyOutputSink } from '../../lib/voice/audioDevices';
 
 export type SampleSource = 'bundled' | 'synth';
 export type SampleResult = { source: SampleSource; outcome: 'played' | 'failed' };
@@ -94,6 +95,7 @@ export function useVoiceSample(character: Character, sampleVoiceId: string | nul
   function play(url: string, rate: number): Promise<boolean> {
     return new Promise((resolve) => {
       const el = new Audio(url);
+      void applyOutputSink(el); // 261118: the speaker picked in Settings
       detachRef.current = attachPitch(el, rate);
       audioRef.current = el;
       el.addEventListener(

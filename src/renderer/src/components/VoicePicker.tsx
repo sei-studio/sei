@@ -77,6 +77,7 @@ import { PlayIcon, StopIcon } from './icons';
 import { clipMimeType } from '../lib/fishVoice';
 import styles from './VoicePicker.module.css';
 import { userChatLanguage } from '@shared/chatLanguage';
+import { applyOutputSink } from '../lib/voice/audioDevices';
 
 export interface VoicePickerProps {
   /** Selected pool voice id, NO_VOICE_ID ('none') for silent, or null for Auto. */
@@ -289,6 +290,7 @@ export function VoicePicker({
   function startAudio(url: string, voiceId: string, rate: number): Promise<boolean> {
     return new Promise((resolve) => {
       const el = new Audio(url);
+      void applyOutputSink(el); // 261118: the speaker picked in Settings
       const detachPitch = attachPitch(el, rate);
       audioRef.current = el;
       detachRef.current = detachPitch;

@@ -13,6 +13,7 @@ import { fishReasonText } from '../../lib/fishVoice';
 import { Button } from '../Button';
 import { TextField } from '../TextField';
 import styles from '../../screens/SettingsScreen.module.css';
+import { applyOutputSink } from '../../lib/voice/audioDevices';
 
 /** Bullets standing in for a stored key (same count as the other key rows). */
 const KEY_BULLETS = 24;
@@ -89,6 +90,7 @@ export function FishAudioSettings(): React.ReactElement {
       }
       const url = URL.createObjectURL(new Blob([res.audio], { type: 'audio/mpeg' }));
       const el = new Audio(url);
+      void applyOutputSink(el); // 261118: the speaker picked in Settings
       audioRef.current = el;
       const release = (): void => URL.revokeObjectURL(url);
       el.addEventListener('ended', release, { once: true });

@@ -37,6 +37,18 @@
   border-radius: var(--radius);
 }
 
+/* 261118: the narrow caret beside the mute pill that opens the mic menu.
+ * Same fill, no border; it hugs the mute pill as one control. */
+.pillBtnCaret {
+  width: 24px;
+  margin-left: -6px;
+}
+
+.pillBtnSm.pillBtnCaret {
+  width: 18px;
+  margin-left: -2px;
+}
+
 .pillBtn:hover {
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }

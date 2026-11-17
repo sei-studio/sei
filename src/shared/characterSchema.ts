@@ -711,6 +711,15 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
+   * Settings > Microphone and speakers (261118). The deviceId (from
+   * enumerateDevices) calls capture from and companion speech plays to.
+   * null or absent = the system default. A saved device that is gone is
+   * reset to null quietly at its next use (renderer lib/voice/audioDevices.ts).
+   * Device ids are opaque per-origin hashes, never labels.
+   */
+  audio_input_device: z.string().max(512).nullable().optional(),
+  audio_output_device: z.string().max(512).nullable().optional(),
+  /**
    * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
    * `avatar_mode`. Kept so existing config.json files still parse and so
    * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never

@@ -157,3 +157,69 @@ describe('createDictation setup failures', () => {
     expect(callSetupFailureProps(err)).toEqual({ stage: 'mic_capture', error_name: 'NotFoundError' });
   });
 });
+
+describe('createDictation input device (261118)', () => {
+  const streamOf = (t: { stop: ReturnType<typeof vi.fn> }) => ({ getTracks: () => [t] });
+
+  it('opens the saved mic with an exact deviceId', async () => {
+    const d = await createDictation({ ...baseOpts(), localModel: 'none', inputDeviceId: 'mic-1' });
+    expect(getUserMedia.mock.calls[0][0].audio.deviceId).toEqual({ exact: 'mic-1' });
+    expect(getUserMedia.mock.calls[0][0].audio.echoCancellation).toBe(true);
+    d.stop();
+  });
+
+  it('a saved mic that is gone falls back to the default and reports it, the call still starts', async () => {
+    getUserMedia.mockRejectedValueOnce(domErr('OverconstrainedError', 'deviceId'));
+    const onInputDeviceGone = vi.fn();
+    const d = await createDictation({ ...baseOpts(), localModel: 'none', inputDeviceId: 'gone', onInputDeviceGone });
+    expect(onInputDeviceGone).toHaveBeenCalledTimes(1);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+    expect(getUserMedia.mock.calls[1][0].audio.deviceId).toBeUndefined();
+    d.stop();
+  });
+
+  it('a refusal on the saved mic is still a refusal (no silent fallback)', async () => {
+    getUserMedia.mockRejectedValueOnce(domErr('NotAllowedError', 'Permission denied'));
+    const err = await failure({ ...baseOpts(), localModel: 'none', inputDeviceId: 'mic-1' });
+    expect(callSetupFailureProps(err)).toEqual({ stage: 'mic_permission', error_name: 'NotAllowedError' });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('switchInput moves capture to the new mic, stops the old one and resets the input stats', async () => {
+    const d = await createDictation({ ...baseOpts(), localModel: 'none' });
+    expect(d.inputStats()).toEqual({ heard: false, listenedMs: 0 });
+    const next = { stop: vi.fn() };
+    getUserMedia.mockResolvedValueOnce(streamOf(next));
+    await expect(d.switchInput('mic-2')).resolves.toBe(true);
+    expect(getUserMedia.mock.calls[1][0].audio.deviceId).toEqual({ exact: 'mic-2' });
+    expect(track.stop).toHaveBeenCalled();
+    expect(next.stop).not.toHaveBeenCalled();
+    d.stop();
+    expect(next.stop).toHaveBeenCalled();
+  });
+
+  it('a switch that cannot open the new mic keeps the current one', async () => {
+    const d = await createDictation({ ...baseOpts(), localModel: 'none' });
+    getUserMedia.mockRejectedValueOnce(domErr('NotReadableError', 'busy'));
+    await expect(d.switchInput('busy-mic')).resolves.toBe(false);
+    expect(track.stop).not.toHaveBeenCalled();
+    d.stop();
+  });
+
+  it('only the latest of two quick switches lands', async () => {
+    const d = await createDictation({ ...baseOpts(), localModel: 'none' });
+    const first = { stop: vi.fn() };
+    const second = { stop: vi.fn() };
+    let releaseFirst: (v: unknown) => void = () => {};
+    getUserMedia.mockImplementationOnce(() => new Promise((r) => (releaseFirst = () => r(streamOf(first)))));
+    getUserMedia.mockResolvedValueOnce(streamOf(second));
+    const a = d.switchInput('a');
+    const b = d.switchInput('b');
+    await expect(b).resolves.toBe(true);
+    releaseFirst(undefined);
+    await expect(a).resolves.toBe(false);
+    expect(first.stop).toHaveBeenCalled();
+    expect(second.stop).not.toHaveBeenCalled();
+    d.stop();
+  });
+});

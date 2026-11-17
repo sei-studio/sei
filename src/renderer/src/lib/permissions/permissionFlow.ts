@@ -5,6 +5,8 @@
  */
 import { sei } from '../ipcClient';
 import type { OsPermissionKind } from '@shared/permissionsIpc';
+import { openMic } from '../voice/audioDevices';
+import { useAudioDeviceStore, resetMissingInput } from '../stores/useAudioDeviceStore';
 
 export type PermissionEvent = 'permission_prompt_shown' | 'permission_settings_opened' | 'permission_granted';
 
@@ -81,7 +83,11 @@ export async function micAccessOk(platform: string = sei.platform): Promise<bool
     }
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // 261118: probe the mic the call will open (Settings > Microphone).
+    const { stream } = await openMic({}, useAudioDeviceStore.getState().inputId, {
+      getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+      onDeviceGone: resetMissingInput,
+    });
     stream.getTracks().forEach((track) => track.stop());
     return true;
   } catch (err) {

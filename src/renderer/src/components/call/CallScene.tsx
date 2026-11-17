@@ -31,6 +31,7 @@ import {
   restIsPastFront,
 } from '../../lib/callScenes';
 import styles from './CallScene.module.css';
+import { applyOutputSink } from '../../lib/voice/audioDevices';
 
 /**
  * Where the character is in the scene's little life cycle.
@@ -134,7 +135,11 @@ export function CallScene({
     const steps = scene.footsteps;
     const vol = volRef.current;
     if (pose !== 'walk' || vol <= 0 || !steps || steps.length === 0) return;
-    if (!stepAudioRef.current) stepAudioRef.current = steps.map((src) => new Audio(src));
+    if (!stepAudioRef.current) stepAudioRef.current = steps.map((src) => {
+        const a = new Audio(src);
+        void applyOutputSink(a); // 261118: the call's speaker
+        return a;
+      });
     const a = stepAudioRef.current[stepIdxRef.current];
     stepIdxRef.current = (stepIdxRef.current + 1) % stepAudioRef.current.length;
     a.volume = Math.min(1, vol);

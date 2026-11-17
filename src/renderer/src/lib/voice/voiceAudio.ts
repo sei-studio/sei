@@ -17,8 +17,11 @@
  * pitch bus takes this one rather than making its own.
  */
 
+import { applyOutputSink, onOutputDeviceChange, type SinkTarget } from './audioDevices';
+
 /** Never closed while the app runs (see the file header). */
 let shared: AudioContext | null = null;
+let sinkFollow: (() => void) | null = null;
 
 export function sharedContext(): AudioContext | null {
   if (shared && shared.state !== 'closed') {
@@ -30,6 +33,15 @@ export function sharedContext(): AudioContext | null {
     shared = new AudioContext();
   } catch {
     return null;
+  }
+  // 261118: every call sound (ring, chimes, pitched companion speech, which
+  // the pitch bus routes through this context) plays on the speaker picked in
+  // Settings. Re-pointed live when the choice changes.
+  void applyOutputSink(shared as unknown as SinkTarget);
+  if (!sinkFollow) {
+    sinkFollow = onOutputDeviceChange((id) => {
+      if (shared && shared.state !== 'closed') void applyOutputSink(shared as unknown as SinkTarget, id);
+    });
   }
   return shared;
 }

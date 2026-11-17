@@ -51,6 +51,7 @@ import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
+import { AudioDevicesSettings } from '../components/settings/AudioDevicesSettings';
 import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
 
 /**
@@ -650,6 +651,14 @@ export function SettingsScreen(): React.ReactElement {
               {t('Open Playtime')}
             </Button>
           </div>
+        </div>
+
+        {/* ── Microphone and speakers (261118): which mic calls hear and
+            which speaker companions play on, with a live mic meter and a
+            speaker test (AudioDevicesSettings). ── */}
+        <div className={styles.group} data-testid="settings-audio-devices">
+          <h3 className={styles.groupTitle}>{t('Microphone and speakers')}</h3>
+          <AudioDevicesSettings />
         </div>
 
         {/* ── Games & search (game adapters, 260908): ONE group for every
