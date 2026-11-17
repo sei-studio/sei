@@ -181,18 +181,3 @@ export function _resetAudioDevicesForTests(): void {
   onOutputGone = null;
   outputListeners.clear();
 }
-
-// ── No-input hint ───────────────────────────────────────────────────────────
-
-/**
- * Whether a live call should say "Can't hear you?" (261118): the mic has
- * delivered at least `afterMs` of unmuted audio and not one frame of it
- * reached the speech floor. Muted time is not counted by the dictation, so a
- * muted player never trips it.
- */
-export function noInputHintDue(
-  stats: { heard: boolean; listenedMs: number },
-  afterMs: number,
-): boolean {
-  return !stats.heard && stats.listenedMs >= afterMs;
-}

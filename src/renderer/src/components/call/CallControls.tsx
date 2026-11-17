@@ -48,7 +48,6 @@ import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useBackseatStore } from '../../lib/stores/useBackseatStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import {
-  ChevronUpIcon,
   MicIcon,
   MicOffIcon,
   HeadphonesIcon,
@@ -61,8 +60,6 @@ import {
 } from '../icons';
 import { useT } from '../../lib/i18n';
 import { visionBlocked, visionGateReason } from '../../lib/visionGate';
-import { MicMenu } from '../audio/MicMenu';
-import audioStyles from '../audio/AudioDevices.module.css';
 import styles from './CallControls.module.css';
 
 export interface CallControlsProps {
@@ -97,9 +94,6 @@ export function CallControls({
   const deafened = useUiStore((s) => s.callDeafened);
   const setDeafened = useUiStore((s) => s.setCallDeafened);
   const endCall = useVoiceStore((s) => s.endCall);
-  const micMenuOpen = useVoiceStore((s) => s.micMenuOpen);
-  const setMicMenuOpen = useVoiceStore((s) => s.setMicMenuOpen);
-  const micGroupRef = React.useRef<HTMLSpanElement | null>(null);
   // 261030: the manual interrupt. Live calls only: while ringing there is
   // nothing to cut, and a disabled pill would just be noise in the row.
   const interrupt = useVoiceStore((s) => s.interrupt);
@@ -163,33 +157,17 @@ export function CallControls({
 
   return (
     <div className={row}>
-      {/* 261118: the mute pill plus a caret that opens the mic menu (the
-          mic and speaker pickers, MicMenu). */}
-      <span className={audioStyles.micGroup} ref={micGroupRef}>
-        <button
-          type="button"
-          className={muted ? `${btn} ${styles.pillBtnToggled}` : btn}
-          onClick={() => setMuted(!muted)}
-          aria-pressed={muted}
-          aria-label={muteLabel}
-          data-tip={muteLabel}
-          data-tip-up={tipUp}
-        >
-          {muted ? <MicOffIcon size={iconPx} /> : <MicIcon size={iconPx} />}
-        </button>
-        <button
-          type="button"
-          className={`${btn} ${styles.pillBtnCaret}`}
-          onClick={() => setMicMenuOpen(!micMenuOpen)}
-          aria-expanded={micMenuOpen}
-          aria-label={t('Microphone and speakers')}
-          data-tip={micMenuOpen ? undefined : t('Microphone and speakers')}
-          data-tip-up={tipUp}
-        >
-          <ChevronUpIcon size={small ? 12 : 14} />
-        </button>
-        <MicMenu groupRef={micGroupRef} />
-      </span>
+      <button
+        type="button"
+        className={muted ? `${btn} ${styles.pillBtnToggled}` : btn}
+        onClick={() => setMuted(!muted)}
+        aria-pressed={muted}
+        aria-label={muteLabel}
+        data-tip={muteLabel}
+        data-tip-up={tipUp}
+      >
+        {muted ? <MicOffIcon size={iconPx} /> : <MicIcon size={iconPx} />}
+      </button>
 
       <button
         type="button"

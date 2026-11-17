@@ -58,8 +58,13 @@ import { localTtsModel, seiVoicesActive } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
-import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
-import { noInputHintDue } from '../voice/audioDevices';
+import {
+  burstLanguageFor,
+  cloudPassText,
+  createDictation,
+  type Dictation,
+  type DictationCallStats,
+} from '../voice/dictation';
 import { useAudioDeviceStore, resetMissingInput } from './useAudioDeviceStore';
 import type { SttHint } from '../voice/sttArbiter';
 import {
@@ -75,10 +80,11 @@ import {
   type MicEchoInfo,
 } from '../voice/echoGate';
 import { createInterruptStats } from '../voice/interruptStats';
+import { createCallHearing } from '../voice/callHearing';
 import { createCutTracker } from '../voice/bargeCut';
 import { createVoiceReplyClock } from '../voice/replyClock';
 import type { CallInterruptCounts } from '@shared/callInterrupts';
-import { sttPolicy } from '../voice/sttPolicy';
+import { sttPolicy, sttPathFor } from '../voice/sttPolicy';
 import {
   decideInactivity,
   countdownSecondsLeft,
@@ -219,18 +225,6 @@ interface VoiceState {
   inactivitySecondsLeft: number;
   /** "I'm here": dismiss the inactivity popup and reset the 10-minute clock. */
   confirmPresence: () => void;
-  /**
-   * 261118: the live call has had no input signal for NO_INPUT_HINT_MS of
-   * unmuted audio (noInputWatch). The call view shows one line, "Can't hear
-   * you? Pick your mic", which opens the call's mic menu. Clears when the mic
-   * starts delivering signal or the player switches mic.
-   */
-  noInputHint: boolean;
-  /** 261118: the call controls' mic menu (input + output pickers) is open. */
-  micMenuOpen: boolean;
-  setMicMenuOpen: (open: boolean) => void;
-  /** The no-input hint was clicked: open the mic menu, count the click. */
-  openMicPickerFromHint: () => void;
 }
 
 /** Non-reactive session internals (torn down in endCall). */
@@ -345,19 +339,10 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
 }
 /** Session token — guards async completions from a superseded/ended call. */
 let session = 0;
-
-/**
- * 261118 no-input hint: how much UNMUTED audio a live call may deliver with
- * no frame over INPUT_SIGNAL_RMS before the call view says "Can't hear you?".
- * 25 s covers the greeting and a normal first reply; muted time does not
- * count, so a player who mutes on purpose is never told their mic is wrong.
- */
-const NO_INPUT_HINT_MS = 25_000;
-const NO_INPUT_POLL_MS = 1_000;
-/** The hint already fired (and was tracked) on this call. */
-let noInputFired = false;
 /** 261030: interrupt diagnostics for voice_call_ended (interruptStats.ts). */
 const interruptStats = createInterruptStats();
+/** 261118: was the player heard, for voice_call_ended (callHearing.ts). */
+const callHearing = createCallHearing();
 /** 261112: the companion line a voice barge-in cut, for the words that cut it (bargeCut.ts). */
 const cutTracker = createCutTracker();
 
@@ -383,6 +368,15 @@ function inGameNow(characterId: string): boolean {
 /** A companion's slice of the interrupt counts, for its hang-up report. */
 function interruptsFor(characterId: string): { interrupts: CallInterruptCounts } {
   return { interrupts: interruptStats.take(characterId) };
+}
+/** 261118: a companion's slice of the hearing counts, for its hang-up report.
+ *  `stats` is the dictation's latest totals (read before it is stopped). */
+function hearingFor(
+  characterId: string,
+  stats: DictationCallStats | null,
+): { hearing?: NonNullable<ReturnType<typeof callHearing.take>> } {
+  const hearing = callHearing.take(characterId, stats);
+  return hearing ? { hearing } : {};
 }
 /** When each participant's audio went live — basis for their connectedMs row. */
 const liveSince = new Map<string, number>();
@@ -1513,49 +1507,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     }
   }
 
+  // 261118: Settings stays reachable while a call runs in the background, so
+  // a mic picked there mid-call moves the live capture to it (a failed open
+  // keeps the current mic).
+  useAudioDeviceStore.subscribe((next, prev) => {
+    if (next.inputId === prev.inputId || !dictation) return;
+    void dictation.switchInput(next.inputId);
+  });
+
   /** One tick of the inactivity watchdog. Chained setTimeout guarded by the
    * session token (same pattern as idleTick), so it dies with the call. All
    * decisions compare wall-clock timestamps (inactivityWatchdog.ts), so a
    * machine that slept 8 hours evaluates once on wake: prompt, then the 10s
    * countdown — never an end without the popup having been shown. */
-  /** 261118: the no-input hint (NO_INPUT_HINT_MS). Polls the dictation's
-   *  input stats once a second for the life of the call; the session token
-   *  ends the chain at hang-up. Fires the hint (and its event) at most once
-   *  per call, and keeps watching so it can clear when signal arrives. */
-  function noInputTick(mySession: number): void {
-    if (session !== mySession) return;
-    const d = dictation;
-    if (d && get().status === 'live') {
-      const stats = d.inputStats();
-      const due = noInputHintDue(stats, NO_INPUT_HINT_MS);
-      if (due && !get().noInputHint && !noInputFired) {
-        noInputFired = true;
-        set({ noInputHint: true });
-        try {
-          sei.track('call_no_input_detected', { os: sei.platform, custom_mic: useAudioDeviceStore.getState().inputId !== null });
-        } catch {
-          /* analytics is never load-bearing */
-        }
-      } else if (stats.heard && get().noInputHint) {
-        set({ noInputHint: false });
-      }
-    }
-    window.setTimeout(() => noInputTick(mySession), NO_INPUT_POLL_MS);
-  }
-
-  // 261118: a mic picked mid-call (the call's mic menu or Settings) moves the
-  // live capture to it. The hint is re-judged for the new device.
-  useAudioDeviceStore.subscribe((next, prev) => {
-    if (next.inputId === prev.inputId || !dictation) return;
-    const d = dictation;
-    const mySession = session;
-    void d.switchInput(next.inputId).then((ok) => {
-      if (session !== mySession || !ok) return;
-      noInputFired = false;
-      if (get().noInputHint) set({ noInputHint: false });
-    });
-  });
-
   function inactivityTick(mySession: number): void {
     if (session !== mySession) return;
     const s = get();
@@ -1874,8 +1838,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     introHold: false,
     inactivityPrompt: false,
     inactivitySecondsLeft: 0,
-    noInputHint: false,
-    micMenuOpen: false,
 
     startCall: async (characterId) => {
       const prev = get();
@@ -1901,6 +1863,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const dialStart = Date.now();
       liveSince.clear();
       interruptStats.reset();
+      callHearing.reset();
       cutTracker.clear();
       replyClock.reset();
       pendingTts = 0;
@@ -1932,8 +1895,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         sttFallbackPrompt: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
-        noInputHint: false,
-        micMenuOpen: false,
         micBlocked: null,
       });
 
@@ -2099,6 +2060,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         uiLanguage: callCfg?.ui_language,
         sensevoiceReady,
       });
+      callHearing.setPath(sttPathFor(policy, callCfg?.ai_backend_kind ?? 'cloud-proxy'));
       // The SenseVoice local leg: utterance PCM → main-side sherpa. Text comes
       // back already normalized (main applies the same normalizeSttText as the
       // cloud path).
@@ -2137,7 +2099,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           if ('unavailable' in res) {
             cloudSttOff = true;
             const { reason } = res as { unavailable: true; reason?: 'no-credentials' | 'upstream' };
-            if (reason === 'no-credentials') cloudSttSilentOff = true;
+            if (reason === 'no-credentials') {
+              cloudSttSilentOff = true;
+              // 261118: no key for the cloud leg, so only this machine
+              // transcribes (BYOK without an ElevenLabs key).
+              if (session === mySession && policy.localModel === 'eager') callHearing.setPath('local');
+            }
             return null;
           }
           // A barge burst Scribe was unsure of is her echo it made a word of
@@ -2198,6 +2165,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             if (session !== mySession) return;
             const s = get();
             if (s.status !== 'live' || !s.participants.length) return;
+            callHearing.noteUtterance(); // 261118: voice_call_ended player_utterances
             // The director handles addressing, mirroring, and the reply chain.
             dispatchUserTurn(text, span);
           },
@@ -2325,6 +2293,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const now = Date.now();
       liveSince.set(characterId, now);
       interruptStats.join(characterId);
+      callHearing.join(characterId, dictation?.callStats() ?? null);
       // Tell main the call is live (260926): it closes the call itself on an
       // account switch and needs the same stopwatch start to time it.
       void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
@@ -2351,10 +2320,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       inactivityPromptAt = null;
       window.setTimeout(() => inactivityTick(mySession), IDLE_TICK_MS);
 
-      // 261118: say so when the mic delivers nothing (see NO_INPUT_HINT_MS).
-      noInputFired = false;
-      window.setTimeout(() => noInputTick(mySession), NO_INPUT_POLL_MS);
-
       // A one-second beat after "connected" before the companion speaks — a real
       // pickup pause, and a head start for the greeting's TTS first byte.
       await wait(CONNECT_SPEAK_DELAY_MS);
@@ -2376,6 +2341,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       set({ participants: [...s.participants, characterId] });
       liveSince.set(characterId, Date.now());
       interruptStats.join(characterId);
+      callHearing.join(characterId, dictation?.callStats() ?? null);
       // A join is live the moment it lands (no ring), so open + live in one.
       void sei.voiceCallSetActive({ characterId, active: true, live: true }).catch(() => {});
       // Tell the companions already on the call that someone joined, so they know
@@ -2428,7 +2394,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         .voiceCallSetActive({
           characterId,
           active: false,
-          ...(since !== undefined ? { connectedMs: Date.now() - since, ...interruptsFor(characterId) } : {}),
+          ...(since !== undefined
+            ? {
+                connectedMs: Date.now() - since,
+                ...interruptsFor(characterId),
+                ...hearingFor(characterId, dictation?.callStats() ?? null),
+              }
+            : {}),
           reason,
         })
         .catch(() => {});
@@ -2470,6 +2442,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       if (participants.length) playHangupChime();
       ttsStreams.clear();
       ttsOrphans.clear();
+      // 261118: the hearing totals, read before the dictation goes away.
+      const finalStats = dictation?.callStats() ?? null;
       dictation?.stop();
       dictation = null;
       queue?.stop();
@@ -2481,7 +2455,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           .voiceCallSetActive({
             characterId: id,
             active: false,
-            ...(since !== undefined ? { connectedMs: now - since, ...interruptsFor(id) } : {}),
+            ...(since !== undefined
+              ? { connectedMs: now - since, ...interruptsFor(id), ...hearingFor(id, finalStats) }
+              : {}),
             reason,
           })
           .catch(() => {});
@@ -2512,8 +2488,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         introHold: false,
         inactivityPrompt: false,
         inactivitySecondsLeft: 0,
-        noInputHint: false,
-        micMenuOpen: false,
         micBlocked: null,
       });
       useUiStore.getState().endCall();
@@ -2547,17 +2521,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // "I'm here" on the inactivity popup: real presence, so the popup drops
     // and the 10-minute clock restarts.
     confirmPresence: () => noteCallActivity(),
-
-    setMicMenuOpen: (open) => set({ micMenuOpen: open }),
-
-    openMicPickerFromHint: () => {
-      set({ micMenuOpen: true });
-      try {
-        sei.track('call_no_input_hint_clicked', { os: sei.platform });
-      } catch {
-        /* analytics is never load-bearing */
-      }
-    },
 
     setIntroHold: (hold) => {
       window.clearTimeout(introHoldTimer);

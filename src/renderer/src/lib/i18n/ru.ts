@@ -2526,7 +2526,7 @@ export const RU: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[голоса Sei сейчас недоступны, говорят голоса этого устройства]",
   "[Sei voices are used up this week, using voices on this device]": "[голоса Sei на этой неделе закончились, говорят голоса этого устройства]",
   "About extra credits": "О дополнительных кредитах",
-  // 261118: Settings > Microphone and speakers, the call's mic menu and no-input hint.
+  // 261118: Settings > Microphone and speakers.
   "Microphone and speakers": "Микрофон и динамики",
   "Microphone": "Микрофон",
   "Speakers": "Динамики",
@@ -2539,9 +2539,7 @@ export const RU: Record<string, string> = {
   "Record and play back": "Записать и прослушать",
   "Recording…": "Запись…",
   "Playing back…": "Воспроизведение…",
-  "Play test sound": "Проиграть тестовый звук",
   "Check that Sei hears you.": "Проверьте, слышит ли вас Sei.",
   "Test mic": "Проверить микрофон",
   "Sei could not open this microphone.": "Sei не удалось открыть этот микрофон.",
-  "Can't hear you? Pick your mic": "Вас не слышно? Выберите микрофон",
 };

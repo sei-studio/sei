@@ -6,7 +6,6 @@ import {
   getOutputDeviceId,
   isDeviceGone,
   micConstraints,
-  noInputHintDue,
   onOutputDeviceChange,
   openMic,
   setOutputDeviceId,
@@ -190,13 +189,5 @@ describe('output sink (261118)', () => {
     setOutputDeviceId('b');
     expect(seen).toEqual(['a', null]);
     expect(getOutputDeviceId()).toBe('b');
-  });
-});
-
-describe('noInputHintDue (261118)', () => {
-  it('fires only after enough unmuted audio with no signal at all', () => {
-    expect(noInputHintDue({ heard: false, listenedMs: 24_999 }, 25_000)).toBe(false);
-    expect(noInputHintDue({ heard: false, listenedMs: 25_000 }, 25_000)).toBe(true);
-    expect(noInputHintDue({ heard: true, listenedMs: 60_000 }, 25_000)).toBe(false);
   });
 });

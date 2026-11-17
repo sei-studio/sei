@@ -1,5 +1,5 @@
-/* Microphone and speakers (261118): the level meter, the call's mic menu and
- * the no-input hint. Tokens only; buttons carry no border (261103 rule). */
+/* Microphone and speakers (261118): the Settings level meter. Tokens only;
+ * buttons carry no border (261103 rule). */
 
 /* ── Settings: live level meter row ─────────────────────────────────────── */
 .meterRow {
@@ -47,74 +47,4 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--muted);
-}
-
-/* ── Call controls: the mic menu ─────────────────────────────────────────── */
-.micGroup {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-}
-
-.micMenu {
-  position: absolute;
-  bottom: calc(100% + var(--space-sm));
-  left: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  min-width: 260px;
-  max-width: min(360px, 80vw);
-  padding: var(--space-md);
-  background: var(--surface-2);
-  color: var(--text);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
-  text-align: left;
-}
-
-.micMenuLabel {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.micMenuSelect {
-  width: 100%;
-  padding: 6px var(--space-sm);
-  font-family: var(--sans);
-  font-size: 13px;
-  background: var(--input-bg, var(--window));
-  color: var(--text);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.micMenuSelect:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* ── Call view: the one-line no-input hint ───────────────────────────────── */
-.noInputHint {
-  -webkit-appearance: none;
-  appearance: none;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  font-family: var(--sans);
-  font-size: 12px;
-  font-style: italic;
-  color: var(--accent);
-  cursor: pointer;
-  max-width: 520px;
-}
-
-.noInputHint:hover,
-.noInputHint:focus-visible {
-  text-decoration: underline;
-  outline: none;
 }

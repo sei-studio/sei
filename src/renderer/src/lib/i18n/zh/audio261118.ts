@@ -1,4 +1,4 @@
-/** zh: Settings > Microphone and speakers, the call's mic menu and no-input hint (261118). */
+/** zh: Settings > Microphone and speakers (261118). */
 export const ZH_AUDIO_261118: Record<string, string> = {
   "Microphone and speakers": "麦克风和扬声器",
   "Microphone": "麦克风",
@@ -12,9 +12,7 @@ export const ZH_AUDIO_261118: Record<string, string> = {
   "Record and play back": "录音并回放",
   "Recording…": "正在录音…",
   "Playing back…": "正在回放…",
-  "Play test sound": "播放测试音",
   "Check that Sei hears you.": "看看 Sei 能不能听到你。",
   "Test mic": "测试麦克风",
   "Sei could not open this microphone.": "Sei 无法打开这个麦克风。",
-  "Can't hear you? Pick your mic": "听不到你？选择你的麦克风",
 };

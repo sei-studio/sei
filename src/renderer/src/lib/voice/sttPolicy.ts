@@ -22,6 +22,8 @@
  * UserConfig's optional stt_* fields satisfy it.
  */
 
+import type { SttPath } from '@shared/callHearing';
+
 export type SttLocalModel = 'eager' | 'none';
 
 /** Which engine serves the LOCAL leg of the race (meaningful when 'eager'). */
@@ -76,4 +78,15 @@ export function sttPolicy(
     };
   }
   return { localModel: 'eager', localEngine: 'whisper', useCloud: engine !== 'whisper' };
+}
+
+/**
+ * 261118: the voice_call_ended `stt_path` of a call on this policy
+ * (shared/callHearing.ts). Cloud STT on a Sei account goes through the proxy
+ * ('cloud'); on a BYOK backend it uses the player's own ElevenLabs key
+ * ('byok'); with no cloud leg only this machine transcribes ('local').
+ */
+export function sttPathFor(policy: Pick<SttPolicy, 'useCloud'>, backendKind: 'local' | 'cloud-proxy'): SttPath {
+  if (!policy.useCloud) return 'local';
+  return backendKind === 'cloud-proxy' ? 'cloud' : 'byok';
 }

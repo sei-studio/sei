@@ -41,6 +41,19 @@ Rules that follow from the existing implementations:
 Current members: `bot_session_ended` (Minecraft), `chess_game_ended`,
 `voice_call_ended`, `draw_game_ended`, `backseat_ended`, `chat_session_ended`.
 
+**`voice_call_ended` says whether the player was heard (261118).** Until
+then "the companion talks but never hears me" could only be estimated from
+the proxy's hourly STT cost rows (cloud calls only). Each companion's row now
+carries, for its slice of the call: `player_utterances` (transcripts accepted
+as a turn), `stt_requests` (transcription passes on any engine),
+`input_peak_heard` (some unmuted mic frame reached the speech floor) and
+`stt_path` (`cloud` / `byok` / `local`). Shape only, on cloud, BYOK and local
+calls alike; absent on a call main closed itself (quit, account switch).
+See `src/shared/callHearing.ts` and `src/renderer/src/lib/voice/callHearing.ts`.
+Settings > Microphone and speakers adds `mic_device_changed` /
+`speaker_device_changed` `{is_default, source}` and `mic_test_used`
+`{mode, heard}`.
+
 **`bot_session_ended` says why (260929).** It used to carry no reason, so a
 player pressing Stop looked exactly like a kick loop, and 10 of 36 Minecraft
 users in a month had sub-minute sessions nobody could explain. It now carries

@@ -2325,7 +2325,7 @@ export const IT: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[voci di Sei non disponibili al momento, in uso le voci di questo dispositivo]",
   "[Sei voices are used up this week, using voices on this device]": "[voci di Sei esaurite per questa settimana, in uso le voci di questo dispositivo]",
   "About extra credits": "Informazioni sui crediti extra",
-  // 261118: Settings > Microphone and speakers, the call's mic menu and no-input hint.
+  // 261118: Settings > Microphone and speakers.
   "Microphone and speakers": "Microfono e altoparlanti",
   "Microphone": "Microfono",
   "Speakers": "Altoparlanti",
@@ -2338,9 +2338,7 @@ export const IT: Record<string, string> = {
   "Record and play back": "Registra e riascolta",
   "Recording…": "Registrazione…",
   "Playing back…": "Riproduzione…",
-  "Play test sound": "Riproduci suono di prova",
   "Check that Sei hears you.": "Controlla che Sei ti senta.",
   "Test mic": "Prova microfono",
   "Sei could not open this microphone.": "Sei non è riuscita ad aprire questo microfono.",
-  "Can't hear you? Pick your mic": "Non ti sentiamo? Scegli il microfono",
 };

@@ -2526,7 +2526,7 @@ export const JA: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[Seiのボイスは今使えないため、このデバイスのボイスを使っています]",
   "[Sei voices are used up this week, using voices on this device]": "[今週のSeiのボイスを使い切ったため、このデバイスのボイスを使っています]",
   "About extra credits": "追加クレジットについて",
-  // 261118: Settings > Microphone and speakers, the call's mic menu and no-input hint.
+  // 261118: Settings > Microphone and speakers.
   "Microphone and speakers": "マイクとスピーカー",
   "Microphone": "マイク",
   "Speakers": "スピーカー",
@@ -2539,9 +2539,7 @@ export const JA: Record<string, string> = {
   "Record and play back": "録音して再生",
   "Recording…": "録音中…",
   "Playing back…": "再生中…",
-  "Play test sound": "テスト音を再生",
   "Check that Sei hears you.": "Seiに声が届いているか確認します。",
   "Test mic": "マイクをテスト",
   "Sei could not open this microphone.": "このマイクを開けませんでした。",
-  "Can't hear you? Pick your mic": "声が届いていません。マイクを選んでください",
 };

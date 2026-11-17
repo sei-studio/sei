@@ -695,23 +695,6 @@ export const HandIcon: React.FC<IconProps> = ({ size = 22 }) => (
 );
 
 /** MicIcon — voice-call mute control (unmuted state). */
-/** 261118: the caret on the call's mute pill that opens the mic menu. */
-export const ChevronUpIcon: React.FC<IconProps> = ({ size = 14 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M6 15l6-6 6 6" />
-  </svg>
-);
-
 export const MicIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}

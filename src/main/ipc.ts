@@ -46,6 +46,7 @@ import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
+import { CallHearingSchema, type CallHearing } from '../shared/callHearing';
 import type { FishAudioResult, FishOverrideResult } from '../shared/fishVoices';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
@@ -236,6 +237,7 @@ export interface IpcHandlerDeps {
     connectedMs: number,
     reason: string,
     interrupts?: CallInterruptCounts,
+    hearing?: CallHearing,
   ) => void;
   /**
    * Voice calls (260705): the call pipeline went live — make the companion
@@ -2269,6 +2271,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             cut_lines: z.number().int().nonnegative().default(0),
           })
           .optional(),
+        // Hang-up only (261118): was the player heard (shared/callHearing.ts).
+        hearing: CallHearingSchema.optional(),
       })
       .parse(argsRaw);
     // The state transition and its account-switch cases live in callState
@@ -2277,7 +2281,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const fx = applyCallReport(args);
     if (fx.voiceCall !== null) deps.supervisor.setVoiceCall(args.characterId, fx.voiceCall);
     if (fx.endedMs !== null) {
-      deps.notifyCallEnded?.(args.characterId, fx.endedMs, args.reason ?? 'unspecified', args.interrupts);
+      deps.notifyCallEnded?.(args.characterId, fx.endedMs, args.reason ?? 'unspecified', args.interrupts, args.hearing);
     }
     if (!fx.stamp) return;
     // Presence (260707): a call is a real interaction, so stamp last_chatted at

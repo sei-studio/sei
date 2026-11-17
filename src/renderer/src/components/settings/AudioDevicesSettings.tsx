@@ -8,16 +8,15 @@
  *               a bar that moves here is a mic the call will hear. "Record and
  *               play back" records 3 s and plays it through the chosen
  *               speaker, which checks both devices at once.
- *   Speakers    the output picker and "Play test sound" (a short bundled Sui
- *               line, played to the chosen speaker).
+ *   Speakers    the output picker (companion speech plays there).
  *
  * The meter opens the mic while this page is mounted and stops every track
  * when it unmounts. On macOS it only starts by itself once access is already
  * granted; otherwise it waits for "Test mic", so opening Settings never raises
  * the system permission prompt on its own.
  *
- * Analytics, shape only: mic_test_used {mode: 'meter' | 'playback', heard},
- * speaker_test_used {is_default}. Device changes are tracked by the store.
+ * Analytics, shape only: mic_test_used {mode: 'meter' | 'playback', heard}.
+ * Device changes are tracked by the store.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../../lib/ipcClient';
@@ -31,8 +30,6 @@ import { CALL_MIC_CONSTRAINTS, INPUT_SIGNAL_RMS } from '../../lib/voice/dictatio
 import styles from '../../screens/SettingsScreen.module.css';
 import own from '../audio/AudioDevices.module.css';
 
-/** The bundled line "Play test sound" plays (public/voice/onboard). */
-const TEST_SOUND_URL = './voice/onboard/hey.en.mp3';
 const RECORD_MS = 3_000;
 /** A meter that ran at least this long reports mic_test_used {mode: 'meter'}. */
 const METER_REPORT_MS = 3_000;
@@ -168,7 +165,7 @@ export function AudioDevicesSettings(): React.ReactElement {
     [],
   );
 
-  // Players started by the tests, stopped on unmount.
+  // Playback players, stopped on unmount.
   const playersRef = useRef<Set<HTMLAudioElement>>(new Set());
   useEffect(() => {
     const players = playersRef.current;
@@ -228,11 +225,6 @@ export function AudioDevicesSettings(): React.ReactElement {
     }, RECORD_MS);
   };
 
-  const playTestSound = (): void => {
-    track('speaker_test_used', { is_default: outputId === null });
-    void play(TEST_SOUND_URL);
-  };
-
   const recordLabel =
     recordState === 'recording' ? t('Recording…') : recordState === 'playing' ? t('Playing back…') : t('Record and play back');
 
@@ -242,7 +234,6 @@ export function AudioDevicesSettings(): React.ReactElement {
         <span className={styles.label}>{t('Microphone')}</span>
         <AudioDeviceSelect
           kind="audioinput"
-          source="settings"
           className={styles.langSelect}
           ariaLabel={t('Microphone')}
         />
@@ -273,13 +264,9 @@ export function AudioDevicesSettings(): React.ReactElement {
         <span className={styles.label}>{t('Speakers')}</span>
         <AudioDeviceSelect
           kind="audiooutput"
-          source="settings"
           className={styles.langSelect}
           ariaLabel={t('Speakers')}
         />
-        <Button kind="secondary" size="sm" onClick={playTestSound}>
-          {t('Play test sound')}
-        </Button>
       </div>
     </>
   );

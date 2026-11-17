@@ -10,7 +10,7 @@
  * SenseVoice as the fallback engine instead of Whisper.
  */
 import { describe, it, expect } from 'vitest';
-import { sttPolicy } from './sttPolicy';
+import { sttPolicy, sttPathFor } from './sttPolicy';
 
 describe('sttPolicy', () => {
   it("cloud-proxy without the fallback opt-in → 'none' + cloud (no model download)", () => {
@@ -139,5 +139,22 @@ describe('sttPolicy', () => {
     expect(
       sttPolicy({ stt_engine: 'whisper' }, 'local', { uiLanguage: 'zh', sensevoiceReady: true }),
     ).toMatchObject({ localEngine: 'whisper' });
+  });
+});
+
+describe('sttPathFor (261118, voice_call_ended stt_path)', () => {
+  it('a Sei account transcribes through the proxy: cloud', () => {
+    expect(sttPathFor(sttPolicy({}, 'cloud-proxy'), 'cloud-proxy')).toBe('cloud');
+    expect(sttPathFor(sttPolicy({ stt_local_fallback: true }, 'cloud-proxy'), 'cloud-proxy')).toBe('cloud');
+  });
+
+  it("BYOK with Scribe uses the player's own key: byok", () => {
+    expect(sttPathFor(sttPolicy({}, 'local'), 'local')).toBe('byok');
+    expect(sttPathFor(sttPolicy({ stt_engine: 'scribe' }, 'local'), 'local')).toBe('byok');
+  });
+
+  it('no cloud leg at all: local', () => {
+    expect(sttPathFor(sttPolicy({ stt_engine: 'whisper' }, 'local'), 'local')).toBe('local');
+    expect(sttPathFor(sttPolicy({ stt_engine: 'sensevoice' }, 'local', { sensevoiceReady: true }), 'local')).toBe('local');
   });
 });

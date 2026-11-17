@@ -55,6 +55,7 @@ import { trackScopedWrite, isAccountTeardownActive } from './profile/scopeBarrie
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
+import { callHearingProps } from '../shared/callHearing';
 import { endCallsForAccountSwitch } from './voice/accountSwitchCalls';
 import { gameEndRoute, mainClosedCallRoute } from './nextStepReach';
 import type { GoodbyeNote } from './sessionGoodbye';
@@ -1673,7 +1674,7 @@ async function bootstrap(): Promise<void> {
     },
     // Voice calls (260705): a live call ended — post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
-    notifyCallEnded: (id, connectedMs, reason, interrupts) => {
+    notifyCallEnded: (id, connectedMs, reason, interrupts, hearing) => {
       void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
       // Analytics (260728): calls are playtime too. `connectedMs` is the time
       // audio actually flowed (the renderer only reports it for calls that
@@ -1692,6 +1693,9 @@ async function bootstrap(): Promise<void> {
         // the renderer's hang-up carries them; a call main closes itself (quit,
         // account switch) has none and leaves them out rather than send zeros.
         ...(interrupts ? callInterruptProps(interrupts) : {}),
+        // 261118: was the player heard (utterances, STT passes, mic signal,
+        // STT path), on every path. Absent on a call main closed itself.
+        ...callHearingProps(hearing),
       });
       // 261013 (T119): the companion's hang-up left a plan; it came from a call.
       if (goodbye.nextStepHook) {

@@ -185,9 +185,8 @@ describe('createDictation input device (261118)', () => {
     expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 
-  it('switchInput moves capture to the new mic, stops the old one and resets the input stats', async () => {
+  it('switchInput moves capture to the new mic, stops the old one', async () => {
     const d = await createDictation({ ...baseOpts(), localModel: 'none' });
-    expect(d.inputStats()).toEqual({ heard: false, listenedMs: 0 });
     const next = { stop: vi.fn() };
     getUserMedia.mockResolvedValueOnce(streamOf(next));
     await expect(d.switchInput('mic-2')).resolves.toBe(true);

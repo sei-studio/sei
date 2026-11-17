@@ -15,7 +15,7 @@ import { sei } from '../ipcClient';
 import { setOutputDeviceId, setOutputGoneHandler, type AudioDeviceKind } from '../voice/audioDevices';
 
 /** Where a device choice was made. 'gone' = the quiet reset of a missing device. */
-export type DeviceChangeSource = 'settings' | 'call' | 'gone';
+export type DeviceChangeSource = 'settings' | 'gone';
 
 interface AudioDeviceState {
   /** Saved input deviceId, or null for the system default. */
