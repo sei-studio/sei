@@ -206,6 +206,16 @@ electronLanguages:
   - fr
   - es
 
+# 261118 Windows native signing. Smart App Control (Windows 11) blocks any
+# DLL or .node file with no signature and no reputation, and electron-builder
+# signs only .exe files by default. This hook signs every .dll/.node in the
+# packaged Windows app that has no signature yet (sherpa-onnx, sharp,
+# velopack, the WorldLink addon, Electron's ffmpeg/ANGLE/Vulkan DLLs) through
+# electron-builder's own Azure Trusted Signing path, and leaves the
+# Microsoft-signed ones alone. No-op on mac; only logs when azureSignOptions
+# is not set (dry runs, local builds). See scripts/win-sign-natives.mjs.
+afterPack: ./scripts/win-sign-natives.mjs
+
 # 260925 Electron fuses (flipped in the packaged Electron binary right before
 # signing, by app-builder-lib's doAddElectronFuses via @electron/fuses). Until
 # this block existed every shipped build ran with Electron's default fuse wire
@@ -615,8 +625,12 @@ win:
     # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
     # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
     # game pack. prismarine-viewer is not in the app tree any more.
-  # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
-  # "unknown publisher" warning is the accepted UX.
+  # Signing: release.yml signs tagged Windows builds with our Trusted Signing
+  # cert by passing -c.win.azureSignOptions.* (only when every AZURE_* secret
+  # and WIN_PUBLISHER_NAME are set). The .exe files are signed by
+  # electron-builder, the unsigned .dll/.node files by the afterPack hook
+  # above (261118). Without those overrides (dry runs, local builds) the
+  # build is UNSIGNED and everything below applies.
   #
   # publisherName: null is LOAD-BEARING, not decoration. Leaving it unset does
   # NOT mean "no publisher" — electron-builder falls back to the common name of

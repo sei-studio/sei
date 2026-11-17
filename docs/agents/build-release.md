@@ -43,7 +43,39 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   the per-machine migration hook (`build/installer.nsh`) are documented above
   the `nsis:` block in electron-builder.yml; `.github/workflows/nsis-upgrade-check.yml`
   (manual dispatch) re-verifies them on windows-latest. Release builds are
-  signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
+  signed through Azure Trusted Signing with our Trusted Signing cert.
+- **Windows native signing (261118).** Smart App Control (Windows 11) and
+  any WDAC policy refuse an unsigned DLL or .node file with no reputation.
+  electron-builder signs only .exe files by default, so through v0.7.0-beta.6
+  16 natives in the app shipped unsigned (sherpa-onnx, the cause of a "local
+  voices never speak" report with CodeIntegrity 3077 events; sharp; velopack's
+  addon; seilink.node; Electron's ffmpeg / libEGL / libGLESv2 /
+  vk_swiftshader / vulkan-1 / dxcompiler), plus about 50 in the Minecraft
+  win32 pack (canvas, gl, mingw and ANGLE DLLs). Now:
+  - `scripts/win-sign-natives.mjs` (electron-builder `afterPack`) signs every
+    .dll/.node in `win-unpacked` that has NO signature, through
+    `packager.signIf` (electron-builder's own Azure path, one request per
+    file, about 16 files). Microsoft-signed files (onnxruntime-node's
+    onnxruntime.dll and binding, dxil.dll, d3dcompiler_47.dll) are left
+    alone; do not switch to `win.signExts`, which would re-sign them. It only
+    lists the files when `azureSignOptions` is unset (dry runs, local
+    builds) and fails the build when a file is still unsigned after signing.
+  - `scripts/build-game-pack.mjs --platform win32` signs the pack's
+    unsigned .dll/.node/.exe in ONE `Invoke-TrustedSigning -FileList` call
+    (`scripts/lib/winTrustedSign.mjs`) before the tree hash, when every
+    AZURE_* variable is set (release.yml's "Build game packs" step).
+  - release.yml "Verify Windows native signatures" checks every
+    .dll/.node/.exe in `win-unpacked` and in each win32 pack zip is
+    Authenticode Valid (any signer) on signed builds, and the Velopack
+    verify step checks the .dll/.node inside the full nupkg too
+    (`velopack-pack.mjs` keeps vpk from re-signing them, `--signExclude`).
+  - Signature presence is read from the PE security directory
+    (`scripts/lib/peSignature.mjs`), so Linux can list what is unsigned:
+    `node -e "import('./scripts/lib/peSignature.mjs').then(m=>console.log(m.unsignedNatives('<win-unpacked>')))"`.
+  - Not covered: the Stardew pack's SeiCompanion.dll (managed, built on
+    the mac leg, loaded by SMAPI inside the game) and anything users
+    download from third parties (SMAPI, Fabric).
+  - A dry run builds unsigned, so only a tagged build exercises signing.
 - **Linux:** AppImage (best-effort unsigned).
 - **WorldLink desktop host addon (261104):** `native/seilink` is built by
   `scripts/build-seilink-addon.mjs` (mac universal via lipo, win x64) into

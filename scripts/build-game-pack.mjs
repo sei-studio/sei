@@ -71,6 +71,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { minimatch } from 'minimatch';
 import { applyAll, patchV8MsvcBuiltins } from './patch-vision-native.mjs';
 import { REQUIRED_PAYLOAD, treeHashOfEntries, verifyPackZip } from './lib/gamePackVerify.mjs';
+import { azureSigningMode, unsignedNatives } from './lib/peSignature.mjs';
+import { trustedSignFiles } from './lib/winTrustedSign.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -501,6 +503,32 @@ function verifyNativeMeta(staging, arch, abi, listOnly = false) {
 
 // ── Hash + zip ──────────────────────────────────────────────────────────────
 
+// 261118 Smart App Control: sign the pack's unsigned Windows binaries
+// (canvas.node, webgl.node, the mingw and ANGLE DLLs) with our Trusted
+// Signing cert before the tree hash, so pack.json describes the signed files.
+// Already-signed ones (Microsoft's d3dcompiler_47.dll) are left alone.
+// Needs every AZURE_* variable (release.yml sets them on tagged builds);
+// with none set the pack is built unsigned and the files are only listed,
+// and a partial set is an error.
+const PACK_SIGN_EXTS = ['.dll', '.node', '.exe'];
+function signWindowsNatives(staging) {
+  const mode = azureSigningMode();
+  const todo = unsignedNatives(staging, PACK_SIGN_EXTS);
+  if (todo.length === 0) {
+    log('windows signing: no unsigned binaries');
+    return;
+  }
+  const list = todo.map((n) => `  ${n.rel}`).join('\n');
+  if (mode === 'off') {
+    log(`windows signing: not configured, ${todo.length} binaries ship UNSIGNED:\n${list}`);
+    return;
+  }
+  log(`windows signing: ${todo.length} unsigned binaries:\n${list}`);
+  trustedSignFiles(todo.map((n) => n.file), { log });
+  const still = unsignedNatives(staging, PACK_SIGN_EXTS);
+  if (still.length) throw new Error(`still unsigned after signing:\n${still.map((n) => `  ${n.rel}`).join('\n')}`);
+}
+
 function sha256File(p) {
   return createHash('sha256').update(readFileSync(p)).digest('hex');
 }
@@ -647,6 +675,7 @@ async function main() {
   // package.json was only there for @electron/rebuild; the pack root carries
   // pack.json alone.
   rmSync(path.join(staging, 'package.json'), { force: true });
+  if (opts.platform === 'win32') signWindowsNatives(staging);
 
   const { treeHash, files, bytes } = treeHashOf(staging);
   const packJson = {

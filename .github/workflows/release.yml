@@ -251,8 +251,20 @@ jobs:
         # builds x64. The zips go up with the installers; the <zip>.meta.json
         # sidecars go up separately so the release job can write ONE manifest
         # without npm ci.
+        #
+        # 261118: the win32 pack's unsigned .dll/.node/.exe files (canvas, gl,
+        # the mingw and ANGLE DLLs) are signed with our Trusted Signing cert
+        # before the pack is hashed (Smart App Control blocks unsigned native
+        # code). Same AZURE_* values as the app build; none set (dry run) =
+        # the pack ships unsigned and the files are listed.
         env:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+          AZURE_TENANT_ID: ${{ !inputs.dry_run && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ !inputs.dry_run && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ !inputs.dry_run && secrets.AZURE_CLIENT_SECRET || '' }}
+          AZURE_ENDPOINT: ${{ !inputs.dry_run && vars.AZURE_ENDPOINT || '' }}
+          AZURE_CODE_SIGNING_ACCOUNT: ${{ !inputs.dry_run && vars.AZURE_CODE_SIGNING_ACCOUNT || '' }}
+          AZURE_CERT_PROFILE: ${{ !inputs.dry_run && vars.AZURE_CERT_PROFILE || '' }}
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -269,6 +281,44 @@ jobs:
             node scripts/build-game-pack.mjs minecraft --platform win32 --arch x64 --out release/packs
           fi
           ls -la release/packs/
+
+      - name: Verify Windows native signatures
+        # 261118 Smart App Control blocks unsigned DLLs and .node files, so a
+        # signed release must not ship any. Every .dll/.node/.exe in the
+        # packaged app (release/win-unpacked, what NSIS and Velopack both
+        # pack) and in every win32 game pack zip must be Valid. Any
+        # signer counts: Microsoft's own DLLs (onnxruntime-node, dxil,
+        # d3dcompiler_47) keep Microsoft's signature on purpose
+        # (scripts/win-sign-natives.mjs). Unsigned builds only list.
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WIN_PUBLISHER_NAME: ${{ !inputs.dry_run && vars.WIN_PUBLISHER_NAME || '' }}
+          AZURE_TENANT_ID: ${{ !inputs.dry_run && secrets.AZURE_TENANT_ID || '' }}
+        run: |
+          $signed = -not [string]::IsNullOrWhiteSpace($env:WIN_PUBLISHER_NAME) -and -not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)
+          if (-not (Test-Path 'release/win-unpacked')) { Write-Output '::error::no release/win-unpacked to check'; exit 1 }
+          $roots = @('release/win-unpacked')
+          foreach ($z in Get-ChildItem 'release/packs' -Filter 'sei-pack-*-win32-*.zip' -ErrorAction SilentlyContinue) {
+            $x = Join-Path $env:RUNNER_TEMP ('packsig-' + $z.BaseName)
+            Expand-Archive -LiteralPath $z.FullName -DestinationPath $x -Force
+            $roots += $x
+          }
+          $bad = 0; $n = 0
+          foreach ($root in $roots) {
+            foreach ($f in Get-ChildItem $root -Recurse -File -Include *.dll,*.node,*.exe) {
+              $n++
+              $sig = Get-AuthenticodeSignature -LiteralPath $f.FullName
+              if ($sig.Status -ne 'Valid') {
+                $rel = [System.IO.Path]::GetRelativePath((Resolve-Path $root), $f.FullName)
+                Write-Output "$root/$rel  status=$($sig.Status)"
+                $bad++
+              }
+            }
+          }
+          Write-Output "checked $n binaries, $bad not Valid"
+          if ($signed -and $bad -gt 0) { Write-Output "::error::$bad shipped binaries are not Valid signed; Smart App Control will block them"; exit 1 }
+          if (-not $signed) { Write-Output 'unsigned build (dry run or signing not configured): listed only' }
 
       - name: Verify cloud config baked into bundle
         # v0.2.0 shipped with empty SUPABASE_URL/ANON because the build-time
@@ -470,6 +520,11 @@ jobs:
           $check = Join-Path $env:RUNNER_TEMP 'vpk-sigcheck'
           New-Item -ItemType Directory -Force $check | Out-Null
           $files = @(Get-ChildItem $env:UPLOAD -Filter 'Sei-*-Setup.exe')
+          # 261118: also every .dll/.node inside the package. vpk is told not
+          # to sign them (scripts/velopack-pack.mjs --signExclude), so they
+          # must still carry the signatures the electron-builder afterPack hook
+          # gave them; Microsoft-signed ones count (Valid, any signer).
+          $natives = @()
           foreach ($pkg in Get-ChildItem $env:UPLOAD -Filter '*-full.nupkg') {
             $zip = [System.IO.Compression.ZipFile]::OpenRead($pkg.FullName)
             try {
@@ -478,10 +533,21 @@ jobs:
                   $dest = Join-Path $check ($pkg.BaseName + '-' + $e.Name)
                   [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true)
                   $files += Get-Item $dest
+                } elseif ($e.FullName -match '\.(dll|node)$') {
+                  $dest = Join-Path $check ($pkg.BaseName + '-' + ($e.FullName -replace '[\\/%]', '_'))
+                  [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $dest, $true)
+                  $natives += Get-Item $dest
                 }
               }
             } finally { $zip.Dispose() }
           }
+          $nativeBad = 0
+          foreach ($f in $natives) {
+            $st = (Get-AuthenticodeSignature -LiteralPath $f.FullName).Status
+            if ($st -ne 'Valid') { Write-Output "$($f.Name)  status=$st"; $nativeBad++ }
+          }
+          Write-Output "package natives: $($natives.Count) checked, $nativeBad not Valid"
+          if ($signed -and $nativeBad -gt 0) { Write-Output "::error::$nativeBad .dll/.node file(s) in the Velopack package are not Valid signed"; exit 1 }
           if ($files.Count -eq 0) { Write-Output '::error::no Velopack Setup or package in the pack output'; exit 1 }
           $bad = 0
           foreach ($f in $files) {
