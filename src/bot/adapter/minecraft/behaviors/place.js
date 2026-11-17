@@ -23,7 +23,7 @@ const EMPTY_AFTER_PLACE = new Set([...AIR, 'water', 'lava'])
 const PLACE_SETTLE = { quietMs: 250, minMs: 300, maxMs: 1200 }
 
 async function verifyPlaced(bot, dest, itemName, before, oldName, refLoc, signal) {
-  if (!dest || !hasLiveInventory(bot) || typeof bot.blockAt !== 'function') return `placed ${itemName} on ${refLoc}`
+  if (!dest || !hasLiveInventory(bot) || typeof bot.blockAt !== 'function') return `placed ${itemName} on ${placedOn(refLoc)}`
   if (await waitInventoryQuiet(bot, { ...PLACE_SETTLE, signal }) === 'aborted') return 'aborted'
   let blk = null
   try { blk = bot.blockAt(dest) } catch { blk = null }
@@ -36,8 +36,17 @@ async function verifyPlaced(bot, dest, itemName, before, oldName, refLoc, signal
     const there = empty ? 'the spot is still empty' : `the spot holds ${blk.name}`
     return `placing ${itemName} on ${refLoc} did not go through: ${there} and the ${itemName} is still in your inventory`
   }
-  return `placed ${itemName} on ${refLoc}`
+  return `placed ${itemName} on ${placedOn(refLoc)}`
 }
+
+// 261114 (quality pass 55): a placed block is told without coordinates.
+// "placed crafting_table on grass_block @174,70,-2" was read out in chat
+// ("already got one down at 174,70,-2 lol"). It goes beside her, and the
+// snapshot lists it with its coordinates for the tools and where it is in
+// words. Words here would go stale in the history once she walks off (a
+// "right by you" she repeated 13 blocks away). Failures keep the
+// coordinates for aiming a retry.
+const placedOn = (refLoc) => refLoc.replace(/ @.*$/, '')
 
 function tryPlace(bot, refBlock, faceVector, itemName, timeoutMs, signal) {
   const rp = refBlock.position
