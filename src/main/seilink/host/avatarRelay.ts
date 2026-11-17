@@ -15,6 +15,8 @@ import type { FromHost, ToHost } from './protocol';
 
 /** One facepack file (facepackStore.readPackFile's limit). */
 export const RELAY_FILE_MAX_BYTES = 16 * 1024 * 1024;
+/** A cloud cut-out PNG (animaPacks' limit). */
+export const RELAY_CUTOUT_MAX_BYTES = 16 * 1024 * 1024;
 /** A whole model bundle (avatarStore's extracted limit). */
 export const RELAY_MODEL_MAX_BYTES = 256 * 1024 * 1024;
 export const RELAY_TIMEOUT_MS = 20_000;
@@ -88,6 +90,16 @@ export class AvatarRelay {
       try {
         if ((await this.files.size(file)) > RELAY_FILE_MAX_BYTES) return null;
         return await this.files.read(file);
+      } catch {
+        return null;
+      }
+    }
+    if (method === 'animaCutout') {
+      const v = value as { file?: unknown; sha256?: unknown } | null;
+      if (typeof v?.file !== 'string' || typeof v.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(v.sha256)) return null;
+      try {
+        if ((await this.files.size(v.file)) > RELAY_CUTOUT_MAX_BYTES) return null;
+        return { sha256: v.sha256, png: await this.files.read(v.file) };
       } catch {
         return null;
       }

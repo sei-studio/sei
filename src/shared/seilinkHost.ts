@@ -145,6 +145,8 @@ export const SEILINK_HOST_AVATAR_METHODS = [
   'facepackFile',
   // 261105: what RoomAvatar ended up showing (analytics only; answers null).
   'avatarShown',
+  // 261118: her cloud cut-out (no face to animate): main names the file, the host reads it.
+  'animaCutout',
 ] as const;
 export type SeilinkHostAvatarMethod = (typeof SEILINK_HOST_AVATAR_METHODS)[number];
 

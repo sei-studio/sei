@@ -11,10 +11,14 @@
  *                                       [--portrait <png>] [--name <her name>]
  *                                       [--facepacks <dir> --facepack-id <an-...>]
  *                                       [--portraits <dir or a.png,b.jpg,...>]
+ *                                       [--cutouts <dir>]
  *
  * With --portraits (261116), every host shot is taken once per portrait (no
  * face set, so the cut-out path), written as <portrait basename>-<shot>.png:
- * a gallery of how uploaded images look in the room.
+ * a gallery of how uploaded images look in the room. With --cutouts (261118),
+ * a portrait whose basename has a <dir>/<basename>.png there gets that PNG as
+ * her cloud cut-out (anima no_pack + cutout, `&cutout=`), as the app would
+ * after the bake: the room shows it instead of cutting the picture itself.
  *
  * With --facepacks (a dir holding <facepack-id>/facepack.json, e.g. an anima
  * client's <userData>/anima/packs), the `host-crossfade` shot is a sequence:
@@ -103,6 +107,7 @@ const FACEPACKS = arg('facepacks', null) ? path.resolve(arg('facepacks')) : null
 const FACEPACK_ID = arg('facepack-id', null);
 const PORTRAIT = arg('portrait', null) ? path.resolve(arg('portrait')) : null;
 const NAME = arg('name', null);
+const CUTOUTS = arg('cutouts', null) ? path.resolve(arg('cutouts')) : null;
 const PORTRAITS = (() => {
   const v = arg('portraits', null);
   if (!v) return null;
@@ -193,6 +198,8 @@ async function main() {
     for (const file of runs) {
     const portrait = `${viteUrl}/@fs${file}`;
     const prefix = PORTRAITS ? `${path.basename(file).replace(/\.[^.]+$/, '')}-` : '';
+    const cutFile = CUTOUTS ? path.join(CUTOUTS, `${path.basename(file).replace(/\.[^.]+$/, '')}.png`) : null;
+    const cutQ = cutFile && fs.existsSync(cutFile) ? `&cutout=${encodeURIComponent(`${viteUrl}/@fs${cutFile}`)}` : '';
     for (const name of names) {
       const shot = SHOTS[name];
       if (!shot) {
@@ -209,7 +216,7 @@ async function main() {
       });
       const url =
         shot.kind === 'host'
-          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}${extra}&${shot.q}`
+          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}${extra}${cutQ}&${shot.q}`
           : shot.kind === 'flow'
             ? `${viteUrl}/?seilinkflow=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}&name=${encodeURIComponent(NAME ?? 'Sui')}&${shot.q}`
             : `${viteUrl}/?dashshot=screen&pack=${encodeURIComponent(packUrl)}&${shot.q}`;

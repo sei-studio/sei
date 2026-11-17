@@ -580,6 +580,40 @@ if (
       return () => listeners.delete(cb);
     };
   }
+  // &cutout=<png url> (261118): her cloud cut-out (anima no_pack + cutout), from the
+  // start, or &cutoutat=<ms> after the room is ready (a manifest push, like a bake landing).
+  const cutoutUrl = harnessParams.get('cutout');
+  if (cutoutUrl) {
+    const at = harnessParams.get('cutoutat');
+    let ready = at === null;
+    const subs = new Set<(u: { characterId: string; manifest: null }) => void>();
+    if (!ready) {
+      const poll = setInterval(() => {
+        if (document.body?.dataset.roomReady !== '1') return;
+        clearInterval(poll);
+        setTimeout(() => {
+          ready = true;
+          for (const cb of subs) cb({ characterId: 'dev-preview', manifest: null });
+        }, Number(at) || 0);
+      }, 50);
+    }
+    let bytes: Promise<Uint8Array | null> | null = null;
+    answers.seilinkAnimaCutout = async () => {
+      if (!ready) return null;
+      bytes ??= fetch(cutoutUrl).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null));
+      const png = await bytes;
+      return png ? { sha256: 'c'.repeat(48) + String(png.byteLength).padStart(16, '0'), png } : null;
+    };
+    const prevSub = answers.onAvatarManifest as ((cb: (u: { characterId: string; manifest: null }) => void) => () => void) | undefined;
+    answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
+      subs.add(cb);
+      const off = prevSub?.(cb);
+      return () => {
+        subs.delete(cb);
+        off?.();
+      };
+    };
+  }
   // &together=<name> (261105, T336): the shared editor (RoomTogether). An empty
   // chat; window.__seiTogether lets a shot script push her chat lines, emit her
   // edit events and script the talk-box reply (`reply(text)` -> her line).

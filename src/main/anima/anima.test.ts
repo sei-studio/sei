@@ -428,3 +428,103 @@ describe('AnimaClient per-avatar bakes (261106)', () => {
     expect(h.bodies[0]).toEqual({ character_id: CHAR });
   });
 });
+
+// ── cloud cut-outs (261118) ─────────────────────────────────────────────────
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82, 1, 2, 3]);
+const PNG2 = new Uint8Array([...PNG, 4]);
+
+function cutoutReply(png: Uint8Array, portrait = 'p1'): ProxyReply {
+  return { state: 'no_pack', portrait_hash: portrait, cutout: { url: 'https://x.supabase.co/sign/cutout.png', sha256: sha256Hex(png), bytes: png.byteLength, expires_in: 3600 } };
+}
+
+describe('AnimaPackStore cut-outs (261118)', () => {
+  it('stores a verified PNG, keeps its own index map, and prunes unused ones', async () => {
+    const store = new AnimaPackStore(() => root);
+    await expect(store.installCutout(PNG, 'f'.repeat(64))).rejects.toMatchObject({ code: 'hash_mismatch' });
+    const notPng = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    await expect(store.installCutout(notPng, sha256Hex(notPng))).rejects.toMatchObject({ code: 'bad_image' });
+    expect((await store.installCutout(PNG, sha256Hex(PNG))).bytes).toBe(PNG.byteLength);
+    expect((await store.installCutout(PNG, sha256Hex(PNG))).bytes).toBe(0);
+    await store.installCutout(PNG2, sha256Hex(PNG2));
+    await store.setCutoutEntry(CHAR, { sha256: sha256Hex(PNG2), portrait_hash: 'p', portrait_ref: 'r', checked_at: 1 });
+    expect((await store.cutoutFileFor(CHAR))?.path).toBe(path.join(root, 'cutouts', `${sha256Hex(PNG2)}.png`));
+    // Never a pack: packIdFor and the old `characters` map know nothing of it.
+    expect(await store.packIdFor(CHAR)).toBeNull();
+    expect(await store.entry(CHAR)).toBeNull();
+    await writeFile(path.join(root, 'cutouts', '.tmp-leftover'), 'x');
+    expect(await store.prune()).toBe(1);
+    expect(await store.hasCutout(sha256Hex(PNG))).toBe(false);
+    expect(await store.prune(true)).toBe(1);
+    expect(await readdir(path.join(root, 'cutouts'))).toEqual([`${sha256Hex(PNG2)}.png`]);
+    // Survives a reload; an index written by a build without cut-outs still loads.
+    expect((await new AnimaPackStore(() => root).cutoutEntry(CHAR))?.portrait_ref).toBe('r');
+    await writeFile(path.join(root, 'index.json'), JSON.stringify({ version: 1, characters: {} }));
+    expect(await new AnimaPackStore(() => root).cutoutEntry(CHAR)).toBeNull();
+  });
+});
+
+describe('AnimaClient cut-outs (261118)', () => {
+  it('no_pack with a cut-out downloads it, tells the views, and serves it while her picture is the same', async () => {
+    const h = await harness();
+    h.set({ zip: PNG });
+    h.replies.push(cutoutReply(PNG));
+    await h.client.prepare(CHAR, 'move_in_sheet');
+    expect(h.ready).toEqual([CHAR]);
+    expect(h.client.status(CHAR)).toMatchObject({ state: 'idle', stage: 'unavailable' });
+    expect(await h.store.packIdFor(CHAR)).toBeNull();
+    const cut = await h.client.cutoutFor(CHAR);
+    expect(cut?.sha256).toBe(sha256Hex(PNG));
+    expect(h.events.map((e) => e.phase)).toEqual(['requested', 'cutout']);
+    expect(h.events[1]).toMatchObject({ trigger: 'move_in_sheet', source: 'cloud_cache', cutout_kb: 0 });
+    // The same answer next time: nothing new for the views.
+    h.replies.push(cutoutReply(PNG));
+    await h.client.prepare(CHAR, 'editor');
+    expect(h.ready).toEqual([CHAR]);
+    // A new picture: the old cut-out is not hers any more.
+    h.set({ ref: 'sui.png|t2|9' });
+    expect(await h.client.cutoutFor(CHAR)).toBeNull();
+  });
+
+  it('a bad cut-out is a failure event and nothing is stored', async () => {
+    const h = await harness();
+    const bad = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    h.set({ zip: bad });
+    h.replies.push(cutoutReply(bad));
+    await h.client.prepare(CHAR, 'editor');
+    expect(h.ready).toEqual([]);
+    expect(await h.client.cutoutFor(CHAR)).toBeNull();
+    expect(h.events.at(-1)).toMatchObject({ phase: 'failed', reason: 'cutout_bad_image' });
+  });
+
+  it('a face set replaces the cut-out, and a cut-out for a new picture replaces an old face set', async () => {
+    const h = await harness();
+    h.set({ zip: PNG });
+    h.replies.push(cutoutReply(PNG, 'a'));
+    await h.client.prepare(CHAR, 'editor');
+    const zip = await packZip();
+    h.set({ zip, ref: 'sui.png|t2|1' });
+    h.replies.push(readyReply(zip, 'b'));
+    await h.client.prepare(CHAR, 'editor');
+    expect(await h.store.cutoutEntry(CHAR)).toBeNull();
+    expect(await h.store.packIdFor(CHAR)).toBe(animaPackId(sha256Hex(zip)));
+    h.set({ zip: PNG2, ref: 'sui.png|t3|1' });
+    h.replies.push(cutoutReply(PNG2, 'c'));
+    await h.client.prepare(CHAR, 'editor');
+    expect(await h.store.packIdFor(CHAR)).toBeNull();
+    expect((await h.client.cutoutFor(CHAR))?.sha256).toBe(sha256Hex(PNG2));
+    expect(h.ready).toEqual([CHAR, CHAR, CHAR]);
+  });
+
+  it('a plain no_pack for another picture drops her old cut-out', async () => {
+    const h = await harness();
+    h.set({ zip: PNG });
+    h.replies.push(cutoutReply(PNG, 'a'));
+    await h.client.prepare(CHAR, 'editor');
+    h.set({ ref: 'sui.png|t2|2' });
+    h.replies.push({ state: 'no_pack', portrait_hash: 'b' });
+    await h.client.prepare(CHAR, 'editor');
+    expect(await h.store.cutoutEntry(CHAR)).toBeNull();
+    expect(h.ready).toEqual([CHAR, CHAR]);
+  });
+});

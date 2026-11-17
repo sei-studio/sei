@@ -482,6 +482,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.animaChanged, handler);
   },
   seilinkAnimaShown: (characterId, kind) => ipcRenderer.send(IpcChannel.seilink.animaShown, { characterId, kind }),
+  seilinkAnimaCutout: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.animaCutout, characterId),
   seilinkVoice: (characterId, speaking) => ipcRenderer.send(IpcChannel.seilink.voice, { characterId, speaking: speaking === true }),
   seilinkEditorSession: (phase, token, characterId) => ipcRenderer.send(IpcChannel.seilink.editorSession, { phase, token, characterId }),
   seilinkEditorSync: (sync) => ipcRenderer.send(IpcChannel.seilink.editorSync, sync),

@@ -821,7 +821,8 @@ export function portraitMatte(data: Uint8ClampedArray, w: number, h: number): Fl
 
 export interface Cutout {
   canvas: HTMLCanvasElement;
-  method: 'key' | 'vignette';
+  /** 'cloud' (261118): the anima cut-out, drawn as it came. */
+  method: 'key' | 'vignette' | 'cloud';
 }
 
 /** A finished cut-out as an image URL, for any number of <img> at once. */
@@ -858,8 +859,43 @@ export function loadCutout(url: string): Promise<CutoutImage | null> {
   return job;
 }
 
-/** Load a portrait and cut it out. Null when it cannot load. */
-export async function buildCutout(url: string, maxSide = 900): Promise<Cutout | null> {
+const serverCuts = new Map<string, Promise<CutoutImage | null>>();
+const serverDone = new Map<string, CutoutImage>();
+
+/** A cloud cut-out that has already finished loading (by its sha256), or null. */
+export function peekServerCutout(sha256: string): CutoutImage | null {
+  return serverDone.get(sha256) ?? null;
+}
+
+/**
+ * 261118: the cloud's cut-out of her picture (anima no_pack + cutout), a PNG
+ * whose alpha is the figure. Its alpha is used as it is (no colour key, no
+ * vignette: the edge of a figure the frame cut is opaque on purpose), only
+ * the transparent margin is trimmed so her lowest pixel sits on the floor
+ * line. Cached per sha256; null when it does not decode.
+ */
+export function loadServerCutout(sha256: string, png: Uint8Array): Promise<CutoutImage | null> {
+  const hit = serverCuts.get(sha256);
+  if (hit) return hit;
+  const raw = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }));
+  const job = buildCutout(raw, 900, true)
+    .then(async (c) => {
+      if (!c) return null;
+      const blob = await new Promise<Blob | null>((res) => c.canvas.toBlob(res, 'image/png'));
+      if (!blob) return null;
+      return { src: URL.createObjectURL(blob), aspect: c.canvas.width / Math.max(1, c.canvas.height), method: c.method };
+    })
+    .finally(() => URL.revokeObjectURL(raw));
+  serverCuts.set(sha256, job);
+  void job.then((r) => {
+    if (!r) serverCuts.delete(sha256);
+    else serverDone.set(sha256, r);
+  });
+  return job;
+}
+
+/** Load a portrait and cut it out (`alpha`: its own alpha is the figure, as it is). Null when it cannot load. */
+export async function buildCutout(url: string, maxSide = 900, alpha = false): Promise<Cutout | null> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
@@ -883,8 +919,9 @@ export async function buildCutout(url: string, maxSide = 900): Promise<Cutout | 
     frame = ctx.getImageData(0, 0, w, h);
   } catch {
     // A tainted canvas (no CORS): the vignette needs no readback.
-    return vignetteCanvas(canvas, ctx, w, h, null);
+    return alpha ? null : vignetteCanvas(canvas, ctx, w, h, null);
   }
+  if (alpha) return { canvas: trimToFigure(canvas, frame.data, w, h), method: 'cloud' };
   const keyed = keyAlpha(frame.data, w, h);
   if (keyed) {
     // A picture with its own alpha is already cut out: nothing to unmix.

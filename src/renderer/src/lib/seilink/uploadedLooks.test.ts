@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../ipcClient', () => ({ sei: { avatarGet: vi.fn(async () => null), facepackForCharacter: vi.fn(async () => null) } }));
+vi.mock('../ipcClient', () => ({
+  sei: { avatarGet: vi.fn(async () => null), facepackForCharacter: vi.fn(async () => null), seilinkAnimaCutout: vi.fn(async () => null) },
+}));
 vi.mock('./portraitCutout', () => ({ loadCutout: vi.fn(async () => ({ src: 'blob:x', aspect: 0.67, method: 'vignette' })) }));
 
 import { uploadedLookBlock, WORLDLINK_UPLOADED_LOOKS, worldlinkLookBlock } from './uploadedLooks';
@@ -47,5 +49,17 @@ describe('WorldLink uploaded looks (261116)', () => {
     expect(await worldlinkLookBlock(aria, 'clean_cutout')).toBe('busy_background');
     const sui = { ...aria, id: 'c', is_default: true };
     expect(await worldlinkLookBlock(sui, 'clean_cutout')).toBe('none');
+  });
+
+  it('a cloud cut-out (261118) counts as her figure', async () => {
+    const aria = {
+      id: 'd',
+      kind: 'custom' as const,
+      is_default: false,
+      metadata: { portrait_active: 'v1.png', portrait_versions: [{ file: 'v1.png', source: 'upload', created_at: '2026-10-10T00:00:00Z' }] },
+      portrait_image: 'https://example.invalid/aria2.png',
+    };
+    vi.mocked(sei.seilinkAnimaCutout!).mockResolvedValueOnce({ sha256: 'a'.repeat(64), png: new Uint8Array([1]) });
+    expect(await worldlinkLookBlock(aria, 'clean_cutout')).toBe('none');
   });
 });

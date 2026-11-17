@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { AvatarRelay, RELAY_FILE_MAX_BYTES, type FileReader } from './avatarRelay';
+import { AvatarRelay, RELAY_CUTOUT_MAX_BYTES, RELAY_FILE_MAX_BYTES, type FileReader } from './avatarRelay';
 import type { FromHost } from './protocol';
 
 type Call = Extract<FromHost, { type: 'call' }>;
@@ -59,6 +59,21 @@ describe('AvatarRelay', () => {
     await expect(small).resolves.toEqual(new Uint8Array([7]));
     await expect(big).resolves.toBeNull();
     await expect(model).resolves.toEqual([{ path: 'x.moc3', bytes: new Uint8Array([3]) }]);
+  });
+
+  it('reads her cloud cut-out (261118) and keeps its sha256', async () => {
+    const sha = 'b'.repeat(64);
+    const { relay, sent } = setup({ '/c/x.png': 5, '/c/big.png': RELAY_CUTOUT_MAX_BYTES + 1 });
+    const ok = relay.call('animaCutout', ['c1']);
+    const big = relay.call('animaCutout', ['c1']);
+    const odd = relay.call('animaCutout', ['c1']);
+    await Promise.resolve();
+    relay.onResult({ type: 'call-result', id: sent[0].id, ok: true, value: { file: '/c/x.png', sha256: sha } });
+    relay.onResult({ type: 'call-result', id: sent[1].id, ok: true, value: { file: '/c/big.png', sha256: sha } });
+    relay.onResult({ type: 'call-result', id: sent[2].id, ok: true, value: { file: '/c/x.png', sha256: 'nope' } });
+    await expect(ok).resolves.toEqual({ sha256: sha, png: new Uint8Array([5]) });
+    await expect(big).resolves.toBeNull();
+    await expect(odd).resolves.toBeNull();
   });
 
   it('rejects on an error answer, a timeout and a closing pipe', async () => {
