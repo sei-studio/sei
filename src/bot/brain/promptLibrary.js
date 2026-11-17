@@ -1679,7 +1679,13 @@ export function renderCore(persona, { userName } = {}) {
   const core = sliceCoreSection(expanded) || fallbackCore(name, expanded)
   const behavior = sliceBehaviorSections(expanded)
   const body = behavior ? `${core}\n\n${behavior}` : core
-  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it or what you want from the player instead.\n\n${body}`
+  // 261116 (pass 57): the line about announcing a next step ended "say how
+  // you feel about it or what you want from the player instead". On a mid-task
+  // turn every reply then reached for a want, and the one at hand was a debt
+  // ("you owe me a wood run"), born on "jk jk" or "thanks for the help" and
+  // said again the next turn (probe: jk/thanks debt 24/96 -> 14/96, the reuse
+  // case 44/48 -> 16/24). How she feels about it is enough.
+  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it instead.\n\n${body}`
 }
 
 // 260618: the progression frontier — milestones reachable RIGHT NOW, computed in
