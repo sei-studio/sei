@@ -6,6 +6,7 @@
  *   appendAssistant(content)
  *   appendToolResults(results, { snapshot, eventText })
  *   demoteOlderImages()        -> replace stale image blocks with a text stub (image cap)
+ *   supersedeSeedConversation() -> drop the seed's conversation + own-lines note from payloads
  *   buildAnthropicPayload()    -> SDK-safe array (no `name` field on text blocks)
  *   iterationCount             -> number of user turns (seed counts as 0)
  *   abortController            -> shared signal for the entire loop
@@ -21,6 +22,8 @@
  *       - seed turns keep `seed_player` text blocks across the
  *         entire loop (D-45); the seed turn's snapshot block is still subject
  *         to the "strip if not last" rule.
+ *       - once supersedeSeedConversation() ran, the seed's
+ *         `recent_conversation` and `own_repeats` blocks are skipped too.
  *   • Tool_result blocks pass through unchanged.
  *   • Assistant turns pass through unchanged (their tool_use blocks are SDK-shaped).
  *
@@ -32,6 +35,9 @@
  */
 
 let _loopId = 1
+
+// The seed blocks a mid-loop conversation replaces (supersedeSeedConversation).
+const SEED_SUPERSEDED_BLOCKS = new Set(['recent_conversation', 'own_repeats'])
 
 /**
  * @param {object} opts
@@ -62,6 +68,14 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
   // returns the active reference; consumers re-read on each access.
   let abortController = new AbortController()
   const id = `loop-${_loopId++}-${startedAt.toString(36)}`
+  // 261118 (pass 58): set once a later turn of this loop carries its own copy
+  // of the conversation (a player line that landed mid-loop). From then on
+  // the seed turn's conversation and own-lines note are left out of the
+  // payload, so the turn shows her recent lines once, not twice over. A bit
+  // she just made ("you still owe me a wood run") was reused in 84% of
+  // mid-loop "thanks" replies with both copies and 56% with only the newest
+  // (pass58-probe thanks_owe), the same as a fresh loop.
+  let seedConversationSuperseded = false
 
   function appendUserTurn(blocks, { seed = false } = {}) {
     if (!Array.isArray(blocks)) throw new Error('appendUserTurn: blocks must be an array')
@@ -162,6 +176,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
           const isSnapshot = blk.name === 'snapshot'
           // Snapshot stripped from any non-last user turn (applies to seed too — D-45).
           if (isSnapshot && i !== lastUserIdx) continue
+          if (turn.seed && seedConversationSuperseded && SEED_SUPERSEDED_BLOCKS.has(blk.name)) continue
           // Strip the `name` field — Anthropic SDK schema has no `name` on text blocks.
           const { name: _omit, ...rest } = blk
           newContent.push({ ...rest })
@@ -175,6 +190,11 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
     return out
   }
 
+  /** A later turn carries the conversation, so the seed's copy is stale. */
+  function supersedeSeedConversation() {
+    seedConversationSuperseded = true
+  }
+
   function byteSize() {
     return JSON.stringify(messages).length
   }
@@ -184,6 +204,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
     appendAssistant,
     appendToolResults,
     demoteOlderImages,
+    supersedeSeedConversation,
     buildAnthropicPayload,
     byteSize,
     get iterationCount() { return iterationCount },

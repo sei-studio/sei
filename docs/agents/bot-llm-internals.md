@@ -218,7 +218,11 @@ that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
   is the information: a question followed by an unrelated line of hers looks
   identical to an answered one. The same block now rides every mid-loop player
   line (`interruptTurnText`); those turns used to carry the new line ALONE, with
-  the only transcript being the seed's, as old as the loop.
+  the only transcript being the seed's, as old as the loop. Once one does, the
+  seed's `recent_conversation` and `own_repeats` blocks leave the payload
+  (`loop.supersedeSeedConversation`, pass 58): with both copies a mid-loop
+  reply showed her recent lines twice over and reused a bit she had just made
+  far more often than a fresh loop did. The canonical messages keep them.
 - **"MID-ACTION, KEEP GOING" only when something is running.**
   `extractPriorTask` returns the last tool call whether or not it finished, so a
   line that landed between actions was told an action was still running. The

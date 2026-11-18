@@ -2942,6 +2942,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (chatText && String(chatText).trim() && !teammate) {
       try { convo = convoMemory.recentChat.formatConversationBlock() } catch {}
     }
+    // 261118 (pass 58): this copy is the newest, so the seed's transcript
+    // and own-lines note leave the payload (loop.supersedeSeedConversation).
+    if (convo) loop?.supersedeSeedConversation?.()
     const convoLead = convo ? `${convo}\n\n` : ''
     // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
     // once a say() line has reached chat this session).
