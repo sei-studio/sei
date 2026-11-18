@@ -71,6 +71,17 @@ function pillFor(install: McInstall): PillSpec {
     };
   }
 
+  // Modrinth App profiles — read-only "Limited" badge (third-party launcher,
+  // Sei never installs here). Branched after lunar so it overrides other
+  // state combos; modrinth rows carry kind 'modrinth' with compatibility
+  // 'limited'.
+  if (install.kind === 'modrinth') {
+    return {
+      tone: 'warn',
+      label: t('Limited'),
+    };
+  }
+
   // Sei-enabled paths first (more specific).
   if (install.sei_enabled) {
     if (install.csl_installed && install.loader && install.loader_version && install.csl_version) {
@@ -127,7 +138,7 @@ export function McInstallRow({
   const checkboxId = `mc-install-${install.id}`;
   // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
   // only, with the checkbox disabled and the row's onClick a no-op.
-  const isReadOnly = install.kind === 'lunar';
+  const isReadOnly = install.kind === 'lunar' || install.kind === 'modrinth';
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
     if (isReadOnly) return;

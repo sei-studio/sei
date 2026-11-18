@@ -1151,7 +1151,7 @@ async function bootstrap(): Promise<void> {
           }
           // Lunar installs were never written to (T3 short-circuits in
           // processOneInstall); nothing to rewrite at boot either.
-          if (inst.kind === 'lunar') continue;
+          if (inst.kind === 'lunar' || inst.kind === 'modrinth') continue;
 
           // Same loader-kind decision as wizard.ts: vanilla → fabric;
           // CurseForge → detected loader (fabric or forge), default forge.

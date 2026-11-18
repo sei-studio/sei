@@ -152,6 +152,35 @@ function curseforgePaths(opts?: ScanOpts): string[] {
 }
 
 /* -------------------------------------------------------------------------- */
+/**
+ * Candidate Modrinth App profiles directories. Modrinth keeps each profile
+ * (a full Minecraft instance) under its own subdir of the profiles root:
+ *   - win32:    %APPDATA%\ModrinthApp\profiles
+ *   - darwin:   ~/Library/Application Support/ModrinthApp/profiles
+ *   - linux:    $XDG_DATA_HOME/ModrinthApp/profiles (~/.local/share/ModrinthApp/profiles)
+ *
+ * Each profile dir counts as a detected install even without a readable
+ * profile.json — the wizard surfaces it read-only (Limited), never installs
+ * into it (third-party launcher; Sei's setup writes only into the official
+ * launcher's files). See modrinthPaths usage in scanMcInstalls below.
+ *
+ * Returns candidate paths; caller stats each and skips ENOENT.
+ * Every path constructed via `path.join` per cross-platform invariant.
+ */
+export function modrinthPaths(opts?: ScanOpts): string[] {
+  const p = platform(opts);
+  if (p === 'win32') {
+    return [path.join(appData(opts), 'ModrinthApp', 'profiles')];
+  }
+  if (p === 'darwin') {
+    return [path.join(homeDir(opts), 'Library', 'Application Support', 'ModrinthApp', 'profiles')];
+  }
+  if (p === 'linux') {
+    return [path.join(process.env.XDG_DATA_HOME ?? path.join(homeDir(opts), '.local', 'share'), 'ModrinthApp', 'profiles')];
+  }
+  return [];
+}
+
 /*  ID hashing — stable across re-scans                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -162,7 +191,7 @@ function curseforgePaths(opts?: ScanOpts): string[] {
  * 12 hex chars = 48 bits = collisions are infeasible for the handful of
  * installs a single user has.
  */
-function idFor(kind: 'vanilla' | 'curseforge' | 'lunar', absPath: string): string {
+function idFor(kind: 'vanilla' | 'curseforge' | 'lunar' | 'modrinth', absPath: string): string {
   return crypto.createHash('sha1').update(`${kind}:${absPath}`).digest('hex').slice(0, 12);
 }
 
@@ -557,6 +586,50 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       });
     } catch (err) {
       logger.warn(`mcInstallScan: lunar scan at ${vp} failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ── Modrinth App profiles (read-only, Limited) ───────────────────────────
+  // Third-party launcher: Sei never writes here, but the player should see
+  // their Modrinth installs in the picker alongside .minecraft / CurseForge.
+  for (const mp of modrinthPaths(opts)) {
+    try {
+      const st = await fs.stat(mp);
+      if (!st.isDirectory()) continue;
+    } catch (err) {
+      if (!err || (err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`mcInstallScan: stat ${mp} failed: ${(err as Error).message}`);
+      }
+      continue;
+    }
+    try {
+      const names = await fs.readdir(mp);
+      const slice = names.slice(0, MAX_CF_INSTANCES);
+      for (const name of slice) {
+        const profileDir = path.join(mp, name);
+        try {
+          const pst = await fs.stat(profileDir);
+          if (!pst.isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        const id = idFor('modrinth', profileDir);
+        results.push({
+          id,
+          kind: 'modrinth',
+          label: name,
+          path: profileDir,
+          mc_version: null,
+          loader: null,
+          loader_version: null,
+          csl_installed: false,
+          csl_version: null,
+          sei_enabled: false,
+          compatibility: 'limited',
+        });
+      }
+    } catch (err) {
+      logger.warn(`mcInstallScan: modrinth scan at ${mp} failed: ${(err as Error).message}`);
     }
   }
 

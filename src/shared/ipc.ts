@@ -1099,7 +1099,7 @@ export interface SkinGenResult {
 export interface McInstall {
   /** Stable hash of `${kind}:${absolutePath}` — durable across re-detects on the same machine. */
   id: string;
-  kind: 'vanilla' | 'curseforge' | 'lunar';
+  kind: 'vanilla' | 'curseforge' | 'lunar' | 'modrinth';
   /** e.g. "Vanilla Launcher" or "Pixelmon · 1.20.1" or "Lunar Client" */
   label: string;
   /** Absolute on-disk path — game dir for vanilla, instance dir for CurseForge. */

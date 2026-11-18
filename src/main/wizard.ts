@@ -461,6 +461,19 @@ async function processOneInstall(
     return;
   }
 
+  // ── Modrinth App profiles (read-only, Limited) ───────────────────────────
+  // Third-party launcher: detected and listed in the install picker, never
+  // installed into (Sei's setup writes only into the official launcher).
+  if (install.kind === 'modrinth') {
+    onProgress({ installId, stage: 'queued' });
+    onProgress({ installId, stage: 'done' });
+    results.push({
+      installId,
+      ok: true,
+    });
+    return;
+  }
+
   // ── Determine MC version (with fallback) ──────────────────────────────
   // Vanilla: the Fabric profile decides the version, so steer an unjoinable
   // or unreadable one to a verified, supported version (the launcher then
