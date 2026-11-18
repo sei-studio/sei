@@ -63,6 +63,7 @@ import {
   elevenKeyHintShown,
   defaultVoiceTab,
   OWN_TAB_KEY,
+  FISH_TAB_KEY,
   PITCH_DEFAULT,
   CALMNESS_DEFAULT,
   NO_VOICE_ID,
@@ -70,6 +71,7 @@ import {
   type VoiceParams,
   type VoiceTabKey,
 } from '../lib/voicePicker';
+import { FishVoiceOverride, type FishVoicePick } from './FishVoiceOverride';
 import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } from '../lib/voice/pitchBus';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useT } from '../lib/i18n';
@@ -117,6 +119,16 @@ export interface VoicePickerProps {
    * pitch. Ignored outside localTtsMode.
    */
   previewCharacterId?: string;
+  /** Edit companion only: the character whose own Fish voice is being picked.
+   * When set, a "Fish Audio" tab shows beside the gender tabs so the player
+   * can paste a fish.audio voice link or id directly in the voice picker.
+   */
+  characterId?: string;
+  /** The currently saved own Fish voice pick, if any (FishVoicePick.id is a
+   * 32-hex Fish voice id). */
+  fishPick?: FishVoicePick | null;
+  /** Called when the user picks or clears an own Fish voice. */
+  onFishPick?: (next: FishVoicePick | null) => void;
 }
 
 export function VoicePicker({
@@ -128,6 +140,9 @@ export function VoicePicker({
   pitchBypassed = false,
   previewCharacterId,
   valueOwn = null,
+  characterId,
+  fishPick = null,
+  onFishPick,
 }: VoicePickerProps): React.ReactElement {
   const t = useT();
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -509,12 +524,13 @@ export function VoicePicker({
   const ownTabShown = ownView === 'tab';
   const tabKeys: VoiceTabKey[] = [
     ...(ownTabShown ? [OWN_TAB_KEY as VoiceTabKey] : []),
+    ...(characterId ? [FISH_TAB_KEY as VoiceTabKey] : []),
     ...groups.map((g) => g.key),
   ];
   const activeTab: VoiceTabKey | null =
     chosenTab !== null && tabKeys.includes(chosenTab)
       ? chosenTab
-      : defaultVoiceTab(value, groups, ownTabShown ? ownVoices : null);
+      : defaultVoiceTab(value, groups, ownTabShown ? ownVoices : null, fishPick ?? null);
   const activeGroup = groups.find((g) => g.key === activeTab) ?? null;
   const unlisted = isUnlistedVoice(value, [...voices, ...ownVoices]);
   // valueOwn only describes `value` when it is still the stored pick.
@@ -620,6 +636,18 @@ export function VoicePicker({
               {t('Your ElevenLabs voices')}
             </button>
           ) : null}
+          {characterId ? (
+            <button
+              key={FISH_TAB_KEY}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === FISH_TAB_KEY}
+              className={activeTab === FISH_TAB_KEY ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+              onClick={() => setChosenTab(FISH_TAB_KEY)}
+            >
+              {t('Fish Audio')}
+            </button>
+          ) : null}
           {groups.map((g) => (
             <button
               key={g.key}
@@ -642,7 +670,18 @@ export function VoicePicker({
       ) : null}
 
       <div className={styles.list}>
-        {activeTab === OWN_TAB_KEY && ownTabShown ? (
+        {activeTab === FISH_TAB_KEY ? (
+          <section className={styles.group}>
+            <FishVoiceOverride
+              characterId={characterId!}
+              value={fishPick ?? null}
+              onChange={(pick) => {
+                onFishPick?.(pick);
+                onChange(pick === null ? null : pick.id, null);
+              }}
+            />
+          </section>
+        ) : activeTab === OWN_TAB_KEY && ownTabShown ? (
           <section className={styles.group}>
             <div className={styles.ownHead}>
               <span className={styles.hint}>

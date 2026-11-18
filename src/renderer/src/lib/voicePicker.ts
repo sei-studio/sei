@@ -127,7 +127,9 @@ export function normalizeVoiceParams(p: VoiceParams): VoiceParams {
 
 /** Tab key for the "Your ElevenLabs voices" tab (beside the gender groups). */
 export const OWN_TAB_KEY = 'own';
-export type VoiceTabKey = VoiceGroup['key'] | typeof OWN_TAB_KEY;
+/** Tab key for the user's own Fish Audio voice pick (beside the gender groups). */
+export const FISH_TAB_KEY = 'fish';
+export type VoiceTabKey = VoiceGroup['key'] | typeof OWN_TAB_KEY | typeof FISH_TAB_KEY;
 
 /** The marker to persist when `id` is picked from the own-voice list, or null
  * for any other selection (pool voice, Auto, No voice). A Sei pool id is
@@ -210,7 +212,9 @@ export function defaultVoiceTab(
   value: VoiceSelection,
   groups: VoiceGroup[],
   own: OwnVoiceInfo[] | null,
+  fishPick: { id: string } | null = null,
 ): VoiceTabKey | null {
+  if (fishPick && value !== null && value === fishPick.id) return FISH_TAB_KEY;
   const g = groups.find((x) => x.voices.some((v) => v.id === value));
   if (g) return g.key;
   if (own && value !== null && own.some((v) => v.id === value)) return OWN_TAB_KEY;

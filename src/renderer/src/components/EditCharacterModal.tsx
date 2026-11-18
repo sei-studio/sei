@@ -47,7 +47,6 @@ import { PortraitVersionsModal } from './PortraitVersionsModal';
 import { SkinEditor } from './SkinEditor';
 import { VoicePicker } from './VoicePicker';
 import { FishVoiceOverride, type FishVoicePick } from './FishVoiceOverride';
-import { localTtsModel } from '@shared/ttsEngine';
 import type { VoiceParams } from '../lib/voicePicker';
 import {
   applySharedVoicePick,
@@ -163,15 +162,12 @@ export function EditCharacterModal({
   // a later engine switch keep their designated voice.
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
   const [localTtsPref, setLocalTtsPref] = useState<boolean>(false);
-  // 261103: Fish Audio as the local voice, and this companion's own pick.
-  const [fishPref, setFishPref] = useState<boolean>(false);
   const [fishVoice, setFishVoice] = useState<FishVoicePick | null>(null);
   useEffect(() => {
     void sei
       .getConfig()
       .then((c) => {
         setLocalTtsPref(c.tts_engine === 'local');
-        setFishPref(localTtsModel(c) === 'fish');
         const own = c.fish_voice_overrides?.[character.id];
         setFishVoice(own ? { id: own.id, name: own.name } : null);
       })
@@ -180,13 +176,6 @@ export function EditCharacterModal({
       });
   }, [character.id]);
   const localTtsMode = aiBackendKind === 'local' && localTtsPref;
-  // 261118: Fish runs on the user's own key on BOTH backends, so the
-  // companion's Fish voice block (paste a fish.audio voice link or id) shows
-  // whenever Fish is the chosen voice, not only in BYOK mode. It used to hang
-  // off localTtsMode, which is false on the Sei backend, so a cloud user who
-  // picked Fish Audio had no way to choose the voice.
-  const fishMode = localTtsPref && fishPref;
-
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────
   const storedChess = (character.metadata?.chess ?? null) as {
@@ -655,11 +644,11 @@ export function EditCharacterModal({
                     onParamsChange={setVoiceParams}
                     localTtsMode={localTtsMode}
                     previewCharacterId={character.id}
-                    pitchBypassed={fishMode && fishVoice !== null}
+                    characterId={character.id}
+                    fishPick={fishVoice}
+                    onFishPick={setFishVoice}
+                    pitchBypassed={fishVoice !== null}
                   />
-                  {fishMode ? (
-                    <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} />
-                  ) : null}
                   {voiceOwn && voiceId && !localTtsMode ? (
                     <div className={styles.sharedVoice}>
                       <SharedVoiceChoice
