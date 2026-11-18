@@ -446,6 +446,14 @@ describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
     expect(src.includes('localTtsMode={localTtsMode}')).toBe(true);
   });
 
+  it('G.5: the Fish voice block is not gated on the BYOK backend (261118)', () => {
+    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
+    // Fish runs on the user's own key on both backends: a cloud user who picks
+    // Fish Audio must still get the voice link/id field in Edit companion.
+    expect(src.includes('const fishMode = localTtsPref && fishPref;')).toBe(true);
+    expect(src.includes('const fishMode = localTtsMode && fishPref;')).toBe(false);
+  });
+
   it('G.2: VoicePicker hides the ElevenLabs list/previews + Calmness in localTtsMode, keeps Pitch tunable', () => {
     const src = readFileSync(VOICE_PICKER_TSX, 'utf-8');
     expect(src.includes('localTtsMode?: boolean')).toBe(true);

@@ -119,7 +119,7 @@ export function FishVoiceOverride({
         <TextField
           value={draft}
           onChange={setDraft}
-          placeholder={t('Paste a fish.audio voice link')}
+          placeholder={t('Paste a fish.audio voice link or id')}
           onEnter={() => void onUse()}
           disabled={busy !== null}
           aria-label={t('Fish Audio voice link')}

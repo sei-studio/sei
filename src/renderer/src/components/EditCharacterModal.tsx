@@ -180,7 +180,12 @@ export function EditCharacterModal({
       });
   }, [character.id]);
   const localTtsMode = aiBackendKind === 'local' && localTtsPref;
-  const fishMode = localTtsMode && fishPref;
+  // 261118: Fish runs on the user's own key on BOTH backends, so the
+  // companion's Fish voice block (paste a fish.audio voice link or id) shows
+  // whenever Fish is the chosen voice, not only in BYOK mode. It used to hang
+  // off localTtsMode, which is false on the Sei backend, so a cloud user who
+  // picked Fish Audio had no way to choose the voice.
+  const fishMode = localTtsPref && fishPref;
 
   // ── Games: chess profile (260710). Auto-derived from the persona on the
   //    first game unless the user customizes it here (source 'user'). ─────

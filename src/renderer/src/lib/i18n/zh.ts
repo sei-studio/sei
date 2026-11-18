@@ -113,7 +113,7 @@ export const ZH: Record<string, string> = {
   'Automatic': '自动',
   'Preview': '试听',
   'Use automatic': '改回自动',
-  'Paste a fish.audio voice link': '粘贴 fish.audio 声音链接',
+  'Paste a fish.audio voice link or id': '粘贴 fish.audio 声音链接或 ID',
   'Fish Audio voice link': 'Fish Audio 声音链接',
   'Use voice': '使用此声音',
   'This voice plays without the pitch setting. It is saved right away.': '这个声音不使用音调设置，选择后立即保存。',

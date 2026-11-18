@@ -2080,7 +2080,7 @@ export const ES: Record<string, string> = {
   "Automatic": "Automática",
   "Preview": "Escuchar",
   "Use automatic": "Usar la automática",
-  "Paste a fish.audio voice link": "Pega un enlace de voz de fish.audio",
+  "Paste a fish.audio voice link or id": "Pega un enlace o ID de voz de fish.audio",
   "Fish Audio voice link": "Enlace de voz de Fish Audio",
   "Use voice": "Usar esta voz",
   "This voice plays without the pitch setting. It is saved right away.": "Esta voz suena sin el ajuste de tono. Se guarda al instante.",
