@@ -38,6 +38,7 @@ import { loadConfig } from '../configStore';
 import { localTtsModel } from '../../shared/ttsEngine';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
+import type { AiBackendKind } from '../apiKeyStore';
 import { userChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
 import { companionLanguageFor } from '../companionLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
@@ -367,18 +368,36 @@ async function getJwtOrNull(): Promise<string | null> {
 /**
  * Local TTS route (260816, china-compat W3+W4): BYOK ('local' backend) users
  * with `tts_engine: 'local'` synthesize through the sherpa-onnx voice packs in
- * main (src/main/speech/) instead of ElevenLabs. Cloud accounts ignore the
- * field entirely, and absent means 'elevenlabs' — both ElevenLabs paths
- * (proxy + direct BYOK key) are byte-identical to before.
+ * main (src/main/speech/) instead of ElevenLabs. Absent means 'elevenlabs'.
+ *
+ * 261118: the local voice PACKS stay BYOK-only, but Fish Audio (see
+ * fishSelected) also speaks on a cloud account — the text still bills Sei's
+ * credits, the user's own Fish key only generates the audio.
  */
-async function localTtsSelected(): Promise<boolean> {
+async function localTtsSelected(backend?: AiBackendKind | null): Promise<boolean> {
   try {
-    const { getAiBackendKind } = await import('../apiKeyStore');
-    if ((await getAiBackendKind()) !== 'local') return false;
+    const kind = backend === undefined ? await aiBackendKind() : backend;
+    if (kind !== 'local') return false;
     return (await loadConfig()).tts_engine === 'local';
   } catch {
     return false;
   }
+}
+
+/** The AI backend kind, or null when it cannot be read (treated as not-local). */
+async function aiBackendKind(): Promise<AiBackendKind | null> {
+  try {
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    return await getAiBackendKind();
+  } catch {
+    return null;
+  }
+}
+
+/** Fish Audio is offered on cloud too (261118). Its fallback differs by
+ * backend: the Fast voices on a local one, the ElevenLabs route on cloud. */
+async function fishOnCloud(backend: AiBackendKind | null): Promise<boolean> {
+  return backend === 'cloud-proxy' && (await fishSelected());
 }
 
 /**
@@ -936,7 +955,17 @@ export async function voiceTts(args: {
   // proxy clip cap (the IPC boundary already bounds text length), WAV bytes
   // instead of mp3 — the renderer's blob playback sniffs the container.
   const own = ownVoicePickOf(character);
-  if (await localTtsSelected()) {
+  const backend = await aiBackendKind();
+  // 261118: Fish Audio on a cloud account. A failure here falls through to
+  // the ElevenLabs route below, never to the Fast voices (BYOK-only packs).
+  if (await fishOnCloud(backend)) {
+    const fishText = speechTextFor(args.text, language);
+    if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const fish = await trySynthesizeFishLine(args.characterId, fishText, voiceId, language, own?.gender);
+    if ('audio' in fish) return fish.audio;
+    console.warn(`[sei/voice] Fish Audio unavailable (${fish.fail}) on cloud, using ElevenLabs`);
+  }
+  if (await localTtsSelected(backend)) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
     // 261103: Fish Audio, when chosen, speaks first; any failure falls back
@@ -1133,7 +1162,26 @@ export async function voiceTtsStream(
   // audio/mpeg MSE pipeline), but any caller that does anyway degrades to a
   // whole-clip synthesis delivered as one chunk + done.
   const own = ownVoicePickOf(character);
-  if (await localTtsSelected()) {
+  const backend = await aiBackendKind();
+  // 261118: Fish Audio streams its mp3 on a cloud account too. A failure
+  // before the first byte falls through to the ElevenLabs stream below; a
+  // failure mid-body ends the stream with an error, like any other stream.
+  if (await fishOnCloud(backend)) {
+    const fishText = speechTextFor(args.text, language);
+    if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const prep = await prepareFishLine(args.characterId, fishText, voiceId, language, own?.gender);
+    if ('fail' in prep) {
+      console.warn(`[sei/voice] Fish Audio unavailable (${prep.fail}) on cloud, using ElevenLabs`);
+    } else {
+      try {
+        const opened = await openFishStream(prep.key, fishText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+        return pumpTtsStream(opened, sink);
+      } catch (err) {
+        console.warn(`[sei/voice] Fish Audio stream unavailable (${noteFishFailure(err, prep)}) on cloud, using ElevenLabs`);
+      }
+    }
+  }
+  if (await localTtsSelected(backend)) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
     // 261103: Fish Audio streams its mp3 like the ElevenLabs path. A failure

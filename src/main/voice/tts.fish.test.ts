@@ -142,14 +142,45 @@ describe('Fish Audio TTS routing', () => {
     expect(m.fishSynth).toHaveBeenCalledTimes(2);
   });
 
-  it('never reaches Fish when another local model is chosen or on a cloud account', async () => {
+  it('never reaches Fish when another local model is chosen', async () => {
     m.config.local_tts_model = 'fast';
     await voiceTts({ characterId: 'c1', text: 'Hello.' });
     expect(m.fishSynth).not.toHaveBeenCalled();
-    m.config.local_tts_model = 'fish'; m.backend = 'cloud-proxy';
+  });
+
+  it('speaks with Fish on a cloud account too (261118)', async () => {
+    m.backend = 'cloud-proxy';
+    const buf = await voiceTts({ characterId: 'c1', text: 'Hello.' });
+    expect(buf).toBe(MP3);
+    expect(m.fishSynth).toHaveBeenCalledTimes(1);
+    // Sei's credits pay for the text, the user's Fish key for the audio: the
+    // cloud ElevenLabs route is never touched while Fish speaks.
+    expect(m.route).not.toHaveBeenCalled();
+    expect(m.local).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the ElevenLabs route, not the Fast voices, when Fish fails on cloud', async () => {
+    m.backend = 'cloud-proxy';
+    m.fishSynth.mockRejectedValue(new Error('FISH_FAILED: fetch failed'));
     m.route.mockRejectedValue(new Error('cloud route reached'));
     await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('cloud route reached');
-    expect(m.fishSynth).not.toHaveBeenCalled();
+    expect(m.route).toHaveBeenCalled();
+    // The local packs are BYOK-only, so no Fast clip and no fish-fallback notice.
+    expect(m.local).not.toHaveBeenCalled();
+    expect(notices).toEqual([]);
+  });
+
+  it('streams Fish on a cloud account too (261118)', async () => {
+    m.backend = 'cloud-proxy';
+    const body = new ReadableStream<Uint8Array>({
+      start(c) { c.enqueue(new Uint8Array([1])); c.close(); },
+    });
+    m.fishOpen.mockResolvedValue({ body, ctrl: new AbortController() });
+    const s = collect();
+    await voiceTtsStream({ characterId: 'c1', text: 'Hello.' }, s.sink);
+    await s.settled;
+    expect(s.events.map((e) => (e.chunk ? e.chunk.byteLength : e.done ? 'done' : e.error))).toEqual([1, 'done']);
+    expect(m.local).not.toHaveBeenCalled();
   });
 
   it('streams the Fish mp3 chunk by chunk', async () => {
