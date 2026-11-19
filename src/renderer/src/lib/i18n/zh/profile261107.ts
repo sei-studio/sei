@@ -28,7 +28,6 @@ export const ZH_PROFILE_261107: Record<string, string> = {
   "Custom skin": "自定义皮肤",
   "From {name}": "来自 {name}",
   "Default skin": "默认皮肤",
-  "{name}, {vibe}": "{name}，{vibe}",
   "A Sei voice": "Sei 的声音",
   "{voice}, pitch {pitch}": "{voice}，音高 {pitch}",
   "Written by Sei": "由 Sei 编写",

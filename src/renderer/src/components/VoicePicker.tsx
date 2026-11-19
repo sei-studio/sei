@@ -44,6 +44,14 @@
  * 261020 (T158): with no key saved, on either backend, one line points to
  * the key field in Settings. Text only: the picker sits inside creation and
  * Edit companion, and jumping to Settings would drop unsaved edits.
+ *
+ * 261119: a "Browse the ElevenLabs Voice Library" tile (voiceLibraryTile in
+ * lib/voicePicker.ts) opens the library in the browser for players who want
+ * to choose a voice themselves. A voice they save to their ElevenLabs account
+ * comes back through the own-voice list above, so the tile shows only when a
+ * key is saved and its list was read, or (no key yet) in place of the
+ * add-your-key line, whose instruction its hint carries. Click event:
+ * voice_library_opened {surface, key, backend} (shape only).
  */
 
 import React, { useEffect, useId, useRef, useState } from 'react';
@@ -60,7 +68,8 @@ import {
   ownVoiceDetail,
   ownVoicesView,
   poolUsesOwnKey,
-  elevenKeyHintShown,
+  voiceLibraryTile,
+  ELEVEN_VOICE_LIBRARY_URL,
   defaultVoiceTab,
   OWN_TAB_KEY,
   PITCH_DEFAULT,
@@ -73,7 +82,7 @@ import {
 import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } from '../lib/voice/pitchBus';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useT } from '../lib/i18n';
-import { PlayIcon, StopIcon } from './icons';
+import { ArrowIcon, PlayIcon, StopIcon } from './icons';
 import { clipMimeType } from '../lib/fishVoice';
 import styles from './VoicePicker.module.css';
 import { userChatLanguage } from '@shared/chatLanguage';
@@ -117,6 +126,8 @@ export interface VoicePickerProps {
    * pitch. Ignored outside localTtsMode.
    */
   previewCharacterId?: string;
+  /** Where the picker sits, for the Voice Library click event (261119). */
+  surface?: 'create' | 'edit';
 }
 
 export function VoicePicker({
@@ -128,6 +139,7 @@ export function VoicePicker({
   pitchBypassed = false,
   previewCharacterId,
   valueOwn = null,
+  surface,
 }: VoicePickerProps): React.ReactElement {
   const t = useT();
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
@@ -519,6 +531,20 @@ export function VoicePicker({
   const unlisted = isUnlistedVoice(value, [...voices, ...ownVoices]);
   // valueOwn only describes `value` when it is still the stored pick.
   const unlistedOwn = unlisted && valueOwn ? valueOwn : null;
+  const libraryTile = voiceLibraryTile(hasElevenKey, localTtsMode, ownList);
+
+  function openVoiceLibrary(): void {
+    try {
+      sei.track('voice_library_opened', {
+        surface: surface ?? 'other',
+        key: libraryTile === 'with_key' ? 'saved' : 'none',
+        backend: aiBackendKind === 'local' ? 'local' : 'cloud',
+      });
+    } catch {
+      /* analytics must never break the picker */
+    }
+    void sei.openExternal(ELEVEN_VOICE_LIBRARY_URL).catch(() => {});
+  }
 
   return (
     <div className={styles.root} role="radiogroup" aria-label={t('Voice')}>
@@ -592,10 +618,25 @@ export function VoicePicker({
         </section>
       ) : null}
 
-      {elevenKeyHintShown(hasElevenKey, localTtsMode) ? (
-        <div className={styles.hint} data-testid="eleven-key-hint">
-          {t('Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.')}
-        </div>
+      {/* Voice Library tile (261119). Without a key it stands in for the
+          old add-your-key line, so its hint names the key step. */}
+      {libraryTile ? (
+        <button
+          type="button"
+          className={styles.optionCard}
+          data-testid="voice-library-tile"
+          onClick={openVoiceLibrary}
+        >
+          <div className={styles.rowTitle}>
+            {t('Browse the ElevenLabs Voice Library')}
+            <ArrowIcon size={12} />
+          </div>
+          <div className={styles.rowVibe}>
+            {libraryTile === 'with_key'
+              ? t('Save a voice there and it shows up under Your ElevenLabs voices. Paid ElevenLabs plans only.')
+              : t('Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.')}
+          </div>
+        </button>
       ) : null}
 
       {ownView === 'hint' ? (

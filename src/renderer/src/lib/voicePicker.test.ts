@@ -2,7 +2,7 @@
  * Voice-picker pure logic (260720) — grouping, selection, legacy detection.
  */
 import { describe, it, expect } from 'vitest';
-import type { OwnVoiceInfo, VoiceInfo } from '@shared/ipc';
+import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import {
   groupVoices,
   reduceSelection,
@@ -19,6 +19,8 @@ import {
   ownVoicesView,
   poolUsesOwnKey,
   elevenKeyHintShown,
+  voiceLibraryTile,
+  ELEVEN_VOICE_LIBRARY_URL,
   defaultVoiceTab,
   applyVoicePick,
 } from './voicePicker';
@@ -199,6 +201,20 @@ describe('own ElevenLabs voices', () => {
     expect(elevenKeyHintShown(true, false)).toBe(false);
     expect(elevenKeyHintShown(null, false)).toBe(false); // still probing
     expect(elevenKeyHintShown(false, true)).toBe(false); // local voice packs
+  });
+
+  it('the Voice Library tile shows only where a saved voice can reach the picker', () => {
+    const ok: OwnVoiceList = { status: 'ok', voices: [] };
+    expect(voiceLibraryTile(false, false, null)).toBe('needs_key');
+    expect(voiceLibraryTile(true, false, ok)).toBe('with_key');
+    expect(voiceLibraryTile(true, false, null)).toBe(null); // own list still loading
+    expect(voiceLibraryTile(true, false, { status: 'bad_key', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(true, false, { status: 'error', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(true, false, { status: 'unavailable', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(null, false, ok)).toBe(null); // key probe still out
+    expect(voiceLibraryTile(true, true, ok)).toBe(null); // local voice packs
+    expect(voiceLibraryTile(false, true, null)).toBe(null);
+    expect(ELEVEN_VOICE_LIBRARY_URL).toBe('https://elevenlabs.io/app/voice-library');
   });
 
   it('defaultVoiceTab opens where the selection lives', () => {

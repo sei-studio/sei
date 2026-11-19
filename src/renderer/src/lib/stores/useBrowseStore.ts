@@ -65,6 +65,7 @@ import { DEFAULT_BROWSE_SORT, type BrowseEntry, type BrowsePage, type BrowseSort
 import { SHOW_ADD_COUNTS } from '@shared/addCounts';
 import { sei } from '../ipcClient';
 import { takeThumbStats } from '../worldThumbStats';
+import { userFacingError } from '../errors';
 
 export const PAGE_SIZE = 24;
 const DEBOUNCE_MS = 250;
@@ -210,7 +211,7 @@ export const useBrowseStore = create<BrowseState & BrowseActions>((set, get) => 
       if (get()._seq !== seq) return;
       trackPage({ trigger, pageIndex, sort, sortChosen, searching: !!query, page: null, failure: 'ipc_failed' });
       if (fresh) {
-        set({ loading: false, error: (e as Error).message ?? 'browse_load_failed' });
+        set({ loading: false, error: userFacingError(e) });
       } else {
         set({ loading: false, loadMoreFailed: true });
       }

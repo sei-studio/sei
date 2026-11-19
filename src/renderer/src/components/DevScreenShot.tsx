@@ -11,6 +11,9 @@
  *              (edit, 261119: the Edit companion popup is gone; its sections
  *              are your own companion's profile tabs, so this opens the
  *              character screen on the tab that holds the section)
+ *     &ownkey=0|1   (character tab=voice, or edit section=voice) no ElevenLabs
+ *                   key / a saved one with one own voice: the picker's Voice
+ *                   Library tile (261119)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
  *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
@@ -234,7 +237,13 @@ function seed(): void {
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
     voiceListVoices: async () => VOICES,
-    voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
+    voiceListOwnVoices: async () =>
+      params.get('ownkey') === '1'
+        ? { status: 'ok', voices: [{ id: 'own1', name: 'My voice', category: 'cloned', hasPreview: true }] }
+        : { status: 'unavailable', voices: [] },
+    // &ownkey=0|1 (edit, section=voice): no ElevenLabs key / a saved one, so
+    // the picker's Voice Library tile renders (261119). Absent: no answer.
+    ...(params.has('ownkey') ? { voiceElevenKeyStatus: async () => ({ present: params.get('ownkey') === '1' }) } : {}),
     // &img=custom: the player's own upload is showing (no Regenerate);
     // otherwise a regenerated version is (Regenerate, 2 left).
     charsPortraitVersions: async (id: string) =>

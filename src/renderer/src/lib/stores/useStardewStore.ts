@@ -8,6 +8,7 @@
 import { create } from 'zustand';
 import type { StardewChooseFolderResult, StardewInstallProgressEvent, StardewInstallState, StardewLaunchResult } from '@shared/stardewIpc';
 import { sei } from '../ipcClient';
+import { errorMessageOf, stripIpcWrapper } from '@shared/ipcError';
 
 interface StardewStore {
   /** null until the first detection lands. */
@@ -86,10 +87,9 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
       set({ state, installing: false, progress: { stage: 'done', state } });
       return state;
     } catch (err) {
-      const message = String((err as Error)?.message ?? err);
-      // Electron wraps handler errors as "Error invoking remote method '...': Error: <msg>".
-      const clean = message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-      set({ installing: false, installError: clean });
+      // Keeps main's "CLASS: detail" shape for installErrorCopy; the preload
+      // already removed Electron's wrapper, this covers a mocked bridge.
+      set({ installing: false, installError: stripIpcWrapper(errorMessageOf(err)) });
       void get().refresh();
       return get().state;
     }
@@ -118,7 +118,7 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
       set({ lastLaunch: r, launching: false });
       return r;
     } catch (err) {
-      const r: StardewLaunchResult = { launched: false, via: 'none', message: String((err as Error)?.message ?? err) };
+      const r: StardewLaunchResult = { launched: false, via: 'none', message: stripIpcWrapper(errorMessageOf(err)) };
       set({ lastLaunch: r, launching: false });
       return r;
     }

@@ -65,6 +65,7 @@ import { FishVoiceOverride, type FishVoicePick } from '../FishVoiceOverride';
 import { SharedVoiceChoice } from '../SharedVoiceChoice';
 import { RowLabel } from './ProfileRow';
 import styles from './ProfileEditors.module.css';
+import { userFacingError } from '../../lib/errors';
 
 export interface EditorProps {
   character: Character;
@@ -313,7 +314,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
       first.reset();
       flashSaved();
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save voice settings.'));
+      setError(userFacingError(err, t('Failed to save voice settings.')));
     } finally {
       setSaving(false);
     }
@@ -357,6 +358,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
         localTtsMode={localTtsMode}
         previewCharacterId={character.id}
         pitchBypassed={fishMode && fishVoice !== null}
+        surface="edit"
       />
       {fishMode ? <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} /> : null}
       {value.voiceOwn && value.voiceId && !localTtsMode ? (
@@ -441,7 +443,7 @@ export function AboutEditor({
       first.reset();
       flashSaved();
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
     } finally {
       setSaving(false);
     }
@@ -591,7 +593,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
       flashSaved();
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to regenerate.'));
+      setError(userFacingError(err, t('Failed to regenerate.')));
       return false;
     } finally {
       setRegenerating(false);
@@ -621,7 +623,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
       first.reset();
       flashSaved();
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
     } finally {
       setSavingAdvanced(false);
     }
@@ -859,7 +861,7 @@ export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): Re
       first.reset();
       flashSaved();
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
     } finally {
       setSaving(false);
     }

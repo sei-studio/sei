@@ -194,12 +194,40 @@ export function poolUsesOwnKey(
   return backend === 'local' && list !== null && list.status !== 'unavailable';
 }
 
-/** Whether the picker shows the "Have your own ElevenLabs voices? Add your
- * key in Settings" pointer (261020, T158): both backends, once the key probe
- * has answered "no key" (null = still probing, say nothing). Local voice-pack
- * mode has no ElevenLabs list at all. */
+/** Whether the picker points to the key field (261020, T158): both backends,
+ * once the key probe has answered "no key" (null = still probing, say
+ * nothing). Local voice-pack mode has no ElevenLabs list at all. Since 261119
+ * the pointer is the Voice Library tile's 'needs_key' hint. */
 export function elevenKeyHintShown(hasKey: boolean | null, localTtsMode: boolean): boolean {
   return !localTtsMode && hasKey === false;
+}
+
+/** The ElevenLabs Voice Library, where a player can pick a voice themselves. */
+export const ELEVEN_VOICE_LIBRARY_URL = 'https://elevenlabs.io/app/voice-library';
+
+/**
+ * The "Browse the ElevenLabs Voice Library" tile (261119). A library voice
+ * reaches Sei only through the own-voice path (T150/T158): the player saves
+ * it to their ElevenLabs account, Sei lists that account with their key, and
+ * the voice shows up under "Your ElevenLabs voices". So the tile shows only
+ * where that path can work:
+ *   - 'with_key'  → a key is saved and the own list was read ('ok').
+ *   - 'needs_key' → no key yet (the add-your-key pointer case): the tile's
+ *                   hint says to add the key, and replaces that pointer.
+ *   - null        → still probing, local voice packs (no ElevenLabs list),
+ *                   or a key ElevenLabs refused / a list that failed (the
+ *                   own-voice error line already says what to fix).
+ */
+export type VoiceLibraryTile = 'with_key' | 'needs_key' | null;
+
+export function voiceLibraryTile(
+  hasKey: boolean | null,
+  localTtsMode: boolean,
+  ownList: OwnVoiceList | null,
+): VoiceLibraryTile {
+  if (elevenKeyHintShown(hasKey, localTtsMode)) return 'needs_key';
+  if (localTtsMode || hasKey !== true) return null;
+  return ownList?.status === 'ok' ? 'with_key' : null;
 }
 
 /** Default tab: the tab holding the selection, else the own tab when it has

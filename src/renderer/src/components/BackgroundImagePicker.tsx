@@ -12,6 +12,7 @@ import { sei } from '../lib/ipcClient';
 import { portraitSrc } from '../lib/portraitSrc';
 import { t as tBare, useT } from '../lib/i18n';
 import { Button } from './Button';
+import { userFacingError } from '../lib/errors';
 
 /** Renderer-side budget, under main's BACKGROUND_MAX_BYTES (4 MB). */
 const MAX_BYTES = 3 * 1024 * 1024;
@@ -53,7 +54,7 @@ export function BackgroundImagePicker({
       const ref = await sei.userApplyBackground({ bytesBase64: bytesToBase64(bytes), format });
       onChange(ref);
     } catch (err) {
-      setError(prettifyError((err as Error).message ?? t('Failed to set the background.')));
+      setError(prettifyError(userFacingError(err, t('Failed to set the background.'))));
     } finally {
       URL.revokeObjectURL(objectUrl);
       setBusy(false);
@@ -68,7 +69,7 @@ export function BackgroundImagePicker({
       await sei.userRemoveBackground();
       onChange(null);
     } catch (err) {
-      setError((err as Error).message ?? t('Failed to remove the background.'));
+      setError(userFacingError(err, t('Failed to remove the background.')));
     } finally {
       setBusy(false);
     }

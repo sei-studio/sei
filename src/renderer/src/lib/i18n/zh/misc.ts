@@ -409,8 +409,12 @@ export const ZH_MISC: Record<string, string> = {
   // 261020 (T158): cloud users with no key hear the stand-in Sei voice.
   'From your ElevenLabs account. Without your ElevenLabs key, a Sei voice speaks for them.':
     '来自你的 ElevenLabs 账户。没有你的 ElevenLabs 密钥时，会由一个 Sei 的声音代为说话。',
-  'Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.':
-    '有自己的 ElevenLabs 声音？请在「游玩时长」中添加你的 ElevenLabs 密钥。',
+  // 261119: the Voice Library tile (replaced the add-your-key line).
+  'Browse the ElevenLabs Voice Library': '浏览 ElevenLabs 声音库',
+  'Save a voice there and it shows up under Your ElevenLabs voices. Paid ElevenLabs plans only.':
+    '在那里收藏一个声音，它就会出现在「你的 ElevenLabs 声音」中。仅限 ElevenLabs 付费套餐。',
+  'Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.':
+    '在那里收藏声音，再到「游玩时长」添加 ElevenLabs 密钥即可使用。仅限 ElevenLabs 付费套餐。',
   'Could not read your ElevenLabs voices. Check your ElevenLabs key in Playtime.':
     '无法读取你的 ElevenLabs 声音。请在「游玩时长」中检查你的 ElevenLabs 密钥。',
   'Could not load your ElevenLabs voices right now.': '暂时无法加载你的 ElevenLabs 声音。',
