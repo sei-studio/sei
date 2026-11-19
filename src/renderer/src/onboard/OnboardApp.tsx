@@ -128,6 +128,7 @@ import { ContinueWithChatGPTButton } from '../components/ContinueWithChatGPTButt
 import { signInFailureText } from '../components/ChatgptPlanSettings';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
+import { userFacingError } from '../lib/errors';
 
 /* ── Script ──────────────────────────────────────────────────────────────── */
 
@@ -641,7 +642,7 @@ export function OnboardApp({
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
-      setSetupError((err as Error).message || t('Something went wrong.'));
+      setSetupError(userFacingError(err, t('Something went wrong.')));
     }
   }, [buildConfig, trackCompleted]);
 
@@ -706,7 +707,7 @@ export function OnboardApp({
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
-      setSetupError((err as Error).message || t('Something went wrong.'));
+      setSetupError(userFacingError(err, t('Something went wrong.')));
     }
   }, [buildConfig, trackCompleted]);
 
@@ -1620,7 +1621,7 @@ function AuthPanel(props: {
           // W7: main refused on region; swap to the blocking panel (its copy
           // is translated locally) instead of the inline error line.
           if (res.code === 'region_blocked') setRegionBlocked(true);
-          else setError(res.message);
+          else setError(userFacingError(res.message));
         } else if (res.requiresVerification) setCodeSentTo(email.trim());
         // A session lands via the auth push; OnboardApp proceeds from there.
       } else {
@@ -1631,15 +1632,15 @@ function AuthPanel(props: {
           // from the server. On the returning panel, say the second one
           // out loud and name the way out (260916).
           else if (res.code === 'invalid_credentials' && mode === 'returning' && props.onStartFresh)
-            setError(`${res.message} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
-          else setError(res.message);
+            setError(`${userFacingError(res.message)} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
+          else setError(userFacingError(res.message));
         }
         // Right password, address never confirmed. Main has already sent a
         // fresh code (260804); show the panel rather than sitting on the form.
         else if (res.needsVerification) setCodeSentTo(email.trim());
       }
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
     } finally {
       setSubmitting(false);
     }
@@ -1718,7 +1719,7 @@ function AuthPanel(props: {
       const res = await sei.sendPasswordReset({ email: email.trim() });
       // Neutral success routes to the SAME code panel a signup lands on.
       if (res.ok) setCodeSentTo(email.trim());
-      else setError(res.message);
+      else setError(userFacingError(res.message));
     } catch {
       setError(t("Couldn't send the code. Try again in a moment."));
     }
@@ -2026,7 +2027,7 @@ function GoogleWaitPanel(props: {
         inFlightRef.current = false;
         if (res.ok || res.reason === 'user_cancelled') props.onDone();
         else if (res.reason === 'region_blocked') setRegionBlocked(true);
-        else setError(res.message || t("Sign-in didn't finish. Try again."));
+        else setError(userFacingError(res.message, t("Sign-in didn't finish. Try again.")));
       },
       () => {
         inFlightRef.current = false;
@@ -2194,7 +2195,7 @@ function LocalSetupPanel(props: {
         setProbe(verdict);
       }
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
     } finally {
       setBusy(false);
     }
@@ -2707,7 +2708,7 @@ function ElKeyPanel(props: { onSaved: () => void; onBack: () => void }): React.R
       await sei.voiceElevenKeySet({ key: key.trim() });
       props.onSaved();
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
       setBusy(false);
     }
   };

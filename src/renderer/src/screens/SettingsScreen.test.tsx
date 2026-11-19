@@ -408,10 +408,14 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
 
   it('OV.3: the picker points to the key field when none is saved, on either backend', () => {
     const src = readFileSync(VOICE_PICKER_TSX, 'utf-8');
-    expect(src.includes('elevenKeyHintShown(hasElevenKey, localTtsMode)')).toBe(true);
-    expect(src.includes("t('Have your own ElevenLabs voices? Add your ElevenLabs key in Playtime.')")).toBe(
-      true,
-    );
+    // 261119: the Voice Library tile stands in for the old one-line pointer
+    // (voiceLibraryTile's 'needs_key' is elevenKeyHintShown).
+    expect(src.includes('voiceLibraryTile(hasElevenKey, localTtsMode, ownList)')).toBe(true);
+    expect(
+      src.includes(
+        "t('Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.')",
+      ),
+    ).toBe(true);
     // The free-plan pool hint is a local-backend thing only.
     expect(src.includes('poolUsesOwnKey(ownList, aiBackendKind)')).toBe(true);
   });

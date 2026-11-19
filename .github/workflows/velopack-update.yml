@@ -52,6 +52,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
   # 261101: CI must never write to production analytics. These CI jobs
   # download and launch real releases (v0.6.4, v0.6.10), which send events
   # unless told otherwise: release builds bake no key, so analytics.ts reads

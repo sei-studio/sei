@@ -10,4 +10,6 @@ export declare const VOICES: ReadonlyArray<{
   age: 'young' | 'adult' | 'elder';
   tags: string[];
   vibe: string;
+  /** false = picker only: listed in the voice picker, never rolled (261119). */
+  roll?: false;
 }>;

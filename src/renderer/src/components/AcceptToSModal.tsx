@@ -28,6 +28,7 @@ import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './AcceptToSModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 // Plan 11-12 ships `sei.tosAccept` + `sei.openExternal` on `RendererApi`. This
 // plan (11-13) lands in parallel with 11-12; the type bridge below lets
@@ -73,11 +74,11 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
       if (result.ok) {
         onAccepted();
       } else {
-        setError(result.message);
+        setError(userFacingError(result.message));
         setSubmitting(false);
       }
     } catch (err) {
-      setError((err as Error).message);
+      setError(userFacingError(err));
       setSubmitting(false);
     }
   };

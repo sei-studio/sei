@@ -23,6 +23,7 @@ import {
 import { t } from '../i18n';
 import { visionGateReason } from '../visionGate';
 import { useUiStore } from './useUiStore';
+import { userFacingError } from '../errors';
 
 /** Narrow local view of the draw members on window.sei. Single cast point. */
 interface DrawApi {
@@ -113,7 +114,7 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
         applyState(state);
         set((s) => ({ error: { ...s.error, [characterId]: null } }));
       } catch (err) {
-        set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+        set((s) => ({ error: { ...s.error, [characterId]: userFacingError(err) } }));
       }
     },
 
@@ -127,13 +128,13 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
         applyState(state);
         set((s) => ({ error: { ...s.error, [characterId]: null } }));
       } catch (err) {
-        const msg = (err as Error).message ?? '';
+        const msg = (err as Error)?.message ?? '';
         // Main's authoritative vision backstop (china-compat W9): the picker
         // tile is gated too, but an already-open setup screen can outlive a
         // model switch. Localize the token to the shared gate copy.
         const text = msg.includes(DRAW_ERR_NO_VISION)
           ? visionGateReason(t, 'draw', useUiStore.getState().llmModel)
-          : msg;
+          : userFacingError(err);
         set((s) => ({ error: { ...s.error, [characterId]: text } }));
       } finally {
         set((s) => ({ starting: { ...s.starting, [characterId]: false } }));
@@ -151,7 +152,7 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
           savedTo: { ...s.savedTo, [characterId]: '' },
         }));
       } catch (err) {
-        set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+        set((s) => ({ error: { ...s.error, [characterId]: userFacingError(err) } }));
       }
     },
 
@@ -182,7 +183,7 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
         set((s) => ({ savedTo: { ...s.savedTo, [characterId]: file } }));
         return file;
       } catch (err) {
-        set((s) => ({ error: { ...s.error, [characterId]: (err as Error).message } }));
+        set((s) => ({ error: { ...s.error, [characterId]: userFacingError(err) } }));
         return null;
       }
     },

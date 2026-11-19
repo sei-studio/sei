@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
-import { cleanIpcError } from '../lib/errors';
+import { userFacingError } from '../lib/errors';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { KnowledgeDropZone } from './KnowledgeDropZone';
@@ -51,7 +51,7 @@ export function KnowledgeModal({
     try {
       setEntries(await sei.knowledgeList(characterId));
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     }
   }, [characterId]);
 
@@ -68,7 +68,7 @@ export function KnowledgeModal({
       await sei.knowledgeAdd(characterId, { title: file.title, content: file.content, source: 'upload' });
       await refresh();
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     }
   };
 
@@ -90,7 +90,7 @@ export function KnowledgeModal({
       setFormContent(res.content);
       setForm({ mode: 'edit', entryId });
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     }
   };
 
@@ -107,7 +107,7 @@ export function KnowledgeModal({
       setForm(null);
       await refresh();
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     } finally {
       setFormBusy(false);
     }
@@ -124,7 +124,7 @@ export function KnowledgeModal({
       await sei.knowledgeDelete(characterId, entryId);
       await refresh();
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     }
   };
 

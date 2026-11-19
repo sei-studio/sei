@@ -45,6 +45,7 @@ import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOpenEditor } from '
 import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 import type { AvatarLibraryView } from '../shared/avatarLibrary';
+import { unwrapIpcRejection } from '../shared/ipcError';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -824,4 +825,35 @@ const api: RendererApi = {
   factoryReset: () => ipcRenderer.invoke(IpcChannel.app.factoryReset),
 };
 
-contextBridge.exposeInMainWorld('sei', api);
+/**
+ * Every bridge method that returns a promise rejects with main's own message
+ * (261119). Electron rejects a failed `ipcRenderer.invoke` with "Error
+ * invoking remote method '<channel>': Error: <message>", and screens that
+ * showed `err.message` printed that wrapper to users ("... 'chars:add-to-
+ * library': Error: You can only have 4 companions ..."). Wrapping the api
+ * once here covers every invoke, including ones added later, without
+ * touching each method. Main's console still logs the full error ("Error
+ * occurred in handler for ..."), and the renderer turns technical messages
+ * into plain copy with `userFacingError` (lib/errors.ts).
+ */
+function withCleanRejections<T extends object>(target: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(target)) {
+    if (typeof value !== 'function') {
+      out[key] = value;
+      continue;
+    }
+    out[key] = (...args: unknown[]): unknown => {
+      const result: unknown = (value as (...a: unknown[]) => unknown).apply(target, args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        return Promise.resolve(result).catch((err: unknown) => {
+          throw unwrapIpcRejection(err);
+        });
+      }
+      return result;
+    };
+  }
+  return out as T;
+}
+
+contextBridge.exposeInMainWorld('sei', withCleanRejections(api));

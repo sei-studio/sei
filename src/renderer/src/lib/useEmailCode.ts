@@ -15,6 +15,7 @@ import { useCallback, useRef, useState } from 'react';
 import { sei } from './ipcClient';
 import { useT } from './i18n';
 import { useAuthStore } from './stores/useAuthStore';
+import { userFacingError } from './errors';
 
 export interface EmailCodeState {
   code: string;
@@ -72,13 +73,13 @@ export function useEmailCode(email: string | null, onVerified?: () => void): Ema
           }
           return;
         }
-        setError(res.message);
+        setError(userFacingError(res.message));
         // Wrong code: clear so the next attempt starts from an empty field
         // rather than requiring six backspaces. A network failure keeps the
         // digits, because retyping a correct code helps nobody.
         if (res.code === 'invalid_code') setCode('');
       } catch (err) {
-        setError((err as Error).message || t("Couldn't check that code. Try again."));
+        setError(userFacingError(err, t("Couldn't check that code. Try again.")));
       } finally {
         inFlight.current = false;
         setSubmitting(false);
@@ -94,7 +95,7 @@ export function useEmailCode(email: string | null, onVerified?: () => void): Ema
     setError(null);
     try {
       const res = await sei.resendVerification({ email });
-      setNote(res.ok ? t('Sent. Give it a minute, and check spam too.') : res.message);
+      setNote(res.ok ? t('Sent. Give it a minute, and check spam too.') : userFacingError(res.message));
     } catch {
       setNote(t("Couldn't send a new code. Try again in a moment."));
     } finally {
