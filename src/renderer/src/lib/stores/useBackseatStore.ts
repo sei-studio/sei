@@ -75,6 +75,7 @@ import { t } from '../i18n';
 import { visionGateReason } from '../visionGate';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
+import { userFacingError } from '../errors';
 
 /**
  * How long an armed share waits for its call. The voice-module download alone
@@ -480,7 +481,12 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         void sei.backseatEnd(characterId, `capture_failed:${captureErrorClass(err)}`).catch(() => {});
         set({
           starting: false,
-          error: (err as Error).message || t('Could not read that window.'),
+          // A capture DOMException's text is the browser's own English
+          // ("Could not start video source"), never Sei copy.
+          error:
+            typeof DOMException !== 'undefined' && err instanceof DOMException
+              ? t('Could not read that window.')
+              : userFacingError(err, t('Could not read that window.')),
         });
         return false;
       }

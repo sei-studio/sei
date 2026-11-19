@@ -60,6 +60,7 @@ import { SharedVoiceChoice } from './SharedVoiceChoice';
 import { voicePitchRate, voiceStabilityFor } from '@shared/voicePitch';
 import type { Character } from '@shared/characterSchema';
 import styles from './EditCharacterModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export type EditSection = 'basic' | 'appearance' | 'voice' | 'persona' | 'games';
 type PersonaMode = 'standard' | 'advanced';
@@ -296,7 +297,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
       return false;
     } finally {
       setSavingBasic(false);
@@ -324,7 +325,7 @@ export function EditCharacterModal({
       window.setTimeout(() => setChessSaved(false), 1500);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
     } finally {
       setSavingChess(false);
     }
@@ -349,7 +350,7 @@ export function EditCharacterModal({
       await refreshCharacter(character.id);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save image.'));
+      setError(userFacingError(err, t('Failed to save image.')));
     }
   };
 
@@ -391,7 +392,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save voice settings.'));
+      setError(userFacingError(err, t('Failed to save voice settings.')));
       return false;
     }
   };
@@ -425,7 +426,7 @@ export function EditCharacterModal({
       onSaved?.(persisted);
       return true;
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to regenerate.'));
+      setError(userFacingError(err, t('Failed to regenerate.')));
       return false;
     } finally {
       setRegenerating(false);
@@ -450,7 +451,7 @@ export function EditCharacterModal({
       setSavedExpanded(personaExpanded);
       onSaved?.(persisted);
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save.'));
+      setError(userFacingError(err, t('Failed to save.')));
     } finally {
       setSavingAdvanced(false);
     }
@@ -513,7 +514,7 @@ export function EditCharacterModal({
       useChatStore.getState().evictLocal(character.id);
       setResetDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Failed to reset memory.'));
+      setError(userFacingError(err, t('Failed to reset memory.')));
     } finally {
       setResetting(false);
     }

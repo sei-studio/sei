@@ -96,6 +96,7 @@ import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
+import { userFacingError } from '../lib/errors';
 
 /** The section menu's tab labels (English keys, translated at render). */
 const TAB_LABEL: Record<ProfileTab, string> = {
@@ -433,7 +434,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         await refreshCharacter(id);
       } catch (err) {
         if (cancelled) return;
-        setPrepareError((err as Error).message);
+        setPrepareError(userFacingError(err));
       } finally {
         if (!cancelled) {
           setPreparing(false);
@@ -585,8 +586,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       setSharePhase('success');
     } catch (err) {
       // err.message carries the real reason (e.g. the moderation friendly
-      // message) — surface it verbatim instead of a generic retry string.
-      setShareError((err as Error).message);
+      // message): surface it instead of a generic retry string.
+      setShareError(userFacingError(err));
       setSharePhase('error');
     }
   };
@@ -683,12 +684,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     } catch (err) {
       console.error('[CharacterPage] add to library failed', err);
       // Surface the failure (e.g. the slot-limit backstop) instead of a
-      // silent no-op — the handler messages are already user-readable.
-      setAddError(
-        err instanceof Error && err.message
-          ? err.message
-          : t("Couldn't add this companion. Please try again."),
-      );
+      // silent no-op. The handler messages are user-readable; anything
+      // technical falls back to the line below.
+      setAddError(userFacingError(err, t("Couldn't add this companion. Please try again.")));
     }
   };
 

@@ -18,6 +18,7 @@ import type { McInstall, WizardInstallResult, WizardProgressEvent } from '@share
 import { StatusPill } from './StatusPill';
 import { t, useT } from '../lib/i18n';
 import styles from './InstallProgressList.module.css';
+import { userFacingDetail } from '../lib/errors';
 
 export interface InstallProgressListProps {
   installs: McInstall[];
@@ -30,7 +31,7 @@ interface StageRender {
   pct: number | null;
   /** Terminal: render a StatusPill instead of a stage label. */
   terminal: 'done' | 'failed' | 'cancelled' | 'skipped' | null;
-  /** Secondary text under a terminal pill (e.g. failure message). */
+  /** Secondary text under a terminal pill (e.g. failure message, only when it reads as copy). */
   terminalSecondary?: string;
 }
 
@@ -85,7 +86,7 @@ function describeStage(ev: WizardProgressEvent | undefined): StageRender {
         label: t('Setup failed'),
         pct: null,
         terminal: 'failed',
-        terminalSecondary: ev.message,
+        terminalSecondary: userFacingDetail(ev.message) ?? undefined,
       };
     case 'cancelled':
       return { label: t('Cancelled'), pct: null, terminal: 'cancelled' };
@@ -128,7 +129,7 @@ export function InstallProgressList({
               label: t('Setup failed'),
               pct: null,
               terminal: 'failed',
-              terminalSecondary: result.message,
+              terminalSecondary: userFacingDetail(result.message) ?? undefined,
             };
           }
         }

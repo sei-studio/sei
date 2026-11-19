@@ -27,7 +27,7 @@ import { useStardewStore } from '../../lib/stores/useStardewStore';
 import { PercentBar } from '../PercentBar';
 import { SearchingLine, type SetupStep, type StepSkin } from '../games/SetupStepper';
 import { progressLine, installErrorCopy, achievementsNoteSeen, markAchievementsNoteSeen } from './stardewCopy';
-import { ERROR_COPY } from '../../lib/errors';
+import { ERROR_COPY, userFacingError } from '../../lib/errors';
 
 export interface StardewSetup {
   steps: SetupStep[];
@@ -251,7 +251,7 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
           </Button>
         </div>
         {lastLaunch && !lastLaunch.launched && lastLaunch.message ? (
-          <span className={skin.sub}>{lastLaunch.message.replace(/^[A-Z_]+:\s*/, '')}</span>
+          <span className={skin.sub}>{userFacingError(lastLaunch.message.replace(/^[A-Z_]+:\s*/, ''))}</span>
         ) : null}
         {install?.platform === 'win32' && install.gamePath && !noteSeen ? (
           <>
