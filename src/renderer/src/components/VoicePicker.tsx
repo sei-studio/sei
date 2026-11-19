@@ -865,6 +865,12 @@ export function VoicePicker({
                   if (e.key === 'Escape') {
                     e.stopPropagation();
                     setMenuOpen(false);
+                  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const items = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+                    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+                    const step = e.key === 'ArrowDown' ? 1 : -1;
+                    items[(at + step + items.length) % items.length]?.focus();
                   }
                 }}
               >

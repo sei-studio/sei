@@ -30,7 +30,7 @@ const BASE = 'screen=character&tab=voice&seilink=on';
 const LINK = 'https://elevenlabs.io/app/voice-library?voiceId=LibVoice0000000000aa';
 
 const menu = async (page) => {
-  await page.click('[aria-label="Voice options"]');
+  await page.click('[data-testid="voice-current"] [aria-haspopup="menu"]');
 };
 const paste = async (page) => {
   await page.fill('[data-testid="library-voice-card"] input', LINK);
