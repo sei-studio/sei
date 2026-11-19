@@ -22,6 +22,29 @@ export interface FacepackPose {
   /** Absent when the expression has blink:false. */
   eyes?: { box: FacepackBox; half?: string; closed?: string };
   mouth?: { box: FacepackBox } & Partial<Record<Exclude<FacepackViseme, 'rest'>, string>>;
+  /**
+   * 261120: gaze frames (anima packs baked from 261120). The open eyes
+   * re-rendered by the model looking `x[xi]` to the viewer's right and
+   * `y[yi]` down (both ascending, in the model's iris-rotation units, 0 = the
+   * expression's own look), cropped to `box`: `frames[yi][xi]`, null where
+   * the frame is the base itself. Drawn over the base before the eye and
+   * mouth patches; a player shows the one nearest its gaze point. Packs
+   * without it (and players that predate it) show the base's eyes.
+   */
+  iris?: FacepackIris;
+}
+
+export interface FacepackIris {
+  box: FacepackBox;
+  x: number[];
+  y: number[];
+  frames: Array<Array<string | null>>;
+  /**
+   * The half-shut eyes looking `x[xi]` across (level), same crop: drawn at
+   * `box` over `eyes.half` so a blink keeps her look. Null at the base's look
+   * (and wherever absent, the plain half patch shows).
+   */
+  half?: Array<string | null>;
 }
 
 export interface FacepackExpression {
