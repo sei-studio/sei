@@ -178,7 +178,7 @@ describe('AnimaClient', () => {
     const s = await h.client.prepare(CHAR, 'move_in_sheet');
     expect(s.state).toBe('preparing');
     expect(h.calls).toEqual([{ method: 'POST', path: '/anima/v1/request' }]);
-    expect(h.timers[0].ms).toBe(10_000);
+    expect(h.timers[0].ms).toBe(4_000);
 
     h.replies.push({ state: 'running', portrait_hash: 'p1' });
     await h.tick();
@@ -193,7 +193,7 @@ describe('AnimaClient', () => {
     const phases = h.events.map((e) => e.phase);
     expect(phases).toEqual(['requested', 'ready']);
     expect(h.events[0]).toMatchObject({ trigger: 'move_in_sheet', state: 'queued', created: true });
-    expect(h.events[1]).toMatchObject({ from_cache: false, source: 'baked', wait_ms: 20_000 });
+    expect(h.events[1]).toMatchObject({ from_cache: false, source: 'baked', wait_ms: 8_000 });
     expect(h.timers).toEqual([]);
   });
 

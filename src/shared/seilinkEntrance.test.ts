@@ -98,9 +98,9 @@ describe('wire shapes', () => {
 });
 
 describe('timing', () => {
-  it('waits long enough for a real bake (130 to 350 s seen on 261119)', () => {
-    expect(EXPECTED_LINK_MS).toBeGreaterThanOrEqual(130_000);
-    expect(LINK_TIMEOUT_MS).toBeGreaterThan(350_000);
+  it('waits long enough for a real bake (fast bake 49 to 63 s on 261119, slower on a fallback GPU or a queue)', () => {
+    expect(EXPECTED_LINK_MS).toBeGreaterThanOrEqual(63_000);
+    expect(LINK_TIMEOUT_MS).toBeGreaterThanOrEqual(3 * EXPECTED_LINK_MS);
     expect(LINK_TIMEOUT_MS).toBeGreaterThan(EXPECTED_LINK_MS);
   });
 });

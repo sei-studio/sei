@@ -99,8 +99,8 @@ describe('planLink', () => {
     expect(p.fail).toBeNull();
   });
 
-  it('a 240 s bake: lines wait on their milestones and the curve, holding through the slow stage', () => {
-    const log = simulatedLog({ doneMs: 240_000 });
+  it('a 200 s bake (queued or slow GPU): lines wait on their milestones and the curve, holding through the slow stage', () => {
+    const log = simulatedLog({ doneMs: 200_000 });
     const p = planLink(log);
     expect(p.lines).toHaveLength(9);
     dwellsKept(p.lines);
@@ -108,10 +108,10 @@ describe('planLink', () => {
     expect(p.lines[4]).toBe(0.4 * EXPECTED_LINK_MS);
     expect(p.lines[5]).toBe(0.6 * EXPECTED_LINK_MS);
     expect(p.lines[6]).toBe(0.8 * EXPECTED_LINK_MS);
-    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 96, 144, 192, 237, 240]);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 30, 45, 60, 197, 200]);
     expect(p.lines[7]).toBe(log.at.baked);
     expect(p.lines[8]).toBe(log.at.installed);
-    expect(p.success).toBe(240_000 + LAST_LINE_MS);
+    expect(p.success).toBe(200_000 + LAST_LINE_MS);
     expect(p.handoff).toBeUndefined();
   });
 
@@ -208,11 +208,11 @@ describe('planLink', () => {
     expect(p.lines[7]).toBe(LINK_TIMEOUT_MS);
     expect(p.success).toBe(p.lines[8] + LAST_LINE_MS);
     // Her look landing before then is the normal link (no handoff).
-    const landed = planLink({ ...log, at: { ...log.at, baked: 300_000, installed: 303_000 } });
+    const landed = planLink({ ...log, at: { ...log.at, baked: 200_000, installed: 203_000 } });
     expect(landed.handoff).toBeUndefined();
-    expect(landed.lines[8]).toBe(303_000);
+    expect(landed.lines[8]).toBe(203_000);
     // A bake failure before the timeout still fails it; one after the handoff is ignored.
-    expect(planLink({ ...log, failed: { at: 300_000, failure: 'bake_failed' } }).fail?.failure).toBe('bake_failed');
+    expect(planLink({ ...log, failed: { at: 200_000, failure: 'bake_failed' } }).fail?.failure).toBe('bake_failed');
     expect(planLink({ ...log, failed: { at: LINK_TIMEOUT_MS + 5000, failure: 'bake_failed' } }).fail).toBeNull();
   });
 

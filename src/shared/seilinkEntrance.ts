@@ -27,17 +27,18 @@ import { ANIMA_SHOWN_KINDS } from './anima';
 
 /**
  * How long a first bake is expected to take (the intro spreads its middle
- * lines over it). Real bakes took about 130 to 350 s on 261119; lower it when
- * bakes get faster.
+ * lines over it). Real bakes took about 130 to 350 s until 261119; the fast
+ * bake (no QC, batched render) measured 49 s warm and 63 s cold, plus up to
+ * 4 s of polling and the pack download.
  */
-export const EXPECTED_LINK_MS = 240_000;
+export const EXPECTED_LINK_MS = 75_000;
 /**
  * The intro stops waiting for her look after this long: with the bake still
  * running it hands her arrival over to the desktop (no failure line); the
  * desktop's waiting line turns quieter but keeps waiting. Lower it with
  * EXPECTED_LINK_MS.
  */
-export const LINK_TIMEOUT_MS = 480_000;
+export const LINK_TIMEOUT_MS = 240_000;
 
 /** After a move-in from the app, she waits this long for the app to step aside before coming in anyway. */
 export const REVEAL_WAIT_MS = 12_000;
