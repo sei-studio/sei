@@ -49,3 +49,23 @@
 .overlay > * {
   pointer-events: auto;
 }
+
+/* 261119: the wallpaper widgets' box (the display), inside the scene so she stands over them. */
+.widgets {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* 261119: the warmth colour matrix (an SVG filter referenced by url()). */
+.defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* 261119: the plain background under the lighting (the root's own colour cannot take a filter). */
+.plainLit {
+  position: absolute;
+  inset: 0;
+}
