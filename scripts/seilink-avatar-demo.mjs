@@ -181,7 +181,8 @@ async function addMenuBar(page) {
       document.getElementById('__demo_menutime').textContent = `${day}  ${time}`;
     };
     tick();
-    setInterval(tick, 1000);
+    // Often enough that it turns over with the clock widget (which ticks just past each minute).
+    setInterval(tick, 100);
   });
 }
 
