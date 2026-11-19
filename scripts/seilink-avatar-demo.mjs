@@ -22,6 +22,11 @@
 // changes the room on cue (host scene): [{ "at": s, "widgets": [...] }, { "at": s, "ms": 1800,
 // "lighting": { "warmth": 40 } }]; widgets replace the room's list at once, lighting numbers ease from
 // what they were over `ms`. --path tour (host scene) keeps the cursor moving after the click.
+//
+// 261120 (iris layer): --path sweep moves the cursor slowly across her (left, right, back, then up,
+// down, back) with no click, for comparing how her irises follow. --dpr <n> renders at that device
+// scale, and --clip face screenshots only her head (the top --cliph share of her box, default 0.42),
+// so the eyes are sharp in a close-up.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -59,6 +64,9 @@ const DIM = JSON.parse(arg('dim', '{"brightness":-8,"dim":50,"warmth":12,"charac
 const MENUBAR = arg('menubar', '1') === '1';
 const SEED = arg('seed', null);
 const PATH = arg('path', 'default');
+const DPR = Number(arg('dpr', '1'));
+const CLIP = arg('clip', null);
+const CLIP_H = Number(arg('cliph', '0.42'));
 const TIMELINE = arg('timeline', null) ? JSON.parse(fs.readFileSync(arg('timeline'), 'utf8')) : [];
 const START_AT = (() => {
   const d = new Date();
@@ -184,6 +192,40 @@ function hostCursorAt(t, her) {
   return { x: way[0][1], y: way[0][2] };
 }
 
+/** --path sweep: slow sweeps across her face, left and right then up and down, with rests. */
+function sweepCursorAt(t, her) {
+  const fx = her.x + her.w / 2;
+  const fy = her.y + her.h * 0.2;
+  const W = WIDTH;
+  const H = HEIGHT;
+  const way = [
+    [0, fx, fy],
+    [1.0, fx, fy],
+    [3.4, W * 0.03, fy],
+    [3.9, W * 0.03, fy],
+    [7.6, W * 0.97, fy],
+    [8.1, W * 0.97, fy],
+    [9.6, fx, fy],
+    [10.0, fx, fy],
+    [11.6, fx, H * 0.02],
+    [12.0, fx, H * 0.02],
+    [14.4, fx, H * 0.98],
+    [14.8, fx, H * 0.98],
+    [16.0, fx, fy],
+    [999, fx, fy],
+  ];
+  for (let i = 0; i < way.length - 1; i++) {
+    const [t0, x0, y0] = way[i];
+    const [t1, x1, y1] = way[i + 1];
+    if (t >= t0 && t <= t1) {
+      const u = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+      const k = u * u * (3 - 2 * u);
+      return { x: x0 + (x1 - x0) * k, y: y0 + (y1 - y0) * k };
+    }
+  }
+  return { x: way[0][1], y: way[0][2] };
+}
+
 /** A slim menu bar over the top edge (headless has no desktop): the app menu and the time. */
 async function addMenuBar(page) {
   await page.evaluate(() => {
@@ -238,7 +280,7 @@ async function main() {
       executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome',
       args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
     });
-    const ctx = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1, colorScheme: 'dark' });
+    const ctx = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: DPR, colorScheme: 'dark' });
     // Nothing leaves this machine (no analytics, no CDNs).
     await ctx.route('**/*', (r) => {
       const u = new URL(r.request().url());
@@ -293,7 +335,7 @@ async function main() {
     let clicked = false;
     for (let i = 0; i < n; i++) {
       const t = i / FPS;
-      const cur = SCENE === 'host' ? hostCursorAt(t, her) : cursorAt(t, her);
+      const cur = PATH === 'sweep' ? sweepCursorAt(t, her) : SCENE === 'host' ? hostCursorAt(t, her) : cursorAt(t, her);
       await page.mouse.move(cur.x, cur.y);
       await page.evaluate(({ x, y }) => {
         document.getElementById('__demo_cursor').style.transform = `translate(${x - 2}px, ${y - 2}px)`;
@@ -347,7 +389,8 @@ async function main() {
         }
       }, frameMs);
       await page.waitForTimeout(15);
-      await page.screenshot({ path: path.join(OUT, 'frames', `f${String(i).padStart(5, '0')}.png`) });
+      const clip = CLIP === 'face' ? { x: Math.round(her.x), y: Math.max(0, Math.round(her.y)), width: Math.round(her.w), height: Math.round(her.h * CLIP_H) } : undefined;
+      await page.screenshot({ path: path.join(OUT, 'frames', `f${String(i).padStart(5, '0')}.png`), clip });
       const st = await page.evaluate(() => {
         const tr = window.__seiFaceTrace;
         const face = tr.length ? tr[tr.length - 1] : null;

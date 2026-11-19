@@ -210,3 +210,89 @@ describe('gaze frames (261120)', () => {
     expect(compose.irisOf(mk({ ...iris, half: half.slice(1) }), 'neutral', 'c')?.half).toBeUndefined();
   });
 });
+
+describe('iris layer (261120)', () => {
+  const X = [-0.5, -0.25, 0, 0.25, 0.5];
+  const Y = [-0.5, 0, 0.5];
+  // eye 0 slides 12 px per unit across and 16 down; eye 1 a little less, and one look missing
+  const table = (kx: number, ky: number) => Y.map((y) => X.map((x) => [x * kx, y * ky] as [number, number] | null));
+  const eye1 = table(10, 16);
+  eye1[0][0] = null;
+  const layer = {
+    box: [90, 200, 130, 220] as [number, number, number, number],
+    x: X,
+    y: Y,
+    sprite: 'n-c/c_irisl_sprite.webp',
+    empty: 'n-c/c_irisl_empty.webp',
+    clip: 'n-c/c_irisl_clip.webp',
+    eyes: [
+      { rect: [90, 200, 110, 220] as [number, number, number, number], d: table(12, 16) },
+      { rect: [110, 200, 130, 220] as [number, number, number, number], d: eye1 },
+    ],
+    fit: 0.6,
+    half: { empty: 'n-c/c_irisl_half_empty.webp', clip: 'n-c/c_irisl_half_clip.webp' },
+  };
+  const mk = (lay: unknown, extra: Record<string, unknown> = {}): FacepackManifest =>
+    ({
+      ...M,
+      expressions: {
+        ...M.expressions,
+        neutral: { blink: true, poses: { c: { ...pose('n-c'), iris_layer: lay, ...extra }, l1: pose('n-l1') } },
+        laugh: { blink: false, poses: { c: { base: 'l-c/base.webp', iris_layer: lay } } },
+      },
+    }) as FacepackManifest;
+
+  it('a pose with a layer has it and loads its five files; other poses, older packs and shut-eye expressions have none', () => {
+    const m = mk(layer);
+    expect(compose.irisLayerOf(m, 'neutral', 'c')?.eyes).toHaveLength(2);
+    expect(compose.irisFiles(m, 'neutral', 'c')).toEqual([layer.sprite, layer.empty, layer.clip, layer.half.empty, layer.half.clip]);
+    expect(compose.irisLayerOf(m, 'neutral', 'l1')).toBeNull();
+    expect(compose.irisLayerOf(m, 'laugh', 'c')).toBeNull();
+    expect(compose.irisLayerOf(M, 'neutral', 'c')).toBeNull();
+    // the layer wins over gaze frames; without a layer the gaze frames still load (older packs)
+    const frames = { box: box(100, 210), x: [-0.5, 0, 0.5], y: [0, 0.5], frames: [['a.webp', null, 'b.webp'], ['c.webp', 'd.webp', 'e.webp']] };
+    expect(compose.irisFiles(mk(layer, { iris: frames }), 'neutral', 'c')).toHaveLength(5);
+    expect(compose.irisFiles(mk(undefined, { iris: frames }), 'neutral', 'c')).toHaveLength(5);
+    expect(compose.irisFiles(mk(undefined, { iris: frames }), 'neutral', 'c')[0]).toBe('a.webp');
+  });
+
+  it('a malformed layer is ignored; a malformed half lid only drops the half lid', () => {
+    const none = (lay: unknown) => expect(compose.irisLayerOf(mk(lay), 'neutral', 'c')).toBeNull();
+    none({ ...layer, box: [10, 10, 5, 20] });
+    none({ ...layer, x: [0.5, 0] });
+    none({ ...layer, sprite: '../sprite.webp' });
+    none({ ...layer, eyes: [] });
+    none({ ...layer, eyes: [{ rect: layer.eyes[0].rect, d: table(1, 1).slice(1) }] });
+    none({ ...layer, eyes: [{ rect: layer.eyes[0].rect, d: Y.map(() => X.map(() => [1, 'x'])) }] });
+    none('layer');
+    const half = compose.irisLayerOf(mk({ ...layer, half: { empty: '/abs.webp', clip: 'a.webp' } }), 'neutral', 'c');
+    expect(half?.sprite).toBe(layer.sprite);
+    expect(half?.half).toBeUndefined();
+    expect(compose.irisLayerFiles(half!)).toHaveLength(3);
+  });
+
+  it('offsets glide continuously between the baked looks, clamped to the grid and IRIS_MAX', () => {
+    const lay = compose.irisLayerOf(mk(layer), 'neutral', 'c')!;
+    const [e0, e1] = lay.eyes;
+    const off = (e: typeof e0, x: number, y: number) => compose.layerOffset(lay, e, x, y).map((v) => Math.round(v * 1000) / 1000);
+    expect(off(e0, 0, 0)).toEqual([0, 0]);
+    expect(off(e0, 0.5, 0)).toEqual([6, 0]);
+    expect(off(e0, 0.1, 0)).toEqual([1.2, 0]);
+    expect(off(e0, 0.37, -0.2)).toEqual([4.44, -3.2]);
+    // every small step of the look moves the iris a small step: no jumps
+    let last = compose.layerOffset(lay, e0, -0.6, 0.1)[0];
+    for (let x = -0.6; x <= 0.6; x += 0.01) {
+      const v = compose.layerOffset(lay, e0, x, 0.1)[0];
+      expect(Math.abs(v - last)).toBeLessThan(0.13);
+      last = v;
+    }
+    // past the edge of the grid (and IRIS_MAX): the edge
+    expect(off(e0, 3, 3)).toEqual([6, 8]);
+    expect(off(e0, -3, -3)).toEqual([-6, -8]);
+    // a tighter cap stops sooner
+    expect(compose.layerOffset(lay, e0, 3, 0, 0.25)).toEqual([3, 0]);
+    // a missing look counts as no move
+    expect(off(e1, -0.5, -0.5)).toEqual([0, 0]);
+    expect(off(e1, -0.25, -0.5)).toEqual([-2.5, -8]);
+  });
+});
