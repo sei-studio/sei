@@ -721,9 +721,11 @@ export function VoicePicker({
     return () => document.removeEventListener('pointerdown', onDown);
   }, [menuOpen]);
 
+  /** A menu item sets its choice (picking the checked one again keeps it,
+   * unlike a list row, which toggles back to Auto). */
   function pickFromMenu(next: string | null): void {
     setMenuOpen(false);
-    onChange(next === null ? null : reduceSelection(value, next), null);
+    if (next !== value) onChange(next, null);
   }
 
   function openVoiceLibrary(): void {
