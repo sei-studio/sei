@@ -21,6 +21,14 @@ describe('RoomWidgets (261119)', () => {
     expect(html).toContain('Thursday, November 19');
   });
 
+  it('the clock draws in its own colour, weight and size (product call 261120)', () => {
+    const c: RoomWidget = { ...newWidget('clock', 'c1'), color: '#ffd28a', weight: 700, size: 200 };
+    const html = renderToStaticMarkup(<RoomWidgets widgets={[c]} width={1000} height={500} running={false} clock={clock} />);
+    expect(html).toContain('color:#ffd28a');
+    expect(html).toContain('font-weight:700');
+    expect(html).toContain('font-size:100px');
+  });
+
   it('a text line shows its placeholder only in the editor; progress shows the day', () => {
     const t = newWidget('text', 't1');
     const p = newWidget('progress', 'p1');

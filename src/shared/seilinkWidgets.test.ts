@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CLOCK_PRESETS,
   CLOCK_SAMPLE,
   DEFAULT_LIGHTING,
   TICK_SLACK_MS,
@@ -67,8 +66,13 @@ const clock = (over: Partial<RoomWidget> = {}): RoomWidget => ({
 });
 
 describe('clock formats (261119)', () => {
-  it('the preset row reads 9:41, 09:41 PM, 9:41:07, 21:41', () => {
-    expect(CLOCK_PRESETS.map((p) => formatClock(CLOCK_SAMPLE, p.format, 'en-US'))).toEqual(['9:41', '09:41 PM', '9:41:07', '21:41']);
+  it('each switch changes one thing: 24-hour, seconds, leading zero, AM/PM', () => {
+    const f = { hour12: true, pad: false, seconds: false, ampm: false };
+    expect(formatClock(CLOCK_SAMPLE, f, 'en-US')).toBe('9:41');
+    expect(formatClock(CLOCK_SAMPLE, { ...f, hour12: false }, 'en-US')).toBe('21:41');
+    expect(formatClock(CLOCK_SAMPLE, { ...f, seconds: true }, 'en-US')).toBe('9:41:07');
+    expect(formatClock(CLOCK_SAMPLE, { ...f, pad: true }, 'en-US')).toBe('09:41');
+    expect(formatClock(CLOCK_SAMPLE, { ...f, pad: true, ampm: true }, 'en-US')).toBe('09:41 PM');
   });
 
   it('12 at noon and midnight on a 12-hour clock, 00 on a padded 24-hour one', () => {
