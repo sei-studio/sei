@@ -13,6 +13,8 @@
  *   dock sits) and the app language.
  * - 261105: her face for a line (`emotion` / `face` on the line, set by main
  *   from the line's face tag or its words), held while the bubble is up.
+ * - 261119: her arrival (HostArrival): main says whether she waits for her
+ *   look, holds, comes in or is just there; the page says when she is in.
  *
  * The avatar goes through the mount point in hostAvatar.tsx.
  */
@@ -38,11 +40,15 @@ import { bubbleMs, HostBubble, HostDock, speakMs, type DockPress } from './HostD
 import { roomAvatarUse } from '../RoomAvatar';
 import { HostAvatar, type HostAvatarPoke, type VoiceLevel } from './hostAvatar';
 import { lineFaceHoldMs, NEUTRAL_LOOK, toNeutral, type HostAvatarLook } from './hostLook';
+import { HostArrival, type ArrivedReport } from './HostArrival';
+import { sanitizeArrival, type SeilinkArrival } from '@shared/seilinkEntrance';
 import styles from './SeilinkHost.module.css';
 
 const FRAMES_REPORT_MS = 500;
 /** She moves (idle motion, a walk off): re-measure her click area this often. */
 const BOX_POLL_MS = 250;
+/** No word from main on her arrival by then (it always sends one first): she is just shown, never left out. */
+const ARRIVAL_FALLBACK_MS = 4000;
 
 function sameBox(a: SeilinkBox | null, b: SeilinkBox | null): boolean {
   if (!a || !b) return a === b;
@@ -63,6 +69,8 @@ export interface SeilinkHostViewProps {
   initialConfirm?: boolean;
   /** Dev preview / screenshots: the decorate-together offer already up. */
   initialOffer?: SeilinkDockOffer;
+  /** Dev preview / screenshots: a fixed reduced-motion answer for her entrance. */
+  reducedMotion?: boolean;
 }
 
 export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactElement {
@@ -86,6 +94,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const [voice, setVoice] = useState(false);
   const voiceLevel = useRef<VoiceLevel>({ level: 0, at: 0 });
   const [pressSeq, setPressSeq] = useState(0);
+  // 261119: a bridge without arrivals (an old dev preview) shows her as before.
+  const [arrival, setArrival] = useState<SeilinkArrival | null>(() => (bridge && !bridge.onArrival ? { mode: 'show', trigger: 'move_in' } : null));
   const frames = useRef(0);
   const sceneReady = useRef(false);
   const firstSent = useRef(false);
@@ -117,10 +127,27 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
         voiceLevel.current = { level, at: performance.now() };
       }) ?? (() => {}),
       bridge.onPress?.(() => setPressSeq((n) => n + 1)) ?? (() => {}),
+      bridge.onArrival?.((raw) => {
+        const a = sanitizeArrival(raw);
+        // Once she is in on this page, she stays in (a late enter or hold must not hide her again).
+        if (a) setArrival((was) => (was?.mode === 'show' ? was : a));
+      }) ?? (() => {}),
     ];
     bridge.ready();
-    return () => offs.forEach((off) => off());
+    const fallback = setTimeout(() => setArrival((a) => a ?? { mode: 'show', trigger: 'restore' }), ARRIVAL_FALLBACK_MS);
+    return () => {
+      clearTimeout(fallback);
+      offs.forEach((off) => off());
+    };
   }, [bridge]);
+
+  const onArrived = useCallback(
+    (r: ArrivedReport) => {
+      setArrival((a) => (a ? { mode: 'show', trigger: a.trigger } : a));
+      bridge?.arrived?.(r);
+    },
+    [bridge],
+  );
 
   // The dock and the bubble speak the app's language (no setting: the system's).
   const uiLanguage = room?.uiLanguage;
@@ -243,25 +270,35 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const characterId = room?.characterId ?? '';
   const avatarChoice = room?.state.avatar;
   const use = useMemo(() => (avatarChoice ? roomAvatarUse(avatarChoice) : 'sei'), [avatarChoice]);
+  const avatarFor = (slot: RoomAvatarSlot): React.ReactNode => (
+    <HostAvatar
+      characterId={characterId}
+      name={room?.name ?? ''}
+      slot={slot}
+      fps={fps}
+      portrait={room?.portrait ?? null}
+      use={use}
+      busy={busy}
+      poke={poke}
+      speaking={speaking}
+      voice={voice}
+      voiceLevel={voiceLevel}
+      pressSeq={pressSeq}
+      emotion={look.emotion}
+      face={look.face}
+      faceSeq={look.seq}
+    />
+  );
+  // 261119: HostArrival decides whether she is drawn yet (waiting for her look, held, coming in, there).
   const renderAvatar = (slot: RoomAvatarSlot): React.ReactNode => (
     <div ref={setWrap} className={styles.measure}>
-      <HostAvatar
-        characterId={characterId}
-        name={room?.name ?? ''}
-        slot={slot}
-        fps={fps}
-        portrait={room?.portrait ?? null}
-        use={use}
-        busy={busy}
-        poke={poke}
-        speaking={speaking}
-        voice={voice}
-        voiceLevel={voiceLevel}
-        pressSeq={pressSeq}
-        emotion={look.emotion}
-        face={look.face}
-        faceSeq={look.seq}
-      />
+      {arrival ? (
+        <HostArrival arrival={arrival} name={room?.name ?? ''} height={slot.height} fps={fps} reduced={props.reducedMotion} onArrived={onArrived}>
+          {avatarFor(slot)}
+        </HostArrival>
+      ) : (
+        <span data-seilink-hit="" className={styles.arrivalNone} />
+      )}
     </div>
   );
 

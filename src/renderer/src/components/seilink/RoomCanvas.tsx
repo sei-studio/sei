@@ -30,14 +30,24 @@
  * plain background in the OS's light or dark mode (lib/seilink/plainTone.ts,
  * black or white, followed live) with her at the preset's seat; the overlay
  * tint (the dock's and the editor's glass) follows that colour.
+ *
+ * 261119: the wallpaper widgets (RoomWidgets: clock, date, text, progress)
+ * draw over the whole room and her (top of the scene, under the overlay
+ * children), on the display box (`frame`, or the whole element), so no
+ * furniture or lamp glow covers them.
+ * The room lighting (brightness, the dark veil, warmth) is a CSS filter on
+ * the room layers, and on her too when `lighting.character`; never on the
+ * widgets. Warmth is an SVG colour matrix, only mounted when it is not 0.
  */
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { resolveRoomTime, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
 import { roomTimeMix, roomViewport, stageViewport, type RoomFit, type StageOptions, type RoomOverlay, type RoomTimeMix, type RoomViewport } from '@shared/seilinkDraw';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomRenderer } from '../../lib/seilink/roomRenderer';
 import { PLAIN_COLOURS, plainOverlay, usePlainTone } from '../../lib/seilink/plainTone';
 import type { RoomAssetError } from '../../lib/seilink/roomCompose';
+import { lightingFilter, warmthMatrix } from '@shared/seilinkWidgets';
+import { RoomWidgets, type RoomWidgetsProps } from './RoomWidgets';
 import styles from './RoomCanvas.module.css';
 
 /** Where her avatar goes, in CSS px of the room box (the RoomCanvas element). */
@@ -92,6 +102,8 @@ export interface RoomCanvasProps {
    * (stageViewport in seilinkDraw.ts). Wins over `fit`.
    */
   stage?: StageOptions | null;
+  /** 261119: the editor's view of the widgets (placeholders, the selected one, a drag in progress). */
+  widgetEdit?: Pick<RoomWidgetsProps, 'selected' | 'moving'> | null;
 }
 
 /** How often 'auto' time re-reads the clock. A clock fade lasts 30 minutes, so this is smooth. */
@@ -239,24 +251,57 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   };
   const avatarNode = typeof avatar === 'function' ? avatar(slot) : avatar;
 
+  // 261119: lighting on the room layers (and on her when it covers her), widgets on the display box.
+  const warmId = `seilinkWarm${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
+  const warm = warmthMatrix(state.lighting?.warmth ?? 0);
+  const filter = lightingFilter(state.lighting, warm ? `url(#${warmId})` : null);
+  const lit: React.CSSProperties | undefined = filter ? { filter } : undefined;
+  const herLit = state.lighting?.character ? lit : undefined;
+  const widgets = state.widgets ?? [];
+  const wbox = fx ?? { x: 0, y: 0, width: box.w, height: box.h };
+
   return (
     <div
       ref={rootRef}
       className={className ? `${styles.root} ${className}` : styles.root}
       style={plain ? { background: PLAIN_COLOURS[tone], ...style } : style}
       data-plain={plain ? tone : undefined}
+      data-lit={filter ? '' : undefined}
     >
+      {warm && (
+        <svg className={styles.defs} aria-hidden="true" focusable="false">
+          <filter id={warmId} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="matrix" values={warm} />
+          </filter>
+        </svg>
+      )}
+      {plain && filter && <div className={styles.plainLit} style={{ background: PLAIN_COLOURS[tone], filter }} />}
       <div className={styles.scene} style={{ left: vp.left, top: vp.top, width: vp.width, height: vp.height }}>
-        <canvas ref={backRef} className={styles.layer} />
+        <canvas ref={backRef} className={styles.layer} style={lit} />
         {/* 261105: weather and ambience particles, behind her. */}
-        <canvas ref={fxRef} className={used.fx ? styles.layer : `${styles.layer} ${styles.hidden}`} data-layer="fx" />
+        <canvas ref={fxRef} className={used.fx ? styles.layer : `${styles.layer} ${styles.hidden}`} style={lit} data-layer="fx" />
         {avatarNode != null && (
-          <div className={styles.avatar} style={{ left: slot.x, top: slot.y, height: slot.height }}>
+          <div className={styles.avatar} style={{ left: slot.x, top: slot.y, height: slot.height, ...herLit }}>
             {avatarNode}
           </div>
         )}
-        <canvas ref={frontRef} className={used.front ? styles.layer : `${styles.layer} ${styles.hidden}`} />
-        <canvas ref={glowRef} className={used.glow ? `${styles.layer} ${styles.glow}` : `${styles.layer} ${styles.glow} ${styles.hidden}`} />
+        <canvas ref={frontRef} className={used.front ? styles.layer : `${styles.layer} ${styles.hidden}`} style={lit} />
+        <canvas ref={glowRef} className={used.glow ? `${styles.layer} ${styles.glow}` : `${styles.layer} ${styles.glow} ${styles.hidden}`} style={lit} />
+        {/* Widgets sit over the whole room and her, like icons on a desktop: furniture never covers the clock. */}
+        {widgets.length > 0 && (
+          <div className={styles.widgets} style={{ left: wbox.x - vp.left, top: wbox.y - vp.top, width: wbox.width, height: wbox.height }}>
+            <RoomWidgets
+              widgets={widgets}
+              width={wbox.width}
+              height={wbox.height}
+              running={fps > 0}
+              clock={clock}
+              editing={props.widgetEdit != null}
+              selected={props.widgetEdit?.selected}
+              moving={props.widgetEdit?.moving}
+            />
+          </div>
+        )}
       </div>
       {children != null && <div className={styles.overlay}>{children}</div>}
     </div>

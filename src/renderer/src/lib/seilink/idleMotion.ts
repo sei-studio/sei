@@ -86,12 +86,15 @@ export interface IdleMotionConfig {
 export const DEFAULT_IDLE_CONFIG: IdleMotionConfig = {
   breathPeriodMs: 4_600,
   breathAmp: 0.007,
-  swayLeanDeg: 0.7,
-  swayDrift: 0.003,
+  // 261119 (product call 261119, "too much swaying"): the lean rotates the whole figure about her
+  // feet, so 0.7 deg read as a pendulum on the desktop. Breath and a faint weight shift stay.
+  swayLeanDeg: 0.2,
+  swayDrift: 0.0015,
   shiftMinGapMs: 9_000,
   shiftMeanGapMs: 26_000,
-  shiftRange: 0.045,
-  shiftStep: 0.028,
+  // 261119: a seat shift is a small settle in place, not a slide across the desk.
+  shiftRange: 0.014,
+  shiftStep: 0.009,
   shiftMinMs: 1_400,
   shiftMaxMs: 2_300,
   walkMinGapMs: 9 * 60_000,
@@ -376,7 +379,7 @@ export class IdleScheduler {
       case 'shifting': {
         const e = smoother(u);
         const arc = Math.sin(Math.PI * u);
-        return { ...seated, x: s.fromX + (s.toX - s.fromX) * e + sway.drift, lift: 0.006 * arc, lean: sway.lean + s.dir * 1.1 * arc };
+        return { ...seated, x: s.fromX + (s.toX - s.fromX) * e + sway.drift, lift: 0.002 * arc, lean: sway.lean + s.dir * 0.35 * arc };
       }
       case 'standing': {
         const up: IdlePose = { ...seated, x: s.fromX, lift: c.standLift, lean: s.dir * c.travelLeanDeg, scale: c.walkScale, breath: 1 };

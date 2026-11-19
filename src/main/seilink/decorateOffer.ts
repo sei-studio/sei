@@ -28,7 +28,7 @@
 import { isFirstRoom, isPlainRoom } from '../../shared/seilinkRoom';
 import { loadAnalytics } from '../lazyAnalytics';
 import { seilinkEnabled } from './gate';
-import { seilinkDockOffer, seilinkLiveCharacter, setSeilinkDockOffer } from './host/seilinkHost';
+import { seilinkDockOffer, seilinkLiveCharacter, setSeilinkDockOffer, whenSeilinkArrived } from './host/seilinkHost';
 import { getRoomState, onRoomChange } from './roomStore';
 import type { PokeOutcome } from './desktopLines';
 
@@ -120,6 +120,18 @@ export async function offerDecorateTogether(
   const note = isPlainRoom(state) ? DECORATE_OFFER_NOTE_PLAIN : DECORATE_OFFER_NOTE;
   asked.add(characterId);
   pending.add(characterId);
+  // 261119: she asks once she is in (her entrance can wait minutes for her look).
+  if (!(await whenSeilinkArrived(characterId))) {
+    pending.delete(characterId);
+    asked.delete(characterId);
+    return skip('not_live');
+  }
+  // Set up some other way while she waited for her look.
+  const now = await getRoomState(characterId).catch(() => null);
+  if (!now || !isFirstRoom(now)) {
+    pending.delete(characterId);
+    return skip('not_blank');
+  }
   const started = Date.now();
   let lineOutcome: PokeOutcome | null = null;
   try {

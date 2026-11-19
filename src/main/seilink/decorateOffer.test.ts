@@ -16,6 +16,7 @@ vi.mock('../lazyAnalytics', () => ({
 vi.mock('./gate', () => ({ seilinkEnabled: () => m.enabled }));
 vi.mock('./host/seilinkHost', () => ({
   seilinkLiveCharacter: () => m.live,
+  whenSeilinkArrived: async (id: string) => m.live === id,
   seilinkDockOffer: (id: string) => m.offer.get(id) ?? 'none',
   setSeilinkDockOffer: (id: string, o: string) => {
     if (m.live !== id) return false;

@@ -15,6 +15,7 @@
  */
 import {
   defaultRoomState,
+  keepDesktop,
   type RoomBox,
   type RoomComponent,
   type RoomItemPlacement,
@@ -326,7 +327,7 @@ export function setRoomAvatar(state: RoomState, avatar: RoomState['avatar']): Ro
 /** Move to another preset: its default room, keeping her avatar and the time setting. */
 export function switchPreset(state: RoomState, preset: RoomPresetManifest['id']): RoomState {
   if (state.preset === preset) return state;
-  return { ...defaultRoomState(preset), time: state.time, avatar: state.avatar };
+  return keepDesktop(state, { ...defaultRoomState(preset), time: state.time, avatar: state.avatar });
 }
 
 /** The tint a slot or item shows now (its own, else the component default). */

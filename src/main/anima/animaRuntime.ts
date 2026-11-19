@@ -38,6 +38,27 @@ async function pushAvatarChanged(characterId: string): Promise<void> {
   broadcast(IpcChannel.avatar.manifestState, { characterId, manifest });
 }
 
+/** 261119: in-process listeners for any change of her look's progress (the desktop arrival, seilinkHost.ts). */
+const changeListeners = new Set<(characterId: string) => void>();
+
+/** Called on every status, stage and ready push. Returns the unsubscribe. */
+export function onAnimaChange(cb: (characterId: string) => void): () => void {
+  changeListeners.add(cb);
+  return () => {
+    changeListeners.delete(cb);
+  };
+}
+
+function noteChange(characterId: string): void {
+  for (const cb of [...changeListeners]) {
+    try {
+      cb(characterId);
+    } catch {
+      /* a listener must not break the client */
+    }
+  }
+}
+
 export const anima = new AnimaClient({
   api,
   online: () => {
@@ -72,10 +93,17 @@ export const anima = new AnimaClient({
   },
   onReady: (characterId) => {
     void pushAvatarChanged(characterId).catch((err) => log(`[anima] avatar push failed (${(err as Error).message})`));
+    noteChange(characterId);
   },
-  onStatus: (s: AnimaStatus) => broadcast(IpcChannel.seilink.animaChanged, s),
+  onStatus: (s: AnimaStatus) => {
+    broadcast(IpcChannel.seilink.animaChanged, s);
+    noteChange(s.characterId);
+  },
   // 261106: the stage pushes ride the same channel (the WorldLink intro paces its lines on them).
-  onProgress: (s: AnimaStatus) => broadcast(IpcChannel.seilink.animaChanged, s),
+  onProgress: (s: AnimaStatus) => {
+    broadcast(IpcChannel.seilink.animaChanged, s);
+    noteChange(s.characterId);
+  },
   now: () => Date.now(),
   setTimeout: (fn, ms) => {
     const t = setTimeout(fn, ms);

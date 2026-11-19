@@ -67,7 +67,7 @@ export interface GlFaceEnv {
 }
 
 const EXPRESSION_FADE_MS = 160;
-const POSE_FADE_MS = 460;
+const POSE_FADE_MS = 600;
 /** Head turn (normalised) each baked pose stands for. */
 const POSE_YAW: Record<string, number> = {
   c: 0,
@@ -77,7 +77,7 @@ const POSE_YAW: Record<string, number> = {
   r2: 0.9,
 };
 /** A baked pose is held at least this long. */
-const POSE_HOLD_MS = 1_400;
+const POSE_HOLD_MS = 2_500;
 /** Warp amplitudes, in eye-to-mouth units (rig.unit) and radians. */
 const FACE_SLIDE_X = 0.16;
 const FACE_SLIDE_Y = 0.1;
@@ -272,7 +272,18 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     lastViseme = viseme;
   };
   show(shown, 'rest', false);
-  const headGain = eyeSetFor(shown).eyes ? 1 : NO_IRIS_HEAD_GAIN;
+  const irises = eyeSetFor(shown).eyes !== null;
+  const headGain = irises ? 1 : NO_IRIS_HEAD_GAIN;
+  /**
+   * 261119 (product call 261119, "the idle animation jumps", "eyes jump"): a baked
+   * turned pose is a different picture (every hair strand moves, the irises sit
+   * elsewhere), so moving to it is a whole-figure crossfade, and her ordinary
+   * glances and cursor looks crossed into it every few seconds. A face set with
+   * irises now turns her head with the warp alone (continuous) and keeps the
+   * baked centre pose; only a face with no iris to move (the flat chibi eyes)
+   * still uses the turned poses, and only for a big turn.
+   */
+  const turnPoses = !irises;
 
   /** The baked pose her head direction calls for (hysteresis, held a while). */
   const posePick = (headX: number, now: number, avail: readonly string[]): string => {
@@ -282,12 +293,12 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     const cur = idlePose;
     let next = cur;
     if (cur === 'c') {
-      if (a > 0.42) next = `${side}1`;
+      if (a > 0.55) next = `${side}1`;
     } else if (cur.endsWith('1')) {
-      if (a < 0.26 || cur[0] !== side) next = 'c';
-      else if (a > 0.8) next = `${side}2`;
+      if (a < 0.3 || cur[0] !== side) next = 'c';
+      else if (a > 0.9) next = `${side}2`;
     } else if (cur.endsWith('2')) {
-      if (a < 0.62 || cur[0] !== side) next = `${cur[0]}1`;
+      if (a < 0.7 || cur[0] !== side) next = `${cur[0]}1`;
     } else next = 'c';
     if (next !== cur && avail.includes(next)) {
       idlePose = next;
@@ -366,7 +377,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     target.expression = exprName;
     if (L.pinnedPose) target.pose = avail.includes(L.pinnedPose) ? L.pinnedPose : avail[0];
     else {
-      const want = g ? posePick(g.headX * headGain, now, avail) : idlePose;
+      const want = g && turnPoses ? posePick(g.headX * headGain, now, avail) : idlePose;
       target.pose = avail.includes(want) ? want : avail.includes('c') ? 'c' : avail[0];
     }
     if (target.expression !== shown.expression || target.pose !== shown.pose) {
@@ -454,7 +465,10 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       lastDrawKey = key;
     }
     gl.draw(p, canvas.width, canvas.height);
-
+    // Dev probe (scripts/seilink-avatar-demo.mjs): a script that sets window.__seiFaceTrace = [] gets one row a frame.
+    const trace = (globalThis as { __seiFaceTrace?: unknown[] }).__seiFaceTrace;
+    if (trace)
+      trace.push({ t: now, gx: g?.gazeX ?? 0, gy: g?.gazeY ?? 0, ex: g?.eyeX ?? 0, ey: g?.eyeY ?? 0, hx: g?.headX ?? 0, hy: g?.headY ?? 0, roll: p.roll, pose: shown.pose, mix: p.mix, lid, ix: p.iris[0], iy: p.iris[1] });
 
     if (env.debugRef) {
       env.debugRef.current = {
@@ -470,8 +484,8 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   };
   raf = requestAnimationFrame(frame);
 
-  // Warm the turned poses of the starting expression (big glances use them).
-  void c.load(posesOf(m, env.startExpr).flatMap((pp) => filesFor(m, env.startExpr, pp)));
+  // Warm the turned poses of the starting expression (big turns of a face with no iris use them).
+  if (turnPoses) void c.load(posesOf(m, env.startExpr).flatMap((pp) => filesFor(m, env.startExpr, pp)));
 
   return {
     resume(): void {

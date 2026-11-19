@@ -580,6 +580,31 @@ if (
       return () => listeners.delete(cb);
     };
   }
+  // &cursorfeed=1 (261119): her gaze feed from the page's own pointer, the way the
+  // desktop host makes it (hostEntry pollHover + dock.ts gazeSample): polled every
+  // 150 ms, [-1, 1] around her face (y up), sent on a change or every 0.7 s.
+  if (harnessParams.has('cursorfeed')) {
+    const subs = new Set<(pt: { x: number; y: number }) => void>();
+    let ptr: { x: number; y: number } | null = null;
+    let last: { x: number; y: number } | null = null;
+    let sentAt = 0;
+    window.addEventListener('pointermove', (e) => (ptr = { x: e.clientX, y: e.clientY }), { passive: true });
+    setInterval(() => {
+      const her = document.querySelector('[data-seilink-hit]')?.getBoundingClientRect();
+      if (!ptr || !her || her.width <= 0) return;
+      const c = (v: number): number => Math.round(Math.max(-1, Math.min(1, v)) * 1000) / 1000;
+      const g = { x: c((ptr.x - (her.x + her.width / 2)) / (window.innerWidth / 2)), y: c((her.y + her.height * 0.22 - ptr.y) / (window.innerHeight / 2)) };
+      const now = Date.now();
+      if (last && Math.abs(last.x - g.x) <= 0.004 && Math.abs(last.y - g.y) <= 0.004 && now - sentAt < 700) return;
+      last = g;
+      sentAt = now;
+      subs.forEach((cb) => cb(g));
+    }, 150);
+    answers.onAvatarOverlayCursor = (cb: (pt: { x: number; y: number }) => void) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    };
+  }
   // &cutout=<png url> (261118): her cloud cut-out (anima no_pack + cutout), from the
   // start, or &cutoutat=<ms> after the room is ready (a manifest push, like a bake landing).
   const cutoutUrl = harnessParams.get('cutout');

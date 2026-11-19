@@ -18,6 +18,7 @@ import { atomicWrite } from '../../bot/brain/storage/atomicWrite.js';
 import { withFileLock } from '../../bot/brain/storage/fileLock.js';
 import { defaultRoomState, ROOM_TIMES, type RoomState } from '../../shared/seilinkRoom';
 import { isRoomPresetId, sanitizeRoomState } from '../../shared/seilinkValidate';
+import { sanitizeLighting, sanitizeWidgets } from '../../shared/seilinkWidgets';
 import type { SeilinkRoomPayload } from '../../shared/seilinkPack';
 import { paths } from '../paths';
 import { trackScopedWrite } from '../profile/scopeBarrier';
@@ -51,6 +52,11 @@ function coarseState(raw: unknown): RoomState {
   if (r.time === 'auto' || (typeof r.time === 'string' && (ROOM_TIMES as readonly string[]).includes(r.time))) {
     state.time = r.time as RoomState['time'];
   }
+  // 261119: the wallpaper widgets and lighting do not depend on the pack.
+  const widgets = sanitizeWidgets(r.widgets);
+  if (widgets) state.widgets = widgets;
+  const lighting = sanitizeLighting(r.lighting);
+  if (lighting) state.lighting = lighting;
   return state;
 }
 

@@ -43,7 +43,7 @@ import { minimizeOtherWindows } from './minimizeOthers';
 import { MINIMIZE_SURFACES, SEILINK_MINIMIZE_EVENT, sanitizeSeilinkSetupTrack, type MinimizeSurface } from '../../shared/seilinkSetupTelemetry';
 import { offerDecorateTogether } from './decorateOffer';
 import { seilinkEnabled } from './gate';
-import { seilinkLiveCharacter } from './host/seilinkHost';
+import { noteSeilinkRevealed, seilinkLiveCharacter } from './host/seilinkHost';
 import { isRoomCharacterId } from './roomStore';
 
 export const SEILINK_DESKTOP_STAGE_EVENT = 'seilink_desktop_stage';
@@ -161,6 +161,8 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
     onStage = null;
     if (!isStaged(win)) return { ok: false, error: 'failed' };
     const res = exitDesktopStage(win, reveal);
+    // 261119: the desktop shows: her entrance can play (main/seilink/host/arrival.ts).
+    if (res.ok && reveal) noteSeilinkRevealed();
     capture({
       action: 'exited',
       purpose: was?.purpose ?? 'editor',
@@ -177,6 +179,7 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
     const characterId = isRoomCharacterId(r.characterId) ? r.characterId : null;
     if (!seilinkEnabled()) return { ok: false, error: 'disabled' };
     const ok = revealDesktop(win);
+    if (ok) noteSeilinkRevealed();
     capture({ action: ok ? 'revealed' : 'failed', purpose, character_id: characterId, ...(ok ? {} : { error_class: 'failed' }) });
     return ok ? { ok: true } : { ok: false, error: 'failed' };
   }
@@ -212,7 +215,7 @@ export async function handleMinimizeOthers(raw: unknown, win: BrowserWindow | nu
     .then((a) => a.capture(SEILINK_MINIMIZE_EVENT, props))
     .catch(() => {});
   if (!res.ok) return { ok: false, error: res.error };
-  if (r.reveal === true && win && !win.isDestroyed()) revealDesktop(win);
+  if (r.reveal === true && win && !win.isDestroyed() && revealDesktop(win)) noteSeilinkRevealed();
   return res.minimized !== undefined ? { ok: true, minimized: res.minimized } : { ok: true };
 }
 

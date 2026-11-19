@@ -120,7 +120,9 @@ const MIX_STEPS = 128;
 function structureKey(state: RoomState): string {
   const slots: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(state.slots)) slots[k] = v ? { id: v.id } : v;
-  return JSON.stringify({ ...state, time: null, slots, items: state.items.map(({ tint: _t, pattern: _p, accent: _a, ...rest }) => rest) });
+  // 261119: widgets and lighting are drawn over and on the canvases (DOM, CSS filter), never into them.
+  const { widgets: _w, lighting: _l, ...room } = state;
+  return JSON.stringify({ ...room, time: null, slots, items: state.items.map(({ tint: _t, pattern: _p, accent: _a, ...rest }) => rest) });
 }
 
 function tintKey(state: RoomState): string {

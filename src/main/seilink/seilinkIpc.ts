@@ -55,8 +55,8 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   // Desktop host. Start throws SEILINK_DISABLED while SeiLink is off (gate.ts).
   ipcMain.handle(IpcChannel.seilink.hostStart, async (_e, characterId: unknown, opts: unknown) => {
     if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
-    const firstRoom = typeof opts === 'object' && opts !== null && (opts as { firstRoom?: unknown }).firstRoom === true;
-    return startSeilinkHost(characterId, { firstRoom });
+    const o = typeof opts === 'object' && opts !== null ? (opts as { firstRoom?: unknown; entrance?: unknown }) : {};
+    return startSeilinkHost(characterId, { firstRoom: o.firstRoom === true, ...(o.entrance === 'first_link' ? { entrance: 'first_link' as const } : {}) });
   });
   // 261106: the WorldLink intro's failure path stops with `link_failed` (the move-in is cleared the same way).
   ipcMain.handle(IpcChannel.seilink.hostStop, async (_e, opts: unknown) =>

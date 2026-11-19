@@ -15,8 +15,11 @@
  *    accelerating), a short hold, a slower open (105 ms, decelerating);
  *    gaps of a few seconds, sometimes a double, sometimes right after a big
  *    eye movement (as people do).
- *  - `GazeDriver`: where she looks. The eyes jump between fixation targets
- *    with quick saccades and hold each for 0.2 to 2.5 s with a tiny drift;
+ *  - `GazeDriver`: where she looks. The eyes move between fixation targets
+ *    and hold each for 0.2 to 2.5 s with a tiny drift (261119, product call
+ *    261119 "her eyes jitter": a move is a spring glide with a speed limit,
+ *    not a tens-of-ms jump, and a cursor she follows is glided and pursued
+ *    outside a small dead zone);
  *    most targets are near where she already looks, some are back at the
  *    viewer, some are the cursor (when the view has one) or a point of
  *    interest (things in her room), now and then a bigger glance. The head
@@ -233,9 +236,23 @@ export interface GazeConfig {
   rollSway: number;
   /** Eye fixational drift amplitude. */
   drift: number;
-  /** Saccade duration: base + per unit of amplitude. */
-  saccadeBaseMs: number;
-  saccadePerUnitMs: number;
+  /**
+   * 261119: the eyes travel to each new target on a critically damped spring
+   * (rad/s): an eased glide that starts and ends at rest and stays smooth when
+   * the target moves mid-way. About 4.7 / omega seconds to arrive.
+   */
+  gazeOmega: number;
+  /** Fastest the gaze may move, units per second. */
+  maxSpeed: number;
+  /** The cursor feed comes in steps (the host polls it every 150 ms): this spring (rad/s) turns them into a glide. */
+  cursorOmega: number;
+  /** While following the cursor, moves smaller than this are not followed (a hand resting on the mouse). */
+  deadZone: number;
+  /** A cursor that moved in the last `cursorActiveMs` has her attention: she looks at it this often. */
+  activeCursorChance: number;
+  cursorActiveMs: number;
+  /** A cursor that starts moving pulls her eyes to it once the current look has lasted this long. */
+  cursorReactMs: number;
 }
 
 export const DEFAULT_GAZE: GazeConfig = {
@@ -254,18 +271,24 @@ export const DEFAULT_GAZE: GazeConfig = {
   headShareSmall: 0.3,
   headShareBig: 0.65,
   headOmega: 4.2,
-  headSway: 0.12,
-  rollSway: 0.55,
-  drift: 0.015,
-  saccadeBaseMs: 28,
-  saccadePerUnitMs: 70,
+  // 261119 (product call 261119, "the swaying"): the head's own sway and tilt were a visible pendulum.
+  headSway: 0.05,
+  rollSway: 0.22,
+  drift: 0.012,
+  gazeOmega: 17,
+  maxSpeed: 4,
+  cursorOmega: 12,
+  deadZone: 0.025,
+  activeCursorChance: 0.85,
+  cursorActiveMs: 1_800,
+  cursorReactMs: 260,
 };
-
-/** Smooth-pursuit lag behind a moving cursor (time constant, ms). */
-const PURSUIT_MS = 140;
 
 /** A saccade at least this big counts as big (blink nudge, head share). */
 export const BIG_SACCADE = 0.35;
+
+/** How far the cursor must move (gaze units) to count as moving. */
+const CURSOR_MOVE_EPS = 0.01;
 
 export class GazeDriver {
   readonly cfg: GazeConfig;
@@ -280,17 +303,27 @@ export class GazeDriver {
     bigSaccadeAt: -Infinity,
   };
   private readonly rng: Rng;
-  // Saccade: from (fx, fy) to (tx, ty) over [s0, s1].
-  private fx = 0;
-  private fy = 0;
+  /** The point she looks at (a fixation, or the cursor she pursues). */
   private tx = 0;
   private ty = 0;
-  private s0 = 0;
-  private s1 = 0;
+  private fixStart: number;
   private fixUntil: number;
   private headShare: number;
+  /** The eyes on their way to (tx, ty). */
+  private readonly gx: SpringState = { x: 0, v: 0 };
+  private readonly gy: SpringState = { x: 0, v: 0 };
   private readonly hx: SpringState = { x: 0, v: 0 };
   private readonly hy: SpringState = { x: 0, v: 0 };
+  /** The cursor feed, glided. */
+  private readonly cx: SpringState = { x: 0, v: 0 };
+  private readonly cy: SpringState = { x: 0, v: 0 };
+  private hasCursor = false;
+  private cursorMovedAt = -Infinity;
+  /** When the cursor last went from still to moving. */
+  private cursorWokeAt = -Infinity;
+  private cursorWasActive = false;
+  private lastCurX = 0;
+  private lastCurY = 0;
   private readonly swayX: Wander;
   private readonly swayY: Wander;
   private readonly swayR: Wander;
@@ -303,6 +336,7 @@ export class GazeDriver {
   constructor(now: number, cfg: Partial<GazeConfig> = {}, rng: Rng = Math.random) {
     this.cfg = { ...DEFAULT_GAZE, ...cfg };
     this.rng = rng;
+    this.fixStart = now;
     this.fixUntil = now + 300 + rng() * 900;
     this.headShare = this.cfg.headShareSmall;
     this.swayX = new Wander([9_100, 14_300, 23_900], rng, [0.5, 0.33, 0.17]);
@@ -322,12 +356,12 @@ export class GazeDriver {
     return clamp(d, c.fixMinMs, c.fixMaxMs);
   }
 
-  private pickTarget(input: GazeInput): void {
+  private pickTarget(now: number, input: GazeInput, cursorActive: boolean, forceCursor: boolean): void {
     const c = this.cfg;
     const r = this.rng();
     const engaged = input.engaged === true;
-    const home = engaged ? 0.6 : c.homeChance;
-    const cursor = input.cursor ? c.cursorChance : 0;
+    const home = forceCursor ? 0 : engaged ? 0.6 : cursorActive ? c.homeChance * 0.3 : c.homeChance;
+    const cursor = input.cursor ? (forceCursor ? 1 : cursorActive ? c.activeCursorChance : c.cursorChance) : 0;
     const interest = input.interests && input.interests.length && !engaged ? c.interestChance : 0;
     let x: number;
     let y: number;
@@ -336,8 +370,8 @@ export class GazeDriver {
       x = (this.rng() * 2 - 1) * 0.06;
       y = (this.rng() * 2 - 1) * 0.05;
     } else if (r < home + cursor && input.cursor) {
-      x = input.cursor.x;
-      y = input.cursor.y;
+      x = this.cx.x;
+      y = this.cy.x;
       this.following = true;
     } else if (r < home + cursor + interest && input.interests) {
       const p = input.interests[Math.floor(this.rng() * input.interests.length) % input.interests.length];
@@ -357,17 +391,14 @@ export class GazeDriver {
       x /= rr;
       y /= rr;
     }
-    this.fx = this.out.gazeX;
-    this.fy = this.out.gazeY;
+    const amp = Math.hypot(x - this.gx.x, y - this.gy.x);
     this.tx = x;
     this.ty = y;
-    const amp = Math.hypot(x - this.fx, y - this.fy);
     this.headShare = amp >= BIG_SACCADE ? c.headShareBig : c.headShareSmall;
-    this.s0 = this.last;
-    this.s1 = this.last + c.saccadeBaseMs + c.saccadePerUnitMs * amp;
-    if (amp >= BIG_SACCADE) this.out.bigSaccadeAt = this.last;
-    // Following the cursor holds longer than a look at a still point.
-    this.fixUntil = this.s1 + this.fixDuration(engaged) * (this.following ? 2.2 : 1);
+    if (amp >= BIG_SACCADE) this.out.bigSaccadeAt = now;
+    this.fixStart = now;
+    // The glide there, then the hold; following the cursor holds longer than a look at a still point.
+    this.fixUntil = now + 4_700 / c.gazeOmega + this.fixDuration(engaged) * (this.following ? 2.2 : 1);
   }
 
   /** Advance to `now` and return the (reused) output. */
@@ -375,24 +406,69 @@ export class GazeDriver {
     const c = this.cfg;
     const dt = this.last < 0 ? 0 : Math.min(250, Math.max(0, now - this.last));
     this.last = now;
-    if (now >= this.fixUntil) this.pickTarget(input);
-    const o = this.out;
-    const u = this.s1 > this.s0 ? (now - this.s0) / (this.s1 - this.s0) : 1;
-    // A cursor she is following keeps her eyes on it while it moves (smooth pursuit, not a saccade).
-    if (this.following && u >= 1) {
-      if (!input.cursor) this.following = false;
+    // The cursor feed, glided (it arrives in steps), and whether it is moving.
+    const cur = input.cursor ?? null;
+    if (cur) {
+      if (!this.hasCursor) {
+        this.cx.x = cur.x;
+        this.cx.v = 0;
+        this.cy.x = cur.y;
+        this.cy.v = 0;
+        this.lastCurX = cur.x;
+        this.lastCurY = cur.y;
+        this.hasCursor = true;
+      } else {
+        springStep(this.cx, cur.x, c.cursorOmega, dt);
+        springStep(this.cy, cur.y, c.cursorOmega, dt);
+      }
+      if (Math.hypot(cur.x - this.lastCurX, cur.y - this.lastCurY) > CURSOR_MOVE_EPS) {
+        this.cursorMovedAt = now;
+        this.lastCurX = cur.x;
+        this.lastCurY = cur.y;
+      }
+    } else this.hasCursor = false;
+    const cursorActive = cur !== null && now - this.cursorMovedAt < c.cursorActiveMs;
+    if (cursorActive && !this.cursorWasActive) this.cursorWokeAt = now;
+    this.cursorWasActive = cursorActive;
+    const engaged = input.engaged === true;
+    // A cursor that starts moving catches her eye once (unless she is talking); after that she
+    // mostly keeps following it but may still glance away and back.
+    const react =
+      cursorActive && !engaged && !this.following && this.cursorWokeAt > this.fixStart && now - this.fixStart >= c.cursorReactMs;
+    if (react || now >= this.fixUntil) this.pickTarget(now, input, cursorActive, react);
+    // Following the cursor: the eyes pursue its glided position, outside a small dead zone.
+    if (this.following) {
+      if (!cur) this.following = false;
       else {
-        const a = 1 - Math.exp(-dt / PURSUIT_MS);
-        this.tx += (clamp(input.cursor.x, -0.85, 0.85) - this.tx) * a;
-        this.ty += (clamp(input.cursor.y, -0.6, 0.6) - this.ty) * a;
-        this.fx = this.tx;
-        this.fy = this.ty;
+        const px = clamp(this.cx.x, -0.85, 0.85);
+        const py = clamp(this.cy.x, -0.6, 0.6);
+        const dx = px - this.tx;
+        const dy = py - this.ty;
+        const d = Math.hypot(dx, dy);
+        if (d > c.deadZone) {
+          const k = (d - c.deadZone) / d;
+          this.tx += dx * k;
+          this.ty += dy * k;
+        }
       }
     }
-    const k = minJerk(u);
-    const driftK = u >= 1 ? 1 : 0;
-    o.gazeX = this.fx + (this.tx - this.fx) * k + c.drift * this.driftX.value(now) * driftK;
-    o.gazeY = this.fy + (this.ty - this.fy) * k + c.drift * this.driftY.value(now) * driftK * 0.8;
+    // The eyes glide to the target on a spring, no faster than maxSpeed.
+    const x0 = this.gx.x;
+    const y0 = this.gy.x;
+    springStep(this.gx, this.tx, c.gazeOmega, dt);
+    springStep(this.gy, this.ty, c.gazeOmega, dt);
+    const lim = (c.maxSpeed * dt) / 1000;
+    const step = Math.hypot(this.gx.x - x0, this.gy.x - y0);
+    if (lim > 0 && step > lim) {
+      const k = lim / step;
+      this.gx.x = x0 + (this.gx.x - x0) * k;
+      this.gy.x = y0 + (this.gy.x - y0) * k;
+      this.gx.v *= k;
+      this.gy.v *= k;
+    }
+    const o = this.out;
+    o.gazeX = this.gx.x + c.drift * this.driftX.value(now);
+    o.gazeY = this.gy.x + c.drift * this.driftY.value(now) * 0.8;
     // Head: a spring after the gaze target (it starts when the eyes do and lags behind), plus its own sway.
     springStep(this.hx, this.tx * this.headShare, c.headOmega, dt);
     springStep(this.hy, this.ty * this.headShare * 0.8, c.headOmega, dt);

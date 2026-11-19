@@ -132,6 +132,8 @@ describe('startSeilinkHost and the intro', () => {
     hostStart.mockReturnValue(new Promise((r) => (resolve = r)));
     const start = flow.startSeilinkHost('c1', { firstRoom: true, entry: 'button' });
     expect(hostStart).toHaveBeenCalledTimes(1);
+    // 261119: main is told the intro shows her coming in (her desktop entrance waits for a handoff).
+    expect(hostStart).toHaveBeenCalledWith('c1', { firstRoom: true, entrance: 'first_link' });
     const intro = useSeilinkStore.getState().intro;
     expect(intro).toMatchObject({ characterId: 'c1', trigger: 'first_link', entry: 'button' });
     resolve({ state: 'running', characterId: 'c1' });
@@ -156,6 +158,8 @@ describe('startSeilinkHost and the intro', () => {
     hostStart.mockResolvedValue({ state: 'running', characterId: 'c1' });
     await flow.startSeilinkHost('c1', { entry: 'button' });
     expect(useSeilinkStore.getState().intro).toBeNull();
+    // 261119: a plain move-in: main plays her entrance on the desktop.
+    expect(hostStart).toHaveBeenCalledWith('c1', undefined);
   });
 
   it('Replay always plays, as a new request, with nothing starting', () => {

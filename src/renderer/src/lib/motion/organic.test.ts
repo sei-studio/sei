@@ -147,18 +147,79 @@ describe('GazeDriver', () => {
     expect(maxStep).toBeLessThan(0.05);
   });
 
-  it('a saccade is quick but not a jump (minimum-jerk over tens of ms)', () => {
+  it('a look is an eased glide, not a jump (261119: "eyes jitter")', () => {
     const g = new GazeDriver(0, { homeChance: 0, cursorChance: 0, interestChance: 0, glanceChance: 1 }, rngOf(9));
     let prev = g.update(0, {}).gazeX;
     let biggestFrame = 0;
-    for (let t = 8; t < 20_000; t += 8) {
+    for (let t = 33; t < 30_000; t += 33) {
       const x = g.update(t, {}).gazeX;
       biggestFrame = Math.max(biggestFrame, Math.abs(x - prev));
       prev = x;
     }
-    // A glance of up to 0.8 spreads over at least ~5 frames at 120 Hz.
-    expect(biggestFrame).toBeLessThan(0.35);
+    // At 30 fps the eyes never move more than maxSpeed allows in one frame (4/s * 33 ms), plus the drift.
+    expect(biggestFrame).toBeLessThan(0.14);
     expect(biggestFrame).toBeGreaterThan(0.02);
+  });
+
+  it('turns a stepped cursor feed (150 ms polls) into a smooth follow', () => {
+    const g = new GazeDriver(0, { homeChance: 0, cursorChance: 1, activeCursorChance: 1, interestChance: 0, glanceChance: 0 }, rngOf(4));
+    let feed = { x: 0, y: 0 };
+    const xs: number[] = [];
+    for (let t = 0; t < 12_000; t += 16) {
+      // The host only reports the cursor every 150 ms.
+      if (t % 150 < 16) feed = { x: Math.sin(t / 1200) * 0.6, y: Math.cos(t / 1700) * 0.3 };
+      const o = g.update(t, { cursor: feed });
+      if (t > 2_000) xs.push(o.gazeX);
+    }
+    // Second difference (acceleration per frame): a stepped follow shows a spike every poll.
+    let maxAcc = 0;
+    for (let i = 2; i < xs.length; i++) maxAcc = Math.max(maxAcc, Math.abs(xs[i] - 2 * xs[i - 1] + xs[i - 2]));
+    expect(maxAcc).toBeLessThan(0.006);
+  });
+
+  it('a cursor resting on the mouse does not jiggle her eyes (dead zone)', () => {
+    const g = new GazeDriver(0, { homeChance: 0, cursorChance: 1, activeCursorChance: 1, interestChance: 0, glanceChance: 0, drift: 0 }, rngOf(6));
+    const rng = rngOf(77);
+    let px = 0;
+    let travel = 0;
+    for (let t = 0; t < 8_000; t += 16) {
+      // A hand on the mouse: the cursor trembles by about 0.01 around one point.
+      const cur = { x: 0.4 + (rng() - 0.5) * 0.02, y: 0.1 + (rng() - 0.5) * 0.02 };
+      const o = g.update(t, { cursor: cur });
+      if (t > 3_000) travel += Math.abs(o.gazeX - px);
+      px = o.gazeX;
+    }
+    // Over 5 s the gaze barely moves (no tremor following).
+    expect(travel).toBeLessThan(0.05);
+  });
+
+  it('looks at a cursor that starts moving, and keeps with it while it moves', () => {
+    const g = new GazeDriver(0, {}, rngOf(31));
+    let near = 0;
+    let n = 0;
+    for (let t = 0; t < 20_000; t += 33) {
+      // Still for 5 s, then sweeping.
+      const cx = t < 5_000 ? -0.5 : -0.5 + Math.sin((t - 5_000) / 2_000) * 0.6;
+      const o = g.update(t, { cursor: { x: cx, y: 0.1 } });
+      if (t > 6_000) {
+        n++;
+        if (Math.abs(o.gazeX - cx) < 0.2) near++;
+      }
+    }
+    expect(near / n).toBeGreaterThan(0.6);
+  });
+
+  it('the head sways only a little (261119: "no pendulum")', () => {
+    const g = new GazeDriver(0, { homeChance: 1, cursorChance: 0, interestChance: 0, glanceChance: 0 }, rngOf(8));
+    let maxRoll = 0;
+    let maxHead = 0;
+    for (let t = 0; t < 120_000; t += 50) {
+      const o = g.update(t, {});
+      maxRoll = Math.max(maxRoll, Math.abs(o.headRoll));
+      maxHead = Math.max(maxHead, Math.abs(o.headX));
+    }
+    expect(maxRoll).toBeLessThan(0.3);
+    expect(maxHead).toBeLessThan(0.1);
   });
 
   it('glances at the cursor and at room objects when given them', () => {

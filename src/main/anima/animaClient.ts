@@ -14,7 +14,7 @@
  *      (portrait cutout, silhouette) stays. BYOK/local-model users with a Sei
  *      account still get a bake: it goes through sei-proxy on their Sei auth.
  *   3. POST /anima/v1/request. queued/running: poll GET /anima/v1/status
- *      (10 s, then 20 s, then 45 s, for at most POLL_MAX_MS). ready: download
+ *      (4 s for 2 min, then 15 s, then 45 s, for at most POLL_MAX_MS). ready: download
  *      the signed pack.zip, check its sha256, extract (animaPacks.ts), then
  *      tell every view to re-resolve her avatar (onReady), which crossfades
  *      to the face set with no restart.
@@ -120,9 +120,11 @@ interface Run {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// A bake takes about 50-70 s, so poll every 4 s for the first 2 minutes to show it as soon
+// as it lands, then back off for slow or queued bakes.
 function pollDelay(n: number): number {
-  if (n < 6) return 10_000;
-  if (n < 15) return 20_000;
+  if (n < 30) return 4_000;
+  if (n < 40) return 15_000;
   return 45_000;
 }
 
@@ -145,6 +147,11 @@ export class AnimaClient {
   status(characterId: string): AnimaStatus {
     const st = this.stages.get(characterId);
     return { characterId, state: this.ui.get(characterId) ?? 'idle', ...(st ? { stage: st.stage, ...(st.failure ? { failure: st.failure } : {}) } : {}) };
+  }
+
+  /** A run for her is still going (a bake, a download, or her cut-out landing after `unavailable`). */
+  inFlight(characterId: string): boolean {
+    return this.runs.has(characterId);
   }
 
   /** Her pack id when it is on disk (RoomAvatar's facepackForCharacter). */
