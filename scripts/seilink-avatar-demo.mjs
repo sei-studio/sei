@@ -16,6 +16,12 @@
 // and date widget (--state <room json> overrides), a slim menu bar (--menubar 0 drops it), her
 // line in a bubble after the click (--line, --lineat s), and the room lighting easing on at
 // --dimat s (--dimms long). The page clock starts at --at (local time, default 21:41 today).
+//
+// 261120: --seed <n> makes the page's Math.random a seeded generator, so two runs (an old and a new
+// pack, the same cursor path) glance, blink and sway alike for a side-by-side. --timeline <json file>
+// changes the room on cue (host scene): [{ "at": s, "widgets": [...] }, { "at": s, "ms": 1800,
+// "lighting": { "warmth": 40 } }]; widgets replace the room's list at once, lighting numbers ease from
+// what they were over `ms`. --path tour (host scene) keeps the cursor moving after the click.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -51,6 +57,9 @@ const DIM_AT = Number(arg('dimat', '-1'));
 const DIM_MS = Number(arg('dimms', '2600'));
 const DIM = JSON.parse(arg('dim', '{"brightness":-8,"dim":50,"warmth":12,"character":false}'));
 const MENUBAR = arg('menubar', '1') === '1';
+const SEED = arg('seed', null);
+const PATH = arg('path', 'default');
+const TIMELINE = arg('timeline', null) ? JSON.parse(fs.readFileSync(arg('timeline'), 'utf8')) : [];
 const START_AT = (() => {
   const d = new Date();
   const [h, m] = arg('at', '21:41').split(':').map(Number);
@@ -145,6 +154,19 @@ function hostCursorAt(t, her) {
     [C - 0.8, fx + her.w * 0.06, fy + her.h * 0.1, 0.2],
     [C + 2.2, fx + her.w * 0.06, fy + her.h * 0.1, 0],
     [C + 3.4, W * 0.9, H * 0.86, -0.3],
+    ...(PATH === 'tour'
+      ? [
+          // 261120 --path tour: she keeps following it after the click, past the widgets as they come on.
+          [C + 5.0, W * 0.9, H * 0.86, 0],
+          [C + 7.6, W * 0.12, H * 0.2, 0.3],
+          [C + 9.0, W * 0.12, H * 0.2, 0],
+          [C + 11.4, W * 0.86, H * 0.42, -0.35],
+          [C + 13.0, W * 0.86, H * 0.42, 0],
+          [C + 15.4, W * 0.2, H * 0.84, 0.3],
+          [C + 16.6, W * 0.2, H * 0.84, 0],
+          [C + 19.0, W * 0.92, H * 0.88, -0.2],
+        ]
+      : []),
     [999, W * 0.9, H * 0.86, 0],
   ];
   for (let i = 0; i < way.length - 1; i++) {
@@ -224,6 +246,18 @@ async function main() {
       return r.abort();
     });
     const page = await ctx.newPage();
+    if (SEED !== null)
+      await page.addInitScript((seed) => {
+        // mulberry32: the same sequence every run.
+        let a = seed >>> 0;
+        Math.random = () => {
+          a = (a + 0x6d2b79f5) >>> 0;
+          let t = a;
+          t = Math.imul(t ^ (t >>> 15), t | 1);
+          t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }, Number(SEED));
     await page.clock.install(SCENE === 'host' ? { time: START_AT } : undefined);
     page.on('pageerror', (e) => console.log(`  [page error] ${e.message.slice(0, 300)}`));
     page.on('console', (m) => {
@@ -253,6 +287,7 @@ async function main() {
     const now = await page.evaluate(() => Date.now());
     await page.clock.pauseAt(now + 1500);
     let lined = false;
+    let lightNow = { brightness: 0, dim: 0, warmth: 0, character: false, ...(HOST_STATE.lighting ?? {}) };
     const n = Math.round(SECONDS * FPS);
     const rows = [];
     let clicked = false;
@@ -277,6 +312,25 @@ async function main() {
         const light = { ...DIM };
         for (const key of ['brightness', 'dim', 'warmth']) if (typeof DIM[key] === 'number') light[key] = Math.round(DIM[key] * k);
         await page.evaluate((lighting) => window.__seiDevRoom?.({ lighting }), light);
+      }
+      for (const ev of TIMELINE) {
+        if (t < ev.at) continue;
+        if (ev.widgets && !ev.done) {
+          ev.done = true;
+          await page.evaluate((widgets) => window.__seiDevRoom?.({ widgets }), ev.widgets);
+        }
+        if (ev.lighting && !ev.finished) {
+          ev.from ??= { ...lightNow };
+          const u = ev.ms > 0 ? Math.min(1, ((t - ev.at) * 1000) / ev.ms) : 1;
+          const k = u * u * (3 - 2 * u);
+          const light = { ...ev.from, ...ev.lighting };
+          for (const key of Object.keys(ev.lighting)) if (typeof ev.lighting[key] === 'number') light[key] = Math.round((ev.from[key] ?? 0) + (ev.lighting[key] - (ev.from[key] ?? 0)) * k);
+          await page.evaluate((lighting) => window.__seiDevRoom?.({ lighting }), light);
+          if (u >= 1) {
+            ev.finished = true;
+            lightNow = light;
+          }
+        }
       }
       const frameMs = Math.round((1000 * (i + 1)) / FPS) - Math.round((1000 * i) / FPS);
       await page.clock.runFor(frameMs);

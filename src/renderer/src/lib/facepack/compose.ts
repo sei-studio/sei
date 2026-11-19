@@ -15,11 +15,12 @@
 import type {
   FacepackEyeState,
   FacepackExpression,
+  FacepackIris,
   FacepackManifest,
   FacepackPose,
   FacepackViseme,
 } from '@shared/facepack';
-import { packPalette } from '@shared/facepack';
+import { isSafePackPath, packPalette } from '@shared/facepack';
 import { resolveExpression } from '../../../../bot/brain/faceExpressions.js';
 
 export interface FaceFrameState {
@@ -128,4 +129,79 @@ export function posesOf(m: FacepackManifest, expression: string): string[] {
   const keys = Object.keys(e.poses);
   const d = m.default_pose ?? 'c';
   return keys.includes(d) ? [d, ...keys.filter((k) => k !== d)] : keys;
+}
+
+/**
+ * The gaze frames of one expression + pose (261120), or null: none baked,
+ * the expression never opens its eyes, or the record is malformed (axes not
+ * ascending, a frame row the wrong length, an unsafe path).
+ */
+export function irisOf(m: FacepackManifest, expression: string, pose: string): FacepackIris | null {
+  const e = m.expressions[resolveExpressionName(m, expression)];
+  if (!e || e.blink === false) return null;
+  const ir = e.poses[resolvePoseName(e, m, pose)]?.iris;
+  if (!ir || !Array.isArray(ir.box) || ir.box.length !== 4 || !Array.isArray(ir.x) || !Array.isArray(ir.y) || !Array.isArray(ir.frames)) return null;
+  const asc = (a: unknown[]): boolean => a.length >= 2 && a.every((v, i) => typeof v === 'number' && Number.isFinite(v) && (i === 0 || v > (a[i - 1] as number)));
+  if (!asc(ir.x) || !asc(ir.y) || ir.frames.length !== ir.y.length) return null;
+  for (const row of ir.frames) {
+    if (!Array.isArray(row) || row.length !== ir.x.length) return null;
+    for (const f of row) if (f !== null && (typeof f !== 'string' || !isSafePackPath(f))) return null;
+  }
+  // The half-lid looks are optional: a malformed list drops them, not the gaze frames.
+  const h = ir.half;
+  if (h !== undefined && (!Array.isArray(h) || h.length !== ir.x.length || !h.every((f) => f === null || (typeof f === 'string' && isSafePackPath(f))))) {
+    return { ...ir, half: undefined };
+  }
+  return ir;
+}
+
+/** The gaze frame files of one expression + pose (none when it has no gaze frames). */
+export function irisFiles(m: FacepackManifest, expression: string, pose: string): string[] {
+  const ir = irisOf(m, expression, pose);
+  if (!ir) return [];
+  const out: string[] = [];
+  for (const row of ir.frames) for (const f of row) if (f) out.push(f);
+  for (const f of ir.half ?? []) if (f) out.push(f);
+  return out;
+}
+
+/** One frame of a gaze crossfade: `src` null is the base itself. */
+export interface IrisTap {
+  src: string | null;
+  w: number;
+}
+
+/**
+ * The grid frame (xi, yi) for the gaze point (x right, y down, the grid's
+ * units), clamped to the grid. Her look steps from frame to frame (the
+ * player crossfades each step quickly, like a saccade) rather than blending
+ * by position: two frames half and half show two faint irises side by side,
+ * which a gaze resting between grid points would hold. `cur` (the frame
+ * shown now) is kept until the point is `hold` of a step past the midpoint,
+ * so a gaze resting on a border does not flicker between two frames.
+ */
+export function irisCell(ir: FacepackIris, x: number, y: number, cur: readonly [number, number] | null, hold = 0.1): [number, number] {
+  const pick = (axis: number[], v: number, c: number | undefined): number => {
+    const n = axis.length;
+    const cl = Math.min(axis[n - 1], Math.max(axis[0], v));
+    let best = 0;
+    for (let i = 1; i < n; i++) if (Math.abs(axis[i] - cl) < Math.abs(axis[best] - cl)) best = i;
+    if (c === undefined || c < 0 || c >= n || c === best) return best;
+    const step = Math.abs(axis[best] - axis[c]);
+    return Math.abs(cl - axis[c]) > Math.abs(cl - axis[best]) + hold * step ? best : c;
+  };
+  return [pick(ir.x, x, cur?.[0]), pick(ir.y, y, cur?.[1])];
+}
+
+/** The gaze frame at grid cell (xi, yi), clamped to the grid (null: the base itself). */
+export function irisFrameAt(ir: FacepackIris, xi: number, yi: number): string | null {
+  const y = Math.min(ir.y.length - 1, Math.max(0, yi));
+  const x = Math.min(ir.x.length - 1, Math.max(0, xi));
+  return ir.frames[y][x] ?? null;
+}
+
+/** The half-lid gaze crop at grid column xi, clamped (null: the plain half patch). */
+export function irisHalfAt(ir: FacepackIris, xi: number): string | null {
+  if (!ir.half) return null;
+  return ir.half[Math.min(ir.x.length - 1, Math.max(0, xi))] ?? null;
 }
