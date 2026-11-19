@@ -30,6 +30,11 @@
  * panel=<avatar|room|furniture|items|slot id> (a slot opens its group at
  * that section), selected=<item index>, items=1, time=,
  * tint.<slot>=, lang=<ui language>.
+ *
+ * 261119, wallpaper widgets and lighting (both views): widgets=demo (a clock
+ * with its date, a date line, a text line, day progress), widget=<id> selects
+ * one in the editor (demo ids: clock, date, text, progress), and
+ * light.brightness=, light.dim=, light.warmth= (numbers), light.char=1.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, type RoomPresetManifest, type RoomSlotId, type RoomState } from '@shared/seilinkRoom';
@@ -44,6 +49,7 @@ import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useCreditsStore } from '../../lib/stores/useCreditsStore';
 import { useChatStore } from '../../lib/stores/useChatStore';
 import { addItem } from '@shared/seilinkEdit';
+import { newWidget, sanitizeLighting, type RoomWidget } from '@shared/seilinkWidgets';
 import { settleItems } from '@shared/seilinkPlace';
 import { memoryRoomEditorSource, type EditorPack, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
@@ -90,9 +96,27 @@ function initialState(manifest: RoomPresetManifest): RoomState {
     else if (what === 'cycle') entry.cycle = v === '1';
     s.slots[slot] = entry;
   }
+  if (params.get('widgets') === 'demo') s.widgets = demoWidgets();
+  const light = sanitizeLighting({
+    brightness: Number(params.get('light.brightness') ?? 0),
+    dim: Number(params.get('light.dim') ?? 0),
+    warmth: Number(params.get('light.warmth') ?? 0),
+    character: params.get('light.char') === '1',
+  });
+  if (light) s.lighting = light;
   // Settled onto the pack's floor, walls and shelves where it labels them.
   if (params.get('items') === '1') s.items = settleItems(manifest, { ...s, items: sampleItems(manifest) }).items;
   return s;
+}
+
+/** widgets=demo: one of each, laid out the way a person might. */
+function demoWidgets(): RoomWidget[] {
+  return [
+    { ...newWidget('clock', 'clock'), x: 0.56, y: 0.26, date: 'long' },
+    { ...newWidget('date', 'date'), x: 0.84, y: 0.1, align: 'right', date: 'medium', size: 24 },
+    { ...newWidget('text', 'text'), x: 0.95, y: 0.93, align: 'right', text: 'one thing at a time', size: 24 },
+    { ...newWidget('progress', 'progress'), x: 0.84, y: 0.18, align: 'right' },
+  ];
 }
 
 /** A few items at plausible spots, from whatever item components the pack has. */
@@ -179,7 +203,7 @@ function DevRoomEditor({ onClose }: { onClose(): void }): React.ReactElement {
       source={source}
       onClose={onClose}
       fps={Number(params.get('fps') ?? 30) || 0}
-      initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null }}
+      initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null, widget: params.get('widget') }}
       together={params.has('together') ? devTogether : undefined}
     />
   );

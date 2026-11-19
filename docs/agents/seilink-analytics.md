@@ -197,6 +197,8 @@ per app run.
 | `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`offer` (261106)/`other`, surface `desktop`/`app` (261106: on the desktop stage or in the window), duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
 | (on `seilink_editor_session`) | 261105 (T336), only when the editor was shared with the resident | together, on_call_at_open, live_lines, call_pictures, call_picture_skipped_unchanged, call_picture_rate_limited, her_edits_applied/suggested/rejected/undone/tried, talk_messages, talk_blocked. Her edits are not counted in `edits` / `edit_<type>` | Decorating together usage |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
+| `seilink_widget` | 261119, per saved change to a wallpaper widget (a diff of the saved room against the one on disk, so a drag is one event, sent on save) | action `added`/`removed`/`edited`, kind `clock`/`date`/`text`/`progress`, surface, changed (comma list of setting names: position, font, color, size, weight, opacity, shadow, align, hour12, pad, seconds, ampm, date, text, span), widgets (count after the save, max 99). Never the text, a colour or a position | Which widgets people add, what they tweak, do they keep them |
+| `seilink_lighting` | 261119, a save that changed the room's lighting | surface, brightness (-50..50), dim (0..90), warmth (-50..50), all rounded to the nearest 10; character (she is lit with the room), reset (back to neutral) | Do people dim the room, how far, with or without her |
 
 Edit types (`classifyEdit`, a diff of two history entries):
 `swap_component`, `view_change`, `recolour`, `remove_slot`, `add_item`,
@@ -209,6 +211,10 @@ colour cycle turned on or off). There is no separate particles toggle: an
 optional slot whose part shows particles (forest fireflies) counts as a
 swap or removal, and `particle_parts_at_close` / `particles_on` give the
 state at close.
+261119: `widget_add`, `widget_remove`, `widget_edit`, `widget_move` (only
+the anchor changed) and `lighting`; panels `panel_misc` and
+`panel_lighting`; at close `widgets_at_close` and `lighting_at_close`
+(true when the lighting is not neutral).
 
 ## Open at login (261107)
 

@@ -1186,6 +1186,47 @@ without them render as before.
 - The host page preload may import only `electron` (sandboxed; a test
   checks), and spells its channel names out (`seilinkHostChannels.ts`).
 
+## Wallpaper widgets and lighting (261119)
+
+Two rail panels in the room editor after Items: **Misc** (widgets over the
+wallpaper) and **Lighting**. Both are fields of `RoomState`, so they save,
+undo and persist with the room (`roomStore.ts`, per companion) and survive a
+room type switch, the guided bare room and a missing pack (`keepDesktop` in
+`seilinkRoom.ts`).
+
+- Pure logic in `src/shared/seilinkWidgets.ts`: kinds (clock, date, text,
+  progress), styles, presets, sanitizing (`sanitizeWidgets`,
+  `sanitizeLighting`, called from `sanitizeRoomState`), edits
+  (`addWidget`/`updateWidget`/`removeWidget`/`setLighting`), formatting
+  (Intl, so the day period and date order follow the locale; `ja` puts the
+  period first), snapping, the tick schedule, and the analytics diff.
+- Drawing: `RoomWidgets.tsx` renders DOM text inside RoomCanvas's scene,
+  over every room layer and her (a lamp never covers the clock), so text is crisp at any DPI and a
+  widget edit never redraws the room (`structureKey` in `roomRenderer.ts`
+  ignores `widgets` and `lighting`). Position is a 0..1 anchor on the room's
+  display box, size is thousandths of its height, so a widget keeps its
+  place and proportion across window and display sizes.
+- Ticking: one timeout at a time (`startWidgetTicker`), just past each
+  second boundary only while a clock shows seconds, otherwise each minute;
+  none for text alone, none while the wallpaper is covered or paused
+  (RoomCanvas `fps` 0).
+- Fonts: the faces the app already bundles (`src/styles/fonts.css`, now
+  linked from `seilink-host.html`) plus OS stacks (serif, mono). No network
+  fonts.
+- Lighting is one CSS filter on the room canvases: `brightness((1 + b/100)
+  * (1 - dim/100))`, plus an SVG `feColorMatrix` for warmth. Her avatar gets
+  the same filter only with "Include her"; widgets never dim. Neutral
+  lighting is dropped from the saved state.
+- Editor: widgets are hit-tested by their DOM boxes; a drag snaps within
+  10 px to the centre lines and to other widgets (guide lines show) and
+  commits one undo step on release. Arrows nudge (Shift: 10 px), Delete
+  removes, Escape deselects.
+- Dev: DevRoomPreview takes `widgets=demo`, `widget=<id>`, `light.dim=`,
+  `light.brightness=`, `light.warmth=`, `light.char=1`; DevHostPreview's `state=<json>` carries both. Shots:
+  `node scripts/seilink-widgets-shots.mjs --out <dir>`.
+- Not done: the no-pack FallbackRoom does not draw widgets; a widget's
+  position is not per display (one anchor for every display size).
+
 ## Not done
 
 - More displays: everything goes through `primaryRect()`; attach takes a
