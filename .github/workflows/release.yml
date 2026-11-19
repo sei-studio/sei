@@ -20,6 +20,12 @@ on:
 permissions:
   contents: write
 
+
+# onnxruntime-node's postinstall tries to fetch Linux CUDA binaries from GitHub; the v1.21.0 asset
+# now 404s and Sei never uses the CUDA provider, so skip it.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   build:
     strategy:

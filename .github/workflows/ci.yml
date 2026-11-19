@@ -11,6 +11,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+
+# onnxruntime-node's postinstall tries to fetch Linux CUDA binaries from GitHub; the v1.21.0 asset
+# now 404s and Sei never uses the CUDA provider, so skip it.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   test:
     runs-on: ubuntu-latest
