@@ -1,5 +1,5 @@
 /**
- * Voice for others (261019): what the share step, Edit companion > Voice and
+ * Voice for others (261019): what the share step, the profile's Voice tab and
  * the character page read and store for metadata.voiceShared.
  */
 import { describe, it, expect } from 'vitest';

@@ -50,18 +50,7 @@ export function ProfileRow({
       data-row={rowId}
       data-locked={locked ? 'true' : undefined}
     >
-      <div className={`${styles.label} ${danger ? styles.labelDanger : ''}`}>
-        {tip ? (
-          <HoverTip tip={tip} onOpen={tipKey ? () => onTipOpen?.(tipKey) : undefined} className={styles.labelTip}>
-            <span>{label}</span>
-            <span className={styles.infoMark} aria-hidden="true">
-              <InfoIcon size={12} />
-            </span>
-          </HoverTip>
-        ) : (
-          <span>{label}</span>
-        )}
-      </div>
+      <RowLabel label={label} tip={tip} tipKey={tipKey} onTipOpen={onTipOpen} danger={danger} />
       {/* Value + actions share one cell that wraps: when the actions do not
           fit beside the value (long translations), they drop under it. */}
       <div className={styles.body}>
@@ -83,6 +72,31 @@ export function ProfileRow({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A row's label, with its hover explanation (also heads the inline editors, ProfileEditors). */
+export function RowLabel({
+  label,
+  tip,
+  tipKey,
+  onTipOpen,
+  danger,
+  id,
+}: Pick<ProfileRowProps, 'label' | 'tip' | 'tipKey' | 'onTipOpen' | 'danger'> & { id?: string }): React.ReactElement {
+  return (
+    <div className={`${styles.label} ${danger ? styles.labelDanger : ''}`} id={id}>
+      {tip ? (
+        <HoverTip tip={tip} onOpen={tipKey ? () => onTipOpen?.(tipKey) : undefined} className={styles.labelTip}>
+          <span>{label}</span>
+          <span className={styles.infoMark} aria-hidden="true">
+            <InfoIcon size={12} />
+          </span>
+        </HoverTip>
+      ) : (
+        <span>{label}</span>
+      )}
     </div>
   );
 }

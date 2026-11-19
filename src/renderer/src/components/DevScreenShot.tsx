@@ -7,9 +7,13 @@
  * without its flow layer.
  *
  *   http://localhost:5173/?dashshot=screen&screen=<screen>[&modal=<modal>]
- *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
- *     &ownkey=0|1   (edit, section=voice) no ElevenLabs key / a saved one with
- *                   one own voice: the picker's Voice Library tile (261119)
+ *     screen = home | character | chat | call | settings | edit (&section=basic|appearance|voice|persona|games)
+ *              (edit, 261119: the Edit companion popup is gone; its sections
+ *              are your own companion's profile tabs, so this opens the
+ *              character screen on the tab that holds the section)
+ *     &ownkey=0|1   (character tab=voice, or edit section=voice) no ElevenLabs
+ *                   key / a saved one with one own voice: the picker's Voice
+ *                   Library tile (261119)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
  *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
@@ -63,7 +67,6 @@ import { useLangStore } from '../lib/i18n';
 import { applyTheme } from '../lib/theme';
 import { MacosWindow } from './MacosWindow';
 import { IconRail } from './IconRail';
-import { EditCharacterModal } from './EditCharacterModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { FeedbackModal } from './FeedbackModal';
 import { ReportCompanionModal } from './ReportCompanionModal';
@@ -97,10 +100,22 @@ const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
 const MARV = 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e06';
 const PEBBLE = '6d0a3f0e-58a4-4d43-9a43-6c1f0d2b7e11';
 
-type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit' | 'awaken';
+type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'awaken';
 
 const params = new URLSearchParams(window.location.search);
-const screen = (params.get('screen') ?? 'home') as Screen;
+/** The old Edit companion sections, and the profile tab each one lives on now (261119). */
+const EDIT_SECTION_TAB: Record<string, string> = {
+  basic: 'personality',
+  appearance: 'look',
+  voice: 'voice',
+  persona: 'personality',
+  games: 'games',
+};
+const rawScreen = params.get('screen') ?? 'home';
+if (rawScreen === 'edit' && !params.has('tab')) {
+  params.set('tab', EDIT_SECTION_TAB[params.get('section') ?? 'basic'] ?? 'personality');
+}
+const screen = (rawScreen === 'edit' ? 'character' : rawScreen) as Screen;
 const modal = params.get('modal');
 const seilinkShot = params.get('seilink');
 const tourShot = params.get('tour') === '1';
@@ -338,7 +353,7 @@ function seed(): void {
   if (isProfileFocus(shotTab)) requestProfileFocus(shotTab);
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });
-  if (screen === 'character' || screen === 'edit') nav({ kind: 'character', id: SUI });
+  if (screen === 'character') nav({ kind: 'character', id: SUI });
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
@@ -414,7 +429,6 @@ export function DevScreenShot(): React.ReactElement {
   const body = (() => {
     switch (shown) {
       case 'character':
-      case 'edit':
         return <CharacterPage id={SUI} />;
       case 'chat':
         return <ChatScreen characterId={SUI} />;
@@ -428,7 +442,6 @@ export function DevScreenShot(): React.ReactElement {
         return <CharactersScreen />;
     }
   })();
-  const sui = CHARACTERS[0] as unknown as Parameters<typeof EditCharacterModal>[0]['character'];
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex' }}>
       <MacosWindow railHidden={false}>
@@ -456,7 +469,6 @@ export function DevScreenShot(): React.ReactElement {
           </div>
         </div>
       </MacosWindow>
-      {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={(['appearance', 'voice', 'persona', 'games'] as const).find((x) => x === params.get('section')) ?? 'basic'} /> : null}
       <Modal />
       {tourShot && flow?.kind === 'sheet' ? <MoveInShot /> : null}
       {tourShot ? <TutorialOverlay /> : null}

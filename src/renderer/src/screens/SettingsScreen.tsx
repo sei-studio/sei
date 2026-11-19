@@ -115,7 +115,7 @@ export function SettingsScreen(): React.ReactElement {
   );
   // ui-A9: "Reset all character memories" iterates over the renderer's
   // character list. refreshCharacter pulls the post-reset row back into the
-  // store so EditCharacterModal / CharacterPage observe last_launched=null
+  // store so CharacterPage observes last_launched=null
   // + playtime_ms=0 without a manual reload.
   const allCharacters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);

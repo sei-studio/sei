@@ -8,7 +8,7 @@
  * whose first option is the close match main rolls for adopters (the
  * default, stored as an ABSENT metadata.voiceShared), plus a sample button.
  * Used in the publish confirm (CharacterPage), the creation flow's visibility
- * step, and Edit companion > Voice. `SharedVoiceLabel` is the read-only
+ * step, and the profile's Voice tab. `SharedVoiceLabel` is the read-only
  * "Voice for others: <name>" line on the character page.
  *
  * Samples play the bundled pool clip (instant, offline, no spend) at the

@@ -169,7 +169,7 @@ export const IT: Record<string, string> = {
   "Knowledge": "Conoscenze",
   "Reset memory": "Azzera memoria",
   "Unbind": "Scollega",
-  "Going public needs a description. Add one, then close this window to continue publishing {name}.": "Per pubblicare il personaggio serve una descrizione. Aggiungila, poi chiudi questa finestra per continuare a pubblicare {name}.",
+  "Going public needs a description. Add one and press Save to continue publishing {name}.": "Per pubblicare il personaggio serve una descrizione. Aggiungila e premi Salva per continuare a pubblicare {name}.",
   "{name} full art": "Immagine completa di {name}",
   "Saved to {path}": "Salvato in {path}",
   "Saving...": "Salvataggio...",

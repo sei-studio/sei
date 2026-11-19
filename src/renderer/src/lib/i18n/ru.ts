@@ -224,7 +224,7 @@ export const RU: Record<string, string> = {
   "Reset memory": "Сбросить память",
   // ── screens-a ──
   "Unbind": "Расстаться",
-  "Going public needs a description. Add one, then close this window to continue publishing {name}.": "Для публикации нужно описание. Добавь его, потом закрой это окно и продолжи публикацию {name}.",
+  "Going public needs a description. Add one and press Save to continue publishing {name}.": "Для публикации нужно описание. Добавь его и нажми «Сохранить», чтобы продолжить публикацию {name}.",
   "{name} full art": "{name}, полный арт",
   // ── games ──
   "Saved to {path}": "Сохранено в {path}",

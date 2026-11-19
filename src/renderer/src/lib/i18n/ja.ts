@@ -224,7 +224,7 @@ export const JA: Record<string, string> = {
   "Reset memory": "記憶をリセット",
   // ── screens-a ──
   "Unbind": "絆を解く",
-  "Going public needs a description. Add one, then close this window to continue publishing {name}.": "公開するには説明が必要です。説明を書いたら、このウィンドウを閉じて{name}の公開を続けてください。",
+  "Going public needs a description. Add one and press Save to continue publishing {name}.": "公開するには説明が必要です。説明を書いて「保存」を押すと、{name}の公開を続けられます。",
   "{name} full art": "{name}のイラスト全体",
   // ── games ──
   "Saved to {path}": "{path}に保存しました",
