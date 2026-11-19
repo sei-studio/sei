@@ -1231,8 +1231,8 @@ without them render as before.
 
 ## Wallpaper widgets and lighting (261119)
 
-Two rail panels in the room editor after Items: **Misc** (widgets over the
-wallpaper) and **Lighting**. Both are fields of `RoomState`, so they save,
+Two rail panels in the room editor after Items: **Utilities** (widgets over
+the wallpaper; panel id `misc` in code and analytics) and **Lighting**. Both are fields of `RoomState`, so they save,
 undo and persist with the room (`roomStore.ts`, per companion) and survive a
 room type switch, the guided bare room and a missing pack (`keepDesktop` in
 `seilinkRoom.ts`).
@@ -1264,6 +1264,17 @@ room type switch, the guided bare room and a missing pack (`keepDesktop` in
   10 px to the centre lines and to other widgets (guide lines show) and
   commits one undo step on release. Arrows nudge (Shift: 10 px), Delete
   removes, Escape deselects.
+- Utilities panel (simplified after product call 261120): one row per widget
+  (icon + name), then a quiet "Add" row that opens the four kinds inline
+  (picking one adds and selects it; with nothing placed the kinds show
+  straight away, no separate add tiles). Only the selected widget opens, its settings
+  inline under its row (accordion; picking it on the desktop opens it and
+  scrolls it into view). Clock format is switches only (24-hour, Seconds,
+  Leading zero, AM/PM, Date below; the old preset chips duplicated them), and
+  the date choice is a wrapped chip group shown only with Date below on.
+  Style rows carry small names (Font, Weight, Color, Size, Opacity); weight
+  and colour apply to the whole widget, the clock digits included. Lighting
+  sliders show name and value only.
 - Dev: DevRoomPreview takes `widgets=demo`, `widget=<id>`, `light.dim=`,
   `light.brightness=`, `light.warmth=`, `light.char=1`; DevHostPreview's `state=<json>` carries both. Shots:
   `node scripts/seilink-widgets-shots.mjs --out <dir>`.

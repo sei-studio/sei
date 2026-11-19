@@ -28,8 +28,8 @@
  * done; Done saves it without, and the next open is the normal editor.
  * Analytics: seilink_setup and seilink_setup_step (shape only).
  *
- * Misc and Lighting (261119, product call 261119): two more rail tiles. Misc
- * adds wallpaper widgets (clock, date, text, progress; RoomDesktopPanels.tsx,
+ * Utilities (code id `misc`) and Lighting (261119, product call 261119): two
+ * more rail tiles. Utilities adds wallpaper widgets (clock, date, text, progress; RoomDesktopPanels.tsx,
  * drawn by RoomCanvas through RoomWidgets.tsx); a widget is selected and
  * dragged on the stage like an item, snapping to the centre lines and to the
  * other widgets. Lighting darkens, veils and warms the room. Both are part of
@@ -757,7 +757,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const panelRef = useRef<HTMLElement>(null);
   const sectionEls = useRef(new Map<RoomSlotId, HTMLElement>());
   const [selected, setSelected] = useState<number | null>(initial?.selected ?? null);
-  // 261119: the selected wallpaper widget (Misc), and one being dragged on the stage.
+  // 261119: the selected wallpaper widget (Utilities), and one being dragged on the stage.
   const [widgetSel, setWidgetSel] = useState<string | null>(initial?.widget ?? null);
   const [widgetDrag, setWidgetDrag] = useState<{ id: string; x: number; y: number; guideX: number | null; guideY: number | null } | null>(null);
   const widgetDragRef = useRef<{ id: string; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean } | null>(null);
@@ -829,7 +829,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   });
   const analyticsRef = useRef(analytics);
   analyticsRef.current = analytics;
-  // 261119: a widget is only selected while Misc is open.
+  // 261119: a widget is only selected while Utilities is open.
   useEffect(() => {
     if (shownPanel !== 'misc') setWidgetSel(null);
   }, [shownPanel]);
@@ -1970,7 +1970,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
                 {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
                 {items.length > 0 && tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
-                {tile('misc', t('Misc'), <WidgetsIcon size={RAIL_ICON} />)}
+                {tile('misc', t('Utilities'), <WidgetsIcon size={RAIL_ICON} />)}
                 {tile('lighting', t('Lighting'), <LightIcon size={RAIL_ICON} />)}
               </nav>
               {renderPanel()}

@@ -12,18 +12,40 @@
  *    the switch crossfades with the features aligned (morph), so it glides;
  *  - blinks follow the lid curve (fast close, short hold, slower open) by
  *    fading the half and closed patches in and out;
- *  - irises move inside the eye openings found by faceRig.findEyes, only
- *    where the art has an iris to move.
+ *  - irises: a pack baked with gaze frames (anima, 261120) moves the iris
+ *    itself: the model re-drew her open eyes looking at a small grid of
+ *    directions; her look steps to the frame nearest her gaze (each step a
+ *    quick crossfade, like a saccade) in the eye region of the composite
+ *    (`composeIris`), and the half-shut frames of a blink keep that look.
+ *    An older pack keeps the pre-261120 warp: the picture shifts inside the
+ *    eye openings found by faceRig.findEyes, only where the art has an iris
+ *    to move.
  *
  * `life: false` (reduced motion, a still preview) keeps only blinks and the
  * mouth. Nothing is allocated per frame on the steady path; the composite is
- * rebuilt only on a state change and the mouth box only on a viseme change.
+ * rebuilt only on a state change, the mouth box only on a viseme change and
+ * the eye region (gaze frames) only when her look steps.
  */
-import type { FacepackManifest, FacepackViseme } from '@shared/facepack';
+import type { FacepackIris, FacepackManifest, FacepackViseme } from '@shared/facepack';
 import type { AvatarCamera } from '@shared/ipc';
 import { BLINK_ON_SACCADE_CHANCE, Blinker, GazeDriver, minJerk, type GazeInput, type GazePoint } from '../motion/organic';
 import { ExpressionTimeline, VisemeDriver, type LevelSample } from './animation';
-import { cueExpression, expressionBlinks, filesFor, layersFor, posesOf, resolveExpressionName, resolvePoseName } from './compose';
+import {
+  cueExpression,
+  expressionBlinks,
+  filesFor,
+  irisCell,
+  irisFiles,
+  irisFrameAt,
+  irisHalfAt,
+  irisOf,
+  layersFor,
+  posesOf,
+  resolveExpressionName,
+  resolvePoseName,
+  type FaceLayer,
+  type IrisTap,
+} from './compose';
 import type { FaceImageCache } from './facepackSource';
 import { FaceGl, lidWeights, newDrawParams, type EyeSet } from './facepackGl';
 import { findEyes, irisVisible, type FaceRig } from './faceRig';
@@ -84,9 +106,22 @@ const FACE_SLIDE_Y = 0.1;
 const HEAD_SHIFT_X = 0.05;
 const HEAD_SHIFT_Y = 0.04;
 const ROLL_RAD = 0.04;
-/** Iris shift as a fraction of the opening's radii. */
+/** Iris shift as a fraction of the opening's radii (packs without gaze frames: the warp). */
 const IRIS_X = 0.3;
 const IRIS_Y = 0.2;
+/**
+ * Gaze frames (261120): her eyes-in-head direction (GazeDriver eyeX/eyeY,
+ * mostly within +-0.5) to the grid's units (the model's iris rotation, -1..1
+ * across, -0.5..0.5 up and down in the 261120 bake); clamped to the grid
+ * and to compose.IRIS_MAX (+-0.5), so a glance past about 0.15 across (0.2
+ * up or down) already shows the +-0.5 frame and the outer columns never show.
+ */
+const GAZE_X = 2.0;
+const GAZE_Y = 1.5;
+/** compose.irisCell's hold: how far past the midpoint (a share of the step) her look must go to step. */
+const GAZE_HOLD = 0.15;
+/** Each step of her look crossfades over this long (a saccade: quick, so two irises never linger). */
+const GAZE_STEP_MS = 70;
 /** Room above her head inside the view, so a tilt never clips her hair at the top edge. */
 const HEADROOM = 0.97;
 
@@ -132,6 +167,8 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   const pg = probe.getContext('2d', { willReadFrequently: true });
   if (!cg || !mg || !pg) throw new Error('2d context unavailable');
 
+  /** A pack baked with gaze frames moves the iris itself; the warp is only for packs without them. */
+  const packIris = Object.values(m.expressions).some((e) => Object.values(e.poses).some((po) => po.iris));
   const eyeSets = new Map<string, EyeSet>();
   /** Midpoint of the two eye openings per state (pack px), for the pose-change morph; kept even where there is no iris. */
   const centres = new Map<string, [number, number] | null>();
@@ -165,7 +202,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       const shut = pg.getImageData(0, 0, w, h).data;
       const found = findEyes(open, shut, w, h);
       if (found) centres.set(key, [box[0] + (found[0].cx + found[1].cx) / 2, box[1] + (found[0].cy + found[1].cy) / 2]);
-      if (found && found.every((el) => irisVisible(open, w, el))) {
+      if (!packIris && found && found.every((el) => irisVisible(open, w, el))) {
         // Slightly inside the opening, so the lash line keeps still.
         set.eyes = [
           {
@@ -187,6 +224,77 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     return set;
   };
 
+  // ── gaze frames ─────────────────────────────────────────────────────────
+  const irisCv = document.createElement('canvas');
+  const ig = irisCv.getContext('2d');
+  if (!ig) throw new Error('2d context unavailable');
+  /** Gaze frames per state, null when the state has none (cached: asked every frame). */
+  const irisCache = new Map<string, FacepackIris | null>();
+  const irisFor = (st: State): FacepackIris | null => {
+    const key = `${st.expression}/${st.pose}`;
+    let hit = irisCache.get(key);
+    if (hit === undefined) {
+      hit = irisOf(m, st.expression, st.pose);
+      irisCache.set(key, hit);
+    }
+    return hit;
+  };
+  /** Everything one state draws: its layers' files and its gaze frames. */
+  const stateFiles = (expr: string, pose: string): string[] => [...filesFor(m, expr, pose), ...irisFiles(m, expr, pose)];
+  /**
+   * Her look on the grid: the frame shown (`cell`, grid indices; -1 before
+   * the first), the one it is stepping from and how far the step's
+   * crossfade has gone (0..1, eased).
+   */
+  const cell: [number, number] = [-1, -1];
+  const cellFrom: [number, number] = [-1, -1];
+  let stepAt = -Infinity;
+  let stepMix = 1;
+  const taps: IrisTap[] = [];
+  /** The frames of her look now: the step's two frames, or the one shown when the step is done. */
+  const gazeTaps = (ir: FacepackIris): IrisTap[] => {
+    const to = cell[0] < 0 ? [ir.x.indexOf(0), ir.y.indexOf(0)] : cell;
+    taps.length = 0;
+    if (stepMix < 1 && cellFrom[0] >= 0) taps.push({ src: irisFrameAt(ir, cellFrom[0], cellFrom[1]), w: 1 - stepMix });
+    taps.push({ src: irisFrameAt(ir, to[0], to[1]), w: stepMix < 1 && cellFrom[0] >= 0 ? stepMix : 1 });
+    return taps;
+  };
+  /**
+   * Draw `layers` at an offset of (-ox, -oy), with the gaze frames of `ir`
+   * over the base: the frame of her look, or mid-step the two frames as a
+   * lerp (the second over the first at its weight). The frames are opaque
+   * inside and feathered to the base at their edges.
+   */
+  const drawLayers = (g: CanvasRenderingContext2D, layers: readonly FaceLayer[], ox: number, oy: number, ir: FacepackIris | null): void => {
+    for (const l of layers) {
+      const bmp = c.get(l.src);
+      if (bmp) g.drawImage(bmp, l.x - ox, l.y - oy);
+      if (l.kind !== 'base' || !ir || !bmp) continue;
+      gazeTaps(ir);
+      const [bx, by, bx1, by1] = ir.box;
+      let acc = 0;
+      for (const t of taps) {
+        const a = t.w / (acc + t.w);
+        acc += t.w;
+        g.globalAlpha = a;
+        if (t.src === null) {
+          if (a < 1) g.drawImage(bmp, bx, by, bx1 - bx, by1 - by, bx - ox, by - oy, bx1 - bx, by1 - by);
+        } else {
+          const f = c.get(t.src);
+          if (f) g.drawImage(f, bx - ox, by - oy);
+        }
+      }
+      g.globalAlpha = 1;
+    }
+  };
+  /** The state's gaze frames when all are decoded (until then her eyes show the base's look). */
+  const irisReady = (st: State): FacepackIris | null => {
+    const ir = irisFor(st);
+    if (!ir) return null;
+    for (const row of ir.frames) for (const f of row) if (f && !c.has(f)) return null;
+    return ir;
+  };
+
   const composeFull = (st: State, viseme: FacepackViseme): boolean => {
     const layers = layersFor(m, {
       ...st,
@@ -197,11 +305,22 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     if (!layers.length) return false;
     cg.setTransform(1, 0, 0, 1, 0, 0);
     cg.clearRect(0, 0, W, H);
-    for (const l of layers) {
-      const bmp = c.get(l.src);
-      if (bmp) cg.drawImage(bmp, l.x, l.y);
-    }
+    drawLayers(cg, layers, 0, 0, irisReady(st));
     return true;
+  };
+
+  /** The eye region of `st` at the current gaze point, composed alone (base crop, gaze frames, mouth, overlays). */
+  const composeIris = (st: State, viseme: FacepackViseme, ir: FacepackIris): [number, number] => {
+    const box = ir.box;
+    const w = Math.max(1, Math.round(box[2] - box[0]));
+    const h = Math.max(1, Math.round(box[3] - box[1]));
+    if (irisCv.width !== w || irisCv.height !== h) {
+      irisCv.width = w;
+      irisCv.height = h;
+    }
+    ig.clearRect(0, 0, w, h);
+    drawLayers(ig, layersFor(m, { ...st, eye: 'open', viseme, overlays: live().overlays }), box[0], box[1], ir);
+    return [box[0], box[1]];
   };
 
   /** The mouth box of `st` with `viseme`, composed alone (base crop, patch, overlays). */
@@ -223,21 +342,44 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       viseme,
       overlays: live().overlays,
     });
-    for (const l of layers) {
-      const bmp = c.get(l.src);
-      if (bmp) mg.drawImage(bmp, l.x - box[0], l.y - box[1]);
-    }
+    drawLayers(mg, layers, box[0], box[1], irisReady(st));
     return [box[0], box[1]];
   };
 
-  const lidsFor = (st: State): void => {
+  const halfCv = document.createElement('canvas');
+  const hg = halfCv.getContext('2d');
+  if (!hg) throw new Error('2d context unavailable');
+  /** The half-lid look (a gaze file) the GL half patch shows now, '' for the plain half patch. */
+  let halfShown = '';
+  /**
+   * The lid patches of `st`. `look` (a gaze-frame pack's half-lid crop,
+   * compose.irisHalfAt) is drawn over the half patch, so the half-shut frames
+   * of a blink keep her look instead of flicking the iris back to centre.
+   */
+  const lidsFor = (st: State, look: string | null = null): void => {
     const e = m.expressions[st.expression];
     const pose = e?.poses[resolvePoseName(e, m, st.pose)];
     const half = pose?.eyes?.half;
     const closed = pose?.eyes?.closed;
     const hb = half ? c.get(half) : undefined;
     const cb = closed ? c.get(closed) : undefined;
-    gl.setLids(hb && half ? { key: half, src: hb } : null, cb && closed ? { key: closed, src: cb } : null);
+    const lb = look ? c.get(look) : undefined;
+    const ir = irisFor(st);
+    let hl: { key: string; src: TexImageSource } | null = hb && half ? { key: half, src: hb } : null;
+    halfShown = '';
+    if (hl && hb && lb && look && ir && pose?.eyes) {
+      if (halfCv.width !== hb.width || halfCv.height !== hb.height) {
+        halfCv.width = hb.width;
+        halfCv.height = hb.height;
+      }
+      hg.clearRect(0, 0, hb.width, hb.height);
+      hg.drawImage(hb, 0, 0);
+      hg.drawImage(lb, ir.box[0] - pose.eyes.box[0], ir.box[1] - pose.eyes.box[1]);
+      // The GL patch cache keeps the upload by key, so each look is drawn here once per state.
+      hl = { key: `${half}|${look}`, src: halfCv };
+      halfShown = look;
+    }
+    gl.setLids(hl, cb && closed ? { key: closed, src: cb } : null);
   };
 
   // ── state ───────────────────────────────────────────────────────────────
@@ -260,6 +402,8 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   let loading: string | null = null;
   let lastBig = -Infinity;
   const keep = new Set<string>();
+  /** States whose files finished loading (some may have failed). */
+  const settled = new Set<string>();
   const p = newDrawParams();
   const gazeIn: GazeInput = { cursor: null, interests: null, engaged: false };
   const cursorPt: GazePoint = { x: 0, y: 0 };
@@ -272,7 +416,18 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     lastViseme = viseme;
   };
   show(shown, 'rest', false);
-  const irises = eyeSetFor(shown).eyes !== null;
+  /** The look (cell x, cell y, from x, from y, step mix) the eye region was last composed at, and for which state. */
+  const irisDrawn: number[] = [NaN, NaN, NaN, NaN, NaN];
+  let irisDrawnFor: FacepackIris | null = null;
+  const markDrawn = (ir: FacepackIris | null): void => {
+    irisDrawnFor = ir;
+    irisDrawn[0] = cell[0];
+    irisDrawn[1] = cell[1];
+    irisDrawn[2] = cellFrom[0];
+    irisDrawn[3] = cellFrom[1];
+    irisDrawn[4] = stepMix;
+  };
+  const irises = packIris || eyeSetFor(shown).eyes !== null;
   const headGain = irises ? 1 : NO_IRIS_HEAD_GAIN;
   /**
    * 261119 (product call 261119, "the idle animation jumps", "eyes jump"): a baked
@@ -323,9 +478,9 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   /** Keep what is on screen (and fading out); run on state changes only, not per frame. */
   const trim = (): void => {
     keep.clear();
-    for (const f of filesFor(m, shown.expression, shown.pose)) keep.add(f);
-    if (prev) for (const f of filesFor(m, prev.expression, prev.pose)) keep.add(f);
-    if (loading) for (const f of filesFor(m, target.expression, target.pose)) keep.add(f);
+    for (const f of stateFiles(shown.expression, shown.pose)) keep.add(f);
+    if (prev) for (const f of stateFiles(prev.expression, prev.pose)) keep.add(f);
+    if (loading) for (const f of stateFiles(target.expression, target.pose)) keep.add(f);
     c.trim(keep);
   };
 
@@ -381,8 +536,11 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       target.pose = avail.includes(want) ? want : avail.includes('c') ? 'c' : avail[0];
     }
     if (target.expression !== shown.expression || target.pose !== shown.pose) {
-      const files = filesFor(m, target.expression, target.pose);
-      if (files.every((f) => c.has(f))) {
+      const files = stateFiles(target.expression, target.pose);
+      const tkey = `${target.expression}/${target.pose}`;
+      // The gaze frames are wanted before the switch, so her eyes do not jump back to the base's look,
+      // but a frame that failed to load must not hold the face: once its load settled, switch anyway.
+      if (filesFor(m, target.expression, target.pose).every((f) => c.has(f)) && (settled.has(tkey) || files.every((f) => c.has(f)))) {
         const exprChange = target.expression !== shown.expression;
         prev = shown;
         shown = { expression: target.expression, pose: target.pose };
@@ -393,12 +551,12 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
         const b = centreOf(shown);
         morphD = a && b && !exprChange ? [b[0] - a[0], b[1] - a[1]] : [0, 0];
         show(shown, lastViseme, true);
+        markDrawn(irisReady(shown));
         trim();
       } else {
-        const key = `${target.expression}/${target.pose}`;
-        if (loading !== key) {
-          loading = key;
-          void c.load(files);
+        if (loading !== tkey) {
+          loading = tkey;
+          void c.load(files).then(() => settled.add(tkey));
         }
       }
     }
@@ -447,6 +605,45 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     p.iris[0] = g ? g.eyeX * IRIS_X : 0;
     p.iris[1] = g ? g.eyeY * IRIS_Y : 0;
 
+    // Gaze frames: her look steps to the grid frame nearest her gaze point, each step a quick
+    // crossfade; the eye region is recomposed only while it changes.
+    const ir = irisReady(shown);
+    if (ir) {
+      const [nx, ny] = irisCell(ir, g ? g.eyeX * GAZE_X : 0, g ? g.eyeY * GAZE_Y : 0, cell[0] < 0 ? null : cell, GAZE_HOLD);
+      if (cell[0] < 0) {
+        cell[0] = cellFrom[0] = nx;
+        cell[1] = cellFrom[1] = ny;
+      } else if (nx !== cell[0] || ny !== cell[1]) {
+        // Mid-step, the step starts again from whichever frame showed more.
+        if (stepMix >= 0.5) {
+          cellFrom[0] = cell[0];
+          cellFrom[1] = cell[1];
+        }
+        cell[0] = nx;
+        cell[1] = ny;
+        stepAt = now;
+      }
+      const u = Math.min(1, Math.max(0, (now - stepAt) / GAZE_STEP_MS));
+      stepMix = u * u * (3 - 2 * u);
+      if (
+        ir !== irisDrawnFor ||
+        cell[0] !== irisDrawn[0] ||
+        cell[1] !== irisDrawn[1] ||
+        cellFrom[0] !== irisDrawn[2] ||
+        cellFrom[1] !== irisDrawn[3] ||
+        stepMix !== irisDrawn[4]
+      ) {
+        const at = composeIris(shown, lastViseme, ir);
+        gl.updateRegion(irisCv, at[0], at[1]);
+        markDrawn(ir);
+      }
+    }
+    // Half lid at her look across (packs that bake it); picked as the half frame comes, held through the blink.
+    if (p.halfA > 0 && p.closedA === 0) {
+      const look = ir && cell[0] >= 0 ? irisHalfAt(ir, cell[0]) : null;
+      if ((look ?? '') !== halfShown) lidsFor(shown, look);
+    }
+
     // Fit: contain, a little headroom, feet (the bottom) on the bottom edge.
     const cam = L.camera;
     const s = Math.min(viewW / W, viewH / H) * (cam?.zoom ?? 1) * HEADROOM;
@@ -468,7 +665,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     // Dev probe (scripts/seilink-avatar-demo.mjs): a script that sets window.__seiFaceTrace = [] gets one row a frame.
     const trace = (globalThis as { __seiFaceTrace?: unknown[] }).__seiFaceTrace;
     if (trace)
-      trace.push({ t: now, gx: g?.gazeX ?? 0, gy: g?.gazeY ?? 0, ex: g?.eyeX ?? 0, ey: g?.eyeY ?? 0, hx: g?.headX ?? 0, hy: g?.headY ?? 0, roll: p.roll, pose: shown.pose, mix: p.mix, lid, ix: p.iris[0], iy: p.iris[1] });
+      trace.push({ t: now, gx: g?.gazeX ?? 0, gy: g?.gazeY ?? 0, ex: g?.eyeX ?? 0, ey: g?.eyeY ?? 0, hx: g?.headX ?? 0, hy: g?.headY ?? 0, roll: p.roll, pose: shown.pose, mix: p.mix, lid, ix: p.iris[0], iy: p.iris[1], irisFrames: ir !== null, cx: cell[0], cy: cell[1], step: stepMix });
 
     if (env.debugRef) {
       env.debugRef.current = {
@@ -486,6 +683,9 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
 
   // Warm the turned poses of the starting expression (big turns of a face with no iris use them).
   if (turnPoses) void c.load(posesOf(m, env.startExpr).flatMap((pp) => filesFor(m, env.startExpr, pp)));
+  // The starting state's gaze frames (FacepackView decoded only its layers); her eyes follow once they are in.
+  const startIris = irisFiles(m, shown.expression, shown.pose);
+  if (startIris.length) void c.load(startIris).then(() => trim());
 
   return {
     resume(): void {

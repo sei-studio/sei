@@ -168,24 +168,11 @@ export interface ClockFormat {
   ampm: boolean;
 }
 
-/** Quick picks for the clock, as the editor's preset row (labels are the sample time formatted with each). */
-export const CLOCK_PRESETS: ReadonlyArray<{ id: string; format: ClockFormat }> = [
-  { id: 'h-mm', format: { hour12: true, pad: false, seconds: false, ampm: false } },
-  { id: 'hh-mm-ampm', format: { hour12: true, pad: true, seconds: false, ampm: true } },
-  { id: 'h-mm-ss', format: { hour12: true, pad: false, seconds: true, ampm: false } },
-  { id: '24h', format: { hour12: false, pad: true, seconds: false, ampm: false } },
-];
-
-/** The time the presets are shown with (21:41:07, a Thursday): "9:41", "09:41 PM", "9:41:07", "21:41". */
+/** A sample time for tests and previews (21:41:07, a Thursday). */
 export const CLOCK_SAMPLE = new Date(2026, 10, 19, 21, 41, 7);
 
 export function clockFormatOf(w: Pick<RoomWidget, 'hour12' | 'pad' | 'seconds' | 'ampm'>): ClockFormat {
   return { hour12: w.hour12 !== false, pad: w.pad === true, seconds: w.seconds === true, ampm: w.ampm === true };
-}
-
-export function sameClockFormat(a: ClockFormat, b: ClockFormat): boolean {
-  // AM/PM only shows on a 12-hour clock.
-  return a.hour12 === b.hour12 && a.pad === b.pad && a.seconds === b.seconds && (!a.hour12 || a.ampm === b.ampm);
 }
 
 /** The clock's text: the digits, and the day period (AM/PM in the locale's words) and which side it goes on. */
