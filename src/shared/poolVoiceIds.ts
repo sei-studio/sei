@@ -20,7 +20,11 @@
  */
 import { VOICES } from '../../vendor/soulcaster/src/voices.js';
 
-/** The current curated pool (what new assignments and the picker draw from). */
+/**
+ * The current curated pool: everything the picker lists. New assignments draw
+ * from it too, minus the picker-only entries (`roll: false`, 261119), which
+ * rollVoice skips.
+ */
 export const POOL_VOICE_IDS: ReadonlySet<string> = new Set(VOICES.map((v) => v.id));
 
 /**
@@ -37,6 +41,13 @@ export const POOL_VOICE_IDS: ReadonlySet<string> = new Set(VOICES.map((v) => v.i
  * Riley, Ramona, Aaron) rejoined the pool as the neutral section of VOICES,
  * so they were removed from this set — membership in both would be
  * contradictory (this set is for voices REMOVED from the pool).
+ *
+ * 261119 (voice library refresh, product call (261119)): eight more voices
+ * left the pool (low use, owner-delisted, or the generic "assistant" sound)
+ * and joined this set at the bottom, so characters that already have them
+ * keep them, show them as "Current voice" in the picker, and still pass the
+ * proxy allowlist. Their bundled preview clips stay too: the profile sample
+ * (VoiceSample) plays the bundled clip for any id this module accepts.
  */
 export const LEGACY_VOICE_IDS: ReadonlySet<string> = new Set([
   // female / young
@@ -79,6 +90,15 @@ export const LEGACY_VOICE_IDS: ReadonlySet<string> = new Set([
   'PerZoH0r6nxBZXCoIPpv', // Michael
   'UzI1NsMEV3ni5JRkRSls', // Alistair
   'RcEmXcISaHUgHOU4uNTz', // Hansi
+  // retired 261119 (were in VOICES 260707 to 261119)
+  'YHcCpa6SBWnKDaCPZJQR', // Mora (female / elder)
+  '7squ7rvxEIZ2rYy7KYPP', // Malakai (male / adult)
+  'M5E055lOUxMi0kJpGyE9', // Gravel (male / elder)
+  '507tTFX0IPtqFzGd1CAL', // Rusty (male / elder)
+  'bAq8AI9QURijOtmeFFqT', // Sigma (neutral / adult, robot)
+  'SAz9YHcvj6GT2YYXdXww', // River (neutral / adult)
+  'Z9VxF84ucVtzvKlmYFhh', // Ramona (neutral / young)
+  'YKlogvnVogI4aFHoGIEw', // Aaron (neutral / adult)
 ]);
 
 /** True when `id` is a current-pool or legacy Sei voice. */
