@@ -170,6 +170,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const reportedRef = useRef(false);
   const failedRef = useRef(false);
   const lastTextRef = useRef({ live: '' });
+  // 261119: whether she is drawn, decided when she would first show: only with her look in (else the desktop brings her in).
+  const herInRef = useRef<boolean | null>(null);
   const cb = useRef(props);
   cb.current = props;
   // A ref: the stage answers after the clock started, and the clock must not restart for it.
@@ -234,7 +236,14 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       // The grain dithers the dark gradients; it goes as her place comes in (under the solid), so the last frame is the plain colour exactly.
       const grain = 1 - f.room.opacity;
       set(grainRef.current, 'opacity', Math.max(0, grain).toFixed(3));
-      set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
+      // 261119: her look not in when she would come in (a handoff at LINK_TIMEOUT_MS, or a skip before it landed):
+      // the intro does not draw her picture with the oval fade; the wallpaper waits for her look and plays her entrance.
+      let herOpacity = f.avatar.opacity;
+      if (herOpacity > 0) {
+        herInRef.current ??= logRef.current.at.installed !== undefined;
+        if (!herInRef.current) herOpacity = 0;
+      }
+      set(avatarRef.current, 'opacity', herOpacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
       set(avatarRef.current, 'transform', f.avatar.rise > 0.05 ? `translateY(${f.avatar.rise.toFixed(2)}px)` : 'none');
       // The solid colour over the whole picture (not the HUD): the opening, the climax filling the screen, its hold under the success line and its fade as she comes in.

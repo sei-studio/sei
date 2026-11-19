@@ -30,16 +30,24 @@
  *   WorldLink established between World 0 and World N.   LAST_LINE_MS after line 9
  *   (5 to 9 dwell LINE_DWELL_MS.)
  *
- *   A 75 s bake: 0.7, 2.7, 5.7, 11.7, 30, 45, 60, 72, 75, success 78.2 s.
+ *   A 240 s bake: 0.7, 2.7, 5.7, 11.7, 96, 144, 192, 237, 240, success 243.2 s.
  *   A 20 s bake: 0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4, 22.1, 23.8, success 27 s.
  *   Everything ready at once (a cached look, a replay): 0.7 ... 20.5, success 23.7 s.
  *
- * A failure (no network, an error, the host start failing, or no line 9 by
- * LINK_TIMEOUT_MS) shows "WorldLink failed. Lost contact with World N. Come
- * back later." instead, FAIL_BEAT_MS after the current line came up at the
- * soonest (a short beat, not a long line's whole dwell). "World N" is
- * worldNumber(her id): six digits, the same for her every time.
+ * A failure (no network, an error, the host start failing, or no answer from
+ * the proxy by LINK_TIMEOUT_MS) shows "WorldLink failed. Lost contact with
+ * World N. Come back later." instead, FAIL_BEAT_MS after the current line
+ * came up at the soonest (a short beat, not a long line's whole dwell).
+ * "World N" is worldNumber(her id): six digits, the same for her every time.
+ *
+ * 261119 (product call (261119)): a bake still running at LINK_TIMEOUT_MS is
+ * not a failure. The intro hands her arrival over to the desktop (`handoff`):
+ * the lines finish as if her look had landed then, the link is established,
+ * and the wallpaper keeps waiting for her look with its own quiet line, then
+ * plays her entrance (main/seilink/host/arrival.ts). The intro does not draw
+ * her then.
  */
+import { EXPECTED_LINK_MS, LINK_TIMEOUT_MS } from '@shared/seilinkEntrance';
 import {
   LINK_LINE_COUNT,
   LINK_MILESTONES,
@@ -109,10 +117,12 @@ export function lineDwell(i: number): number {
 }
 /** Line 9 is on screen this long before the success line (the climax and the expand into the solid play under it). */
 export const LAST_LINE_MS = 3200;
-/** How long a first bake is expected to take (the curve the middle lines are spread over). */
-export const EXPECTED_LINK_MS = 75_000;
-/** No line 9 by then: the link failed (timeout). The bake goes on in the background for the next try. */
-export const LINK_TIMEOUT_MS = 210_000;
+/**
+ * How long a first bake is expected to take (the curve the middle lines are spread over), and how
+ * long the intro waits for her look before it hands her arrival to the desktop (or fails, with no
+ * answer from the proxy). One place for both: shared/seilinkEntrance.ts.
+ */
+export { EXPECTED_LINK_MS, LINK_TIMEOUT_MS } from '@shared/seilinkEntrance';
 
 /** What has happened so far, ms from the intro's start (a milestone that arrived before it counts as 0). */
 export interface LinkLog {
@@ -141,6 +151,8 @@ export interface LinkPlan {
   /** When the success line lands (null: not known yet, or it failed). */
   success: number | null;
   fail: { at: number; failure: LinkFailure } | null;
+  /** 261119: her look was not in by LINK_TIMEOUT_MS with the bake still going: the desktop brings her in later. */
+  handoff?: boolean;
 }
 
 /** The pipeline milestones in order (host is apart). */
@@ -172,8 +184,16 @@ function gateTime(line: StatusLine, T: Record<LinkMilestone, number>): number {
  * view can recompute it every frame without a jump.
  */
 export function planLink(log: LinkLog): LinkPlan {
-  const T = effectiveTimes(log);
-  const last = gateTime(STATUS_LINES[LINK_LINE_COUNT - 1], T);
+  let T = effectiveTimes(log);
+  let last = gateTime(STATUS_LINES[LINK_LINE_COUNT - 1], T);
+  // 261119: the proxy answered and the host is up, but her look is not in by the timeout (a long bake):
+  // the link goes on as if it landed then; the desktop waits for it (no failure line).
+  const handoff =
+    last > LINK_TIMEOUT_MS && T.answered <= LINK_TIMEOUT_MS && T.host <= LINK_TIMEOUT_MS && (log.failed === null || log.failed.at > LINK_TIMEOUT_MS);
+  if (handoff) {
+    T = effectiveTimes({ ...log, at: { ...log.at, installed: LINK_TIMEOUT_MS } });
+    last = gateTime(STATUS_LINES[LINK_LINE_COUNT - 1], T);
+  }
   let failAt = log.failed?.at ?? Infinity;
   let failure: LinkFailure = log.failed?.failure ?? 'error';
   if (last > LINK_TIMEOUT_MS && LINK_TIMEOUT_MS < failAt) {
@@ -191,7 +211,8 @@ export function planLink(log: LinkLog): LinkPlan {
   if (Number.isFinite(failAt)) {
     return { lines, success: null, fail: { at: Math.max(failAt, lines[lines.length - 1] + FAIL_BEAT_MS), failure } };
   }
-  return { lines, success: lines.length === LINK_LINE_COUNT ? lines[LINK_LINE_COUNT - 1] + LAST_LINE_MS : null, fail: null };
+  const success = lines.length === LINK_LINE_COUNT ? lines[LINK_LINE_COUNT - 1] + LAST_LINE_MS : null;
+  return handoff ? { lines, success, fail: null, handoff: true } : { lines, success, fail: null };
 }
 
 /** Record an event into a log at `at` ms (the first arrival counts; nothing after a failure). */
@@ -261,6 +282,8 @@ export function linkReport(
     out[`line_${i + 1}_ms`] = Math.round(Math.min(after[i + 1], endedAt) - s);
   });
   if (outcome === 'failed' && plan.fail) out.failure = plan.fail.failure;
+  // 261119: the intro handed her arrival to the desktop (her look was still baking at LINK_TIMEOUT_MS).
+  if (plan.handoff && plan.success !== null && plan.success <= endedAt) out.handoff = 1;
   const a = log.at;
   const waits: Array<[LinkMilestone, number | undefined]> = [
     ['sent', a.sent],

@@ -12,7 +12,8 @@
  * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
  * facepackManifest, facepackFile, seilinkAnimaCutout (261118), and
  * seilinkAnimaShown for analytics), and
- * onAvatarOverlayCursor (the host's cursor feed, so her gaze follows it). The
+ * onAvatarOverlayCursor (the host's cursor feed, so her gaze follows it).
+ * 261119: onArrival / arrived, her arrival on the desktop. The
  * host relays each one to main, which answers for the moved-in character only. Every other RendererApi method is
  * absent here; the views call these with `?.` or only after avatarGet /
  * facepackForCharacter found something.
@@ -41,6 +42,8 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   hover: 'seilink-host:hover',
   press: 'seilink-host:press',
   cursor: 'seilink-host:cursor',
+  arrival: 'seilink-host:arrival',
+  arrived: 'seilink-host:arrived',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -84,6 +87,10 @@ if (process.contextIsolated) {
     onLevel: (cb: (level: number) => void) => listen<number>(C.level, (v) => cb(Math.max(0, Math.min(1, num(v))))),
     onHover: (cb: (hover: boolean) => void) => listen<boolean>(C.hover, (v) => cb(v === true)),
     onPress: (cb: () => void) => listen(C.press, () => cb()),
+    // 261119: her arrival (main decides; the page draws it and says when she is in).
+    onArrival: (cb: (arrival: unknown) => void) => listen(C.arrival, cb),
+    arrived: (r: { played?: unknown; reduced?: unknown; kind?: unknown }) =>
+      ipcRenderer.send(C.arrived, { played: r?.played === true, reduced: r?.reduced === true, kind: typeof r?.kind === 'string' ? r.kind.slice(0, 24) : null }),
   });
   const call = (method: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(C.call, method, args);
   contextBridge.exposeInMainWorld('sei', {

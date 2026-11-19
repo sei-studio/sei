@@ -17,7 +17,8 @@
  *  - seilink_intro_link (261106 v6, the WorldLink status lines) {outcome:
  *    success|failed|abandoned, failure, trigger, reduced_motion, lines_shown,
  *    line_1_ms .. line_9_ms, total_ms, slowest (milestone), slowest_ms,
- *    anima_start}. No character id, no text.
+ *    anima_start, handoff (261119: her look still baking at the timeout, the
+ *    desktop brings her in)}. No character id, no text.
  *
  * Event table: docs/agents/seilink-analytics.md.
  */
@@ -230,6 +231,7 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
     if (slowest && slowMs !== undefined) out.slowest_ms = slowMs;
     const start = oneOf(LINK_ANIMA_START, p.anima_start);
     if (start) out.anima_start = start;
+    if (p.handoff === 1 || p.handoff === true) out.handoff = true;
     return out;
   }
   if (event === SEILINK_TOUR_EVENT) {

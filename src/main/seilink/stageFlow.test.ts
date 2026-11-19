@@ -16,7 +16,7 @@ vi.mock('../lazyAnalytics', () => ({
   loadAnalytics: async () => ({ capture: (event: string, props: Record<string, unknown>) => m.events.push({ event, ...props }) }),
 }));
 vi.mock('./gate', () => ({ seilinkEnabled: () => m.enabled }));
-vi.mock('./host/seilinkHost', () => ({ seilinkLiveCharacter: () => m.live }));
+vi.mock('./host/seilinkHost', () => ({ seilinkLiveCharacter: () => m.live, noteSeilinkRevealed: () => {} }));
 vi.mock('./roomStore', () => ({ isRoomCharacterId: (id: unknown) => typeof id === 'string' && /^[a-z]+$/.test(id) }));
 vi.mock('./decorateOffer', () => ({ offerDecorateTogether: vi.fn(async () => ({ shown: true, line: 'her' })) }));
 vi.mock('./desktopStage', () => ({

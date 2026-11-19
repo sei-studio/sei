@@ -52,7 +52,9 @@ import { BusyTracker, onSeilinkAvatarChanged, onSeilinkChatTurn } from './hostSi
 import { answerHostAvatarCall, hostPortrait, type HostAvatarStores } from './hostAvatarCalls';
 import { getCharacter } from '../../characterStore';
 import { paths } from '../../paths';
-import { anima } from '../../anima/animaRuntime';
+import { anima, onAnimaChange } from '../../anima/animaRuntime';
+import { Arrival } from './arrival';
+import { lookPending, sanitizeArrivedReport, settledLook, type EntranceTrigger } from '../../../shared/seilinkEntrance';
 import { avatarLibrary } from '../../avatarLibrary/avatarLibraryRuntime';
 import { facepackIdForCharacter, packFilePath, readPackManifest } from '../../facepack/facepackStore';
 import { getRoomPayload, isRoomCharacterId, onRoomChange } from '../roomStore';
@@ -174,6 +176,10 @@ interface Session {
   offer: SeilinkDockOffer;
   /** 261110: her voice in the main window, relayed to the desktop (speaking, and a level seen for this line). */
   voice: { speaking: boolean; leveled: boolean };
+  /** 261119: her arrival on the desktop (arrival.ts): waits for her look, then her entrance. */
+  arrival: Arrival;
+  /** She plays her own imported model (no face set to wait for); null until checked. */
+  imported: boolean | null;
 }
 
 let deps: SeilinkHostDeps | null = null;
@@ -315,14 +321,20 @@ function emitHealth(s: Session): void {
  */
 export function startSeilinkHost(
   characterId: string,
-  opts?: { restored?: boolean; /** The move-in sheet set up her first room. */ firstRoom?: boolean },
+  opts?: {
+    restored?: boolean;
+    /** The move-in sheet set up her first room. */
+    firstRoom?: boolean;
+    /** 261119: the first-link intro plays with this start (it shows her coming in itself). */
+    entrance?: 'first_link';
+  },
 ): Promise<SeilinkHostStatus> {
   return serial(() => startNow(characterId, opts));
 }
 
 async function startNow(
   characterId: string,
-  opts?: { restored?: boolean; firstRoom?: boolean },
+  opts?: { restored?: boolean; firstRoom?: boolean; entrance?: 'first_link' },
 ): Promise<SeilinkHostStatus> {
   if (!seilinkEnabled()) throw new Error('SEILINK_DISABLED');
   if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
@@ -356,7 +368,9 @@ async function startNow(
     });
   }
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
-  await openSession(characterId, opts?.restored === true);
+  // 261119: what brought her here decides her entrance (shared/seilinkEntrance.ts arrivalMode).
+  const trigger: EntranceTrigger = opts?.restored ? 'restore' : opts?.entrance === 'first_link' ? 'first_link' : swapped ? 'switch' : 'move_in';
+  await openSession(characterId, opts?.restored === true, trigger);
   // 261105: her face set, baked/downloaded in the background (a no-op once it is on disk).
   void anima.prepare(characterId, opts?.restored ? 'host_restore' : 'host_start');
   return status;
@@ -471,7 +485,7 @@ export function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
 
 // ── Session ─────────────────────────────────────────────────────────────────
 
-async function openSession(characterId: string, restored: boolean): Promise<void> {
+async function openSession(characterId: string, restored: boolean, trigger: EntranceTrigger): Promise<void> {
   const token = randomBytes(16).toString('hex');
   const pipe = hostPipePath(process.platform, process.pid, os.tmpdir(), path.join, ++sessionSeq);
   if (process.platform !== 'win32') rmSync(pipe, { force: true });
@@ -525,6 +539,28 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     deafened: false,
     offer: 'none',
     voice: { speaking: false, leveled: false },
+    arrival: new Arrival(characterId, trigger, {
+      look: () => {
+        if (s.imported === null) return null;
+        const st = anima.status(s.characterId);
+        return {
+          pending: lookPending(st, { inFlight: anima.inFlight(s.characterId), imported: s.imported }),
+          look: settledLook(st, { imported: s.imported }),
+        };
+      },
+      send: (arrival) => {
+        if (session === s) sendTo(s, { type: 'arrival', arrival });
+      },
+      capture,
+      now: () => Date.now(),
+      setTimeout: (fn, ms) => {
+        const t = setTimeout(fn, ms);
+        (t as { unref?: () => void }).unref?.();
+        return t;
+      },
+      clearTimeout: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+    }),
+    imported: null,
   };
   s.timers.push(
     setTimeout(() => {
@@ -546,6 +582,9 @@ async function openSession(characterId: string, restored: boolean): Promise<void
     }),
     onSeilinkAvatarChanged((id, manifest) => {
       if (session === s && id === s.characterId) sendTo(s, { type: 'avatar-manifest', characterId: id, manifest });
+    }),
+    onAnimaChange((id) => {
+      if (session === s && id === s.characterId) s.arrival.update();
     }),
   ];
   s.unsub = () => {
@@ -584,6 +623,24 @@ async function openSession(characterId: string, restored: boolean): Promise<void
   setStatus({ state: 'starting', characterId, covered: false, paused: false, fps: 0 });
   log(`host starting for ${characterId}${restored ? ' (restored)' : ''}`);
   supervisor.start();
+  // Her own imported model has no look to wait for. Checked once; her arrival decides after it (and after anima.prepare).
+  void playsImported(characterId).then((v) => {
+    if (session !== s) return;
+    s.imported = v;
+    s.arrival.update();
+  });
+}
+
+/** 261119: the room says to play her imported model and she has one (RoomAvatar resolveKind tries it first). */
+async function playsImported(characterId: string): Promise<boolean> {
+  try {
+    const room = await getRoomPayload(characterId).catch(() => null);
+    if (room?.state.avatar?.kind !== 'live2d') return false;
+    const { getAvatarManifest } = await import('../../avatar/avatarStore');
+    return (await getAvatarManifest(characterId).catch(() => null)) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function spawnHost(s: Session, n: number): HostChild {
@@ -672,6 +729,8 @@ function onConnection(s: Session, sock: net.Socket): void {
         s.connPid = pid;
         sendTo(s, { type: 'set-fps', fps: fpsCap });
         sendTo(s, { type: 'busy', busy: s.busy.busy });
+        // Before her room, so the page never draws her before it knows how she arrives.
+        s.arrival.resend();
         void sendRoom(s);
         void loadConfig().then(
           (c) => {
@@ -793,16 +852,20 @@ function onHostMessage(s: Session, m: FromHost): void {
     case 'activity':
       patchStatus({ covered: m.covered, paused: m.paused, fps: m.fps === 0 ? 0 : status.fps });
       emitWatchdog(s, s.watchdog.onActivity(Date.now(), { covered: m.covered === true, paused: m.paused === true }));
+      s.arrival.coverage(m.covered === true || m.paused === true);
       break;
     case 'heartbeat':
       patchStatus({ covered: m.covered, paused: m.paused, fps: Math.max(0, Math.round(m.effectiveFps)) });
       s.health.heartbeat(Date.now(), m);
       emitWatchdog(s, s.watchdog.onActivity(Date.now(), { covered: m.covered === true, paused: m.paused === true }));
+      s.arrival.coverage(m.covered === true || m.paused === true);
       break;
     case 'click':
       // Product call (261116): a click is her reaction on the desktop, a double click opens her chat.
       if (m.kind === 'click') {
         s.counters.add('clicks');
+        // 261119: a click on the waiting line lets her in now (seilink_entrance skipped).
+        if (s.arrival.skip()) break;
         deps?.onClick?.(s.characterId);
       } else if (m.kind === 'dblclick') {
         s.counters.add('double_clicks');
@@ -812,6 +875,9 @@ function onHostMessage(s: Session, m: FromHost): void {
       break;
     case 'dock':
       if (isSeilinkDockAction(m.action)) void onDockAction(s, m.action);
+      break;
+    case 'arrived':
+      s.arrival.pageArrived(sanitizeArrivedReport(m));
       break;
     case 'log':
       log(`host: ${m.msg}`);
@@ -880,6 +946,8 @@ export function sendSeilinkLine(
 ): { expression: 'tag' | 'lexicon' | 'none' } | null {
   const s = session;
   if (!s || s.ending || s.characterId !== characterId || !s.conn) return null;
+  // 261119: not while she is not there yet (waiting for her look, or held for her entrance).
+  if (!s.arrival.present()) return null;
   const look = desktopLineFace(text, tag);
   const expression = !look.face && !look.emotion ? 'none' : isFaceWord(tag) ? 'tag' : 'lexicon';
   sendTo(s, { type: 'line', text, kind, emotion: look.emotion, face: look.face });
@@ -952,6 +1020,22 @@ export function setSeilinkDockOffer(characterId: string, offer: SeilinkDockOffer
 export function seilinkDockOffer(characterId: string): SeilinkDockOffer {
   const s = session;
   return s && !s.ending && s.characterId === characterId ? s.offer : 'none';
+}
+
+/**
+ * 261119: the app stepped aside and the desktop shows (stageFlow.ts reveal): her entrance can play
+ * now that it will be seen.
+ */
+export function noteSeilinkRevealed(): void {
+  const s = session;
+  if (s && !s.ending) s.arrival.revealed();
+}
+
+/** 261119: resolves true once she is in on the desktop (her entrance done), false when that session ends first. */
+export function whenSeilinkArrived(characterId: string): Promise<boolean> {
+  const s = session;
+  if (!s || s.ending || s.characterId !== characterId) return Promise.resolve(false);
+  return s.arrival.whenArrived();
 }
 
 export function seilinkLiveCharacter(): string | null {
@@ -1056,6 +1140,7 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
   setSeilinkResident(null);
   s.unsub();
   for (const t of s.timers) clearTimeout(t);
+  s.arrival.end();
   const live = s.supervisor.stop({ kill: false });
   sendTo(s, { type: 'quit' });
   const now = Date.now();

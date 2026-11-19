@@ -147,6 +147,11 @@ export class AnimaClient {
     return { characterId, state: this.ui.get(characterId) ?? 'idle', ...(st ? { stage: st.stage, ...(st.failure ? { failure: st.failure } : {}) } : {}) };
   }
 
+  /** A run for her is still going (a bake, a download, or her cut-out landing after `unavailable`). */
+  inFlight(characterId: string): boolean {
+    return this.runs.has(characterId);
+  }
+
   /** Her pack id when it is on disk (RoomAvatar's facepackForCharacter). */
   packIdFor(characterId: string): Promise<string | null> {
     return this.d.store.packIdFor(characterId);

@@ -2359,7 +2359,8 @@ export interface RendererApi {
   seilinkOpenPreview?(): Promise<boolean>;
   /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink available: a supported install or the dev flag). */
   /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
-  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
+  /** 261119: `entrance: 'first_link'` when the first-link intro plays with this start (it shows her coming in). */
+  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean; entrance?: 'first_link' }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(opts?: { reason?: 'link_failed' }): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   /** 261107: the profile's Idle lines toggle; writes seilink_deafened (inverted). Resolves with the new state. */

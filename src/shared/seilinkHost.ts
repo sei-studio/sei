@@ -193,6 +193,11 @@ export interface SeilinkHostBridge {
   onHover?(cb: (hover: boolean) => void): () => void;
   /** A press went down on her: a small reaction at once (the click itself waits for the double-click time). */
   onPress?(cb: () => void): () => void;
+  // ── 261119: her arrival (shared/seilinkEntrance.ts) ──
+  /** How she arrives now: wait for her look, hold, come in, or just be there. */
+  onArrival?(cb: (arrival: unknown) => void): () => void;
+  /** She is in: her entrance played (or she was shown as she is), with the avatar kind it showed. */
+  arrived?(report: { played: boolean; reduced: boolean; kind: string | null }): void;
 }
 
 export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';

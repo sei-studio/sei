@@ -10,6 +10,7 @@
  */
 import type { AvatarEmotion, AvatarManifest } from '../../../shared/ipc';
 import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
+import type { SeilinkArrival } from '../../../shared/seilinkEntrance';
 
 /** Main -> host. */
 export type ToHost =
@@ -42,6 +43,8 @@ export type ToHost =
   | { type: 'level'; level: number }
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
+  /** 261119: her arrival on the desktop (wait for her look / hold / come in / just there), main/seilink/host/arrival.ts. */
+  | { type: 'arrival'; arrival: SeilinkArrival }
   | { type: 'quit' }
   /**
    * Liveness probe, every second. The host answers `pong` from its main process as soon as the
@@ -120,6 +123,8 @@ export type FromHost =
   | { type: 'verify-failed'; reasons: string[]; trigger: string }
   | { type: 'activity'; covered: boolean; paused: boolean; fps: number; reason: string }
   | { type: 'click'; kind: 'click' | 'dblclick' }
+  /** 261119: she is in (her entrance played, or she was shown as she is); checked by sanitizeArrivedReport. */
+  | { type: 'arrived'; played: boolean; reduced: boolean; kind: string | null }
   /** Her box and (M4) the dock buttons, in screen coordinates (top-left points). */
   | {
       type: 'box';

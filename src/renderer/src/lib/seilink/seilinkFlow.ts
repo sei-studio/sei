@@ -58,8 +58,11 @@ export function startSeilinkHost(
   opts: { firstRoom?: boolean; entry: SeilinkEntrySource; /** 261106: she just moved in fresh (a plain background, no room yet). */ fresh?: boolean },
 ): Promise<SeilinkHostStatus | null> {
   if (!sei.seilinkHostStart) return Promise.resolve(null);
-  const start = sei.seilinkHostStart(characterId, opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : undefined);
-  if (shouldPlayFirstLink({ seen: introSeen() })) {
+  const intro = shouldPlayFirstLink({ seen: introSeen() });
+  // 261119: main plays her entrance on the desktop for every move-in; with the intro it shows her coming in itself.
+  const hostOpts = { ...(opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : {}), ...(intro ? { entrance: 'first_link' as const } : {}) };
+  const start = sei.seilinkHostStart(characterId, Object.keys(hostOpts).length ? hostOpts : undefined);
+  if (intro) {
     useSeilinkStore.getState().playIntro({
       characterId,
       trigger: 'first_link',

@@ -51,6 +51,7 @@ import {
 import { AvatarRelay } from './avatarRelay';
 import { dockHover, dragSlopPhysical, gazeMoved, gazeSample, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
 import type { SeilinkHostCountKey } from './protocol';
+import { sanitizeArrival, type SeilinkArrival } from '../../../shared/seilinkEntrance';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
 const FAKE = fakeDesktopEnabled(app.isPackaged);
@@ -169,6 +170,8 @@ let shellLost = false;
 let room: SeilinkHostRoom | null = null;
 /** The player is chatting with her or just clicked her (main decides; RoomAvatar holds her seated). */
 let busy = false;
+/** 261119: her arrival as main last said it (replayed to the page on ready, before her room). */
+let arrival: SeilinkArrival | null = null;
 /** `<packId>/<rel>` -> realpath, from main's room message. */
 let allow = new Map<string, string>();
 let box: SeilinkBox | null = null;
@@ -310,6 +313,14 @@ function onCommand(m: ToHost): void {
     case 'level': {
       const level = Number(m.level);
       toPage(CH.level, Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0);
+      break;
+    }
+    case 'arrival': {
+      const a = sanitizeArrival(m.arrival);
+      if (!a) break;
+      arrival = a;
+      log(`arrival ${a.mode} (${a.trigger}${a.quiet ? ', quiet' : ''})`);
+      toPage(CH.arrival, a);
       break;
     }
     case 'set-paused':
@@ -489,7 +500,14 @@ ipcMain.on(CH.ready, (e) => {
   e.sender.send(CH.busy, busy);
   e.sender.send(CH.layout, layoutNow());
   e.sender.send(CH.dockState, { deafened, offer });
+  if (arrival) e.sender.send(CH.arrival, arrival);
   if (room) e.sender.send(CH.room, room);
+});
+
+ipcMain.on(CH.arrived, (e, raw: unknown) => {
+  if (!fromOurPage(e.sender)) return;
+  const r = (raw ?? {}) as { played?: unknown; reduced?: unknown; kind?: unknown };
+  send({ type: 'arrived', played: r.played === true, reduced: r.reduced === true, kind: typeof r.kind === 'string' ? r.kind.slice(0, 24) : null });
 });
 
 // RoomAvatar's avatar calls (window.sei in the host preload), relayed to main.

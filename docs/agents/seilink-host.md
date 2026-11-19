@@ -704,7 +704,7 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
   | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 3 s |
   | 3 | Awaiting response… | (same) | 6 s |
   | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 2 s |
-  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 1.7 s |
+  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (240 s since 261119), cut short by the bake finishing | 1.7 s |
   | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 1.7 s |
   | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 1.7 s |
   | 8 | Stabilizing the link… | the bake is done (`downloading`) | 1.7 s |
@@ -716,9 +716,9 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
   are longer, product feedback (261106): sending a signal and waiting for a
   reply should take a while. Product call (261116): every dwell and the typing
   halved, in place of the Skip button). The milestone gates apply on top: a slow
-  proxy holds "Awaiting response…" until it answers. Measured: a 75 s
-  bake shows the lines at 0.7, 2.7, 5.7, 11.7, 30, 45, 60, 72 and 75 s,
-  success 78.2 s; a 20 s bake at 0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4,
+  proxy holds "Awaiting response…" until it answers. Measured: a 240 s
+  bake shows the lines at 0.7, 2.7, 5.7, 11.7, 96, 144, 192, 237 and 240 s,
+  success 243.2 s; a 20 s bake at 0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4,
   22.1 and 23.8 s, success 27 s; a cached look or a replay at 0.7, 2.7,
   5.7, 11.7, 13.7, 15.4, 17.1, 18.8 and 20.5 s, success 23.7 s. On a slow stage the current line holds (no filler lines) while
   the light keeps moving. The proxy says nothing finer than queued, running
@@ -740,8 +740,14 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
   at the soonest `FAIL_BEAT_MS` (2.8 s) after the current line came up, so
   a failure during the 6 s "Awaiting response…" shows after a short
   beat): offline (stage or the window offline for
-  5 s), a request, bake or install error, no line 9 by `LINK_TIMEOUT_MS`
-  (3.5 min; the bake goes on in the background), or the host start failing.
+  5 s), a request, bake or install error, no answer from the proxy by
+  `LINK_TIMEOUT_MS` (8 min), or the host start failing. 261119: a bake
+  still running at `LINK_TIMEOUT_MS` is NOT a failure: the intro hands her
+  arrival to the desktop (`planLink` `handoff`; seilink_intro_link
+  `handoff`): the lines finish as if her look landed then, the link is
+  established, the intro does not draw her, and the wallpaper keeps waiting
+  for her look and plays her entrance (see "Her entrance on the desktop"
+  below). Both constants live in `shared/seilinkEntrance.ts`.
   The light calms and stays, no her; a Close button comes up (Esc too), which
   fades the overlay out as `aborted`. FirstLinkIntro then stops the host if
   it had started (`seilinkHostStop({reason: 'link_failed'})`, which also
@@ -868,6 +874,54 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
   onboarding. Sure: her chat, the WorldLink button spotlighted with two lines,
   then the move-in sheet. Not now: asked once more 3 days later, then never.
   Not persisted in `tutorial_state` (a quit ends it).
+
+## Her entrance on the desktop (261119, product call 261119)
+
+Before, the only entrance was inside the one-time intro, and only the intro
+waited for her Anima face set: every later move-in put her straight onto the
+wallpaper, often as her picture with the oval fade (the bake was not done).
+Now the wallpaper brings her in on every move-in, apart from the intro and
+its tutorial copy (both still once per account).
+
+- Rules: `shared/seilinkEntrance.ts` (`arrivalMode`, pure, tested). Main
+  owns one `Arrival` per host session (`main/seilink/host/arrival.ts`), so a
+  host restart neither replays her entrance nor forgets she is waiting. The
+  page draws it (`components/seilink/host/HostArrival.tsx`). Wire: ToHost
+  `arrival` {mode, trigger, quiet?} (sent on hello before her room, and on
+  every change; hostEntry replays it on page ready), FromHost `arrived`
+  {played, reduced, kind}; host channels `arrival` / `arrived`.
+- Trigger (startSeilinkHost): `restore` (app start, account switch),
+  `first_link` (the renderer passes `entrance: 'first_link'` when the intro
+  plays), `switch` (someone else moved out for her), else `move_in`.
+- Modes: `wait` (her look is on its way: anima stage checking..downloading,
+  or `unavailable` while the cut-out still lands; `lookPending`), `hold`
+  (look ready, the app has not stepped aside yet), `enter` (the intro's
+  arrival, `lib/seilink/entrance.ts`: 2.8 s fade with a 2% rise and a
+  brightness/blur clearing; reduced motion a 1.2 s fade), `show` (just
+  there). Move-in / switch: hold until the app steps aside (stageFlow
+  reveal, an exit with reveal, minimize-others with reveal; or the desktop
+  uncovered after it was covered, e.g. Win+D; or `REVEAL_WAIT_MS` 12 s),
+  then enter. Restore: show, unless she had to wait (then enter when her
+  look lands). First link: show (the intro shows her coming in), or after a
+  handoff wait then enter. The page starts `enter` only once her avatar has
+  resolved what it shows and frames run (not while the desktop is covered).
+- Waiting: one line at her chest in the intro's status-line style ("Inviting
+  {name}…", typed in, cycling dots, room ink and halo, no box). It is her
+  click area: a click lets her in now with the look she has (skip; a click
+  is not a poke then). Past `LINK_TIMEOUT_MS` it turns dimmer (`quiet`) and
+  keeps waiting; there is no failure. Main re-reads her look on every anima
+  push (`onAnimaChange` in animaRuntime.ts) and every 2 s while she waits.
+  Her desktop lines (pokes, idle lines) are dropped until she is there, and
+  the decorate-together offer waits for her arrival (`whenSeilinkArrived`).
+- Her look: a face set on disk shows at once (a re-check runs behind it).
+  `unavailable` / no_pack uses the cloud cut-out (261118); the oval-fade
+  portrait remains only as the offline or signed-out last resort.
+- Product question left open: a move-in into a saved room (live card
+  dismissed) still leaves the app up; she comes in when the desktop next
+  shows, or after 12 s if it is already partly visible.
+- Dev: `?seilinkhost=1&arrival=sim&arriveat=<ms>&facepackat=<ms>` (also
+  `wait|hold|enter|show`, `quietat`, `reduced=1`); the page's report lands
+  on `body[data-arrived]`. `scripts/seilink-entrance-shots.mjs` records it.
 
 ## Analytics (shape only)
 

@@ -15,6 +15,12 @@
  *   lang=<code>           UI language
  *   press=edit|deafen     simulate a dock press after the line shows (the caption)
  *   state=<json>          261105: the room as saved (slots, items; sanitized like the store's), e.g. after an edit
+ *   arrival=<mode>        261119: her arrival as main would send it: wait | hold | enter | show, or sim
+ *                         (the waiting line, then her entrance at `arriveat`). Absent: she is just shown.
+ *   arriveat=<ms>         sim: when her look lands and she comes in (default 6000; pair with facepackat)
+ *   quietat=<ms>          sim: when the waiting line turns quiet (the wait passed LINK_TIMEOUT_MS)
+ *   reduced=1             her entrance as under reduced motion (a fade)
+ *   The page's arrived report lands on body[data-arrived] (JSON) for the shot script.
  * Used by scripts/seilink-host-shots.mjs. Never in a packaged build (main.tsx
  * imports it only under import.meta.env.DEV).
  */
@@ -24,6 +30,7 @@ import type { SeilinkDockAction, SeilinkHostBridge, SeilinkHostRoom } from '@sha
 import { parseRoomManifest, sanitizeRoomState } from '@shared/seilinkValidate';
 import { desktopLineFace } from '@shared/seilinkExpression';
 import type { SeilinkPack } from '@shared/seilinkPack';
+import { isArrivalMode, type SeilinkArrival } from '@shared/seilinkEntrance';
 import { SeilinkHostView } from './SeilinkHostView';
 
 type Cb<T> = (v: T) => void;
@@ -34,7 +41,27 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
   // Deafen flips like the real host's answer (seilinkHost.onDockAction).
   let deafened = params.get('deafened') === '1';
   let dockState: Cb<{ deafened: boolean }> | null = null;
+  const arrivalParam = params.get('arrival');
+  const arrival: Partial<SeilinkHostBridge> = arrivalParam
+    ? {
+        onArrival: (cb: Cb<SeilinkArrival>) => {
+          const trigger = 'move_in' as const;
+          if (arrivalParam === 'sim') {
+            later(() => cb({ mode: 'wait', trigger }), 0);
+            const quietAt = Number(params.get('quietat'));
+            if (quietAt > 0) later(() => cb({ mode: 'wait', trigger, quiet: true }), quietAt);
+            later(() => cb({ mode: 'enter', trigger }), Number(params.get('arriveat') ?? 6000) || 6000);
+          } else if (isArrivalMode(arrivalParam)) later(() => cb({ mode: arrivalParam, trigger }), 0);
+          return () => {};
+        },
+        arrived: (r) => {
+          console.log(`[dev host] arrived ${JSON.stringify(r)}`);
+          document.body.dataset.arrived = JSON.stringify(r);
+        },
+      }
+    : {};
   return {
+    ...arrival,
     onRoom: (cb: Cb<SeilinkHostRoom>) => {
       void fetch(`${packUrl}manifest.json`, { cache: 'no-store' })
         .then((r) => r.json())
@@ -113,5 +140,12 @@ export function DevHostPreview(): React.ReactElement {
   const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
   // `_shared/...` (views, pattern tiles) sits beside the pack dirs, as in the real resolver.
   const resolveFor = useMemo(() => () => (rel: string) => (rel.startsWith('_shared/') ? new URL(`../${rel}`, packUrl).href : `${packUrl}${rel}`), [packUrl]);
-  return <SeilinkHostView bridge={bridge} resolveFor={resolveFor} initialConfirm={params.get('confirm') === '1'} />;
+  return (
+    <SeilinkHostView
+      bridge={bridge}
+      resolveFor={resolveFor}
+      initialConfirm={params.get('confirm') === '1'}
+      reducedMotion={params.has('reduced') ? params.get('reduced') === '1' : undefined}
+    />
+  );
 }
