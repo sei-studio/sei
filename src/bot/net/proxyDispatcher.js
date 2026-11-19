@@ -24,11 +24,18 @@
 // up themselves. Timeouts and aborts stay with the callers: their
 // AbortSignals reach the request exactly as before.
 //
-// A proxy that cannot be reached (refused, reset, unresolvable: a VPN that
-// was switched off, the bot's fork-time snapshot gone stale) is marked dead
-// for PROXY_DEAD_MS and the request moves to the next PAC entry, ending
-// DIRECT. Only a request that never started is moved, so nothing is sent
-// twice.
+// A request that fails before it started (nothing was sent, so nothing is
+// sent twice) moves to the next entry of the PAC answer. Only a proxy whose
+// socket could not be opened at all (refused, host unresolvable or
+// unreachable: a VPN that was switched off, the bot's fork-time snapshot gone
+// stale) is also marked dead for PROXY_DEAD_MS. A proxy that answered but
+// would not tunnel (407 auth, 403, 502, SOCKS5 auth or reply errors), a TLS
+// failure to an HTTPS proxy, and a reset or timeout inside the tunnel move
+// only that one request on (261120 release review: a reset inside a VPN
+// tunnel used to mark the VPN dead and send a China user DIRECT into a
+// region 403). DIRECT is tried only when the answer names it, or when the
+// answer's proxies are all loopback and all dead (the local VPN client is
+// gone, so there is nothing to protect).
 //
 // Loopback and private-network hosts never consult the resolver. Chromium
 // bypasses loopback on its own, and LAN targets (an Ollama box, a Stardew
@@ -52,40 +59,89 @@ export const PROXY_RESOLVE_TIMEOUT_MS = 3_000
 /** How long a proxy that refused a connection is skipped. */
 export const PROXY_DEAD_MS = 60_000
 
-/** Errors that mean "could not reach the proxy itself". */
-const PROXY_CONNECT_ERROR_CODES = new Set([
-  'ECONNREFUSED',
+/** Errors that mean the proxy's own socket could not be opened: the request
+ * moves on and the proxy is skipped for PROXY_DEAD_MS. In tunnel mode the
+ * target is resolved and dialled by the proxy, so these codes on our side are
+ * about the proxy host. */
+const PROXY_DEAD_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH'])
+
+/** Errors that move one request on without marking the proxy dead: they can
+ * come from inside a working tunnel (a reset, a slow TLS handshake to the
+ * target) or from a proxy that is up but refuses this request. */
+const PROXY_NEXT_ERROR_CODES = new Set([
   'ECONNRESET',
-  'ENOTFOUND',
-  'EAI_AGAIN',
-  'EHOSTUNREACH',
-  'ENETUNREACH',
   'ETIMEDOUT',
   'EPIPE',
   'UND_ERR_CONNECT_TIMEOUT',
   'UND_ERR_SOCKET',
+  // TLS to an HTTPS proxy failed. undici wraps only the altname mismatch;
+  // the others arrive as Node's own codes (see TLS_ERROR_RE).
+  'UND_ERR_PRX_TLS',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'CERT_HAS_EXPIRED',
 ])
 
-/** @param {unknown} err */
-export function isProxyConnectError(err) {
+/** Node TLS / OpenSSL error codes (a TLS failure before the request started,
+ * to the proxy or to the target through it). */
+const TLS_ERROR_RE = /^ERR_(TLS|SSL)_/
+
+/** undici's ProxyAgent reports a CONNECT answered with anything but 200 (407
+ * proxy auth, 403, 502) as a RequestAbortedError (UND_ERR_ABORTED, the code a
+ * caller abort also has), so it is told apart by its message. */
+const TUNNEL_STATUS_RE = /^Proxy response \(\d+\) !== 200 when HTTP Tunneling/
+
+/**
+ * How a proxy failure that landed before the request started is handled:
+ * 'dead' = move on and skip the proxy for a while, 'next' = move this request
+ * on only, null = not a proxy failure (the caller gets the error).
+ * @param {unknown} err
+ * @returns {'dead' | 'next' | null}
+ */
+export function proxyFailureKind(err) {
   let cur = err
   for (let i = 0; i < 4 && cur && typeof cur === 'object'; i++) {
     const code = /** @type {{ code?: unknown }} */ (cur).code
-    if (typeof code === 'string' && PROXY_CONNECT_ERROR_CODES.has(code)) return true
+    if (typeof code === 'string') {
+      if (PROXY_DEAD_ERROR_CODES.has(code)) return 'dead'
+      if (PROXY_NEXT_ERROR_CODES.has(code) || TLS_ERROR_RE.test(code) || code.startsWith('UND_ERR_SOCKS5_')) return 'next'
+      if (code === 'UND_ERR_ABORTED' && TUNNEL_STATUS_RE.test(String(/** @type {{ message?: unknown }} */ (cur).message))) {
+        return 'next'
+      }
+    }
     cur = /** @type {{ cause?: unknown }} */ (cur).cause
   }
-  return false
+  return null
+}
+
+/** @param {unknown} err */
+export function isProxyConnectError(err) {
+  return proxyFailureKind(err) !== null
+}
+
+/** @param {string} proxyUri */
+function isLoopbackProxy(proxyUri) {
+  let host
+  try {
+    host = new URL(proxyUri).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  } catch {
+    return false
+  }
+  return host === 'localhost' || host.endsWith('.localhost') || host === '::1' || /^127\.\d+\.\d+\.\d+$/.test(host)
 }
 
 const START_METHODS = new Set(['onConnect', 'onRequestStart', 'onHeaders', 'onResponseStart', 'onUpgrade', 'onRequestUpgrade'])
 
 /**
  * Wrap an undici handler so a proxy connect error that lands BEFORE the
- * request started is handed to `onFail` instead of the caller. Methods the
+ * request started is handed to `onFail` (with its proxyFailureKind) instead
+ * of the caller. Methods the
  * handler does not have stay absent (undici picks the handler API by which
  * methods exist).
  * @param {any} handler
- * @param {(err: Error) => void} onFail
+ * @param {(err: Error, kind: 'dead' | 'next') => void} onFail
  */
 function failoverHandler(handler, onFail) {
   let started = false
@@ -103,9 +159,10 @@ function failoverHandler(handler, onFail) {
       if (prop === 'onError' || prop === 'onResponseError') {
         return (...args) => {
           const err = prop === 'onError' ? args[0] : args[1]
-          if (!started && !failedOver && isProxyConnectError(err)) {
+          const kind = !started && !failedOver ? proxyFailureKind(err) : null
+          if (kind) {
             failedOver = true
-            onFail(/** @type {Error} */ (err))
+            onFail(/** @type {Error} */ (err), kind)
             return undefined
           }
           return value.apply(target, args)
@@ -166,6 +223,8 @@ export class SystemProxyDispatcher extends Dispatcher {
     /** Last route logged per origin, so the log says when routing CHANGES. */
     this.logged = new Map()
     this.loggedSocks4 = false
+    /** proxy|code pairs already logged as a one-request fall-through. */
+    this.loggedNext = new Set()
   }
 
   /** @param {string} origin @param {Array<string | null>} chain @param {boolean} failed */
@@ -186,7 +245,8 @@ export class SystemProxyDispatcher extends Dispatcher {
   }
 
   /**
-   * The proxy list (ending DIRECT) for an origin. A lookup that fails or
+   * The proxy list for an origin, ending DIRECT (null) only when the answer
+   * names DIRECT (an answer with no usable entry is DIRECT). A lookup that fails or
    * takes longer than resolveTimeoutMs means DIRECT, remembered for
    * failedTtlMs; a late answer still lands in the cache when it arrives.
    * @param {string} origin  e.g. https://api.sei.gg
@@ -206,8 +266,7 @@ export class SystemProxyDispatcher extends Dispatcher {
             this.log(`[net] SOCKS (v4) proxy entry for ${origin} is tried as SOCKS5`)
           }
           const chain = proxyChainFromPac(answer)
-          if (chain[chain.length - 1] !== null) chain.push(null)
-          return chain
+          return chain.length ? chain : [null]
         },
         () => null,
       )
@@ -252,7 +311,7 @@ export class SystemProxyDispatcher extends Dispatcher {
   /** @param {string} proxy @param {Error} err @param {string} origin */
   markDead(proxy, err, origin) {
     this.deadUntil.set(proxy, this.now() + this.deadMs)
-    const code = /** @type {{ code?: string }} */ (err)?.code ?? /** @type {any} */ (err)?.cause?.code ?? 'error'
+    const code = errorCode(err)
     this.log(`[net] proxy ${proxy} unreachable (${code}) for ${origin}; skipping it for ${Math.round(this.deadMs / 1000)}s`)
   }
 
@@ -266,24 +325,57 @@ export class SystemProxyDispatcher extends Dispatcher {
     return agent
   }
 
+  /** @param {string} proxy @param {Error} err @param {string} origin */
+  noteFallthrough(proxy, err, origin) {
+    const code = errorCode(err)
+    const key = `${proxy}|${code}`
+    if (this.loggedNext.has(key)) return
+    this.loggedNext.add(key)
+    this.log(`[net] proxy ${proxy} failed (${code}) for ${origin}; trying the next entry for this request`)
+  }
+
+  /**
+   * True when every proxy of a chain with no DIRECT is a loopback proxy that
+   * is dead: the local VPN client is gone, so DIRECT is the only way left.
+   * @param {Array<string | null>} chain
+   */
+  localProxiesGone(chain) {
+    return chain.length > 0 && chain.every((p) => p !== null && isLoopbackProxy(p) && this.isDead(p))
+  }
+
   /**
    * Dispatch through the first live entry of `chain` at or after `from`; a
-   * connect error on a proxy moves the request to the next entry.
+   * proxy failure before the request started moves it to the next entry.
+   * When the entries run out without a DIRECT: a chain of gone loopback
+   * proxies goes DIRECT, a request that already failed gets that error, and
+   * a fresh request whose proxies are all dead tries them anyway (as
+   * Chromium does), since there is nothing else it may use.
    * @param {Array<string | null>} chain
    * @param {string} origin
    * @param {any} opts
    * @param {any} handler
    * @param {number} [from]
+   * @param {Error | null} [lastErr]
+   * @param {boolean} [ignoreDead]
    */
-  dispatchVia(chain, origin, opts, handler, from = 0) {
+  dispatchVia(chain, origin, opts, handler, from = 0, lastErr = null, ignoreDead = false) {
     let i = from
-    while (i < chain.length && chain[i] !== null && this.isDead(chain[i])) i++
-    const proxy = i < chain.length ? chain[i] : null
+    while (i < chain.length && chain[i] !== null && !ignoreDead && this.isDead(chain[i])) i++
+    if (i >= chain.length) {
+      if (this.localProxiesGone(chain)) return this.direct.dispatch(opts, handler)
+      if (lastErr) {
+        failHandler(handler, lastErr)
+        return true
+      }
+      return this.dispatchVia(chain, origin, opts, handler, 0, null, true)
+    }
+    const proxy = chain[i]
     if (proxy === null) return this.direct.dispatch(opts, handler)
-    const wrapped = failoverHandler(handler, (err) => {
-      this.markDead(proxy, err, origin)
+    const wrapped = failoverHandler(handler, (err, kind) => {
+      if (kind === 'dead') this.markDead(proxy, err, origin)
+      else this.noteFallthrough(proxy, err, origin)
       try {
-        this.dispatchVia(chain, origin, opts, handler, i + 1)
+        this.dispatchVia(chain, origin, opts, handler, i + 1, err, ignoreDead)
       } catch (e) {
         failHandler(handler, /** @type {Error} */ (e))
       }
@@ -324,6 +416,11 @@ export class SystemProxyDispatcher extends Dispatcher {
   async destroy(err) {
     await Promise.all([...this.agents.values()].map((a) => a.destroy(err ?? null).catch(() => {})))
   }
+}
+
+/** @param {unknown} err */
+function errorCode(err) {
+  return /** @type {any} */ (err)?.code ?? /** @type {any} */ (err)?.cause?.code ?? 'error'
 }
 
 /** @param {string} uri */

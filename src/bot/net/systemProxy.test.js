@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import http from 'node:http'
 import net from 'node:net'
-import { Agent, ProxyAgent } from 'undici'
+import { Agent, ProxyAgent, Dispatcher, errors as undiciErrors } from 'undici'
 import {
   proxyChainFromPac,
   proxyUriFromPac,
@@ -9,6 +9,7 @@ import {
   snapshotResolver,
   SystemProxyDispatcher,
   isProxyConnectError,
+  proxyFailureKind,
 } from './proxyDispatcher.js'
 
 describe('proxyChainFromPac', () => {
@@ -33,6 +34,35 @@ describe('isProxyConnectError', () => {
     expect(isProxyConnectError(wrapped)).toBe(true)
     expect(isProxyConnectError(new Error('aborted'))).toBe(false)
     expect(isProxyConnectError(null)).toBe(false)
+  })
+})
+
+describe('proxyFailureKind', () => {
+  const coded = (code, message = code) => Object.assign(new Error(message), { code })
+  it('marks dead only when the proxy socket could not be opened', () => {
+    for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']) {
+      expect(proxyFailureKind(coded(code))).toBe('dead')
+    }
+    for (const code of ['ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT']) {
+      expect(proxyFailureKind(coded(code))).toBe('next')
+    }
+  })
+
+  it('moves on from a refused tunnel, a proxy TLS failure and SOCKS5 refusals', () => {
+    const tunnel = new undiciErrors.RequestAbortedError('Proxy response (407) !== 200 when HTTP Tunneling')
+    expect(tunnel.code).toBe('UND_ERR_ABORTED')
+    expect(proxyFailureKind(tunnel)).toBe('next')
+    expect(proxyFailureKind(new TypeError('fetch failed', { cause: tunnel }))).toBe('next')
+    expect(proxyFailureKind(new undiciErrors.SecureProxyConnectionError(coded('ERR_TLS_CERT_ALTNAME_INVALID')))).toBe('next')
+    expect(proxyFailureKind(coded('ERR_SSL_WRONG_VERSION_NUMBER'))).toBe('next')
+    expect(proxyFailureKind(coded('DEPTH_ZERO_SELF_SIGNED_CERT'))).toBe('next')
+    expect(proxyFailureKind(coded('UND_ERR_SOCKS5_AUTH_FAILED'))).toBe('next')
+  })
+
+  it('leaves a caller abort and other errors with the caller', () => {
+    expect(proxyFailureKind(new undiciErrors.RequestAbortedError())).toBe(null)
+    expect(proxyFailureKind(coded('UND_ERR_ABORTED', 'caller gave up'))).toBe(null)
+    expect(proxyFailureKind(new Error('boom'))).toBe(null)
   })
 })
 
@@ -133,6 +163,36 @@ function mappedDirect(targetPort) {
       s.once('error', (e) => cb(e, null))
     },
   })
+}
+
+/** A proxy agent that fails every request before it starts with `err`. */
+class FailingAgent extends Dispatcher {
+  constructor(uri, err, dispatched) {
+    super()
+    this.uri = uri
+    this.err = err
+    this.dispatched = dispatched
+  }
+  dispatch(_opts, handler) {
+    this.dispatched.push(this.uri)
+    queueMicrotask(() => {
+      if (typeof handler.onResponseError === 'function') handler.onResponseError(null, this.err)
+      else handler.onError(this.err)
+    })
+    return true
+  }
+  async close() {}
+  async destroy() {}
+}
+
+/** An HTTP proxy that answers every CONNECT with `status`. */
+async function refusingProxy(status) {
+  const proxy = http.createServer((_req, res) => res.writeHead(status).end())
+  proxy.on('connect', (_req, socket) => {
+    socket.end(`HTTP/1.1 ${status} Nope\r\nProxy-Authenticate: Basic realm="corp"\r\nContent-Length: 0\r\n\r\n`)
+  })
+  await new Promise((r) => proxy.listen(0, '127.0.0.1', r))
+  return { port: proxy.address().port, close: () => new Promise((r) => proxy.close(r)) }
 }
 
 function countingProxyAgent(uri, dispatched) {
@@ -290,7 +350,7 @@ describe('SystemProxyDispatcher with the built-in fetch', () => {
     expect(dispatched).toEqual([dead, dead])
   })
 
-  it('falls back DIRECT once even when the PAC answer names no DIRECT', async () => {
+  it('goes DIRECT with no DIRECT in the answer only when its loopback proxy is gone', async () => {
     h = await harness()
     const closedPort = await freePort()
     const dispatched = []
@@ -338,5 +398,104 @@ describe('SystemProxyDispatcher with the built-in fetch', () => {
     await (await fetch(`http://other.invalid:${h.targetPort}/`, { dispatcher: d })).text()
     expect(made).toEqual(['socks5://127.0.0.1:1'])
     expect(lines.filter((l) => l.includes('tried as SOCKS5'))).toHaveLength(1)
+  })
+
+  it('moves past a proxy that answers 407 without marking it dead (DIRECT allowed)', async () => {
+    h = await harness()
+    const auth = await refusingProxy(407)
+    const dispatched = []
+    const lines = []
+    try {
+      d = new SystemProxyDispatcher({
+        resolve: () => `PROXY 127.0.0.1:${auth.port}; DIRECT`,
+        direct: mappedDirect(h.targetPort),
+        makeAgent: (uri) => countingProxyAgent(uri, dispatched),
+        log: (m) => lines.push(m),
+      })
+      const res = await fetch(`${h.url}/`, { dispatcher: d })
+      expect(await res.text()).toMatch(/^hello blocked\.invalid/)
+      // Not dead: the next request asks the proxy again, then goes DIRECT.
+      await (await fetch(`${h.url}/again`, { dispatcher: d })).text()
+      expect(dispatched).toHaveLength(2)
+      expect(lines.some((l) => l.includes('unreachable'))).toBe(false)
+      expect(lines.filter((l) => l.includes('failed (UND_ERR_ABORTED)') && l.includes('trying the next entry'))).toHaveLength(1)
+    } finally {
+      await d.close()
+      await auth.close()
+    }
+  })
+
+  it('never goes DIRECT past a 407 when the answer names no DIRECT', async () => {
+    h = await harness()
+    const auth = await refusingProxy(407)
+    try {
+      d = new SystemProxyDispatcher({
+        resolve: () => `PROXY 127.0.0.1:${auth.port}`,
+        direct: mappedDirect(h.targetPort),
+      })
+      await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    } finally {
+      await d.close()
+      await auth.close()
+    }
+  })
+
+  it('keeps a VPN proxy whose tunnel reset: no dead mark, no DIRECT the answer did not allow', async () => {
+    h = await harness()
+    const dispatched = []
+    const reset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
+    for (const proxy of ['127.0.0.1:7890', '10.1.2.3:8080']) {
+      dispatched.length = 0
+      d = new SystemProxyDispatcher({
+        resolve: () => `PROXY ${proxy}`,
+        direct: mappedDirect(h.targetPort),
+        makeAgent: (uri) => new FailingAgent(uri, reset, dispatched),
+      })
+      await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+      await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+      expect(dispatched).toEqual([`http://${proxy}`, `http://${proxy}`])
+      expect(d.isDead(`http://${proxy}`)).toBe(false)
+      await d.close()
+    }
+  })
+
+  it('moves a reset request DIRECT when the answer allows it, without marking the proxy dead', async () => {
+    h = await harness()
+    const dispatched = []
+    const timeout = Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })
+    d = new SystemProxyDispatcher({
+      resolve: () => 'PROXY 10.1.2.3:8080; DIRECT',
+      direct: mappedDirect(h.targetPort),
+      makeAgent: (uri) => new FailingAgent(uri, timeout, dispatched),
+    })
+    await (await fetch(`${h.url}/`, { dispatcher: d })).text()
+    await (await fetch(`${h.url}/`, { dispatcher: d })).text()
+    expect(dispatched).toEqual(['http://10.1.2.3:8080', 'http://10.1.2.3:8080'])
+  })
+
+  it('marks a refused remote proxy dead but, with nothing else allowed, keeps trying it instead of DIRECT', async () => {
+    h = await harness()
+    const dispatched = []
+    const lines = []
+    const refused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+    d = new SystemProxyDispatcher({
+      resolve: () => 'PROXY 10.1.2.3:8080',
+      direct: mappedDirect(h.targetPort),
+      makeAgent: (uri) => new FailingAgent(uri, refused, dispatched),
+      log: (m) => lines.push(m),
+    })
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    expect(d.isDead('http://10.1.2.3:8080')).toBe(true)
+    expect(lines.some((l) => l.includes('unreachable (ECONNREFUSED)'))).toBe(true)
+    await expect(fetch(`${h.url}/`, { dispatcher: d })).rejects.toThrow()
+    expect(dispatched).toHaveLength(2)
+  })
+
+  it('treats an answer with no usable entry as DIRECT', async () => {
+    h = await harness()
+    d = new SystemProxyDispatcher({ resolve: () => 'QUIC 1.2.3.4:443', direct: mappedDirect(h.targetPort) })
+    const res = await fetch(`${h.url}/`, { dispatcher: d })
+    expect(res.status).toBe(200)
+    await res.text()
   })
 })

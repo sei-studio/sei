@@ -318,4 +318,48 @@ describe('the window between dying and the death turn (pass 19)', () => {
     await orch.handleDispatch('sei:idle', { quietMs: 60_000 })
     expect(provider.calls.length).toBe(0)
   })
+
+  it('the death hold outlasts its 10 s backstop while the adapter is still respawning (261120)', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const { adapter } = makeAdapter()
+      const provider = makeProvider([{ text: '', toolUses: [] }])
+      const reenqueue = vi.fn()
+      const orch = createOrchestrator({ adapter, config: makeConfig(), reenqueue, _anthropicOverride: provider })
+      let respawning = true
+      orch.noteDeath({ stillDying: () => respawning })
+      const line = chat('sui??')
+      await orch.handleDispatch('sei:chat_received', line)
+      expect(provider.calls.length).toBe(0)
+      // Past the plain 10 s backstop: still held while the respawn runs.
+      vi.advanceTimersByTime(15_000)
+      expect(reenqueue.mock.calls.filter((c) => c[0] === 'sei:chat_received')).toHaveLength(0)
+      // The respawn stalls (no death turn ever comes): released once it stops.
+      respawning = false
+      vi.advanceTimersByTime(1_000)
+      const resent = reenqueue.mock.calls.filter((c) => c[0] === 'sei:chat_received')
+      expect(resent).toHaveLength(1)
+      expect(resent[0][1]).toBe(line)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('the extended death hold never passes its 30 s ceiling', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const { adapter } = makeAdapter()
+      const provider = makeProvider([{ text: '', toolUses: [] }])
+      const reenqueue = vi.fn()
+      const orch = createOrchestrator({ adapter, config: makeConfig(), reenqueue, _anthropicOverride: provider })
+      orch.noteDeath({ stillDying: () => true })
+      await orch.handleDispatch('sei:chat_received', chat('hello?'))
+      vi.advanceTimersByTime(29_000)
+      expect(reenqueue.mock.calls.filter((c) => c[0] === 'sei:chat_received')).toHaveLength(0)
+      vi.advanceTimersByTime(1_500)
+      expect(reenqueue.mock.calls.filter((c) => c[0] === 'sei:chat_received')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

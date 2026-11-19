@@ -492,8 +492,12 @@ range (`A–Z`), never as prose punctuation.
   without loading undici). DIRECT stays on Node's built-in Agent: the undici
   package fills the shared global slot with its own Agent when it LOADS, so
   never import `undici` or `proxyDispatcher.js` statically from main or the
-  bot entry. A proxy that refuses the connection is skipped for 60 s and the
-  request moves down the PAC list, always ending DIRECT; a failed or slow
+  bot entry. A request that fails before it started moves down the PAC list
+  (proxy refused/unresolvable/unreachable: also skipped for 60 s; 407/403
+  tunnel answer, proxy TLS failure, reset or timeout in the tunnel: that
+  request only). DIRECT only when the answer names it or its loopback
+  proxies are all gone (261120: a tunnel reset sent China VPN users DIRECT
+  into a region 403); a failed or slow
   (3 s) lookup is DIRECT for 30 s. `undici` is pinned exactly and must share
   its major with Electron's `process.versions.undici` (a test checks).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
