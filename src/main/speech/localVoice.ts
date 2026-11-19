@@ -70,8 +70,9 @@ export const LOCAL_VOICE_SPEC: Record<LocalVoiceId, LocalVoiceSpec> = {
 };
 
 /**
- * Gender of the 260707-curated legacy pool ids (shared/poolVoiceIds.ts LEGACY_VOICE_IDS).
- * Closed set; transcribed from that module's section comments.
+ * Gender of the legacy pool ids (shared/poolVoiceIds.ts LEGACY_VOICE_IDS: the
+ * 260707 cut plus the 261119 retirements). Closed set; transcribed from that
+ * module's comments. A test keeps it covering every legacy id.
  */
 const LEGACY_VOICE_GENDER: Record<string, VoiceGender> = {
   // female
@@ -110,6 +111,16 @@ const LEGACY_VOICE_GENDER: Record<string, VoiceGender> = {
   PerZoH0r6nxBZXCoIPpv: 'male', // Michael
   UzI1NsMEV3ni5JRkRSls: 'male', // Alistair
   RcEmXcISaHUgHOU4uNTz: 'male', // Hansi
+  // Retired from VOICES 261119. Neutral ones map to 'female', the same as a
+  // neutral pool voice, so their local voice does not change.
+  YHcCpa6SBWnKDaCPZJQR: 'female', // Mora
+  bAq8AI9QURijOtmeFFqT: 'female', // Sigma (neutral)
+  SAz9YHcvj6GT2YYXdXww: 'female', // River (neutral)
+  Z9VxF84ucVtzvKlmYFhh: 'female', // Ramona (neutral)
+  YKlogvnVogI4aFHoGIEw: 'female', // Aaron (neutral)
+  '7squ7rvxEIZ2rYy7KYPP': 'male', // Malakai
+  M5E055lOUxMi0kJpGyE9: 'male', // Gravel
+  '507tTFX0IPtqFzGd1CAL': 'male', // Rusty
 };
 
 type PoolVoice = { id: string; gender: string };

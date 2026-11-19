@@ -35,7 +35,20 @@ import {
   ownVoiceHonored,
   closeSharedVoiceId,
   sharedVoiceIdFor,
+  listPoolVoices,
 } from './voiceAssign';
+
+/** The eight voices retired from VOICES on 261119 (now in LEGACY_VOICE_IDS). */
+const RETIRED_261119 = [
+  'M5E055lOUxMi0kJpGyE9', // Gravel
+  '507tTFX0IPtqFzGd1CAL', // Rusty
+  'bAq8AI9QURijOtmeFFqT', // Sigma
+  'Z9VxF84ucVtzvKlmYFhh', // Ramona
+  'SAz9YHcvj6GT2YYXdXww', // River
+  'YKlogvnVogI4aFHoGIEw', // Aaron
+  '7squ7rvxEIZ2rYy7KYPP', // Malakai
+  'YHcCpa6SBWnKDaCPZJQR', // Mora
+];
 
 function makeCharacter(overrides: Partial<Character> = {}): Character {
   return {
@@ -129,7 +142,10 @@ describe('resolveVoiceId', () => {
       metadata: { soulcaster_sheet: { gender: 'female', age: 22, background: 'human' } },
     });
     const eligible = VOICES.filter(
-      (v) => (v.gender === 'female' || v.gender === 'neutral') && !v.tags.includes('robotic'),
+      (v) =>
+        (v.gender === 'female' || v.gender === 'neutral') &&
+        !v.tags.includes('robotic') &&
+        v.roll !== false,
     );
     const free = eligible[eligible.length - 1];
     const others = eligible
@@ -166,11 +182,13 @@ describe('personaVoiceHints', () => {
     expect(personaVoiceHints('a person who exists').seeds).toHaveLength(0);
   });
 
-  it('seed-weighted fallback shifts a monotone-robot persona toward deep/dry/calm voices', async () => {
+  it('seed-weighted fallback gives a monotone-robot persona a robotic or deep/dry/calm voice', async () => {
     // Not a determinism re-test — assert the ROLLED voice for a Marv-like
-    // persona carries at least one of the tags its seeds weight toward,
-    // across a spread of character ids (weights are soft, so allow the roll
-    // to disagree occasionally; a majority is the behavioral claim).
+    // persona is either a robotic voice (the robot rule, 261119: robotic
+    // voices take a fixed 70% of a robot's roll, and Vector carries no
+    // mood tags) or carries one of the tags its seeds weight toward, across
+    // a spread of character ids (weights are soft, so allow the roll to
+    // disagree occasionally; a majority is the behavioral claim).
     const wantTags = new Set(['deep', 'dry', 'calm', 'steady', 'dark', 'raspy', 'soft']);
     let hits = 0;
     const N = 12;
@@ -184,6 +202,26 @@ describe('personaVoiceHints', () => {
       });
       const v = await resolveVoiceId(c);
       const entry = VOICES.find((e) => e.id === v);
+      if (entry?.tags.some((t) => t === 'robotic' || wantTags.has(t))) hits += 1;
+    }
+    expect(hits).toBeGreaterThanOrEqual(Math.ceil(N * 0.6));
+  });
+
+  it('seed-weighted fallback shifts a monotone HUMAN persona toward deep/dry/calm voices', async () => {
+    const wantTags = new Set(['deep', 'dry', 'calm', 'steady', 'dark', 'raspy', 'soft', 'wise']);
+    let hits = 0;
+    const N = 12;
+    for (let i = 0; i < N; i++) {
+      const c = makeCharacter({
+        id: `ccccccc${i}-3333-4333-8333-333333333333`,
+        persona: {
+          source: 'A clinically depressed old miner. Monotonous, dead inside, endlessly gloomy.',
+          expanded: 'expanded text',
+        },
+      });
+      const v = await resolveVoiceId(c);
+      const entry = VOICES.find((e) => e.id === v);
+      expect(entry?.tags.includes('robotic')).toBe(false);
       if (entry?.tags.some((t) => wantTags.has(t))) hits += 1;
     }
     expect(hits).toBeGreaterThanOrEqual(Math.ceil(N * 0.6));
@@ -208,6 +246,40 @@ describe('assignedVoiceId', () => {
     expect(await resolveVoiceId(c)).toBe(legacy);
     expect(mockSave).not.toHaveBeenCalled();
     expect(assignedVoiceId(makeCharacter({ metadata: { voiceId: 'not-a-voice-anywhere' } }))).toBeNull();
+  });
+
+  // 261119 voice library refresh: the retired voices left VOICES but every
+  // character that already speaks with one keeps it.
+  it('keeps a 261119-retired voice id instead of re-rolling', async () => {
+    for (const id of RETIRED_261119) {
+      mockSave.mockClear();
+      expect(VOICES.some((v) => v.id === id)).toBe(false);
+      const c = makeCharacter({ metadata: { voiceId: id } });
+      expect(assignedVoiceId(c)).toBe(id);
+      expect(await resolveVoiceId(c)).toBe(id);
+      expect(mockSave).not.toHaveBeenCalled();
+    }
+  });
+
+  // 261119: picker-only voices (roll: false, e.g. Lyan = Sui's voice) are
+  // never handed out by the fallback roll, whatever the character.
+  it('the fallback roll never lands on a picker-only voice', async () => {
+    const pickerOnly = new Set(VOICES.filter((v) => v.roll === false).map((v) => v.id));
+    expect(pickerOnly.size).toBeGreaterThan(0);
+    const sheets = [
+      { gender: 'female', age: 22, background: 'human' },
+      { gender: 'female', age: 35, background: 'human' },
+      { gender: 'male', age: 20, background: 'human' },
+      { gender: 'male', age: 40, background: 'human' },
+      { gender: 'other', age: 24, background: 'human' },
+    ];
+    for (let i = 0; i < 200; i++) {
+      const c = makeCharacter({
+        id: `bbbbbbb${i}-2222-4222-8222-222222222222`,
+        metadata: { soulcaster_sheet: sheets[i % sheets.length] },
+      });
+      expect(pickerOnly.has(await resolveVoiceId(c))).toBe(false);
+    }
   });
 
   // 261019: a voice from the user's own ElevenLabs account is outside the
@@ -422,5 +494,16 @@ describe('voice for others (metadata.voiceShared, 261019)', () => {
     expect(saved.metadata.voiceShared).toBeUndefined();
     expect(saved.metadata.voiceOwn).toBeUndefined();
     expect(pool.some((p) => p.id === saved.metadata.voiceId)).toBe(true);
+  });
+});
+
+// 261119: the picker lists every VOICES entry (picker-only ones too) and
+// never a retired voice; a retired voice shows as the "Current voice" row.
+describe('listPoolVoices', () => {
+  it('lists picker-only voices and no retired ones', () => {
+    const ids = listPoolVoices().map((v) => v.id);
+    expect(ids).toHaveLength(VOICES.length);
+    for (const v of VOICES.filter((e) => e.roll === false)) expect(ids).toContain(v.id);
+    for (const id of RETIRED_261119) expect(ids).not.toContain(id);
   });
 });

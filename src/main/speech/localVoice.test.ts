@@ -9,6 +9,7 @@ import {
   voiceGenderFor,
 } from './localVoice';
 import { SPEECH_PACKS } from './packs';
+import { LEGACY_VOICE_IDS } from '../../shared/poolVoiceIds';
 
 type PoolVoice = { id: string; label: string; gender: string };
 const pool = VOICES as PoolVoice[];
@@ -32,6 +33,21 @@ describe('voiceGenderFor', () => {
     expect(voiceGenderFor('EXAVITQu4vr4xnSDxMaL')).toBe('female'); // Sarah
     expect(voiceGenderFor('JBFqnCBsd6RMkjVDRZzb')).toBe('male'); // George
     expect(voiceGenderFor('RcEmXcISaHUgHOU4uNTz')).toBe('male'); // Hansi
+  });
+
+  // 261119: the retired voices left VOICES, so only the static table knows
+  // their gender now. Without it Malakai, Gravel and Rusty would turn female.
+  it('maps the 261119-retired ids by the static table', () => {
+    expect(voiceGenderFor('7squ7rvxEIZ2rYy7KYPP')).toBe('male'); // Malakai
+    expect(voiceGenderFor('M5E055lOUxMi0kJpGyE9')).toBe('male'); // Gravel
+    expect(voiceGenderFor('507tTFX0IPtqFzGd1CAL')).toBe('male'); // Rusty
+    expect(voiceGenderFor('YHcCpa6SBWnKDaCPZJQR')).toBe('female'); // Mora
+  });
+
+  it('every legacy id has a table gender (a hint never decides it)', () => {
+    for (const id of LEGACY_VOICE_IDS) {
+      expect(voiceGenderFor(id, 'male'), id).toBe(voiceGenderFor(id, 'female'));
+    }
   });
 
   it('falls back to female for unknown / absent ids', () => {
