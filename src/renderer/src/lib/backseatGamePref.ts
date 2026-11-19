@@ -4,7 +4,7 @@
  *
  * The popup shows on the FIRST click of a backseat game tile and never again
  * for that game on this account. Same storage shape and reasoning as
- * gamesTipPref: localStorage (a cosmetic flag is not worth config.json's
+ * worldlinkTipPref: localStorage (a cosmetic flag is not worth config.json's
  * whole-config write hazard), defensive reads, best-effort writes, and a key
  * that carries the PROFILE SCOPE (account UUID or 'local') because
  * localStorage is one bucket for the whole app and does not move with an

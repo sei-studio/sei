@@ -103,7 +103,18 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 | `seilink_entry` | every WorldLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
 | `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`; since 261106 v6 `aborted` = closed from the WorldLink failure line, and the v6 intro runs 30 s or longer so duration_bucket is mostly `gt20s`: use `seilink_intro_link.total_ms`) | character_id, action, trigger `first_link`/`replay`, style `aurora` (the only one since 261106 v3; `bloom`/`tide` earlier that day, `holo`/`glitch`/`tunnel` before), mood `eclipse` (261106 v4: the only colour mood; `accretion`/`nebula` were sent on 261106 v3 builds only), end_on `plain_dark`/`plain_light`/`room` (what it settled into), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
 | `seilink_intro_link` | once per intro, when it ends (or is unmounted): how the WorldLink status lines went (261106 v6, `lib/seilink/worldLink.ts` linkReport) | outcome `success` (the success line landed)/`failed` (the failure line showed and was closed)/`abandoned` (skipped or closed before either), failure `offline`/`network`/`timeout`/`bake_failed`/`install`/`http`/`auth`/`host`/`error` (failed only), trigger, reduced_motion, lines_shown (0 to 9), line_1_ms .. line_9_ms (how long each line was on screen), total_ms, slowest (the milestone that took longest after the one before: `sent`/`answered`/`running`/`baked`/`installed`/`host`) + slowest_ms, anima_start (her bake's `AnimaStage` when the intro started, or `none`). No character id, no text | Is the link fast enough, which stage is slow, how often it fails and why |
+| `feature_tip` | the one-time "New" tip under the chat header's WorldLink button (261119, `lib/worldlinkTipPref`): `shown` (once per account per app session), `opened` (the WorldLink button clicked while it was up; the same click also sends `seilink_entry` source `button`), `dismissed` ("Got it") | target `worldlink` (closed enum, so a later move of the tip is a separate series), action, character_id | Does the tip drive people into WorldLink |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
+
+The "New" tip and WorldLink's own onboarding (261119): the tip never shows
+while a tour runs, a modal or any WorldLink surface is up (sheet, editor,
+intro, live hint, a move in progress), and never for someone who already
+knows WorldLink (intro seen, a companion on the desktop, or the tour
+finished; a tour only offered or snoozed once does not count). Every
+WorldLink entry (`seilinkFlow.trackEntry`) retires it for good, so the
+button click flows straight into the sheet and the first-link intro with the
+tip already gone. The guide's tour is unchanged and may still be offered on
+Home to someone who only dismissed the tip.
 
 Profile page (261107, v0.7; reorganized by product call 261110, then split
 into a section menu on 261110 v2): the gear menu is gone. Its WorldLink items

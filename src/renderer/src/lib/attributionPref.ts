@@ -5,9 +5,9 @@
  * Why per machine, not per account: the question is about how this install
  * came to exist. It is asked before sign-in (the scope is still 'local' at
  * that point), and a second account on the same machine arrived the same way
- * or was told by the first. So the key carries no scope, unlike gamesTipPref.
+ * or was told by the first. So the key carries no scope, unlike worldlinkTipPref.
  *
- * Why localStorage: same reasoning as gamesTipPref. A one-time renderer flag,
+ * Why localStorage: same reasoning as worldlinkTipPref. A one-time renderer flag,
  * defensive reads, best-effort writes. The failure mode (storage unavailable)
  * is that the question can appear again on a replayed onboarding, which is
  * harmless: every answer is one event and the person property is set once.

@@ -12,6 +12,7 @@ import {
   SEILINK_SETUP_EVENT,
   SEILINK_SETUP_STEP_EVENT,
   SETUP_OPENED_FROM,
+  FEATURE_TIP_EVENT,
   SEILINK_ENTRY_EVENT,
   SEILINK_INTRO_EVENT,
   SEILINK_INTRO_LINK_EVENT,
@@ -30,7 +31,24 @@ describe('isSeilinkIntroEvent', () => {
     expect(isSeilinkIntroEvent(SEILINK_TOUR_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent(SEILINK_ENTRY_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent(SEILINK_INTRO_LINK_EVENT)).toBe(true);
+    expect(isSeilinkIntroEvent(FEATURE_TIP_EVENT)).toBe(true);
     expect(isSeilinkIntroEvent('seilink_movein_sheet')).toBe(false);
+  });
+});
+
+describe('feature_tip', () => {
+  it('keeps the closed shape and names the target', () => {
+    expect(
+      sanitizeSeilinkIntroTrack(FEATURE_TIP_EVENT, { character_id: CID, target: 'worldlink', action: 'opened', text: 'x' }),
+    ).toEqual({ character_id: CID, target: 'worldlink', action: 'opened' });
+  });
+
+  it('falls back on unknown values instead of passing them through', () => {
+    expect(sanitizeSeilinkIntroTrack(FEATURE_TIP_EVENT, { character_id: 'nope', target: 'games', action: 'clicked' })).toEqual({
+      character_id: null,
+      target: 'worldlink',
+      action: 'shown',
+    });
   });
 });
 

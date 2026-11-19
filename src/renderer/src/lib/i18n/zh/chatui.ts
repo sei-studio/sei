@@ -63,7 +63,7 @@ export const ZH_CHATUI: Record<string, string> = {
   'Hold to move': '按住拖动',
 
   // Screen share (Backseat)
-  'Backseat (beta)': 'Backseat（测试版）',
+  'Backseat': 'Backseat',
   // Disabled-state tooltips (260907)
   'End the Minecraft session to use Backseat': '结束 Minecraft 会话后才能使用 Backseat',
   'End the Minecraft session to share your screen': '结束 Minecraft 会话后才能共享屏幕',
@@ -74,9 +74,6 @@ export const ZH_CHATUI: Record<string, string> = {
   'Screen sharing needs a model that can see images. Your current model does not support vision.':
     '屏幕共享需要能看懂图像的模型。你当前的模型不支持视觉能力。',
   'NEW': '新功能',
-  // One-time games tip under the header's games button (260929).
-  'New games added': '新增游戏',
-  '{first} and {second} are here. Play them with {name}.': '{first}和{second}来啦，和{name}一起玩吧。',
   'Show {name} your screen': '把你的屏幕分享给{name}',
   'Sound is shared too, so {name} can hear it.': '声音也会一起共享，{name} 能听到。',
   'Sharing starts a voice call.': '开始共享会同时发起语音通话。',
