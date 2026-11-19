@@ -2314,8 +2314,6 @@ export const PT_BR: Record<string, string> = {
   "WorldLink": "WorldLink",
   "WorldLink (beta)": "WorldLink (beta)",
   "{name} can move onto your desktop and live on your wallpaper.": "{name} pode se mudar para a sua área de trabalho e morar no seu papel de parede.",
-  "WorldLink (beta): edit {name}'s room": "WorldLink (beta): editar o quarto de {name}",
-  "WorldLink (beta): put {name} on your desktop": "WorldLink (beta): colocar {name} na sua área de trabalho",
   "Replay WorldLink intro": "Rever a introdução do WorldLink",
   // 261106 v6: the WorldLink first-link intro's status lines ({world} is her world's six-digit number).
   "Initializing WorldLink…": "Inicializando o WorldLink…",

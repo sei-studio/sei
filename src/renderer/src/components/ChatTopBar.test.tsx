@@ -86,9 +86,18 @@ describe('ChatTopBar beta tags', () => {
   it('tags WorldLink "(beta)" and no longer tags Backseat', () => {
     const html = render();
     expect(html).toContain('aria-label="WorldLink (beta)"');
-    expect(html).toContain('data-tip="WorldLink (beta): put Companion on your desktop"');
+    expect(html).toContain('data-tip="WorldLink (beta)"');
+    expect(html).not.toContain('on your desktop"');
     expect(html).toContain('aria-label="Backseat"');
     expect(html).not.toContain('Backseat (beta)');
+  });
+
+  it('keeps the plain "WorldLink (beta)" tooltip once she lives on the desktop', () => {
+    seilink.status = { state: 'running', characterId: 'c1' };
+    const html = render();
+    expect(html).toContain('data-tip="WorldLink (beta)"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).not.toContain('room"');
   });
 });
 

@@ -2314,8 +2314,6 @@ export const JA: Record<string, string> = {
   "WorldLink": "WorldLink",
   "WorldLink (beta)": "WorldLink（ベータ）",
   "{name} can move onto your desktop and live on your wallpaper.": "{name}があなたのデスクトップに引っ越して、壁紙の中で暮らせます。",
-  "WorldLink (beta): edit {name}'s room": "WorldLink（ベータ）：{name}の部屋を編集",
-  "WorldLink (beta): put {name} on your desktop": "WorldLink（ベータ）：{name}をデスクトップに住まわせる",
   "Replay WorldLink intro": "WorldLinkのイントロをもう一度見る",
   // 261106 v6: the WorldLink first-link intro's status lines ({world} is her world's six-digit number).
   "Initializing WorldLink…": "WorldLinkを初期化しています…",

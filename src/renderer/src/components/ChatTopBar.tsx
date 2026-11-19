@@ -23,7 +23,8 @@
  *            move-in flow (the sheet, or straight in); moved in -> her room
  *            editor (lib/seilink/seilinkFlow openSeilink). Lit while she lives
  *            there. The guide's SeiLink tour spotlights it (data-tutorial).
- *            Tagged "(beta)" in its label and tooltip, the way Backseat was.
+ *            Its label and tooltip are just "WorldLink (beta)", the way
+ *            Backseat's were "Backseat (beta)" until 261119.
  *            It carries the one-time "New" tip (261119, lib/worldlinkTipPref),
  *            which keeps out of the way of WorldLink's own tour, sheet and
  *            intro; clicking the button retires it.
@@ -257,11 +258,7 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
               }}
               aria-label={t('WorldLink (beta)')}
               aria-pressed={seilinkHere}
-              data-tip={
-                seilinkHere
-                  ? t("WorldLink (beta): edit {name}'s room", { name: companionName })
-                  : t('WorldLink (beta): put {name} on your desktop', { name: companionName })
-              }
+              data-tip={t('WorldLink (beta)')}
               data-tip-edge="right"
               data-tutorial="seilink-btn"
             >

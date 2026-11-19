@@ -2093,8 +2093,6 @@ export const IT: Record<string, string> = {
   "WorldLink": "WorldLink",
   "WorldLink (beta)": "WorldLink (beta)",
   "{name} can move onto your desktop and live on your wallpaper.": "{name} può trasferirsi sul tuo desktop e vivere sul tuo sfondo.",
-  "WorldLink (beta): edit {name}'s room": "WorldLink (beta): modifica la stanza di {name}",
-  "WorldLink (beta): put {name} on your desktop": "WorldLink (beta): porta {name} sul tuo desktop",
   "Replay WorldLink intro": "Rivedi l’introduzione di WorldLink",
   "Initializing WorldLink…": "Inizializzazione di WorldLink…",
   "Sending signal to World {world}…": "Invio del segnale al Mondo {world}…",
