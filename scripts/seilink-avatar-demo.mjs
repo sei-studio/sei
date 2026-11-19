@@ -10,6 +10,12 @@
 //
 //   node scripts/seilink-avatar-demo.mjs --facepacks <packs dir> --facepack-id <an-...> \
 //        --portrait <png> --out <dir> [--seconds 26] [--fps 30] [--clickat 15.5] [--width 1440 --height 900]
+//
+// --scene host (261119, the product demo): the real wallpaper page instead (DevHostPreview,
+// `?seilinkhost=1`): her room (--room cozy, --time night), her face set at DESKTOP_STAGE, a clock
+// and date widget (--state <room json> overrides), a slim menu bar (--menubar 0 drops it), her
+// line in a bubble after the click (--line, --lineat s), and the room lighting easing on at
+// --dimat s (--dimms long). The page clock starts at --at (local time, default 21:41 today).
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -36,6 +42,27 @@ const CLICK_AT = Number(arg('clickat', '15.5'));
 const WIDTH = Number(arg('width', '1440'));
 const HEIGHT = Number(arg('height', '900'));
 const SETTLE_S = Number(arg('settle', '3'));
+const SCENE = arg('scene', 'flow');
+const ROOM = arg('room', 'cozy');
+const TIME = arg('time', 'night');
+const LINE = arg('line', null);
+const LINE_AT = Number(arg('lineat', String(CLICK_AT + 0.8)));
+const DIM_AT = Number(arg('dimat', '-1'));
+const DIM_MS = Number(arg('dimms', '2600'));
+const DIM = JSON.parse(arg('dim', '{"brightness":-8,"dim":50,"warmth":12,"character":false}'));
+const MENUBAR = arg('menubar', '1') === '1';
+const START_AT = (() => {
+  const d = new Date();
+  const [h, m] = arg('at', '21:41').split(':').map(Number);
+  d.setHours(h, m, 0, 0);
+  return d;
+})();
+/** The desktop as someone might set it up: a big clock with its date, top right. */
+const HOST_STATE = arg('state', null)
+  ? JSON.parse(fs.readFileSync(arg('state'), 'utf8'))
+  : {
+      widgets: [{ id: 'clock', kind: 'clock', x: 0.93, y: 0.16, align: 'right', font: 'system', color: '#ffffff', size: 120, weight: 300, opacity: 0.95, shadow: true, hour12: true, pad: false, seconds: false, ampm: true, date: 'long' }],
+    };
 
 function fileServer(root) {
   return new Promise((resolve) => {
@@ -98,6 +125,66 @@ function cursorAt(t, her) {
   return { x: way[0][1], y: way[0][2] };
 }
 
+/** The host scene's cursor (page px) at time t (s): slow and fast arcs, a click on her, then a long rest. */
+function hostCursorAt(t, her) {
+  const fx = her.x + her.w / 2;
+  const fy = her.y + her.h * 0.2;
+  const W = WIDTH;
+  const H = HEIGHT;
+  const C = CLICK_AT;
+  // [time, x, y, bend]: bend bows the move sideways (fraction of its length), so it is an arc.
+  const way = [
+    [0, W * 0.82, H * 0.62, 0],
+    [1.6, W * 0.82, H * 0.62, 0],
+    [4.6, W * 0.14, H * 0.3, 0.35],
+    [5.8, W * 0.14, H * 0.3, 0],
+    [6.7, W * 0.7, H * 0.8, -0.25],
+    [8.0, W * 0.7, H * 0.8, 0],
+    [11.0, W * 0.28, H * 0.72, 0.5],
+    [11.6, W * 0.28, H * 0.72, 0],
+    [C - 0.8, fx + her.w * 0.06, fy + her.h * 0.1, 0.2],
+    [C + 2.2, fx + her.w * 0.06, fy + her.h * 0.1, 0],
+    [C + 3.4, W * 0.9, H * 0.86, -0.3],
+    [999, W * 0.9, H * 0.86, 0],
+  ];
+  for (let i = 0; i < way.length - 1; i++) {
+    const [t0, x0, y0] = way[i];
+    const [t1, x1, y1, bend] = way[i + 1];
+    if (t >= t0 && t <= t1) {
+      const u = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+      const k = u * u * u * (u * (u * 6 - 15) + 10);
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const off = Math.sin(Math.PI * k) * (bend ?? 0);
+      return { x: x0 + dx * k - dy * off, y: y0 + dy * k + dx * off };
+    }
+  }
+  return { x: way[0][1], y: way[0][2] };
+}
+
+/** A slim menu bar over the top edge (headless has no desktop): the app menu and the time. */
+async function addMenuBar(page) {
+  await page.evaluate(() => {
+    const bar = document.createElement('div');
+    bar.id = '__demo_menubar';
+    bar.style.cssText =
+      'position:fixed;left:0;top:0;right:0;height:25px;z-index:2147483646;pointer-events:none;display:flex;align-items:center;gap:20px;padding:0 14px;' +
+      'background:rgba(28,26,36,0.42);backdrop-filter:blur(18px) saturate(1.4);color:rgba(255,255,255,0.92);' +
+      'font:500 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;letter-spacing:0.1px';
+    const left = ['Files', 'File', 'Edit', 'View', 'Go', 'Window', 'Help'];
+    bar.innerHTML = left.map((w, i) => `<span style="${i === 0 ? 'font-weight:700' : ''}">${w}</span>`).join('') + '<span style="flex:1"></span><span id="__demo_menutime"></span>';
+    document.body.appendChild(bar);
+    const tick = () => {
+      const d = new Date();
+      const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      document.getElementById('__demo_menutime').textContent = `${day}  ${time}`;
+    };
+    tick();
+    setInterval(tick, 1000);
+  });
+}
+
 async function main() {
   fs.mkdirSync(path.join(OUT, 'frames'), { recursive: true });
   const rooms = await fileServer(path.join(REPO, 'resources/seilink-packs'));
@@ -119,7 +206,10 @@ async function main() {
     const roomUrl = `http://127.0.0.1:${rooms.address().port}/cozy/`;
     const faceQ = `&facepacks=${encodeURIComponent(`http://127.0.0.1:${faces.address().port}/`)}&facepackid=${encodeURIComponent(FACEPACK_ID)}&facepackat=0`;
     const portraitQ = PORTRAIT ? `&portrait=${encodeURIComponent(`${viteUrl}/@fs${path.resolve(PORTRAIT)}`)}` : '';
-    const url = `${viteUrl}/?seilinkflow=1&phase=desktop&cursorfeed=1&pack=${encodeURIComponent(roomUrl)}&name=${encodeURIComponent(NAME)}${portraitQ}${faceQ}`;
+    const url =
+      SCENE === 'host'
+        ? `${viteUrl}/?seilinkhost=1&cursorfeed=1&taskbar=0&time=${TIME}&pack=${encodeURIComponent(`http://127.0.0.1:${rooms.address().port}/${ROOM}/`)}&name=${encodeURIComponent(NAME)}${portraitQ}${faceQ}&state=${encodeURIComponent(JSON.stringify(HOST_STATE))}`
+        : `${viteUrl}/?seilinkflow=1&phase=desktop&cursorfeed=1&pack=${encodeURIComponent(roomUrl)}&name=${encodeURIComponent(NAME)}${portraitQ}${faceQ}`;
     browser = await chromium.launch({
       headless: true,
       executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome',
@@ -133,7 +223,7 @@ async function main() {
       return r.abort();
     });
     const page = await ctx.newPage();
-    await page.clock.install();
+    await page.clock.install(SCENE === 'host' ? { time: START_AT } : undefined);
     page.on('pageerror', (e) => console.log(`  [page error] ${e.message.slice(0, 300)}`));
     page.on('console', (m) => {
       if (m.type() === 'error') console.log(`  [console error] ${m.text().slice(0, 240)}`);
@@ -157,15 +247,17 @@ async function main() {
       document.body.appendChild(c);
       window.__seiFaceTrace = [];
     });
-    // Freeze a moment ahead of both clocks (the page's can run ahead of this process's).
-    const now = Math.max(Date.now(), await page.evaluate(() => Date.now()));
+    if (SCENE === 'host' && MENUBAR) await addMenuBar(page);
+    // Freeze a moment ahead of the page's clock (this process's may be behind it).
+    const now = await page.evaluate(() => Date.now());
     await page.clock.pauseAt(now + 1500);
+    let lined = false;
     const n = Math.round(SECONDS * FPS);
     const rows = [];
     let clicked = false;
     for (let i = 0; i < n; i++) {
       const t = i / FPS;
-      const cur = cursorAt(t, her);
+      const cur = SCENE === 'host' ? hostCursorAt(t, her) : cursorAt(t, her);
       await page.mouse.move(cur.x, cur.y);
       await page.evaluate(({ x, y }) => {
         document.getElementById('__demo_cursor').style.transform = `translate(${x - 2}px, ${y - 2}px)`;
@@ -173,6 +265,17 @@ async function main() {
       if (!clicked && t >= CLICK_AT) {
         clicked = true;
         await page.evaluate(() => window.__seiDevPoke?.('click'));
+      }
+      if (LINE && !lined && t >= LINE_AT) {
+        lined = true;
+        await page.evaluate((text) => window.__seiDevLine?.(text), LINE);
+      }
+      if (DIM_AT >= 0 && t >= DIM_AT && t <= DIM_AT + DIM_MS / 1000 + 1 / FPS) {
+        const u = Math.min(1, ((t - DIM_AT) * 1000) / DIM_MS);
+        const k = u * u * (3 - 2 * u);
+        const light = { ...DIM };
+        for (const key of ['brightness', 'dim', 'warmth']) if (typeof DIM[key] === 'number') light[key] = Math.round(DIM[key] * k);
+        await page.evaluate((lighting) => window.__seiDevRoom?.({ lighting }), light);
       }
       const frameMs = Math.round((1000 * (i + 1)) / FPS) - Math.round((1000 * i) / FPS);
       await page.clock.runFor(frameMs);
@@ -203,7 +306,7 @@ async function main() {
       rows.push({ i, t, cursor: cur, clicked: clicked && t - CLICK_AT < 1 / FPS ? 1 : 0, ...st });
       if (i % 60 === 0) console.log(`frame ${i}/${n}`);
     }
-    fs.writeFileSync(path.join(OUT, 'trace.json'), JSON.stringify({ fps: FPS, clickAt: CLICK_AT, her, rows }));
+    fs.writeFileSync(path.join(OUT, 'trace.json'), JSON.stringify({ fps: FPS, clickAt: CLICK_AT, scene: SCENE, lineAt: LINE ? LINE_AT : null, dimAt: DIM_AT, her, rows }));
     console.log(`stepped ${n} frames at ${FPS} fps`);
   } finally {
     await browser?.close().catch(() => {});

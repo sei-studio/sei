@@ -409,6 +409,11 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     `&cursorfeed=1`, a drawn cursor, `window.__seiDevPoke()`, the page clock
     stepped per frame, `trace.json` per frame, `demo.mp4` with a silent
     AAC track).
+    `--scene host` records the real wallpaper page instead (DevHostPreview:
+    her room at `--time`, a clock and date widget, a slim menu bar, her
+    line after the click with `--line`, the lighting easing on at
+    `--dimat`); DevHostPreview's `__seiDevPoke`, `__seiDevLine` and
+    `__seiDevRoom` hooks drive it.
 
 ### What RoomAvatar can read in the host
 
