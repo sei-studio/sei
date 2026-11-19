@@ -44,6 +44,7 @@ import {
   type Dynamic,
 } from './suiQuestions';
 import styles from './onboard.module.css';
+import { userFacingError } from '../lib/errors';
 
 type LineId = 'welcome' | 'qDyn' | 'qAge' | 'qArt' | 'saved';
 
@@ -198,7 +199,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
         });
         goLine('saved');
       } catch (err) {
-        setSaveError((err as Error).message || t('Something went wrong.'));
+        setSaveError(userFacingError(err, t('Something went wrong.')));
       } finally {
         savingRef.current = false;
       }

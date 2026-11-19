@@ -4,7 +4,7 @@
  */
 import type { StardewInstallProgressEvent } from '@shared/stardewIpc';
 import type { ErrorClass } from '@shared/errorClasses';
-import { ERROR_COPY } from '../../lib/errors';
+import { ERROR_COPY, userFacingDetail } from '../../lib/errors';
 
 /** English key for the progress stage (translated by the caller's t()). */
 export function progressLine(ev: StardewInstallProgressEvent | null): { key: string; pct: number | null } {
@@ -33,7 +33,9 @@ export function installErrorCopy(message: string | null): { copy: string; detail
   if (!message) return null;
   const m = /^([A-Z_]+):\s*(.*)$/s.exec(message);
   const cls = (m?.[1] ?? '') as ErrorClass;
-  const detail = m ? m[2] : message;
+  // The detail line is shown under the copy only when it reads as a sentence
+  // for people; a stack, error code or "fetch failed" is dropped (261119).
+  const detail = userFacingDetail(m ? m[2] : message) ?? '';
   const copy = (ERROR_COPY as Record<string, string>)[cls] ?? ERROR_COPY.GAME_INSTALL_FAILED;
   return { copy, detail };
 }

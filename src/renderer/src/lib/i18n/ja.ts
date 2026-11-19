@@ -2525,4 +2525,10 @@ export const JA: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[Seiのボイスは今使えないため、このデバイスのボイスを使っています]",
   "[Sei voices are used up this week, using voices on this device]": "[今週のSeiのボイスを使い切ったため、このデバイスのボイスを使っています]",
   "About extra credits": "追加クレジットについて",
+  // Plain error lines (261119, lib/errors.ts userFacingError).
+  "Can't reach Sei right now. Check your connection and try again.": "今はSeiに接続できません。接続を確認してもう一度お試しください。",
+  "That took too long. Please try again.": "時間がかかりすぎました。もう一度お試しください。",
+  "Sei's servers are having trouble. Please try again in a moment.": "Seiのサーバーで問題が起きています。少し待ってからもう一度お試しください。",
+  "You can only have {n} companions. Remove one to make room.": "コンパニオンは{n}人までです。1人外して枠を空けてください。",
+  "Some knowledge could not be saved. You can add it later from the companion page.": "一部のナレッジを保存できませんでした。あとからコンパニオンページで追加できます。",
 };

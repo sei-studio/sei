@@ -16,7 +16,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { attemptSummon } from '../lib/summonFlow';
 import { botGameName } from '../lib/gameLaunch';
-import { ERROR_COPY, errorCopyText } from '../lib/errors';
+import { ERROR_COPY, errorCopyText, userFacingDetail, userFacingError } from '../lib/errors';
 import styles from './LanNotOpenModal.module.css';
 
 export interface GameErrorModalProps {
@@ -32,7 +32,10 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
   const rawName = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? null);
   const name = rawName ?? t('Your companion');
   const gameName = botGameName(game);
-  const copy = ERROR_COPY[error] ? errorCopyText(error, t, message) : message;
+  const copy = ERROR_COPY[error] ? errorCopyText(error, t, message) : userFacingError(message);
+  // The bot's own line under the copy, only when it reads as a sentence for
+  // people (a socket error or stack is dropped, 261119).
+  const hint = userFacingDetail((message ?? '').replace(/^[A-Z][A-Z0-9_]+:\s*/, ''));
   // 260926: a credit-wall refusal says when free play comes back.
   const resetLine = useResetLine();
   const showReset = error === 'CLOUD_CREDITS_DEPLETED' && !!resetLine;
@@ -45,7 +48,7 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
     <ModalShell title={title} width={480} scrimClose onClose={closeModal} aria-label={title}>
       <p className={styles.body}>{copy}</p>
       {showReset ? <p className={styles.body}>{resetLine}</p> : null}
-      {message && message !== copy ? <p className={styles.hint}>{message}</p> : null}
+      {hint && hint !== copy ? <p className={styles.hint}>{hint}</p> : null}
       <ModalFooter>
         <Button kind="quiet" size="md" onClick={closeModal}>
           {t('Close')}

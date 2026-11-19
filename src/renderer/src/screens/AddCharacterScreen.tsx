@@ -50,6 +50,7 @@ import { applySharedVoicePick, applyVoicePick, type OwnVoicePick } from '@shared
 import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
 import type { Character } from '@shared/characterSchema';
 import { KNOWLEDGE_COMPACT_SUGGEST_BYTES } from '@shared/ipc';
+import { userFacingDetail, userFacingError } from '../lib/errors';
 
 const STEPS = 7;
 
@@ -204,13 +205,13 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       setCreated(persisted);
       return persisted;
     } catch (err) {
-      const message = (err as Error).message;
+      const message = (err as Error)?.message ?? '';
       // Daily cap hit mid-flow (rare race past the pre-flight gate) — show the
       // same friendly modal instead of the raw sentinel error string.
       if (message.includes('daily_limit_reached')) {
         setLimitHit(true);
       } else {
-        setError(message);
+        setError(userFacingError(err));
       }
       return null;
     } finally {
@@ -241,10 +242,13 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           await sei.knowledgeCompact(persisted.id);
         }
       } catch (err) {
+        const detail = userFacingDetail(err);
         setError(
-          t('Some knowledge could not be saved: {error}. You can add it later from the companion page.', {
-            error: (err as Error).message,
-          }),
+          detail
+            ? t('Some knowledge could not be saved: {error}. You can add it later from the companion page.', {
+                error: detail.replace(/[.。]$/, ''),
+              })
+            : t('Some knowledge could not be saved. You can add it later from the companion page.'),
         );
       } finally {
         setSubmitting(false);
@@ -260,7 +264,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     try {
       await refreshCharacter(created.id);
     } catch (err) {
-      setError((err as Error).message);
+      setError(userFacingError(err));
     }
   };
 
@@ -317,7 +321,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       await refreshCharacter(saved.id);
       finish(saved.id);
     } catch (err) {
-      setError((err as Error).message);
+      setError(userFacingError(err));
     } finally {
       setSubmitting(false);
     }

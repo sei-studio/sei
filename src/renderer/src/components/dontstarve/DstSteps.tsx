@@ -25,6 +25,7 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { SearchingLine, type SetupStep, type StepButtonProps, type StepSkin } from '../games/SetupStepper';
 import { useDstStore } from './useDstStore';
 import styles from './dst.module.css';
+import { userFacingDetail } from '../../lib/errors';
 
 const POLL_MS = 3000;
 export const DST_GAME_NAME = "Don't Starve Together";
@@ -111,7 +112,7 @@ export function useDstSetupSteps(skin: StepSkin): DstSetup {
         ) : install?.kind === 'error' ? (
           <>
             <span role="alert">{t("Couldn't add Sei's helper.")}</span>
-            <span className={skin.mono}>{install.message}</span>
+            {userFacingDetail(install.message) ? <span className={skin.mono}>{userFacingDetail(install.message)}</span> : null}
             <div className={skin.actions}>
               <Button kind="primary" disabled={installBusy} onClick={() => void runInstall()}>{t('Try again')}</Button>
             </div>

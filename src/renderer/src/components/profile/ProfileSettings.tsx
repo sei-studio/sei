@@ -54,6 +54,7 @@ import { ActionChip, ProfileRow, RowValue } from './ProfileRow';
 import { VoiceSampleButton, type SampleResult } from './VoiceSample';
 import { UserText } from './UserText';
 import styles from './Profile.module.css';
+import { userFacingError } from '../../lib/errors';
 
 export interface ProfileSettingsProps {
   character: Character;
@@ -611,7 +612,7 @@ function PitchRow({
       await sei.saveCharacter({ ...latest, metadata }, { skipExpansion: true });
       await refreshCharacter(character.id);
     } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save voice settings.'));
+      setError(userFacingError(err, t('Failed to save voice settings.')));
       setDraft(rate);
     }
   };

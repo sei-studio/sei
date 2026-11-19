@@ -28,7 +28,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { uiLocale, useT } from '../lib/i18n';
-import { cleanIpcError } from '../lib/errors';
+import { userFacingError } from '../lib/errors';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { bumpPortraitRef, portraitSrc } from '../lib/portraitSrc';
@@ -82,7 +82,7 @@ export function PortraitVersionsModal({
       const next = await sei.charsPortraitVersions(characterId);
       if (mounted.current) setState(next);
     } catch (err) {
-      if (mounted.current) setError(cleanIpcError(err));
+      if (mounted.current) setError(userFacingError(err));
     }
   }, [characterId]);
 
@@ -110,7 +110,7 @@ export function PortraitVersionsModal({
       const next = await sei.charsPortraitSelect({ characterId, file });
       await afterSwap(next);
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     } finally {
       if (mounted.current) setSelecting(null);
     }
@@ -130,7 +130,7 @@ export function PortraitVersionsModal({
       }
       await afterSwap(res.state);
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     } finally {
       if (mounted.current) setRegenerating(false);
     }
@@ -162,7 +162,7 @@ export function PortraitVersionsModal({
       await refreshCharacter(characterId);
       await load();
     } catch (err) {
-      setError(cleanIpcError(err));
+      setError(userFacingError(err));
     }
   };
 

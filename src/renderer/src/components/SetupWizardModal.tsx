@@ -38,7 +38,7 @@ import { installableMcVersions } from '@shared/mcSetup';
 import { InstallProgressList } from './InstallProgressList';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useWizardStore, type WizardStep } from '../lib/stores/useWizardStore';
-import { WARN_COPY } from '../lib/errors';
+import { WARN_COPY, userFacingDetail } from '../lib/errors';
 import styles from './SetupWizardModal.module.css';
 import noteStyles from './LanNotOpenModal.module.css';
 import { useStartMinecraft } from './mcdash/useStartMinecraft';
@@ -347,7 +347,8 @@ function OneFailedStep(): React.ReactElement {
     ? installs.find((i) => i.id === failedResult.installId)
     : null;
   const failedName = failedInstall?.label ?? t('One install');
-  const failedMessage = failedResult?.message ?? t('an unknown error');
+  // Main's message is the installer's raw error; only a readable one is named.
+  const failedMessage = userFacingDetail(failedResult?.message) ?? t('an unknown error');
 
   // Bring failed install rows to the top of the InstallProgressList.
   const selected = installs.filter((i) => selectedIds.has(i.id));

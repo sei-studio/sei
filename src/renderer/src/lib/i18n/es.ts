@@ -2525,4 +2525,10 @@ export const ES: Record<string, string> = {
   "[Sei voices are unavailable right now, using voices on this device]": "[las voces de Sei no están disponibles ahora, usando las voces de este dispositivo]",
   "[Sei voices are used up this week, using voices on this device]": "[las voces de Sei se agotaron esta semana, usando las voces de este dispositivo]",
   "About extra credits": "Sobre los créditos extra",
+  // Plain error lines (261119, lib/errors.ts userFacingError).
+  "Can't reach Sei right now. Check your connection and try again.": "No se puede conectar con Sei ahora mismo. Revisa tu conexión e inténtalo de nuevo.",
+  "That took too long. Please try again.": "Tardó demasiado. Inténtalo de nuevo.",
+  "Sei's servers are having trouble. Please try again in a moment.": "Los servidores de Sei tienen problemas. Inténtalo de nuevo en un momento.",
+  "You can only have {n} companions. Remove one to make room.": "Solo puedes tener {n} compis. Quita uno para hacer hueco.",
+  "Some knowledge could not be saved. You can add it later from the companion page.": "Parte del conocimiento no se pudo guardar. Puedes añadirlo más tarde desde la página del personaje.",
 };

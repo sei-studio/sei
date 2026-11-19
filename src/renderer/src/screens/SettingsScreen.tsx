@@ -52,6 +52,7 @@ import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
 import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
+import { userFacingError } from '../lib/errors';
 
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
@@ -464,7 +465,7 @@ export function SettingsScreen(): React.ReactElement {
         await refreshCharacter(c.id);
       } catch (err) {
         if (firstError === null) {
-          firstError = err instanceof Error ? err.message : t('Failed to reset some memories.');
+          firstError = userFacingError(err, t('Failed to reset some memories.'));
         }
       }
       setResetAllProgress({ done: i + 1, total: snapshot.length });

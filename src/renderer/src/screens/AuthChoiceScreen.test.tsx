@@ -147,7 +147,12 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
       // Keyed to invalid_credentials only: Supabase returns it for a wrong
       // password and an unknown address alike, so the hint says nothing about
       // whether the account exists. Network / rate-limit errors get no hint.
-      expect(source.includes("setHintFor(res.code === 'invalid_credentials' ? res.message : null)")).toBe(true);
+      // The error and the hint key go through the same userFacingError, so the
+      // equality check below still matches.
+      expect(
+        source.includes("setHintFor(res.code === 'invalid_credentials' ? userFacingError(res.message) : null)"),
+      ).toBe(true);
+      expect(source.includes('setError(userFacingError(res.message));')).toBe(true);
       expect(source.includes("error && mode === 'signin' && error === hintFor")).toBe(true);
     }
   });

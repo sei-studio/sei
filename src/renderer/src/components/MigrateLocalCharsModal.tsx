@@ -31,6 +31,7 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { useCloudCharactersStore } from '../lib/stores/useCloudCharactersStore';
 import styles from './MigrateLocalCharsModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface MigrateLocalCharsModalProps {
   /** Closes the modal. Caller controls mount/unmount. */
@@ -210,7 +211,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
                 <li key={r.id} className={r.ok ? styles.resultOk : styles.resultFail}>
                   {r.ok ? '✓' : '✗'} {name}
                   {!r.ok && r.message ? (
-                    <span className={styles.resultMessage}>: {r.message}</span>
+                    <span className={styles.resultMessage}>: {userFacingError(r.message)}</span>
                   ) : null}
                 </li>
               );

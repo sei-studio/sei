@@ -16,6 +16,7 @@ import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
 import { MC_RANGE_VARS } from './mcVersions';
 import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, providerFromRegionMessage } from '@shared/providerRegion';
+import { errorMessageOf, stripIpcWrapper } from '@shared/ipcError';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -154,19 +155,113 @@ export function errorCopyText(
 }
 
 /**
- * Strip Electron's IPC wrapper from a rejected `ipcRenderer.invoke` so main's
- * user-facing copy shows clean. A main-side throw arrives as
- * "Error invoking remote method 'chars:portrait-select': Error: Unknown
- * portrait version." and the class name is whatever main threw
- * (KnowledgeExtractError, Error, ...), so the second strip is class-agnostic.
- * Use for surfaces that show main's message verbatim; structured errors that
- * carry an ErrorClass go through ERROR_COPY instead.
+ * Plain lines for failures whose own text is technical (261119). Keys are the
+ * English copy; every one is in the i18n dictionaries.
  */
-export function cleanIpcError(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  return raw
-    .replace(/^Error invoking remote method '[^']*':\s*/, '')
-    .replace(/^[A-Za-z]*Error:\s*/, '');
+export const FRIENDLY_ERROR_COPY = {
+  GENERIC: 'Something went wrong. Please try again.',
+  NETWORK: "Can't reach Sei right now. Check your connection and try again.",
+  TIMEOUT: 'That took too long. Please try again.',
+  SERVER: "Sei's servers are having trouble. Please try again in a moment.",
+} as const;
+
+/** Connection failures: never user copy, always "check your connection". */
+const NETWORK_RE =
+  /fetch failed|failed to fetch|networkerror|network request failed|net::ERR_|\bERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|CONNECTION_\w+|ADDRESS_UNREACHABLE)\b|\bE(CONNREFUSED|CONNRESET|CONNABORTED|NOTFOUND|AI_AGAIN|NETUNREACH|NETDOWN|HOSTUNREACH|PIPE)\b|getaddrinfo|socket hang up|\bUND_ERR_(SOCKET|CONNECT)\w*/i;
+
+/** Machine-shaped timeouts and aborts (a sentence saying "took too long" is left alone). */
+const TIMEOUT_RE =
+  /\bE(SOCKET)?TIMEDOUT\b|\bUND_ERR_\w*TIMEOUT\b|timeout of \d+ ?ms|\b(AbortError|TimeoutError)\b|(the|this) operation was aborted|signal (is aborted|timed out)/i;
+
+/** Upstream 5xx answers. */
+const SERVER_RE =
+  /^(HTTP\s*)?5\d\d\b|\bstatus(\s+code)?:?\s*5\d\d\b|\b(internal server error|bad gateway|service unavailable|gateway time-?out)\b/i;
+
+/** Anything else that is a bug or a protocol detail, never copy written for a person. */
+const TECHNICAL_RE = [
+  // JavaScript's own error classes (stripIpcWrapper keeps their prefix).
+  /^(TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|AggregateError|InternalError)\b/,
+  // A stack trace.
+  /\n\s*at\s/,
+  /cannot (read|set) propert(y|ies) of|is not a function|is not defined|is not iterable|is not a constructor|undefined is not|null is not|maximum call stack|unexpected token|unexpected end of json|is not valid json|json\.parse/i,
+  // A JSON blob (Zod issue lists, raw API bodies).
+  /^\s*[{[]/,
+  // A bare HTTP status, or a status-code sentence from a client library.
+  /^(HTTP\s*)?\d{3}(\s+[A-Za-z][A-Za-z ]*)?$/i,
+  /\bstatus(\s+code)?:?\s*\d{3}\b|request failed with status/i,
+  // Node / Electron error codes ("ENOENT: no such file", "ERR_INVALID_ARG_TYPE").
+  /\bE[A-Z]{2,}:\s|\bERR_[A-Z_]{3,}\b/,
+  /an object could not be cloned|no handler registered for/i,
+  // Placeholder-shaped text.
+  /^(undefined|null|nan|error|unknown error|\[object \w+\]|\{\})$/i,
+];
+
+/** A bare SCREAMING_SNAKE token, optionally followed by ": detail". */
+const TOKEN_RE = /^([A-Z][A-Z0-9_]{2,})(?::\s*([\s\S]*))?$/;
+
+/** Parameterised messages main writes in English; matched to translate them. */
+const KNOWN_MESSAGES: Array<{ re: RegExp; key: string; params: (m: RegExpMatchArray) => Record<string, string | number> }> = [
+  {
+    re: /^You can only have (\d+) companions\. Remove one to make room\.$/,
+    key: 'You can only have {n} companions. Remove one to make room.',
+    params: (m) => ({ n: Number(m[1]) }),
+  },
+];
+
+type Friendly = { text: string; kind: 'message' | 'mapped' };
+
+function friendly(msg: string, tr: typeof t, depth = 0): Friendly | null {
+  if (!msg) return null;
+  const tok = TOKEN_RE.exec(msg);
+  if (tok) {
+    const cls = tok[1] as ErrorClass;
+    if (cls in ERROR_COPY) return { text: errorCopyText(cls, tr, msg), kind: 'mapped' };
+  }
+  for (const k of KNOWN_MESSAGES) {
+    const m = msg.match(k.re);
+    if (m) return { text: tr(k.key, k.params(m)), kind: 'message' };
+  }
+  if (NETWORK_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.NETWORK), kind: 'mapped' };
+  if (TIMEOUT_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.TIMEOUT), kind: 'mapped' };
+  if (SERVER_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.SERVER), kind: 'mapped' };
+  if (TECHNICAL_RE.some((re) => re.test(msg))) return null;
+  // An unknown code ("CHAT_ABORTED") is never copy; with a tail
+  // ("SEILINK_PACK_MISSING: Download ...") the tail is judged on its own.
+  if (tok) return tok[2] && depth < 2 ? friendly(tok[2].trim(), tr, depth + 1) : null;
+  // Copy main (or a library) already wrote for people. Translated when the
+  // dictionaries know it, English otherwise.
+  return { text: tr(msg), kind: 'message' };
+}
+
+/**
+ * The one way to turn a caught error (or a result's `message`) into text a
+ * user reads (261119). Strips Electron's IPC wrapper and class prefixes
+ * (the preload already does for every invoke; this covers everything else),
+ * keeps messages written for people (translated when the dictionaries have
+ * them), maps network / timeout / server failures to a plain line, and turns
+ * anything technical (stack traces, TypeErrors, error codes, JSON, bare HTTP
+ * statuses) into `fallback`, default "Something went wrong. Please try again."
+ * The raw text goes to the console whenever it is replaced.
+ *
+ * Pass a translated `fallback` when the surface has its own wording ("Failed
+ * to save."); it is also used for an empty or missing message.
+ */
+export function userFacingError(err: unknown, fallback?: string, tr: typeof t = t): string {
+  const raw = errorMessageOf(err);
+  const out = friendly(stripIpcWrapper(raw), tr);
+  if (out?.kind === 'message') return out.text;
+  if (raw) console.warn('[userFacingError] showing plain copy for:', raw);
+  return out?.text ?? fallback ?? tr(FRIENDLY_ERROR_COPY.GENERIC);
+}
+
+/**
+ * Like userFacingError but null when the message is not one written for
+ * people (technical, mapped or empty): for surfaces that append a reason to
+ * their own line only when there is a readable one.
+ */
+export function userFacingDetail(err: unknown, tr: typeof t = t): string | null {
+  const out = friendly(stripIpcWrapper(errorMessageOf(err)), tr);
+  return out?.kind === 'message' ? out.text : null;
 }
 
 /**
@@ -243,9 +338,14 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   if (/timeout|did not signal ready/i.test(lower)) {
     return { class: 'BOT_START_TIMEOUT', copy: t(ERROR_COPY.BOT_START_TIMEOUT) };
   }
-  // Generic fallback
+  // Generic fallback. Only a message written for people goes into the line
+  // (261119: this used to print raw text such as "TypeError: x is not a
+  // function. Try again.").
+  const detail = userFacingDetail(err);
   return {
     class: 'BOT_CRASH',
-    copy: t('Something went wrong. {detail}Try again.', { detail: msg ? msg + '. ' : '' }),
+    copy: t('Something went wrong. {detail}Try again.', {
+      detail: detail ? (/[.!?。！？]$/.test(detail) ? detail : detail + '.') + ' ' : '',
+    }),
   };
 }
