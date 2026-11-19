@@ -52,7 +52,7 @@ import type { VoiceParams } from '../lib/voicePicker';
 import {
   applySharedVoicePick,
   applyVoicePick,
-  ownVoiceOf,
+  storedVoicePickOf,
   sharedVoiceIdOf,
   type OwnVoicePick,
 } from '@shared/voiceIds';
@@ -128,7 +128,7 @@ export function EditCharacterModal({
   // 261019: the own-ElevenLabs-voice marker that rides with voiceId (null for
   // pool / Auto / No voice). Seeded from metadata so a params-only save keeps
   // an own pick marked; replaced on every picker selection.
-  const [voiceOwn, setVoiceOwn] = useState<OwnVoicePick | null>(() => ownVoiceOf(character.metadata));
+  const [voiceOwn, setVoiceOwn] = useState<OwnVoicePick | null>(() => storedVoicePickOf(character.metadata));
   const onVoiceChange = (id: string | null, own: OwnVoicePick | null): void => {
     setVoiceId(id);
     setVoiceOwn(own);
@@ -374,7 +374,7 @@ export function EditCharacterModal({
       // pick clears a stale marker, an own pick stamps it.
       // A pool pick clears voiceShared (applyVoicePick); an own pick keeps
       // the "Others will hear" choice from this section.
-      const metadata = voiceOwn
+      const metadata = voiceOwn && voiceOwn.source !== 'library'
         ? applySharedVoicePick(applyVoicePick(latest.metadata, voiceId, voiceOwn), voiceShared)
         : applyVoicePick(latest.metadata, voiceId, voiceOwn);
       const baked = { id: character.id, metadata: {} };
@@ -657,7 +657,7 @@ export function EditCharacterModal({
                   {fishMode ? (
                     <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} />
                   ) : null}
-                  {voiceOwn && voiceId && !localTtsMode ? (
+                  {voiceOwn && voiceOwn.source !== 'library' && voiceId && !localTtsMode ? (
                     <div className={styles.sharedVoice}>
                       <SharedVoiceChoice
                         characterId={character.id}

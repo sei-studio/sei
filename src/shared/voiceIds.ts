@@ -40,9 +40,25 @@ export const OWN_VOICE_KEY = 'voiceOwn';
  */
 export const SHARED_VOICE_KEY = 'voiceShared';
 
+/**
+ * A voice from the public ElevenLabs Voice Library that a Sei cloud user
+ * pasted into the voice picker (261119). The proxy added it to Sei's
+ * ElevenLabs account, so it plays through /tts/speech for EVERYONE (adopters
+ * of a shared character too), metered like a pool voice. Persisted beside
+ * `metadata.voiceId` as `metadata.voiceLibrary = {name, gender?}`; like the
+ * own-voice marker it tells the runtime the id is a deliberate pick, not a
+ * stale one to re-roll. `gender` picks the stand-in pool voice when the proxy
+ * no longer has the voice (sei-proxy retires library voices unused for 30
+ * days) and the local voice when synthesis runs on-device.
+ */
+export const LIBRARY_VOICE_KEY = 'voiceLibrary';
+
 export interface OwnVoicePick {
   name: string;
   gender?: string;
+  /** 'library' (261119): a Voice Library voice pasted on Sei cloud, stored
+   * as metadata.voiceLibrary instead of the own-voice marker. */
+  source?: 'library';
 }
 
 /** ElevenLabs voice ids are short alphanumeric tokens (20 chars today). The
@@ -62,7 +78,10 @@ export function isWellFormedVoiceId(id: unknown): id is string {
 export function ownVoiceOf(metadata: Record<string, unknown> | undefined | null): OwnVoicePick | null {
   if (!metadata || !isWellFormedVoiceId(metadata.voiceId)) return null;
   if (isPoolVoiceId(metadata.voiceId)) return null;
-  const raw = metadata[OWN_VOICE_KEY];
+  return readVoiceMarker(metadata[OWN_VOICE_KEY]);
+}
+
+function readVoiceMarker(raw: unknown): { name: string; gender?: string } | null {
   if (!raw || typeof raw !== 'object') return null;
   const { name, gender } = raw as { name?: unknown; gender?: unknown };
   if (typeof name !== 'string' || !name.trim()) return null;
@@ -72,10 +91,30 @@ export function ownVoiceOf(metadata: Record<string, unknown> | undefined | null)
   };
 }
 
+/** The Voice Library marker on a character's metadata (261119), or null when
+ * the stored voice is not a library pick. A pool id never is one. */
+export function libraryVoiceOf(
+  metadata: Record<string, unknown> | undefined | null,
+): { name: string; gender?: string } | null {
+  if (!metadata || !isWellFormedVoiceId(metadata.voiceId)) return null;
+  if (isPoolVoiceId(metadata.voiceId)) return null;
+  return readVoiceMarker(metadata[LIBRARY_VOICE_KEY]);
+}
+
+/** The picker-side pick for the stored voice: the own-voice marker, else the
+ * library marker tagged `source: 'library'`, else null (261119). */
+export function storedVoicePickOf(metadata: Record<string, unknown> | undefined | null): OwnVoicePick | null {
+  const own = ownVoiceOf(metadata);
+  if (own) return own;
+  const library = libraryVoiceOf(metadata);
+  return library ? { ...library, source: 'library' } : null;
+}
+
 /**
  * Apply a voice-picker selection to character metadata (returns a copy).
  * `voiceId` null = Auto (key removed), NO_VOICE_ID = silent, else a pinned
- * voice. `own` is set only for an own-account pick; any other selection
+ * voice. `own` is set only for an own-account pick (or, with source
+ * 'library', a Voice Library pick, stored as voiceLibrary); any other selection
  * clears the marker, so switching back to a Sei voice can never leave a stale
  * own-voice flag that would shield a pool id from the normal rules. A pool
  * id never takes the marker, even when a caller passes one (261024).
@@ -85,18 +124,29 @@ export function applyVoicePick(
   voiceId: string | null,
   own?: OwnVoicePick | null,
 ): Record<string, unknown> {
+  // A save that leaves the voice unchanged keeps its Voice Library marker even
+  // when the caller passes no pick (261119): only a different voice, or an
+  // own-voice pick, replaces it.
+  const keptLibrary =
+    voiceId !== null && metadata?.voiceId === voiceId && !own ? libraryVoiceOf(metadata) : null;
   const next: Record<string, unknown> = { ...(metadata ?? {}) };
   if (voiceId === null) delete next.voiceId;
   else next.voiceId = voiceId;
-  if (own && voiceId !== null && isWellFormedVoiceId(voiceId) && !isPoolVoiceId(voiceId) && own.name.trim()) {
-    next[OWN_VOICE_KEY] = {
-      name: own.name.slice(0, 100),
-      ...(own.gender ? { gender: own.gender.slice(0, 20) } : {}),
-    };
+  const pickable = own && voiceId !== null && isWellFormedVoiceId(voiceId) && !isPoolVoiceId(voiceId) && own.name.trim();
+  const marker = pickable
+    ? { name: own.name.slice(0, 100), ...(own.gender ? { gender: own.gender.slice(0, 20) } : {}) }
+    : null;
+  if (marker && own?.source !== 'library') {
+    next[OWN_VOICE_KEY] = marker;
+    delete next[LIBRARY_VOICE_KEY];
   } else {
     delete next[OWN_VOICE_KEY];
-    // The voice for others only stands in for an own voice.
+    // The voice for others only stands in for an own voice; a library voice
+    // plays for everyone, so it needs none.
     delete next[SHARED_VOICE_KEY];
+    const library = marker ?? keptLibrary;
+    if (library) next[LIBRARY_VOICE_KEY] = library;
+    else delete next[LIBRARY_VOICE_KEY];
   }
   return next;
 }

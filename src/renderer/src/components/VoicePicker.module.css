@@ -294,3 +294,75 @@
   align-items: baseline;
   gap: var(--space-sm);
 }
+
+/* Voice Library paste card (261119, Sei cloud): a filled panel, no border
+   lines on its buttons (Button handles the Look up / Use fills). */
+.libCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  padding: var(--pad-control) var(--pad-card);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.libForm {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.libInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.libInput:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.libInput:disabled {
+  opacity: 0.6;
+}
+
+/* The looked-up voice: a plain row inside the card, no outline. */
+.libRow,
+.libRow:hover {
+  border-color: transparent;
+  background: var(--surface);
+}
+
+.libBody {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.libBody .rowVibe {
+  overflow-wrap: anywhere;
+}
+
+.libPlay,
+.libPlay:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent-soft);
+}
+
+.libUse {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.libReason {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+}

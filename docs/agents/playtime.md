@@ -80,6 +80,26 @@ stays in Settings > Account because it is an account setting).
   (the credits store, the same number the Sei tab shows).
 - Top-up tiles and the voice plan card are behind `VOICE_PLAN_UI_ENABLED`
   (false). No billing products exist for them.
+- **Voice Library voices on Sei cloud (261119).** In the voice picker a
+  cloud user (not BYOK, not on-device voices: `libraryPasteShown`) pastes an
+  ElevenLabs Voice Library link or voice id. Main
+  (`main/voice/libraryVoices.ts`) calls the proxy's
+  `/tts/library-voice/lookup|add|:id` routes with the JWT; the proxy checks
+  the voice (standard rate, no live moderation, long notice period, not
+  delisted, allowed category), adds it to Sei's ElevenLabs account and lets
+  `/tts/speech` play it for everyone, metered like a pool voice. The pick is
+  stored as `metadata.voiceLibrary` {name, gender} (`shared/voiceIds.ts`);
+  `assignedVoiceId` honours it for adopters too (no owner check). When the
+  proxy refuses it at synthesis (retired after long idle, or removed),
+  `tts.ts` retries once with `libraryVoiceStandInId` (same gender pool voice),
+  posts the `library-voice-unavailable` notice and skips the voice for 10
+  minutes; the picker's current row says it is gone. Preview clips come only
+  from the URL the proxy returned (`isAllowedPreviewUrl`). Rejections are
+  reason codes with one line of copy each (`libraryReasonCopy`). Events,
+  shape only: `library_voice_rejected` {reason, stage},
+  `library_voice_add_attempted`, `library_voice_added` {already},
+  `library_voice_unavailable_shown`, `library_voice_fallback`. Screens:
+  `?dashshot=voicekey&part=picker` (+`&lib=rejected|removed`).
 
 ## Analytics
 

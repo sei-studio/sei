@@ -2769,6 +2769,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await voicePreviewTts({ voiceId: args.voiceId });
   });
 
+  // Voice Library voices on Sei cloud (261119, voice/libraryVoices.ts). The
+  // proxy validates and records; main only relays with the JWT. Lookup, add
+  // and status never throw (reason / status fields).
+  ipcMain.handle(IpcChannel.voice.libraryLookup, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { lookupLibraryVoice } = await import('./voice/libraryVoices');
+    return lookupLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryAdd, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { addLibraryVoice } = await import('./voice/libraryVoices');
+    return addLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryStatus, async (_event, argsRaw: unknown) => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoiceStatus } = await import('./voice/libraryVoices');
+    return libraryVoiceStatus(args.voiceId);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryPreview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoicePreviewBytes } = await import('./voice/libraryVoices');
+    return libraryVoicePreviewBytes(args.voiceId);
+  });
+
   // Voice for others (261019): the close pool voice an adopter hears for a
   // character whose voice is the author's own ElevenLabs voice, when the
   // author has not chosen one. Same roll resolveVoiceId uses on their side.

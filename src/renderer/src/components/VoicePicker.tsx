@@ -52,11 +52,24 @@
  * key is saved and its list was read, or (no key yet) in place of the
  * add-your-key line, whose instruction its hint carries. Click event:
  * voice_library_opened {surface, key, backend} (shape only).
+ *
+ * 261119, Sei cloud: "Use a voice from the library". Under the tile, a cloud
+ * user pastes a Voice Library link or voice id; main asks the proxy
+ * (voiceLibraryLookup: name, labels, preview), the play button plays
+ * ElevenLabs' preview clip, and "Use this voice" asks the proxy to add it
+ * (voiceLibraryAdd, which validates again) before reporting the pick with
+ * `source: 'library'`, which the save site stores as metadata.voiceLibrary.
+ * A rejection is one line of reason copy (libraryReasonCopy). A stored
+ * library voice shows as the "Current voice" row; when the proxy says it is
+ * gone, the row says a similar Sei voice speaks for them (the runtime's
+ * stand-in). Events (shape only, no voice names): library_voice_rejected
+ * {reason, stage}, library_voice_add_attempted, library_voice_added
+ * {already}, library_voice_unavailable_shown, all with {surface}.
  */
 
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import type { OwnVoiceList, VoiceInfo } from '@shared/ipc';
+import type { LibraryVoiceInfo, LibraryVoiceReason, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import {
   groupVoices,
   reduceSelection,
@@ -69,6 +82,10 @@ import {
   ownVoicesView,
   poolUsesOwnKey,
   voiceLibraryTile,
+  libraryPasteShown,
+  libraryReasonCopy,
+  libraryVoiceDetail,
+  libraryVoicePick,
   ELEVEN_VOICE_LIBRARY_URL,
   defaultVoiceTab,
   OWN_TAB_KEY,
@@ -83,9 +100,18 @@ import { attach as attachPitch, warm as warmPitchBus, whenReady as pitchReady } 
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useT } from '../lib/i18n';
 import { ArrowIcon, PlayIcon, StopIcon } from './icons';
+import { Button } from './Button';
 import { clipMimeType } from '../lib/fishVoice';
 import styles from './VoicePicker.module.css';
 import { userChatLanguage } from '@shared/chatLanguage';
+
+/** The paste card's state (261119). */
+type LibraryPasteState =
+  | { kind: 'idle' }
+  | { kind: 'looking' }
+  | { kind: 'found'; voice: LibraryVoiceInfo }
+  | { kind: 'adding'; voice: LibraryVoiceInfo }
+  | { kind: 'rejected'; reason: LibraryVoiceReason };
 
 export interface VoicePickerProps {
   /** Selected pool voice id, NO_VOICE_ID ('none') for silent, or null for Auto. */
@@ -188,6 +214,96 @@ export function VoicePicker({
   }, []);
   const cloudVoicesUnavailable =
     !localTtsMode && aiBackendKind === 'local' && hasElevenKey === false;
+
+  // ── Voice Library paste card (261119, Sei cloud) ─────────────────────────
+  const libraryPaste = libraryPasteShown(aiBackendKind, localTtsMode);
+  const [libInput, setLibInput] = useState('');
+  const [libState, setLibState] = useState<LibraryPasteState>({ kind: 'idle' });
+  /** Voices looked up this session: preview clips + labels. */
+  const [libVoices, setLibVoices] = useState<LibraryVoiceInfo[]>([]);
+  /** The stored library voice's state on the proxy (null = not asked). */
+  const [libStatus, setLibStatus] = useState<'active' | 'removed' | null>(null);
+  const valueLibrary = valueOwn?.source === 'library' && value ? value : null;
+  useEffect(() => {
+    setLibStatus(null);
+    if (!valueLibrary || !libraryPaste) return;
+    let alive = true;
+    try {
+      void sei
+        .voiceLibraryStatus({ voiceId: valueLibrary })
+        .then((r) => {
+          if (!alive) return;
+          if (r.status === 'removed') {
+            setLibStatus('removed');
+            trackLibrary('library_voice_unavailable_shown', {});
+          } else if (r.status === 'active') {
+            setLibStatus('active');
+          }
+        })
+        .catch(() => {});
+    } catch {
+      /* stale preload without the channel: no status line */
+    }
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valueLibrary, libraryPaste]);
+
+  function trackLibrary(event: string, props: Record<string, string | boolean>): void {
+    try {
+      sei.track(event, { surface: surface ?? 'other', ...props });
+    } catch {
+      /* analytics must never break the picker */
+    }
+  }
+
+  function rememberLibraryVoice(v: LibraryVoiceInfo): void {
+    setLibVoices((prev) => [v, ...prev.filter((x) => x.voiceId !== v.voiceId)].slice(0, 20));
+  }
+
+  async function lookupLibrary(raw?: string): Promise<void> {
+    const input = (raw ?? libInput).trim();
+    if (!input || libState.kind === 'looking' || libState.kind === 'adding') return;
+    setLibState({ kind: 'looking' });
+    let r: Awaited<ReturnType<typeof sei.voiceLibraryLookup>>;
+    try {
+      r = await sei.voiceLibraryLookup({ input });
+    } catch {
+      r = { ok: false, reason: 'unavailable' };
+    }
+    if (!aliveRef.current) return;
+    if (r.ok) {
+      rememberLibraryVoice(r.voice);
+      setLibState({ kind: 'found', voice: r.voice });
+    } else {
+      setLibState({ kind: 'rejected', reason: r.reason });
+      trackLibrary('library_voice_rejected', { reason: r.reason, stage: 'lookup' });
+    }
+  }
+
+  async function pickLibraryVoice(voice: LibraryVoiceInfo): Promise<void> {
+    if (libState.kind === 'adding') return;
+    trackLibrary('library_voice_add_attempted', {});
+    setLibState({ kind: 'adding', voice });
+    let r: Awaited<ReturnType<typeof sei.voiceLibraryAdd>>;
+    try {
+      r = await sei.voiceLibraryAdd({ input: voice.voiceId });
+    } catch {
+      r = { ok: false, reason: 'unavailable' };
+    }
+    if (!aliveRef.current) return;
+    if (r.ok) {
+      trackLibrary('library_voice_added', { already: r.already });
+      rememberLibraryVoice(r.voice);
+      onChange(r.voice.voiceId, libraryVoicePick(r.voice));
+      setLibInput('');
+      setLibState({ kind: 'idle' });
+    } else {
+      trackLibrary('library_voice_rejected', { reason: r.reason, stage: 'add' });
+      setLibState({ kind: 'rejected', reason: r.reason });
+    }
+  }
 
   useEffect(() => {
     // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
@@ -346,6 +462,21 @@ export function VoicePicker({
     await startAudio(url, voiceId, pitch);
   }
 
+  /** A looked-up Voice Library voice at default calmness: ElevenLabs'
+   * preview clip, fetched by main (261119). Session-cached. */
+  async function playLibraryPreview(voiceId: string): Promise<void> {
+    const key = `lib|${voiceId}`;
+    let buf = cacheRef.current.get(key);
+    if (!buf) {
+      setLoadingId(voiceId);
+      buf = await sei.voiceLibraryPreview({ voiceId });
+      cacheRef.current.set(key, buf);
+    }
+    if (!aliveRef.current) return;
+    const url = URL.createObjectURL(new Blob([buf], { type: 'audio/mpeg' }));
+    await startAudio(url, voiceId, pitch);
+  }
+
   /** Live TTS preview with the current params, session-cached per combo. Pitch
    * is not part of the key: it does not change the bytes any more, only how
    * they are played back. */
@@ -388,12 +519,18 @@ export function VoicePicker({
         await playOwnPreview(voiceId);
         return;
       }
+      if (!tuned && libVoices.some((v) => v.voiceId === voiceId && v.hasPreview)) {
+        await playLibraryPreview(voiceId);
+        return;
+      }
       await playTts(voiceId);
     } catch (err) {
       if (!aliveRef.current) return;
       const msg = String((err as Error)?.message ?? '');
       if (/VOICE_NO_SESSION/.test(msg)) {
         setSamplesAvailable(false);
+      } else if (/VOICE_LIBRARY_UNAVAILABLE/.test(msg)) {
+        setError(t('This voice is no longer available.'));
       } else if (/VOICE_NEEDS_PAID_PLAN/.test(msg)) {
         setError(t('Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.'));
       } else if (/VOICE_ELEVEN_QUOTA/.test(msg)) {
@@ -546,6 +683,98 @@ export function VoicePicker({
     void sei.openExternal(ELEVEN_VOICE_LIBRARY_URL).catch(() => {});
   }
 
+  /** The paste card (261119): input + Look up, then the voice or a reason. */
+  function renderLibraryPaste(): React.ReactElement {
+    const busy = libState.kind === 'looking' || libState.kind === 'adding';
+    const shown = libState.kind === 'found' || libState.kind === 'adding' ? libState.voice : null;
+    return (
+      <section className={styles.libCard} data-testid="library-voice-card" aria-label={t('Use a voice from the library')}>
+        <div className={styles.rowTitle}>{t('Use a voice from the library')}</div>
+        <div className={styles.rowVibe}>
+          {t('Paste a link or voice ID from the ElevenLabs Voice Library. It costs nothing extra on your Sei plan.')}
+        </div>
+        <form
+          className={styles.libForm}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void lookupLibrary();
+          }}
+        >
+          <input
+            className={styles.libInput}
+            type="text"
+            value={libInput}
+            placeholder={t('Voice Library link or voice ID')}
+            aria-label={t('Voice Library link or voice ID')}
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={2048}
+            disabled={busy}
+            onChange={(e) => {
+              setLibInput(e.target.value);
+              if (libState.kind === 'rejected' || libState.kind === 'found') setLibState({ kind: 'idle' });
+            }}
+            onPaste={(e) => {
+              const text = e.clipboardData.getData('text').trim();
+              if (!text) return;
+              e.preventDefault();
+              setLibInput(text);
+              void lookupLibrary(text);
+            }}
+          />
+          <Button kind="secondary" size="sm" type="submit" disabled={busy || !libInput.trim()}>
+            {libState.kind === 'looking' ? t('Looking up...') : t('Look up')}
+          </Button>
+        </form>
+        {shown ? (
+          <div className={`${styles.row} ${styles.libRow}`}>
+            <button
+              type="button"
+              className={`${styles.playBtn} ${styles.libPlay}`}
+              aria-label={
+                playingId === shown.voiceId
+                  ? t('Stop {name} sample', { name: shown.name })
+                  : t('Play {name} sample', { name: shown.name })
+              }
+              disabled={!shown.hasPreview || (loadingId !== null && loadingId !== shown.voiceId)}
+              onClick={() => void toggleSample(shown.voiceId)}
+            >
+              {loadingId === shown.voiceId ? (
+                <span className={styles.loadingDot} aria-hidden="true" />
+              ) : playingId === shown.voiceId ? (
+                <StopIcon size={14} />
+              ) : (
+                <PlayIcon size={14} />
+              )}
+            </button>
+            <div className={styles.libBody}>
+              <div className={styles.rowTitle}>{shown.name}</div>
+              <div className={styles.rowVibe}>{libraryVoiceDetail(shown) || t('From the ElevenLabs Voice Library.')}</div>
+            </div>
+            <Button
+              kind="primary"
+              size="sm"
+              className={styles.libUse}
+              disabled={libState.kind === 'adding' || value === shown.voiceId}
+              onClick={() => void pickLibraryVoice(shown)}
+            >
+              {value === shown.voiceId
+                ? t('In use')
+                : libState.kind === 'adding'
+                  ? t('Adding...')
+                  : t('Use this voice')}
+            </Button>
+          </div>
+        ) : null}
+        {libState.kind === 'rejected' ? (
+          <div className={styles.libReason} role="status">
+            {t(libraryReasonCopy(libState.reason))}
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
   return (
     <div className={styles.root} role="radiogroup" aria-label={t('Voice')}>
       {localTtsMode ? null : (
@@ -598,7 +827,17 @@ export function VoicePicker({
       {unlisted && value ? (
         <section className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Current voice')}</h3>
-          {unlistedOwn
+          {unlistedOwn?.source === 'library'
+            ? renderRow(
+                value,
+                unlistedOwn.name,
+                libStatus === 'removed'
+                  ? t('No longer available. A similar Sei voice speaks for them until you pick another.')
+                  : t('From the ElevenLabs Voice Library.'),
+                unlistedOwn.name,
+                false,
+              )
+            : unlistedOwn
             ? renderRow(
                 value,
                 unlistedOwn.name,
@@ -634,10 +873,14 @@ export function VoicePicker({
           <div className={styles.rowVibe}>
             {libraryTile === 'with_key'
               ? t('Save a voice there and it shows up under Your ElevenLabs voices. Paid ElevenLabs plans only.')
-              : t('Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.')}
+              : libraryPaste
+                ? t('Find a voice there, copy its link and paste it below.')
+                : t('Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.')}
           </div>
         </button>
       ) : null}
+
+      {libraryPaste ? renderLibraryPaste() : null}
 
       {ownView === 'hint' ? (
         <div className={styles.hint} role="status">
