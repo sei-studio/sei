@@ -63,10 +63,18 @@ uniform vec2 uHeadShift;
 uniform vec4 uFace;
 uniform vec2 uFaceShift;
 
+// 261119: every texture read runs in uniform control flow and is masked after. A read
+// inside a per-pixel branch (the old early return, the old lid-box if) has no defined
+// derivatives at the branch edge, so a GPU may take a far mip level there: a thin light
+// line along the edge of the pack rect and of the eye box.
+float inBox(vec2 uv) {
+  vec2 i = step(vec2(0.0), uv) * step(uv, vec2(1.0));
+  return i.x * i.y;
+}
+
 vec4 tex(sampler2D t, vec2 q) {
   vec2 uv = q / uSize;
-  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return vec4(0.0);
-  return texture(t, uv);
+  return texture(t, clamp(uv, 0.0, 1.0)) * inBox(uv);
 }
 
 vec2 irisShift(vec2 q, vec4 e) {
@@ -94,12 +102,12 @@ void main() {
   vec4 col = tex(uCur, qc - irisShift(qc, uEyeL) - irisShift(qc, uEyeR));
   if (uHalfA > 0.0 || uClosedA > 0.0) {
     vec2 uv = (qc - uEyeBox.xy) / (uEyeBox.zw - uEyeBox.xy);
-    if (uv.x >= 0.0 && uv.y >= 0.0 && uv.x <= 1.0 && uv.y <= 1.0) {
-      vec4 h = texture(uHalf, uv) * uHalfA;
-      col = h + col * (1.0 - h.a);
-      vec4 k = texture(uClosed, uv) * uClosedA;
-      col = k + col * (1.0 - k.a);
-    }
+    vec2 luv = clamp(uv, 0.0, 1.0);
+    float inside = inBox(uv);
+    vec4 h = texture(uHalf, luv) * (uHalfA * inside);
+    col = h + col * (1.0 - h.a);
+    vec4 k = texture(uClosed, luv) * (uClosedA * inside);
+    col = k + col * (1.0 - k.a);
   }
   if (uMix < 1.0) {
     vec2 qo = q + uMorphOld * fw;
@@ -309,6 +317,28 @@ export class FaceGl {
     gl.generateMipmap(gl.TEXTURE_2D);
   }
 
+  /**
+   * 261119 (product call 261119, "a thin white box round her every time she blinks"):
+   * the lid patches are decoded ImageBitmaps, and WebGL ignores
+   * UNPACK_PREMULTIPLY_ALPHA_WEBGL for an ImageBitmap: whether its pixels arrive
+   * premultiplied is up to the browser and the platform's decoder. Uploaded straight,
+   * the shader's premultiplied "over" adds the full colour of every soft edge pixel,
+   * and the patches' fully transparent border still holds a light colour (about
+   * rgb 190,191,207 in the anima packs): a bright rectangle round the eye box on
+   * every blink. Drawn through a 2D canvas first, the upload is premultiplied
+   * everywhere (the composite and the mouth box already go through a canvas).
+   */
+  private premultiplied(src: TexImageSource): TexImageSource {
+    if (typeof ImageBitmap === 'undefined' || !(src instanceof ImageBitmap)) return src;
+    const cv = document.createElement('canvas');
+    cv.width = src.width;
+    cv.height = src.height;
+    const g = cv.getContext('2d');
+    if (!g) return src;
+    g.drawImage(src, 0, 0);
+    return cv;
+  }
+
   /** The current composite changed (a new expression, pose or overlay set). `crossfade` keeps the old one for the fade. */
   setComposite(src: TexImageSource, eyes: EyeSet, crossfade: boolean): void {
     if (crossfade) {
@@ -343,7 +373,7 @@ export class FaceGl {
       return hit;
     }
     const t = this.newTex();
-    this.upload(t, src);
+    this.upload(t, this.premultiplied(src));
     this.patches.set(key, t);
     while (this.patches.size > 16) {
       const oldest = this.patches.keys().next().value as string;
