@@ -57,6 +57,34 @@ const SHOTS = {
       });
     },
   },
+  'editor-clock-day': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=misc&widget=clock', size: [1280, 800] },
+  'editor-clock-day-scrolled': {
+    kind: 'editor',
+    q: 'time=day&items=1&widgets=demo&panel=misc&widget=clock',
+    size: [1280, 800],
+    act: async (page) => {
+      await page.evaluate(() => {
+        const el = [...document.querySelectorAll('[data-room-editor] section')].find((s) => s.scrollHeight > s.clientHeight);
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+  },
+  'editor-misc-night': { kind: 'editor', q: 'time=night&items=1&widgets=demo&panel=misc', size: [1280, 800] },
+  'editor-text-night': { kind: 'editor', q: 'time=night&items=1&widgets=demo&panel=misc&widget=text', size: [1280, 800] },
+  'editor-lighting-day': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=lighting&light.dim=20&light.brightness=-10&light.warmth=15', size: [1280, 800] },
+  // The clock's colour, weight and size go through to the big digits: Bold, the amber swatch, a larger size.
+  'editor-clock-styled': {
+    kind: 'editor',
+    q: 'time=night&items=1&widgets=demo&panel=misc&widget=clock',
+    size: [1280, 800],
+    act: async (page) => {
+      await page.locator('[data-widget-settings="clock"] [role="radio"][aria-label="Bold"]').click();
+      await page.locator('[data-widget-settings="clock"] [role="radio"][aria-label="#ffd28a"]').click();
+      const size = page.locator('[data-widget-settings="clock"] input[aria-label="Size"]');
+      await size.focus();
+      for (let i = 0; i < 40; i++) await size.press('ArrowRight');
+    },
+  },
   'editor-misc-add': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=misc', size: [1280, 800] },
   'editor-text': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=misc&widget=text', size: [1280, 800] },
   'editor-lighting': { kind: 'editor', q: 'time=night&items=1&widgets=demo&panel=lighting&light.dim=45&light.brightness=-10', size: [1280, 800] },

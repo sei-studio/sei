@@ -1,4 +1,4 @@
-/* Misc and Lighting panels (261119). Inside the editor root, so the editor's
+/* Utilities and Lighting panels (261119, simplified 261120). Inside the editor root, so the editor's
    glass variables (--tile, --tile-on, --muted, --ink, --hot) apply. Buttons
    have no visible borders: a background until pressed. */
 
@@ -43,14 +43,17 @@
   gap: 2px;
 }
 
+/* One placed widget: its row, and its settings under it while it is open. */
+.item {
+  display: flex;
+  flex-direction: column;
+}
+
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-height: 32px;
-  padding: 4px 8px;
   border-radius: var(--r-tile);
-  text-align: left;
   color: rgb(var(--ink) / 0.78);
   transition: background-color 160ms var(--ease);
 }
@@ -66,6 +69,18 @@
   color: rgb(var(--ink));
 }
 
+.rowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  text-align: left;
+  color: inherit;
+}
+
 .rowText {
   min-width: 0;
   overflow: hidden;
@@ -74,14 +89,27 @@
   font-size: 13px;
 }
 
-.head {
+.settings {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-md) 0 var(--space-md-plus);
+}
+
+/* A control row with its small name over it ("Font", "Weight", "Color"). */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  color: rgb(var(--ink) / 0.82);
 }
 
 .remove {
+  flex: none;
   width: 30px;
   height: 30px;
   color: var(--muted);
@@ -93,13 +121,8 @@
   gap: 4px;
 }
 
-
 .chipsWrap {
   flex-wrap: wrap;
-}
-
-.chipsColumn {
-  flex-direction: column;
 }
 
 .chip {
@@ -119,11 +142,6 @@
   transition:
     background-color 160ms var(--ease),
     box-shadow 160ms var(--ease);
-}
-
-.chipsColumn .chip {
-  justify-content: flex-start;
-  text-align: left;
 }
 
 .chip:hover {
@@ -228,15 +246,6 @@
 .sliderValue {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
-}
-
-.sliderEnds {
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  margin-top: -2px;
 }
 
 .slider input[type='range'] {

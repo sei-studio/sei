@@ -1,7 +1,7 @@
 /**
- * The room editor's Misc and Lighting panels (261119, product call 261119).
- * Misc adds the wallpaper widgets (clock, date, text, progress) and edits the
- * selected one; Lighting darkens, veils and warms the room. Both are plain
+ * The room editor's Utilities and Lighting panels (261119, product call 261119;
+ * simplified after product call 261120). Utilities adds the wallpaper widgets
+ * (clock, date, text, progress) and edits the selected one; Lighting darkens, veils and warms the room. Both are plain
  * views over shared/seilinkWidgets.ts: every change goes back through the
  * editor's `edit` (one undo step per slider drag, via the gesture key).
  * Built from the editor's own primitives (RoomEditor.module.css: panel,
@@ -9,8 +9,6 @@
  */
 import React from 'react';
 import {
-  CLOCK_PRESETS,
-  CLOCK_SAMPLE,
   DATE_PRESETS,
   DEFAULT_LIGHTING,
   LIGHTING_RANGE,
@@ -29,10 +27,8 @@ import {
   WIDGET_WEIGHTS,
   WIDGET_WEIGHT_LABEL,
   clockFormatOf,
-  formatClock,
   formatDate,
   isNeutralLighting,
-  sameClockFormat,
   type RoomLighting,
   type RoomWidget,
   type WidgetAlign,
@@ -53,7 +49,7 @@ const Svg = ({ size = 18, children }: { size?: number; children: React.ReactNode
   </svg>
 );
 
-/** Rail: Misc (the wallpaper widgets). */
+/** Rail: Utilities (the wallpaper widgets). */
 export const WidgetsIcon = ({ size }: { size?: number }): React.ReactElement => (
   <Svg size={size}>
     <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
@@ -127,13 +123,11 @@ function Slider(props: {
   min: number;
   max: number;
   step?: number;
-  /** Words under the two ends ("Darker", "Brighter"). */
-  ends?: [string, string];
   show?: string;
   onChange(v: number): void;
   onEnd(): void;
 }): React.ReactElement {
-  const { label, value, min, max, step = 1, ends, show, onChange, onEnd } = props;
+  const { label, value, min, max, step = 1, show, onChange, onEnd } = props;
   const pct = ((value - min) / (max - min)) * 100;
   return (
     <label className={styles.slider}>
@@ -154,12 +148,6 @@ function Slider(props: {
         onKeyUp={onEnd}
         onBlur={onEnd}
       />
-      {ends && (
-        <span className={styles.sliderEnds} aria-hidden="true">
-          <span>{ends[0]}</span>
-          <span>{ends[1]}</span>
-        </span>
-      )}
     </label>
   );
 }
@@ -181,9 +169,8 @@ function Chips<T extends string | number>(props: {
   wrap?: boolean;
   /** One row of equal chips (no wrap), for short labels like the font samples. */
   even?: boolean;
-  column?: boolean;
 }): React.ReactElement {
-  const cls = [styles.chips, props.wrap ? styles.chipsWrap : '', props.even ? styles.chipsEven : '', props.column ? styles.chipsColumn : ''].filter(Boolean).join(' ');
+  const cls = [styles.chips, props.wrap ? styles.chipsWrap : '', props.even ? styles.chipsEven : ''].filter(Boolean).join(' ');
   return (
     <div className={cls} role="radiogroup" aria-label={props.label}>
       {props.options.map((o) => {
@@ -231,7 +218,7 @@ function ColorRow({ value, gesture, onTint, onGestureEnd }: { value: string; ges
   );
 }
 
-// ── Misc: the widgets ───────────────────────────────────────────────────────
+// ── Utilities: the widgets ──────────────────────────────────────────────────
 
 export interface WidgetsPanelProps {
   widgets: readonly RoomWidget[];
@@ -244,25 +231,43 @@ export interface WidgetsPanelProps {
   onGestureEnd(): void;
 }
 
-/** A widget's one-line name in the list: what it shows. */
-function widgetSummary(w: RoomWidget, locale: string, t: (en: string) => string): string {
-  if (w.kind === 'clock') return formatClock(CLOCK_SAMPLE, clockFormatOf(w), locale);
-  if (w.kind === 'date') return formatDate(new Date(), w.date ?? 'long', locale);
-  if (w.kind === 'text') return w.text || t('Your text here');
-  return t(SPAN_LABEL[w.span ?? 'day']);
+/** A widget's name in the list: its kind, or a text line's own words. */
+function widgetName(w: RoomWidget, t: (en: string) => string): string {
+  return w.kind === 'text' && w.text ? w.text : t(WIDGET_KIND_LABEL[w.kind]);
 }
 
+/**
+ * Utilities (product call 261120): the add tiles, then one row per placed
+ * widget (icon + name). Only the selected widget opens, its settings inline
+ * under its row; a click on the row again, or on the room, closes it.
+ */
 export function WidgetsPanel(props: WidgetsPanelProps): React.ReactElement {
   const { widgets, selected, onSelect, onAdd, onChange, onRemove, onGestureEnd } = props;
   const t = useT();
   const lang = useLangStore((s) => s.lang);
   const locale = widgetLocale(lang);
-  const sel = widgets.find((w) => w.id === selected) ?? null;
   const full = widgets.length >= WIDGET_MAX;
+  const panelRef = React.useRef<HTMLElement>(null);
+  const first = React.useRef(true);
+  // A widget picked on the desktop may open below the fold: bring its row
+  // and as much of its settings as fit into view (never past the row's top).
+  React.useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    const panel = panelRef.current;
+    const item = selected ? panel?.querySelector<HTMLElement>(`[data-widget-item="${CSS.escape(selected)}"]`) : null;
+    if (!panel || !item) return;
+    const p = panel.getBoundingClientRect();
+    const r = item.getBoundingClientRect();
+    if (r.top < p.top) panel.scrollTop -= p.top - r.top + 8;
+    else if (r.bottom > p.bottom) panel.scrollTop += Math.min(r.bottom - p.bottom + 8, r.top - p.top - 8);
+  }, [selected]);
   return (
-    <section key="misc" className={`${ed.panel} ${ed.groupPanel}`} aria-label={t('Misc')} data-panel="misc">
-      <div className={ed.section} role="group" aria-label={t('Add to your desktop')}>
-        <h2 className={ed.title}>{t('Add to your desktop')}</h2>
+    <section key="misc" ref={panelRef} className={`${ed.panel} ${ed.groupPanel}`} aria-label={t('Utilities')} data-panel="misc">
+      <div className={ed.section}>
+        <h2 className={ed.title}>{t('Utilities')}</h2>
         <div className={styles.addGrid}>
           {WIDGET_KINDS.map((kind) => (
             <button key={kind} type="button" className={styles.add} disabled={full} onClick={() => onAdd(kind)} data-add-widget={kind}>
@@ -272,27 +277,44 @@ export function WidgetsPanel(props: WidgetsPanelProps): React.ReactElement {
           ))}
         </div>
         {widgets.length > 0 ? (
-          <div className={styles.list} role="listbox" aria-label={t('On your desktop')}>
-            {widgets.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                role="option"
-                aria-selected={w.id === selected}
-                className={w.id === selected ? `${styles.row} ${styles.rowOn}` : styles.row}
-                onClick={() => onSelect(w.id === selected ? null : w.id)}
-              >
-                <KindIcon kind={w.kind} size={16} />
-                <span className={styles.rowText}>{widgetSummary(w, locale, t)}</span>
-              </button>
-            ))}
+          <div className={styles.list} aria-label={t('On your desktop')}>
+            {widgets.map((w) => {
+              const open = w.id === selected;
+              return (
+                <div key={w.id} className={styles.item} data-widget-item={w.id}>
+                  <div className={open ? `${styles.row} ${styles.rowOn}` : styles.row}>
+                    <button type="button" className={styles.rowMain} aria-expanded={open} onClick={() => onSelect(open ? null : w.id)}>
+                      <KindIcon kind={w.kind} size={16} />
+                      <span className={styles.rowText}>{widgetName(w, t)}</span>
+                    </button>
+                    {open && (
+                      <button type="button" className={`${ed.iconBtn} ${styles.remove}`} title={t('Remove')} aria-label={t('Remove')} onClick={() => onRemove(w.id)}>
+                        <TrashIcon size={16} />
+                      </button>
+                    )}
+                  </div>
+                  {open && <WidgetSettings w={w} locale={locale} onChange={onChange} onGestureEnd={onGestureEnd} />}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className={ed.note}>{t('Drag them anywhere on your desktop.')}</p>
         )}
       </div>
-      {sel && <WidgetSettings key={sel.id} w={sel} locale={locale} onChange={onChange} onRemove={onRemove} onGestureEnd={onGestureEnd} />}
     </section>
+  );
+}
+
+/** A small name over a control row ("Font", "Weight", "Color"), styled like a slider's name. */
+function Field({ label, children }: { label: string; children: React.ReactNode }): React.ReactElement {
+  return (
+    <div className={styles.field} role="group" aria-label={label}>
+      <span className={styles.fieldLabel} aria-hidden="true">
+        {label}
+      </span>
+      {children}
+    </div>
   );
 }
 
@@ -300,13 +322,11 @@ function WidgetSettings({
   w,
   locale,
   onChange,
-  onRemove,
   onGestureEnd,
 }: {
   w: RoomWidget;
   locale: string;
   onChange: WidgetsPanelProps['onChange'];
-  onRemove(id: string): void;
   onGestureEnd(): void;
 }): React.ReactElement {
   const t = useT();
@@ -315,52 +335,36 @@ function WidgetSettings({
   const today = new Date();
   const dateOptions = DATE_PRESETS.map((id) => ({ id, label: formatDate(today, id, locale) }));
   return (
-    <>
-      <div className={ed.section} role="group" aria-label={t(WIDGET_KIND_LABEL[w.kind])} data-widget-settings={w.kind}>
-        <div className={styles.head}>
-          <h2 className={ed.title}>{t(WIDGET_KIND_LABEL[w.kind])}</h2>
-          <button type="button" className={`${ed.iconBtn} ${styles.remove}`} title={t('Remove')} aria-label={t('Remove')} onClick={() => onRemove(w.id)}>
-            <TrashIcon size={17} />
-          </button>
-        </div>
-        {w.kind === 'clock' && (
-          <>
-            <Chips
-              label={t('Format')}
-              value={CLOCK_PRESETS.find((p) => sameClockFormat(p.format, fmt))?.id ?? null}
-              options={CLOCK_PRESETS.map((p) => ({ id: p.id, label: formatClock(CLOCK_SAMPLE, p.format, locale) }))}
-              onPick={(id) => set({ ...CLOCK_PRESETS.find((p) => p.id === id)!.format })}
-              wrap
-            />
-            <div className={styles.toggles}>
-              <Toggle label={t('24-hour')} on={!fmt.hour12} onChange={(on) => set({ hour12: !on })} />
-              <Toggle label={t('Seconds')} on={fmt.seconds} onChange={(on) => set({ seconds: on })} />
-              <Toggle label={t('Leading zero')} on={fmt.pad} onChange={(on) => set({ pad: on })} />
-              {fmt.hour12 && <Toggle label={t('AM/PM')} on={fmt.ampm} onChange={(on) => set({ ampm: on })} />}
-              <Toggle label={t('Date below')} on={Boolean(w.date)} onChange={(on) => set({ date: on ? 'long' : undefined })} />
-            </div>
-            {w.date && <Chips label={t('Date format')} value={w.date} options={dateOptions} onPick={(id) => set({ date: id })} column />}
-          </>
-        )}
-        {w.kind === 'date' && <Chips label={t('Date format')} value={w.date ?? 'long'} options={dateOptions} onPick={(id) => set({ date: id })} column />}
-        {w.kind === 'text' && (
-          <input
-            className={styles.textInput}
-            type="text"
-            value={w.text ?? ''}
-            maxLength={WIDGET_TEXT_MAX}
-            placeholder={t('Your text here')}
-            aria-label={t('Text')}
-            onChange={(e) => set({ text: e.target.value }, `widget:${w.id}:text`)}
-            onBlur={onGestureEnd}
-          />
-        )}
-        {w.kind === 'progress' && (
-          <Chips label={t('Progress')} value={w.span ?? 'day'} options={PROGRESS_SPANS.map((id) => ({ id, label: t(SPAN_LABEL[id]) }))} onPick={(id) => set({ span: id })} />
-        )}
-      </div>
-      <div className={ed.section} role="group" aria-label={t('Style')}>
-        <h2 className={ed.title}>{t('Style')}</h2>
+    <div className={styles.settings} role="group" aria-label={t(WIDGET_KIND_LABEL[w.kind])} data-widget-settings={w.kind}>
+      {w.kind === 'clock' && (
+        <>
+          <div className={styles.toggles}>
+            <Toggle label={t('24-hour')} on={!fmt.hour12} onChange={(on) => set({ hour12: !on })} />
+            <Toggle label={t('Seconds')} on={fmt.seconds} onChange={(on) => set({ seconds: on })} />
+            <Toggle label={t('Leading zero')} on={fmt.pad} onChange={(on) => set({ pad: on })} />
+            {fmt.hour12 && <Toggle label={t('AM/PM')} on={fmt.ampm} onChange={(on) => set({ ampm: on })} />}
+            <Toggle label={t('Date below')} on={Boolean(w.date)} onChange={(on) => set({ date: on ? 'long' : undefined })} />
+          </div>
+          {w.date && <Chips label={t('Date format')} value={w.date} options={dateOptions} onPick={(id) => set({ date: id })} wrap />}
+        </>
+      )}
+      {w.kind === 'date' && <Chips label={t('Date format')} value={w.date ?? 'long'} options={dateOptions} onPick={(id) => set({ date: id })} wrap />}
+      {w.kind === 'text' && (
+        <input
+          className={styles.textInput}
+          type="text"
+          value={w.text ?? ''}
+          maxLength={WIDGET_TEXT_MAX}
+          placeholder={t('Your text here')}
+          aria-label={t('Text')}
+          onChange={(e) => set({ text: e.target.value }, `widget:${w.id}:text`)}
+          onBlur={onGestureEnd}
+        />
+      )}
+      {w.kind === 'progress' && (
+        <Chips label={t('Progress')} value={w.span ?? 'day'} options={PROGRESS_SPANS.map((id) => ({ id, label: t(SPAN_LABEL[id]) }))} onPick={(id) => set({ span: id })} />
+      )}
+      <Field label={t('Font')}>
         <Chips
           label={t('Font')}
           value={w.font}
@@ -368,34 +372,38 @@ function WidgetSettings({
           onPick={(id) => set({ font: id })}
           even
         />
+      </Field>
+      <Field label={t('Weight')}>
         <Chips
           label={t('Weight')}
           value={w.weight}
           options={WIDGET_WEIGHTS.map((id) => ({ id, label: 'Aa', title: t(WIDGET_WEIGHT_LABEL[id]), style: { fontFamily: WIDGET_FONT_STACK[w.font], fontWeight: id } }))}
           onPick={(id) => set({ weight: id })}
         />
+      </Field>
+      <Field label={t('Color')}>
         <ColorRow value={w.color} gesture={`widget:${w.id}:color`} onTint={(hex, g) => set({ color: hex }, g)} onGestureEnd={onGestureEnd} />
-        <Slider label={t('Size')} value={w.size} min={WIDGET_SIZE_MIN} max={WIDGET_SIZE_MAX} onChange={(v) => set({ size: v }, `widget:${w.id}:size`)} onEnd={onGestureEnd} />
-        <Slider
-          label={t('Opacity')}
-          value={Math.round(w.opacity * 100)}
-          min={Math.round(WIDGET_OPACITY_MIN * 100)}
-          max={100}
-          show={`${Math.round(w.opacity * 100)}%`}
-          onChange={(v) => set({ opacity: v / 100 }, `widget:${w.id}:opacity`)}
-          onEnd={onGestureEnd}
+      </Field>
+      <Slider label={t('Size')} value={w.size} min={WIDGET_SIZE_MIN} max={WIDGET_SIZE_MAX} onChange={(v) => set({ size: v }, `widget:${w.id}:size`)} onEnd={onGestureEnd} />
+      <Slider
+        label={t('Opacity')}
+        value={Math.round(w.opacity * 100)}
+        min={Math.round(WIDGET_OPACITY_MIN * 100)}
+        max={100}
+        show={`${Math.round(w.opacity * 100)}%`}
+        onChange={(v) => set({ opacity: v / 100 }, `widget:${w.id}:opacity`)}
+        onEnd={onGestureEnd}
+      />
+      <div className={styles.styleRow}>
+        <Chips
+          label={t('Alignment')}
+          value={w.align}
+          options={WIDGET_ALIGNS.map((id) => ({ id, label: <AlignIcon align={id} />, title: t(ALIGN_LABEL[id]) }))}
+          onPick={(id) => set({ align: id })}
         />
-        <div className={styles.styleRow}>
-          <Chips
-            label={t('Alignment')}
-            value={w.align}
-            options={WIDGET_ALIGNS.map((id) => ({ id, label: <AlignIcon align={id} />, title: t(ALIGN_LABEL[id]) }))}
-            onPick={(id) => set({ align: id })}
-          />
-          <Toggle label={t('Shadow')} on={w.shadow} onChange={(on) => set({ shadow: on })} />
-        </div>
+        <Toggle label={t('Shadow')} on={w.shadow} onChange={(on) => set({ shadow: on })} />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -424,7 +432,6 @@ export function LightingPanel({ lighting, name, onChange, onReset, onGestureEnd 
         min={LIGHTING_RANGE.brightness[0]}
         max={LIGHTING_RANGE.brightness[1]}
         show={signed(l.brightness)}
-        ends={[t('Darker'), t('Brighter')]}
         onChange={(v) => onChange({ brightness: v }, 'light:brightness')}
         onEnd={onGestureEnd}
       />
@@ -443,12 +450,10 @@ export function LightingPanel({ lighting, name, onChange, onReset, onGestureEnd 
         min={LIGHTING_RANGE.warmth[0]}
         max={LIGHTING_RANGE.warmth[1]}
         show={signed(l.warmth)}
-        ends={[t('Cooler'), t('Warmer')]}
         onChange={(v) => onChange({ warmth: v }, 'light:warmth')}
         onEnd={onGestureEnd}
       />
       <Toggle label={name ? t('Include {name}', { name }) : t('Include the character')} on={l.character} onChange={(on) => onChange({ character: on })} />
-      <p className={ed.note}>{t('Dim the room so your icons and windows stand out.')}</p>
       <div className={styles.resetRow}>
         <button type="button" className={ed.pill} disabled={isNeutralLighting(l) && !l.character} onClick={onReset}>
           {t('Reset')}
