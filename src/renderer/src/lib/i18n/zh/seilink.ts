@@ -124,8 +124,10 @@ export const ZH_SEILINK: Record<string, string> = {
   "Move out?": "要搬走吗？",
   // 261105 T337: entry button, first-link intro, the guide's WorldLink tour.
   "WorldLink": "WorldLink",
-  "WorldLink: edit {name}'s room": "WorldLink：编辑{name}的房间",
-  "WorldLink: put {name} on your desktop": "WorldLink：让{name}住到你的桌面上",
+  "WorldLink (beta)": "WorldLink（测试版）",
+  "{name} can move onto your desktop and live on your wallpaper.": "{name}可以搬到你的桌面上，住在你的壁纸里。",
+  "WorldLink (beta): edit {name}'s room": "WorldLink（测试版）：编辑{name}的房间",
+  "WorldLink (beta): put {name} on your desktop": "WorldLink（测试版）：让{name}住到你的桌面上",
   "Replay WorldLink intro": "重播 WorldLink 开场动画",
   // 261106 v6: the WorldLink first-link intro's status lines ({world} is her world's six-digit number).
   "Initializing WorldLink…": "正在初始化 WorldLink…",

@@ -1,7 +1,7 @@
 /*
  * RegenHint (261107): the one-time card on the profile's card image
  * Regenerate button (.below, since the v0.7 profile) or over an anchor.
- * Same card language as the chat header's one-time games tip
+ * Same card language as the chat header's one-time WorldLink tip
  * (ChatTopBar.module.css .tip): surface-2 card, hairline card edge, pop
  * shadow, a rotated-square tail. Buttons carry no border lines (product rule).
  *
