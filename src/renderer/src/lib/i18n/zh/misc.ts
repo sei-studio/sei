@@ -362,16 +362,10 @@ export const ZH_MISC: Record<string, string> = {
   'Play {name} sample': '播放 {name} 的声音示例',
   'Voice': '声音',
   'Auto: let Sei pick': '自动：让 Sei 挑选',
-  'A voice that fits their personality, never one another companion already uses. Recommended.':
-    '一个符合其个性的声音，绝不会与其他伙伴重复。推荐。',
   'No voice': '无声音',
-  'A silent companion. They chat by text and stay quiet on voice calls.':
-    '一个安静的伙伴。只用文字聊天，语音通话时保持沉默。',
   'Sign in to play the current voice sample. Picking a voice still works.':
     '登录后才能播放当前声音示例。选择声音不受影响。',
   'Current voice': '当前声音',
-  'current voice': '当前声音',
-  'Assigned from an earlier voice pool.': '来自较早的声音池。',
   'Voice group': '声音分组',
   'Feminine': '女性',
   'Masculine': '男性',
@@ -382,8 +376,6 @@ export const ZH_MISC: Record<string, string> = {
   'Pitch': '音高',
   'Reset': '重置',
   'Higher or lower voice. Speaking pace stays the same.': '声音更高或更低。语速保持不变。',
-  'Higher or lower voice. Speaking pace stays the same. Press play to hear it.':
-    '声音更高或更低。语速保持不变。按播放试听。',
   'Hear the pitch': '试听音高',
   'Stop the pitch sample': '停止试听',
   'Download a voice pack in Playtime to hear a sample.': '先在「游玩时长」中下载语音包，才能试听。',
@@ -393,8 +385,6 @@ export const ZH_MISC: Record<string, string> = {
     '越高越平稳均匀，越低越富有戏剧性。',
   // 261019: the user's own ElevenLabs voices in the picker.
   'Your ElevenLabs voices': '你的 ElevenLabs 声音',
-  'Voices from your own ElevenLabs account. They play through your key.':
-    '来自你自己 ElevenLabs 账户的声音，通过你的密钥播放。',
   'No voices in your ElevenLabs account yet. Voices you clone, design or save there show up here.':
     '你的 ElevenLabs 账户里还没有声音。你在那里克隆、设计或收藏的声音会显示在这里。',
   'Refresh': '刷新',
@@ -403,23 +393,18 @@ export const ZH_MISC: Record<string, string> = {
   'Designed voice': '设计的声音',
   'Library voice': '声音库声音',
   'Your voice': '你的声音',
-  'From your ElevenLabs account.': '来自你的 ElevenLabs 账户。',
-  'From your ElevenLabs account. It plays only with your ElevenLabs key.':
-    '来自你的 ElevenLabs 账户，只有使用你的 ElevenLabs 密钥才能播放。',
   // 261020 (T158): cloud users with no key hear the stand-in Sei voice.
   'From your ElevenLabs account. Without your ElevenLabs key, a Sei voice speaks for them.':
     '来自你的 ElevenLabs 账户。没有你的 ElevenLabs 密钥时，会由一个 Sei 的声音代为说话。',
-  // 261119: the Voice Library tile (replaced the add-your-key line).
-  'Browse the ElevenLabs Voice Library': '浏览 ElevenLabs 声音库',
-  'Save a voice there and it shows up under Your ElevenLabs voices. Paid ElevenLabs plans only.':
-    '在那里收藏一个声音，它就会出现在「你的 ElevenLabs 声音」中。仅限 ElevenLabs 付费套餐。',
-  'Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.':
-    '在那里收藏声音，再到「游玩时长」添加 ElevenLabs 密钥即可使用。仅限 ElevenLabs 付费套餐。',
+  // 261119: the Voice Library link (261120: short own-key notes, a menu label).
+  'Voice options': '声音选项',
+  'Browse the Voice Library': '浏览声音库',
+  'Voices you save there show up under Your ElevenLabs voices. Paid plans only.': '在那里收藏的声音会出现在「你的 ElevenLabs 声音」中。仅限付费套餐。',
+  'To use one, add your ElevenLabs key in Playtime. Paid plans only.': '要使用，请在「游玩时长」中添加 ElevenLabs 密钥。仅限付费套餐。',
   'Could not read your ElevenLabs voices. Check your ElevenLabs key in Playtime.':
     '无法读取你的 ElevenLabs 声音。请在「游玩时长」中检查你的 ElevenLabs 密钥。',
   'Could not load your ElevenLabs voices right now.': '暂时无法加载你的 ElevenLabs 声音。',
-  "Sei's voices play through your ElevenLabs key on paid ElevenLabs plans. On a free plan, use your own voices.":
-    'Sei 的声音在 ElevenLabs 付费套餐下可通过你的密钥播放。免费套餐请使用你自己的声音。',
+  "Sei's voices need a paid ElevenLabs plan on your key.": "用你的密钥时，Sei 的声音需要 ElevenLabs 付费套餐。",
   'Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.':
     'ElevenLabs 免费套餐无法通过你的密钥播放这个声音。请选择你自己的声音。',
   'Your ElevenLabs account is out of credits.': '你的 ElevenLabs 账户额度已用完。',
@@ -510,10 +495,7 @@ export const ZH_MISC: Record<string, string> = {
   // Voice Library voices on Sei cloud (261119).
   "This voice is no longer available.": "这个声音已不再可用。",
   "No longer available. A similar Sei voice speaks for them until you pick another.": "已不再可用。在你另选声音之前，由一个相似的 Sei 声音代为发声。",
-  "From the ElevenLabs Voice Library.": "来自 ElevenLabs 声音库。",
-  "Find a voice there, copy its link and paste it below.": "在那里找到声音，复制链接，然后粘贴到下面。",
   "Use a voice from the library": "使用声音库中的声音",
-  "Paste a link or voice ID from the ElevenLabs Voice Library. It costs nothing extra on your Sei plan.": "粘贴 ElevenLabs 声音库中的链接或声音 ID。在你的 Sei 套餐中使用不额外收费。",
   "Voice Library link or voice ID": "声音库链接或声音 ID",
   "Looking up...": "查询中...",
   "In use": "使用中",
