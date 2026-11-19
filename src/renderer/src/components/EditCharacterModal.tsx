@@ -651,6 +651,7 @@ export function EditCharacterModal({
                     localTtsMode={localTtsMode}
                     previewCharacterId={character.id}
                     pitchBypassed={fishMode && fishVoice !== null}
+                    surface="edit"
                   />
                   {fishMode ? (
                     <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} />
