@@ -21,7 +21,13 @@
  * No React, no IPC.
  */
 import type { Character } from '@shared/characterSchema';
-import { applySharedVoicePick, applyVoicePick, ownVoiceOf, sharedVoiceIdOf, type OwnVoicePick } from '@shared/voiceIds';
+import {
+  applySharedVoicePick,
+  applyVoicePick,
+  sharedVoiceIdOf,
+  storedVoicePickOf,
+  type OwnVoicePick,
+} from '@shared/voiceIds';
 import { voicePitchRate, voiceStabilityFor } from '@shared/voicePitch';
 import type { VoiceParams } from './voicePicker';
 
@@ -32,7 +38,8 @@ type Meta = Record<string, unknown> | undefined | null;
 export interface VoiceDraft {
   /** null = Auto, NO_VOICE_ID = silent, else a pinned voice. */
   voiceId: string | null;
-  /** The own-ElevenLabs-voice marker that rides with voiceId (null otherwise). */
+  /** The own-ElevenLabs-voice or Voice Library marker that rides with voiceId
+   *  (null otherwise; a library pick carries source: 'library'). */
   voiceOwn: OwnVoicePick | null;
   /** The Sei voice others hear while the voice is the author's own (null = the close match). */
   voiceShared: string | null;
@@ -53,7 +60,7 @@ export function voiceFromCharacter(character: Pick<Character, 'id' | 'metadata'>
   if (calm !== undefined) params.calmness = calm;
   return {
     voiceId: typeof meta?.voiceId === 'string' ? (meta.voiceId as string) : null,
-    voiceOwn: ownVoiceOf(meta),
+    voiceOwn: storedVoicePickOf(meta),
     voiceShared: sharedVoiceIdOf(meta),
     params,
   };
@@ -72,8 +79,9 @@ export function voiceDiffers(a: VoiceDraft, b: VoiceDraft): boolean {
 /** The metadata one voice save writes, on top of the LATEST stored metadata. */
 export function voiceMetadataToSave(characterId: string, latest: Meta, draft: VoiceDraft): Record<string, unknown> {
   // A pool pick clears voiceShared (applyVoicePick); an own pick keeps the
-  // "Others will hear" choice.
-  const metadata = draft.voiceOwn
+  // "Others will hear" choice. A library voice is a Sei voice everyone hears,
+  // so it never carries one.
+  const metadata = draft.voiceOwn && draft.voiceOwn.source !== 'library'
     ? applySharedVoicePick(applyVoicePick(latest, draft.voiceId, draft.voiceOwn), draft.voiceShared)
     : applyVoicePick(latest, draft.voiceId, draft.voiceOwn);
   const baked = { id: characterId, metadata: {} };

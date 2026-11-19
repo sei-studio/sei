@@ -361,7 +361,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
         surface="edit"
       />
       {fishMode ? <FishVoiceOverride characterId={character.id} value={fishVoice} onChange={setFishVoice} /> : null}
-      {value.voiceOwn && value.voiceId && !localTtsMode ? (
+      {value.voiceOwn && value.voiceOwn.source !== 'library' && value.voiceId && !localTtsMode ? (
         <div className={styles.sharedVoice}>
           <SharedVoiceChoice
             characterId={character.id}

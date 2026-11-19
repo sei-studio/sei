@@ -13,8 +13,11 @@
  *                     metadata.voiceOwn marker (shared/voiceIds.ts
  *                     applyVoicePick), which keeps the runtime from treating
  *                     it as unknown and re-rolling it.
+ *   - a library voice → (261119) a Voice Library voice pasted on Sei cloud:
+ *                     metadata.voiceId = its id PLUS metadata.voiceLibrary
+ *                     (an OwnVoicePick with source 'library' at the picker).
  */
-import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
+import type { LibraryVoiceInfo, LibraryVoiceReason, OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import { NO_VOICE_ID, applyVoicePick, type OwnVoicePick } from '@shared/voiceIds';
 import { isPoolVoiceId } from '@shared/poolVoiceIds';
 
@@ -263,4 +266,67 @@ export function elevenKeySettingMode(
   if (backend === 'cloud-proxy') return 'cloud-optional';
   if (backend === 'local' && ttsEngine === 'elevenlabs') return 'byok';
   return 'hidden';
+}
+
+// ── Voice Library voices on Sei cloud (261119) ─────────────────────────────
+
+/** The paste-a-library-voice card shows for Sei cloud users (the proxy adds
+ * the voice to Sei's account). BYOK users keep the own-voice path. */
+export function libraryPasteShown(
+  backend: 'local' | 'cloud-proxy' | null | undefined,
+  localTtsMode: boolean,
+): boolean {
+  return !localTtsMode && backend === 'cloud-proxy';
+}
+
+/** The picker pick for a library voice (stored as metadata.voiceLibrary). */
+export function libraryVoicePick(v: Pick<LibraryVoiceInfo, 'name' | 'gender'>): OwnVoicePick {
+  return { name: v.name, ...(v.gender ? { gender: v.gender } : {}), source: 'library' };
+}
+
+/** English copy (callers pass it through t()) for why a pasted voice cannot
+ * be used. One plain line each; no counts that the proxy could change. */
+export function libraryReasonCopy(reason: LibraryVoiceReason): string {
+  switch (reason) {
+    case 'invalid_input':
+      return 'Paste a link from the ElevenLabs Voice Library, or a voice ID.';
+    case 'not_found':
+      return 'That voice is not in the public ElevenLabs Voice Library.';
+    case 'pool_voice':
+      return 'That voice is already one of the Sei voices below.';
+    case 'custom_rate':
+      return 'That voice costs extra to use, so it cannot be used on the Sei plan.';
+    case 'live_moderation':
+      return 'That voice has its own content checks that can cut lines off, so it cannot be used here.';
+    case 'short_notice':
+      return 'That voice could leave the library on short notice, so it cannot be used here.';
+    case 'delisted':
+      return 'That voice is leaving the library, so it cannot be used.';
+    case 'restricted_category':
+      return 'That kind of voice cannot be used on the Sei plan.';
+    case 'daily_limit':
+      return 'You have added as many library voices as you can today. Try again tomorrow.';
+    case 'voice_limit':
+      return 'Your companions already use as many library voices as allowed. Switch one back to a Sei voice first.';
+    case 'capacity':
+      return 'Library voices are full right now. Try again later, or pick a Sei voice.';
+    case 'no_session':
+      return 'Sign in to use a voice from the library.';
+    case 'rate_limited':
+      return 'Too many tries. Wait a little and try again.';
+    case 'unavailable':
+    default:
+      return 'Could not reach the Voice Library right now. Try again in a moment.';
+  }
+}
+
+/** One short line under a looked-up voice: its labels, else the start of its
+ * description. ElevenLabs labels are English words and stay as they are. */
+export function libraryVoiceDetail(v: Pick<LibraryVoiceInfo, 'gender' | 'age' | 'accent' | 'description'>): string {
+  const labels = [v.gender, v.age, v.accent]
+    .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+    .map((x) => x.replace(/_/g, ' ').trim());
+  if (labels.length > 0) return labels.join(', ');
+  const d = (v.description ?? '').trim();
+  return d.length > 120 ? `${d.slice(0, 117).trimEnd()}...` : d;
 }

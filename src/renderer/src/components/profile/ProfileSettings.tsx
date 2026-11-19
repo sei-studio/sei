@@ -44,7 +44,7 @@ import type { Character, CardImageOrigin } from '@shared/characterSchema';
 import { cardImageOrigin, effectiveMcUsername, portraitVersionIndex } from '@shared/characterSchema';
 import type { AvatarLibraryView } from '@shared/avatarLibrary';
 import type { VoiceInfo } from '@shared/ipc';
-import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
+import { NO_VOICE_ID, libraryVoiceOf, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { voicePitchRate } from '@shared/voicePitch';
 import { dstSurvivor } from '@shared/dstSurvivors';
 import { Button } from '../Button';
@@ -571,6 +571,8 @@ export function useVoiceLabel(character: Character, opts: { borrowed?: boolean }
   if (own && opts.borrowed) return lookup(sharedVoiceIdOf(character.metadata));
   if (!id) return t('Auto');
   if (own) return own.name;
+  const library = libraryVoiceOf(character.metadata);
+  if (library) return library.name;
   return lookup(id);
 }
 
