@@ -1,7 +1,7 @@
 /**
  * Voice-picker pure logic (260720) — grouping + selection, no React.
  *
- * Selection model (what AddCharacterScreen / EditCharacterModal persist to
+ * Selection model (what AddCharacterScreen / the profile's VoiceEditor persist to
  * character.metadata.voiceId — the same shape unique-cast writes):
  *   - null          → Auto: metadata.voiceId stays unset; the runtime assigns
  *                     a deterministic, roster-deduped pool voice on first use.

@@ -150,7 +150,7 @@ export function PortraitVersionsModal({
    * Upload / Remove (user-made companions). The renderer-side save after main
    * applied the bytes is load-bearing for shared companions: the moderation
    * gate on new portrait bytes runs only in the chars:save handler (see
-   * EditCharacterModal.persistPortrait). Read the latest row first so the
+   * the old EditCharacterModal.persistPortrait). Read the latest row first so the
    * portrait_versions records main just wrote survive.
    */
   const onUploaded = async (ref: string | null): Promise<void> => {

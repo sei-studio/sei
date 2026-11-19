@@ -23,8 +23,10 @@
  *    owner control (look, voice, persona, Public, Locked rows) shows.
  *
  * The rows (components/profile/ProfileSettings.tsx) are label + value +
- * action; every action opens the existing editor or popup, which this page
- * owns.
+ * action. Your own companion's voice, name and description, persona and
+ * chess are edited inline in their tab (components/profile/ProfileEditors,
+ * 261119: the Edit companion popup that repeated the tabs is gone); the
+ * other actions open a focused popup this page owns.
  *
  * This page is STATIC info only. Minecraft connect/disconnect controls live
  * exclusively in the chat's game surface (McLaunchPanel Launch / the
@@ -49,7 +51,6 @@ import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { Button } from '../components/Button';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
 import { PixelPortrait } from '../components/PixelPortrait';
-import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
 import { AddCount } from '../components/AddCount';
@@ -92,7 +93,7 @@ import {
 } from '../lib/profileRows';
 import type { Character } from '@shared/characterSchema';
 import type { CharacterOverviewInfo } from '@shared/ipc';
-import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
+import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
@@ -186,8 +187,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
 
   const character: Character | undefined = characters.find((c) => c.id === id);
-  const [editing, setEditing] = useState<boolean>(false);
-  const [editSection, setEditSection] = useState<EditSection>('basic');
   // Where a deep link (or the screenshot harness) asked the page to open: a
   // tab, or a row group (its tab opens). Read once.
   const [initialFocus] = useState<ProfileFocus | null>(() => takeRequestedProfileFocus());
@@ -254,10 +253,17 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     // Seed on open only; later metadata refreshes must not reset the pick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareConfirm]);
-  // Set when a publish attempt is blocked on a missing description: we open the
-  // edit modal at Basic, and resume the publish once the modal closes with a
-  // description present.
+  // Set when a publish attempt is blocked on a missing description: the page
+  // opens the Personality tab, whose name and description editor says why,
+  // and the publish resumes once a description is saved.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
+  const savedDescription = (character?.description ?? '').trim();
+  useEffect(() => {
+    if (!needsDescription || savedDescription === '') return;
+    setNeedsDescription(false);
+    setSharePhase('confirm');
+    setShareConfirm('going_public');
+  }, [needsDescription, savedDescription]);
   // 260729 — full-art popup (the corner expand button over the portrait).
   const [artOpen, setArtOpen] = useState<boolean>(false);
   const [artSaving, setArtSaving] = useState<boolean>(false);
@@ -321,7 +327,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     seilinkOn,
     movedInHere: livingId === id,
     ownVoice: !!ownVoiceOf(character?.metadata),
-    noVoice: character?.metadata?.voiceId === NO_VOICE_ID,
   });
   const view = profileView(kind);
   const tabs: ProfileTab[] = profileTabs(access);
@@ -394,7 +399,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     character,
     pageOverlayOpen:
       view !== 'owner' ||
-      editing ||
       knowledgeOpen ||
       cardImage !== null ||
       skinEditOpen ||
@@ -508,11 +512,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Per-character accent tint for the portrait bloom.
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
 
-  const openEdit = (section: EditSection): void => {
-    setEditSection(section);
-    setEditing(true);
-  };
-
   // "Chat" routes to the chat page; "Play" routes to chat AND opens the
   // Minecraft game surface (the launch panel, or the live dashboard when the
   // bot is already online). Both are static: connection control lives in the
@@ -548,11 +547,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       // be a dead end; an Awakened companion is always cast with a description
       // anyway (buildDescription in uniqueGeneration), so this is a fallback.
       if (!hasDescription && !viewOnly) {
-        // Description is edited in the modal now — open it at Basic and resume
-        // the publish when the modal closes with a description present.
+        // Open the name and description editor (Personality tab); the
+        // publish resumes once a description is saved (effect above).
         setNeedsDescription(true);
-        setEditSection('basic');
-        setEditing(true);
+        setWantedTab('personality');
         return;
       }
       setShareConfirm('going_public');
@@ -595,22 +593,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareConfirm(null);
     setSharePhase('confirm');
     setShareError(null);
-  };
-
-  /**
-   * Modal close handler. If a publish attempt was blocked on a missing
-   * description, resume it once the modal closes with a description present
-   * (read the freshest character from the store — the modal refreshed it).
-   */
-  const onEditClose = (): void => {
-    setEditing(false);
-    if (!needsDescription) return;
-    setNeedsDescription(false);
-    const latest = useDataStore.getState().characters.find((c) => c.id === id);
-    if (latest && (latest.description ?? '').trim() !== '') {
-      setSharePhase('confirm');
-      setShareConfirm('going_public');
-    }
   };
 
   // Reset memory opens a confirmation popup (reset is irreversible and does NOT
@@ -743,7 +725,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     tab,
     onAction: (action: ProfileAction) => onAction(action),
     onTipOpen,
-    openEdit,
+    openTab: (next: ProfileTab) => selectTab(next),
+    aboutNotice: needsDescription
+      ? t('Going public needs a description. Add one and press Save to continue publishing {name}.', {
+          name: character.name,
+        })
+      : null,
     openCardImage: (regenerate: boolean) => setCardImage({ regenerate }),
     openKnowledge: () => setKnowledgeOpen(true),
     openSkinEdit: () => setSkinEditOpen(true),
@@ -911,6 +898,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 <ProfileSettings
                   {...settingsProps}
                   tab={key}
+                  active={key === tab}
                   regenHint={
                     key === tab && view === 'owner' && regenHint.show ? (
                       <RegenHint
@@ -981,22 +969,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         </div>
       </div>
 
-      {editing ? (
-        <EditCharacterModal
-          character={character}
-          initialSection={editSection}
-          only
-          onClose={onEditClose}
-          notice={
-            needsDescription
-              ? t(
-                  'Going public needs a description. Add one, then close this window to continue publishing {name}.',
-                  { name: character.name },
-                )
-              : undefined
-          }
-        />
-      ) : null}
       {knowledgeOpen ? (
         <KnowledgeModal
           characterId={character.id}

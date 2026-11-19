@@ -224,7 +224,7 @@ export const PT_BR: Record<string, string> = {
   "Reset memory": "Redefinir memória",
   // ── screens-a ──
   "Unbind": "Desfazer vínculo",
-  "Going public needs a description. Add one, then close this window to continue publishing {name}.": "Para publicar {name}, adicione uma descrição. Depois, feche esta janela para continuar.",
+  "Going public needs a description. Add one and press Save to continue publishing {name}.": "Para publicar {name}, adicione uma descrição. Depois, clique em Salvar para continuar.",
   "{name} full art": "Arte completa de {name}",
   // ── games ──
   "Saved to {path}": "Salvo em {path}",
