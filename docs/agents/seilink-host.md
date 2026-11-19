@@ -347,8 +347,9 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     by sliding the features inside the face ellipse, irises moved inside
     the eye openings that `findEyes` finds from the open/closed difference
     (only when `irisVisible`: the flat chibi Sui eyes have no iris, so her
-    gaze shows through a slightly bigger head motion). Big turns move to the
-    baked l1/r1 (l2/r2) pose with hysteresis and a 1.4 s hold; the 460 ms
+    gaze shows through a slightly bigger head motion). Big turns of a face with
+    no iris move to the baked l1/r1 (l2/r2) pose with hysteresis and a 2.5 s
+    hold (261119; a face with irises keeps the centre pose); the 600 ms
     crossfade slides each picture's features toward the other (eye-centre
     morph), so it glides. Lids swap patches on the lid curve (a dissolve of
     the opaque patches showed the iris through the lid). No WebGL2, a failed
@@ -362,15 +363,52 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   - portrait cutout and silhouette: no eyes; breathing (now also widening
     the shoulders, `BREATH_WIDTH`), sway, a weight shift at least 9 s apart (about every 35 s
     on average), and a slight lean toward where she would look (`gazeLean`).
-- **Cursor.** The host gets no cursor feed (that lives in the hover code),
-  so on the wallpaper her eyes wander and glance around; the overlay's feed
-  still drives the cursor looks there.
+- **Cursor.** The host's hover poll feeds her gaze (`CH.cursor`, see "The
+  dock" above; it used to have none). The harness makes the same feed from
+  the page's pointer with `&cursorfeed=1`.
 - **Cost.** The WebGL face draws one quad a frame at the cap (30, 15 on
   battery, 0 covered); the composite uploads only on an expression or pose
   change and the mouth box only on a viseme change. Measure with
   `scripts/seilink-idle-capture.mjs` (video + CDP main-thread busy + per
   process CPU; headless uses SwiftShader, so the GPU process number is not
   what a real GPU costs).
+- **Polish (261119, product call 261119 on beta.6 with Sui's anima face set).**
+  - White box on every blink: the lid patches are ImageBitmaps, and whether
+    WebGL gets an ImageBitmap premultiplied is up to the browser and the
+    decoder (the UNPACK_PREMULTIPLY flag does not apply to it). The patches'
+    fully transparent border still holds a light colour (about rgb
+    190,191,207), so a straight upload under the shader's premultiplied
+    "over" drew a bright rectangle round the eye box. `FaceGl.patch` now
+    draws each patch through a 2D canvas first (premultiplied everywhere,
+    like the composite and the mouth box). The shader also reads every
+    texture in uniform control flow and masks after (no early return, no
+    per-pixel `if` round a read), so no GPU picks a far mip level along the
+    pack rect or the eye box edge.
+  - Gaze: the eyes travel on a critically damped spring (`gazeOmega` 17,
+    `maxSpeed` 4/s) instead of a 30-80 ms minimum-jerk snap, the drift no
+    longer switches on and off with each saccade, the stepped cursor feed
+    (150 ms polls) is glided by its own spring (`cursorOmega`), a soft dead
+    zone (`deadZone` 0.025) ignores a resting hand, and a cursor that moved
+    in the last 1.8 s gets her look (85% of fixations; a cursor that starts
+    moving catches her eye after 260 ms). Plot: the demo script's
+    `trace.json`.
+  - Baked turned poses (l1/r1) are whole-figure crossfades (every hair
+    strand moves), which read as the idle animation jumping. A face set
+    with irises now turns with the warp alone; only a face with no iris
+    still switches, for big turns (0.55 in, 0.3 out, 2.5 s hold, 600 ms
+    fade). The 2D fallback's idle pose fade is 420 ms (was 170).
+  - Sway: body lean 0.7 to 0.2 deg (it rotates about her bottom: a
+    pendulum at the head), seat shifts at most 0.014 heights (was 0.045,
+    about 28 px), head sway 0.12 to 0.05 and roll 0.55 to 0.22.
+  - Click: one slight reaction per click (`host/clickReaction.ts`: about 1%
+    toward her feet, 280 ms) on the press; the click that follows does not
+    animate again (it used to squash on the press and hop up to 18 px on
+    the click).
+  - Demo: `node scripts/seilink-avatar-demo.mjs --facepacks <packs dir>
+    --facepack-id <an-...> --out <dir>` (DevFirstRoomFlow desktop with
+    `&cursorfeed=1`, a drawn cursor, `window.__seiDevPoke()`, the page clock
+    stepped per frame, `trace.json` per frame, `demo.mp4` with a silent
+    AAC track).
 
 ### What RoomAvatar can read in the host
 
