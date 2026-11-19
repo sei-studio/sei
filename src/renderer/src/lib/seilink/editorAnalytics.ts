@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isDirty, type EditHistory } from '@shared/seilinkEdit';
 import {
+  desktopSaveEvents,
   EditorSessionTracker,
   SEILINK_EDITOR_ERROR_EVENT,
   SEILINK_EDITOR_SESSION_EVENT,
@@ -22,7 +23,7 @@ import {
   type EditorSurface,
   type RoomShapeAtClose,
 } from '@shared/seilinkTelemetry';
-import type { RoomSlotId } from '@shared/seilinkRoom';
+import type { RoomSlotId, RoomState } from '@shared/seilinkRoom';
 import type { TogetherCount } from '@shared/seilinkTogether';
 import { sei } from '../ipcClient';
 
@@ -64,6 +65,8 @@ export interface EditorAnalytics {
   colorPicked(kind: ColorPickKind): void;
   /** 261105 (T336): decorating together (session counters on seilink_editor_session). */
   together: TogetherAnalytics;
+  /** 261119: a save went through: seilink_widget / seilink_lighting for what it changed on the desktop layer. */
+  desktopSaved(before: RoomState | null, after: RoomState): void;
 }
 
 export interface TogetherAnalytics {
@@ -180,5 +183,17 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
     [on, session],
   );
 
-  return { avatarUpload, pickerOpened, colorPicked, together };
+  const desktopSaved = useCallback(
+    (before: RoomState | null, after: RoomState) => {
+      if (!on) return;
+      try {
+        for (const e of desktopSaveEvents(before, after, { characterId, surface })) track(e.event, e.props);
+      } catch {
+        /* analytics must never disrupt the editor */
+      }
+    },
+    [on, characterId, surface],
+  );
+
+  return { avatarUpload, pickerOpened, colorPicked, together, desktopSaved };
 }

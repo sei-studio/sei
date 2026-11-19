@@ -128,6 +128,8 @@
 import { CODE_PATTERNS, PATTERN_ID_RE, codePattern, toneOnTone, type PatternDef, type PatternQuad, type PatternSurface } from './seilinkPatterns';
 import type { RoomParticles } from './seilinkParticles';
 
+import type { RoomLighting, RoomWidget } from './seilinkWidgets';
+
 export const SEILINK_ROOM_FORMAT = 'sei-room' as const;
 export const SEILINK_ROOM_VERSION = 1 as const;
 
@@ -375,6 +377,14 @@ export interface RoomState {
    * editor resumes at the first step not in it. Absent = no setup running.
    */
   setup?: { done: RoomSetupStep[] };
+  /**
+   * 261119: overlay widgets on the wallpaper (clock, date, a text line, a
+   * progress bar; shared/seilinkWidgets.ts). Absent = none. They belong to
+   * the desktop, not the room art, so a room type switch keeps them.
+   */
+  widgets?: RoomWidget[];
+  /** 261119: brightness, a dark veil and warmth over the room (seilinkWidgets.ts). Absent = as painted. */
+  lighting?: RoomLighting;
 }
 
 /** The guided setup's steps, in order (261106). Mapped to the editor's panels in RoomEditor. */
@@ -427,14 +437,25 @@ export function isBlankRoom(state: Pick<RoomState, 'preset' | 'slots' | 'items'>
  * The guided setup's first step puts this in, so furniture and extras are
  * added in their own steps. Keeps the time setting and her avatar.
  */
-export function bareRoomState(manifest: Pick<RoomPresetManifest, 'id' | 'slots'>, keep?: Pick<RoomState, 'time' | 'avatar'>): RoomState {
+export function bareRoomState(
+  manifest: Pick<RoomPresetManifest, 'id' | 'slots'>,
+  keep?: Pick<RoomState, 'time' | 'avatar'> & Partial<Pick<RoomState, 'widgets' | 'lighting'>>,
+): RoomState {
   const slots: RoomState['slots'] = {};
   for (const [slot, def] of Object.entries(manifest.slots) as Array<[RoomSlotId, RoomSlotDef]>) if (def.optional) slots[slot] = { id: null };
   const out: RoomState = { ...defaultRoomState(manifest.id), slots };
   if (keep) {
     out.time = keep.time;
     out.avatar = keep.avatar;
+    keepDesktop(keep, out);
   }
+  return out;
+}
+
+/** 261119: the desktop's own layer (widgets, lighting) carried onto a rebuilt room. Mutates `out`. */
+export function keepDesktop(from: Partial<Pick<RoomState, 'widgets' | 'lighting'>>, out: RoomState): RoomState {
+  if (from.widgets?.length) out.widgets = from.widgets;
+  if (from.lighting) out.lighting = from.lighting;
   return out;
 }
 

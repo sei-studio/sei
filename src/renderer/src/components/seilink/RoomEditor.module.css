@@ -1247,3 +1247,20 @@
     animation: none;
   }
 }
+
+/* 261119: snap lines while a wallpaper widget is dragged. */
+.snapV,
+.snapH {
+  position: absolute;
+  pointer-events: none;
+  background: rgb(255 255 255 / 0.75);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.18);
+}
+
+.snapV {
+  width: 1px;
+}
+
+.snapH {
+  height: 1px;
+}
