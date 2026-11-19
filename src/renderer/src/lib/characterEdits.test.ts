@@ -70,6 +70,26 @@ describe('voice', () => {
     expect(meta.voiceShared).toBeUndefined();
   });
 
+  it('a Voice Library voice reads back as a library pick and never carries a voice for others', () => {
+    const stored = { voiceId: OWN, voiceLibrary: { name: 'Captain Wren', gender: 'female' } };
+    const draft = voiceFromCharacter({ id: 'x', metadata: stored });
+    expect(draft.voiceOwn).toEqual({ name: 'Captain Wren', gender: 'female', source: 'library' });
+    // A params-only save keeps the library marker.
+    const kept = voiceMetadataToSave('x', stored, { ...draft, params: { calmness: 0.7 } });
+    expect(kept.voiceLibrary).toEqual({ name: 'Captain Wren', gender: 'female' });
+    expect(kept.voiceOwn).toBeUndefined();
+    // A fresh library pick over an own voice drops the own marker and the voice for others.
+    const picked = voiceMetadataToSave('x', { voiceId: POOL, voiceOwn: { name: 'Mine' }, voiceShared: POOL }, {
+      voiceId: OWN,
+      voiceOwn: { name: 'Captain Wren', source: 'library' },
+      voiceShared: POOL,
+      params: {},
+    });
+    expect(picked.voiceLibrary).toEqual({ name: 'Captain Wren' });
+    expect(picked.voiceOwn).toBeUndefined();
+    expect(picked.voiceShared).toBeUndefined();
+  });
+
   it('keeps metadata it does not own', () => {
     const meta = voiceMetadataToSave('x', { chess: { elo: 1200 }, prompt_mode: 'advanced' }, {
       voiceId: null,
