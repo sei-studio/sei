@@ -830,6 +830,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
 
+    // 261120 `expandOnly`: run the persona expansion and return the expanded
+    // character WITHOUT writing it. The profile Regenerate uses it so the
+    // write happens afterwards on the row as it is THEN (the renderer's
+    // character save queue re-reads it and applies only the persona fields):
+    // a whole-row write at the end of a ~30 s expansion reverted any edit
+    // saved meanwhile. No write means no create, quota, owner or moderation
+    // step here; the renderer's follow-up save runs those as usual.
+    if (
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { expandOnly?: unknown }).expandOnly === true
+    ) {
+      const requestId = (optsArg as { expansionRequestId?: unknown }).expansionRequestId;
+      return await expandAndSaveCharacter({
+        character: parsedCharacter,
+        persist: false,
+        onProgress:
+          typeof requestId === 'string'
+            ? (p: { fraction: number; section: string }): void =>
+                deps.sendExpansionProgress({ requestId, ...p })
+            : undefined,
+      });
+    }
+
     // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
     // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
     // character are always allowed (they don't add a slot). Defaults are never

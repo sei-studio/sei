@@ -2114,9 +2114,11 @@ export interface RendererApi {
   // that tags the streaming ExpansionProgressEvent ticks so the caller can
   // filter progress for THIS save. Ignored when skipExpansion is true (no LLM
   // call runs). When omitted, expansion still runs/streams but emits no ticks.
+  // `expandOnly` (261120): expand and return the result WITHOUT saving it (the
+  // caller writes the persona onto the then-current row itself).
   saveCharacter(
     character: Character,
-    options?: { skipExpansion?: boolean; expansionRequestId?: string },
+    options?: { skipExpansion?: boolean; expansionRequestId?: string; expandOnly?: boolean },
   ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;

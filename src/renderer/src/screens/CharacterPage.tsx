@@ -44,6 +44,7 @@ import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { forgetEditDrafts } from '../lib/profileEditDrafts';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
@@ -626,10 +627,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     try {
       if (isAddedFromWorld) {
         await sei.charsRemoveFromLibrary(character.id);
+        forgetEditDrafts(character.id);
         useDataStore.getState().removeCharacter(character.id);
         await refreshLibraryState();
       } else {
         await sei.deleteCharacter(character.id);
+        // Before anything re-renders: the profile editors' leave-saves on
+        // the way Home must not write (a save recreates a deleted companion
+        // and puts a released default back).
+        forgetEditDrafts(character.id);
         if (character.is_default) {
           await refreshLibraryState();
         } else {

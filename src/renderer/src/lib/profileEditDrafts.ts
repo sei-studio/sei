@@ -18,12 +18,18 @@
  * Account-scoped: cleared, and the epoch bumped, when the account changes
  * (lib/scopeReset.ts), so a leave-save started by that change's own
  * navigation never writes into the next account.
+ *
+ * Released companions (261120): releasing or deleting a companion drops its
+ * drafts and bumps its release count (`forgetEditDrafts`), so the leave-saves
+ * of the editors that unmount on the way Home write nothing (a save would
+ * bring the companion back).
  */
 
 export type DraftSection = 'voice' | 'about' | 'persona' | 'chess';
 
 const drafts = new Map<string, unknown>();
 let epoch = 0;
+const releases = new Map<string, number>();
 
 const keyOf = (characterId: string, section: DraftSection): string => `${characterId}:${section}`;
 
@@ -45,4 +51,17 @@ export function editDraftEpoch(): number {
 export function clearAllEditDrafts(): void {
   drafts.clear();
   epoch += 1;
+}
+
+/** How many times this companion was released this session; a leave-save checks it before writing. */
+export function editReleaseCount(characterId: string): number {
+  return releases.get(characterId) ?? 0;
+}
+
+/** The companion was released or deleted: drop its drafts, and the editors' pending leave-saves write nothing. */
+export function forgetEditDrafts(characterId: string): void {
+  for (const key of [...drafts.keys()]) {
+    if (key.startsWith(`${characterId}:`)) drafts.delete(key);
+  }
+  releases.set(characterId, editReleaseCount(characterId) + 1);
 }

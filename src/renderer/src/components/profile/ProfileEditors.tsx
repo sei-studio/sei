@@ -26,6 +26,13 @@
  *    See lib/profileEditDrafts.ts.
  *  - A field the player has not touched always shows the stored value, so a
  *    save made elsewhere (the publish step's "Others will hear") shows here.
+ *  - Every write goes through lib/characterSaveQueue.ts: one at a time per
+ *    companion, each applying only its own fields onto the row as stored at
+ *    that moment, so two editors saving together (leaving the page with
+ *    several drafts) or a Regenerate finishing after another save never
+ *    drops the other change. A companion that is no longer stored is never
+ *    written (a save would recreate it), and releasing one drops its drafts
+ *    (forgetEditDrafts) so the leave-saves on the way Home write nothing.
  *
  * Analytics: the first change in an editor reports its row's edit action
  * (edit_voice, edit_about, edit_persona, edit_chess, the actions the popup's
@@ -53,7 +60,14 @@ import {
   type PersonaMode,
   type VoiceDraft,
 } from '../../lib/characterEdits';
-import { editDraftEpoch, getEditDraft, setEditDraft, type DraftSection } from '../../lib/profileEditDrafts';
+import {
+  editDraftEpoch,
+  editReleaseCount,
+  getEditDraft,
+  setEditDraft,
+  type DraftSection,
+} from '../../lib/profileEditDrafts';
+import { regenerateStoredPersona, updateStoredCharacter } from '../../lib/characterSaveQueue';
 import type { ProfileAction } from '../../lib/profileRows';
 import { localTtsModel } from '@shared/ttsEngine';
 import type { Character } from '@shared/characterSchema';
@@ -82,11 +96,6 @@ async function refresh(id: string): Promise<void> {
   await useDataStore.getState().refreshCharacter(id);
 }
 
-/** The stored row, falling back to the page's copy (never save a stale copy over a newer one). */
-async function latestOf(character: Character): Promise<Character> {
-  return (await sei.getCharacter(character.id)) ?? character;
-}
-
 /**
  * Keeps a dirty draft past the editor unmounting (leaving the page), and
  * runs `save` on it when the section saves on leave. `pending()` returns the
@@ -102,10 +111,14 @@ function useKeepOnLeave<D>(
   latest.current = { pending, save };
   useEffect(() => {
     const epochAtMount = editDraftEpoch();
+    const releasesAtMount = editReleaseCount(characterId);
     return () => {
       // The account changed (lib/scopeReset.ts cleared the drafts): this
       // unmount is that change's own navigation, so nothing is written.
       if (editDraftEpoch() !== epochAtMount) return;
+      // The companion was released (its drafts are gone): writing now would
+      // bring it back.
+      if (editReleaseCount(characterId) !== releasesAtMount) return;
       const draft = latest.current.pending();
       setEditDraft(characterId, section, draft);
       const run = latest.current.save;
@@ -238,12 +251,18 @@ function SaveBar({
 
 // ── Voice ─────────────────────────────────────────────────────────────────
 
-/** One voice save on top of the latest stored row (the popup's persistVoiceSettings). */
-async function saveVoice(character: Character, draft: VoiceDraft): Promise<void> {
-  const latest = await latestOf(character);
-  const metadata = voiceMetadataToSave(character.id, latest.metadata, draft);
-  await sei.saveCharacter({ ...latest, metadata }, { skipExpansion: true });
-  await refresh(character.id);
+/**
+ * One voice save on top of the stored row (the popup's persistVoiceSettings).
+ * Resolves false when the companion is no longer stored (nothing written).
+ */
+async function saveVoice(characterId: string, draft: VoiceDraft): Promise<boolean> {
+  const stored = await updateStoredCharacter(characterId, (latest) => ({
+    ...latest,
+    metadata: voiceMetadataToSave(characterId, latest.metadata, draft),
+  }));
+  if (!stored) return false;
+  await refresh(characterId);
+  return true;
 }
 
 export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): React.ReactElement {
@@ -293,8 +312,8 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
 
   const persist = async (d: VoiceDraft): Promise<boolean> => {
     try {
-      await saveVoice(character, d);
-      onAction('save_voice');
+      // Gone (released): nothing to save, the draft is dropped.
+      if (await saveVoice(character.id, d)) onAction('save_voice');
       return true;
     } catch {
       return false;
@@ -307,12 +326,12 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
     setSaving(true);
     setError(null);
     try {
-      await saveVoice(character, draft);
-      onAction('save_voice');
+      const stored = await saveVoice(character.id, draft);
+      if (stored) onAction('save_voice');
       // Only the draft that was saved is cleared (a change made meanwhile stays).
       setDraft((cur) => (cur === draft ? null : cur));
       first.reset();
-      flashSaved();
+      if (stored) flashSaved();
     } catch (err) {
       setError(userFacingError(err, t('Failed to save voice settings.')));
     } finally {
@@ -383,13 +402,17 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
 
 // ── Name and description ──────────────────────────────────────────────────
 
-/** One name + description save (the popup's persistBasic). Throws 'empty_name' on an empty name. */
-async function saveAbout(character: Character, draft: AboutDraft): Promise<void> {
+/**
+ * One name + description save (the popup's persistBasic). Throws 'empty_name'
+ * on an empty name; resolves false when the companion is no longer stored.
+ */
+async function saveAbout(characterId: string, draft: AboutDraft): Promise<boolean> {
   const fields = aboutToSave(draft);
   if (fields === 'empty_name') throw new Error('empty_name');
-  const latest = await latestOf(character);
-  await sei.saveCharacter({ ...latest, ...fields }, { skipExpansion: true });
-  await refresh(character.id);
+  const stored = await updateStoredCharacter(characterId, (latest) => ({ ...latest, ...fields }));
+  if (!stored) return false;
+  await refresh(characterId);
+  return true;
 }
 
 export function AboutEditor({
@@ -419,8 +442,7 @@ export function AboutEditor({
 
   const persist = async (d: AboutDraft): Promise<boolean> => {
     try {
-      await saveAbout(character, d);
-      onAction('save_about');
+      if (await saveAbout(character.id, d)) onAction('save_about');
       return true;
     } catch {
       return false; // an empty name stays a draft
@@ -437,11 +459,11 @@ export function AboutEditor({
     setSaving(true);
     setError(null);
     try {
-      await saveAbout(character, draft);
-      onAction('save_about');
+      const stored = await saveAbout(character.id, draft);
+      if (stored) onAction('save_about');
       setDraft((cur) => (cur === draft ? null : cur));
       first.reset();
-      flashSaved();
+      if (stored) flashSaved();
     } catch (err) {
       setError(userFacingError(err, t('Failed to save.')));
     } finally {
@@ -575,16 +597,10 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
     activeRequestId.current = requestId;
     setExpansion({ pct: 0, label: t('Starting') });
     try {
-      const latest = await latestOf(character);
-      await sei.saveCharacter(
-        {
-          ...latest,
-          persona: { source: trimmed, expanded: '' },
-          // Regenerating means the player is back on the standard framework.
-          metadata: { ...(latest.metadata ?? {}), prompt_mode: 'standard' },
-        },
-        { skipExpansion: false, expansionRequestId: requestId },
-      );
+      // Expand first, then store only the persona on the row as it is then
+      // (lib/characterSaveQueue.ts), so a save made meanwhile is kept.
+      const stored = await regenerateStoredPersona(character.id, trimmed, requestId);
+      if (!stored) return false;
       await refresh(character.id);
       setSourceDraft(null);
       setExpandedDraft(null);
@@ -607,16 +623,13 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
     setSavingAdvanced(true);
     setError(null);
     try {
-      const latest = await latestOf(character);
-      await sei.saveCharacter(
-        {
-          ...latest,
-          persona: { source: savedSource, expanded },
-          // A hand-edited raw prompt means this companion is Advanced-managed now.
-          metadata: { ...(latest.metadata ?? {}), prompt_mode: 'advanced' },
-        },
-        { skipExpansion: true },
-      );
+      const stored = await updateStoredCharacter(character.id, (latest) => ({
+        ...latest,
+        persona: { source: latest.persona.source, expanded },
+        // A hand-edited raw prompt means this companion is Advanced-managed now.
+        metadata: { ...(latest.metadata ?? {}), prompt_mode: 'advanced' },
+      }));
+      if (!stored) return; // released meanwhile
       await refresh(character.id);
       setExpandedDraft(null);
       onAction('save_persona');
@@ -812,14 +825,15 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
 
 // ── Chess ─────────────────────────────────────────────────────────────────
 
-/** One chess save: write (or clear, for Auto) metadata.chess. */
-async function saveChess(character: Character, draft: ChessDraft): Promise<void> {
-  const latest = await latestOf(character);
-  await sei.saveCharacter(
-    { ...latest, metadata: chessMetadataToSave(latest.metadata, draft) },
-    { skipExpansion: true },
-  );
-  await refresh(character.id);
+/** One chess save: write (or clear, for Auto) metadata.chess. False = the companion is no longer stored. */
+async function saveChess(characterId: string, draft: ChessDraft): Promise<boolean> {
+  const stored = await updateStoredCharacter(characterId, (latest) => ({
+    ...latest,
+    metadata: chessMetadataToSave(latest.metadata, draft),
+  }));
+  if (!stored) return false;
+  await refresh(characterId);
+  return true;
 }
 
 export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): React.ReactElement {
@@ -841,8 +855,7 @@ export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): Re
 
   const persist = async (d: ChessDraft): Promise<boolean> => {
     try {
-      await saveChess(character, d);
-      onAction('save_chess');
+      if (await saveChess(character.id, d)) onAction('save_chess');
       return true;
     } catch {
       return false;
@@ -855,11 +868,11 @@ export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): Re
     setSaving(true);
     setError(null);
     try {
-      await saveChess(character, draft);
-      onAction('save_chess');
+      const stored = await saveChess(character.id, draft);
+      if (stored) onAction('save_chess');
       setDraft((cur) => (cur === draft ? null : cur));
       first.reset();
-      flashSaved();
+      if (stored) flashSaved();
     } catch (err) {
       setError(userFacingError(err, t('Failed to save.')));
     } finally {

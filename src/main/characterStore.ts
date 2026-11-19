@@ -317,7 +317,12 @@ export async function patchCharacter(
  * IPC handler surfaces the thrown message to the renderer for display.
  */
 export async function expandAndSaveCharacter(
-  input: { character: Character; onProgress?: (p: ExpansionProgress) => void },
+  input: {
+    character: Character;
+    onProgress?: (p: ExpansionProgress) => void;
+    /** false = expand and return, write nothing (the profile Regenerate, 261120). */
+    persist?: boolean;
+  },
 ): Promise<Character> {
   const { character, onProgress } = input;
   const validated = CharacterSchema.parse(character);
@@ -407,7 +412,7 @@ export async function expandAndSaveCharacter(
       expanded,
     },
   };
-  await saveCharacter(merged);
+  if (input.persist !== false) await saveCharacter(merged);
   return merged;
 }
 
