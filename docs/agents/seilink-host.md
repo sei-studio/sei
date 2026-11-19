@@ -1264,8 +1264,10 @@ room type switch, the guided bare room and a missing pack (`keepDesktop` in
   10 px to the centre lines and to other widgets (guide lines show) and
   commits one undo step on release. Arrows nudge (Shift: 10 px), Delete
   removes, Escape deselects.
-- Utilities panel (simplified after product call 261120): add tiles, then one
-  row per widget (icon + name). Only the selected widget opens, its settings
+- Utilities panel (simplified after product call 261120): one row per widget
+  (icon + name), then a quiet "Add" row that opens the four kinds inline
+  (picking one adds and selects it; with nothing placed the kinds show
+  straight away, no separate add tiles). Only the selected widget opens, its settings
   inline under its row (accordion; picking it on the desktop opens it and
   scrolls it into view). Clock format is switches only (24-hour, Seconds,
   Leading zero, AM/PM, Date below; the old preset chips duplicated them), and

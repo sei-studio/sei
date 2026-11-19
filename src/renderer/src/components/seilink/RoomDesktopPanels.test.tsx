@@ -13,11 +13,13 @@ const panel = (selected: string | null): string =>
 const count = (html: string, s: string): number => html.split(s).length - 1;
 
 describe('Utilities panel (product call 261120)', () => {
-  it('nothing selected: the heading, the add tiles and one plain row per widget, no settings', () => {
+  it('nothing selected: the heading, one plain row per widget and a closed Add row, no settings', () => {
     const html = panel(null);
     expect(html).toContain('>Utilities</h2>');
     expect(html).not.toContain('Add to your desktop');
-    expect(count(html, 'data-add-widget=')).toBe(4);
+    // No add tiles next to the list: the kinds only show once Add is opened.
+    expect(count(html, 'data-add-widget=')).toBe(0);
+    expect(html).toMatch(/aria-expanded="false" data-add-open=""/);
     expect(count(html, 'data-widget-item=')).toBe(3);
     expect(html).toContain('>Clock</span>');
     expect(html).toContain('>one thing at a time</span>');
@@ -40,6 +42,12 @@ describe('Utilities panel (product call 261120)', () => {
     for (const label of ['Font', 'Weight', 'Color']) expect(item).toContain(`role="group" aria-label="${label}"`);
     expect(item).toContain('aria-label="Size"');
     expect(item).toContain('font-weight:700');
+  });
+
+  it('with nothing placed the four kinds show straight away, and no Add row', () => {
+    const html = renderToStaticMarkup(<WidgetsPanel widgets={[]} selected={null} onSelect={noop} onAdd={noop} onChange={noop} onRemove={noop} onGestureEnd={noop} />);
+    expect(count(html, 'data-add-widget=')).toBe(4);
+    expect(html).not.toContain('data-add-open');
   });
 
   it('the date choice only shows while the clock has its date on', () => {

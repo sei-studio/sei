@@ -2,41 +2,6 @@
    glass variables (--tile, --tile-on, --muted, --ink, --hot) apply. Buttons
    have no visible borders: a background until pressed. */
 
-.addGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-sm);
-}
-
-.add {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 10px 2px 8px;
-  border-radius: var(--r-tile);
-  background: var(--tile);
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: rgb(var(--ink) / 0.82);
-  transition:
-    background-color 160ms var(--ease),
-    transform 160ms var(--ease-pop);
-}
-
-.add:hover:not(:disabled) {
-  background: var(--tile-hover);
-}
-
-.add:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.add:disabled {
-  opacity: 0.4;
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -87,6 +52,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+/* The quiet "Add" row under the list, and the four kinds it opens. */
+.addRow {
+  color: var(--muted);
+}
+
+.kinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: var(--r-tile);
+  background: var(--tile);
+  text-align: left;
+  color: rgb(var(--ink) / 0.82);
+  transition:
+    background-color 160ms var(--ease),
+    transform 160ms var(--ease-pop);
+}
+
+.kind:hover {
+  background: var(--tile-hover);
+}
+
+.kind:active {
+  transform: scale(0.97);
 }
 
 .settings {

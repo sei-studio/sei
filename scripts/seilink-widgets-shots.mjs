@@ -85,6 +85,24 @@ const SHOTS = {
       for (let i = 0; i < 40; i++) await size.press('ArrowRight');
     },
   },
+  'editor-misc-adding': {
+    kind: 'editor',
+    q: 'time=day&items=1&widgets=demo&panel=misc',
+    size: [1280, 800],
+    act: async (page) => {
+      await page.locator('[data-add-open]').click();
+    },
+  },
+  'editor-misc-adding-night': {
+    kind: 'editor',
+    q: 'time=night&items=1&widgets=demo&panel=misc',
+    size: [1280, 800],
+    act: async (page) => {
+      await page.locator('[data-add-open]').click();
+    },
+  },
+  'editor-misc-empty': { kind: 'editor', q: 'time=day&items=1&panel=misc', size: [1280, 800] },
+  'editor-misc-empty-night': { kind: 'editor', q: 'time=night&items=1&panel=misc', size: [1280, 800] },
   'editor-misc-add': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=misc', size: [1280, 800] },
   'editor-text': { kind: 'editor', q: 'time=day&items=1&widgets=demo&panel=misc&widget=text', size: [1280, 800] },
   'editor-lighting': { kind: 'editor', q: 'time=night&items=1&widgets=demo&panel=lighting&light.dim=45&light.brightness=-10', size: [1280, 800] },
