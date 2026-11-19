@@ -670,6 +670,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           }}
           params={voiceParams}
           onParamsChange={setVoiceParams}
+          surface="create"
         />
         {error ? <ErrorRow message={error} /> : null}
       </QuestionShell>

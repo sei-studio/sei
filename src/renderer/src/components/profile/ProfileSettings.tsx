@@ -511,8 +511,9 @@ function SkinHead({ character }: { character: Character }): React.ReactElement |
 // ── Voice ─────────────────────────────────────────────────────────────────
 
 /**
- * The voice's name as the player should read it. For someone else's own
- * ElevenLabs voice (`othersHear`), the Sei voice it is played with instead.
+ * The voice's name as the player should read it (the name only, no vibe
+ * tags). For someone else's own ElevenLabs voice (`othersHear`), the Sei
+ * voice it is played with instead.
  */
 export function useVoiceLabel(character: Character, opts: { borrowed?: boolean } = {}): string {
   const t = useT();
@@ -534,7 +535,10 @@ export function useVoiceLabel(character: Character, opts: { borrowed?: boolean }
   if (id === NO_VOICE_ID) return t('No voice');
   const lookup = (vid: string | null): string => {
     const v = vid ? pool?.find((x) => x.id === vid) : undefined;
-    return v ? (v.vibe ? t('{name}, {vibe}', { name: v.label, vibe: v.vibe }) : v.label) : t('A Sei voice');
+    // Name only (product call 261119): the long vibe tags ("casual, natural,
+    // girl-next-door, American accent") crowded the play button. The picker
+    // rows still carry them, where they help choose.
+    return v ? v.label : t('A Sei voice');
   };
   if (own && opts.borrowed) return lookup(sharedVoiceIdOf(character.metadata));
   if (!id) return t('Auto');
