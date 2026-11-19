@@ -144,12 +144,18 @@ describe('gaze frames (261120)', () => {
     expect(compose.irisOf(bad({ box: box(0, 0), x: X, y: Y, frames: [['../x.webp', null, null, null, null], ...grid('a').slice(1)] }), 'neutral', 'c')).toBeNull();
   });
 
-  it('picks the frame nearest the gaze point, clamped to the grid', () => {
+  it('picks the frame nearest the gaze point, clamped to the grid and to IRIS_MAX', () => {
     const ir = compose.irisOf(withIris, 'neutral', 'c')!;
+    expect(compose.IRIS_MAX).toBe(0.5);
     expect(compose.irisCell(ir, 0, 0, null)).toEqual([2, 1]);
     expect(compose.irisCell(ir, 0.3, -0.3, null)).toEqual([3, 0]);
-    expect(compose.irisCell(ir, 5, 5, null)).toEqual([4, 2]);
-    expect(compose.irisCell(ir, -0.8, 0.1, null)).toEqual([0, 1]);
+    // the full-rotation columns (x +-1) are never picked: the look stops at +-0.5
+    expect(compose.irisCell(ir, 5, 5, null)).toEqual([3, 2]);
+    expect(compose.irisCell(ir, -0.8, 0.1, null)).toEqual([1, 1]);
+    expect(compose.irisCell(ir, 1, -0.5, null)).toEqual([3, 0]);
+    expect(compose.irisCell(ir, -1, 0.5, null)).toEqual([1, 2]);
+    // an explicit wider cap reaches them
+    expect(compose.irisCell(ir, 5, 5, null, 0.1, 1)).toEqual([4, 2]);
     expect(compose.irisFrameAt(ir, 2, 1)).toBeNull();
     expect(compose.irisFrameAt(ir, 3, 0)).toBe('n-c/iris_3_0.webp');
     expect(compose.irisFrameAt(ir, 9, -3)).toBe('n-c/iris_4_0.webp');
@@ -162,9 +168,28 @@ describe('gaze frames (261120)', () => {
     expect(compose.irisCell(ir, 0.29, 0, [2, 1], 0.1)).toEqual([3, 1]);
     expect(compose.irisCell(ir, 0.23, 0, [3, 1], 0.1)).toEqual([3, 1]);
     expect(compose.irisCell(ir, 0.2, 0, [3, 1], 0.1)).toEqual([2, 1]);
-    // a far jump steps straight there; a frame index from another grid is ignored
-    expect(compose.irisCell(ir, -1, 0.5, [3, 1], 0.1)).toEqual([0, 2]);
+    // a far jump steps straight there (to the capped edge); a frame index from another grid is ignored
+    expect(compose.irisCell(ir, -1, 0.5, [3, 1], 0.1)).toEqual([1, 2]);
     expect(compose.irisCell(ir, 0, 0, [7, 9], 0.1)).toEqual([2, 1]);
+    // a frame outside the cap is left at once, even where it would otherwise hold
+    expect(compose.irisCell(ir, 0.7, 0, [4, 1], 0.1)).toEqual([3, 1]);
+    expect(compose.irisCell(ir, -0.7, 0, [0, 1], 0.1)).toEqual([1, 1]);
+  });
+
+  it('a grid without +-0.5 keeps its values within the cap, the centre at least', () => {
+    const mk = (x: number[], y: number[]) => ({ box: box(0, 0), x, y, frames: y.map(() => x.map(() => 'a.webp')) });
+    // +-0.25 is the farthest allowed
+    const quarter = mk([-1, -0.25, 0, 0.25, 1], [-0.5, 0, 0.5]);
+    expect(compose.irisCell(quarter, 2, 0, null)).toEqual([3, 1]);
+    expect(compose.irisCell(quarter, -2, 0, null)).toEqual([1, 1]);
+    // only the centre is within the cap
+    const coarse = mk([-1, 0, 1], [-1, 0, 1]);
+    expect(compose.irisCell(coarse, 3, -3, null)).toEqual([1, 1]);
+    expect(compose.irisCell(coarse, -0.9, 0.9, [0, 2])).toEqual([1, 1]);
+    // nothing within the cap: the value nearest the centre
+    const wide = mk([-1, 0.75, 2], [-0.5, 0, 0.5]);
+    expect(compose.irisCell(wide, -5, 0, null)).toEqual([1, 1]);
+    expect(compose.irisCell(wide, 5, 0, null)).toEqual([1, 1]);
   });
 
   it('half-lid looks: nearest across, loaded with the state, optional and dropped when malformed', () => {
