@@ -112,7 +112,9 @@ const IRIS_Y = 0.2;
 /**
  * Gaze frames (261120): her eyes-in-head direction (GazeDriver eyeX/eyeY,
  * mostly within +-0.5) to the grid's units (the model's iris rotation, -1..1
- * across, -0.5..0.5 up and down in the 261120 bake); clamped to the grid.
+ * across, -0.5..0.5 up and down in the 261120 bake); clamped to the grid
+ * and to compose.IRIS_MAX (+-0.5), so a glance past about 0.15 across (0.2
+ * up or down) already shows the +-0.5 frame and the outer columns never show.
  */
 const GAZE_X = 2.0;
 const GAZE_Y = 1.5;

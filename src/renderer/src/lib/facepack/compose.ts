@@ -172,21 +172,39 @@ export interface IrisTap {
 }
 
 /**
+ * The farthest iris rotation (grid units, either axis) a player ever shows.
+ * THA3 smears the iris into grey/white trailing ghosts at full rotation on
+ * some art (chibi eyes at x +-1), while +-0.5 is clean on every pack checked,
+ * so the outer frames stay in the pack but are never picked.
+ */
+export const IRIS_MAX = 0.5;
+
+/**
  * The grid frame (xi, yi) for the gaze point (x right, y down, the grid's
- * units), clamped to the grid. Her look steps from frame to frame (the
+ * units), clamped to the grid and to the cells within `max` (IRIS_MAX) of
+ * the centre on each axis; a grid with no value that close keeps only its
+ * value nearest the centre. Her look steps from frame to frame (the
  * player crossfades each step quickly, like a saccade) rather than blending
  * by position: two frames half and half show two faint irises side by side,
  * which a gaze resting between grid points would hold. `cur` (the frame
  * shown now) is kept until the point is `hold` of a step past the midpoint,
  * so a gaze resting on a border does not flicker between two frames.
  */
-export function irisCell(ir: FacepackIris, x: number, y: number, cur: readonly [number, number] | null, hold = 0.1): [number, number] {
+export function irisCell(ir: FacepackIris, x: number, y: number, cur: readonly [number, number] | null, hold = 0.1, max = IRIS_MAX): [number, number] {
   const pick = (axis: number[], v: number, c: number | undefined): number => {
     const n = axis.length;
-    const cl = Math.min(axis[n - 1], Math.max(axis[0], v));
-    let best = 0;
-    for (let i = 1; i < n; i++) if (Math.abs(axis[i] - cl) < Math.abs(axis[best] - cl)) best = i;
-    if (c === undefined || c < 0 || c >= n || c === best) return best;
+    let ok = axis.map((a) => Math.abs(a) <= max + 1e-9);
+    if (!ok.includes(true)) {
+      let mid = 0;
+      for (let i = 1; i < n; i++) if (Math.abs(axis[i]) < Math.abs(axis[mid])) mid = i;
+      ok = axis.map((_, i) => i === mid);
+    }
+    const lo = ok.indexOf(true);
+    const hi = ok.lastIndexOf(true);
+    const cl = Math.min(axis[hi], Math.max(axis[lo], v));
+    let best = lo;
+    for (let i = lo + 1; i <= hi; i++) if (Math.abs(axis[i] - cl) < Math.abs(axis[best] - cl)) best = i;
+    if (c === undefined || c < lo || c > hi || c === best) return best;
     const step = Math.abs(axis[best] - axis[c]);
     return Math.abs(cl - axis[c]) > Math.abs(cl - axis[best]) + hold * step ? best : c;
   };
