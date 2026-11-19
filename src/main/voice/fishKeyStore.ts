@@ -9,7 +9,7 @@
  * proxy: Fish's terms keep free use non-commercial and not for third
  * parties, and a user's own key on their own machine stays inside that.
  */
-import { safeStorage } from 'electron';
+import { app, safeStorage } from 'electron';
 import { readFile, writeFile, access, mkdir, unlink, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { paths } from '../paths';
@@ -48,11 +48,11 @@ export async function hasFishKey(): Promise<boolean> {
 /**
  * The stored key, or null when none is stored or it cannot be decrypted
  * (best-effort: a locked keychain reads as "no key", which falls back to the
- * Fast voices with the no-key notice). SEI_FISH_DEV_KEY (dev shells only,
- * never a committed file) wins.
+ * Fast voices with the no-key notice). SEI_FISH_DEV_KEY (never a committed
+ * file) wins, in unpackaged dev runs only: a packaged build ignores it.
  */
 export async function resolveFishKey(): Promise<string | null> {
-  const envKey = process.env.SEI_FISH_DEV_KEY;
+  const envKey = app.isPackaged ? undefined : process.env.SEI_FISH_DEV_KEY;
   if (envKey) return envKey;
   try {
     const buf = await readFile(paths.fishKeyPath());

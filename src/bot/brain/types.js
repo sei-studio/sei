@@ -80,9 +80,11 @@
  *   adapter's eventAddendum('sei:death', data) supplies the framing. Optional
  *   for adapters whose game has no death. 261019: Minecraft reports it after
  *   the respawn, with what she lost and the game's death message.
- * @property {() => void}                                                            [onDying]
+ * @property {(info?: { stillDying?: () => boolean }) => void}                       [onDying]
  *   261019: the instant of death, before the respawn and the onDeath report.
  *   The brain drops the turn the dying body was still writing. Optional.
+ *   261120: `stillDying` (DST) keeps that hold past its 10 s backstop while
+ *   the respawn is still under way.
  * @property {() => void}                                                            onSpawn
  *   The body is in the world. Fires the world-identity resolve
  *   (getWorldIdentity), the settle-delayed first idle tick (greeting), and

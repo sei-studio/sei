@@ -44,8 +44,10 @@ const DEATH_GRACE_MS = 8_000
 const DESPAWN_WAIT_MS = 2_500
 // 261104: from the death to the corpse being removed (the death animation
 // plays and her items scatter first), then how long the fresh body may take
-// to appear (the offer rides the next 2 s heartbeat). Together they stay
-// under the brain's 10 s death backstop (orchestrator DEATH_PENDING_MAX_MS).
+// to appear (the offer rides the next 2 s heartbeat). Worst case, with the
+// despawn wait, is ~21.5 s, past the brain's 10 s death hold
+// (orchestrator DEATH_PENDING_MAX_MS), so the adapter reports `respawning`
+// and the brain keeps holding while it is true (261120).
 const RESPAWN_DELAY_MS = 4_000
 const RESPAWN_SPAWN_WAIT_MS = 15_000
 /** How recent a darkness hit must be for a cause-less death to be the dark. */
@@ -369,6 +371,9 @@ export async function createRuntime(config, hooks) {
   // fresh body on its way) or 'final' (the last death turn, then the end).
   let _deathState = null
   let _respawnTimer = null
+  /** From a death that will respawn until the new body is up or the respawn
+   * is abandoned (the brain holds its turns while this is true). */
+  let _respawnPending = false
   let _respawnDeadline = null
   /** The death being recovered from, until the fresh body spawns. */
   let _awaitingSpawn = null
@@ -419,7 +424,11 @@ export async function createRuntime(config, hooks) {
   }
 
   async function bringUp(info) {
-    _adapter = createDontStarveAdapter({ link, config })
+    _adapter = createDontStarveAdapter({
+      link,
+      config,
+      respawning: () => !_stopped && _respawnPending,
+    })
     if (typeof onDashboard === 'function') {
       _dash = _adapter.createTelemetry({ emit: (s) => onDashboard({ ...s, game: 'dontstarve' }), logger })
       if (_dashWatching) _dash.setWatching(true)
@@ -516,6 +525,7 @@ export async function createRuntime(config, hooks) {
     postLives()
     if (verdict.action === 'respawn') {
       _deathState = 'respawning'
+      _respawnPending = true
       logger.info(`[sei] DST respawn ${policy.respawns + 1} of ${policy.maxRespawns} in ${Math.round(respawnDelay() / 1000)}s`)
       _respawnTimer = setTimeout(() => { _respawnTimer = null; void respawn(death) }, respawnDelay())
       return
@@ -572,13 +582,21 @@ export async function createRuntime(config, hooks) {
     })
   }
 
+  /** Resolves on the mod's `despawned` event or after DESPAWN_WAIT_MS,
+   * whichever comes first; the listener goes either way (a leftover one
+   * would fire on a later despawn). */
+  function waitDespawned() {
+    return new Promise((r) => {
+      const onGone = () => { clearTimeout(t); r() }
+      const t = setTimeout(() => { link.events.off('despawned', onGone); r() }, DESPAWN_WAIT_MS)
+      link.events.once('despawned', onGone)
+    })
+  }
+
   /** Remove the corpse, then ask main for a fresh body beside the host. */
   async function respawn(death) {
     if (_stopped) return
-    const gone = new Promise((r) => {
-      const t = setTimeout(r, DESPAWN_WAIT_MS)
-      link.events.once('despawned', () => { clearTimeout(t); r() })
-    })
+    const gone = waitDespawned()
     void link.send({ kind: 'despawn' }, { timeoutMs: DESPAWN_WAIT_MS })
     await gone
     if (_stopped) return
@@ -598,6 +616,7 @@ export async function createRuntime(config, hooks) {
 
   function onRespawned(info) {
     clearTimeout(_respawnDeadline); _respawnDeadline = null
+    _respawnPending = false
     const death = _awaitingSpawn
     _awaitingSpawn = null
     _deathState = null
@@ -614,6 +633,7 @@ export async function createRuntime(config, hooks) {
     if (_stopped || _deathState !== 'respawning') return
     logger.info(`[sei] DST respawn abandoned: ${why}`)
     _awaitingSpawn = null
+    _respawnPending = false
     void dropBrain().then(() => {
       try { onDisconnected({ reason: 'died', willRetry: false }) } catch {}
       fail(BODY_DIED_MESSAGE)
@@ -677,10 +697,7 @@ export async function createRuntime(config, hooks) {
         _stopped = true
         clearTimers()
         if (wasLive) {
-          const gone = new Promise((r) => {
-            const t = setTimeout(r, DESPAWN_WAIT_MS)
-            link.events.once('despawned', () => { clearTimeout(t); r() })
-          })
+          const gone = waitDespawned()
           void link.send({ kind: 'despawn' }, { timeoutMs: DESPAWN_WAIT_MS })
           await gone
         }

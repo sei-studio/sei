@@ -164,10 +164,14 @@ describe('createRuntime + fake mod', () => {
     const rt = await createRuntime(dstConfig({ respawn_delay_ms: 50, death_grace_ms: 200 }), h)
     cleanup.push(() => rt.stop())
     const { mod } = await bringLive(h)
+    const baseListeners = rt.link.events.listenerCount('despawned')
     await mod.event('death', { x: 1, z: 2, cause: 'darkness' })
     await waitFor(() => h.handlers.onDying.mock.calls.length === 1)
-    // No death turn yet: she is coming back.
+    // No death turn yet: she is coming back, and the brain is told so it
+    // keeps holding past its 10 s backstop while she is (261120).
     expect(h.handlers.onDeath).not.toHaveBeenCalled()
+    const { stillDying } = h.handlers.onDying.mock.calls[0][0]
+    expect(stillDying()).toBe(true)
     expect(h.postPortMessage).toHaveBeenCalledWith({ type: 'dst-lives', respawns: 0, deaths: 1, lastDeathCause: 'darkness' })
 
     // The corpse is despawned, then main is asked for a fresh body.
@@ -186,6 +190,8 @@ describe('createRuntime + fake mod', () => {
     cleanup.push(() => mod2.stop())
     await mod2.start()
     await waitFor(() => h.handlers.onDeath.mock.calls.length === 1)
+    expect(stillDying()).toBe(false)
+    expect(rt.link.events.listenerCount('despawned')).toBe(baseListeners)
     const evt = h.handlers.onDeath.mock.calls[0][0]
     expect(evt.pos).toEqual({ x: 1, y: 0, z: 2 })
     expect(evt.deathText).toBe('killed by Charlie in the darkness')
@@ -227,6 +233,22 @@ describe('createRuntime + fake mod', () => {
     await mod.stop()
     await waitFor(() => h.onError.mock.calls.length === 1)
     expect(h.onError.mock.calls[0][0].error).toBe('DST_BODY_DIED')
+    // Given up: the brain's death hold is no longer extended.
+    expect(h.handlers.onDying.mock.calls[0][0].stillDying()).toBe(false)
+  })
+
+  it('drops its despawned listener when the corpse despawn times out', async () => {
+    const h = hooks()
+    const rt = await createRuntime(dstConfig({ respawn_delay_ms: 20 }), h)
+    cleanup.push(() => rt.stop())
+    const { mod } = await bringLive(h)
+    const baseListeners = rt.link.events.listenerCount('despawned')
+    await mod.event('death', { x: 1, z: 2 })
+    // The body never answers the despawn, so the 2.5 s wait runs out.
+    await mod.stop()
+    await waitFor(() => rt.link.events.listenerCount('despawned') === baseListeners + 1)
+    await nextListen(h, 2)
+    expect(rt.link.events.listenerCount('despawned')).toBe(baseListeners)
   })
 
   it('after the cap the next death gets a final death turn and ends as DST_DIED_TOO_OFTEN', async () => {

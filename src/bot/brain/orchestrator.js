@@ -2053,6 +2053,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let deathPending = false
   let life = 0
   const DEATH_PENDING_MAX_MS = 10_000
+  // 261120: an adapter whose respawn can outlast DEATH_PENDING_MAX_MS (DST:
+  // up to ~21.5 s from the death to the new body) passes `stillDying`; the
+  // hold is extended while it says so, re-checked every
+  // DEATH_PENDING_RECHECK_MS, never past DEATH_PENDING_HARD_MAX_MS.
+  const DEATH_PENDING_RECHECK_MS = 1_000
+  const DEATH_PENDING_HARD_MAX_MS = 30_000
   /** Player lines that arrived while deathPending with no loop open. */
   let deathHeld = []
   function flushDeathHeld() {
@@ -7016,18 +7022,32 @@ function maybeWarnByteCap(loop, warned) {
    * drops whatever turn is being written (see runIterations), and `life`
    * moves on so a hit queued before the death is dropped at dispatch.
    * A parked LLM call is aborted now instead of being left to finish.
+   * @param {{ stillDying?: () => boolean }} [info]  adapter hint: true while
+   *   its respawn is still under way, which keeps the hold past
+   *   DEATH_PENDING_MAX_MS (up to DEATH_PENDING_HARD_MAX_MS).
    */
-  function noteDeath() {
+  function noteDeath(info) {
     deathPending = true
     life++
     // Backstop: the death turn normally clears this within a couple of
     // seconds. If it never comes (a disconnect mid-respawn), turns resume.
     const lifeAtDeath = life
-    const t = setTimeout(() => {
+    const diedAt = Date.now()
+    const stillDying = typeof info?.stillDying === 'function' ? info.stillDying : null
+    const release = () => {
       if (life !== lifeAtDeath || !deathPending) return
+      let dying = false
+      try { dying = stillDying ? stillDying() === true : false } catch {}
+      const left = DEATH_PENDING_HARD_MAX_MS - (Date.now() - diedAt)
+      if (dying && left > 0) {
+        const again = setTimeout(release, Math.min(DEATH_PENDING_RECHECK_MS, left))
+        again.unref?.()
+        return
+      }
       deathPending = false
       flushDeathHeld()
-    }, DEATH_PENDING_MAX_MS)
+    }
+    const t = setTimeout(release, DEATH_PENDING_MAX_MS)
     t.unref?.()
     const loop = currentLoop
     // A player line whose reply was still being written is not lost with the
