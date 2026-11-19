@@ -174,7 +174,20 @@ async function main() {
         clicked = true;
         await page.evaluate(() => window.__seiDevPoke?.('click'));
       }
-      await page.clock.runFor(Math.round((1000 * (i + 1)) / FPS) - Math.round((1000 * i) / FPS));
+      const frameMs = Math.round((1000 * (i + 1)) / FPS) - Math.round((1000 * i) / FPS);
+      await page.clock.runFor(frameMs);
+      // Web Animations (her click reaction, transitions) run on the real compositor clock, not the
+      // stepped one: hold each and move it on one video frame at a time, or a 280 ms reaction
+      // would finish between two screenshots.
+      await page.evaluate((ms) => {
+        for (const a of document.getAnimations()) {
+          if (!a.__demoStepped) {
+            a.__demoStepped = true;
+            a.pause();
+            a.currentTime = 0;
+          } else a.currentTime = (Number(a.currentTime) || 0) + ms;
+        }
+      }, frameMs);
       await page.waitForTimeout(15);
       await page.screenshot({ path: path.join(OUT, 'frames', `f${String(i).padStart(5, '0')}.png`) });
       const st = await page.evaluate(() => {
@@ -184,7 +197,8 @@ async function main() {
         const body = document.querySelector('[data-avatar-kind] > div');
         const hit = document.querySelector('[data-seilink-hit]');
         const r = hit?.getBoundingClientRect();
-        return { face, body: body?.style.transform ?? '', hitTransform: hit ? getComputedStyle(hit).transform : '', hit: r ? [r.x, r.y, r.width, r.height] : null };
+        const anims = hit ? hit.getAnimations().map((a) => Math.round(Number(a.currentTime) || 0)) : [];
+        return { face, body: body?.style.transform ?? '', hitTransform: hit ? getComputedStyle(hit).transform : '', hit: r ? [r.x, r.y, r.width, r.height] : null, anims };
       });
       rows.push({ i, t, cursor: cur, clicked: clicked && t - CLICK_AT < 1 / FPS ? 1 : 0, ...st });
       if (i % 60 === 0) console.log(`frame ${i}/${n}`);
