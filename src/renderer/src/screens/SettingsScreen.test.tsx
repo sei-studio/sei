@@ -36,7 +36,10 @@ const PROVIDER_SELECT_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'compon
 const LLM_CATALOG_TS = resolve(REPO_ROOT, 'src', 'shared', 'llmCatalog.ts');
 const USE_UI_STORE_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'stores', 'useUiStore.ts');
 const APP_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'App.tsx');
-const EDIT_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'EditCharacterModal.tsx');
+// 261119: the Edit companion popup is gone; its voice section is the
+// profile's inline VoiceEditor, its save rule lib/characterEdits.ts.
+const EDIT_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'profile', 'ProfileEditors.tsx');
+const CHARACTER_EDITS_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'characterEdits.ts');
 const VOICE_PICKER_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'VoicePicker.tsx');
 const DOWNLOAD_MODAL_TSX = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'components', 'DownloadConfirmModal.tsx');
 const ZH_TS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'lib', 'i18n', 'zh.ts');
@@ -408,14 +411,11 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
 
   it('OV.3: the picker points to the key field when none is saved, on either backend', () => {
     const src = readFileSync(VOICE_PICKER_TSX, 'utf-8');
-    // 261119: the Voice Library tile stands in for the old one-line pointer
-    // (voiceLibraryTile's 'needs_key' is elevenKeyHintShown).
+    // 261119: the Voice Library link stands in for the old one-line pointer
+    // (voiceLibraryTile's 'needs_key' is elevenKeyHintShown); 261120 shortened
+    // its note to the key step.
     expect(src.includes('voiceLibraryTile(hasElevenKey, localTtsMode, ownList)')).toBe(true);
-    expect(
-      src.includes(
-        "t('Save a voice there, then add your ElevenLabs key in Playtime to use it. Paid ElevenLabs plans only.')",
-      ),
-    ).toBe(true);
+    expect(src.includes("t('To use one, add your ElevenLabs key in Playtime. Paid plans only.')")).toBe(true);
     // The free-plan pool hint is a local-backend thing only.
     expect(src.includes('poolUsesOwnKey(ownList, aiBackendKind)')).toBe(true);
   });
@@ -432,8 +432,8 @@ describe('DownloadConfirmModal (W5 shared "Download? (XX MB)" confirm)', () => {
   });
 });
 
-describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
-  it('G.1: EditCharacterModal derives localTtsMode from backend kind + tts_engine and passes it down', () => {
+describe('VoiceEditor + VoicePicker (W5 local-TTS voice gating)', () => {
+  it('G.1: the profile VoiceEditor derives localTtsMode from backend kind + tts_engine and passes it down', () => {
     const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
     expect(src.includes("aiBackendKind === 'local' && localTtsPref")).toBe(true);
     expect(src.includes("c.tts_engine === 'local'")).toBe(true);
@@ -450,11 +450,12 @@ describe('EditCharacterModal + VoicePicker (W5 local-TTS voice gating)', () => {
   });
 
   it('G.3: the stored ElevenLabs voiceId is preserved untouched underneath', () => {
-    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
-    // The deferred save still writes voiceId from state — which localTtsMode
-    // never mutates, since the picker that changes it is hidden. (261019:
-    // written through applyVoicePick, which also carries the own-voice marker.)
-    expect(src.includes('applyVoicePick(latest.metadata, voiceId, voiceOwn)')).toBe(true);
+    const src = readFileSync(CHARACTER_EDITS_TS, 'utf-8');
+    // The deferred save still writes voiceId from the draft — which
+    // localTtsMode never mutates, since the picker that changes it is hidden.
+    // (261019: written through applyVoicePick, which also carries the
+    // own-voice marker.)
+    expect(src.includes('applyVoicePick(latest, draft.voiceId, draft.voiceOwn)')).toBe(true);
   });
 
   it('G.4: every W5 user string has a zh entry in the dedicated block', () => {

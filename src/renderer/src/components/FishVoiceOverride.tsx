@@ -1,5 +1,5 @@
 /**
- * A companion's own Fish Audio voice (261103), in Edit companion > Voice
+ * A companion's own Fish Audio voice (261103), in the profile's Voice tab
  * while Fish Audio is the chosen local voice. The user pastes a fish.audio
  * voice link or id; main checks it with their key and stores it (main-owned
  * `fish_voice_overrides`, saved at once, not on Done). A picked voice plays

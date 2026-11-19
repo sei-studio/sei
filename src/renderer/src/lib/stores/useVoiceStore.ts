@@ -789,7 +789,14 @@ export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 
   return t('[Sei voices are unavailable right now, using voices on this device]');
 }
 
+/** 261119: a Voice Library voice the proxy no longer plays; the stand-in Sei
+ * voice spoke the line. */
+export function libraryVoiceUnavailableNotice(): string {
+  return t('[spoken with a similar Sei voice, their Voice Library voice is no longer available]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
+  if (push.kind === 'library-voice-unavailable') return libraryVoiceUnavailableNotice();
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
   if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
@@ -1760,6 +1767,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             state: push.reason === 'no-credits' ? 'used_up' : 'fallback',
             reason: push.reason,
           });
+        }
+        // 261119: once per companion per call (shape only, no voice name).
+        if (push.kind === 'library-voice-unavailable') {
+          const key = `library:${push.characterId}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
+          sei.track('library_voice_fallback', { surface: 'call' });
         }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;

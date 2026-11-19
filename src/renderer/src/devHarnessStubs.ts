@@ -391,6 +391,41 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
             { id: 'f2', label: 'Lily', gender: 'female', age: 'adult', tags: [], vibe: 'soft, British' },
             { id: 'm1', label: 'Liam', gender: 'male', age: 'young', tags: [], vibe: 'easygoing, American' },
           ],
+          // 261119: the Voice Library paste card. &lib=rejected answers a
+          // lookup with a rejection; anything else finds a voice.
+          voiceLibraryLookup: async () =>
+            params.get('lib') === 'rejected'
+              ? { ok: false, reason: 'custom_rate' }
+              : {
+                  ok: true,
+                  voice: {
+                    voiceId: 'LibVoice0000000000aa',
+                    name: 'Captain Wren',
+                    gender: 'female',
+                    age: 'middle_aged',
+                    accent: 'british',
+                    description: 'A weathered sea captain with a warm, steady voice.',
+                    hasPreview: true,
+                  },
+                },
+          voiceLibraryAdd: async () => ({
+            ok: true,
+            already: false,
+            voice: {
+              voiceId: 'LibVoice0000000000aa',
+              name: 'Captain Wren',
+              gender: 'female',
+              age: 'middle_aged',
+              accent: 'british',
+              description: null,
+              hasPreview: true,
+            },
+          }),
+          voiceLibraryStatus: async () =>
+            params.get('lib') === 'removed'
+              ? { status: 'removed', name: 'Captain Wren', gender: 'female' }
+              : { status: 'active', name: 'Captain Wren', gender: 'female' },
+          voiceLibraryPreview: async () => new ArrayBuffer(0),
           voiceListOwnVoices: async () =>
             voiceKeySaved
               ? {

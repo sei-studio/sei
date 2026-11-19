@@ -25,6 +25,9 @@ interface ButtonProps {
   'aria-disabled'?: boolean;
   /** Toggle/segmented selection state — also drives the pressed visual. */
   'aria-pressed'?: boolean;
+  /** A menu trigger (261120): the menu it opens, and whether it is open. */
+  'aria-haspopup'?: 'menu';
+  'aria-expanded'?: boolean;
   style?: React.CSSProperties;
   className?: string;
   title?: string;
@@ -67,6 +70,8 @@ export function Button({
       aria-label={rest['aria-label']}
       aria-disabled={rest['aria-disabled']}
       aria-pressed={rest['aria-pressed']}
+      aria-haspopup={rest['aria-haspopup']}
+      aria-expanded={rest['aria-expanded']}
       // Must reach the real DOM: the tutorial finds its spotlight targets via
       // document.querySelector('[data-tutorial=...]'). Declaring the prop
       // without forwarding it left the say-hello step highlighting nothing.

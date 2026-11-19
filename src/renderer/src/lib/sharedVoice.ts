@@ -5,7 +5,7 @@
  * account, so anyone else who invites a shared character hears a Sei pool
  * voice instead: the one stored as metadata.voiceShared, or (absent) the
  * close match main rolls from the character (voice:shared-default, the same
- * roll every adopter's app makes). The share step, Edit companion > Voice and
+ * roll every adopter's app makes). The share step, the profile's Voice tab and
  * the character page all read the choice through these helpers, so a junk or
  * stale stored id reads as the default everywhere, exactly like main does.
  */

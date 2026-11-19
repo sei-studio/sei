@@ -639,6 +639,53 @@ export interface VoiceInfo {
 }
 
 /**
+ * Voice Library voices on Sei cloud (261119, main/voice/libraryVoices.ts):
+ * why a pasted voice cannot be used. The first twelve come from the proxy;
+ * `no_session` and `rate_limited` are the client's own.
+ */
+export type LibraryVoiceReason =
+  | 'invalid_input'
+  | 'not_found'
+  | 'pool_voice'
+  | 'custom_rate'
+  | 'live_moderation'
+  | 'short_notice'
+  | 'delisted'
+  | 'restricted_category'
+  | 'daily_limit'
+  | 'voice_limit'
+  | 'capacity'
+  | 'unavailable'
+  | 'no_session'
+  | 'rate_limited';
+
+/** A Voice Library voice as the picker shows it (no owner id, no URL). */
+export interface LibraryVoiceInfo {
+  /** Persisted as metadata.voiceId when picked. */
+  voiceId: string;
+  name: string;
+  gender: string | null;
+  age: string | null;
+  accent: string | null;
+  description: string | null;
+  /** ElevenLabs has a preview clip (voiceLibraryPreview plays it). */
+  hasPreview: boolean;
+}
+
+export type LibraryVoiceLookupResult =
+  | { ok: true; voice: LibraryVoiceInfo }
+  | { ok: false; reason: LibraryVoiceReason };
+
+export type LibraryVoiceAddResult =
+  | { ok: true; voice: LibraryVoiceInfo; already: boolean }
+  | { ok: false; reason: LibraryVoiceReason };
+
+/** Whether a stored library voice still plays; 'error' = could not ask. */
+export type LibraryVoiceStatusResult =
+  | { status: 'active' | 'removed'; name: string; gender: string | null }
+  | { status: 'pool' | 'unknown' | 'error' };
+
+/**
  * One voice from the user's OWN ElevenLabs account (261019), listed by main
  * with the stored BYOK key (GET /v2/voices). Renderer-safe: no key, no
  * preview URL (main fetches preview bytes itself, see voiceOwnPreview).
@@ -738,6 +785,12 @@ export type VoiceTtsNoticePush =
       kind: 'sei-voices-fallback';
       characterId: string;
       reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+    }
+  | {
+      /** 261119: the character's Voice Library voice is no longer available
+       * on Sei cloud, so a close Sei voice spoke the line. */
+      kind: 'library-voice-unavailable';
+      characterId: string;
     };
 
 /**
@@ -2061,9 +2114,11 @@ export interface RendererApi {
   // that tags the streaming ExpansionProgressEvent ticks so the caller can
   // filter progress for THIS save. Ignored when skipExpansion is true (no LLM
   // call runs). When omitted, expansion still runs/streams but emits no ticks.
+  // `expandOnly` (261120): expand and return the result WITHOUT saving it (the
+  // caller writes the persona onto the then-current row itself).
   saveCharacter(
     character: Character,
-    options?: { skipExpansion?: boolean; expansionRequestId?: string },
+    options?: { skipExpansion?: boolean; expansionRequestId?: string; expandOnly?: boolean },
   ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
@@ -2860,6 +2915,17 @@ export interface RendererApi {
    * picker's sample line synthesized through the user's key.
    */
   voiceOwnPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
+  /**
+   * Voice Library voices on Sei cloud (261119). Lookup resolves a pasted
+   * link or id through the proxy (no writes); add is the pick (the proxy
+   * validates again and adds it to Sei's ElevenLabs account); status says
+   * whether a stored one still plays; preview plays the ElevenLabs preview
+   * of a voice looked up this session. Lookup, add and status never throw.
+   */
+  voiceLibraryLookup(args: { input: string }): Promise<LibraryVoiceLookupResult>;
+  voiceLibraryAdd(args: { input: string }): Promise<LibraryVoiceAddResult>;
+  voiceLibraryStatus(args: { voiceId: string }): Promise<LibraryVoiceStatusResult>;
+  voiceLibraryPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
   /**
    * The close Sei pool voice that others hear for this character when its
    * voice is the author's own ElevenLabs voice and no voice for others was
@@ -4106,6 +4172,14 @@ export const IpcChannel = {
     ownList: 'voice:own-list',
     /** Invoke: sample bytes for one own voice ({voiceId}) → ArrayBuffer (261019). */
     ownPreview: 'voice:own-preview',
+    /** Invoke: Voice Library voice lookup ({input}) → LibraryVoiceLookupResult (261119). */
+    libraryLookup: 'voice:library-lookup',
+    /** Invoke: add a Voice Library voice ({input}) → LibraryVoiceAddResult (261119). */
+    libraryAdd: 'voice:library-add',
+    /** Invoke: does a stored library voice still play ({voiceId}) → LibraryVoiceStatusResult (261119). */
+    libraryStatus: 'voice:library-status',
+    /** Invoke: preview clip of a looked-up library voice ({voiceId}) → ArrayBuffer (261119). */
+    libraryPreview: 'voice:library-preview',
     /** Invoke: default voice for others on an own-voice character ({characterId, ownGender?}) → {voiceId} (261019). */
     sharedDefault: 'voice:shared-default',
     /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */

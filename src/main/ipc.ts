@@ -830,6 +830,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
 
+    // 261120 `expandOnly`: run the persona expansion and return the expanded
+    // character WITHOUT writing it. The profile Regenerate uses it so the
+    // write happens afterwards on the row as it is THEN (the renderer's
+    // character save queue re-reads it and applies only the persona fields):
+    // a whole-row write at the end of a ~30 s expansion reverted any edit
+    // saved meanwhile. No write means no create, quota, owner or moderation
+    // step here; the renderer's follow-up save runs those as usual.
+    if (
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { expandOnly?: unknown }).expandOnly === true
+    ) {
+      const requestId = (optsArg as { expansionRequestId?: unknown }).expansionRequestId;
+      return await expandAndSaveCharacter({
+        character: parsedCharacter,
+        persist: false,
+        onProgress:
+          typeof requestId === 'string'
+            ? (p: { fraction: number; section: string }): void =>
+                deps.sendExpansionProgress({ requestId, ...p })
+            : undefined,
+      });
+    }
+
     // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
     // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
     // character are always allowed (they don't add a slot). Defaults are never
@@ -2767,6 +2791,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (bytes) return bytes;
     const { voicePreviewTts } = await import('./voice/tts');
     return await voicePreviewTts({ voiceId: args.voiceId });
+  });
+
+  // Voice Library voices on Sei cloud (261119, voice/libraryVoices.ts). The
+  // proxy validates and records; main only relays with the JWT. Lookup, add
+  // and status never throw (reason / status fields).
+  ipcMain.handle(IpcChannel.voice.libraryLookup, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { lookupLibraryVoice } = await import('./voice/libraryVoices');
+    return lookupLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryAdd, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { addLibraryVoice } = await import('./voice/libraryVoices');
+    return addLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryStatus, async (_event, argsRaw: unknown) => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoiceStatus } = await import('./voice/libraryVoices');
+    return libraryVoiceStatus(args.voiceId);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryPreview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoicePreviewBytes } = await import('./voice/libraryVoices');
+    return libraryVoicePreviewBytes(args.voiceId);
   });
 
   // Voice for others (261019): the close pool voice an adopter hears for a

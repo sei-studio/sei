@@ -66,7 +66,6 @@ function render(
     seilinkOn: false,
     movedInHere: false,
     ownVoice: false,
-    noVoice: false,
     ...extra,
   });
   const tabs = tab ? [tab] : profileTabs(access).filter((t) => t !== 'overview');
@@ -79,7 +78,7 @@ function render(
           tab: one,
           onAction: noop,
           onTipOpen: noop,
-          openEdit: noop,
+          openTab: noop,
           openCardImage: noop,
           openKnowledge: noop,
           openSkinEdit: noop,
@@ -117,9 +116,10 @@ describe('ProfileSettings, your own companion', () => {
   });
 
   it("the description is the creator's words, boxed as user text; the placeholder is not", () => {
-    const html = render('custom', {}, undefined, 'personality');
+    // Read-only where it cannot be edited (yours is a text field, 261119).
+    const html = render('awakened', {}, undefined, 'personality');
     expect(html).toMatch(/data-user-text="true"[^>]*><p[^>]*>A teasing, sunny gremlin\.<\/p>/);
-    const none = render('custom', {}, undefined, 'personality', { ...character, description: '' } as typeof character);
+    const none = render('awakened', {}, undefined, 'personality', { ...character, description: '' } as typeof character);
     expect(none).not.toContain('data-user-text');
     expect(none).toContain('No description yet.');
   });
@@ -131,7 +131,6 @@ describe('ProfileSettings, your own companion', () => {
       'avatar',
       'floating-avatar',
       'voice',
-      'pitch',
       'about',
       'persona',
       'knowledge',
@@ -180,11 +179,10 @@ describe('ProfileSettings, your own companion', () => {
           seilinkOn: false,
           movedInHere: false,
           ownVoice: false,
-          noVoice: false,
         }),
         onAction: noop,
         onTipOpen: noop,
-        openEdit: noop,
+        openTab: noop,
         openCardImage: noop,
         openKnowledge: noop,
         openSkinEdit: noop,
@@ -218,11 +216,10 @@ describe('ProfileSettings, your own companion', () => {
           seilinkOn: false,
           movedInHere: false,
           ownVoice: false,
-          noVoice: false,
         }),
         onAction: noop,
         onTipOpen: noop,
-        openEdit: noop,
+        openTab: noop,
         openCardImage: noop,
         openKnowledge: noop,
         openSkinEdit: noop,
@@ -238,11 +235,53 @@ describe('ProfileSettings, your own companion', () => {
     expect(html2).toContain('Regenerate');
   });
 
-  it('No voice: no sample button and no Pitch row', () => {
-    const html = render('custom', { noVoice: true }, { voiceId: 'none' });
-    expect(rows(html)).not.toContain('pitch');
-    expect(html).not.toContain('Play voice sample');
-    expect(render('custom')).toContain('Play voice sample');
+  it('voice, name and description, persona and chess are edited in the tab, no popup opener (261119)', () => {
+    const editors = (html: string): string[] =>
+      [...html.matchAll(/data-row="([^"]+)" data-editor="true"/g)].map((m) => m[1]);
+    expect(editors(render('custom'))).toEqual(['voice', 'about', 'persona', 'chess']);
+    // Nothing to save until something changes: no save bar on open.
+    expect(render('custom')).not.toContain('data-save-bar');
+    // The fields are there, with the stored values.
+    const personality = render('custom', {}, undefined, 'personality');
+    expect(personality).toContain('aria-label="Companion name"');
+    expect(personality).toContain('A teasing gremlin.');
+    expect(render('custom', {}, undefined, 'voice')).toContain('Tune the voice');
+    // The old rows' Edit / Change openers are gone from those tabs.
+    for (const tab of ['voice', 'personality'] as const) {
+      expect(render('custom', {}, undefined, tab)).not.toMatch(/>(Edit|Change)</);
+    }
+    // An Awakened companion keeps read-only rows: no editor.
+    expect(editors(render('awakened'))).toEqual([]);
+  });
+
+  it('the publish step sends you to the name and description editor with its reason', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ProfileSettings, {
+        character,
+        tab: 'personality',
+        access: profileAccess({ kind: 'custom', inLibrary: true, seilinkOn: false, movedInHere: false, ownVoice: false }),
+        onAction: noop,
+        onTipOpen: noop,
+        openTab: noop,
+        aboutNotice: 'Going public needs a description.',
+        openCardImage: noop,
+        openKnowledge: noop,
+        openSkinEdit: noop,
+        openAvatars: noop,
+        openFloating: noop,
+        onToggleShared: noop,
+        shareToggleDisabled: false,
+        onResetMemory: noop,
+        onUnbind: noop,
+        refreshKey: 0,
+      }),
+    );
+    expect(html).toContain('Going public needs a description.');
+  });
+
+  it("an awakened companion's voice row plays its sample, a silent one has none", () => {
+    expect(render('awakened', {}, undefined, 'voice')).toContain('Play voice sample');
+    expect(render('awakened', {}, { voiceId: 'none' }, 'voice')).not.toContain('Play voice sample');
   });
 });
 

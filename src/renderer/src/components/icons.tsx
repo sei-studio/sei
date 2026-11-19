@@ -651,6 +651,18 @@ export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
+ * DotsIcon — a quiet overflow-menu trigger (three dots in a row, the Voice
+ * tab's Auto / No voice menu, 261120). Inherits currentColor.
+ */
+export const DotsIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx={5} cy={12} r={1.8} />
+    <circle cx={12} cy={12} r={1.8} />
+    <circle cx={19} cy={12} r={1.8} />
+  </svg>
+);
+
+/**
  * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
  * red via currentColor at the call site.
  */

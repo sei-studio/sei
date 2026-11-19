@@ -1,6 +1,6 @@
 /**
- * PortraitImagePicker — image-upload control used by EditCharacterModal and
- * AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
+ * PortraitImagePicker — image-upload control used by the card image popup
+ * (PortraitVersionsModal), Settings and AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
  * the image as a base64 data URL — instead it:
  *
  *   1. Loads the picked file into an HTMLImageElement

@@ -707,7 +707,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
             {t('No, keep private')}
           </Button>
         </div>
-        {visibility === 'public' && voiceOwn && voiceId && created ? (
+        {visibility === 'public' && voiceOwn && voiceOwn.source !== 'library' && voiceId && created ? (
           <div style={{ marginTop: 18, maxWidth: 460 }}>
             <SharedVoiceChoice
               characterId={created.id}

@@ -36,6 +36,8 @@ import {
   closeSharedVoiceId,
   sharedVoiceIdFor,
   listPoolVoices,
+  libraryVoicePickOf,
+  libraryVoiceStandInId,
 } from './voiceAssign';
 
 /** The eight voices retired from VOICES on 261119 (now in LEGACY_VOICE_IDS). */
@@ -505,5 +507,52 @@ describe('listPoolVoices', () => {
     expect(ids).toHaveLength(VOICES.length);
     for (const v of VOICES.filter((e) => e.roll === false)) expect(ids).toContain(v.id);
     for (const id of RETIRED_261119) expect(ids).not.toContain(id);
+  });
+});
+
+describe('Voice Library voices (metadata.voiceLibrary, 261119)', () => {
+  const ME = '11111111-1111-4111-8111-111111111111';
+  const AUTHOR = '22222222-2222-4222-8222-222222222222';
+  const LIB_ID = 'LibVoice0000000000aa';
+  const pool = VOICES as Array<{ id: string; gender: string }>;
+  const libMeta = (gender?: string) => ({ voiceId: LIB_ID, voiceLibrary: { name: 'Captain Wren', ...(gender ? { gender } : {}) } });
+
+  beforeEach(() => {
+    mockSave.mockClear();
+    mockList.mockClear();
+    mockAuth.mockReturnValue({ kind: 'signed_in', user: { id: ME } });
+  });
+
+  it('plays for the author and for adopters alike, never re-rolled or persisted', async () => {
+    for (const c of [
+      makeCharacter({ owner: ME, metadata: libMeta('female') }),
+      makeCharacter({ owner: AUTHOR, kind: 'world', metadata: libMeta('female') }),
+    ]) {
+      expect(assignedVoiceId(c)).toBe(LIB_ID);
+      expect(await resolveVoiceId(c)).toBe(LIB_ID);
+      expect(libraryVoicePickOf(c)).toEqual({ name: 'Captain Wren', gender: 'female' });
+      expect(ownVoicePickOf(c)).toBeNull();
+    }
+    mockAuth.mockReturnValue({ kind: 'signed_out' });
+    expect(assignedVoiceId(makeCharacter({ owner: AUTHOR, metadata: libMeta() }))).toBe(LIB_ID);
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('the stand-in is a deterministic pool voice of the same gender', () => {
+    for (const gender of ['male', 'female']) {
+      const c = makeCharacter({ metadata: libMeta(gender) });
+      const v = libraryVoiceStandInId(c);
+      expect(pool.find((p) => p.id === v)?.gender).toBe(gender);
+      expect(libraryVoiceStandInId(makeCharacter({ metadata: libMeta(gender) }))).toBe(v);
+    }
+  });
+
+  it('an unmarked unknown id still re-rolls, and the re-roll drops a stale library marker', async () => {
+    const c = makeCharacter({ metadata: { voiceId: 'not-a-voice-anywhere', voiceLibrary: { name: 'x' } } });
+    expect(assignedVoiceId(c)).toBeNull();
+    const v = await resolveVoiceId(c);
+    expect(VOICES.some((p) => p.id === v)).toBe(true);
+    const saved = (mockSave.mock.calls[0] as unknown as [Character])[0];
+    expect(saved.metadata).toEqual({ voiceId: v });
   });
 });
