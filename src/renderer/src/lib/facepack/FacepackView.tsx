@@ -18,7 +18,7 @@
  *  - expression: ExpressionTimeline (persist until the next cue, decay
  *    holds, 60 s idle -> neutral), with a 120 ms crossfade;
  *  - pose: an idle head turn every 4-10 s, one step at a time, biased toward
- *    the cursor when the overlay's cursor feed is fresh; 170 ms crossfade;
+ *    the cursor when the overlay's cursor feed is fresh; 420 ms crossfade;
  *  - a 1-2 px idle bob in screen pixels.
  *
  * With `life` (261116, WorldLink) the pack is drawn by WebGL instead
@@ -108,7 +108,9 @@ export interface FacepackViewProps {
 }
 
 const EXPRESSION_FADE_MS = 120;
-const POSE_FADE_MS = 170;
+// 261119 (product call 261119, "the idle animation jumps"): a pose is a different picture of the
+// whole figure, so a 170 ms fade read as a jump; this one reads as a turn.
+const POSE_FADE_MS = 420;
 /** Idle bob: CSS px amplitude and period. */
 const BOB_PX = 1.5;
 const BOB_PERIOD_MS = 3_400;
