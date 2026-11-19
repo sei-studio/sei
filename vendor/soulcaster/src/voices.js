@@ -73,7 +73,7 @@ export const VOICES = [
   // picker only (roll: false)
   { id: 'tnVKC6NjwhdRxoQIfKue', owner: '0a2b6902206ee5c247450ff82caa110406aedfb7173a54281db01ffe36abe033', label: 'Lyan', gender: 'female', age: 'young', roll: false, tags: ['casual', 'bright'], vibe: 'casual, natural, girl-next-door, American accent' },
   // adult
-  { id: 'WMKg7TxPpPWCryaXE42r', owner: '5214e3d3123945dcad0881d8743a206c4dbc617f34e858e8878c4fd90deb4892', label: 'Cruella', gender: 'female', age: 'adult', tags: ['intense', 'sly', 'classy', 'dark'], vibe: 'dangerously charming, silky menace, theatrical British' },
+  { id: 'WMKg7TxPpPWCryaXE42r', owner: '5214e3d3123945dcad0881d8743a206c4dbc617f34e858e8878c4fd90deb4892', label: 'Ravenna', gender: 'female', age: 'adult', tags: ['intense', 'sly', 'classy', 'dark'], vibe: 'dangerously charming, silky menace, theatrical British' },
   { id: '4BAlflaQyhIcCfHiEI7x', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Tess', gender: 'female', age: 'adult', tags: ['wise', 'steady', 'commanding'], vibe: 'direct and grounded, no-nonsense British' },
   { id: 'FCYF8vBfwu11whOhvb94', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Jade', gender: 'female', age: 'adult', tags: ['raspy', 'dry', 'dark', 'casual'], vibe: 'edgy and nonchalant, a raspy shrug of a voice, American accent' },
   { id: 'sssn4wp3AspuK2kvy3Ym', owner: '90bcaeda9ed6d1dea5a80cc31469586854c06a388054be31490a3b0e6732358a', label: 'Vivien', gender: 'female', age: 'adult', tags: ['dark', 'classy', 'soft'], vibe: 'mysterious witch, velvety dark-fantasy elegance, American' },
