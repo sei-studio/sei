@@ -39,7 +39,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, plainRoomState, ROOM_PRESET_IDS, type RoomPresetManifest, type RoomState } from '@shared/seilinkRoom';
-import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostBridge } from '@shared/seilinkHost';
+import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostBridge, SeilinkPokeKind } from '@shared/seilinkHost';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { desktopLineFace } from '@shared/seilinkExpression';
 import type { SeilinkPack } from '@shared/seilinkPack';
@@ -67,6 +67,16 @@ function fakeLoginSource(mode: string): OpenAtLoginSource {
 }
 
 type Cb<T> = (v: T) => void;
+
+/** Dev: `window.__seiDevPoke(kind?)` presses on her, then sends the poke, as the host does for a click. */
+const devPoke = { press: new Set<() => void>(), poke: new Set<(kind: SeilinkPokeKind) => void>() };
+if (typeof window !== 'undefined') {
+  (window as unknown as { __seiDevPoke?: (kind?: SeilinkPokeKind) => void }).__seiDevPoke = (kind = 'click') => {
+    devPoke.press.forEach((cb) => cb());
+    // The host sends the click once the double-click time (500 ms) has passed.
+    setTimeout(() => devPoke.poke.forEach((cb) => cb(kind)), 560);
+  };
+}
 const PHASES = ['desktop', 'offer', 'prompt', 'later', 'editor', 'decorated', 'closed', 'login'] as const;
 type Phase = (typeof PHASES)[number];
 
@@ -107,7 +117,15 @@ function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state
       later(() => cb(30), 0);
       return () => {};
     },
-    onPoke: () => () => {},
+    // 261119: a scripted click on her (window.__seiDevPoke(), the avatar demo): the press, then the click.
+    onPoke: (cb) => {
+      devPoke.poke.add(cb);
+      return () => devPoke.poke.delete(cb);
+    },
+    onPress: (cb) => {
+      devPoke.press.add(cb);
+      return () => devPoke.press.delete(cb);
+    },
     setBox: () => {},
     frames: () => {},
     firstFrame: () => {
