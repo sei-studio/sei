@@ -35,8 +35,11 @@ import { introSeen, shouldPlayFirstLink } from './introPref';
 import { liveHintDismissed } from './liveHintPref';
 import { useDataStore } from '../stores/useDataStore';
 import { WORLDLINK_UPLOADED_LOOKS, worldlinkLookBlock } from './uploadedLooks';
+import { dismissWorldlinkTip } from '../worldlinkTipPref';
 
+/** Every WorldLink entry runs through here, so it also retires the chat header's one-time WorldLink tip (261119). */
 export function trackEntry(characterId: string, source: SeilinkEntrySource, action: EntryAction): void {
+  dismissWorldlinkTip();
   try {
     sei.track(SEILINK_ENTRY_EVENT, { character_id: characterId, source, action });
   } catch {

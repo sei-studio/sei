@@ -311,7 +311,9 @@ The design and its measurements are committed at
   GAMES button on 260929 ("New games added", announcing Stardew Valley and
   Don't Starve Together;
   `lib/gamesTipPref`, new key `sei.gamesTipDone.v1.<scope>` so everyone sees it
-  once). Its rules carried over: **it retires only on "Got it" or a click on
+  once), and to the WorldLink button on 261119 (`lib/worldlinkTipPref`, see
+  `seilink-analytics.md`; Backseat's "(beta)" tag moved to WorldLink then too).
+  The games-era rules were: **it retires only on "Got it" or a click on
   the games button itself**, never on using a feature some other way (the
   Backseat version once retired on any share, and that silenced exactly the
   players who had used backseat in an earlier build and were owed the notice).

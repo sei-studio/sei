@@ -138,8 +138,8 @@
   color: var(--accent);
 }
 
-/* ── One-time games tip (260929; was the Backseat tip, 260803) ──────────────
- * A small card under the games button with a tail pointing up at it. The
+/* ── One-time "New" tip (261119 WorldLink; 260929 games; 260803 Backseat) ────
+ * A small card under the WorldLink button with a tail pointing up at it. The
  * header is the top of the window, so it can only hang downward, over the
  * message list.
  *

@@ -98,6 +98,19 @@ export type SeilinkEntrySource = (typeof ENTRY_SOURCES)[number];
 export const ENTRY_ACTIONS = ['sheet', 'move_in', 'edit', 'move_out', 'replay_intro'] as const;
 export type EntryAction = (typeof ENTRY_ACTIONS)[number];
 
+/**
+ * The one-time "New" tip under the chat header's WorldLink button (261119;
+ * it pointed at the games button before, with no event). `target` names what
+ * it points at, so a later move of the tip stays a separate series.
+ * shown = it went up (once per account per app session); opened = the
+ * WorldLink button was clicked while it was up; dismissed = "Got it".
+ */
+export const FEATURE_TIP_EVENT = 'feature_tip';
+export const TIP_TARGETS = ['worldlink'] as const;
+export type TipTarget = (typeof TIP_TARGETS)[number];
+export const TIP_ACTIONS = ['shown', 'opened', 'dismissed'] as const;
+export type TipAction = (typeof TIP_ACTIONS)[number];
+
 type Scalar = string | number | boolean | null;
 
 // ── The WorldLink status lines (261106 v6) ────────────────────────────────
@@ -181,6 +194,7 @@ export function isSeilinkIntroEvent(event: string): boolean {
     event === SEILINK_INTRO_EVENT ||
     event === SEILINK_TOUR_EVENT ||
     event === SEILINK_ENTRY_EVENT ||
+    event === FEATURE_TIP_EVENT ||
     event === SEILINK_SETUP_EVENT ||
     event === SEILINK_SETUP_STEP_EVENT ||
     event === SEILINK_INTRO_LINK_EVENT
@@ -289,6 +303,13 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
       character_id: charId(p.character_id),
       source: oneOf(ENTRY_SOURCES, p.source) ?? 'button',
       action: oneOf(ENTRY_ACTIONS, p.action) ?? 'sheet',
+    };
+  }
+  if (event === FEATURE_TIP_EVENT) {
+    return {
+      character_id: charId(p.character_id),
+      target: oneOf(TIP_TARGETS, p.target) ?? 'worldlink',
+      action: oneOf(TIP_ACTIONS, p.action) ?? 'shown',
     };
   }
   return {};

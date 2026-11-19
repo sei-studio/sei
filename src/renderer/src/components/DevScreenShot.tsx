@@ -366,7 +366,7 @@ function MoveInShot(): React.ReactElement {
       lookBlocked={look === 'busy_background' || look === 'uploaded' ? look : null}
       customImage={params.get('custom') === '1'}
       error={null}
-      onCancel={noop}
+      onCancel={() => useSeilinkStore.getState().closeFlow()}
       onConfirm={noop}
     />
   );

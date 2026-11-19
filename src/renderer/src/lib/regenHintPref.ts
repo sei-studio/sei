@@ -13,9 +13,9 @@
  *
  * ONCE PER PLAYER, EVER, not once per companion. The flag is written the
  * moment the hint shows, not when it is dismissed, so a quit or a navigation
- * while it is up does not bring it back. Same storage shape as gamesTipPref:
+ * while it is up does not bring it back. Same storage shape as worldlinkTipPref:
  * localStorage per profile scope (the account UUID, or 'local' when signed
- * out), defensive reads, best-effort writes. See gamesTipPref for why
+ * out), defensive reads, best-effort writes. See worldlinkTipPref for why
  * config.json was rejected for cosmetic one-time flags, and why the key
  * carries the scope. A lost record costs one more showing at worst.
  *

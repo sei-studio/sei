@@ -51,8 +51,8 @@ this, onboarding landed on Home: 24% of new installs never used any surface.
   error settles the store as `failed`: the plain chat, no card, no error.
   Main pushes the greeting's thoughts only after `prepareChatTurn` succeeds,
   so a failed prep cannot leave "a button will appear" queued for the
-  player's first message. The one-time games tip is held back while the
-  moment is pending or showing (`shouldShowGamesTip.firstMomentLive`).
+  player's first message. The one-time header tip (WorldLink since 261119) is held back while the
+  moment is pending or showing (`shouldShowWorldlinkTip.firstMomentLive`).
 - **Analytics (shape only, renderer `sei.track`):** `first_moment_shown
   {primary, minecraft_offered, backseat_offered, companion: sui|generated}`,
   `first_moment_action {action: backseat|chess|minecraft|call|dismiss|typed,
