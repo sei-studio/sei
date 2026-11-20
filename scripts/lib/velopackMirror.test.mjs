@@ -113,6 +113,17 @@ describe('setRollout', () => {
     await setRollout({ store, channel: 'win', kind: 'migration', percent: 50, log: quiet });
     expect(await getJson(store, 'migration.win.json')).toEqual({ percent: 50, epoch: 2 });
   });
+
+  it('sets the self-repair switch (no setup needed to switch it off) and keeps the epoch', async () => {
+    const store = dirStore(tmp(), { log: quiet });
+    await setRollout({ store, channel: 'beta', kind: 'repair', percent: 0, log: quiet });
+    expect(await getJson(store, 'repair.beta.json')).toEqual({ percent: 0, epoch: 0 });
+    await setRollout({ store, channel: 'beta', kind: 'repair', percent: 100, epoch: 1, log: quiet });
+    await setRollout({ store, channel: 'beta', kind: 'repair', percent: 30, log: quiet });
+    expect(await getJson(store, 'repair.beta.json')).toEqual({ percent: 30, epoch: 1 });
+    await expect(setRollout({ store, channel: 'beta', kind: 'repair', percent: 130, log: quiet })).rejects.toThrow(/percent/);
+    await expect(setRollout({ store, channel: 'beta', kind: 'nope', percent: 1, log: quiet })).rejects.toThrow(/kind/);
+  });
 });
 
 describe('stores', () => {

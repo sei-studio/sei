@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SAFE_MODE_ADDED, UPDATE_WINDOW_ADDED, FREE_PLAY_RESET_ADDED, VELOPACK_SPLASH_ADDED, DST_GRANT_ADDED } from './addedLanguageCopy';
+import { SAFE_MODE_ADDED, UPDATE_WINDOW_ADDED, FREE_PLAY_RESET_ADDED, VELOPACK_SPLASH_ADDED, DST_GRANT_ADDED, VELOPACK_REPAIR_ADDED } from './addedLanguageCopy';
 import { formatMessage } from './uiLanguage';
 
 describe.each([
@@ -8,6 +8,7 @@ describe.each([
   ['credit resets', FREE_PLAY_RESET_ADDED],
   ['update splash', VELOPACK_SPLASH_ADDED],
   ['mod setup', DST_GRANT_ADDED],
+  ['self-repair', VELOPACK_REPAIR_ADDED],
 ] as const)('Italian %s copy', (_name, table) => {
   it('covers the existing keys and preserves interpolation through formatting', () => {
     const italian: Record<string, string> = table.it;

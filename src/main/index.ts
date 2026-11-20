@@ -93,6 +93,7 @@ import {
   takeSafeModeReport,
 } from './bootContext';
 import { applyPendingAtLaunch, updateSplashStatusForLaunch } from './velopackUpdater';
+import { handOffRepairAtLaunch, takeRepairReports } from './velopackRepair';
 import { initNotices, refreshNotices } from './notices';
 import { installPopupFrameGuards } from './popupFrameGuards';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
@@ -1880,6 +1881,11 @@ async function bootstrap(): Promise<void> {
     if (app.isPackaged) {
       const safe = takeSafeModeReport();
       if (safe) capture('boot_safe_mode_entered', { reason: safe.reason, failures: safe.failures });
+      // Windows Velopack self-repair (261120): events queued by this and
+      // earlier launches (safe mode never starts analytics). Shape only.
+      if (process.env.SEI_VELOPACK_CI !== '1') {
+        for (const r of takeRepairReports()) capture('velopack_repair', { ...r });
+      }
       const { onConfigRecovered } = await import('./configStore');
       onConfigRecovered((e) => capture('settings_recovered', { kind: e.kind }));
     }
@@ -2053,7 +2059,13 @@ async function bootstrap(): Promise<void> {
     // up itself when this launch has none), instead of booting.
     // Not at login: a pending update applies on the next quit or the next
     // launch the user starts, never as an update screen at login.
-    void (login ? Promise.resolve(false) : applyPendingAtLaunch(splashWindow))
+    // A Velopack self-repair whose Setup an earlier run downloaded goes first
+    // (velopackRepair.ts): it reinstalls Sei and starts it again.
+    void (login
+      ? Promise.resolve(false)
+      : handOffRepairAtLaunch()
+          .catch(() => false)
+          .then((repairing) => repairing || applyPendingAtLaunch(splashWindow)))
       .catch(() => false)
       .then((applying) => {
         if (applying) {

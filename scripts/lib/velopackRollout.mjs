@@ -9,6 +9,10 @@
 //                   NSIS installs in the first <percent> buckets move to
 //                   Velopack. No file or percent 0 = nobody moves. A higher
 //                   epoch gives installs that gave up three more tries.
+//   kind repair:    repair.<channel>.json { percent, epoch }
+//                   The Velopack self-repair (src/main/velopackRepair.ts).
+//                   No file = on for everyone; percent 0 = the kill switch.
+//                   A higher epoch gives installs that gave up three more tries.
 
 import { compareVersions, INDEX_CACHE_CONTROL, migrationRule, parseReleases, parseSetupManifest, rolloutRule } from './velopackFeed.mjs';
 import { getJson } from './velopackStore.mjs';
@@ -43,5 +47,14 @@ export async function setRollout({ store, channel, kind, version, percent, epoch
     log(`migration.${channel}.json = ${JSON.stringify(rule)} (${store.describe})`);
     return rule;
   }
-  throw new Error(`kind must be update or migration, got ${kind}`);
+  if (kind === 'repair') {
+    const prev = await getJson(store, `repair.${channel}.json`);
+    const e = epoch === undefined || epoch === '' ? (Number.isInteger(prev?.epoch) ? prev.epoch : 0) : epoch;
+    // Same shape and limits as the migration switch.
+    const rule = migrationRule(percent, e);
+    await store.putJson(`repair.${channel}.json`, rule, { cacheControl: INDEX_CACHE_CONTROL });
+    log(`repair.${channel}.json = ${JSON.stringify(rule)} (${store.describe})`);
+    return rule;
+  }
+  throw new Error(`kind must be update, migration or repair, got ${kind}`);
 }
