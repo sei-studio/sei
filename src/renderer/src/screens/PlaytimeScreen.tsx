@@ -33,7 +33,7 @@ import { SignInModal } from '../components/SignInModal';
 import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmModal';
 import { ChatgptTab } from '../components/playtime/ChatgptTab';
 import { MyKeysTab } from '../components/playtime/MyKeysTab';
-import { ElevenKeyRow } from '../components/playtime/ElevenKeyRow';
+import { CloudVoiceAdvanced } from '../components/playtime/CloudVoiceAdvanced';
 import { SeiPlanTab } from './CreditsScreen';
 import styles from './PlaytimeScreen.module.css';
 
@@ -246,7 +246,11 @@ export function PlaytimeScreen(): React.ReactElement {
               <section className={styles.section} aria-label={t('Voice')}>
                 <h3 className={styles.sectionTitle}>{t('Voice')}</h3>
                 <div className={styles.panel}>
-                  <ElevenKeyRow mode="cloud-optional" />
+                  {/* 261120: the ElevenLabs key (own ElevenLabs voices), who
+                      speaks (Sei voices or Fish Audio on the user's own key)
+                      and the Fish key, all behind one collapsed line. Fish
+                      speaks only when picked there. */}
+                  <CloudVoiceAdvanced cfg={cfg} persist={persist} />
                 </div>
               </section>
             </>

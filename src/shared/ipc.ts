@@ -772,6 +772,13 @@ export type VoiceTtsNoticePush =
       reason: FishFailureReason;
     }
   | {
+      /** 261120: Fish Audio is the chosen cloud voice (Playtime > Sei >
+       * Advanced) but could not speak this line, so Sei's voices spoke it. */
+      kind: 'fish-cloud-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
       /** 261102: Kokoro is the chosen local model but could not speak this
        * line (pack not downloaded, or it would not load), so the Fast voices
        * spoke it. The line still plays; the call UI shows a system notice. */

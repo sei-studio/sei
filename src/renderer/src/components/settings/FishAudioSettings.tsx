@@ -2,8 +2,8 @@
  * Settings > Voice > Local voice > Fish Audio (261103): the user's own Fish
  * Audio key (write-only, like the ElevenLabs key: only its presence comes
  * back), where to get a free one, a Test button that speaks one line, and
- * the plain privacy line. Rendered only while Fish Audio is the chosen local
- * voice, which itself only shows in local (BYOK) mode.
+ * the plain privacy line. Rendered while Fish Audio is the chosen voice on
+ * Playtime > My keys, and (261120) inside Playtime > Sei > Voice > Advanced.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { FISH_API_KEYS_URL } from '@shared/fishVoices';
@@ -19,7 +19,13 @@ const KEY_BULLETS = 24;
 
 type TestState = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'error'; text: string };
 
-export function FishAudioSettings(): React.ReactElement {
+export function FishAudioSettings(props: {
+  /** Where the row sits, for the key saved/removed events (shape only). */
+  surface?: 'mykeys' | 'cloud';
+  /** Told whenever the stored key's presence is known or changes. */
+  onKeyChange?: (present: boolean) => void;
+} = {}): React.ReactElement {
+  const { surface = 'mykeys', onKeyChange } = props;
   const t = useT();
   const [hasKey, setHasKey] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -54,6 +60,8 @@ export function FishAudioSettings(): React.ReactElement {
       await sei.voiceFishKeySet({ key: trimmed });
       const { present } = await sei.voiceFishKeyStatus();
       setHasKey(present);
+      onKeyChange?.(present);
+      sei.track('fish_key_saved', { surface, replaced: hasKey });
       setDraft('');
       setEditing(false);
       setKeyError(null);
@@ -69,6 +77,8 @@ export function FishAudioSettings(): React.ReactElement {
     try {
       await sei.voiceFishKeySet({ key: null });
       setHasKey(false);
+      onKeyChange?.(false);
+      sei.track('fish_key_removed', { surface });
       setKeyError(null);
       setTest({ kind: 'idle' });
     } catch (err) {
@@ -132,7 +142,9 @@ export function FishAudioSettings(): React.ReactElement {
           </span>
         ) : (
           <>
-            <span className={hasKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}>
+            {/* On the cloud tab the key is optional (Sei voices speak without
+                it), so "Not set" is a plain state there, a warning elsewhere. */}
+            <span className={hasKey || surface === 'cloud' ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}>
               {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
             </span>
             <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>

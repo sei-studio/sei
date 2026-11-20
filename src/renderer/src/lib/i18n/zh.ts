@@ -113,7 +113,7 @@ export const ZH: Record<string, string> = {
   'Automatic': '自动',
   'Preview': '试听',
   'Use automatic': '改回自动',
-  'Paste a fish.audio voice link': '粘贴 fish.audio 声音链接',
+  'Paste a fish.audio voice link or id': '粘贴 fish.audio 声音链接或 ID',
   'Fish Audio voice link': 'Fish Audio 声音链接',
   'Use voice': '使用此声音',
   'This voice plays without the pitch setting. It is saved right away.': '这个声音不使用音调设置，选择后立即保存。',
@@ -188,4 +188,8 @@ export const ZH: Record<string, string> = {
   'Downloading... {pct}%': '下载中……{pct}%',
   // 'The download failed...' lives in common.ts (shared with the chess panel).
   'You can keep going; it finishes in the background.': '可以继续下一步，下载会在后台完成。',
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "语音提供方",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[已用 Sei 声音朗读，请在游玩时长中添加你的 Fish Audio 密钥]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[已用 Sei 声音朗读，Fish Audio 未能朗读这句话]",
 };

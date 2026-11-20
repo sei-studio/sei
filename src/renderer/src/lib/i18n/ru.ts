@@ -2073,7 +2073,7 @@ export const RU: Record<string, string> = {
   "Automatic": "Автоматически",
   "Preview": "Прослушать",
   "Use automatic": "Автовыбор",
-  "Paste a fish.audio voice link": "Вставь ссылку на голос с fish.audio",
+  "Paste a fish.audio voice link or id": "Вставь ссылку или ID голоса с fish.audio",
   "Fish Audio voice link": "Ссылка на голос Fish Audio",
   "Use voice": "Выбрать голос",
   "This voice plays without the pitch setting. It is saved right away.": "Этот голос звучит без настройки высоты. Сохраняется сразу.",
@@ -2589,4 +2589,8 @@ export const RU: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Слишком много попыток. Подожди немного и попробуй снова.",
   "Could not reach the Voice Library right now. Try again in a moment.": "Не удалось связаться с библиотекой голосов. Попробуй чуть позже.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[озвучено похожим голосом Sei, голос из библиотеки больше недоступен]",
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "Поставщик голоса",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[озвучено голосом Sei, добавь свой ключ Fish Audio в разделе «Игровое время»]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[озвучено голосом Sei, Fish Audio не смог озвучить эту реплику]",
 };

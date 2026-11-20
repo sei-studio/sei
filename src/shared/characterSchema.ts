@@ -1138,6 +1138,15 @@ export const UserConfigSchema = z.object({
    */
   local_tts_model: z.enum(['fast', 'kokoro', 'fish']).optional(),
   /**
+   * 261120: who speaks on a Sei (cloud) account, chosen in Playtime > Sei >
+   * Voice > Advanced. 'fish' = Fish Audio with the user's own key (their
+   * account pays for the audio, never Sei's); a Fish failure speaks the line
+   * with Sei's voices. Absent = 'sei'. Read through cloudVoiceProvider()
+   * (shared/ttsEngine.ts) and only on the cloud backend: tts_engine and
+   * local_tts_model never send a cloud line to Fish.
+   */
+  cloud_tts_provider: z.enum(['sei', 'fish']).optional(),
+  /**
    * 261103: per-character Fish Audio voice picks, SPARSE like avatar_prefs: an
    * absent character id means "automatic" (shared/fishVoices.ts maps the
    * character's voice gender + the line's language to a curated licensed

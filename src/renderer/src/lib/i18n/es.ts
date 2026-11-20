@@ -2073,7 +2073,7 @@ export const ES: Record<string, string> = {
   "Automatic": "Automática",
   "Preview": "Escuchar",
   "Use automatic": "Usar la automática",
-  "Paste a fish.audio voice link": "Pega un enlace de voz de fish.audio",
+  "Paste a fish.audio voice link or id": "Pega un enlace o ID de voz de fish.audio",
   "Fish Audio voice link": "Enlace de voz de Fish Audio",
   "Use voice": "Usar esta voz",
   "This voice plays without the pitch setting. It is saved right away.": "Esta voz suena sin el ajuste de tono. Se guarda al instante.",
@@ -2589,4 +2589,8 @@ export const ES: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Demasiados intentos. Espera un poco e inténtalo de nuevo.",
   "Could not reach the Voice Library right now. Try again in a moment.": "No se pudo conectar con la biblioteca de voces. Inténtalo de nuevo en un momento.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[dicho con una voz parecida de Sei, su voz de la biblioteca ya no está disponible]",
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "Proveedor de voz",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[dicho con una voz de Sei, añade tu clave de Fish Audio en Tiempo de juego]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[dicho con una voz de Sei, Fish Audio no pudo decir esta frase]",
 };
