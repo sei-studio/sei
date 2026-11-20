@@ -37,6 +37,7 @@ vi.mock('../cloud/syncQueue', () => ({
   enqueueUpsert: vi.fn(async () => {}),
   enqueueDelete: vi.fn(async () => {}),
   processNext: vi.fn(async () => {}),
+  kickDrain: vi.fn(),
 }));
 
 // Mock the LLM so the summary fold is deterministic and call-countable.

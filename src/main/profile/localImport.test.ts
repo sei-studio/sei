@@ -31,6 +31,7 @@ vi.mock('../cloud/syncQueue', () => ({
   enqueueUpsert: vi.fn(async () => {}),
   enqueueDelete: vi.fn(async () => {}),
   processNext: vi.fn(async () => {}),
+  kickDrain: vi.fn(),
 }));
 
 import { paths, _setUserDataOverride, setActiveScope, profileRootFor, getActiveScope } from '../paths';
