@@ -26,7 +26,7 @@
 // 261120 (iris layer): --path sweep moves the cursor slowly across her (left, right, back, then up,
 // down, back) with no click, for comparing how her irises follow. --dpr <n> renders at that device
 // scale, and --clip face screenshots only her head (the top --cliph share of her box, default 0.42),
-// so the eyes are sharp in a close-up.
+// so the eyes are sharp in a close-up; --clipy starts it that share of her box down.
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -67,6 +67,7 @@ const PATH = arg('path', 'default');
 const DPR = Number(arg('dpr', '1'));
 const CLIP = arg('clip', null);
 const CLIP_H = Number(arg('cliph', '0.42'));
+const CLIP_Y = Number(arg('clipy', '0'));
 const TIMELINE = arg('timeline', null) ? JSON.parse(fs.readFileSync(arg('timeline'), 'utf8')) : [];
 const START_AT = (() => {
   const d = new Date();
@@ -389,7 +390,7 @@ async function main() {
         }
       }, frameMs);
       await page.waitForTimeout(15);
-      const clip = CLIP === 'face' ? { x: Math.round(her.x), y: Math.max(0, Math.round(her.y)), width: Math.round(her.w), height: Math.round(her.h * CLIP_H) } : undefined;
+      const clip = CLIP === 'face' ? { x: Math.round(her.x), y: Math.max(0, Math.round(her.y + her.h * CLIP_Y)), width: Math.round(her.w), height: Math.round(her.h * CLIP_H) } : undefined;
       await page.screenshot({ path: path.join(OUT, 'frames', `f${String(i).padStart(5, '0')}.png`), clip });
       const st = await page.evaluate(() => {
         const tr = window.__seiFaceTrace;
