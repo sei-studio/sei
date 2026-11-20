@@ -421,10 +421,6 @@ export const RU: Record<string, string> = {
   "Call captions": "Субтитры в звонке",
   "About call captions": "О субтитрах в звонке",
   "Shows live captions during voice calls: what the companion said and what Sei heard you say.": "Показывает субтитры прямо во время звонка: реплики компаньона и то, как Sei распознаёт твою речь.",
-  "About the avatar": "О плавающем аватаре",
-  "Floats your companion on top of every app: their picture, or a Live2D model from their profile. \"When active\" shows it during calls, games, screensharing and Minecraft; \"Always\" keeps it up while Sei is open. Hover it to move or resize.": "Показывает аватар компаньона поверх всех окон: портрет или Live2D-модель из профиля. «Когда активен» показывает аватар во время звонков, игр, показа экрана и игры в Minecraft; «Всегда» оставляет аватар на экране, пока Sei открыт. Наведи курсор на аватар, чтобы переместить его или изменить размер.",
-  "When active": "Когда активен",
-  "Always": "Всегда",
   "Conversation starters": "Начало разговора",
   "About conversation starters": "О начале разговора",
   "When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.": "Если в звонке становится тихо, компаньон может сам поднять тему, а не ждать, пока ты заговоришь.",
@@ -2589,4 +2585,9 @@ export const RU: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Слишком много попыток. Подожди немного и попробуй снова.",
   "Could not reach the Voice Library right now. Try again in a moment.": "Не удалось связаться с библиотекой голосов. Попробуй чуть позже.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[озвучено похожим голосом Sei, голос из библиотеки больше недоступен]",
+  // WorldLink pin on top (261120)
+  "Pin on top": "Поверх всех окон",
+  "Back to the room": "Вернуть в комнату",
+  "Pinned on top": "Теперь поверх всех окон",
+  "Back in the room": "Снова в комнате",
 };

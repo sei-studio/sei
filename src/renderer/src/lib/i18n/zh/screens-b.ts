@@ -112,12 +112,6 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'About call captions': '关于通话字幕',
   'Shows live captions during voice calls: what the companion said and what Sei heard you say.':
     '在语音通话中显示实时字幕：伙伴说了什么，以及 Sei 听到你说了什么。',
-  // Avatar overlay (260804, grew out of the 260706 call overlay setting)
-  'About the avatar': '关于虚拟形象',
-  'Floats your companion on top of every app: their picture, or a Live2D model from their profile. "When active" shows it during calls, games, screensharing and Minecraft; "Always" keeps it up while Sei is open. Hover it to move or resize.':
-    '把伙伴悬浮显示在所有应用之上：可以是他们的头像，也可以是角色页里设置的 Live2D 模型。「活动时」在通话、游戏、屏幕分享和 Minecraft 期间显示；「一直显示」则只要 Sei 开着就一直显示。鼠标悬停可以移动和调整大小。',
-  'When active': '活动时',
-  'Always': '一直显示',
   'Conversation starters': '主动开启话题',
   'About conversation starters': '关于主动开启话题',
   'When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.':

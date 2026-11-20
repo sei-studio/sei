@@ -1,16 +1,34 @@
 # Avatar overlay (260804, grew out of the 260706 "call overlay")
 
-The always-on-top overlay window is now the companion's desktop presence:
-static portrait tiles or a per-character Live2D model, shown per
-`avatar_mode` in UserConfig: `'off' | 'activity' | 'always'` ('activity' =
-any live surface: call, chess, Draw!, backseat, MC summon; 'always' falls
-back to the LAST-INTERACTED companion — the Home wall's `lastInteractionAt`
-recency, not the open chat, so switching chats never swaps the desk
-companion). The field is OPTIONAL with no default;
-**read it only through `effectiveAvatarMode`** (characterSchema), which folds
-the deprecated `call_overlay_enabled` boolean (`true` → `'activity'`) so old
-configs keep their overlay without a migration. The player's own tile is
-GONE; the overlay is AI-only. Design doc: `docs/design/avatar-v06-260804.md`.
+**261120 (product call (261120)): the overlay is WorldLink's "pin on top".**
+Only someone with WorldLink sees it: WorldLink available on this install
+(`SeilinkAvailability.enabled`) AND a companion moved in (host
+starting/running/restarting/failed). The pin button on her desktop dock
+(HostDock, `data-dock="pin"`) floats her on top; the overlay's edit-mode
+"Back to the room" (or the dock again) unpins her. The overlay shows at
+most ONE companion, the pinned WorldLink one, and never while the app draws
+her in her room (her room editor / intro); calls, games, shares and summons
+add nobody (any other call companion stays in the app's call screen only).
+Pinned, the wallpaper room stays but draws without her (no click area, no
+bubbles, idle lines blocked `pinned`). The pin persists on
+`seilink_moved_in.pinned` (main-owned): a restart keeps it, a new move-in or
+move-out resets it, a failed host keeps her floating. Rules (pure, tested):
+`src/shared/seilinkPin.ts`; main: `setSeilinkPinned` in
+`main/seilink/host/seilinkHost.ts` (IPC `seilink:pin-set`). She is drawn as
+her room draws her (participant `figure` = the room's avatar choice →
+`RoomAvatar`, held in place). Settings > Appearance > Avatar is GONE:
+`avatar_mode` and `call_overlay_enabled` stay in the schema but are never
+read (old configs parse; an old "Always" cannot bring the overlay up);
+`effectiveAvatarMode` and `computeAvatarIds` were deleted. The chrome is one
+borderless button primitive (`.btn`): view mode = move + pencil (+ mute,
+interrupt on her call); edit mode adds captions (on a call) and Back to the
+room. Analytics: `avatar_overlay_shown {duration_bucket, source}` and
+`avatar_overlay_failed {failure_class}` from callOverlay.ts.
+
+Before 261120 (history): the overlay showed static portrait tiles or a
+per-character Live2D model per `avatar_mode` ('off' | 'activity' |
+'always'). The player's own tile is GONE; the overlay is AI-only. Design
+doc: `docs/design/avatar-v06-260804.md`.
 
 - **Window** (`src/main/callOverlay.ts`): click-through by default with
   `setIgnoreMouseEvents(true, {forward: true})` so hover still reaches the
@@ -250,7 +268,7 @@ GONE; the overlay is AI-only. Design doc: `docs/design/avatar-v06-260804.md`.
   and the v1→v2 manifest heal carries `accessories` over while a fresh
   import resets them (new model, new names). Sui's model ships "1 帽"
   (Key1 hat -1, Key22 crown +1): toggled ON = the author's no-hat crown look.
-- **Pusher** (`components/CallOverlayPusher.tsx`): mode + activity stores →
-  `computeAvatarIds` (pure, tested) → `voice:overlay-set`. Zod in
+- **Pusher** (`components/CallOverlayPusher.tsx`): WorldLink store →
+  `floatingAvatarIds` (shared/seilinkPin.ts, pure, tested) → `voice:overlay-set`. Zod in
   `main/ipc.ts` must name every participant field the overlay renders
   (undeclared keys are STRIPPED — the backseat gridSmall lesson).

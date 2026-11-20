@@ -40,6 +40,8 @@ describe('seilink desktop lines (M4)', () => {
     expect(idleBlock(free)).toBeNull();
     expect(idleBlock({ ...free, covered: true })).toBe('covered');
     expect(idleBlock({ ...free, paused: true })).toBe('paused');
+    // 261120: pinned on top, she is not in her room: no bubble there.
+    expect(idleBlock({ ...free, pinned: true })).toBe('pinned');
     expect(idleBlock({ ...free, deafened: true })).toBe('deafened');
     expect(idleBlock({ ...free, idleSeconds: AWAY_AFTER_S })).toBe('away');
     expect(idleBlock({ ...free, busy: true })).toBe('busy');

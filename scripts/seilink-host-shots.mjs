@@ -75,6 +75,11 @@ const SHOTS = {
   'host-day-deafen-caption': { kind: 'host', q: 'time=day&press=deafen' },
   'host-night-deafened-caption': { kind: 'host', q: 'time=night&deafened=1&press=deafen' },
   'host-dusk-edit-caption': { kind: 'host', q: 'time=dusk&press=edit' },
+  // 261120: pin on top. Pressing pin (she leaves the room), pinned (room without her, pin lit), unpinning.
+  'host-day-pin-caption': { kind: 'host', q: 'time=day&press=pin', seq: [400, 1200, 2000, 2800] },
+  'host-day-pinned': { kind: 'host', q: 'time=day&pinned=1' },
+  'host-day-unpin-caption': { kind: 'host', q: 'time=day&pinned=1&press=pin', seq: [400, 1200, 2000, 2800] },
+  'host-ru-pin-caption': { kind: 'host', q: 'time=day&lang=ru&press=pin', seq: [2000] },
   'host-ja-confirm-line': { kind: 'host', q: `time=day&lang=ja&confirm=1&line=${encodeURIComponent(LINE_JA)}` },
   'host-react-line': { kind: 'host', q: `time=day&state=${encodeURIComponent(REACT_STATE)}&line=${encodeURIComponent(LINE_REACT)}` },
   'host-taskbar0-line': { kind: 'host', q: `time=day&taskbar=0&line=${encodeURIComponent(LINE)}`, size: { width: 1000, height: 800 } },

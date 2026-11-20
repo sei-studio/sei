@@ -76,10 +76,15 @@ first frame and on Chromium's gpu-info-update (at most every 5 s).
 | `seilink_her_edit` | she used decorate (main, surface `chat`/`call`) or the player answered it (editor, outcome `undone`/`tried`) | outcome `applied`/`suggested`/`rejected`/`undone`/`tried`, changes (bucket), rejected (bucket), surface `chat`/`call`/`editor` | Does she decorate, do people keep it |
 | `seilink_editor_talk` | a message from the editor's talk box | outcome `sent`/`limit`/`error` | Is the talk box used, how often the cap blocks it |
 | `seilink_line_shown` | a bubble line shows | kind poke/idle/react, chars, expression `tag`/`lexicon`/`none` (261105: where her face for the line came from) | How much she talks on the desktop, and how often her face changes with it |
-| `seilink_dock_action` | a dock button | action edit/deafen/moveout, deafened? | Dock use |
+| `seilink_dock_action` | a dock button | action edit/deafen/moveout, deafened? (the pin button reports as `seilink_pin`) | Dock use |
+| `seilink_pin` | 261120: she was pinned on top or brought back to her room | pinned, via `dock`/`overlay`, character_id | Is pin on top used, from where |
+| `seilink_pin_ended` | a pin span ended | reason `unpin`/`move_out`/`replaced`/`disabled`/`character_removed`/`link_failed`/`account_switch`/`app_quit`, duration_bucket `lt1m`/`1_5m`/`5_30m`/`30m_2h`/`2_8h`/`gt8h`, character_id | How long she floats, how it ends |
+| `seilink_pin_failed` | a pin toggle did not take | failure_class `not_moved_in`/`unavailable`/`config_write`, via | Pin failures |
+| `avatar_overlay_shown` | the overlay window closed after showing (main/callOverlay.ts) | duration_bucket (as above), source `worldlink_pin` | Overlay health: how long it stays up |
+| `avatar_overlay_failed` | the overlay window failed | failure_class `create_failed`/`load_failed`/`renderer_gone`/`reveal_backstop` | Overlay failures |
 
 Idle lines: a "due window" opens when her gap has passed. `idle_due` counts
-windows, `idle_skip_<reason>` (cap, covered, paused, deafened, away, busy,
+windows, `idle_skip_<reason>` (cap, covered, paused, pinned, deafened, away, busy,
 occupied, free_plan, free_cap, over_limit, no_plan) counts each reason once
 per window, `idle_attempted` / `idle_shown` / `idle_none_<why>` count tries.
 Live lines (decorating together): `live_shown`, `live_skip_<reason>`.

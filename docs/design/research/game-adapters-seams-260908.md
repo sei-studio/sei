@@ -512,7 +512,7 @@ User copy in `src/renderer/src/lib/errors.ts` `ERROR_COPY` (30-64), e.g.
   `requestGameLaunch(id, {id:'minecraft', name:'Minecraft'}, () => openGame(id,'minecraft'))` (369-370).
 - **IconRail.tsx** `avatarActivityBadge(...)` (173-196) counts `summons[id].kind
   === 'online'|'connecting'` as `'game'`. `callLaunch.ts:39` and `CallMiniBar.tsx:69`
-  treat an online summon as an open game surface. `overlayParticipants.ts:20`
+  treat an online summon as an open game surface. `overlayParticipants.ts:20` (deleted 261120)
   counts a summon as avatar activity.
 - **ChatTopBar.tsx**: controller button opens `games-picker`; Backseat button.
 - **Modals** (`useUiStore.ts` union 90-135): `mc-setup{tab:'world'|'skin',

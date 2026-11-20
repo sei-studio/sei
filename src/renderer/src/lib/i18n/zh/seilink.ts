@@ -203,4 +203,9 @@ export const ZH_SEILINK: Record<string, string> = {
   "Could not change this setting. Turn Sei on in Windows Settings > Apps > Startup, or in Task Manager > Startup apps.": "无法更改此设置。请在 Windows 的“设置 > 应用 > 启动”或“任务管理器 > 启动应用”中开启 Sei。",
   "Could not change this setting. Add Sei in System Settings > General > Login Items.": "无法更改此设置。请在“系统设置 > 通用 > 登录项”中添加 Sei。",
   "Contact support": "联系支持",
+  // WorldLink pin on top (261120)
+  "Pin on top": "置顶悬浮",
+  "Back to the room": "回到房间",
+  "Pinned on top": "已置顶悬浮",
+  "Back in the room": "已回到房间",
 };

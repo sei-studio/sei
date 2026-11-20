@@ -421,10 +421,6 @@ export const ES: Record<string, string> = {
   "Call captions": "Subtítulos en llamadas",
   "About call captions": "Sobre los subtítulos en llamadas",
   "Shows live captions during voice calls: what the companion said and what Sei heard you say.": "Muestra subtítulos en vivo durante las llamadas: lo que dijo tu compi y lo que Sei te oyó decir.",
-  "About the avatar": "Sobre el avatar",
-  "Floats your companion on top of every app: their picture, or a Live2D model from their profile. \"When active\" shows it during calls, games, screensharing and Minecraft; \"Always\" keeps it up while Sei is open. Hover it to move or resize.": "Muestra a tu compi encima de todas las apps: su retrato o un modelo Live2D de su perfil. «Cuando esté activo» lo muestra en llamadas, juegos, pantalla compartida y Minecraft; «Siempre» lo mantiene visible mientras Sei esté abierto. Pasa el cursor por encima para moverlo o cambiar su tamaño.",
-  "When active": "Cuando esté activo",
-  "Always": "Siempre",
   "Conversation starters": "Temas de conversación",
   "About conversation starters": "Sobre los temas de conversación",
   "When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.": "Cuando una llamada de voz se queda en silencio un rato, tu compi puede sacar un tema por su cuenta en vez de esperar a que hables.",
@@ -2589,4 +2585,9 @@ export const ES: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Demasiados intentos. Espera un poco e inténtalo de nuevo.",
   "Could not reach the Voice Library right now. Try again in a moment.": "No se pudo conectar con la biblioteca de voces. Inténtalo de nuevo en un momento.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[dicho con una voz parecida de Sei, su voz de la biblioteca ya no está disponible]",
+  // WorldLink pin on top (261120)
+  "Pin on top": "Fijar encima",
+  "Back to the room": "Volver a la habitación",
+  "Pinned on top": "Ahora encima de todo",
+  "Back in the room": "De vuelta en la habitación",
 };

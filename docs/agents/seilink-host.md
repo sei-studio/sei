@@ -164,6 +164,16 @@ lives on the wallpaper, not in the app or a tray.
   as `dock-state`. Mutes her IDLE lines only; a reply to a poke still shows.
 - Move out → the first press turns the button into "Move out?" for 4 s, a
   second press sends the action; main `stopSeilinkHost('user_stop', 'dock')`.
+- 261120 Pin on top (first button, PinIcon, ink fill while on) → main
+  `setSeilinkPinned(!pinned, 'dock')`: she floats in the always-on-top
+  avatar overlay (main/callOverlay.ts) and the room draws without her
+  (SeilinkHostView hides her wrap: no click area, no bubbles; idle lines
+  skip as `pinned`). Saved on `seilink_moved_in.pinned`, pushed back as
+  `dock-state.pinned` and `SeilinkHostStatus.pinned`; the overlay's edit-mode
+  "Back to the room" unpins (`seilink:pin-set`, via `overlay`). A restore
+  keeps it; a new move-in, move-out, removal or account switch ends it; a
+  failed host keeps her floating. Rules: shared/seilinkPin.ts,
+  docs/agents/avatar-overlay.md.
 - 261106 the offer (`dock-state.offer`, `her` | `prompt` | `none`): after
   her first move-in into the blank room the dock holds "Decorate together"
   (`decorate`, BrushIcon, accent fill) and "Not now" (`later`); `prompt` adds

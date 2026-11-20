@@ -421,10 +421,6 @@ export const JA: Record<string, string> = {
   "Call captions": "通話の字幕",
   "About call captions": "通話の字幕について",
   "Shows live captions during voice calls: what the companion said and what Sei heard you say.": "通話中にライブ字幕を表示します。コンパニオンの発言と、Seiが聞き取ったあなたの発言が出ます。",
-  "About the avatar": "アバターについて",
-  "Floats your companion on top of every app: their picture, or a Live2D model from their profile. \"When active\" shows it during calls, games, screensharing and Minecraft; \"Always\" keeps it up while Sei is open. Hover it to move or resize.": "コンパニオンをすべてのアプリの手前に表示します。画像か、プロファイルのLive2Dモデルを使います。「アクティブ時」は通話、ゲーム、画面共有、Minecraftの間だけ表示し、「常に表示」はSeiを開いている間ずっと表示します。カーソルを乗せると移動やサイズ変更ができます。",
-  "When active": "アクティブ時",
-  "Always": "常に表示",
   "Conversation starters": "会話のきっかけ",
   "About conversation starters": "会話のきっかけについて",
   "When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.": "音声通話中に少し会話が途切れると、コンパニオンがこちらから話しかけるのを待たずに、自分から話題を出します。",
@@ -2589,4 +2585,9 @@ export const JA: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "試行回数が多すぎます。少し待ってからもう一度お試しください。",
   "Could not reach the Voice Library right now. Try again in a moment.": "今はボイスライブラリにつながりません。少し待ってからもう一度お試しください。",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[似たSeiのボイスで読み上げました。ボイスライブラリのボイスはもう使えません]",
+  // WorldLink pin on top (261120)
+  "Pin on top": "最前面に固定",
+  "Back to the room": "部屋に戻す",
+  "Pinned on top": "最前面に固定しました",
+  "Back in the room": "部屋に戻りました",
 };

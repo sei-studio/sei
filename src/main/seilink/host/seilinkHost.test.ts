@@ -328,4 +328,57 @@ describe('seilink host start / stop / restore', () => {
     await settle();
     expect(state.received.find((m) => m.type === 'arrival')).toEqual({ type: 'arrival', arrival: { mode: 'show', trigger: 'restore' } });
   });
+
+  it('261120: pin on top persists on her move-in and in the status; unpin drops it', async () => {
+    await host.startSeilinkHost(SUI);
+    await settle();
+    expect(host.seilinkHostStatus().pinned).toBeUndefined();
+    const st = await host.setSeilinkPinned(true, 'dock');
+    expect(st.pinned).toBe(true);
+    expect(state.config.seilink_moved_in).toMatchObject({ character_id: SUI, pinned: true });
+    expect(state.events).toContainEqual(['seilink_pin', { pinned: true, via: 'dock', character_id: SUI }]);
+    // The host hears it (the room hides her, the dock lights the pin).
+    await settle(20);
+    expect(state.received.filter((m) => m.type === 'dock-state').pop()).toMatchObject({ pinned: true });
+    const off = await host.setSeilinkPinned(false, 'overlay');
+    expect(off.pinned).toBeUndefined();
+    expect(state.config.seilink_moved_in).toEqual({ character_id: SUI, moved_in_at: expect.any(Number) });
+    const ended = state.events.filter(([e]) => e === 'seilink_pin_ended');
+    expect(ended).toEqual([['seilink_pin_ended', { character_id: SUI, reason: 'unpin', duration_bucket: 'lt1m' }]]);
+  });
+
+  it('261120: her dock pin button toggles it', async () => {
+    state.script = [{ type: 'dock', action: 'pin' }];
+    await host.startSeilinkHost(SUI);
+    await settle(150);
+    expect(host.seilinkHostStatus().pinned).toBe(true);
+    expect((state.config.seilink_moved_in as { pinned?: boolean }).pinned).toBe(true);
+  });
+
+  it('261120: a restart keeps the pin; a new move-in or a move-out starts unpinned', async () => {
+    state.config = { seilink_moved_in: { character_id: SUI, moved_in_at: 1, pinned: true } };
+    await host.restoreSeilinkHost();
+    await settle();
+    expect(host.seilinkHostStatus()).toMatchObject({ characterId: SUI, pinned: true });
+    // Lyra moves in: she starts in her room, and the old pin ends as replaced.
+    await host.startSeilinkHost(LYRA);
+    await settle();
+    expect(host.seilinkHostStatus().characterId).toBe(LYRA);
+    expect(host.seilinkHostStatus().pinned).toBeUndefined();
+    expect((state.config.seilink_moved_in as { pinned?: boolean }).pinned).toBeUndefined();
+    expect(state.events.find(([e]) => e === 'seilink_pin_ended')?.[1]).toMatchObject({ character_id: SUI, reason: 'replaced' });
+    await host.setSeilinkPinned(true, 'dock');
+    state.events = [];
+    await host.stopSeilinkHost('user_stop');
+    expect(host.seilinkHostStatus().pinned).toBeUndefined();
+    expect(state.config.seilink_moved_in ?? null).toBeNull();
+    expect(state.events.find(([e]) => e === 'seilink_pin_ended')?.[1]).toMatchObject({ character_id: LYRA, reason: 'move_out' });
+  });
+
+  it('261120: nobody moved in = no pin (failure reported, nothing written)', async () => {
+    const st = await host.setSeilinkPinned(true, 'overlay');
+    expect(st.pinned).toBeUndefined();
+    expect(state.config).toEqual({});
+    expect(state.events).toContainEqual(['seilink_pin_failed', { failure_class: 'not_moved_in', via: 'overlay' }]);
+  });
 });

@@ -327,10 +327,6 @@ export const IT: Record<string, string> = {
   "Call captions": "Sottotitoli delle chiamate",
   "About call captions": "Informazioni sui sottotitoli delle chiamate",
   "Shows live captions during voice calls: what the companion said and what Sei heard you say.": "Mostra sottotitoli in tempo reale durante le chiamate vocali: ciò che ha detto il personaggio e ciò che Sei ha capito dalle tue parole.",
-  "About the avatar": "Informazioni sull’avatar",
-  "Floats your companion on top of every app: their picture, or a Live2D model from their profile. \"When active\" shows it during calls, games, screensharing and Minecraft; \"Always\" keeps it up while Sei is open. Hover it to move or resize.": "Mostra il tuo personaggio sopra tutte le app: la sua immagine o un modello Live2D dal suo profilo. «Quando attivo» lo mostra durante chiamate, giochi, condivisione dello schermo e Minecraft; «Sempre» lo mantiene visibile mentre Sei è aperto. Passaci sopra per spostarlo o ridimensionarlo.",
-  "When active": "Quando attivo",
-  "Always": "Sempre",
   "Conversation starters": "Avvio spontaneo delle conversazioni",
   "About conversation starters": "Informazioni sull’avvio spontaneo delle conversazioni",
   "When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.": "Quando una chiamata rimane in silenzio per un po’, il personaggio può proporre un argomento senza aspettare che parli tu.",
@@ -2388,4 +2384,9 @@ export const IT: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Troppi tentativi. Aspetta un po' e riprova.",
   "Could not reach the Voice Library right now. Try again in a moment.": "Impossibile raggiungere la libreria di voci al momento. Riprova tra poco.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[detto con una voce di Sei simile, la sua voce della libreria non è più disponibile]",
+  // WorldLink pin on top (261120)
+  "Pin on top": "Fissa in primo piano",
+  "Back to the room": "Torna nella stanza",
+  "Pinned on top": "Ora in primo piano",
+  "Back in the room": "Di nuovo nella stanza",
 };

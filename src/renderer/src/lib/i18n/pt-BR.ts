@@ -421,10 +421,6 @@ export const PT_BR: Record<string, string> = {
   "Call captions": "Legendas na chamada",
   "About call captions": "Sobre as legendas na chamada",
   "Shows live captions during voice calls: what the companion said and what Sei heard you say.": "Mostra legendas ao vivo durante as chamadas de voz: o que o companion falou e o que o Sei ouviu de você.",
-  "About the avatar": "Sobre o avatar",
-  "Floats your companion on top of every app: their picture, or a Live2D model from their profile. \"When active\" shows it during calls, games, screensharing and Minecraft; \"Always\" keeps it up while Sei is open. Hover it to move or resize.": "Deixa o companion flutuando por cima de qualquer app: a imagem ou um modelo Live2D do perfil. \"Quando ativo\" mostra durante chamadas, jogos, compartilhamento de tela e Minecraft; \"Sempre\" mantém na tela enquanto o Sei estiver aberto. Passe o mouse em cima para mover ou redimensionar.",
-  "When active": "Quando ativo",
-  "Always": "Sempre",
   "Conversation starters": "Puxar assunto",
   "About conversation starters": "Sobre puxar assunto",
   "When a voice call goes quiet for a bit, your companion can bring up a topic on their own instead of waiting for you to speak.": "Quando a chamada de voz fica em silêncio por um tempo, o companion pode puxar um assunto por conta própria em vez de esperar você falar.",
@@ -2589,4 +2585,9 @@ export const PT_BR: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Tentativas demais. Espere um pouco e tente de novo.",
   "Could not reach the Voice Library right now. Try again in a moment.": "Não foi possível acessar a Biblioteca de Vozes agora. Tente de novo em instantes.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[falado com uma voz parecida da Sei, a voz da Biblioteca de Vozes não está mais disponível]",
+  // WorldLink pin on top (261120)
+  "Pin on top": "Fixar no topo",
+  "Back to the room": "Voltar para o quarto",
+  "Pinned on top": "Agora no topo",
+  "Back in the room": "De volta ao quarto",
 };
