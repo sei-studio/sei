@@ -2392,4 +2392,6 @@ export const IT: Record<string, string> = {
   "Voice provider": "Fornitore della voce",
   "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[detto con una voce di Sei, aggiungi la chiave Fish Audio in Tempo di gioco]",
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[detto con una voce di Sei, Fish Audio non è riuscito a dire questa frase]",
+  "[voice could not load, check your connection]": "[impossibile caricare la voce, controlla la connessione]",
+  "[voice could not play this line]": "[impossibile riprodurre questa frase]",
 };

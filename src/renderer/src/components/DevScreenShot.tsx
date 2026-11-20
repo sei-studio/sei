@@ -23,6 +23,8 @@
  *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
  *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
+ *     &ttsfail=1     (call) the voice could not load: notice + unvoiced line
+ *                    as the caption with captions off (261121)
  *     &tour=1[&audience=new]  the guide's SeiLink tour, live from its offer on
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
@@ -67,7 +69,7 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
-import { useLangStore } from '../lib/i18n';
+import { t, useLangStore } from '../lib/i18n';
 import { applyTheme } from '../lib/theme';
 import { MacosWindow } from './MacosWindow';
 import { IconRail } from './IconRail';
@@ -353,6 +355,17 @@ function seed(): void {
   if (screen === 'call') {
     useUiStore.getState().setCallBackdropFor(SUI, params.get('backdrop') === '1');
     useVoiceStore.setState({ participants: [SUI], status: 'live', liveAt: now - 3 * 60_000 - 12_000 });
+    // 261121 (T507): &ttsfail=1, the voice could not load: the unvoiced
+    // line shows as a caption (captions setting off) under the notice.
+    if (params.get('ttsfail') === '1') {
+      useUiStore.setState({ callCaptions: false });
+      useVoiceStore.setState({
+        lastSpoken: "wait, you found diamonds already? show me where, I'm coming over.",
+        lastSpokenId: SUI,
+        voiceFailing: true,
+        callNotice: t('[voice could not load, check your connection]'),
+      });
+    }
   }
   // A signed-in cloud account: the common case.
   useAuthStore.setState({

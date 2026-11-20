@@ -192,4 +192,6 @@ export const ZH: Record<string, string> = {
   "Voice provider": "语音提供方",
   "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[已用 Sei 声音朗读，请在游玩时长中添加你的 Fish Audio 密钥]",
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[已用 Sei 声音朗读，Fish Audio 未能朗读这句话]",
+  "[voice could not load, check your connection]": "[语音加载失败，请检查网络连接]",
+  "[voice could not play this line]": "[语音无法播放这句话]",
 };
