@@ -23,12 +23,13 @@
 import './remoteDebugGuard';
 import './velopackBoot';
 import { scheduleVelopackMigration } from './velopackMigration';
-import { app, BrowserWindow, ipcMain, net, session, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, net, Notification, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { launchSplashStatus, msSinceProcessStart } from './splashPage';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
+import { installCapNotices } from './capNotices';
 import { registerFacepackIpc } from './facepack/facepackIpc';
 import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
 import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
@@ -339,6 +340,88 @@ function openMainWindowAgain(): void {
     reopenMainWindow();
   } catch (err) {
     logger.error(`reopen window failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * 261120: a click on a cap notice's OS notification (capNotices.ts). Bring the
+ * app window forward wherever it is (hidden by the desktop stage, minimized,
+ * behind a game) or make one (macOS keeps running with none). The notice
+ * itself is waiting there: the renderer reads it back on mount.
+ */
+function revealMainWindowForNotice(): void {
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  const w = mainWindow;
+  if (w && !w.isDestroyed()) {
+    if (process.platform !== 'linux') w.setOpacity(1);
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    w.focus();
+    return;
+  }
+  openMainWindowAgain();
+}
+
+/** The latest cap notification, held so it is not garbage collected before a click. */
+let capNotification: Notification | null = null;
+
+function installCapNoticeDeps(): void {
+  installCapNotices({
+    now: () => Date.now(),
+    mainWindow: () => mainWindow,
+    notificationSupported: () => Notification.isSupported(),
+    showNotification: (text, onClick) => {
+      const n = new Notification({ title: text.title, body: text.body });
+      n.on('click', onClick);
+      n.on('failed', (_e, error) => logger.warn(`[sei/cap-notice] notification failed: ${error}`));
+      capNotification = n;
+      n.show();
+    },
+    requestAttention: () => {
+      if (process.platform === 'darwin') {
+        app.dock?.bounce('informational');
+        return;
+      }
+      const w = mainWindow;
+      if (process.platform === 'win32' && w && !w.isDestroyed() && !w.isFocused()) {
+        w.flashFrame(true);
+        w.once('focus', () => {
+          if (!w.isDestroyed()) w.flashFrame(false);
+        });
+      }
+    },
+    revealMainWindow: revealMainWindowForNotice,
+    uiLanguage: async () => {
+      const { loadConfig } = await import('./configStore');
+      return (await loadConfig()).ui_language;
+    },
+    log: (m) => logger.info(m),
+  });
+  // Dev only: SEI_DEV_CAP_NOTICE=wall|spend raises that notice once, a few
+  // seconds after launch, so the whole path (push, modal or banner, OS
+  // notification, replay into a reopened window) can be checked without a
+  // spent account. SEI_DEV_CAP_NOTICE_HIDE=1 hides the window first (the
+  // "Sei not in front" case) and brings it back the way a notification click
+  // does after SEI_DEV_CAP_NOTICE_REVEAL_MS. Never in a packaged build.
+  const devNotice = !app.isPackaged ? process.env.SEI_DEV_CAP_NOTICE?.trim() : undefined;
+  if (devNotice === 'wall' || devNotice === 'spend') {
+    const delayMs = Number(process.env.SEI_DEV_CAP_NOTICE_DELAY_MS) || 8000;
+    setTimeout(() => {
+      logger.info(`[sei/cap-notice] dev trigger: ${devNotice}`);
+      if (process.env.SEI_DEV_CAP_NOTICE_HIDE === '1' && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+        const revealMs = Number(process.env.SEI_DEV_CAP_NOTICE_REVEAL_MS) || 6000;
+        setTimeout(() => {
+          logger.info('[sei/cap-notice] dev trigger: reveal (as a notification click)');
+          revealMainWindowForNotice();
+        }, revealMs);
+      }
+      if (devNotice === 'wall') {
+        emitCreditsHardStop({ reason: 'depleted' }, { surface: 'unknown' });
+        return;
+      }
+      void import('./usage/llmUsageLedger').then((m) => m._emitSpendAlertForDev({ limitUsd: 5, spendMonthUsd: 5.12 }));
+    }, delayMs);
   }
 }
 
@@ -1251,6 +1334,8 @@ async function bootstrap(): Promise<void> {
   //    resolve <img src="sei-portrait://…"> the moment it loads.
   registerPortraitProtocol();
   registerSeilinkProtocol();
+  // 261120: cap notices outside the window (OS notification, replay).
+  installCapNoticeDeps();
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
@@ -1920,6 +2005,22 @@ async function bootstrap(): Promise<void> {
     // The menu bar / tray mode from 0.6.8-beta.1/2 is gone: drop its settings
     // file and the login item it may have registered. See legacyTrayCleanup.ts.
     cleanupLegacyTraySettings();
+
+    // 261120: Windows shows a toast (the cap notices, capNotices.ts) only for
+    // an AppUserModelID that a Start menu shortcut carries. Both installers
+    // stamp the appId on theirs (electron-builder NSIS: appId; Velopack:
+    // `--aumid com.sei.app` in scripts/velopack-pack.mjs); without this call
+    // Electron makes up `electron.app.Sei` on first use and the toast is
+    // dropped silently. AFTER the legacy cleanup: that removes a Run value
+    // named by the default AppUserModelID, so it must still see the old one.
+    // The open-at-login item has a fixed name of its own (WIN_RUN_NAME).
+    if (process.platform === 'win32') {
+      try {
+        app.setAppUserModelId(app.isPackaged ? 'com.sei.app' : process.execPath);
+      } catch (err) {
+        logger.warn(`setAppUserModelId failed: ${(err as Error).message}`);
+      }
+    }
 
     // 261107: "Open on login". AFTER the legacy cleanup: both act on
     // the same macOS login item (the cleanup leaves it when this setting holds

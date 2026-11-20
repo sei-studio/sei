@@ -58,6 +58,7 @@ function makeSupervisor(over: {
   sendStatus?: (status: unknown) => void;
   onSummonReady?: (characterId: string, props: Record<string, number | string | null>) => void;
   getLanHost?: () => LanHost | undefined;
+  emitHardStop?: (...args: unknown[]) => void;
 }): ReturnType<typeof createBotSupervisor> {
   return createBotSupervisor({
     getLanPort: over.getLanPort ?? (() => 25565),
@@ -65,7 +66,7 @@ function makeSupervisor(over: {
     sendLog: vi.fn(),
     getSkinServerBaseUrl: () => null,
     cloudOverLimit: over.cloudOverLimit ?? vi.fn(async () => false),
-    emitHardStop: vi.fn(),
+    emitHardStop: over.emitHardStop ?? vi.fn(),
     onSummonFailure: over.onSummonFailure,
     onSummonReady: over.onSummonReady,
     getLanHost: over.getLanHost,
@@ -163,13 +164,21 @@ const OUR_FABRIC: LanHost = { client: 'fabric', forgeModCount: null, seiSkinMod:
 const QUILT: LanHost = { client: 'quilt', forgeModCount: null };
 const VANILLA: LanHost = { client: 'vanilla', forgeModCount: null };
 
-async function summonToReady(getLanHost?: () => LanHost | undefined): Promise<{
+async function summonToReady(
+  getLanHost?: () => LanHost | undefined,
+  emitHardStop?: (...args: unknown[]) => void,
+): Promise<{
   sup: ReturnType<typeof createBotSupervisor>;
   fake: ReturnType<typeof armFakeChild>;
   statuses: Status[];
 }> {
   const statuses: Status[] = [];
-  const sup = makeSupervisor({ onSummonFailure: vi.fn(), sendStatus: (s) => statuses.push(s as Status), getLanHost });
+  const sup = makeSupervisor({
+    onSummonFailure: vi.fn(),
+    sendStatus: (s) => statuses.push(s as Status),
+    getLanHost,
+    emitHardStop,
+  });
   const fake = armFakeChild();
   const p = sup.summon(A);
   await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
@@ -218,6 +227,18 @@ describe('session end reasons (260929)', () => {
     const { fake, statuses } = await summonToReady();
     fake.emitExit(0);
     expect(terminal(statuses)).toMatchObject({ kind: 'idle', endReason: 'bot_exit' });
+  });
+
+  // 261120 release gate: the bot's 402 latch (orchestrator.js, CLOUD_CREDITS_DEPLETED)
+  // must raise the wall popup (emitCreditsHardStop) with the game surface.
+  it('the credit wall mid-session raises the hard-stop popup once, as depleted', async () => {
+    const emitHardStop = vi.fn();
+    const { fake } = await summonToReady(undefined, emitHardStop);
+    fake.emitPortMessage({ type: 'error', error: 'CLOUD_CREDITS_DEPLETED', message: 'Out of cloud credits' });
+    expect(emitHardStop).toHaveBeenCalledTimes(1);
+    expect(emitHardStop.mock.calls[0][0]).toEqual({ reason: 'depleted' });
+    expect(emitHardStop.mock.calls[0][1]).toMatchObject({ surface: 'game', trigger: 'session' });
+    fake.emitExit(0);
   });
 
   it('a mid-session crash is crash on the error status', async () => {

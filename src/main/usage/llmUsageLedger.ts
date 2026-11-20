@@ -67,6 +67,11 @@ export function onSpendAlert(fn: AlertSink | null): void {
   alertSink = fn;
 }
 
+/** Dev trigger (index.ts SEI_DEV_CAP_NOTICE, unpackaged only): fire the sink as the ledger would. */
+export function _emitSpendAlertForDev(e: SpendAlertEvent): void {
+  alertSink?.(e);
+}
+
 /** Test seams. */
 export function _resetUsageLedgerForTests(): void {
   cache.clear();
@@ -114,8 +119,11 @@ async function checkSpendAlert(scope: string, ledger: UsageLedger, now: Date): P
   const spend = summarizeUsage(ledger, now).spendMonthUsd;
   if (!shouldFireSpendAlert(cfg, spend, now)) return;
   const month = monthKey(now);
-  await configStore.updateConfig((c) => ({ ...c, spend_alert_fired_month: month }), { scope });
   const limitUsd = cfg.spend_alert_usd ?? 0;
+  await configStore.updateConfig(
+    (c) => ({ ...c, spend_alert_fired_month: month, spend_alert_fired_usd: limitUsd }),
+    { scope },
+  );
   try {
     alertSink?.({ limitUsd, spendMonthUsd: spend });
   } catch {
