@@ -55,6 +55,13 @@ const MAX_PENDING_MS = 10_000;
  *  and still owns the stream until it answers; see dispatch(). */
 const STT_SLOW_JOB_MS = 15_000;
 
+/** A single job running past this is a wedged worker, not a slow one: the
+ *  1-core harness that reproduced the pile-up answered within 24 s once jobs
+ *  ran one at a time. See failWorker(). */
+const STT_JOB_CEILING_MS = 90_000;
+/** Worker replacements per session before the stream gives up for good. */
+const STT_MAX_RESPAWNS = 2;
+
 export interface SttStream {
   /** Feed normalized PCM: mono Float32 at STT_SAMPLE_RATE. */
   push(pcm: Float32Array): void;
@@ -84,11 +91,24 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
   let nextId = 1;
   const waiters = new Map<number, (text: string) => void>();
 
-  try {
-    worker = new Worker(new URL('../voice/whisperWorker.ts', import.meta.url), {
-      type: 'module',
-    });
-    worker.onmessage = (e: MessageEvent) => {
+  /** Workers replaced after a crash or a job past STT_JOB_CEILING_MS. */
+  let respawns = 0;
+
+  function spawn(): void {
+    ready = false;
+    let w: Worker;
+    try {
+      w = new Worker(new URL('../voice/whisperWorker.ts', import.meta.url), {
+        type: 'module',
+      });
+    } catch {
+      dead = true;
+      worker = null;
+      return;
+    }
+    worker = w;
+    w.onmessage = (e: MessageEvent) => {
+      if (worker !== w) return; // a replaced worker's late message
       const msg = e.data as { type: string; id?: number; text?: string; message?: string };
       if (msg.type === 'ready') {
         ready = true;
@@ -97,9 +117,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
       if (msg.type === 'init-error') {
         // No model, no transcripts — the session stays fully functional.
         console.warn(`[sei] backseat stt unavailable: ${msg.message}`);
-        dead = true;
-        worker?.terminate();
-        worker = null;
+        failWorker('init-error', false);
         return;
       }
       if (msg.type === 'transcript' && typeof msg.id === 'number') {
@@ -107,10 +125,18 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
         waiters.delete(msg.id);
       }
     };
-    worker.postMessage({ type: 'init', language: opts.language ?? 'en', mirrorFirst: whisperMirrorFirst() });
-  } catch {
-    dead = true;
-    worker = null;
+    // 261121: with one job in flight, a worker that dies without answering
+    // would hold the stream forever. A crash (an uncaught error, a WASM
+    // abort, an undeserializable message) fails the job and replaces the
+    // worker, so a session keeps its transcript.
+    w.onerror = (e: ErrorEvent) => {
+      e.preventDefault?.();
+      if (worker === w) failWorker(`worker error: ${e.message ?? 'unknown'}`, true);
+    };
+    w.onmessageerror = () => {
+      if (worker === w) failWorker('worker messageerror', true);
+    };
+    w.postMessage({ type: 'init', language: opts.language ?? 'en', mirrorFirst: whisperMirrorFirst() });
   }
 
   /** Accumulated PCM since the last dispatch, plus when its audio began. */
@@ -128,6 +154,40 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
   const judged = (t: number): void => {
     if (t > judgedUntil) judgedUntil = t;
   };
+
+  /** The in-flight job's slow-tick and ceiling timers. */
+  let jobTimers: ReturnType<typeof setTimeout>[] = [];
+
+  /**
+   * The worker crashed, failed to load, or sat on a job past the ceiling.
+   * Fail the in-flight job (its audio is gone, the stream is free again),
+   * release any waiting tick, and either replace the worker (up to
+   * STT_MAX_RESPAWNS per session, same language and mirror options) or mark
+   * the stream dead. A replacement is not ready until its model loads; audio
+   * meanwhile is dropped exactly as during the first-run download.
+   */
+  function failWorker(reason: string, respawn: boolean): void {
+    const old = worker;
+    worker = null;
+    ready = false;
+    old?.terminate();
+    for (const t of jobTimers) clearTimeout(t);
+    jobTimers = [];
+    waiters.clear();
+    busy = false;
+    flushArmed = false;
+    if (respawn && !dead && respawns < STT_MAX_RESPAWNS) {
+      respawns++;
+      console.warn(`[sei] backseat stt worker replaced (${reason}), ${respawns}/${STT_MAX_RESPAWNS}`);
+      spawn();
+    } else {
+      if (!dead) console.warn(`[sei] backseat stt stopped (${reason})`);
+      dead = true;
+      pending = [];
+      pendingSamples = 0;
+    }
+    settle();
+  }
 
   const pendingMs = (): number => (pendingSamples / STT_SAMPLE_RATE) * 1000;
 
@@ -176,8 +236,16 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
     const timeout = setTimeout(() => {
       if (waiters.has(id)) settle();
     }, STT_SLOW_JOB_MS);
+    // Past the ceiling the worker is taken for wedged, not slow: it is
+    // terminated (which frees whatever the job holds) and replaced.
+    const ceiling = setTimeout(() => {
+      if (waiters.has(id)) failWorker(`job ${id} past ${STT_JOB_CEILING_MS} ms`, true);
+    }, STT_JOB_CEILING_MS);
+    jobTimers = [timeout, ceiling];
     waiters.set(id, (text) => {
       clearTimeout(timeout);
+      clearTimeout(ceiling);
+      jobTimers = [];
       busy = false;
       if (text) pushSegment(segments, { t0, t1, text }, Date.now(), TRANSCRIPT_KEEP_MS);
       judged(t1);
@@ -220,6 +288,8 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
       settle();
     }
   }
+
+  spawn();
 
   return {
     push(pcm: Float32Array): void {
@@ -275,6 +345,8 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
       dead = true;
       worker?.terminate();
       worker = null;
+      for (const t of jobTimers) clearTimeout(t);
+      jobTimers = [];
       waiters.clear();
       pending = [];
       pendingSamples = 0;
