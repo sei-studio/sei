@@ -17,7 +17,7 @@ const h = vi.hoisted(() => ({
   installed: true,
   feed: {} as Record<string, unknown>,
   status: {} as Record<string, number>,
-  setupBytes: Buffer.alloc(0),
+  setupBytes: Buffer.alloc(0) as Buffer,
   fetched: [] as string[],
   spawn: vi.fn(),
   quit: vi.fn(),
@@ -40,7 +40,7 @@ vi.mock('electron', () => ({
       const name = url.split('/').pop()!;
       if (h.status[name]) return new Response('', { status: h.status[name] });
       if (name in h.feed) return new Response(JSON.stringify(h.feed[name]));
-      if (name === 'Sei-win-Setup.exe') return new Response(h.setupBytes);
+      if (name === 'Sei-win-Setup.exe') return new Response(new Uint8Array(h.setupBytes));
       return new Response('', { status: 404 });
     },
   },
