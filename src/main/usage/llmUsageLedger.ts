@@ -24,6 +24,7 @@ import {
   monthKey,
   normalizeUsage,
   parseLedger,
+  SPEND_ALERT_ENABLED,
   shouldFireSpendAlert,
   summarizeUsage,
   type UsageLedger,
@@ -113,6 +114,7 @@ export function recordLlmUsage(entry: { provider: string; model: string; usage: 
 async function checkSpendAlert(scope: string, ledger: UsageLedger, now: Date): Promise<void> {
   // Members are read where used, not destructured up front: updateConfig is
   // only needed once the alert fires.
+  if (!SPEND_ALERT_ENABLED) return;
   const configStore = await import('../configStore');
   if (getActiveScope() !== scope) return;
   const cfg = await configStore.loadConfig();

@@ -348,6 +348,14 @@ export const SPEND_ALERT_AMOUNTS = [5, 10, 20, 50, 100] as const;
 export const DEFAULT_SPEND_ALERT_USD = 10;
 
 /**
+ * Product call 261120: the own-key monthly spend alert is hidden for v0.7.0
+ * (its out-of-app notice is untested on macOS / Windows). Off = no Playtime
+ * row and main never fires it, even for a config that enabled it in a beta.
+ * Flip to true to bring it back.
+ */
+export const SPEND_ALERT_ENABLED = false;
+
+/**
  * Whether the monthly spend alert should fire now: on, a positive amount,
  * this month's estimate at or over it, and not already fired this month for
  * this amount or a higher one. Raising the amount after it fired re-arms it

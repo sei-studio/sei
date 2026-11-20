@@ -18,6 +18,7 @@ import {
   DEFAULT_SPEND_ALERT_USD,
   EMPTY_LEDGER,
   SPEND_ALERT_AMOUNTS,
+  SPEND_ALERT_ENABLED,
   formatTokens,
   formatUsd,
   summarizeUsage,
@@ -278,31 +279,34 @@ function SpendSection({
         </div>
         <SpendChart days={summary.days} />
       </div>
-      <div className={styles.panel}>
-        <Row
-          testId="spend-alert"
-          label={
-            <span>
-              {before}
-              <select
-                className={`${styles.select} ${styles.selectSans}`}
-                aria-label={t('Alert amount')}
-                value={amount}
-                onChange={(e) => setAlert(enabled, Number(e.target.value))}
-              >
-                {amounts.map((n) => (
-                  <option key={n} value={n}>
-                    {`$${n}`}
-                  </option>
-                ))}
-              </select>
-              {after}
-            </span>
-          }
-        >
-          <Toggle on={enabled} onChange={(v) => setAlert(v, amount)} aria-label={t('Spend alert')} />
-        </Row>
-      </div>
+      {/* 261120: hidden for v0.7.0 (SPEND_ALERT_ENABLED). */}
+      {SPEND_ALERT_ENABLED ? (
+        <div className={styles.panel}>
+          <Row
+            testId="spend-alert"
+            label={
+              <span>
+                {before}
+                <select
+                  className={`${styles.select} ${styles.selectSans}`}
+                  aria-label={t('Alert amount')}
+                  value={amount}
+                  onChange={(e) => setAlert(enabled, Number(e.target.value))}
+                >
+                  {amounts.map((n) => (
+                    <option key={n} value={n}>
+                      {`$${n}`}
+                    </option>
+                  ))}
+                </select>
+                {after}
+              </span>
+            }
+          >
+            <Toggle on={enabled} onChange={(v) => setAlert(v, amount)} aria-label={t('Spend alert')} />
+          </Row>
+        </div>
+      ) : null}
     </>
   );
 }
