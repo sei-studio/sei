@@ -16,6 +16,8 @@ import type {
   FacepackEyeState,
   FacepackExpression,
   FacepackIris,
+  FacepackIrisLayer,
+  FacepackIrisLayerEye,
   FacepackManifest,
   FacepackPose,
   FacepackViseme,
@@ -155,14 +157,84 @@ export function irisOf(m: FacepackManifest, expression: string, pose: string): F
   return ir;
 }
 
-/** The gaze frame files of one expression + pose (none when it has no gaze frames). */
+/** The gaze files of one expression + pose: its iris layer's, else its gaze frames (none when it has neither). */
 export function irisFiles(m: FacepackManifest, expression: string, pose: string): string[] {
+  const lay = irisLayerOf(m, expression, pose);
+  if (lay) return irisLayerFiles(lay);
   const ir = irisOf(m, expression, pose);
   if (!ir) return [];
   const out: string[] = [];
   for (const row of ir.frames) for (const f of row) if (f) out.push(f);
   for (const f of ir.half ?? []) if (f) out.push(f);
   return out;
+}
+
+const isBox = (b: unknown): b is [number, number, number, number] =>
+  Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === 'number' && Number.isFinite(v)) && b[2] > b[0] && b[3] > b[1];
+const isAscending = (a: unknown): a is number[] =>
+  Array.isArray(a) && a.length >= 2 && a.every((v, i) => typeof v === 'number' && Number.isFinite(v) && (i === 0 || v > (a[i - 1] as number)));
+const isFile = (f: unknown): f is string => typeof f === 'string' && isSafePackPath(f);
+
+/**
+ * The iris layer of one expression + pose (261120), or null: none baked, the
+ * expression never opens its eyes, or the record is malformed (a bad box,
+ * axes not ascending, an offset table the wrong shape, an unsafe path).
+ */
+export function irisLayerOf(m: FacepackManifest, expression: string, pose: string): FacepackIrisLayer | null {
+  const e = m.expressions[resolveExpressionName(m, expression)];
+  if (!e || e.blink === false) return null;
+  const lay = e.poses[resolvePoseName(e, m, pose)]?.iris_layer;
+  if (!lay || typeof lay !== 'object' || !isBox(lay.box) || !isAscending(lay.x) || !isAscending(lay.y)) return null;
+  if (!isFile(lay.sprite) || !isFile(lay.empty) || !isFile(lay.clip)) return null;
+  if (!Array.isArray(lay.eyes) || lay.eyes.length < 1) return null;
+  for (const eye of lay.eyes) {
+    if (!eye || !isBox(eye.rect) || !Array.isArray(eye.d) || eye.d.length !== lay.y.length) return null;
+    for (const row of eye.d) {
+      if (!Array.isArray(row) || row.length !== lay.x.length) return null;
+      for (const v of row) if (v !== null && !(Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n)))) return null;
+    }
+  }
+  // The half lid is optional: a malformed one drops it, not the layer.
+  const h = lay.half;
+  if (h !== undefined && !(h && isFile(h.empty) && isFile(h.clip))) return { ...lay, half: undefined };
+  return lay;
+}
+
+/** Every file an iris layer draws. */
+export function irisLayerFiles(lay: FacepackIrisLayer): string[] {
+  const out = [lay.sprite, lay.empty, lay.clip];
+  if (lay.half) out.push(lay.half.empty, lay.half.clip);
+  return out;
+}
+
+/**
+ * One eye's sprite offset (pack px) at her look (x right, y down, the
+ * layer's units): bilinear in its offset table, the look clamped to the grid
+ * and to `max` (IRIS_MAX) on each axis, so it glides continuously and never
+ * past the looks the bake checked. A null entry counts as no move.
+ */
+export function layerOffset(lay: FacepackIrisLayer, eye: FacepackIrisLayerEye, x: number, y: number, max = IRIS_MAX): [number, number] {
+  const cell = (axis: number[], v: number): [number, number] => {
+    const lo = Math.max(axis[0], -max);
+    const hi = Math.min(axis[axis.length - 1], max);
+    const c = hi >= lo ? Math.min(hi, Math.max(lo, v)) : 0;
+    let i = 0;
+    while (i < axis.length - 2 && c > axis[i + 1]) i++;
+    const t = (c - axis[i]) / (axis[i + 1] - axis[i]);
+    return [i, Math.min(1, Math.max(0, t))];
+  };
+  const [xi, tx] = cell(lay.x, x);
+  const [yi, ty] = cell(lay.y, y);
+  const at = (i: number, j: number): readonly [number, number] => eye.d[j][i] ?? [0, 0];
+  const a = at(xi, yi);
+  const b = at(xi + 1, yi);
+  const c = at(xi, yi + 1);
+  const d = at(xi + 1, yi + 1);
+  const w00 = (1 - tx) * (1 - ty);
+  const w10 = tx * (1 - ty);
+  const w01 = (1 - tx) * ty;
+  const w11 = tx * ty;
+  return [w00 * a[0] + w10 * b[0] + w01 * c[0] + w11 * d[0], w00 * a[1] + w10 * b[1] + w01 * c[1] + w11 * d[1]];
 }
 
 /** One frame of a gaze crossfade: `src` null is the base itself. */
