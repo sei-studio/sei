@@ -182,6 +182,22 @@ export async function enqueueDelete(
   notifyStatusChange();
 }
 
+/**
+ * Fire-and-forget drain (261121). processNext() rejects whenever its queue
+ * write fails, and on Windows the atomicWrite rename of sync-queue.json can
+ * fail transiently (EPERM/EBUSY from an antivirus or indexer handle on the
+ * file). Every caller that does not await the drain must go through here:
+ * a bare `void processNext()` turned that into a main-process
+ * unhandledRejection (v0.7.0 app_error, top frame atomicWrite's rename),
+ * once or twice per voice turn because each last_chatted stamp mirrors the
+ * character. The queue is left as it was, and the next drain retries.
+ */
+export function kickDrain(): void {
+  processNext().catch((err: unknown) => {
+    console.warn(`[sei] sync queue drain failed: ${(err as Error)?.message ?? String(err)}`);
+  });
+}
+
 export async function processNext(): Promise<void> {
   const q = await readQueue();
   const now = Date.now();
@@ -302,9 +318,7 @@ export async function processNext(): Promise<void> {
     // Drain another op immediately if any are due. Use setImmediate (not
     // recursion) so the event loop can interleave other work — this matters
     // when there's a long backlog after a reconnect.
-    setImmediate(() => {
-      void processNext();
-    });
+    setImmediate(kickDrain);
   } catch (err) {
     // T-11-08-04: bounded retries. After MAX_ATTEMPTS the op is left in the
     // queue with failedAt set so getStatus() can surface it; the renderer

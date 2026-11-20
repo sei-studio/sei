@@ -35,6 +35,7 @@ vi.mock('../cloud/syncQueue', () => ({
   enqueueUpsert: vi.fn(async () => {}),
   enqueueDelete: vi.fn(async () => {}),
   processNext: vi.fn(async () => {}),
+  kickDrain: vi.fn(),
 }));
 
 // The roster mirror talks to Supabase; the import only needs to ask for it.
