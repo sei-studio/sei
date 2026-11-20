@@ -193,6 +193,8 @@ The \`xN\` count on a nearby block is only the exposed faces within a short scan
 
 None of this mutes your personality — it only bars raw snapshot readouts (counts, coordinates, biome, time). The remarks that DO belong in chat are the ones only your character would make: your voice, your interests, the thing you would notice and care about. On the turns you choose to speak, sound like yourself, not like a status line.
 
+When you tell the player where something is, say it the way a player would: by a landmark, or with the words your snapshot gives next to the coordinates ("right by you", "14 blocks southwest, 6 down"). The numbers are for your tools. Do not read them out in chat unless the player asks for coordinates.
+
 When entities or features show up in the snapshot, react to them specifically when it fits — "passed a pod of salmon" beats "nice river". Don't force it on every loop.
 
 Movement rule: at most ONE TYPE of movement action per response (ten dig calls is fine; dig + goTo together is not). If the snapshot shows \`in_flight:\`, the body is already busy — do NOT call movement this turn. You may still call say() to speak.
@@ -363,11 +365,25 @@ export const attackedMobUnarmed = () => {
   const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
   return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + ATTACKED_UNARMED_THEN
 }
-export const ATTACKED_ADDENDUM = (label, kind, pvp = false, unarmed = false) => {
+// 261115 (quality pass 56): the same hit while a long action of hers is still
+// running (shelter, gather, build...; not follow, not the fight itself; the
+// orchestrator's mid-action delivery sets `busyAction`). The action keeps
+// moving her and holding its own item (combat.js skips the weapon swap while
+// an action runs), so the reflex swings are stray bare-handed pokes. In the
+// 11-14 scorecard (night_social-03) "your reflexes swing back on their own"
+// plus "it keeps running while you deal with this" read as handled: she said
+// "he's got me now" and kept building the shelter while the zombie hit her.
+export const ATTACKED_BUSY_THEN = ` Then: {action} is still running, and while it runs it moves you and keeps its own item in your hand, so your reflex swings barely land. To fight back, call attackEntity on it (that replaces {action}). If you would rather not fight it (low health, a crowd), get away with goTo() somewhere safer or follow() the player.`
+export const attackedMobBusy = (action) => {
+  const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
+  return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + fillTemplate(ATTACKED_BUSY_THEN, { action })
+}
+export const ATTACKED_ADDENDUM = (label, kind, pvp = false, unarmed = false, busyAction = null) => {
   const isPlayer = kind === 'player' || kind === 'players'
+  const busy = typeof busyAction === 'string' && busyAction.trim() ? busyAction.trim() : null
   const tmpl = isPlayer
     ? (pvp ? ATTACKED_ADDENDUM_PVP_ON : ATTACKED_ADDENDUM_PVP)
-    : (unarmed ? attackedMobUnarmed() : ATTACKED_ADDENDUM_MOB)
+    : (unarmed ? attackedMobUnarmed() : busy ? attackedMobBusy(busy) : ATTACKED_ADDENDUM_MOB)
   return fillTemplate(tmpl, { label })
 }
 
@@ -428,6 +444,12 @@ export const SURVIVAL_ADDENDUM = (label, data) => {
 // made it worse in the pass 50 probe (5 of 16 "zombie's on me" vs 1 of 16
 // for the old text); with neither, 0 of 16.
 export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it on reflex, so you do not need to call attackEntity for this one. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
+// 261115 (quality pass 56): the engaged case while a long action of hers is
+// still running (`busyAction`, see ATTACKED_BUSY_THEN). The swing is real but
+// the action keeps moving her and holding its own item, so it does not stop
+// the mob. 11-14 scorecard night_social-03: with the ENGAGED text above, the
+// player's "theres a zombie!! kill it" got "im on it" and the shelter went on.
+export const DEFEND_ADDENDUM_ENGAGED_BUSY = `{owner} is being hit by {label}{dist}. You swing at it on reflex, but {action} is still running: it moves you and keeps its own item in your hand, so those swings will not stop it. Call attackEntity on it in this same turn (that replaces {action}), and say one short line so they know.`
 export const DEFEND_ADDENDUM_HELD = `{owner} is being hit by {label}{dist}. You are NOT engaging it automatically (it is a mob melee cannot safely answer, or you are already in your own fight). Decide and act in the SAME turn: attackEntity it to pull it off them (a mob turns on whoever hits it), place a block between them, or warn them in ONE short line and get clear. Do not just narrate.`
 // 261012: added to the defend turn when other hostiles are on the player
 // besides the one the body swings at (the automatic swing covers ONE mob), and
@@ -477,10 +499,14 @@ export const DEFEND_ADDENDUM = (label, data) => {
     return fillTemplate(data?.unarmed ? DEFEND_ADDENDUM_THREAT_UNARMED : DEFEND_ADDENDUM_THREAT, { closing, owner, ownerDist: od, dist: Number.isFinite(d) ? d : '?', hp })
   }
   const held = data?.unarmed ? DEFEND_ADDENDUM_HELD_UNARMED : DEFEND_ADDENDUM_HELD
-  const tpl = data?.actionOnIt ? DEFEND_ADDENDUM_ACTION : data?.engaged ? DEFEND_ADDENDUM_ENGAGED : held
-  let text = fillTemplate(tpl, { label, dist, owner })
+  const busy = typeof data?.busyAction === 'string' && data.busyAction.trim() ? data.busyAction.trim() : null
+  const engagedBusy = !!data?.engaged && !data?.actionOnIt && !!busy
+  const tpl = data?.actionOnIt ? DEFEND_ADDENDUM_ACTION : engagedBusy ? DEFEND_ADDENDUM_ENGAGED_BUSY : data?.engaged ? DEFEND_ADDENDUM_ENGAGED : held
+  let text = fillTemplate(tpl, { label, dist, owner, action: busy ?? '' })
   const others = typeof data?.othersOnOwner === 'number' ? data.othersOnOwner : 0
-  if (data?.engaged && !data?.actionOnIt && others > 0) {
+  // The others clause speaks of the automatic swing; the busy text already
+  // hands the fight to attackEntity, which goes on to the next one near them.
+  if (data?.engaged && !data?.actionOnIt && !engagedBusy && others > 0) {
     text += ` There ${others > 1 ? 'are' : 'is'} ${fillTemplate(DEFEND_OTHERS_CLAUSE, { others, mobWord: others > 1 ? 'mobs' : 'mob' })}`
   }
   if (data?.actionOnIt && data?.runGoesOn === true) text += ` ${DEFEND_ACTION_GOES_ON}`
@@ -1263,8 +1289,18 @@ export const NUDGES = {
   // 261011: a hit (or a reflex / defend / survival heads-up) that lands while
   // an action runs is delivered without aborting it. This follows the attack
   // text and says what is still running and how to change course.
-  attackMidAction: ({ action, stopTool }) =>
-    `You're currently: ${action || 'your action'}. It keeps running while you deal with this. To fight or get away instead, call that action (it replaces the current one); to drop what you were doing, call ${stopTool}.`,
+  // 261115 (pass 56): `busy` = a long foreground action (not a background
+  // one like follow, not the fight itself) is in the way of the fight. "It
+  // keeps running while you deal with this" read as permission to keep
+  // building through it, so that sentence is left out.
+  attackMidAction: ({ action, stopTool, busy = false }) => busy
+    ? `You're currently: ${action || 'your action'}. It runs until you call another action, which replaces it, or call ${stopTool}.`
+    : `You're currently: ${action || 'your action'}. It keeps running while you deal with this. To fight or get away instead, call that action (it replaces the current one); to drop what you were doing, call ${stopTool}.`,
+
+  // 261115 (pass 56): appended to the result of a fight that replaced her
+  // long action (see attackMidAction busy). Past tense: it stays in history.
+  fightCutAction: (action) =>
+    `This fight cut short your ${action || 'action'} before it was done. Unless something else needs you first, call it again now to finish it.`,
 
   // 261011: appended to an attack turn when the bot already spoke about the
   // fight moments ago. Quality eval 2026-10-11: every throttled hit forced a
@@ -1643,7 +1679,13 @@ export function renderCore(persona, { userName } = {}) {
   const core = sliceCoreSection(expanded) || fallbackCore(name, expanded)
   const behavior = sliceBehaviorSections(expanded)
   const body = behavior ? `${core}\n\n${behavior}` : core
-  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it or what you want from the player instead.\n\n${body}`
+  // 261116 (pass 57): the line about announcing a next step ended "say how
+  // you feel about it or what you want from the player instead". On a mid-task
+  // turn every reply then reached for a want, and the one at hand was a debt
+  // ("you owe me a wood run"), born on "jk jk" or "thanks for the help" and
+  // said again the next turn (probe: jk/thanks debt 24/96 -> 14/96, the reuse
+  // case 44/48 -> 16/24). How she feels about it is enough.
+  return `# CORE\nThis is who you are. Hold this voice and these traits in every line, no matter what is happening around you. That matters most when something happens to you (an order, a hit, a death, a failed action, praise, an insult, a quiet moment): react the way this person reacts, in their own words and attitude, and take only the kind of initiative they would take. A plain status report or a stock helper reply is a line any companion could say, so it is out of character. What you are doing next is already in your tool calls, so a line that only announces it adds nothing; say how you feel about it instead.\n\n${body}`
 }
 
 // 260618: the progression frontier — milestones reachable RIGHT NOW, computed in
@@ -1899,7 +1941,9 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
     // from a player picks "hit back" (PvP on) vs "can't hit back" (PvP off).
     // 261030: `unarmed` (lost a weapon on death, none again) is set by the minecraft adapter when
     // the turn is written, and picks the get-away wording for a mob hit.
-    return entry(label, kind, !!data?.pvp, data?.unarmed === true)
+    // 261115 (pass 56): `busyAction` (orchestrator mid-action delivery) names
+    // the long action still running when a mob hits her.
+    return entry(label, kind, !!data?.pvp, data?.unarmed === true, data?.busyAction ?? null)
   }
   return entry ?? ''
 }

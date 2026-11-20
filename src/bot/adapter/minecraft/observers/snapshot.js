@@ -26,6 +26,7 @@ import { tallyAggro, aggroLine, AGGRO_PAIR_RANGE } from './aggro.js'
 import { liveInventoryItems } from './liveInventory.js'
 import { lostWeaponLine } from '../behaviors/weaponSelect.js'
 import { noteSeenStations, seenStationLine } from './seenStations.js'
+import { whereFromYou } from './whereFromYou.js'
 
 const MAX_ENTITIES = 6
 
@@ -403,6 +404,19 @@ export function composeSnapshot(bot, opts = {}) {
   const expiresAt = Date.now() + HANDLE_TTL_MS
   let n = 1
 
+  // 261114 (pass 55): "(11 blocks southeast)" on each listed block and
+  // non-hostile entity (whereFromYou). Hostiles keep their distance clause.
+  const selfPos = bot.entity?.position
+  const ownerAt = owner?.player?.entity?.position
+    ? { pos: owner.player.entity.position, name: pinUsername ?? ownerPinName }
+    : null
+  const whereText = (pos, { skipOwner = false } = {}) => {
+    try {
+      const where = selfPos ? whereFromYou(pos, selfPos, skipOwner ? null : ownerAt) : null
+      return where ? ` (${where})` : ''
+    } catch { return '' }
+  }
+
   // Nearby blocks: one line per unique block name within radius. The #N
   // handle is anchored at the NEAREST member of that name — pass it to
   // dig/gather/goTo when the LLM wants to act on this resource.
@@ -412,7 +426,8 @@ export function composeSnapshot(bot, opts = {}) {
   } else {
     for (const g of survey.groups) {
       const tag = `#${n++}`
-      lines.push(`  ${tag} ${g.name} x${g.total} @${g.nearest.x},${g.nearest.y},${g.nearest.z}`)
+      const where = whereText(g.nearest)
+      lines.push(`  ${tag} ${g.name} x${g.total} @${g.nearest.x},${g.nearest.y},${g.nearest.z}${where}`)
       handles.push([tag, { kind: 'block', pos: { x: g.nearest.x, y: g.nearest.y, z: g.nearest.z }, expiresAt }])
     }
     if (survey.more > 0) lines.push(`  +${survey.more} more`)
@@ -453,6 +468,8 @@ export function composeSnapshot(bot, opts = {}) {
         const note = sameNameDeathTag(e.name, other)
         dists = dists ? `${dists.slice(0, -1)}; ${note})` : ` (${note})`
       }
+      // The player's own line and a companion's take no ", by <player>".
+      if (!dists) dists = whereText(e.position, { skipOwner: !!e.username })
       lines.push(`  ${tag} ${label} @${x},${y},${z}${dists}`)
       handles.push([tag, { kind: 'entity', entityId: e.id, expiresAt }])
     }
