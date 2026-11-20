@@ -172,8 +172,10 @@ the feed AND Windows reports it Authenticode Valid and signed by the
 rollout file on dl.sei.gg allows it (an unreadable one holds the update).
 Release steps, the asset counts for publishing the draft, the three-part kill
 switch (update rollout to 0, the GitHub release back to draft, migration to
-0), rollback-by-rolling-forward, the users' way out of a broken Velopack copy,
-re-running a cancelled mirror, and the one-time move of the workflows to
+0), rollback-by-rolling-forward, the automatic self-repair of a broken
+Velopack copy (`velopackRepair.ts`, kill switch `repair.<channel>.json` via
+`velopack-rollout.yml -f kind=repair`) and the manual way out when it cannot
+run, re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
 
