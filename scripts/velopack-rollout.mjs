@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Set a staged rollout or the NSIS -> Velopack migration switch in a feed
+// Set a staged rollout, the NSIS -> Velopack migration switch or the
+// Velopack self-repair switch in a feed
 // (scripts/lib/velopackRollout.mjs).
 //
 //   node scripts/velopack-rollout.mjs --store <store> --channel win|beta --kind update --version 0.7.1 --percent 20
 //   node scripts/velopack-rollout.mjs --store <store> --channel win|beta --kind migration --percent 10 [--epoch 1]
+//   node scripts/velopack-rollout.mjs --store <store> --channel win|beta --kind repair --percent 0 [--epoch 1]
 //        [--endpoint https://<account>.r2.cloudflarestorage.com] [--dry-run]
 import { setRollout } from './lib/velopackRollout.mjs';
 import { openStore, parseArgs } from './lib/velopackStore.mjs';
