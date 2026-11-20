@@ -1,6 +1,7 @@
 /**
  * Playtime > Sei > Voice > Advanced (261120, product call 261120): one
- * collapsed line on the cloud tab. Opened, it offers who speaks (Sei voices,
+ * collapsed line on the cloud tab. Opened, it holds the ElevenLabs key
+ * (the user's own ElevenLabs voices), who speaks (Sei voices,
  * the default, or Fish Audio on the user's own key) and the Fish Audio key.
  *
  * Fish speaks a cloud line ONLY when picked here (config cloud_tts_provider,
@@ -16,6 +17,7 @@ import { sei } from '../../lib/ipcClient';
 import { useT } from '../../lib/i18n';
 import { FishAudioSettings } from '../settings/FishAudioSettings';
 import { Choice, Row } from './PlaytimeParts';
+import { ElevenKeyRow } from './ElevenKeyRow';
 import styles from '../../screens/PlaytimeScreen.module.css';
 
 export function CloudVoiceAdvanced(props: {
@@ -100,6 +102,7 @@ export function CloudVoiceAdvanced(props: {
       </button>
       {open ? (
         <div id={bodyId} className={styles.panel}>
+          <ElevenKeyRow mode="cloud-optional" />
           <Row label={t('Voice provider')}>
             <Choice<CloudVoiceProvider>
               aria-label={t('Voice provider')}

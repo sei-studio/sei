@@ -401,7 +401,7 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
 
   it('OV.2: the Sei tab renders the shared key row in optional mode; one key editor in the source', () => {
     const pt = readFileSync(PLAYTIME_TSX, 'utf-8');
-    expect(pt.includes('<ElevenKeyRow mode="cloud-optional" />')).toBe(true);
+    expect(readFileSync(resolve(PT_DIR, 'CloudVoiceAdvanced.tsx'), 'utf-8').includes('<ElevenKeyRow mode="cloud-optional" />')).toBe(true);
     expect(readFileSync(VOICE_PANEL_TSX, 'utf-8').includes('<ElevenKeyRow mode="byok" />')).toBe(true);
     const row = readFileSync(ELEVEN_ROW_TSX, 'utf-8');
     expect((row.match(/placeholder=\{t\('Your ElevenLabs key'\)\}/g) ?? []).length).toBe(1);
