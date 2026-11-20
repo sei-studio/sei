@@ -57,6 +57,7 @@ import { updaterLog } from './updaterLog';
 import { ciMark, velopackInstalled } from './velopackBoot';
 import { noteNeutralExit } from './bootContext';
 import { createVelopackAutoUpdater } from './velopackUpdater';
+import { velopackLayoutBroken } from './velopackRepair';
 
 // Tees to the console AND <userData>/logs/updater.log. Was console-only until
 // 260803, which is why a week of failed Windows updates left no trace on disk
@@ -288,6 +289,33 @@ export function handOffUpdatesToMigration(restart: () => void, version: string):
   send(IpcChannel.app.updateDownloaded, { forced: false, onRestart: true, version });
 }
 
+/**
+ * Windows Velopack self-repair (product call 261120, velopackRepair.ts). The
+ * repair reinstalls Sei from a full Setup; once that Setup is downloaded and
+ * verified the updater stops and the "Update Sei" button (or the safe-mode
+ * screen's install) runs the repair. Its download shows as update progress.
+ */
+let repairRestart: (() => void) | null = null;
+let repairOffer: Record<string, unknown> | null = null;
+
+export function handOffUpdatesToRepair(restart: () => void, version: string, forced: boolean): void {
+  repairRestart = restart;
+  if (autoUpdater) autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater = null;
+  updateReadyToInstall = false;
+  logger.info(`updater: repair Setup ${version} ready; updater stopped`);
+  repairOffer = forced ? { forced: true, version } : { forced: false, onRestart: true, version };
+  send(IpcChannel.app.updateDownloaded, repairOffer);
+}
+
+export function sendRepairProgress(percent: number): void {
+  send(IpcChannel.app.updateProgress, { percent });
+}
+
+export function sendRepairFailed(message: string): void {
+  send(IpcChannel.app.updateError, message);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  version.json fetch (ported from updateChecker.ts)                          */
 /* -------------------------------------------------------------------------- */
@@ -449,8 +477,15 @@ function ensureAutoUpdater(): AutoUpdater | null {
     logger.info('updater disabled in dev (autoUpdater not loaded — unpackaged)');
     return null;
   }
-  if (migrationRestart) return null;
+  if (migrationRestart || repairRestart) return null;
   if (autoUpdater && wired) return autoUpdater;
+  // A Velopack install whose Update.exe is gone looks like "not Velopack" to
+  // velopackInstalled(); electron-updater would then install a second, NSIS
+  // copy beside it. The self-repair reinstalls it instead.
+  if (process.platform === 'win32' && velopackLayoutBroken()) {
+    logger.warn('updater: Velopack install without a working updater; leaving it to the self-repair');
+    return null;
+  }
   try {
     // Windows (261030): a Velopack install updates through Velopack; an NSIS
     // install (and macOS) keeps electron-updater, so one build serves both
@@ -989,7 +1024,9 @@ export async function checkForUpdatesManual(): Promise<void> {
   if (channelInit) await channelInit;
   const au = ensureAutoUpdater();
   if (!au) {
-    send(IpcChannel.app.updateNotAvailable);
+    // A repair Setup waiting to run is what this check would find.
+    if (repairOffer) send(IpcChannel.app.updateDownloaded, repairOffer);
+    else send(IpcChannel.app.updateNotAvailable);
     return;
   }
   // Take priority over any in-flight background check for the duration (see
@@ -1150,6 +1187,10 @@ export async function installDownloadedUpdate(): Promise<void> {
   // electron-updater is stopped, so the button restarts into that copy.
   if (migrationRestart) {
     migrationRestart();
+    return;
+  }
+  if (repairRestart) {
+    repairRestart();
     return;
   }
   const au = ensureAutoUpdater();

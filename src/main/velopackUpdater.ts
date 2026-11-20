@@ -64,6 +64,7 @@ import {
 } from './velopackFastApply';
 import { closeSplashWindow, createSplashWindow, renderSplashFrames } from './windowChrome';
 import { hasPassingVerdict, verifyPackage } from './velopackVerify';
+import { noteApplyLaunched, noteUpdaterFailure, noteUpdaterHealthy, repairHoldsUpdates } from './velopackRepair';
 import { normalizeUiLanguage } from '../shared/uiLanguage';
 
 /** The feed: releases.<channel>.json plus packages, served from R2 behind dl.sei.gg. */
@@ -331,8 +332,10 @@ async function showScreenAndApply(
   log(`apply ${targetVersion} with restart, overlay=${overlay ? 'yes' : 'no'}`);
   ciMark('apply-launch', { restart: true, overlay: Boolean(overlay) });
   st.spawned = await startDetached(p.updateExe, args, p.root);
+  if (st.spawned) noteApplyLaunched(targetVersion);
   if (!st.spawned) {
     ciMark('apply-spawn-failed', { restart: true });
+    void noteUpdaterFailure('apply-spawn', { target: targetVersion, detail: 'Update.exe did not start' });
     await restoreWindows(st);
     return false;
   }
@@ -416,6 +419,7 @@ function stage(p: VelopackPaths, packagePath: string, waitMs: number): Promise<v
     child.on('exit', finish);
     child.on('error', (err) => {
       log(`stage failed to start: ${err.message}`);
+      void noteUpdaterFailure('stage-spawn', { detail: err.message });
       finish(null);
     });
   });
@@ -485,11 +489,19 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         events.emit('update-not-available');
         return null;
       }
+      if (repairHoldsUpdates()) {
+        // A reinstall is due or under way (velopackRepair.ts): nothing to apply meanwhile.
+        log('a repair is due or running; not checking');
+        ciMark('check-held-by-repair');
+        events.emit('update-not-available');
+        return null;
+      }
       ciMark('check-start', { feed: feedOverride ?? (useGithub ? GITHUB_REPO : DEFAULT_FEED), channel: channel() });
       try {
         const info = await manager().checkForUpdatesAsync();
         if (!info) {
           ciMark('check-none');
+          noteUpdaterHealthy();
           events.emit('update-not-available');
           return null;
         }
@@ -516,6 +528,10 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         events.emit('update-available', { version });
         return { updateInfo: { version } };
       } catch (err) {
+        void noteUpdaterFailure('check', {
+          detail: (err as Error)?.message,
+          probe: { url: `${feedUrl()}/releases.${channel()}.json`, json: true },
+        });
         events.emit('error', err);
         throw err;
       }
@@ -529,6 +545,11 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
           events.emit('download-progress', { percent });
         });
       } catch (err) {
+        void noteUpdaterFailure('download', {
+          detail: (err as Error)?.message,
+          target: info.TargetFullRelease.Version,
+          probe: { url: `${feedUrl()}/${encodeURIComponent(path.basename(info.TargetFullRelease.FileName))}` },
+        });
         events.emit('error', err);
         throw err;
       }
@@ -578,6 +599,11 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
 
   function channel(): string {
     return self.allowPrerelease ? BETA_CHANNEL : STABLE_CHANNEL;
+  }
+
+  /** The dl.sei.gg feed folder (or CI's), which the repair probes before it counts a failure. */
+  function feedUrl(): string {
+    return (feedOverride && /^https?:\/\//i.test(feedOverride) ? feedOverride : DEFAULT_FEED).replace(/\/+$/, '');
   }
 
   function manager(): VelopackUpdateManager {
@@ -682,6 +708,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         });
         log(`apply ${pending.TargetFullRelease.Version} on quit`);
         ciMark('apply-launch', { restart: false });
+        noteApplyLaunched(pending.TargetFullRelease.Version);
         const child = spawn(p.updateExe, args, { detached: true, stdio: 'ignore', cwd: p.root });
         child.on('error', (err) => log(`Update.exe failed to start on quit: ${err.message}`));
         child.unref();
@@ -737,6 +764,7 @@ function clearLaunchApplyStateIfCurrent(): void {
 export async function applyPendingAtLaunch(splash: BrowserWindow | null): Promise<boolean> {
   if (process.platform !== 'win32' || !velopackInstalled()) return false;
   if (process.env.SEI_VELOPACK_CI === '1' && process.env.SEI_VELOPACK_CI_MODE === 'none') return false;
+  if (repairHoldsUpdates()) return false;
   const vp = velopackModule();
   const p = velopackPaths();
   if (!vp || !p) return false;
