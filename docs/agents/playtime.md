@@ -47,9 +47,19 @@ stays in Settings > Account because it is an account setting).
 - The renderer reads it through `sei.usageSummary()` (`useUsageStore`, every
   60 s while the page is open).
 - Spend alert: `spend_alert_enabled` + `spend_alert_usd` (config). After each
-  own-key record, main fires once per calendar month
-  (`spend_alert_fired_month`), pushes `usage:spend-alert` and the renderer
-  shows `SpendAlertBanner` (a NoticeLine). It only warns; nothing is paused.
+  own-key record, main fires once per calendar month per amount
+  (`spend_alert_fired_month` + `spend_alert_fired_usd`: raising the amount
+  re-arms it), pushes `usage:spend-alert` and the renderer shows
+  `SpendAlertBanner` (a NoticeLine). It only warns; nothing is paused.
+- 261120 (`main/capNotices.ts`, also the credit wall): main keeps the alert
+  until the banner is dismissed (`usage:spend-alert-pending` / `-ack`), so a
+  window opened after it fired (macOS with no window, a reload) still shows
+  it, and when the app window is not in front it posts an OS notification
+  (Electron Notification; Windows needs `app.setAppUserModelId('com.sei.app')`,
+  set in index.ts) plus a Dock bounce / taskbar flash. Dev check:
+  `SEI_DEV_CAP_NOTICE=spend|wall` (+ `SEI_DEV_CAP_NOTICE_HIDE=1`), unpackaged
+  only. Packaged check of the wall: `scripts/cap-wall-stub.mjs` +
+  `SEI_PROXY_URL`.
 
 ## Voice
 
@@ -58,6 +68,16 @@ stays in Settings > Account because it is an account setting).
   "Free this week" row are built but hidden behind
   `SEI_VOICES_FOR_CHATGPT_ENABLED` (`shared/ttsEngine.ts`, false), see below.
 - My keys: On this device / ElevenLabs key / Fish Audio key.
+- Sei tab (cloud): the optional ElevenLabs key (only for voices in the user's
+  own ElevenLabs account and the Voice Library tile; Sei's pool voices and
+  STT never use it), then one collapsed "Advanced" line
+  (`components/playtime/CloudVoiceAdvanced.tsx`, 261120): Voice provider (Sei
+  voices, default, or Fish Audio) and the Fish Audio key. Stored as
+  `cloud_tts_provider`; main's `fishOnCloud` sends a cloud line to Fish ONLY
+  when it is 'fish' (tts_engine / local_tts_model never do, privacy). Fish
+  cannot be picked without a saved key; removing the key goes back to Sei
+  voices; a failed Fish line is spoken by Sei's voices with the
+  `fish-cloud-fallback` notice. Fish usage is on the user's own key.
 - "On this device" carries its engine (Fast / Kokoro) as a small inline
   select, never a row of its own. Kokoro and SenseVoice download first.
 - **Sei voices with the ChatGPT plan** is OFF (`SEI_VOICES_FOR_CHATGPT_ENABLED`
@@ -113,6 +133,12 @@ All through `sei.track`; `main/analytics.ts` files them under the `credits` surf
 | `voice_trial_state` | `state` (`shown` + `left_pct`; `used_up` / `fallback` + `reason`) | the free Sei-voices meter is shown; a call falls back to device voices (both only with the flag on) |
 | `spend_alert_toggled` | `enabled`, `limit_usd` | the alert toggle or amount changes |
 | `spend_alert_fired` | `limit_usd`, `provider_kind` | main fires the monthly alert |
+| `playtime_voice_advanced_opened` | `provider` | the Sei tab's Voice > Advanced line is opened |
+| `playtime_cloud_voice_provider_switched` | `to` (`sei` / `fish`), `via` (`choice` / `key_removed`) | the cloud voice provider changes |
+| `playtime_cloud_voice_provider_blocked` | `reason` (`no_key`) | Fish Audio picked with no key saved |
+| `fish_key_saved` / `fish_key_removed` | `surface` (`cloud` / `mykeys`), `replaced` | the Fish Audio key row |
+| `voice_fish_cloud_spoke` | `stage` (`clip` / `stream`) | main: first cloud line Fish spoke this run |
+| `voice_fish_cloud_failed` | `reason` (FishFailureReason), `stage` | main: a cloud Fish line fell back to Sei voices (once per class per run) |
 
 ## Checks
 

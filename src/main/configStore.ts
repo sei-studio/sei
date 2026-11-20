@@ -880,6 +880,8 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'stt_local_fallback',
   'tts_engine',
   'local_tts_model',
+  // 261120: Playtime > Sei > Voice > Advanced (Sei voices or Fish Audio).
+  'cloud_tts_provider',
   'ui_language',
   // 260909: Settings > Games & search > Web search (provider + optional key).
   'web_search_provider',
@@ -926,6 +928,7 @@ export const MAIN_OWNED_KEYS: readonly (keyof UserConfig)[] = [
   'seilink_moved_in', // seilink/host/seilinkHost.ts
   'seilink_deafened', // seilink/desktopLines.ts (the dock's deafen button)
   'spend_alert_fired_month', // usage/llmUsageLedger.ts
+  'spend_alert_fired_usd', // usage/llmUsageLedger.ts
   'schema_version', // configStore itself, on every write
 ];
 

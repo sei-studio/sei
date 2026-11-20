@@ -161,6 +161,47 @@
   font-weight: 500;
 }
 
+/* Playtime > Sei > Voice > Advanced (261120): a whole row that opens and
+   closes, drawn like the rows around it (no button chrome). */
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-md) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.advancedToggle .rowLabel {
+  color: var(--muted);
+  transition: color 160ms var(--ease);
+}
+
+.advancedToggle:hover .rowLabel,
+.advancedToggle[aria-expanded='true'] .rowLabel {
+  color: var(--text);
+}
+
+.advancedToggle:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.advancedChevron {
+  flex: none;
+  transition: transform 160ms var(--ease);
+}
+
+.advancedChevronOpen {
+  transform: rotate(180deg);
+}
+
 .mono {
   font-family: var(--mono);
   font-size: 13px;

@@ -772,6 +772,13 @@ export type VoiceTtsNoticePush =
       reason: FishFailureReason;
     }
   | {
+      /** 261120: Fish Audio is the chosen cloud voice (Playtime > Sei >
+       * Advanced) but could not speak this line, so Sei's voices spoke it. */
+      kind: 'fish-cloud-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
       /** 261102: Kokoro is the chosen local model but could not speak this
        * line (pack not downloaded, or it would not load), so the Fast voices
        * spoke it. The line still plays; the call UI shows a system notice. */
@@ -3270,6 +3277,13 @@ export interface RendererApi {
   /** 261110: the "Alert me at $N a month" notice fired (once a month). */
   onSpendAlert?: (cb: (e: SpendAlertPush) => void) => Unsubscribe;
   /**
+   * 261120: the spend alert main still holds because no one dismissed it yet
+   * (it may have fired while no window was open). null when none.
+   */
+  usageSpendAlertPending?: () => Promise<SpendAlertPush | null>;
+  /** 261120: the banner was dismissed or clicked; main stops replaying it. */
+  usageSpendAlertAck?: () => Promise<void>;
+  /**
    * 260725 — read the server-driven pricing catalog (plan cards + top up
    * packages) from the proxy's world-readable config tables. Cached in main;
    * null when the read fails and no cached copy exists (the renderer then
@@ -3357,6 +3371,13 @@ export interface RendererApi {
    * Returns the unsubscribe fn.
    */
   onCreditsHardStop: (cb: (info: CreditsHardStopEvent) => void) => Unsubscribe;
+  /**
+   * 261120: a depleted-credit wall main still holds because the modal was not
+   * closed yet (it may have hit while no window was open). null when none.
+   */
+  creditsHardStopPending?: () => Promise<CreditsHardStopEvent | null>;
+  /** 261120: the wall modal was closed (or lifted); main stops replaying it. */
+  creditsHardStopAck?: () => Promise<void>;
   /**
    * Subscribe to `proxy:kind-changed` pushes — the effective ai_backend_kind,
    * emitted by main on every persisted change and at the end of every
@@ -4534,11 +4555,15 @@ export const IpcChannel = {
     changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',
     hardStop: 'credits:hard-stop',
+    hardStopPending: 'credits:hard-stop-pending',
+    hardStopAck: 'credits:hard-stop-ack',
   },
   // 261110 Playtime: own-key / ChatGPT-plan usage ledger (main/usage/).
   usage: {
     summary: 'usage:summary',
     spendAlert: 'usage:spend-alert',
+    spendAlertPending: 'usage:spend-alert-pending',
+    spendAlertAck: 'usage:spend-alert-ack',
   },
   subscription: {
     status: 'subscription:status',

@@ -19,6 +19,12 @@ vi.mock('../configStore', () => ({
     return h.cfg;
   },
 }));
+// The spend alert is hidden in v0.7.0 (SPEND_ALERT_ENABLED = false, product
+// call 261120); these tests keep its firing logic covered for when it returns.
+vi.mock('../../shared/llmUsage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../shared/llmUsage')>()),
+  SPEND_ALERT_ENABLED: true,
+}));
 vi.mock('../lazyAnalytics', () => ({
   loadAnalytics: async () => ({ capture: (event: string, props: unknown) => h.captured.push({ event, props }) }),
 }));
@@ -96,6 +102,20 @@ describe('spend alert', () => {
     expect(pushes[0]).toMatchObject({ limitUsd: 5 });
     expect(h.captured).toEqual([{ event: 'spend_alert_fired', props: { limit_usd: 5, provider_kind: 'own_key' } }]);
     expect(typeof h.cfg.spend_alert_fired_month).toBe('string');
+    expect(h.cfg.spend_alert_fired_usd).toBe(5);
+  });
+
+  it('raising the amount after it fired fires again at the new amount (261120)', async () => {
+    h.cfg = { spend_alert_enabled: true, spend_alert_usd: 5 };
+    const pushes: Array<{ limitUsd: number }> = [];
+    onSpendAlert((e) => pushes.push(e));
+    await recordLlmUsage({ provider: 'anthropic', model: 'claude-sonnet-4-5', usage: big });
+    expect(pushes).toHaveLength(1);
+    h.cfg = { ...h.cfg, spend_alert_usd: 100 }; // $30 per record below
+    await recordLlmUsage({ provider: 'anthropic', model: 'claude-sonnet-4-5', usage: big });
+    expect(pushes).toHaveLength(1);
+    for (let i = 0; i < 2; i++) await recordLlmUsage({ provider: 'anthropic', model: 'claude-sonnet-4-5', usage: big });
+    expect(pushes.map((p) => p.limitUsd)).toEqual([5, 100]);
   });
 
   it('off: never fires; ChatGPT plan replies never count as spend', async () => {

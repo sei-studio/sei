@@ -401,12 +401,22 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
 
   it('OV.2: the Sei tab renders the shared key row in optional mode; one key editor in the source', () => {
     const pt = readFileSync(PLAYTIME_TSX, 'utf-8');
-    expect(pt.includes('<ElevenKeyRow mode="cloud-optional" />')).toBe(true);
+    expect(readFileSync(resolve(PT_DIR, 'CloudVoiceAdvanced.tsx'), 'utf-8').includes('<ElevenKeyRow mode="cloud-optional" />')).toBe(true);
     expect(readFileSync(VOICE_PANEL_TSX, 'utf-8').includes('<ElevenKeyRow mode="byok" />')).toBe(true);
     const row = readFileSync(ELEVEN_ROW_TSX, 'utf-8');
     expect((row.match(/placeholder=\{t\('Your ElevenLabs key'\)\}/g) ?? []).length).toBe(1);
     // "Not set" is a warning only in BYOK mode.
     expect(row.includes("hasKey || mode === 'cloud-optional'")).toBe(true);
+    expect(readFileSync(SETTINGS_TSX, 'utf-8').includes("t('Use your own ElevenLabs voices')")).toBe(false);
+    // 261120: the cloud provider choice (Sei voices | Fish Audio) and the Fish
+    // key sit behind one collapsed Advanced line (product call 261120).
+    expect(pt.includes('<CloudVoiceAdvanced cfg={cfg} persist={persist} />')).toBe(true);
+    expect(pt.includes('<FishAudioSettings')).toBe(false);
+    const adv = readFileSync(resolve(PT_DIR, 'CloudVoiceAdvanced.tsx'), 'utf-8');
+    expect(adv.includes('useState(false)')).toBe(true);
+    expect(adv.includes('cloud_tts_provider: next')).toBe(true);
+    expect(adv.includes('<FishAudioSettings surface="cloud"')).toBe(true);
+    expect(readFileSync(VOICE_PANEL_TSX, 'utf-8').includes('<FishAudioSettings />')).toBe(true);
   });
 
   it('OV.3: the picker points to the key field when none is saved, on either backend', () => {
@@ -438,6 +448,14 @@ describe('VoiceEditor + VoicePicker (W5 local-TTS voice gating)', () => {
     expect(src.includes("aiBackendKind === 'local' && localTtsPref")).toBe(true);
     expect(src.includes("c.tts_engine === 'local'")).toBe(true);
     expect(src.includes('localTtsMode={localTtsMode}')).toBe(true);
+  });
+
+  it('G.5: the Fish voice block is not gated on the BYOK backend (261118)', () => {
+    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
+    // Fish runs on the user's own key on both backends: a cloud user who picks
+    // Fish Audio must still get the voice link/id field in Edit companion.
+    // 261120: on a Sei account only the Advanced pick (cloud_tts_provider) counts.
+    expect(src.includes("const fishMode = (localTtsMode && fishPref) || (aiBackendKind === 'cloud-proxy' && cloudFishPref);")).toBe(true);
   });
 
   it('G.2: VoicePicker hides the ElevenLabs list/previews + Calmness in localTtsMode, keeps Pitch tunable', () => {

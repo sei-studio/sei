@@ -782,6 +782,14 @@ export function fishFallbackNotice(reason: FishFailureReason): string {
   }
 }
 
+/** 261120: Fish Audio is the chosen cloud voice but Sei's voices spoke the
+ * line instead. */
+export function fishCloudFallbackNotice(reason: FishFailureReason): string {
+  return reason === 'no-key'
+    ? t('[spoken with a Sei voice, add your Fish Audio key in Playtime]')
+    : t('[spoken with a Sei voice, Fish Audio could not speak this line]');
+}
+
 /** The call notice for one voice:tts-notice push. */
 /** 261110: a "Sei voices" line spoken on-device instead (ChatGPT brain). */
 export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed'): string {
@@ -801,6 +809,7 @@ function ttsNoticeText(push: VoiceTtsNoticePush): string {
   if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
   if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
+  if (push.kind === 'fish-cloud-fallback') return fishCloudFallbackNotice(push.reason);
   return substitutePackNotice(push);
 }
 
@@ -1756,6 +1765,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         if (push.kind === 'fish-fallback') {
           if (fishNoticeReasons.has(push.reason)) return;
           fishNoticeReasons.add(push.reason);
+        }
+        // 261120: once per reason per call (main reports the failure class).
+        if (push.kind === 'fish-cloud-fallback') {
+          const key = `fish-cloud:${push.reason}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
         }
         // 261110: once per call, whatever the reason.
         if (push.kind === 'sei-voices-fallback') {

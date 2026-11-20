@@ -8,6 +8,8 @@
  *     &gpt=connected|none|limited       the ChatGPT sign-in
  *     &voice=sei|device|elevenlabs|fish the voice choice; &engine=kokoro
  *     &key=1                            an ElevenLabs key is saved
+ *     &fishkey=1                        a Fish Audio key is saved
+ *     &cloudvoice=fish                  Fish picked in Sei > Voice > Advanced
  *     &alert=1                          the monthly spend alert is on
  *     &part=settings                    the Settings screen instead
  *     &banner=1                         the spend alert line above the page

@@ -1018,6 +1018,8 @@ export const UserConfigSchema = z.object({
   spend_alert_enabled: z.boolean().optional(),
   spend_alert_usd: z.number().positive().max(100_000).optional(),
   spend_alert_fired_month: z.string().optional(),
+  /** 261120: the amount that month's alert fired at (main-owned); a higher amount re-arms it. */
+  spend_alert_fired_usd: z.number().optional(),
   /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside
@@ -1137,6 +1139,15 @@ export const UserConfigSchema = z.object({
    * as an unknown key.)
    */
   local_tts_model: z.enum(['fast', 'kokoro', 'fish']).optional(),
+  /**
+   * 261120: who speaks on a Sei (cloud) account, chosen in Playtime > Sei >
+   * Voice > Advanced. 'fish' = Fish Audio with the user's own key (their
+   * account pays for the audio, never Sei's); a Fish failure speaks the line
+   * with Sei's voices. Absent = 'sei'. Read through cloudVoiceProvider()
+   * (shared/ttsEngine.ts) and only on the cloud backend: tts_engine and
+   * local_tts_model never send a cloud line to Fish.
+   */
+  cloud_tts_provider: z.enum(['sei', 'fish']).optional(),
   /**
    * 261103: per-character Fish Audio voice picks, SPARSE like avatar_prefs: an
    * absent character id means "automatic" (shared/fishVoices.ts maps the

@@ -348,19 +348,38 @@ export const SPEND_ALERT_AMOUNTS = [5, 10, 20, 50, 100] as const;
 export const DEFAULT_SPEND_ALERT_USD = 10;
 
 /**
+ * Product call 261120: the own-key monthly spend alert is hidden for v0.7.0
+ * (its out-of-app notice is untested on macOS / Windows). Off = no Playtime
+ * row and main never fires it, even for a config that enabled it in a beta.
+ * Flip to true to bring it back.
+ */
+export const SPEND_ALERT_ENABLED = false;
+
+/**
  * Whether the monthly spend alert should fire now: on, a positive amount,
- * this month's estimate at or over it, and not already fired this month.
+ * this month's estimate at or over it, and not already fired this month for
+ * this amount or a higher one. Raising the amount after it fired re-arms it
+ * (261120: an alert at $5 used to silence a new $20 alert for the rest of
+ * the month); a fire recorded with no amount (before 261120) counts as any.
  * The alert only warns; nothing is ever blocked.
  */
 export function shouldFireSpendAlert(
-  cfg: { spend_alert_enabled?: unknown; spend_alert_usd?: unknown; spend_alert_fired_month?: unknown },
+  cfg: {
+    spend_alert_enabled?: unknown;
+    spend_alert_usd?: unknown;
+    spend_alert_fired_month?: unknown;
+    spend_alert_fired_usd?: unknown;
+  },
   spendMonthUsd: number,
   now: Date,
 ): boolean {
   if (cfg.spend_alert_enabled !== true) return false;
   const limit = typeof cfg.spend_alert_usd === 'number' && cfg.spend_alert_usd > 0 ? cfg.spend_alert_usd : 0;
   if (limit <= 0) return false;
-  if (cfg.spend_alert_fired_month === monthKey(now)) return false;
+  if (cfg.spend_alert_fired_month === monthKey(now)) {
+    const firedAt = cfg.spend_alert_fired_usd;
+    if (typeof firedAt !== 'number' || firedAt >= limit) return false;
+  }
   return spendMonthUsd >= limit;
 }
 

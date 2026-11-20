@@ -119,6 +119,8 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         : { [params.get('provider') ?? 'anthropic']: { model: 'claude-haiku-5-5' } },
     tts_engine: ptVoice === 'sei' ? 'sei' : ptVoice === 'elevenlabs' ? 'elevenlabs' : 'local',
     local_tts_model: ptVoice === 'fish' ? 'fish' : params.get('engine') === 'kokoro' ? 'kokoro' : 'fast',
+    // 261120: &cloudvoice=fish = Fish picked in Playtime > Sei > Advanced.
+    ...(params.get('cloudvoice') === 'fish' ? { cloud_tts_provider: 'fish' } : {}),
     stt_engine: 'whisper',
     spend_alert_enabled: params.has('alert'),
     spend_alert_usd: 20,
@@ -466,7 +468,8 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           hasApiKey: async () => !params.has('nokey'),
           saveApiKey: async () => undefined,
           voiceElevenKeyStatus: async () => ({ present: params.get('key') === '1' }),
-          voiceFishKeyStatus: async () => ({ present: false }),
+          voiceFishKeyStatus: async () => ({ present: params.get('fishkey') === '1' }),
+          voiceFishKeySet: async () => undefined,
           speechPackStatus: async () => ({
             packs: {
               'tts-en': { state: 'ready', bytes: 64_000_000 },

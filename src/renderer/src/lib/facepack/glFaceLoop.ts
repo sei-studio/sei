@@ -12,21 +12,23 @@
  *    the switch crossfades with the features aligned (morph), so it glides;
  *  - blinks follow the lid curve (fast close, short hold, slower open) by
  *    fading the half and closed patches in and out;
- *  - irises: a pack baked with gaze frames (anima, 261120) moves the iris
- *    itself: the model re-drew her open eyes looking at a small grid of
- *    directions; her look steps to the frame nearest her gaze (each step a
- *    quick crossfade, like a saccade) in the eye region of the composite
- *    (`composeIris`), and the half-shut frames of a blink keep that look.
- *    An older pack keeps the pre-261120 warp: the picture shifts inside the
- *    eye openings found by faceRig.findEyes, only where the art has an iris
- *    to move.
+ *  - irises: a pack baked with an iris layer (anima, 261120, product call
+ *    261120 "why can't we just slide it across?") slides the iris itself:
+ *    every frame her look moves, the eye region of the composite
+ *    (`composeIris`) is redrawn with the eyes' empty sockets and the iris
+ *    sprite moved by a continuous sub-pixel offset (compose.layerOffset),
+ *    kept to the eye opening, and the half-shut frames of a blink keep that
+ *    offset. A pack baked with gaze frames (the first 261120 bake) steps to
+ *    the frame nearest her gaze (each step a quick crossfade). An older pack
+ *    keeps the pre-261120 warp: the picture shifts inside the eye openings
+ *    found by faceRig.findEyes, only where the art has an iris to move.
  *
  * `life: false` (reduced motion, a still preview) keeps only blinks and the
  * mouth. Nothing is allocated per frame on the steady path; the composite is
  * rebuilt only on a state change, the mouth box only on a viseme change and
- * the eye region (gaze frames) only when her look steps.
+ * the eye region only while her look moves (iris layer) or steps (gaze frames).
  */
-import type { FacepackIris, FacepackManifest, FacepackViseme } from '@shared/facepack';
+import type { FacepackIris, FacepackIrisLayer, FacepackManifest, FacepackViseme } from '@shared/facepack';
 import type { AvatarCamera } from '@shared/ipc';
 import { BLINK_ON_SACCADE_CHANCE, Blinker, GazeDriver, minJerk, type GazeInput, type GazePoint } from '../motion/organic';
 import { ExpressionTimeline, VisemeDriver, type LevelSample } from './animation';
@@ -38,7 +40,10 @@ import {
   irisFiles,
   irisFrameAt,
   irisHalfAt,
+  irisLayerFiles,
+  irisLayerOf,
   irisOf,
+  layerOffset,
   layersFor,
   posesOf,
   resolveExpressionName,
@@ -122,6 +127,17 @@ const GAZE_Y = 1.5;
 const GAZE_HOLD = 0.15;
 /** Each step of her look crossfades over this long (a saccade: quick, so two irises never linger). */
 const GAZE_STEP_MS = 70;
+/**
+ * Iris layer (261120): her eyes-in-head direction to the layer's units. The
+ * slide is continuous, so the gain only sets how far a usual glance goes:
+ * past about 0.33 her iris rests at the layer's edge (compose.IRIS_MAX).
+ */
+const LAYER_X = 1.5;
+const LAYER_Y = 1.5;
+/** The eye region is redrawn when an eye's offset moved this far (pack px): smooth, and still when she is. */
+const LAYER_EPS = 0.04;
+/** The half-lid patch is cached per look, rounded to this (layer units; well under a pack px of slide). */
+const LAYER_HALF_Q = 0.02;
 /** Room above her head inside the view, so a tilt never clips her hair at the top edge. */
 const HEADROOM = 0.97;
 
@@ -168,7 +184,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   if (!cg || !mg || !pg) throw new Error('2d context unavailable');
 
   /** A pack baked with gaze frames moves the iris itself; the warp is only for packs without them. */
-  const packIris = Object.values(m.expressions).some((e) => Object.values(e.poses).some((po) => po.iris));
+  const packIris = Object.values(m.expressions).some((e) => Object.values(e.poses).some((po) => po.iris || po.iris_layer));
   const eyeSets = new Map<string, EyeSet>();
   /** Midpoint of the two eye openings per state (pack px), for the pose-change morph; kept even where there is no iris. */
   const centres = new Map<string, [number, number] | null>();
@@ -239,7 +255,68 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     }
     return hit;
   };
-  /** Everything one state draws: its layers' files and its gaze frames. */
+  /** Iris layers per state, null when the state has none (cached: asked every frame). */
+  const layerCache = new Map<string, FacepackIrisLayer | null>();
+  const layerFor = (st: State): FacepackIrisLayer | null => {
+    const key = `${st.expression}/${st.pose}`;
+    let hit = layerCache.get(key);
+    if (hit === undefined) {
+      hit = irisLayerOf(m, st.expression, st.pose);
+      layerCache.set(key, hit);
+    }
+    return hit;
+  };
+  /** The state's iris layer when its files are decoded (until then her eyes show the base's look). */
+  const layerReady = (st: State): FacepackIrisLayer | null => {
+    const lay = layerFor(st);
+    if (!lay) return null;
+    for (const f of irisLayerFiles(lay)) if (!c.has(f)) return null;
+    return lay;
+  };
+  /** Her look in the layer's units, as the eye region was (and the next compose will be) drawn. */
+  const look: [number, number] = [0, 0];
+  const spriteCv = document.createElement('canvas');
+  const sg = spriteCv.getContext('2d');
+  if (!sg) throw new Error('2d context unavailable');
+  /**
+   * The iris layer over `g` (its origin at pack px (ox, oy)): the eyes with
+   * the iris taken out, then each eye's part of the sprite moved by its
+   * offset at `look` (sub-pixel, filtered), kept to the opening (the half
+   * lid's narrower one with `half`).
+   */
+  const drawIrisLayer = (g: CanvasRenderingContext2D, lay: FacepackIrisLayer, ox: number, oy: number, half = false): void => {
+    const src = half ? lay.half : lay;
+    if (!src) return;
+    const empty = c.get(src.empty);
+    const clip = c.get(src.clip);
+    const sprite = c.get(lay.sprite);
+    if (!empty || !clip || !sprite) return;
+    const [bx, by] = lay.box;
+    g.drawImage(empty, bx - ox, by - oy);
+    const w = empty.width;
+    const h = empty.height;
+    if (spriteCv.width !== w || spriteCv.height !== h) {
+      spriteCv.width = w;
+      spriteCv.height = h;
+    }
+    sg.globalCompositeOperation = 'source-over';
+    sg.clearRect(0, 0, w, h);
+    sg.imageSmoothingEnabled = true;
+    sg.imageSmoothingQuality = 'high';
+    for (const eye of lay.eyes) {
+      const [dx, dy] = layerOffset(lay, eye, look[0], look[1]);
+      const sx = Math.max(0, eye.rect[0] - bx);
+      const sy = Math.max(0, eye.rect[1] - by);
+      const sw = Math.min(w, eye.rect[2] - bx) - sx;
+      const sh = Math.min(h, eye.rect[3] - by) - sy;
+      if (sw > 0 && sh > 0) sg.drawImage(sprite, sx, sy, sw, sh, sx + dx, sy + dy, sw, sh);
+    }
+    sg.globalCompositeOperation = 'destination-in';
+    sg.drawImage(clip, 0, 0);
+    sg.globalCompositeOperation = 'source-over';
+    g.drawImage(spriteCv, bx - ox, by - oy);
+  };
+  /** Everything one state draws: its layers' files and its gaze files. */
   const stateFiles = (expr: string, pose: string): string[] => [...filesFor(m, expr, pose), ...irisFiles(m, expr, pose)];
   /**
    * Her look on the grid: the frame shown (`cell`, grid indices; -1 before
@@ -265,10 +342,14 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
    * lerp (the second over the first at its weight). The frames are opaque
    * inside and feathered to the base at their edges.
    */
-  const drawLayers = (g: CanvasRenderingContext2D, layers: readonly FaceLayer[], ox: number, oy: number, ir: FacepackIris | null): void => {
+  const drawLayers = (g: CanvasRenderingContext2D, layers: readonly FaceLayer[], ox: number, oy: number, ir: FacepackIris | null, lay: FacepackIrisLayer | null = null): void => {
     for (const l of layers) {
       const bmp = c.get(l.src);
       if (bmp) g.drawImage(bmp, l.x - ox, l.y - oy);
+      if (l.kind === 'base' && lay && bmp) {
+        drawIrisLayer(g, lay, ox, oy);
+        continue;
+      }
       if (l.kind !== 'base' || !ir || !bmp) continue;
       gazeTaps(ir);
       const [bx, by, bx1, by1] = ir.box;
@@ -305,13 +386,14 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     if (!layers.length) return false;
     cg.setTransform(1, 0, 0, 1, 0, 0);
     cg.clearRect(0, 0, W, H);
-    drawLayers(cg, layers, 0, 0, irisReady(st));
+    const lay = layerReady(st);
+    drawLayers(cg, layers, 0, 0, lay ? null : irisReady(st), lay);
     return true;
   };
 
-  /** The eye region of `st` at the current gaze point, composed alone (base crop, gaze frames, mouth, overlays). */
-  const composeIris = (st: State, viseme: FacepackViseme, ir: FacepackIris): [number, number] => {
-    const box = ir.box;
+  /** The eye region of `st` at the current gaze point, composed alone (base crop, iris layer or gaze frames, mouth, overlays). */
+  const composeIris = (st: State, viseme: FacepackViseme, ir: FacepackIris | null, lay: FacepackIrisLayer | null = null): [number, number] => {
+    const box = lay ? lay.box : ir ? ir.box : [0, 0, 1, 1];
     const w = Math.max(1, Math.round(box[2] - box[0]));
     const h = Math.max(1, Math.round(box[3] - box[1]));
     if (irisCv.width !== w || irisCv.height !== h) {
@@ -319,7 +401,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       irisCv.height = h;
     }
     ig.clearRect(0, 0, w, h);
-    drawLayers(ig, layersFor(m, { ...st, eye: 'open', viseme, overlays: live().overlays }), box[0], box[1], ir);
+    drawLayers(ig, layersFor(m, { ...st, eye: 'open', viseme, overlays: live().overlays }), box[0], box[1], ir, lay);
     return [box[0], box[1]];
   };
 
@@ -342,7 +424,8 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
       viseme,
       overlays: live().overlays,
     });
-    drawLayers(mg, layers, box[0], box[1], irisReady(st));
+    const lay = layerReady(st);
+    drawLayers(mg, layers, box[0], box[1], lay ? null : irisReady(st), lay);
     return [box[0], box[1]];
   };
 
@@ -356,7 +439,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
    * compose.irisHalfAt) is drawn over the half patch, so the half-shut frames
    * of a blink keep her look instead of flicking the iris back to centre.
    */
-  const lidsFor = (st: State, look: string | null = null): void => {
+  const lidsFor = (st: State, look: string | null = null, layerKey = ''): void => {
     const e = m.expressions[st.expression];
     const pose = e?.poses[resolvePoseName(e, m, st.pose)];
     const half = pose?.eyes?.half;
@@ -367,7 +450,19 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     const ir = irisFor(st);
     let hl: { key: string; src: TexImageSource } | null = hb && half ? { key: half, src: hb } : null;
     halfShown = '';
-    if (hl && hb && lb && look && ir && pose?.eyes) {
+    const lay = layerKey ? layerReady(st) : null;
+    if (hl && hb && lay?.half && pose?.eyes) {
+      // Iris layer: the half patch, then the half lid's empty eyes and the sprite at her look.
+      if (halfCv.width !== hb.width || halfCv.height !== hb.height) {
+        halfCv.width = hb.width;
+        halfCv.height = hb.height;
+      }
+      hg.clearRect(0, 0, hb.width, hb.height);
+      hg.drawImage(hb, 0, 0);
+      drawIrisLayer(hg, lay, pose.eyes.box[0], pose.eyes.box[1], true);
+      hl = { key: `${half}|${layerKey}`, src: halfCv };
+      halfShown = layerKey;
+    } else if (hl && hb && lb && look && ir && pose?.eyes) {
       if (halfCv.width !== hb.width || halfCv.height !== hb.height) {
         halfCv.width = hb.width;
         halfCv.height = hb.height;
@@ -419,6 +514,9 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   /** The look (cell x, cell y, from x, from y, step mix) the eye region was last composed at, and for which state. */
   const irisDrawn: number[] = [NaN, NaN, NaN, NaN, NaN];
   let irisDrawnFor: FacepackIris | null = null;
+  /** The iris layer the eye region was last composed with, and each eye's offset then (dx, dy, ...). */
+  let layerDrawnFor: FacepackIrisLayer | null = null;
+  const layerDrawn: number[] = [];
   const markDrawn = (ir: FacepackIris | null): void => {
     irisDrawnFor = ir;
     irisDrawn[0] = cell[0];
@@ -552,6 +650,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
         morphD = a && b && !exprChange ? [b[0] - a[0], b[1] - a[1]] : [0, 0];
         show(shown, lastViseme, true);
         markDrawn(irisReady(shown));
+        layerDrawnFor = null;
         trim();
       } else {
         if (loading !== tkey) {
@@ -605,9 +704,28 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     p.iris[0] = g ? g.eyeX * IRIS_X : 0;
     p.iris[1] = g ? g.eyeY * IRIS_Y : 0;
 
+    // Iris layer: the sprite slides with her look, continuously; the eye region is redrawn only
+    // while an eye's offset moves.
+    const lay = layerReady(shown);
+    if (lay) {
+      look[0] = g ? g.eyeX * LAYER_X : 0;
+      look[1] = g ? g.eyeY * LAYER_Y : 0;
+      let moved = lay !== layerDrawnFor;
+      for (let i = 0; i < lay.eyes.length && !moved; i++) {
+        const [dx, dy] = layerOffset(lay, lay.eyes[i], look[0], look[1]);
+        moved = !(Math.abs(dx - (layerDrawn[2 * i] ?? NaN)) < LAYER_EPS && Math.abs(dy - (layerDrawn[2 * i + 1] ?? NaN)) < LAYER_EPS);
+      }
+      if (moved) {
+        const at = composeIris(shown, lastViseme, null, lay);
+        gl.updateRegion(irisCv, at[0], at[1]);
+        layerDrawnFor = lay;
+        layerDrawn.length = 0;
+        for (const eye of lay.eyes) layerDrawn.push(...layerOffset(lay, eye, look[0], look[1]));
+      }
+    }
     // Gaze frames: her look steps to the grid frame nearest her gaze point, each step a quick
     // crossfade; the eye region is recomposed only while it changes.
-    const ir = irisReady(shown);
+    const ir = lay ? null : irisReady(shown);
     if (ir) {
       const [nx, ny] = irisCell(ir, g ? g.eyeX * GAZE_X : 0, g ? g.eyeY * GAZE_Y : 0, cell[0] < 0 ? null : cell, GAZE_HOLD);
       if (cell[0] < 0) {
@@ -640,8 +758,24 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     }
     // Half lid at her look across (packs that bake it); picked as the half frame comes, held through the blink.
     if (p.halfA > 0 && p.closedA === 0) {
-      const look = ir && cell[0] >= 0 ? irisHalfAt(ir, cell[0]) : null;
-      if ((look ?? '') !== halfShown) lidsFor(shown, look);
+      if (lay?.half) {
+        // The half lid at her look now, rounded so a blink draws it once or twice.
+        const qx = Math.round(look[0] / LAYER_HALF_Q) * LAYER_HALF_Q;
+        const qy = Math.round(look[1] / LAYER_HALF_Q) * LAYER_HALF_Q;
+        const key = `L${qx.toFixed(2)},${qy.toFixed(2)}`;
+        if (key !== halfShown) {
+          const lx = look[0];
+          const ly = look[1];
+          look[0] = qx;
+          look[1] = qy;
+          lidsFor(shown, null, key);
+          look[0] = lx;
+          look[1] = ly;
+        }
+      } else {
+        const hlook = ir && cell[0] >= 0 ? irisHalfAt(ir, cell[0]) : null;
+        if ((hlook ?? '') !== halfShown) lidsFor(shown, hlook);
+      }
     }
 
     // Fit: contain, a little headroom, feet (the bottom) on the bottom edge.
@@ -665,7 +799,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     // Dev probe (scripts/seilink-avatar-demo.mjs): a script that sets window.__seiFaceTrace = [] gets one row a frame.
     const trace = (globalThis as { __seiFaceTrace?: unknown[] }).__seiFaceTrace;
     if (trace)
-      trace.push({ t: now, gx: g?.gazeX ?? 0, gy: g?.gazeY ?? 0, ex: g?.eyeX ?? 0, ey: g?.eyeY ?? 0, hx: g?.headX ?? 0, hy: g?.headY ?? 0, roll: p.roll, pose: shown.pose, mix: p.mix, lid, ix: p.iris[0], iy: p.iris[1], irisFrames: ir !== null, cx: cell[0], cy: cell[1], step: stepMix });
+      trace.push({ t: now, gx: g?.gazeX ?? 0, gy: g?.gazeY ?? 0, ex: g?.eyeX ?? 0, ey: g?.eyeY ?? 0, hx: g?.headX ?? 0, hy: g?.headY ?? 0, roll: p.roll, pose: shown.pose, mix: p.mix, lid, ix: p.iris[0], iy: p.iris[1], irisFrames: ir !== null, cx: cell[0], cy: cell[1], step: stepMix, layer: lay !== null, lx: look[0], ly: look[1], ldx: layerDrawn[0] ?? 0, ldy: layerDrawn[1] ?? 0 });
 
     if (env.debugRef) {
       env.debugRef.current = {

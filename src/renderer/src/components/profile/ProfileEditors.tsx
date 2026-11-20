@@ -69,7 +69,7 @@ import {
 } from '../../lib/profileEditDrafts';
 import { regenerateStoredPersona, updateStoredCharacter } from '../../lib/characterSaveQueue';
 import type { ProfileAction } from '../../lib/profileRows';
-import { localTtsModel } from '@shared/ttsEngine';
+import { cloudVoiceProvider, localTtsModel } from '@shared/ttsEngine';
 import type { Character } from '@shared/characterSchema';
 import { Button } from '../Button';
 import { PercentBar } from '../PercentBar';
@@ -282,6 +282,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
   const aiBackendKind = useCreditsStore((s) => s.ai_backend_kind);
   const [localTtsPref, setLocalTtsPref] = useState<boolean>(false);
   const [fishPref, setFishPref] = useState<boolean>(false);
+  const [cloudFishPref, setCloudFishPref] = useState<boolean>(false);
   const [fishVoice, setFishVoice] = useState<FishVoicePick | null>(null);
   useEffect(() => {
     let live = true;
@@ -290,7 +291,10 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
       .then((c) => {
         if (!live) return;
         setLocalTtsPref(c.tts_engine === 'local');
+        // 261120: on a Sei account Fish is chosen in Playtime > Sei >
+        // Advanced (cloud_tts_provider), never by the BYOK local model.
         setFishPref(localTtsModel(c) === 'fish');
+        setCloudFishPref(cloudVoiceProvider(c) === 'fish');
         const own = c.fish_voice_overrides?.[character.id];
         setFishVoice(own ? { id: own.id, name: own.name } : null);
       })
@@ -302,7 +306,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
     };
   }, [character.id]);
   const localTtsMode = aiBackendKind === 'local' && localTtsPref;
-  const fishMode = localTtsMode && fishPref;
+  const fishMode = (localTtsMode && fishPref) || (aiBackendKind === 'cloud-proxy' && cloudFishPref);
 
   // Functional, so two changes in one tick (a pick and its params) both land.
   const edit = (patch: Partial<VoiceDraft>): void => {
