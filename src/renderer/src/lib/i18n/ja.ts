@@ -2073,7 +2073,7 @@ export const JA: Record<string, string> = {
   "Automatic": "自動",
   "Preview": "試聴",
   "Use automatic": "自動に戻す",
-  "Paste a fish.audio voice link": "fish.audioのボイスリンクを貼り付け",
+  "Paste a fish.audio voice link or id": "fish.audioのボイスリンクまたはIDを貼り付け",
   "Fish Audio voice link": "Fish Audioボイスリンク",
   "Use voice": "このボイスを使う",
   "This voice plays without the pitch setting. It is saved right away.": "このボイスはピッチ設定なしで再生されます。すぐに保存されます。",

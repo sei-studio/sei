@@ -1854,7 +1854,7 @@ export const IT: Record<string, string> = {
   "Automatic": "Automatica",
   "Preview": "Anteprima",
   "Use automatic": "Usa selezione automatica",
-  "Paste a fish.audio voice link": "Incolla il link a una voce fish.audio",
+  "Paste a fish.audio voice link or id": "Incolla il link o l'ID di una voce fish.audio",
   "Fish Audio voice link": "Link della voce Fish Audio",
   "Use voice": "Usa voce",
   "This voice plays without the pitch setting. It is saved right away.": "Questa voce viene riprodotta senza la regolazione dell’altezza. Viene salvata subito.",

@@ -407,6 +407,16 @@ describe('SettingsScreen (T158: optional ElevenLabs key on Sei Cloud)', () => {
     expect((row.match(/placeholder=\{t\('Your ElevenLabs key'\)\}/g) ?? []).length).toBe(1);
     // "Not set" is a warning only in BYOK mode.
     expect(row.includes("hasKey || mode === 'cloud-optional'")).toBe(true);
+    // 261118: the cloud group offers the provider picker (ElevenLabs | Fish
+    // Audio) and keeps BOTH key rows visible, so the other key can be set
+    // without switching first. The old "Use your own ElevenLabs voices" line
+    // is gone.
+    expect(readFileSync(SETTINGS_TSX, 'utf-8').includes("t('Use your own ElevenLabs voices')")).toBe(false);
+    expect(pt.includes("value={fishSelected ? 'fish' : 'elevenlabs'}")).toBe(true);
+    const fishRows =
+      (pt.match(/<FishAudioSettings \/>/g) ?? []).length +
+      (readFileSync(VOICE_PANEL_TSX, 'utf-8').match(/<FishAudioSettings \/>/g) ?? []).length;
+    expect(fishRows).toBe(2);
   });
 
   it('OV.3: the picker points to the key field when none is saved, on either backend', () => {
@@ -438,6 +448,14 @@ describe('VoiceEditor + VoicePicker (W5 local-TTS voice gating)', () => {
     expect(src.includes("aiBackendKind === 'local' && localTtsPref")).toBe(true);
     expect(src.includes("c.tts_engine === 'local'")).toBe(true);
     expect(src.includes('localTtsMode={localTtsMode}')).toBe(true);
+  });
+
+  it('G.5: the Fish voice block is not gated on the BYOK backend (261118)', () => {
+    const src = readFileSync(EDIT_MODAL_TSX, 'utf-8');
+    // Fish runs on the user's own key on both backends: a cloud user who picks
+    // Fish Audio must still get the voice link/id field in Edit companion.
+    expect(src.includes('const fishMode = localTtsPref && fishPref;')).toBe(true);
+    expect(src.includes('const fishMode = localTtsMode && fishPref;')).toBe(false);
   });
 
   it('G.2: VoicePicker hides the ElevenLabs list/previews + Calmness in localTtsMode, keeps Pitch tunable', () => {

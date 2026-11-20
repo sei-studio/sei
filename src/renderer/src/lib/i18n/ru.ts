@@ -2073,7 +2073,7 @@ export const RU: Record<string, string> = {
   "Automatic": "Автоматически",
   "Preview": "Прослушать",
   "Use automatic": "Автовыбор",
-  "Paste a fish.audio voice link": "Вставь ссылку на голос с fish.audio",
+  "Paste a fish.audio voice link or id": "Вставь ссылку или ID голоса с fish.audio",
   "Fish Audio voice link": "Ссылка на голос Fish Audio",
   "Use voice": "Выбрать голос",
   "This voice plays without the pitch setting. It is saved right away.": "Этот голос звучит без настройки высоты. Сохраняется сразу.",

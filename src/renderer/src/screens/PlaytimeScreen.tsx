@@ -19,6 +19,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { UserConfig } from '@shared/characterSchema';
+import { localTtsModel, voiceSourceOf } from '@shared/ttsEngine';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
@@ -34,6 +35,8 @@ import { SwitchBackendConfirmModal } from '../components/SwitchBackendConfirmMod
 import { ChatgptTab } from '../components/playtime/ChatgptTab';
 import { MyKeysTab } from '../components/playtime/MyKeysTab';
 import { ElevenKeyRow } from '../components/playtime/ElevenKeyRow';
+import { Choice, Row } from '../components/playtime/PlaytimeParts';
+import { FishAudioSettings } from '../components/settings/FishAudioSettings';
 import { SeiPlanTab } from './CreditsScreen';
 import styles from './PlaytimeScreen.module.css';
 
@@ -118,6 +121,21 @@ export function PlaytimeScreen(): React.ReactElement {
   };
 
   const activeHere = tab !== null && !!cfg && isActiveSetupTab(tab, backend, provider);
+  // 261118: Fish Audio is a provider of its own on the Sei tab too. Underneath
+  // it is still Local + local_tts_model 'fish', so the routing, the
+  // per-character voices and the Fast fallback stay exactly as they are.
+  const fishSelected = voiceSourceOf(cfg) === 'fish';
+  const onSelectCloudVoice = (next: 'elevenlabs' | 'fish'): void => {
+    void persist((c) => {
+      if (next === 'fish') return { ...c, tts_engine: 'local', local_tts_model: 'fish' };
+      // Leaving Fish Audio lands on the ElevenLabs route, never on a stale 'fish'.
+      return {
+        ...c,
+        tts_engine: 'elevenlabs',
+        ...(localTtsModel(c) === 'fish' ? { local_tts_model: 'fast' as const } : {}),
+      };
+    });
+  };
   const tracked = useRef<string | null>(null);
   useEffect(() => {
     if (!tab || !setupTab) return;
@@ -246,7 +264,24 @@ export function PlaytimeScreen(): React.ReactElement {
               <section className={styles.section} aria-label={t('Voice')}>
                 <h3 className={styles.sectionTitle}>{t('Voice')}</h3>
                 <div className={styles.panel}>
+                  {/* Provider picker on the cloud backend: ElevenLabs or Fish
+                      Audio. Both key rows stay visible either way, so the user
+                      can set the other one without switching first (261118). */}
+                  <Row label={t('Voices')}>
+                    <Choice
+                      aria-label={t('Voices')}
+                      value={fishSelected ? 'fish' : 'elevenlabs'}
+                      options={[
+                        { value: 'elevenlabs', label: t('ElevenLabs') },
+                        { value: 'fish', label: 'Fish Audio' },
+                      ]}
+                      onChange={onSelectCloudVoice}
+                    />
+                  </Row>
                   <ElevenKeyRow mode="cloud-optional" />
+                </div>
+                <div className={styles.panel}>
+                  <FishAudioSettings />
                 </div>
               </section>
             </>
