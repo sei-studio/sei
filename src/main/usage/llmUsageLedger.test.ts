@@ -19,6 +19,12 @@ vi.mock('../configStore', () => ({
     return h.cfg;
   },
 }));
+// The spend alert is hidden in v0.7.0 (SPEND_ALERT_ENABLED = false, product
+// call 261120); these tests keep its firing logic covered for when it returns.
+vi.mock('../../shared/llmUsage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../shared/llmUsage')>()),
+  SPEND_ALERT_ENABLED: true,
+}));
 vi.mock('../lazyAnalytics', () => ({
   loadAnalytics: async () => ({ capture: (event: string, props: unknown) => h.captured.push({ event, props }) }),
 }));

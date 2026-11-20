@@ -163,3 +163,10 @@ describe('formatting', () => {
     expect(dayKey(new Date(2026, 0, 5, 23, 59))).toBe('2026-01-05');
   });
 });
+
+describe('SPEND_ALERT_ENABLED (261120)', () => {
+  it('is off for v0.7.0: no Playtime row, main never fires the alert', async () => {
+    const mod = await import('./llmUsage');
+    expect(mod.SPEND_ALERT_ENABLED).toBe(false);
+  });
+});
