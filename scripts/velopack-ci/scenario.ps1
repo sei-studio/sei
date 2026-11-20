@@ -451,12 +451,12 @@ function Check-UserData {
   $results.user_data_intact = $bad.Count -eq 0
   if ($bad.Count -gt 0) { Fail "user data touched by the repair: $($bad -join ', ')" }
 }
-function RepairEnv([string]$mode, [switch]$Safe, [switch]$Trigger) {
+function RepairEnv([string]$mode, [switch]$Safe, [switch]$WithTrigger) {
   # Like Prepare, but keeps the marks: a repair scenario spans several launches.
   # No trigger file = an update that does download runs its mode at once.
   $env:SEI_VELOPACK_CI = '1'
   $env:SEI_VELOPACK_CI_MODE = $mode
-  $env:SEI_VELOPACK_CI_TRIGGER = if ($Trigger) { $trigger } else { '' }
+  $env:SEI_VELOPACK_CI_TRIGGER = if ($WithTrigger) { $trigger } else { '' }
   $env:SEI_VELOPACK_FEED = "http://127.0.0.1:8765/$Target"
   $env:SEI_VELOPACK_CI_NOSTAGE = ''
   $env:SEI_VELOPACK_CI_PUBLISHER = ''
@@ -542,7 +542,8 @@ function Assert-Repaired([long]$t0) {
   $nsis = Join-Path $env:LOCALAPPDATA 'Programs\sei'
   if (Test-Path $nsis) { Fail "an NSIS copy appeared at $nsis" }
   if ((SeiProcs).Count -lt 1) { Fail 'no Sei running after the repair' }
-  $aside = @(Get-ChildItem $env:LOCALAPPDATA -Directory -Filter 'Sei.*' -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  # Setup renames the old folder to Sei.<random> and deletes it after the install. (-Filter 'Sei.*' also matches 'Sei'.)
+  $aside = @(Get-ChildItem $env:LOCALAPPDATA -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'Sei.*' } | ForEach-Object { $_.Name })
   $results.repair_leftover_dirs = $aside
   Check-UserData
   if ($results.repair_failed.Count -gt 0) { Fail "repair-failed marks: $($results.repair_failed -join '; ')" }
@@ -939,7 +940,11 @@ switch -Regex ($Scenario) {
     RepairEnv 'restart'
     $t0 = Now
     $how = ''
-    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) { $how = Repair-Launch $n 180 }
+    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) {
+      $how = Repair-Launch $n 180
+      # Quit on its own: an ordinary update may be under way (the download can restore Update.exe).
+      if ($how -eq 'exited' -and (WaitMark 'window-loaded' $Target 90 $isApp)) { $how = 'target' }
+    }
     $results.corrupt_path = $how
     if ($how -eq 'handoff') {
       Assert-Repaired $t0
@@ -966,7 +971,11 @@ switch -Regex ($Scenario) {
     RepairEnv 'restart'
     $t0 = Now
     $how = ''
-    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) { $how = Repair-Launch $n 180 }
+    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) {
+      $how = Repair-Launch $n 180
+      # Quit on its own: an ordinary update may be under way (the download can restore Update.exe).
+      if ($how -eq 'exited' -and (WaitMark 'window-loaded' $Target 90 $isApp)) { $how = 'target' }
+    }
     if ($how -ne 'handoff') { $results.repair_launches = @($repairLaunches); Timeline $t0; Fail "no repair after $($n - 1) launches ($how)" }
     else {
       $results.repair_launch_count = $repairLaunches.Count
@@ -1000,7 +1009,7 @@ switch -Regex ($Scenario) {
     }
     if (@(Events | Where-Object { $_.ev -eq 'launch-apply' }).Count -lt 2) { Fail 'expected two launch applies' }
     # 3. The launch-apply cap is spent: this launch boots and applies on quit.
-    RepairEnv 'quit' -Trigger
+    RepairEnv 'quit' -WithTrigger
     Remove-Item $trigger -Force -ErrorAction SilentlyContinue
     $p = Start-Sei
     $d = WaitMark 'downloaded' $From 300 { param($e) $e.pid -eq $p.Id }
