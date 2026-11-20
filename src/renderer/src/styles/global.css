@@ -53,6 +53,102 @@ textarea {
   font-family: inherit;
 }
 
+/* ── Checkbox + radio (261103 radius pass) ─────────────────────────────
+   One checkbox everywhere instead of Chromium's native box (which ignored
+   the theme in dark): a --radius-sm square, hairline frame, accent fill
+   with an --accent-text tick when checked. Modules may still size it
+   (several set 16px). Radios stay round (their convention) and only pick
+   up the accent. */
+input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  /* --muted, not --border-strong: an empty box has to read as a control
+     on its own, in both themes. */
+  border: 1px solid var(--muted);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+
+input[type='checkbox']:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+input[type='checkbox']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The tick: two borders of a rotated box, centred in the square. */
+input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 28%;
+  height: 52%;
+  border-right: 2px solid var(--accent-text);
+  border-bottom: 2px solid var(--accent-text);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+
+/* Range sliders: the Settings slider look everywhere (voice tuner, chess
+   Elo, crop zoom), instead of Chromium's pill track and round thumb. A
+   hairline track, a 12px --radius-sm square accent thumb. The element keeps
+   Chromium's native 16px height (appearance:none would collapse it to the
+   track), so rows around it don't move. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--border-strong);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+}
+
+input[type='range']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='range']:disabled {
+  cursor: not-allowed;
+}
+
 /* ── Selection + scrollbars (mockup: thin, sharp, accent selection) ──── */
 ::selection {
   background: var(--accent-soft);
@@ -70,7 +166,7 @@ textarea {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -192,6 +288,7 @@ textarea {
   background: var(--surface-2);
   color: var(--text);
   border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.04em;

@@ -25,6 +25,7 @@ import {
   renderPunctuationDirective,
   VOICE_PUNCTUATION_DIRECTIVE,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   NEXT_TIME_FIELD,
   NEXT_TIME_FOR_PLAYER_FIELD,
   NEXT_TIME_GAME_FIELD,
@@ -35,6 +36,7 @@ import type { ChatLanguage } from '../../shared/chatLanguage';
 import { audioTagDirective } from '../voice/audioTags';
 import { FACE_PROMPT } from '../../bot/brain/faceExpressions.js';
 import { renderGamesDirective, GAME_CATALOG, type GameCatalogEntry } from '../../shared/games';
+import { LOOK_TOOL } from '../seilink/roomContext';
 
 export interface BuildSystemArgs {
   persona: Persona;
@@ -138,6 +140,13 @@ export interface BuildSystemArgs {
    */
   language?: ChatLanguage;
   /**
+   * 261116: someone else wrote her (a World companion, chatLanguage.ts
+   * companionLanguage). The persona block then ends with a note that a
+   * language named in her description was her creator's choice and she talks
+   * to this player in `language`. Static per character, so it stays cached.
+   */
+  adoptedLanguage?: boolean;
+  /**
    * 260724: a STATIC surface contract (the chess table-talk rules, the watch
    * viewing rules) that holds for a whole session. Inserted after memory/summary
    * and BEFORE the volatile status block, so it lands inside the cached region
@@ -205,6 +214,16 @@ export interface BuildSystemArgs {
    * CHAT_SEARCH_CHECK (ahead of the memory check). Set by chatService only.
    */
   searchGuide?: boolean;
+  /**
+   * 261104 SeiLink: one short line saying where she is ("You're in your
+   * bedroom. It's night."), from src/main/seilink/roomContext.ts
+   * roomPromptLine. Set by chatService only when she has a room and is not in
+   * a game. It sits right after the time line in the status block, which
+   * already changes every minute in typed chat; on a call the caller leaves
+   * an auto time of day out so the cached status block stays stable. Ignored
+   * for surface 'game'.
+   */
+  roomLine?: string;
 }
 
 /**
@@ -363,6 +382,10 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
     ),
   ];
   if (args.preferredName) personaParts.push(`The player's name is ${args.preferredName}.`);
+  if (args.adoptedLanguage) {
+    const note = renderAdoptedLanguageNote(args.language ?? 'en');
+    if (note) personaParts.push(note);
+  }
   personaParts.push(renderChatProactivenessDirective(args.proactiveness));
   // Punctuation register (260729): a call is SPOKEN, so the texting directive is
   // replaced rather than added to — see VOICE_PUNCTUATION_DIRECTIVE. The persona
@@ -455,6 +478,7 @@ export function buildSystemBlocks(args: BuildSystemArgs): SystemBlock[] {
       : (args.clockInTail
           ? 'The current date and time is the "now" stamp at the end of the latest message.\n'
           : `The current date and time is ${formatNow()}.\n`) +
+        (args.roomLine ? `${args.roomLine}\n` : '') +
         `${connLine}\n` +
         (args.openWorldDetected
           ? 'World status: an open Minecraft world is detected, so you could join if asked. ' +
@@ -755,8 +779,17 @@ export const CHAT_REMEMBER_TOOL = {
  * (scripts/remember-eval.ts) send exactly the same list. `web` is whatever
  * webToolsFor() returns for the provider; it always goes last.
  */
-export function chatSurfaceTools<T>(voice: boolean, web: T[]): Array<T | typeof LAUNCH_TOOL | typeof CHAT_REMEMBER_TOOL | typeof END_CALL_TOOL> {
-  return voice ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, CHAT_REMEMBER_TOOL, ...web] : [LAUNCH_TOOL, QUIT_TOOL, CHAT_REMEMBER_TOOL, ...web];
+export function chatSurfaceTools<T>(
+  voice: boolean,
+  web: T[],
+  room = false,
+): Array<T | typeof LAUNCH_TOOL | typeof CHAT_REMEMBER_TOOL | typeof END_CALL_TOOL | typeof LOOK_TOOL> {
+  // 261104 SeiLink: look() only when she has a room (roomContext.ts). It sits
+  // before the web tools so a room/no-room flip changes the tail of the list.
+  const look = room ? [LOOK_TOOL] : [];
+  return voice
+    ? [LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, CHAT_REMEMBER_TOOL, ...look, ...web]
+    : [LAUNCH_TOOL, QUIT_TOOL, CHAT_REMEMBER_TOOL, ...look, ...web];
 }
 
 // Silence on voice calls (260707): there is deliberately NO silence tool.

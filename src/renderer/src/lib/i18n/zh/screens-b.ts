@@ -129,7 +129,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'up to date': '已是最新',
   'update available': '有可用更新',
   'check failed': '检查失败',
-  'Advanced updates': '抢先更新',
+  // 261103: "Advanced updates" renamed to Experimental updates, ON asks first.
+  'Experimental updates': '实验性更新',
   // 260909 Search group
   'Search': '搜索',
   // 261023: web search moved into the Games group, renamed for both.
@@ -146,9 +147,10 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Paste your key': '粘贴你的密钥',
   'Clear': '清除',
   'Without a key, search falls back to the free providers.': '未设置密钥时，搜索会回退到免费提供方。',
-  'About advanced updates': '关于抢先更新',
-  'Get beta releases early, before they roll out to everyone. Betas are less tested and may have rough edges. Leave this off for the stable version.':
-    '在向所有人推送之前抢先获得测试版。测试版测试较少，可能不够完善。想用稳定版就保持关闭。',
+  'About experimental updates': '关于实验性更新',
+  'Try new features early. These builds can be buggy, and not every experimental feature makes it into the stable version.':
+    '抢先体验新功能。这些版本可能有 bug，而且并非每个实验性功能都会进入稳定版。',
+  "You'll get new features early, but they can be buggy. Continue?": '你会抢先用到新功能，但它们可能有 bug。要继续吗？',
   'Terms of Service': '服务条款',
   'Privacy Policy': '隐私政策',
   'Open': '打开',
@@ -164,6 +166,12 @@ export const ZH_SCREENS_B: Record<string, string> = {
     '，经由 Piper；已转换为 ONNX。中文语音：基于北京希尔贝壳科技的 AISHELL-3 训练，',
   'Apache License 2.0': 'Apache 2.0 许可证',
   ', via icefall.': '，经由 icefall。',
+  // 261102 Kokoro credit (Settings > About).
+  'Kokoro voice:': 'Kokoro 语音：',
+  'by hexgrad,': '，作者 hexgrad，',
+  ', converted by sherpa-onnx. Its pronunciation data comes from espeak-ng,':
+    '，由 sherpa-onnx 转换。其发音数据来自 espeak-ng，',
+  '.': '。',
   'Danger': '危险操作',
   'Reset all companion memories': '重置所有伙伴的记忆',
   'All memories reset': '已重置所有记忆',
@@ -195,7 +203,7 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Refresh plan usage': '刷新套餐用量',
   '{name} plan': '{name} 套餐',
   "Couldn't check your account. Refresh to try again.": '无法查询你的账户。请刷新重试。',
-  'Resets in {time}': '{time} 后重置',
+  'Resets in {time}': '{time}后重置',
   // 260926: under the free-play reset line when the allowance is spent.
   'To keep playing before then, top up or pick a plan below.':
     '想在那之前继续玩，可以充值或在下方选择套餐。',
@@ -259,8 +267,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Billed monthly until you cancel.': '按月计费，直到你取消为止。',
   'Next billing date: {date}.': '下次扣款日期：{date}。',
   'in 30 days': '30 天后',
-  'Cancel anytime in Settings → Cloud AI → Cancel subscription.':
-    '可随时在「设置 → 云端 AI → 取消订阅」中取消。',
+  'Cancel anytime in Playtime → Sei → Manage billing.':
+    '可随时在「游玩时长 → Sei → 管理账单」中取消。',
   'Back to Sei': '返回 Sei',
 
   // ── SkinSetupScreen ───────────────────────────────────────────────
@@ -298,7 +306,6 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Timeless': '无龄',
   'A partner in crime': '一起闯祸的搭档',
   'Someone to look after': '需要你照顾的人',
-  'A chill friend': '一个随性的朋友',
   'Round chibi': '圆润 Q 版',
   'Anime': '动漫',
   'Cel-shaded': '赛璐璐',
@@ -349,8 +356,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Go home': '回到主页',
   'Say hello': '打个招呼',
 
-  // ── 261017 (issue #46): ChatGPT plan ("Continue with ChatGPT" itself is
-  //    OpenAI's fixed button label and is never translated) ─────────────
+  // ── 261017 (issue #46): ChatGPT plan (the "Continue with ChatGPT" button
+  //    label itself is translated since 261104, in gaps261104.ts) ────────
   'ChatGPT plan': 'ChatGPT 套餐',
   'Use your ChatGPT plan': '使用你的 ChatGPT 套餐',
   'Use ChatGPT plan': '使用 ChatGPT 套餐',
@@ -376,7 +383,7 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Sign in with your ChatGPT account to use your plan in Sei. No API key needed.':
     '登录你的 ChatGPT 账户，即可在 Sei 中使用你的套餐。无需 API 密钥。',
   'Your ChatGPT sign-in ended. Continue with ChatGPT to sign in again.':
-    '你的 ChatGPT 登录已失效。点击 Continue with ChatGPT 重新登录。',
+    '你的 ChatGPT 登录已失效。点击「通过 ChatGPT 继续」重新登录。',
   'ChatGPT plan use was not turned on when you signed in, so Sei cannot use your plan yet.':
     '登录时没有开启 ChatGPT 套餐使用权限，所以 Sei 暂时无法使用你的套餐。',
   'Turn on ChatGPT plan': '开启 ChatGPT 套餐',
@@ -405,8 +412,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   "You've used the ChatGPT plan usage available to Sei for now. Check Manage usage to see when it resets. Sei pauses ChatGPT requests until then.":
     '你目前可供 Sei 使用的 ChatGPT 套餐用量已用完。查看「管理用量」了解何时重置。在此之前，Sei 会暂停 ChatGPT 请求。',
   'Sign in to ChatGPT again': '重新登录 ChatGPT',
-  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Settings.":
-    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的 ChatGPT 套餐，或在设置中选择其他 AI 选项。',
+  "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your ChatGPT plan, or pick another AI option in Playtime.":
+    'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的 ChatGPT 套餐，或在「游玩时长」中选择其他 AI 选项。',
   'ChatGPT rejected the request': 'ChatGPT 拒绝了请求',
   "ChatGPT didn't accept Sei's sign-in, even after renewing it. Sign in again to keep using your plan.":
     'ChatGPT 不接受 Sei 的登录，即使已经续期也一样。请重新登录以继续使用你的套餐。',
@@ -414,6 +421,6 @@ export const ZH_SCREENS_B: Record<string, string> = {
     'ChatGPT 不接受 Sei 的上一个请求，所以 ChatGPT 请求已暂停。',
   "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan.":
     '目前无法在这里使用 ChatGPT 套餐，可能受你所在地区或套餐的限制。',
-  "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Settings.":
-    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴停了下来，没有反复重试。请重试，或在设置中选择其他 AI 选项。',
+  "ChatGPT didn't accept the request Sei sent, so your companion stopped instead of retrying. Try again, or pick another AI option in Playtime.":
+    'ChatGPT 不接受 Sei 发送的请求，所以你的伙伴停了下来，没有反复重试。请重试，或在「游玩时长」中选择其他 AI 选项。',
 };

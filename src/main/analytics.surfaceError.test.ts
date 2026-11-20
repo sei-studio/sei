@@ -5,6 +5,11 @@
  * these run in file order: init with a mocked PostHog client first.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
 

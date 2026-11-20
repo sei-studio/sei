@@ -39,6 +39,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, SpokenLineContext } from '../../shared/ipc';
 import {
   MIN_SPEAK_GAP_MS,
+  quietExtraMs,
   PREV_GRID_MAX_AGE_MS,
   START_LOOK_TIMEOUT_MS,
   type BackseatLine,
@@ -52,18 +53,18 @@ import { loadConfig } from '../configStore';
 import { getCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from '../chat/sdk';
 import { activeLlmVision, buildLlmProvider } from '../llm';
-import { buildSystemBlocks, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
+import { buildSystemBlocks, clockTailNote, markMessageCached, REMEMBER_TOOL } from '../chat/chatPrompts';
 import { toMessages, isSilenceFiller, splitReply } from '../chat/chatService';
 import { isNoteLeak, stripThoughtTags } from '../chat/noteLeak';
 import { readChatContext, foldIfDue } from '../chat/continuity';
 import { accountSwitchingError, beginSessionStart, trackScopedWrite } from '../profile/scopeBarrier';
 import { playSummaryText } from '../chat/playSummary';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { surfaceLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import * as chatStore from '../chat/chatStore';
 import { classifyUsageLimit, raiseUsageLimitPopup } from '../chat/usageLimit';
-import { startPlayerEndNextStep } from '../playerEndNextStep';
+import { reportNextStepNotRun, startPlayerEndNextStep } from '../playerEndNextStep';
 import type { LogBatch } from '../../shared/ipc';
 import {
   BACKSEAT_CONTRACT,
@@ -86,6 +87,7 @@ import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote } from '../
 import { ControlGate, type ControlOrigin } from '../computerUse/controlPolicy';
 import type { ActOutcome } from '../computerUse/actLoop';
 import { loadAnalytics } from '../lazyAnalytics';
+import { WatchedTally, classifyWatched, watchedProps } from './watchedGame';
 
 /**
  * Tick priority. Strictly ordered: a tick preempts an in-flight turn only when
@@ -191,6 +193,13 @@ interface Session {
    *  something, which is exactly what memory is for). */
   lastRememberAt: number;
   /**
+   * 261103: lines she has said on her own (start, jolt, idle turns) since the
+   * player last spoke. Feeds quietExtraMs, which grows the speak gap for
+   * screen ticks once nobody has answered for a while. A user tick resets it.
+   * Carried over a resumed share (RESUME_WINDOW_MS), which is the same sitting.
+   */
+  unansweredLines: number;
+  /**
    * Index into the chat history where this session's verbatim window starts.
    *
    * Prompt caching (260801): the obvious `history.slice(-RECENT_CAP)` slides
@@ -242,6 +251,8 @@ interface Session {
   lastErrorClass: string | null;
   /** 261023: when the companion's first line went out (null = never). */
   firstLineAt: number | null;
+  /** 261031 (T278): what the share showed, by window title, for the analytics `game`. */
+  watched: WatchedTally;
   /** 261023: ms between this character's previous share ending and this one
    *  starting, when that share had her talking and ended under
    *  RESUME_WINDOW_MS ago. Set = the opening look is a resume, not a hello. */
@@ -260,7 +271,7 @@ let deps: BackseatDeps | null = null;
  * days to 261023 started within 30 s of the previous one ending, with no way
  * to tell a lost window from a source switch). Kept in memory only.
  */
-const lastEnded = new Map<string, { at: number; reason: string; spoke: boolean }>();
+const lastEnded = new Map<string, { at: number; reason: string; spoke: boolean; unansweredLines?: number }>();
 /** A start this soon after an end is reported as a restart. */
 const RESTART_WINDOW_MS = 10 * 60_000;
 /** A start this soon after a share she spoke in opens without a new hello. */
@@ -395,7 +406,13 @@ export async function startBackseat(
     lastErrorClass: null,
     firstLineAt: null,
     resumedAfterMs: resumedAfterMs(lastEnded.get(characterId), Date.now()),
+    unansweredLines: 0,
+    watched: new WatchedTally(),
   };
+  // A resumed share is the same sitting: a player who was not answering
+  // before the window came back is still not answering.
+  if (s.resumedAfterMs !== null) s.unansweredLines = lastEnded.get(characterId)?.unansweredLines ?? 0;
+  s.watched.note(sourceName);
   if (!startGuard.stillValid()) {
     void log.close().catch(() => {});
     throw accountSwitchingError();
@@ -445,10 +462,10 @@ export async function startBackseat(
         ...restart,
         source_kind: sourceId.startsWith('screen:') ? 'screen' : 'window',
         // 260929: which backseat game tile started it, if any. Shape only:
-        // the id, never the game's name.
-        ...(game
-          ? { game: game.def.id, has_specific_game: !!gameSel?.universeId }
-          : {}),
+        // the id, never the game's name. 261031: otherwise the game the
+        // shared window's title names, from a closed list (watchedGame.ts).
+        ...watchedProps(game?.def.id ?? null, classifyWatched(sourceName)),
+        ...(game ? { has_specific_game: !!gameSel?.universeId } : {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -519,7 +536,12 @@ async function endBackseatSession(
   s.clips.clear();
   push(s);
   sessions.delete(characterId);
-  lastEnded.set(characterId, { at: Date.now(), reason, spoke: s.firstLineAt !== null || s.resumedAfterMs !== null });
+  lastEnded.set(characterId, {
+    at: Date.now(),
+    reason,
+    spoke: s.firstLineAt !== null || s.resumedAfterMs !== null,
+    unansweredLines: s.unansweredLines,
+  });
   slog(
     s,
     `session end (${reason}): ${Math.round(durationMs / 1000)}s, ${lineCount} line(s) said` +
@@ -541,7 +563,7 @@ async function endBackseatSession(
         duration_ms: durationMs,
         mode: s.state.mode,
         lines: lineCount,
-        ...(s.game ? { game: s.game.def.id } : {}),
+        ...watchedProps(s.game?.def.id ?? null, s.watched.top()),
         reason,
         // 261023: what the session was like, by shape: how long the first
         // line took (absent when there was none) and how many turns failed.
@@ -568,6 +590,16 @@ async function endBackseatSession(
       lines: s.state.lines.slice(-16).map((l) => ({ who: l.who === 'player' ? 'player' : 'you', text: l.text })),
       playerLines,
     }).catch(() => {});
+  } else {
+    // 261107 (O2 reach): a share that ended any other way runs no check; say so.
+    reportNextStepNotRun({
+      characterId,
+      surface: 'backseat',
+      ...(s.game ? { game: s.game.def.id } : {}),
+      outcome: 'not_covered',
+      endReason: reason,
+      durationMs,
+    });
   }
 
   // Continuity, OUT/short-term: one play row so the session exists in the
@@ -593,7 +625,7 @@ async function endBackseatSession(
         // language the two of them talk in, not the current UI language.
         // playSummaryText only has a zh wording; every other language falls
         // back to the English sentence, same as Draw!.
-        surfaceLanguage(character?.metadata, (await loadConfig()).chat_language) === 'zh'
+        companionLanguageFor(character ?? {}, await loadConfig()).language === 'zh'
           ? 'zh'
           : undefined,
       ),
@@ -765,6 +797,9 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
   const s = sessions.get(tick.characterId);
   if (!s) return 'dropped';
   if (s.state.phase === 'ended') return 'dropped';
+  // 261031: every tick's window title counts toward what the session showed,
+  // even one dropped below (the title is what was on screen either way).
+  if (s.state.phase !== 'paused') s.watched.note(tick.shareLabel);
   // Paused holds everything, including user ticks: the overlay's chat input is
   // disabled while paused, so a user tick arriving here is a race with the
   // button, and honoring it would speak right after the player asked for quiet.
@@ -772,6 +807,8 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
 
   const isUser = tick.kind === 'user';
   const label = tick.kind + (tick.joltReason ? `:${tick.joltReason}` : '');
+  // 261103: the player spoke, so the run of lines nobody answered is over.
+  if (isUser) s.unansweredLines = 0;
 
   // 260925 act spike: while the companion is driving (control()), jolts and
   // idle looks are dropped (the livelock lesson: nothing may preempt the act
@@ -790,9 +827,16 @@ export async function handleTick(tick: BackseatTick): Promise<BackseatTickOutcom
 
   // Being talked to always earns an answer, so a user tick skips the speak-gap
   // floor. Everything else respects it: two lines about the same six seconds
-  // is worse than one.
-  if (!isUser && Date.now() - s.lastSpokeAt < MIN_SPEAK_GAP_MS) {
-    slog(s, `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago)`);
+  // is worse than one. 261103: the floor grows while nobody answers her
+  // (quietExtraMs); the renderer already pushed its idle look back by the
+  // same amount, so in practice this drops jolts, not idle looks.
+  const gapMs = MIN_SPEAK_GAP_MS + quietExtraMs(s.unansweredLines);
+  if (!isUser && Date.now() - s.lastSpokeAt < gapMs) {
+    slog(
+      s,
+      `tick ${label} dropped (spoke ${((Date.now() - s.lastSpokeAt) / 1000).toFixed(1)}s ago, ` +
+        `gap ${(gapMs / 1000).toFixed(0)}s, ${s.unansweredLines} unanswered)`,
+    );
     return 'dropped';
   }
 
@@ -1107,9 +1151,19 @@ async function runTurn(
     // A character pinned to a language speaks it on EVERY surface, so this
     // reads the pin first and falls back to the auto-detected conversation
     // language, the same as chat, voice, chess and Draw!.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    ...(() => {
+      // 261116: the player's language by default (companionLanguage).
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // 261010: the notes are about the player's real life, not the screen.
     memoryNote: BACKSEAT_MEMORY_NOTE,
+    // 261102: the minute clock rides after the last breakpoint, at the end
+    // of the look note (clockTailNote below), the same move calls made on
+    // 261024. In the status block, every minute rollover changed a cached
+    // block and re-wrote the whole transcript below it to cache; looks land
+    // 12-60 s apart, so that was roughly one look in five.
+    clockInTail: true,
     // The whole-session contract rides inside the cached region, so the grid
     // explanation and the register are written once and read every tick.
     // 260929: a game tile's block (knowledge + the picked experience) rides
@@ -1136,7 +1190,13 @@ async function runTurn(
     const last = recent[recent.length - 1];
     if (last && last.role === 'user' && last.text === tick.text) recent = recent.slice(0, -1);
   }
-  const messages = toMessages(recent);
+  // appendOnly (261102): each row is its own text block, so appending the
+  // line this tick produces leaves the block the breakpoint below sits on
+  // byte-identical next tick. Merged into one growing string (the companion
+  // speaks on every look, so her lines run together into one assistant
+  // message), that block changed every tick and the transcript was re-written
+  // to cache on every look without ever being read back (see toMessages).
+  const messages = toMessages(recent, { appendOnly: true });
   // Prompt caching (260801), and the reason this is NOT markLastMessageCached.
   // buildSystemBlocks already spent three of Anthropic's four breakpoints. The
   // fourth belongs HERE, at the end of the history, not on the message below:
@@ -1180,7 +1240,10 @@ async function runTurn(
   const content: unknown[] = [
     ...(prev ? [image(strip(prev.data))] : []),
     image(strip(tick.grid)),
-    { type: 'text', text: tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note },
+    {
+      type: 'text',
+      text: `${tick.kind === 'user' ? `${note}\n\n${tick.text ?? ''}` : note}\n${clockTailNote()}`,
+    },
   ];
   messages.push({ role: 'user', content: content as never });
 
@@ -1208,6 +1271,7 @@ async function runTurn(
     if (!parts.length) return;
     leadSpoken = true;
     s.lastSpokeAt = Date.now();
+    if (tick.kind !== 'user') s.unansweredLines += 1;
     slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
     leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt });
   };
@@ -1389,6 +1453,9 @@ async function runTurn(
   // The lead (if any) is persisted and pushed before the answer.
   await leadEmit;
   if (!parts.length) return;
+  // 261103: one more line nobody has answered yet (once per turn; a lead
+  // spoken before a lookup already counted it).
+  if (tick.kind !== 'user' && !leadSpoken) s.unansweredLines += 1;
   // 261010: how stale the line is before TTS even starts (newest grid frame ->
   // line ready), so a live log shows the timing the player hears as retrospective.
   slog(
@@ -1511,11 +1578,14 @@ function emitCompanionLines(
       // The overlay's mini chat is fed separately: it shows lines in BOTH modes
       // (voice included, where the transcript deliberately hides them) because
       // the overlay is the only thing on screen while a game is fullscreen.
+      const quiet = quietExtraMs(s.unansweredLines);
       const line: BackseatLine = {
         id: msg.id,
         text: msg.text,
         at: msg.ts,
         ...(clip && i === parts.length - 1 ? { clipPath: clip.path } : {}),
+        // 261103: the renderer pushes its next idle look back by this much.
+        ...(quiet > 0 ? { quietExtraMs: quiet } : {}),
       };
       s.state.lines.push(line);
       while (s.state.lines.length > LINE_TAIL) s.state.lines.shift();

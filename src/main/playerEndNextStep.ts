@@ -36,9 +36,15 @@
  *
  * Analytics: shape only, never the plan text or any transcript.
  * `next_step_checked {character_id, source:'player_end', surface, game?,
- * saved, outcome}` for every check that reached the model, plus
+ * saved, outcome, reached_model, duration_s}` for every check, plus
  * `next_step_saved {character_id, source:'player_end', surface, game?}` when a
- * plan was written. The session's `_ended` event has already fired by then
+ * plan was written. 261107 (O2 reach): a check skipped before the model
+ * (trivial, offline, over_limit, busy, no_character) used to send nothing,
+ * so a session that never got a plan could not be told from one that was
+ * never checked; every outcome is sent now, with `reached_model` saying
+ * whether the call went out. Session ends that never run a check report
+ * through reportNextStepNotRun (below), so there is one next_step_checked
+ * per session end. The session's `_ended` event has already fired by then
  * (it is not delayed for this), so these are follow-ups; the companion path
  * keeps `next_step_hook` and gains `next_step_source: 'companion'` on the
  * `_ended` event itself (sessionGoodbye.ts).
@@ -51,7 +57,8 @@ import { PLAYER_END_NEXT_STEP_SYSTEM } from '../bot/brain/promptLibrary.js';
 import { gameDisplayName, gameIdFromName, nameInSentence } from '../shared/homeNextStep';
 import { GAME_IDS, isGameId, type GameId } from '../shared/gameIpc';
 
-export type NextStepSurface = 'game' | 'call' | 'backseat';
+/** 261107: 'chat' = a text-chat session (chatNextStep.ts). */
+export type NextStepSurface = 'game' | 'call' | 'backseat' | 'chat';
 
 export interface DigestLine {
   /** The human player, this companion, or a sibling companion. */
@@ -88,9 +95,9 @@ export function isPlayerEndedGame(reason: string | undefined): boolean {
   return typeof reason === 'string' && PLAYER_ENDED_GAME_REASONS.has(reason);
 }
 
-/** Long enough, and either the player talked or there was a goal. */
-export function worthChecking(p: { durationMs: number; playerLines: number; goals: number }): boolean {
-  return p.durationMs >= PLAYER_END_MIN_MS && (p.playerLines >= 2 || p.goals > 0);
+/** Long enough, and either the player talked (`minPlayerLines`, default 2) or there was a goal. */
+export function worthChecking(p: { durationMs: number; playerLines: number; goals: number; minPlayerLines?: number }): boolean {
+  return p.durationMs >= PLAYER_END_MIN_MS && (p.playerLines >= (p.minPlayerLines ?? 2) || p.goals > 0);
 }
 
 // ── session digests from the bot port ─────────────────────────────────────
@@ -424,6 +431,14 @@ export interface PlayerEndInput {
   source?: 'player_end' | 'app_quit';
   /** Extra shape-only props for the two events (T120: `late_hours`). */
   eventProps?: Record<string, string | number | boolean>;
+  /** Fewer player lines than this (and no goal) is trivial. Default 2. */
+  minPlayerLines?: number;
+  /**
+   * 261107: skip when the call would be paid by Sei for a free cloud account
+   * (text chat: a check there is a new LLM call). Reported as `not_covered`
+   * with `skip_reason: 'free_cloud'`.
+   */
+  skipOnFreeCloud?: boolean;
 }
 
 export type PlayerEndOutcome =
@@ -436,7 +451,8 @@ export type PlayerEndOutcome =
   | 'timeout'
   | 'error'
   | 'cancelled'
-  | 'no_character';
+  | 'no_character'
+  | 'free_cloud';
 
 export interface PlayerEndDeps {
   buildProvider(): Promise<LlmProvider>;
@@ -444,6 +460,13 @@ export interface PlayerEndDeps {
   isOnline(): boolean;
   /** Cloud account over its limit (fails open: false on any error / BYOK). */
   overLimit(): Promise<boolean>;
+  /**
+   * 261107: the check would be a cost to Sei, i.e. the cloud backend on the
+   * free plan (or signed out). BYOK, local models, the ChatGPT plan and a
+   * paid plan are false. Fails CLOSED: true on any error or slow read.
+   * Only consulted for inputs with `skipOnFreeCloud`.
+   */
+  freeCloud(): Promise<boolean>;
   readText(file: string): Promise<string>;
   memoryFile(characterId: string): string;
   goalsFile(characterId: string, game: string): string;
@@ -513,9 +536,17 @@ export async function runPlayerEndNextStep(
   const outcome = await (async (): Promise<PlayerEndOutcome> => {
     try {
       const goals = await readGoals(deps, input);
-      if (!worthChecking({ durationMs: input.durationMs, playerLines: input.playerLines, goals: goals.length })) {
+      if (
+        !worthChecking({
+          durationMs: input.durationMs,
+          playerLines: input.playerLines,
+          goals: goals.length,
+          minPlayerLines: input.minPlayerLines,
+        })
+      ) {
         return 'trivial';
       }
+      if (input.skipOnFreeCloud && (await deps.freeCloud())) return 'free_cloud';
       provider = await deps.buildProvider();
       const local = provider.kind === 'ollama';
       if (!local && !deps.isOnline()) return 'offline';
@@ -579,22 +610,123 @@ export async function runPlayerEndNextStep(
       return 'error';
     }
   })();
-  if (reachedModel && outcome !== 'cancelled') {
-    const base = {
-      character_id: characterId,
-      source: input.source ?? 'player_end',
-      surface: input.surface,
-      ...(input.game ? { game: input.game } : {}),
-      ...(input.eventProps ?? {}),
-    };
-    try {
-      deps.capture('next_step_checked', { ...base, saved: outcome === 'saved', outcome });
-      if (outcome === 'saved') deps.capture('next_step_saved', base);
-    } catch {
-      /* analytics is never load-bearing */
-    }
-  }
+  // A cancelled check (a new session, or an account switch that may already
+  // have re-identified analytics) sends nothing, as before.
+  if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
   return outcome;
+}
+
+/**
+ * The check's `next_step_checked` (and `next_step_saved` on a save). 261107:
+ * sent for every outcome, a skip before the model included, so the funnel
+ * from session end to saved plan has no invisible step.
+ */
+function reportCheckOutcome(
+  capture: PlayerEndDeps['capture'],
+  input: PlayerEndInput,
+  outcome: PlayerEndOutcome,
+  reachedModel: boolean,
+): void {
+  const base = {
+    character_id: input.characterId,
+    source: input.source ?? 'player_end',
+    surface: input.surface,
+    ...(input.game ? { game: input.game } : {}),
+    ...(input.eventProps ?? {}),
+  };
+  try {
+    capture('next_step_checked', {
+      ...base,
+      saved: outcome === 'saved',
+      // 261107: a free cloud chat is the not_covered of before, now with why.
+      ...(outcome === 'free_cloud' ? { outcome: 'not_covered', skip_reason: 'free_cloud' } : { outcome }),
+      reached_model: reachedModel,
+      duration_s: Math.max(0, Math.round(input.durationMs / 1000)),
+    });
+    if (outcome === 'saved') capture('next_step_saved', base);
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
+// ── session ends that never run the check ────────────────────────────────
+
+/** Every surface a session can end on, for analytics (the check itself covers NextStepSurface). */
+export type NextStepEventSurface = NextStepSurface | 'chat' | 'chess' | 'draw';
+
+/**
+ * Why a session end ran no check (261107, O2 reach). Sent as the
+ * `next_step_checked` outcome, `reached_model: false`:
+ *   - goodbye: the companion ended it; its goodbye tool carries the plan
+ *     (`saved` = it left one, also sent as next_step_saved source 'companion').
+ *   - in_game: a call while the character was in a game; the game's end covers it.
+ *   - deferred: the app quit ended it; the check runs on the next launch
+ *     (quitNextStep.ts), which sends its own event with source 'app_quit'.
+ *   - trivial: the app quit ended it, but it was too short to keep for that.
+ *   - not_covered: this way of ending runs no check (`end_reason` says which).
+ */
+export type NextStepNotRun = 'goodbye' | 'in_game' | 'deferred' | 'trivial' | 'not_covered';
+
+export interface NotRunReport {
+  characterId: string;
+  surface: NextStepEventSurface;
+  game?: string;
+  outcome: NextStepNotRun;
+  /** The `_ended` event's reason (an enum token, never text). */
+  endReason?: string;
+  durationMs?: number;
+  /** goodbye only: its goodbye left a plan. */
+  saved?: boolean;
+}
+
+/** Shape-only props for a session end that ran no check. Pure. */
+export function notRunProps(r: NotRunReport): Record<string, string | number | boolean> {
+  return {
+    character_id: r.characterId,
+    source: 'player_end',
+    surface: r.surface,
+    ...(r.game ? { game: r.game } : {}),
+    saved: r.outcome === 'goodbye' && r.saved === true,
+    outcome: r.outcome,
+    reached_model: false,
+    ...(r.endReason ? { end_reason: r.endReason } : {}),
+    ...(typeof r.durationMs === 'number' && Number.isFinite(r.durationMs)
+      ? { duration_s: Math.max(0, Math.round(r.durationMs / 1000)) }
+      : {}),
+  };
+}
+
+/**
+ * Report a session end that ran no check. Never throws. `capture` defaults to
+ * the app's analytics (loaded lazily, like the check's own events).
+ */
+export function reportNextStepNotRun(r: NotRunReport, capture?: PlayerEndDeps['capture']): void {
+  try {
+    (capture ?? captureLazily)('next_step_checked', notRunProps(r));
+  } catch {
+    /* analytics is never load-bearing */
+  }
+}
+
+/**
+ * A companion goodbye left a plan (sessionGoodbye.ts). The `_ended` event
+ * carries it as `next_step_hook`; this is the same save as the one event the
+ * player-end check sends, so "saved a next step" counts every source.
+ */
+export function reportGoodbyePlanSaved(
+  r: { characterId: string; surface: NextStepSurface; game?: string },
+  capture?: PlayerEndDeps['capture'],
+): void {
+  try {
+    (capture ?? captureLazily)('next_step_saved', {
+      character_id: r.characterId,
+      source: 'companion',
+      surface: r.surface,
+      ...(r.game ? { game: r.game } : {}),
+    });
+  } catch {
+    /* analytics is never load-bearing */
+  }
 }
 
 // ── scheduling ────────────────────────────────────────────────────────────
@@ -618,6 +750,8 @@ export function startPlayerEndNextStep(
   const now = d.now();
   const prev = lastRun.get(characterId);
   if (inflight.has(characterId) || (prev !== undefined && now - prev < DEDUPE_WINDOW_MS)) {
+    // 261107: visible too (a backseat share ending with its call lands here).
+    reportCheckOutcome(d.capture, input, 'busy', false);
     return Promise.resolve('busy');
   }
   lastRun.set(characterId, now);
@@ -675,6 +809,7 @@ function defaultDeps(): PlayerEndDeps {
         return false;
       }
     },
+    freeCloud: () => freeCloudNow(),
     readText: (file) => readFile(file, 'utf8'),
     memoryFile(characterId) {
       return path.join(memoryDirOf(characterId), 'MEMORY.md');
@@ -712,24 +847,7 @@ function defaultDeps(): PlayerEndDeps {
       const names = await readPlayerLineNames(characterId);
       if (await trackScopedWrite(tagLatestPlan(dir, { surface, game, line, names }))) noteHomeNextStepChanged(characterId);
     },
-    capture(event, props) {
-      void (async () => {
-        try {
-          // One cached import: the checked + saved pair fires in the same tick,
-          // and two concurrent dynamic imports can resolve to different module
-          // instances under vitest mocking (lazyAnalytics.ts).
-          lazyAnalytics ??= import('./lazyAnalytics').catch((err) => {
-            lazyAnalytics = null;
-            throw err;
-          });
-          const { loadAnalytics } = await lazyAnalytics;
-          const { capture } = await loadAnalytics();
-          capture(event, props);
-        } catch {
-          /* analytics is never load-bearing */
-        }
-      })();
-    },
+    capture: captureLazily,
     timeoutMs(provider, ms) {
       return timeoutFor(provider, ms);
     },
@@ -742,7 +860,58 @@ function defaultDeps(): PlayerEndDeps {
   };
 }
 
+/** How long the plan read behind freeCloud may take before it counts as free. */
+export const FREE_CLOUD_READ_MS = 5_000;
+
+/**
+ * True when a check would be paid by Sei: the cloud backend on the free plan,
+ * signed out, or a plan read that failed or took longer than
+ * FREE_CLOUD_READ_MS. Any other backend (BYOK, Ollama and other local
+ * models, the ChatGPT plan) is the user's own cost; a paid plan spends its
+ * own allowance, like a call.
+ */
+async function freeCloudNow(): Promise<boolean> {
+  try {
+    const { getAiBackendKind } = await import('./apiKeyStore');
+    if ((await getAiBackendKind()) !== 'cloud-proxy') return false;
+    const { creditsGet } = await import('./cloud/proxyClient');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), FREE_CLOUD_READ_MS);
+      timer.unref?.();
+    });
+    const status = await Promise.race([creditsGet(), slow]).finally(() => clearTimeout(timer));
+    return !status || isFreeCloudPlan(status.plan);
+  } catch {
+    return true;
+  }
+}
+
+/** A plan that leaves the check's cost with Sei. Pure. */
+export function isFreeCloudPlan(plan: string | null | undefined): boolean {
+  return plan !== 'quest' && plan !== 'party';
+}
+
 let lazyAnalytics: Promise<typeof import('./lazyAnalytics')> | null = null;
+
+function captureLazily(event: string, props: Record<string, unknown>): void {
+  void (async () => {
+    try {
+      // One cached import: the checked + saved pair fires in the same tick,
+      // and two concurrent dynamic imports can resolve to different module
+      // instances under vitest mocking (lazyAnalytics.ts).
+      lazyAnalytics ??= import('./lazyAnalytics').catch((err) => {
+        lazyAnalytics = null;
+        throw err;
+      });
+      const { loadAnalytics } = await lazyAnalytics;
+      const { capture } = await loadAnalytics();
+      capture(event, props);
+    } catch {
+      /* analytics is never load-bearing */
+    }
+  })();
+}
 
 let boundMemoryDir: ((characterId: string) => string) | null = null;
 /** Unbound (bindPlayerEndRuntime never ran) = refuse, never a relative path. */

@@ -39,7 +39,7 @@
   flex: 0 0 auto;
   padding: 2px var(--space-sm);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
+  border-radius: 6px;
   background: transparent;
   color: var(--muted);
   font-family: var(--sans);

@@ -1,0 +1,641 @@
+/**
+ * PlaytimeScreen (261110, product call 261110): the page frame, the tab bar
+ * and the panels the ChatGPT and My keys tabs share. Mocks: Playtime v3
+ * (01 Sei, 02/03 ChatGPT, 04/05 My keys), drawn in the Settings register:
+ * the 780px column, Oswald group titles, label | control rows on hairline
+ * bottom borders, Seg-style bordered tabs and choices, bordered tiles.
+ * The Sei tab body keeps its own sheet (CreditsScreen.module.css).
+ */
+
+.root {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--page-top) 0 var(--space-2xl);
+  display: flex;
+  flex-direction: column;
+}
+
+.col {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 var(--page-gutter);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+
+/* ── Header: the page title and the three tabs ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-group);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--heading);
+  margin: 0;
+}
+
+/* The tab bar: the Seg look (bordered frame, accent-soft on the selected
+   option), one size up because it is the page's main control. */
+.tabs {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.tab {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 7px 18px;
+  cursor: pointer;
+  transition: color 160ms var(--ease), background 160ms var(--ease);
+}
+
+.tab:first-child {
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
+}
+
+.tab:last-child {
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tabOn,
+.tabOn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ── Sections: a title (and an optional aside) over a panel ── */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-group);
+}
+
+.sectionTitle {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.aside {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A row: label left, controls right, on a hairline (the Settings row). */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 34px;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.25;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.rowEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* Playtime > Sei > Voice > Advanced (261120): a whole row that opens and
+   closes, drawn like the rows around it (no button chrome). */
+.advancedToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  min-height: 34px;
+  padding: var(--space-md) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.advancedToggle .rowLabel {
+  color: var(--muted);
+  transition: color 160ms var(--ease);
+}
+
+.advancedToggle:hover .rowLabel,
+.advancedToggle[aria-expanded='true'] .rowLabel {
+  color: var(--text);
+}
+
+.advancedToggle:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.advancedChevron {
+  flex: none;
+  transition: transform 160ms var(--ease);
+}
+
+.advancedChevronOpen {
+  transform: rotate(180deg);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.ok {
+  color: var(--green);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+/* One line under a panel: errors, the switch heads-up, a status. */
+.note {
+  margin: var(--space-xs) 0 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.noteError {
+  color: var(--red);
+}
+
+/* A link-styled action (Manage usage). */
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--accent);
+}
+
+.link:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Native select (model, local engine, alert amount, recognition), styled
+   like the Settings language picker. */
+.select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 280px;
+  padding: 6px var(--space-md);
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--input-bg, var(--window));
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.select option {
+  background: var(--bg2);
+  color: var(--text);
+}
+
+.select:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.selectSans {
+  font-family: var(--sans);
+  font-weight: 600;
+}
+
+/* ── The choice control (voice source): the Seg look ── */
+.choice {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.choiceOpt {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: color 160ms var(--ease), background 160ms var(--ease);
+}
+
+.choiceOpt:first-child {
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
+}
+
+.choiceOpt:last-child {
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
+}
+
+.choiceOpt:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.choiceOpt:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.choiceOpt:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.choiceOptOn,
+.choiceOptOn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The engine folded into "On this device" (founder feedback 261110): a small
+   inline select right after the choice. */
+.inlineEngine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+/* ── Meter (Free this week) ── */
+.meter {
+  flex: 0 1 240px;
+  min-width: 80px;
+  height: 8px;
+  background: var(--bg4);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.meterValue {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Mini bars: replies per day (ChatGPT tab) ── */
+.miniBars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  height: 28px;
+}
+
+.miniBar {
+  width: 12px;
+  min-height: 3px;
+  background: var(--accent);
+  opacity: 0.55;
+  border-radius: var(--radius-sm);
+}
+
+.miniBarToday {
+  opacity: 1;
+}
+
+/* ── Spend: stat tiles beside the per-day chart. The grid row stretches both
+   columns to the taller one, and the two tiles split the stat column, so the
+   tiles' top and bottom edges match the chart's (founder feedback 261110).
+   Tiles are the plan cards' solid --bg4 surface with a quiet border. ── */
+.spendGrid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 2.4fr;
+  gap: var(--gap-stack);
+  align-items: stretch;
+  margin-top: var(--space-md);
+}
+
+.stats {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--gap-stack);
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--pad-card);
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.statLabel {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.statValue {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.statSub {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--pad-card);
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.chartTitle {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.chartBars {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-md);
+  align-items: end;
+  min-height: 150px;
+}
+
+.chartCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  height: 100%;
+  min-width: 0;
+}
+
+.chartValue {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.chartBarTrack {
+  flex: 1;
+  width: 100%;
+  max-width: 40px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chartBar {
+  width: 100%;
+  min-height: 3px;
+  background: var(--accent);
+  opacity: 0.55;
+  border-radius: var(--radius-sm);
+}
+
+.chartBarToday {
+  opacity: 1;
+}
+
+.chartDay {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chartDayToday {
+  color: var(--text);
+  font-weight: 700;
+}
+
+/* ── Voice plan tiles (UI only, behind VOICE_PLAN_UI_ENABLED) ── */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap-stack);
+  align-items: stretch;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--pad-card);
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.tile > button {
+  margin-top: auto;
+}
+
+/* ── Not-in-use tabs: one centered line and one action ── */
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-group);
+  padding: var(--space-3xl) 0;
+  text-align: center;
+}
+
+.inviteLine {
+  margin: 0;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+/* The key editor inside a row. */
+.editor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The spend alert (App.tsx): one line on the accent-soft fill (the inline
+   confirm's look), set in from the window edges. The line opens My keys. */
+.alertBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: var(--space-sm) var(--page-gutter) 0;
+  padding: var(--space-xs) var(--space-xs) var(--space-xs) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.alertText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.alertText:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.alertClose {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.alertClose:hover {
+  color: var(--text);
+}
+
+.alertText:focus-visible,
+.alertClose:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .spendGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .tiles {
+    grid-template-columns: 1fr;
+  }
+}

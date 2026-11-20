@@ -6,12 +6,20 @@
  * an unknown value, or the same key on another event sets nothing.
  */
 import { describe, it, expect, vi } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
 
 vi.mock('electron', () => ({
   app: { getVersion: () => '9.9.9' },
 }));
+// 261031: the device id; a profile that already has an install id (as here)
+// keeps that install id as its anonymous distinct_id.
+vi.mock('./auth/deviceId', () => ({ getDeviceId: async () => 'device-raw-0000' }));
 vi.mock('posthog-node', () => ({
   PostHog: class {
     capture = captureSpy;

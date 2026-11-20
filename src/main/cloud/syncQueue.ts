@@ -273,7 +273,13 @@ export async function processNext(): Promise<void> {
           if (portraitBytes) {
             // Format detection: the on-disk file is always PNG (PortraitImagePicker
             // canvas-re-encodes any source format to PNG before writing).
-            await uploadPortrait(op.uuid, portraitBytes, 'png', jwt);
+            const sent = await uploadPortrait(op.uuid, portraitBytes, 'png', jwt);
+            // 261111: a shared character's World thumbnail is made by the
+            // proxy from the stored portrait. Refresh it only when new bytes
+            // actually went up (an unchanged portrait skips the PUT).
+            if (sent && char.shared) {
+              void import('./portraitThumb').then((m) => m.requestPortraitThumb(op.uuid)).catch(() => {});
+            }
           }
         } catch (err) {
           console.warn(

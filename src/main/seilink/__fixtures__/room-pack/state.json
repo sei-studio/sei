@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "preset": "cozy",
+  "time": "night",
+  "slots": { "curtains": { "id": "curtains-plain", "tint": "#7b4fc9" } },
+  "items": [
+    { "id": "trophy-sei-2026", "x": 1670, "y": 760, "scale": 1.5 },
+    { "id": "plant-pot", "x": 732, "y": 1280, "scale": 1.6, "flip": true }
+  ],
+  "avatar": { "kind": "sei" }
+}

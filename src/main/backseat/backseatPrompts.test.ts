@@ -218,6 +218,49 @@ describe('BACKSEAT_CONTRACT watching is not making', () => {
 });
 
 /**
+ * 261103: a free user's Valheim session, the companion warning them their
+ * house was burning while they stood beside a hearth, again and again. The
+ * rule names the light sources a build has, asks for plain evidence of harm
+ * before any alarm, and says her own earlier worry is not that evidence.
+ */
+describe('BACKSEAT_CONTRACT fire, light and danger (261103)', () => {
+  const rule = BACKSEAT_CONTRACT.split('\n\n').find((p) => p.startsWith('FIRE, LIGHT AND DANGER')) ?? '';
+
+  it('is in the cached contract and names the light sources a build has', () => {
+    expect(rule).not.toBe('');
+    for (const w of ['hearth', 'fireplace', 'campfire', 'torch', 'brazier', 'forge']) expect(rule).toContain(w);
+    expect(rule).toContain('part of the build');
+  });
+
+  it('asks for plain evidence of harm, or the player saying so, before any alarm', () => {
+    expect(rule).toContain('plainly shows it hurting them');
+    expect(rule).toMatch(/health dropping/);
+    expect(rule).toContain('or when they tell you so');
+  });
+
+  it('does not let an earlier line of hers count as proof, and lets the player settle what a thing is', () => {
+    expect(rule).toContain('A worry from one of your earlier lines is not proof');
+    expect(rule).toContain('do not raise it again');
+    expect(rule).toContain('When they tell you what something on screen is, they are right');
+  });
+
+  it('is the last paragraph of the contract, where the replay showed it working', () => {
+    const paras = BACKSEAT_CONTRACT.split('\n\n');
+    expect(paras[paras.length - 1]).toBe(rule);
+  });
+
+  it('reads a flame among the status icons as warmth, not harm', () => {
+    expect(rule).toContain('A small flame among their status icons usually means they are warm by a fire');
+  });
+
+  it('never quotes the alarm it is about, and is plain text', () => {
+    expect(rule).not.toMatch(/on fire/i);
+    expect(rule).not.toMatch(/["\u201c\u201d]/);
+    expect(rule).not.toMatch(/[\u2014\u2013;]/);
+  });
+});
+
+/**
  * Backseat game block (260929): the Roblox tile's knowledge plus the picked
  * experience. The creator-written fields are untrusted and FENCED; the block
  * is fixed for the session so it can live in the cached prefix.

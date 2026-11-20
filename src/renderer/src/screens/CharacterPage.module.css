@@ -1,26 +1,51 @@
-/* CharacterPage.module.css — full-bleed character detail (Party redesign §4.6;
- * 260721 static-info revision). Portrait bleeds off the right behind a
- * left→right scrim; a left content panel carries the crumb, name + IdTag,
- * Description / Game tabs (description card, stat boxes, share box), and the
- * Chat + Play deploy row. Box-to-box vertical spacing is one token
- * (--space-md) everywhere. */
+/* CharacterPage.module.css: a companion's profile (Party redesign §4.6;
+ * profile v2, product call 261110). The content (header with the actions
+ * under the stats, the section menu, the active tab) is on the left; the
+ * portrait is a panel on the right whose inner edge fades into the page.
+ *
+ * One dark surface, no boxed panels, few type sizes: the name (display),
+ * 16-17px reading text, 15px controls and tabs, 13-14px quiet details. Row
+ * styles live in components/profile/Profile.module.css, the Overview's in
+ * ProfileOverview.module.css. */
 
 .root {
   position: relative;
   height: 100%;
   overflow: hidden;
   background: var(--window);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 34%);
 }
 
-/* ── Portrait layer (right, behind the scrim) ────────────────────────── */
+/* ── Art: the portrait panel (+ the expand button) ───────────────────── */
+.art {
+  position: relative;
+  margin: var(--page-top) var(--page-gutter) var(--page-top) 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg3);
+  min-height: 0;
+  /* The inner (left) edge fades into the page instead of a hard frame
+     line: an eased ramp over the first fifth, so the art itself stays
+     whole. */
+  --art-fade: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, black 22%, transparent) 6%,
+    color-mix(in srgb, black 60%, transparent) 13%,
+    color-mix(in srgb, black 88%, transparent) 19%,
+    black 24%
+  );
+  -webkit-mask-image: var(--art-fade);
+  mask-image: var(--art-fade);
+}
+
 .portraitLayer {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(660px, 56%);
+  inset: 0;
   z-index: 0;
   overflow: hidden;
+  background: linear-gradient(180deg, var(--card-top), var(--card-bottom));
 }
 
 .portraitTint {
@@ -33,7 +58,9 @@
   position: absolute !important;
   inset: 0;
   z-index: 1;
-  filter: drop-shadow(-30px 0 60px rgba(0, 0, 0, 0.5));
+  /* The panel's own backing shows through a cut-out portrait (and the tint
+     glow with it), so the panel reads as one piece. */
+  background: transparent;
   /* Portrait rises + fades in on open. */
   animation: picRise 0.7s var(--ease) both;
 }
@@ -70,26 +97,24 @@
   inset: 0;
   z-index: 2;
   pointer-events: none;
-  /* Softened 260729: fainter wash, shorter reach — the art carries the right
-     half of the page uncovered; the left band stays strong enough for text. */
-  background:
-    linear-gradient(
-      90deg,
-      var(--window) 3%,
-      color-mix(in srgb, var(--window) 74%, transparent) 24%,
-      color-mix(in srgb, var(--window) 22%, transparent) 46%,
-      transparent 62%
-    ),
-    linear-gradient(0deg, color-mix(in srgb, var(--window) 45%, transparent), transparent 20%);
+  /* A soft fade at the panel's foot, under the expand button. */
+  background: linear-gradient(0deg, color-mix(in srgb, var(--window) 40%, transparent), transparent 22%);
 }
 
-/* Expand-art corner button (260729): floats over the portrait's bottom-right,
-   reusing the game surface's fullscreen glyph. Quiet, borderless chip. */
-.artExpandBtn {
+/* The portrait's bottom-right corner: the Avatars button (profile v3) beside
+   the expand-art one (260729). */
+.artCorner {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: var(--space-md-plus);
+  bottom: var(--space-md-plus);
   z-index: 4;
+  display: flex;
+  gap: var(--space-xs);
+}
+
+/* A corner button: quiet, borderless chip (the expand-art one reuses the
+   game surface's fullscreen glyph). */
+.artExpandBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -100,6 +125,7 @@
   background: color-mix(in srgb, var(--window) 45%, transparent);
   color: var(--text-2);
   transition: color 140ms var(--ease), background 140ms var(--ease);
+  border-radius: var(--radius-sm);
 }
 
 .artExpandBtn:hover {
@@ -124,21 +150,26 @@
   word-break: break-all;
 }
 
-/* ── Left content panel ──────────────────────────────────────────────── */
+/* ── Content column ──────────────────────────────────────────────────── */
 .content {
   position: relative;
   z-index: 3;
   height: 100%;
-  width: min(520px, 60%);
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-  padding: 18px 22px 24px 34px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  /* Content panel slides in from the right when the page opens. Clipped by
+  gap: var(--gap-group);
+  /* The page never scrolls as a whole: only the tab panel does, and only
+     when a small window cannot fit the tab. */
+  overflow: hidden;
+  /* Content slides in from the right when the page opens. Clipped by
      .root's overflow:hidden so it never triggers a horizontal scrollbar. */
   animation: detailIn 0.5s var(--ease) both;
+}
+
+.content {
+  padding: var(--page-top) var(--space-lg) var(--page-top) var(--page-gutter);
+  max-width: 860px;
 }
 
 @keyframes detailIn {
@@ -170,21 +201,42 @@
 .crumb {
   /* Pull left by the quiet/sm button's horizontal padding so the back button's
      icon lines up with the title + content left edge. */
-  margin-left: -12px;
+  margin-left: calc(-1 * var(--space-md));
+  margin-bottom: calc(-1 * var(--space-xs));
   align-self: flex-start;
+}
+
+/* Header: the name block, then Chat + Play across its full width under the
+   stats (product call 261116: the buttons used to sit beside the name and
+   squeezed the stats into a wrap). */
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-group);
+}
+
+.headMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  /* The stats line picks its layout from the column's width (below). */
+  container-type: inline-size;
 }
 
 .titleRow {
   display: flex;
   align-items: baseline;
-  gap: var(--space-sm);
-  margin-top: 2px;
+  flex-wrap: wrap;
+  column-gap: var(--gap-stack);
+  row-gap: var(--gap-tight);
 }
 
 .title {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 38px;
+  font-size: 46px;
   line-height: 1.05;
   color: var(--text);
   margin: 0;
@@ -193,30 +245,99 @@
   word-break: break-word;
 }
 
-.reportLink {
-  background: transparent;
-  border: 0;
-  padding: 0;
+.kindChip {
+  align-self: baseline;
   font-family: var(--sans);
   font-size: 13px;
   font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 140ms ease;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  color: var(--text-2);
+  white-space: nowrap;
 }
 
-.reportLink:hover,
-.reportLink:focus-visible {
-  color: var(--red);
-  outline: none;
-}
-
-/* ── Tabs (mockup .pf-tab — underline on active) ─────────────────────── */
-.tabs {
+/* One stats line: "by <author>", Created / Bonded, Played, Last launch.
+   Same face and size for label and value; the label is just quieter. The
+   items never wrap one by one (an orphan "Last launch" on its own line,
+   261116): they stay on one row, the author name giving way first, and a
+   column too narrow for the row lays them out as an even two-column grid. */
+.meta {
   display: flex;
-  gap: 2px;
+  flex-wrap: nowrap;
+  column-gap: var(--space-lg);
+  row-gap: var(--space-xs);
+  margin: 0;
+  min-width: 0;
+}
+
+.metaItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  flex: none;
+  min-width: 0;
+}
+
+.metaItem[data-meta='by'] {
+  flex: 0 1 auto;
+}
+
+.metaItem dt {
+  font-family: var(--sans);
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.metaItem dd {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* "by Sei" / "by <author>" on someone else's companion (261110). */
+.metaItem dd.byline {
+  font-size: 15px;
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@container (max-width: 520px) {
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ── Actions: Chat + Play, or Invite to party ────────────────────────── */
+/* Under the stats, filling the header's width: two equal buttons (one
+   full-width button for Invite to party). */
+.deploy {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: var(--gap-control);
+}
+
+.deployBig {
+  width: 100%;
+  min-width: 0;
+  justify-content: center;
+}
+
+/* ── Section menu (one row of tabs, underline on the active one) ─────── */
+.tabs {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-lg);
   border-bottom: 1px solid var(--border);
-  margin-top: 4px;
 }
 
 .tab,
@@ -226,13 +347,16 @@
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  padding: 8px 14px;
+  padding: var(--space-sm) 0 var(--space-sm);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
-  transition: color 140ms ease;
+  white-space: nowrap;
+  /* No color fade on the labels: the one that was active used to fade out over
+     140ms while the new tab's body was already showing, so for a few frames
+     the old tab still looked selected over the new content (261116). */
 }
 
 .tab:hover {
@@ -244,206 +368,24 @@
   border-bottom-color: var(--accent);
 }
 
-/* ── Pane (Description / Game) ───────────────────────────────────────── */
-/* One token gap between every box on the page (description card → stat
-   boxes → share box). */
-.pane {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
+/* ── The active tab ─────────────────────────────────────────────────────
+   Fills the rest of the column and scrolls inside it only when a small
+   window cannot fit the tab. The negative margin + padding keep the
+   scrollbar off the rows' right edge. */
+.panel {
+  flex: 1 1 auto;
   min-height: 0;
-}
-
-/* Avatar tab: the pane scrolls INTERNALLY. The .content flex column shrinks
-   .pane (min-height: 0) to fit above the bottom-pinned deploy row, and the
-   Live2D settings are taller than that space — without their own scroll they
-   painted straight under the Chat/Play buttons. The padding is the breathing
-   room between the last control and the deploy row. */
-.paneScroll {
   overflow-y: auto;
   overflow-x: hidden;
-  padding-bottom: var(--space-lg);
-}
-
-/* Persona / description card (mockup .persona). */
-.personaBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
-}
-
-.persona {
-  align-self: stretch;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 13px 15px;
-}
-
-.personaHead {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
-.rotateBtn {
-  appearance: none;
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  padding: 3px;
-  color: var(--muted);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 140ms ease, border-color 140ms ease;
-}
-
-.rotateBtn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.rotateBtn:focus-visible {
-  outline: 1.5px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.personaBody {
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text-2);
-  white-space: pre-wrap;
-}
-
-/* ── Boxed stat cells (260705: recovered dev-branch .stats layout) ────── */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-md);
-}
-
-.stat {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 11px 12px;
-}
-
-/* Label typography comes from the shared u-lbl utility (same as the
-   description card's header) so the pane reads as one type family. */
-.statEyebrow {
-  display: block;
-  margin-bottom: 7px;
-}
-
-/* Matches the description card body (sans 14px), just bolder for the figure. */
-.statValue {
-  font-family: var(--sans);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text);
-  white-space: nowrap;
-}
-
-/* ── Share box (Toggle + label) — same surface as a stat cell, sits under
-   the stat boxes on the Description tab. ──────────────────────────────── */
-.shareBox {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
-  padding: 11px 12px;
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-.shareLabel {
-  font-family: var(--sans);
-}
-
-/* 261019 — "Voice for others: <name>" under the share box (own voice only). */
-.shareVoiceRow {
-  margin-top: 8px;
-  padding: 0 2px;
-  font-family: var(--sans);
-}
-
-/* ── Deploy row (mockup .deploy) — pinned to the bottom ──────────────── */
-.deploy {
-  margin-top: auto;
-  display: flex;
-  gap: 10px;
-  padding-top: 18px;
-}
-
-.deployBig {
-  flex: 1;
-  min-width: 0;
-  justify-content: center;
+  margin-right: calc(-1 * var(--space-md));
+  padding: var(--space-xs) var(--space-md) var(--space-sm) 0;
 }
 
 .addError {
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--red);
   margin: 0;
-}
-
-/* ── Settings (gear) popup — Reset memory + Unbind ───────────────────── */
-/* Mirrors the ProviderSelect popover surface (--surface + --border-strong +
- * --shadow-pop); opens UPWARD since the deploy row is pinned to the bottom. */
-.settingsWrap {
-  position: relative;
-  display: flex;
-}
-
-.settingsMenu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 4px);
-  z-index: 40;
-  min-width: 168px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  box-shadow: var(--shadow-pop);
-}
-
-.settingsItem {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 11px;
-  border: none;
-  background: none;
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-align: left;
-  color: var(--text-2);
-  cursor: pointer;
-}
-
-.settingsItem:hover,
-.settingsItem:focus-visible {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.settingsItemDanger {
-  color: var(--red);
-}
-
-.settingsItemDanger:hover,
-.settingsItemDanger:focus-visible {
-  background: color-mix(in srgb, var(--red) 12%, transparent);
-  color: var(--red);
 }
 
 /* ── Share-toggle confirm (rendered inside ModalShell) ───────────────── */
@@ -465,7 +407,6 @@
 }
 
 .confirmVoice {
-  margin-top: 14px;
   font-family: var(--sans);
 }
 
@@ -491,6 +432,7 @@
   height: 6px;
   background: var(--accent-soft);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .progressIndeterminate {
@@ -554,18 +496,15 @@
 
 .skelTitle {
   width: 200px;
-  height: 34px;
-  margin-top: 6px;
+  height: 44px;
   background: var(--bg3);
 }
 
 .skelBlock {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 15px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  gap: var(--gap-control);
+  max-width: 520px;
 }
 
 .skelLine {
@@ -591,21 +530,19 @@
 }
 
 .skelDeploy {
-  margin-top: auto;
+  flex: none;
   display: flex;
-  gap: 10px;
-  padding-top: 18px;
+  gap: var(--gap-control);
 }
 
 .skelBtn {
-  flex: 1;
-  height: 44px;
+  width: 148px;
+  height: 40px;
   background: var(--bg3);
 }
 
 .skelBtnSm {
-  width: 52px;
-  height: 44px;
+  width: 148px;
+  height: 40px;
   background: var(--bg3);
 }
-

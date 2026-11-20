@@ -139,7 +139,7 @@ describe('OnboardApp: key-step probe (260817)', () => {
     expect(src).toContain('Continue anyway');
   });
   it('Continue anyway on a REJECTED key skips generation; a re-submitted key un-skips it', () => {
-    expect(src).toContain("if (probe === 'rejected') skipGenRef.current = true;");
+    expect(src).toContain("if (probe === 'rejected' || probe === 'region') skipGenRef.current = true;");
     expect(src).toContain('skipGenRef.current = false;');
     expect(src).toContain('...(skipGenRef.current ? { skipGeneration: true } : {})');
   });

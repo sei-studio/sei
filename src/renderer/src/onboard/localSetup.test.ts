@@ -16,6 +16,7 @@ import {
   packsPct,
   packsTotalBytes,
   returningLocalRoute,
+  routeAfterAuthDecision,
   ttsPackIdsFor,
 } from './localSetup';
 import { ZH } from '../lib/i18n/zh';
@@ -81,6 +82,22 @@ describe('allPacksReady', () => {
     expect(allPacksReady(['a', 'b'], { a: push('ready', 1), b: push('ready', 1) })).toBe(true);
     expect(allPacksReady(['a', 'b'], { a: push('ready', 1), b: push('downloading', 1, 99) })).toBe(false);
     expect(allPacksReady(['a'], null)).toBe(false);
+  });
+});
+
+describe('provider region refusal (261103, T303)', () => {
+  it('reads as its own verdict and line, not a rejected key', () => {
+    expect(keyProbeVerdict('openai', 'region_unsupported')).toBe('region');
+    expect(keyProbeVerdict('anthropic', 'unauthorized')).toBe('rejected');
+    expect(keyProbeLine('openai', 'region')).toBe('{provider} does not support your region.');
+    expect(keyProbeConsequence('region')).toBe(keyProbeConsequence('rejected'));
+    expect(llmTestErrorCopy('region_unsupported')).toBe('{provider} does not support your region.');
+  });
+  it('has zh copy and no em dash or VPN advice', () => {
+    for (const en of ['{provider} does not support your region.', 'Your AI provider']) {
+      expect(ZH[en], `zh for ${en}`).toBeTruthy();
+      expect(en + ZH[en]).not.toMatch(/\u2014|VPN/i);
+    }
   });
 });
 
@@ -210,5 +227,24 @@ describe('returningLocalRoute (261007)', () => {
   });
   it('the line Sui comes back with is translated', () => {
     expect(ZH["Wait, Sei hasn't been set up on this computer yet. Let's do that first!"]).toBeTruthy();
+  });
+});
+
+describe('routeAfterAuthDecision (261103)', () => {
+  it('new branch: a successful read decides; age never overrides it', () => {
+    // The support case: a nameless Google account, days old, read OK.
+    expect(routeAfterAuthDecision('new', false, false, true)).toBe('setup');
+    expect(routeAfterAuthDecision('new', false, false, false)).toBe('setup');
+    expect(routeAfterAuthDecision('new', true, false, false)).toBe('welcome-existing');
+  });
+  it('new branch: only a failed read falls back to account age (no setup over a veteran)', () => {
+    expect(routeAfterAuthDecision('new', null, false, true)).toBe('welcome-existing');
+    expect(routeAfterAuthDecision('new', null, true, false)).toBe('setup');
+  });
+  it('returning branch keeps the profile answer, and the fresh-account check when it is unknown', () => {
+    expect(routeAfterAuthDecision('returning', true, true, false)).toBe('complete-returning');
+    expect(routeAfterAuthDecision('returning', false, false, true)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, true, false)).toBe('resume-as-new');
+    expect(routeAfterAuthDecision('returning', null, false, true)).toBe('complete-returning');
   });
 });

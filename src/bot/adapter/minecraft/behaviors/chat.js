@@ -36,6 +36,22 @@ function sameName(a, b) {
   return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase()
 }
 
+/**
+ * Keep the owner's latest death on the bot for the snapshot owner line
+ * (observers/snapshot.js ownerStateClause): when, the world's wording, where
+ * the body was, and the entity object that died (mineflayer replaces it when
+ * the player respawns). Exported for tests.
+ */
+export function recordOwnerDeath(bot, death, nowMs = Date.now()) {
+  let entity = null
+  try { entity = bot.players?.[death.subject]?.entity ?? null } catch { entity = null }
+  const p = entity?.position
+  const pos = p && [p.x, p.y, p.z].every(Number.isFinite)
+    ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }
+    : null
+  bot._seiOwnerDeath = { text: death.text, at: nowMs, pos, entity }
+}
+
 // The subject of a translated death message is its first `with` argument (a
 // nested ChatMessage for the player name); fall back to the first word of the
 // flattened line, which is the subject in every vanilla death string.
@@ -127,6 +143,14 @@ export function startChat(bot, config, orchestrator = null) {
     const who = isOwner
       ? (config.player_display_name || config.player_username || death.subject)
       : death.subject
+    // 261110 (quality pass 50): the snapshot's owner line reads this, so the
+    // very next turn (even a mid-action one this line has not reached yet)
+    // sees that they died, and later turns see that they respawned with
+    // nothing. Before, the owner line kept the dying body's stale health and
+    // then a fresh 20/20: "that one's gone, i'm still right here" right after
+    // the creeper killed them, and "you're fine, you're at full hp" after a
+    // drowning (combat_night evals 261109).
+    if (isOwner) recordOwnerDeath(bot, death)
     const labeled = `just DIED in-game. This is the world's own death message, not something they said to you, and it names the cause: ${death.text}`
     logChatIn(who, labeled)
     _deathHandled = death.text
@@ -135,6 +159,15 @@ export function startChat(bot, config, orchestrator = null) {
     // it does wake a turn, because a companion that says nothing when its
     // player dies in front of it reads as not having noticed.
     const payload = { username: who, message: labeled, addressed: false, playerSpoke: false, suppressInterrupt: false }
+    // 261113 (quality pass 54): when a turn's snapshot first showed this death
+    // (observers/snapshot.js). The brain skips the wake when she has spoken
+    // since then: she already reacted, and a second turn made her say it
+    // twice ("oof alex. creeper got you" / "oof alex. you alright? the
+    // creeper got you fast", combat_night-01 11-12).
+    if (isOwner) {
+      const rec = bot._seiOwnerDeath
+      payload.noticeShownAt = () => (Number.isFinite(rec?.shownAt) ? rec.shownAt : null)
+    }
     if (bot._seiDebouncer) {
       bot._seiDebouncer.debounce(`death:${who}`, payload, (p) => bot.emit('sei:chat_received', p))
     } else {

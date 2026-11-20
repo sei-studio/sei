@@ -67,6 +67,23 @@ describe('DST prompts', () => {
     expect(all).not.toContain('\u2014')
   })
 
+  it('a hit by the darkness names Charlie, says running does not help, and counts the torch', () => {
+    const caps = { hasCaps: true }
+    const hit = { attackerKind: 'mob', attackerLabel: 'the darkness', darkness: true, healthPct: 0.33 }
+    const partial = eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 0, twigs: 1, haveGrass: 2, haveTwigs: 1 } }, caps)
+    expect(partial).toMatch(/^Interrupted: the darkness hit you \(33% health left\)\. That is Charlie/)
+    expect(partial).toMatch(/running from it does not help/)
+    expect(partial).toMatch(/you carry 2 grass and 1 twigs, so get 1 twig now/)
+    expect(partial).toMatch(/Your body makes and lights the torch the moment you have them/)
+    expect(partial).not.toMatch(/flee\(\)/)
+    expect(partial).not.toContain('\u2014')
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 2, twigs: 2, haveGrass: 0, haveTwigs: 0 } }, caps)).toMatch(/so get 2 grass and 2 twigs now/)
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 0, twigs: 0, haveGrass: 3, haveTwigs: 2 } }, caps)).toMatch(/your body is making it now/)
+    expect(eventAddendum('sei:attacked', { ...hit, torchNeed: { grass: 1, twigs: 0, haveGrass: 1, haveTwigs: 2 } })).toMatch(/Then craft\(torch\) and equip it/)
+    // A monster still gets the monster text.
+    expect(eventAddendum('sei:attacked', { attackerKind: 'mob', attackerLabel: 'hound', healthPct: 0.5 }, caps)).toMatch(/call flee\(\)/)
+  })
+
   it('0.3.0 event prose: defend, alerts as wakes and as idle nudges, a hopeless dark, habit-aware idle', () => {
     const caps = { hasCaps: true }
     expect(eventAddendum('sei:attacked', { attackerKind: 'defend', attackerLabel: 'spider', player: 'Steve' }, caps)).toMatch(/spider went for Steve, and your body is fighting it/)
@@ -102,5 +119,41 @@ describe('DST prompts', () => {
     expect(eventAddendum('sei:death', { pos: { x: 3.4, z: -9.6 }, lastAttack: { label: 'spider' } })).toMatch(/last thing that hit you was spider.*~3,-10/)
     expect(eventAddendum('sei:enterdark', { phase: 'dusk' })).toMatch(/darkness \(dusk\)/)
     expect(eventAddendum('sei:something_else', {})).toBe('')
+  })
+})
+
+describe('DST death turn after a respawn (261104)', () => {
+  const base = { pos: { x: 3.4, z: -9.6 }, lastAttack: { label: 'Spider' } }
+  it('respawned: names the cause, the player and the drop spot, asks for say() + remember()', () => {
+    const t = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'Charlie in the darkness', respawns: 1, respawnsLeft: 2, player: 'Steve' } })
+    expect(t).toMatch(/killed by Charlie in the darkness; the last thing that hit you was Spider/)
+    expect(t).toMatch(/fresh body next to Steve/)
+    expect(t).toMatch(/around 3,-10/)
+    expect(t).toMatch(/say\(\)/)
+    expect(t).toMatch(/remember\(\)/)
+    expect(t).not.toMatch(/once more|last comeback/)
+    expect(t).not.toMatch(/\u2014/)
+    expect(t).not.toMatch(/\{\w+\}/)
+  })
+
+  it('respawned: warns when one comeback or none is left', () => {
+    const one = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'starvation', respawns: 2, respawnsLeft: 1, player: 'Steve' } })
+    expect(one).toMatch(/once more this session/)
+    const none = eventAddendum('sei:death', { ...base, detail: { outcome: 'respawned', cause: 'starvation', respawns: 3, respawnsLeft: 0, player: 'Steve' } })
+    expect(none).toMatch(/last comeback this session/)
+  })
+
+  it('final: says why she is not coming back, cap or bad spot', () => {
+    const cap = eventAddendum('sei:death', { ...base, detail: { outcome: 'final', reason: 'cap', cause: 'freezing', respawns: 3, respawnsLeft: 0, player: 'Steve' } })
+    expect(cap).toMatch(/not coming back this session: you already came back 3 times, which is the limit/)
+    expect(cap).toMatch(/goodbye to Steve/)
+    const bad = eventAddendum('sei:death', { ...base, detail: { outcome: 'final', reason: 'bad_spot', cause: null, respawns: 2, player: null } })
+    expect(bad).toMatch(/twice in a row, so this spot is too dangerous/)
+    expect(bad).toMatch(/the last thing that hit you was Spider/)
+    expect(bad).toMatch(/goodbye to the player/)
+    for (const t of [cap, bad]) {
+      expect(t).not.toMatch(/\u2014/)
+      expect(t).not.toMatch(/\{\w+\}/)
+    }
   })
 })

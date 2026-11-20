@@ -1,7 +1,9 @@
 /**
- * CreditsScreen — plan + weekly usage surface (260724, 260725 sketch layout).
+ * SeiPlanTab (CreditsScreen.tsx) — the Playtime page's Sei tab: plan + weekly
+ * usage (260724, 260725 sketch layout; 261110 restyle to the Playtime mock 01,
+ * the page frame lives in PlaytimeScreen.module.css).
  *
- * A single centered 860px column. USAGE section: two aligned label/bar/value
+ * Inside the Playtime column. USAGE section: two aligned label/bar/value
  * rows ("{Plan} plan / Resets in Xd Yh" + allowance bar + "{pct}%", then
  * "Extra credits / x/y used" + muted bar + Top up), with the carry-over note
  * directly beneath. PLANS section: three solid-surface cards (light surface in
@@ -17,51 +19,22 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.8 + the 260725 sketch.
  */
 
-.root {
-  flex: 1;
-  overflow-y: auto;
-  padding: 28px 0 40px;
+/* The tab body: Usage, Plan and the footer are page sections, one
+   --gap-section apart (the 261103 spacing pass). */
+.tab {
   display: flex;
   flex-direction: column;
-}
-
-.col {
-  width: 100%;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 0 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.backRow {
-  /* Pull left by the quiet/sm button's horizontal padding so the icon lines up
-     with the column's content edge. */
-  margin-left: -12px;
+  gap: var(--gap-section);
 }
 
 /* ── Usage: two aligned label / bar / value rows (260725 sketch) ── */
 .usage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--gap-group);
 }
 
-/* Shared section heading ("Usage" / "Plan") + the quiet refresh beside it. */
-.usageHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Oswald's tall ascender space makes the centered refresh button read as
-   floating high next to the title; nudge it down to the text's optical
-   center (260725). */
-.usageHead > button {
-  margin-top: 3px;
-}
-
+/* Shared section heading ("Usage" / "Plan"). */
 .sectionTitle {
   font-family: var(--display);
   font-weight: 600;
@@ -70,13 +43,28 @@
   margin: 0;
 }
 
+/* The two usage rows. */
+.usagePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+
 /* Label column | flexible bar | fixed-ish right slot, vertically centered.
    The two rows share the grid so their bars start and end on the same lines. */
 .usageRow {
   display: grid;
-  grid-template-columns: minmax(150px, 190px) 1fr minmax(64px, auto);
+  grid-template-columns: minmax(150px, 190px) 1fr auto;
   align-items: center;
-  gap: 16px;
+  gap: var(--gap-group);
+  min-height: 36px;
+}
+
+/* The extra-credits row's end: what is left, then Top up. */
+.usageEnd {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-group);
 }
 
 .usageLabel {
@@ -87,16 +75,13 @@
 }
 
 .usageName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
   font-family: var(--sans);
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
-}
-
-.usageSub {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .usageSubWarn {
@@ -110,6 +95,7 @@
   height: 8px;
   background: var(--bg4);
   overflow: hidden;
+  border-radius: var(--radius-sm);
 }
 
 .usageTrack i {
@@ -138,16 +124,7 @@
   font-weight: 600;
   font-size: 14px;
   color: var(--text);
-  justify-self: start;
-}
-
-/* Carry-over note, directly under the extra-credits row. Indented to the bar
-   column so it reads as a caption for the bars, not a new section. */
-.usageNote {
-  font-family: var(--sans);
-  font-size: 12px;
-  color: var(--muted-2);
-  margin: -6px 0 0;
+  justify-self: end;
 }
 
 /* 260926: the credit wall's pause line ("Free play resets in 3 days
@@ -155,9 +132,9 @@
 .resetCallout {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  gap: var(--gap-tight);
+  padding: var(--pad-control);
+  border-radius: var(--radius);
   background: var(--accent-soft);
   font-family: var(--sans);
 }
@@ -177,13 +154,14 @@
 .plans {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* Title to content as in Usage. */
+  gap: var(--gap-group);
 }
 
 .plansRow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: var(--gap-stack);
 }
 
 /* Solid surface: var(--bg4) is a visible step off the window in every theme
@@ -194,12 +172,13 @@
   position: relative;
   background: var(--bg4);
   border: 1px solid var(--border);
-  padding: 20px 18px 18px;
+  padding: var(--pad-card);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--gap-tight);
   min-height: 196px;
   min-width: 0;
+  border-radius: var(--radius);
 }
 
 /* Active subscription — accent edge on the solid surface. */
@@ -234,6 +213,7 @@
   text-transform: uppercase;
   line-height: 1.2;
   white-space: nowrap;
+  border-radius: var(--radius-sm);
 }
 
 .planName {
@@ -269,58 +249,9 @@
   margin: 2px 0 0;
 }
 
-/* 261017: "Use your ChatGPT plan", its own block under the plan cards. */
-.chatgptPlan {
-  margin-top: var(--space-lg);
-}
-
-.chatgptPlanRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md);
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.chatgptPlanText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* Not .planName: that one uppercases, and "ChatGPT" is a brand name. */
-.chatgptPlanName {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  font-family: var(--sans);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.planFeatureLink {
-  -webkit-appearance: none;
-  appearance: none;
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: var(--muted);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.planFeatureLink:hover {
-  color: var(--accent);
-}
-
 .planCardActions {
   margin-top: auto;
-  padding-top: 16px;
+  padding-top: var(--gap-group);
 }
 
 /* "Your Party plan renews on …" / "… will not renew" note under the cards. */
@@ -328,22 +259,23 @@
   font-family: var(--sans);
   font-size: 13px;
   color: var(--text-2);
-  margin: 4px 0 0;
+  margin: 0;
 }
 
 /* ── Footer: Manage billing ──────────────────────────────────── */
 .foot {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--gap-stack);
   flex-wrap: wrap;
 }
 
-/* Standing "Submit feedback" button row, tucked under Manage billing (260706).
- * Negative margin pulls it inside the column's 28px gap so it reads as part
- * of the footer cluster rather than a new section. */
-.footFeedback {
-  margin-top: -16px;
+/* Manage billing, its error and the standing "Submit feedback" row (260706)
+ * as one footer cluster: a control step apart, not a section. */
+.footGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
 }
 
 .manageError {
@@ -358,7 +290,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: var(--gap-stack);
   text-align: center;
 }
 
@@ -379,7 +311,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-text);
   font-size: 13px;

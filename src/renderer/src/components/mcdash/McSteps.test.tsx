@@ -22,7 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import type { McInstall } from '@shared/ipc';
+import type { McInstall, McScanExtras } from '@shared/ipc';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -53,6 +53,7 @@ beforeEach(() => {
 
 interface Opts {
   installs: McInstall[] | null;
+  extras?: McScanExtras | null;
   dismissed?: boolean;
   lanOpen?: boolean;
   lanVersion?: string;
@@ -61,7 +62,7 @@ interface Opts {
 async function mockStores(opts: Opts): Promise<void> {
   vi.resetModules();
   vi.doMock('minecraft-protocol/src/version.js', () => ({ supportedVersions: SUPPORTED }));
-  const setup = { installs: opts.installs, scanning: false, dismissed: opts.dismissed ?? false, scan: vi.fn(), hydrate: vi.fn(), dismiss: vi.fn() };
+  const setup = { installs: opts.installs, extras: opts.extras ?? null, scanning: false, dismissed: opts.dismissed ?? false, scan: vi.fn(), hydrate: vi.fn(), dismiss: vi.fn() };
   const { selectReadyVersion } = await import('./useMcSetupStore');
   vi.doMock('./useMcSetupStore', () => ({
     useMcSetupStore: Object.assign((selector: (s: typeof setup) => unknown) => selector(setup), { getState: () => setup }),
@@ -210,6 +211,39 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
     expect(await renderPanel({ installs: [ready], lanOpen: true, lanVersion: '1.21.4' })).not.toContain('Start Minecraft');
     expect(await renderPanel({ installs: [VANILLA] })).not.toContain('Start Minecraft');
     expect(await renderPanel({ installs: [VANILLA], dismissed: true })).not.toContain('Start Minecraft');
+  });
+
+  // 261104: why no Java install was found, and what Sei can do about it.
+  it('Test 11: Bedrock only and launcher-only get their own note and Open Minecraft Launcher', async () => {
+    const bedrock = await renderSteps({ installs: [], extras: { others: [], bedrock: true, launcherInstalled: true } });
+    expect(bedrock).toContain('only has Bedrock Edition');
+    expect(bedrock).toContain('>Open Minecraft Launcher<');
+    expect(bedrock).not.toContain('Get Minecraft<');
+    expect(bedrock).toContain('data-complete="false"');
+    const launcherOnly = await renderSteps({ installs: [], extras: { others: [], bedrock: false, launcherInstalled: true } });
+    expect(launcherOnly).toContain("Java Edition hasn&#x27;t been played on this computer yet");
+    expect(launcherOnly).toContain('>Open Minecraft Launcher<');
+    const none = await renderSteps({ installs: [], extras: { others: [], bedrock: false, launcherInstalled: false } });
+    expect(none).toContain('Get Minecraft');
+  });
+
+  it('Test 12: Java in another launcher is detection only and lets the player Launch', async () => {
+    const extras: McScanExtras = {
+      others: [
+        { launcher: 'prism', label: 'FO', mc_version: '1.21.4', loader: 'fabric' },
+        { launcher: 'prism', label: 'Other', mc_version: '1.20.1', loader: null },
+        { launcher: 'atlauncher', label: 'A', mc_version: null, loader: null },
+      ],
+      bedrock: false,
+      launcherInstalled: false,
+    };
+    const steps = await renderSteps({ installs: [], extras });
+    expect(steps).toContain('Minecraft Java found in Prism Launcher, ATLauncher.');
+    expect(steps).toContain('data-step="game"');
+    expect(steps).not.toContain('>Set up<');
+    expect(steps).toContain('data-complete="true"');
+    const panel = await renderPanel({ installs: [], extras });
+    expect(panel).toContain('>Launch<');
   });
 
   it('Test 8: every t() key has a zh entry and no em dash', async () => {

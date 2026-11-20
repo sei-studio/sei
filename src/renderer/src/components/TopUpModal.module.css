@@ -8,13 +8,13 @@
   font-family: var(--sans);
   font-size: 14px;
   color: var(--muted);
-  margin: 0 0 14px;
+  margin: 0;
 }
 
 .packs {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: var(--gap-stack);
 }
 
 /* Solid surface card, mirrors CreditsScreen .planCard (260725): var(--bg4)
@@ -24,10 +24,11 @@
   min-width: 0;
   background: var(--bg4);
   border: 1px solid var(--border);
-  padding: 16px 14px 14px;
+  padding: var(--pad-card);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--gap-tight);
+  border-radius: var(--radius);
 }
 
 .packPrice {
@@ -46,5 +47,13 @@
 
 .packAction {
   margin-top: auto;
-  padding-top: 14px;
+  padding-top: var(--gap-stack);
+}
+
+/* 261104: "Comprar por $20" (es, pt-BR) is a few px wider than the pack
+   card's button and ended in an ellipsis. Those two languages get tighter
+   side padding; every other language keeps the PlanButton default. */
+:global(html:lang(es)) .packAction button,
+:global(html:lang(pt)) .packAction button {
+  padding-inline: var(--space-sm);
 }

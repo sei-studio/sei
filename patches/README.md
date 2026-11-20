@@ -20,6 +20,13 @@ upstream work onto the versions pinned in `package-lock.json`:
 Live-verified against vanilla 26.1, 26.2, 26.3 and 1.21.1 servers with
 `scripts/mc-version-smoke.mjs` (spawn, chat, pathfinding, dig, inventory, craft, place, follow).
 
+### Known data gap: 26.3 materials (261111)
+
+The 26.3 entry reuses `pc/26.2/materials.json`, which is keyed by 26.2 numeric item ids; 26.3
+renumbered items, so the table is wrong on 26.3. The bot corrects it at runtime
+(`src/bot/adapter/minecraft/registryFixes.js`, which also raises copper tool speeds from 1 to 5).
+Drop that remap once a released minecraft-data ships a real `pc/26.3/materials.json`.
+
 ### Moving back to releases
 
 Once minecraft-data, minecraft-protocol, mineflayer, prismarine-chunk and prismarine-physics

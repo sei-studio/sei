@@ -68,9 +68,14 @@ function Events.Attach(inst)
     listen("attacked", function(_, data)
         local attacker = data and data.attacker or nil
         local hp = inst.components.health
+        -- Charlie (components/grue.lua) hits through GetAttacked with no
+        -- attacker and stimuli "darkness"; without the stimuli the app only
+        -- ever saw "something" hit her.
+        local stimuli = data ~= nil and type(data.stimuli) == "string" and data.stimuli or nil
         post("attacked", {
             attacker = attacker ~= nil and attacker.GUID or nil,
-            label = labelOf(attacker),
+            label = (attacker == nil and stimuli == "darkness") and "darkness" or labelOf(attacker),
+            stimuli = stimuli,
             isplayer = attacker ~= nil and attacker:HasTag("player") or false,
             damage = data and Util.Round1(data.damage or 0) or 0,
             health = hp ~= nil and Util.Round1(hp.currenthealth) or 0,
@@ -79,9 +84,16 @@ function Events.Attach(inst)
     end)
     listen("death", function(_, data)
         local x, _, z = inst.Transform:GetWorldPosition()
+        -- A grue kill reaches health:DoDelta with no attacker, so the game's
+        -- cause is the string "NIL"; the combat's last stimuli says what it was.
+        local cause = data and data.cause or nil
+        local combat = inst.components.combat
+        if (cause == nil or cause == "NIL") and combat ~= nil and combat.laststimuli == "darkness" then
+            cause = "darkness"
+        end
         post("death", {
             x = Util.Round1(x), z = Util.Round1(z),
-            cause = data and data.cause or nil,
+            cause = cause,
             afflicter = data and data.afflicter ~= nil and labelOf(data.afflicter) or nil,
         })
     end)

@@ -85,6 +85,8 @@ export function createObservationState() {
       inLight: raw.inlight === true, busy: raw.busy === true, dead: raw.dead === true,
       target: typeof raw.target === 'number' ? raw.target : null,
       follow: typeof raw.follow === 'number' ? raw.follow : null,
+      // helper 0.3.2: distance to the follow target, also past the perception radius.
+      followDist: typeof raw.followd === 'number' ? raw.followd : null,
       cmd: typeof raw.cmd === 'string' ? raw.cmd : null,
       inv, equip,
     }

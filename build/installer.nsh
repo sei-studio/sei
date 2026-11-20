@@ -116,3 +116,28 @@ CRCCheck off
   Pop $R6
   Pop $R5
 !macroend
+
+; 261107: "Open Sei when I log in" (src/main/seilink/openAtLogin.ts) writes the
+; HKCU Run value "SeiWorldLink" = "<install dir>\Sei.exe" --seilink-login
+; (plus, once the user turns it off in Task Manager, a StartupApproved value).
+; Windows does not remove a Run value with the program, so a real uninstall
+; removes it here. Never on an update: every update runs the old uninstaller
+; with --updated, and the app keeps the item. Only when the value starts THIS
+; install's exe: the NSIS -> Velopack migration runs this uninstaller after the
+; Velopack copy has pointed the value at itself, and that one must stay.
+!define SEI_RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
+!define SEI_STARTUP_APPROVED_KEY "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+!define SEI_LOGIN_VALUE "SeiWorldLink"
+
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    Push $R0
+    ReadRegStr $R0 HKCU "${SEI_RUN_KEY}" "${SEI_LOGIN_VALUE}"
+    ; LogicLib == is StrCmp, which ignores case (Windows paths do too).
+    ${if} $R0 == `"$INSTDIR\${APP_EXECUTABLE_FILENAME}" --seilink-login`
+      DeleteRegValue HKCU "${SEI_RUN_KEY}" "${SEI_LOGIN_VALUE}"
+      DeleteRegValue HKCU "${SEI_STARTUP_APPROVED_KEY}" "${SEI_LOGIN_VALUE}"
+    ${endIf}
+    Pop $R0
+  ${endIf}
+!macroend

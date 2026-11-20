@@ -51,6 +51,16 @@ export function hasImportableLeftovers(peek: PeekLocalProfileResult | null | und
   return [...peek.migratableCharacterIds, ...peek.memoryOnlyCharacterIds].some((id) => !untouched.has(id));
 }
 
+/**
+ * 261116: the local companions would not fit the account's party, so the
+ * import is not offered (it would import nothing). The player is told in
+ * one line instead, and imports from Settings once a slot is free.
+ * Unknown (no `party` in the peek) is not blocked: main checks again.
+ */
+export function importBlockedByParty(peek: PeekLocalProfileResult | null | undefined): boolean {
+  return peek?.party?.fits === false;
+}
+
 /** First boot-offer look after sign-in is known, then the poll while the UI is busy. */
 export const BOOT_OFFER_FIRST_MS = 2500;
 export const BOOT_OFFER_POLL_MS = 3000;
@@ -92,15 +102,23 @@ export interface BootOfferDeps {
  *   'wait' — not a good moment; check again later.
  *   'done' — nothing to offer, or this account already answered.
  *   'show' — show the modal now (the UI is re-checked after the reads).
+ *   'party_full': there is something to bring, but it would not fit the
+ *     party (261116): say so in one line instead of offering the modal.
  */
 export async function checkBootImportOffer(
   deps: BootOfferDeps,
-): Promise<{ kind: 'wait' } | { kind: 'done' } | { kind: 'show'; peek: PeekLocalProfileResult }> {
+): Promise<
+  | { kind: 'wait' }
+  | { kind: 'done' }
+  | { kind: 'show'; peek: PeekLocalProfileResult }
+  | { kind: 'party_full'; peek: PeekLocalProfileResult }
+> {
   if (!bootOfferUiReady(deps.ui())) return { kind: 'wait' };
   if (await deps.offered()) return { kind: 'done' };
   const peek = await deps.peek();
   if (!hasImportableLeftovers(peek)) return { kind: 'done' };
   // The reads took a moment; the player may have opened something meanwhile.
   if (!bootOfferUiReady(deps.ui())) return { kind: 'wait' };
+  if (importBlockedByParty(peek)) return { kind: 'party_full', peek };
   return { kind: 'show', peek };
 }

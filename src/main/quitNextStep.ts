@@ -54,6 +54,7 @@ import {
   type SessionDigest,
 } from './playerEndNextStep';
 import { NEXT_STEP_MAX_AGE_MS } from './homeNextStep';
+import { chatCheckInput } from './chatNextStep';
 import type { ChatMessage } from '../shared/ipc';
 import { isGameId } from '../shared/gameIpc';
 
@@ -67,7 +68,8 @@ export const LAUNCH_DELAY_MS = 10_000;
 /** A play/call row this long after the quit is a later session, not the quit's own row. */
 export const LATER_SESSION_MARGIN_MS = 60_000;
 
-export type PendingSurface = 'game' | 'call';
+/** 261107: 'chat' = a text chat open at quit (chatNextStep.ts). */
+export type PendingSurface = 'game' | 'call' | 'chat';
 
 export interface PendingQuitNextStep {
   v: 1;
@@ -93,7 +95,7 @@ export function parsePending(raw: string | null): PendingQuitNextStep | null {
     const j = JSON.parse(raw) as Partial<PendingQuitNextStep> | null;
     if (!j || typeof j !== 'object') return null;
     if (typeof j.characterId !== 'string' || !j.characterId) return null;
-    if (j.surface !== 'game' && j.surface !== 'call') return null;
+    if (j.surface !== 'game' && j.surface !== 'call' && j.surface !== 'chat') return null;
     const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
     if (!num(j.durationMs) || !num(j.endedAt)) return null;
     const out: PendingQuitNextStep = {
@@ -276,6 +278,17 @@ async function inputFor(p: PendingQuitNextStep, rows: ChatMessage[], deps: QuitR
       source: 'app_quit',
       eventProps,
     };
+  }
+  if (p.surface === 'chat') {
+    // endedAt is the chat's last message; its lines are typed transcript rows.
+    return chatCheckInput({
+      characterId: p.characterId,
+      startedAt: p.endedAt - p.durationMs,
+      lastAt: p.endedAt,
+      rows,
+      source: 'app_quit',
+      eventProps,
+    });
   }
   const call = callDigestFromRows(rows, p.endedAt - p.durationMs - 30_000, p.endedAt + 5_000);
   return {

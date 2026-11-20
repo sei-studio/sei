@@ -8,10 +8,13 @@
  * radius, Inter 15px/500 and a 242px width. The literal values in the CSS
  * module are those brand specs. The white format is used on Sei's dark
  * theme and the black one on light, so the button always reads as a solid
- * shape against the surface. The label is never translated or reworded.
+ * shape against the surface. The label keeps OpenAI's "Continue with
+ * ChatGPT" wording; under a non-English UI it is the same phrase in that
+ * language (261104), with "ChatGPT" verbatim, like the Google button.
  */
 import React from 'react';
 import { ChatgptLogo } from './ChatgptLogo';
+import { useT } from '../lib/i18n';
 import styles from './ContinueWithChatGPTButton.module.css';
 
 interface Props {
@@ -26,6 +29,7 @@ interface Props {
 }
 
 export function ContinueWithChatGPTButton({ onClick, disabled, format, busy, fullWidth }: Props): React.ReactElement {
+  const t = useT();
   return (
     <button
       type="button"
@@ -36,7 +40,7 @@ export function ContinueWithChatGPTButton({ onClick, disabled, format, busy, ful
       aria-busy={busy || undefined}
     >
       <ChatgptLogo className={styles.logo} />
-      <span>Continue with ChatGPT</span>
+      <span>{t('Continue with ChatGPT')}</span>
     </button>
   );
 }

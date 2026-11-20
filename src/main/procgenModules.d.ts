@@ -54,6 +54,8 @@ declare module 'soulcaster' {
     age: 'young' | 'adult' | 'elder';
     tags: string[];
     vibe: string;
+    /** false = picker only: listed, never rolled (261119). */
+    roll?: false;
   }>;
   /** Stage 1 voice roll — used directly for legacy-character fallback assignment. */
   export function rollVoice(

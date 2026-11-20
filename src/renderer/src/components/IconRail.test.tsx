@@ -14,8 +14,8 @@
  *   4. Source surfaces the round + button → add-character navigation.
  *   5. Source surfaces the CompassIcon → World tab gateway and writes
  *      homeTab='world' before navigating.
- *   6. Source surfaces the CloudIcon branch when ai_backend_kind === 'local'
- *      and mounts a confirm dialog → SignInModal.
+ *   6. The StarIcon opens the Playtime page on both backends (261110; the
+ *      local "Switch to cloud?" prompt moved to Playtime's Sei tab).
  *   7. Source preserves the cloud-proxy PricingIcon branch + Settings link.
  *   8. CSS module hides the scrollbar on the avatar cluster.
  */
@@ -75,16 +75,15 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(source.includes("navigate({ kind: 'home' })")).toBe(true);
   });
 
-  it('Test 6: local backend renders StarIcon + confirm dialog mounting SignInModal', () => {
+  it('Test 6: the StarIcon opens Playtime on both backends (261110)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
-    // Item 5: the rail's credits/cloud button uses StarIcon in BOTH the
-    // cloud-proxy and local states for consistent iconography; CloudIcon is
-    // gone. The local branch still opens the "Switch to cloud?" confirm dialog
-    // that mounts SignInModal.
+    // Item 5: StarIcon in both states, CloudIcon gone. 261110: the local
+    // backend no longer opens a "Switch to cloud?" prompt; the Playtime page
+    // (its Sei tab) owns the switch and the sign-in it may need.
     expect(source.includes('CloudIcon')).toBe(false);
-    expect(source.includes("aiBackendKind === 'cloud-proxy'")).toBe(true);
-    expect(source.includes('Switch to cloud?')).toBe(true);
-    expect(source.includes('SignInModal')).toBe(true);
+    expect(source.includes("aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local'")).toBe(true);
+    expect(source.includes('Switch to cloud?')).toBe(false);
+    expect(source.includes('SignInModal')).toBe(false);
   });
 
   it('Test 7: preserves the cloud-proxy StarIcon credits branch and Settings link', () => {
@@ -101,9 +100,29 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(css.includes('.avatarCluster')).toBe(true);
   });
 
-  it('Test 9: sorts characters by last_launched desc then created desc', () => {
+  it('Test 9: the rail lists every party member, most recently active first, then newest', async () => {
+    const { railParty } = await import('../lib/homeLibrary');
+    const mk = (id: string, created: string, last_launched: string | null = null, last_chatted: string | null = null) =>
+      ({ id, name: id, created, last_launched, last_chatted }) as unknown as import('@shared/characterSchema').Character;
+    const party = [
+      mk('old', '2026-01-01T00:00:00Z'),
+      mk('chatted', '2026-01-02T00:00:00Z', null, '2026-11-10T00:00:00Z'),
+      mk('launched', '2026-01-03T00:00:00Z', '2026-11-12T00:00:00Z'),
+      mk('new', '2026-03-01T00:00:00Z'),
+      mk('newest', '2026-04-01T00:00:00Z'),
+    ];
+    expect(railParty(party).map((c) => c.id)).toEqual(['launched', 'chatted', 'newest', 'new', 'old']);
+  });
+
+  it('Test 10: a party over the slot cap stays on the rail (not capped, 261116)', async () => {
+    const { railParty } = await import('../lib/homeLibrary');
+    const { MAX_COMPANION_SLOTS } = await import('@shared/characterSchema');
+    const party = Array.from({ length: MAX_COMPANION_SLOTS + 2 }, (_, i) =>
+      ({ id: `c${i}`, name: `c${i}`, created: `2026-01-0${i + 1}T00:00:00Z` }) as unknown as import('@shared/characterSchema').Character,
+    );
+    expect(railParty(party)).toHaveLength(MAX_COMPANION_SLOTS + 2);
     const source = readFileSync(TSX_PATH, 'utf-8');
-    expect(source.includes('last_launched')).toBe(true);
-    expect(source.includes('created')).toBe(true);
+    expect(source.includes('railParty(homeCharacters)')).toBe(true);
+    expect(source.includes('slice(0, MAX_COMPANION_SLOTS)')).toBe(false);
   });
 });

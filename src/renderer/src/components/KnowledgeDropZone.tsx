@@ -16,7 +16,7 @@
 import React, { useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
-import { cleanIpcError } from '../lib/errors';
+import { userFacingError } from '../lib/errors';
 import { UploadIcon } from './icons';
 import styles from './KnowledgeDropZone.module.css';
 
@@ -75,7 +75,7 @@ export function KnowledgeDropZone({
       } catch (err) {
         // Main's KnowledgeExtractError copy is user-facing; strip the IPC
         // wrapper ("Error invoking remote method 'knowledge:extract': ...").
-        failed.push(cleanIpcError(err));
+        failed.push(userFacingError(err));
       }
     }
     setErrors(failed);

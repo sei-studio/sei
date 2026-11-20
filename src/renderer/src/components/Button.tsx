@@ -1,14 +1,15 @@
 /**
- * Button — primary / accent / ghost / quiet × sm / md / lg.
+ * Button — primary / accent / secondary / soft / ghost / quiet / danger /
+ * dangerSoft × sm / md / lg.
  *
  * Source: 04-UI-SPEC.md §Component Inventory → Button (variants × size matrix).
- * Visual contract: D-28 sharp corners; native :focus-visible 1.5px accent ring.
+ * Visual contract: --radius corners; native :focus-visible 1.5px accent ring.
  */
 
 import React from 'react';
 import styles from './Button.module.css';
 
-type Kind = 'primary' | 'accent' | 'ghost' | 'quiet' | 'danger';
+type Kind = 'primary' | 'accent' | 'secondary' | 'soft' | 'ghost' | 'quiet' | 'danger' | 'dangerSoft';
 type Size = 'sm' | 'md' | 'lg';
 
 interface ButtonProps {
@@ -24,6 +25,9 @@ interface ButtonProps {
   'aria-disabled'?: boolean;
   /** Toggle/segmented selection state — also drives the pressed visual. */
   'aria-pressed'?: boolean;
+  /** A menu trigger (261120): the menu it opens, and whether it is open. */
+  'aria-haspopup'?: 'menu';
+  'aria-expanded'?: boolean;
   style?: React.CSSProperties;
   className?: string;
   title?: string;
@@ -66,6 +70,8 @@ export function Button({
       aria-label={rest['aria-label']}
       aria-disabled={rest['aria-disabled']}
       aria-pressed={rest['aria-pressed']}
+      aria-haspopup={rest['aria-haspopup']}
+      aria-expanded={rest['aria-expanded']}
       // Must reach the real DOM: the tutorial finds its spotlight targets via
       // document.querySelector('[data-tutorial=...]'). Declaring the prop
       // without forwarding it left the say-hello step highlighting nothing.

@@ -126,6 +126,8 @@ describe('260708 group-voice framing', () => {
     // Group-addressing guidance replaces the mandatory reply.
     expect(prompt).toContain('Decide from context who it is addressed to')
     expect(prompt).not.toContain('a direct message never gets silence')
+    // 261101 (pass 34): the acknowledgement let-off is a plain-reply rule.
+    expect(prompt).not.toContain('needs no answer: skip say() this turn')
     expect(prompt).not.toContain('NOT in the game')
   })
 

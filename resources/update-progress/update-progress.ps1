@@ -242,6 +242,7 @@ try { $window.Icon = [Windows.Media.Imaging.BitmapFrame]::Create([Uri](Join-Path
 # ---- fonts: the app's own Oswald + Rajdhani, loaded from the private copy ------
 $fontBase = [Uri]('file:///' + (($dir -replace '\\', '/').TrimEnd('/')) + '/fonts/')
 $cjk = 'Microsoft YaHei UI, Microsoft YaHei, Segoe UI'
+if ($cfg.fallbackFonts) { $cjk = [string]$cfg.fallbackFonts }
 function Fam([string]$family) { return New-Object Windows.Media.FontFamily($fontBase, "./#$family, $cjk") }
 $fDisplay = Fam 'Sei Oswald SemiBold'
 $fBody = Fam 'Sei Rajdhani Medium'

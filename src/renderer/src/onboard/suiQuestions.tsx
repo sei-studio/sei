@@ -37,7 +37,7 @@ export const DYN_OPTIONS: Array<{ value: Dynamic; label: string }> = [
   { value: 'partner-in-crime', label: 'A partner in crime' },
   { value: 'caretaker', label: 'Someone to look after me' },
   { value: 'protege', label: 'Someone to look after' },
-  { value: 'chill-friend', label: 'A chill friend' },
+  { value: 'chill-friend', label: 'Someone chill to hang out with' },
   { value: 'challenger', label: 'Someone who pushes me' },
 ];
 

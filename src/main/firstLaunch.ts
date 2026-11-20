@@ -53,6 +53,9 @@ export const PRIOR_STATE_ENTRIES: readonly string[] = [
   'device-id.json',              // trial-claim device id
   'migration-uuid-rename.json',  // slug→UUID migration marker
   'notices.json',                // notices inbox state
+  // NOT session.json (crashReporting's session marker) or logs/: they are
+  // written at whenReady, BEFORE noteLaunch, on a fresh install too, so
+  // listing them would turn every fresh install into an 'upgrade'.
 ];
 
 export type LaunchKind = 'fresh' | 'upgrade' | 'seen' | 'unrecorded';
@@ -176,12 +179,26 @@ export function currentFirstLaunchEnv(): FirstLaunchEnv {
 // ── Process-level wiring ────────────────────────────────────────────────────
 
 let pendingFirstLaunch = false;
+let launchKind: LaunchKind | null = null;
 
-/** Call once, first thing in bootstrap(). */
+/**
+ * Classify this launch once per process, before anything writes userData
+ * state. boot.ts calls it ahead of the early updater (whose what's-new check
+ * writes update-state.json, one of the probed entries); bootstrap() calls it
+ * again and gets the same answer.
+ */
 export function noteLaunch(userDataDir: string, appVersion: string): LaunchKind {
+  if (launchKind !== null) return launchKind;
   const kind = recordLaunch(userDataDir, appVersion);
+  launchKind = kind;
   pendingFirstLaunch = kind === 'fresh';
   return kind;
+}
+
+/** TEST-ONLY. */
+export function _resetLaunchForTests(): void {
+  launchKind = null;
+  pendingFirstLaunch = false;
 }
 
 /**

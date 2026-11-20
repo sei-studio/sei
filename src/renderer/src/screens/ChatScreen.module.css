@@ -120,14 +120,14 @@
 .skelAvatar {
   width: 40px;
   height: 40px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--bg3);
 }
 
 .skelBody {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-control);
   padding-top: 2px;
 }
 
@@ -179,7 +179,7 @@
   width: 40px;
   height: 40px;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: var(--radius);
   background: var(--surface-2);
   display: flex;
   align-items: center;
@@ -226,7 +226,7 @@
   height: 16px;
   flex-shrink: 0;
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: var(--radius-sm);
   background: var(--surface-2);
   display: inline-flex;
   align-items: center;
@@ -545,8 +545,9 @@
 .composer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
+  gap: var(--gap-control);
+  /* 261103: card padding, as the T262 explore's composer (was 11 / 14). */
+  padding: var(--pad-control) var(--pad-card);
   background: var(--bg2);
 }
 
@@ -692,10 +693,17 @@
 }
 
 .presBody {
-  padding: 14px 18px 18px;
+  padding: var(--pad-card);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gap-stack);
+}
+
+.presIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
 }
 
 .presNameRow {
@@ -729,8 +737,8 @@
 .presActions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-sm);
-  padding-top: 10px;
+  gap: var(--gap-control);
+  padding-top: var(--gap-stack);
   border-top: 1px solid var(--border);
 }
 

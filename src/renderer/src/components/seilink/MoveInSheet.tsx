@@ -1,0 +1,272 @@
+/**
+ * MoveInSheet (261104, SeiLink M4): "Move {name} onto your desktop".
+ *
+ * Shown from the companion page's gear menu (and the SeiLink button, the
+ * tour) the first time a companion moves in (she has no saved room yet), and
+ * whenever moving her in would move someone else out. It has:
+ *  - one line on her room: 261106 (first-link v3), she starts on a plain
+ *    background with no room (plainRoomState: black or white with the OS
+ *    theme), and the room is set up together, step by step, once she is on
+ *    the desktop (main/seilink/decorateOffer.ts, the editor's guided setup);
+ *    a companion with a saved room keeps it as she left it. (Until 261106 a
+ *    first room was picked here from the three presets, then a blank white
+ *    room with a chair; the editor's Room step has the rooms.)
+ *  - three short lines on what moving in means (wallpaper, pauses when
+ *    covered, click her to chat, the dock);
+ *  - 261116: no "Preparing {name}'s look" line here any more (product call
+ *    261116); her face set still starts baking when the sheet opens.
+ *  - Move in: saves the plain background when it is her first, then starts the
+ *    host. Main swaps out whoever lived there (one companion at a time).
+ *
+ *  - "Open on login" is not asked here (product call 261107): it is a step
+ *    after the guided room setup (RoomEditor, lib/seilink/loginStep.ts).
+ *
+ * A companion whose room is saved and nobody else moved in skips the sheet
+ * (needsMoveInSheet, lib/seilink/moveIn.ts); the page starts the host directly.
+ *
+ * 261116: when WORLDLINK_UPLOADED_LOOKS keeps her uploaded look out
+ * (lib/seilink/uploadedLooks.ts, default off) the sheet says why in one
+ * line and Move in is off.
+ *
+ * 261118 (product call 261118): when her look is a custom uploaded picture
+ * (worldlinkCustomImage, the same rule as 'sei_looks') and nothing keeps her
+ * out, the sheet says in one line that it may not look as good and that
+ * characters made in Sei work best. Move in stays on.
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import { plainRoomState, type RoomPresetId, type RoomState } from '@shared/seilinkRoom';
+import type { SeilinkPack } from '@shared/seilinkPack';
+import { sei } from '../../lib/ipcClient';
+import { useT } from '../../lib/i18n';
+import { Button } from '../Button';
+import { ModalShell, ModalFooter } from '../ModalShell';
+import { moveInFailed } from '../../lib/seilink/moveIn';
+import { useAnimaLook } from '../../lib/seilink/useAnimaLook';
+import { SEILINK_MOVEIN_SHEET_EVENT, WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT, type MoveInAction, type MoveInFail, type MoveInReason } from '@shared/seilinkTelemetry';
+import type { SeilinkEntrySource } from '@shared/seilinkIntroTelemetry';
+import { startSeilinkHost } from '../../lib/seilink/seilinkFlow';
+import styles from './MoveInSheet.module.css';
+import { cardImageOrigin } from '@shared/characterSchema';
+import { useDataStore } from '../../lib/stores/useDataStore';
+import { worldlinkCustomImage, worldlinkLookBlock, type LookBlock } from '../../lib/seilink/uploadedLooks';
+
+/**
+ * Her first room: the plain background (no room yet), in the cozy pack's
+ * frame when it is here (where she stands), else the first pack's. Null with
+ * no packs at all (nothing to draw her in).
+ */
+export function firstRoomState(packs: readonly SeilinkPack[]): { state: RoomState; plain: true } | null {
+  const pack = packs.find((p) => p.id === 'cozy') ?? packs[0];
+  return pack ? { state: plainRoomState(pack.manifest), plain: true } : null;
+}
+
+export interface MoveInSheetViewProps {
+  name: string;
+  /** Who lives on the desktop now and moves out (null = nobody). */
+  otherName: string | null;
+  /** Her first room (she starts on a plain background); false = she has a room, it stays as she left it. */
+  firstRoom: boolean;
+  busy: boolean;
+  /** Her room is still loading (Move in waits for it). */
+  loading?: boolean;
+  /** 261116: her uploaded look keeps her out (uploadedLooks.ts): one line, Move in off. */
+  lookBlocked?: Exclude<LookBlock, 'none'> | null;
+  /** 261118: her look is a custom uploaded picture: one line saying so (Move in stays on). Ignored when lookBlocked. */
+  customImage?: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+export function MoveInSheetView(p: MoveInSheetViewProps): React.ReactElement {
+  const t = useT();
+  return (
+    <ModalShell title={t('Move {name} onto your desktop', { name: p.name })} width={560} onClose={p.busy ? undefined : p.onCancel}>
+      {/* 261110 (product call 261110): one short notice, no bullets. What the
+          room does on the desktop is shown when it goes live (LiveCard). */}
+      <div className={styles.notice} data-movein-notice="beta_v1">
+        <span className={styles.beta}>{t('Beta')}</span>
+        <p className={styles.noticeText}>{t('WorldLink is a beta feature that puts {name} in a virtual space on your desktop.', { name: p.name })}</p>
+      </div>
+      {p.otherName ? (
+        <p className={styles.line}>{t('{other} moves out first. One companion lives on the desktop at a time.', { other: p.otherName })}</p>
+      ) : null}
+      {p.error ? (
+        <p className={styles.error} role="alert">
+          {p.error}
+        </p>
+      ) : null}
+      {p.lookBlocked ? (
+        <p className={styles.line} role="status" data-look-blocked={p.lookBlocked}>
+          {p.lookBlocked === 'busy_background'
+            ? t("WorldLink can't cut {name} out of this picture yet. Pictures with a plain background work.", { name: p.name })
+            : t("For now WorldLink only works with looks made in Sei, and {name}'s picture was uploaded.", { name: p.name })}
+        </p>
+      ) : p.customImage ? (
+        <p className={styles.line} role="status" data-custom-image-notice="v1">
+          {t('{name} uses a custom image, which may not look as good here. Characters made in Sei work best.', { name: p.name })}
+        </p>
+      ) : null}
+      <ModalFooter>
+        <Button kind="quiet" size="md" disabled={p.busy} onClick={p.onCancel}>
+          {t('Not now')}
+        </Button>
+        <Button kind="primary" size="md" disabled={p.busy || p.loading === true || Boolean(p.lookBlocked)} onClick={p.onConfirm}>
+          {p.busy ? t('Moving in') : t('Move in')}
+        </Button>
+      </ModalFooter>
+    </ModalShell>
+  );
+}
+
+export interface MoveInSheetProps {
+  characterId: string;
+  name: string;
+  otherName: string | null;
+  /** Why the page showed the sheet (analytics). */
+  reason?: MoveInReason;
+  /** 261105: how the person got here (analytics: the SeiLink button, the gear menu, the tour, the dock). */
+  entry?: SeilinkEntrySource;
+  onClose: () => void;
+}
+
+export function MoveInSheet({ characterId, name, otherName, reason, entry, onClose }: MoveInSheetProps): React.ReactElement {
+  const t = useT();
+  const [packs, setPacks] = useState<SeilinkPack[] | null>(null);
+  const [saved, setSaved] = useState<{ saved: boolean; preset: RoomPresetId } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // 261105: SeiLink opened for her: her face set gets ready in the background while she moves in.
+  // 261116 (product call 261116): the sheet no longer says so (no "Preparing her look" line here);
+  // the first-link intro's status lines carry the wait.
+  useAnimaLook(characterId, 'move_in_sheet');
+  // Analytics (261105), shape only: shown once loaded, then confirmed, failed (once per class) or dismissed.
+  const openedAt = useRef(Date.now());
+  const sent = useRef(new Set<string>());
+  // 261116: her uploaded look under WORLDLINK_UPLOADED_LOOKS (instant 'none' with the default 'all').
+  const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
+  const [lookBlock, setLookBlock] = useState<LookBlock | null>(null);
+  // 261118: her look is a custom uploaded picture (the custom-image line).
+  const [customImage, setCustomImage] = useState(false);
+  const customRef = useRef(false);
+  const lookOrigin = character ? cardImageOrigin(character) : null;
+  const firstRoom = saved ? !saved.saved : true;
+  const first = packs ? firstRoomState(packs) : null;
+  const report = (
+    action: MoveInAction,
+    extra: { error_class?: MoveInFail; packs?: number; first?: boolean; preset?: RoomPresetId | null; plain?: boolean; look?: LookBlock } = {},
+  ): void => {
+    const key = action === 'failed' ? `failed:${extra.error_class}` : action;
+    if (sent.current.has(key) || (action !== 'failed' && action !== 'shown' && (sent.current.has('confirmed') || sent.current.has('dismissed')))) return;
+    sent.current.add(key);
+    const isFirst = extra.first ?? firstRoom;
+    const plain = extra.plain ?? (isFirst && first?.plain === true);
+    try {
+      sei.track(SEILINK_MOVEIN_SHEET_EVENT, {
+        character_id: characterId,
+        action,
+        reason: reason ?? null,
+        preset: extra.preset !== undefined ? extra.preset : isFirst ? (first?.state.preset ?? null) : (saved?.preset ?? null),
+        // Until 261106 the first room was picked here; it then started blank (blank_room), now plain (plain_room).
+        pick_room: isFirst,
+        swap: otherName !== null,
+        preset_changed: false,
+        // 261110: the one-line beta notice in place of the bulleted sheet.
+        notice: 'beta_v1',
+        ms_open: Date.now() - openedAt.current,
+        ...(plain ? { plain_room: true } : {}),
+        ...(entry ? { entry } : {}),
+        ...(extra.packs !== undefined ? { packs_available: extra.packs } : {}),
+        ...(extra.error_class ? { error_class: extra.error_class } : {}),
+        ...(lookOrigin ? { look_origin: lookOrigin } : {}),
+        ...(extra.look && extra.look !== 'none' ? { look_blocked: extra.look } : {}),
+        ...(customRef.current ? { custom_image_notice: true } : {}),
+      });
+    } catch {
+      /* analytics must never disrupt the sheet */
+    }
+  };
+
+  useEffect(() => {
+    let dead = false;
+    const look: Promise<LookBlock> = character ? worldlinkLookBlock(character).catch(() => 'none' as const) : Promise.resolve('none');
+    // 261118: the custom-image line only when nothing keeps her out (that line says more).
+    const custom: Promise<boolean> = look.then((b) => (character && b === 'none' ? worldlinkCustomImage(character).catch(() => false) : false));
+    void Promise.all([sei.seilinkPacks?.() ?? Promise.resolve([]), sei.seilinkRoomGet?.(characterId) ?? Promise.resolve(null), look, custom]).then(
+      ([list, room, block, isCustom]) => {
+        if (dead) return;
+        setPacks(list);
+        setLookBlock(block);
+        customRef.current = isCustom;
+        setCustomImage(isCustom);
+        if (isCustom) {
+          try {
+            sei.track(WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT, { character_id: characterId });
+          } catch {
+            /* analytics must never disrupt the sheet */
+          }
+        }
+        const was = room ? { saved: room.saved === true, preset: room.state.preset } : { saved: false, preset: 'cozy' as RoomPresetId };
+        setSaved(was);
+        const f = firstRoomState(list);
+        report('shown', { packs: list.length, first: !was.saved, preset: was.saved ? was.preset : (f?.state.preset ?? null), plain: !was.saved && f?.plain === true, look: block });
+      },
+      () => {
+        if (dead) return;
+        setPacks([]);
+        report('shown', { packs: 0 });
+      },
+    );
+    return () => {
+      dead = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterId]);
+
+  const confirm = async (): Promise<void> => {
+    if (!sei.seilinkHostStart) return;
+    setBusy(true);
+    setError(null);
+    let stage: MoveInFail = 'save_failed';
+    try {
+      const room = firstRoom ? first : null;
+      if (room && sei.seilinkRoomSet) await sei.seilinkRoomSet(characterId, room.state);
+      stage = 'start_failed';
+      // 261105: the first move-in on this account plays the first-link intro alongside the start.
+      // 261106: a plain first room ends on the desktop with the set-it-up-together offer (seilinkFlow).
+      const status = await startSeilinkHost(characterId, { firstRoom, entry: entry ?? 'gear', fresh: room?.plain === true });
+      if (!status || moveInFailed(status)) {
+        report('failed', { error_class: status?.state === 'unsupported' ? 'unsupported' : 'start_failed' });
+        setError(t('Could not move in. Try again.'));
+        setBusy(false);
+        return;
+      }
+      report('confirmed');
+      onClose();
+    } catch {
+      report('failed', { error_class: stage });
+      setError(t('Could not move in. Try again.'));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <MoveInSheetView
+      name={name}
+      otherName={otherName}
+      firstRoom={firstRoom}
+      busy={busy}
+      loading={packs === null || saved === null}
+      lookBlocked={lookBlock && lookBlock !== 'none' ? lookBlock : null}
+      customImage={customImage}
+      error={error}
+      onCancel={() => {
+        report('dismissed');
+        onClose();
+      }}
+      onConfirm={() => void confirm()}
+    />
+  );
+}
+
+export default MoveInSheet;

@@ -57,4 +57,18 @@ describe('nearbyEntities requireLineOfSight', () => {
       .entries.map((e) => e.entity.username)
     expect(names).toContain('Ouen')
   })
+
+  // 261106 (quality pass 44): the mob her running attackEntity is on stays
+  // listed when the filter would hide it (combat_night: a zombie in the river).
+  it('keeps a pinned entity id through the filter and the count cap', () => {
+    const bot = makeBot([
+      { name: 'zombie', position: at(2, 55, 0) },     // id 1, hidden underground
+      ...Array.from({ length: 6 }, (_, i) => ({ name: 'cow', position: at(3, 64, -6 + 2 * i) })),
+    ])
+    const plain = nearbyEntities(bot, { radius: 64, count: 6, requireLineOfSight: true })
+    expect(plain.entries.map((e) => e.entity.name)).not.toContain('zombie')
+    const pinned = nearbyEntities(bot, { radius: 64, count: 6, pinIds: [1], requireLineOfSight: true })
+    expect(pinned.entries.map((e) => e.entity.name)).toContain('zombie')
+    expect(pinned.entries).toHaveLength(6)
+  })
 })

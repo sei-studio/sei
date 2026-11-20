@@ -383,4 +383,20 @@ describe('orchestrator: a player line while nothing runs', () => {
     expect(turn).toContain("You're currently: gather oak_log")
     expect(turn).not.toContain("You're currently: end_loop")
   })
+
+  // 261110 (pass 49): the running action's count, so "like 10 more" during a
+  // 3-log gather reads as a changed job.
+  it('names the running gather with its count', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([
+      { text: '', toolUses: [{ id: 'g1', name: 'gather', input: { name: 'oak_log', count: 3 } }] },
+      { text: '', toolUses: [{ id: 's2', name: 'say', input: { text: 'ok' } }] },
+    ])
+    const orch = createOrchestrator({ adapter: makeAdapter(), config: config(), reenqueue: () => {}, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:chat_received', { text: 'can you get wood', username: 'Steve', playerSpoke: true, ts: Date.now() })
+    expect(orch.currentLoop?.inFlight?.name).toBe('gather')
+    await orch.handleDispatch('sei:chat_received', { text: 'go get more wood, like 10 more', username: 'Steve', playerSpoke: true, ts: Date.now() })
+    const turn = JSON.stringify(provider.calls[1].messages ?? provider.calls[1])
+    expect(turn).toContain("You're currently: gather 3 oak_log")
+  })
 })

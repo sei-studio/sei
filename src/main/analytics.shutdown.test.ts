@@ -5,6 +5,11 @@
  * quit (and leave the companion in the world) for 30s.
  */
 import { describe, it, expect, vi } from 'vitest';
+// 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
+// SEI_ANALYTICS_DEV is set (analyticsContext.ts send gate).
+vi.hoisted(() => {
+  process.env.SEI_ANALYTICS_DEV = '1';
+});
 
 const { shutdownSpy } = vi.hoisted(() => ({
   // posthog-node rejects its shutdown timeout with a bare string.

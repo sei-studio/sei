@@ -4,7 +4,7 @@
  * only move in whole steps, counted on absolute transcript positions.
  */
 import { describe, it, expect } from 'vitest';
-import { voiceWindowStart } from './transcript';
+import { toMessages, voiceWindowStart } from './transcript';
 import type { ChatMessage } from '../../shared/ipc';
 
 /** A transcript of `n` alternating user/companion rows; row text = absolute position. */
@@ -80,5 +80,77 @@ describe('voiceWindowStart', () => {
     expect(firstKept(rows(25), 0)).toBe(10);
     const h = rows(25);
     expect(Number(h[voiceWindowStart(h, 0, 10, 0)].text)).toBe(15);
+  });
+});
+
+/**
+ * toMessages appendOnly (261102, backseat). The model must read the same text
+ * either way; what changes is that appending a row never edits an earlier
+ * block, so a cache breakpoint on the last history message stays readable.
+ */
+describe('toMessages appendOnly', () => {
+  type Msg = { role: 'user' | 'assistant'; content: unknown };
+  const row = (i: number, role: 'user' | 'companion', text: string, extra: Partial<ChatMessage> = {}): ChatMessage =>
+    ({ id: `r${i}`, role, text, ts: 1_700_000_000_000 + i * 1000, ...extra }) as ChatMessage;
+  /** The text the model reads: blocks of one message joined with no separator (Anthropic). */
+  const flat = (ms: Msg[]) =>
+    ms.map((m) => ({
+      role: m.role,
+      text: typeof m.content === 'string' ? m.content : (m.content as Array<{ text: string }>).map((b) => b.text).join(''),
+    }));
+  /** Every content block in order, as the cache prefix sees it. */
+  const blocks = (ms: Msg[]): string[] =>
+    ms.flatMap((m, i) =>
+      (typeof m.content === 'string' ? [m.content] : (m.content as Array<{ text: string }>).map((b) => b.text)).map(
+        (t) => `${i}:${m.role}:${t}`,
+      ),
+    );
+
+  // A backseat-shaped transcript: the companion talks on every look, the
+  // player now and then, a finished play session and a web lookup in between.
+  const history: ChatMessage[] = [
+    row(0, 'companion', 'oh the boss is back'),
+    row(1, 'companion', 'that dodge was clean'),
+    row(2, 'user', 'thanks lol'),
+    row(3, 'companion', 'ok now heal'),
+    row(4, 'companion', 'it says level 12', { lookup: { queries: ['boss level'] } } as Partial<ChatMessage>),
+    row(5, 'companion', 'you got this'),
+    { id: 'p', role: 'system', text: 'You played Minecraft for 10 minutes.', ts: 1_700_000_006_000, event: { kind: 'play' } } as ChatMessage,
+    row(7, 'user', 'back'),
+    row(8, 'user', 'did you miss me'),
+    row(9, 'companion', 'always'),
+  ];
+
+  it('reads exactly the same text as the default string merge', () => {
+    for (let n = 1; n <= history.length; n++) {
+      const h = history.slice(0, n);
+      expect(flat(toMessages(h, { appendOnly: true }))).toEqual(flat(toMessages(h)));
+    }
+  });
+
+  it('leaves the default (chat, call) output unchanged: plain strings', () => {
+    const ms = toMessages(history);
+    expect(ms.every((m) => typeof m.content === 'string')).toBe(true);
+    expect(ms[1]).toEqual({ role: 'assistant', content: 'oh the boss is back\nthat dodge was clean' });
+  });
+
+  it('keeps roles alternating and starting on the user', () => {
+    const ms = toMessages(history, { appendOnly: true });
+    expect(ms[0].role).toBe('user');
+    ms.forEach((m, i) => i > 0 && expect(m.role).not.toBe(ms[i - 1].role));
+  });
+
+  it('only ever appends blocks when a row is added, never edits one', () => {
+    for (let n = 1; n < history.length; n++) {
+      const before = blocks(toMessages(history.slice(0, n), { appendOnly: true }));
+      const after = blocks(toMessages(history.slice(0, n + 1), { appendOnly: true }));
+      expect(after.slice(0, before.length)).toEqual(before);
+    }
+  });
+
+  it('the default merge does edit the last block, which is the cache bug it avoids', () => {
+    const before = blocks(toMessages(history.slice(0, 1)));
+    const after = blocks(toMessages(history.slice(0, 2)));
+    expect(after.slice(0, before.length)).not.toEqual(before);
   });
 });

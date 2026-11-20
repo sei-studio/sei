@@ -72,6 +72,13 @@ local activePort = nil      -- the port that last answered as Sei
 local misses = 0            -- consecutive failures on activePort
 local inflight = {}         -- port -> GetTime() the request left
 
+local function shardId()
+    local shard = GLOBAL.TheShard
+    if shard == nil or shard.GetShardId == nil then return nil end
+    local ok, id = pcall(function() return shard:GetShardId() end)
+    return ok and id ~= nil and tostring(id) or nil
+end
+
 local function helloBody()
     local TheWorld = GLOBAL.TheWorld
     local ws = TheWorld and TheWorld.state or {}
@@ -91,6 +98,11 @@ local function helloBody()
         players = players,
         ismastersim = TheWorld ~= nil and TheWorld.ismastersim or false,
         caves = TheWorld ~= nil and TheWorld:HasTag("cave") or false,
+        -- A world with caves runs this helper on BOTH server shards (forest
+        -- master + caves), each heartbeating with its own players. Sei hands
+        -- a summon only to the shard its player is on (261104).
+        shard = shardId(),
+        mastershard = TheWorld ~= nil and TheWorld.ismastershard or false,
         mod = MOD_VERSION,
         build = tostring(GLOBAL.APP_VERSION or ""),
         bot = Companion.IsLive() and Companion.inst.GUID or nil,
@@ -115,6 +127,19 @@ local function onSummon(offer)
     end
     Net.Configure(offer.botPort, offer.token)
     if offer.announce == nil then offer.announce = ANNOUNCE end
+    -- Never spawn on a secondary shard (the caves) the player is not on: the
+    -- body would stand alone in the dark, and darkness kills a survivor in
+    -- 10-20 s (261104, the early DST_BODY_DIED). Sei only offers to the
+    -- player's shard; this covers a player migrating at that very moment.
+    local TheWorld = GLOBAL.TheWorld
+    if TheWorld ~= nil and not TheWorld.ismastershard then
+        local Util = require("sei/util")
+        if Util.FindPlayer(offer.nearUserid) == nil then
+            log("summon offer is for a player who is not on this shard, refusing it")
+            require("sei/events").Post("spawnfailed", { reason = "your player is not in this part of the world (caves vs surface); press Play again" })
+            return
+        end
+    end
     local inst, reason = Companion.Summon(offer)
     if inst == nil then
         log("summon failed: " .. tostring(reason))

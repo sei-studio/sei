@@ -12,6 +12,7 @@ import { FACE_EXPRESSION_ENUM, SAY_EXPRESSION_DESCRIPTION, resolveExpression } f
 import { createLlmProvider } from './llm/index.js'
 import { applyLlmSwitch } from '../llmInit.js'
 import { TERMINAL_CHATGPT_CODES } from './llm/responsesWire.js'
+import { isProviderRegionRefusal, providerRegionError, PROVIDER_REGION_CODE } from './llm/regionRefusal.js'
 import { VISION_MESSAGES_PATH } from './anthropicClient.js'
 import { createTokenBucket } from './rateLimiter.js'
 import { createDebouncer, createThrottle } from './debounce.js'
@@ -31,6 +32,7 @@ import {
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   renderCore,
   renderCompanions,
   voiceGroupGuidance,
@@ -44,6 +46,10 @@ import {
   FIRST_CONTACT,
   nextTimeGreeting,
   MEMORY_GOAL_TAIL,
+  ACK_LINE,
+  staleTurnText,
+  STALE_TURN_SAY_RESULT,
+  STALE_TURN_TOOL_RESULT,
 } from './prompts.js'
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from './nextStep.js'
 import { buildAnthropicTools } from './schemaBridge.js'
@@ -518,6 +524,15 @@ export function isBareStopLine(text, { wordsOnly = false } = {}) {
 // 261012 (pass 5): the player's line asks her to stop or wait (not "don't
 // stop"). Gates the idle hold, so her OWN stop() while switching to a new
 // order ("can you smelt this" answered with stop + say "on it") is no hold.
+// 261112: a voice line that cut her off mid-line (the app's barge-in, carried
+// by deliverSeiChat as interrupted + cutLine). Returns { line } or null. Such a
+// line skips the forced stop rules below (the bare-stop backstops and the
+// player stop hold): "stop" or "wait" said over her voice is usually about
+// the talking, so the model decides from the cut-off note in its turn.
+export function cutInOf(data) {
+  if (!data || data.interrupted !== true || data.playerSpoke === false) return null
+  return { line: String(data.cutLine ?? '').trim().slice(0, 300) }
+}
 const ASKS_STOP_RE = /(?<!\b(?:dont|don't|do not|never|not|cant|can't|wont|won't)\s+)\b(?:stop|halt|cancel|nevermind|never mind|enough|pause|freeze|hold on|hold up|wait|quit it)\b/
 export function asksToStop(text) {
   return ASKS_STOP_RE.test(String(text ?? '').toLowerCase())
@@ -1127,6 +1142,44 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // handed the items over anyway (probe chain_give and chain_gather).
   let clearedTasks = []
   const CLEARED_TASK_MS = config?.memory?.cleared_task_note_ms ?? 180_000
+  // 261031 (pass 32): the player's lines she answered with a world action
+  // since her last hand-over ({ at, who, line, toPlayer }), oldest first.
+  // Everything above keys on a player task in her heartbeat, and she wrote
+  // one for "grab me some coal and bring it back here" in only 48 of 140
+  // errands sessions (10-20..10-30). Without it, nothing kept the errand: on
+  // the turn her walk reached the player she started the next order or her
+  // own plan with the coal still in her bag (9 of the 24 sessions where the
+  // coal never reached them). While one is open, the turn her walk to the
+  // player ends gets a hand-over note (arrivalAskText). toPlayer: the line only got a walk to the
+  // player or follow ("meet me over here"), so it asks for nothing to hand
+  // over. Cleared by a give that lands, a plain stop, or age. Only for games
+  // that report their hand-overs (caps.handOverDetail).
+  // 261102 (pass 37): each ask also keeps `items` (what the actions she
+  // answered it with bring in, caps.workItems) and `delivering` (she set off
+  // toward the player while carrying some of them). The 11-02 scorecard had
+  // the plain "look back at what they asked you for" note hand over the
+  // called-off logs while the asked-for coal stayed in her bag (errands-02),
+  // a stop clear the coal errand with the log run (errands-03), and a stop
+  // that ended a log run leave the logs owed, so they went to the player and
+  // her next craft failed (work_session-01).
+  // 261103 (pass 38): `delivering` is 'own' when she set off on her own and
+  // 'answer' when the walk answers a newer line that got only the walk
+  // ("hows it going" answered with "walking it to you" and a goTo). Before,
+  // that newer walk-only line blocked the flag, so in errands-04-B (pass-37
+  // compare) the walk back carried no hand-over line, the log order during
+  // it took over, and she reached the player and kept the coal. A toPlayer
+  // ask also keeps `replaced`, the items of the work its walk cut off: those
+  // asks are not delivered by it ("forget the logs, just meet me").
+  let openAsks = []
+  const OPEN_ASK_MS = config?.memory?.open_ask_note_ms ?? 300_000
+  const OPEN_ASK_MAX = 3
+  // A line answered only with a walk gets the items of the next action that
+  // brings some in, if it starts this soon after.
+  const OPEN_ASK_ITEMS_MS = 90_000
+  // Actions whose items are a product made from the items fetched first. In
+  // the same loop they add to the ask, so "make me a crafting table" is
+  // answered by the give of the table and not by the leftover log.
+  const MAKES_ITEMS = new Set(['craft', 'smeltInput'])
   async function refreshPlayerTaskInGoals() {
     if (!heartbeatLog) { playerTaskInGoals = false; heartbeatGoals = []; heartbeatGoalLines = []; playerTasks = []; taskHolds.clear(); return }
     try {
@@ -1187,9 +1240,167 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const names = new Set(playerNames().map((n) => String(n).toLowerCase()))
     return Object.values(args).some((v) => typeof v === 'string' && names.has(v.trim().toLowerCase()))
   }
+  // pass 32: see openAsks.
+  function noteOpenAsk(line, who, uses, loopId = null, running = null) {
+    const text = String(line ?? '').trim()
+    if (!text || typeof caps.handOverDetail !== 'function') return
+    const toPlayer = uses.every((u) => aimsAtPlayer(u.input) && !isHandOver(u.name))
+    const worked = toPlayer ? [] : [...new Set(uses.flatMap((u) => workItemsOf(u.name, u.input)))]
+    // 261111 (pass 52): only the items their line asked for. Work that
+    // brings in none of them answers the line with her own plan ("yeah
+    // sounds good" -> craft(wooden_pickaxe)); that ask is `unnamed` and
+    // stays out of the hand-over notes unless a later action in this loop
+    // makes something the line named ("make me a table" -> logs, then the
+    // table). See itemsNamedIn (Minecraft observers/workItems.js).
+    const items = namedItemsOf(text, worked)
+    const unnamed = worked.length > 0 && items.length === 0
+    // pass 38: the work a walk-only answer cuts off (see openAsks).
+    const replaced = toPlayer && running ? workItemsOf(running.name, running.args ?? running.input) : []
+    openAsks = [...openAsks.filter((a) => a.line !== text), { at: Date.now(), who: who ?? null, line: text, toPlayer, items, unnamed, delivering: false, loopId, replaced }].slice(-OPEN_ASK_MAX)
+  }
+  // pass 52: the items of `items` a player's line names (caps.namedItems),
+  // or all of them for a game without item words.
+  function namedItemsOf(line, items) {
+    if (!items.length || typeof caps.namedItems !== 'function') return items
+    try {
+      const out = caps.namedItems(line, items)
+      return Array.isArray(out) ? out.filter((n) => items.includes(n)) : items
+    } catch { return items }
+  }
+  // pass 37: see openAsks.
+  function workItemsOf(name, args) {
+    if (typeof caps.workItems !== 'function') return []
+    try {
+      const out = caps.workItems(name, args)
+      return Array.isArray(out) ? out.filter((n) => typeof n === 'string' && n) : []
+    } catch { return [] }
+  }
+  // What she carries of an ask's items, as [{ item, n }].
+  function carriedFor(ask) {
+    if (!ask?.items?.length || typeof caps.carriedCounts !== 'function') return []
+    let counts = {}
+    try { counts = caps.carriedCounts(ask.items) ?? {} } catch { counts = {} }
+    return ask.items.map((item) => ({ item, n: Number(counts[item]) || 0 })).filter((c) => c.n > 0)
+  }
+  // Open asks that wanted something brought, with what she carries of each.
+  // An item is listed once, under the newest ask that names it.
+  function carriedAsks({ deliveringOnly = false } = {}) {
+    openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
+    const seen = new Set()
+    const out = []
+    for (const a of [...openAsks].reverse()) {
+      if (a.toPlayer || a.unnamed || (deliveringOnly && !a.delivering)) continue
+      const items = carriedFor(a).filter((c) => !seen.has(c.item))
+      for (const c of items) seen.add(c.item)
+      if (items.length) out.unshift({ line: a.line, items, delivering: a.delivering, at: a.at })
+    }
+    return out
+  }
+  // A stop on the player's line ends the asks whose work it ended (the log
+  // run "actually stop" ended), and with nothing running, all of them (pass
+  // 32). Stopping a walk or an explore ends no ask: in errands-03 "forget the
+  // logs, just meet me" stopped an explore and the coal was still owed.
+  function closeAsksOnStop(running, startsNew) {
+    if (!running) {
+      if (!startsNew) openAsks = []
+      return
+    }
+    const ended = new Set(workItemsOf(running.name, running.args ?? running.input))
+    if (!ended.size) return
+    openAsks = openAsks.filter((a) => !a.items?.some((i) => ended.has(i)))
+  }
+  // A give that landed answers the asks for that item, and the asks that
+  // named no items. A give no open ask names answers them all (pass 32): the
+  // item lists miss things (a recipe chain made outside the ask's loop), and
+  // an ask left open after its give makes the arrival note offer leftovers.
+  function closeAsksOnGive(item) {
+    if (!openAsks.some((a) => a.items?.includes(item))) { openAsks = []; return }
+    openAsks = openAsks.filter((a) => a.items?.length && !a.items.includes(item))
+  }
+  // Called for every world action she starts.
+  function noteAskWork(name, args) {
+    if (!openAsks.length) return
+    const now = Date.now()
+    const last = openAsks[openAsks.length - 1]
+    // Only work in the loop the player's line started counts toward it: an
+    // item action on a later turn is as likely her own goal work, and the
+    // arrival note would then offer her own logs for "go explore east".
+    const loopId = currentLoop?.id ?? null
+    const ask = loopId ? [...openAsks].reverse().find((a) => a.loopId === loopId && !a.toPlayer) : null
+    if (ask) {
+      // pass 52: only what the line named, as in noteOpenAsk.
+      const items = namedItemsOf(ask.line, workItemsOf(name, args))
+      if (items.length && MAKES_ITEMS.has(name)) ask.items = [...new Set([...(ask.items ?? []), ...items])]
+      else if (items.length && !ask.items?.length && now - ask.at < OPEN_ASK_ITEMS_MS) ask.items = items
+      if (ask.items?.length) ask.unnamed = false
+    }
+    // Her walk back with the items. pass 38: also when the walk answers a
+    // newer line that got only the walk (errands-04-B "hows it going"); its
+    // snapshot line then leaves the choice to her (deliveryNoteText), since
+    // that line may be "come here" after small talk she answered with her
+    // own gather. Not the asks whose work that walk cut off.
+    if (walksOrFollowsOwner(name, args)) {
+      const answers = last?.toPlayer ? last : null
+      for (const a of openAsks) {
+        if (a.toPlayer || a.delivering || !carriedFor(a).length) continue
+        if (answers?.replaced?.some((i) => a.items?.includes(i))) continue
+        a.delivering = answers ? 'answer' : 'own'
+      }
+    }
+  }
+  const walksOrFollowsOwner = (name, args) => (name === 'goTo' || name === 'follow') && Object.values(args ?? {}).some(isOwnerName)
+  // The delivery line in the snapshot: asks she set off to hand over and
+  // still carries, only while that walk (or follow) is running. Once she has
+  // arrived the arrival note says it once; the line staying on after it made
+  // her hand over logs the player had called off during the walk.
+  function deliveryNoteText() {
+    if (!openAsks.length || stayNote) return ''
+    const cur = inflight.current()
+    if (!cur || !walksOrFollowsOwner(cur.name, cur.args)) return ''
+    const asks = carriedAsks({ deliveringOnly: true })
+    if (!asks.length) return ''
+    const who = config?.player_display_name || config?.player_username || null
+    return NUDGES.deliveryNote({ who, asks, answered: !asks.some((a) => a.delivering === 'own') })
+  }
+  // The completion turn of a walk that reached the player: the hand-over
+  // note, or '' when no open line could want a hand-over.
+  // Only a walk to the player themself: aimsAtPlayer also matches sibling
+  // companions, and "You are next to Steve" on reaching Lyra is false.
+  const isOwnerName = (v) => typeof v === 'string' && !!v.trim() &&
+    [config?.player_display_name, config?.player_username].some((n) => n && String(n).toLowerCase() === v.trim().toLowerCase())
+  const isCompanionName = (v) => typeof v === 'string' && !!v.trim() &&
+    companions.some((c) => String(c).toLowerCase() === v.trim().toLowerCase())
+  // 261102 (pass 37): a goTo whose target is the player themself.
+  const walksToOwner = (u) => u?.name === 'goTo' && Object.values(u?.input ?? {}).some(isOwnerName)
+  // pass 38: `deferred`: a line she answered during the walk without
+  // starting it (handleActionComplete's replyDeferred).
+  function arrivalAskText(data, { deferred = false } = {}) {
+    if (!openAsks.length || data?.aborted || data?.name !== 'goTo') return ''
+    if (!Object.values(data?.input ?? {}).some(isOwnerName)) return ''
+    if (!/^reached\b/.test(String(data?.result ?? ''))) return ''
+    // A held player task has its own note (taskNoteText). A cleared one does
+    // not stop this note: the coal asked for before a called-off log run
+    // still has to be handed over (errands-02-B, pass 32 compare).
+    if (taskHolds.size) return ''
+    openAsks = openAsks.filter((a) => Date.now() - a.at < OPEN_ASK_MS)
+    if (!openAsks.some((a) => !a.toPlayer && !a.unnamed)) return ''
+    // Name the player she reached, not the newest asker (a teammate or a
+    // second human may have spoken last).
+    const who = config?.player_display_name || config?.player_username || null
+    // pass 37: name what she carries for which line, when it is known.
+    const asks = carriedAsks()
+    if (asks.length) {
+      // pass 38: they asked for something else since (see arrivedCarrying).
+      const since = Math.min(...asks.map((a) => a.at))
+      const newer = deferred || playerTasks.some((t) => taskNotStarted(t) && taskSetAt.get(t.key) > since)
+      return NUDGES.arrivedCarrying({ who, asks, newer })
+    }
+    return NUDGES.arrivedAsks({ who })
+  }
   function noteTaskStarted(name, args) {
     if (ACTION_VERB_SKIP.has(name)) return
     lastActionStartAt = Date.now()
+    noteAskWork(name, args)
     if (!playerTasks.length) return
     const open = playerTasks.filter((t) => Number.isFinite(taskSetAt.get(t.key)))
     const linked = aimsAtPlayer(args) ? open : tasksOfAction(args, open, { names: playerNames() })
@@ -1285,7 +1496,15 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // start. A player task stamped before it was given in an earlier session.
   const sessionStartedAt = Date.now()
   const PLAYER_STOP_HOLD_MS = config?.memory?.player_stop_hold_ms ?? 120_000
-  const playerStopHeld = () => playerStopAt > 0 && Date.now() - playerStopAt < PLAYER_STOP_HOLD_MS
+  // 261112: the hold after a stop she chose on a line that cut her off
+  // mid-line. Her stop() is honoured, but the line was ambiguous (it may have
+  // been about her talking), and the player is usually mid-activity: a two
+  // minute silence mid-chase was the reported failure. The short hold still
+  // keeps the next idle tick (5 s at the agentic cadence) from restarting her
+  // own goal right after she stopped, and matches the reply window.
+  const INTERRUPT_STOP_HOLD_MS = config?.memory?.interrupt_stop_hold_ms ?? 20_000
+  let playerStopHoldMs = PLAYER_STOP_HOLD_MS
+  const playerStopHeld = () => playerStopAt > 0 && Date.now() - playerStopAt < playerStopHoldMs
   // 261018 (pass 15): set when she herself answered a player's line with stop
   // or unfollow and started nothing new: { at, who, line }. Later turns see a
   // short note in the snapshot (NUDGES.stayNote) so a completion or idle turn
@@ -1299,6 +1518,37 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const ms = Date.now() - stayNote.at
     if (ms >= STAY_NOTE_MS) { stayNote = null; return '' }
     return NUDGES.stayNote({ who: stayNote.who, line: stayNote.line, secs: Math.max(1, Math.round(ms / 1000)) })
+  }
+  // 261112 (pass 53): the player's lines she answered in words while an
+  // action ran (loop._replyDeferred), kept past the completion turn that
+  // brought them back (NUDGES.deferredReplies) when that turn went to a
+  // hand-over first ({ line, at }, oldest first). In errands-03 (11-12
+  // scorecard) the walk back with the coal ended, its turn carried "get me
+  // like 8 logs" and the arrival note, she gave the coal first as that note
+  // asks, and the order was gone: an order answered in words has no task
+  // and no open ask. The next idle tick read only her own furnace goal and
+  // the `next:` furnace line ("8 cobble for the furnace first, then i go get
+  // your logs"). Only lines a give put off are kept: carrying every one
+  // brought answered questions back ("ok so caves, you're into them?",
+  // pass53-probe q_only). They ride the snapshot while nothing is running
+  // (deferredNoteText) and end when she starts other work (a world action
+  // that is not a hand-over or a walk to the player), when a player line
+  // gets an action or a stop, when she sets a task for the player, or after
+  // DEFERRED_LINE_MS. deferredCarry: the lines of the completion turn in
+  // this loop, until she starts a world action.
+  let deferredLines = []
+  let deferredCarry = null
+  const DEFERRED_LINE_MS = config?.memory?.deferred_line_note_ms ?? 300_000
+  // `shown`: lines this turn's event text already brings back.
+  function deferredNoteText(shown = []) {
+    if (!deferredLines.length) return ''
+    deferredLines = deferredLines.filter((d) => Date.now() - d.at < DEFERRED_LINE_MS)
+    const cur = inflight.current()
+    if (cur && !caps.backgroundActions?.[cur.name]) return ''
+    const lines = deferredLines.filter((d) => !shown.includes(d.line))
+    if (!lines.length) return ''
+    const who = config?.player_display_name || config?.player_username || null
+    return NUDGES.deferredNote({ who, lines: lines.map((d) => d.line) })
   }
   // 17-04 (D-08): node ids whose known-good `procedure` has already been written
   // to per-world memory this session — dedupes the procedural write-back so a
@@ -1598,7 +1848,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 260703: track per-loop speech so a player-message loop can refuse to
     // end silently (see the end_loop deferral in the dispatch predicates).
     loop._spokeThisLoop = true
-    if ((loop._currentIterationTrigger ?? loop._triggerEvent) === 'sei:attacked') _lastFightLineAt = Date.now()
+    if ((loop._currentIterationTrigger ?? loop._triggerEvent) === 'sei:attacked') {
+      _lastFightLineAt = Date.now()
+      _lastFightMobId = loop._fightMobId ?? null
+    }
     // 260703: any line actually reaching the player counts as this session's
     // greeting — stop injecting the sticky GREETING_HINT from here on.
     greetedPlayer = true
@@ -1800,6 +2053,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let deathPending = false
   let life = 0
   const DEATH_PENDING_MAX_MS = 10_000
+  // 261120: an adapter whose respawn can outlast DEATH_PENDING_MAX_MS (DST:
+  // up to ~21.5 s from the death to the new body) passes `stillDying`; the
+  // hold is extended while it says so, re-checked every
+  // DEATH_PENDING_RECHECK_MS, never past DEATH_PENDING_HARD_MAX_MS.
+  const DEATH_PENDING_RECHECK_MS = 1_000
+  const DEATH_PENDING_HARD_MAX_MS = 30_000
   /** Player lines that arrived while deathPending with no loop open. */
   let deathHeld = []
   function flushDeathHeld() {
@@ -1811,9 +2070,24 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       }
     }
   }
+  // 261111 (pass 51): see the staleTurn check in runIterations.
+  const STALE_TURN_MAX_PER_LOOP = 2
+  function safeStaleTurn(toolUses, sinceMs) {
+    if (!Array.isArray(toolUses) || toolUses.length === 0) return null
+    try {
+      const r = caps.staleTurn(toolUses, sinceMs)
+      return r && typeof r.reason === 'string' && r.reason ? r : null
+    } catch (err) {
+      logger.warn?.(`[sei/orch] staleTurn threw: ${err?.message ?? err}`)
+      return null
+    }
+  }
   // 261011: when the bot last spoke during an attack turn, so the next hit in
   // the same fight is told it already warned the player (NUDGES.fightAlreadyTold).
   let _lastFightLineAt = 0
+  // 261111 (pass 51): the mob that turn was about (adapter entity id), so a
+  // new mob after that one died is not "this fight" (caps.sameFight).
+  let _lastFightMobId = null
   const FIGHT_TOLD_WINDOW_MS = 30_000
   // 261018 (pass 17): a line from any other turn counts too. night_social-01
   // (pass 15 eval): her reply to "are you ok??" said "going after the zombie
@@ -1825,10 +2099,16 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // line a joke) from 6/6 to 0-3/6 spoken, because she counted "they can see
   // me fighting" as told (scripts/quality-eval/pass17-probe.mjs).
   const RECENT_LINE_TOLD_MS = 15_000
-  function fightToldSuffix() {
+  function fightToldSuffix(data = null) {
     const now = Date.now()
     const ago = now - _lastFightLineAt
-    if (_lastFightLineAt && ago < FIGHT_TOLD_WINDOW_MS) {
+    // 261111 (pass 51): "this fight" was any hit within 30s, so a second
+    // drowned 17s after she killed the first was read as the same fight
+    // ("already told ... skip the warning") and she said "drowned's down" to
+    // a player it was hitting. A new mob after the old one died is a new fight.
+    let same = true
+    try { same = caps.sameFight(_lastFightMobId, data) !== false } catch { same = true }
+    if (_lastFightLineAt && ago < FIGHT_TOLD_WINDOW_MS && same) {
       return ' ' + NUDGES.fightAlreadyTold(Math.max(1, Math.round(ago / 1000)))
     }
     const last = recentOwnTurns(convoMemory?.recentChat?._internal?.selfLines, { now, turns: 1, withinMs: RECENT_LINE_TOLD_MS })[0]
@@ -2169,6 +2449,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         ...(renderLanguageDirective(config.persona?.language ?? config.chat_language)
           ? [renderLanguageDirective(config.persona?.language ?? config.chat_language)]
           : []),
+        // 261116: someone else's character (from the World) whose description
+        // may name the creator's language. Appended after the directive so
+        // the player's language wins over the persona text (English gets no
+        // directive at all, so without this the persona's language won).
+        ...(config.persona?.language_adopted
+          ? [renderAdoptedLanguageNote(config.persona?.language ?? config.chat_language)]
+          : []),
         // 260725 Knowledge: user-provided reference files (capped + sanitized
         // in main, shipped via the init payload). APPENDED (never inserted) for
         // the same cache-key index-stability reason as above; spread so
@@ -2430,7 +2717,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
 
   // ─── Snapshot helper ────────────────────────────────────────────────
-  function snapshotText({ playerRequestOwed = false } = {}) {
+  // 261111 (pass 51): when the last snapshot was composed, i.e. what the
+  // next model call sees (caps.staleTurn compares against it).
+  let _lastSnapshotAt = 0
+  function snapshotText({ playerRequestOwed = false, deferredShown = [] } = {}) {
+    _lastSnapshotAt = Date.now()
     // 260725: the pause contract says NO Minecraft context reaches the model
     // while paused — this is the single choke point every turn's snapshot
     // (fresh seed, tool-result continuation, action tick) flows through, so
@@ -2441,6 +2732,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       const w = worldRegistry?.current?.() ?? null
       // Read first: it also expires the note.
       const note = stayNoteText()
+      // 261102 (pass 37): the items she set off to hand over.
+      const delivery = deliveryNoteText()
+      // 261112 (pass 53): lines she put off while busy.
+      const deferred = deferredNoteText(deferredShown)
       const text = snapshotComposer.next({
         lastActionResult,
         inFlight: inflight.current(),
@@ -2464,7 +2759,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // chat turns after "actually stop" she read "next: make a furnace" as
         // what she was doing ("i'm still making that furnace", 1 cobblestone,
         // nothing running).
-        hideNext: playerRequestOwed || playerTaskInGoals || !!note,
+        // 261102 (pass 37): and so does a hand-over she set off on (errands-03
+        // left the coal in her bag for "next: crafting table" with no wood).
+        // 261112 (pass 53): and so do lines she put off while busy.
+        hideNext: playerRequestOwed || playerTaskInGoals || !!note || !!delivery || !!deferred,
         // 261018 (pass 16): items that arrived without an action of hers go
         // into the conversation record (sessionEvents.describeInventoryGain).
         // A run of them with nothing said in between is one line.
@@ -2473,7 +2771,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       if (typeof text === 'string') _repeatsContext.snapshot = text
       if (typeof text !== 'string') return text
       const tasks = taskNoteText()
-      return [text, note, tasks].filter(Boolean).join('\n')
+      return [text, note, tasks, delivery, deferred].filter(Boolean).join('\n')
     } catch (err) {
       logger.warn(`[sei/orch] composeSnapshot failed: ${err.message}`)
       return '(snapshot unavailable)'
@@ -2557,6 +2855,10 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     else if (typeof a.player === 'string') parts.push(a.player)
     else if (typeof a.item === 'string') parts.push(a.item)
     else if (typeof a.name === 'string') parts.push(a.name)
+    // 261110 (pass 49): the count. "You're currently: gather oak_log" read as
+    // any wood gather, so "go get more wood, like 10 more" during her own
+    // 3-log gather got "on it" and the 3-log gather ran on (probe 1/10).
+    if (parts.length && Number.isFinite(a.count)) parts.unshift(String(a.count))
     if (typeof a.times === 'number') parts.push(`times=${a.times}`)
     return `${name}${parts.length ? ' ' + parts.join(' ') : ''}`.slice(0, 120)
   }
@@ -2588,7 +2890,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     return playerLabel(name)
   }
 
-  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false) {
+  function interruptTurnText(loop, chatText, who = null, teammate = false, unanswered = false, cutIn = null) {
     // 260921: "mid-action" only when something is actually running.
     // extractPriorTask returns the last tool call in the history whether or
     // not it has finished, so a line that landed BETWEEN actions (the gather
@@ -2625,7 +2927,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       // 260921: the unanswered-line retry (see runIterations) re-presents the
       // SAME line; only a genuinely new one re-arms it.
       if (!unanswered) {
-        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null, at: Date.now() }
+        loop._lastPlayerLine = teammate ? null : { text: String(chatText), who: who ?? null, at: Date.now(), ...(cutIn ? { interrupted: true } : {}) }
         loop._unansweredRetried = false
         loop._unansweredNudgeText = null
       }
@@ -2675,7 +2977,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       peers: companions,
       fromTeammate: teammate === true,
       ownAction,
-    })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '')
+    })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '') +
+      // 261112: their line cut her off mid-line (see cutInOf).
+      (humanLine && cutIn && !unanswered ? `\n\n${NUDGES.cutOff(cutIn.line)}` : '')
   }
 
   // 261023 (pass 25): NUDGES.goodbyeNotStarted for a player line that opens a
@@ -2788,9 +3092,42 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // 261018 (pass 15): any world action that moves her or starts work ends
     // the stay note, on any trigger (a completion turn, an idle tick, her own
     // project), not only on the turn a player line started.
-    if (stayNote && !ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+    // 261102 (pass 37): not a walk over to the player (see stopToPlayer).
+    if (stayNote && !ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name) && !walksToOwner({ name, input: args })) {
       logger.info?.(`[sei/orch] stay note cleared: she started ${name}`)
       stayNote = null
+    }
+    // 261112 (pass 53): a hand-over keeps the lines her completion turn
+    // brought back, since that is the earlier ask being finished first. A
+    // walk to the player keeps the ones already kept but adds none: walking
+    // back after her own completion turn carried answered questions along
+    // ("ok so caves, you're into them?", pass53-probe q_only). Other work
+    // ends them (see deferredLines).
+    // 261113 (pass 54): a walk to the player carries them on to the give at
+    // the end of it. The completion turn often walks first (goTo the player)
+    // and gives on the walk's own completion turn, and the carry was dropped
+    // at the walk, so the order was gone by the give (the goTo-then-give
+    // path pass 53 left open). Only a give after the walk keeps them.
+    if (!ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+      const carryLive = deferredCarry &&
+        (deferredCarry.loopId === currentLoop?.id || (deferredCarry.viaWalk && Date.now() - deferredCarry.at < DEFERRED_LINE_MS))
+      if (isHandOver(name)) {
+        if (carryLive) {
+          const kept = deferredLines.filter((d) => !deferredCarry.lines.includes(d.line))
+          deferredLines = [...kept, ...deferredCarry.lines.map((line) => ({ line, at: Date.now() }))].slice(-DEFERRED_REPLY_MAX)
+          logger.info?.(`[sei/orch] deferred lines kept past ${name}: ${deferredCarry.lines.length}`)
+        }
+      } else if (walksOrFollowsOwner(name, args)) {
+        // neither kept nor ended; a carry rides the walk to the give
+        if (carryLive) {
+          deferredCarry = { ...deferredCarry, viaWalk: true, at: Date.now() }
+          logger.info?.(`[sei/orch] deferred lines carried on ${name}: ${deferredCarry.lines.length}`)
+        }
+      } else if (deferredLines.length) {
+        logger.info?.(`[sei/orch] deferred lines cleared: she started ${name}`)
+        deferredLines = []
+      }
+      if (!(walksOrFollowsOwner(name, args) && carryLive)) deferredCarry = null
     }
     releaseTaskHolds(name, args)
     noteTaskStarted(name, args)
@@ -2940,6 +3277,21 @@ function maybeWarnByteCap(loop, warned) {
       deathHeld.push({ event, data })
       return
     }
+    // 261113 (pass 54): a game notice (the player's death) that a turn's
+    // snapshot already showed, with a line of hers decided since: she has
+    // reacted, and waking again made her say it twice ("oof alex. creeper
+    // got you" then "oof alex. you alright? the creeper got you fast",
+    // combat_night-01 11-12). The line is already in the record (index.js).
+    if (event === 'sei:chat_received' && typeof data?.noticeShownAt === 'function') {
+      let shownAt = null
+      try { shownAt = data.noticeShownAt() } catch { shownAt = null }
+      let last = null
+      try { last = convoMemory.recentChat.lastSelf?.() ?? null } catch { last = null }
+      if (Number.isFinite(shownAt) && Number.isFinite(last?.at) && last.at >= shownAt) {
+        logger.info?.('[sei/orch] game notice already answered: a turn saw it and she spoke since')
+        return
+      }
+    }
 
     // 261011: a NEW player line, attack or death preempts whatever is left of
     // a previous turn's drained batch, exactly as it preempts a live action.
@@ -3084,7 +3436,7 @@ function maybeWarnByteCap(loop, warned) {
           const delivering = { event, data }
           tickLoop._deliveringLine = delivering
           try {
-            await handleActionTick(tickLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true })
+            await handleActionTick(tickLoop, { playerMessage: String(chatText), who, teammate: isTeammateVoiceChat, seiChat: data?.seiChat === true, cutIn: cutInOf(data) })
           } finally {
             if (tickLoop._deliveringLine === delivering) tickLoop._deliveringLine = null
           }
@@ -3107,6 +3459,8 @@ function maybeWarnByteCap(loop, warned) {
             // 260910: any part typed in the Sei app keeps the reply on the app
             // surface too (see the mirror gate in emitSay).
             seiChat: pendingInterrupt?.seiChat === true || data?.seiChat === true,
+            // 261112: any part that cut her off mid-line (cutInOf).
+            cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
           }
         }
         if (currentLoop.inFlight) {
@@ -3173,7 +3527,7 @@ function maybeWarnByteCap(loop, warned) {
         // loop. The priority queue runs P0 before P1, so the attack opens a
         // fresh loop first; the chat then arrives as a normal P1 dispatch.
         let preservedInterrupt = pendingInterrupt
-          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true }
+          ? { chatText: pendingInterrupt.chatText, who: pendingInterrupt.who ?? data?.who ?? 'player', seiChat: pendingInterrupt.seiChat === true, cutIn: pendingInterrupt.cutIn ?? null }
           : null
         // 260708: a chat-TRIGGERED loop that has not completed a single
         // iteration is itself an undelivered player message — the attack
@@ -3191,6 +3545,7 @@ function maybeWarnByteCap(loop, warned) {
               who: trig.username ?? 'player',
               seiChat: trig.seiChat === true,
               voice: trig.voice === true,
+              cutIn: cutInOf(trig),
             }
           }
         }
@@ -3310,7 +3665,8 @@ function maybeWarnByteCap(loop, warned) {
     // (greetCrossed), for the own_repeats note's 'greeted' form.
     let greetedTurn = false
     if (isSafetyEvent && typeof adapter.eventAddendum === 'function') {
-      eventText = adapter.eventAddendum(event, data).trim() + fightToldSuffix()
+      eventText = adapter.eventAddendum(event, data).trim() + fightToldSuffix(data)
+      loop._fightMobId = data?.attacker?.id ?? null
     } else {
       let eventAddendum = (typeof adapter.eventAddendum === 'function')
         ? adapter.eventAddendum(event === 'idle' ? 'sei:idle' : event, data)
@@ -3371,7 +3727,10 @@ function maybeWarnByteCap(loop, warned) {
             : `your teammate ${speakerName} just spoke to you`)
           : isVoiceLine ? 'the player just said this on the voice call' : 'the player just spoke to you'
         // 260921: kept for the unanswered-line retry (runIterations).
-        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null, at: Date.now() }
+        // 261112: a line that cut her off mid-line (cutInOf) is marked, so the
+        // forced stop rules leave the decision to the model.
+        const cutIn = fromTeammate ? null : cutInOf(data)
+        loop._lastPlayerLine = fromTeammate ? null : { text: String(data?.text ?? '').trim(), who: speakerName || null, at: Date.now(), ...(cutIn ? { interrupted: true } : {}) }
         // 261017 (quality pass 11): their line comes after the instructions,
         // labelled the way the transcript labels it ("Their line, player
         // (Alex): cool"), instead of as a bare quoted string right under the
@@ -3392,8 +3751,9 @@ function maybeWarnByteCap(loop, warned) {
             ? teammateVoiceGuidance(speakerName || 'your teammate').trim()
             : crossed
             ? NUDGES.greetCrossed
-            : 'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-              'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them. ' +
+            // 261101 (pass 34): the reply mandate, with an acknowledgement
+            // let off (ACK_LINE).
+            : `${ACK_LINE} ` +
               NUDGES.replyNoRestate +
               // 261013 (pass 6b): the mid-action variants already end on this
               // check; a line that starts a fresh loop did not, and errands
@@ -3402,6 +3762,7 @@ function maybeWarnByteCap(loop, warned) {
               (fromTeammate ? '' : MEMORY_GOAL_TAIL)) +
           (fromTeammate ? '' : goodbyeNotStartedTail()) +
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
+          (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
@@ -3811,6 +4172,7 @@ function maybeWarnByteCap(loop, warned) {
           text: pi.chatText,
           message: pi.chatText,
           playerSpoke: true,
+          ...(pi.cutIn ? { interrupted: true, cutLine: pi.cutIn.line } : {}),
         }
         drainSpared.add(redo)
         reenqueue('sei:chat_received', redo, 1 /* Priority.P1_CHAT */)
@@ -3849,6 +4211,7 @@ function maybeWarnByteCap(loop, warned) {
             // so its late reply still goes to the call / chat surface.
             ...(pa.preservedInterrupt.seiChat === true ? { seiChat: true } : {}),
             ...(pa.preservedInterrupt.voice === true ? { voice: true } : {}),
+            ...(pa.preservedInterrupt.cutIn ? { interrupted: true, cutLine: pa.preservedInterrupt.cutIn.line } : {}),
           }
           // Spoken before the drained batch was cut loose: not a new preempt.
           drainSpared.add(preserved)
@@ -4119,6 +4482,9 @@ function maybeWarnByteCap(loop, warned) {
         // 261022 (pass 22): when this task was set, and setting it again
         // picks a held task back up.
         if (forPlayer) {
+          // 261112 (pass 53): the task carries what she put off.
+          deferredLines = []
+          deferredCarry = null
           const key = goalKey(text.replace(/\s*\n+\s*/g, ' '))
           // 261022 (pass 22c): stamped when the line that asked for it came
           // in, so a quick "nvm" sent while she was still answering counts as
@@ -4228,6 +4594,11 @@ function maybeWarnByteCap(loop, warned) {
         const text = typeof r === 'string' ? r : (typeof r?.text === 'string' ? r.text : '')
         const h = caps.handOverDetail(name, text)
         if (h) convoMemory.recentChat.noteGiven(h)
+        // pass 32: a hand-over answers the asks before it. Not a give to a
+        // sibling companion ("give Lyra some logs"): the player's own ask
+        // is still open.
+        // pass 37: only the asks for what she gave.
+        if (h && !isCompanionName(h.to)) closeAsksOnGive(h.item)
       }
       if (countsAsGoalWork(name, r)) lastWorkAt = Date.now()
       if (!ACTION_VERB_SKIP.has(name)) lastActionEndAt = Date.now()
@@ -4556,7 +4927,7 @@ function maybeWarnByteCap(loop, warned) {
     let extraEventText = null
     if (pendingInterrupt && data.aborted) {
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)
+      extraEventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true, false, pendingInterrupt.cutIn)
       if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
       pendingInterrupt = null
       logger.info?.(`[sei/orch] action_complete + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -4660,7 +5031,8 @@ function maybeWarnByteCap(loop, warned) {
     // own cadence check).
     // 261020 (pass 20): her fresh line, when this is the result of her own
     // action (a player line folded in already carries the reply form).
-    const resultEventText = extraEventText ?? (resultRepeatsTail(loop).trim() || null)
+    // 261031 (pass 32): plus the open asks when a walk reached the player.
+    const resultEventText = extraEventText ?? ([arrivalAskText(data), resultRepeatsTail(loop).trim()].filter(Boolean).join('\n\n') || null)
     try {
       loop.appendToolResults(pendingResults, {
         snapshot: snapshotText(),
@@ -4807,7 +5179,7 @@ function maybeWarnByteCap(loop, warned) {
       // so a text-only response terminates naturally after the bot replies; a
       // text+action response re-suspends via R2.
       // 260608-tik: unified mid-action interrupt framing (Change 2).
-      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who)
+      eventText = interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, false, false, pendingInterrupt.cutIn)
       pendingInterrupt = null
       loop._currentIterationTrigger = 'sei:chat_received'
       logger.info?.(`[sei/orch] action_complete (tick-claimed) + PLAYER INTERRUPT folded into loop=${loop.id}`)
@@ -4820,6 +5192,15 @@ function maybeWarnByteCap(loop, warned) {
       // 261016 (pass 9c): she answered a player line while this ran without
       // starting anything ("on it, after this stone batch"); bring that line
       // back now, so a new order is not lost behind her own next step.
+      // 261031 (pass 32): a walk that reached the player first asks what she
+      // brought them (arrivalAskText), ahead of the next order.
+      const arrival = arrivalAskText(data, { deferred: !!replyDeferred?.length })
+      if (arrival) eventText = `${eventText}\n\n${arrival}`
+      // 261112 (pass 53): kept if this turn hands something over first.
+      // 261113 (pass 54): a carry on its way to a give keeps going through
+      // the walk's own completion turn.
+      if (replyDeferred?.length) deferredCarry = { lines: [...replyDeferred], loopId: loop.id }
+      else if (!deferredCarry?.viaWalk) deferredCarry = null
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
       else if (!pendingInterrupt) eventText += resultRepeatsTail(loop)
@@ -4827,7 +5208,7 @@ function maybeWarnByteCap(loop, warned) {
       // completion (no action running, so it could not ride an action tick)
       // is answered in the same turn as the result.
       if (pendingInterrupt && !pendingAttack) {
-        eventText = `${eventText}\n\n${interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true)}`
+        eventText = `${eventText}\n\n${interruptTurnText(loop, pendingInterrupt.chatText, pendingInterrupt.who, pendingInterrupt.teammate === true, false, pendingInterrupt.cutIn)}`
         if (pendingInterrupt.seiChat === true) loop._seiChatFolded = true
         pendingInterrupt = null
         loop._currentIterationTrigger = 'sei:chat_received'
@@ -4836,7 +5217,7 @@ function maybeWarnByteCap(loop, warned) {
     try {
       loop.appendUserTurn([
         { type: 'text', name: 'event',    text: eventText },
-        { type: 'text', name: 'snapshot', text: snapshotText({ playerRequestOwed: !!replyDeferred?.length }) },
+        { type: 'text', name: 'snapshot', text: snapshotText({ playerRequestOwed: !!replyDeferred?.length, deferredShown: replyDeferred ?? [] }) },
       ])
     } catch (err) {
       logger.warn?.(`[sei/orch] action_complete (tick-claimed) appendUserTurn failed: ${err.message}`)
@@ -4929,8 +5310,9 @@ function maybeWarnByteCap(loop, warned) {
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
     const attackText = attack && typeof adapter.eventAddendum === 'function'
-      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix()}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
+      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
       : null
+    if (attack) loop._fightMobId = attack?.attacker?.id ?? null
     // 261013: the silent check-in that carries a waiting player order invites
     // an action that replaces hers, so the silent-tick drop must let it through.
     const tickWaitingAsk = (attackText == null && playerMessage == null && loop.inFlight?.selfStarted && loop.inFlight?.waitingAsk) || null
@@ -4938,7 +5320,7 @@ function maybeWarnByteCap(loop, warned) {
     const tickEventText = attackText != null
       ? attackText
       : playerMessage != null
-      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered)
+      ? interruptTurnText(loop, playerMessage, who, teammate, unanswered, data?.cutIn ?? null)
       : withGreetingHint(NUDGES.actionTurn({
           action,
           stopTool: stopToolForAction(action),
@@ -5230,6 +5612,9 @@ function maybeWarnByteCap(loop, warned) {
       attachPendingFrame(loop)
 
       let resp
+      // 261111 (pass 51): the snapshot this call reads was taken at or before
+      // this moment; anything that changes after it is news to the turn.
+      const turnSnapshotAt = Math.min(_lastSnapshotAt || Date.now(), Date.now())
       try {
         resp = await callPersonality(loop, signal)
       } catch (err) {
@@ -5327,6 +5712,25 @@ function maybeWarnByteCap(loop, warned) {
           }
           return
         }
+        // 261103 (T303): a BYOK provider refused the caller's region. Local
+        // mode never pre-blocks by region, so this is the provider's own
+        // answer, and every turn would get it again: stop once with the plain
+        // line ("<Provider> does not support your region.") the launch panel
+        // and the error popup show. Never in cloud mode (the proxy calls the
+        // model from its own servers; its gate is Sei's, not a provider's).
+        if (err && !config.anthropic?.cloudMode && isProviderRegionRefusal(err)) {
+          _halted = true
+          const regionErr = providerRegionError(config.llm?.provider ?? 'anthropic')
+          logger.warn?.(`[sei/orch] ${regionErr.message} — stopping the session`)
+          if (typeof onTerminalError === 'function') {
+            try {
+              onTerminalError({ error: PROVIDER_REGION_CODE, message: regionErr.message })
+            } catch (cbErr) {
+              logger.warn?.(`[sei/orch] onTerminalError callback threw: ${cbErr && cbErr.message}`)
+            }
+          }
+          return
+        }
         if (err && (err.code === 'OLLAMA_MODEL_NO_TOOLS' || err.code === 'OLLAMA_MODEL_MISSING')) {
           _halted = true
           logger.warn?.(`[sei/orch] ${err.message} — stopping the session`)
@@ -5400,6 +5804,28 @@ function maybeWarnByteCap(loop, warned) {
       // silence-cadence reset below.
       const respText = (resp.text ?? '').trim()
       if (respText) emitThinkIfFull(respText)
+      // 261111 (quality pass 51): the turn was written about a fight that
+      // ended during the call (its mob died or left). Like a turn written by
+      // a body that died (deathPending above), none of it runs: not its line
+      // ("i'm hitting it now" about a dead spider) and not its attack (a swing
+      // at nothing). Every tool gets a result saying so and the next call
+      // decides again on a fresh snapshot. A loop gets this at most twice.
+      const staleTurn = !loop._earlySay && (loop._staleTurns ?? 0) < STALE_TURN_MAX_PER_LOOP
+        ? safeStaleTurn(toolUses, turnSnapshotAt)
+        : null
+      if (staleTurn) {
+        loop._staleTurns = (loop._staleTurns ?? 0) + 1
+        logger.info?.(`[sei/orch] turn not run: written before the fight changed (${staleTurn.reason}) (loop=${loop.id})`)
+        try { sessionActionStats.noteLlmTurn({ said: false }) } catch {}
+        const results = toolUses.map((u) => ({
+          type: 'tool_result',
+          tool_use_id: u.id,
+          content: u.name === 'say' ? STALE_TURN_SAY_RESULT : STALE_TURN_TOOL_RESULT,
+          is_error: false,
+        }))
+        loop.appendToolResults(results, { snapshot: snapshotText(), eventText: staleTurnText(staleTurn.reason) })
+        continue
+      }
       const sayResults = emitSayCalls(loop, toolUses)
       const saySpokenThisTurn = sayResults.size > 0 || loop._searchLineSpoken === true
       if (sayResults.size > 0) loop._saidThisLoop = true
@@ -5594,8 +6020,26 @@ function maybeWarnByteCap(loop, warned) {
         const line = loop._lastPlayerLine.text
         // The idle hold keeps its pre-pass-14 trigger: any action but unfollow
         // ends it. The stay note below lets stationary actions through.
+        // 261112: a line that cut her off mid-line (cutInOf) starts no hold by
+        // its words alone; only her own stop() on it does, and then the short
+        // INTERRUPT_STOP_HOLD_MS.
+        const cutInLine = loop._lastPlayerLine.interrupted === true
         if (actingTools.some(u => u.name !== 'unfollow') || setsGoal) playerStopAt = 0
-        else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) playerStopAt = Date.now()
+        else if (cutInLine) {
+          if (hasStop && asksToStop(line)) { playerStopAt = Date.now(); playerStopHoldMs = INTERRUPT_STOP_HOLD_MS }
+        } else if ((hasStop && asksToStop(line)) || isBareStopLine(line)) { playerStopAt = Date.now(); playerStopHoldMs = PLAYER_STOP_HOLD_MS }
+        // 261112 analytics: a cut-in line she answered by stopping her action.
+        if (cutInLine && !loop._lastPlayerLine.stopNoted && !loop._groupVoiceLine &&
+            (hasStop || actingTools.some(u => u.name === 'unfollow'))) {
+          loop._lastPlayerLine.stopNoted = true
+          try { sessionActionStats.noteInterruptStop() } catch {}
+        }
+        // pass 32: a line she acted on stays open until a hand-over. pass 37:
+        // a stop closes the asks whose work it ended (closeAsksOnStop).
+        if (!loop._groupVoiceLine) {
+          if (hasStop) closeAsksOnStop(loop.inFlight ?? inflight.current(), newSuspendingTools.length > 0)
+          if (newSuspendingTools.length > 0) noteOpenAsk(line, loop._lastPlayerLine.who, newSuspendingTools, loop.id, loop.inFlight ?? inflight.current())
+        }
         // 261018 (pass 15): her own choice to stop or unfollow in answer to
         // this line leaves the stay note for later turns (see stayNote). Not
         // for a group-call line, which may have been for someone else, and
@@ -5603,7 +6047,12 @@ function maybeWarnByteCap(loop, warned) {
         // goal set from the line ends it here; a world action ends it in
         // startLongRunner, on any turn.
         const calledUnfollow = actingTools.some(u => u.name === 'unfollow')
-        const newWork = actingTools.some(u => !STATIONARY_ACTIONS.has(u.name)) || setsGoal
+        // 261102 (pass 37): a stop that only walks her over to the player
+        // ("actually stop" answered with stop + goTo them) still leaves the
+        // note. In work_session-01 she reached them and set off on a new
+        // mining trip a second later.
+        const stopToPlayer = hasStop && !setsGoal && actingTools.length > 0 && actingTools.every(walksToOwner)
+        const newWork = !stopToPlayer && (actingTools.some(u => !STATIONARY_ACTIONS.has(u.name)) || setsGoal)
         // 261024 (pass 26): a stop that gets the call after it sets the note
         // only if that call starts nothing either (stopBefore).
         if (newWork) {
@@ -5714,8 +6163,11 @@ function maybeWarnByteCap(loop, warned) {
       // action is cancelled and no completion turn is owed after it.
       // Not on a group call's line to someone else ("lyra stop"): that turn
       // is often silent on purpose (_groupVoiceLine, as the unanswered retry).
+      // 261112: not on a line that cut her off mid-line (cutInOf): there a
+      // bare "stop" is often about her talking, and her reply decides.
       const unheededPlayerStop = !hasStop && !hasEndLoop && actingTools.length === 0 &&
-        _p1Trigger && !loop._groupVoiceLine && isBareStopLine(loop._lastPlayerLine?.text, { wordsOnly: true })
+        _p1Trigger && !loop._groupVoiceLine && !loop._lastPlayerLine?.interrupted &&
+        isBareStopLine(loop._lastPlayerLine?.text, { wordsOnly: true })
       if (unheededPlayerStop) logger.info?.(`[sei/orch] player said stop and the reply started nothing: treating it as stop (loop=${loop.id}, in_flight=${loop.inFlight?.name ?? loop._settleOwed ?? 'none'})`)
       // 261016: a reply that started nothing while an action runs (or just
       // finished during the call) leaves the player's line for the
@@ -5725,7 +6177,9 @@ function maybeWarnByteCap(loop, warned) {
       // unanswered-line nudge covers it, so no "you answered" claim here.
       // 261017 (pass 14): a list, oldest first. A later question answered in
       // words ("whats ur favorite block") used to replace the order before it.
-      if (_p1Trigger && (actingTools.length > 0 || hasStop || unheededPlayerStop)) loop._replyDeferred = null
+      // 261112 (pass 53): a line answered with work or a stop also ends the
+      // lines a hand-over kept (deferredLines).
+      if (_p1Trigger && (actingTools.length > 0 || hasStop || unheededPlayerStop)) { loop._replyDeferred = null; deferredLines = []; deferredCarry = null }
       else if (_p1Trigger && !loop._groupVoiceLine && loop._spokeThisLoop && loop._lastPlayerLine?.text &&
                (loop.inFlight || loopAwaitsSettle(loop))) {
         const text = loop._lastPlayerLine.text
@@ -5765,12 +6219,14 @@ function maybeWarnByteCap(loop, warned) {
           terminateLoop(loop, 'R3-stop')
         }
       } else if (hasEndLoop && newSuspendingTools.length === 0 && (inFlightIsForeground || loopAwaitsSettle(loop)) &&
-                 !(_p1Trigger && !loop._groupVoiceLine && isBareStopLine(loop._lastPlayerLine?.text))) {
+                 !(_p1Trigger && !loop._groupVoiceLine && !loop._lastPlayerLine?.interrupted && isBareStopLine(loop._lastPlayerLine?.text))) {
         // (A bare "stop" from the player answered with end_loop instead of
         // stop falls through to R3 below and cancels the action as end_loop
         // did before the split, so a model that misses the stop tool cannot
         // keep working against the player. Not on a group call, where
-        // end_loop is how she yields "lyra stop" to Lyra.)
+        // end_loop is how she yields "lyra stop" to Lyra. 261112: and not
+        // on a line that cut her off mid-line, where end_loop means she took
+        // it as being about her talking.)
         // 261011 R1-end — end_loop while a foreground action runs ends the
         // TURN, not the action: the model is done talking and the gather /
         // build / dig carries on, exactly like a text-only keep-alive turn.
@@ -6050,7 +6506,7 @@ function maybeWarnByteCap(loop, warned) {
             }
           }
           // 260608-tik: unified mid-action interrupt framing (Change 2).
-          const interruptEventText = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who)
+          const interruptEventText = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, false, false, pendingInterrupt?.cutIn)
           loop.appendToolResults(results, { snapshot: snapshotText(), eventText: interruptEventText })
           maybeWarnByteCap(loop, byteWarn)
           pendingInterrupt = null
@@ -6263,7 +6719,7 @@ function maybeWarnByteCap(loop, warned) {
     // 260608-tik: unified mid-action interrupt framing (Change 2). The action
     // kept running across the aborted Haiku call, so this reads like a tick that
     // carries the player's words.
-    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, pendingInterrupt?.teammate === true)
+    const eventTextWithHint = interruptTurnText(loop, pendingInterrupt?.chatText ?? '', pendingInterrupt?.who, pendingInterrupt?.teammate === true, false, pendingInterrupt?.cutIn)
 
     if (aborted.length > 0) {
       loop.appendToolResults(aborted, { snapshot: snapshotText(), eventText: eventTextWithHint })
@@ -6509,6 +6965,8 @@ function maybeWarnByteCap(loop, warned) {
         // is always a player line — but derive it rather than assume, and let
         // any player part of an accumulated batch win over teammate framing.
         teammate: (prevText ? pendingInterrupt?.teammate === true : true) && data?.playerSpoke === false,
+        // 261112: any part that cut her off mid-line (cutInOf).
+        cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
       }
       try { loop.abortController.abort() } catch {}
       // Claimed events never reach handleDispatch, so its drain preempt check
@@ -6564,18 +7022,32 @@ function maybeWarnByteCap(loop, warned) {
    * drops whatever turn is being written (see runIterations), and `life`
    * moves on so a hit queued before the death is dropped at dispatch.
    * A parked LLM call is aborted now instead of being left to finish.
+   * @param {{ stillDying?: () => boolean }} [info]  adapter hint: true while
+   *   its respawn is still under way, which keeps the hold past
+   *   DEATH_PENDING_MAX_MS (up to DEATH_PENDING_HARD_MAX_MS).
    */
-  function noteDeath() {
+  function noteDeath(info) {
     deathPending = true
     life++
     // Backstop: the death turn normally clears this within a couple of
     // seconds. If it never comes (a disconnect mid-respawn), turns resume.
     const lifeAtDeath = life
-    const t = setTimeout(() => {
+    const diedAt = Date.now()
+    const stillDying = typeof info?.stillDying === 'function' ? info.stillDying : null
+    const release = () => {
       if (life !== lifeAtDeath || !deathPending) return
+      let dying = false
+      try { dying = stillDying ? stillDying() === true : false } catch {}
+      const left = DEATH_PENDING_HARD_MAX_MS - (Date.now() - diedAt)
+      if (dying && left > 0) {
+        const again = setTimeout(release, Math.min(DEATH_PENDING_RECHECK_MS, left))
+        again.unref?.()
+        return
+      }
       deathPending = false
       flushDeathHeld()
-    }, DEATH_PENDING_MAX_MS)
+    }
+    const t = setTimeout(release, DEATH_PENDING_MAX_MS)
     t.unref?.()
     const loop = currentLoop
     // A player line whose reply was still being written is not lost with the

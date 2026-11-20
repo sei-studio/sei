@@ -37,6 +37,8 @@ import { normalizePalette } from './brain/faceExpressions.js'
 import { sessionActionStats, llmMetaFromConfig } from './brain/actionStats.js'
 import { sessionDigest } from './brain/sessionDigest.js'
 import { setChatgptTokenTransport, deliverChatgptToken } from './brain/llm/chatgptTokenBridge.js'
+import { setLlmUsageSink } from './brain/llm/index.js'
+import { snapshotResolver } from './net/proxyPac.js'
 
 // 260926: the static graph above (config, zod, the brain, the LLM SDKs) is
 // evaluated by now. See bootTiming.js for the phase list.
@@ -47,6 +49,21 @@ const logger = {
   warn:  (m) => console.warn(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
   error: (m) => console.error(`[sei] ${typeof m === 'string' ? m : JSON.stringify(m)}`),
 }
+
+// 261103 (T303): route the LLM providers' Node fetch through the OS proxy
+// that main resolved at fork (SEI_SYSTEM_PROXY). Absent or all DIRECT = the
+// undici package is never loaded and the global dispatcher is left alone.
+// start() waits for it so the first LLM call is already routed.
+const proxyReady = (async () => {
+  const resolve = snapshotResolver(process.env.SEI_SYSTEM_PROXY)
+  if (!resolve) return
+  try {
+    const { installSystemProxy } = await import('./net/systemProxy.js')
+    await installSystemProxy({ resolve, log: (m) => logger.info(m) })
+  } catch (err) {
+    logger.warn(`system proxy not installed, going direct: ${err?.message ?? err}`)
+  }
+})()
 
 /**
  * Load a game runtime module by kind. Validated against GAME_KINDS so the
@@ -87,6 +104,7 @@ export async function start(config, hooks = {}) {
     postPortMessage = null,
     runtime: runtimeModule = null,
   } = hooks
+  await proxyReady
   const kind = config?.adapter?.kind ?? 'minecraft'
   const mod = runtimeModule ?? await loadRuntimeModule(kind)
   if (typeof mod?.createRuntime !== 'function') {
@@ -306,6 +324,14 @@ export async function start(config, hooks = {}) {
     setDashboardWatch(active) {
       try { _runtime?.setDashboardWatch?.(active) } catch {}
     },
+    /**
+     * 261104: a main -> runtime message (DST: main's answer to a respawn
+     * offer, {type:'dst-respawn-offer'}). NOT a brain passthrough: the game
+     * runtime owns it (portForwarders.test.js exempts it).
+     */
+    runtimeMessage(data) {
+      try { _runtime?.handlePortMessage?.(data) } catch {}
+    },
   }
 }
 
@@ -351,6 +377,12 @@ function postActionStats({ force = false } = {}) {
 function startActionStats(config) {
   _actionStatsEnabled = true
   sessionActionStats.setMetaProvider(() => llmMetaFromConfig(config))
+  // 261106: per-turn reply_latency samples (shape only); main samples and
+  // sends them (src/main/replyLatency.ts).
+  sessionActionStats.setLatencySink((sample) => {
+    if (!initPort) return
+    try { initPort.postMessage({ type: 'reply-latency', ...sample }) } catch {}
+  })
   _actionStatsTimer = setInterval(() => postActionStats(), ACTION_STATS_FLUSH_MS)
   _actionStatsTimer.unref?.()
 }
@@ -386,6 +418,8 @@ function emitLifecycle(payload) {
   // 261011: the final telemetry snapshot must reach main BEFORE the status
   // that closes the play session (same port, so ordering holds).
   if (payload?.type === 'error' || payload?.type === 'summon-stopped') {
+    // 261106: a line still waiting for a reply was cut off by the end.
+    if (_actionStatsEnabled) { try { sessionActionStats.abandonPending() } catch {} }
     postActionStats({ force: true })
     postSessionDigest({ force: true })
   }
@@ -467,7 +501,11 @@ async function bootstrapWithInit(initData) {
     // UserConfig.chat_language. Maps into config.chat_language below (drives
     // the # LANGUAGE directive in the cached system prefix). undefined (older
     // main / CLI standalone) → ConfigSchema default 'en'.
-    chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es' | undefined
+    chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es'|'ru'|'pt'|'it' | undefined
+    // 261116: true when the companion is someone else's character (from the
+    // World). main already resolved chatLanguage without the creator's pin,
+    // so the pin below is skipped and the adopted-language note is appended.
+    languageAdopted,      // boolean | undefined
     // 260618: in-game usernames of the OTHER AI companions summoned into this
     // same world (multi-bot sessions). Seeds the roster so the bot knows its
     // teammates from the first tick; the supervisor re-broadcasts on every
@@ -598,7 +636,7 @@ async function bootstrapWithInit(initData) {
     // 260709: conversation language. Only spread a KNOWN code so junk from an
     // older/foreign supervisor falls to the ConfigSchema default ('en')
     // instead of failing the whole parse.
-    ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(chatLanguage)
+    ...(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it'].includes(chatLanguage)
       ? { chat_language: chatLanguage }
       : {}),
     player_username: playerName,
@@ -629,9 +667,13 @@ async function bootstrapWithInit(initData) {
       // falls through to config.chat_language. MIRROR:
       // src/shared/chatLanguage.ts characterLanguage() for the main-process
       // surfaces — keep the two reads in sync.
-      ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(character.metadata?.language)
-        ? { language: character.metadata.language }
-        : {}),
+      // 261116: never for an adopted (World) character: that pin is the
+      // creator's choice, not this player's.
+      ...(languageAdopted === true
+        ? { language_adopted: true }
+        : ['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it'].includes(character.metadata?.language)
+          ? { language: character.metadata.language }
+          : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
     // proxy with Bearer auth (apiKey is unused — anthropicClient passes
@@ -983,6 +1025,9 @@ if (process.parentPort) {
       // 261017 (issue #46): ChatGPT-plan token requests go up this port;
       // main answers with {type:'chatgpt-token'} (handled below).
       setChatgptTokenTransport((msg) => { initPort?.postMessage(msg) })
+      // 261110: completed-request usage for the Playtime ledger (main keeps
+      // it only for own-key / ChatGPT-plan sessions).
+      setLlmUsageSink((msg) => { try { initPort?.postMessage(msg) } catch {} })
       // 260926: boot-phase stamps go up as full snapshots (no stdout mirror:
       // main folds them into the summon diagnostics). The first post is the
       // init_received stamp in bootstrapWithInit, which carries the phases
@@ -1002,7 +1047,16 @@ if (process.parentPort) {
             // in-game. Inject it into the brain as an out-of-band chat event so
             // it runs on the SAME session (brain + prompt cache) and replies
             // back to the chat surface (see onSeiChatReply above).
-            try { _running?.deliverSeiChat?.({ from: data.from, text: data.text, voice: data.voice === true }) } catch {}
+            // 261112: interrupted = this voice line cut her off mid-line.
+            try {
+              _running?.deliverSeiChat?.({
+                from: data.from,
+                text: data.text,
+                voice: data.voice === true,
+                interrupted: data.voice === true && data.interrupted === true,
+                cutLine: typeof data.cutLine === 'string' ? data.cutLine : '',
+              })
+            } catch {}
           } else if (data && data.type === 'sei-chat-observe') {
             // 260708: a group-call line this bot HEARD but is not the routed
             // recipient of (a sibling companion spoke, or the player line went
@@ -1031,6 +1085,9 @@ if (process.parentPort) {
             // (FSM hold + abort of live work); paused:false resumes with the
             // "player just unpaused your game" tick.
             try { _running?.setGamePaused?.(data.paused === true) } catch {}
+          } else if (data && data.type === 'dst-respawn-offer') {
+            // 261104: main checked for a host to respawn the DST body beside.
+            try { _running?.runtimeMessage?.(data) } catch {}
           } else if (data && data.type === 'game-mode') {
             // 260725: runtime reactive/proactive mode. Never persisted; every
             // summon starts proactive.

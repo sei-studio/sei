@@ -62,9 +62,13 @@
  * @property {(player: Player) => void}                                              onPlayerLeft
  * @property {(evt: { username: string, text: string, playerSpoke: boolean,
  *                    addressed: boolean, nearby: boolean,
- *                    suppressInterrupt?: boolean }) => void}                        onChat
+ *                    suppressInterrupt?: boolean,
+ *                    noticeShownAt?: () => number|null }) => void}                 onChat
  *   `suppressInterrupt: true` records the line in chat history WITHOUT waking
  *   the brain (a line aimed at a sibling companion, or a sibling's own chatter).
+ *   `noticeShownAt` (a game notice, e.g. the player's death): when a turn's
+ *   snapshot first showed what it reports. If she has spoken since, the wake
+ *   is skipped (she already reacted); the line stays recorded.
  * @property {(evt: { attacker: Player|null, attackerLabel: string,
  *                    attackerKind: AttackerKind, pvp?: boolean,
  *                    [k: string]: any }) => void}                                  onAttacked
@@ -76,9 +80,11 @@
  *   adapter's eventAddendum('sei:death', data) supplies the framing. Optional
  *   for adapters whose game has no death. 261019: Minecraft reports it after
  *   the respawn, with what she lost and the game's death message.
- * @property {() => void}                                                            [onDying]
+ * @property {(info?: { stillDying?: () => boolean }) => void}                       [onDying]
  *   261019: the instant of death, before the respawn and the onDeath report.
  *   The brain drops the turn the dying body was still writing. Optional.
+ *   261120: `stillDying` (DST) keeps that hold past its 10 s backstop while
+ *   the respawn is still under way.
  * @property {() => void}                                                            onSpawn
  *   The body is in the world. Fires the world-identity resolve
  *   (getWorldIdentity), the settle-delayed first idle tick (greeting), and
@@ -236,6 +242,17 @@
  *   toolUses[i]). May return a one-shot `nudge` appended to the next user
  *   turn (it outranks the brain's silence nudge). Minecraft: the per-loop
  *   goTo cant_reach dedup → cantReachNudge. Default: no nudge.
+ * @property {(prevMobId: any, data: any) => boolean}                    [sameFight]
+ *   261111 (pass 51): whether a hit event (`data`, with `data.attacker`)
+ *   belongs to the fight her last fight line was about (`prevMobId`, that
+ *   turn's attacker id). Minecraft: a different mob after the old one died is
+ *   a new fight. Default: always the same fight.
+ * @property {(toolUses: any[], sinceMs: number) => ({ reason: string } | null)} [staleTurn]
+ *   261111 (pass 51): checked on a response before any of it runs. Non-null
+ *   when the turn was written about something that changed while it was being
+ *   written (`sinceMs` = when its snapshot was taken); the brain then runs
+ *   none of the turn and asks again with the new state. Minecraft: an
+ *   attackEntity whose mob died during the call. Default: never.
  * @property {(running: {name: string, input?: any}, use: {id: string, name: string, input?: any}) => string | null} [continueRunningAction]
  *   Asked for each world tool in a batch while an action is running (not
  *   when the batch calls stop). A string means the call is the SAME work as
@@ -259,6 +276,19 @@
  *   hand-over, or it failed). When the adapter has it, the conversation
  *   transcript ends on the session's hand-over line (261026). Minecraft:
  *   give's "gave N item to NAME, ...". Default: absent, no hand-over line.
+ * @property {(name: string, args: object) => string[]}                    [workItems]
+ *   The item names an action brings into her bag (a gather's drops, a
+ *   craft's product). An open player ask remembers them, so the arrival note
+ *   and the delivery line name what she fetched (261102, pass 37). Minecraft:
+ *   gather/find/dig targets' drops, craft/pickup/withdrawItem items.
+ *   Default: absent, asks carry no items.
+ * @property {(names: string[]) => Record<string, number>}                 [carriedCounts]
+ *   How many of each named item she carries now. Default: absent.
+ * @property {(line: string, items: string[]) => string[]}                [namedItems]
+ *   The items a player's line asks for, out of the ones her answering work
+ *   brings in; the rest are her own and stay off the ask (261111, pass 52).
+ *   Minecraft: item words, kinds and loose terms. Default: absent, the ask
+ *   keeps every item.
  * @property {() => string}                                                [surfaceBaseline]
  *   The game-surface half of the cached system block [0]. The brain composes
  *   `${UNIVERSAL_BASELINE}\n\n${surfaceBaseline()}`. Default MINECRAFT_BASELINE.

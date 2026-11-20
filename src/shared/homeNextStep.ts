@@ -12,7 +12,7 @@ import { isGameId, type GameId } from './gameIpc';
 import { GAME_CATALOG } from './games';
 
 /** Where a plan was made. Same values as playerEndNextStep's NextStepSurface. */
-export type HomeNextStepSurface = 'game' | 'call' | 'backseat';
+export type HomeNextStepSurface = 'game' | 'call' | 'backseat' | 'chat';
 
 export interface HomeNextStep {
   characterId: string;

@@ -1,0 +1,94 @@
+/* WorldLink wallpaper widgets (261119). Literal values on purpose: these draw
+   on the user's desktop over her room, not on the app's surfaces, so the
+   app theme tokens do not apply. */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.widget {
+  position: absolute;
+  white-space: nowrap;
+  line-height: 1.08;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* The anchor: left edge, centre or right edge; vertically the middle. */
+.left {
+  transform: translate(0, -50%);
+}
+
+.center {
+  transform: translate(-50%, -50%);
+}
+
+.right {
+  transform: translate(-100%, -50%);
+}
+
+.selected {
+  outline: 1.5px dashed rgb(255 255 255 / 0.85);
+  outline-offset: 0.12em;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25);
+  border-radius: 4px;
+}
+
+.time {
+  letter-spacing: -0.02em;
+}
+
+.period {
+  font-size: 0.32em;
+  letter-spacing: 0.04em;
+  margin-inline: 0.22em;
+}
+
+/* The date under a clock. */
+.subline {
+  font-size: 0.24em;
+  letter-spacing: 0.02em;
+  margin-top: 0.12em;
+  font-variant-numeric: normal;
+}
+
+.line {
+  letter-spacing: 0.01em;
+}
+
+.placeholder {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.progress {
+  width: 9em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+
+.progressRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  font-size: 0.8em;
+  letter-spacing: 0.04em;
+}
+
+.bar {
+  height: 0.28em;
+  border-radius: 0.14em;
+  background: color-mix(in srgb, currentColor 26%, transparent);
+  overflow: hidden;
+  filter: var(--bar-shadow, none);
+}
+
+.fill {
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+}

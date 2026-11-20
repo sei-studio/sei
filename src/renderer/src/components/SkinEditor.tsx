@@ -24,8 +24,8 @@
  * Sui-gating rule (UI-SPEC §"Sui-gating"):
  *   SkinEditor renders for ALL personas, including is_default: true ones.
  *   Skin + username are user-personalization the project wants accessible
- *   across all personas. The persona-source/name editing gate stays in
- *   EditCharacterModal — that's unchanged.
+ *   across all personas. The persona-source/name editing gate lives in the
+ *   profile's inline editors (components/profile/ProfileEditors).
  *
  * Bot-active gating:
  *   If the bot is currently summoned as THIS persona, Apply + Remove are
@@ -35,7 +35,7 @@
  * Source: 09-UI-SPEC.md §"Layout Contracts → Skin editor on CharacterPage"
  *         + §"Skin editor (persona page section) — copy"
  *         + §"Interaction States" (Apply CTA + Remove button rows)
- *         + EditCharacterModal.tsx two-click destructive pattern (Reset memory).
+ *         + the old EditCharacterModal two-click destructive pattern (Reset memory).
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -80,11 +80,11 @@ export interface SkinEditorProps {
   /**
    * When provided (editable chars on the profile Game tab), renders a ghost
    * "Edit skin" button beside the read-only preview that routes to the full
-   * editor (EditCharacterModal → Appearance). Only used on the viewOnly path.
+   * editor (the profile's skin popup). Only used on the viewOnly path.
    */
   onEditSkin?: () => void;
   /**
-   * 261027: show the "make / regenerate Minecraft skin (uses credits)" button
+   * 261027: show the "generate / regenerate Minecraft skin" button (free since 261028)
    * on the view-only path. For characters the player OWNS, which includes
    * Awakened ('unique') companions that are otherwise view-only. The
    * editable path always shows it (only owned characters are editable).
@@ -295,7 +295,7 @@ export function SkinEditor({
     }
   };
 
-  // ── Remove skin — inline two-click confirm (EditCharacterModal pattern) ──
+  // ── Remove skin — inline two-click confirm (the old EditCharacterModal pattern) ──
   const onRemoveClick = async (): Promise<void> => {
     if (!removeArmed) {
       setRemoveArmed(true);

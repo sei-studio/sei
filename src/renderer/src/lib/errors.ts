@@ -15,6 +15,8 @@
 import type { ErrorClass } from '@shared/errorClasses';
 import { t } from './i18n';
 import { MC_RANGE_VARS } from './mcVersions';
+import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, providerFromRegionMessage } from '@shared/providerRegion';
+import { errorMessageOf, stripIpcWrapper } from '@shared/ipcError';
 
 /**
  * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
@@ -82,7 +84,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   SKIN_FILE_INVALID: "That doesn't look like a Minecraft skin PNG. Skins must be 64×64 pixels.",
   SKIN_SERVER_PORT_TAKEN: "Sei couldn't reserve a local port for serving skins. Restart Sei and try again.",
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
-  CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up on the plan screen, or switch to your own API key in Settings.",
+  CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up in Playtime, or switch to your own API key there.",
   DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
   // 260828: pre-gate refusal — onboarding never captured a name. Previously
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
@@ -104,24 +106,35 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   DST_SPAWN_FAILED: "Sei's helper answered, but no survivor appeared in your world. Make sure you are the host, then press Play again.",
   DST_PORT_IN_USE: "Sei couldn't open its local port for Don't Starve Together. Change the discovery port in Settings, or close whatever is using it, and try again.",
   DST_BODY_DIED: "Your companion's survivor died in the Constant. Press Play to summon them again.",
+  // 261104 respawn. "3 times" MIRRORS MAX_RESPAWNS in
+  // src/bot/adapter/dontstarve/respawn.js (runtime.test.js pins the two).
+  DST_DIED_TOO_OFTEN: "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.",
+  DST_DANGEROUS_SPOT: "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.",
   DST_ONE_COMPANION: "Don't Starve Together fits one companion at a time. Disconnect the companion already in your world, then press Play.",
   // Stardew Valley (game-adapters M1, 260908).
   STARDEW_FARMHAND_NO_MOD: "Someone in your farm doesn't have the Sei companion mod, so your companion can't appear for them. Ask them to install it, or play without them for now.",
   // 261010: local Ollama backend. Before these, a model that could not run the
   // game brain joined the world and then never said or did anything.
   OLLAMA_NOT_RUNNING: "Sei can't reach Ollama. Start the Ollama app, check the Ollama address in Settings, then press Launch again.",
-  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Settings. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
-  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Settings, like qwen3 or qwen3-vl, then press Launch again.",
+  OLLAMA_MODEL_MISSING: "Ollama doesn't have the model picked in Playtime. Download it in Ollama (ollama pull followed by the model name) or pick another model, then press Launch again.",
+  // 261103 (T303): {provider} comes from the status message (errorCopyText).
+  PROVIDER_REGION_UNSUPPORTED: PROVIDER_REGION_COPY,
+  OLLAMA_MODEL_NO_TOOLS: "This Ollama model can't use tools, and your companion needs them to talk and act in games. Pick a model with tool support in Playtime, like qwen3 or qwen3-vl, then press Launch again.",
   // 261017 (issue #46): ChatGPT plan.
-  CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Settings.",
-  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Settings.",
-  CHATGPT_FORBIDDEN: "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Settings.",
-  CHATGPT_AUTH_REJECTED: "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Settings to sign in again.",
-  CHATGPT_REQUEST_REJECTED: "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Settings.",
-  CHATGPT_UNSUPPORTED: "The ChatGPT model picked in Settings can't handle this request. Pick another model in Settings and try again.",
-  CHATGPT_SIGNED_OUT: "Your ChatGPT sign-in ended. Continue with ChatGPT in Settings to sign in again.",
-  CHATGPT_PLAN_DISABLED: "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Settings, then try again.",
+  CHATGPT_USAGE_LIMIT: "You've reached your ChatGPT plan's usage limit. Check Manage usage in ChatGPT to see when it resets, or switch to another AI option in Playtime.",
+  CHATGPT_NOT_ELIGIBLE: "This ChatGPT account can't use its plan in Sei. Plan use needs ChatGPT Plus or Pro. Sign in with a different account, or pick another AI option in Playtime.",
+  CHATGPT_FORBIDDEN: "ChatGPT plan use isn't available here right now. It may be limited in your region or by your plan. Pick another AI option in Playtime.",
+  CHATGPT_AUTH_REJECTED: "ChatGPT didn't accept Sei's sign-in, even after renewing it. Continue with ChatGPT in Playtime to sign in again.",
+  CHATGPT_REQUEST_REJECTED: "ChatGPT didn't accept the request Sei sent, so your companion stopped. Try again, or pick another AI option in Playtime.",
+  CHATGPT_UNSUPPORTED: "The ChatGPT model picked in Playtime can't handle this request. Pick another model there and try again.",
+  CHATGPT_SIGNED_OUT: "Your ChatGPT sign-in ended. Continue with ChatGPT in Playtime to sign in again.",
+  CHATGPT_PLAN_DISABLED: "ChatGPT plan use isn't turned on for this sign-in. Turn it on in Playtime, then try again.",
   SMAPI_INSTALL_FAILED: "Couldn't install SMAPI, the mod loader Stardew Valley needs. Make sure the game is closed and try the setup again, or install SMAPI from smapi.io and then re-run the setup.",
+  // 261104: SMAPI failures by cause.
+  SMAPI_NETWORK_FAILED: "Couldn't download SMAPI, the mod loader Stardew Valley needs. Check your internet connection, then try the setup again.",
+  SMAPI_PERMISSION_DENIED: "SMAPI wasn't allowed to change the Stardew Valley folder. Close the game and Steam, then try the setup again. If it keeps failing, install SMAPI from smapi.io and re-run the setup.",
+  SMAPI_GAME_RUNNING: "Stardew Valley is running, so SMAPI can't be installed. Close the game, then try the setup again.",
+  SMAPI_ANTIVIRUS_SUSPECTED: "SMAPI was installed, but your antivirus most likely removed it. Allow StardewModdingAPI.exe in your antivirus, then run the setup again. In Windows Security: Virus & threat protection, Protection history, pick the item, then Allow on device.",
 };
 
 /**
@@ -132,24 +145,123 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
 export function errorCopyText(
   cls: ErrorClass,
   tr: (en: string, params?: Record<string, string | number>) => string = t,
+  message?: string,
 ): string {
+  if (cls === 'PROVIDER_REGION_UNSUPPORTED') {
+    const name = providerFromRegionMessage(message) ?? PROVIDER_REGION_FALLBACK_NAME;
+    return tr(PROVIDER_REGION_COPY, { provider: name === PROVIDER_REGION_FALLBACK_NAME ? tr(name) : name });
+  }
   return tr(ERROR_COPY[cls] ?? ERROR_COPY.BOT_CRASH, MC_RANGE_VARS);
 }
 
 /**
- * Strip Electron's IPC wrapper from a rejected `ipcRenderer.invoke` so main's
- * user-facing copy shows clean. A main-side throw arrives as
- * "Error invoking remote method 'chars:portrait-select': Error: Unknown
- * portrait version." and the class name is whatever main threw
- * (KnowledgeExtractError, Error, ...), so the second strip is class-agnostic.
- * Use for surfaces that show main's message verbatim; structured errors that
- * carry an ErrorClass go through ERROR_COPY instead.
+ * Plain lines for failures whose own text is technical (261119). Keys are the
+ * English copy; every one is in the i18n dictionaries.
  */
-export function cleanIpcError(err: unknown): string {
-  const raw = (err as Error)?.message ?? String(err);
-  return raw
-    .replace(/^Error invoking remote method '[^']*':\s*/, '')
-    .replace(/^[A-Za-z]*Error:\s*/, '');
+export const FRIENDLY_ERROR_COPY = {
+  GENERIC: 'Something went wrong. Please try again.',
+  NETWORK: "Can't reach Sei right now. Check your connection and try again.",
+  TIMEOUT: 'That took too long. Please try again.',
+  SERVER: "Sei's servers are having trouble. Please try again in a moment.",
+} as const;
+
+/** Connection failures: never user copy, always "check your connection". */
+const NETWORK_RE =
+  /fetch failed|failed to fetch|networkerror|network request failed|net::ERR_|\bERR_(INTERNET_DISCONNECTED|NETWORK_CHANGED|NAME_NOT_RESOLVED|CONNECTION_\w+|ADDRESS_UNREACHABLE)\b|\bE(CONNREFUSED|CONNRESET|CONNABORTED|NOTFOUND|AI_AGAIN|NETUNREACH|NETDOWN|HOSTUNREACH|PIPE)\b|getaddrinfo|socket hang up|\bUND_ERR_(SOCKET|CONNECT)\w*/i;
+
+/** Machine-shaped timeouts and aborts (a sentence saying "took too long" is left alone). */
+const TIMEOUT_RE =
+  /\bE(SOCKET)?TIMEDOUT\b|\bUND_ERR_\w*TIMEOUT\b|timeout of \d+ ?ms|\b(AbortError|TimeoutError)\b|(the|this) operation was aborted|signal (is aborted|timed out)/i;
+
+/** Upstream 5xx answers. */
+const SERVER_RE =
+  /^(HTTP\s*)?5\d\d\b|\bstatus(\s+code)?:?\s*5\d\d\b|\b(internal server error|bad gateway|service unavailable|gateway time-?out)\b/i;
+
+/** Anything else that is a bug or a protocol detail, never copy written for a person. */
+const TECHNICAL_RE = [
+  // JavaScript's own error classes (stripIpcWrapper keeps their prefix).
+  /^(TypeError|ReferenceError|SyntaxError|RangeError|EvalError|URIError|AggregateError|InternalError)\b/,
+  // A stack trace.
+  /\n\s*at\s/,
+  /cannot (read|set) propert(y|ies) of|is not a function|is not defined|is not iterable|is not a constructor|undefined is not|null is not|maximum call stack|unexpected token|unexpected end of json|is not valid json|json\.parse/i,
+  // A JSON blob (Zod issue lists, raw API bodies).
+  /^\s*[{[]/,
+  // A bare HTTP status, or a status-code sentence from a client library.
+  /^(HTTP\s*)?\d{3}(\s+[A-Za-z][A-Za-z ]*)?$/i,
+  /\bstatus(\s+code)?:?\s*\d{3}\b|request failed with status/i,
+  // Node / Electron error codes ("ENOENT: no such file", "ERR_INVALID_ARG_TYPE").
+  /\bE[A-Z]{2,}:\s|\bERR_[A-Z_]{3,}\b/,
+  /an object could not be cloned|no handler registered for/i,
+  // Placeholder-shaped text.
+  /^(undefined|null|nan|error|unknown error|\[object \w+\]|\{\})$/i,
+];
+
+/** A bare SCREAMING_SNAKE token, optionally followed by ": detail". */
+const TOKEN_RE = /^([A-Z][A-Z0-9_]{2,})(?::\s*([\s\S]*))?$/;
+
+/** Parameterised messages main writes in English; matched to translate them. */
+const KNOWN_MESSAGES: Array<{ re: RegExp; key: string; params: (m: RegExpMatchArray) => Record<string, string | number> }> = [
+  {
+    re: /^You can only have (\d+) companions\. Remove one to make room\.$/,
+    key: 'You can only have {n} companions. Remove one to make room.',
+    params: (m) => ({ n: Number(m[1]) }),
+  },
+];
+
+type Friendly = { text: string; kind: 'message' | 'mapped' };
+
+function friendly(msg: string, tr: typeof t, depth = 0): Friendly | null {
+  if (!msg) return null;
+  const tok = TOKEN_RE.exec(msg);
+  if (tok) {
+    const cls = tok[1] as ErrorClass;
+    if (cls in ERROR_COPY) return { text: errorCopyText(cls, tr, msg), kind: 'mapped' };
+  }
+  for (const k of KNOWN_MESSAGES) {
+    const m = msg.match(k.re);
+    if (m) return { text: tr(k.key, k.params(m)), kind: 'message' };
+  }
+  if (NETWORK_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.NETWORK), kind: 'mapped' };
+  if (TIMEOUT_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.TIMEOUT), kind: 'mapped' };
+  if (SERVER_RE.test(msg)) return { text: tr(FRIENDLY_ERROR_COPY.SERVER), kind: 'mapped' };
+  if (TECHNICAL_RE.some((re) => re.test(msg))) return null;
+  // An unknown code ("CHAT_ABORTED") is never copy; with a tail
+  // ("SEILINK_PACK_MISSING: Download ...") the tail is judged on its own.
+  if (tok) return tok[2] && depth < 2 ? friendly(tok[2].trim(), tr, depth + 1) : null;
+  // Copy main (or a library) already wrote for people. Translated when the
+  // dictionaries know it, English otherwise.
+  return { text: tr(msg), kind: 'message' };
+}
+
+/**
+ * The one way to turn a caught error (or a result's `message`) into text a
+ * user reads (261119). Strips Electron's IPC wrapper and class prefixes
+ * (the preload already does for every invoke; this covers everything else),
+ * keeps messages written for people (translated when the dictionaries have
+ * them), maps network / timeout / server failures to a plain line, and turns
+ * anything technical (stack traces, TypeErrors, error codes, JSON, bare HTTP
+ * statuses) into `fallback`, default "Something went wrong. Please try again."
+ * The raw text goes to the console whenever it is replaced.
+ *
+ * Pass a translated `fallback` when the surface has its own wording ("Failed
+ * to save."); it is also used for an empty or missing message.
+ */
+export function userFacingError(err: unknown, fallback?: string, tr: typeof t = t): string {
+  const raw = errorMessageOf(err);
+  const out = friendly(stripIpcWrapper(raw), tr);
+  if (out?.kind === 'message') return out.text;
+  if (raw) console.warn('[userFacingError] showing plain copy for:', raw);
+  return out?.text ?? fallback ?? tr(FRIENDLY_ERROR_COPY.GENERIC);
+}
+
+/**
+ * Like userFacingError but null when the message is not one written for
+ * people (technical, mapped or empty): for surfaces that append a reason to
+ * their own line only when there is a readable one.
+ */
+export function userFacingDetail(err: unknown, tr: typeof t = t): string | null {
+  const out = friendly(stripIpcWrapper(errorMessageOf(err)), tr);
+  return out?.kind === 'message' ? out.text : null;
 }
 
 /**
@@ -226,9 +338,14 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   if (/timeout|did not signal ready/i.test(lower)) {
     return { class: 'BOT_START_TIMEOUT', copy: t(ERROR_COPY.BOT_START_TIMEOUT) };
   }
-  // Generic fallback
+  // Generic fallback. Only a message written for people goes into the line
+  // (261119: this used to print raw text such as "TypeError: x is not a
+  // function. Try again.").
+  const detail = userFacingDetail(err);
   return {
     class: 'BOT_CRASH',
-    copy: t('Something went wrong. {detail}Try again.', { detail: msg ? msg + '. ' : '' }),
+    copy: t('Something went wrong. {detail}Try again.', {
+      detail: detail ? (/[.!?。！？]$/.test(detail) ? detail : detail + '.') + ' ' : '',
+    }),
   };
 }

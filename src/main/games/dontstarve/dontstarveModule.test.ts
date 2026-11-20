@@ -1,6 +1,6 @@
 /** Game-adapters M2 (260908): the DST GameModule over a fake watcher + deps. */
 import { describe, it, expect, vi } from 'vitest';
-import { createDontStarveGameModule, effectiveDstUsername } from './index';
+import { createDontStarveGameModule, effectiveDstUsername, pickRespawnHost } from './index';
 import { createDstWatcher } from './watcher';
 import type { UserConfig } from '../../../shared/characterSchema';
 import type { DstJoinTarget } from '../../../shared/dstIpc';
@@ -65,6 +65,36 @@ describe('dontstarve GameModule', () => {
     await mod.setSummonOffer('zz', { port: 5002, token: 'tok-abcdefgh' });
     await mod.setSummonOffer('zz', null);
     expect(watcher.handleHello({ session: 'SESS' }).summon).toBeUndefined();
+  });
+
+  it('a respawn offer goes beside the original host when they are still there, else whoever is', async () => {
+    const { mod, watcher } = build();
+    watcher.handleHello({ session: 'SESS', players: [{ userid: 'KU_2', name: 'Alex' }, { userid: 'KU_1', name: 'Steve' }] });
+    const res = await mod.setSummonOffer('c1', { port: 5000, token: 'tok-12345678', respawn: true, nearUserid: 'KU_1' });
+    expect(res).toEqual({ ok: true, nearUserid: 'KU_1', nearName: 'Steve' });
+    expect(watcher.handleHello({ session: 'SESS', players: [{ userid: 'KU_1', name: 'Steve' }] }).summon).toMatchObject({ nearUserid: 'KU_1', token: 'tok-12345678' });
+    // The original host left: the other player.
+    const res2 = await mod.setSummonOffer('c1', { port: 5000, token: 'tok-22345678', respawn: true, nearUserid: 'KU_9' });
+    expect(res2).toEqual({ ok: true, nearUserid: 'KU_1', nearName: 'Steve' });
+  });
+
+  it('a respawn with nobody in the world, or no world, is refused and queues nothing', async () => {
+    const { mod, watcher } = build();
+    expect(await mod.setSummonOffer('c1', { port: 5000, token: 'tok-12345678', respawn: true, nearUserid: 'KU_1' })).toEqual({ ok: false, reason: 'no_world' });
+    watcher.handleHello({ session: 'SESS', players: [] });
+    expect(await mod.setSummonOffer('c1', { port: 5000, token: 'tok-12345678', respawn: true, nearUserid: 'KU_1' })).toEqual({ ok: false, reason: 'no_host' });
+    expect(watcher.handleHello({ session: 'SESS', players: [] }).summon).toBeUndefined();
+    // A first summon keeps the old rule (no player = the portal).
+    expect((await mod.setSummonOffer('c1', { port: 5000, token: 'tok-32345678' })).ok).toBe(true);
+    expect(watcher.handleHello({ session: 'SESS', players: [] }).summon).toMatchObject({ nearUserid: '' });
+  });
+
+  it('pickRespawnHost prefers the original player', () => {
+    const players = [{ userid: 'A', name: 'a' }, { userid: 'B', name: 'b' }];
+    expect(pickRespawnHost(players, 'B')).toEqual({ userid: 'B', name: 'b' });
+    expect(pickRespawnHost(players, 'Z')).toEqual({ userid: 'A', name: 'a' });
+    expect(pickRespawnHost(players, '')).toEqual({ userid: 'A', name: 'a' });
+    expect(pickRespawnHost([], 'A')).toBeNull();
   });
 
   it('reports not_installed when detection finds nothing and no heartbeat is live; install goes through the pack', async () => {

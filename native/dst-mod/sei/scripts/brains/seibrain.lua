@@ -59,6 +59,9 @@ local DEFEND_REPORT_S = 15
 local LIGHT_RETRY_S = 4
 -- After a dusk check that found nothing to do.
 local LIGHT_IDLE_RETRY_S = 1
+-- After picking torch makings in the dark: the next pick (or the torch
+-- craft) has to land before Charlie's next hit, so barely a wait.
+local LIGHT_PICK_RETRY_S = 0.5
 local HEAL_RETRY_S = 4
 local FUEL_RETRY_S = 3
 
@@ -183,10 +186,10 @@ local function lightStep(inst)
     if inst.sg ~= nil and inst.sg:HasStateTag("busy") then return nil end
     local now = GetTime()
     if inst.sei.lightNext ~= nil and now < inst.sei.lightNext then return nil end
-    local b
+    local b, picking
     if Reflexes.NeedsLight(inst) then
-        b = Reflexes.LightAction(inst, LIGHT_SEE_DIST)
-        inst.sei.lightNext = now + LIGHT_RETRY_S
+        b, picking = Reflexes.LightAction(inst, LIGHT_SEE_DIST)
+        inst.sei.lightNext = now + (picking and LIGHT_PICK_RETRY_S or LIGHT_RETRY_S)
     else
         b = Reflexes.DuskPrep(inst, LIGHT_SEE_DIST)
         inst.sei.lightNext = now + (b ~= nil and LIGHT_RETRY_S or LIGHT_IDLE_RETRY_S)

@@ -55,7 +55,10 @@ export function droppedItemName(entity) {
 // the stale attack-event text). A mob that left the entity table without a
 // death (a creeper that exploded, a despawn, out of range) is kept the same
 // way with died:false.
-const RECENT_LOSS_MS = 30_000
+// 261111 (pass 51): 60s (was 30s), so a mob that turns up after one with the
+// same name died can be told apart from it (sameNameDeathAge) for as long as
+// the kill is still the newest thing in her snapshot and her lines.
+export const RECENT_LOSS_MS = 60_000
 // Entity types that are never a mob she fought: dropped items, arrows, xp,
 // boats and the like ('other' and 'projectile' in minecraft-data 1.21,
 // 'object'/'orb'/'global' in older tables). Without this every item pickup
@@ -104,7 +107,7 @@ export function msSinceDeath(bot, id, withinMs = RECENT_LOSS_MS) {
  * within `withinMs`, within `maxDist` blocks of her when both positions are
  * known. Returns { id, age, died } or null.
  */
-export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } = {}) {
+export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16, diedOnly = false } = {}) {
   const want = String(name ?? '').toLowerCase()
   const recent = bot?._seiRecentLosses
   if (!want || !recent) return null
@@ -113,6 +116,7 @@ export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } 
   let best = null
   for (const [id, d] of recent) {
     if ((d.name ?? '').toLowerCase() !== want) continue
+    if (diedOnly && !d.died) continue
     const age = now - d.at
     if (age > withinMs) continue
     if (me && d.pos) {
@@ -122,6 +126,31 @@ export function recentLossByName(bot, name, { withinMs = 10_000, maxDist = 16 } 
     if (!best || age < best.age) best = { id, age, died: d.died }
   }
   return best
+}
+
+/**
+ * 261111 (pass 51): how many ms ago ANOTHER mob with this entity's name died
+ * near her, or null. In the combat_night evals she called a fresh zombie "the
+ * zombie" she had just killed ("zombie's dead alex" with a live one 1 block
+ * away, "drowned's down" while a second drowned hit the player): her snapshot
+ * still said "killed zombie" and nothing told the two apart.
+ */
+export function sameNameDeathAge(bot, entity, { withinMs = RECENT_LOSS_MS, maxDist = 24 } = {}) {
+  if (!entity || entity.username || entity.name == null) return null
+  const d = recentLossByName(bot, entity.name, { withinMs, maxDist, diedOnly: true })
+  if (!d || d.id === entity.id) return null
+  return d.age
+}
+
+/**
+ * 261111 (pass 51): true when this entity id has died or left the entity
+ * table. Used to tell whether the fight she last spoke about is over.
+ */
+export function isGoneOrDead(bot, id) {
+  if (id == null) return false
+  if (bot?._seiDeadEntityIds?.has(id)) return true
+  if (bot?._seiRecentLosses?.has(id)) return true
+  return !bot?.entities?.[id]
 }
 
 /** True once the server has reported this entity dead (it may still be listed). */
@@ -148,7 +177,10 @@ export function isDeadEntity(bot, entity) {
  * entity slots and drops out, so the model can't see its teammate to coordinate.
  *
  * @param {import('mineflayer').Bot} bot
- * @param {{ radius?:number, count?:number, pin?:string|null, pins?:string[] }} [opts]
+ * `pinIds`: entity ids force-included the same way (and exempt from the
+ * line-of-sight filter), for the mob her running attackEntity is fighting.
+ *
+ * @param {{ radius?:number, count?:number, pin?:string|null, pins?:string[], pinIds?:number[], requireLineOfSight?:boolean }} [opts]
  * @returns {{ entries: Array<{ entity:any, distance:number }>, more:number }}
  */
 export function nearbyEntities(bot, opts = {}) {
@@ -158,6 +190,10 @@ export function nearbyEntities(bot, opts = {}) {
   const pinSet = new Set()
   if (opts.pin) pinSet.add(opts.pin)
   for (const p of (opts.pins ?? [])) if (p) pinSet.add(p)
+  // 261106 (quality pass 44): entity ids pinned the same way as the usernames
+  // (the mob her running attackEntity is on). See snapshot.js.
+  const pinIds = new Set((opts.pinIds ?? []).filter((id) => id != null))
+  const isPinned = (e) => !!e && ((e.username && pinSet.has(e.username)) || pinIds.has(e.id))
   const me = bot.entity
   if (!me) return { entries: [], more: 0 }
   const all = []
@@ -176,7 +212,7 @@ export function nearbyEntities(bot, opts = {}) {
     // human + AI teammates) bypass it: the bot needs their coords for
     // goTo/follow even through cover, and the owner-whereabouts line handles an
     // out-of-view owner separately.
-    if (requireLOS && !(e.username && pinSet.has(e.username)) &&
+    if (requireLOS && !isPinned(e) &&
         !hasClearLineOfSight(bot, e, { maxRange: radius, stepsPerBlock: 2 })) continue
     all.push({ entity: e, distance: d })
   }
@@ -188,8 +224,7 @@ export function nearbyEntities(bot, opts = {}) {
   // would just drop the pin again (it's at rank > count by definition). If every
   // visible slot is already a pin, we let the set overflow slightly rather than
   // drop a teammate — the pin set is small (human + a teammate or two).
-  if (pinSet.size > 0) {
-    const isPinned = (e) => e && e.username && pinSet.has(e.username)
+  if (pinSet.size > 0 || pinIds.size > 0) {
     for (const pinEntry of all) {
       if (!isPinned(pinEntry.entity)) continue
       if (entries.some((x) => x.entity === pinEntry.entity)) continue

@@ -22,7 +22,7 @@ import { CHAT_TIMEOUT_MS } from './sdk';
 // The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
 // local BYOK) rides the exact old SDK path inside it, streaming included.
 import { buildLlmProvider } from '../llm';
-import { raiseUsageLimitPopup } from './usageLimit';
+import { classifyUsageLimit, raiseUsageLimitPopup } from './usageLimit';
 import {
   buildSystemBlocks,
   markLastMessageCached,
@@ -43,16 +43,22 @@ import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
 import { splitReplyParts, type ReplyPart } from './replyParts';
-import type { FacePalette } from '../../bot/brain/faceExpressions.js';
+import { readFaceTags, type FacePalette } from '../../bot/brain/faceExpressions.js';
 import { emitReplyFaces } from '../facepack/faceEvents';
 import { facesEnabled } from '../facepack/facepackDev';
 import { facePaletteForCharacterName } from '../facepack/facepackStore';
 import { readChatContext, foldIfDue } from './continuity';
 import { toMessages, voiceWindowStart } from './transcript';
 import { scopedTurnCurrent, withScopedTurn } from '../profile/scopeBarrier';
+import { noteSeilinkChatTurn } from '../seilink/host/hostSignals';
 import { maybeCompactChatMemory } from './memoryCompaction';
 import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
-import { surfaceLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
+import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
+import type { RoomImage } from '../seilink/roomRender';
+import { roomChangeTurnNote } from '../seilink/roomChangeNote';
+import { callPictureDecision, DECORATE_TOOL_NAME, decorateToolFor, editorTurnNote, notePictureSent, runDecorate } from '../seilink/editorTogether';
+import { DECORATE_MAX_CHANGES } from '../../shared/seilinkDecorate';
 import * as chatStore from './chatStore';
 import {
   drainThoughts,
@@ -86,7 +92,10 @@ export interface ChatDeps {
    * cache). Returns false if no session took it, so the caller can fall back to
    * the standalone chat brain.
    */
-  routeToBot?: (characterId: string, payload: { from: string; text: string; voice?: boolean }) => boolean;
+  routeToBot?: (
+    characterId: string,
+    payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+  ) => boolean;
   /** The (non-blocking) join kicked off by launch() failed — report it to the
    * player in the companion's own voice (index.ts sendLaunchFailedTurn). */
   onLaunchFailed?: (characterId: string, reason: string) => void;
@@ -143,9 +152,57 @@ export const NO_FOLLOW_UP_TOOLS: ReadonlySet<string> = new Set(['remember']);
  * (cloud proxy or Anthropic BYOK) get the native server-side web_search + our
  * visit; other providers get our search + visit (webToolsFor).
  */
-function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean): LlmToolDef[] {
+function chatTools(llm: Pick<LlmProvider, 'kind'>, voice: boolean, room = false, decorate: LlmToolDef | null = null): LlmToolDef[] {
   const web = webToolsFor({ serverWebSearch: llm.kind === 'anthropic' }) as LlmToolDef[];
-  return chatSurfaceTools(voice, web) as LlmToolDef[];
+  // 261104 SeiLink: look() rides every turn kind while she has a room, so
+  // the list stays identical across the voice turn kinds (prepareChatTurn
+  // decides `room` once per turn, from the same source).
+  // 261105 (T336): decorate() rides last, on every turn kind too, while the
+  // player has her room editor open (editorTogether.ts decorateToolFor).
+  const tools = chatSurfaceTools(voice, web, room) as LlmToolDef[];
+  return decorate ? [...tools, decorate] : tools;
+}
+
+/**
+ * 261105 (T336): a call turn while her room editor is open gets a fresh
+ * picture of the room when it changed since the last one she saw (at most
+ * one per PICTURE_GAP_MS; editorTogether.ts callPictureDecision). It rides
+ * as a look() she made, after the turn's notes, so it reads as her own look
+ * and never as something the player sent (the 261104 probe finding).
+ */
+/**
+ * 261105 (T336): the reply cap. While her room editor is open (decorate is
+ * offered) a turn can carry a lead line plus a five-change decorate call; at
+ * 200 the probe's "make it cozier" turns ended exactly at the cap, one step
+ * from a cut-off tool call. Only a cap: a turn pays for what it writes.
+ */
+function replyMaxTokens(tools: ReadonlyArray<{ name: string }> | undefined): number {
+  return tools?.some((t) => t.name === DECORATE_TOOL_NAME) ? 400 : 200;
+}
+
+async function appendCallPicture(characterId: string, room: RoomContext | null, llm: LlmProvider, messages: LlmMessage[]): Promise<void> {
+  if (!room) return;
+  if (callPictureDecision(characterId, { now: Date.now(), vision: llm.vision }) !== 'send') return;
+  const look = await runLook(characterId, room, llm);
+  if (!look.image) return;
+  const id = `toolu_room_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+  const r = lookToolResult(id, look, { nested: llm.kind === 'anthropic' });
+  messages.push({ role: 'assistant', content: [{ type: 'tool_use', id, name: LOOK_TOOL_NAME, input: {} }] } as LlmMessage);
+  messages.push({ role: 'user', content: lookResultContent([r.result], r.sibling ? [r.sibling] : []) } as LlmMessage);
+  notePictureSent(characterId, room, Date.now());
+}
+
+/**
+ * 261104 SeiLink: run one look() call. Returns the tool_result text and the
+ * picture (null when the model cannot see or the render failed); the caller
+ * places the picture with lookToolResult.
+ */
+async function runLook(characterId: string, room: RoomContext | null, llm: Pick<LlmProvider, 'vision'>): Promise<RoomLook> {
+  if (!room) return { text: 'You have no room to look at right now.', image: null };
+  const t0 = Date.now();
+  const look = await lookAtRoom(room, { vision: llm.vision });
+  console.log(`[sei/chat] look char=${characterId.slice(0, 8)} ${look.image ? `${look.image.width}x${look.image.height} ${look.image.data.length}B` : 'no image'} ${Date.now() - t0}ms`);
+  return look;
 }
 
 /**
@@ -169,19 +226,37 @@ async function followUpWebTools(p: {
   res: LlmResult;
   ctrl: AbortController;
   config: Pick<UserConfig, 'web_search_provider' | 'web_search_api_key'>;
+  /** 261104 SeiLink: her room, so a look() on these turns is answered too. */
+  room?: RoomContext | null;
 }): Promise<LlmResult> {
   const { res } = p;
-  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isWebTool(b.name));
+  const isFollowUpTool = (name: string): boolean => isWebTool(name) || name === LOOK_TOOL_NAME || name === DECORATE_TOOL_NAME;
+  const hasWebUse = res.content.some((b) => b.type === 'tool_use' && isFollowUpTool(b.name));
   const paused = res.stopReason === 'pause_turn';
   if (!hasWebUse && !paused) return res;
   const messages: LlmMessage[] = [...p.messages, { role: 'assistant', content: res.content }];
   if (hasWebUse) {
-    const ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
-    ws.beginTurn();
+    let ws: ReturnType<typeof getChatWebSession> | null = null;
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    const images: RoomImage[] = [];
+    let lookImageSent = false;
     for (const b of res.content) {
       if (b.type !== 'tool_use') continue;
-      if (isWebTool(b.name)) {
+      if (b.name === LOOK_TOOL_NAME) {
+        const look = await runLook(p.characterId, p.room ?? null, p.llm);
+        // One picture per response: a second look() in it gets the list only.
+        const r = lookToolResult(b.id, look, { nested: p.llm.kind === 'anthropic', withImage: !lookImageSent });
+        if (look.image) lookImageSent = true;
+        results.push(r.result);
+        if (r.sibling) images.push(r.sibling);
+      } else if (b.name === DECORATE_TOOL_NAME) {
+        // 261105 (T336): her room edits on a call turn while the editor is open.
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: runDecorate(p.characterId, b.input, { now: Date.now(), surface: 'call' }).text });
+      } else if (isWebTool(b.name)) {
+        if (!ws) {
+          ws = getChatWebSession(p.characterId, resolveWebSearchSettings(p.config));
+          ws.beginTurn();
+        }
         try {
           const r = await ws.runTool(b.name, (b.input ?? {}) as Record<string, unknown>, { signal: p.ctrl.signal });
           results.push({ type: 'tool_result', tool_use_id: b.id, content: r.content, ...(r.is_error ? { is_error: true } : {}) });
@@ -197,7 +272,7 @@ async function followUpWebTools(p: {
         results.push({ type: 'tool_result', tool_use_id: b.id, content: 'ok' });
       }
     }
-    messages.push({ role: 'user', content: results });
+    messages.push({ role: 'user', content: lookResultContent(results, images) });
   }
   const next = await p.llm.call({
     maxTokens: 300,
@@ -208,7 +283,7 @@ async function followUpWebTools(p: {
     timeoutMs: CHAT_TIMEOUT_MS,
     signal: p.ctrl.signal,
   });
-  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isWebTool(b.name)));
+  const lead = res.content.filter((b) => b.type === 'text' || (b.type === 'tool_use' && !isFollowUpTool(b.name)));
   const content = mergeFollowUpContent(lead, next.content) as typeof next.content;
   return { ...next, content, text: textOf(content) };
 }
@@ -684,6 +759,11 @@ async function prepareChatTurn(
   // faces; the palette maps a face the pack lacks to its nearest when the
   // reply's tags are read.
   const facePalette = facesEnabled() ? await facePaletteForCharacterName(character.name).catch(() => null) : null;
+  // 261104 SeiLink: where she is, only when she has a room and is not in a
+  // game. On a call an auto time of day stays out of the cached status block
+  // (the call clock stamp carries it; see roomPromptLine).
+  const room = await roomForSurface(characterId, { inGame: opts.inGame });
+  const roomLine = room ? roomPromptLine(room, { includeTime: opts.voiceCall !== true }) : undefined;
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -702,7 +782,13 @@ async function prepareChatTurn(
     // Settings change applies from the very next message with no restart.
     // 260730: a character created under the Chinese UI carries
     // metadata.language, which pins its surfaces regardless of auto-detect.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    // 261116: the default is the player's UI language, a pin only counts on
+    // her own companions, and a World companion's description cannot pick
+    // the language (companionLanguage in shared/chatLanguage.ts).
+    ...(() => {
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // 261008: every chat and voice turn offers remember() (chatSurfaceTools),
     // so the status block carries the per-turn memory check.
     memoryGuide: true,
@@ -715,6 +801,7 @@ async function prepareChatTurn(
     clockInTail: opts.voiceCall === true,
     // 261028 facepack pilot: dev flag only (unpackaged + SEI_FACEPACK_DIR).
     faceGuide: facesEnabled(),
+    roomLine,
   });
   // Voice: only the recent rows go to the model (VOICE_RECENT_CAP, stepped by
   // VOICE_WINDOW_STEP so the cached transcript prefix holds across turns; see
@@ -726,7 +813,7 @@ async function prepareChatTurn(
   const messages = toMessages(windowed);
   // Voice calls append this after markLastMessageCached (appendUncachedTail).
   const clockNote = opts.voiceCall === true ? clockTailNote() : '';
-  return { character, config, system, messages, punctuation, clockNote, facePalette };
+  return { character, config, system, messages, punctuation, clockNote, facePalette, room };
 }
 
 /**
@@ -788,7 +875,7 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean },
+  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean; desktop?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
   // Loop/cut-off guard first (tidyReply): repeated sentences and a max_tokens
@@ -832,6 +919,8 @@ async function persistReplies(
     ts: now + i,
     // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
+    // A WorldLink desktop bubble → hidden in the chat UI too (see ChatMessage.desktop).
+    ...(opts?.desktop ? { desktop: true } : {}),
   }));
   // Face cues go out BEFORE the replies return, so the renderer holds them
   // when the bubble is shown or its clip starts. No-op with the flag off.
@@ -849,6 +938,9 @@ async function sendChatMessageImpl(
     /** Multi-companion voice (260706): names of the OTHER companions on the same
      * call, so the prompt frames the group. Absent/empty = a solo call. */
     voicePeers?: string[];
+    /** 261112: a voice line that cut the companion off mid-line. Only the
+     * in-game route carries it (the bot frames the turn as a cut-in). */
+    interrupted?: { line: string };
   },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
@@ -890,7 +982,15 @@ async function sendChatMessageImpl(
       // not an out-of-band app text. The voice flag switches the bot-side
       // framing (deliverSeiChat) from the "Sei chat / NOT in the game" wrapper
       // to in-game voice delivery.
-      if (deps.routeToBot(args.characterId, { from, text: args.text, voice: args.voiceCall === true })) {
+      const voice = args.voiceCall === true;
+      if (
+        deps.routeToBot(args.characterId, {
+          from,
+          text: args.text,
+          voice,
+          ...(voice && args.interrupted ? { interrupted: args.interrupted } : {}),
+        })
+      ) {
         // In-game chatter appends to the transcript without ever running a
         // standalone chat turn, so drain any fold backlog from here too —
         // otherwise a long play session could grow the window unbounded.
@@ -936,8 +1036,12 @@ async function sendChatMessageImpl(
     // the transcript is then cached prefix-incrementally across the call's turns.
     markLastMessageCached(messages);
     // 261024: the call clock goes after the breakpoint (no-op in typed chat).
-    appendUncachedTail(messages, prep.clockNote);
+    // 261105 SeiLink: room edits she did not react to ride once, here too (roomChangeNote.ts).
+    // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
+    const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
+    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
     const llm = await buildLlmProvider();
+    if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
     // the model is still writing the rest, instead of waiting for the whole reply
@@ -1037,7 +1141,9 @@ async function sendChatMessageImpl(
     // end_call + remember are offered only while a call is open (block 0
     // already flips for the primer, so this adds no extra cache churn).
     // Same list on every voice turn kind for the cache prefix (chatTools).
-    const tools = chatTools(llm, args.voiceCall === true);
+    const tools = chatTools(llm, args.voiceCall === true, Boolean(prep.room), decorateToolFor(args.characterId, prep.room));
+    /** 261105 (T336): decorate() changes left this turn (DECORATE_MAX_CHANGES per request). */
+    let decorateLeft = DECORATE_MAX_CHANGES;
     // 260909: per-character web session (lettered results survive across
     // turns). Resolved lazily so a turn that never searches pays nothing.
     let webSession: ReturnType<typeof getChatWebSession> | null = null;
@@ -1095,7 +1201,7 @@ async function sendChatMessageImpl(
         : undefined;
       // #9 — abortable: a follow-up send aborts this signal.
       const res = await llm.call({
-        maxTokens: 200,
+        maxTokens: replyMaxTokens(tools),
         system,
         tools,
         stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1177,16 +1283,56 @@ async function sendChatMessageImpl(
       // Emit replyText, not text: when a server-side search and a client
       // visit() ride the same response the split above has already pushed
       // the pre-search line, and replyText holds only what followed it.
-      if (!isStreaming && replyText && typeof deps.emitReply === 'function' && toolUses.some((b) => isWebTool(b.name))) {
+      // 261104: look() is the same kind of pause ("let me look around").
+      // 261105 (T336): for the "answered" guard below, decided before the early push clears replyText.
+      const answeredBeforeTools = isStreaming
+        ? streamedReplies.length > streamedBeforeHop
+        : Boolean(text.trim()) && Boolean(replyText.trim());
+      /** 261105: every decorate() this hop applied all it asked for. */
+      let decorateClean = true;
+      /** 261105: room changes this hop's decorate() calls made (or offered). */
+      let decorateOps = 0;
+      if (
+        !isStreaming &&
+        replyText &&
+        typeof deps.emitReply === 'function' &&
+        toolUses.some((b) => isWebTool(b.name) || b.name === LOOK_TOOL_NAME || b.name === DECORATE_TOOL_NAME)
+      ) {
         await emitStreamedBubble(replyText, false);
         replyText = '';
       }
 
       messages.push({ role: 'assistant', content: res.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+      /** 261104 SeiLink: look() pictures for a provider that takes them beside the tool_results. */
+      const lookImages: RoomImage[] = [];
+      let lookImageSent = false;
       for (const toolUse of toolUses) {
         let note: string;
-        if (toolUse.name === 'launch') {
+        if (toolUse.name === LOOK_TOOL_NAME) {
+          // Her own room (roomContext.ts). One picture per hop is plenty; a
+          // second look() in the same response gets the list only.
+          const look = await runLook(args.characterId, prep.room, llm);
+          const r = lookToolResult(toolUse.id, look, { nested: llm.kind === 'anthropic', withImage: !lookImageSent });
+          if (look.image) lookImageSent = true;
+          toolResults.push(r.result);
+          if (r.sibling) lookImages.push(r.sibling);
+          continue;
+        } else if (toolUse.name === DECORATE_TOOL_NAME) {
+          // 261105 (T336): her edits to her room while the player has the editor open.
+          const r = runDecorate(args.characterId, toolUse.input, {
+            now: Date.now(),
+            budgetLeft: decorateLeft,
+            surface: args.voiceCall === true ? 'call' : 'chat',
+          });
+          decorateLeft -= r.result?.ops.length ?? 0;
+          if (!r.result || r.result.rejected.length || !r.result.ops.length) decorateClean = false;
+          decorateOps += r.result?.ops.length ?? 0;
+          console.log(
+            `[sei/chat] decorate char=${args.characterId.slice(0, 8)} mode=${r.result?.mode ?? '-'} ops=${r.result?.ops.length ?? 0} rejected=${r.result?.rejected.length ?? 0}`,
+          );
+          note = r.text;
+        } else if (toolUse.name === 'launch') {
           launchCalled = true;
           const game = String((toolUse.input as { game?: string })?.game ?? 'minecraft');
           const result = resolveLaunch(game, args.characterId, deps);
@@ -1284,7 +1430,7 @@ async function sendChatMessageImpl(
         }
         toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
       }
-      messages.push({ role: 'user', content: toolResults });
+      messages.push({ role: 'user', content: lookResultContent(toolResults, lookImages) });
 
       // Double-goodbye guard (260706): the quit/end_call tool notes tell the model
       // to "say goodbye if you have not already". If it ALREADY spoke this turn,
@@ -1313,6 +1459,11 @@ async function sendChatMessageImpl(
         ? streamedReplies.length > streamedBeforeHop
         : Boolean(text.trim()) && Boolean(replyText.trim());
       if (answeredThisHop && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name))) break;
+      // 261105 (T336): "sure, navy it is" + ONE change that applied: the line already answered,
+      // so no second round (it would only repeat it). Several changes get a hop, so she says
+      // what she did after seeing what landed (probe: "my turn, ok" + five silent changes);
+      // rejections get one too.
+      if (answeredBeforeTools && decorateClean && decorateOps <= 1 && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name) || b.name === DECORATE_TOOL_NAME)) break;
     }
 
     // #9 — if a newer send arrived (or we were aborted) while this turn ran,
@@ -1619,10 +1770,10 @@ async function sendVoiceGreetingTurnImpl(
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
     // here, during the ring, so the first spoken user reply is a fast cache READ.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
-    const tools = chatTools(llm, true);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1632,7 +1783,7 @@ async function sendVoiceGreetingTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
@@ -1764,12 +1915,12 @@ async function sendCompanionVoiceTurnImpl(
     // in before the breakpoint, every group-call reaction wrote a prefix that
     // no turn ever read back.
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
 
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true);
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1779,7 +1930,7 @@ async function sendCompanionVoiceTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
     // 260708: honor launch() the same single-shot way remember() is honored —
@@ -1881,11 +2032,11 @@ async function sendVoiceIdleTurnImpl(
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);
-    appendUncachedTail(messages, note, prep.clockNote);
+    appendUncachedTail(messages, note, roomChangeTurnNote(characterId, prep.room), prep.room ? editorTurnNote(characterId, { now: Date.now(), onCall: true }) : '', prep.clockNote);
     const llm = await buildLlmProvider();
-    const tools = chatTools(llm, true);
+    const tools = chatTools(llm, true, Boolean(prep.room), decorateToolFor(characterId, prep.room));
     const first = await llm.call({
-      maxTokens: 200,
+      maxTokens: replyMaxTokens(tools),
       system,
       tools,
       stopSequences: TRANSCRIPT_STOP_SEQUENCES,
@@ -1895,7 +2046,7 @@ async function sendVoiceIdleTurnImpl(
     });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     // 260917: run an announced lookup and speak its answer (one bounded hop).
-    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config });
+    const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return { messages: [] };
     await honorRememberCalls(characterId, res.content);
     // No tool loop runs here, so honor end_call by flagging it for the caller:
@@ -2118,6 +2269,108 @@ function blockedReason(errorClass: string): string {
   }
 }
 
+// ── SeiLink desktop lines (261104, M4) ──────────────────────────────────────
+
+/** Model-facing notes for a desktop line (plain, see the prompt style note). */
+export const DESKTOP_LINE_NOTES = {
+  poke:
+    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, and they just clicked you there. " +
+    'Say one short line back to them, under fifteen words, in your own voice. It shows as a small speech bubble next to you. Do not mention this note.]',
+  idle:
+    "[System note, not the player speaking: you live on the player's desktop wallpaper, in your room, while they use their computer. " +
+    'You can say one short line, under twelve words: a passing thought, something about your room, or something you remember about them. ' +
+    'It shows as a small speech bubble next to you and they may not answer. ' +
+    'Or reply with exactly (silence), which is never shown and is often the right choice. Do not mention this note.]',
+} as const;
+
+/**
+ * One short line she says on the desktop (desktopLines.ts decides when and
+ * who pays): `poke` answers a click on her (a double click before 261116), `idle` is unprompted,
+ * `react` (261105) answers the player's room edits (roomReaction.ts).
+ * Same context as a chat turn (persona, memory, summary, knowledge, her room
+ * line), the note after the cache breakpoint, no tool loop. A remember() call
+ * is honored. The line is saved to her chat like any reply, so the fold and
+ * her next turns see it; product call (261116): as a desktop row
+ * (ChatMessage.desktop, hidden in the chat UI) unless `where` is 'chat' (her
+ * live line in the room editor, which shows in the chat). Skipped (null) while another turn for her is running, when
+ * she has no room right now (a game surface), or when she stays silent.
+ */
+/** Why a desktop line came back null (analytics, seilink_poke / idle counts). */
+export type DesktopLineSkip = 'busy' | 'no_room' | 'silence' | 'aborted' | 'error' | 'rate_limited' | 'depleted';
+
+async function sendDesktopLineTurnImpl(
+  characterId: string,
+  kind: 'poke' | 'idle' | 'react',
+  /** 261105: told why the result is null (shape only). */
+  onSkip?: (why: DesktopLineSkip) => void,
+  /** 261105 (T335): the note for a 'react' turn (roomReactionNote: what the player changed in her room). */
+  reactNote?: string,
+  /** Product call (261116): 'desktop' (a bubble only, hidden in the chat UI) or 'chat' (the editor's live line). */
+  where: 'desktop' | 'chat' = 'desktop',
+): Promise<{ text: string; messages: ChatMessage[]; face: string | null } | null> {
+  const skip = (why: DesktopLineSkip): null => {
+    try {
+      onSkip?.(why);
+    } catch {
+      /* analytics only */
+    }
+    return null;
+  };
+  if (inflight.has(characterId)) return skip('busy');
+  const ctrl = new AbortController();
+  inflight.set(characterId, ctrl);
+  try {
+    const prep = await prepareChatTurn(characterId, { openWorldDetected: false, inGame: false, recentCap: VOICE_RECENT_CAP });
+    if (!prep || !prep.room) return skip('no_room');
+    const { system, messages } = prep;
+    markLastMessageCached(messages);
+    // A reaction carries its own change list; a poke or an idle line takes any unseen room edits.
+    if (kind === 'react') {
+      if (!reactNote) return skip('error');
+      appendUncachedTail(messages, reactNote, prep.clockNote);
+    } else appendUncachedTail(messages, DESKTOP_LINE_NOTES[kind], roomChangeTurnNote(characterId, prep.room), prep.clockNote);
+    const llm = await buildLlmProvider();
+    const tools = chatTools(llm, false, true, decorateToolFor(characterId, prep.room));
+    const res = await llm.call({
+      maxTokens: 120,
+      system,
+      tools,
+      stopSequences: TRANSCRIPT_STOP_SEQUENCES,
+      messages,
+      timeoutMs: CHAT_TIMEOUT_MS,
+      signal: ctrl.signal,
+    });
+    if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return skip('aborted');
+    await honorRememberCalls(characterId, res.content);
+    const replyText = textOf(res.content).trim();
+    if (!replyText || isSilenceFiller(replyText)) return skip('silence');
+    const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
+    const saved = await persistReplies(characterId, replyText, prep.punctuation, {
+      rememberCalled,
+      truncated: res.stopReason === 'max_tokens',
+      local: llm.backend === 'local',
+      desktop: where === 'desktop',
+    });
+    const text = saved
+      .map((m) => m.text)
+      .join(' ')
+      .trim();
+    if (scopedTurnCurrent()) void foldIfDue(characterId, prep.character.persona.expanded).catch(() => {});
+    // 261105: the face tag her line led with (only the facepack dev flag prompts for one), for her
+    // desktop avatar; null = the host reads the line's words instead (seilinkExpression.ts).
+    const tags = facesEnabled() ? readFaceTags(replyText, prep.facePalette) : null;
+    const face = tags ? (tags.lead ?? tags.trail) : null;
+    return text ? { text, messages: saved, face } : skip('silence');
+  } catch (err) {
+    // Unprompted or a poke: never a popup. The next line simply tries again later.
+    if (isAbortError(err)) return skip('aborted');
+    console.warn(`[sei] desktop ${kind} line failed: ${(err as Error).message}`);
+    return skip(classifyUsageLimit(err) ?? 'error');
+  } finally {
+    if (inflight.get(characterId) === ctrl) inflight.delete(characterId);
+  }
+}
+
 // ── Account-scoped turn entry points (260926) ─────────────────────────────────
 // Every exported LLM turn runs under withScopedTurn: refused while an account
 // switch is running, and tagged with the scope it began in so its writes are
@@ -2127,7 +2380,11 @@ function blockedReason(errorClass: string): string {
 export function sendChatMessage(
   ...args: Parameters<typeof sendChatMessageImpl>
 ): ReturnType<typeof sendChatMessageImpl> {
-  return withScopedTurn(() => sendChatMessageImpl(...args));
+  // SeiLink (261104): while the player chats with her, her wallpaper self holds still.
+  const done = noteSeilinkChatTurn(args[0].characterId);
+  const turn = withScopedTurn(() => sendChatMessageImpl(...args));
+  turn.then(done, done);
+  return turn;
 }
 
 export function sendLaunchFailedTurn(
@@ -2158,6 +2415,12 @@ export function sendVoiceIdleTurn(
   ...args: Parameters<typeof sendVoiceIdleTurnImpl>
 ): ReturnType<typeof sendVoiceIdleTurnImpl> {
   return withScopedTurn(() => sendVoiceIdleTurnImpl(...args));
+}
+
+export function sendDesktopLineTurn(
+  ...args: Parameters<typeof sendDesktopLineTurnImpl>
+): ReturnType<typeof sendDesktopLineTurnImpl> {
+  return withScopedTurn(() => sendDesktopLineTurnImpl(...args));
 }
 
 export { readRecent } from './chatStore';

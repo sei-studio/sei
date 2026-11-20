@@ -52,6 +52,7 @@ import { SetupStepper, useSetupWindow, type StepButtonProps, type StepSkin, type
 import { useMcSetupSteps } from './McSteps';
 import { useSeiProfile, useStartMinecraft } from './useStartMinecraft';
 import { useT, uiLanguage } from '../../lib/i18n';
+import { joinSentences } from '@shared/uiLanguage';
 import { useResetLine } from '../../lib/useResetLine';
 import { skinPrepLine, useMinecraftSkinPrep } from '../../lib/skinGeneration';
 import styles from './McLaunchPanel.module.css';
@@ -150,12 +151,12 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   const summon = useDataStore((s) => s.summons[characterId]);
   const connecting = summon?.kind === 'connecting';
   const resetLine = useResetLine();
-  const failCopy = summon?.kind === 'error' ? errorCopyText(summon.error, t) : null;
+  const failCopy = summon?.kind === 'error' ? errorCopyText(summon.error, t, summon.message) : null;
   // 260926: the pre-flight credit gate's refusal also says when free play
   // comes back (the same line as the usage-limit popup).
   const failReason =
     failCopy && summon?.kind === 'error' && summon.error === 'CLOUD_CREDITS_DEPLETED' && resetLine
-      ? `${failCopy}${uiLanguage() === 'zh' ? '' : ' '}${resetLine}`
+      ? joinSentences(uiLanguage(), failCopy, resetLine)
       : failCopy;
   // 260926: say which Minecraft versions work BEFORE the first Launch, and
   // warn when the open world is already known to be too new (the LAN

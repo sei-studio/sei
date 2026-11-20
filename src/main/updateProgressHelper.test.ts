@@ -8,6 +8,7 @@ import {
   DOWNLOAD_DONE_SHARE,
   OPENING_FILL_SEC,
   HELPER_COPY,
+  HELPER_FALLBACK_FONTS,
   HELPER_FILES,
   buildHelperConfig,
   buildPlan,
@@ -117,13 +118,24 @@ describe('status lines', () => {
     expect(statusAt(200, 100, en)).toBe('Taking a little longer than usual');
   });
 
+  it('Russian minutes take the right plural form', () => {
+    const ru = HELPER_COPY.ru;
+    const two = statusAt(0, 140, ru, 'ru');
+    const five = statusAt(0, 300, ru, 'ru');
+    expect(two).toMatch(/2/);
+    expect(five).toMatch(/5/);
+    expect(two).not.toContain('{');
+    expect(five).not.toContain('{');
+  });
+
   it('never promises fewer than 2 minutes in the minutes line', () => {
     expect(statusAt(0, 140, en)).toBe('About 2 minutes left');
   });
 
   it('copy is plain: no em dashes, every key in both languages', () => {
-    for (const lang of ['en', 'zh'] as const) {
+    for (const lang of Object.keys(HELPER_COPY) as (keyof typeof HELPER_COPY)[]) {
       const c = HELPER_COPY[lang];
+      expect(HELPER_FALLBACK_FONTS[lang]).toBeTruthy();
       expect(Object.keys(c).sort()).toEqual(Object.keys(HELPER_COPY.en).sort());
       for (const v of Object.values(c)) {
         expect(v).not.toContain(EM_DASH);
@@ -183,6 +195,8 @@ describe('config inputs', () => {
 
   it('maps ui_language, absent = en', () => {
     expect(resolveHelperLang('zh')).toBe('zh');
+    expect(resolveHelperLang('pt-BR')).toBe('pt-BR');
+    expect(resolveHelperLang('fr')).toBe('en');
     expect(resolveHelperLang('en')).toBe('en');
     expect(resolveHelperLang(undefined)).toBe('en');
   });

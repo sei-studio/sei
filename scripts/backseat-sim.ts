@@ -59,6 +59,7 @@ import {
   JOLT_GAIN_DB,
   JOLT_REFRACTORY_MS,
   MIN_SPEAK_GAP_MS,
+  quietExtraMs,
   START_LOOK_MS,
   nextIdleDelayMs,
   SAMPLE_INTERVAL_MS,
@@ -498,6 +499,8 @@ async function run(): Promise<void> {
   const rand = rng(SEED);
   const turns: Turn[] = [];
   let lastSpokeAt = -Infinity;
+  /** 261103: nobody talks in the sim, so every line is unanswered. */
+  let unanswered = 0;
   /** The half-size grid from the last turn that produced a line. */
   let prevGrid: { small: Buffer; at: number } | null = null;
   let nextIdleAt = nextIdleDelayMs(rand);
@@ -520,6 +523,7 @@ async function run(): Promise<void> {
       if (turn.spoke) {
         prevGrid = { small: grid.small, at: START_LOOK_MS };
         lastSpokeAt = START_LOOK_MS + TURN_MS;
+        unanswered++;
       }
       turns.push(turn);
       turn.grid = `${turns.length.toString().padStart(3, '0')}-start.jpg`;
@@ -542,7 +546,7 @@ async function run(): Promise<void> {
     if (useJolt) joltIdx++;
     else nextIdleAt = at + nextIdleDelayMs(rand);
 
-    if (at - lastSpokeAt < MIN_SPEAK_GAP_MS) {
+    if (at - lastSpokeAt < MIN_SPEAK_GAP_MS + quietExtraMs(unanswered)) {
       console.log(`[${clock(at)}] ${kind} dropped (spoke ${((at - lastSpokeAt) / 1000).toFixed(1)}s ago)`);
       t = at;
       continue;
@@ -577,9 +581,10 @@ async function run(): Promise<void> {
     writeFileSync(path.join(gridsDir(), turn.grid), grid.jpeg);
     if (turn.spoke) {
       lastSpokeAt = at + TURN_MS;
+      unanswered++;
       // The companion just spoke, so the scheduled look is pushed back a full
-      // fresh interval — CaptureHandle.noteSpoke().
-      nextIdleAt = lastSpokeAt + nextIdleDelayMs(rand);
+      // fresh interval, plus main's backoff (261103) — CaptureHandle.noteSpoke().
+      nextIdleAt = lastSpokeAt + nextIdleDelayMs(rand) + quietExtraMs(unanswered);
     }
     t = at;
   }

@@ -18,7 +18,7 @@
   padding: var(--space-lg) var(--space-md-plus);
   background: var(--surface);
   border: 1px dashed var(--border-strong);
-  border-radius: 0;
+  border-radius: var(--radius);
   cursor: pointer;
   transition:
     background 120ms ease,

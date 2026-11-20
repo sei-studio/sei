@@ -14,7 +14,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS } from './prompts.js'
+import { NUDGES, GREETING_HINT, memoryGameScope, chatContinuityGameScope, PERSONALITY_TOOL_DESCRIPTIONS, ACK_LINE } from './prompts.js'
 import {
   createOrchestrator,
   composeSeedBlocks,
@@ -43,7 +43,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     expect(t).toContain('If they ask you to come to them or follow them, or point out where they are, call the action that takes you to them')
     expect(t).toContain('If they ask you to stop or to stay where you are, call unfollow')
     expect(t).toContain('make the switch in this same turn, even when the current action is one they asked for')
-    expect(t).toContain('asked for once you finish what you are doing now is not a switch')
+    expect(t).toContain('Only when their own line puts it after what you are doing now is it not a switch')
     // 261018 (pass 17): a changed count or item re-calls the action; a line
     // that drops the job and asks for a new one calls only the new action.
     expect(t).toContain('If they change the job you are on, like how many or which item, call that action again with the new details')
@@ -56,6 +56,10 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     // so the player heard nothing. The action is not the reply.
     expect(t).toContain('The action is not the reply')
     expect(t).toContain('also call say() this turn')
+    // 261101 (pass 34): the acknowledgement let-off is for plain replies only.
+    // On a mid-action turn it read as leave to skip a stop or a follow
+    // (pass34-compare2: order/stop lines off 0/48 -> 6/48).
+    expect(t).not.toContain(ACK_LINE)
     // The interrupt variant must NOT carry the silent-monitor phrasing.
     expect(t).not.toContain('Nothing needs you')
   })
@@ -353,6 +357,26 @@ describe('daily play limit (daily_dollar 429)', () => {
     })
     // Leaves the world QUIETLY — no in-game chat line on the way out.
     expect(adapter.chat).not.toHaveBeenCalled()
+  })
+
+  // 261120 release gate: the weekly allowance spent mid-session (proxy 402).
+  it('a 402 halts and signals CLOUD_CREDITS_DEPLETED once, leaving quietly', async () => {
+    const { adapter } = makeAdapter()
+    const onTerminalError = vi.fn()
+    const provider = makeProvider([
+      throwing(402, { error: 'payment_required' }),
+      { text: 'never reached', toolUses: [] },
+    ])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('hi'))
+    expect(onTerminalError).toHaveBeenCalledTimes(1)
+    expect(onTerminalError.mock.calls[0][0]).toMatchObject({ error: 'CLOUD_CREDITS_DEPLETED' })
+    expect(adapter.chat).not.toHaveBeenCalled()
+    // Latched: a later message makes no further (402-ing) model call.
+    await orch.handleDispatch('sei:chat_received', chat('hello?'))
+    expect(provider.calls.length).toBe(1)
   })
 
   it('does NOT halt on a transient itpm 429 (that path redrives, not terminal)', async () => {
@@ -927,8 +951,9 @@ describe('player_message block — scratchpad contract (260703b)', () => {
     })
     await orch.handleDispatch('sei:chat_received', chat('yo'))
     const turn = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
-    expect(turn).toContain('private scratchpad the player can NEVER see')
-    expect(turn).toContain('only say() reaches them')
+    // 261102 (pass 34): said in fewer tokens, in the reply mandate itself.
+    expect(turn).toContain('Text outside say() never reaches them.')
+    expect(turn).toContain('your text output is invisible to them')
   })
 })
 

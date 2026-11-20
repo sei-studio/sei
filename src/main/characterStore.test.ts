@@ -349,3 +349,40 @@ describe('listCharacters index self-heal (260721)', () => {
     expect(await readFile(path.join(paths.charactersDir(), `${strayId}.json`), 'utf8')).toBe('{"broken":');
   });
 });
+
+describe('legacy purge guard (261031)', () => {
+  const OLD = '550e8400-e29b-41d4-a716-446655440102';
+  const NEWER = '550e8400-e29b-41d4-a716-446655440103';
+
+  async function writeIndexed(id: string, body: Record<string, unknown>): Promise<void> {
+    await mkdir(paths.charactersDir(), { recursive: true });
+    await writeFile(paths.characterPath(id), JSON.stringify(body));
+    await writeFile(paths.indexPath(), JSON.stringify({ version: 1, order: [UUID, id] }, null, 2) + '\n');
+  }
+
+  it('still purges a real pre-schema file', async () => {
+    await saveCharacter(makeChar());
+    await writeIndexed(OLD, { id: OLD, name: 'Old', persona_prompt: 'x', description: 'y' });
+    const out = await listCharacters();
+    expect(out.map((c) => c.id)).toEqual([UUID]);
+    await expect(readFile(paths.characterPath(OLD), 'utf8')).rejects.toThrow();
+  });
+
+  it('never deletes a file from a newer Sei that only looks legacy', async () => {
+    await saveCharacter(makeChar());
+    const body = { id: NEWER, name: 'Newer', description: 'y', persona_v2: { text: 'z' } };
+    await writeIndexed(NEWER, body);
+    const out = await listCharacters();
+    expect(out.map((c) => c.id)).toEqual([UUID]);
+    expect(JSON.parse(await readFile(paths.characterPath(NEWER), 'utf8'))).toEqual(body);
+    const idx = JSON.parse(await readFile(paths.indexPath(), 'utf8')) as { order: string[] };
+    expect(idx.order).toContain(NEWER);
+  });
+
+  it('a version stamp also blocks the purge', async () => {
+    await saveCharacter(makeChar());
+    await writeIndexed(NEWER, { id: NEWER, name: 'Newer', description: 'y', schema_version: 3 });
+    await listCharacters();
+    expect(await readFile(paths.characterPath(NEWER), 'utf8')).toContain('schema_version');
+  });
+});

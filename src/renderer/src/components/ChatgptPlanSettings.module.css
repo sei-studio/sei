@@ -46,6 +46,7 @@
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .accountRow {
@@ -66,7 +67,7 @@
    startup popup's chatgpt-plan action). A tint that fades, no outline: the
    rows keep their own hairlines and nothing shifts. */
 .focusTarget {
-  border-radius: 10px;
+  border-radius: var(--radius);
 }
 
 .focusPulse {

@@ -1,254 +1,319 @@
-/* VoicePicker (260705, reworked 260720, tabs + playground 260725) — voice
-   selection with gender tabs + playable samples + tune panel. Summoning
-   Terminal: sharp corners, token colors only, Oswald group headings, no
-   uppercase transforms. Tab strip mirrors EditCharacterModal's underline
-   modeTabs. */
+/* VoicePicker (260705; simplified 261120, product call 261120): the current
+   voice on top, one plain list below, the Voice Library as one quiet line,
+   then pitch and calmness. One font family (--sans), two sizes: names 15px,
+   everything else 13px. Buttons are the shared Button (quiet kind): no fill
+   and no border until hovered or pressed. The accent marks the selected row
+   only. Tokens only. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--gap-stack);
   min-width: 0;
+  font-family: var(--sans);
+  font-size: 13px;
 }
 
-.optionCard {
+/* ── Rows (the current voice, the list, a looked-up library voice) ────── */
+.row,
+.currentRow {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+  min-width: 0;
+  padding: 2px var(--space-sm) 2px 2px;
+  border-radius: var(--radius);
+}
+
+.row:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.row.selected {
+  background: var(--accent-soft);
+}
+
+.row.selected .name {
+  color: var(--accent);
+}
+
+.rowBody,
+.rowStatic {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-control);
+  padding: var(--space-sm) 0;
   text-align: left;
-  padding: 12px 14px;
-  border-radius: 0;
-  border: 1px solid var(--border-strong);
+  border: none;
   background: transparent;
   color: var(--text);
-  cursor: pointer;
   font: inherit;
 }
 
-.optionCard:hover {
-  border-color: var(--accent);
+.rowBody {
+  cursor: pointer;
+}
+
+.rowBody:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.name {
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* The play control: a quiet icon Button, square. Two classes, so it wins
+   over the Button size padding whatever the stylesheet order. */
+.root .playBtn {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.playSpacer {
+  flex: 0 0 auto;
+  width: 32px;
+}
+
+/* ── The current voice ───────────────────────────────────────────────── */
+.current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+}
+
+.currentName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.menuWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.root .menuBtn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.root .menuBtn[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-xs));
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: var(--space-xs);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-pop);
+}
+
+.menuItem {
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+  outline: none;
+}
+
+.menuItem[aria-checked='true'] {
+  color: var(--accent);
+}
+
+/* ── Filter (Feminine / Masculine / Neutral, your own voices) ─────────── */
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-md-plus);
+  row-gap: var(--space-xs);
+}
+
+.filterBtn {
+  padding: var(--space-xs) 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.filterBtn:hover {
+  color: var(--text-2);
+}
+
+.filterBtn:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.filterActive,
+.filterActive:hover {
+  color: var(--text);
+}
+
+.filterEnd {
+  margin-left: auto;
 }
 
 .list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   max-height: 320px;
   overflow-y: auto;
-  padding-right: 4px;
+  margin-top: calc(-1 * var(--space-sm));
 }
 
-.group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.groupTitle {
-  margin: 0;
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 16px;
-  color: var(--text);
-}
-
-.row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  padding: 8px 10px;
-}
-
-.row:hover {
-  border-color: var(--accent);
-}
-
-.row.selected,
-.optionCard.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.playBtn {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  align-self: center;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0;
-  border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
-}
-
-.playBtn:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.playBtn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.rowBody {
-  flex: 1 1 auto;
-  min-width: 0;
-  text-align: left;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  padding: 0;
-  cursor: pointer;
-  font: inherit;
-}
-
-.playBtn:focus-visible,
-.rowBody:focus-visible,
-.optionCard:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.rowTitle {
-  font-weight: 600;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.rowMeta {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 400;
+/* ── Notes: one muted line, sentence case, no labels ─────────────────── */
+.note {
   color: var(--muted);
-  letter-spacing: 0.04em;
+  line-height: 1.4;
 }
 
-.rowVibe {
-  font-size: 13px;
-  color: var(--muted);
-  line-height: 1.35;
-  margin-top: 2px;
-}
-
-.hint {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-/* Warning notice (260907): local backend + no ElevenLabs key means the pool
-   voices and Auto cannot synthesize. Text only, warn token, no layout. */
+/* Local backend + no ElevenLabs key: the pool and Auto cannot speak. */
 .warnNote {
-  font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--warn);
 }
 
-/* ── Gender tabs (Feminine / Masculine / Neutral) ─────────────────────── */
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 22px;
-  border-bottom: 1px solid var(--border);
+.error {
+  color: var(--red);
 }
 
-.tab {
+/* A text link (Browse the Voice Library). */
+.link {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
   background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 8px 0;
-  font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--muted);
+  color: var(--text-2);
+  font: inherit;
+  white-space: nowrap;
   cursor: pointer;
-  transition: color 140ms var(--ease), border-color 140ms var(--ease);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--text-2) 40%, transparent);
+  text-underline-offset: 3px;
 }
 
-.tab:hover:not(.tabActive) {
-  color: var(--text);
-}
-
-.tab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.tabActive {
+.link:hover {
   color: var(--accent);
-  border-bottom-color: var(--accent);
+  text-decoration-color: currentColor;
 }
 
-/* ── Playground ("Tune the voice") ────────────────────────────────────── */
+.link:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A quiet Button that still reads as the line's action (Look up, Use). */
+.root .action:not(:hover) {
+  color: var(--text-2);
+}
+
+/* ── The Voice Library line (261119, quieted 261120) ─────────────────── */
+.lib {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+}
+
+.libForm,
+.libLine {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--gap-control);
+  row-gap: var(--gap-tight);
+}
+
+.libInput {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px var(--space-sm);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text);
+  font: inherit;
+}
+
+.libInput::placeholder {
+  color: var(--muted);
+}
+
+.libInput:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 0;
+}
+
+.libInput:disabled {
+  opacity: 0.6;
+}
+
+/* ── Pitch and calmness ──────────────────────────────────────────────── */
 .tuner {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  padding: 12px 14px;
+  gap: var(--gap-tight);
+  margin-top: var(--space-xs);
 }
 
 .tunerRow {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.tunerHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-sm);
+  align-items: center;
+  gap: var(--space-md);
+  min-height: 32px;
 }
 
 .tunerLabel {
-  font-weight: 600;
-}
-
-.tunerValue {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-.tunerReset {
-  margin-left: auto;
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 0;
-  padding: 2px 8px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.tunerReset:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.tunerReset:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.tunerReset:disabled {
-  opacity: 0.4;
-  cursor: default;
+  flex: 0 0 76px;
+  color: var(--text-2);
 }
 
 .tunerSlider {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   accent-color: var(--accent);
 }
@@ -257,23 +322,28 @@
   opacity: 0.5;
 }
 
-.tunerHint {
-  font-size: 12px;
+.tunerValue {
+  flex: 0 0 auto;
+  min-width: 32px;
   color: var(--muted);
-  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.tunerReset {
+  flex: 0 0 auto;
+}
+
+/* Reset keeps its space while hidden, so the row never shifts. */
+.hidden {
+  visibility: hidden;
 }
 
 .loadingDot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent);
+  background: currentColor;
   animation: voicePickerPulse 0.8s ease-in-out infinite;
-}
-
-.error {
-  font-size: 13px;
-  color: var(--red);
 }
 
 @keyframes voicePickerPulse {
@@ -286,11 +356,4 @@
     animation: none;
     opacity: 1;
   }
-}
-
-/* Own ElevenLabs voices tab (261019): intro line + Refresh on one row. */
-.ownHead {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-sm);
 }

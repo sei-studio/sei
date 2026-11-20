@@ -8,7 +8,7 @@
  * module turns per-utterance detections into the persisted
  * UserConfig.chat_language:
  *
- *   - Only the six supported codes count (detectedToChatLanguage in
+ *   - Only the supported codes count (detectedToChatLanguage in
  *     shared/chatLanguage.ts). An unsupported detection (German speech,
  *     noise) resets the streak and changes nothing.
  *   - A switch needs CONSECUTIVE_REQUIRED confident detections in a row of
@@ -27,7 +27,7 @@
  */
 import { loadConfig, updateConfig } from '../configStore';
 import {
-  clampChatLanguage,
+  userChatLanguage,
   detectedToChatLanguage,
   type ChatLanguage,
 } from '../../shared/chatLanguage';
@@ -67,10 +67,13 @@ export async function noteDetectedLanguage(detection: {
   streak = streak?.lang === lang ? { lang, count: streak.count + 1 } : { lang, count: 1 };
   if (streak.count < CONSECUTIVE_REQUIRED) return;
   try {
-    const current = clampChatLanguage((await loadConfig()).chat_language);
+    // 261116: compared with the player's EFFECTIVE language (chat_language,
+    // else the UI language), so an English speaker on a Japanese UI gets
+    // 'en' written instead of being read as already speaking it.
+    const current = userChatLanguage(await loadConfig());
     if (current === lang) return;
     await updateConfig((cfg) =>
-      clampChatLanguage(cfg.chat_language) === lang ? cfg : { ...cfg, chat_language: lang },
+      cfg.chat_language === lang ? cfg : { ...cfg, chat_language: lang },
     );
     console.log(`[sei/voice] chat language auto-switched ${current} -> ${lang}`);
   } catch (err) {

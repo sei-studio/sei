@@ -35,10 +35,11 @@
  * We ship NONE of these — download on demand.
  */
 
-export type SpeechPackId = 'tts-en' | 'tts-zh' | 'stt-sensevoice';
+export type SpeechPackId = 'tts-en' | 'tts-zh' | 'tts-kokoro' | 'stt-sensevoice';
 
 export const SPEECH_PACK_IDS: readonly SpeechPackId[] = [
   'tts-en',
+  'tts-kokoro',
   'tts-zh',
   'stt-sensevoice',
 ];
@@ -61,6 +62,22 @@ const TTS_RELEASE = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts
 const ASR_RELEASE = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models';
 
 export const SPEECH_PACKS: Record<SpeechPackId, SpeechPackDef> = {
+  /** Kokoro-82M v1.0, sherpa int8 conversion. Optional; Apache-2.0 weights.
+   * espeak-ng data retains its upstream GPL notices in the downloaded pack. */
+  'tts-kokoro': {
+    id: 'tts-kokoro',
+    asset: 'kokoro-int8-multi-lang-v1_0.tar.bz2',
+    originUrl: TTS_RELEASE + '/kokoro-int8-multi-lang-v1_0.tar.bz2',
+    archiveBytes: 132_353_410,
+    dirName: 'kokoro-int8-multi-lang-v1_0',
+    requiredFiles: [
+      'model.int8.onnx', 'voices.bin', 'tokens.txt', 'LICENSE',
+      'espeak-ng-data/phontab', 'espeak-ng-data/en_dict', 'espeak-ng-data/es_dict',
+      'espeak-ng-data/fr_dict', 'espeak-ng-data/it_dict',
+      'espeak-ng-data/lang/gmw/en-US', 'espeak-ng-data/lang/roa/es',
+      'espeak-ng-data/lang/roa/fr', 'espeak-ng-data/lang/roa/it',
+    ],
+  },
   /** en female + male: vits-piper libritts_r medium, 904 speakers (CC BY 4.0). */
   'tts-en': {
     id: 'tts-en',

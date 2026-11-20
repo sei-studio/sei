@@ -28,6 +28,7 @@ export {
   SESSION_END_CLAUSE,
   MEMORY_GOAL_CUE,
   MEMORY_GOAL_TAIL,
+  ACK_LINE,
   NEXT_TIME_FIELD,
   NEXT_TIME_GOODBYE,
   NEXT_TIME_OWN_PLAN,
@@ -43,6 +44,7 @@ export {
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   CHAT_LANGUAGE_NAMES,
   renderCore,
   renderHeartbeat,
@@ -51,6 +53,10 @@ export {
   renderCompanions,
   voiceGroupGuidance,
   teammateVoiceGuidance,
+  // 261111 (pass 51): a turn written about a fight that ended meanwhile.
+  staleTurnText,
+  STALE_TURN_SAY_RESULT,
+  STALE_TURN_TOOL_RESULT,
 } from './promptLibrary.js'
 
 // 260615: per-tier idle-tick cadence (ms). NOT prompt text — these are the FSM

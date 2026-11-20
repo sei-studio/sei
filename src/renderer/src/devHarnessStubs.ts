@@ -68,7 +68,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // picks the card for the first companion: plan (a Minecraft plan, the
   // default), call, untagged, goal, long (two-line clamp), or none (no card).
   // Analytics calls are kept on window.__seiDevTrack.
-  const homeMode = (params.get('dashshot') ?? '') === 'home';
+  // ?dashshot=screen (261103): DevScreenShot, the real screens in the real
+  // shell for spacing/layout review. Rides the Home stubs (the up-next strip).
+  const homeMode = (params.get('dashshot') ?? '') === 'home' || (params.get('dashshot') ?? '') === 'screen';
   // ?dashshot=art (261023): names over character art (DevArtShot). The
   // generic Proxy answers whatever the page, call and grid ask.
   const artMode = (params.get('dashshot') ?? '') === 'art';
@@ -86,6 +88,9 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   // &chatgpt=1 (261023): local backend on the ChatGPT plan, one signed-in
   // account, so the connected row renders.
   const voiceKeyChatgpt = params.get('chatgpt') === '1';
+  // &tts=fish (261103): local voice set to Fish Audio, with &fishkey=1 a saved key.
+  const voiceKeyFish = params.get('tts') === 'fish';
+  const voiceKeyFishSaved = params.get('fishkey') === '1';
   const voiceKeyChatgptStatus = {
     accounts: voiceKeyChatgpt
       ? [{ id: 'acc1', email: 'player@example.com', label: 'player@example.com', signedIn: true, planEnabled: true }]
@@ -97,6 +102,54 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
     welcomeSeen: true,
     models: [],
   };
+  // ?dashshot=playtime (261110): the Playtime page. &setup=cloud|chatgpt|mykeys
+  // (default cloud), &gpt=connected|none|limited (the ChatGPT sign-in; default
+  // connected on setup=chatgpt), &voice=sei|device|elevenlabs|fish,
+  // &provider=<kind> on mykeys (default anthropic), &nokey=1, &alert=1.
+  const playtimeMode = (params.get('dashshot') ?? '') === 'playtime';
+  const ptSetup = params.get('setup') === 'chatgpt' || params.get('setup') === 'mykeys' ? params.get('setup') : 'cloud';
+  const ptGpt = params.get('gpt') ?? (ptSetup === 'chatgpt' ? 'connected' : 'none');
+  const ptVoice = params.get('voice') ?? 'device';
+  const ptConfig: Record<string, unknown> = {
+    ai_backend_kind: ptSetup === 'cloud' ? 'cloud-proxy' : 'local',
+    provider: ptSetup === 'chatgpt' ? 'chatgpt' : (params.get('provider') ?? 'anthropic'),
+    provider_config:
+      ptSetup === 'chatgpt'
+        ? { chatgpt: { model: 'gpt-6-luna' } }
+        : { [params.get('provider') ?? 'anthropic']: { model: 'claude-haiku-5-5' } },
+    tts_engine: ptVoice === 'sei' ? 'sei' : ptVoice === 'elevenlabs' ? 'elevenlabs' : 'local',
+    local_tts_model: ptVoice === 'fish' ? 'fish' : params.get('engine') === 'kokoro' ? 'kokoro' : 'fast',
+    // 261120: &cloudvoice=fish = Fish picked in Playtime > Sei > Advanced.
+    ...(params.get('cloudvoice') === 'fish' ? { cloud_tts_provider: 'fish' } : {}),
+    stt_engine: 'whisper',
+    spend_alert_enabled: params.has('alert'),
+    spend_alert_usd: 20,
+  };
+  const ptGptStatus = {
+    accounts:
+      ptGpt === 'none'
+        ? []
+        : [{ id: 'acc1', email: 'robin@example.com', label: 'robin@example.com', signedIn: true, planEnabled: true }],
+    activeId: ptGpt === 'none' ? null : 'acc1',
+    signingIn: false,
+    usageLimited: ptGpt === 'limited',
+    blockedCode: null,
+    welcomeSeen: true,
+    models: [
+      { id: 'gpt-6-luna', label: 'GPT-6 Luna' },
+      { id: 'gpt-6-mini', label: 'GPT-6 mini' },
+    ],
+  };
+  const ptDays = (() => {
+    const replies = [12, 18, 9, 25, 16, 30, 10];
+    const spend = [0.41, 0.62, 0.18, 0.84, 0.73, 1.12, 0.21];
+    return replies.map((r, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { day, weekday: d.getDay(), chatgptReplies: r, spendUsd: spend[i], unpricedTokens: 0 };
+    });
+  })();
   const now = Date.now();
   const chatRows = Array.from({ length: 24 }, (_, i) => ({
     id: `row-${i}`,
@@ -312,9 +365,11 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
       ? {
           getConfig: async () => ({
             ai_backend_kind: voiceKeyBackend,
-            tts_engine: 'elevenlabs',
+            tts_engine: voiceKeyFish ? 'local' : 'elevenlabs',
+            ...(voiceKeyFish ? { local_tts_model: 'fish' } : {}),
             ...(voiceKeyChatgpt ? { provider: 'chatgpt' } : {}),
           }),
+          voiceFishKeyStatus: async () => ({ present: voiceKeyFishSaved }),
           chatgptStatus: async () => voiceKeyChatgptStatus,
           onChatgptStatus: () => () => {},
           creditsGet: async () => ({
@@ -338,6 +393,41 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
             { id: 'f2', label: 'Lily', gender: 'female', age: 'adult', tags: [], vibe: 'soft, British' },
             { id: 'm1', label: 'Liam', gender: 'male', age: 'young', tags: [], vibe: 'easygoing, American' },
           ],
+          // 261119: the Voice Library paste card. &lib=rejected answers a
+          // lookup with a rejection; anything else finds a voice.
+          voiceLibraryLookup: async () =>
+            params.get('lib') === 'rejected'
+              ? { ok: false, reason: 'custom_rate' }
+              : {
+                  ok: true,
+                  voice: {
+                    voiceId: 'LibVoice0000000000aa',
+                    name: 'Captain Wren',
+                    gender: 'female',
+                    age: 'middle_aged',
+                    accent: 'british',
+                    description: 'A weathered sea captain with a warm, steady voice.',
+                    hasPreview: true,
+                  },
+                },
+          voiceLibraryAdd: async () => ({
+            ok: true,
+            already: false,
+            voice: {
+              voiceId: 'LibVoice0000000000aa',
+              name: 'Captain Wren',
+              gender: 'female',
+              age: 'middle_aged',
+              accent: 'british',
+              description: null,
+              hasPreview: true,
+            },
+          }),
+          voiceLibraryStatus: async () =>
+            params.get('lib') === 'removed'
+              ? { status: 'removed', name: 'Captain Wren', gender: 'female' }
+              : { status: 'active', name: 'Captain Wren', gender: 'female' },
+          voiceLibraryPreview: async () => new ArrayBuffer(0),
           voiceListOwnVoices: async () =>
             voiceKeySaved
               ? {
@@ -348,6 +438,74 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
                   ],
                 }
               : { status: 'unavailable', voices: [] },
+        }
+      : {}),
+    ...(playtimeMode
+      ? {
+          getConfig: async () => ({ ...ptConfig }),
+          saveConfig: async (next: Record<string, unknown>) => {
+            Object.assign(ptConfig, next);
+          },
+          proxyConfigure: async (kind: string) => {
+            ptConfig.ai_backend_kind = kind;
+            return { ok: true };
+          },
+          chatgptStatus: async () => ptGptStatus,
+          onChatgptStatus: () => () => {},
+          creditsGet: async () => ({
+            plan: params.get('plan') === 'quest' || params.get('plan') === 'party' ? params.get('plan') : 'free',
+            usage_pct: 35,
+            over_limit: false,
+            resets_at: new Date(now + 3 * 86_400_000).toISOString(),
+            extra_credits_used: 0,
+            extra_credits_total: 0,
+            renews_at: null,
+            ends_at: null,
+            subscription_status_raw: null,
+            ai_backend_kind: ptConfig.ai_backend_kind,
+            feedback_reward_available: false,
+          }),
+          hasApiKey: async () => !params.has('nokey'),
+          saveApiKey: async () => undefined,
+          voiceElevenKeyStatus: async () => ({ present: params.get('key') === '1' }),
+          voiceFishKeyStatus: async () => ({ present: params.get('fishkey') === '1' }),
+          voiceFishKeySet: async () => undefined,
+          speechPackStatus: async () => ({
+            packs: {
+              'tts-en': { state: 'ready', bytes: 64_000_000 },
+              'tts-zh': { state: 'absent', bytes: 71_000_000 },
+              'tts-kokoro': { state: params.get('engine') === 'kokoro' ? 'ready' : 'absent', bytes: 330_000_000 },
+              'stt-sensevoice': { state: 'absent', bytes: 240_000_000 },
+            },
+          }),
+          llmListModels: async (provider: string) =>
+            provider === 'chatgpt'
+              ? { models: ptGptStatus.models.map((m) => ({ id: m.id, label: m.label, vision: 'yes' })) }
+              : {
+                  models: [
+                    { id: 'claude-haiku-5-5', vision: 'yes' },
+                    { id: 'claude-sonnet-5', vision: 'yes' },
+                    { id: 'claude-opus-5-5', vision: 'yes' },
+                  ],
+                },
+          onSpendAlert: (cb: (e: { limitUsd: number; spendMonthUsd: number }) => void) => {
+            if (params.has('banner')) setTimeout(() => cb({ limitUsd: 20, spendMonthUsd: 21.4 }), 50);
+            return () => undefined;
+          },
+          usageSummary: async () => ({
+            days: ptDays,
+            chatgptRepliesWeek: ptDays.reduce((a, d) => a + d.chatgptReplies, 0),
+            spendWeekUsd: ptDays.reduce((a, d) => a + d.spendUsd, 0),
+            spendMonthUsd: 13.8,
+            unpricedTokensWeek: 0,
+            unpricedTokensMonth: 0,
+            tokensWeek: 1_240_000,
+            tokensMonth: 4_100_000,
+          }),
+          track: (event: string, props: unknown) => {
+            const dev = window as unknown as { __seiDevTrack?: Array<{ event: string; props: unknown }> };
+            (dev.__seiDevTrack ??= []).push({ event, props });
+          },
         }
       : {}),
     // The onboarding AuthPanel reuses the same ChatGPT stubs (?dashshot=onboard).
@@ -373,7 +531,10 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           chatgptLoginResendCode: async () => ({ ok: true }),
         }
       : {}),
-    ...(onboardMode
+    // ?dashshot=onboard and ?dashshot=creditwall (the usage-limit popup's
+    // credit_wall_action clicks, 261103) record track calls. So does
+    // ?dashshot=roblox (the Suggest-a-game hint events, 261109).
+    ...(onboardMode || creditWallMode || robloxMode
       ? {
           track: (event: string, props: unknown) => {
             const dev = window as unknown as { __seiDevTrack?: Array<{ event: string; props: unknown; at: number }> };
@@ -382,7 +543,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         }
       : {}),
   };
-  (window as unknown as { sei: Record<string, unknown> }).sei = authMode || chatMode || creditWallMode || robloxMode || permsMode || onboardMode || homeMode || voiceKeyMode || artMode
+  (window as unknown as { sei: Record<string, unknown> }).sei = authMode || chatMode || creditWallMode || robloxMode || permsMode || onboardMode || homeMode || voiceKeyMode || artMode || playtimeMode
     ? new Proxy(base, {
         get(target, key) {
           if (key in target) return target[key as string];
@@ -396,13 +557,173 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
 // ?facepack=1 (261028): the facepack dev preview in a plain browser tab. It
 // reads packs over HTTP (urlPackSource), so the bridge only has to answer
 // the view's optional subscriptions: everything is an async undefined, every
-// on* an unsubscribe.
-if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.search).has('facepack')) {
+// on* an unsubscribe. ?seilink=1 (261104) gets the same, so RoomAvatar runs
+// in a plain tab; with &rig=<url of a rig dir> it also answers avatarGet and
+// avatarModelFiles from that dir, so the imported-avatar path can be shot.
+// ?seilinkhost=1 (261105) gets it too, and with &facepacks=<url of a packs
+// dir>&facepackid=<pack id>[&facepackat=<ms>] her face set "arrives" that
+// long after the room first draws (data-room-ready; an avatar-manifest push,
+// like the anima client's), so the portrait-to-face-set crossfade can be shot.
+// ?seilinkintro=1 (261105, the first-link intro) and ?seilinkflow=1 (261106,
+// the first-room flow) get the plain stub.
+const harnessParams = w ? new URLSearchParams(w.location.search) : null;
+if (
+  import.meta.env.DEV &&
+  w &&
+  w.sei == null &&
+  harnessParams &&
+  (harnessParams.has('facepack') || harnessParams.has('seilink') || harnessParams.has('seilinkhost') || harnessParams.has('seilinkintro') || harnessParams.has('seilinkflow'))
+) {
   const noop = async (): Promise<undefined> => undefined;
+  const rigBase = harnessParams.get('rig')?.replace(/\/?$/, '/') ?? null;
+  const rigFiles = async (): Promise<Array<{ path: string; bytes: Uint8Array }>> => {
+    if (!rigBase) return [];
+    const get = async (rel: string): Promise<{ path: string; bytes: Uint8Array }> => ({ path: rel, bytes: new Uint8Array(await (await fetch(rigBase + rel)).arrayBuffer()) });
+    const spec = (await (await fetch(`${rigBase}rig.json`)).json()) as { layers: Array<{ src?: string; states?: { open: string; closed: string } }> };
+    const refs = spec.layers.flatMap((l) => [l.src, l.states?.open, l.states?.closed]).filter((r): r is string => !!r);
+    return Promise.all(['rig.json', ...refs].map(get));
+  };
+  const answers: Record<string, unknown> = rigBase
+    ? {
+        avatarGet: async () => ({ version: 2, kind: 'rig', name: 'dev rig', entry: 'rig.json', importedAt: '', bytes: 0, expressions: [], emotions: {} }),
+        avatarModelFiles: rigFiles,
+      }
+    : {};
+  const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
+  const packId = harnessParams.get('facepackid');
+  if (packsBase && packId) {
+    const delay = Number(harnessParams.get('facepackat') ?? 0) || 0;
+    let arrived = false;
+    const listeners = new Set<(u: { characterId: string; manifest: null }) => void>();
+    const poll = setInterval(() => {
+      if (document.body?.dataset.roomReady !== '1') return;
+      clearInterval(poll);
+      setTimeout(() => {
+        arrived = true;
+        for (const cb of listeners) cb({ characterId: 'dev-preview', manifest: null });
+      }, delay);
+    }, 50);
+    const url = (id: string, rel: string): string => `${packsBase}${encodeURIComponent(id)}/${rel.split('/').map(encodeURIComponent).join('/')}`;
+    answers.facepackForCharacter = async () => (arrived ? packId : null);
+    answers.facepackManifest = async (id: string) => {
+      const r = await fetch(url(id, 'facepack.json'));
+      return r.ok ? r.json() : null;
+    };
+    answers.facepackFile = async (id: string, rel: string) => {
+      const r = await fetch(url(id, rel));
+      return r.ok ? new Uint8Array(await r.arrayBuffer()) : null;
+    };
+    answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    };
+  }
+  // &cursorfeed=1 (261119): her gaze feed from the page's own pointer, the way the
+  // desktop host makes it (hostEntry pollHover + dock.ts gazeSample): polled every
+  // 150 ms, [-1, 1] around her face (y up), sent on a change or every 0.7 s.
+  if (harnessParams.has('cursorfeed')) {
+    const subs = new Set<(pt: { x: number; y: number }) => void>();
+    let ptr: { x: number; y: number } | null = null;
+    let last: { x: number; y: number } | null = null;
+    let sentAt = 0;
+    window.addEventListener('pointermove', (e) => (ptr = { x: e.clientX, y: e.clientY }), { passive: true });
+    setInterval(() => {
+      const her = document.querySelector('[data-seilink-hit]')?.getBoundingClientRect();
+      if (!ptr || !her || her.width <= 0) return;
+      const c = (v: number): number => Math.round(Math.max(-1, Math.min(1, v)) * 1000) / 1000;
+      const g = { x: c((ptr.x - (her.x + her.width / 2)) / (window.innerWidth / 2)), y: c((her.y + her.height * 0.22 - ptr.y) / (window.innerHeight / 2)) };
+      const now = Date.now();
+      if (last && Math.abs(last.x - g.x) <= 0.004 && Math.abs(last.y - g.y) <= 0.004 && now - sentAt < 700) return;
+      last = g;
+      sentAt = now;
+      subs.forEach((cb) => cb(g));
+    }, 150);
+    answers.onAvatarOverlayCursor = (cb: (pt: { x: number; y: number }) => void) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    };
+  }
+  // &cutout=<png url> (261118): her cloud cut-out (anima no_pack + cutout), from the
+  // start, or &cutoutat=<ms> after the room is ready (a manifest push, like a bake landing).
+  const cutoutUrl = harnessParams.get('cutout');
+  if (cutoutUrl) {
+    const at = harnessParams.get('cutoutat');
+    let ready = at === null;
+    const subs = new Set<(u: { characterId: string; manifest: null }) => void>();
+    if (!ready) {
+      const poll = setInterval(() => {
+        if (document.body?.dataset.roomReady !== '1') return;
+        clearInterval(poll);
+        setTimeout(() => {
+          ready = true;
+          for (const cb of subs) cb({ characterId: 'dev-preview', manifest: null });
+        }, Number(at) || 0);
+      }, 50);
+    }
+    let bytes: Promise<Uint8Array | null> | null = null;
+    answers.seilinkAnimaCutout = async () => {
+      if (!ready) return null;
+      bytes ??= fetch(cutoutUrl).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null));
+      const png = await bytes;
+      return png ? { sha256: 'c'.repeat(48) + String(png.byteLength).padStart(16, '0'), png } : null;
+    };
+    const prevSub = answers.onAvatarManifest as ((cb: (u: { characterId: string; manifest: null }) => void) => () => void) | undefined;
+    answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
+      subs.add(cb);
+      const off = prevSub?.(cb);
+      return () => {
+        subs.delete(cb);
+        off?.();
+      };
+    };
+  }
+  // &together=<name> (261105, T336): the shared editor (RoomTogether). An empty
+  // chat; window.__seiTogether lets a shot script push her chat lines, emit her
+  // edit events and script the talk-box reply (`reply(text)` -> her line).
+  if (harnessParams.has('together')) {
+    const chatCbs = new Set<(p: unknown) => void>();
+    const editorCbs = new Set<(e: unknown) => void>();
+    const dev = {
+      synced: [] as unknown[],
+      tracked: [] as Array<{ event: string; props: unknown }>,
+      replyMs: 1400,
+      reply: (text: string): string => `ok: ${text}`,
+      push: (characterId: string, text: string): void => {
+        const message = { id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, role: 'companion', text, ts: Date.now() };
+        chatCbs.forEach((cb) => cb({ characterId, message }));
+      },
+      emit: (ev: unknown): void => editorCbs.forEach((cb) => cb(ev)),
+    };
+    (window as unknown as { __seiTogether: typeof dev }).__seiTogether = dev;
+    answers.chatHistory = async () => [];
+    answers.chatOpened = undefined;
+    answers.chatSend = async (req: { characterId: string; text: string }) => {
+      await new Promise((r) => setTimeout(r, dev.replyMs));
+      return { replies: [{ id: `dev-r-${Date.now()}`, role: 'companion', text: dev.reply(req.text), ts: Date.now() }] };
+    };
+    answers.onChatMessage = (cb: (p: unknown) => void) => {
+      chatCbs.add(cb);
+      return () => chatCbs.delete(cb);
+    };
+    answers.onSeilinkEditorEvent = (cb: (e: unknown) => void) => {
+      editorCbs.add(cb);
+      return () => editorCbs.delete(cb);
+    };
+    answers.seilinkEditorSync = (sync: unknown) => {
+      dev.synced.push(sync);
+    };
+    answers.track = (event: string, props: unknown) => {
+      dev.tracked.push({ event, props });
+    };
+    // &voicegate=consent (261110): the Call button meets a missing voice module
+    // (the local fallback on, nothing in the cache), so it asks first.
+    if (harnessParams.get('voicegate') === 'consent') answers.getConfig = async () => ({ stt_local_fallback: true });
+  }
   (window as unknown as { sei: unknown }).sei = new Proxy(
     {},
     {
       get(_t, key) {
+        if (typeof key === 'string' && key in answers) return answers[key];
         if (typeof key === 'string' && key.startsWith('on')) return () => () => undefined;
         return noop;
       },
@@ -411,3 +732,24 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
 }
 
 export {};
+
+// &ipclatency=<ms> (261116): every async bridge answer arrives that much
+// later, like the real IPC round trip, so a harness can show what a screen
+// paints before its reads land (the profile tab switch was checked this way).
+if (import.meta.env.DEV && w && harnessParams?.has('dashshot') && Number(harnessParams.get('ipclatency')) > 0) {
+  const lag = Number(harnessParams.get('ipclatency'));
+  const inner = (w as { sei?: unknown }).sei as Record<string, unknown> | undefined;
+  if (inner) {
+    (w as { sei?: unknown }).sei = new Proxy(inner, {
+      get(target, key) {
+        const value = target[key as string];
+        if (typeof value !== 'function' || (typeof key === 'string' && key.startsWith('on'))) return value;
+        return (...args: unknown[]) => {
+          const out = (value as (...a: unknown[]) => unknown)(...args);
+          if (!out || typeof (out as Promise<unknown>).then !== 'function') return out;
+          return new Promise((resolve, reject) => setTimeout(() => (out as Promise<unknown>).then(resolve, reject), lag));
+        };
+      },
+    });
+  }
+}

@@ -22,6 +22,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { BrowserWindow, OpenDialogOptions } from 'electron';
 import type { MacGrant } from './install';
+import { DST_GRANT_ADDED } from '../../../shared/addedLanguageCopy';
+import type { UiLanguage } from '../../../shared/uiLanguage';
 
 /** The panel copy. Short, no em dashes (house rule). */
 export const GRANT_COPY = {
@@ -35,6 +37,7 @@ export const GRANT_COPY = {
     hint: '选的不是这个文件夹。请在打开“mods”文件夹时直接点击“安装助手”。',
     button: '安装助手',
   },
+  ...DST_GRANT_ADDED,
 } as const;
 
 /**
@@ -74,7 +77,7 @@ async function fileModes(dir: string): Promise<{ rel: string; mode: number }[]> 
   return out;
 }
 
-export function createMacGrant(opts: { window: BrowserWindow | null; language: 'en' | 'zh' }): MacGrant {
+export function createMacGrant(opts: { window: BrowserWindow | null; language: UiLanguage }): MacGrant {
   const copy = GRANT_COPY[opts.language];
   return {
     async pickFolder({ defaultPath, hint }) {

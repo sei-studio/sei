@@ -80,6 +80,13 @@ export interface SummonFailureInfo {
    * turns it into `[bot]` so the tails still say which lines were ours.
    */
   botName?: string;
+  /**
+   * 261031 (T278): the player's own names (mc_username, preferred_name) for
+   * this attempt; redact() turns them into `[player]` wherever they appear.
+   */
+  playerNames?: string[];
+  /** 261031 (T278): which game the summon was for. Stardew and DST failures used to read as Minecraft. */
+  game?: string;
 }
 
 /**
@@ -307,6 +314,13 @@ export interface RedactOptions {
    * shipping the name itself.
    */
   botName?: string;
+  /**
+   * 261031 (T278): the player's own names (UserConfig mc_username and
+   * preferred_name). Their occurrences become `[player]` anywhere in the text,
+   * not only where a log line format gives a name away. Names under 3
+   * characters are skipped (they would eat ordinary words).
+   */
+  playerNames?: ReadonlyArray<string | null | undefined>;
 }
 
 /**
@@ -379,6 +393,12 @@ export function redact(text: string, opts: RedactOptions = {}): string {
   s = s.replace(IPV4_RE, (ip) => (KEEP_IPS.has(ip) || ip.startsWith('127.') ? ip : '[ip]'));
   s = s.replace(IPV6_RE, '[ip]');
   if (opts.botName) s = replaceWord(s, opts.botName.trim(), '[bot]');
+  for (const name of opts.playerNames ?? []) {
+    if (typeof name !== 'string') continue;
+    const n = name.trim();
+    // The bot's own name wins: a player named like their companion keeps [bot].
+    if (n && n.toLowerCase() !== (opts.botName ?? '').trim().toLowerCase()) s = replaceWord(s, n, '[player]');
+  }
   s = redactPlayerNames(s);
   return s;
 }
@@ -451,13 +471,14 @@ export function buildSummonDiagnostic(
     host_client: lanOpen?.host?.client ?? null,
     forge_mod_count: lanOpen?.host?.forgeModCount ?? null,
     packaged: ctx.packaged,
+    game: info.game ?? null,
     electron_version: process.versions.electron ?? null,
     node_version: process.versions.node ?? null,
   };
   if (info.reclassifiedFrom) diag.reclassified_from = info.reclassifiedFrom;
   if (info.boot) Object.assign(diag, bootPhaseProps(info.boot));
   if (!omitsHeavyText(info.errorClass, info.phase)) {
-    const r = { botName: info.botName };
+    const r = { botName: info.botName, playerNames: info.playerNames };
     diag.error_message = redact(info.errorMessage ?? '', r).slice(0, ERROR_MESSAGE_CAP);
     // Keep the END of each tail — the crash is at the bottom. Redact first so
     // the cut can never split a secret into an unrecognizable fragment.

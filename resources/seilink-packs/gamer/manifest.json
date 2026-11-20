@@ -1,0 +1,437 @@
+{
+  "format": "sei-room",
+  "version": 1,
+  "id": "gamer",
+  "place": "your gaming room",
+  "canvas": [2560, 1440],
+  "avatar": {
+    "x": 1300,
+    "y": 1440,
+    "height": 720
+  },
+  "slots": {
+    "view": {
+      "z": 0,
+      "options": [
+        "view_neon",
+        "view_city",
+        "view_sea",
+        "view_forest"
+      ]
+    },
+    "shell": {
+      "z": 10,
+      "options": [
+        "gamer_room"
+      ]
+    },
+    "shelf": {
+      "z": 40,
+      "options": [
+        "black_wall_shelves"
+      ],
+      "optional": true
+    },
+    "bed": {
+      "z": 50,
+      "options": [
+        "platform_bed"
+      ],
+      "optional": true
+    },
+    "lamp": {
+      "z": 35,
+      "options": [
+        "led_strip"
+      ],
+      "optional": true
+    },
+    "chair": {
+      "z": 90,
+      "options": [
+        "gaming_chair"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "view_neon",
+      "slot": "view",
+      "name": "neon city",
+      "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/neon_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/neon_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/neon_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_city",
+      "slot": "view",
+      "name": "city skyline",
+      "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/city_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/city_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/city_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_sea",
+      "slot": "view",
+      "name": "seaside town",
+      "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/sea_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/sea_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/sea_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_forest",
+      "slot": "view",
+      "name": "forest valley",
+      "box": [1345, 0, 1215, 1319],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/forest_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/forest_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/forest_night.webp"
+        }
+      }
+    },
+    {
+      "id": "gamer_room",
+      "slot": "shell",
+      "name": "walls",
+      "tintable": true,
+      "defaultTint": "#424B63",
+      "accentSwatches": ["#eef0f5", "#a9afbf", "#9cc4ff", "#3fb8af", "#8c6eff", "#f07ab0", "#16181f"],
+      "swatches": ["#424b63", "#c4c6cc", "#6c7286", "#5a4063", "#5c3443", "#2c575c", "#34463f", "#1b1f2b"],
+      "frames": {
+        "day": {
+          "src": "shell_day.webp",
+          "mask": "shell_mask.webp"
+        },
+        "dusk": {
+          "src": "shell_dusk.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_glow_dusk.webp"
+        },
+        "night": {
+          "src": "shell_night.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_glow_night.webp"
+        }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [460, 140], [460, 1120], [0, 1225]],
+          "size": [469, 980]
+        },
+        {
+          "quad": [[460, 140], [2560, -211], [2560, 1349], [460, 1120]],
+          "size": [1804, 980],
+          "uv": [469, 0]
+        }
+      ]
+    },
+    {
+      "id": "black_wall_shelves",
+      "slot": "shelf",
+      "name": "black wall shelves",
+      "frames": {
+        "day": {
+          "src": "shelf_day.webp"
+        },
+        "dusk": {
+          "src": "shelf_dusk.webp"
+        },
+        "night": {
+          "src": "shelf_night.webp"
+        }
+      },
+      "surfaceTops": [
+        {
+          "area": [[16, 225], [521, 325], [521, 346], [16, 250]],
+          "lip": [[0, 226.5], [1.5, 226.5], [2.5, 225.5], [6.5, 225.5], [7.5, 224.5], [12.5, 224.5], [13.5, 223.5], [14.5, 224.5], [16, 224.5], [16, 247.2], [19.5, 247.4], [32.5, 249.8], [48.5, 253.3], [100.5, 262.7], [148.5, 272.2], [417.5, 322.7], [444.5, 328.2], [458.5, 330.5], [460.5, 331.3], [488.5, 336.6], [491.5, 336.7], [517.5, 342.5], [523, 342.9], [523, 345.9], [487.5, 349.6], [480.5, 350.4], [479.5, 351], [471.5, 351.5], [470.5, 352], [466.5, 352], [463.5, 352.4], [462.5, 353], [456.5, 353], [455.5, 352], [447.5, 351], [442.5, 349.6], [376.5, 337.7], [369.5, 337], [366.5, 336], [358.5, 335], [328.5, 329], [304.5, 325.1], [298.5, 323.7], [284.5, 322], [281.5, 321], [279.5, 321], [244.5, 314.2], [140.5, 296], [88.5, 286.2], [57.5, 281.1], [45.5, 278.4], [29.5, 276], [13.5, 272.6], [0, 271]]
+        },
+        {
+          "area": [[16, 409], [521, 470], [521, 490], [16, 434]],
+          "lip": [[0, 409.5], [5.5, 409.5], [6.5, 408.5], [16, 408.5], [16, 431.4], [19.5, 431.4], [42.5, 434.3], [131.5, 443.4], [212.5, 453.1], [259.5, 458], [302.5, 463.1], [456.5, 479.5], [460.5, 480.2], [499.5, 484.4], [512.5, 486.7], [524, 486.9], [524, 489.5], [512.5, 489.7], [511.5, 490.2], [498.5, 490.7], [497.5, 491.1], [466.5, 493.5], [464.5, 494], [457.5, 494], [455.5, 493], [414.5, 489.1], [413.5, 488.7], [405.5, 488.1], [404.5, 487.7], [391.5, 487], [390.5, 486.4], [372.5, 485], [371.5, 484.4], [364.5, 484], [363.5, 483.5], [322.5, 479], [300.5, 477.1], [298.5, 476.5], [281.5, 475.1], [259.5, 472.5], [250.5, 472], [249.5, 471.5], [241.5, 471], [240.5, 470.5], [232.5, 470], [231.5, 469.6], [223.5, 469], [214.5, 467.7], [177.5, 464], [148.5, 460.5], [140.5, 460], [139.5, 459.5], [132.5, 459.1], [131.5, 458.7], [100.5, 456], [99.5, 455.5], [72.5, 453], [71.5, 452.5], [64.5, 451.7], [36.5, 449], [7.5, 445.5], [0, 445.2]]
+        },
+        {
+          "area": [[16, 592], [521, 613], [521, 634], [16, 618]],
+          "lip": [[0, 592.5], [5.5, 592.5], [6.5, 591.5], [13.5, 591.5], [14.5, 590.5], [16, 591.5], [16, 614.8], [123.5, 617.8], [152.5, 619.2], [347.5, 625.2], [420.5, 628], [524, 630.8], [524, 633.3], [478.5, 634], [477.5, 634.4], [469.5, 634.5], [468.5, 635], [463.5, 635], [462.5, 636], [456.5, 636], [455.5, 635], [450.5, 635], [449.5, 634.5], [422.5, 634], [421.5, 633.6], [275.5, 629], [274.5, 628.6], [243.5, 627.6], [150.5, 625.1], [149.5, 624.7], [121.5, 624.1], [116.5, 623.6], [50.5, 622], [20.5, 622], [19.5, 621.3], [16.5, 621], [0, 621]]
+        }
+      ],
+      "blocks": {
+        "wall": [
+          [[0, 220], [526, 320], [526, 352], [460, 358], [0, 280]],
+          [[0, 404], [526, 466], [526, 495], [460, 498], [0, 452]],
+          [[0, 587], [526, 610], [526, 638], [460, 640], [0, 626]]
+        ]
+      }
+    },
+    {
+      "id": "platform_bed",
+      "slot": "bed",
+      "name": "bed",
+      "tintable": true,
+      "defaultTint": "#6A7698",
+      "accentSwatches": ["#eef0f5", "#a9afbf", "#9cc4ff", "#3fb8af", "#8c6eff", "#f07ab0", "#16181f"],
+      "swatches": ["#6a7698", "#d5d7de", "#a39bc4", "#3e7a80", "#6c4f86", "#8c3b4c", "#3b3e48", "#252c46"],
+      "frames": {
+        "day": {
+          "src": "bed_day.webp",
+          "mask": "bed_mask.webp"
+        },
+        "dusk": {
+          "src": "bed_dusk.webp",
+          "mask": "bed_mask.webp"
+        },
+        "night": {
+          "src": "bed_night.webp",
+          "mask": "bed_mask.webp"
+        }
+      },
+      "surfaceTops": [
+        {
+          "area": [[0, 983], [70, 975], [115, 977], [210, 960], [360, 940], [430, 946], [610, 960], [750, 986], [845, 972], [850, 982], [742, 992], [650, 1003], [485, 1032], [110, 1090], [0, 1098]],
+          "sink": 8
+        }
+      ],
+      "blocks": {
+        "floor": [
+          [[885, 1116], [885, 1160], [882, 1200], [743, 1240], [603, 1280], [480, 1320], [346, 1360], [206, 1400], [119, 1440], [0, 1440], [0, 1116]]
+        ],
+        "wall": [
+          [[438, 813], [880, 813], [885, 1117], [885, 1217], [812, 1240], [0, 1240], [0, 967], [281, 917], [388, 867]]
+        ]
+      },
+      "patternSurface": "bedding",
+      "patternQuads": [
+        {
+          "quad": [[-300, 985], [430, 955], [844, 978], [-300, 1110]],
+          "size": [940, 582]
+        },
+        {
+          "quad": [[-300, 1110], [844, 978], [844, 1090], [-300, 1560]],
+          "size": [940, 150],
+          "uv": [0, 582]
+        },
+        {
+          "quad": [[370, 858], [840, 870], [805, 990], [335, 975]],
+          "size": [582, 128]
+        }
+      ]
+    },
+    {
+      "id": "led_strip",
+      "slot": "lamp",
+      "name": "LED strip lights",
+      "tintable": true,
+      "defaultTint": "#7FB0FF",
+      "swatches": ["#7fb0ff", "#3cd6e6", "#3ce0a0", "#ffd9a0", "#ffa040", "#ff5fb0", "#8c6eff"],
+      "frames": {
+        "day": {
+          "src": "led_day.webp",
+          "mask": "led_mask.webp"
+        },
+        "dusk": {
+          "src": "led_dusk.webp",
+          "mask": "led_mask.webp",
+          "glow": "led_glow_dusk.webp",
+          "effect": "pulse",
+          "glowTint": true
+        },
+        "night": {
+          "src": "led_night.webp",
+          "mask": "led_mask.webp",
+          "glow": "led_glow_night.webp",
+          "effect": "pulse",
+          "glowTint": true
+        }
+      },
+      "cycle": true
+    },
+    {
+      "id": "gaming_chair",
+      "slot": "chair",
+      "name": "gaming chair",
+      "tintable": true,
+      "defaultTint": "#9CC4FF",
+      "swatches": ["#9cc4ff", "#eef0f5", "#f2c94c", "#5fd3a8", "#f07ab0", "#f08a3c", "#d9434f", "#8c6eff"],
+      "frames": {
+        "day": {
+          "src": "chair_day.webp",
+          "mask": "chair_mask.webp"
+        },
+        "dusk": {
+          "src": "chair_dusk.webp",
+          "mask": "chair_mask.webp",
+          "glow": "monitor_glow_dusk.webp",
+          "effect": "pulse"
+        },
+        "night": {
+          "src": "chair_night.webp",
+          "mask": "chair_mask.webp",
+          "glow": "monitor_glow_night.webp",
+          "effect": "pulse"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[1023, 1126], [1595, 1126], [1602, 1170], [1727, 1210], [1758, 1250], [1764, 1290], [1746, 1330], [1698, 1370], [1697, 1410], [1691, 1440], [924, 1440], [924, 1410], [920, 1370], [880, 1330], [852, 1290], [859, 1250], [890, 1210], [1012, 1170]]
+        ],
+        "wall": [
+          [[1201, 501], [1417, 501], [1451, 565], [1471, 625], [1532, 685], [1596, 745], [1608, 805], [1607, 865], [1589, 925], [1571, 985], [1579, 1045], [1592, 1105], [1683, 1165], [1743, 1225], [1743, 1250], [869, 1250], [869, 1225], [943, 1165], [1026, 1105], [1040, 1045], [1048, 985], [1029, 925], [1010, 865], [1010, 805], [1022, 745], [1085, 685], [1147, 625], [1167, 565]]
+        ]
+      }
+    },
+    {
+      "id": "headset_stand",
+      "slot": "item",
+      "name": "headset on a stand",
+      "placement": "surface",
+      "box": [242, 125, 116, 169],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_headset_stand_day.webp"
+        },
+        "dusk": {
+          "src": "item_headset_stand_dusk.webp"
+        },
+        "night": {
+          "src": "item_headset_stand_night.webp"
+        }
+      },
+      "foot": 7
+    },
+    {
+      "id": "robot_figure",
+      "slot": "item",
+      "name": "little robot figure",
+      "placement": "surface",
+      "box": [109, 300, 82, 135],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_robot_figure_day.webp"
+        },
+        "dusk": {
+          "src": "item_robot_figure_dusk.webp"
+        },
+        "night": {
+          "src": "item_robot_figure_night.webp"
+        }
+      },
+      "foot": 5
+    },
+    {
+      "id": "energy_can",
+      "slot": "item",
+      "name": "can of energy drink",
+      "placement": "surface",
+      "box": [349, 347, 62, 115],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_energy_can_day.webp"
+        },
+        "dusk": {
+          "src": "item_energy_can_dusk.webp"
+        },
+        "night": {
+          "src": "item_energy_can_night.webp"
+        }
+      },
+      "foot": 4
+    },
+    {
+      "id": "mini_cactus",
+      "slot": "item",
+      "name": "mini cactus",
+      "placement": "surface",
+      "box": [262, 506, 76, 106],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_mini_cactus_day.webp"
+        },
+        "dusk": {
+          "src": "item_mini_cactus_dusk.webp"
+        },
+        "night": {
+          "src": "item_mini_cactus_night.webp"
+        }
+      },
+      "foot": 5
+    },
+    {
+      "id": "controller",
+      "slot": "item",
+      "name": "game controller",
+      "placement": "surface",
+      "box": [217, 826, 166, 138],
+      "z": 55,
+      "frames": {
+        "day": {
+          "src": "item_controller_day.webp"
+        },
+        "dusk": {
+          "src": "item_controller_dusk.webp"
+        },
+        "night": {
+          "src": "item_controller_night.webp"
+        }
+      },
+      "foot": 13
+    }
+  ],
+  "overlay": {
+    "day": "#C9CEDC",
+    "dusk": "#5A4B66",
+    "night": "#151A2B"
+  },
+  "horizon": 695,
+  "floorAreas": [
+    [[0, 1248], [462, 1142], [1312, 1250], [2468, 1342], [2560, 1356], [2560, 1470], [0, 1470]]
+  ],
+  "wallAreas": [
+    [[0, 40], [460, 146], [460, 1134], [0, 1240]],
+    [[466, 146], [1300, 24], [1300, 1238], [466, 1138]]
+  ]
+}

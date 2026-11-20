@@ -22,6 +22,8 @@
  *              --acc (rgb triple, for rgba()) --acc-c (= rgb(var(--acc)))
  *   Status     --green --red --red-strong --warn  (+ --ok rgb triple)
  *   Type       --display (Oswald) --sans (Rajdhani) --mono (JetBrains Mono) --pixel
+ *   Corners    --radius (chrome: buttons, fields, cards, popups)
+ *              --radius-sm (small controls: chips, tags, icon buttons)
  *   Motion     --ease --ease-pop --flux (motion multiplier) --scan (scanline α)
  */
 
@@ -35,6 +37,57 @@
   --space-xl: 32px;
   --space-2xl: 40px;
   --space-3xl: 56px;
+
+  /* ── Spacing roles (261103 spacing pass) ─────────────────────
+   * Pick the ROLE, not a number. Distance says what belongs together:
+   * each step up separates more, so two neighbours never sit closer than
+   * the things inside either of them.
+   *
+   *   --gap-tight    4   a line and its own hint/caption, label + field
+   *   --gap-control  8   sibling controls: a button row or stack, chips
+   *   --gap-stack   12   items of one list: rows, fields, cards in a row
+   *   --gap-group   16   groups inside one panel, modal or card
+   *   --gap-section 32   sections of a page (settings groups, Usage/Plan)
+   *
+   *   --pad-control 12   inside small boxes: callouts, list rows, menus
+   *   --pad-card    16   inside cards and tiles
+   *   --pad-modal   24   inside every ModalShell panel (and its footer)
+   *   --page-top    24   top inset of a scrolling page
+   *   --page-gutter 32   side inset of a page's content column
+   *
+   * Rules: the parent owns the space (flex/grid `gap`), children carry no
+   * outer margins. Literal px only for optical nudges under 4px, hairlines,
+   * and control heights. Vertical padding inside a button or field is
+   * sizing, not rhythm, and stays where it hits the control's height. */
+  --gap-tight: var(--space-xs);
+  --gap-control: var(--space-sm);
+  --gap-stack: var(--space-md);
+  --gap-group: var(--space-md-plus);
+  --gap-section: var(--space-xl);
+  --pad-control: var(--space-md);
+  --pad-card: var(--space-md-plus);
+  --pad-modal: var(--space-lg);
+  --page-top: var(--space-lg);
+  --page-gutter: var(--space-xl);
+
+  /* ── Corner radius ───────────────────────────────────────────
+   * 2px (261103, picked over 0 and 4): sharp-ish, not severe. Was 0
+   * (D-28). Every rectangular piece of chrome reads these, never a literal:
+   * Button, PlanButton, framed inputs and selects, cards, tiles, list
+   * boxes, modal and popup shells, menus, tooltips, Seg, Toggle, call
+   * controls, toasts, notices, the main pane's top-left corner, progress
+   * tracks of 6px and up, checkboxes, the scrollbar thumb.
+   *   --radius     chrome: buttons, fields, cards, panels, menus
+   *   --radius-sm  small controls: tags, badges, icon buttons, checkboxes,
+   *                toggle, slider thumbs, scrollbar thumb, progress tracks
+   * Avatars and portraits are --radius squares too (261103, one rule).
+   * NOT: the few circles left (50%: tiny status dots, radios, spinners),
+   * the underline-only TextField, hairline bars under 6px tall, pixel art, the Continue with
+   * ChatGPT / Google sign-in buttons (their brand shapes), or the game
+   * register (Draw!, Stardew/DST/Minecraft dashboards + launch panels,
+   * backseat, onboarding art cards, the tutorial speech bubble). */
+  --radius: 2px;
+  --radius-sm: 2px;
 
   /* ── Easing + motion (mockup: hud.jsx --ease) ─────────────── */
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -50,6 +103,9 @@
   --sans: 'Rajdhani', 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --pixel: 'Press Start 2P', monospace;
+  /* CJK UI faces, first in --sans under a Japanese or Chinese UI (below). */
+  --sans-ja: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans CJK JP', 'Noto Sans JP';
+  --sans-zh: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans SC';
 
   /*
    * ── ICE theme (light) — "Nurture sky" ─────────────────────────
@@ -391,4 +447,21 @@
   --shadow-window: 0 0 0 1px rgba(28, 74, 48, .08), 0 24px 60px rgba(28, 74, 48, .18), 0 4px 16px rgba(28, 74, 48, .07);
   --shadow-card: 0 1px 2px rgba(28, 74, 48, .05), 0 4px 12px rgba(28, 74, 48, .06);
   --shadow-pop: 0 12px 32px rgba(28, 74, 48, .12);
+}
+
+/* ── Japanese and Chinese UI type (261104) ────────────────────────────
+ * Rajdhani is a condensed Latin face with a small x-height, and it has no
+ * CJK, so a mixed label such as "ChatGPTログイン" or "账户 ID" set its Latin
+ * in Rajdhani and its kana/hanzi in the system CJK face: the Latin read
+ * smaller and in a different face. Under a ja or zh UI the system CJK face
+ * leads --sans, so the whole label is one face whose Latin was drawn to sit
+ * beside its CJK. Rajdhani stays as the fallback. --display (Oswald
+ * headings) and --mono are unchanged. html:lang() outranks :root, and no
+ * theme block redefines --sans.
+ */
+html:lang(ja) {
+  --sans: var(--sans-ja), 'Rajdhani', 'Noto Sans', system-ui, sans-serif;
+}
+html:lang(zh) {
+  --sans: var(--sans-zh), 'Rajdhani', 'Noto Sans', system-ui, sans-serif;
 }

@@ -26,7 +26,8 @@
 // Knobs: --out DIR, --suites micro,convo,freeplay, --modes brain,direct,
 // --bench id,id, --brain-reps N, --direct-reps N, --convo-reps N,
 // --scripts id,id, --fp-reps N, --fp-minutes N, --fp-scenarios id,id,
-// --skip-judge. Output: ~/suisei/reports/quality/<date>-scorecard[-quick]/.
+// --skip-judge, --char-b FILE (compare: arm B plays this character file;
+// the judge keeps the default card). Output: ~/suisei/reports/quality/<date>-scorecard[-quick]/.
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -137,6 +138,14 @@ async function main() {
   const cmpI = argv.indexOf('--compare')
   const refs = cmpI >= 0 ? [prepareRef(argv[cmpI + 1]), prepareRef(argv[cmpI + 2])] : [prepareRef(opt('ref', 'WORKTREE'))]
   if (refs.length === 2) { refs[0].label = 'A'; refs[1].label = 'B' } else refs[0].label = 'run'
+  // --char-b FILE: arm B plays a different character file (a proposed card
+  // edit, the bot code otherwise as its ref). The judge keeps arm A's card.
+  const charB = opt('char-b', null)
+  if (charB) {
+    if (refs.length !== 2) throw new Error('--char-b needs --compare')
+    refs[1].character = path.resolve(charB)
+    process.env.QE_CHARACTER_BY_REPO = JSON.stringify({ [refs[1].repo]: refs[1].character })
+  }
   const OUT = path.resolve(opt('out', path.join(os.homedir(), 'suisei', 'reports', 'quality', `${date}-scorecard${QUICK ? '-quick' : ''}${refs.length === 2 ? '-compare' : ''}`)))
   fs.mkdirSync(OUT, { recursive: true })
   const config = { started: new Date().toISOString(), quick: QUICK, cfg: CFG, refs, argv, suiteSeconds: {} }

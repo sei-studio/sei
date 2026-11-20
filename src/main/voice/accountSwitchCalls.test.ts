@@ -124,4 +124,33 @@ describe('endCallsForAccountSwitch', () => {
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it('hands each connected call to onClosed synchronously, after its event (261107)', () => {
+    openLive('sui', 180_000);
+    const d = deps();
+    const closed: Array<[string, number, boolean]> = [];
+    void endCallsForAccountSwitch('window_closed', {
+      ...d,
+      onClosed: (id, ms, goodbye) => {
+        order.push(`closed:${id}`);
+        closed.push([id, ms, goodbye.companionEnded]);
+      },
+    });
+    expect(closed).toEqual([['sui', 180_000, false]]);
+    expect(order.indexOf('capture:voice_call_ended')).toBeLessThan(order.indexOf('closed:sui'));
+  });
+
+  it('a throwing onClosed never breaks the teardown', async () => {
+    openLive('sui', 60_000);
+    const d = deps();
+    const done = endCallsForAccountSwitch('window_closed', {
+      ...d,
+      onClosed: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(d.emitCallSession).toHaveBeenCalledWith('sui', 60_000);
+    release!();
+    await expect(done).resolves.toBeUndefined();
+  });
 });

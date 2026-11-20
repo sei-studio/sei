@@ -21,7 +21,7 @@
 .root {
   position: relative;
   background: var(--surface-2);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   /* 260602-uv9: distinct, theme-aware track — a 1px inset outline keeps the
      unused portion readable against the page background in both themes. */

@@ -61,6 +61,8 @@ export function signInFailureText(reason: ChatgptSignInFailure, t: (s: string) =
       return t('Could not open your browser. Try again.');
     case 'port_unavailable':
       return t('Sei could not start its sign-in listener. Try again.');
+    case 'region_unsupported':
+      return t('OpenAI does not support your region.');
     default:
       return t('Sign-in did not finish. Try again.');
   }
@@ -78,14 +80,15 @@ export function chatgptPlanDisclosure(t: (s: string) => string): string {
 }
 
 /**
- * Scroll the ChatGPT plan rows into view and flash them (Settings with
- * view.focus = 'chatgpt-plan'). The rows render once Settings has read the
- * config, so this waits for them for a moment; gives up quietly.
+ * Scroll a Settings row marked `data-settings-focus="<target>"` into view and
+ * flash it (Settings with view.focus). The rows render once Settings has read
+ * the config, so this waits for them for a moment; gives up quietly. The
+ * first marked element wins.
  */
-export function revealChatgptPlanRows(waitMs = 3000): void {
+export function revealSettingsFocus(target: string, waitMs = 3000): void {
   const deadline = Date.now() + waitMs;
   const tick = (): void => {
-    const el = document.querySelector<HTMLElement>('[data-settings-focus="chatgpt-plan"]');
+    const el = document.querySelector<HTMLElement>(`[data-settings-focus="${target}"]`);
     if (!el) {
       if (Date.now() < deadline) window.setTimeout(tick, 100);
       return;
@@ -99,6 +102,14 @@ export function revealChatgptPlanRows(waitMs = 3000): void {
   };
   tick();
 }
+
+/** The ChatGPT plan rows (view.focus = 'chatgpt-plan'). */
+export function revealChatgptPlanRows(waitMs = 3000): void {
+  revealSettingsFocus('chatgpt-plan', waitMs);
+}
+
+/** The class a focus target carries so its flash has rounded corners. */
+export const settingsFocusTargetClass = styles.focusTarget;
 
 interface ChatgptPlanSettingsProps {
   active: boolean;

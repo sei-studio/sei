@@ -17,7 +17,7 @@
     background 120ms ease,
     border-color 120ms ease;
   /* Sharp corners explicit so a future global border-radius doesn't sneak in. */
-  border-radius: 0;
+  border-radius: var(--radius);
 }
 
 .zone:hover {

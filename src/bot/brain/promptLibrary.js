@@ -270,13 +270,13 @@ export const ACTION_DESCRIPTIONS = {
     'Return the nearest matching block or creature (`{name:"<term>"}`) and its position; does not move.',
 
   explore:
-    'Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; `{orientation:"forward|backwards|left|right"}` or `{angle:0-360}`.',
+    'Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; `{orientation:"north|south|east|west|forward|left|right"}` or `{angle}`.',
 
   placeBlock:
     'Place one block beside you (`{block}`); optionally aim it with `against`. Use build for multi-cell shapes.',
 
   equip:
-    'Equip an item to a slot: `{item, destination:"hand"|"off-hand"|"head"|"torso"|"legs"|"feet"}`.',
+    'Equip an item: `{item, destination?:"hand"|"off-hand"}`. Armor goes to its own slot. Better armor you get is put on automatically.',
 
   craft:
     'Craft `{item, count?}`; consumes materials. Makes the planks and sticks it needs from your wood on the way, and 3x3 recipes walk to a crafting_table within 16 blocks.',
@@ -320,7 +320,7 @@ export const ACTION_DESCRIPTIONS = {
 }
 
 // explore()'s description with the picture promise removed (Looking off).
-export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16, max 48) to load new terrain when goTo fails or find comes up empty; \`{orientation:"forward|backwards|left|right"}\` or \`{angle:0-360}\`. Returns where you ended up as text.`
+export const EXPLORE_DESCRIPTION_NOVISION = `Walk a short hop (default 16) to load new terrain when goTo fails or find comes up empty; \`{orientation:"north|south|east|west|forward|left|right"}\` or \`{angle}\`. Returns where you ended up as text.`
 
 // 3f. Per-event (per-tick) framing appended to the seed for a fresh loop.
 //
@@ -352,7 +352,13 @@ export const ATTACKED_ADDENDUM_MOB = `Interrupted — {label} hit you. TELL THE 
 // fought bare-handed and died again (13 of 18 deaths in two runs came unarmed).
 // The text is the mob framing above up to its " Then:" advice, with this advice
 // in its place (so the reaction half is edited in one place).
-export const ATTACKED_UNARMED_THEN = ` Then: you lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them while each of their hits costs you 2 or 3 health. Unless the player asks you to fight it, do not stand and fight it: get away from it with follow() on the player or goTo() somewhere away from it, and tell them you have no weapon.`
+// 261031 (quality pass 33): the get-away advice above sent her after the
+// player (where the mobs were) and away from her sword lying a few blocks off,
+// and "tell them you have no weapon" on every hit made "no sword" most of her
+// lines (combat_night eval after pass 31: 7 and 15 deaths in two runs).
+// Getting the weapon back is now the first step (the snapshot's weapon: line
+// says where it lies, weaponSelect lostWeaponLine).
+export const ATTACKED_UNARMED_THEN = ` Then: you have no weapon since you died, and your swings do 1 damage, so do not stand and fight it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, keep away from the mobs and keep the player with you.`
 export const attackedMobUnarmed = () => {
   const cut = ATTACKED_ADDENDUM_MOB.indexOf(' Then:')
   return (cut >= 0 ? ATTACKED_ADDENDUM_MOB.slice(0, cut) : ATTACKED_ADDENDUM_MOB) + ATTACKED_UNARMED_THEN
@@ -387,12 +393,24 @@ export const REFLEX_ADDENDUM = (label, data) => {
 // hostile at low HP). Like the reflex warning, the physical response is already
 // happening on its own — this is a heads-up so the bot can react in character,
 // NOT an instruction to move.
+// 261109 (pass 48): the swim starts at 10 of 20 air (up to 19 under a
+// ceiling, pass 47), long before air hurts, but the old line handed her "you
+// nearly drowned" and she said it at full health ("almost drowned in a puddle
+// lol"), which the judge read as made up: 40 of the 56 off-labelled air lines
+// in the dev scorecards and compares. The air she has left now rides on the
+// event; "nearly drowned" is offered only when it was nearly gone.
 export const SURVIVAL_ADDENDUM_DROWNING = `Heads up — you were running out of air underwater and are AUTOMATICALLY swimming up to breathe; the escape is on reflex, so you do not need to move manually. If it fits you, warn the player in ONE short in-character line (you nearly drowned / coming up for air), or stay silent. Don't say you drowned — you're getting out.`
+export const SURVIVAL_ADDENDUM_AIR_TEXT = `Heads up: you are under water with {air} of 20 air left, so you are AUTOMATICALLY swimming up to breathe. The swim is on reflex, so you do not need to move. Air only hurts once it runs out, and yours has not, so this is a swim up for air, not a near-drowning. If it fits you, tell the player in ONE short in-character line that you are coming up for air, or stay silent.`
+export const AIR_NEARLY_GONE = 3
 export const SURVIVAL_ADDENDUM_RETREAT = `Heads up — your health is LOW and hostiles are near, so you are AUTOMATICALLY backing away from {label}{many} to survive; the retreat is on reflex, you do not need to move manually. Do NOT fight at this health. Warn the player in ONE short in-character line — you're hurt and pulling back — then make the call: call them to come help, or once you're clear wall yourself in with placed blocks. Don't say you were killed — you weren't.`
 export const SURVIVAL_ADDENDUM = (label, data) => {
   const n = Number(data?.count)
   const many = Number.isFinite(n) && n > 1 ? ` (${n} hostiles close)` : ''
-  if (data?.survivalKind === 'drowning') return SURVIVAL_ADDENDUM_DROWNING
+  if (data?.survivalKind === 'drowning') {
+    const air = Number(data?.air)
+    if (data?.air == null || !Number.isFinite(air) || air <= AIR_NEARLY_GONE) return SURVIVAL_ADDENDUM_DROWNING
+    return fillTemplate(SURVIVAL_ADDENDUM_AIR_TEXT, { air: String(Math.round(air)) })
+  }
   return fillTemplate(SURVIVAL_ADDENDUM_RETREAT, { label, many })
 }
 
@@ -401,7 +419,15 @@ export const SURVIVAL_ADDENDUM = (label, data) => {
 // the player, not you. Two variants by whether the body already engaged —
 // combat.js swings automatically when the mob is safe to melee, and the line
 // has to match what the player is watching happen on their screen.
-export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it — that is automatic, you do not need to call attackEntity for this one. Hitting a mob is what makes it turn on YOU instead of them, which is the whole point. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
+// 261110 (quality pass 50): "Hitting a mob is what makes it turn on YOU
+// instead of them" came back as fact the moment the turn was written:
+// "zombie's on me not you", "got the spider on me, hitting it", while her
+// snapshot's aggro line still had the mob on the player (combat_night evals
+// 261109, 6 of the wrong-fact labels). The sentence is gone. A version that
+// said instead "it is still going for them until your hits draw it away"
+// made it worse in the pass 50 probe (5 of 16 "zombie's on me" vs 1 of 16
+// for the old text); with neither, 0 of 16.
+export const DEFEND_ADDENDUM_ENGAGED = `{owner} is being hit by {label}{dist}, and you are ALREADY swinging at it on reflex, so you do not need to call attackEntity for this one. Say ONE short in-character line so they know you're on it, and keep going: if more are coming, name that too.`
 export const DEFEND_ADDENDUM_HELD = `{owner} is being hit by {label}{dist}. You are NOT engaging it automatically (it is a mob melee cannot safely answer, or you are already in your own fight). Decide and act in the SAME turn: attackEntity it to pull it off them (a mob turns on whoever hits it), place a block between them, or warn them in ONE short line and get clear. Do not just narrate.`
 // 261012: added to the defend turn when other hostiles are on the player
 // besides the one the body swings at (the automatic swing covers ONE mob), and
@@ -419,12 +445,19 @@ export const DEFEND_ADDENDUM_THREAT = `{closing} {owner}: the nearest is {ownerD
 // In the protect_player eval this used the ENGAGED wording, and she called
 // attackEntity on it again, which aborted the chase and started it over.
 export const DEFEND_ADDENDUM_ACTION = `{owner} is being hit by {label}{dist}, the mob your attackEntity is already going after. Let it run; calling attackEntity on it again only restarts the chase. Say one short line so they know you are coming.`
+// 261106 (quality pass 44): added when the running attack will go on to another
+// hostile near them after this kill (adapter withAttackRunState). The others
+// clause above told her to call attackEntity on it, which ended the attack.
+export const DEFEND_ACTION_GOES_ON = `After this kill it goes on by itself to the next one near them.`
 // 261030 (quality pass 31): the threat and held turns after a death took her
 // weapon and she has none again (a bot that never had one keeps the dev text).
 // Both said to attackEntity the mob, and after a death took her sword she ran at
 // it bare-handed (the river drowned in the combat_night eval) and died again.
 // `data.unarmed` is set when the turn is written (adapter eventAddendum).
-export const DEFEND_UNARMED_TEXT = `You lost your weapon when you died, so your swings do 1 damage and most mobs take about 20 of them, and a fight like that usually ends with you dead. Unless they ask you to fight it, do not attackEntity it. Say one short line that tells them you have no weapon, and get away from it together (follow them, or goTo somewhere away from it), or place a block between them and it.`
+// 261031 (quality pass 33): "place a block between them and it" with an empty
+// bag gave dirt walls she did not have, and with no plan of her own she told
+// the scared player to fight for her. Getting the weapon back comes first.
+export const DEFEND_UNARMED_TEXT = `You have no weapon since you died, and your swings do 1 damage, so do not attackEntity it. Getting your weapon back comes first: the weapon line in your snapshot says where it lies and how to pick it up, and if you are already on your way to it, let that run. If it has despawned, stay with {owner} and lead them away from the mobs. You are the one looking after them, so tell them what you are doing in one short line rather than asking them to fight it.`
 export const DEFEND_ADDENDUM_THREAT_UNARMED = `{closing} {owner}: the nearest is {ownerDist} blocks from them and {dist} blocks from you.{hp} ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM_HELD_UNARMED = `{owner} is being hit by {label}{dist}. ` + DEFEND_UNARMED_TEXT
 export const DEFEND_ADDENDUM = (label, data) => {
@@ -450,6 +483,7 @@ export const DEFEND_ADDENDUM = (label, data) => {
   if (data?.engaged && !data?.actionOnIt && others > 0) {
     text += ` There ${others > 1 ? 'are' : 'is'} ${fillTemplate(DEFEND_OTHERS_CLAUSE, { others, mobWord: others > 1 ? 'mobs' : 'mob' })}`
   }
+  if (data?.actionOnIt && data?.runGoesOn === true) text += ` ${DEFEND_ACTION_GOES_ON}`
   if (hpKnown && hpRaw <= 10) text += ` ${fillTemplate(DEFEND_OWNER_HP_CLAUSE, { hp: hpRaw })}`
   return text
 }
@@ -465,6 +499,32 @@ export const STALE_ATTACKER_DIED = 'it has died since then'
 export const STALE_ATTACKER_GONE = 'it is not there anymore ({why})'
 export const STALE_GONE_CREEPER = 'it most likely exploded'
 export const STALE_GONE_OTHER = 'it despawned or moved out of range'
+// 261111 (quality pass 51): a turn written about a fight that ended while the
+// model call ran (adapter staleTurn). None of the turn runs; its tool results
+// say so and the next call gets this text with a fresh snapshot.
+export const STALE_TURN_DIED = 'the {label} you went for died {s}s ago'
+export const STALE_TURN_GONE = 'the {label} you went for left {s}s ago ({why})'
+export const STALE_TURN_TEXT = 'Nothing from your last turn ran, and the player did not hear its line: while you were writing it, {reason}, so that fight is over. Check your snapshot for what is around you now and decide again. If you speak, talk about how things are now.'
+export const STALE_TURN_SAY_RESULT = 'not said: this line was written before the fight changed (see below)'
+export const STALE_TURN_TOOL_RESULT = 'not run: this turn was written before the fight changed (see below)'
+export const staleTurnReason = (label, died, ageMs) => {
+  const s = String(Math.max(1, Math.round((Number(ageMs) || 0) / 1000)))
+  return died
+    ? fillTemplate(STALE_TURN_DIED, { label, s })
+    : fillTemplate(STALE_TURN_GONE, { label, s, why: staleGoneWhy(label) })
+}
+export const staleTurnText = (reason) => fillTemplate(STALE_TURN_TEXT, { reason })
+
+// 261111 (quality pass 51): a mob of the same kind as one that died moments
+// ago. In the combat_night evals her snapshot still said "killed zombie" while
+// a second zombie was on her, and she told the player "zombie's dead" or
+// "drowned's down" about the live one. The tag rides on the live mob's
+// nearby-entities line; the sentence on a hit or defend event about it.
+export const SAME_NAME_DEATH_TAG = 'not the {label} that died {s}s ago'
+export const SAME_NAME_DEATH_EVENT = 'This {label} is a different one from the {label} that died {s}s ago.'
+const secs = (ms) => String(Math.max(1, Math.round(ms / 1000)))
+export const sameNameDeathTag = (label, ageMs) => fillTemplate(SAME_NAME_DEATH_TAG, { label, s: secs(ageMs) })
+export const sameNameDeathEvent = (label, ageMs) => fillTemplate(SAME_NAME_DEATH_EVENT, { label, s: secs(ageMs) })
 export const staleGoneWhy = (label) => (label === 'creeper' ? STALE_GONE_CREEPER : STALE_GONE_OTHER)
 export const staleAttackerAddendum = (label, who, died) =>
   fillTemplate(STALE_ATTACKER_ADDENDUM_TEXT, { label, who, fate: died ? STALE_ATTACKER_DIED : fillTemplate(STALE_ATTACKER_GONE, { why: staleGoneWhy(label) }) })
@@ -525,8 +585,15 @@ export const GREETING_HINT =
   `You have not greeted the player yet this session — work one short in-character hello into this turn's say(), before or alongside whatever else you do.`
 
 export const PERSONALITY_TOOL_DESCRIPTIONS = {
+  // 261109 (pass 48): the timing sentence. say() is emitted up front, before
+  // the actions called with it run, but she wrote the line as if the turn had
+  // already played out: "table's down" with the placeBlock that then failed,
+  // "8 logs turned into planks" with the craft, "zombies are down" while the
+  // attack still ran (the top free-play wrong_or_hallucinated mechanism over
+  // the pass 45-47 compares and the 10-30..11-03 dev scorecards). The count
+  // sentence was shortened to keep the description about the same length.
   say:
-    `Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. When you tell them how many of something you have, use the count on your inventory line this turn; it changes as you gather, craft and use things, so a number from earlier in the conversation may be out of date.`,
+    `Speak ONE short line to the player - the only thing you produce that reaches them; your text output is a private scratchpad and is never shown. Call at most once per turn, and only when you genuinely have something to say. It is heard before any action you call with it runs, so speak of that action, or one still running, as not done yet. When you say how many of something you have, use the count on your inventory line this turn, not a number from earlier in the conversation.`,
 
   remember:
     `Append one line to MEMORY.md in your own voice: an impression, your read on the player, or something they asked you to keep in mind (a plan you made together counts, and a task they gave you also goes in setGoal so you carry it out); never a coordinate dump or transaction log. MEMORY.md loads at the start of every future session and stays small, so save only what you would genuinely need then; routine greetings and ordinary moments do not belong in it. Record your misses too, when you were wrong or failed, so you don't repeat them.`,
@@ -916,9 +983,17 @@ export const SESSION_END_CLAUSE = `That's for pausing a TASK. If instead they're
 // now gets the same stop-or-switch as a new one, with clearGoal on its goal.
 // Review: clearGoal only when that request has a goal of its own, so a one-off
 // gather called off leaves an unrelated goal ("Build a house") alone.
+// 261110 (pass 49): the deferral is the player's call. "Any of these asked
+// for once you finish" was read as her own choice to finish first: "go get
+// more wood, like 10 more" during her 3-log gather got "on it" with the old
+// gather left running (pass43 work_session-03-B; 11-09 work_session-03 "on it
+// after the stone"). pass49-probe gather_more: re-gather 2/20 -> 11/20 (with
+// the count in "You're currently"), and with neither a new gather nor a
+// setGoal 11/20 -> 1/20; defer_ok ("when youre done with that ...") started
+// no new action 0/10 on both, so their own "after" still keeps her going.
 export const WAIT_FOR_THEM = 'When they ask you to wait for them, they are the one coming to you: stop and stay where you are, and do not walk toward them.'
 export const midActionChoice = (stopTool) =>
-  `If it is chat, a question, a joke or encouragement, answer it and let the action carry on; you do not need to stop or restart it to reply. Read their whole line before you choose. If they ask you to come to them or follow them, or point out where they are, call the action that takes you to them. If they ask you to go somewhere, call the action that takes you there. If they ask you to stop or to stay where you are, call ${stopTool}. If they ask for something else to be done, call that action. If they change the job you are on, like how many or which item, call that action again with the new details, because the running one keeps its old ones. A new action replaces the current one, so make the switch in this same turn, even when the current action is one they asked for. When they drop the current job and ask for something new in the same line, call only the new action; calling ${stopTool} and saying you will do it next leaves them waiting. If they call off something they asked for, they no longer want it, even when you already have some of it or are handing it over: call ${stopTool}, or the new action if they asked for one, and if it has a goal in your heartbeat, call clearGoal on that goal in this same turn. Any of these asked for once you finish what you are doing now is not a switch: keep going, tell them you will, and record it with setGoal.`
+  `If it is chat, a question, a joke or encouragement, answer it and let the action carry on; you do not need to stop or restart it to reply. Read their whole line before you choose. If they ask you to come to them or follow them, or point out where they are, call the action that takes you to them. If they ask you to go somewhere, call the action that takes you there. If they ask you to stop or to stay where you are, call ${stopTool}. If they ask for something else to be done, call that action. If they change the job you are on, like how many or which item, call that action again with the new details, because the running one keeps its old ones. A new action replaces the current one, so make the switch in this same turn, even when the current action is one they asked for. When they drop the current job and ask for something new in the same line, call only the new action; calling ${stopTool} and saying you will do it next leaves them waiting. If they call off something they asked for, they no longer want it, even when you already have some of it or are handing it over: call ${stopTool}, or the new action if they asked for one, and if it has a goal in your heartbeat, call clearGoal on that goal in this same turn. Only when their own line puts it after what you are doing now is it not a switch: then keep going, tell them you will, and record it with setGoal.`
 
 // 260708: shared memory/goal capture cue for every variant that delivers a
 // player message (Lyra post-mortem: the player set an explicit session goal
@@ -945,6 +1020,33 @@ export const ACTION_STUCK_NUDGE_NOVISION = 'explore() in a different direction t
 // One line of a goal or a player's line, folded and clipped, for a note.
 const clipNote = (t, n = 160) => { const x = String(t ?? '').replace(/\s+/g, ' ').trim(); return x.length > n ? `${x.slice(0, n - 3).trimEnd()}...` : x }
 
+// 261101 (quality pass 34): a line that only acknowledges hers. Every reply
+// turn said three times that a player line always gets a say(), and CORE
+// says a stock reply is out of character, so "jk jk", "cool", "nice job" and
+// "thanks" each got a bit, and with nothing new to say it was her last one:
+// 39 of 71 repetitive labels in the 10-28..11-01 scorecards and compares were
+// on these lines (6.8% of them against 3.3% of lines that need a reply), and
+// she spoke on 81% of them. Which line is an acknowledgement is her call; the
+// examples only show the kind. pass34-probe: acknowledgement cases ok 28/50
+// -> 44/50 ("cool" 2/10 -> 10/10), every line that needs a reply still
+// answered. A softer "a few words or no say() is enough" moved nothing.
+// Plain replies only (orchestrator player_message). On the mid-action turn,
+// with the "say something" demands there dropped, stop and follow orders
+// slipped (pass34-compare2: order/stop lines off 0/48 -> 6/48), so that turn
+// and playerInterruptHint keep dev's text.
+// 261102: folded into the plain-reply mandate it qualifies, token-neutral
+// against dev (that sentence pair was 70 tokens, this is 67).
+export const ACK_LINE = 'Reply with the say() tool: a direct message never gets silence, even a refusal or one word, unless it only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk); then skip say(). Text outside say() never reaches them.'
+
+// 261102 (pass 37): "coal×6 you got for their line "..."", joined with "and".
+function carriedList(asks) {
+  const quote = (t) => {
+    const x = String(t ?? '').trim().replace(/\s+/g, ' ')
+    return x.length > 100 ? `${x.slice(0, 97)}...` : x
+  }
+  return (asks ?? []).map((a) => `${a.items.map((c) => `${c.item}×${c.n}`).join(' and ')}, which you got for their line "${quote(a.line)}"`).join('; and ')
+}
+
 export const NUDGES = {
   silence:
     '[several iterations without speaking — call a brief say() if it genuinely fits, or stay silent. don\'t restate numbers; one short observation is enough.]',
@@ -959,6 +1061,16 @@ export const NUDGES = {
   // reply was told its say() "keeps the current action going" and she said
   // "still mining stone for you" with nothing running.
   replyWhileRunning: `One say() without a new action keeps the current action going.`,
+  // 261112: the player's voice line cut her off mid-line (a barge-in on the
+  // call). Rides only those turns. "stop" or "wait" said over her voice is
+  // usually about the talking; the model decides, nothing is forced.
+  cutOff: (line) => {
+    const said = clipNote(line, 200)
+    const what = said
+      ? `They said this while you were still talking, so your line "${said}" was cut off and they did not hear all of it.`
+      : 'They said this while you were still talking, which cut your line off.'
+    return `${what} Their words may be about your talking, not about what you are doing. If they only wanted you to stop talking, keep doing what you were doing, and stop your action only if they want it stopped.`
+  },
   replyWhileIdle: `No action is running right now, so a reply on its own starts nothing. If you tell them you are doing something, start it with its action in this same turn.`,
 
   // 261016 (quality pass 9c): appended to the completion turn of an action
@@ -977,6 +1089,54 @@ export const NUDGES = {
     const quoted = list.map((l) => `"${l}"`)
     return `While it ran, the player said ${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}, and you answered without starting anything. If one of them asked you to do something you have not started, start it now, before your own plan.`
   },
+
+  // 261112 (quality pass 53): the same lines on the turns after that
+  // completion turn, as a snapshot line while nothing is running
+  // (orchestrator deferredNoteText). The completion turn showed them once,
+  // and in errands-03 (11-12 scorecard) that turn went to handing the coal
+  // over, as the arrival note asks; the log order was gone after it and the
+  // next idle tick went to her own furnace.
+  deferredNote: ({ who, lines }) => {
+    const quoted = (Array.isArray(lines) ? lines : [lines]).map((l) => clipNote(l, 200)).filter(Boolean).map((l) => `"${l}"`)
+    const said = quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} and then ${quoted[quoted.length - 1]}` : quoted[0]
+    return `asked earlier: while you were busy, ${who || 'the player'} said ${said} and you answered without starting anything. If they asked you to do something there and have not called it off, it comes before your own goal: start it now.`
+  },
+
+  // 261031 (quality pass 32): the completion turn of a walk that reached the
+  // player, when she acted on a line of theirs since her last hand-over
+  // (orchestrator arrivalAskText). Without it the arrival turn carried only
+  // "reached Alex" and the newest order, and 9 of 24 errands sessions that
+  // never handed the coal over had her standing next to the player with it
+  // in her bag. It quotes nothing: in live play she keeps working while she
+  // chats, so the lines she "acted on" include small talk, and a quoted list
+  // read as orders. It names both outcomes so a call-off holds.
+  arrivedAsks: ({ who }) => `You are next to ${who || 'the player'} now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.`,
+
+  // 261102 (quality pass 37): the same arrival turn when the brain knows what
+  // she fetched for which line (orchestrator carriedAsks). The general note
+  // above had her hand over the logs they had called off and keep the coal
+  // they asked for (errands-02, 11-02 scorecard). asks: [{ line, items:
+  // [{ item, n }] }], oldest first.
+  // 261103 (pass 38): `newer`: they asked for something else since (a line
+  // she answered during the walk without starting it, or a player task set
+  // after the ask and not started), so the hand-over goes first. In
+  // errands-04-B (pass-37 compare) the arrival turn also carried the log
+  // order from the walk ("start it now") and its not-started task line, and
+  // she went for logs with the coal still in her bag. Not on every arrival:
+  // "give it before anything new" there had her hand over the cobblestone
+  // she got while answering "hows it going" (probe come_here_busy 2/5).
+  arrivedCarrying: ({ who, asks, newer = false }) => `You are next to ${who || 'the player'} now. You are carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, and anything they called off stays with you.${newer ? ' If they still want it, give it before you start anything they asked for since.' : ''}`,
+
+  // 261102 (quality pass 37): a snapshot line while she carries what she set
+  // off to hand over (a walk or follow toward the player with it in her bag).
+  // In errands-03 she followed the player up out of a pit with the coal, and
+  // the next quiet turn went to crafting a table she had no wood for.
+  // 261103 (pass 38): `answered`: the walk answers a newer line of theirs
+  // that got only the walk, which may be "come here" after small talk she
+  // answered with her own gather, so it names both outcomes.
+  deliveryNote: ({ who, asks, answered = false }) => answered
+    ? `hand-over: you are walking to ${who || 'the player'} carrying ${carriedList(asks)}. Anything there they still want reaches them only through give, which walks to them first. If they called it off, keep it.`
+    : `hand-over: you set off toward ${who || 'the player'} carrying ${carriedList(asks)}. It reaches them only through give, which walks to them first. If they called it off, keep it.`,
 
   // 261018 (quality pass 15): the line the snapshot carries after she
   // stopped (stop or unfollow, nothing new started) in answer to a player
@@ -1089,6 +1249,9 @@ export const NUDGES = {
   // same case. Also appended to a mid-action turn, where it is the exception.
   // 261017: the transcript now orders her lines by when they reached the
   // player, so her hello sits right AFTER their line, not above it.
+  // 261101 (pass 34): keep this wording. In ACK_LINE's words ("it needs no
+  // answer: skip say() this turn") she greeted again on 6 of 15 crossed
+  // hellos in the paired compare, against 0 of 14 with this one.
   greetCrossed: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part, and act on it if it is a request, without greeting them or introducing yourself again. Your text output is a private scratchpad they never see.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the
@@ -1372,6 +1535,9 @@ export const CHAT_LANGUAGE_NAMES = {
   ko: 'Korean',
   fr: 'French',
   es: 'Spanish',
+  ru: 'Russian',
+  pt: 'Brazilian Portuguese',
+  it: 'Italian',
 }
 
 export function renderLanguageDirective(language) {
@@ -1381,6 +1547,17 @@ export function renderLanguageDirective(language) {
 The player's language is ${name}. Everything you say to the player is in ${name}: chat messages, spoken lines on voice calls, and say() lines in the game. Write it the way a native speaker actually chats, with natural everyday phrasing, not like a translation from English. You are an AI and speak multiple languages fluently: if the player writes to you in a different language, answer in the language they used. Never claim you cannot speak or understand a language, even if you said so earlier in the conversation.
 
 Only your words to the player change language. Your instructions, tool results, and tool names stay in English, and you keep calling tools exactly as documented. Protocol markers stay in English too: when an instruction tells you to reply with exactly (silence), output the literal text (silence), never a translation of it. Your private notes through remember() and setGoal() can be in ${name} or English, whichever comes naturally.`
+}
+
+// 261116 (product call 261116): a World companion's description was written by
+// whoever made her, and can name a language ("Speak primarily in natural, casual
+// Spanish"). Placed after her persona, so it outranks that line; the player's
+// own language (chatLanguage.ts companionLanguage) is the default. Only for
+// companions someone else wrote: a player's own description is their choice.
+export function renderAdoptedLanguageNote(language) {
+  const name = CHAT_LANGUAGE_NAMES[language]
+  if (!name) return ''
+  return `Someone else wrote your description. If it says you speak a certain language, that was their choice, not this player's: talk to this player in ${name}, keeping the rest of your personality. If the player writes to you in a different language, answer in that language.`
 }
 
 // 260618: the proactiveness directive is STATIC for a session — selected once by
@@ -1664,7 +1841,16 @@ export function renderCompanions(companionNames, playerName = 'the player') {
 
 // ── Minecraft surface text assembly (Looking-mode aware) ─────────────────────
 
-export function worldPrimer() { return WORLD_PRIMER }
+// 261111 (user feedback ae9a758e): Haiku 5.5 says copper armor is not in
+// vanilla Minecraft ("copper is only used for blocks"), so a player who
+// handed her a copper chestplate on 26.3 was told it must be from a mod.
+// Copper tools and armor came in 1.21.9; the line is added only when the
+// connected version's registry has them.
+export const COPPER_GEAR_FACT = 'This version of the game has copper tools and copper armor, made from copper ingots. Copper sits between stone and iron: a copper pickaxe mines what a stone one does, and copper armor protects less than iron and more than leather.'
+
+export function worldPrimer({ copperGear = false } = {}) {
+  return copperGear ? `${WORLD_PRIMER} ${COPPER_GEAR_FACT}` : WORLD_PRIMER
+}
 
 // With Looking 'off' the capability paragraph drops every look() instruction
 // (the tool isn't offered in that mode).

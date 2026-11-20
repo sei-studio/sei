@@ -40,15 +40,21 @@ import {
   SMAPI_INSTALLER_ORIGIN_URL,
   SMAPI_VERSION,
   STARDEW_DEFAULT_PORT,
+  STARDEW_MIN_GAME_VERSION,
   STARDEW_MOD_FOLDER,
   STARDEW_MOD_PACK_PATH,
   StardewModConfigSchema,
   type StardewInstallProgressEvent,
+  type StardewChooseFolderResult,
+  type StardewGameFolderType,
+  type StardewInstallErrorClass,
   type StardewInstallState,
   type StardewModConfig,
 } from '../../../shared/stardewIpc';
 import { DL_MIRROR_BASE, MIRROR_CONNECT_TIMEOUT_MS } from '../../speech/mirrors';
-import { packModIsNewer } from '../modVersion';
+import { compareModVersions, packModIsNewer } from '../modVersion';
+import { trackSetupStep, type SetupSink } from '../../setupTelemetry';
+import { classifyFailReason, type StardewSetupStep } from '../../../shared/setupTelemetry';
 
 const execFileAsync = promisify(execFile);
 const STEAM_APP_ID = '413150';
@@ -73,6 +79,35 @@ export interface StardewInstallEnv {
   /** Run the extracted SMAPI installer (overridable so tests can fake it). */
   runInstaller: (installerPath: string, args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>;
   now: () => number;
+  /** 261104: the folder the player picked with Choose folder (null = none). Optional so test envs can omit it. */
+  readCustomPath?: () => Promise<string | null>;
+  /** 261104: is the game running (null = cannot tell)? Optional; checked before the SMAPI install. */
+  isGameRunning?: () => Promise<boolean | null>;
+  /** 261104: wait after the Windows installer before checking its files (tests set 0). */
+  postInstallSettleMs?: number;
+}
+
+/** Where Choose folder keeps the picked game folder (userData; never the SMAPI targets file). */
+export const CUSTOM_PATH_FILE = 'stardew-game-path.json';
+
+async function customPathFile(): Promise<string> {
+  const { paths } = await import('../../paths');
+  return path.join(paths.userData(), CUSTOM_PATH_FILE);
+}
+
+async function readCustomPathDefault(): Promise<string | null> {
+  try {
+    const j = JSON.parse(await fs.readFile(await customPathFile(), 'utf8')) as { gamePath?: unknown };
+    return typeof j.gamePath === 'string' && j.gamePath ? j.gamePath : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCustomGamePath(gamePath: string, file?: string): Promise<void> {
+  const target = file ?? (await customPathFile());
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, JSON.stringify({ gamePath }), 'utf8');
 }
 
 export function defaultEnv(): StardewInstallEnv {
@@ -103,6 +138,11 @@ export function defaultEnv(): StardewInstallEnv {
       return { stdout: String(stdout ?? ''), stderr: String(stderr ?? '') };
     },
     now: () => Date.now(),
+    readCustomPath: readCustomPathDefault,
+    isGameRunning: async () => {
+      const { stardewGameRunning } = await import('./launch');
+      return (await stardewGameRunning()).running;
+    },
   };
 }
 
@@ -209,6 +249,9 @@ export function defaultInstallPaths(platform: StardewInstallEnv['platform'], hom
     }
     for (let d = 'C'.charCodeAt(0); d <= 'H'.charCodeAt(0); d++) {
       out.push(`${String.fromCharCode(d)}:\\Program Files\\ModifiableWindowsApps\\Stardew Valley`);
+      // 261104: the Xbox app's newer default install folder (Game Pass /
+      // Microsoft Store). The game files sit one level down, in Content.
+      out.push(`${String.fromCharCode(d)}:\\XboxGames\\Stardew Valley\\Content`);
     }
   }
   return out;
@@ -223,7 +266,7 @@ export function gamePathFromTargets(xml: string): string | null {
 export function storeFromPath(p: string): StardewInstallState['store'] {
   const lower = p.toLowerCase();
   if (lower.includes('steamapps')) return 'steam';
-  if (lower.includes('modifiablewindowsapps')) return 'xbox';
+  if (lower.includes('modifiablewindowsapps') || lower.includes('xboxgames')) return 'xbox';
   if (lower.includes('gog') || lower.includes('galaxy')) return 'gog';
   return 'unknown';
 }
@@ -245,6 +288,82 @@ export async function classifyGameFolder(dir: string): Promise<'valid' | 'legacy
   return 'invalid';
 }
 
+/**
+ * The folder a player picked with Choose folder, resolved to the game
+ * folder (261104). People pick the folder they see: the Xbox app's
+ * `XboxGames\Stardew Valley` (files in Content), the macOS app bundle, the
+ * GOG Linux root (files in game). Valid = `Stardew Valley.dll` present.
+ */
+export async function resolveChosenFolder(dir: string): Promise<{ gamePath: string } | { error: 'not_game' | 'legacy' }> {
+  const tries = [
+    dir,
+    path.join(dir, 'Content'),
+    path.join(dir, 'Contents', 'MacOS'),
+    path.join(dir, 'Stardew Valley.app', 'Contents', 'MacOS'),
+    path.join(dir, 'game'),
+    path.join(dir, 'Stardew Valley'),
+    path.join(dir, 'Stardew Valley', 'Content'),
+  ];
+  let legacy = false;
+  for (const t of tries) {
+    const kind: StardewGameFolderType = await classifyGameFolder(t);
+    if (kind === 'valid') return { gamePath: t };
+    if (kind === 'legacy') legacy = true;
+  }
+  return { error: legacy ? 'legacy' : 'not_game' };
+}
+
+const PE_FIXED_FILE_INFO_SIG = Buffer.from([0xbd, 0x04, 0xef, 0xfe]);
+
+/**
+ * major.minor.patch of a PE file's VS_FIXEDFILEINFO FileVersion, or null.
+ * Stardew Valley.dll is a .NET assembly on every OS and its Win32 version
+ * resource carries the game version (1.6.15.24356 -> "1.6.15").
+ */
+export function peFileVersion(buf: Buffer): string | null {
+  let i = buf.indexOf(PE_FIXED_FILE_INFO_SIG);
+  while (i >= 0 && i + 16 <= buf.length) {
+    if (buf.readUInt32LE(i + 4) === 0x00010000) {
+      const ms = buf.readUInt32LE(i + 8);
+      const ls = buf.readUInt32LE(i + 12);
+      return `${ms >>> 16}.${ms & 0xffff}.${ls >>> 16}`;
+    }
+    i = buf.indexOf(PE_FIXED_FILE_INFO_SIG, i + 1);
+  }
+  return null;
+}
+
+const gameVersionCache = new Map<string, { key: string; version: string | null }>();
+
+/**
+ * The installed game's version, or null when it cannot be read. A 1.0.0 /
+ * 0.x answer is a placeholder resource, not the game version, so it reads
+ * as unknown (never as "too old"). Cached by size + mtime: detection runs
+ * on every Check again and on the watcher's port refresh.
+ */
+export async function readGameVersion(gamePath: string): Promise<string | null> {
+  const dll = path.join(gamePath, 'Stardew Valley.dll');
+  try {
+    const st = await fs.stat(dll);
+    const key = `${st.size}:${st.mtimeMs}`;
+    const hit = gameVersionCache.get(dll);
+    if (hit && hit.key === key) return hit.version;
+    let version = peFileVersion(await fs.readFile(dll));
+    if (version && (!version.startsWith('1.') || version === '1.0.0')) version = null;
+    gameVersionCache.set(dll, { key, version });
+    return version;
+  } catch {
+    return null;
+  }
+}
+
+/** true = new enough for the helper, false = too old, null = unknown. */
+export function gameVersionOk(version: string | null): boolean | null {
+  if (!version) return null;
+  const c = compareModVersions(version, STARDEW_MIN_GAME_VERSION);
+  return c == null ? null : c >= 0;
+}
+
 /* ── Detection ───────────────────────────────────────────────────────── */
 
 /** Every folder worth checking, custom + registry + Steam libraries + defaults, deduplicated in order. */
@@ -255,6 +374,12 @@ export async function candidateGamePaths(env: StardewInstallEnv): Promise<string
     const norm = path.normalize(p.trim().replace(/[\\/]+$/, ''));
     if (!out.some((x) => x.toLowerCase() === norm.toLowerCase())) out.push(norm);
   };
+  // The folder the player picked comes first: they told us where it is.
+  try {
+    push(await env.readCustomPath?.());
+  } catch {
+    /* no picked folder */
+  }
   try {
     const targets = await fs.readFile(path.join(env.home, 'stardewvalley.targets'), 'utf8');
     push(gamePathFromTargets(targets));
@@ -369,6 +494,12 @@ async function readSmapiVersion(gamePath: string): Promise<string | null> {
 /** One detection pass: game folder, SMAPI, the mod, its config. */
 export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Promise<StardewInstallState> {
   const candidates = await candidateGamePaths(env);
+  let custom: string | null = null;
+  try {
+    custom = (await env.readCustomPath?.()) ?? null;
+  } catch {
+    custom = null;
+  }
   let gamePath: string | null = null;
   for (const c of candidates) {
     if ((await classifyGameFolder(c)) === 'valid') {
@@ -385,11 +516,19 @@ export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Prom
     modVersion: null,
     modConfig: null,
     store: gamePath ? storeFromPath(gamePath) : 'unknown',
+    manual: !!gamePath && !!custom && path.normalize(custom.trim().replace(/[\\/]+$/, '')).toLowerCase() === gamePath.toLowerCase(),
+    gameVersion: null,
+    versionOk: null,
     platform: env.platform,
     ready: false,
   };
   if (!gamePath) return base;
+  base.gameVersion = await readGameVersion(gamePath);
+  base.versionOk = gameVersionOk(base.gameVersion);
   base.smapiInstalled = await smapiInstalledIn(gamePath, env.platform);
+  // Windows only: on macOS / Linux a dll without the rewired launcher is also
+  // a manual half-install (see smapiLauncherWired), not a quarantine.
+  base.smapiRemoved = !base.smapiInstalled && env.platform === 'win32' && (await smapiFilesRemoved(gamePath, env.platform));
   base.smapiVersion = base.smapiInstalled ? await readSmapiVersion(gamePath) : null;
   base.modInstalled = (await exists(path.join(modDir(gamePath), 'SeiCompanion.dll'))) && (await exists(path.join(modDir(gamePath), 'manifest.json')));
   base.modVersion = base.modInstalled ? await readModVersion(gamePath) : null;
@@ -589,12 +728,49 @@ export async function upgradeModIfNewer(gamePath: string, packRoot: string): Pro
   return { upgraded: true, from, to };
 }
 
+/* ── SMAPI failure causes (261104) ───────────────────────────────────── */
+
+/**
+ * The SMAPI installer's failure, read into its own class so the setup can
+ * name the fix (it used to be one SMAPI_INSTALL_FAILED for everything).
+ */
+export function smapiRunFailCode(text: string): StardewInstallErrorClass {
+  switch (classifyFailReason(text)) {
+    case 'game_running':
+    case 'locked':
+      return 'SMAPI_GAME_RUNNING';
+    case 'permission':
+      return 'SMAPI_PERMISSION_DENIED';
+    case 'antivirus':
+      return 'SMAPI_ANTIVIRUS_SUSPECTED';
+    case 'network':
+      return 'SMAPI_NETWORK_FAILED';
+    default:
+      return 'SMAPI_INSTALL_FAILED';
+  }
+}
+
+/**
+ * SMAPI was put in the game folder and then lost its launcher: the
+ * installer's other files (StardewModdingAPI.dll, the deps file) are there
+ * but StardewModdingAPI.exe (Windows) / StardewModdingAPI (macOS, Linux) is
+ * not. That is an antivirus quarantine, not a failed install.
+ */
+export async function smapiFilesRemoved(gamePath: string, platform: StardewInstallEnv['platform']): Promise<boolean> {
+  const others = (await exists(path.join(gamePath, 'StardewModdingAPI.dll'))) || (await exists(path.join(gamePath, 'StardewModdingAPI.deps.json')));
+  if (!others) return false;
+  const launcher = path.join(gamePath, platform === 'win32' ? 'StardewModdingAPI.exe' : 'StardewModdingAPI');
+  return !(await exists(launcher));
+}
+
 /* ── The whole install ───────────────────────────────────────────────── */
 
 export interface InstallStardewOpts {
   onProgress?: (ev: StardewInstallProgressEvent) => void;
   signal?: AbortSignal | null;
   env?: StardewInstallEnv;
+  /** game_setup_step sink (261104); tests pass a recorder. */
+  track?: SetupSink;
 }
 
 /**
@@ -603,44 +779,90 @@ export interface InstallStardewOpts {
  * GAME_INSTALL_FAILED); the IPC handler forwards it and the last progress
  * event carries the same class.
  */
-export async function installStardew({ onProgress = () => {}, signal = null, env = defaultEnv() }: InstallStardewOpts = {}): Promise<StardewInstallState> {
-  const fail = (error: 'GAME_NOT_INSTALLED' | 'SMAPI_INSTALL_FAILED' | 'GAME_INSTALL_FAILED', message: string): never => {
+export async function installStardew({ onProgress = () => {}, signal = null, env = defaultEnv(), track = trackSetupStep }: InstallStardewOpts = {}): Promise<StardewInstallState> {
+  // 261104: each install step reports start / ok / fail (shape only).
+  let step: StardewSetupStep | null = null;
+  let store: string = 'unknown';
+  const begin = (next: StardewSetupStep): void => {
+    if (step) safeTrack(track, { game: 'stardew', step, outcome: 'ok', store });
+    step = next;
+    safeTrack(track, { game: 'stardew', step, outcome: 'start', store });
+  };
+  const fail = (error: StardewInstallErrorClass, message: string): never => {
+    if (step) safeTrack(track, { game: 'stardew', step, outcome: 'fail', store, error_code: error, reason: classifyFailReason(message) });
+    step = null;
     onProgress({ stage: 'failed', error, message });
     throw new Error(`${error}: ${message}`);
   };
   onProgress({ stage: 'detecting' });
   const before = await detectStardew(env);
+  store = before.store;
   if (!before.gamePath) {
+    step = 'find_game';
     fail('GAME_NOT_INSTALLED', `Stardew Valley was not found. Looked in: ${before.candidates.slice(0, 6).join(', ')}`);
   }
   const gamePath = before.gamePath as string;
 
   if (!before.smapiInstalled) {
+    // 261104: a running game holds its files open and the installer fails
+    // half way, so say so before a 42 MB download.
+    if ((await env.isGameRunning?.().catch(() => null)) === true) {
+      step = 'smapi_run';
+      fail('SMAPI_GAME_RUNNING', 'Stardew Valley is running. Close the game, then run the setup again.');
+    }
+    begin('smapi_download');
     onProgress({ stage: 'smapi-downloading', pct: 0 });
     let zipBytes: Buffer;
     try {
       zipBytes = await downloadSmapiInstaller(env, (pct, bytes, total) => onProgress({ stage: 'smapi-downloading', pct, bytes, total }), signal);
     } catch (err) {
-      fail('SMAPI_INSTALL_FAILED', String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, ''));
+      const msg = String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, '');
+      fail(msg === 'cancelled' ? 'SMAPI_INSTALL_FAILED' : 'SMAPI_NETWORK_FAILED', msg);
     }
+    begin('smapi_run');
     onProgress({ stage: 'smapi-installing' });
     const workDir = path.join(await env.tmpDir(), `smapi-installer-${env.now().toString(36)}`);
     try {
-      const installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
-      const { stdout, stderr } = await env.runInstaller(installer, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer));
+      let installer: string;
+      try {
+        installer = await extractSmapiInstaller(zipBytes!, workDir, env.platform);
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err).replace(/^SMAPI_INSTALL_FAILED:\s*/, '');
+        // The zip was checked on download; an installer that is not there
+        // right after it was written was taken by an antivirus.
+        fail(/has no .*SMAPI\.Installer|EPERM|EACCES/i.test(msg) ? 'SMAPI_ANTIVIRUS_SUSPECTED' : 'SMAPI_INSTALL_FAILED', msg);
+      }
+      let out: { stdout: string; stderr: string };
+      try {
+        out = await env.runInstaller(installer!, ['--install', '--no-prompt', '--game-path', gamePath], path.dirname(installer!));
+      } catch (err) {
+        const e = err as Error & { code?: unknown; stdout?: unknown; stderr?: unknown };
+        const text = [e?.message ?? String(err), String(e?.stdout ?? ''), String(e?.stderr ?? '')].join('\n');
+        const code = e?.code === 'ENOENT' && !(await exists(installer!)) ? 'SMAPI_ANTIVIRUS_SUSPECTED' : smapiRunFailCode(text);
+        const tail = text.trim().split('\n').filter(Boolean).slice(-4).join(' | ');
+        fail(code, `${tail}. Close Stardew Valley and try again; if it keeps failing, install SMAPI from smapi.io and re-run this setup.`);
+      }
+      // An antivirus quarantines a new exe a moment after it is written.
+      if (env.platform === 'win32') await new Promise((r) => setTimeout(r, env.postInstallSettleMs ?? 1500));
       if (!(await smapiInstalledIn(gamePath, env.platform))) {
+        const { stdout, stderr } = out!;
         const tail = (stdout + '\n' + stderr).trim().split('\n').slice(-6).join(' | ');
-        fail('SMAPI_INSTALL_FAILED', `the SMAPI ${SMAPI_VERSION} installer finished but SMAPI is not wired into ${gamePath}: ${tail || 'no output'}`);
+        const removed = (env.platform === 'win32' && (await smapiFilesRemoved(gamePath, env.platform))) || /SMAPI is installed/i.test(stdout);
+        fail(
+          removed ? 'SMAPI_ANTIVIRUS_SUSPECTED' : smapiRunFailCode(stdout + '\n' + stderr),
+          `the SMAPI ${SMAPI_VERSION} installer finished but SMAPI is not wired into ${gamePath}: ${tail || 'no output'}`,
+        );
       }
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
-      if (msg.startsWith('SMAPI_INSTALL_FAILED')) throw err;
+      if (/^SMAPI_[A-Z_]+:/.test(msg)) throw err;
       fail('SMAPI_INSTALL_FAILED', `${msg}. Close Stardew Valley and try again; if it keeps failing, install SMAPI from smapi.io and re-run this setup.`);
     } finally {
       await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
+  begin('mod_copy');
   onProgress({ stage: 'mod-placing' });
   let packRoot: string;
   try {
@@ -654,14 +876,25 @@ export async function installStardew({ onProgress = () => {}, signal = null, env
   } catch (err) {
     const msg = String((err as Error)?.message ?? err);
     if (msg.startsWith('GAME_INSTALL_FAILED')) {
+      if (step) safeTrack(track, { game: 'stardew', step, outcome: 'fail', store, error_code: 'GAME_INSTALL_FAILED', reason: classifyFailReason(msg) });
+      step = null;
       onProgress({ stage: 'failed', error: 'GAME_INSTALL_FAILED', message: msg.replace(/^GAME_INSTALL_FAILED:\s*/, '') });
       throw err;
     }
     fail('GAME_INSTALL_FAILED', `could not copy the mod into ${modDir(gamePath)}: ${msg}`);
   }
   const after = await detectStardew(env);
+  if (step) safeTrack(track, { game: 'stardew', step, outcome: 'ok', store });
   onProgress({ stage: 'done', state: after });
   return after;
+}
+
+function safeTrack(track: SetupSink, input: Parameters<SetupSink>[0]): void {
+  try {
+    track(input);
+  } catch {
+    /* telemetry never breaks the install */
+  }
 }
 
 /** sha256 of a buffer (exported for the tests' fixture checks). */
@@ -695,4 +928,36 @@ export async function spawnGame(gamePath: string, platform: StardewInstallEnv['p
   child.on('error', () => {});
   child.unref();
   return { via };
+}
+
+/* ── Choose folder (261104) ──────────────────────────────────────────── */
+
+/**
+ * The setup's Choose folder: `pick` shows the folder dialog (null =
+ * cancelled); the pick is validated by the game files being there, saved,
+ * and answered with a fresh detection.
+ */
+export async function chooseStardewFolder(
+  pick: () => Promise<string | null>,
+  opts: { env?: StardewInstallEnv; save?: (gamePath: string) => Promise<void>; track?: SetupSink } = {},
+): Promise<StardewChooseFolderResult> {
+  const env = opts.env ?? defaultEnv();
+  const track = opts.track ?? trackSetupStep;
+  const dir = await pick();
+  if (!dir) return { ok: false, reason: 'cancelled' };
+  const resolved = await resolveChosenFolder(dir);
+  if ('error' in resolved) {
+    safeTrack(track, {
+      game: 'stardew',
+      step: 'choose_folder',
+      outcome: 'fail',
+      store: 'manual',
+      error_code: resolved.error === 'legacy' ? 'STARDEW_FOLDER_LEGACY' : 'STARDEW_FOLDER_NOT_GAME',
+    });
+    return { ok: false, reason: resolved.error };
+  }
+  await (opts.save ?? ((p: string) => saveCustomGamePath(p)))(resolved.gamePath);
+  const state = await detectStardew(env);
+  safeTrack(track, { game: 'stardew', step: 'choose_folder', outcome: 'ok', store: storeFromPath(resolved.gamePath) === 'unknown' ? 'manual' : storeFromPath(resolved.gamePath) });
+  return { ok: true, state };
 }

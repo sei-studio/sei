@@ -7,16 +7,23 @@
  * card body opens the character profile, where the "Add to library" CTA
  * lives — there is no in-card invite action anymore.
  *
+ * 261110: the "by" line carries the library add count on its right
+ * (AddCount; hidden for 0 / unknown).
+ *
  * Lean-component contract (CONTEXT D-31c): does NOT subscribe to auth/sync/
  * cloud stores.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { BrowseEntry } from '@shared/ipc';
+import { browseArtSources } from '@shared/portraitUrls';
+import { createHoverDwell } from '../lib/hoverDwell';
+import { noteThumbFallback, noteThumbLoaded } from '../lib/worldThumbStats';
 import { PixelPortrait } from './PixelPortrait';
 import { pickPalette } from '../lib/portraitPalettes';
 import { useT } from '../lib/i18n';
 import { IdTag } from './IdTag';
+import { AddCount } from './AddCount';
 import styles from './BrowseCard.module.css';
 
 export interface BrowseCardProps {
@@ -32,10 +39,12 @@ export interface BrowseCardProps {
    */
   ready?: boolean;
   /**
-   * Fired on hover / focus to warm the cache-on-demand path (character row +
-   * skin + portrait) so the subsequent open is instant. Fire-and-forget and
-   * idempotent — the parent dedupes; main's in-flight guard + existsSync make
-   * a no-op cheap. Optional so other callers can omit it.
+   * Fired after a short hover / focus DWELL (lib/hoverDwell.ts, cancelled if
+   * the pointer leaves first) to warm the cache-on-demand path (character row
+   * + skin + full portrait) so the subsequent open is instant. Fire-and-forget
+   * and idempotent — the parent dedupes; main skips a portrait it already has
+   * for this version and dedupes in-flight downloads. Optional so other
+   * callers can omit it.
    */
   onPrefetch?: () => void;
 }
@@ -60,14 +69,41 @@ export function BrowseCard({
   // two rows reveal as a coordinated group; below-the-fold cards leave it
   // undefined and fall back to their own per-card settle.
   const [artSettled, setArtSettled] = useState(false);
-  const ready = readyOverride ?? (!entry.portraitUrl || artSettled);
+  const art = browseArtSources(entry);
+  const ready = readyOverride ?? (!art.primary || artSettled);
+
+  // 261111: warm only after a hover dwell, never on a brush-past.
+  const prefetchRef = useRef(onPrefetch);
+  prefetchRef.current = onPrefetch;
+  const dwellRef = useRef<ReturnType<typeof createHoverDwell> | null>(null);
+  if (!dwellRef.current) dwellRef.current = createHoverDwell(() => prefetchRef.current?.());
+  const dwell = dwellRef.current;
+  useEffect(() => () => dwell.cancel(), [dwell]);
+
+  // Thumbnail hit vs fallback, counted once per card source.
+  const thumbCounted = useRef(false);
+  const handleSettled = (): void => {
+    if (entry.thumbUrl && !thumbCounted.current) {
+      thumbCounted.current = true;
+      noteThumbLoaded();
+    }
+    setArtSettled(true);
+  };
+  const handleFallback = (): void => {
+    if (!thumbCounted.current) {
+      thumbCounted.current = true;
+      noteThumbFallback();
+    }
+  };
 
   return (
     <div
       className={`${styles.card} ${ready ? '' : styles.loading}`}
       onClick={onOpen}
-      onMouseEnter={onPrefetch}
-      onFocus={onPrefetch}
+      onMouseEnter={dwell.start}
+      onMouseLeave={dwell.cancel}
+      onFocus={dwell.start}
+      onBlur={dwell.cancel}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -83,8 +119,10 @@ export function BrowseCard({
           seed={entry.id + entry.name}
           palette={palette}
           size={300}
-          portraitImage={entry.portraitUrl}
-          onImageSettled={() => setArtSettled(true)}
+          portraitImage={art.primary}
+          fallbackImage={art.fallback}
+          onFallback={handleFallback}
+          onImageSettled={handleSettled}
           style={{ width: '100%', height: '100%' }}
         />
       </div>
@@ -94,7 +132,10 @@ export function BrowseCard({
           <span className={styles.name}>{entry.name}</span>
           {entry.publicId ? <IdTag id={entry.publicId} size="sm" /> : null}
         </div>
-        <span className={styles.by}>{entry.creatorLabel}</span>
+        <div className={styles.byRow}>
+          <span className={styles.by}>{entry.creatorLabel}</span>
+          <AddCount count={entry.addCount} variant="card" />
+        </div>
       </div>
       {!ready ? (
         <div className={styles.skel} aria-hidden="true">

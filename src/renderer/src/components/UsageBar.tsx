@@ -21,10 +21,10 @@ import { RefreshIcon } from './icons';
 import { t, useT } from '../lib/i18n';
 import styles from './UsageBar.module.css';
 
-/** Cumulative playtime ms → "3h 17m". */
+/** Cumulative playtime ms → "3h 17m", unit letters in the UI language. */
 export function formatPlayed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 60000));
-  return `${Math.floor(total / 60)}h ${total % 60}m`;
+  return t('{h}h {m}m', { h: Math.floor(total / 60), m: total % 60 });
 }
 
 /** Bar hover tooltip: total time played across every companion on this profile. */

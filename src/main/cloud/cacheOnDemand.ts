@@ -172,7 +172,7 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
     // skin. User can re-open later to retry, or apply a new skin.
     await Promise.all([
       writeSkin(downloadSkin, ownerUuid, uuid),
-      writePortrait(downloadPortrait, ownerUuid, uuid),
+      writePortrait(downloadPortrait, ownerUuid, uuid, cloud.cloud_updated_at ?? null),
     ]);
   }
 }
@@ -207,10 +207,21 @@ async function writeSkin(downloadSkin: SkinDownloader, ownerUuid: string, uuid: 
 /**
  * Download + atomic-write a character's portrait PNG. Best-effort; swallows +
  * logs. Returns true only when bytes actually landed on disk (see writeSkin).
+ *
+ * 261111: `version` is the cloud row's updated_at. A portrait already
+ * downloaded at that version comes from the per-version cache with no network
+ * (cloud/portraitCache.ts), so a hover warm-up, an open, a refresh and a heal
+ * fetch each portrait at most once per version.
  */
-async function writePortrait(downloadPortrait: SkinDownloader, ownerUuid: string, uuid: string): Promise<boolean> {
+async function writePortrait(
+  downloadPortrait: SkinDownloader,
+  ownerUuid: string,
+  uuid: string,
+  version: string | null,
+): Promise<boolean> {
   try {
-    const portrait = await downloadPortrait(ownerUuid, uuid);
+    const { fetchPortraitOnce } = await import('./portraitCache');
+    const { bytes: portrait } = await fetchPortraitOnce(downloadPortrait, ownerUuid, uuid, version);
     if (portrait) {
       const portraitTarget = paths.portraitPath(uuid);
       await mkdir(path.dirname(portraitTarget), { recursive: true });
@@ -259,7 +270,9 @@ async function healMissingAssets(uuid: string): Promise<void> {
     // Heal whichever assets are missing, concurrently.
     await Promise.all([
       skinMissing ? writeSkin(downloadSkin, ownerUuid, uuid) : Promise.resolve(),
-      portraitMissing ? writePortrait(downloadPortrait, ownerUuid, uuid) : Promise.resolve(),
+      portraitMissing
+        ? writePortrait(downloadPortrait, ownerUuid, uuid, local.cloud_updated_at ?? null)
+        : Promise.resolve(),
     ]);
   } catch (err) {
     console.warn(`[sei] cache-on-demand healMissingAssets ${uuid} failed: ${(err as Error).message}`);
@@ -392,7 +405,9 @@ async function refreshFromCloud(uuid: string): Promise<void> {
     if (ownerUuid && (wantPortrait || wantSkin)) {
       const { downloadSkin, downloadPortrait } = await import('./cloudCharacterClient');
       const [pOk, sOk] = await Promise.all([
-        wantPortrait ? writePortrait(downloadPortrait, ownerUuid, uuid) : Promise.resolve(true),
+        wantPortrait
+          ? writePortrait(downloadPortrait, ownerUuid, uuid, cloud.cloud_updated_at ?? null)
+          : Promise.resolve(true),
         wantSkin ? writeSkin(downloadSkin, ownerUuid, uuid) : Promise.resolve(true),
       ]);
       portraitOk = pOk;

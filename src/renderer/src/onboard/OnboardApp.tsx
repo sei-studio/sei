@@ -33,8 +33,10 @@
  * sprite always scale by the SAME factor and their line weights stay matched;
  * dialogue and the sign-in panel stay in window coordinates at full size.
  */
+import { regionProviderLabel } from '@shared/providerRegion';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
+import { profileSetUp } from '../lib/profileSetUp';
 import { readAuthSnapshot } from '../lib/authBoot';
 import { createSignInScopeGate, type SignInScopeGate } from '../lib/signInScopeGate';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -79,6 +81,8 @@ import {
   packsPct,
   packsTotalBytes,
   returningLocalRoute,
+  routeAfterAuthDecision,
+  PROFILE_READ_RETRY_MS,
   ttsPackIdsFor,
   type KeyProbeVerdict,
   type LocalSetupChoices,
@@ -124,6 +128,7 @@ import { ContinueWithChatGPTButton } from '../components/ContinueWithChatGPTButt
 import { signInFailureText } from '../components/ChatgptPlanSettings';
 import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
+import { userFacingError } from '../lib/errors';
 
 /* ── Script ──────────────────────────────────────────────────────────────── */
 
@@ -172,7 +177,7 @@ const SCRIPT: Record<LineId, string> = {
   // 261012: the optional one-tap follow-up for "AI" and "Google search".
   heardAi: 'Ooh, another AI! Which one?',
   heardGoogle: 'Nice! What did you search for?',
-  job: 'So, {name}, my job here is to help you meet other AI friends from my world.',
+  job: 'So, {name}, my job here is to help you meet other AI companions from my world.',
   skipConfirm: 'Aww, really? I was going to find a companion just for you. You wanna skip it?',
   fiveQs:
     'The terminal says I need five quick answers from you. It uses them to pick who you meet first, so be honest with me okay?',
@@ -637,7 +642,7 @@ export function OnboardApp({
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
-      setSetupError((err as Error).message || t('Something went wrong.'));
+      setSetupError(userFacingError(err, t('Something went wrong.')));
     }
   }, [buildConfig, trackCompleted]);
 
@@ -702,7 +707,7 @@ export function OnboardApp({
       setGroundIn(true);
     } catch (err) {
       if (run !== setupRunRef.current) return;
-      setSetupError((err as Error).message || t('Something went wrong.'));
+      setSetupError(userFacingError(err, t('Something went wrong.')));
     }
   }, [buildConfig, trackCompleted]);
 
@@ -911,31 +916,6 @@ export function OnboardApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase.k]);
 
-  /** New branch only: did the session that just landed belong to an account
-   * that already existed? Decided by ACCOUNT AGE for both the password form
-   * and OAuth (260730). A pure intent check ('signin' = existing) broke the
-   * boomerang first-timer: someone who created their account mid-onboarding,
-   * quit before setup ran (the email-verification detour is the common way),
-   * and came back through "I already have an account". Their profile has no
-   * config yet, so the welcome-back dead-end would bounce them to Home and
-   * replay the whole questionnaire on the NEXT launch — the account-age
-   * window routes them into setup + tutorial now instead. 48h comfortably
-   * covers a verify-tomorrow detour while still catching genuine veterans;
-   * the cost when it misjudges (a days-old account's first sign-in on a
-   * second machine) is one redundant setup, not data loss. A 'signup'
-   * intent and a boot-restored session (null intent, relaunch
-   * mid-onboarding) are always new. */
-  const signedIntoExistingAccount = useCallback((): boolean => {
-    const a = authRef.current;
-    if (a.kind !== 'signed_in') return false;
-    const intent = authIntentRef.current;
-    if (intent === 'signin' || intent === 'oauth') {
-      const ageMs = Date.now() - Date.parse(a.user.createdAt);
-      return Number.isFinite(ageMs) && ageMs > 48 * 3600_000;
-    }
-    return false;
-  }, []);
-
   /**
    * The returning branch signed into an account that was created by that very
    * sign-in (260916). Google sign-in creates the account on the spot, so
@@ -949,6 +929,23 @@ export function OnboardApp({
     if (a.kind !== 'signed_in') return false;
     const ageMs = Date.now() - Date.parse(a.user.createdAt);
     return Number.isFinite(ageMs) && ageMs < 10 * 60_000;
+  }, []);
+
+  /**
+   * Fallback only, for when the profile read fails (260730): the new-user
+   * branch signed into an account older than 48 h through a sign-in (not a
+   * sign-up), so it is probably a veteran and setup would overwrite its
+   * config. A read that succeeds always decides instead.
+   */
+  const signedIntoExistingAccount = useCallback((): boolean => {
+    const a = authRef.current;
+    if (a.kind !== 'signed_in') return false;
+    const intent = authIntentRef.current;
+    if (intent === 'signin' || intent === 'oauth') {
+      const ageMs = Date.now() - Date.parse(a.user.createdAt);
+      return Number.isFinite(ageMs) && ageMs > 48 * 3600_000;
+    }
+    return false;
   }, []);
 
   /** Returning branch that turned out to have nothing to return to (a sign-in
@@ -974,13 +971,17 @@ export function OnboardApp({
    * backfills preferred_name from the cloud profile before the scope flips
    * (profileScope.ts), and only the app's own setup ever writes that column,
    * so a veteran on a second machine reads as onboarded and a minutes-old
-   * Google sign-in with no profile does not. The two age heuristics above
-   * stay as the fallback for when the read fails (null = could not tell).
+   * Google sign-in with no profile does not. When the read fails (null,
+   * even after routeAfterAuth's one retry), routeAfterAuthDecision falls
+   * back to account age (localSetup.ts).
    */
   const accountHasProfile = useCallback(async (): Promise<boolean | null> => {
     try {
       const cfg = await sei.getConfig();
-      return Boolean((cfg.preferred_name ?? '').trim());
+      if ((cfg.preferred_name ?? '').trim()) return true;
+      // T283: a profile set up before whose settings were recovered to
+      // defaults has no name and is still not a new one.
+      return (await profileSetUp(cfg.preferred_name)).setUp;
     } catch {
       return null;
     }
@@ -989,15 +990,24 @@ export function OnboardApp({
   /** Route a signed-in user: setup (no profile yet) or done (has one). */
   const routeAfterAuth = useCallback(
     async (mode: 'new' | 'returning') => {
-      const has = await accountHasProfile();
-      if (mode === 'returning') {
-        const fresh = has === null ? signedIntoFreshAccount() : !has;
-        if (fresh) resumeAsNew();
-        else {
-          trackCompleted('returning');
-          complete(false, null);
-        }
-      } else if (has === null ? signedIntoExistingAccount() : has) {
+      let has = await accountHasProfile();
+      if (has === null) {
+        // One retry before the age fallback: a read that failed once (main
+        // still moving the scope) usually answers a moment later.
+        await new Promise((r) => setTimeout(r, PROFILE_READ_RETRY_MS));
+        has = await accountHasProfile();
+      }
+      const route = routeAfterAuthDecision(
+        mode,
+        has,
+        signedIntoFreshAccount(),
+        signedIntoExistingAccount(),
+      );
+      if (route === 'resume-as-new') resumeAsNew();
+      else if (route === 'complete-returning') {
+        trackCompleted('returning');
+        complete(false, null);
+      } else if (route === 'welcome-existing') {
         // They walked the new-user branch but signed into an account that
         // already has a profile. Running setup here would clobber the
         // profile's config and mint a new character on the account (260729):
@@ -1007,7 +1017,14 @@ export function OnboardApp({
         setPhase({ k: 'setup' });
       }
     },
-    [accountHasProfile, complete, signedIntoExistingAccount, signedIntoFreshAccount, resumeAsNew, trackCompleted],
+    [
+      accountHasProfile,
+      complete,
+      signedIntoFreshAccount,
+      signedIntoExistingAccount,
+      resumeAsNew,
+      trackCompleted,
+    ],
   );
 
   /** Post-auth continuation: ToS gate, then setup (new) or done (returning). */
@@ -1544,6 +1561,7 @@ function AuthPanel(props: {
             : 'form',
     );
   }, [onSubStep, regionBlocked, codeSentTo, oauth, gptCode, gpt.phase]);
+  // "Continue with ChatGPT" mints a Sei cloud session, so main gates it.
   useEffect(() => {
     if (gpt.failure === 'region_blocked') setRegionBlocked(true);
   }, [gpt.failure]);
@@ -1559,6 +1577,20 @@ function AuthPanel(props: {
       cancelled = true;
     };
   }, []);
+  // 261103 (T303): the verdict is never cached, so a player who turns on a
+  // VPN or moves can ask again instead of being stuck on the panel.
+  const [regionChecking, setRegionChecking] = useState(false);
+  const recheckRegion = (): void => {
+    if (regionChecking) return;
+    setRegionChecking(true);
+    sei.regionStatus().then(
+      (s) => {
+        setRegionChecking(false);
+        if (!s.blocked) setRegionBlocked(false);
+      },
+      () => setRegionChecking(false),
+    );
+  };
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -1589,7 +1621,7 @@ function AuthPanel(props: {
           // W7: main refused on region; swap to the blocking panel (its copy
           // is translated locally) instead of the inline error line.
           if (res.code === 'region_blocked') setRegionBlocked(true);
-          else setError(res.message);
+          else setError(userFacingError(res.message));
         } else if (res.requiresVerification) setCodeSentTo(email.trim());
         // A session lands via the auth push; OnboardApp proceeds from there.
       } else {
@@ -1600,15 +1632,15 @@ function AuthPanel(props: {
           // from the server. On the returning panel, say the second one
           // out loud and name the way out (260916).
           else if (res.code === 'invalid_credentials' && mode === 'returning' && props.onStartFresh)
-            setError(`${res.message} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
-          else setError(res.message);
+            setError(`${userFacingError(res.message)} ${t('No account with that email yet? Press "I\'m new here" below.')}`);
+          else setError(userFacingError(res.message));
         }
         // Right password, address never confirmed. Main has already sent a
         // fresh code (260804); show the panel rather than sitting on the form.
         else if (res.needsVerification) setCodeSentTo(email.trim());
       }
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
     } finally {
       setSubmitting(false);
     }
@@ -1656,6 +1688,10 @@ function AuthPanel(props: {
   // the local-setup path. Placed AFTER the needsTos branch on purpose: that
   // branch serves an already-signed-in user, and existing sessions are never
   // gated.
+  // 261103 (T303): the verdict is no longer cached, so the panel can be
+  // re-checked. "Continue with ChatGPT" is a cloud account and stays off
+  // here; local mode's provider list has the ChatGPT plan, which OpenAI
+  // gates on its own.
   if (regionBlocked) {
     return (
       <div className={styles.panel}>
@@ -1664,6 +1700,10 @@ function AuthPanel(props: {
         </p>
         <button className={`${styles.pill} ${styles.pillWide}`} onClick={props.onLocal}>
           {tt('Use my own API key')}
+        </button>
+        <p className={styles.panelNote}>{tt('Local mode can also use your ChatGPT plan.')}</p>
+        <button className={styles.quietLink} onClick={recheckRegion} disabled={regionChecking}>
+          {tt('Check again')}
         </button>
       </div>
     );
@@ -1679,7 +1719,7 @@ function AuthPanel(props: {
       const res = await sei.sendPasswordReset({ email: email.trim() });
       // Neutral success routes to the SAME code panel a signup lands on.
       if (res.ok) setCodeSentTo(email.trim());
-      else setError(res.message);
+      else setError(userFacingError(res.message));
     } catch {
       setError(t("Couldn't send the code. Try again in a moment."));
     }
@@ -1987,7 +2027,7 @@ function GoogleWaitPanel(props: {
         inFlightRef.current = false;
         if (res.ok || res.reason === 'user_cancelled') props.onDone();
         else if (res.reason === 'region_blocked') setRegionBlocked(true);
-        else setError(res.message || t("Sign-in didn't finish. Try again."));
+        else setError(userFacingError(res.message, t("Sign-in didn't finish. Try again.")));
       },
       () => {
         inFlightRef.current = false;
@@ -2013,8 +2053,9 @@ function GoogleWaitPanel(props: {
     props.onDone();
   };
 
-  // W7 region gate — no "Try again": the verdict is cached, retrying cannot
-  // change it. Offer the local path in the scene's own vocabulary.
+  // W7 region gate. "Back" returns to the form, where a new attempt runs a
+  // fresh check (261103: the verdict is never cached). Offer the local path
+  // in the scene's own vocabulary.
   if (regionBlocked) {
     return (
       <div className={styles.panel}>
@@ -2154,7 +2195,7 @@ function LocalSetupPanel(props: {
         setProbe(verdict);
       }
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
     } finally {
       setBusy(false);
     }
@@ -2163,7 +2204,7 @@ function LocalSetupPanel(props: {
   if (step === 'key' && probe) {
     return (
       <div className={styles.panel}>
-        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe))}</p>
+        <p className={styles.panelText}>{tt(keyProbeLine(provider, probe), { provider: regionProviderLabel(provider) })}</p>
         <p className={styles.panelNote}>{tt(keyProbeConsequence(probe))}</p>
         <div className={styles.choices}>
           <button className={styles.pill} onClick={() => setProbe(null)}>
@@ -2172,7 +2213,7 @@ function LocalSetupPanel(props: {
           <button
             className={styles.pill}
             onClick={() => {
-              if (probe === 'rejected') skipGenRef.current = true;
+              if (probe === 'rejected' || probe === 'region') skipGenRef.current = true;
               setProbe(null);
               setModel(DEFAULT_MODELS[provider] ?? '');
               setStep('model');
@@ -2510,7 +2551,7 @@ function ModelStep(props: {
         <p className={styles.panelNote}>{tt('Connection works ({seconds}s).', { seconds: test.seconds })}</p>
       ) : test.k === 'err' ? (
         <p className={styles.panelError} role="alert">
-          {tt(test.copy)}
+          {tt(test.copy, { provider: regionProviderLabel(provider) })}
         </p>
       ) : null}
       <div className={styles.choices}>
@@ -2667,7 +2708,7 @@ function ElKeyPanel(props: { onSaved: () => void; onBack: () => void }): React.R
       await sei.voiceElevenKeySet({ key: key.trim() });
       props.onSaved();
     } catch (err) {
-      setError((err as Error).message || t('Something went wrong.'));
+      setError(userFacingError(err, t('Something went wrong.')));
       setBusy(false);
     }
   };

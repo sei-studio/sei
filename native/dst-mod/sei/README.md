@@ -76,9 +76,27 @@ cluster token:
 3. Spawn a stand-in player from the console (`SpawnPrefab("wendy")` with a
    `userid`, `SetCanSleep(false)`, invincible so the world does not reset).
 4. `node scripts/dst-headless-harness.mjs --console <fifo> --near <userid>`
-   with a scenario on stdin (`tool`, `snap`, `obs`, `lua`, `wait`, `events`).
+   with a scenario on stdin (`tool`, `tool&` to run a verb without waiting
+   for it, `snap`, `obs`, `lua`, `wait`, `events`).
    Scenarios for the 0.3.0 habits are in `scripts/dst-headless-scenarios/`
    (chop near a fire at night, a night alone, holds/defend/give).
+5. Respawn after death (261104) needs a cluster with caves (`shard_enabled =
+   true`, a Master and a Caves shard, the mod enabled in both) and the
+   stand-in on Master: `DST_MASTER_FIFO=<fifo> npx tsx
+   scripts/dst-respawn-headless.ts cap|badspot` drives the real bot runtime
+   and main's DST module, kills the body from the console and prints where
+   each new body stood, the death-turn prompt and how the session ended.
+
+6. Quality eval with the real brain (claude-haiku-5-5, test key):
+   `npx tsx scripts/quality-eval/dst/run.ts --arm <name> --repo <checkout>
+   --out <dir>` runs the night, hostile, follow, errand and hunger
+   scenarios and decides pass or fail from game state (console probes).
+   It starts and stops its own SeiTest server and repoints `mods/sei` at
+   the checkout under test for the run. The server saves the world every
+   day, so plants a run left behind stay; the first arm copies the save to
+   `<out>/world-snapshot` (`--world`) and later arms start from that copy.
+   `scripts/quality-eval/dst/rejudge-chat.mjs <out>/<arm>.run.out` re-scores
+   the chat scenario (majority of 3 judge calls).
 
 What a server with no real client cannot show: entities away from a real
 player are asleep, and a sleeping light does not light anything (the same
@@ -89,6 +107,23 @@ the body equips awake from the equip event, and respawns the flame of a
 burning fire near the body awake (`Reflexes.KeepFiresAwake`). Fire heat did
 not change the body's temperature on the test server, so warming up is
 checked only as walking to the fire.
+
+### A world with caves (two shards)
+
+A caves world runs two server processes, and the helper loads and
+heartbeats in both (`TheWorld.ismastersim` is true on each). Each beat lists
+only the players on that shard, and the cave shard reports `phase` "night"
+at any time of day. Helpers before 0.3.1 sent no shard id, and the app gave
+the summon to whichever shard asked first, so about half the summons spawned
+the body in the caves, alone and in the dark, where Charlie killed it about
+16 s later (DST_BODY_DIED). To reproduce it: set `shard_enabled = true`,
+`master_port` and `cluster_key` in `cluster.ini`, add a `Caves` shard folder
+(`is_master = false`, a `worldgenoverride.lua` with `preset = "DST_CAVE"`,
+its own `server_port`), enable the mod on both shards, start both with
+`-shard Master` / `-shard Caves`, and watch which shard takes the offer.
+Since 0.3.1 the helper sends `shard` and `mastershard`, the app gives the
+offer only to the shard that lists the player (else the master), and a
+secondary shard refuses an offer for a player it does not have.
 
 ## Credits
 

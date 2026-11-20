@@ -12,6 +12,7 @@
 
 import { goTo as realGoTo } from './pathfind.js'
 import { dropItemAction as realDrop } from './drop.js'
+import { wornArmor } from './armor.js'
 import { resolveOwner } from '../observers/snapshot.js'
 import { beginGivenToss } from '../observers/givenDrops.js'
 import { nextMilestone, readProgressionState, nextNeedAfterGive } from '../observers/progression.js'
@@ -27,7 +28,11 @@ const FACE_MS = 800
 function countOf(bot, item) {
   let items = []
   try { items = bot?.inventory?.items?.() ?? [] } catch { items = [] }
-  return items.filter((i) => i?.name === item).reduce((s, i) => s + (i.count ?? 1), 0)
+  // 261111: worn armor counts too; drop() takes it off before the toss.
+  let worn = []
+  try { worn = wornArmor(bot) } catch { worn = [] }
+  return items.filter((i) => i?.name === item).reduce((s, i) => s + (i.count ?? 1), 0) +
+    worn.filter((w) => w.item.name === item).length
 }
 
 function distance(a, b) {
@@ -81,13 +86,20 @@ export function resolveRecipient(bot, who, config) {
 // work_session-06 gave all 6 logs, and read after the give the frontier was
 // back at "gather wood" (no recipe), so the note was missing exactly when
 // she had nothing left for the table she had just said she would make.
+// 261110 (pass 49): and that what she gave stays given. work_session-01
+// (11-09 scorecard, 47% off) gave all 6 logs, read "you need 1 more", and
+// asked the player to toss one back four times, once in answer to "make a
+// crafting table" with oak trees in view (pass47 gather_craft-02-A: eight
+// times). The note stays on last_action_result until her next action, so it
+// is what those later turns read. pass49-probe ws01_table (her first ask
+// already said, then "make a crafting table"): asked again 10/10 -> 2/10.
 function nextStepNote(bot, item, given) {
   try {
     const state = readProgressionState(bot)
     const before = { ...state, items: { ...state.items, [item]: (Number(state.items?.[item]) || 0) + given } }
     const { node } = nextMilestone(before)
     const need = nextNeedAfterGive(node, state.items, item)
-    return need ? `. Note: ${need}` : ''
+    return need ? `. Note: ${need}. What you gave is theirs to keep, so get what you need yourself` : ''
   } catch {
     return ''
   }

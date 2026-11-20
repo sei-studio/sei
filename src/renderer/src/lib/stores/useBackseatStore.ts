@@ -75,6 +75,7 @@ import { t } from '../i18n';
 import { visionGateReason } from '../visionGate';
 import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
+import { userFacingError } from '../errors';
 
 /**
  * How long an armed share waits for its call. The voice-module download alone
@@ -409,7 +410,9 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     // very next idle tick is composed, sent and dropped for nothing. (The
     // player's own echoed line is a real turn boundary too: it means a reply is
     // imminent.)
-    offLine = sei.onBackseatLine?.(() => capture?.noteSpoke()) ?? null;
+    // 261103: a companion line carries main's backoff (quietExtraMs); the
+    // player's own line carries none, which resets it here as it does in main.
+    offLine = sei.onBackseatLine?.((l) => capture?.noteSpoke(l.quietExtraMs ?? 0)) ?? null;
   } catch {
     /* preload without the backseat bridge — refresh() still reconciles */
   }
@@ -478,7 +481,12 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
         void sei.backseatEnd(characterId, `capture_failed:${captureErrorClass(err)}`).catch(() => {});
         set({
           starting: false,
-          error: (err as Error).message || t('Could not read that window.'),
+          // A capture DOMException's text is the browser's own English
+          // ("Could not start video source"), never Sei copy.
+          error:
+            typeof DOMException !== 'undefined' && err instanceof DOMException
+              ? t('Could not read that window.')
+              : userFacingError(err, t('Could not read that window.')),
         });
         return false;
       }

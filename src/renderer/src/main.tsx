@@ -25,9 +25,23 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // summon and no real IPC, so the game-styled panels can be checked in a
   // plain browser tab. Lazy import keeps it out of prod bundles.
   const which = new URLSearchParams(window.location.search).get('dashshot') ?? '';
-  void import('./components/games/DevDashShot').then(({ DevDashShot }) => {
-    root.render(<DevDashShot which={which} />);
-  });
+  const screenShot = new URLSearchParams(window.location.search).get('screen') ?? '';
+  if (which === 'screen' && (screenShot === 'world' || screenShot === 'worldprofile')) {
+    // 261110: the World tab / a profile opened from World over a fixture
+    // listing with library add counts (DevWorldShot).
+    void import('./components/DevWorldShot').then(({ DevWorldShot }) => {
+      root.render(<DevWorldShot />);
+    });
+  } else if (which === 'screen') {
+    // 261103: the real screens in the real shell (DevScreenShot).
+    void import('./components/DevScreenShot').then(({ DevScreenShot }) => {
+      root.render(<DevScreenShot />);
+    });
+  } else {
+    void import('./components/games/DevDashShot').then(({ DevDashShot }) => {
+      root.render(<DevDashShot which={which} />);
+    });
+  }
   // 260803: the `?backseat=1` branch is gone with the backseat overlay window.
   // Screen sharing is a call feature now and its capture runs in THIS window;
   // see lib/stores/useBackseatStore.ts for why that is safe.
@@ -37,6 +51,28 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('ches
   // main's dev-flag preview window. Lazy import keeps it out of prod bundles.
   void import('./components/DevFacepackPreview').then(({ DevFacepackPreview }) => {
     root.render(<DevFacepackPreview />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkintro')) {
+  // Dev-only SeiLink first-link intro (261105, T337). See DevIntroPreview.
+  void import('./components/seilink/intro/DevIntroPreview').then(({ DevIntroPreview }) => {
+    root.render(<DevIntroPreview />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkflow')) {
+  // Dev-only first-room flow on a simulated desktop (261106). See DevFirstRoomFlow.
+  void import('./components/seilink/DevFirstRoomFlow').then(({ DevFirstRoomFlow }) => {
+    root.render(<DevFirstRoomFlow />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilinkhost')) {
+  // Dev-only SeiLink wallpaper page with the dock and a bubble (261104, M4),
+  // over a fake host bridge. See DevHostPreview for params.
+  void import('./components/seilink/host/DevHostPreview').then(({ DevHostPreview }) => {
+    root.render(<DevHostPreview />);
+  });
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('seilink')) {
+  // Dev-only SeiLink room preview (261104): main's dev window (unpackaged +
+  // SEI_SEILINK_PACKS) or a browser tab with &pack=<url>. See DevRoomPreview.
+  void import('./components/seilink/DevRoomPreview').then(({ DevRoomPreview }) => {
+    root.render(<DevRoomPreview />);
   });
 } else if (new URLSearchParams(window.location.search).has('overlay')) {
   document.documentElement.style.background = 'transparent';

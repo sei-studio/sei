@@ -110,6 +110,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Description': '描述',
   'For you and other players': '给你和其他玩家看的',
   'Card image': '卡片图片',
+  // 261107: the one-time regenerate hint on a companion's profile.
+  'Not happy with the look?': '对外观不满意？',
   'Skin': '皮肤',
   'Image and skin changes apply immediately.': '图片和皮肤的更改会立即生效。',
   'How they sound on voice calls. Changes save when you press Done.':
@@ -215,11 +217,14 @@ export const ZH_MODALS: Record<string, string> = {
   "Sei's servers are limiting requests right now, so your companion has to sit this one out. This does not use up any of your credits. You can try again in a little while.":
     'Sei 的服务器目前正在限制请求，你的伙伴只能先休息一下。这不会消耗你的任何积分。请稍后再试。',
   'Usage limit reached': '已达使用上限',
-  "You've used this week's allowance. Upgrade for a bigger weekly allowance, or top up to keep playing now.":
-    '你已用完本周额度。升级可获得更高的每周额度，或充值以立即继续游玩。',
+  "You've used this week's allowance.": '你已用完本周额度。',
   'Top up': '充值',
   'Upgrade': '升级',
   '{weekday} at {time}': '{weekday} {time}',
+  // 261103: the free options under the wall's CTA ("Use your ChatGPT plan"
+  // lives in screens-b, "or" further down).
+  'Works with ChatGPT Plus or Pro.': '适用于 ChatGPT Plus 或 Pro。',
+  'Use your own API key or a local model': '使用你自己的 API 密钥或本地模型',
 
   // ── ImportLocalProfileModal ──
   'Bring your companion to this account?': '要把你的伙伴带到这个账户吗？',
@@ -239,6 +244,8 @@ export const ZH_MODALS: Record<string, string> = {
   'Start fresh': '重新开始',
   'Bring it over': '带过来',
   'Not everything came over. Try again, or later from Settings.': '没能全部带过来。可以再试一次，或稍后在设置里操作。',
+  'Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.': '你的队伍已满，这台电脑上的伙伴先留在这里。空出一个位置后，再到设置里把它们带过来。',
+  'Your party is full. Free a slot to bring them over.': '你的队伍已满。空出一个位置后才能带过来。',
 
   // ── KnowledgeModal / CompactKnowledgeModal ──
   "{name}'s knowledge": '{name} 的知识',
@@ -404,7 +411,7 @@ export const ZH_MODALS: Record<string, string> = {
 
   // ── OfflineRetryModal ──
   "You're offline": '你已离线',
-  'Sei couldn’t reach the cloud to check your account. You can keep playing locally — cloud features like character sync will reconnect once you’re back online.':
+  'Sei couldn’t reach the cloud to check your account. You can keep playing locally. Cloud features like character sync will reconnect once you’re back online.':
     'Sei 无法连接云端以检查你的账户。你可以继续在本地游玩，等你重新联网后，角色同步等云端功能会自动重连。',
   'Still can’t connect. Check your internet connection and try again.':
     '仍然无法连接。请检查网络连接后重试。',

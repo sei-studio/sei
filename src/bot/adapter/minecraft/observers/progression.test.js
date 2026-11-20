@@ -8,6 +8,7 @@ import {
   getProgression,
   nextMilestone,
   loadSpine,
+  nextNeedAfterGive,
 } from './progression.js'
 
 const ids = (nodes) => nodes.map(n => n.id)
@@ -240,5 +241,20 @@ describe('readProgressionState (live bot reader) — defensive', () => {
     expect(() => getProgression({})).not.toThrow()
     const prog = getProgression({})
     expect(ids(prog.frontier)).toEqual(['logs']) // empty state → start of the spine
+  })
+})
+
+// 261109 (pass 48): after giving away her logs on the iron pickaxe rung, the
+// note said the next step "takes 1 log to make" and she told the player one
+// more log would make the iron pickaxe, with no iron at all.
+describe('nextNeedAfterGive names the other parts the recipe still lacks', () => {
+  const iron = SPINE.find((n) => n.id === 'iron_pickaxe')
+  it('names the iron with the log for the sticks', () => {
+    expect(nextNeedAfterGive(iron, { stone_pickaxe: 1, furnace: 1 }, 'oak_log'))
+      .toBe('your next step (get an iron pickaxe) takes 1 log for its planks and sticks and you have 0, and it also takes 3 iron_ingot (you have 0)')
+  })
+  it('keeps the plain log line when the rest is in her bag', () => {
+    expect(nextNeedAfterGive(iron, { iron_ingot: 3 }, 'oak_log'))
+      .toBe('your next step (get an iron pickaxe) takes 1 log to make and you have 0, so you need 1 more for it')
   })
 })

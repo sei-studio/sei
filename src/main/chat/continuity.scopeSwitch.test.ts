@@ -25,7 +25,7 @@ vi.mock('./sdk', () => ({
 
 import * as chatStore from './chatStore';
 import { foldIfDue } from './continuity';
-import { withAccountTeardown, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
+import { drainScopedWrites, withAccountTeardown, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
 
 const CHAR = 'bbf5b66f-2f0f-4918-a953-a2cf66d5a586';
 const UUID_A = 'a1111111-1111-4111-8111-111111111111';
@@ -40,6 +40,11 @@ beforeEach(async () => {
   createSpy.mockClear();
 });
 afterEach(async () => {
+  // A finished LLM call records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later, fire-and-forget. Let those
+  // tracked writes land before the profile dir goes (under CI load they raced
+  // the rm: ENOTEMPTY, or wrote after the override was cleared).
+  await drainScopedWrites();
   setActiveScope('local');
   _setUserDataOverride(null);
   await rm(dir, { recursive: true, force: true });

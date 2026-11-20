@@ -1,0 +1,190 @@
+/* Profile Overview (profile v2, product call 261110): a companion you do
+   not own. One surface, few type sizes: 17px reading text, 15px voice
+   line, 13px quiet details. The creator's description is boxed as user
+   text (Profile.module.css .userText, profile v3). The public avatars open
+   in a small popover from the portrait's corner (.avatarsPop below). */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+}
+
+/* ── Intro: the description and the voice line ──────────────────────── */
+
+.intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+
+.voice {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-stack);
+  min-width: 0;
+}
+
+.voiceLabel {
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sample {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control);
+  flex: none;
+}
+
+/* No visible border (house rule for buttons): a soft accent fill. */
+.sampleBtn {
+  appearance: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  min-width: 34px;
+  height: 34px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.sampleBtn:hover {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+
+.sampleBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sampleBtn[aria-busy='true'] {
+  cursor: progress;
+}
+
+.sampleBtnOn {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.sampleBtnOn:hover {
+  background: var(--accent-strong);
+}
+
+.sampleErr {
+  font-size: 12.5px;
+  color: var(--red);
+}
+
+/* ── Avatars popover (profile v3): opens from the portrait's corner
+   button, right above it. Its public avatars as picture tiles, no title
+   row (the button's tooltip names it). ──────────────────────────────── */
+.avatarsPop {
+  position: fixed;
+  z-index: 900;
+  max-width: min(440px, calc(100vw - 16px));
+  padding: var(--space-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+  animation: avatarsPopIn 140ms var(--ease);
+}
+
+@keyframes avatarsPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.avatarTiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-stack);
+}
+
+.avatar {
+  width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-tight);
+  min-width: 0;
+}
+
+.avatarArt {
+  width: 100%;
+  height: 128px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  /* A step off the popover's own fill, so a kind tile (Live2D) still reads. */
+  background: color-mix(in srgb, var(--text) 7%, var(--surface-2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatarArt img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.avatarKind {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.avatarName {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Report (quiet link, someone else's companion) ──────────────────── */
+
+.report {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-tight);
+  padding: 2px 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.report:hover,
+.report:focus-visible {
+  color: var(--red);
+}

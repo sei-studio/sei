@@ -13,6 +13,7 @@
  *     the cloud). Mirrors the last_launched stamp in botSupervisor.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { drainScopedWrites } from '../profile/scopeBarrier';
 import { mkdtemp, mkdir, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -102,6 +103,10 @@ beforeEach(async () => {
   captureSpy.mockReset();
 });
 afterEach(async () => {
+  // 261110: a finished turn records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later; let those writes land before
+  // the profile dir is removed (they would race the rm: ENOTEMPTY).
+  await drainScopedWrites();
   _setUserDataOverride(null);
   // callState is module-level; clear it so a test that opened a call never
   // leaks the flag into the next one.
@@ -1216,5 +1221,34 @@ describe('single-shot voice turns keep their note after the cache breakpoint (26
     expect(tail).toMatch(/System note/);
     expect(tail).toMatch(/\[now: \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}\]/);
     expect(tail).not.toContain('System note, not the player speaking: the current');
+  });
+});
+
+// 261112: a voice line that cut the companion off mid-line reaches the live
+// game session marked, so the bot frames it as a cut-in, not a stop order.
+describe('in-game route carries the barge-in mark (261112)', () => {
+  it('a voice line passes interrupted to the bot', async () => {
+    const routeToBot = vi.fn(() => true);
+    const d: ChatDeps = { ...deps(), isInGame: () => true, routeToBot };
+    const r = await sendChatMessage(
+      { characterId: CHAR, text: 'wait', voiceCall: true, interrupted: { line: 'ok so the cave is right' } },
+      d,
+    );
+    expect(r).toEqual({ replies: [], routed: true });
+    expect(routeToBot).toHaveBeenCalledWith(CHAR, {
+      from: 'Player',
+      text: 'wait',
+      voice: true,
+      interrupted: { line: 'ok so the cave is right' },
+    });
+  });
+
+  it('a plain voice line and a typed line carry no mark', async () => {
+    const routeToBot = vi.fn(() => true);
+    const d: ChatDeps = { ...deps(), isInGame: () => true, routeToBot };
+    await sendChatMessage({ characterId: CHAR, text: 'stop', voiceCall: true }, d);
+    await sendChatMessage({ characterId: CHAR, text: 'stop', interrupted: { line: 'x' } }, d);
+    expect(routeToBot).toHaveBeenNthCalledWith(1, CHAR, { from: 'Player', text: 'stop', voice: true });
+    expect(routeToBot).toHaveBeenNthCalledWith(2, CHAR, { from: 'Player', text: 'stop', voice: false });
   });
 });

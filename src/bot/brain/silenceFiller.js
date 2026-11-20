@@ -45,9 +45,12 @@
 // the silen-stem and CJK keywords (沉默 / 无言 zh, 沈黙 / 無言 ja, 침묵 / 조용 ko)
 // allow a short lead-in ("reste silencieux", 保持沉默, 계속 침묵) — CJK also
 // needs this shape because \b never matches between two non-word chars.
+// 261116: ru/pt/it joined the language list. sil[eê]n- covers silêncio and
+// silenzio; niente is the Italian "(nothing)", and the Russian stems
+// (тишин- / молч- / ничего) sit in the lead-in group because \b is ASCII-only.
 
 export const SILENCE_FILLER_RE =
-  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+(?:reply|response|comment)|nada|rien)\b|[^)\]]{0,12}(?:silen[a-z]*|沉默|无言|沈黙|無言|침묵|조용))[^)\]]*)\s*[)\]*.!]*\s*$/i
+  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+(?:reply|response|comment)|nada|rien|niente)\b|[^)\]]{0,12}(?:sil[eê]n[a-z]*|沉默|无言|沈黙|無言|침묵|조용|тишин|молч|ничего))[^)\]]*)\s*[)\]*.!]*\s*$/i
 
 /** True when the reply is the silence sentinel (any tolerated variant): the
  * caller must treat it as no message at all — no persist, no push, no TTS. */

@@ -140,7 +140,13 @@ export function createSnapshotComposer({
       const body = getBodyState() || {}
       const followEnt = self.follow != null ? state.ents.get(self.follow) : null
       const followLabel = body.followLabel ?? (followEnt ? (followEnt.name ?? followEnt.prefab) : null)
-      lines.push(`follow: ${followLabel ?? 'nobody'} | fight back when hit: ${body.fight === false ? 'off' : 'on'}${self.target != null ? ` | fighting: ${state.ents.get(self.target)?.prefab ?? 'something'}` : ''}`)
+      // A command outranks following in the body (seibrain.lua), so a player
+      // who walks on while she works can be far away while this still names
+      // them (261104 eval: 82m, with nothing in the prompt saying so).
+      const followFar = self.follow != null && (self.followDist != null ? self.followDist > PERCEPTION_RADIUS : !followEnt)
+        ? ` (${self.followDist != null ? `${Math.round(self.followDist)}m away` : `over ${PERCEPTION_RADIUS}m away`}, out of sight: while another command runs you stay behind)`
+        : ''
+      lines.push(`follow: ${followLabel ?? 'nobody'}${followFar} | fight back when hit: ${body.fight === false ? 'off' : 'on'}${self.target != null ? ` | fighting: ${state.ents.get(self.target)?.prefab ?? 'something'}` : ''}`)
       if (prevHp != null && self.hp < prevHp - 0.5) lines.push(`recent_events: health -${Math.round(prevHp - self.hp)}`)
       const habits = getHabits() ?? []
       if (habits.length) lines.push(`your_habits (done on your own lately): ${habits.join('; ')}`)

@@ -15,10 +15,12 @@
  *   - <WorldGrid />  : public character listing. Search + sort top bar with a
  *                      right-aligned party-slots indicator, 3:4 "scouting"
  *                      cards (BrowseCard) whose body opens the character
- *                      profile (where "Add to library" lives), paged by
- *                      ROWS_PER_BATCH rows behind an explicit "Load more"
- *                      button (260704: bounds the portrait-download burst that
- *                      tripped the per-IP rate limit on the proxy).
+ *                      profile (where "Add to library" lives), revealed
+ *                      ROWS_PER_BATCH rows at a time as the user scrolls near
+ *                      the end (261110: was an explicit "Load more" button;
+ *                      still batched to bound the portrait-download burst that
+ *                      tripped the per-IP rate limit on the proxy, 260704).
+ *                      Sorted Popular (library adds) by default, server-side.
  *
  * Lifecycle pitfalls (unchanged):
  *   - HomeGrid's useEffect that fires sei.charsListMerged() stays INSIDE
@@ -50,6 +52,7 @@ import type { GatherCycle } from '../components/GatherPixels';
 import { CreationLimitModal } from '../components/CreationLimitModal';
 import { BrowseCard } from '../components/BrowseCard';
 import { portraitSrc } from '../lib/portraitSrc';
+import { mergeWorldEntries } from '../lib/worldList';
 import { Button } from '../components/Button';
 import { HomeNextStepCard } from '../components/HomeNextStepCard';
 import { useHomeNextStepStore } from '../lib/stores/useHomeNextStepStore';
@@ -58,7 +61,9 @@ import { chooseHomeNextStep } from '../lib/homeNextStep';
 import { activeGameFor } from '../lib/gameLaunch';
 import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
-import type { BrowseEntry } from '@shared/ipc';
+import type { BrowseEntry, BrowseSort } from '@shared/ipc';
+import { BROWSE_SORTS } from '@shared/ipc';
+import { browseArtSources } from '@shared/portraitUrls';
 import homeStyles from './HomeScreen.module.css';
 import styles from './CharactersScreen.module.css';
 
@@ -67,10 +72,19 @@ type Tab = 'home' | 'world';
 /**
  * World grid batch size in ROWS (260704). Rows, not cards: cards-per-row is
  * responsive, so WorldGrid measures the live column count off the grid and
- * shows `columns × visibleRows` cards. Each "Load more" click adds this many
- * rows. Keeps the first paint (and its portrait-download burst) bounded.
+ * shows `columns × visibleRows` cards. Each scroll-triggered reveal (261110,
+ * was a "Load more" click) adds this many rows. Keeps the first paint (and
+ * its portrait-download burst) bounded.
  */
 const ROWS_PER_BATCH = 4;
+
+/**
+ * How far below the visible end of the World list the auto-load sentinel
+ * starts the next batch (261110), about a row and a half, so the next rows
+ * are usually there before the user reaches them without pulling extra pages
+ * (and their portraits) on open.
+ */
+const AUTOLOAD_MARGIN_PX = 400;
 
 /**
  * Dormant-slot gathering figures by wall position (sigil-lab "four
@@ -521,11 +535,17 @@ function WorldGrid(): React.ReactElement {
   const loading = useBrowseStore((s) => s.loading);
   const exhausted = useBrowseStore((s) => s.exhausted);
   const error = useBrowseStore((s) => s.error);
+  const loadMoreFailed = useBrowseStore((s) => s.loadMoreFailed);
+  const worldSort = useBrowseStore((s) => s.sort);
+  const serverSorted = useBrowseStore((s) => s.serverSorted);
   const setQuery = useBrowseStore((s) => s.setQuery);
+  const setWorldSort = useBrowseStore((s) => s.setSort);
   const loadMore = useBrowseStore((s) => s.loadMore);
+  const retryLoadMore = useBrowseStore((s) => s.retryLoadMore);
   const prefetch = useBrowseStore((s) => s.prefetch);
 
-  // Paged display (260704): show ROWS_PER_BATCH rows per "Load more" click.
+  // Paged display (260704): show ROWS_PER_BATCH rows per batch; 261110 the
+  // next batch is revealed by scrolling (sentinel below), not a button.
   // The column count is measured off the rendered grid rather than hardcoded
   // so it tracks the CSS (fixed 6-up as of 260709) without a duplicate const.
   const gridRef = useRef<HTMLDivElement>(null);
@@ -546,10 +566,6 @@ function WorldGrid(): React.ReactElement {
     return () => ro.disconnect();
   }, []);
 
-  // #6 — World sort. Alphabetical by default; "Newest" sorts by updatedAt desc.
-  // Client-side over the currently-loaded pages.
-  const [worldSort, setWorldSort] = useState<'alpha' | 'recent'>('alpha');
-
   const localCharacters = useDataStore((s) => s.characters);
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
@@ -569,16 +585,8 @@ function WorldGrid(): React.ReactElement {
   // though they live in the local store and don't have a cloud row (D-22).
   // `inMyLibrary` flips false when the user removed the default from their
   // library (config-tracked) so BrowseCard offers Invite again.
-  const defaultEntries: BrowseEntry[] = localCharacters
+  const allDefaultEntries: BrowseEntry[] = localCharacters
     .filter((c) => c.is_default === true)
-    .filter((c) => {
-      if (!query) return true;
-      const q = query.toLowerCase();
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.persona.source ?? '').toLowerCase().includes(q)
-      );
-    })
     .map((c) => ({
       id: c.id,
       name: c.name,
@@ -591,12 +599,24 @@ function WorldGrid(): React.ReactElement {
       // matching the cloud rows — surface it like any other World card.
       publicId: c.public_id ?? null,
       portraitUrl: c.portrait_image,
+      thumbUrl: null,
       skinUrl: null,
       updatedAt: c.created,
       // 260703 procgen: defaults are opt-in on Home — "in library" means the
       // user invited this default (matches the HomeGrid/IconRail filter).
       inMyLibrary: addedDefaultIds.has(c.id),
+      // The add count comes from the defaults' cloud rows (mergeWorldEntries).
+      addCount: null,
     }));
+  const defaultEntries = allDefaultEntries.filter((e) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    const local = localCharacters.find((c) => c.id === e.id);
+    return (
+      e.name.toLowerCase().includes(q) ||
+      (local?.persona.source ?? '').toLowerCase().includes(q)
+    );
+  });
 
   const navigate = useUiStore((s) => s.navigate);
 
@@ -611,10 +631,13 @@ function WorldGrid(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A new search shows a fresh result set — restart at the first batch.
+  // A new search or sort shows a fresh result set — restart at the first
+  // batch, back at the top.
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setVisibleRows(ROWS_PER_BATCH);
-  }, [query]);
+    scrollRef.current?.scrollTo?.({ top: 0 });
+  }, [query, worldSort]);
 
   // Prefetch dedup — one warm-up per id per mount. main's in-flight guard +
   // existsSync already make repeats cheap, but this avoids redundant IPC churn
@@ -642,13 +665,17 @@ function WorldGrid(): React.ReactElement {
     navigate({ kind: 'character', id: entry.id });
   };
 
-  // Merge defaults + cloud rows into one list, then sort per the dropdown.
-  const worldEntries = [
-    ...defaultEntries,
-    ...entries.filter((e) => !defaultEntries.some((d) => d.id === e.id)),
-  ].sort((a, b) =>
-    worldSort === 'alpha' ? a.name.localeCompare(b.name) : b.updatedAt.localeCompare(a.updatedAt),
-  );
+  // Merge defaults + cloud rows into one list in the dropdown's order:
+  // server order when the server sorted (paged lists cannot be sorted on the
+  // client), else the pre-261110 client-side sort over the loaded pages.
+  const worldEntries = mergeWorldEntries({
+    defaults: defaultEntries,
+    allDefaults: allDefaultEntries,
+    entries,
+    sort: worldSort,
+    serverSorted,
+    exhausted,
+  });
 
   // Cap the DISPLAY to whole rows; the store keeps its own page size. Cards
   // render → portraits download, so this cap is what bounds the network burst.
@@ -670,12 +697,18 @@ function WorldGrid(): React.ReactElement {
   const firstRowsEntries = shownEntries.slice(0, firstRowsCount);
   // A stable key over the first-rows set: re-gate only when the actual cards
   // (or their portrait refs) change — not on every render.
+  // 261111: a card loads the small World thumbnail first and the full
+  // portrait only when the thumbnail fails (browseArtSources), so the group
+  // gate waits on the same sources in the same order.
   const firstRowsKey = firstRowsEntries
-    .map((e) => `${e.id}:${e.portraitUrl ?? ''}`)
+    .map((e) => `${e.id}:${e.thumbUrl ?? ''}:${e.portraitUrl ?? ''}`)
     .join('|');
   const firstRowsSrcs = firstRowsEntries
-    .map((e) => portraitSrc(e.portraitUrl))
-    .filter((s): s is string => !!s);
+    .map((e) => {
+      const art = browseArtSources(e);
+      return { primary: portraitSrc(art.primary), fallback: portraitSrc(art.fallback) };
+    })
+    .filter((s): s is { primary: string; fallback: string | null } => !!s.primary);
   const [firstRowsReady, setFirstRowsReady] = useState(false);
   useEffect(() => {
     // Nothing on screen yet (still fetching page 0) → stay gated so the
@@ -709,10 +742,19 @@ function WorldGrid(): React.ReactElement {
         finish();
       };
       // A broken image resolves via onerror — treated as "done" so it never
-      // holds the group.
+      // holds the group. A missing thumbnail retries with the full portrait
+      // first, as the card itself does.
+      let triedFallback = false;
       img.onload = once;
-      img.onerror = once;
-      img.src = src;
+      img.onerror = () => {
+        if (!triedFallback && src.fallback) {
+          triedFallback = true;
+          img.src = src.fallback;
+          return;
+        }
+        once();
+      };
+      img.src = src.primary;
       // A cached image can already be complete before the handlers attach.
       if (img.complete) once();
       return img;
@@ -735,15 +777,47 @@ function WorldGrid(): React.ReactElement {
   }, [firstRowsKey]);
 
   // Backfill: when the display window outruns what's loaded (initial batch on
-  // a wide window, or "Load more" past the last fetched page), pull the next
-  // page. loadMore() no-ops while loading/exhausted, so this can't stack.
+  // a wide window, or a scroll reveal past the last fetched page), pull the
+  // next page. loadMore() no-ops while loading/exhausted and after a failed
+  // page (until "Try again"), so this can't stack or spin.
   useEffect(() => {
     if (worldEntries.length < visibleCount && !exhausted && !loading) void loadMore();
   }, [worldEntries.length, visibleCount, exhausted, loading, loadMore]);
 
   // More to show: either already-loaded rows beyond the cap, or more pages
-  // server-side. Hidden while the very first page is still loading.
+  // server-side.
   const hasMoreToShow = worldEntries.length > visibleCount || !exhausted;
+
+  // Auto-load (261110). A sentinel under the grid reports whether the end of
+  // the list is within AUTOLOAD_MARGIN_PX of the visible area. While it is,
+  // reveal another batch of rows, but only once the current window is FILLED
+  // (so one batch waits for its page instead of stacking reveals) and only
+  // while there is more to show. A tall window with a short list therefore
+  // settles as soon as the list is exhausted, and a sentinel that stays in
+  // view after a reveal keeps going (the effect re-runs on visibleCount)
+  // without needing a fresh intersection event.
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [nearEnd, setNearEnd] = useState(false);
+  useEffect(() => {
+    const root = scrollRef.current;
+    const el = sentinelRef.current;
+    if (!root || !el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(
+      (records) => {
+        const last = records[records.length - 1];
+        if (last) setNearEnd(last.isIntersecting);
+      },
+      { root, rootMargin: `0px 0px ${AUTOLOAD_MARGIN_PX}px 0px` },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  const windowFilled = worldEntries.length >= visibleCount;
+  const pageFailed = loadMoreFailed || error !== null;
+  useEffect(() => {
+    if (!nearEnd || loading || pageFailed || initialLoading) return;
+    if (windowFilled && hasMoreToShow) setVisibleRows((r) => r + ROWS_PER_BATCH);
+  }, [nearEnd, loading, pageFailed, initialLoading, windowFilled, hasMoreToShow, visibleCount]);
 
   // Wireframe placeholders while a fetch is in flight: a fixed SKELETON_ROWS
   // block on a cold open / new search (whole rows only — never a partial
@@ -784,11 +858,15 @@ function WorldGrid(): React.ReactElement {
         <select
           className={styles.sortSelect}
           value={worldSort}
-          onChange={(e) => setWorldSort(e.target.value as 'alpha' | 'recent')}
+          onChange={(e) => {
+            const next = e.target.value as BrowseSort;
+            if ((BROWSE_SORTS as readonly string[]).includes(next)) setWorldSort(next);
+          }}
           aria-label={t('Sort companions')}
         >
-          <option value="alpha">{t('A–Z')}</option>
+          <option value="popular">{t('Popular')}</option>
           <option value="recent">{t('Newest')}</option>
+          <option value="alpha">{t('A–Z')}</option>
         </select>
         <span className={styles.slots}>
           {partyFull
@@ -796,7 +874,7 @@ function WorldGrid(): React.ReactElement {
             : t('{open}/{max} slots open', { open: slotsOpen, max: MAX_COMPANION_SLOTS })}
         </span>
       </header>
-      <div className={styles.scroll}>
+      <div className={styles.scroll} ref={scrollRef}>
       {error ? (
         <div className={styles.error} role="alert">
           {t("Couldn't load World. {error}", { error })}
@@ -828,10 +906,15 @@ function WorldGrid(): React.ReactElement {
           </div>
         ))}
       </div>
-      {hasMoreToShow && !loading ? (
+      {/* Auto-load sentinel (always mounted so the observer has a target).
+          The loading indicator is the skeleton tail above; a failed page
+          pauses auto-load behind a quiet retry; the end of the list is just
+          the end. */}
+      <div ref={sentinelRef} className={styles.autoloadSentinel} aria-hidden="true" />
+      {pageFailed && !loading ? (
         <div className={styles.loadMoreRow}>
-          <Button kind="ghost" onClick={() => setVisibleRows((r) => r + ROWS_PER_BATCH)}>
-            {t('Load more')}
+          <Button kind="ghost" onClick={() => void retryLoadMore()}>
+            {t('Try again')}
           </Button>
         </div>
       ) : null}

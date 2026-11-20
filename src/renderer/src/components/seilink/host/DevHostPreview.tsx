@@ -1,0 +1,183 @@
+/**
+ * Dev-only preview of the SeiLink wallpaper page with its dock and bubble
+ * (261104, M4), in a plain browser tab: `?seilinkhost=1&pack=<url to a pack
+ * dir>/`. A fake bridge plays the host's part. Params:
+ *   time=day|dusk|night   the room's time (default day)
+ *   taskbar=<px>          space the work area leaves at the bottom (default 48)
+ *   deafened=1            the dock shows her idle lines muted
+ *   confirm=1             move out already asking
+ *   line=<text>           a line of hers in a bubble (shown once her box is measured)
+ *   lineat=<ms>           when the line shows (default 1800)
+ *   face=<word>           her face for the line as if it led with a [word] tag (default: read off
+ *                         its words, as main does: shared/seilinkExpression.ts)
+ *   portrait=<url>        her portrait (else her silhouette)
+ *   name=<name>           her name (default Sui)
+ *   lang=<code>           UI language
+ *   press=edit|deafen     simulate a dock press after the line shows (the caption)
+ *   state=<json>          261105: the room as saved (slots, items; sanitized like the store's), e.g. after an edit
+ *   arrival=<mode>        261119: her arrival as main would send it: wait | hold | enter | show, or sim
+ *                         (the waiting line, then her entrance at `arriveat`). Absent: she is just shown.
+ *   arriveat=<ms>         sim: when her look lands and she comes in (default 6000; pair with facepackat)
+ *   quietat=<ms>          sim: when the waiting line turns quiet (the wait passed LINK_TIMEOUT_MS)
+ *   reduced=1             her entrance as under reduced motion (a fade)
+ *   The page's arrived report lands on body[data-arrived] (JSON) for the shot script.
+ *   Script hooks (261119, scripts/seilink-avatar-demo.mjs): window.__seiDevPoke(kind) plays a click
+ *   on her as the host sends it (the press at once, the classified click 560 ms later);
+ *   window.__seiDevLine(text) shows a line of hers; window.__seiDevRoom(patch) re-sends the room
+ *   with fields replaced (e.g. { lighting }), sanitized like a saved room.
+ * Used by scripts/seilink-host-shots.mjs. Never in a packaged build (main.tsx
+ * imports it only under import.meta.env.DEV).
+ */
+import React, { useMemo } from 'react';
+import { defaultRoomState, type RoomState } from '@shared/seilinkRoom';
+import type { SeilinkDockAction, SeilinkHostBridge, SeilinkHostRoom, SeilinkPokeKind } from '@shared/seilinkHost';
+import { parseRoomManifest, sanitizeRoomState } from '@shared/seilinkValidate';
+import { desktopLineFace } from '@shared/seilinkExpression';
+import type { SeilinkPack } from '@shared/seilinkPack';
+import { isArrivalMode, type SeilinkArrival } from '@shared/seilinkEntrance';
+import { SeilinkHostView } from './SeilinkHostView';
+
+type Cb<T> = (v: T) => void;
+
+interface DevHooks {
+  __seiDevPoke?: (kind?: SeilinkPokeKind) => void;
+  __seiDevLine?: (text: string) => void;
+  __seiDevRoom?: (patch: Partial<RoomState>) => void;
+}
+
+function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
+  const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
+  const later = (fn: () => void, ms: number): void => void setTimeout(fn, ms);
+  // Deafen flips like the real host's answer (seilinkHost.onDockAction).
+  let deafened = params.get('deafened') === '1';
+  let dockState: Cb<{ deafened: boolean }> | null = null;
+  const hooks = window as unknown as DevHooks;
+  const press = new Set<() => void>();
+  const pokes = new Set<Cb<SeilinkPokeKind>>();
+  hooks.__seiDevPoke = (kind = 'click') => {
+    press.forEach((cb) => cb());
+    later(() => pokes.forEach((cb) => cb(kind)), 560);
+  };
+  const arrivalParam = params.get('arrival');
+  const arrival: Partial<SeilinkHostBridge> = arrivalParam
+    ? {
+        onArrival: (cb: Cb<SeilinkArrival>) => {
+          const trigger = 'move_in' as const;
+          if (arrivalParam === 'sim') {
+            later(() => cb({ mode: 'wait', trigger }), 0);
+            const quietAt = Number(params.get('quietat'));
+            if (quietAt > 0) later(() => cb({ mode: 'wait', trigger, quiet: true }), quietAt);
+            later(() => cb({ mode: 'enter', trigger }), Number(params.get('arriveat') ?? 6000) || 6000);
+          } else if (isArrivalMode(arrivalParam)) later(() => cb({ mode: arrivalParam, trigger }), 0);
+          return () => {};
+        },
+        arrived: (r) => {
+          console.log(`[dev host] arrived ${JSON.stringify(r)}`);
+          document.body.dataset.arrived = JSON.stringify(r);
+        },
+      }
+    : {};
+  return {
+    ...arrival,
+    onRoom: (cb: Cb<SeilinkHostRoom>) => {
+      void fetch(`${packUrl}manifest.json`, { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((raw: unknown) => {
+          const manifest = parseRoomManifest(raw);
+          if (!manifest) throw new Error('bad manifest');
+          const t = params.get('time');
+          let saved: unknown = null;
+          try {
+            saved = JSON.parse(params.get('state') ?? 'null');
+          } catch {
+            saved = null;
+          }
+          const base = saved ? sanitizeRoomState(manifest, { ...defaultRoomState(manifest.id), ...(saved as object) }) : defaultRoomState(manifest.id);
+          const state: RoomState = { ...base, time: t === 'dusk' || t === 'night' ? t : 'day' };
+          const pack: SeilinkPack = { id: manifest.id, manifest, rev: 1, source: 'dev' };
+          const room: SeilinkHostRoom = {
+            characterId: 'dev-preview',
+            state,
+            pack,
+            portrait: params.get('portrait'),
+            name: params.get('name') ?? 'Sui',
+            uiLanguage: params.get('lang'),
+          };
+          cb(room);
+          let cur = room;
+          hooks.__seiDevRoom = (patch) => {
+            cur = { ...cur, state: { ...sanitizeRoomState(manifest, { ...cur.state, ...patch }), time: cur.state.time } };
+            cb(cur);
+          };
+        })
+        .catch((err: unknown) => console.error('[dev host] pack', err));
+      return () => {};
+    },
+    onBusy: () => () => {},
+    onFps: (cb) => {
+      later(() => cb(30), 0);
+      return () => {};
+    },
+    onPoke: (cb) => {
+      pokes.add(cb);
+      return () => pokes.delete(cb);
+    },
+    onPress: (cb) => {
+      press.add(cb);
+      return () => press.delete(cb);
+    },
+    setBox: () => {},
+    frames: () => {},
+    // The shot script waits for [data-room-ready="1"], like the room preview's.
+    firstFrame: () => {
+      document.body.dataset.roomReady = '1';
+    },
+    ready: () => {},
+    onLayout: (cb) => {
+      const tb = Number(params.get('taskbar') ?? 48) || 0;
+      later(() => cb({ workArea: { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight - tb } }), 0);
+      return () => {};
+    },
+    onDockState: (cb) => {
+      dockState = cb;
+      later(() => cb({ deafened }), 0);
+      return () => {};
+    },
+    onDockPress: (cb: Cb<SeilinkDockAction>) => {
+      const p = params.get('press');
+      if (p === 'edit' || p === 'deafen') later(() => cb(p), 2600);
+      return () => {};
+    },
+    setDock: () => {},
+    dockAction: (a) => {
+      console.log(`[dev host] dock action ${a}`);
+      if (a !== 'deafen') return;
+      deafened = !deafened;
+      dockState?.({ deafened });
+    },
+    onLine: (cb) => {
+      const text = params.get('line');
+      const look = text ? desktopLineFace(text, params.get('face')) : null;
+      if (text) later(() => cb({ id: 1, text, kind: 'poke', ...look }), Number(params.get('lineat') ?? 1800) || 1800);
+      let id = 100;
+      hooks.__seiDevLine = (t) => cb({ id: ++id, text: t, kind: 'poke', ...desktopLineFace(t, null) });
+      return () => {};
+    },
+  };
+}
+
+export function DevHostPreview(): React.ReactElement {
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const bridge = useMemo(() => fakeBridge(params), [params]);
+  const packUrl = (params.get('pack') ?? '').replace(/\/?$/, '/');
+  // `_shared/...` (views, pattern tiles) sits beside the pack dirs, as in the real resolver.
+  const resolveFor = useMemo(() => () => (rel: string) => (rel.startsWith('_shared/') ? new URL(`../${rel}`, packUrl).href : `${packUrl}${rel}`), [packUrl]);
+  return (
+    <SeilinkHostView
+      bridge={bridge}
+      resolveFor={resolveFor}
+      initialConfirm={params.get('confirm') === '1'}
+      reducedMotion={params.has('reduced') ? params.get('reduced') === '1' : undefined}
+    />
+  );
+}

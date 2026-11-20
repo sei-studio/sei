@@ -1,8 +1,9 @@
 /**
  * AwakenScreen — the "awaken a companion" chooser view (Party redesign §4.3).
  * Replaces AddCompanionChooserModal: a full view (rail visible) with the
- * flagship "Meet my companion" match hero on the left and the two secondary
- * origins (create my own / invite from World) stacked on the right.
+ * flagship "Meet my companion" match hero on the left and the secondary
+ * origins stacked on the right: explore World first (the most used, product
+ * call 261116), then create my own, then connect an existing one.
  *
  * Gates (moved verbatim from the old HomeGrid handlers):
  *   - Meet my companion → signed-in + cloud backend required, else SignInModal
@@ -134,6 +135,11 @@ export function AwakenScreen(): React.ReactElement {
           <span className={styles.go}>{beginLabel}</span>
         </button>
         <div className={styles.origins}>
+          {/* Explore leads (product call 261116): it is the one most used. */}
+          <button type="button" className={styles.origin} onClick={handleWorld}>
+            <h3 className={styles.originTitle}>{t('Explore available companions')}</h3>
+            <p className={styles.originSub}>{t('Browse companions shared by others in World.')}</p>
+          </button>
           <button type="button" className={styles.origin} onClick={() => void handleCreate()}>
             <h3 className={styles.originTitle}>{t('Create new companion')}</h3>
             <p className={styles.originSub}>
@@ -143,10 +149,6 @@ export function AwakenScreen(): React.ReactElement {
           <button type="button" className={styles.origin} onClick={() => void handleImport()}>
             <h3 className={styles.originTitle}>{t('Connect existing companion')}</h3>
             <p className={styles.originSub}>{t('Import your companion from another platform.')}</p>
-          </button>
-          <button type="button" className={styles.origin} onClick={handleWorld}>
-            <h3 className={styles.originTitle}>{t('Explore available companions')}</h3>
-            <p className={styles.originSub}>{t('Browse companions shared by others in World.')}</p>
           </button>
         </div>
       </div>

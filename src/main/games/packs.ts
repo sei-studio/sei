@@ -77,7 +77,18 @@ export interface GamePackEnv {
   fetch: typeof fetch;
   /** Stall watchdog for the zip body: no bytes for this long aborts the attempt. */
   stallMs: number;
+  /**
+   * 261104: waits before the 2nd and 3rd unpack attempt after an EPERM /
+   * EBUSY (an antivirus scanning the freshly written files holds them).
+   * Optional so test envs can omit it.
+   */
+  unpackBackoffMs?: readonly number[];
+  /** Moves the checked staging folder into place (default: rename). A test seam for EPERM. */
+  commitDir?: (from: string, to: string) => Promise<void>;
 }
+
+/** Default unpack retry waits (3 attempts in all). */
+export const UNPACK_BACKOFF_MS: readonly number[] = [1000, 3000];
 
 function defaultEnv(): GamePackEnv {
   const devDir = process.env.SEI_GAME_PACKS_DIR;
@@ -278,7 +289,7 @@ async function install(e: GamePackEnv, game: GameId, opts: EnsurePackOptions): P
     }
 
     const zipPath = await downloadZip(e, game, entry, opts);
-    const root = await extractZip(e, game, entry, zipPath);
+    const root = await extractZipWithRetry(e, game, entry, zipPath);
     // The whole download dir, not just the zip: an empty tmp/ used to stay
     // behind in every pack dir after a successful install.
     await rm(tmpDir(e, game), { recursive: true, force: true }).catch(() => {});
@@ -451,14 +462,55 @@ export function isSafeZipEntryName(name: string): boolean {
   return parts.every((p) => p !== '..');
 }
 
-async function extractZip(
+/** EPERM / EBUSY / EACCES: a file held by another process (usually an antivirus scan). */
+export function isFileLockError(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') return true;
+  return /\b(EPERM|EBUSY|EACCES)\b/.test(errText(err));
+}
+
+/**
+ * extractZip with retries (261104). On Windows an antivirus scans each file
+ * Sei writes and holds it for a moment, so a write or the final rename can
+ * fail with EPERM / EBUSY; the old code failed the whole pack on the first
+ * one. Each retry starts in a fresh staging folder (the old one may still be
+ * held) after a growing wait. The last failure names the antivirus.
+ */
+async function extractZipWithRetry(
   e: GamePackEnv,
   game: GameId,
   entry: GamePackManifestEntry,
   zipPath: string,
 ): Promise<string> {
+  const waits = e.unpackBackoffMs ?? UNPACK_BACKOFF_MS;
+  const attempts = waits.length + 1;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await extractZip(e, game, entry, zipPath, attempt === 1 ? '' : `-${attempt}`);
+    } catch (err) {
+      if (!isFileLockError(err)) throw err;
+      if (attempt >= attempts) {
+        throw new Error(
+          `could not unpack ${entry.file} after ${attempts} tries (${errText(err)}). An antivirus may be blocking Sei's game files: allow Sei in your antivirus, then try again.`,
+        );
+      }
+      console.warn(`[sei/game-packs] unpack attempt ${attempt} hit a locked file (${errText(err)}); retrying`);
+      await new Promise((r) => setTimeout(r, waits[attempt - 1]));
+    }
+  }
+}
+
+async function extractZip(
+  e: GamePackEnv,
+  game: GameId,
+  entry: GamePackManifestEntry,
+  zipPath: string,
+  stagingSuffix = '',
+): Promise<string> {
   const finalRoot = versionRoot(e, game, e.version);
-  const stagingRoot = `${finalRoot}.extracting`;
+  const stagingRoot = `${finalRoot}.extracting${stagingSuffix}`;
+  // An earlier attempt's staging folder may still be held; best effort.
+  if (stagingSuffix) await rm(`${finalRoot}.extracting`, { recursive: true, force: true }).catch(() => {});
   await rm(stagingRoot, { recursive: true, force: true });
   await mkdir(stagingRoot, { recursive: true });
 
@@ -504,7 +556,7 @@ async function extractZip(
   if (problem) throw new Error(`${entry.file} is incomplete: ${problem}`);
 
   await rm(finalRoot, { recursive: true, force: true });
-  await rename(stagingRoot, finalRoot);
+  await (e.commitDir ?? rename)(stagingRoot, finalRoot);
   return finalRoot;
 }
 

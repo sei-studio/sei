@@ -3,6 +3,7 @@
 .seg {
   display: inline-flex;
   border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
 }
 
 .opt {
@@ -15,6 +16,15 @@
   border: 0;
   cursor: pointer;
   transition: color 160ms var(--ease), background 160ms var(--ease);
+}
+
+/* Inner corners follow the frame so a filled option doesn't poke past it. */
+.opt:first-child {
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
+}
+
+.opt:last-child {
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
 }
 
 .opt:hover:not(:disabled) {

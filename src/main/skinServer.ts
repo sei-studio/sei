@@ -42,6 +42,7 @@
  *   - threat model: path traversal via /skins/... — mitigated by regex
  */
 import http from 'node:http';
+import { stopHttpServer } from './httpServerStop';
 import { readFile } from 'node:fs/promises';
 import { readSkinPng } from './skinStore';
 import { listCharacters } from './characterStore';
@@ -247,9 +248,7 @@ export async function createSkinServer(
   return {
     baseUrl,
     port,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      }),
+    // Bounded (261031): a keep-alive socket must not hang the quit.
+    stop: () => stopHttpServer(server),
   };
 }

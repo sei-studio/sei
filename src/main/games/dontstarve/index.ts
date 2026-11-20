@@ -48,8 +48,15 @@ export interface DstModuleDeps {
 }
 
 export interface DstGameModule extends GameModule {
-  /** The bot runtime is listening: hand the mod a summon on the next heartbeat. */
-  setSummonOffer(characterId: string, listen: Pick<DstListenMessage, 'port' | 'token'> | null): Promise<void>;
+  /**
+   * The bot runtime is listening: hand the mod a summon on the next heartbeat.
+   * 261104: `respawn` = a dead body's replacement, queued only when a host
+   * player is in the world (the result says which, or why not).
+   */
+  setSummonOffer(
+    characterId: string,
+    listen: Pick<DstListenMessage, 'port' | 'token' | 'respawn' | 'nearUserid'> | null,
+  ): Promise<DstOfferResult>;
   getInstallState(): Promise<DstInstallState>;
   /**
    * Copy + enable the helper. `grant` = this run comes from a click in Sei,
@@ -60,6 +67,30 @@ export interface DstGameModule extends GameModule {
   readonly watcherDst: DstWatcher;
   /** Install detection cached from the last detect pass (null = not run yet). */
   readonly lastInstall: DstInstallState | null;
+}
+
+/** What setSummonOffer did. A first summon is always queued (ok). */
+export interface DstOfferResult {
+  ok: boolean;
+  reason?: 'no_world' | 'no_host';
+  nearUserid?: string;
+  nearName?: string;
+}
+
+/**
+ * 261104: who a respawned body stands beside. The player she was summoned
+ * next to when they are still in the world, else whoever is (the merged
+ * heartbeat lists every shard's players), else nobody.
+ */
+export function pickRespawnHost(
+  players: ReadonlyArray<{ userid: string; name: string }>,
+  preferredUserid: string | undefined,
+): { userid: string; name: string } | null {
+  if (preferredUserid) {
+    const same = players.find((p) => p.userid === preferredUserid);
+    if (same) return same;
+  }
+  return players[0] ?? null;
 }
 
 /** MIRROR of src/bot/adapter/dontstarve/runtime.js botUsernameFor. */
@@ -217,13 +248,21 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
     async setSummonOffer(characterId, listen) {
       if (!listen) {
         watcher.setSummonOffer(characterId, null);
-        return;
+        return { ok: true };
       }
       const [cfg, character, hb] = await Promise.all([
         deps.loadConfig().catch(() => null),
         deps.getCharacter(characterId).catch(() => null),
         Promise.resolve(watcher.latestHeartbeat()),
       ]);
+      let near = hb?.players[0] ?? null;
+      if (listen.respawn) {
+        // A respawn never spawns at the portal with nobody there: no world
+        // or no player means the session ends the way it did before.
+        if (!hb) return { ok: false, reason: 'no_world' };
+        near = pickRespawnHost(hb.players, listen.nearUserid);
+        if (!near) return { ok: false, reason: 'no_host' };
+      }
       const stored = cfg?.dst_survivor?.[characterId]?.prefab;
       const prefab = isDstSurvivorPrefab(stored) ? stored : DST_DEFAULT_SURVIVOR;
       const offer: DstSummonOffer = {
@@ -231,12 +270,13 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
         botPort: listen.port,
         name: effectiveDstUsername(character ?? { name: 'Sei' }),
         prefab,
-        nearUserid: hb?.players[0]?.userid ?? '',
+        nearUserid: near?.userid ?? '',
         announce: true,
         expiresAt: Date.now() + OFFER_TTL_MS,
       };
       watcher.setSummonOffer(characterId, offer);
-      log(`summon offer queued for ${offer.name} (${prefab}) -> bot port ${listen.port}`);
+      log(`${listen.respawn ? 'respawn' : 'summon'} offer queued for ${offer.name} (${prefab}) -> bot port ${listen.port}`);
+      return { ok: true, nearUserid: near?.userid ?? '', nearName: near?.name ?? '' };
     },
     getInstallState: () => refreshInstall(),
     async runInstall(onProgress, opts = {}) {

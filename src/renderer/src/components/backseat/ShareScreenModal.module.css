@@ -104,7 +104,7 @@
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: var(--radius-sm, 6px);
+  border-radius: 6px;
   background: var(--bg4);
 }
 

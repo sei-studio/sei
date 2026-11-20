@@ -9,6 +9,7 @@ const requestGameLaunch = vi.fn((_id: string, _game: unknown, launch: () => void
 const openGame = vi.fn();
 const startOrOpenCall = vi.fn();
 const openModal = vi.fn();
+const navigate = vi.fn();
 
 vi.mock('./ipcClient', () => ({ sei: { track: (...a: unknown[]) => track(...a) } }));
 vi.mock('./gameLaunch', () => ({
@@ -18,7 +19,7 @@ vi.mock('./gameLaunch', () => ({
   openGame: (...a: unknown[]) => openGame(...a),
 }));
 vi.mock('./callLaunch', () => ({ startOrOpenCall: (...a: unknown[]) => startOrOpenCall(...a) }));
-vi.mock('./stores/useUiStore', () => ({ useUiStore: { getState: () => ({ openModal }) } }));
+vi.mock('./stores/useUiStore', () => ({ useUiStore: { getState: () => ({ openModal, navigate }) } }));
 
 const {
   chooseHomeNextStep,
@@ -48,6 +49,7 @@ beforeEach(() => {
   openGame.mockReset();
   startOrOpenCall.mockReset();
   openModal.mockReset();
+  navigate.mockReset();
   resetNextStepShown();
 });
 
@@ -85,6 +87,7 @@ describe('nextStepTarget + label', () => {
     expect(nextStepTarget(step({ surface: 'call', game: null }))).toEqual({ kind: 'call' });
     expect(nextStepTarget(step({ surface: 'backseat', game: 'roblox' }))).toEqual({ kind: 'backseat', gameId: 'roblox' });
     expect(nextStepTarget(step({ surface: 'backseat', game: null }))).toEqual({ kind: 'call' });
+    expect(nextStepTarget(step({ surface: 'chat', game: null }))).toEqual({ kind: 'chat' });
     expect(nextStepTarget(step({ surface: null, game: null }))).toEqual({ kind: 'picker' });
     expect(nextStepTarget(step({ surface: 'game', game: 'chess' }))).toEqual({ kind: 'picker' });
   });
@@ -92,6 +95,7 @@ describe('nextStepTarget + label', () => {
   it('labels', () => {
     expect(nextStepButtonLabel({ kind: 'game', game: 'minecraft' }, 'Sui', fakeT)).toBe('Play Minecraft');
     expect(nextStepButtonLabel({ kind: 'call' }, 'Sui', fakeT)).toBe('Call Sui');
+    expect(nextStepButtonLabel({ kind: 'chat' }, 'Sui', fakeT)).toBe('Message Sui');
     expect(nextStepButtonLabel({ kind: 'picker' }, 'Sui', fakeT)).toBe('Play');
     expect(nextStepButtonLabel({ kind: 'backseat', gameId: 'roblox' }, 'Sui', fakeT)).toMatch(/^Play Roblox/);
   });
@@ -164,6 +168,12 @@ describe('launchHomeNextStep', () => {
     launchHomeNextStep(step({ surface: 'backseat', game: 'roblox' }), NOW);
     expect(requestGameLaunch).toHaveBeenCalledWith('c1', expect.objectContaining({ id: 'backseat' }), expect.any(Function));
     expect(openModal).toHaveBeenCalledWith({ kind: 'backseat-game', characterId: 'c1', gameId: 'roblox' });
+  });
+
+  it('a text-chat plan opens the chat', () => {
+    launchHomeNextStep(step({ surface: 'chat', game: null }), NOW);
+    expect(navigate).toHaveBeenCalledWith({ kind: 'chat', characterId: 'c1' });
+    expect(track).toHaveBeenCalledWith('home_next_step_clicked', expect.objectContaining({ surface: 'chat' }));
   });
 
   it('an untagged plan opens the games picker', () => {

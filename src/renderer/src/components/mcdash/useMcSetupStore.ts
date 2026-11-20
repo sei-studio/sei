@@ -11,13 +11,15 @@
  * so a finished setup flips the step without a click.
  */
 import { create } from 'zustand';
-import type { McInstall } from '@shared/ipc';
+import type { McInstall, McScanExtras } from '@shared/ipc';
 import { anyMcInstallReady } from '@shared/mcSetup';
 import { sei } from '../../lib/ipcClient';
 
 export interface McSetupStoreState {
   /** null until the first scan has answered. */
   installs: McInstall[] | null;
+  /** 261104: what the scan found but cannot use (Bedrock, other launchers); null until known. */
+  extras: McScanExtras | null;
   scanning: boolean;
   /** Hydrated from UserConfig; null until read. */
   dismissed: boolean | null;
@@ -29,6 +31,7 @@ export interface McSetupStoreState {
 
 export const useMcSetupStore = create<McSetupStoreState>((set, get) => ({
   installs: null,
+  extras: null,
   scanning: false,
   dismissed: null,
 
@@ -47,7 +50,10 @@ export const useMcSetupStore = create<McSetupStoreState>((set, get) => ({
         : res && typeof res === 'object' && Array.isArray((res as { installs?: unknown }).installs)
           ? (res as { installs: McInstall[] }).installs
           : [];
-      set({ installs });
+      const ex = res && typeof res === 'object' && !Array.isArray(res) ? (res as { extras?: unknown }).extras : null;
+      const extras =
+        ex && typeof ex === 'object' && Array.isArray((ex as McScanExtras).others) ? (ex as McScanExtras) : null;
+      set({ installs, extras });
     } catch {
       set((s) => ({ installs: s.installs ?? [] }));
     } finally {

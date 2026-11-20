@@ -1,0 +1,562 @@
+/**
+ * SeiLink desktop host CI self-test (261104). Runs inside the real app (main
+ * process) when it is started UNPACKAGED with SEI_SEILINK_SELFTEST=<outdir>
+ * and the dev flag (SEI_SEILINK_PACKS). Driven by
+ * .github/workflows/seilink-host-check.yml on windows-2022/2025 and
+ * macos-15/26; never compiled into a path a packaged build can reach (index.ts
+ * imports it only behind !app.isPackaged).
+ *
+ * Steps, each a named check in <outdir>/result.json, screenshots beside it:
+ *   attach      start(), attached behind the icons, first frame, frames > 0
+ *   shown       the first frame verified the attach and main sent seilink_shown (261105)
+ *   cover       a maximized window (mac: a work-area window over her box) -> covered, 0 fps
+ *   uncover     close it -> fps back
+ *   click       a synthetic click on her box -> click (her reaction; Sei stays hidden);
+ *               on bare wallpaper -> nothing; a double click -> dblclick and no click,
+ *               Sei comes up (her chat) (product call (261116))
+ *   kill        kill the host -> a new host attaches and draws
+ *   hang        wedge the host -> hang detected, a new host attaches
+ *   explorer    (Windows) kill and restart Explorer -> the SAME host re-attaches behind the icons
+ *               (no host exit or restart, `shell-lost:` reason, seilink_reattached explorer_restart)
+ *   stop        stop() -> host gone, status off
+ */
+import { app, BrowserWindow, screen } from 'electron';
+import { execFile } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { bundleRequire } from '../../bundleRequire';
+import type { FromHost } from './protocol';
+import { fakeDesktopEnabled } from './native';
+import {
+  seilinkHostEvents,
+  seilinkHostPidForTest,
+  seilinkHostStatus,
+  sendToSeilinkHostForTest,
+  startSeilinkHost,
+  stopSeilinkHost,
+} from './seilinkHost';
+import { getCharacter } from '../../characterStore';
+import { SUI_CHARACTER_ID } from '../../../shared/voicePitch';
+
+/** No such character: the room draws her as a silhouette. Used when Sui is not in the store. */
+const SYNTHETIC_CHARACTER = '5e11a1c0-0000-4000-8000-00000000c1a0';
+const FAKE = fakeDesktopEnabled(app.isPackaged);
+const IS_WIN = !FAKE && process.platform === 'win32';
+const IS_MAC = !FAKE && process.platform === 'darwin';
+
+interface TestAddon {
+  testClick(x: number, y: number, count?: number): unknown;
+  /** 261116: move the cursor, no button (Windows physical px, mac global top-left points). */
+  testMove?(x: number, y: number): unknown;
+  /** macOS only: size another app's first window through Accessibility. */
+  axSetWindowFrame?(bundleId: string, x: number, y: number, w: number, h: number): string;
+}
+
+interface Check {
+  ok: boolean;
+  ms?: number;
+  detail?: string;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function waitFor<T>(pred: () => T | null | undefined | false, timeoutMs: number, everyMs = 100): Promise<T | null> {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const tick = (): void => {
+      let v: T | null | undefined | false = null;
+      try {
+        v = pred();
+      } catch {
+        v = null;
+      }
+      if (v) return resolve(v as T);
+      if (Date.now() - t0 > timeoutMs) return resolve(null);
+      setTimeout(tick, everyMs);
+    };
+    tick();
+  });
+}
+
+function run(cmd: string, args: string[], timeoutMs = 20_000): Promise<string> {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) =>
+      resolve(err ? `ERR ${err.message} ${stderr}` : String(stdout)),
+    );
+  });
+}
+
+/**
+ * macOS: open TextEdit and size its window over the work area: through Accessibility (the
+ * test addon; the runner grants it), else AppleScript (needs an Automation grant). True when
+ * TextEdit opened; an unsized window may still cover her, the cover check says.
+ */
+async function coverWithTextEdit(
+  out: string,
+  wa: Electron.Rectangle,
+  addon: TestAddon | null,
+  log: (s: string) => void,
+): Promise<boolean> {
+  const file = path.join(out, 'cover.txt');
+  writeFileSync(file, 'SeiLink self-test: this window covers the room.\n'.repeat(40));
+  const opened = await run('/usr/bin/open', ['-a', 'TextEdit', file]);
+  log(`open TextEdit: ${opened.trim() || 'ok'}`);
+  if (opened.startsWith('ERR')) return false;
+  await new Promise((r) => setTimeout(r, 3000));
+  const ax = addon?.axSetWindowFrame?.('com.apple.TextEdit', wa.x, wa.y, wa.width, wa.height) ?? 'no AX helper';
+  log(`TextEdit frame via AX (wanted ${wa.x},${wa.y} ${wa.width}x${wa.height}): ${ax}`);
+  if (!ax.startsWith('ok')) {
+    const bounds = `{${wa.x}, ${wa.y}, ${wa.x + wa.width}, ${wa.y + wa.height}}`;
+    const res = await run('/usr/bin/osascript', ['-e', `tell application "TextEdit" to activate`, '-e', `tell application "TextEdit" to set bounds of front window to ${bounds}`], 8000);
+    log(`TextEdit frame via AppleScript: ${res.trim().slice(0, 200) || 'ok'}`);
+  }
+  return true;
+}
+
+export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWindow | null }): Promise<void> {
+  const out = path.resolve(process.env.SEI_SEILINK_SELFTEST ?? 'seilink-selftest');
+  mkdirSync(out, { recursive: true });
+  const t0 = Date.now();
+  const lines: string[] = [];
+  const log = (s: string): void => {
+    const line = `[selftest +${((Date.now() - t0) / 1000).toFixed(2)}s] ${s}`;
+    lines.push(line);
+    console.log(line);
+    try {
+      writeFileSync(path.join(out, 'selftest.log'), lines.join('\n') + '\n');
+    } catch {
+      /* ignore */
+    }
+  };
+  const checks: Record<string, Check> = {};
+  const timings: Record<string, number> = {};
+  const events: Array<{ t: number; m: FromHost | { type: string; [k: string]: unknown } }> = [];
+  const heartbeats: Array<{ t: number; fps: number; covered: boolean }> = [];
+  const onMsg = (m: FromHost): void => {
+    if (m.type === 'heartbeat') heartbeats.push({ t: Date.now(), fps: m.effectiveFps, covered: m.covered });
+    else {
+      events.push({ t: Date.now(), m });
+      log(`host: ${JSON.stringify(m).slice(0, 300)}`);
+    }
+  };
+  seilinkHostEvents.on('message', onMsg);
+  // 261105: the analytics main sends (seilinkHost.ts capture), so the run can check seilink_shown.
+  const analytics: Array<{ t: number; event: string; props: Record<string, unknown> }> = [];
+  seilinkHostEvents.on('analytics', (event: string, props: Record<string, unknown>) => {
+    analytics.push({ t: Date.now(), event, props });
+    log(`analytics ${event} ${JSON.stringify(props).slice(0, 300)}`);
+  });
+  for (const ev of ['spawn', 'exit', 'restart', 'hung']) {
+    seilinkHostEvents.on(ev, (e: Record<string, unknown>) => {
+      events.push({ t: Date.now(), m: { type: `sup:${ev}`, ...e } });
+      log(`supervisor ${ev} ${JSON.stringify(e)}`);
+    });
+  }
+  const since = (t: number, type: string, pred?: (m: Record<string, unknown>) => boolean) => () =>
+    events.find((e) => e.t >= t && e.m.type === type && (!pred || pred(e.m as Record<string, unknown>)));
+  const fpsAfter = async (t: number, want: 'zero' | 'positive', timeoutMs: number): Promise<number | null> => {
+    const hit = await waitFor(() => {
+      const hb = heartbeats.filter((h) => h.t >= t);
+      if (hb.length < 2) return null;
+      const last2 = hb.slice(-2);
+      return want === 'zero' ? last2.every((h) => h.fps === 0) && last2 : last2.every((h) => h.fps > 0) && last2;
+    }, timeoutMs);
+    return hit ? hit[1].fps : null;
+  };
+  const shot = async (name: string): Promise<void> => {
+    const file = path.join(out, `${name}.png`);
+    if (IS_WIN) {
+      const ps1 = path.join(app.getAppPath(), 'scripts', 'seilink', 'shot-win.ps1');
+      log(`shot ${name}: ${(await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ps1, file])).trim()}`);
+    } else if (IS_MAC) {
+      log(`shot ${name}: ${(await run('screencapture', ['-x', '-C', '-m', file])).trim() || 'ok'}`);
+    } else if (process.platform === 'linux' && process.env.DISPLAY) {
+      // The Xvfb smoke (fake desktop): ImageMagick's import, when installed.
+      log(`shot ${name}: ${(await run('import', ['-window', 'root', file])).trim() || 'ok'}`);
+    }
+  };
+  const hideMain = (): void => {
+    const w = opts.getMainWindow();
+    if (w && !w.isDestroyed()) w.hide();
+  };
+
+  let testAddon: TestAddon | null = null;
+  try {
+    testAddon = bundleRequire()(path.join(app.getAppPath(), 'native', 'seilink', 'out', 'seilink_test.node')) as TestAddon;
+  } catch (err) {
+    log(`test addon missing: ${(err as Error).message}`);
+  }
+
+  try {
+    // Let the app settle, then get the main window out of the way.
+    await waitFor(() => opts.getMainWindow(), 60_000);
+    await sleep(4000);
+    hideMain();
+    await sleep(1000);
+    await shot('00-before');
+
+    // A move-in restored at boot (a previous run) is not this test's start.
+    await stopSeilinkHost('user_stop');
+    await sleep(1500);
+
+    // ── attach ──
+    let t = Date.now();
+    // Sui when the profile has her (her bundled portrait, cut out), so the screenshots show a real figure.
+    const testCharacter = (await getCharacter(SUI_CHARACTER_ID).catch(() => null)) ? SUI_CHARACTER_ID : SYNTHETIC_CHARACTER;
+    log(`character ${testCharacter === SUI_CHARACTER_ID ? 'sui' : 'synthetic'}`);
+    const st = await startSeilinkHost(testCharacter);
+    log(`start -> ${JSON.stringify(st)}`);
+    const gaveUp = (): boolean => seilinkHostStatus().state === 'failed';
+    const attachedOrFailed = await waitFor(() => since(t, 'attached')() ?? (gaveUp() ? 'failed' : null), 60_000);
+    const attached = attachedOrFailed && attachedOrFailed !== 'failed' ? attachedOrFailed : null;
+    const first = attached ? await waitFor(since(t, 'first-frame'), 60_000) : null;
+    const drawing = await fpsAfter(t, 'positive', 15_000);
+    timings.attachMs = attached ? attached.t - t : -1;
+    timings.firstFrameMs = first ? first.t - t : -1;
+    checks.attach = {
+      ok: !!attached && !!first && drawing !== null && seilinkHostStatus().state === 'running',
+      ms: timings.firstFrameMs,
+      detail: attached ? JSON.stringify(attached.m) : 'no attached',
+    };
+    await sleep(1500);
+    await shot('01-attached');
+    if (!checks.attach.ok) throw new Error(`never attached (${seilinkHostStatus().state} ${seilinkHostStatus().failure ?? ''})`);
+
+    // ── seilink_shown (261105): the first frame verified the attach, and main reported it shown ──
+    const shown = await waitFor(() => analytics.find((a) => a.t >= t && a.event === 'seilink_shown'), 10_000);
+    const notShown = analytics.find((a) => a.t >= t && a.event === 'seilink_not_shown');
+    const firstMsg = first?.m as Record<string, unknown> | undefined;
+    checks.shown = {
+      ok: !!shown && firstMsg?.verified === true && !notShown,
+      ms: shown ? shown.t - t : -1,
+      detail: shown
+        ? `${JSON.stringify(shown.props)} first-frame verified=${String(firstMsg?.verified)} reasons=${JSON.stringify(firstMsg?.reasons ?? [])}`
+        : `no seilink_shown${notShown ? ` (not_shown ${JSON.stringify(notShown.props)})` : ''}; first-frame ${JSON.stringify(firstMsg ?? null)}`,
+    };
+
+    if (!FAKE) {
+      // ── cover / uncover ──
+      const box = [...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen: unknown }).screen)?.m as
+        | { screen: { x: number; y: number; w: number; h: number } }
+        | undefined;
+      log(`her box ${JSON.stringify(box?.screen ?? null)}`);
+      t = Date.now();
+      const d = screen.getPrimaryDisplay();
+      // macOS: another app's window zoomed over the work area (the spike's cover; a window of our
+      // own Electron bundle did not occlude the hit panel on macos-26). Windows: a maximized window.
+      const textEdit = IS_MAC ? await coverWithTextEdit(out, d.workArea, testAddon, log) : false;
+      log(`cover with ${textEdit ? 'TextEdit' : 'an Electron window'}`);
+      const cover = textEdit
+        ? null
+        : new BrowserWindow({
+            ...(IS_MAC ? d.workArea : { x: d.workArea.x + 40, y: d.workArea.y + 40, width: 800, height: 600 }),
+            show: false,
+            backgroundColor: '#2d6a4f',
+            title: 'SeiLink cover',
+          });
+      if (cover) {
+        void cover.loadURL('data:text/html,<body style="background:%232d6a4f;color:white;font:40px sans-serif">cover</body>');
+        if (IS_WIN) cover.maximize();
+        cover.show();
+      }
+      const coveredMsg = await waitFor(since(t, 'activity', (m) => m.covered === true), 15_000);
+      const zero = await fpsAfter(coveredMsg ? coveredMsg.t : t, 'zero', 10_000);
+      timings.coverDetectMs = coveredMsg ? coveredMsg.t - t : -1;
+      checks.cover = { ok: !!coveredMsg && zero === 0, ms: timings.coverDetectMs, detail: coveredMsg ? String((coveredMsg.m as { reason?: string }).reason) : 'never covered' };
+      await shot('02-covered');
+      t = Date.now();
+      if (cover) cover.destroy();
+      // killall, not AppleScript: no Automation grant needed.
+      else log(`uncover: ${(await run('/usr/bin/killall', ['TextEdit'], 8000)).trim() || 'TextEdit killed'}`);
+      const uncoveredMsg = await waitFor(since(t, 'activity', (m) => m.covered === false), 15_000);
+      const back = await fpsAfter(uncoveredMsg ? uncoveredMsg.t : t, 'positive', 10_000);
+      timings.uncoverMs = uncoveredMsg ? uncoveredMsg.t - t : -1;
+      checks.uncover = { ok: !!uncoveredMsg && back !== null, ms: timings.uncoverMs, detail: `fps ${back}` };
+
+      // ── click ──
+      if (testAddon && box?.screen) {
+        const b = box.screen;
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const cx = Math.round((b.x + b.w / 2) * s);
+        const cy = Math.round((b.y + b.h * 0.6) * s);
+        // Product call (261116): a click is her reaction on the desktop (Sei stays where it is), a
+        // double click brings Sei up on her chat.
+        hideMain();
+        await sleep(500);
+        t = Date.now();
+        log(`click her at ${cx},${cy}: ${JSON.stringify(testAddon.testClick(cx, cy, 1))}`);
+        const clicked = await waitFor(since(t, 'click', (m) => m.kind === 'click'), 5000);
+        timings.clickMs = clicked ? clicked.t - t : -1;
+        await sleep(800);
+        const mainAfterClick = !!opts.getMainWindow()?.isVisible();
+        hideMain();
+        await sleep(800);
+        // Bare wallpaper: beside her on the wider side, a third of the way into the gap (clear of
+        // her and of the icon column at the screen edge), at her mid-height.
+        const wa = d.workArea;
+        const leftGap = b.x - wa.x;
+        const rightGap = wa.x + wa.width - (b.x + b.w);
+        const bxPt = rightGap >= leftGap ? b.x + b.w + rightGap / 3 : b.x - leftGap / 3;
+        const byPt = Math.min(Math.max(b.y + b.h / 2, wa.y + 20), wa.y + wa.height - 20);
+        const bx = Math.round(bxPt * s);
+        const by = Math.round(byPt * s);
+        const insideHer = bxPt >= b.x && bxPt <= b.x + b.w && byPt >= b.y && byPt <= b.y + b.h;
+        t = Date.now();
+        log(`click bare wallpaper at ${bx},${by} (gaps ${Math.round(leftGap)}/${Math.round(rightGap)}${insideHer ? ', INSIDE her box' : ''})`);
+        testAddon.testClick(bx, by, 1);
+        const stray = await waitFor(since(t, 'click'), 2000);
+        // A stray open would put the app window over her and eat the double click.
+        if (stray) {
+          hideMain();
+          await sleep(800);
+        }
+        t = Date.now();
+        testAddon.testClick(cx, cy, 2);
+        const dbl = await waitFor(since(t, 'click', (m) => m.kind === 'dblclick'), 3000);
+        await sleep(1200);
+        const mainShown = !!opts.getMainWindow()?.isVisible();
+        const singleAfterDbl = events.find((e) => e.t >= t && e.m.type === 'click' && (e.m as { kind?: string }).kind === 'click');
+        hideMain();
+        // macOS: Sei's window was over her (box-occluded, her hit panel off) until the host sees it
+        // gone, about a second later; the dock step presses only once she is visible again.
+        const lastActivity = [...events].reverse().find((e) => e.m.type === 'activity')?.m as { covered?: boolean } | undefined;
+        if (lastActivity?.covered) {
+          const tHide = Date.now();
+          await waitFor(since(tHide, 'activity', (m) => m.covered === false), 6000);
+          await sleep(300);
+        }
+        checks.click = {
+          ok: !!clicked && !mainAfterClick && mainShown && !stray && !insideHer && !!dbl && !singleAfterDbl,
+          ms: timings.clickMs,
+          detail: `click ${!!clicked} mainAfterClick ${mainAfterClick} stray ${!!stray} dbl ${!!dbl} mainShownAfterDbl ${mainShown} singleAfterDbl ${!!singleAfterDbl}`,
+        };
+      } else {
+        checks.click = { ok: false, detail: testAddon ? 'no box reported' : 'no test addon' };
+      }
+
+      // ── dock (M4): a press on its deafen button reaches main as a dock action, twice (on, then back off) ──
+      const withDock = [...events].reverse().find((e) => e.m.type === 'box' && Array.isArray((e.m as { dock?: unknown }).dock))?.m as
+        | { dock: Array<{ id: string; x: number; y: number; w: number; h: number }> }
+        | undefined;
+      const deafenBtn = withDock?.dock.find((x) => x.id === 'deafen');
+      if (testAddon && deafenBtn) {
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const px = Math.round((deafenBtn.x + deafenBtn.w / 2) * s);
+        const py = Math.round((deafenBtn.y + deafenBtn.h / 2) * s);
+        const pressDeafen = async (): Promise<boolean> => {
+          const t0 = Date.now();
+          testAddon.testClick(px, py, 1);
+          const got = await waitFor(since(t0, 'dock', (m) => m.action === 'deafen'), 4000);
+          await sleep(600);
+          return !!got;
+        };
+        t = Date.now();
+        log(`press the dock's deafen at ${px},${py}`);
+        const first = await pressDeafen();
+        timings.dockMs = first ? Date.now() - t - 600 : -1;
+        const second = await pressDeafen();
+        // A dock press must not also open her chat.
+        const opened = events.some((e) => e.t >= t && e.m.type === 'click');
+        hideMain();
+        checks.dock = { ok: first && second && !opened, ms: timings.dockMs, detail: `first ${first} second ${second} openedChat ${opened}` };
+      } else {
+        checks.dock = { ok: false, detail: testAddon ? 'no dock reported' : 'no test addon' };
+      }
+
+      // ── hover (261116): the dock wakes near the cursor and goes quiet when it leaves, also after a
+      //    press on it and after a click or double click on her (with Sei's window up, then hidden);
+      //    her cursor feed keeps coming. Product call (261116): it stayed lit after a click. ──
+      const herNow = ([...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen?: unknown }).screen)?.m as { screen: { x: number; y: number; w: number; h: number } } | undefined)?.screen;
+      if (testAddon?.testMove && deafenBtn && herNow) {
+        const s = IS_WIN ? d.scaleFactor : 1;
+        const wa = d.workArea;
+        const near = { x: Math.round((deafenBtn.x + deafenBtn.w / 2) * s), y: Math.round((deafenBtn.y + deafenBtn.h / 2) * s) };
+        // Far: the top-left quarter of the work area, clear of her and of the dock.
+        const far = { x: Math.round((wa.x + wa.width * 0.25) * s), y: Math.round((wa.y + wa.height * 0.3) * s) };
+        const her = { x: Math.round((herNow.x + herNow.w / 2) * s), y: Math.round((herNow.y + herNow.h * 0.6) * s) };
+        type Probe = { hover: boolean; fps: number; reason: string; pageAwake: boolean | null; pagePressed: boolean | null; cursorSamples: number; maxPollGapMs: number };
+        let probeId = 0;
+        const probe = async (label: string): Promise<Probe | null> => {
+          const id = ++probeId;
+          const t1 = Date.now();
+          sendToSeilinkHostForTest({ type: 'test-probe', id });
+          const got = await waitFor(since(t1, 'test-probe', (m) => m.id === id), 3000);
+          const p = (got?.m ?? null) as Probe | null;
+          log(`probe ${label}: ${JSON.stringify(p)}`);
+          return p;
+        };
+        const moveTo = async (pt: { x: number; y: number }, settleMs = 900): Promise<void> => {
+          testAddon.testMove?.(pt.x, pt.y);
+          await sleep(settleMs);
+        };
+        const steps: string[] = [];
+        let ok = true;
+        const expect = async (label: string, hover: boolean, opts2: { feed?: boolean } = {}): Promise<void> => {
+          const p = await probe(label);
+          const good = !!p && p.hover === hover && p.pageAwake === hover && p.pagePressed === false && (!opts2.feed || p.cursorSamples > 0);
+          if (!good) ok = false;
+          steps.push(`${label}:${good ? 'ok' : 'FAIL'}(${p ? `h${+p.hover} a${p.pageAwake === null ? '-' : +p.pageAwake} p${p.pagePressed === null ? '-' : +p.pagePressed} fps${p.fps} feed${p.cursorSamples} gap${p.maxPollGapMs}` : 'no answer'})`);
+        };
+        // The dock step's caption and press glow lapse first.
+        await moveTo(far, 3200);
+        await expect('far', false);
+        await moveTo(near);
+        await expect('near', true);
+        // Deafen twice (it ends where it started) with the cursor resting on it, then leave.
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        testAddon.testClick(near.x, near.y, 1);
+        await sleep(700);
+        await moveTo(far, 3200);
+        await expect('pressed-then-far', false, { feed: true });
+        await moveTo(near);
+        await expect('pressed-then-near', true);
+        await moveTo(far, 1800);
+        // A double click on her (Sei's window comes up on her chat and stays up), then hidden.
+        testAddon.testClick(her.x, her.y, 2);
+        await sleep(1800);
+        await shot('06-hover-her-dblclicked');
+        // macOS: Sei's window over her box stops her frames (box-occluded); the dock still wakes.
+        await moveTo(near);
+        await expect('her-dbl-window-up-near', true);
+        await moveTo(far, 1800);
+        hideMain();
+        await sleep(1500);
+        await expect('her-dbl-far', false, { feed: true });
+        await moveTo(near);
+        await expect('her-dbl-near', true);
+        await moveTo(far, 1800);
+        await expect('her-dbl-back-far', false, { feed: true });
+        // A single click on her (her reaction on the desktop; Sei stays hidden), then the same.
+        testAddon.testClick(her.x, her.y, 1);
+        await sleep(1800);
+        await moveTo(near);
+        await expect('her-clicked-near', true);
+        await moveTo(far, 1800);
+        await expect('her-clicked-far', false, { feed: true });
+        hideMain();
+        checks.hover = { ok, detail: steps.join(' ') };
+      } else {
+        checks.hover = { ok: false, detail: !testAddon?.testMove ? 'no testMove in the test addon' : 'no dock or box reported' };
+      }
+
+    } else {
+      for (const k of ['cover', 'uncover', 'click', 'dock', 'hover']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
+    }
+
+    // ── kill ──
+    await sleep(1000);
+    const pid = seilinkHostPidForTest();
+    t = Date.now();
+    if (pid) {
+      if (IS_WIN) await run('taskkill', ['/PID', String(pid), '/T', '/F']);
+      else process.kill(pid, 'SIGKILL');
+    }
+    const reattached = await waitFor(since(t, 'attached'), 30_000);
+    const refirst = await waitFor(since(t, 'first-frame'), 30_000);
+    const redraw = await fpsAfter(t, 'positive', 15_000);
+    timings.killToAttachMs = reattached ? reattached.t - t : -1;
+    timings.killToFrameMs = refirst ? refirst.t - t : -1;
+    checks.kill = { ok: !!pid && !!reattached && !!refirst && redraw !== null && seilinkHostPidForTest() !== pid, ms: timings.killToFrameMs };
+    await sleep(1000);
+    await shot('03-after-kill');
+
+    // ── hang ──
+    await sleep(2000);
+    t = Date.now();
+    sendToSeilinkHostForTest({ type: 'test-hang', ms: 15_000 });
+    const hung = await waitFor(since(t, 'sup:hung'), 10_000);
+    const afterHang = await waitFor(since(t, 'attached'), 40_000);
+    timings.hangDetectMs = hung ? hung.t - t : -1;
+    timings.hangToAttachMs = afterHang ? afterHang.t - t : -1;
+    checks.hang = { ok: !!hung && !!afterHang && timings.hangDetectMs < 4500, ms: timings.hangDetectMs };
+
+    // ── explorer (Windows) ──
+    if (IS_WIN) {
+      await fpsAfter(Date.now(), 'positive', 15_000);
+      await sleep(2000);
+      t = Date.now();
+      const pidBefore = seilinkHostPidForTest();
+      log(`explorer kill: ${(await run('taskkill', ['/F', '/IM', 'explorer.exe'])).trim()}`);
+      await sleep(6000);
+      const tasks = await run('tasklist', ['/FI', 'IMAGENAME eq explorer.exe', '/NH']);
+      if (!/explorer\.exe/i.test(tasks)) {
+        log('explorer did not come back by itself; starting it');
+        execFile('explorer.exe', [], { windowsHide: false }, () => {});
+      }
+      const back2 = await waitFor(since(t, 'attached'), 60_000);
+      const frame2 = await fpsAfter(back2 ? back2.t : t, 'positive', 20_000);
+      timings.explorerToAttachMs = back2 ? back2.t - t : -1;
+      // 261105 (T332): the SAME host re-attaches. Before, the destroy of Explorer's windows
+      // killed the host (0xC000041D) and a fresh one attached, which this check let pass.
+      const restarted = events.find((e) => e.t >= t && (e.m.type === 'sup:exit' || e.m.type === 'sup:restart' || e.m.type === 'sup:spawn'));
+      const samePid = !!pidBefore && seilinkHostPidForTest() === pidBefore;
+      const m2 = back2?.m as Record<string, unknown> | undefined;
+      const asReattach = m2?.reattach === true && String(m2?.reason ?? '').startsWith('shell-lost:');
+      const counted = await waitFor(
+        () => analytics.find((a) => a.t >= t && a.event === 'seilink_reattached' && a.props.cause === 'explorer_restart'),
+        5000,
+      );
+      const crashed = analytics.find((a) => a.t >= t && a.event === 'seilink_reattached' && a.props.cause === 'host_restart');
+      const why: string[] = [];
+      if (!back2) why.push('never re-attached');
+      if (back2 && frame2 === null) why.push('no frames after');
+      if (restarted) why.push(`host restarted (${restarted.m.type})`);
+      if (!samePid) why.push(`host pid ${pidBefore} -> ${seilinkHostPidForTest()}`);
+      if (back2 && !asReattach) why.push('not a shell-lost re-attach');
+      if (!counted) why.push('no seilink_reattached explorer_restart');
+      if (crashed) why.push('counted as host_restart');
+      checks.explorer = {
+        ok: why.length === 0,
+        ms: timings.explorerToAttachMs,
+        detail: `${why.join('; ') || 'same host re-attached'}${back2 ? ` ${JSON.stringify(back2.m)}` : ''}`,
+      };
+      await sleep(3000);
+      await shot('04-after-explorer');
+    }
+
+    // ── stop ──
+    const lastPid = seilinkHostPidForTest();
+    t = Date.now();
+    await stopSeilinkHost('user_stop');
+    const gone = await waitFor(() => {
+      if (!lastPid) return true;
+      try {
+        process.kill(lastPid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    }, 8000);
+    timings.stopMs = Date.now() - t;
+    checks.stop = { ok: !!gone && seilinkHostStatus().state === 'off', ms: timings.stopMs };
+    await sleep(1500);
+    await shot('05-stopped');
+  } catch (err) {
+    log(`self-test threw: ${(err as Error).stack ?? err}`);
+    checks.threw = { ok: false, detail: String((err as Error).message) };
+  }
+
+  const ok = Object.values(checks).length > 0 && Object.values(checks).every((c) => c.ok);
+  const fpsSamples = heartbeats.map((h) => h.fps);
+  writeFileSync(
+    path.join(out, 'result.json'),
+    JSON.stringify(
+      {
+        ok,
+        platform: process.platform,
+        arch: process.arch,
+        osRelease: (await import('node:os')).release(),
+        electron: process.versions.electron,
+        checks,
+        timings,
+        heartbeatFps: { samples: fpsSamples.length, max: Math.max(0, ...fpsSamples) },
+        events: events.map((e) => ({ t: e.t - t0, ...e.m })),
+      },
+      null,
+      2,
+    ),
+  );
+  log(`done: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(checks)}`);
+  app.exit(ok ? 0 : 1);
+}

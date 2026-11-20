@@ -278,9 +278,14 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   bot.pathfinder.setMovements(companionMovements(bot, opts))
   // opts.reach: walk until the block at x,y,z is within dig reach (gather,
   // dig cuboids) instead of within `range` of the feet.
+  // 261108 (quality pass 47): opts.xz: any height within `range` of the x,z
+  // column (explore). A point 30 blocks off at the bot's own y is inside a
+  // hill or over a valley as often as not, so a 3D goal there had no path.
   const goal = Number.isFinite(opts.reach)
     ? new GoalDigReach(x, y, z, opts.reach)
-    : new goals.GoalNear(x, y, z, range)
+    : opts.xz
+      ? new goals.GoalNearXZ(x, z, range)
+      : new goals.GoalNear(x, y, z, range)
 
   // Closest-distance hint on cant_reach. The LLM was getting bare
   // 'cant_reach' and either retrying identically or
@@ -470,7 +475,26 @@ function endedAtGoal(bot, goal, x, y, z, range, opts) {
     const eye = Number.isFinite(bot.entity?.eyeHeight) ? bot.entity.eyeHeight : 1.62
     return Math.hypot(x + 0.5 - p.x, y + 0.5 - (p.y + eye), z + 0.5 - p.z) <= opts.reach + 0.5
   }
+  if (opts?.xz) return Math.hypot(x - p.x, z - p.z) <= range + 1
   return Math.hypot(x - p.x, y - p.y, z - p.z) <= range + 1
+}
+
+// 261107 (quality pass 45): a walk that ran out of time while still closing in
+// walks on, up to this many more legs. The wall clock is one leg
+// (pathfinder_timeout_ms, 12s), which is about 25-35m of walking without
+// sprint, so every goTo back to a player more than ~30m off came back
+// "timeout" part way there (gather_craft free play: 64m -> 30m, 28m -> 7m),
+// and the model read it as a failed walk: it explored away, or told the player
+// it was stuck. A leg only counts as progress when it closed at least
+// PROGRESS_MIN_M, so a wedged or circling walk still ends after one leg.
+// 261108 (pass 47): moved here from registry.js so explore walks on the same way.
+export const PROGRESS_LEGS = 3
+export const PROGRESS_MIN_M = 4
+
+/** A timed-out leg that closed in by at least PROGRESS_MIN_M. */
+export function timedOutClosingIn(result, before, after) {
+  return String(result).startsWith('timeout') && Number.isFinite(before) && Number.isFinite(after) &&
+    before - after >= PROGRESS_MIN_M
 }
 
 export const PathfindResult = /** @type {const} */ ({

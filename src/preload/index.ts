@@ -29,6 +29,7 @@ import {
   type SyncStatusPushEvent,
   type CreditsStatus,
   type CreditsHardStopEvent,
+  type SpendAlertPush,
   type ChatMessagePush,
   type CallOverlayState,
   type AvatarManifest,
@@ -40,6 +41,11 @@ import {
 import type { ChatgptStatus } from '../shared/chatgptPlan';
 import type { OverlayPointerSample } from '../shared/overlayPointer';
 import type { PopupAction } from '../shared/popupActions';
+import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOpenEditor } from '../shared/seilinkHost';
+import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
+import type { AnimaStatus } from '../shared/anima';
+import type { AvatarLibraryView } from '../shared/avatarLibrary';
+import { unwrapIpcRejection } from '../shared/ipcError';
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -92,6 +98,7 @@ const api: RendererApi = {
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
   // 260909 — card-image versions + regeneration.
   charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
+  charsOverviewInfo: (id) => ipcRenderer.invoke(IpcChannel.chars.overviewInfo, id),
   charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
   charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
@@ -125,6 +132,7 @@ const api: RendererApi = {
   },
 
   getConfig: () => ipcRenderer.invoke(IpcChannel.config.get),
+  configProfileState: () => ipcRenderer.invoke(IpcChannel.config.profileState),
   saveConfig: (c) => ipcRenderer.invoke(IpcChannel.config.save, c),
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
@@ -311,6 +319,8 @@ const api: RendererApi = {
   stardewInstallState: () => ipcRenderer.invoke(IpcChannel.stardew.installState),
   stardewInstall: () => ipcRenderer.invoke(IpcChannel.stardew.install),
   stardewLaunch: () => ipcRenderer.invoke(IpcChannel.stardew.launch),
+  stardewChooseFolder: () => ipcRenderer.invoke(IpcChannel.stardew.chooseFolder),
+  stardewGameRunning: () => ipcRenderer.invoke(IpcChannel.stardew.gameRunning),
   onStardewInstallProgress(cb) {
     const handler = (_e: Electron.IpcRendererEvent, ev: Parameters<typeof cb>[0]) => cb(ev);
     ipcRenderer.on(IpcChannel.stardew.installProgress, handler);
@@ -368,6 +378,22 @@ const api: RendererApi = {
   avatarModelFiles: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.modelFiles, characterId),
   avatarSetAccessory: (characterId, name, on) =>
     ipcRenderer.invoke(IpcChannel.avatar.setAccessory, { characterId, name, on }),
+  // Avatar library (261106)
+  avatarLibraryList: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.list, { characterId, sync: opts?.sync === true, fresh: opts?.fresh === true }),
+  avatarLibraryAddImage: (characterId, bytes, name) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.addImage, { characterId, bytes, name }),
+  avatarLibraryAddModel: (characterId, zip) => ipcRenderer.invoke(IpcChannel.avatarLibrary.addModel, { characterId, zip }),
+  avatarLibrarySetFlags: (characterId, avatarId, flags) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.setFlags, { characterId, avatarId, ...flags }),
+  avatarLibraryRemove: (characterId, avatarId) =>
+    ipcRenderer.invoke(IpcChannel.avatarLibrary.remove, { characterId, avatarId }),
+  avatarLibraryPick: (characterId, avatarId) => ipcRenderer.invoke(IpcChannel.avatarLibrary.pick, { characterId, avatarId }),
+  onAvatarLibrary(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, update: { characterId: string; view: AvatarLibraryView }) => cb(update);
+    ipcRenderer.on(IpcChannel.avatarLibrary.changed, handler);
+    return () => ipcRenderer.off(IpcChannel.avatarLibrary.changed, handler);
+  },
   onAvatarManifest(cb) {
     const handler = (
       _e: Electron.IpcRendererEvent,
@@ -409,6 +435,63 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.facepack.cue, handler);
     return () => ipcRenderer.off(IpcChannel.facepack.cue, handler);
   },
+  // SeiLink room (261104).
+  seilinkDevInfo: () => ipcRenderer.invoke(IpcChannel.seilink.devInfo),
+  seilinkPacks: () => ipcRenderer.invoke(IpcChannel.seilink.packs),
+  seilinkRoomGet: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.roomGet, characterId),
+  seilinkRoomSet: (characterId, state) => ipcRenderer.invoke(IpcChannel.seilink.roomSet, { characterId, state }),
+  onSeilinkRoomChanged(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.roomChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.roomChanged, handler);
+  },
+  seilinkOpenPreview: () => ipcRenderer.invoke(IpcChannel.seilink.openPreview),
+  seilinkHostStart: (characterId, opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStart, characterId, opts),
+  seilinkHostStop: (opts) => ipcRenderer.invoke(IpcChannel.seilink.hostStop, opts ?? null),
+  seilinkHostStatus: () => ipcRenderer.invoke(IpcChannel.seilink.hostStatus),
+  seilinkSetIdleLines: (on) => ipcRenderer.invoke(IpcChannel.seilink.setIdleLines, on),
+  onSeilinkHostStatus: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: SeilinkHostStatus) => cb(status);
+    ipcRenderer.on(IpcChannel.seilink.hostStatusChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.hostStatusChanged, handler);
+  },
+  onSeilinkOpenChat: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, characterId: string) => cb(characterId);
+    ipcRenderer.on(IpcChannel.seilink.openChat, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.openChat, handler);
+  },
+  seilinkAvailability: () => ipcRenderer.invoke(IpcChannel.seilink.availability),
+  seilinkLoginItemGet: () => ipcRenderer.invoke(IpcChannel.seilink.loginItemGet),
+  seilinkLoginItemSet: (enabled, surface) => ipcRenderer.invoke(IpcChannel.seilink.loginItemSet, { enabled, surface }),
+  onSeilinkAvailability: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, a: SeilinkAvailability) => cb(a);
+    ipcRenderer.on(IpcChannel.seilink.availabilityChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.availabilityChanged, handler);
+  },
+  onSeilinkOpenRoomEditor: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, req: SeilinkOpenEditor) => cb(req);
+    ipcRenderer.on(IpcChannel.seilink.openRoomEditor, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.openRoomEditor, handler);
+  },
+  seilinkStage: (req) => ipcRenderer.invoke(IpcChannel.seilink.stage, req),
+  seilinkOffer: (characterId, via) => ipcRenderer.invoke(IpcChannel.seilink.offer, { characterId, via }),
+  seilinkAnimaPrepare: (characterId, trigger) => ipcRenderer.invoke(IpcChannel.seilink.animaPrepare, { characterId, trigger }),
+  seilinkAnimaStatus: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.animaStatus, characterId),
+  onSeilinkAnima: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: AnimaStatus) => cb(status);
+    ipcRenderer.on(IpcChannel.seilink.animaChanged, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.animaChanged, handler);
+  },
+  seilinkAnimaShown: (characterId, kind) => ipcRenderer.send(IpcChannel.seilink.animaShown, { characterId, kind }),
+  seilinkAnimaCutout: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.animaCutout, characterId),
+  seilinkVoice: (characterId, speaking) => ipcRenderer.send(IpcChannel.seilink.voice, { characterId, speaking: speaking === true }),
+  seilinkEditorSession: (phase, token, characterId) => ipcRenderer.send(IpcChannel.seilink.editorSession, { phase, token, characterId }),
+  seilinkEditorSync: (sync) => ipcRenderer.send(IpcChannel.seilink.editorSync, sync),
+  onSeilinkEditorEvent: (cb) => {
+    const handler = (_e: Electron.IpcRendererEvent, ev: SeilinkEditorEvent) => cb(ev);
+    ipcRenderer.on(IpcChannel.seilink.editorEvent, handler);
+    return () => ipcRenderer.off(IpcChannel.seilink.editorEvent, handler);
+  },
   avatarOverlayCamera: (args) => ipcRenderer.invoke(IpcChannel.avatar.overlayCamera, args),
   avatarOverlayEditing: (editing) => ipcRenderer.invoke(IpcChannel.avatar.overlayEditing, editing),
   avatarOverlayMuteToggle: () => ipcRenderer.invoke(IpcChannel.avatar.overlayMute),
@@ -436,11 +519,20 @@ const api: RendererApi = {
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voiceListOwnVoices: (args) => ipcRenderer.invoke(IpcChannel.voice.ownList, args ?? {}),
   voiceOwnPreview: (args) => ipcRenderer.invoke(IpcChannel.voice.ownPreview, args),
+  voiceLibraryLookup: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryLookup, args),
+  voiceLibraryAdd: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryAdd, args),
+  voiceLibraryStatus: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryStatus, args),
+  voiceLibraryPreview: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryPreview, args),
   voiceSharedDefault: (args) => ipcRenderer.invoke(IpcChannel.voice.sharedDefault, args),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
   voiceElevenKeySet: (args) => ipcRenderer.invoke(IpcChannel.voice.elevenKeySet, args),
   voiceElevenKeyStatus: () => ipcRenderer.invoke(IpcChannel.voice.elevenKeyStatus),
+  voiceFishKeySet: (args) => ipcRenderer.invoke(IpcChannel.voice.fishKeySet, args),
+  voiceFishKeyStatus: () => ipcRenderer.invoke(IpcChannel.voice.fishKeyStatus),
+  voiceFishTest: () => ipcRenderer.invoke(IpcChannel.voice.fishTest),
+  voiceFishOverrideSet: (args) => ipcRenderer.invoke(IpcChannel.voice.fishOverrideSet, args),
+  voiceFishVoicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.fishVoicePreview, args),
   onVoiceCallEnded(cb: (push: { characterId: string }) => void) {
     const handler = (_e: Electron.IpcRendererEvent, push: { characterId: string }) => cb(push);
     ipcRenderer.on(IpcChannel.voice.callEnded, handler);
@@ -470,6 +562,7 @@ const api: RendererApi = {
   runWizardInstall: (args) => ipcRenderer.invoke(IpcChannel.wizard.install, args),
   wizardCancel: (sessionId) => ipcRenderer.invoke(IpcChannel.wizard.cancel, sessionId),
   startMinecraft: (args) => ipcRenderer.invoke(IpcChannel.wizard.startMinecraft, args ?? {}),
+  openMinecraftLauncher: () => ipcRenderer.invoke(IpcChannel.wizard.openLauncher),
   minecraftRunning: () => ipcRenderer.invoke(IpcChannel.wizard.minecraftRunning),
   getWizardState: () => ipcRenderer.invoke(IpcChannel.wizard.getState),
   wizardPromptShown: (action: 'get' | 'set') => ipcRenderer.invoke(IpcChannel.wizard.promptShown, action),
@@ -532,6 +625,14 @@ const api: RendererApi = {
   // --- Proxy + billing + plan ---
   proxyConfigure: (kind) => ipcRenderer.invoke(IpcChannel.proxy.configure, { kind }),
   creditsGet: () => ipcRenderer.invoke(IpcChannel.credits.get),
+  usageSummary: () => ipcRenderer.invoke(IpcChannel.usage.summary),
+  onSpendAlert(cb: (e: SpendAlertPush) => void) {
+    const handler = (_e: Electron.IpcRendererEvent, ev: SpendAlertPush): void => cb(ev);
+    ipcRenderer.on(IpcChannel.usage.spendAlert, handler);
+    return () => ipcRenderer.off(IpcChannel.usage.spendAlert, handler);
+  },
+  usageSpendAlertPending: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertPending),
+  usageSpendAlertAck: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertAck),
   creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
   creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
@@ -553,6 +654,8 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.credits.hardStop, handler);
     return () => ipcRenderer.off(IpcChannel.credits.hardStop, handler);
   },
+  creditsHardStopPending: () => ipcRenderer.invoke(IpcChannel.credits.hardStopPending),
+  creditsHardStopAck: () => ipcRenderer.invoke(IpcChannel.credits.hardStopAck),
   onAiBackendKindChanged(cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) {
     const handler = (
       _e: Electron.IpcRendererEvent,
@@ -636,6 +739,9 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, info: UpdateAvailableEvent) => cb(info);
     ipcRenderer.on(IpcChannel.app.updateAvailable, handler);
     return () => ipcRenderer.off(IpcChannel.app.updateAvailable, handler);
+  },
+  rendererReady() {
+    ipcRenderer.send(IpcChannel.app.rendererReady);
   },
   onUpdateChecking(cb: () => void) {
     const handler = () => cb();
@@ -727,4 +833,35 @@ const api: RendererApi = {
   factoryReset: () => ipcRenderer.invoke(IpcChannel.app.factoryReset),
 };
 
-contextBridge.exposeInMainWorld('sei', api);
+/**
+ * Every bridge method that returns a promise rejects with main's own message
+ * (261119). Electron rejects a failed `ipcRenderer.invoke` with "Error
+ * invoking remote method '<channel>': Error: <message>", and screens that
+ * showed `err.message` printed that wrapper to users ("... 'chars:add-to-
+ * library': Error: You can only have 4 companions ..."). Wrapping the api
+ * once here covers every invoke, including ones added later, without
+ * touching each method. Main's console still logs the full error ("Error
+ * occurred in handler for ..."), and the renderer turns technical messages
+ * into plain copy with `userFacingError` (lib/errors.ts).
+ */
+function withCleanRejections<T extends object>(target: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(target)) {
+    if (typeof value !== 'function') {
+      out[key] = value;
+      continue;
+    }
+    out[key] = (...args: unknown[]): unknown => {
+      const result: unknown = (value as (...a: unknown[]) => unknown).apply(target, args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        return Promise.resolve(result).catch((err: unknown) => {
+          throw unwrapIpcRejection(err);
+        });
+      }
+      return result;
+    };
+  }
+  return out as T;
+}
+
+contextBridge.exposeInMainWorld('sei', withCleanRejections(api));

@@ -10,7 +10,7 @@
  * scope-changed handler, before it reloads config and characters.
  *
  * Cleared here: chat transcripts + previews + in-flight reveals, imported
- * avatar manifests, unsent feedback drafts, the dev console's bot log (bot
+ * avatar manifests, unsent feedback drafts, unsaved profile edits, the dev console's bot log (bot
  * lines quote the conversation), the recently-deleted id set, a pending
  * guided first moment, and the Home "up next" cards. Stores that already
  * re-seed on scope or auth change (characters, library state, credits, cloud
@@ -29,7 +29,10 @@ import { useDataStore } from './stores/useDataStore';
 import { useFirstMomentStore } from './stores/useFirstMomentStore';
 import { useHomeNextStepStore } from './stores/useHomeNextStepStore';
 import { useChatgptStore } from './stores/useChatgptStore';
+import { useSeilinkStore } from './stores/useSeilinkStore';
+import { useUsageStore } from './stores/useUsageStore';
 import { clearAllFeedbackDrafts } from './feedbackDraft';
+import { clearAllEditDrafts } from './profileEditDrafts';
 import { useVoiceStore } from './stores/useVoiceStore';
 import { useBackseatStore } from './stores/useBackseatStore';
 import { useChessStore } from './stores/useChessStore';
@@ -51,6 +54,9 @@ const ACCOUNT_SURFACE_VIEWS: ReadonlySet<View['kind']> = new Set<View['kind']>([
  * end anything: main already did, before it told us.
  */
 export function endLiveSurfaces(): void {
+  // 261119: first, so the profile editors the Home navigation below unmounts
+  // neither save on the way out nor keep their drafts (lib/profileEditDrafts).
+  clearAllEditDrafts();
   // Capture first, the call second: the same order as the hang-up button.
   try { useBackseatStore.getState().resetForScope(); } catch { /* keep going */ }
   try {
@@ -99,10 +105,16 @@ export function resetAccountScopedState(): void {
   // a default deleted by one account must not vanish for the next.
   useDataStore.setState({ recentlyDeletedIds: new Set<string>() });
   clearAllFeedbackDrafts();
+  // 261119: unsaved profile edits (persona drafts) name the old account's companions.
+  clearAllEditDrafts();
   // A pending guided first moment belongs to the account that armed it.
   useFirstMomentStore.getState().reset();
   // 261013 (T119): the Home "up next" cards are read from this account's memory.
   useHomeNextStepStore.getState().reset();
   // 261017 (issue #46): the ChatGPT-plan accounts file lives in the profile.
   useChatgptStore.getState().reset();
+  // 261105 (T337): an open move-in sheet, room editor or first-link intro names a companion of the old account.
+  useSeilinkStore.setState({ flow: null, intro: null, moveBusy: false });
+  // 261110: Playtime's usage summary is read from this profile's ledger.
+  useUsageStore.getState().reset();
 }

@@ -51,8 +51,12 @@ import { backseatReasonForCallEnd, type CallEndReason } from '@shared/callEndRea
 import { createStaleGate } from '../backseat/staleGate';
 import { voicePitchRate } from '@shared/voicePitch';
 import type { VoiceTtsNoticePush } from '@shared/ipc';
+import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
+import { createSentenceTts } from '../voice/sentenceTts';
+import { localTtsModel, seiVoicesActive } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
+import { joinSentences } from '@shared/uiLanguage';
 import { currentResetLine } from '../useResetLine';
 import { burstLanguageFor, cloudPassText, createDictation, type Dictation } from '../voice/dictation';
 import type { SttHint } from '../voice/sttArbiter';
@@ -69,6 +73,8 @@ import {
   type MicEchoInfo,
 } from '../voice/echoGate';
 import { createInterruptStats } from '../voice/interruptStats';
+import { createCutTracker } from '../voice/bargeCut';
+import { createVoiceReplyClock } from '../voice/replyClock';
 import type { CallInterruptCounts } from '@shared/callInterrupts';
 import { sttPolicy } from '../voice/sttPolicy';
 import {
@@ -91,6 +97,7 @@ import {
 import { warm as warmPitchBus } from '../voice/pitchBus';
 import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
 import { callSetupFailureProps } from '../voice/callSetupFailure';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
  * 260929: a call held up by microphone access. MicAccessCard (mounted in
@@ -326,6 +333,28 @@ async function micEchoCheck(info: MicEchoInfo): Promise<boolean> {
 let session = 0;
 /** 261030: interrupt diagnostics for voice_call_ended (interruptStats.ts). */
 const interruptStats = createInterruptStats();
+/** 261112: the companion line a voice barge-in cut, for the words that cut it (bargeCut.ts). */
+const cutTracker = createCutTracker();
+
+/** 261106: utterance -> first audible reply, sent as reply_latency (replyClock.ts). */
+const replyClock = createVoiceReplyClock({
+  now: () => performance.now(),
+  report: (sample) => {
+    try {
+      sei.track('reply_latency', { ...sample });
+    } catch {
+      /* analytics is never load-bearing */
+    }
+  },
+  setTimer: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimer: (h) => window.clearTimeout(h as number),
+});
+
+/** A companion who is live (or joining) in a game answers through its bot. */
+function inGameNow(characterId: string): boolean {
+  const k = useDataStore.getState().summons[characterId]?.kind;
+  return k === 'online' || k === 'connecting';
+}
 /** A companion's slice of the interrupt counts, for its hang-up report. */
 function interruptsFor(characterId: string): { interrupts: CallInterruptCounts } {
   return { interrupts: interruptStats.take(characterId) };
@@ -343,6 +372,21 @@ let pendingTts = 0;
  * (audioQueue playBuffer) and plays them fine.
  */
 let localTtsCall = false;
+let kokoroTtsCall = false;
+/** 261103: Fish Audio is this call's local voice. Its clips are mp3, so the
+ * streaming path is open again (a Fast fallback arrives as one WAV chunk and
+ * the stream player sniffs it). */
+let fishTtsCall = false;
+/** 261110: "Sei voices" with the ChatGPT brain this call (see localTtsCall). */
+let seiVoicesCall = false;
+/** Characters with their own Fish voice this call: played without the pitch
+ * shift (the user picked that exact voice). */
+let fishOverrideIds = new Set<string>();
+/** Fish fallback reasons already shown this call: the notice is once per
+ * reason per call, not once per line (every queued line can fail the same
+ * way). Cleared at call start. */
+const fishNoticeReasons = new Set<string>();
+let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
  * speakerOriginSeq), threaded through the flush into speakAndCapture. */
@@ -562,6 +606,7 @@ function staleGate(text: string, capturedAt: number): (when: 'arrival' | 'playhe
 }
 
 function pitchRateOf(characterId: string): number {
+  if (fishTtsCall && fishOverrideIds.has(characterId)) return 1;
   const character = useDataStore.getState().characters.find((c) => c.id === characterId);
   return voicePitchRate(character ?? { id: characterId, metadata: {} });
 }
@@ -621,12 +666,12 @@ function friendlyError(err: unknown): string {
     return t('Free ElevenLabs plans cannot play this voice through your key. Pick one of your own voices.');
   }
   if (/VOICE_ELEVEN_QUOTA/.test(msg)) return t('Your ElevenLabs account is out of credits.');
-  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Settings.');
+  if (/VOICE_ELEVEN_KEY_INVALID/.test(msg)) return t('ElevenLabs rejected your key. Check it in Playtime.');
   if (/VOICE_NO_CREDITS/.test(msg)) {
     // 260926: say when free play comes back, not just that it is gone.
     const base = t("You've used this week's credits. Upgrade or top up to keep calling.");
     const reset = currentResetLine();
-    return reset ? `${base}${uiLanguage() === 'zh' ? '' : ' '}${reset}` : base;
+    return reset ? joinSentences(uiLanguage(), base, reset) : base;
   }
   // 260810: the daily dollar cap was retired 260724, so a voice 429 is the
   // burst rate gate — never claim a daily cap or a tomorrow reset.
@@ -674,20 +719,21 @@ function isZhPack(packId: string | undefined): boolean {
  * "the local voice pack". */
 function missingPackNotice(packId: string | undefined): string {
   if (isZhPack(packId)) {
-    return t('[voice unavailable, download the Chinese voice pack in Settings]');
+    return t('[voice unavailable, download the Chinese voice pack in Playtime]');
   }
+  if (packId === 'tts-kokoro') return t('[voice unavailable, download the Kokoro voice pack in Playtime]');
   if (packId === 'tts-en') {
-    return t('[voice unavailable, download the English voice pack in Settings]');
+    return t('[voice unavailable, download the English voice pack in Playtime]');
   }
-  return t('[voice unavailable, download the local voice pack in Settings]');
+  return t('[voice unavailable, download the local voice pack in Playtime]');
 }
 
 /** Notice copy when a line WAS spoken, but with a substitute pack because the
  * language-matching one is not installed (260908, voice:tts-notice push). */
 function substitutePackNotice(push: { missingPackId: string; spokenPackId: string }): string {
   return isZhPack(push.missingPackId)
-    ? t('[spoken with the English voice, download the Chinese voice pack in Settings for a better fit]')
-    : t('[spoken with the Chinese voice, download the English voice pack in Settings for a better fit]');
+    ? t('[spoken with the English voice, download the Chinese voice pack in Playtime for a better fit]')
+    : t('[spoken with the Chinese voice, download the English voice pack in Playtime for a better fit]');
 }
 
 /** Notice copy when a cloud line for the user's OWN ElevenLabs voice was
@@ -697,7 +743,7 @@ export function ownVoiceStandInNotice(
 ): string {
   switch (reason) {
     case 'no-key':
-      return t('[speaking with a Sei voice, add your ElevenLabs key in Settings to hear their own voice]');
+      return t('[speaking with a Sei voice, add your ElevenLabs key in Playtime to hear their own voice]');
     case 'key-invalid':
       return t('[speaking with a Sei voice, ElevenLabs rejected your key]');
     case 'voice-missing':
@@ -709,9 +755,62 @@ export function ownVoiceStandInNotice(
   }
 }
 
+/** Notice copy when Kokoro is the chosen local voice but the Fast voices
+ * spoke the line instead (261102, kokoro-fallback push). */
+export function kokoroFallbackNotice(reason: 'pack-missing' | 'failed'): string {
+  return reason === 'pack-missing'
+    ? t('[spoken with the Fast voice, download the Kokoro voice pack in Playtime]')
+    : t('[spoken with the Fast voice, the Kokoro voice could not load]');
+}
+
+/** Notice copy when Fish Audio is the chosen local voice but the Fast voices
+ * spoke the line instead (261103, fish-fallback push). */
+export function fishFallbackNotice(reason: FishFailureReason): string {
+  switch (reason) {
+    case 'no-key':
+      return t('[spoken with the Fast voice, add your Fish Audio key in Playtime]');
+    case 'key-invalid':
+      return t('[spoken with the Fast voice, Fish Audio rejected your key]');
+    case 'no-credit':
+      return t('[spoken with the Fast voice, the Fish Audio free model may have ended, or your account needs credit]');
+    case 'busy':
+      return t('[spoken with the Fast voice, Fish Audio is busy right now]');
+    case 'voice-missing':
+      return t('[spoken with the Fast voice, the Fish Audio voice was not found]');
+    case 'failed':
+      return t('[spoken with the Fast voice, Fish Audio could not be reached]');
+  }
+}
+
+/** 261120: Fish Audio is the chosen cloud voice but Sei's voices spoke the
+ * line instead. */
+export function fishCloudFallbackNotice(reason: FishFailureReason): string {
+  return reason === 'no-key'
+    ? t('[spoken with a Sei voice, add your Fish Audio key in Playtime]')
+    : t('[spoken with a Sei voice, Fish Audio could not speak this line]');
+}
+
 /** The call notice for one voice:tts-notice push. */
+/** 261110: a "Sei voices" line spoken on-device instead (ChatGPT brain). */
+export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed'): string {
+  if (reason === 'no-credits') return t('[Sei voices are used up this week, using voices on this device]');
+  return t('[Sei voices are unavailable right now, using voices on this device]');
+}
+
+/** 261119: a Voice Library voice the proxy no longer plays; the stand-in Sei
+ * voice spoke the line. */
+export function libraryVoiceUnavailableNotice(): string {
+  return t('[spoken with a similar Sei voice, their Voice Library voice is no longer available]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
-  return push.kind === 'own-voice-stand-in' ? ownVoiceStandInNotice(push.reason) : substitutePackNotice(push);
+  if (push.kind === 'library-voice-unavailable') return libraryVoiceUnavailableNotice();
+  if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
+  if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
+  if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
+  if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
+  if (push.kind === 'fish-cloud-fallback') return fishCloudFallbackNotice(push.reason);
+  return substitutePackNotice(push);
 }
 
 export const useVoiceStore = create<VoiceState>((set, get) => {
@@ -797,6 +896,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       );
       replyClockAt = null;
     }
+    replyClock.lineQueued();
     // Caption is set when this clip reaches the playhead (see the audio queue's
     // onSpeakingChange below), NOT here at enqueue time — otherwise a multi-line
     // reply (or two companions' queued lines) would jump the caption straight to
@@ -843,6 +943,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       }
     };
     const settleTts = (): void => {
+      if (session !== mySession) return;
       pendingTts = Math.max(0, pendingTts - 1);
       maybeFinishRemoteEnd();
     };
@@ -850,8 +951,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const canStream =
       typeof sei.voiceTtsStream === 'function' &&
       typeof sei.onVoiceTtsChunk === 'function' &&
-      // Local TTS (260816): whole WAV clips only — see localTtsCall.
-      !localTtsCall;
+      // Local TTS (260816): whole WAV clips only — see localTtsCall. Fish
+      // Audio (261103) is mp3 and streams.
+      (!localTtsCall || fishTtsCall);
     // 260726: a TINY line does not stream. Streaming exists to cut time-to-
     // first-audio on a long clip, and its cost is that playback starts on a
     // buffer that is still filling. On a clip of a few hundred ms there is
@@ -890,12 +992,25 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       settleTts();
       return;
     }
+    if (kokoroTtsCall && sentenceTts && queue) {
+      void sentenceTts({ characterId, text, ...ttsCtx }, {
+        rate: pitchRateOf(characterId),
+        turn,
+        onDone,
+        stale: stale ? () => stale('playhead') : undefined,
+        onError: (error) => surfaceTtsError(String((error as Error)?.message ?? '')),
+      }).finally(settleTts);
+      return;
+    }
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
       const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), {
         turn,
         onDone,
         ...(stale ? { stale: () => stale('playhead') } : {}),
+        // A Fish line that falls back to the Fast voices arrives as one WAV,
+        // and so does a "Sei voices" line spoken on-device (261110).
+        ...(fishTtsCall || seiVoicesCall ? { sniff: true } : {}),
       });
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
@@ -1114,7 +1229,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   async function runCompanionTurn(
     mySeq: number,
     speakerId: string,
-    incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
+    incoming:
+      | { from: 'player'; text: string; interrupted?: { line: string } }
+      | { from: 'companion'; fromName: string; text: string },
     depth: number,
     opts?: { capture?: boolean },
   ): Promise<void> {
@@ -1136,7 +1253,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   async function runCompanionTurnInner(
     mySeq: number,
     speakerId: string,
-    incoming: { from: 'player'; text: string } | { from: 'companion'; fromName: string; text: string },
+    incoming:
+      | { from: 'player'; text: string; interrupted?: { line: string } }
+      | { from: 'companion'; fromName: string; text: string },
     depth: number,
     peers: string[],
     capture: boolean = true,
@@ -1171,13 +1290,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             directorSendFailed.delete(speakerId);
             directorSendSeq.set(speakerId, mySeq);
             try {
-              await useChatStore.getState().send(speakerId, incoming.text, undefined, peers);
+              await useChatStore
+                .getState()
+                .send(speakerId, incoming.text, undefined, peers, incoming.interrupted ? { interrupted: incoming.interrupted } : undefined);
             } finally {
               directorSendSeq.delete(speakerId);
             }
             // Success, abort/supersede, or a failure the chat surface kept.
             if (!directorSendFailed.delete(speakerId)) break;
-            if (attempt >= TURN_RETRY_DELAYS_MS.length) break;
+            if (attempt >= TURN_RETRY_DELAYS_MS.length) {
+              replyClock.failed(mySeq);
+              break;
+            }
             if (mySeq !== directorSeq || get().status !== 'live' || !get().participants.includes(speakerId)) break;
             if (!holdsReconnectSlot) {
               holdsReconnectSlot = true;
@@ -1434,10 +1558,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   function dispatchUserTurn(text: string, span?: { t0: number; t1: number }): void {
     const parts = get().participants;
     if (!parts.length || get().status !== 'live') return;
+    // 261112: the first utterance after a confirmed barge-in is the one that
+    // cut the companion off (consumed even when it turns out to be junk).
+    const cut = cutTracker.take(Date.now(), span);
     // Reject Whisper hallucinations (echo/breath/silence → "hhhhh", "you",
     // "[BLANK_AUDIO]") before they become a turn: otherwise they inject lines
     // the player never said and, via supersede, delay the real reply.
     if (isJunkTranscript(text)) return;
+    if (cut && parts.includes(cut.speakerId)) interruptStats.note('cut_lines');
     // A confirmed, dispatched utterance is real presence (junk and echo-gated
     // transcripts never reach this line, so phantom audio cannot keep an
     // unattended call alive).
@@ -1483,6 +1611,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // Anyone else on the call still takes a normal turn.
     const sharingFor = useBackseatStore.getState().sharingFor;
     const capture = sharingFor && parts.includes(sharingFor) ? backseatCapture() : null;
+    // 261106 reply_latency: the clock runs until the first audible clip. Only
+    // off-game turns that all return can call it silent (in-game replies come
+    // back over the push long after the send, and backseat's own loop owns
+    // its reply), so those wait for the give-up timer.
+    const inGame = parts.some(inGameNow);
+    replyClock.utterance(mySeq, inGame ? 'in_game' : 'app');
+    const directTurns: Promise<void>[] = [];
     for (const id of parts) {
       if (capture && id === sharingFor) {
         // Date the dispatch the way armTurnCapture would, so the reply arriving
@@ -1505,8 +1640,19 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // capture slot is single and the replies stream back through
       // onCompanionText, which speaks and mirrors them regardless (the first
       // responder to actually produce a line takes the floor there).
-      void runCompanionTurn(mySeq, id, { from: 'player', text }, 0, { capture: parts.length === 1 });
+      // 261112: only the companion whose line was cut hears this as an
+      // interruption; everyone else on the call gets a normal line.
+      const interrupted = cut && cut.speakerId === id ? { line: cut.line } : undefined;
+      directTurns.push(
+        runCompanionTurn(mySeq, id, { from: 'player', text, ...(interrupted ? { interrupted } : {}) }, 0, {
+          capture: parts.length === 1,
+        }),
+      );
     }
+    const settles = !inGame && !capture;
+    void Promise.allSettled(directTurns).then(() => {
+      if (settles) replyClock.settled(mySeq);
+    });
   }
 
   // Chat → voice seam: companion text lands here from BOTH reply paths (send()
@@ -1616,6 +1762,34 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     offTtsNotice =
       sei.onVoiceTtsNotice?.((push) => {
         if (!get().participants.length) return; // no call surface to show it on
+        if (push.kind === 'fish-fallback') {
+          if (fishNoticeReasons.has(push.reason)) return;
+          fishNoticeReasons.add(push.reason);
+        }
+        // 261120: once per reason per call (main reports the failure class).
+        if (push.kind === 'fish-cloud-fallback') {
+          const key = `fish-cloud:${push.reason}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
+        }
+        // 261110: once per call, whatever the reason.
+        if (push.kind === 'sei-voices-fallback') {
+          if (fishNoticeReasons.has('sei-voices')) return;
+          fishNoticeReasons.add('sei-voices');
+          // Playtime funnel (261110): the free Sei voices ran out (or failed)
+          // and the call fell back to on-device voices. Once per call.
+          sei.track('voice_trial_state', {
+            state: push.reason === 'no-credits' ? 'used_up' : 'fallback',
+            reason: push.reason,
+          });
+        }
+        // 261119: once per companion per call (shape only, no voice name).
+        if (push.kind === 'library-voice-unavailable') {
+          const key = `library:${push.characterId}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
+          sei.track('library_voice_fallback', { surface: 'call' });
+        }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;
   } catch {
@@ -1691,6 +1865,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const dialStart = Date.now();
       liveSince.clear();
       interruptStats.reset();
+      cutTracker.clear();
+      replyClock.reset();
       pendingTts = 0;
       pendingCompanionLines = [];
       remoteEndAt = null;
@@ -1818,10 +1994,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // Echo gate: this exact text is now coming out of the speakers, so
           // the mic hearing these words back is her, not the player.
           if (text) noteAudibleLine(text);
+          replyClock.audible();
           dictation?.armBargeGrace();
         },
       );
       queue.setOutputMuted(useUiStore.getState().callDeafened);
+      sentenceTts = createSentenceTts(queue, (request) => sei.voiceTts(request), () => session === mySession);
 
       // 260709: conversation language — picks the local Whisper model
       // (English-only tiny.en vs multilingual base) and pins its decode
@@ -1833,7 +2011,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // local Whisper worker boots at all, and whether cloud Scribe is wired.
       const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
-      const chatLanguage = callCfg?.chat_language ?? 'en';
+      // 261116: the player's language (chat_language, else the UI language).
+      const chatLanguage = userChatLanguage(callCfg);
       // Local TTS route (260816): the same read decides how this call's clips
       // are synthesized. See localTtsCall.
       // 260908: BYOK on the ElevenLabs engine with NO key stored also counts —
@@ -1848,9 +2027,23 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         /* status read failed → assume absent, which only costs streaming */
       }
       if (session !== mySession) return;
+      // 261110: "Sei voices" with the ChatGPT brain streams the proxy's mp3
+      // like a cloud call; a line it cannot speak arrives as one on-device
+      // WAV chunk, which the stream player sniffs (seiVoicesCall).
+      seiVoicesCall = seiVoicesActive(callCfg);
       localTtsCall =
+        !seiVoicesCall &&
         (callCfg?.ai_backend_kind ?? 'cloud-proxy') === 'local' &&
         (callCfg?.tts_engine === 'local' || !elevenKeyPresent);
+      // 261102: Kokoro lines go sentence by sentence (slower synthesis, so
+      // the first sentence plays while the next one generates).
+      kokoroTtsCall = localTtsCall && localTtsModel(callCfg) === 'kokoro';
+      // 261103: Fish Audio only when it is really the engine (tts_engine
+      // 'local'), not the no-ElevenLabs-key fallback above.
+      fishTtsCall =
+        localTtsCall && callCfg?.tts_engine === 'local' && localTtsModel(callCfg) === 'fish';
+      fishOverrideIds = new Set(fishTtsCall ? Object.keys(callCfg?.fish_voice_overrides ?? {}) : []);
+      fishNoticeReasons.clear();
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is
@@ -1988,6 +2181,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           onBargeIn: () => {
             if (session !== mySession) return;
             interruptStats.note('cuts');
+            // 261112: remember whose line was audible (read before
+            // cutCompanions clears the caption), so the words that cut it
+            // reach that companion marked as an interruption.
+            {
+              const s = get();
+              const speaker = s.speaking ? s.speakingId : null;
+              cutTracker.note(speaker, s.lastSpokenId === speaker ? s.lastSpoken : '', Date.now());
+            }
             cutCompanions();
           },
           // 261030: during a share the room floor is mostly the game's audio,
@@ -2209,6 +2410,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       const bs = useBackseatStore.getState();
       if (bs.sharingFor) void bs.stopSharing(backseatReasonForCallEnd(reason));
       directorSeq++; // cancel any running companion chain (bump + clear travel together)
+      replyClock.end();
       clearTurnCapture();
       speakerOriginSeq.clear();
       lastReactorId = null;

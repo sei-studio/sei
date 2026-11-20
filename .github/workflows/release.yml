@@ -20,6 +20,12 @@ on:
 permissions:
   contents: write
 
+
+# onnxruntime-node's postinstall tries to fetch Linux CUDA binaries from GitHub; the v1.21.0 asset
+# now 404s and Sei never uses the CUDA provider, so skip it.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   build:
     strategy:
@@ -51,6 +57,29 @@ jobs:
         env:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
+
+      # 261116: fail in seconds, not after a 45-minute signed build, when the
+      # unbundled bot (src/bot/**) or a vendored file: dep has an import plain
+      # Node ESM rejects at link time (v0.7.0-beta.5: the bot never loaded).
+      - name: ESM link check (unbundled runtime code)
+        run: npm run check:esm
+
+      # 261104 SeiLink desktop host addon (native/seilink): mac universal, win x64,
+      # into resources/seilink (electron-builder extraResources). predist runs the
+      # same script again and finds it up to date. Not fatal while SeiLink is behind
+      # its dev flag: a failed compile ships without the addon and leaves a warning.
+      - name: SeiLink desktop host addon
+        env:
+          npm_config_python: ${{ steps.setup-python.outputs.python-path }}
+        shell: bash
+        run: |
+          node scripts/build-seilink-addon.mjs
+          if [ -f resources/seilink/seilink.node ]; then
+            ls -la resources/seilink/
+            if [ "$RUNNER_OS" = "macOS" ]; then lipo -info resources/seilink/seilink.node; fi
+          else
+            echo "::warning::SeiLink addon missing: this build ships without the desktop host"
+          fi
 
       - name: Dry run settings
         if: inputs.dry_run
@@ -169,6 +198,31 @@ jobs:
           # builder's CI default publishes on a tag or onto an existing draft).
           if [ "$DRY_RUN" = true ]; then extra+=( --publish never ); fi
 
+          # 261031 (T278): bake the release channel (electron.vite.config.ts,
+          # src/main/analyticsContext.ts). Only a real tag build is stable or
+          # beta; a dry run or a manual run stays unbaked, which the app reads
+          # as a test build and sends no analytics from.
+          if [ "$DRY_RUN" != true ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            # The app reads a beta bake with a non-beta version (or a stable
+            # bake with a beta version) as 'test' and sends nothing, so a tag
+            # and package.json that disagree fail here, before the build.
+            pkg_version=$(node -p "require('./package.json').version")
+            tag_beta=false; pkg_beta=false
+            case "$GITHUB_REF_NAME" in *-beta.*) tag_beta=true ;; esac
+            case "$pkg_version" in *-beta.*) pkg_beta=true ;; esac
+            if [ "$tag_beta" != "$pkg_beta" ]; then
+              echo "::error::tag $GITHUB_REF_NAME and package.json version $pkg_version disagree on -beta.: this release would send no analytics"
+              exit 1
+            fi
+            case "$GITHUB_REF_NAME" in
+              *-beta*) export SEI_RELEASE_CHANNEL="sei-channel=beta" ;;
+              *-*) export SEI_RELEASE_CHANNEL= ;;
+              *) export SEI_RELEASE_CHANNEL="sei-channel=stable" ;;
+            esac
+          else
+            export SEI_RELEASE_CHANNEL=
+          fi
+
           npm run ${{ matrix.build_cmd }} -- "${extra[@]}"
 
           if [ -n "$SEI_WIN_PUBLISHER" ]; then
@@ -179,6 +233,16 @@ jobs:
               exit 1
             fi
             echo "Velopack signature check baked in for publisher '$SEI_WIN_PUBLISHER'"
+          fi
+
+          if [ -n "$SEI_RELEASE_CHANNEL" ]; then
+            # A release whose bundle lacks the channel would send no analytics
+            # at all: fail it here rather than find out from an empty dashboard.
+            if ! grep -rqF -- "$SEI_RELEASE_CHANNEL" dist/main; then
+              echo "::error::SEI_RELEASE_CHANNEL '$SEI_RELEASE_CHANNEL' is not in dist/main: this release would send no analytics"
+              exit 1
+            fi
+            echo "Release channel baked in: $SEI_RELEASE_CHANNEL"
           fi
 
       - name: Build game packs

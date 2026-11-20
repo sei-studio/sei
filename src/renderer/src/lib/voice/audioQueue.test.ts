@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAudioQueue } from './audioQueue';
+import { createSentenceTts } from './sentenceTts';
 
 class FakeAudio {
   static instances: FakeAudio[] = [];
@@ -70,6 +71,36 @@ function playingQueue() {
   expect(el.paused).toBe(false);
   return { q, el, onSpeak };
 }
+
+describe('Kokoro sentences through the real audio queue', () => {
+  it('plays and captions sentence one before sentence two finishes, then clears pending synthesis', async () => {
+    const audible = vi.fn();
+    const q = createAudioQueue(vi.fn(), audible);
+    let resolveSecond!: (buf: ArrayBuffer) => void;
+    const second = new Promise<ArrayBuffer>((resolve) => { resolveSecond = resolve; });
+    const synthesize = vi.fn().mockResolvedValueOnce(new TextEncoder().encode('RIFFtest').buffer)
+      .mockReturnValueOnce(second);
+    const heard = vi.fn();
+    const speak = createSentenceTts(q, synthesize, () => true);
+    const generation = speak({ characterId: 'sui', text: 'Hello Marco. Second sentence. Third sentence.' }, {
+      rate: 1, onDone: heard, onError: vi.fn(),
+    });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    const first = FakeAudio.instances.at(-1)!;
+    expect(first.src).toBe('blob:fake');
+    expect(first.paused).toBe(false);
+    first.dispatch('playing');
+    expect(audible).toHaveBeenCalledWith('sui', 'Hello Marco.');
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    q.clear();
+    resolveSecond(new TextEncoder().encode('RIFFlate').buffer);
+    await generation;
+    expect(q.speaking()).toBe(false);
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    expect(heard).toHaveBeenCalledExactlyOnceWith(false);
+    q.stop();
+  });
+});
 
 describe('audioQueue barge-in fade', () => {
   it('clear() flips the queue idle immediately but fades the clip before pausing it', async () => {
@@ -460,5 +491,68 @@ describe('audioQueue playhead stale check (261010)', () => {
     const q = createAudioQueue(onSpeak);
     clip(q, 'fresh line.', () => false);
     expect(said(onSpeak)).toEqual(['fresh line.']);
+  });
+});
+
+describe('audioQueue container sniff (261103 Fish Audio fallback)', () => {
+  class FakeMediaSource {
+    static instances: FakeMediaSource[] = [];
+    static isTypeSupported(): boolean { return true; }
+    readyState = 'closed';
+    constructor() { FakeMediaSource.instances.push(this); }
+    addEventListener(): void {}
+    removeEventListener(): void {}
+  }
+  let urls: unknown[];
+  beforeEach(() => {
+    FakeMediaSource.instances = [];
+    urls = [];
+    vi.stubGlobal('MediaSource', FakeMediaSource);
+    vi.stubGlobal('URL', {
+      createObjectURL: (o: unknown) => { urls.push(o); return 'blob:fake'; },
+      revokeObjectURL: () => {},
+    });
+  });
+  const riff = (): ArrayBuffer => new Uint8Array([0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4]).buffer;
+  const mp3 = (): ArrayBuffer => new Uint8Array([0xff, 0xf3, 1, 2]).buffer;
+
+  it('a sniffing stream whose first chunk is WAV plays one WAV Blob, never MediaSource', () => {
+    const onSpeak = vi.fn();
+    const q = createAudioQueue(onSpeak);
+    const h = q.enqueueStream('sui', 'fallback line', 1, { sniff: true });
+    expect(urls).toEqual([]); // waiting for the first chunk
+    expect(onSpeak).toHaveBeenCalledWith(true, 'sui', 'fallback line');
+    h.push(riff());
+    h.end();
+    expect(FakeMediaSource.instances).toHaveLength(0);
+    expect(urls).toHaveLength(1);
+    expect((urls[0] as Blob).type).toBe('audio/wav');
+    expect(FakeAudio.instances.at(-1)!.paused).toBe(false);
+  });
+
+  it('a sniffing stream of mp3 goes through MediaSource as before', () => {
+    const q = createAudioQueue(vi.fn());
+    const h = q.enqueueStream('sui', 'fish line', 1, { sniff: true });
+    h.push(mp3());
+    expect(FakeMediaSource.instances).toHaveLength(1);
+    expect(urls[0]).toBe(FakeMediaSource.instances[0]);
+  });
+
+  it('without sniff a stream opens MediaSource at once (ElevenLabs path unchanged)', () => {
+    const q = createAudioQueue(vi.fn());
+    q.enqueueStream('sui', 'eleven line', 1);
+    expect(FakeMediaSource.instances).toHaveLength(1);
+  });
+
+  it('clear() while sniffing drops the slot; late bytes are ignored', () => {
+    const onDone = vi.fn();
+    const q = createAudioQueue(vi.fn());
+    const h = q.enqueueStream('sui', 'never heard', 1, { sniff: true, onDone });
+    q.clear();
+    h.push(riff());
+    h.end();
+    expect(urls).toEqual([]);
+    expect(onDone).toHaveBeenCalledWith(false);
+    expect(q.speaking()).toBe(false);
   });
 });

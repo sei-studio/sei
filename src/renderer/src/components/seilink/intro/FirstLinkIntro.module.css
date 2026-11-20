@@ -1,0 +1,248 @@
+/**
+ * The first-link intro (261105, T337; 261106 the eclipse aurora). Dark
+ * while the light plays, whatever the app theme: it is a cinematic over the whole window (on the
+ * first link, the whole screen), not a panel. Its few colours are defined
+ * once here (the periwinkle is the app's accent hue, #7fb0ff); fonts, corners
+ * and easing come from tokens.css. Every moving value is written per frame
+ * from FirstLinkIntroView's timeline, so nothing here animates by itself.
+ * No hard lines anywhere: the light is gradients on small upscaled canvases,
+ * dithered by a still grain tile so the slow dark gradients never band. It
+ * ends on the plain colour (black or white with the OS theme) or her room.
+ */
+
+.root {
+  --fl-glow: 127 176 255;
+  --fl-ink: #f4f7ff;
+  position: fixed;
+  inset: 0;
+  z-index: 4500;
+  overflow: hidden;
+  background: #02030a;
+  color: var(--fl-ink);
+  user-select: none;
+  contain: strict;
+}
+
+.void {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * The light canvases: a sixth of the screen, stretched smooth. They bleed
+ * 12px past every edge: melt's blur pulls transparency in from the canvas
+ * edge, which stretched shows as a dark rim once the peak's light runs edge
+ * to edge (about 1% of scale, invisible elsewhere).
+ */
+.fx {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  width: calc(100% + 24px);
+  height: calc(100% + 24px);
+  pointer-events: none;
+  image-rendering: auto;
+}
+
+/* A still grain over the dark (a seeded noise tile at a few 8-bit steps): dithers the gradients. */
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-repeat: repeat;
+  opacity: 1;
+}
+
+/*
+ * The solid colour (261106 v5): the theme's plain colour (set inline: white in
+ * light mode, black in dark) over the whole picture, under the HUD (Close
+ * stays). The intro opens out of it and the climax fills the screen with it.
+ * Opacity per frame.
+ */
+.solid {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  display: none;
+  pointer-events: none;
+}
+
+/* Her room: its canvases (direct layers of the scene) fade and open in a soft circle; she is not masked. */
+.room {
+  --fl-room: 0;
+  --fl-mask: none;
+  position: absolute;
+  inset: 0;
+}
+
+/* RoomCanvas paints black behind its scene; here the light shows through until the room opens. */
+.room > div {
+  background: transparent;
+}
+
+.room > div > div > canvas {
+  opacity: var(--fl-room);
+  mask-image: var(--fl-mask);
+  -webkit-mask-image: var(--fl-mask);
+}
+
+/* The plain background she spawns on: the whole screen settles into it (the colour is set inline, PLAIN_COLOURS). */
+.room > .plain {
+  position: absolute;
+  inset: 0;
+  opacity: var(--fl-room);
+}
+
+.avatarWrap {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  opacity: 0;
+  will-change: opacity, filter, transform;
+}
+
+/* HUD: one layer, so the end can fade the captions and keep the picture. */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/*
+ * The HUD's text reads on two pictures: the light (dark, with bright bands)
+ * and what it ends on (white plain background, a light room). --fl-day (0..1, written per frame
+ * on each piece from how much of her room is behind it: roomBehind)
+ * crossfades between them: light ink over a soft dark cloud while the light
+ * plays, deep ink over a soft white cloud once her room is behind the text.
+ * Clouds and glows only (feathered radial masks): no boxes, no borders.
+ */
+.caption,
+.skip {
+  --fl-day: 0;
+  --fl-d: calc(var(--fl-day) * 100%);
+  --fl-text: color-mix(in srgb, rgb(18 24 46) var(--fl-d), rgb(244 247 255));
+  --fl-text-dim: color-mix(in srgb, rgba(30 38 66 / 0.92) var(--fl-d), rgba(232 238 252 / 0.86));
+  --fl-halo: color-mix(in srgb, rgba(255 255 255 / 0.95) var(--fl-d), rgba(var(--fl-glow) / 0.55));
+  --fl-drop: color-mix(in srgb, rgba(255 255 255 / 0.85) var(--fl-d), rgba(0 0 0 / 0.75));
+  --fl-cloud: color-mix(in srgb, rgba(250 251 255 / 0.86) var(--fl-d), rgba(4 6 16 / 0.62));
+  --fl-feather: radial-gradient(closest-side, #000 0%, rgba(0, 0, 0, 0.85) 40%, rgba(0, 0, 0, 0.35) 72%, transparent 100%);
+}
+
+/* Centred on the screen (product feedback (261106)): the view sets the real top each frame (captionTop). */
+.caption {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(1100px, calc(100vw - 64px));
+  transform: translateX(-50%);
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/*
+ * The soft cloud behind the captions, feathered on every side, that also
+ * blurs what is behind it a little (the bright bands, the room's lines).
+ * Half strength over the light, full over her room.
+ */
+.captionGlow {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: -80px;
+  bottom: -70px;
+  z-index: -1;
+  opacity: calc(0.5 + 0.5 * var(--fl-day));
+  background: var(--fl-cloud);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  mask-image: var(--fl-feather);
+  -webkit-mask-image: var(--fl-feather);
+  pointer-events: none;
+}
+
+/* One status line at a time: the old and the new line share one cell and crossfade. */
+.lines {
+  display: grid;
+  justify-items: center;
+  align-items: center;
+  width: 100%;
+}
+
+.lines > .line {
+  grid-area: 1 / 1;
+}
+
+.line {
+  margin: 0;
+  max-width: 100%;
+  min-height: 1.3em;
+  font-family: var(--display);
+  font-size: clamp(20px, 2.6vh, 34px);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  color: var(--fl-text);
+  opacity: 0;
+  text-shadow:
+    0 0 22px var(--fl-halo),
+    0 2px 12px var(--fl-drop);
+  overflow-wrap: anywhere;
+}
+
+/* The letters still to come: laid out, not drawn, so a typing line keeps its full width and centre. */
+.rest {
+  visibility: hidden;
+}
+
+/* What screen readers hear: each whole line once (the drawn lines are letter by letter, so aria-hidden). */
+.live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Borderless, like every button (product rule); a soft halo keeps it off busy rooms. */
+.skip {
+  position: absolute;
+  right: 28px;
+  bottom: 26px;
+  appearance: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  background: color-mix(in srgb, rgba(250 251 255 / 0.82) var(--fl-d), rgba(4 6 16 / 0.55));
+  box-shadow: 0 0 26px 6px color-mix(in srgb, rgba(250 251 255 / 0.5) var(--fl-d), rgba(4 6 16 / 0.25));
+  color: var(--fl-text);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+
+.skip:hover,
+.skip:focus-visible {
+  background: color-mix(in srgb, rgba(255 255 255 / 0.96) var(--fl-d), rgba(24 30 52 / 0.82));
+  color: color-mix(in srgb, rgb(8 12 28) var(--fl-d), #ffffff);
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .skip {
+    right: 16px;
+    bottom: 16px;
+  }
+}

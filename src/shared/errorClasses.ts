@@ -68,6 +68,11 @@ export type ErrorClass =
   | 'DST_SPAWN_FAILED'
   | 'DST_PORT_IN_USE'
   | 'DST_BODY_DIED'
+  // 261104: a dead survivor is respawned beside the host, up to 3 times a
+  // session. These end it: the comebacks are used up, or she died right
+  // after coming back twice in a row (the spot keeps killing her).
+  | 'DST_DIED_TOO_OFTEN'
+  | 'DST_DANGEROUS_SPOT'
   // 260909: the helper runs ONE body per world. A second character's summon
   // used to replace the first (and, through a link-reset race, strand a
   // brainless survivor), so the supervisor refuses it and the launch panel
@@ -79,6 +84,12 @@ export type ErrorClass =
   // failing is a different fix from the mod copy failing.
   | 'STARDEW_FARMHAND_NO_MOD'
   | 'SMAPI_INSTALL_FAILED'
+  // 261104: SMAPI's failure by cause, so the copy names the fix.
+  // SMAPI_INSTALL_FAILED stays for the rest.
+  | 'SMAPI_NETWORK_FAILED'
+  | 'SMAPI_PERMISSION_DENIED'
+  | 'SMAPI_GAME_RUNNING'
+  | 'SMAPI_ANTIVIRUS_SUSPECTED'
   // 261010: local Ollama backend problems that used to leave the companion
   // silently mute in-game. Checked before the bot joins (botSupervisor) and
   // again by the brain mid-session (orchestrator.js).
@@ -99,7 +110,10 @@ export type ErrorClass =
   | 'CHATGPT_REQUEST_REJECTED'
   | 'CHATGPT_UNSUPPORTED'
   | 'CHATGPT_SIGNED_OUT'
-  | 'CHATGPT_PLAN_DISABLED';
+  | 'CHATGPT_PLAN_DISABLED'
+  // 261103 (T303): a BYOK provider refused the caller's region (the brain
+  // stops on it, orchestrator.js). The message carries the provider name.
+  | 'PROVIDER_REGION_UNSUPPORTED';
 
 export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'BOT_START_TIMEOUT',
@@ -136,9 +150,15 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'DST_SPAWN_FAILED',
   'DST_PORT_IN_USE',
   'DST_BODY_DIED',
+  'DST_DIED_TOO_OFTEN',
+  'DST_DANGEROUS_SPOT',
   'DST_ONE_COMPANION',
   'STARDEW_FARMHAND_NO_MOD',
   'SMAPI_INSTALL_FAILED',
+  'SMAPI_NETWORK_FAILED',
+  'SMAPI_PERMISSION_DENIED',
+  'SMAPI_GAME_RUNNING',
+  'SMAPI_ANTIVIRUS_SUSPECTED',
   'OLLAMA_NOT_RUNNING',
   'OLLAMA_MODEL_MISSING',
   'OLLAMA_MODEL_NO_TOOLS',
@@ -150,4 +170,5 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CHATGPT_UNSUPPORTED',
   'CHATGPT_SIGNED_OUT',
   'CHATGPT_PLAN_DISABLED',
+  'PROVIDER_REGION_UNSUPPORTED',
 ]);

@@ -31,6 +31,7 @@ import { classifyConnectError } from './errors.js'
 import { mcUsernameFromName } from '../../names.js'
 import { bootMarks, markBoot } from '../../bootTiming.js'
 import { configurePovStackLoader, loadPovStack } from './render/povStackLoader.js'
+import { sessionActionStats } from '../../brain/actionStats.js'
 
 /**
  * The bot's MC login name must NOT collide with the LAN host's own player
@@ -100,6 +101,33 @@ export function visionWarmupWanted(config, brain) {
 
 const MAX_RECONNECT_ATTEMPTS = 3
 
+// 261111 (user feedback ae9a758e, two "world_closed" endings on a world that
+// was open again a minute later): the post-spawn liveness check was ONE status
+// ping with a 1.5s timeout. A drop often comes from the host stalling (no
+// keep-alive for 30s), and a host that just stalled can miss one short ping
+// too, which ended the session with "re-open the world to LAN". Now up to
+// three pings with growing timeouts (about 9.5s at most) before calling the
+// world closed.
+export const LIVENESS_PING_TIMEOUTS_MS = [1500, 2500, 3500]
+const LIVENESS_PING_GAP_MS = 1000
+// 261111: a drop after this long connected is not part of a kick loop, so the
+// rejoin budget starts over. A long session with a drop now and then used to
+// spend the 3 rejoins of the WHOLE session and then end.
+export const STABLE_CONNECTION_MS = 5 * 60_000
+
+/**
+ * True when any of the pings answers. Exported for tests.
+ * @param {() => Promise<unknown>} ping  one status ping with the given timeout
+ */
+export async function worldAnswers(ping, { timeouts = LIVENESS_PING_TIMEOUTS_MS, gapMs = LIVENESS_PING_GAP_MS, stopped = () => false } = {}) {
+  for (let i = 0; i < timeouts.length; i++) {
+    if (stopped()) return false
+    try { await ping(timeouts[i]); return true } catch { /* try again */ }
+    if (i < timeouts.length - 1 && gapMs > 0) await new Promise((r) => setTimeout(r, gapMs))
+  }
+  return false
+}
+
 /**
  * @param {object} config  Parsed bot config (config.adapter.kind === 'minecraft').
  * @param {import('../../brain/types.js').RuntimeHooks} hooks
@@ -125,6 +153,7 @@ export async function createRuntime(config, hooks) {
   // (the supervisor already gates on summonResolved, but belt-and-suspenders).
   let _readyFired = false
   let _reconnectAttempts = 0
+  let _lastSpawnAt = 0
 
   // Terminal failure → the composer emits the lifecycle error and shuts down.
   // `end` (260929): {endReason, kickCode} for a post-spawn drop, so main can
@@ -177,6 +206,7 @@ export async function createRuntime(config, hooks) {
         // for the surrounding lifecycle (summon-ready emit). Fires onConnected
         // the first time mineflayer's spawn event lands so the supervisor's
         // "Connecting…" → "Online" flip happens at the right moment.
+        _lastSpawnAt = Date.now()
         if (_readyFired) return
         _readyFired = true
         // A successful spawn means the server is reachable; reset the
@@ -309,6 +339,7 @@ export async function createRuntime(config, hooks) {
         //   - ping dead → the player really closed the world; terminal
         //     LAN_NOT_OPEN exactly as before.
         if (_readyFired) {
+          const droppedAt = Date.now()
           const deadBrain = _brain
           _brain = null
           try { onBrainLost() } catch {}
@@ -317,19 +348,19 @@ export async function createRuntime(config, hooks) {
               logger.warn(`brain stop after disconnect threw: ${err && err.message}`)
             }
             if (_stopped) return
-            let worldStillOpen = false
-            try {
-              await resolveServerVersion({
-                host: mc.host, port: mc.port, timeoutMs: 1500,
-                logger: { info: () => {} }, // quiet — this is a liveness probe, not version resolution
-              })
-              worldStillOpen = true
-            } catch { /* closed, unreachable, or version weirdness → terminal path */ }
+            // closed, unreachable, or version weirdness on every ping → terminal path
+            const worldStillOpen = await worldAnswers((timeoutMs) => resolveServerVersion({
+              host: mc.host, port: mc.port, timeoutMs,
+              logger: { info: () => {} }, // quiet — this is a liveness probe, not version resolution
+            }), { stopped: () => _stopped })
             if (_stopped) return
+            const noteDrop = (o) => { try { sessionActionStats.noteBodyDrop({ cls: info?.dropClass, ...o }) } catch {} }
 
             if (worldStillOpen) {
+              if (_lastSpawnAt && droppedAt - _lastSpawnAt >= STABLE_CONNECTION_MS) _reconnectAttempts = 0
               _reconnectAttempts += 1
               if (_reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                noteDrop({ rejoin: true })
                 logger.info(
                   `[sei] Kicked from the world but it is still open (${humanizedReason}) — ` +
                   `rejoining in ${mc.reconnect_delay_ms}ms ` +
@@ -345,6 +376,7 @@ export async function createRuntime(config, hooks) {
               }
               // Kick loop — the server keeps ejecting us. Give up with an
               // honest message (NOT "re-open your world": it IS open).
+              noteDrop({})
               _stopped = true
               logger.error(
                 `[sei] Kicked ${MAX_RECONNECT_ATTEMPTS} times by a world that is still open ` +
@@ -359,6 +391,7 @@ export async function createRuntime(config, hooks) {
               return
             }
 
+            noteDrop({ pingFailed: true })
             _stopped = true
             logger.info(
               `[sei] Lost connection to the LAN world (${humanizedReason}) — stopping. ` +

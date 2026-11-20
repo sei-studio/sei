@@ -345,7 +345,8 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     const localKind = await llmMod.localProviderKind();
     if (localKind !== 'anthropic') {
       try {
-        layerProvider = await llmMod.buildLocalProviderFor(localKind);
+        const { withUsageMeter } = await import('./usage/llmUsageLedger');
+        layerProvider = withUsageMeter(await llmMod.buildLocalProviderFor(localKind));
       } catch (err) {
         // e.g. LOCAL_NO_API_KEY for a key-needing provider — same failure
         // class as the missing-apiKey throw below, with the specific message.

@@ -23,7 +23,7 @@ import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './PortraitCropModal.module.css';
 
 // On-screen crop frame dimensions per shape. 'card' is the portrait card aspect
-// (210:312, the hero display); 'avatar' is a square frame with a circular cutout
+// (210:312, the hero display); 'avatar' is a square frame with an avatar-shaped cutout
 // (the round profile picture). Output stays ≤ 1024 on both axes (PORTRAIT_MAX_DIM).
 const FRAME_DIMS = {
   card: { w: 268, h: Math.round(268 * (312 / 210)) }, // 268 × 398
@@ -45,7 +45,7 @@ export interface PortraitCropModalProps {
   busy?: boolean;
   /**
    * Crop frame shape. 'card' (default) = 210:312 portrait for character images;
-   * 'avatar' = a square frame with a circular cutout for round profile pictures.
+   * 'avatar' = a square frame with an avatar-shaped (--radius square) cutout.
    */
   shape?: 'card' | 'avatar';
 }

@@ -42,32 +42,37 @@ export function skinButtonResultLine(outcome: SkinGenOutcome, name: string, t: T
   }
 }
 
-export function SkinGenerateButton({
-  character,
-  onChanged,
-}: {
-  character: Character;
-  onChanged: () => void;
-}): React.ReactElement | null {
+export interface SkinGenerateState {
+  /** The player may make this companion's skin (own, has a picture). */
+  visible: boolean;
+  /** No skin was ever made: "Make" rather than "Regenerate". */
+  firstSkin: boolean;
+  running: boolean;
+  /** The bot is in a world as this companion: the skin cannot change now. */
+  botOnline: boolean;
+  run: () => Promise<void>;
+  /** Result line of the last press (null = nothing to say). */
+  line: string | null;
+  ok: boolean;
+}
+
+/**
+ * The make / regenerate state for one companion, shared by this button and
+ * the profile's Minecraft skin row (261107).
+ */
+export function useSkinGenerate(character: Character, onChanged: () => void): SkinGenerateState {
   const t = useT();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<{ outcome: SkinGenOutcome } | { error: string } | null>(null);
   const botOnline = useDataStore((s) => s.summons[character.id]?.kind === 'online');
   const currentUserId = useAuthStore((s) => (s.state.kind === 'signed_in' ? s.state.user.id : null));
-  if (!character.portrait_image) return null;
   // Defaults and other people's characters wear their owner's skin.
-  if (!canGenerateSkin(character, currentUserId)) return null;
-
+  const visible = !!character.portrait_image && canGenerateSkin(character, currentUserId);
   // Never made yet (creation placeholder, or no skin): "Make". Otherwise a
   // new one replaces the current skin.
   const firstSkin = skinPendingOf(character) || character.skin.source === 'none';
-  const label = running
-    ? t('Making skin...')
-    : firstSkin
-      ? t('Make Minecraft skin (uses credits)')
-      : t('Regenerate skin (uses credits)');
 
-  const onClick = async (): Promise<void> => {
+  const run = async (): Promise<void> => {
     setRunning(true);
     setResult(null);
     try {
@@ -88,13 +93,32 @@ export function SkinGenerateButton({
         ? result.error
         : skinButtonResultLine(result.outcome, character.name, t);
   const ok = result != null && 'outcome' in result && result.outcome === 'generated';
+  return { visible, firstSkin, running, botOnline, run, line, ok };
+}
+
+export function SkinGenerateButton({
+  character,
+  onChanged,
+}: {
+  character: Character;
+  onChanged: () => void;
+}): React.ReactElement | null {
+  const t = useT();
+  const gen = useSkinGenerate(character, onChanged);
+  if (!gen.visible) return null;
+
+  const label = gen.running
+    ? t('Making skin...')
+    : gen.firstSkin
+      ? t('Generate Minecraft skin')
+      : t('Regenerate skin');
 
   return (
     <div data-slot="skin-generate">
-      <Button kind="ghost" size="sm" onClick={() => void onClick()} disabled={running || botOnline}>
+      <Button kind="ghost" size="sm" onClick={() => void gen.run()} disabled={gen.running || gen.botOnline}>
         {label}
       </Button>
-      {line ? <p className={ok ? styles.successCopy : styles.errorCopy}>{line}</p> : null}
+      {gen.line ? <p className={gen.ok ? styles.successCopy : styles.errorCopy}>{gen.line}</p> : null}
     </div>
   );
 }

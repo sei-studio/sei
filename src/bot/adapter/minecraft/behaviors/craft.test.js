@@ -7,6 +7,8 @@ import { craftAction, placeNote } from './craft.js'
 import { goTo } from './pathfind.js'
 
 vi.mock('./pathfind.js', () => ({ goTo: vi.fn(async () => 'reached') }))
+vi.mock('./place.js', () => ({ placeBlockAction: vi.fn(async () => 'placed crafting_table on grass_block @1,63,0') }))
+import { placeBlockAction } from './place.js'
 import { maxRepetitions, __resetCraftableCache } from '../observers/craftable.js'
 
 const require = createRequire(import.meta.url)
@@ -74,7 +76,7 @@ describe('craftAction', () => {
     const craft = vi.fn(async () => {})
     const bot = makeBot({ items: [{ name: 'oak_planks', count: 8 }], table: { name: 'crafting_table' }, craft })
     const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
-    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down)')
+    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down; it is down once that result says placed)')
     expect(craft).toHaveBeenCalledTimes(1)
   })
 
@@ -97,7 +99,7 @@ describe('craftAction', () => {
     // you have"; now the planks are made on the way.
     const bot = makeBot({ items: [{ name: 'oak_planks', count: 2 }, { name: 'oak_log', count: 6 }] })
     const res = await craftAction({ item: 'crafting_table' }, bot, {})
-    expect(res).toBe('crafted 1 crafting_table, made 4 oak_planks for it first; it is in your inventory, not placed yet (placeBlock crafting_table to put it down)')
+    expect(res).toBe('crafted 1 crafting_table, made 4 oak_planks for it first; it is in your inventory, not placed yet (placeBlock crafting_table to put it down; it is down once that result says placed)')
     expect(bot.craft).toHaveBeenCalledTimes(2)
   })
 
@@ -118,10 +120,62 @@ describe('craftAction', () => {
     expect(bot.craft).not.toHaveBeenCalled()
   })
 
-  it('says to place the table it is carrying when none is in reach (261011)', async () => {
-    const bot = makeBot({ items: [{ name: 'oak_planks', count: 8 }, { name: 'crafting_table', count: 1 }] })
+  // 261108 (pass 46): a table in the bag is put down instead of walking far.
+  // `tables` lists world tables; findBlock honours maxDistance like mineflayer.
+  function withTables(bot, tables) {
+    bot.findBlock = ({ matching, maxDistance }) => {
+      if (matching !== blockId('crafting_table')) return null
+      const p = bot.entity.position
+      return tables.find((t) => Math.hypot(t.position.x - p.x, t.position.y - p.y, t.position.z - p.z) <= maxDistance) ?? null
+    }
+    return bot
+  }
+  const carried = [{ name: 'oak_planks', count: 8 }, { name: 'crafting_table', count: 1 }]
+
+  it('puts down the table it is carrying when none is in reach, then crafts (261108)', async () => {
+    goTo.mockClear(); placeBlockAction.mockClear()
+    const tables = []
+    const bot = withTables(makeBot({ items: carried }), tables)
+    placeBlockAction.mockImplementationOnce(async () => {
+      tables.push({ name: 'crafting_table', position: { x: 1, y: 64, z: 0 } })
+      return 'placed crafting_table on grass_block @1,63,0'
+    })
     const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
-    expect(res).toMatch(/You have one in your inventory: place it/)
+    expect(placeBlockAction).toHaveBeenCalledWith({ block: 'crafting_table' }, bot, {})
+    expect(goTo).not.toHaveBeenCalled()
+    expect(res).toMatch(/^crafted 1 chest; put down your crafting_table at 1,64,0 to craft at/)
+  })
+
+  it('puts the carried table down rather than walking to a far one (261108)', async () => {
+    goTo.mockClear(); placeBlockAction.mockClear()
+    const tables = [{ name: 'crafting_table', position: { x: 14, y: 64, z: 0 } }]
+    const bot = withTables(makeBot({ items: carried }), tables)
+    placeBlockAction.mockImplementationOnce(async () => {
+      tables.push({ name: 'crafting_table', position: { x: 1, y: 64, z: 0 } })
+      return 'placed crafting_table on grass_block @1,63,0'
+    })
+    const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
+    expect(goTo).not.toHaveBeenCalled()
+    expect(res).toMatch(/^crafted 1 chest; put down your crafting_table/)
+  })
+
+  it('still walks to a table a few steps away when carrying one (261108)', async () => {
+    goTo.mockClear(); placeBlockAction.mockClear()
+    const bot = withTables(makeBot({ items: carried }), [{ name: 'crafting_table', position: { x: 6, y: 64, z: 0 } }])
+    goTo.mockImplementationOnce(async () => { bot.entity.position = { x: 4, y: 64, z: 0 }; return 'reached' })
+    const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
+    expect(goTo).toHaveBeenCalledTimes(1)
+    expect(placeBlockAction).not.toHaveBeenCalled()
+    expect(res).toMatch(/^crafted 1 chest; it is in your inventory/)
+  })
+
+  it('says so when the carried table cannot be put down (261108)', async () => {
+    placeBlockAction.mockClear()
+    const bot = withTables(makeBot({ items: carried }), [])
+    placeBlockAction.mockImplementationOnce(async () => "couldn't place crafting_table: no open spot in reach.")
+    const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
+    expect(res).toMatch(/^can't craft chest: it needs a crafting table and putting down the one in your inventory failed \(couldn't place crafting_table: no open spot in reach\.\)/)
+    expect(bot.craft).not.toHaveBeenCalled()
   })
 
   it('names the missing count for one ingredient of a multi-ingredient recipe', async () => {
@@ -151,7 +205,7 @@ describe('craftAction', () => {
     goTo.mockImplementationOnce(async () => { walked = true; return 'reached' })
     const res = await craftAction({ item: 'chest', count: 1 }, bot, {})
     expect(goTo).toHaveBeenCalledWith(bot, 8, 64, 0, 2, expect.any(Number), undefined, { reach: 3.5 })
-    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down)')
+    expect(res).toBe('crafted 1 chest; it is in your inventory, not placed yet (placeBlock chest to put it down; it is down once that result says placed)')
   })
 })
 

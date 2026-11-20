@@ -692,3 +692,32 @@ describe('checkout watch (beginPurchase / dismissCheckout)', () => {
     expect(store.getState().checkoutStatus).toBe('confirmed');
   });
 });
+
+// 261120 (capNotices.ts): a depleted wall main still holds is shown by a
+// window that mounts after it, and closing the modal tells main to drop it.
+describe('useCreditsStore pending wall replay', () => {
+  it('init() shows a wall main kept, acknowledgeHardStop() acks it', async () => {
+    creditsGetMock.mockResolvedValue(status({ usage_pct: 100 }));
+    const ack = vi.fn(async () => undefined);
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.creditsHardStopPending = vi.fn(async () => ({ reason: 'depleted' }));
+    w.sei.creditsHardStopAck = ack;
+    const store = await loadStore();
+    await store.getState().init();
+    await vi.waitFor(() => expect(store.getState().hardStopActive).toBe(true));
+    expect(store.getState().hardStopReason).toBe('depleted');
+    store.getState().acknowledgeHardStop();
+    expect(store.getState().hardStopActive).toBe(false);
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('nothing pending (or an older main without the call): no wall', async () => {
+    creditsGetMock.mockResolvedValue(status({ usage_pct: 20 }));
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.creditsHardStopPending = vi.fn(async () => null);
+    const store = await loadStore();
+    await store.getState().init();
+    await Promise.resolve();
+    expect(store.getState().hardStopActive).toBe(false);
+  });
+});

@@ -19,6 +19,7 @@
  */
 
 import type { PlanTier, PricingCatalog } from '@shared/ipc';
+import { t, uiLanguage } from './i18n';
 
 export interface PlanCard {
   tier: PlanTier;
@@ -150,9 +151,56 @@ export function planCard(cards: readonly PlanCard[], tier: PlanTier): PlanCard {
   return cards.find((p) => p.tier === tier) ?? cards[0] ?? PLANS[0];
 }
 
-/** "Quest" / "Party" / "Free". */
+/**
+ * "Quest" / "Party" / "Free", in the UI language (261104). Quest and Party are
+ * brand names and stay as they are; Free is a word, so it is translated when
+ * the catalog still calls it Free. A renamed plan shows the server's name.
+ */
+export function planDisplayName(card: PlanCard): string {
+  return card.tier === 'free' && card.name === 'Free' ? t('Free') : card.name;
+}
+
+/** planDisplayName by tier. */
 export function planName(cards: readonly PlanCard[], tier: PlanTier): string {
-  return planCard(cards, tier).name;
+  return planDisplayName(planCard(cards, tier));
+}
+
+/**
+ * "Free plan" / "Quest plan". Free gets its own key because the translated
+ * word does not fit the "{name} plan" frame ("Тариф Бесплатный").
+ */
+export function planLabel(cards: readonly PlanCard[], tier: PlanTier): string {
+  const card = planCard(cards, tier);
+  return card.tier === 'free' && card.name === 'Free' ? t('Free plan') : t('{name} plan', { name: card.name });
+}
+
+/**
+ * The plan card's positioning line in the UI language. The blurb arrives in
+ * English from the server catalog (or the bundled fallback), and the i18n key
+ * IS the English string, so a known blurb is translated and a retuned one the
+ * dictionaries do not know yet shows as sent.
+ */
+export function planBlurb(card: PlanCard): string {
+  return t(card.blurb);
+}
+
+/** Server top up lines look like "800 credits" or "3200 credits + 400 bonus". */
+const CREDITS_LINE = /^(\d[\d,]*) credits(?: \+ (\d[\d,]*) bonus)?$/;
+
+/**
+ * A top up card's credits line in the UI language (261104). Either shape
+ * above is rebuilt from its numbers; anything else (a free-form server
+ * blurb) goes through t() and shows as sent when the dictionaries lack it.
+ * Outside English the count is shown without digit grouping.
+ */
+export function topUpCreditsLine(credits: string): string {
+  // English shows the line exactly as the catalog has it ("10,000 credits").
+  if (uiLanguage() === 'en') return credits;
+  const m = CREDITS_LINE.exec(credits.trim());
+  if (!m) return t(credits);
+  const n = Number(m[1].replace(/,/g, ''));
+  if (m[2] === undefined) return t('{n} credits', { n });
+  return t('{n} credits + {bonus} bonus', { n, bonus: Number(m[2].replace(/,/g, '')) });
 }
 
 /** "$8.00" for a paid tier, null for Free. */

@@ -28,6 +28,8 @@ export interface StardewWatcherDeps {
   /** Re-read the port every N polls. */
   portRefreshPolls?: number;
   logger?: { info: (m: string) => void; warn: (m: string) => void };
+  /** Every state change, before the listener (261104: setup telemetry). */
+  onChange?: (next: StardewWorldState, prev: StardewWorldState) => void;
 }
 
 export const STARDEW_POLL_INTERVAL_MS = 3000;
@@ -95,7 +97,9 @@ export function createStardewWatcher(deps: StardewWatcherDeps): GameWatcher & { 
       if (next.kind === 'open' && latest.kind === 'open') latest = next; // refresh lastSeenAt
       return;
     }
+    const prev = latest;
     latest = next;
+    try { deps.onChange?.(next, prev); } catch { /* telemetry must not kill the poll */ }
     try { onUpdate?.({ game: 'stardew', ...next }); } catch { /* listener error must not kill the poll */ }
   };
 

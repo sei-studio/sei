@@ -21,6 +21,12 @@ import { ZH_GAMES } from './zh/games';
 import { ZH_MISC } from './zh/misc';
 import { ZH_DONTSTARVE } from './zh/dontstarve';
 import { ZH_STARDEW } from './zh/stardew';
+import { ZH_GAPS_261104 } from './zh/gaps261104';
+import { ZH_SEILINK } from './zh/seilink';
+import { ZH_SETUP_261104 } from './zh/setup261104';
+import { ZH_AVATARS_261106 } from './zh/avatars261106';
+import { ZH_PROFILE_261107 } from './zh/profile261107';
+import { ZH_PLAYTIME_261110 } from './zh/playtime261110';
 
 export const ZH: Record<string, string> = {
   ...ZH_COMMON,
@@ -33,6 +39,12 @@ export const ZH: Record<string, string> = {
   ...ZH_MISC,
   ...ZH_DONTSTARVE,
   ...ZH_STARDEW,
+  ...ZH_GAPS_261104,
+  ...ZH_SEILINK,
+  ...ZH_SETUP_261104,
+  ...ZH_AVATARS_261106,
+  ...ZH_PROFILE_261107,
+  ...ZH_PLAYTIME_261110,
 
   // W5 settings (china-compat)
   // Model picker + Test probe (SettingsScreen)
@@ -70,6 +82,45 @@ export const ZH: Record<string, string> = {
     '未连接 Sei 云端，也没有 ElevenLabs 密钥。自定义语音将无法播放。本地语音包仍可正常使用。',
   'English voices, female and male': '英语语音，女声和男声',
   'Chinese voices, female and male': '中文语音，女声和男声',
+  // 261102: Local voice choice (Fast = the original packs, or Kokoro).
+  'Kokoro voices': 'Kokoro 语音',
+  'Local voice': '本地语音',
+  'About local voices': '关于本地语音',
+  'Fast': '快速',
+  "Fast voices start speaking right away and come in English and Chinese. Kokoro sounds more natural but takes longer to speak, and speaks English, Spanish and French. Other languages use the Fast voices. Fish Audio is an online service that needs your own free Fish Audio key. It sends your companions' lines to Fish Audio.":
+    '快速语音能立刻开口，提供英语和中文。Kokoro 听起来更自然，但开口要慢一些，支持英语、西班牙语和法语。其他语言使用快速语音。Fish Audio 是在线服务，需要你自己的免费 Fish Audio 密钥，会把伙伴要说的话发送给 Fish Audio。',
+  'Kokoro speaks English, Spanish and French. Companions in other languages use the Fast voices.':
+    'Kokoro 支持英语、西班牙语和法语。使用其他语言的伙伴会使用快速语音。',
+  'Kokoro sounds more natural but is slower.': 'Kokoro 听起来更自然，但速度较慢。',
+  // 261103 Fish Audio local voice (Settings + Edit companion)
+  'Fish Audio (online, free API key)': 'Fish Audio（在线，免费 API 密钥）',
+  'If Fish Audio cannot speak a line, the Fast voices below speak it.': '如果 Fish Audio 无法朗读某句话，会改用下方的快速语音。',
+  'Fish Audio key': 'Fish Audio 密钥',
+  'Your Fish Audio key': '你的 Fish Audio 密钥',
+  'Fish Audio works.': 'Fish Audio 可以正常使用。',
+  "Fish Audio is an online service. Sei uses its free model and sends your companions' lines to Fish Audio to be spoken.":
+    'Fish Audio 是在线服务。Sei 使用它的免费模型，并把伙伴要说的话发送给 Fish Audio 朗读。',
+  'Get a free key': '获取免费密钥',
+  'Add your Fish Audio key first.': '请先添加你的 Fish Audio 密钥。',
+  'Fish Audio rejected this key.': 'Fish Audio 拒绝了这个密钥。',
+  'Fish Audio refused the free model. It may have ended, or your account needs credit.':
+    'Fish Audio 拒绝了免费模型。免费模型可能已结束，或你的账户需要充值。',
+  'Fish Audio is busy. Try again in a moment.': 'Fish Audio 正忙，请稍后再试。',
+  'That voice was not found on Fish Audio.': '在 Fish Audio 上找不到这个声音。',
+  'That is not a Fish Audio voice link.': '这不是 Fish Audio 的声音链接。',
+  'Could not reach Fish Audio. Check your connection.': '无法连接 Fish Audio。请检查网络。',
+  'Fish Audio voice': 'Fish Audio 声音',
+  'Automatic': '自动',
+  'Preview': '试听',
+  'Use automatic': '改回自动',
+  'Paste a fish.audio voice link or id': '粘贴 fish.audio 声音链接或 ID',
+  'Fish Audio voice link': 'Fish Audio 声音链接',
+  'Use voice': '使用此声音',
+  'This voice plays without the pitch setting. It is saved right away.': '这个声音不使用音调设置，选择后立即保存。',
+  'Sei picks a Fish Audio voice that matches this companion. Paste a voice link to choose your own.':
+    'Sei 会为这位伙伴挑选匹配的 Fish Audio 声音。粘贴声音链接即可自己选择。',
+  'Their own Fish Audio voice plays without the pitch setting.': '他们自己的 Fish Audio 声音不使用音调设置。',
+  'It is a {mb} MB download.': '需要下载 {mb} MB。',
   'Downloading… {pct}%': '下载中… {pct}%',
   'Ready': '已就绪',
   'Download…': '下载…',
@@ -137,4 +188,8 @@ export const ZH: Record<string, string> = {
   'Downloading... {pct}%': '下载中……{pct}%',
   // 'The download failed...' lives in common.ts (shared with the chess panel).
   'You can keep going; it finishes in the background.': '可以继续下一步，下载会在后台完成。',
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "语音提供方",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[已用 Sei 声音朗读，请在游玩时长中添加你的 Fish Audio 密钥]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[已用 Sei 声音朗读，Fish Audio 未能朗读这句话]",
 };

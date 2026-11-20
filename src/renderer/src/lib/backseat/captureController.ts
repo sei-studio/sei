@@ -44,6 +44,7 @@ import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
 import { blockMaxDelta } from './signals';
 import { createSwitchDwell } from './switchDwell';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -108,8 +109,11 @@ export interface CaptureHandle {
    * The companion just said something. Push the scheduled look back a full
    * fresh interval: main already spoke about these seconds, and an idle tick
    * arriving right behind a jolt reply is two lines about one moment.
+   * `quietExtraMs` (261103, BackseatLine.quietExtraMs): main's backoff while
+   * nobody answers her; it is added to the next idle draw and to the switch
+   * deferral so neither composes a look main would drop. 0 = normal pace.
    */
-  noteSpoke: () => void;
+  noteSpoke: (quietExtraMs?: number) => void;
   /**
    * Echo gate (260807): the screen audio as an echo REFERENCE for the mic.
    * The loudness contour comes from the same normalized PCM feed that drives
@@ -425,8 +429,7 @@ export async function startCapture(
   // The session's language, read once, for the STT ring.
   let language = 'en';
   try {
-    const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
-    if (cfg?.chat_language) language = cfg.chat_language;
+    language = userChatLanguage((await sei.getConfig()) as { chat_language?: string; ui_language?: string } | null);
   } catch {
     /* English is the right default */
   }
@@ -458,10 +461,12 @@ export async function startCapture(
    *  until the next idle look. Deferring the fire past the gap keeps the
    *  reaction; a change during the deferral cancels it like any other. */
   let lastSpokeLocalAt = 0;
+  /** 261103: main's current backoff (quietExtraMs), mirrored from noteSpoke. */
+  let quietExtra = 0;
   let switchDeferTimer = 0;
   async function fireSwitch(sinceChangeMs: number): Promise<void> {
     if (paused || stopped) return;
-    const gapLeft = MIN_SPEAK_GAP_MS - (Date.now() - lastSpokeLocalAt);
+    const gapLeft = MIN_SPEAK_GAP_MS + quietExtra - (Date.now() - lastSpokeLocalAt);
     if (gapLeft > 0) {
       window.clearTimeout(switchDeferTimer);
       switchDeferTimer = window.setTimeout(() => {
@@ -819,7 +824,10 @@ export async function startCapture(
   const scheduleIdle = (): void => {
     if (stopped) return;
     window.clearTimeout(idleTimer);
-    const delay = nextIdleDelayMs();
+    // 261103: shifted by main's backoff while nobody answers her. Adding it
+    // moves the whole distribution, so the wait stays memoryless past the
+    // new floor.
+    const delay = nextIdleDelayMs() + quietExtra;
     idleTimer = window.setTimeout(() => {
       scheduleIdle();
       if (paused || stopped || idleBusy) return;
@@ -1008,8 +1016,9 @@ export async function startCapture(
         : undefined;
       await sendTick('user', grid, { text, transcript, ...(micInfo ? { mic: micInfo } : {}) });
     },
-    noteSpoke: () => {
+    noteSpoke: (quietExtraMs = 0) => {
       lastSpokeLocalAt = Date.now();
+      quietExtra = Math.max(0, quietExtraMs);
       if (!stopped) scheduleIdle();
     },
     echoProbe: (t0, t1) => ({

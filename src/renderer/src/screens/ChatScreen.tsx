@@ -29,7 +29,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useT, uiLanguage } from '../lib/i18n';
+import { useT, uiLanguage, uiLocale } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
@@ -71,6 +71,7 @@ import { FirstMomentCard } from '../components/FirstMomentCard';
 import { ChatgptPlanBadge } from '../components/ChatgptPlanBadge';
 import { useFirstMomentStore } from '../lib/stores/useFirstMomentStore';
 import { useTutorialStore } from '../lib/stores/useTutorialStore';
+import { onComposerFocusRequest, takeComposerFocus } from '../lib/composerFocus';
 import styles from './ChatScreen.module.css';
 
 export interface ChatScreenProps {
@@ -111,10 +112,14 @@ function fmtTimestamp(ts: number): string {
 /** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese). */
 function fmtDay(ts: number): string {
   const d = new Date(ts);
-  if (uiLanguage() === 'zh') {
+  const lang = uiLanguage();
+  if (lang === 'zh') {
     return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
   }
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  if (lang === 'en') return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  // 261104 languages: the locale's own date order and month names
+  // ("2026年4月17日", "17 апр. 2026 г.", "17 de abr. de 2026").
+  return d.toLocaleDateString(uiLocale(), { day: 'numeric', month: lang === 'ja' ? 'long' : 'short', year: 'numeric' });
 }
 
 /** Stable per-calendar-day key so a separator drops in when the day changes. */
@@ -147,7 +152,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // for the model's continuity but hidden here — a call is represented by its
   // "You and X called for Y" row alone. Filtered BEFORE the map so day
   // separators and author-run detection key on the visible neighbors.
-  const visibleMessages = useMemo(() => messages.filter((m) => !m.voice), [messages]);
+  // WorldLink desktop lines (ChatMessage.desktop) likewise: they stay desktop bubbles.
+  const visibleMessages = useMemo(() => messages.filter((m) => !m.voice && !m.desktop), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   // On a call the reply is SPOKEN and its row is a hidden voice row (see
   // visibleMessages above), so "is typing…" would show and then nothing ever
@@ -193,6 +199,15 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Product call (261116): opened from a double click on her on the desktop: the composer takes focus.
+  useEffect(() => {
+    const take = (): void => {
+      if (!takeComposerFocus(characterId)) return;
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    take();
+    return onComposerFocusRequest(take);
+  }, [characterId]);
 
   // Load persisted transcript once for this character.
   useEffect(() => {
@@ -615,7 +630,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     const prev = seenCountRef.current;
     seenCountRef.current = messages.length;
     if (!chatHidden || messages.length <= prev) return;
-    if (messages.slice(prev).some((m) => m.role !== 'user' && !m.voice)) setGameUnread(true);
+    if (messages.slice(prev).some((m) => m.role !== 'user' && !m.voice && !m.desktop)) setGameUnread(true);
   }, [messages, chatHidden]);
   useEffect(() => {
     if (!chatHidden) setGameUnread(false);
@@ -965,17 +980,21 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             </button>
           </div>
           <div className={styles.presBody}>
-            <div className={styles.presNameRow}>
-              <span className={styles.presName}>{showingUser ? userName : companionName}</span>
-              {showingUser
-                ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
-                : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+            {/* 261103: who and what they are doing, one tight group; the
+                actions are the next group below. */}
+            <div className={styles.presIdentity}>
+              <div className={styles.presNameRow}>
+                <span className={styles.presName}>{showingUser ? userName : companionName}</span>
+                {showingUser
+                  ? userProfile?.handle && <IdTag id={userProfile.handle} size="sm" />
+                  : character?.public_id && <IdTag id={character.public_id} size="sm" />}
+              </div>
+              <div className={styles.presKind}>
+                {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
+              </div>
+              {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
+              {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
             </div>
-            <div className={styles.presKind}>
-              {showingUser ? t('Human') : kindLine === 'Companion' ? t('Companion') : kindLine}
-            </div>
-            {!showingUser ? <Presence category={presence.category} label={presence.label} /> : null}
-            {!showingUser && nowVerb ? <div className={styles.presNow}>{nowVerb}</div> : null}
             {!showingUser ? (
               <div className={styles.presActions}>
                 {online ? (

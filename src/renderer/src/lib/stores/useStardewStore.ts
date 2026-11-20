@@ -6,8 +6,9 @@
  * launch panel, the setup modal and the settings section all read.
  */
 import { create } from 'zustand';
-import type { StardewInstallProgressEvent, StardewInstallState, StardewLaunchResult } from '@shared/stardewIpc';
+import type { StardewChooseFolderResult, StardewInstallProgressEvent, StardewInstallState, StardewLaunchResult } from '@shared/stardewIpc';
 import { sei } from '../ipcClient';
+import { errorMessageOf, stripIpcWrapper } from '@shared/ipcError';
 
 interface StardewStore {
   /** null until the first detection lands. */
@@ -25,6 +26,11 @@ interface StardewStore {
   /** Run the install; resolves once it settles (never rejects; read installError). */
   install: () => Promise<StardewInstallState | null>;
   launchGame: () => Promise<StardewLaunchResult | null>;
+  /** 261104: why the last Choose folder pick was refused (null = none / ok). */
+  folderError: 'not_game' | 'legacy' | null;
+  choosingFolder: boolean;
+  /** Choose folder: the picker, validated in main; a good pick refreshes `state`. */
+  chooseFolder: () => Promise<StardewChooseFolderResult | null>;
 }
 
 // Reference-counted: several surfaces (launch panel, setup modal, settings)
@@ -39,6 +45,8 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
   installError: null,
   launching: false,
   lastLaunch: null,
+  folderError: null,
+  choosingFolder: false,
 
   init: () => {
     subscribers += 1;
@@ -79,12 +87,26 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
       set({ state, installing: false, progress: { stage: 'done', state } });
       return state;
     } catch (err) {
-      const message = String((err as Error)?.message ?? err);
-      // Electron wraps handler errors as "Error invoking remote method '...': Error: <msg>".
-      const clean = message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
-      set({ installing: false, installError: clean });
+      // Keeps main's "CLASS: detail" shape for installErrorCopy; the preload
+      // already removed Electron's wrapper, this covers a mocked bridge.
+      set({ installing: false, installError: stripIpcWrapper(errorMessageOf(err)) });
       void get().refresh();
       return get().state;
+    }
+  },
+
+  chooseFolder: async () => {
+    if (get().choosingFolder || typeof sei.stardewChooseFolder !== 'function') return null;
+    set({ choosingFolder: true });
+    try {
+      const r = await sei.stardewChooseFolder();
+      if (r.ok) set({ state: r.state, folderError: null });
+      else if (r.reason !== 'cancelled') set({ folderError: r.reason });
+      return r;
+    } catch {
+      return null;
+    } finally {
+      set({ choosingFolder: false });
     }
   },
 
@@ -96,7 +118,7 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
       set({ lastLaunch: r, launching: false });
       return r;
     } catch (err) {
-      const r: StardewLaunchResult = { launched: false, via: 'none', message: String((err as Error)?.message ?? err) };
+      const r: StardewLaunchResult = { launched: false, via: 'none', message: stripIpcWrapper(errorMessageOf(err)) };
       set({ lastLaunch: r, launching: false });
       return r;
     }

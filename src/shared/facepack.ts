@@ -22,6 +22,61 @@ export interface FacepackPose {
   /** Absent when the expression has blink:false. */
   eyes?: { box: FacepackBox; half?: string; closed?: string };
   mouth?: { box: FacepackBox } & Partial<Record<Exclude<FacepackViseme, 'rest'>, string>>;
+  /**
+   * 261120: gaze frames (anima packs baked from 261120). The open eyes
+   * re-rendered by the model looking `x[xi]` to the viewer's right and
+   * `y[yi]` down (both ascending, in the model's iris-rotation units, 0 = the
+   * expression's own look), cropped to `box`: `frames[yi][xi]`, null where
+   * the frame is the base itself. Drawn over the base before the eye and
+   * mouth patches; a player shows the one nearest its gaze point. Packs
+   * without it (and players that predate it) show the base's eyes.
+   */
+  iris?: FacepackIris;
+  /**
+   * 261120 (product call 261120, "why can't we just slide it across?"): the
+   * iris as its own layer, slid continuously. Drawn over the base: `empty`
+   * (the eyes with the iris taken out) at `box`, then for each of `eyes` the
+   * part of `sprite` inside its `rect` moved by its offset at her look
+   * (`d[yi][xi]` = [dx, dy] pack px at x[xi], y[yi], bilinear between,
+   * clamped to the grid; null = no move), kept to the opening: the sprite's
+   * alpha times `clip`'s. `half` is the half lid's own empty eye and
+   * opening, drawn the same way over `eyes.half`. Players that predate it
+   * ignore it; a pack with it has no `iris`.
+   */
+  iris_layer?: FacepackIrisLayer;
+}
+
+export interface FacepackIrisLayerEye {
+  /** This eye's part of the sprite (pack px, inside the layer's box). */
+  rect: FacepackBox;
+  d: Array<Array<[number, number] | null>>;
+}
+
+export interface FacepackIrisLayer {
+  box: FacepackBox;
+  x: number[];
+  y: number[];
+  /** All three are `box`-sized: the iris (RGBA), the eyes without it (opaque), the opening (alpha). */
+  sprite: string;
+  empty: string;
+  clip: string;
+  eyes: FacepackIrisLayerEye[];
+  /** Fit quality at bake time (share of the model's renders explained), informational. */
+  fit?: number;
+  half?: { empty: string; clip: string };
+}
+
+export interface FacepackIris {
+  box: FacepackBox;
+  x: number[];
+  y: number[];
+  frames: Array<Array<string | null>>;
+  /**
+   * The half-shut eyes looking `x[xi]` across (level), same crop: drawn at
+   * `box` over `eyes.half` so a blink keeps her look. Null at the base's look
+   * (and wherever absent, the plain half patch shows).
+   */
+  half?: Array<string | null>;
 }
 
 export interface FacepackExpression {

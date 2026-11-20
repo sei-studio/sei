@@ -57,4 +57,10 @@ export const ZH_COMMON: Record<string, string> = {
     '无法打开 Minecraft 启动器。请手动打开它，并在「开始游戏」旁选择 Sei 配置。',
   'Windows may ask whether Java can use the network. You can press Cancel. Sei joins your world from this computer, so it still works.':
     'Windows 可能会询问是否允许 Java 访问网络。你可以点击「取消」。Sei 在这台电脑上加入你的世界，所以不受影响。',
+  // Plain error lines (261119, lib/errors.ts userFacingError).
+  "Can't reach Sei right now. Check your connection and try again.": "现在连不上 Sei。请检查网络连接后再试一次。",
+  "That took too long. Please try again.": "用时太久了，请再试一次。",
+  "Sei's servers are having trouble. Please try again in a moment.": "Sei 的服务器出了点问题，请稍后再试。",
+  "You can only have {n} companions. Remove one to make room.": "你最多只能有 {n} 位伙伴。移除一位来腾出位置吧。",
+  "Some knowledge could not be saved. You can add it later from the companion page.": "部分知识没能保存。你之后可以在伙伴页面再添加。",
 };

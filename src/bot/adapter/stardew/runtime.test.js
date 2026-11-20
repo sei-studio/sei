@@ -184,6 +184,8 @@ describe('stardew runtime against the fake mod', () => {
     await createRuntime(configFor(port), hooks)
     expect(hooks.onError).toHaveBeenCalledTimes(1)
     expect(hooks.onError.mock.calls[0][0].error).toBe('GAME_WORLD_NOT_OPEN')
+    // Never live: not a session end, so no end reason.
+    expect(hooks.onError.mock.calls[0][0].endReason).toBeUndefined()
     expect(hooks.onConnected).not.toHaveBeenCalled()
     expect(mod.state.frames.filter((f) => f.t === 'spawn')).toHaveLength(1)
   })
@@ -244,6 +246,8 @@ describe('stardew runtime against the fake mod', () => {
     mod = null
     await until(() => hooks.onError.mock.calls.length >= 1, 4000)
     expect(hooks.onError.mock.calls[0][0].error).toBe('GAME_WORLD_NOT_OPEN')
+    // 261107: the player closing the game, so main runs the "next time" check.
+    expect(hooks.onError.mock.calls[0][0].endReason).toBe('world_closed')
     expect(hooks.onDisconnected).toHaveBeenLastCalledWith(expect.objectContaining({ willRetry: false }))
   })
 })

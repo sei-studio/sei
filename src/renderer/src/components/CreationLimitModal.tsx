@@ -11,7 +11,7 @@
  * blocking hard-stop like HardStopModal. Renders through ModalShell.
  */
 import React from 'react';
-import { useT } from '../lib/i18n';
+import { uiLocale, useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './CreationLimitModal.module.css';
@@ -31,7 +31,7 @@ export function CreationLimitModal({
     if (!resetsAt) return null;
     const t = new Date(resetsAt);
     if (Number.isNaN(t.getTime())) return null;
-    return t.toLocaleString(undefined, {
+    return t.toLocaleString(uiLocale(), {
       weekday: 'short',
       hour: 'numeric',
       minute: '2-digit',

@@ -31,6 +31,8 @@
  */
 import React, { useEffect } from 'react';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
+import type { McOtherLauncher } from '@shared/ipc';
+import { mcScanFound } from '@shared/setupTelemetry';
 import { useT } from '../../lib/i18n';
 import { MC_NEWEST_JOINABLE } from '../../lib/mcVersions';
 import { sei } from '../../lib/ipcClient';
@@ -56,6 +58,30 @@ const LAN_STEPS: readonly string[] = [
   'Click Start LAN World.',
 ];
 
+/** Third-party launcher names, as their makers write them (not translated). */
+export const OTHER_LAUNCHER_NAMES: Record<McOtherLauncher, string> = {
+  prism: 'Prism Launcher',
+  multimc: 'MultiMC',
+  modrinth: 'Modrinth App',
+  atlauncher: 'ATLauncher',
+};
+
+/** "Prism Launcher" / "Prism Launcher, ATLauncher": each launcher once, scan order. */
+export function otherLauncherList(launchers: readonly McOtherLauncher[]): string {
+  return [...new Set(launchers)].map((l) => OTHER_LAUNCHER_NAMES[l]).join(', ');
+}
+
+/** Open the official launcher (no profile); when it is not there, the download page. */
+async function openOfficialLauncher(): Promise<void> {
+  try {
+    const r = typeof sei.openMinecraftLauncher === 'function' ? await sei.openMinecraftLauncher() : null;
+    if (r?.ok) return;
+  } catch {
+    /* fall through to the download page */
+  }
+  void sei.openExternal(GET_MINECRAFT_URL);
+}
+
 export interface McSetup {
   steps: SetupStep[];
   /** The one-time part is done (or dismissed): the panel may offer Launch. */
@@ -69,6 +95,7 @@ export interface McSetup {
 export function useMcSetupSteps(skin: StepSkin): McSetup {
   const t = useT();
   const installs = useMcSetupStore((s) => s.installs);
+  const extras = useMcSetupStore((s) => s.extras);
   const dismissed = useMcSetupStore((s) => s.dismissed);
   const scan = useMcSetupStore((s) => s.scan);
   const hydrate = useMcSetupStore((s) => s.hydrate);
@@ -83,6 +110,12 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
 
   const readyVersion = selectReadyVersion(installs, supportedVersions);
   const found = installs == null ? null : installs.length > 0;
+  // 261104: why the scan found no usable Java install, best first.
+  const scanFound = installs == null ? null : mcScanFound(installs, extras);
+  // Java lives in a launcher Sei cannot set up: the companion still joins a
+  // LAN world from it, so the panel may offer Launch.
+  const javaElsewhere = scanFound === 'other_launcher';
+  const otherNames = extras ? otherLauncherList(extras.others.map((o) => o.launcher)) : '';
   const installDone = readyVersion != null;
   // Hidden once dismissed, unless it has since become true (a cheap positive).
   const showInstallStep = installDone || dismissed !== true;
@@ -105,12 +138,31 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
     {
       id: 'game',
       title: t('Minecraft Java Edition'),
+      // Java in another launcher stays not done so the window opens on this
+      // note (what Sei can and cannot do there); `complete` still offers Launch.
       done: found === true,
       body:
         found === null ? (
           <span>{t('Looking for Minecraft on this computer...')}</span>
         ) : found ? (
           <span>{t('Minecraft Java Edition is installed.')}</span>
+        ) : javaElsewhere ? (
+          <span>
+            {t("Minecraft Java found in {launcher}. Sei can't add its setup there, but your companion can still join: open a world there on a version up to {latest} and choose Open to LAN.", { launcher: otherNames, latest: LATEST_SUPPORTED })}
+          </span>
+        ) : scanFound === 'bedrock_only' || scanFound === 'launcher_only' ? (
+          <>
+            <span>
+              {scanFound === 'bedrock_only'
+                ? t('Sei needs Minecraft Java Edition, and this computer only has Bedrock Edition. If you own Minecraft for Windows, you most likely own Java Edition too: since 2022 the two come together.')
+                : t("The Minecraft Launcher is installed, but Java Edition hasn't been played on this computer yet.")}
+            </span>
+            <span>{t('Open the Minecraft Launcher, choose Minecraft: Java Edition, and press Play once. Then check again.')}</span>
+            <div className={skin.actions}>
+              <Button kind="primary" onClick={() => void openOfficialLauncher()}>{t('Open Minecraft Launcher')}</Button>
+              <Button kind="quiet" onClick={() => void scan()}>{t('Check again')}</Button>
+            </div>
+          </>
         ) : (
           <>
             <span>{t('Install Minecraft Java Edition from minecraft.net, then check again.')}</span>
@@ -130,6 +182,13 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
       done: installDone,
       body: installDone ? (
         <span>{t('Your Minecraft is Sei-ready: Fabric for {version} with companion skins. Pick the "Sei {version}" profile in the launcher.', { version: readyVersion })}</span>
+      ) : javaElsewhere ? (
+        <>
+          <span>{t('To see companion skins in your game, use the official Minecraft Launcher, where Sei can set everything up.')}</span>
+          <div className={skin.actions}>
+            <button type="button" className={skin.link} onClick={() => void dismiss()}>{t('Do not show again')}</button>
+          </div>
+        </>
       ) : (
         <>
           <span>
@@ -166,14 +225,14 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
           </div>
         ) : null}
         {launcher.note ? <span className={skin.sub} role="status">{launcher.note.text}</span> : null}
-        {found ? <SearchingLine label={t('Waiting for your world...')} className={skin.sub} /> : null}
+        {found || javaElsewhere ? <SearchingLine label={t('Waiting for your world...')} className={skin.sub} /> : null}
       </>
     ),
   });
 
   return {
     steps,
-    complete: found === true && (installDone || dismissed === true),
+    complete: (found === true && (installDone || dismissed === true)) || javaElsewhere,
     allDone: steps.every((s) => s.done),
     known: installs != null,
   };

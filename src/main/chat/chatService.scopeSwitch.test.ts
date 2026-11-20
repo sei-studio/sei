@@ -44,6 +44,7 @@ import { sendChatMessage, cancelAllInflightTurns, CHAT_ABORTED } from './chatSer
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead } from './chatStore';
 import {
+  drainScopedWrites,
   beginScopeSwitch,
   noteScopeChanged,
   ACCOUNT_SWITCHING,
@@ -91,6 +92,11 @@ beforeEach(async () => {
   streamSpy.mockReset();
 });
 afterEach(async () => {
+  // A finished LLM call records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later, fire-and-forget. Let those
+  // tracked writes land before the profile dir goes (under CI load they raced
+  // the rm: ENOTEMPTY, or wrote after the override was cleared).
+  await drainScopedWrites();
   _setUserDataOverride(null);
   setCallActive(CHAR, false);
   _resetScopeBarrierForTests();

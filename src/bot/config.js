@@ -250,7 +250,7 @@ const ConfigObjectSchema = z.object({
   // 'en' renders nothing — existing sessions are byte-for-byte unchanged.
   // Keep the enum in sync with CHAT_LANGUAGES in src/shared/chatLanguage.ts
   // (this process cannot import that TS module).
-  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).default('en'),
+  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).default('en'),
   player_username: z.string(),
   // Human label for the world this session joins (Minecraft: the LAN MOTD /
   // level name; Stardew: the farm name; DST: the cluster name), used by the
@@ -289,7 +289,13 @@ const ConfigObjectSchema = z.object({
     // stamped at creation under the Chinese UI). When set it beats the
     // profile-wide chat_language below in rebuildPersonalitySystem. Optional:
     // absent = no pin.
-    language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
+    language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).optional(),
+    // 261116: true when this companion came from the World (someone else's
+    // character). Its description may name a language the creator picked;
+    // rebuildPersonalitySystem then appends renderAdoptedLanguageNote so the
+    // player's language wins. Resolved in main (shared/chatLanguage.ts
+    // companionLanguage), which also drops the creator's metadata.language pin.
+    language_adopted: z.boolean().optional(),
   }),
   anthropic: z.object({
     // Phase 13-15 (D-40 sub-delivery a): api_key is no longer strictly required

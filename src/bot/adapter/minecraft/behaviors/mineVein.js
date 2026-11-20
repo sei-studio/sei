@@ -37,7 +37,8 @@ import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { resolveTerm } from '../loose-terms.js'
 import { goTo as realGoTo, waitForReflexClear, dropWalkOpts } from './pathfind.js'
-import { digAction as realDigAction, digReachDistance, DIG_REACH } from './dig.js'
+import { digAction as realDigAction, digReachDistance, DIG_REACH, closeInForDig, AIR_STOP_PREFIX } from './dig.js'
+import { lowOnAir, surfaceForAir, isUnderwaterBlock } from './air.js'
 import { isUnreachable, noteUnreachable } from './unreachable.js'
 import { inventoryCounts, gained } from './pickup.js'
 import { droppedItemName } from '../observers/entities.js'
@@ -67,6 +68,9 @@ const extraDigs = (want) => Math.max(4, Math.ceil(want / 2))
 // Mine-then-sweep cycles: a sweep that leaves the batch short sends it back
 // to mining, at most this many times in all.
 const MAX_CYCLES = 3
+// 261108 (quality pass 47): a gather stops after swimming up for air this
+// many times (the rest of what is near is under water).
+export const MAX_AIR_BREAKS = 2
 
 function isItemEntity(e) {
   // No objectType: the getter is deprecated in prismarine-entity and prints a
@@ -96,6 +100,8 @@ async function sweepDrops(bot, goTo, signal, sleep = (ms) => new Promise(r => se
   const gone = (e) => e.isValid === false || (bot.entities && e.id != null && bot.entities[e.id] !== e)
   for (let i = 0; i < SWEEP_MAX; i++) {
     if (signal?.aborted || Date.now() > deadline) return
+    // 261108 (pass 47): drops in the water are not worth the air.
+    if (lowOnAir(bot)) { await surfaceForAir(bot, signal); return }
     const here = bot.entity?.position
     if (!here) return
     let best = null, bestD = Infinity
@@ -246,14 +252,20 @@ export async function gatherAction(args, bot, config, _deps) {
       count: 64,
       point,
     })
+    // 261108 (quality pass 47): the nearest block NOT under water first. A
+    // river bed is often the nearest stone, and digging it means floating in
+    // the water at a fraction of the speed until the air runs out (02-B
+    // drowned that way). Under-water blocks only when nothing dry is in range.
+    let wet = null
     for (const h of hits ?? []) {
       if (visited.has(key(h.x, h.y, h.z))) continue
       // 261015: blocks an earlier walk or dig could not reach (this call or
       // a recent one) are not worth a 6s walk again; take the next one.
       if (isUnreachable(bot, h)) { skippedUnreachable++; visited.add(key(h.x, h.y, h.z)); continue }
+      if (isUnderwaterBlock(bot, h)) { wet ??= h; continue }
       return new Vec3(h.x, h.y, h.z)
     }
-    return null
+    return wet ? new Vec3(wet.x, wet.y, wet.z) : null
   }
 
   // Flood-fill the same-name component from `anchor`, up to `limit` blocks.
@@ -307,17 +319,32 @@ export async function gatherAction(args, bot, config, _deps) {
         // on 'timeout' fall through — re-check abort and retry the block next loop
       }
 
+      // 261108 (quality pass 47): low on air under water: stop, swim up and
+      // let the air come back before the next block (air.js).
+      if (lowOnAir(bot)) {
+        const s = await surfaceForAir(bot, signal)
+        if (s === 'aborted' || signal?.aborted) return 'aborted'
+        progress.airBreaks++
+        if (progress.airBreaks >= MAX_AIR_BREAKS) return dug
+      }
+
       const bp = bot.entity?.position
       let nextEntry = null
       let bestD = Infinity
+      // Dry blocks before under-water ones (see nextAnchor).
+      let nextWet = null
+      let bestWetD = Infinity
       for (const entry of positions) {
         if (entry.done) continue
         const dx = bp ? entry.p.x - bp.x : 0
         const dy = bp ? entry.p.y - bp.y : 0
         const dz = bp ? entry.p.z - bp.z : 0
         const d = bp ? Math.hypot(dx, dy, dz) : 0
-        if (d < bestD) { bestD = d; nextEntry = entry }
+        if (entry.wet ??= isUnderwaterBlock(bot, entry.p)) {
+          if (d < bestWetD) { bestWetD = d; nextWet = entry }
+        } else if (d < bestD) { bestD = d; nextEntry = entry }
       }
+      nextEntry ??= nextWet
       if (!nextEntry) return dug
       // Enough already reached the inventory (a block can drop several).
       if (got() >= want) return dug
@@ -331,10 +358,11 @@ export async function gatherAction(args, bot, config, _deps) {
       // the same metric dig.js checks (eyes to block center), and the walk
       // aims for dig reach rather than "feet within 3", which for a high log
       // meant climbing.
+      let walk = null
       if (digReachDistance(bot, np) > DIG_REACH) {
         // Pre-pathfind to dig reach (Pitfall 2 — dig.js does NOT pathfind in).
         // 261012: never scaffold with what we are gathering.
-        await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs, signal, { reach: DIG_REACH - 0.3, ...(dropItems.length ? { keepItems: dropItems } : {}) })
+        walk = await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs, signal, { reach: DIG_REACH - 0.3, ...(dropItems.length ? { keepItems: dropItems } : {}) })
       }
 
       if (signal?.aborted) return 'aborted'
@@ -351,6 +379,25 @@ export async function gatherAction(args, bot, config, _deps) {
         r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
       }
       if (r === 'aborted') return 'aborted'
+      // 261108 (pass 47): the dig stopped to swim up for air.
+      if (typeof r === 'string' && r.startsWith(AIR_STOP_PREFIX)) {
+        nextEntry.done = true
+        progress.airBreaks++
+        tick()
+        if (progress.airBreaks >= MAX_AIR_BREAKS) return dug
+        continue
+      }
+      // 261107 (pass 45): the walk said "reached" but stopped a step or two
+      // short (at the edge of its goal): one more short walk before calling
+      // the block unreachable. Not after a failed walk.
+      if (typeof r === 'string' && r.startsWith('out of range') && walk === 'reached') {
+        const step = await closeInForDig(bot, np, goTo, signal, dropItems.length ? { keepItems: dropItems } : {})
+        if (step === 'aborted' || signal?.aborted) return 'aborted'
+        if (step != null) {
+          r = await digAction({ x: np.x, y: np.y, z: np.z }, bot, config)
+          if (r === 'aborted') return 'aborted'
+        }
+      }
       if (typeof r === 'string' && r.startsWith('dug ')) {
         dug++
         progress.dug++
@@ -418,7 +465,7 @@ export async function gatherAction(args, bot, config, _deps) {
   // batch keeps mining until that reaches the request. Blocks whose drops are
   // unknown or empty (or a bot without an inventory) fall back to counting
   // digs.
-  const progress = { dug: 0, noHarvest: false }
+  const progress = { dug: 0, noHarvest: false, airBreaks: 0 }
   const invBefore = inventoryCounts(bot)
   dropItems = invBefore ? dropItemsFor(bot, blockName) : []
   const countItems = dropItems.length > 0
@@ -461,7 +508,7 @@ export async function gatherAction(args, bot, config, _deps) {
     // gather of 8 logs came back with 13). Only a sweep that leaves the batch
     // short opens the extra digs, up to digCap.
     const cycleCap = cycle === 0 ? Math.min(want, digCap) : digCap
-    while (got() < want && progress.dug < cycleCap && !progress.noHarvest) {
+    while (got() < want && progress.dug < cycleCap && !progress.noHarvest && progress.airBreaks < MAX_AIR_BREAKS) {
       let roundAnchor
       if (firstRound) {
         firstRound = false
@@ -503,7 +550,7 @@ export async function gatherAction(args, bot, config, _deps) {
     }
     // Still short after the sweep: lost drops. Mine more if there is more to
     // mine and dig budget left; otherwise report what actually arrived.
-    if (got() >= want || exhausted || coordMode || progress.noHarvest || progress.dug >= digCap) break
+    if (got() >= want || exhausted || coordMode || progress.noHarvest || progress.dug >= digCap || progress.airBreaks >= MAX_AIR_BREAKS) break
   }
 
   const have = got()
@@ -514,6 +561,10 @@ export async function gatherAction(args, bot, config, _deps) {
     note = skippedUnreachable
       ? ` (no more ${blockName} reachable nearby; skipped ${skippedUnreachable} you could not reach recently)`
       : ` (no more ${blockName} reachable nearby)`
+  } else if (progress.airBreaks >= MAX_AIR_BREAKS && have < want) {
+    note = ` (stopped: you ran low on air under water ${progress.airBreaks} times and swam up each time; the ${blockName} left here is under water. Gather somewhere dry)`
+  } else if (progress.airBreaks > 0) {
+    note = ' (you swam up for air on the way)'
   } else if (coordMode && attempted < want && have < want) {
     note = ` (that vein had only ${attempted})`
   }

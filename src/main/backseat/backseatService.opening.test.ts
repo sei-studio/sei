@@ -55,6 +55,7 @@ vi.mock('../llm', () => ({
 vi.mock('../chat/chatPrompts', () => ({
   buildSystemBlocks: () => [],
   markMessageCached: () => {},
+  clockTailNote: () => '[now: test]',
   REMEMBER_TOOL: { name: 'remember', description: '', input_schema: { type: 'object', properties: {} } },
 }));
 vi.mock('../chat/chatService', () => ({
@@ -69,7 +70,7 @@ vi.mock('../chat/usageLimit', () => ({ classifyUsageLimit: () => null, raiseUsag
 vi.mock('../knowledge/knowledgeStore', () => ({ readKnowledgeForPrompt: async () => '' }));
 vi.mock('../../bot/brain/memory/memoryLog.js', () => ({ appendMemory: async () => {}, humanizeMemoryStamps: (t: string) => t }));
 vi.mock('../chat/chatStore', () => ({ appendMessage: async () => {} }));
-vi.mock('../playerEndNextStep', () => ({ startPlayerEndNextStep: async () => {} }));
+vi.mock('../playerEndNextStep', () => ({ startPlayerEndNextStep: async () => {}, reportNextStepNotRun: () => {} }));
 vi.mock('./backseatLog', () => ({
   createBackseatLog: async () => ({ line: () => {}, close: async () => {} }),
   NULL_BACKSEAT_LOG: { line: () => {}, close: async () => {} },

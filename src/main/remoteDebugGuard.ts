@@ -2,7 +2,7 @@
  * Side-effect module: refuse Chromium remote debugging in packaged STABLE
  * builds. Policy and rationale: `remoteDebugPolicy.ts`.
  *
- * MUST be the first import of `src/main/index.ts`. ES module bodies evaluate
+ * MUST be the first import of `src/main/boot.ts` (the main entry). ES module bodies evaluate
  * in import order, so this runs before any other main module, before app
  * 'ready', and before any window exists.
  *

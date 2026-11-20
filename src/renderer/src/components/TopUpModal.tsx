@@ -24,6 +24,7 @@ import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { PlanButton } from './PlanButton';
+import { topUpCreditsLine } from '../lib/planCatalog';
 import styles from './TopUpModal.module.css';
 
 export interface TopUpModalProps {
@@ -62,7 +63,7 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
         {packages.map((pkg) => (
           <div key={pkg.kind} className={styles.pack}>
             <span className={styles.packPrice}>{pkg.price}</span>
-            <span className={styles.packCredits}>{pkg.credits}</span>
+            <span className={styles.packCredits}>{topUpCreditsLine(pkg.credits)}</span>
             <div className={styles.packAction}>
               {/* 261023: a big full-width target that names the amount. */}
               <PlanButton

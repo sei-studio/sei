@@ -9,19 +9,23 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-lg) 0 var(--space-2xl);
+  padding: var(--page-top) 0 var(--space-2xl);
 }
 
 .col {
   max-width: 780px;
   margin: 0 auto;
-  padding: 0 var(--space-lg);
+  padding: 0 var(--page-gutter);
   display: flex;
   flex-direction: column;
 }
 
+/* 261103 spacing pass: groups are page sections, one --gap-section apart
+   (was 4 above + 24 below, so a group's title sat nearer the previous
+   group than the T262 explore's rhythm). Title to first row stays a group
+   step (4 + the row's 12). */
 .group {
-  padding: var(--space-xs) 0 var(--space-lg);
+  padding: 0 0 var(--gap-section);
 }
 
 .groupTitle {
@@ -66,6 +70,26 @@
   color: var(--text);
 }
 
+/* App language picker (261104): a native select, styled like the shared
+   voice picker's. */
+.langSelect {
+  flex: 0 0 auto;
+  min-width: 160px;
+  padding: 6px var(--space-md);
+  font-family: var(--sans);
+  font-size: 14px;
+  background: var(--input-bg, var(--window));
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.langSelect:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .value {
   font-family: var(--sans);
   font-size: 13px;
@@ -95,6 +119,14 @@
   max-width: 360px;
 }
 
+/* A label with a helper line under it, inside the row (261116: the own-key
+   import row says when the party is full). */
+.labelStack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
 /* Supplementary lines under a row (export path, switch notice, danger blurb).
    No border — they belong to the row above. */
 .helper {
@@ -102,6 +134,33 @@
   font-size: 13px;
   color: var(--muted);
   margin: var(--space-xs) 0 0;
+}
+
+/* 261103: inline confirm that opens under a row (Experimental updates ON).
+   The row drops its hairline so the confirm reads as part of it; the confirm
+   carries the hairline instead. Text left, actions right. */
+.rowOpen {
+  border-bottom: none;
+}
+
+.inlineConfirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.inlineConfirmText {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
 }
 
 /* Inline text link inside a .helper line (e.g. the photo credits). */
@@ -166,7 +225,7 @@
 .swatch {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  border-radius: var(--radius);
   /* The two color halves (inline gradient) fill the WHOLE circle — the border
      is transparent so nothing behind the button leaks in at the rim; a faint
      INSET hairline keeps light swatches visible on light surfaces. Selected
@@ -206,6 +265,7 @@
   background: var(--accent);
   border: none;
   cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
 .slider:focus-visible {
@@ -228,6 +288,7 @@
   color: var(--muted);
   cursor: pointer;
   transition: color 120ms var(--ease), background 120ms var(--ease);
+  border-radius: var(--radius-sm);
 }
 .copyBtn:hover {
   color: var(--accent);
@@ -261,6 +322,7 @@
   border: 1px solid var(--border-strong);
   background: var(--surface-2);
   margin-top: var(--space-xs);
+  border-radius: var(--radius);
 }
 
 .modelRow {

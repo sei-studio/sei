@@ -30,23 +30,63 @@
  * voice (ownVoiceStandInId) and a TtsNotice says why, so a call never goes
  * silent over it. The pick itself is never swapped. (This replaced the old
  * VOICE_OWN_NEEDS_KEY refusal, which muted every line.)
+ *
+ * 261119, Voice Library voices on Sei cloud (metadata.voiceLibrary): they
+ * live in Sei's ElevenLabs account and speak through the proxy like a pool
+ * voice. When the proxy answers that it no longer has one (400 `unknown
+ * voice_id`, reason `library_voice_unavailable`: retired after 30 idle days),
+ * the line is spoken through the proxy with the close stand-in pool voice
+ * (libraryVoiceStandInId), a `library-voice-unavailable` TtsNotice says so,
+ * and the refusal is remembered for a while (libraryVoices.ts) so later lines
+ * go straight to the stand-in. Never silent, and the pick is never swapped.
  */
 import { createHash } from 'node:crypto';
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
+import { cloudVoiceProvider, localTtsModel } from '../../shared/ttsEngine';
+import { loadAnalytics } from '../lazyAnalytics';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
-import { characterLanguage, clampChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import type { AiBackendKind } from '../apiKeyStore';
+import { userChatLanguage, type ChatLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 import { stripAudioTags, SUPPORTS_AUDIO_TAGS } from './audioTags';
-import { resolveVoiceId, isPoolVoiceId, ownVoicePickOf, ownVoiceStandInId } from './voiceAssign';
+import {
+  resolveVoiceId,
+  isPoolVoiceId,
+  libraryVoicePickOf,
+  libraryVoiceStandInId,
+  ownVoicePickOf,
+  ownVoiceStandInId,
+  previewVoiceIdFor,
+} from './voiceAssign';
+import {
+  forgetLibraryRefusal,
+  isKnownLibraryVoiceId,
+  libraryVoiceRefused,
+  rememberLibraryRefusal,
+} from './libraryVoices';
 import { previewCacheKey, readCachedPreview, writeCachedPreview } from './previewCache';
 import { NO_VOICE_ID } from '../../shared/voiceIds';
-import { resolveElevenLabsRoute, resolveTtsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
+import { resolveSpeakRoute, resolveTtsRoute, type ElevenLabsRoute } from './elevenLabsKeyStore';
 import { isOwnVoiceId } from './ownVoices';
 import type { SpeechPackId } from '../speech/packs';
 import { noteCreditWall } from '../creditWall';
+import { resolveFishKey } from './fishKeyStore';
+import {
+  fishFailureReason,
+  openFishStream,
+  planFishVoice,
+  rememberFishFailure,
+  rememberedFishFailure,
+  synthesizeFish,
+  type FishFailureReason,
+  type FishVoicePlan,
+  type OpenedFishStream,
+} from './fishTts';
+import { FISH_OVERRIDE_DEFAULT_SPEED } from '../../shared/fishVoices';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_TTS_MODEL = 'eleven_flash_v2_5';
@@ -86,6 +126,19 @@ const NOT_CONFIGURED_BYOK = 'VOICE_NOT_CONFIGURED: add your ElevenLabs key in Se
  */
 const VOICE_NOT_IN_LIBRARY =
   'VOICE_NOT_IN_LIBRARY: this voice is not in your own ElevenLabs library. Add it there, or pick a different voice.';
+
+/** The proxy no longer has a Voice Library voice (see header, 261119). */
+const VOICE_LIBRARY_UNAVAILABLE = 'VOICE_LIBRARY_UNAVAILABLE: this Voice Library voice is no longer available';
+
+/** The proxy's refusal of a voice id it does not serve (ttsGate). Matches the
+ * deployed proxy's body too (no `reason` field before 261119). */
+export function isProxyVoiceRefusal(status: number, body: string): boolean {
+  return status === 400 && /library_voice_unavailable|unknown voice_id/.test(body);
+}
+
+function isLibraryUnavailableError(err: unknown): boolean {
+  return String((err as Error)?.message ?? err ?? '').startsWith('VOICE_LIBRARY_UNAVAILABLE');
+}
 
 /** ElevenLabs' "no such voice for this account" answer: a 4xx whose body names
  * the voice id as missing. Status has drifted between 400/404/422 across API
@@ -140,11 +193,30 @@ export function directElevenLabsError(status: number, body: string): string | nu
  * nothing — request bodies stay byte-identical to before. Read fresh per
  * synthesis so an auto-switch applies to the very next spoken line.
  */
+/** The config, or null when it cannot be read (callers fall back to defaults). */
+async function loadConfigOrNull(): Promise<Awaited<ReturnType<typeof loadConfig>> | null> {
+  try {
+    return await loadConfig();
+  } catch {
+    return null;
+  }
+}
+
+/** The player's language (261116: heard on calls, else the UI language): previews. */
 async function ttsLanguage(): Promise<ChatLanguage> {
   try {
-    return clampChatLanguage((await loadConfig()).chat_language);
+    return userChatLanguage(await loadConfig());
   } catch {
     return 'en';
+  }
+}
+
+/** The language she speaks to this player (261116, companionLanguage): her own pin, else the player's. */
+async function characterTtsLanguage(character: Parameters<typeof companionLanguageFor>[0]): Promise<ChatLanguage> {
+  try {
+    return companionLanguageFor(character, await loadConfig()).language;
+  } catch {
+    return companionLanguageFor(character, null).language;
   }
 }
 
@@ -241,6 +313,9 @@ const TTS_NEXT_TEXT: Record<ChatLanguage, string> = {
   ko: '아무튼, 그 얘기는 아직 더 하고 싶은 게 남았어.',
   fr: " enfin, j'ai encore des choses à dire là-dessus.",
   es: ' en fin, todavía tengo más que decir sobre eso.',
+  ru: ' в общем, я ещё хотела кое-что об этом сказать.',
+  pt: ' enfim, ainda tenho mais coisa pra dizer sobre isso.',
+  it: " comunque, ho ancora qualcosa da dire su questo.",
 };
 /** Keep the conditioning tail short (and under the proxy's 1000-char field cap). */
 const TTS_PREVIOUS_TEXT_MAX = 500;
@@ -330,18 +405,67 @@ async function getJwtOrNull(): Promise<string | null> {
 /**
  * Local TTS route (260816, china-compat W3+W4): BYOK ('local' backend) users
  * with `tts_engine: 'local'` synthesize through the sherpa-onnx voice packs in
- * main (src/main/speech/) instead of ElevenLabs. Cloud accounts ignore the
- * field entirely, and absent means 'elevenlabs' — both ElevenLabs paths
- * (proxy + direct BYOK key) are byte-identical to before.
+ * main (src/main/speech/) instead of ElevenLabs. Absent means 'elevenlabs'.
+ *
+ * 261118: the local voice PACKS stay BYOK-only, but Fish Audio also speaks
+ * on a cloud account (see fishOnCloud) — the text still bills Sei's credits,
+ * the user's own Fish key only generates the audio.
  */
-async function localTtsSelected(): Promise<boolean> {
+async function localTtsSelected(backend?: AiBackendKind | null): Promise<boolean> {
   try {
-    const { getAiBackendKind } = await import('../apiKeyStore');
-    if ((await getAiBackendKind()) !== 'local') return false;
+    const kind = backend === undefined ? await aiBackendKind() : backend;
+    if (kind !== 'local') return false;
     return (await loadConfig()).tts_engine === 'local';
   } catch {
     return false;
   }
+}
+
+/** The AI backend kind, or null when it cannot be read (treated as not-local). */
+async function aiBackendKind(): Promise<AiBackendKind | null> {
+  try {
+    const { getAiBackendKind } = await import('../apiKeyStore');
+    return await getAiBackendKind();
+  } catch {
+    return null;
+  }
+}
+
+/** Fish Audio is offered on cloud too (261118). Its fallback differs by
+ * backend: the Fast voices on a local one, Sei's voices (the proxy route) on
+ * cloud. 261120 (privacy): on cloud it speaks ONLY when the user picked it in
+ * Playtime > Sei > Voice > Advanced (cloud_tts_provider 'fish'). tts_engine
+ * and local_tts_model are BYOK settings and never send a cloud line to Fish. */
+async function fishOnCloud(backend: AiBackendKind | null): Promise<boolean> {
+  if (backend !== 'cloud-proxy') return false;
+  return cloudVoiceProvider(await loadConfigOrNull()) === 'fish';
+}
+
+/** Fish failure classes already reported this run (analytics, shape only). */
+const fishCloudFailuresReported = new Set<string>();
+let fishCloudUseReported = false;
+
+/** A cloud Fish line failed: Sei's voices speak it (the caller falls
+ * through), the call shows one notice per reason, and analytics gets the
+ * failure class once per run. */
+function noteFishCloudFallback(characterId: string, reason: FishFailureReason, stage: 'clip' | 'stream'): void {
+  console.warn(`[sei/voice] Fish Audio unavailable (${reason}) on cloud, using Sei voices`);
+  emitTtsNotice({ kind: 'fish-cloud-fallback', characterId, reason });
+  const key = `${stage}:${reason}`;
+  if (fishCloudFailuresReported.has(key)) return;
+  fishCloudFailuresReported.add(key);
+  void loadAnalytics()
+    .then((a) => a.capture('voice_fish_cloud_failed', { reason, stage }))
+    .catch(() => {});
+}
+
+/** First cloud line Fish spoke this run (analytics, shape only). */
+function noteFishCloudSpoke(stage: 'clip' | 'stream'): void {
+  if (fishCloudUseReported) return;
+  fishCloudUseReported = true;
+  void loadAnalytics()
+    .then((a) => a.capture('voice_fish_cloud_spoke', { stage }))
+    .catch(() => {});
 }
 
 /**
@@ -363,12 +487,105 @@ export type TtsNotice =
       spokenPackId: string;
     }
   | {
+      /** 261102: Kokoro is the chosen local model but could not speak this
+       * line ('pack-missing': not downloaded; 'failed': the pack would not
+       * load or produced no audio), so it was spoken with the Fast voices. */
+      kind: 'kokoro-fallback';
+      characterId: string;
+      reason: 'pack-missing' | 'failed';
+    }
+  | {
+      /** 261103: Fish Audio is the chosen local voice but could not speak
+       * this line (see fishTts.ts for the reasons), so it was spoken with the
+       * Fast voices. */
+      kind: 'fish-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
+      /** 261120: Fish Audio is the chosen CLOUD voice but could not speak
+       * this line, so Sei's voices (the proxy route) spoke it instead. */
+      kind: 'fish-cloud-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
       /** 261020 (T158): a cloud line for an OWN ElevenLabs voice was spoken
        * with the character's stand-in Sei voice instead (see header). */
       kind: 'own-voice-stand-in';
       characterId: string;
       reason: OwnVoiceStandInReason;
+    }
+  | {
+      /** 261110: "Sei voices" with the ChatGPT brain could not speak this
+       * line (the weekly allowance is out, the rate limit, no session, the
+       * service unreachable), so an on-device voice spoke it. */
+      kind: 'sei-voices-fallback';
+      characterId: string;
+      reason: SeiVoicesFallbackReason;
+    }
+  | {
+      /** 261119: the Voice Library voice is gone from Sei cloud; the
+       * stand-in pool voice spoke the line (see header). */
+      kind: 'library-voice-unavailable';
+      characterId: string;
     };
+
+/** Why a "Sei voices" line was spoken on-device (see TtsNotice). */
+export type SeiVoicesFallbackReason = 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+
+/** After the allowance or rate limit refused a "Sei voices" line, lines go
+ * straight to the on-device voice for this long instead of asking again. */
+export const SEI_VOICES_PAUSE_MS = 10 * 60_000;
+let seiVoicesPausedUntil = 0;
+let seiVoicesPauseReason: SeiVoicesFallbackReason = 'no-credits';
+
+export function _resetSeiVoicesPauseForTests(): void {
+  seiVoicesPausedUntil = 0;
+}
+
+function isSeiVoicesRoute(route: ElevenLabsRoute): boolean {
+  return route.kind === 'proxy' && route.seiVoices === true;
+}
+
+/** The fallback reason for a failed "Sei voices" request, or null when the
+ * error is not one the on-device voice should cover (e.g. VOICE_DISABLED). */
+export function seiVoicesFallbackReason(err: unknown): SeiVoicesFallbackReason | null {
+  const msg = String((err as Error)?.message ?? err ?? '');
+  if (msg.startsWith('VOICE_NO_CREDITS')) return 'no-credits';
+  if (msg.startsWith('VOICE_RATE_LIMITED')) return 'rate-limited';
+  if (msg.startsWith('VOICE_NO_SESSION')) return 'no-session';
+  if (msg.startsWith('VOICE_NOT_CONFIGURED') || msg.startsWith('VOICE_TTS_FAILED')) return 'failed';
+  return null;
+}
+
+/**
+ * "Sei voices" could not speak a line: speak it with the on-device voice and
+ * say so. Allowance and rate-limit refusals pause the proxy for
+ * SEI_VOICES_PAUSE_MS. Returns null when no on-device voice can speak it
+ * either (the caller rethrows the original error).
+ */
+async function seiVoicesLocalFallback(
+  reason: SeiVoicesFallbackReason,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  characterId: string,
+  genderHint?: string,
+): Promise<ArrayBuffer | null> {
+  if (reason === 'no-credits' || reason === 'rate-limited') {
+    seiVoicesPausedUntil = Date.now() + SEI_VOICES_PAUSE_MS;
+    seiVoicesPauseReason = reason;
+  }
+  const clip = await tryLocalFallbackClip(text, voiceId, language, characterId, genderHint);
+  if (clip) emitTtsNotice({ kind: 'sei-voices-fallback', characterId, reason });
+  return clip;
+}
+
+/** The pause reason while "Sei voices" is paused, else null. */
+function seiVoicesPaused(): SeiVoicesFallbackReason | null {
+  return Date.now() < seiVoicesPausedUntil ? seiVoicesPauseReason : null;
+}
 
 /** Why an own voice was not spoken with the user's key (see TtsNotice). */
 export type OwnVoiceStandInReason = 'no-key' | 'key-invalid' | 'voice-missing' | 'quota' | 'plan';
@@ -445,6 +662,9 @@ interface SpeakPlan {
   speakId: string;
   /** A refusal of the user's key may retry once via the proxy stand-in. */
   canFallBack: boolean;
+  /** A Voice Library voice on the proxy: a refusal retries once with the
+   * stand-in pool voice (261119). */
+  libraryRetry?: boolean;
 }
 
 /**
@@ -457,8 +677,18 @@ async function planSpeech(
   character: Character,
   voiceId: string,
   own: boolean,
+  library = false,
 ): Promise<SpeakPlan> {
   const { route, ownKeyOnCloud } = await resolveTtsRoute({ own });
+  // Voice Library voice (261119): the proxy refused it a moment ago, so the
+  // stand-in speaks without asking again until the memory expires.
+  if (library && route.kind === 'proxy') {
+    if (libraryVoiceRefused(voiceId)) {
+      emitTtsNotice({ kind: 'library-voice-unavailable', characterId: character.id });
+      return { route, speakId: libraryVoiceStandInId(character), canFallBack: false };
+    }
+    return { route, speakId: voiceId, canFallBack: false, libraryRetry: true };
+  }
   if (own && route.kind === 'proxy') {
     emitTtsNotice({ kind: 'own-voice-stand-in', characterId: character.id, reason: 'no-key' });
     return { route, speakId: ownVoiceStandInId(character), canFallBack: false };
@@ -471,6 +701,26 @@ async function planSpeech(
     }
   }
   return { route, speakId: voiceId, canFallBack: ownKeyOnCloud };
+}
+
+/**
+ * Run one synthesis attempt with the planned voice; when the proxy refuses a
+ * Voice Library voice, remember it, say so, and run it once more with the
+ * stand-in pool voice (261119).
+ */
+async function withLibraryStandIn<T>(
+  plan: SpeakPlan,
+  character: Character,
+  attempt: (speakId: string) => Promise<T>,
+): Promise<T> {
+  try {
+    return await attempt(plan.speakId);
+  } catch (err) {
+    if (!plan.libraryRetry || !isLibraryUnavailableError(err)) throw err;
+    rememberLibraryRefusal(plan.speakId);
+    emitTtsNotice({ kind: 'library-voice-unavailable', characterId: character.id });
+    return await attempt(libraryVoiceStandInId(character));
+  }
 }
 
 /**
@@ -518,19 +768,46 @@ async function synthesizeLocalClip(
   genderHint?: string,
 ): Promise<ArrayBuffer> {
   const speech = await import('../speech');
-  const ready: SpeechPackId[] = [];
-  for (const id of speech.SPEECH_PACK_IDS) {
-    if (id.startsWith('tts-') && (await speech.packReady(id))) ready.push(id);
-  }
   const effLanguage = speech.detectSpokenLanguage(text, language);
   const gender = speech.voiceGenderFor(voiceId, genderHint);
+  // 261102: Kokoro, when chosen, speaks the languages/genders it has a voice
+  // for. A missing or broken Kokoro pack falls through to the Fast voices
+  // below (with a call notice) instead of leaving the companion silent.
+  let kokoroFallback: 'pack-missing' | 'failed' | null = null;
+  if (localTtsModel(await loadConfigOrNull()) === 'kokoro') {
+    const voice = speech.pickKokoroVoice(gender, effLanguage);
+    if (voice) {
+      try {
+        const { samples, sampleRate } = await speech.synthesizeKokoro(text, voice);
+        const { encodeWav } = await import('./stt');
+        return encodeWav(samples, sampleRate);
+      } catch (err) {
+        const msg = String((err as Error)?.message ?? err);
+        kokoroFallback = msg.startsWith('VOICE_PACK_MISSING') ? 'pack-missing' : 'failed';
+        console.warn(`[sei/voice] Kokoro unavailable, using the Fast voices: ${msg}`);
+      }
+    }
+  } else {
+    // Switched away from Kokoro: free its engines now rather than at the
+    // idle timeout (a no-op when none are loaded).
+    speech.releaseKokoroEngines('model switched');
+  }
+  const ready: SpeechPackId[] = [];
+  for (const id of speech.SPEECH_PACK_IDS) {
+    if (id.startsWith('tts-') && id !== 'tts-kokoro' && (await speech.packReady(id))) ready.push(id);
+  }
   const pick = speech.pickLocalVoice(gender, effLanguage, ready);
   if (!pick) {
+    // Kokoro was chosen and only its pack is missing: name that download.
     throw speech.packMissingError(
-      speech.LOCAL_VOICE_SPEC[speech.localVoiceFor(gender, effLanguage)].packId,
+      kokoroFallback === 'pack-missing'
+        ? 'tts-kokoro'
+        : speech.LOCAL_VOICE_SPEC[speech.localVoiceFor(gender, effLanguage)].packId,
     );
   }
-  if (pick.missingPreferredPack) {
+  if (kokoroFallback) {
+    emitTtsNotice({ kind: 'kokoro-fallback', characterId, reason: kokoroFallback });
+  } else if (pick.missingPreferredPack) {
     emitTtsNotice({
       kind: 'substitute-pack',
       characterId,
@@ -565,11 +842,80 @@ async function tryLocalFallbackClip(
   }
 }
 
+/**
+ * Fish Audio (261103): the line's plan, or why it cannot be spoken with Fish
+ * right now (no key, or a refusal remembered for this key and voice). The
+ * voice and the request language key on the LINE's effective language, the
+ * same way the local packs do (detectSpokenLanguage).
+ */
+async function prepareFishLine(
+  characterId: string,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  genderHint?: string,
+): Promise<{ key: string; plan: FishVoicePlan; language: string } | { fail: FishFailureReason }> {
+  const key = await resolveFishKey();
+  if (!key) return { fail: 'no-key' };
+  const speech = await import('../speech');
+  const effLanguage = speech.detectSpokenLanguage(text, language);
+  const gender = speech.voiceGenderFor(voiceId, genderHint);
+  const override = (await loadConfigOrNull())?.fish_voice_overrides?.[characterId];
+  const plan = planFishVoice(override, gender, effLanguage);
+  const remembered = rememberedFishFailure(key, plan.id);
+  if (remembered) return { fail: remembered };
+  return { key, plan, language: effLanguage };
+}
+
+/** A Fish failure for one line: remember it when it is terminal. The notice
+ * waits until the Fast voice has actually spoken the line (emitFishFallback). */
+function noteFishFailure(
+  err: unknown,
+  prep: { key: string; plan: FishVoicePlan },
+): FishFailureReason {
+  const reason = fishFailureReason(err) ?? 'failed';
+  rememberFishFailure(prep.key, prep.plan.id, reason);
+  return reason;
+}
+
+/** Say the Fast voice spoke a line Fish could not. Only after the Fast clip
+ * is in hand: with no Fast pack the line throws VOICE_PACK_MISSING instead,
+ * and that pack-missing notice is the one the user sees. */
+function emitFishFallback(characterId: string, reason: FishFailureReason): void {
+  console.warn(`[sei/voice] Fish Audio unavailable (${reason}), using the Fast voices`);
+  emitTtsNotice({ kind: 'fish-fallback', characterId, reason });
+}
+
+async function fishSelected(): Promise<boolean> {
+  return localTtsModel(await loadConfigOrNull()) === 'fish';
+}
+
+/**
+ * One whole Fish clip (mp3), or why Fish could not speak the line: the caller
+ * then speaks it with the Fast voices and, once that worked, sends the notice.
+ */
+async function trySynthesizeFishLine(
+  characterId: string,
+  text: string,
+  voiceId: string,
+  language: ChatLanguage,
+  genderHint?: string,
+): Promise<{ audio: ArrayBuffer } | { fail: FishFailureReason }> {
+  const prep = await prepareFishLine(characterId, text, voiceId, language, genderHint);
+  if ('fail' in prep) return prep;
+  try {
+    return { audio: await synthesizeFish(prep.key, text.slice(0, MAX_TTS_CHARS), prep.plan, prep.language) };
+  } catch (err) {
+    return { fail: noteFishFailure(err, prep) };
+  }
+}
+
 async function fetchAudio(
   url: string,
   headers: Record<string, string>,
   body: unknown,
   direct = false,
+  wall = !direct,
 ): Promise<ArrayBuffer> {
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), TTS_TIMEOUT_MS);
@@ -593,10 +939,13 @@ async function fetchAudio(
     // credit wall and a free-plan refusal says what it is.
     const directErr = direct ? directElevenLabsError(res.status, text) : null;
     if (directErr) throw new Error(directErr);
+    if (!direct && isProxyVoiceRefusal(res.status, text)) throw new Error(VOICE_LIBRARY_UNAVAILABLE);
     if (res.status === 402) {
       // 261005: the proxy's ledger is out. A direct (own ElevenLabs key) 402 is
       // the user's own account, not Sei's credit wall.
-      if (!direct) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      // 261110: nor is a "Sei voices" 402 (the ChatGPT brain still works,
+      // the line falls back to an on-device voice), so `wall` is false there.
+      if (wall) noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
       throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
     }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
@@ -637,7 +986,7 @@ async function synthesize(
   // as `speed`.
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(stability);
-  const route = routeArg ?? (await resolveElevenLabsRoute());
+  const route = routeArg ?? (await resolveSpeakRoute());
   if (route.kind === 'direct') {
     return fetchAudio(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
@@ -655,6 +1004,8 @@ async function synthesize(
     `${PROXY_BASE_URL}/tts/speech`,
     { Authorization: `Bearer ${jwt}` },
     { text, voice_id: voiceId, ...langField, ...(context ?? {}), ...(stability !== undefined ? { stability } : {}) },
+    false,
+    !isSeiVoicesRoute(route),
   );
 }
 
@@ -678,7 +1029,7 @@ export function prewarmTts(): void {
   // Fire-and-forget: the route only picks the ORIGIN to warm, so the key
   // store read rides inside the async wrapper (callers stay synchronous).
   void (async () => {
-    const route = await resolveElevenLabsRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
+    const route = await resolveSpeakRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
     // Unconfigured BYOK: no request will follow, so nothing to warm.
     if (route.kind === 'unconfigured') return;
     const origin = route.kind === 'direct' ? 'https://api.elevenlabs.io' : PROXY_BASE_URL;
@@ -713,21 +1064,48 @@ export async function voiceTts(args: {
   // character-pinned language (metadata.language, 260730) beats auto-detect.
   const language = ttsLanguageForText(
     args.text,
-    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+    await characterTtsLanguage(character),
   );
   // Local TTS route (see localTtsSelected): same register conversion, no
   // proxy clip cap (the IPC boundary already bounds text length), WAV bytes
   // instead of mp3 — the renderer's blob playback sniffs the container.
   const own = ownVoicePickOf(character);
-  if (await localTtsSelected()) {
+  // A Voice Library voice (261119): its gender picks the local voice and the
+  // stand-in, like an own voice's.
+  const library = libraryVoicePickOf(character);
+  const genderHint = own?.gender ?? library?.gender;
+  const backend = await aiBackendKind();
+  // 261118: Fish Audio on a cloud account (261120: only when picked in
+  // Playtime > Sei > Advanced). A failure here falls through to Sei's voices
+  // below, never to the Fast voices (BYOK-only packs).
+  if (await fishOnCloud(backend)) {
+    const fishText = speechTextFor(args.text, language);
+    if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const fish = await trySynthesizeFishLine(args.characterId, fishText, voiceId, language, genderHint);
+    if ('audio' in fish) {
+      noteFishCloudSpoke('clip');
+      return fish.audio;
+    }
+    noteFishCloudFallback(args.characterId, fish.fail, 'clip');
+  }
+  if (await localTtsSelected(backend)) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
-    return await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
+    // 261103: Fish Audio, when chosen, speaks first; any failure falls back
+    // to the Fast voices below, with a notice once that clip exists.
+    if (await fishSelected()) {
+      const fish = await trySynthesizeFishLine(args.characterId, localText, voiceId, language, genderHint);
+      if ('audio' in fish) return fish.audio;
+      const clip = await synthesizeLocalClip(localText, voiceId, language, args.characterId, genderHint);
+      emitFishFallback(args.characterId, fish.fail);
+      return clip;
+    }
+    return await synthesizeLocalClip(localText, voiceId, language, args.characterId, genderHint);
   }
   // An own-account voice (261019) goes direct with the user's key, on cloud
   // too (261020); without a usable key on cloud it speaks the stand-in pool
   // voice through the proxy instead (planSpeech). The pick is never swapped.
-  const plan = await planSpeech(character, voiceId, own !== null);
+  const plan = await planSpeech(character, voiceId, own !== null, library !== null);
   const { route } = plan;
   // BYOK on the ElevenLabs engine with no key stored (260908): before failing
   // with the setup hint, try any installed local voice pack — an accented or
@@ -736,7 +1114,7 @@ export async function voiceTts(args: {
   if (route.kind === 'unconfigured') {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
-    const fallback = await tryLocalFallbackClip(localText, voiceId, language, args.characterId, own?.gender);
+    const fallback = await tryLocalFallbackClip(localText, voiceId, language, args.characterId, genderHint);
     if (fallback) return fallback;
     throw new Error(NOT_CONFIGURED_BYOK);
   }
@@ -751,8 +1129,31 @@ export async function voiceTts(args: {
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
   const context = ttsContextFor(text, language, prev, args.more === true);
   const stability = voiceStabilityFor(character);
+  // 261110: "Sei voices" with the ChatGPT brain. While the allowance or rate
+  // limit has paused it, and whenever a line fails, an on-device voice
+  // speaks the line instead (with a notice), never the credit wall.
+  if (isSeiVoicesRoute(route)) {
+    const paused = seiVoicesPaused();
+    if (paused) {
+      const clip = await seiVoicesLocalFallback(paused, spoken, voiceId, language, args.characterId, genderHint);
+      if (clip) return clip;
+    }
+    try {
+      return await withLibraryStandIn(plan, character, (id) =>
+        synthesize(text, id, language, stability, route, context),
+      );
+    } catch (err) {
+      const reason = seiVoicesFallbackReason(err);
+      if (!reason) throw err;
+      const clip = await seiVoicesLocalFallback(reason, spoken, voiceId, language, args.characterId, genderHint);
+      if (clip) return clip;
+      throw err;
+    }
+  }
   try {
-    return await synthesize(text, plan.speakId, language, stability, route, context);
+    return await withLibraryStandIn(plan, character, (id) =>
+      synthesize(text, id, language, stability, route, context),
+    );
   } catch (err) {
     // Cloud + own voice + a key ElevenLabs refused: speak this line with the
     // stand-in pool voice through the proxy (the notice already went out).
@@ -828,9 +1229,14 @@ async function openTtsStream(
     // Direct route vocabulary first (see fetchAudio / directElevenLabsError).
     const directErr = route.kind === 'direct' && !res.ok ? directElevenLabsError(res.status, bodyText) : null;
     if (directErr) throw new Error(directErr);
+    if (route.kind !== 'direct' && isProxyVoiceRefusal(res.status, bodyText)) {
+      throw new Error(VOICE_LIBRARY_UNAVAILABLE);
+    }
     if (res.status === 402) {
       // 261005: see fetchAudio; only the proxy route is Sei's credit wall.
-      if (route.kind !== 'direct') noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      if (route.kind !== 'direct' && !isSeiVoicesRoute(route)) {
+        noteCreditWall({ reason: 'depleted' }, { surface: 'voice', trigger: 'tts' });
+      }
       throw new Error('VOICE_NO_CREDITS: playtime balance exhausted');
     }
     if (res.status === 429) throw new Error('VOICE_RATE_LIMITED: daily usage cap reached');
@@ -879,17 +1285,63 @@ export async function voiceTtsStream(
   // Per-message pin (see ttsLanguageForText and voiceTts).
   const language = ttsLanguageForText(
     args.text,
-    characterLanguage(character.metadata) ?? (await ttsLanguage()),
+    await characterTtsLanguage(character),
   );
   // Local TTS route (260816): the renderer's voice store never picks the
   // streaming path while local TTS is selected (a WAV clip cannot ride the
   // audio/mpeg MSE pipeline), but any caller that does anyway degrades to a
   // whole-clip synthesis delivered as one chunk + done.
   const own = ownVoicePickOf(character);
-  if (await localTtsSelected()) {
+  // A Voice Library voice (261119): its gender picks the local voice and the
+  // stand-in, like an own voice's.
+  const library = libraryVoicePickOf(character);
+  const genderHint = own?.gender ?? library?.gender;
+  const backend = await aiBackendKind();
+  // 261118: Fish Audio streams its mp3 on a cloud account too (261120: only
+  // when picked in Playtime > Sei > Advanced). A failure before the first
+  // byte falls through to Sei's voices stream below; a
+  // failure mid-body ends the stream with an error, like any other stream.
+  if (await fishOnCloud(backend)) {
+    const fishText = speechTextFor(args.text, language);
+    if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
+    const prep = await prepareFishLine(args.characterId, fishText, voiceId, language, genderHint);
+    if ('fail' in prep) {
+      noteFishCloudFallback(args.characterId, prep.fail, 'stream');
+    } else {
+      try {
+        const opened = await openFishStream(prep.key, fishText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+        noteFishCloudSpoke('stream');
+        return pumpTtsStream(opened, sink);
+      } catch (err) {
+        noteFishCloudFallback(args.characterId, noteFishFailure(err, prep), 'stream');
+      }
+    }
+  }
+  if (await localTtsSelected(backend)) {
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
-    const buf = await synthesizeLocalClip(localText, voiceId, language, args.characterId, own?.gender);
+    // 261103: Fish Audio streams its mp3 like the ElevenLabs path. A failure
+    // before the first byte (no key, a refusal, the connect timeout) falls
+    // back to a Fast clip delivered as one WAV chunk + done; the renderer's
+    // stream player sniffs the container. A failure mid-body ends the stream
+    // with an error, like any other stream. The notice goes out only once
+    // the Fast clip exists (no Fast pack = the pack-missing error instead).
+    let fishFail: FishFailureReason | null = null;
+    if (await fishSelected()) {
+      const prep = await prepareFishLine(args.characterId, localText, voiceId, language, genderHint);
+      if ('fail' in prep) {
+        fishFail = prep.fail;
+      } else {
+        try {
+          const opened = await openFishStream(prep.key, localText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+          return pumpTtsStream(opened, sink);
+        } catch (err) {
+          fishFail = noteFishFailure(err, prep);
+        }
+      }
+    }
+    const buf = await synthesizeLocalClip(localText, voiceId, language, args.characterId, genderHint);
+    if (fishFail) emitFishFallback(args.characterId, fishFail);
     const streamId = `tts-${nextStreamSeq++}`;
     queueMicrotask(() => {
       sink({ streamId, chunk: buf });
@@ -898,7 +1350,7 @@ export async function voiceTtsStream(
     return { streamId };
   }
   // Own-account voice (see voiceTts / planSpeech).
-  const plan = await planSpeech(character, voiceId, own !== null);
+  const plan = await planSpeech(character, voiceId, own !== null, library !== null);
   const { route } = plan;
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const spoken = speechTextFor(args.text, language);
@@ -908,7 +1360,7 @@ export async function voiceTtsStream(
   // sentinel (see voiceTts, 260908), degraded to one whole-clip chunk + done
   // exactly like the localTtsSelected branch.
   if (route.kind === 'unconfigured') {
-    const fallback = await tryLocalFallbackClip(text, voiceId, language, args.characterId, own?.gender);
+    const fallback = await tryLocalFallbackClip(text, voiceId, language, args.characterId, genderHint);
     if (!fallback) throw new Error(NOT_CONFIGURED_BYOK);
     const streamId = `tts-${nextStreamSeq++}`;
     queueMicrotask(() => {
@@ -926,9 +1378,40 @@ export async function voiceTtsStream(
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
   const more = args.more === true;
 
+  // 261110: "Sei voices" fallback (see voiceTts): a whole on-device clip
+  // delivered as one chunk + done; the renderer's stream player sniffs it.
+  if (isSeiVoicesRoute(route)) {
+    const deliver = (buf: ArrayBuffer): { streamId: string } => {
+      const streamId = `tts-${nextStreamSeq++}`;
+      queueMicrotask(() => {
+        sink({ streamId, chunk: buf });
+        sink({ streamId, done: true });
+      });
+      return { streamId };
+    };
+    const paused = seiVoicesPaused();
+    if (paused) {
+      const clip = await seiVoicesLocalFallback(paused, spoken, voiceId, language, args.characterId, genderHint);
+      if (clip) return deliver(clip);
+    }
+    try {
+      const sOpened = await withLibraryStandIn(plan, character, (id) =>
+        openTtsStream(route, id, text, language, stability, ttsContextFor(text, language, prev, more)),
+      );
+      return pumpTtsStream(sOpened, sink);
+    } catch (err) {
+      const reason = seiVoicesFallbackReason(err);
+      if (!reason) throw err;
+      const clip = await seiVoicesLocalFallback(reason, spoken, voiceId, language, args.characterId, genderHint);
+      if (clip) return deliver(clip);
+      throw err;
+    }
+  }
   let opened: OpenedTtsStream;
   try {
-    opened = await openTtsStream(route, plan.speakId, text, language, stability, ttsContextFor(text, language, prev, more));
+    opened = await withLibraryStandIn(plan, character, (id) =>
+      openTtsStream(route, id, text, language, stability, ttsContextFor(text, language, prev, more)),
+    );
   } catch (err) {
     // Cloud + own voice + a key ElevenLabs refused: stand-in via the proxy
     // (see voiceTts). Pre-flight only, so nothing has reached the sink yet.
@@ -943,10 +1426,19 @@ export async function voiceTtsStream(
       ttsContextFor(proxyText, language, prev, more),
     );
   }
-  const { body: resBody, ctrl } = opened;
-  // Upstream accepted the synthesis — this line is what the player will hear
-  // last, so it becomes the next clip's previous_text.
+  return pumpTtsStream(opened, sink);
+}
 
+/**
+ * Pump an opened synthesis body to `sink` in the background (ordered chunks,
+ * then exactly one terminal {done} or {error}) and return its id at once.
+ * Shared by the ElevenLabs and Fish Audio streams.
+ */
+function pumpTtsStream(
+  opened: OpenedTtsStream | OpenedFishStream,
+  sink: (event: TtsStreamEvent) => void,
+): { streamId: string } {
+  const { body: resBody, ctrl } = opened;
   const streamId = `tts-${nextStreamSeq++}`;
   // Pump in the background; the caller gets the id NOW so it can route chunks.
   //
@@ -1007,6 +1499,9 @@ const PREVIEW_LINES: Record<ChatLanguage, string> = {
   ko: '안녕, 이게 내 목소리야.',
   fr: 'Salut, voici ma voix.',
   es: 'Hola, así es como sueno.',
+  ru: 'Привет, вот так звучит мой голос.',
+  pt: 'Oi, essa é a minha voz.',
+  it: 'Ciao, questa è la mia voce.',
 };
 
 /**
@@ -1048,20 +1543,62 @@ export async function voicePreviewTts(args: {
       const character = await getCharacter(args.characterId);
       if (character && character.metadata?.voiceId !== NO_VOICE_ID) {
         voiceId = await resolveVoiceId(character);
-        genderHint = ownVoicePickOf(character)?.gender;
+        genderHint = ownVoicePickOf(character)?.gender ?? libraryVoicePickOf(character)?.gender;
       }
     }
+    // Same path for Fast and Kokoro: synthesizeLocalClip reads the model
+    // choice (and falls back to Fast when Kokoro cannot speak).
     const localText = speechTextFor(line, language) || line;
+    // 261103: Fish Audio speaks the sample in the voice the call would use
+    // (the character's own pick when set). A failure plays the Fast sample;
+    // the Settings Test button is where Fish errors are shown.
+    if (await fishSelected()) {
+      const prep = await prepareFishLine(args.characterId ?? '', localText, voiceId ?? '', language, genderHint);
+      if (!('fail' in prep)) {
+        try {
+          return await synthesizeFish(prep.key, localText, prep.plan, prep.language);
+        } catch (err) {
+          const reason = fishFailureReason(err) ?? 'failed';
+          rememberFishFailure(prep.key, prep.plan.id, reason);
+          console.warn(`[sei/voice] Fish Audio sample failed (${reason}), using the Fast voices`);
+        }
+      }
+    }
     return await synthesizeLocalClip(localText, voiceId ?? '', language, args.characterId ?? '', genderHint);
   }
-  const voiceId = args.voiceId ?? '';
+  let voiceId = args.voiceId ?? '';
+  /** The companion whose Voice Library voice this sample plays (261119). */
+  let libraryCharacter: Character | null = null;
+  // 261110: the profile Overview's sample asks by companion only: play the
+  // voice a call with them would use (resolved without writing anything, so
+  // a World preview's cached row is never touched).
+  if (!voiceId && args.characterId) {
+    const character = await getCharacter(args.characterId);
+    if (!character) throw new Error('VOICE_TTS_FAILED: unknown character');
+    if (character.metadata?.voiceId === NO_VOICE_ID) throw new Error('VOICE_DISABLED: this companion has no voice');
+    voiceId = previewVoiceIdFor(character);
+    if (libraryVoicePickOf(character) && voiceId === character.metadata?.voiceId) {
+      // A Voice Library voice (261119) plays for everyone; once the proxy
+      // refused it, the stand-in a live line would use.
+      if (libraryVoiceRefused(voiceId)) voiceId = libraryVoiceStandInId(character);
+      else libraryCharacter = character;
+    } else if (!isPoolVoiceId(voiceId) && !(await isOwnVoiceId(voiceId))) {
+      // The author's own ElevenLabs voice on a machine whose key cannot speak
+      // it: the stand-in they approved for others, as a live line would.
+      voiceId = ownVoiceStandInId(character);
+    }
+  }
   // Closed allowlist: the curated pool, or (261019) a voice in the user's
   // own ElevenLabs account as listed with the current own-voice key. Own
   // voices only list when that key exists, and they synthesize on its direct
   // route (on cloud too, 261020), so they never reach the proxy from here; a
   // pool voice keeps the base route (the proxy on cloud).
   const pool = isPoolVoiceId(voiceId);
-  if (!pool && !(await isOwnVoiceId(voiceId))) {
+  // 261119: or a Voice Library voice (stored on a character, or looked up in
+  // the picker this session). It speaks on the base route like a pool voice;
+  // the proxy decides whether it still has it.
+  const library = !pool && (libraryCharacter !== null || (await isKnownLibraryVoiceId(voiceId)));
+  if (!pool && !library && !(await isOwnVoiceId(voiceId))) {
     throw new Error('VOICE_TTS_FAILED: unknown voice');
   }
   const calmness =
@@ -1072,12 +1609,45 @@ export async function voicePreviewTts(args: {
   // valid; only the pitch component of the key is gone.
   const paramTag = calmness !== undefined ? `\n#pitch=1;calm=${calmness}` : '';
   const key = previewCacheKey(voiceId, line + paramTag);
-  const cached = await readCachedPreview(key);
+  // A library voice the proxy refused keeps no sample: the picker shows it
+  // as gone, and an old cached clip would say otherwise.
+  const cached = library && libraryVoiceRefused(voiceId) ? null : await readCachedPreview(key);
   if (cached) return cached;
-  const { route } = await resolveTtsRoute({ own: !pool });
-  const buf = await synthesize(line, voiceId, language, calmness, route);
+  const { route } = await resolveTtsRoute({ own: !pool && !library });
+  let buf: ArrayBuffer;
+  try {
+    buf = await synthesize(line, voiceId, language, calmness, route);
+  } catch (err) {
+    if (!library || !isLibraryUnavailableError(err)) throw err;
+    rememberLibraryRefusal(voiceId);
+    // The companion's sample plays the stand-in a call would use; the picker
+    // asking for the voice itself gets the error (it shows the voice as gone).
+    if (libraryCharacter) {
+      return voicePreviewTts({ voiceId: libraryVoiceStandInId(libraryCharacter), calmness: args.calmness });
+    }
+    throw err;
+  }
+  if (library) forgetLibraryRefusal(voiceId);
   await writeCachedPreview(key, buf);
   return buf;
+}
+
+/**
+ * Fish Audio sample in one voice, for the Settings Test button and the
+ * character's voice-pick Preview (261103). Throws the FISH_* sentinels (no
+ * fallback here: these buttons exist to show whether Fish works). `voiceId`
+ * absent = the automatic female voice for the conversation language.
+ */
+export async function fishSampleTts(args: { voiceId?: string; speed?: number } = {}): Promise<ArrayBuffer> {
+  const key = await resolveFishKey();
+  if (!key) throw new Error('FISH_NO_KEY: add your Fish Audio key first');
+  const language = await ttsLanguage();
+  const line = PREVIEW_LINES[language] ?? PREVIEW_LINES.en;
+  const text = speechTextFor(line, language) || line;
+  const plan = args.voiceId
+    ? planFishVoice({ id: args.voiceId, name: '', speed: args.speed ?? FISH_OVERRIDE_DEFAULT_SPEED }, 'female', language)
+    : planFishVoice(undefined, 'female', language);
+  return await synthesizeFish(key, text, plan, language);
 }
 
 /**
@@ -1093,7 +1663,7 @@ export async function voicePreviewTts(args: {
  * click.
  */
 export async function voicePreviewAvailable(): Promise<boolean> {
-  const route = await resolveElevenLabsRoute();
+  const route = await resolveSpeakRoute();
   if (route.kind === 'direct') return true;
   if (route.kind === 'unconfigured') return false;
   return (await getJwtOrNull()) !== null;

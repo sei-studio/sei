@@ -48,9 +48,11 @@ const sessions = new Map<string, LiveSession>();
 /**
  * Record one player message to `characterId` on the plain-chat path. Opens a
  * session on the first message and refreshes the idle timer on every one.
+ * Returns this message's 1-based number within its session (the turn index
+ * `reply_latency` buckets on, see replyLatency.ts), 0 if recording failed.
  * Never throws — analytics must not be able to break a chat send.
  */
-export function noteChatMessage(characterId: string): void {
+export function noteChatMessage(characterId: string): number {
   try {
     const now = Date.now();
     const live = sessions.get(characterId);
@@ -63,18 +65,48 @@ export function noteChatMessage(characterId: string): void {
       live.timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
       // A pending timer must never hold the app open at quit.
       live.timer.unref?.();
-      return;
+      return live.messages;
     }
     const timer = setTimeout(() => void endChatSession(characterId, 'idle'), IDLE_TIMEOUT_MS);
     timer.unref?.();
     sessions.set(characterId, { characterId, startedAt: now, lastAt: now, messages: 1, timer });
+    // 261107: a next-step check from the last chat still running on a local
+    // model gives the GPU back to this one (playerEndNextStep.ts).
+    void import('../playerEndNextStep').then((m) => m.yieldToNewSession(characterId)).catch(() => {});
+    // 261107: the player is back in a text chat, so a plan the last chat left
+    // ("up next" card, homeNextStep.ts) is used, as a game session's start
+    // uses its plan. A game, call or untagged plan stays (onlySurface).
+    void consumeChatPlan(characterId);
     void (async () => {
       try {
         const { capture } = await import('../analytics');
         capture('chat_session_started', { character_id: characterId });
       } catch { /* best-effort */ }
     })();
-  } catch { /* best-effort */ }
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Mark a chat-sourced plan used (consumeNextStep, onlySurface 'chat') and tell
+ * the renderer to re-read the card when that changed something. Tracked as a
+ * scoped write like index.ts updateHomeNextStep, so an account switch waits
+ * for it. Never rejects.
+ */
+async function consumeChatPlan(characterId: string): Promise<void> {
+  try {
+    const [{ paths }, { consumeNextStep, noteHomeNextStepChanged }, { trackScopedWrite }] = await Promise.all([
+      import('../paths'),
+      import('../homeNextStep'),
+      import('../profile/scopeBarrier'),
+    ]);
+    const changed = await trackScopedWrite(
+      consumeNextStep(paths.memoryDir(characterId), Date.now(), { onlySurface: 'chat' }),
+    );
+    if (changed) noteHomeNextStepChanged(characterId);
+  } catch { /* the card stays until its TTL */ }
 }
 
 /**
@@ -96,6 +128,12 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
       messages: live.messages,
       reason,
     });
+    // 261107 (O2): the "next time" check for text chat (chatNextStep.ts):
+    // run in the background on an idle end, kept for the next launch on a
+    // quit, skipped on the free cloud plan. Never awaited past its start, so
+    // closing the chat does not wait on the model.
+    const { chatSessionNextStep } = await import('../chatNextStep');
+    await chatSessionNextStep(live, reason, capture);
   } catch { /* best-effort */ }
 }
 

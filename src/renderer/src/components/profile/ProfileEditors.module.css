@@ -1,0 +1,223 @@
+/* Inline editors on your own companion's profile tabs (261119). They sit in
+   the tab's row list (Profile.module.css .rows) and keep its look: the row
+   label on the left, the fields in the value column, a hairline between. The field
+   styles are the ones the Edit companion popup used (mono micro-labels,
+   underline mode tabs). Tokens only. */
+
+/* The row grid (Profile.module.css .row): label column, then the fields. */
+.block {
+  display: grid;
+  grid-template-columns: minmax(110px, 28%) minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Lines the label up with the first control's text. */
+.labelCell {
+  min-width: 0;
+  padding-top: var(--space-xs);
+}
+
+.block:last-child {
+  border-bottom: 0;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.hint {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  margin: 0;
+}
+
+/* Why the player was sent here (the publish step needs a description). */
+.notice {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: var(--space-sm) var(--pad-control);
+  margin: 0;
+  border-radius: var(--radius);
+}
+
+.error {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--red);
+  margin: 0;
+}
+
+/* ── Save bar: only while there is something to save ─────────────────── */
+.saveBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.saveHint {
+  margin-right: auto;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.savedTag {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--green);
+}
+
+/* ── Underline mode tabs (persona Standard / Advanced, chess Auto / Custom) ── */
+.modeTabs {
+  display: flex;
+  gap: var(--space-lg);
+  border-bottom: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.modeTab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: var(--space-sm) 0;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease);
+}
+
+.modeTab:hover:not(:disabled):not(.modeTabActive) {
+  color: var(--text);
+}
+
+.modeTab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modeTabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Persona: the raw prompt (Advanced) ──────────────────────────────── */
+.expandedBody {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  padding: var(--pad-control);
+  border-radius: var(--radius);
+}
+
+.expandedTextarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: vertical;
+  min-height: 280px;
+  max-height: 560px;
+  padding: 0 64px 0 0;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.expandedTextarea:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* No border on the button (house rule): a background chip until pressed. */
+.expandedCopy {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  border: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: var(--space-xs) var(--space-sm);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.expandedCopy:hover {
+  color: var(--accent);
+}
+
+/* Advanced to Standard with hand edits: confirm first. */
+.confirmBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  background: var(--surface-2);
+  padding: var(--pad-control);
+  border-radius: var(--radius);
+}
+
+.confirmText {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--gap-control);
+  flex-wrap: wrap;
+}
+
+/* ── Chess ───────────────────────────────────────────────────────────── */
+.slider {
+  width: 100%;
+  max-width: 360px;
+  accent-color: var(--accent);
+  margin: var(--space-sm) 0 var(--space-xs);
+}
+
+/* ── Voice: "Others will hear" under an own ElevenLabs voice ─────────── */
+.sharedVoice {
+  padding-top: var(--gap-group);
+  border-top: 1px solid var(--border);
+}

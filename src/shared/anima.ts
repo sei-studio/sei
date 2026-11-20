@@ -1,0 +1,82 @@
+/**
+ * Anima face sets (261105): a companion's baked facepack, made in the cloud
+ * from her portrait the first time SeiLink opens for her (sei-proxy
+ * /anima/v1/*, baked on Modal), then kept on disk. See src/main/anima/.
+ *
+ * Shared between main and the renderer: the pack id shape, and the small
+ * status the renderer shows ("Preparing {name}'s look...").
+ */
+
+/** A downloaded pack's id: `an-` + the first 32 hex of its archive sha256. Fits facepackStore's id rule. */
+export const ANIMA_PACK_ID_RE = /^an-[0-9a-f]{32}$/;
+
+export function animaPackId(packSha256: string): string {
+  return `an-${packSha256.slice(0, 32)}`;
+}
+
+export function isAnimaPackId(id: unknown): id is string {
+  return typeof id === 'string' && ANIMA_PACK_ID_RE.test(id);
+}
+
+/**
+ * What the renderer needs to know, nothing more:
+ *  - preparing: a bake is queued or running, or the pack is downloading;
+ *  - ready: her face set is on disk (RoomAvatar picks it up by itself);
+ *  - idle: anything else (never asked, signed out, offline, no pack for this
+ *    portrait, deferred, failed). The fallback avatar stays and nothing is shown.
+ *    Since 261118 that fallback can be the cloud's cut-out of her picture
+ *    (no face to animate): still 'idle', RoomAvatar picks it up by itself.
+ */
+export type AnimaUiState = 'idle' | 'preparing' | 'ready';
+
+/**
+ * Where her bake stands, finer than AnimaUiState (261106, the WorldLink
+ * first-link intro paces its status lines on it):
+ *  - checking: SeiLink opened for her, looking at the pack on disk;
+ *  - requesting: POST /anima/v1/request sent, no answer yet;
+ *  - queued / running: the proxy's answer (waiting for a worker / baking);
+ *  - downloading: the bake is done, the pack is downloading;
+ *  - ready: her face set is on disk;
+ *  - unavailable: no pack will come for now (no_pack, deferred, unavailable,
+ *    signed out, no such character): the fallback avatar is her look (since
+ *    261118 possibly the cloud's cut-out, downloaded before this stage);
+ *  - offline: no network and no pack on disk;
+ *  - failed: the request, the bake or the install failed (`failure`).
+ */
+export type AnimaStage = 'checking' | 'requesting' | 'queued' | 'running' | 'downloading' | 'ready' | 'unavailable' | 'offline' | 'failed';
+
+export const ANIMA_STAGES: readonly AnimaStage[] = ['checking', 'requesting', 'queued', 'running', 'downloading', 'ready', 'unavailable', 'offline', 'failed'];
+
+/** Why a stage is `failed`. */
+export type AnimaFailure = 'network' | 'timeout' | 'bake_failed' | 'install' | 'http' | 'auth' | 'error';
+
+export interface AnimaStatus {
+  characterId: string;
+  state: AnimaUiState;
+  /** Absent before SeiLink ever opened for her in this app run. */
+  stage?: AnimaStage;
+  failure?: AnimaFailure;
+}
+
+/** What opened SeiLink for her (analytics only). */
+export type AnimaTrigger = 'move_in_sheet' | 'editor' | 'host_start' | 'host_restore' | 'portrait_changed';
+
+export const ANIMA_TRIGGERS: readonly AnimaTrigger[] = ['move_in_sheet', 'editor', 'host_start', 'host_restore', 'portrait_changed'];
+
+/**
+ * The avatar kinds RoomAvatar can show (RoomAvatarKind), for the `shown` analytics event.
+ * 'cutout' (261118): the cloud's clean cut-out of her picture, for a portrait with no face to animate.
+ */
+export const ANIMA_SHOWN_KINDS = ['live2d', 'rig', 'facepack', 'cutout', 'portrait', 'placeholder'] as const;
+export type AnimaShownKind = (typeof ANIMA_SHOWN_KINDS)[number];
+
+export function isAnimaShownKind(v: unknown): v is AnimaShownKind {
+  return typeof v === 'string' && (ANIMA_SHOWN_KINDS as readonly string[]).includes(v);
+}
+
+/** A downloaded cloud cut-out (261118): her picture's figure on transparency, PNG. */
+export interface AnimaCutout {
+  /** sha256 of the PNG (what the proxy signed), a cache key for the views. */
+  sha256: string;
+  png: Uint8Array;
+}

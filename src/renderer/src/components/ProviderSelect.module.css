@@ -22,9 +22,9 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-control);
   min-height: 40px;
-  padding: 0 13px;
+  padding: 0 var(--space-md);
   background: rgba(127, 127, 127, 0.03);
   border: 1px solid var(--border-strong);
   color: var(--text);
@@ -35,6 +35,7 @@
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+  border-radius: var(--radius);
 }
 
 .trigger:hover {
@@ -84,21 +85,22 @@
   right: 0;
   z-index: 40;
   margin: 0;
-  padding: 4px;
+  padding: var(--space-xs);
   list-style: none;
   max-height: 296px;
   overflow-y: auto;
   background: var(--surface);
   box-shadow: var(--shadow-pop);
   outline: none;
+  border-radius: var(--radius);
 }
 
 .option {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--gap-control);
   min-height: 34px;
-  padding: 0 11px;
+  padding: 0 var(--space-md);
   font-family: var(--mono);
   font-weight: 500;
   font-size: 11px;

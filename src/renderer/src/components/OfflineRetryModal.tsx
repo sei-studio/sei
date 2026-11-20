@@ -63,7 +63,7 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
     <ModalShell title={t("You're offline")} onClose={onDismiss}>
       <p className={styles.body}>
         {t(
-          'Sei couldn’t reach the cloud to check your account. You can keep playing locally — cloud features like character sync will reconnect once you’re back online.',
+          'Sei couldn’t reach the cloud to check your account. You can keep playing locally. Cloud features like character sync will reconnect once you’re back online.',
         )}
       </p>
       {retryFailed ? (

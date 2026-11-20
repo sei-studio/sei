@@ -124,7 +124,9 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     return () => window.removeEventListener('keydown', handler);
   }, [closeModal]);
 
-  const onPlay = (g: GameDef): void => {
+  /** `query`: a Roblox experience to search for in the pick step (261109,
+   *  from the Suggest-a-game hint: "Roblox Forsaken"). */
+  const onPlay = (g: GameDef, query?: string): void => {
     if (!g.available) return;
     if (isVisionLocked(g)) return;
     if (g.id === 'suggest') {
@@ -152,7 +154,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     if (isBackseatGameId(g.id)) {
       closeModal();
       requestGameLaunch(characterId, { id: 'backseat', name: t(g.name) }, () =>
-        openModal({ kind: 'backseat-game', characterId, gameId: g.id }),
+        openModal({ kind: 'backseat-game', characterId, gameId: g.id, ...(query ? { query } : {}) }),
       );
       return;
     }
@@ -266,6 +268,15 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
           placeholder={t('What game should we add?')}
           doneNote={t('In the meantime, Backseat already works with any game on your screen.')}
           onClose={() => setSuggestOpen(false)}
+          form="suggest_game"
+          // 261109 (T379): the typed game is one we have. Leave the form and
+          // open that tile's own path, as if it had been clicked. A tile the
+          // model locks (vision) leaves the picker showing why.
+          onKnownGame={(m) => {
+            setSuggestOpen(false);
+            const g = GAMES.find((x) => x.id === m.gameId);
+            if (g) onPlay(g, m.query);
+          }}
         />
       ) : null}
     </div>

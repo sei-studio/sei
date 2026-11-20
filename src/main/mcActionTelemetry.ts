@@ -50,10 +50,23 @@ const COUNTER_KEYS = [
   'deaths',
   'player_msgs',
   'voice_msgs',
+  // 261112: voice lines that cut her off mid-line, and how many of those she
+  // answered by stopping her action (stop or unfollow).
+  'voice_interrupt_msgs',
+  'voice_interrupt_stops',
   'unanswered',
   'replied',
   'reply_ms_total',
   'pending_chats',
+  // 261111: Minecraft connection drops after spawn (bot actionStats noteBodyDrop).
+  'body_drops',
+  'body_rejoins',
+  'drop_kick',
+  'drop_keepalive',
+  'drop_socket',
+  'drop_reset',
+  'drop_other',
+  'drop_ping_failed',
 ] as const;
 
 const count = z.number().int().nonnegative().catch(0);

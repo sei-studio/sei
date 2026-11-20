@@ -247,6 +247,19 @@ function broadcastOnDidFinishLoad(): void {
   broadcastAuthState(mainWindowRef);
 }
 
+/**
+ * macOS: the main window was closed and a new one made (index.ts
+ * reopenMainWindow, which does not run bootstrap or initAuthState again).
+ * Auth pushes, and their replay on load, go to the new window.
+ */
+export function rebindAuthWindow(window: BrowserWindow): void {
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    mainWindowRef.webContents.removeListener('did-finish-load', broadcastOnDidFinishLoad);
+  }
+  mainWindowRef = window;
+  window.webContents.on('did-finish-load', broadcastOnDidFinishLoad);
+}
+
 /** The profile scope an auth state belongs in: the user's id, or null for 'local'. */
 function scopeFor(state: AuthState): string | null {
   return state.kind === 'signed_in' ? state.user.id.toLowerCase() : null;

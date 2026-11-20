@@ -14,6 +14,7 @@ import { detectStardew, installStardew, readModConfig, type StardewInstallEnv } 
 import { launchStardew } from './launch';
 import { createStardewWatcher, STARDEW_POLL_INTERVAL_MS } from './watcher';
 import { stardewNameFromRaw } from '../../../bot/names.js';
+import { trackStardewFarmSeen } from '../../setupTelemetry';
 
 /**
  * The companion's in-game display name. MIRROR of botUsernameFor in
@@ -40,8 +41,10 @@ export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModul
   let cachedToken: string | null = null;
 
   /** The mod's port from its config.json (also caches the token for the join target). */
+  let lastStore = 'unknown';
   const getPort = async (): Promise<number | null> => {
     const state = await detectStardew(opts.env);
+    lastStore = state.gamePath ? state.store : 'unknown';
     if (!state.gamePath || !state.modInstalled) {
       cachedToken = null;
       return null;
@@ -56,6 +59,9 @@ export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModul
     fetch: opts.fetch,
     intervalMs: opts.intervalMs ?? STARDEW_POLL_INTERVAL_MS,
     logger,
+    onChange: (next) => {
+      if (next.kind === 'open') trackStardewFarmSeen(lastStore);
+    },
   });
 
   const tag = (s: StardewWorldState): WorldState => ({ game: 'stardew', ...s });

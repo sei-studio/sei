@@ -27,6 +27,7 @@ import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import type { ImportLocalProfileResult, PeekLocalProfileResult } from '../../../shared/ipc';
+import { trackLocalImportPartyFull, trackLocalImportResult, type LocalImportEntry } from '../lib/localImportTrack';
 import styles from './confirmModal.module.css';
 
 export interface ImportLocalProfileModalProps {
@@ -35,9 +36,22 @@ export interface ImportLocalProfileModalProps {
   existingAccount?: boolean;
   /** Called after the user chooses. `didImport` = the local data was imported. */
   onDone: (didImport: boolean) => void;
+  /** Where it was offered (analytics). */
+  entry?: LocalImportEntry;
 }
 
-export type ImportOfferStatus = 'idle' | 'importing' | 'error';
+/**
+ * 'full' (261116): main refused the import because the companions would not
+ * fit the party (it filled up after the offer was made); nothing moved.
+ */
+/**
+ * The one line shown when the local companions would not fit the party
+ * (261116): the sign-in / boot notice, and the modal when main refused.
+ */
+export const PARTY_FULL_LINE =
+  'Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.';
+
+export type ImportOfferStatus = 'idle' | 'importing' | 'error' | 'full';
 
 /**
  * Whether an import attempt failed: the call threw (`null`), or some
@@ -47,7 +61,12 @@ export function importAttemptFailed(result: ImportLocalProfileResult | null): bo
   return result == null || result.failed.length > 0;
 }
 
-export function ImportLocalProfileModal({ peek, existingAccount = false, onDone }: ImportLocalProfileModalProps): React.ReactElement {
+export function ImportLocalProfileModal({
+  peek,
+  existingAccount = false,
+  onDone,
+  entry = 'sign_in',
+}: ImportLocalProfileModalProps): React.ReactElement {
   const [status, setStatus] = useState<ImportOfferStatus>('idle');
   const [importedAny, setImportedAny] = useState(false);
 
@@ -61,11 +80,20 @@ export function ImportLocalProfileModal({ peek, existingAccount = false, onDone 
     }
     const any = importedAny || (result?.imported.length ?? 0) > 0;
     setImportedAny(any);
+    if (result?.skipped === 'party_full') {
+      // Nothing moved; the line says to free a slot and import from Settings.
+      trackLocalImportResult(entry, 'party_full', 0, 0);
+      trackLocalImportPartyFull(entry, peek.party);
+      setStatus('full');
+      return;
+    }
     if (importAttemptFailed(result)) {
       // Stay up with the error. Whatever did come across is the account's now.
+      trackLocalImportResult(entry, 'failed', result?.imported.length ?? 0, result?.failed.length ?? 0);
       setStatus('error');
       return;
     }
+    trackLocalImportResult(entry, 'imported', result?.imported.length ?? 0, 0);
     onDone(true);
   }
 
@@ -74,7 +102,10 @@ export function ImportLocalProfileModal({ peek, existingAccount = false, onDone 
       peek={peek}
       existingAccount={existingAccount}
       status={status}
-      onDecline={() => onDone(false)}
+      onDecline={() => {
+        trackLocalImportResult(entry, 'declined', 0, 0);
+        onDone(false);
+      }}
       onImport={() => void handleImport()}
       onContinue={() => onDone(importedAny)}
     />
@@ -135,8 +166,19 @@ export function ImportLocalProfileModalView({
           {t('Not everything came over. Try again, or later from Settings.')}
         </p>
       ) : null}
+      {status === 'full' ? (
+        <p className={styles.error} role="alert">
+          {t(PARTY_FULL_LINE)}
+        </p>
+      ) : null}
       {status === 'importing' ? (
         <p className={styles.status}>{t('Importing…')}</p>
+      ) : status === 'full' ? (
+        <ModalFooter>
+          <Button kind="primary" onClick={onContinue}>
+            {t('Continue')}
+          </Button>
+        </ModalFooter>
       ) : status === 'error' ? (
         <ModalFooter>
           <Button kind="ghost" onClick={onContinue}>

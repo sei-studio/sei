@@ -72,7 +72,7 @@ export function ReceiptScreen(): React.ReactElement {
           <p className={styles.line}>{t('Billed monthly until you cancel.')}</p>
           <p className={styles.line}>{t('Next billing date: {date}.', { date: nextBilling })}</p>
           <p className={styles.line}>
-            {t('Cancel anytime in Settings → Cloud AI → Cancel subscription.')}
+            {t('Cancel anytime in Playtime → Sei → Manage billing.')}
           </p>
         </div>
 

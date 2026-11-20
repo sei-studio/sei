@@ -1,0 +1,111 @@
+/* LiveCard (261110): "{name} lives on your desktop now". Tokens only, no
+ * borders. `stage`: a borderless app popup in the lower left, over the first
+ * link's last frame (she stands near the middle, so she stays in view).
+ * `app`: inside ModalShell. */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  /* Over the intro (z 4500). */
+  z-index: 4600;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: var(--space-lg) var(--space-lg) 56px 48px;
+  pointer-events: none;
+}
+
+.card {
+  pointer-events: auto;
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+  padding: var(--pad-modal);
+  border-radius: var(--radius);
+  background: var(--bg2);
+  color: var(--text);
+  box-shadow:
+    var(--shadow-pop),
+    0 24px 60px rgba(0, 0, 0, 0.28);
+  animation: liveIn 360ms var(--ease-pop) both;
+  user-select: none;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 18px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.appBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-group);
+}
+
+.lead {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.rowText {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--gap-control);
+  padding-top: calc(var(--pad-modal) - var(--gap-group));
+}
+
+@keyframes liveIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    animation: none;
+  }
+}

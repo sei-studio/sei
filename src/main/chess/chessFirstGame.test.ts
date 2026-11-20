@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Chess } from 'chess.js';
 import { _setUserDataOverride } from '../paths';
+import { drainScopedWrites } from '../profile/scopeBarrier';
 import type { ChatMessage } from '../../shared/ipc';
 import type { ChessDownloadProgress, ChessGameState } from '../../shared/chessIpc';
 
@@ -150,6 +151,11 @@ beforeEach(async () => {
 afterEach(async () => {
   await endChess(CHAR);
   await shutdownChess();
+  // A finished LLM call records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later, fire-and-forget. Let those
+  // tracked writes land before the profile dir goes (under CI load they raced
+  // the rm: ENOTEMPTY, or wrote after the override was cleared).
+  await drainScopedWrites();
   _setUserDataOverride(null);
   for (let i = 0; ; i++) {
     try {

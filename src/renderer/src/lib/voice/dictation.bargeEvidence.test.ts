@@ -873,9 +873,12 @@ describe('burst word helpers (261101)', () => {
     expect(burstWordOffScript('قف', 'en')).toBe(false);
   });
 
-  it('burstLanguageFor: chat_language, then a Chinese UI, then the OS locale', () => {
+  it('burstLanguageFor: chat_language, then a non-English UI, then the OS locale', () => {
     expect(burstLanguageFor('fr', 'zh', 'ja-JP')).toBe('fr');
     expect(burstLanguageFor(undefined, 'zh', 'en-US')).toBe('zh');
+    expect(burstLanguageFor(undefined, 'ja', 'en-US')).toBe('ja');
+    expect(burstLanguageFor(undefined, 'pt-BR', 'en-US')).toBe('pt');
+    expect(burstLanguageFor(undefined, 'es', 'en-US')).toBe('es');
     expect(burstLanguageFor(undefined, 'en', 'ja-JP')).toBe('ja');
     expect(burstLanguageFor(undefined, 'en', 'ko')).toBe('ko');
     expect(burstLanguageFor(undefined, 'en', 'RU-ru')).toBe('ru');

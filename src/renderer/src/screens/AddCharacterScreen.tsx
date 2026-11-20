@@ -27,7 +27,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { sei } from '../lib/ipcClient';
-import { uiLanguage } from '../lib/i18n';
+import { uiLanguage, useT } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
@@ -50,6 +50,7 @@ import { applySharedVoicePick, applyVoicePick, type OwnVoicePick } from '@shared
 import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
 import type { Character } from '@shared/characterSchema';
 import { KNOWLEDGE_COMPACT_SUGGEST_BYTES } from '@shared/ipc';
+import { userFacingDetail, userFacingError } from '../lib/errors';
 
 const STEPS = 7;
 
@@ -61,6 +62,7 @@ interface PendingKnowledge {
 }
 
 export function AddCharacterScreen({ importFirst = false }: { importFirst?: boolean } = {}): React.ReactElement {
+  const t = useT();
   const navigate = useUiStore((s) => s.navigate);
   const addCharacter = useDataStore((s) => s.addCharacter);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
@@ -203,13 +205,13 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       setCreated(persisted);
       return persisted;
     } catch (err) {
-      const message = (err as Error).message;
+      const message = (err as Error)?.message ?? '';
       // Daily cap hit mid-flow (rare race past the pre-flight gate) — show the
       // same friendly modal instead of the raw sentinel error string.
       if (message.includes('daily_limit_reached')) {
         setLimitHit(true);
       } else {
-        setError(message);
+        setError(userFacingError(err));
       }
       return null;
     } finally {
@@ -230,17 +232,24 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     if (!persisted) return;
     if (pendingKnowledge.length > 0) {
       setSubmitting(true);
-      setKnowledgeStatus('Saving knowledge…');
+      setKnowledgeStatus(t('Saving knowledge…'));
       try {
         for (const f of pendingKnowledge) {
           await sei.knowledgeAdd(persisted.id, { title: f.title, content: f.content, source: 'upload' });
         }
         if (compact) {
-          setKnowledgeStatus('Compressing knowledge…');
+          setKnowledgeStatus(t('Compressing knowledge…'));
           await sei.knowledgeCompact(persisted.id);
         }
       } catch (err) {
-        setError(`Some knowledge could not be saved: ${(err as Error).message}. You can add it later from the companion page.`);
+        const detail = userFacingDetail(err);
+        setError(
+          detail
+            ? t('Some knowledge could not be saved: {error}. You can add it later from the companion page.', {
+                error: detail.replace(/[.。]$/, ''),
+              })
+            : t('Some knowledge could not be saved. You can add it later from the companion page.'),
+        );
       } finally {
         setSubmitting(false);
         setKnowledgeStatus(null);
@@ -255,7 +264,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     try {
       await refreshCharacter(created.id);
     } catch (err) {
-      setError((err as Error).message);
+      setError(userFacingError(err));
     }
   };
 
@@ -312,7 +321,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       await refreshCharacter(saved.id);
       finish(saved.id);
     } catch (err) {
-      setError((err as Error).message);
+      setError(userFacingError(err));
     } finally {
       setSubmitting(false);
     }
@@ -389,15 +398,15 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     const totalKb = Math.round(pendingKnowledge.reduce((s, f) => s + f.bytes, 0) / 1024);
     return (
       <QuestionShell
-        title="Bring their memories"
-        hint="Upload your companion's memories and knowledge here. You can always edit this later. Please do not upload your AI prompt here."
+        title={t('Bring their memories')}
+        hint={t("Upload your companion's memories and knowledge here. You can always edit this later. Please do not upload your AI prompt here.")}
         stepCount={totalSteps}
         currentStep={0}
         onBack={() => navigate({ kind: 'awaken' })}
         onNext={() => setImportPhase(false)}
         nextLabel="Next"
         nextDisabled={pendingKnowledge.length === 0}
-        secondaryLabel="Skip"
+        secondaryLabel={t('Skip')}
         onSecondary={() => setImportPhase(false)}
       >
         <KnowledgeDropZone
@@ -440,12 +449,12 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
                 </span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>
-                    {Math.max(1, Math.round(f.bytes / 1024))} KB
+                    {t('{n} KB', { n: Math.max(1, Math.round(f.bytes / 1024)) })}
                   </span>
                   <Button
                     kind="ghost"
                     size="sm"
-                    aria-label={`Remove ${f.title}`}
+                    aria-label={t('Remove {name}', { name: f.title })}
                     onClick={() => setPendingKnowledge((prev) => prev.filter((_, j) => j !== i))}
                   >
                     <TrashIcon size={13} />
@@ -461,7 +470,10 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
                 color: 'var(--muted)',
               }}
             >
-              {pendingKnowledge.length} file{pendingKnowledge.length === 1 ? '' : 's'}, {Math.max(1, totalKb)} KB total
+              {t(pendingKnowledge.length === 1 ? '{n} file, {kb} KB total' : '{n} files, {kb} KB total', {
+                n: pendingKnowledge.length,
+                kb: Math.max(1, totalKb),
+              })}
             </div>
           </div>
         ) : null}
@@ -473,7 +485,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 0) {
     return (
       <QuestionShell
-        title="What is your companion's name?"
+        title={t("What is your companion's name?")}
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -485,7 +497,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           onChange={setName}
           autoFocus
           onEnter={() => void next()}
-          aria-label="Companion name"
+          aria-label={t('Companion name')}
         />
       </QuestionShell>
     );
@@ -495,8 +507,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 1) {
     return (
       <QuestionShell
-        title="Who are they?"
-        hint="Describe your companion in as much detail as you like."
+        title={t('Who are they?')}
+        hint={t('Describe your companion in as much detail as you like.')}
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -508,9 +520,9 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         <FullscreenTextField
           value={personaSource}
           onChange={setPersonaSource}
-          modalTitle="Describe your character."
-          placeholder="Describe your character."
-          aria-label="Persona source"
+          modalTitle={t('Describe your character.')}
+          placeholder={t('Describe your character.')}
+          aria-label={t('Persona source')}
         />
         <div
           style={{
@@ -522,16 +534,16 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           }}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>Expand my prompt</span>
+            <span style={{ fontWeight: 700 }}>{t('Expand my prompt')}</span>
             <InfoTip
-              text="Let AI build on what you wrote, keeping your details and adding structure. Off uses your text exactly as written."
-              label="About Expand my prompt"
+              text={t('Let AI build on what you wrote, keeping your details and adding structure. Off uses your text exactly as written.')}
+              label={t('About Expand my prompt')}
             />
           </span>
           <Toggle
             on={expandPrompt}
             onChange={setExpandPrompt}
-            aria-label="Expand my prompt"
+            aria-label={t('Expand my prompt')}
           />
         </div>
         {submitting && expandPrompt && expansion ? (
@@ -583,15 +595,15 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 2) {
     return (
       <QuestionShell
-        title="Add a card image?"
-        hint="Optional. Shown on the companion card on Home."
+        title={t('Add a card image?')}
+        hint={t('Optional. Shown on the companion card on Home.')}
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
         onNext={() => void next()}
         nextLabel="Next"
         nextDisabled={!validate()}
-        secondaryLabel="Skip"
+        secondaryLabel={t('Skip')}
         onSecondary={() => void skip()}
       >
         {created ? (
@@ -610,24 +622,27 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 3) {
     return (
       <QuestionShell
-        title="Select a Minecraft skin"
-        hint="Optional. Search a Minecraft username or upload a PNG. You can change this later."
+        title={t('Select a Minecraft skin')}
+        hint={t('Optional. Search a Minecraft username or upload a PNG. You can change this later.')}
         stepCount={totalSteps}
         currentStep={step}
         wide
         onBack={back}
         onNext={() => void next()}
         nextLabel="Next"
-        secondaryLabel="Skip"
+        secondaryLabel={t('Skip')}
         onSecondary={() => void skip()}
       >
         {created ? (
-          <SkinEditor
-            character={created}
-            onChanged={() => {
-              if (created) void refreshCharacter(created.id);
-            }}
-          />
+          // The box's distance from the hint is the step's to set (261103).
+          <div style={{ paddingTop: 'var(--space-xl)' }}>
+            <SkinEditor
+              character={created}
+              onChanged={() => {
+                if (created) void refreshCharacter(created.id);
+              }}
+            />
+          </div>
         ) : null}
       </QuestionShell>
     );
@@ -637,8 +652,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 4) {
     return (
       <QuestionShell
-        title="Pick their voice?"
-        hint="Auto picks one that fits their personality. Tap play to hear a sample; you can change this later."
+        title={t('Pick their voice?')}
+        hint={t('Auto picks one that fits their personality. Tap play to hear a sample; you can change this later.')}
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -655,6 +670,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           }}
           params={voiceParams}
           onParamsChange={setVoiceParams}
+          surface="create"
         />
         {error ? <ErrorRow message={error} /> : null}
       </QuestionShell>
@@ -665,8 +681,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   if (step === 5) {
     return (
       <QuestionShell
-        title="Visible to other players?"
-        hint="Public companions appear in the World tab and anyone can connect them. Private stays only in your party."
+        title={t('Visible to other players?')}
+        hint={t('Public companions appear in the World tab and anyone can connect them. Private stays only in your party.')}
         stepCount={totalSteps}
         currentStep={step}
         onBack={back}
@@ -681,17 +697,17 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
             size="lg"
             onClick={() => setVisibility('public')}
           >
-            Yes, share with other players
+            {t('Yes, share with other players')}
           </Button>
           <Button
             kind={visibility === 'private' ? 'primary' : 'ghost'}
             size="lg"
             onClick={() => setVisibility('private')}
           >
-            No, keep private
+            {t('No, keep private')}
           </Button>
         </div>
-        {visibility === 'public' && voiceOwn && voiceId && created ? (
+        {visibility === 'public' && voiceOwn && voiceOwn.source !== 'library' && voiceId && created ? (
           <div style={{ marginTop: 18, maxWidth: 460 }}>
             <SharedVoiceChoice
               characterId={created.id}
@@ -710,8 +726,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   // ── Step 6 — Description (only when public) ─────────────────────────────
   return (
     <QuestionShell
-      title="Short description for your companion?"
-      hint="A blurb other players read on the World card. The AI never sees this; it's just for humans browsing."
+      title={t('Short description for your companion?')}
+      hint={t("A blurb other players read on the World card. The AI never sees this; it's just for humans browsing.")}
       stepCount={totalSteps}
       currentStep={step}
       onBack={back}
@@ -725,7 +741,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         onChange={setDescription}
         multiline
         rows={4}
-        aria-label="Public description"
+        aria-label={t('Public description')}
       />
       {error ? <ErrorRow message={error} /> : null}
     </QuestionShell>
@@ -738,7 +754,9 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
  * tracks the streamed fraction. JetBrains-Mono caption above a slim PercentBar,
  * matching the design system's label register.
  */
-function ExpansionProgressRow({ pct, label }: { pct: number; label: string }): React.ReactElement {
+function ExpansionProgressRow({ pct, label: rawLabel }: { pct: number; label: string }): React.ReactElement {
+  const t = useT();
+  const label = t(rawLabel);
   return (
     <div style={{ marginTop: 16 }} aria-live="polite">
       <div
@@ -753,10 +771,10 @@ function ExpansionProgressRow({ pct, label }: { pct: number; label: string }): R
           color: 'var(--muted)',
         }}
       >
-        <span>Summoning persona: {label}</span>
+        <span>{t('Summoning persona: {label}', { label })}</span>
         <span>{pct}%</span>
       </div>
-      <PercentBar value={pct} size="sm" label={`Expanding persona: ${label}, ${pct} percent`} />
+      <PercentBar value={pct} size="sm" label={t('Expanding persona: {label}, {pct} percent', { label, pct })} />
     </div>
   );
 }

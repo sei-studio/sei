@@ -68,6 +68,39 @@ describe('trackDeaths', () => {
     dispose()
   })
 
+  // 261031 (pass 33): the drop spot rides on the lost-weapon mark, a later
+  // death while it still lies there names it, and recent deaths are counted.
+  it('a later death names the earlier weapon drop and counts recent deaths', () => {
+    vi.useFakeTimers()
+    const bot = makeBot([{ name: 'stone_sword', count: 1 }])
+    const death = vi.fn()
+    bot.on('sei:death', death)
+    trackDeaths(bot, { logger: {} })
+    const die = (at, respawnAt) => {
+      bot.emit('health')
+      bot.entity.position = at
+      bot.health = 0
+      bot._items = []
+      bot.emit('death')
+      vi.advanceTimersByTime(500)
+      bot.entity.position = respawnAt
+      bot.health = 20
+      bot.emit('spawn')
+      vi.advanceTimersByTime(600)
+    }
+    die({ x: 20, y: 64, z: 0 }, { x: 0, y: 64, z: 0 })
+    const first = death.mock.calls[0][0]
+    expect(bot._seiLostWeapon).toMatchObject({ weapon: 'stone_sword', pos: { x: 20, y: 64, z: 0 } })
+    expect(first.recentDeaths).toBeUndefined()
+    expect(first.earlierWeapon).toBeUndefined()
+    vi.advanceTimersByTime(30_000)
+    die({ x: 5, y: 64, z: 0 }, { x: 0, y: 64, z: 8 })
+    const second = death.mock.calls[1][0]
+    expect(second.lost).toEqual([])
+    expect(second.recentDeaths).toEqual({ count: 2, minutes: 1 })
+    expect(second.earlierWeapon).toMatchObject({ weapon: 'stone_sword', pos: { x: 20, y: 64, z: 0 }, dist: 22, minutesLeft: 5 })
+  })
+
   it('keepInventory reads as keptAll, with nothing lost', () => {
     vi.useFakeTimers()
     const bot = makeBot([{ name: 'bread', count: 5 }])

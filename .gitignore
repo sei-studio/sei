@@ -53,6 +53,7 @@ ARCHITECTURE.md
 # Compiled Swift helpers (built by scripts/build-mac-*.sh on predev/predist).
 resources/audio-tap/
 resources/mac-input/
+resources/seilink/
 
 # Offline backseat sim output (frame banks, grids, voice-overs).
 .backseat-sim/
@@ -73,3 +74,5 @@ native/stardew-mod/**/obj/
 # Local planning scratch (the old GSD tree, removed 261030). Durable design
 # docs go in docs/design/.
 .planning/
+seilink-dev-packs/
+seilink-shots/

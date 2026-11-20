@@ -360,6 +360,20 @@ describe('redact — chat/prompt content stripping', () => {
   });
 });
 
+describe('redact — the player\'s own names (261031, T278)', () => {
+  it('scrubs mc_username / preferred_name anywhere, not only in known log formats', () => {
+    const out = redact('spawn failed near Steve_X base; Sam said hi; Sui waved; Steve_Xavier ok', {
+      botName: 'Sui',
+      playerNames: ['Steve_X', 'Sam', null, ''],
+    });
+    expect(out).toBe('spawn failed near [player] base; [player] said hi; [bot] waved; Steve_Xavier ok');
+  });
+
+  it('skips names under 3 characters and keeps [bot] when the player shares the bot name', () => {
+    expect(redact('Al and Sui', { botName: 'Sui', playerNames: ['Al', 'sui'] })).toBe('Al and [bot]');
+  });
+});
+
 describe('buildSummonDiagnostic', () => {
   const openLan: LanState = {
     kind: 'open',
@@ -391,6 +405,23 @@ describe('buildSummonDiagnostic', () => {
       packaged: true,
     });
     expect(diag.node_version).toBe(process.versions.node);
+  });
+
+  it('carries the game and scrubs the player names out of the tails (261031)', () => {
+    const diag = buildSummonDiagnostic(
+      baseInfo({
+        phase: 'connect',
+        errorClass: 'BOT_CRASH',
+        errorMessage: 'kicked while following Notchy',
+        stderrTail: 'Error near Notchy at farm',
+        game: 'stardew',
+        playerNames: ['Notchy'],
+      }),
+      { lan: null, signedIn: false, packaged: true },
+    );
+    expect(diag.game).toBe('stardew');
+    expect(JSON.stringify(diag)).not.toContain('Notchy');
+    expect(String(diag.error_message)).toContain('[player]');
   });
 
   it('nulls MC context when no world is detected', () => {

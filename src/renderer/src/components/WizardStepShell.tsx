@@ -16,6 +16,7 @@
  */
 
 import React from 'react';
+import { useT } from '../lib/i18n';
 import styles from './WizardStepShell.module.css';
 
 export interface WizardStepShellProps {
@@ -32,10 +33,11 @@ export function WizardStepShell({
   children,
   footer,
 }: WizardStepShellProps): React.ReactElement {
+  const t = useT();
   return (
     <div className={styles.shell}>
       {stepNumber !== null ? (
-        <div className={styles.stepIndicator}>Step {stepNumber} / 4</div>
+        <div className={styles.stepIndicator}>{t('Step {n} of {m}', { n: stepNumber, m: 4 })}</div>
       ) : null}
       <h2 className={styles.heading}>{heading}</h2>
       <div className={styles.body}>{children}</div>

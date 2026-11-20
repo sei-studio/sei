@@ -15,12 +15,12 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--gap-stack);
 }
 
 .step {
   display: flex;
-  gap: 16px;
+  gap: var(--gap-group);
   align-items: baseline;
 }
 
@@ -63,7 +63,7 @@
 
 .spans {
   list-style: none;
-  margin: 10px 0 0;
+  margin: var(--gap-control) 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
@@ -77,6 +77,6 @@
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }

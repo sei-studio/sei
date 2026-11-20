@@ -224,6 +224,9 @@ export function resolveVoiceAgeBand(age) {
   return 'elder';
 }
 
+// Share of a robot character's voice roll that goes to robotic voices.
+const ROBOT_VOICE_SHARE = 0.7;
+
 // Stage 1 voice roll. Appropriateness is table-side, like everything else:
 // hard-filter by character gender (plus the special robotic rule), then weight
 // by age-band proximity and personality-seed tag affinity. `takenVoiceIds`
@@ -235,6 +238,9 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
   const band = resolveVoiceAgeBand(age);
 
   let pool = VOICES.filter((v) => {
+    // Picker-only voices (roll: false, 261119) are never assigned by a roll:
+    // the user can pick them, the dice can't.
+    if (v.roll === false) return false;
     // Robotic voices are only offered to robot characters; a human with a
     // synthesizer voice reads as a bug, not variety.
     if (v.tags.includes('robotic') && background !== 'robot') return false;
@@ -262,9 +268,12 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
       else if ((v.age === 'young' && band === 'elder') || (v.age === 'elder' && band === 'young')) weight = 0;
       else weight = 1.5;
 
-      // Neutral voices are a spice for gendered characters, the core pool for
-      // 'other' characters.
-      if (v.gender === 'neutral') weight *= gender === 'other' ? 4 : 0.5;
+      // Neutral voices are a spice for gendered characters and a mild lean for
+      // 'other' characters. Was x4 for 'other' while there were five rollable
+      // neutral voices; since 261119 the only rollable non-robot neutral is
+      // Horatius, so x4 would hand one voice a big slice of every 'other'
+      // character.
+      if (v.gender === 'neutral' && !v.tags.includes('robotic')) weight *= gender === 'other' ? 2 : 0.5;
 
       // Personality affinity: each rolled seed whose tag set intersects the
       // voice's tags doubles the weight (up to x4 for both seeds).
@@ -273,12 +282,25 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
         if (tags.some((t) => v.tags.includes(t))) weight *= 2;
       }
 
-      // Robots strongly prefer the actually-robotic voices when available.
-      if (background === 'robot' && v.tags.includes('robotic')) weight *= 10;
-
       return { value: v, weight };
     })
     .filter((e) => e.weight > 0);
+
+  // Robots strongly prefer the actually-robotic voices when one is free: the
+  // robotic voices together get a fixed ROBOT_VOICE_SHARE of the draw, their
+  // relative weights (age, seeds) kept. A fixed share instead of a flat
+  // multiplier (was x10) so the rule does not fade as the human pool grows:
+  // at 261119 (~40 rollable human voices, Vector the only robotic one) x10
+  // left a male robot on Vector about 15% of the time.
+  if (background === 'robot') {
+    const robotic = entries.filter((e) => e.value.tags.includes('robotic'));
+    const humanTotal = entries.reduce((s, e) => (e.value.tags.includes('robotic') ? s : s + e.weight), 0);
+    const roboticTotal = robotic.reduce((s, e) => s + e.weight, 0);
+    if (robotic.length && humanTotal > 0 && roboticTotal > 0) {
+      const scale = ((ROBOT_VOICE_SHARE / (1 - ROBOT_VOICE_SHARE)) * humanTotal) / roboticTotal;
+      for (const e of robotic) e.weight *= scale;
+    }
+  }
 
   // Degenerate case (a gender whose only voices sit in the far age band):
   // fall back to a uniform draw over the gender-filtered pool rather than

@@ -26,6 +26,12 @@ export const SMAPI_INSTALLER_ASSET = `SMAPI-${SMAPI_VERSION}-installer.zip`;
 export const SMAPI_INSTALLER_ORIGIN_URL = `https://github.com/Pathoschild/SMAPI/releases/download/${SMAPI_VERSION}/${SMAPI_INSTALLER_ASSET}`;
 /** Approximate installer zip size for the "about NN MB" copy (4.5.2 measures 42 MB). */
 export const SMAPI_INSTALLER_SIZE_HINT_BYTES = 42 * 1024 * 1024;
+/**
+ * Oldest game the helper mod loads in (its manifest.json MinimumGameVersion;
+ * a test pins the two together). Below it SMAPI refuses the mod, so the
+ * setup step says to update the game instead of waiting for a farm.
+ */
+export const STARDEW_MIN_GAME_VERSION = '1.6.14';
 /** Folder name of the mod inside <game>/Mods/. */
 export const STARDEW_MOD_FOLDER = 'SeiCompanion';
 /** Where the built mod lives inside a game pack root (and the repo root in dev). */
@@ -176,6 +182,14 @@ export interface StardewInstallState {
   modConfig: { port: number; hasToken: boolean } | null;
   /** 'steam' | 'gog' | 'xbox' | 'unknown', from the path shape. */
   store: 'steam' | 'gog' | 'xbox' | 'unknown';
+  /** 261104: the game folder is the one the player picked with Choose folder. */
+  manual?: boolean;
+  /** 261104: the game's version from Stardew Valley.dll, or null when unreadable. */
+  gameVersion?: string | null;
+  /** 261104: false when gameVersion is below STARDEW_MIN_GAME_VERSION (null = unknown). */
+  versionOk?: boolean | null;
+  /** 261104: SMAPI's files are there but its launcher is gone (an antivirus quarantine). */
+  smapiRemoved?: boolean;
   platform: 'darwin' | 'win32' | 'linux';
   /** Everything the launch panel needs is in place. */
   ready: boolean;
@@ -189,7 +203,32 @@ export type StardewInstallProgressEvent =
   | { stage: 'mod-placing' }
   | { stage: 'config-writing' }
   | { stage: 'done'; state: StardewInstallState }
-  | { stage: 'failed'; error: 'GAME_NOT_INSTALLED' | 'SMAPI_INSTALL_FAILED' | 'GAME_INSTALL_FAILED'; message: string };
+  | { stage: 'failed'; error: StardewInstallErrorClass; message: string };
+
+/**
+ * The classes a Stardew install fails with. 261104: SMAPI's failure is split
+ * by cause so the copy names the fix; SMAPI_INSTALL_FAILED is what is left.
+ */
+export type StardewInstallErrorClass =
+  | 'GAME_NOT_INSTALLED'
+  | 'GAME_INSTALL_FAILED'
+  | 'SMAPI_INSTALL_FAILED'
+  | 'SMAPI_NETWORK_FAILED'
+  | 'SMAPI_PERMISSION_DENIED'
+  | 'SMAPI_GAME_RUNNING'
+  | 'SMAPI_ANTIVIRUS_SUSPECTED';
+
+/** The Choose folder answer (261104). */
+export type StardewChooseFolderResult =
+  | { ok: true; state: StardewInstallState }
+  | { ok: false; reason: 'cancelled' | 'not_game' | 'legacy' };
+
+/** Is Stardew Valley running (261104)? null = the probe could not tell. */
+export interface StardewGameRunning {
+  running: boolean | null;
+  /** The running process is SMAPI's (null when not running or unknown). */
+  smapi: boolean | null;
+}
 
 export interface StardewLaunchResult {
   launched: boolean;
@@ -205,6 +244,10 @@ export const StardewIpcChannel = {
   install: 'stardew:install',
   /** Invoke: () → StardewLaunchResult. */
   launch: 'stardew:launch',
+  /** Invoke: () → StardewChooseFolderResult (folder picker, validated, saved). */
+  chooseFolder: 'stardew:choose-folder',
+  /** Invoke: () → StardewGameRunning (is the game process up, and through SMAPI?). */
+  gameRunning: 'stardew:game-running',
   /** Push (main → renderer): StardewInstallProgressEvent while an install runs. */
   installProgress: 'stardew:install-progress',
 } as const;

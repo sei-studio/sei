@@ -16,8 +16,10 @@
  *     http://localhost:5173/?dashshot=mcprofile&part=lan|unsupported|forge|setup|done  the Sei profile / Start Minecraft surfaces (DevMcProfileShot)
  *     http://localhost:5173/?dashshot=chatfirst    the guided first moment (260926) in the real ChatScreen
  *     http://localhost:5173/?dashshot=perms&part=mic|screen|...  the OS permission cards (DevPermsShot, 260929)
+ *     http://localhost:5173/?dashshot=playtime&setup=cloud|chatgpt|mykeys&tab=...  the Playtime page (DevPlaytimeShot, 261110)
  *     http://localhost:5173/?dashshot=voicekey&part=settings|picker&backend=cloud|local&key=1  the ElevenLabs key
- *                                              field and the picker's add-your-key line (DevVoiceKeyShot, 261020)
+ *                                              field and the picker's add-your-key line (DevVoiceKeyShot, 261020);
+ *                                              &backend=local&tts=fish&fishkey=1 shows the Fish Audio rows (261103)
  *     http://localhost:5173/?dashshot=onboard  the first-run Sui scene from the top (261012); every
  *                                              sei.track call is kept on window.__seiDevTrack
  *     http://localhost:5173/?dashshot=chatlaunch&game=minecraft|dontstarve|stardew  a launch panel inside the real ChatScreen
@@ -35,7 +37,8 @@
  *                                                  &novision=1: text-only model, chess leads)
  *                                                  (&update=downloading|ready|restarting|updated: the sidebar
  *                                                  "Update Sei" button / "Updated to vX" toast, 261023;
- *                                                  &live=game: a companion online, so a click asks first)
+ *                                                  &live=game: a companion online, so a click asks first;
+ *                                                  &update=optional|forced|whatsnew: the UpdatePopup modal, 261104)
  *
  * It seeds useMcDashboardStore with fixture snapshots and useDataStore with
  * two named characters (window.sei is stubbed by devHarnessStubs.ts, which
@@ -59,6 +62,7 @@ import { DevCreditWallShot } from '../DevCreditWallShot';
 import { DevRobloxShot } from '../backseat/DevRobloxShot';
 import { DevMcProfileShot } from '../mcdash/DevMcProfileShot';
 import { DevPermsShot } from '../permissions/DevPermsShot';
+import { DevPlaytimeShot } from '../DevPlaytimeShot';
 import { DevVoiceKeyShot } from '../DevVoiceKeyShot';
 import { DevArtShot, devArtList } from '../DevArtShot';
 import { OnboardApp } from '../../onboard/OnboardApp';
@@ -68,6 +72,7 @@ import { useVoiceStore } from '../../lib/stores/useVoiceStore';
 import { useUpdateStore } from '../../lib/stores/useUpdateStore';
 import { topChangelogLine } from '../../lib/changelog';
 import { UpdatedToast } from '../UpdatedToast';
+import { UpdatePopup, type UpdatePopupState } from '../UpdatePopup';
 import { useUiStore } from '../../lib/stores/useUiStore';
 import { useLangStore } from '../../lib/i18n';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
@@ -75,10 +80,11 @@ import { VoiceCallScreen } from '../../screens/VoiceCallScreen';
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { AuthChoiceScreen } from '../../screens/AuthChoiceScreen';
 import { SignInModal } from '../SignInModal';
-import { CreditsScreen } from '../../screens/CreditsScreen';
+import { PlaytimeScreen } from '../../screens/PlaytimeScreen';
 import { CharactersScreen } from '../../screens/CharactersScreen';
 import { IconRail } from '../IconRail';
 import { GamesPickerModal } from '../GamesPickerModal';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const DST_ID = 'dashshot-dst';
 const SDV_ID = 'dashshot-sdv';
@@ -190,7 +196,8 @@ function seed(): void {
   // ?dashshot=chatfirst: armed exactly as App.tsx arms it at onboarding
   // completion, so opening the chat runs the real greeting + card path.
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   const which = params.get('dashshot') ?? '';
   // ?dashshot=chatlaunch (260929): a launch panel opened from the games
   // picker, hosted by the real ChatScreen at the real game/chat split.
@@ -275,6 +282,8 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
   if (which === 'perms') return <DevPermsShot />;
   // ?dashshot=voicekey&part=settings|picker&backend=cloud|local&key=1 (261020, T158).
   if (which === 'voicekey') return <DevVoiceKeyShot />;
+  // ?dashshot=playtime&setup=cloud|chatgpt|mykeys&tab=...&part=settings (261110).
+  if (which === 'playtime') return <DevPlaytimeShot />;
   // ?dashshot=art&part=browse|page|call&art=<url> (261023): names over character art.
   if (which === 'art') return <DevArtShot />;
   // ?dashshot=onboard (261012): the first-run scene, for the intro's stage
@@ -336,10 +345,11 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
         <IconRail />
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           {/* &part=credits (261017): the pricing page's ChatGPT plan block. */}
-          {part === 'settings' ? <SettingsScreen /> : part === 'credits' ? <CreditsScreen /> : <ChatScreen characterId={SDV_ID} />}
+          {part === 'settings' ? <SettingsScreen /> : part === 'credits' ? <PlaytimeScreen /> : <ChatScreen characterId={SDV_ID} />}
         </div>
         {part === 'picker' ? <GamesPickerModal characterId={SDV_ID} /> : null}
         {update === 'updated' ? <UpdatedToast /> : null}
+        {DEV_POPUP_STATES[update ?? ''] ? <UpdatePopup state={DEV_POPUP_STATES[update ?? '']} platform="win32" onDismiss={() => undefined} onUpdateNow={() => undefined} /> : null}
       </div>
     );
   }
@@ -385,6 +395,14 @@ export function DevDashShot({ which }: { which: string }): React.ReactElement {
     </div>
   );
 }
+
+const DEV_CHANGELOG = "## What's new in 0.7.0\n- New: use your own ElevenLabs voices. Save your key in Settings and pick them in the voice picker\n- Fixes";
+/** ?dashshot=chatui&update=optional|forced|whatsnew (261104): the update popup's three states. */
+const DEV_POPUP_STATES: Record<string, UpdatePopupState> = {
+  optional: { kind: 'available-optional', currentVersion: '0.6.12', latestVersion: '0.7.0', changelog: DEV_CHANGELOG },
+  forced: { kind: 'forced' },
+  whatsnew: { kind: 'whats-new', version: '0.7.0', changelog: DEV_CHANGELOG },
+};
 
 /** ?dashshot=home (261013): the Home wall, plus the games picker when the card opens it. */
 function DevHomeShot(): React.ReactElement {

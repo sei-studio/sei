@@ -11,8 +11,11 @@
   line-height: 1.45;
 }
 
-.body.note {
-  margin-top: var(--space-sm);
+/* Paragraphs of one message: a step tighter than the shell's group gap. */
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
 }
 
 /* Changelog block — scrolls if a long release notes blob is handed in. */

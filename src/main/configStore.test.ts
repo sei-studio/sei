@@ -92,6 +92,17 @@ describe('addPlaytimeMs', () => {
 });
 
 describe('saveConfigFromRenderer', () => {
+  it('a renderer save never undoes the avatar library pick main wrote (avatar_prefs[id].avatar_id, 261106)', async () => {
+    await saveConfig({ ...(await loadConfig()), avatar_prefs: { c1: { frame: 'circle', avatar_id: 'old' } } });
+    const mountSnapshot = await loadConfig(); // carries avatar_id 'old'
+    // main picks another avatar (sync migration, viewer pick)...
+    await updateConfig((c) => ({ ...c, avatar_prefs: { ...c.avatar_prefs, c1: { ...c.avatar_prefs?.c1, avatar_id: 'new' }, c2: { avatar_id: 'p2' } } }));
+    // ...then the Avatar tab saves its own field over the stale copy
+    await saveConfigFromRenderer({ ...mountSnapshot, avatar_prefs: { c1: { frame: 'square', avatar_id: 'old' }, c3: { tab: 'live2d', avatar_id: 'forged' } } });
+    const cfg = await loadConfig();
+    expect(cfg.avatar_prefs).toEqual({ c1: { frame: 'square', avatar_id: 'new' }, c2: { avatar_id: 'p2' }, c3: { tab: 'live2d' } });
+  });
+
   it('a stale renderer copy can never revert ai_backend_kind (the recurring "switched back to local" bug)', async () => {
     // The exact failure sequence: SettingsScreen snapshots the config at
     // mount, the user confirms Switch to cloud (setAiBackendKind path writes
@@ -207,6 +218,20 @@ describe('saveConfigFromRenderer', () => {
     expect(cfg.chess_elo_offsets).toEqual({ [UUID_A]: -100 });
     expect(cfg.draw_intro_done).toBe(true);
     expect(cfg.theme_mode).toBe('mint');
+  });
+
+  it('261103: the renderer can pick Fish Audio but never writes the Fish voice overrides', async () => {
+    const id = '0123456789abcdef0123456789abcdef';
+    const mountSnapshot = await loadConfig();
+    await updateConfig((cfg) => ({ ...cfg, fish_voice_overrides: { [UUID_A]: { id, name: 'Calm' } } }));
+    await saveConfigFromRenderer({
+      ...mountSnapshot,
+      local_tts_model: 'fish',
+      fish_voice_overrides: { [UUID_B]: { id, name: 'Injected' } },
+    });
+    const cfg = await loadConfig();
+    expect(cfg.local_tts_model).toBe('fish');
+    expect(cfg.fish_voice_overrides).toEqual({ [UUID_A]: { id, name: 'Calm' } });
   });
 
   it('260929: the Minecraft setup dismissal (renderer-owned) persists', async () => {

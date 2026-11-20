@@ -7,7 +7,7 @@
  *      Opens the World tab (sets homeTab='world' then navigate home); active
  *      while the World tab is selected.
  *   3. Thin divider
- *   4. Scrollable 40px circular character sockets sorted by last_launched desc,
+ *   4. Scrollable 40px character sockets (--radius squares) sorted by last_launched desc,
  *      then created desc. Active when view.kind==='character' && id matches.
  *      Each socket carries a top-right activity badge when the character is
  *      on a voice call (phone) or in a live game session (controller) — see
@@ -15,13 +15,10 @@
  *   5. Round + button — opens the awaken flow; hidden once every companion
  *      slot is taken (260731b)
  *   6. Flex spacer
- *   7. Credits/Cloud icon — StarIcon (4-point) in BOTH states for consistent
- *      rail iconography; only the click target differs:
- *        - cloud-proxy → navigate credits
- *        - local + signed in   → SwitchBackendConfirmModal → flip to cloud-proxy
- *          directly (NO sign-in re-prompt — the user already has a session).
- *        - local + signed out  → inline "Switch to cloud?" confirm dialog →
- *          SignInModal; once signed in the switch completes automatically.
+ *   7. Playtime icon — StarIcon (4-point). 261110: opens the Playtime page on
+ *      every backend (it has the Sei / ChatGPT / My keys tabs and every
+ *      switch, with the sign-in a signed-out "Switch to Sei" needs). Before,
+ *      the local backend's star opened its own cloud-switch prompt.
  *   8. Settings icon
  *   9. "Update Sei" (UpdateRailButton, 261023): only while an update is
  *      downloading or ready; full rail width, flush with the bottom edge
@@ -33,7 +30,7 @@
  * Inventory → IconRail/Sidebar (updated by B3 sub-task).
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import styles from './IconRail.module.css';
 import {
   CompassIcon,
@@ -45,14 +42,8 @@ import {
   StarIcon,
 } from './icons';
 import { PixelPortrait } from './PixelPortrait';
-import { Button } from './Button';
-import { ModalShell, ModalFooter } from './ModalShell';
-import { SignInModal } from './SignInModal';
-import { SwitchBackendConfirmModal } from './SwitchBackendConfirmModal';
 import { UpdateRailButton } from './UpdateRailButton';
-import { sei } from '../lib/ipcClient';
-import { lastInteractionAt } from '../lib/lastInteraction';
-import { isHomeCharacter } from '../lib/homeLibrary';
+import { isHomeCharacter, railParty } from '../lib/homeLibrary';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
@@ -101,7 +92,7 @@ interface RailButtonProps {
   title?: string;
   badge?: boolean;
   muted?: boolean;
-  /** When true, omit the active-bar so circular avatars can carry their own focus ring. */
+  /** When true, omit the active-bar so the avatars can carry their own focus ring. */
   noActiveBar?: boolean;
   /** Optional warm-up fired on hover / focus (e.g. prefetch the World grid). */
   onHoverStart?: () => void;
@@ -211,8 +202,8 @@ export function avatarActivityBadge(
 
 /**
  * Single avatar in the scrollable character cluster. Uses the character's
- * portrait_image when present (rendered as a circular <img>), otherwise
- * a 40px PixelPortrait inside a circular clip.
+ * portrait_image when present (rendered as a --radius-cornered <img>), otherwise
+ * a 40px PixelPortrait inside the same clip.
  */
 interface AvatarButtonProps {
   characterId: string;
@@ -277,7 +268,7 @@ function AvatarButton({
       onBlur={() => setHover(null)}
     >
       {/*
-        Wrapper enforces the circular crop. Browsers honor `border-radius`
+        Wrapper enforces the avatar crop. Browsers honor `border-radius`
         on <img>, but non-square portraits with `object-fit:cover` + the
         `image-rendering: pixelated` rule have shown inconsistent clipping
         in some Electron builds. A wrapping div with `overflow: hidden`
@@ -303,7 +294,7 @@ function AvatarButton({
           />
         )}
       </span>
-      {/* Activity badge — sits OUTSIDE .avatarClip so the circular crop
+      {/* Activity badge — sits OUTSIDE .avatarClip so the avatar crop
           doesn't shave it; the panel-colored ring separates it from the
           avatar art. aria-hidden: the activity is already in the button's
           aria-label suffix. */}
@@ -337,48 +328,7 @@ export function IconRail(): React.ReactElement {
   const usagePct = useCreditsStore((s) => s.usage_pct);
   const usageKnown = useCreditsStore((s) => s.initialized && !s.snapshotFailed);
 
-  // B3 — local confirm dialog for the cloud-icon click when the user is on
-  // the local backend. Two-button "Switch to cloud?" panel that, on
-  // continue, opens the existing SignInModal. Component-level state keeps
-  // this self-contained (no global modal needed).
-  const [showCloudPrompt, setShowCloudPrompt] = useState(false);
-  const [showSignIn, setShowSignIn] = useState(false);
-  // Already-signed-in user switching BYOK → cloud: the backend-switch confirm
-  // (same modal Settings uses). No sign-in re-prompt — they have a session.
-  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
-  // Set when a signed-OUT user takes the "Switch to cloud" path: after they
-  // finish signing in we complete the switch automatically (see effect below).
-  const [pendingCloudAfterSignIn, setPendingCloudAfterSignIn] = useState(false);
   const [hoverTip, setHoverTip] = useState<TooltipState | null>(null);
-
-  // Flip the AI backend to cloud-proxy (the canonical switch SettingsScreen
-  // uses), refresh the credits store so the rail swaps to the Playtime icon +
-  // unlocks the credits surface, then land on it.
-  const switchToCloud = useCallback(async (): Promise<void> => {
-    await sei.proxyConfigure('cloud-proxy');
-    await useCreditsStore.getState().refresh();
-    navigate({ kind: 'credits' });
-  }, [navigate]);
-
-  // Complete a "switch to cloud" that was waiting on sign-in: once the user is
-  // signed in, flip the backend without a second prompt. Guarded by the
-  // pending flag (set only by the signed-out cloud path) so an unrelated
-  // sign-in never triggers an unwanted backend switch.
-  useEffect(() => {
-    if (pendingCloudAfterSignIn && currentUserId) {
-      setPendingCloudAfterSignIn(false);
-      setShowSignIn(false);
-      void switchToCloud();
-    }
-  }, [pendingCloudAfterSignIn, currentUserId, switchToCloud]);
-
-  // Cloud-icon click on the LOCAL backend. Signed-in users go straight to the
-  // backend-switch confirm (the bug fix: never re-prompt for sign-in when a
-  // session already exists); signed-out users get the sign-in path.
-  const handleCloudClick = (): void => {
-    if (currentUserId) setShowSwitchConfirm(true);
-    else setShowCloudPrompt(true);
-  };
 
   const theme: 'light' | 'dark' = resolvedScheme();
 
@@ -408,26 +358,11 @@ export function IconRail(): React.ReactElement {
     );
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
-  // Stable sort: last interaction desc (summon OR chat; nulls last), then created
-  // desc — then capped at MAX_COMPANION_SLOTS so the rail mirrors the home party
-  // wall's fixed 4 slots (same set, same order), never a longer list.
-  const sortedCharacters = useMemo(() => {
-    const copy = homeCharacters.slice();
-    copy.sort((a, b) => {
-      const aLast = lastInteractionAt(a) ?? '';
-      const bLast = lastInteractionAt(b) ?? '';
-      if (aLast !== bLast) {
-        // Most-recently-active first; empty strings (no activity) sort last.
-        if (!aLast) return 1;
-        if (!bLast) return -1;
-        return bLast.localeCompare(aLast);
-      }
-      const aCreated = a.created ?? '';
-      const bCreated = b.created ?? '';
-      return bCreated.localeCompare(aCreated);
-    });
-    return copy.slice(0, MAX_COMPANION_SLOTS);
-  }, [homeCharacters]);
+  // Every party member, most recently active first (lib/homeLibrary.ts
+  // railParty). Not capped at the slot count (261116): the Home wall shows
+  // four panels, so a party over the cap had members reachable nowhere; the
+  // rail is where they stay reachable (the column scrolls).
+  const sortedCharacters = useMemo(() => railParty(homeCharacters), [homeCharacters]);
 
   const handleCompassClick = (): void => {
     setHomeTab('world');
@@ -508,9 +443,9 @@ export function IconRail(): React.ReactElement {
               paid for discoverability with a dead-end click and a dialog.
 
               The two sets cannot disagree here: sortedCharacters IS
-              homeCharacters capped at MAX_COMPANION_SLOTS, so the moment the
-              count reaches the cap the rail is showing exactly that many
-              circles. A full rail with no + is then self-explanatory, which the
+              homeCharacters (every member, never capped since 261116), so
+              the moment the count reaches the cap the rail is showing at
+              least that many circles. A full rail with no + is then self-explanatory, which the
               button plus an apology never was. chars:save remains the
               authoritative backstop, and the World tab's slots indicator still
               spells out "Party full" in words. */}
@@ -535,25 +470,18 @@ export function IconRail(): React.ReactElement {
         <div className={styles.cluster}>
           {/* 260725: three-state. UNKNOWN (null) renders NEITHER button — the
               rail must never claim a mode main hasn't reported (a guessed
-              "Switch to cloud" here painted BYOK over live cloud billing). */}
-          {aiBackendKind === 'cloud-proxy' ? (
+              cloud switch here painted BYOK over live cloud billing). */}
+          {aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local' ? (
             <RailButton
               active={view.kind === 'credits'}
               onClick={() => navigate({ kind: 'credits' })}
-              title={usageKnown ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) }) : t('Plan')}
+              title={
+                aiBackendKind === 'cloud-proxy' && usageKnown
+                  ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) })
+                  : t('Playtime')
+              }
               setHover={setHoverTip}
             >
-              <StarIcon size={22} />
-            </RailButton>
-          ) : aiBackendKind === 'local' ? (
-            <RailButton
-              onClick={handleCloudClick}
-              title={t('Switch to cloud')}
-              setHover={setHoverTip}
-            >
-              {/* Same StarIcon as the cloud-proxy branch — consistent rail
-                  iconography; only the click target differs (local → the
-                  "Switch to cloud?" prompt). */}
               <StarIcon size={22} />
             </RailButton>
           ) : null}
@@ -591,55 +519,6 @@ export function IconRail(): React.ReactElement {
         </div>
       ) : null}
 
-      {showCloudPrompt ? (
-        <ModalShell
-          title={t('Switch to cloud?')}
-          onClose={() => setShowCloudPrompt(false)}
-          scrimClose
-        >
-          <p className={styles.cloudPromptBody}>
-            {t("Sign in to use Sei's hosted AI. You keep your local characters either way.")}
-          </p>
-          <ModalFooter>
-            <Button kind="quiet" size="md" onClick={() => setShowCloudPrompt(false)}>
-              {t('Not now')}
-            </Button>
-            <Button
-              kind="primary"
-              size="md"
-              onClick={() => {
-                setShowCloudPrompt(false);
-                setShowSignIn(true);
-                // Once sign-in lands, the effect above flips us to cloud.
-                setPendingCloudAfterSignIn(true);
-              }}
-            >
-              {t('Continue')}
-            </Button>
-          </ModalFooter>
-        </ModalShell>
-      ) : null}
-
-      {showSignIn ? (
-        <SignInModal
-          framingLabel={null}
-          onClose={() => setShowSignIn(false)}
-        />
-      ) : null}
-
-      {/* Signed-in BYOK → cloud switch (no sign-in re-prompt). Same confirm
-          modal Settings uses; on confirm we flip the backend live + land on
-          the Playtime/credits screen. */}
-      {showSwitchConfirm ? (
-        <SwitchBackendConfirmModal
-          direction="cloud-proxy"
-          onCancel={() => setShowSwitchConfirm(false)}
-          onConfirm={async () => {
-            await switchToCloud();
-            setShowSwitchConfirm(false);
-          }}
-        />
-      ) : null}
     </>
   );
 }

@@ -135,6 +135,22 @@ describe('PickStep first render', () => {
   });
 });
 
+// 261109: the Suggest-a-game hint opens the step with the experience typed in.
+describe('PickStep with a prefilled search', () => {
+  it('shows the query in the search pill', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(PickStep, {
+        gameId: 'roblox',
+        gameName: 'Roblox',
+        initialQuery: 'Forsaken',
+        onClose: () => undefined,
+        onDone: () => undefined,
+      }),
+    );
+    expect(html).toContain('value="Forsaken"');
+  });
+});
+
 describe('the pick hand-over', () => {
   it('holds the picked card up for a beat, then fades out', () => {
     const full = pickHandoffMs(false);

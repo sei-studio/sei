@@ -397,11 +397,56 @@ local function carriedLight(i)
     return i:FindItem(function(it) return isLightItem(it) and hasFuelLeft(it) and it.components.equippable ~= nil end)
 end
 
+-- What a torch needs (recipe: 2 cutgrass + 2 twigs) and where each comes from.
+local TORCH_MAKINGS = { cutgrass = 2, twigs = 2 }
+-- How far the light habit goes for them on its own (0.3.2). Charlie hits
+-- 5-10 s after dark and every 5-11 s after (components/grue.lua), two hits
+-- kill most survivors, and one LLM turn takes 4-6 s, so a body summoned (or
+-- respawned) into the dark with an empty bag died before the brain's gather
+-- landed. A few steps is what fits inside that clock.
+local MAKINGS_RADIUS = 12
+
+--- The nearest loose item or pickable plant that gives a torch ingredient
+--- she is still short of, within MAKINGS_RADIUS, as a PICKUP/PICK action.
+local function makingsAction(inst)
+    local x, y, z = inst.Transform:GetWorldPosition()
+    local short = {}
+    local any = false
+    for prefab, n in pairs(TORCH_MAKINGS) do
+        if countOf(inst, prefab) < n then short[prefab] = true; any = true end
+    end
+    if not any then return nil end
+    local best, bestd, act = nil, math.huge, nil
+    for _, v in ipairs(TheSim:FindEntities(x, y, z, MAKINGS_RADIUS, nil, EXCLUDE)) do
+        local a = nil
+        local ii = v.components.inventoryitem
+        if short[v.prefab] and ii ~= nil and ii.canbepickedup and ii:GetGrandOwner() == nil then
+            a = ACTIONS.PICKUP
+        elseif v:HasTag("pickable") and v.components.pickable ~= nil and short[v.components.pickable.product] then
+            a = ACTIONS.PICK
+        end
+        if a ~= nil then
+            local d = Util.DistXZ(inst, v)
+            if d < bestd then best, bestd, act = v, d, a end
+        end
+    end
+    if best == nil then return nil end
+    local b = BufferedAction(inst, best, act)
+    local what = act == ACTIONS.PICK and best.components.pickable.product or best.prefab
+    b:AddSuccessAction(function()
+        Events.Post("survival", { what = "light", did = "picked", item = what })
+    end)
+    return b
+end
+
 --- The light habit's next step, or nil when it has nothing to do (the brain
 --- then falls through to the seek-light node, which walks to a light it can
 --- see). Order: equip a carried light, craft a torch, (walk to a light),
---- build a campfire. Only runs when NeedsLight: dark with no light is the
---- one case allowed to replace what the LLM put in the body's hands.
+--- build a campfire, pick the torch makings within a few steps (0.3.2; the
+--- second return value is true for that pick, so the caller retries at once
+--- and crafts the torch the moment the bag has them). Only runs when
+--- NeedsLight: dark with no light is the one case allowed to replace what
+--- the LLM put in the body's hands.
 function Reflexes.LightAction(inst, seeDist)
     local i = inv(inst)
     if i == nil then return nil end
@@ -433,6 +478,9 @@ function Reflexes.LightAction(inst, seeDist)
             end)
         end
     end
+    if holding then return nil end
+    local pick = makingsAction(inst)
+    if pick ~= nil then return pick, true end
     return nil
 end
 

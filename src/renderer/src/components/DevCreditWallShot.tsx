@@ -11,6 +11,9 @@
  *
  * `&plan=quest|party` seeds a subscriber, `&under=1` an account with
  * allowance left (both answered by the creditsGet stub too).
+ * `&gpt=active` (261103) makes the ChatGPT plan the provider in use, which
+ * hides the modal's "Use your ChatGPT plan" option. Clicks land on `window.__seiDevTrack`.
+ * `&theme=light|dark` picks the theme (default: the dev page's own).
  *
  * Add `&lang=zh` for the Chinese copy. window.sei is stubbed by
  * devHarnessStubs.ts (creditsGet answers a free plan at the wall, reset 3
@@ -22,18 +25,25 @@ import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useDrawStore } from '../lib/stores/useDrawStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useLangStore } from '../lib/i18n';
+import { useUiStore } from '../lib/stores/useUiStore';
+import { applyTheme } from '../lib/theme';
 import { HardStopModal } from './HardStopModal';
 import { Banner } from './Banner';
-import { CreditsScreen } from '../screens/CreditsScreen';
+import { PlaytimeScreen } from '../screens/PlaytimeScreen';
 import { DrawScreen } from './draw/DrawScreen';
 import { useT } from '../lib/i18n';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'creditwall-char';
 const RESETS_AT = new Date(Date.now() + 3 * 86_400_000).toISOString();
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
+  const theme = params.get('theme');
+  if (theme === 'light' || theme === 'dark') applyTheme(theme === 'light' ? 'ice' : 'midnight');
+  if (params.get('gpt') === 'active') useUiStore.setState({ llmProvider: 'chatgpt' });
   const planParam = params.get('plan');
   const under = params.has('under');
   useCreditsStore.setState({
@@ -96,7 +106,7 @@ export function DevCreditWallShot(): React.ReactElement {
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--window)', overflow: 'auto' }}>
       {part === 'banner' ? <BannerPart /> : null}
-      {part === 'credits' || part === 'modal' || part === 'topup' ? <CreditsScreen /> : null}
+      {part === 'credits' || part === 'modal' || part === 'topup' ? <PlaytimeScreen /> : null}
       {part === 'draw' ? <DrawScreen characterId={CHAR} /> : null}
       <HardStopModal />
     </div>

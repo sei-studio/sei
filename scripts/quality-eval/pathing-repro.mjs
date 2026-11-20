@@ -47,6 +47,26 @@
 //   dig_raised_5m   dig a granite on a 3-high pillar 5 blocks off, one call
 //   craft_second_pickaxe craft a wooden pickaxe with one already in the bag
 //                   and the parts only as planks and logs
+//   dig_buried_stone 261107 (pass 45): the arena with 2 dirt layers under the
+//                   grass, so the nearest stone is 3 below the surface (the
+//                   gather_craft-02-B ground): dig({block:"stone"}) twice.
+//                   base: "out of range (4.5-5.0m) ... walk ended: reached"
+//   gather_buried_stone same ground, gather 4 stone
+//   goto_far_player the player 68m off across the flat arena: goTo the
+//                   player (base: one 12s leg, "timeout" part way there)
+//   stone_02b_a/b/c natural: the gather_craft-02-B spots, dig({block:"stone"})
+//                   twice from each (run alone right after the reset)
+//   explore_east_32 / explore_west_32 / explore_left_20 / explore_chain_north /
+//   explore_compass_north  261108 (pass 47), natural: the gather_craft-03-B
+//                   explore spots (blocked, 10 of 32, timeout, walked back to
+//                   base); progress measured along the asked direction.
+//                   explore_pit_east / _west / _left start down in the base
+//                   pit, where the 03-B ones really started
+//   river_gather_stone / river_dig_stone / river_idle  natural: the 02-B
+//                   flooded cave under the river bank (stone ceiling overhead,
+//                   air 12 cells away through the cave mouth) with a wooden
+//                   pickaxe; river_idle runs no action (the drowning reflex
+//                   alone); success = she does not drown
 //   beach_hole_a/b/c the combat_night holes on the natural beach: goTo from
 //                   where she was stuck. natural: no arena, so run these
 //                   alone right after the reset (--cases beach_hole_a,...)
@@ -59,7 +79,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { serverCtl, cmds, itemCount } from './lib/server.mjs'
-import { connectPlayer, distTo, entityOf } from './lib/player.mjs'
+import { connectPlayer, distTo, entityOf, goals } from './lib/player.mjs'
 import { startCompanion, companionName, PLAYER } from './lib/companionProc.mjs'
 import { Vec3 } from 'vec3'
 import { WORLD_RULES, arenaReset, playersReset, tp, tree, zombie, S, P, Y, A } from './bench/arena.mjs'
@@ -489,6 +509,67 @@ CASES.death_recover = {
   },
 }
 
+// 261107 (quality pass 45): digs at the edge of dig reach after a walk.
+const BURIED = [`fill ${A.x0} ${A_FLOOR - 2} ${A.z0} ${A.x1} ${A_FLOOR - 1} ${A.z1} dirt`]
+async function digStoneTwice(ctx) {
+  const results = []
+  const t0 = Date.now()
+  for (let i = 0; i < 2; i++) {
+    const d = await ctx.exec('dig', { block: 'stone', maxDistance: 32 }, { timeoutMs: 40000 })
+    results.push(String(d.result))
+    await sleep(800)
+  }
+  const ms = Date.now() - t0
+  const n = await itemCount(ctx.bot, 'cobblestone')
+  const outOfRange = results.filter((r) => r.startsWith('out of range')).length
+  return { result: results.join(' | '), ms, cobblestone: n, outOfRange, success: n >= 2 && outOfRange === 0 }
+}
+CASES.dig_buried_stone = {
+  world: BURIED,
+  give: ['wooden_pickaxe'],
+  run: digStoneTwice,
+}
+CASES.gather_buried_stone = {
+  world: BURIED,
+  give: ['wooden_pickaxe'],
+  async run(ctx) {
+    const t0 = Date.now()
+    const g = await ctx.exec('gather', { name: 'stone', count: 4 }, { timeoutMs: 90000 })
+    const ms = Date.now() - t0
+    await sleep(800)
+    const n = await itemCount(ctx.bot, 'cobblestone')
+    return { result: g.result, ms, cobblestone: n, success: n >= 4 }
+  },
+}
+CASES.goto_far_player = {
+  give: [],
+  async run(ctx) {
+    const from = { x: A.x1 - 1, y: Y, z: A.z1 - 1 }
+    const to = { x: A.x0 + 1, y: Y, z: A.z0 + 1 }
+    await cmds([tp(ctx.bot, from, to), tp(PLAYER, to, from)])
+    await sleep(2000)
+    const t0 = Date.now()
+    const r = await ctx.exec('goTo', { player: PLAYER, range: 2 }, { timeoutMs: 90000 })
+    const ms = Date.now() - t0
+    const d = distTo(ctx.pbot, ctx.bot)
+    return { result: r.result, ms, dist: Number(d.toFixed(1)), success: /^reached/.test(String(r.result)) && d <= 4.5 }
+  },
+}
+function stone02b(at) {
+  return {
+    natural: true,
+    give: ['wooden_pickaxe'],
+    async run(ctx) {
+      await cmds([`tp ${ctx.bot} ${at.x + 0.5} ${at.y} ${at.z + 0.5}`, `tp ${PLAYER} ${at.x + 3.5} ${at.y + 1} ${at.z + 3.5}`])
+      await sleep(2500)
+      return digStoneTwice(ctx)
+    },
+  }
+}
+CASES.stone_02b_a = stone02b({ x: 185, y: 66, z: -5 })
+CASES.stone_02b_b = stone02b({ x: 189, y: 66, z: -11 })
+CASES.stone_02b_c = stone02b({ x: 187, y: 66, z: -3 })
+
 // 261019: the combat_night holes on the natural beach (free-play world, no
 // arena). goTo from where she was stuck to where she was going.
 function beachHole(from, to) {
@@ -511,6 +592,163 @@ function beachHole(from, to) {
 CASES.beach_hole_a = beachHole({ x: 169, y: 62, z: 12 }, { x: 184, y: 64, z: 10 })
 CASES.beach_hole_b = beachHole({ x: 155, y: 61, z: 13 }, { x: 177, y: 64, z: 9 })
 CASES.beach_hole_c = beachHole({ x: 153, y: 61, z: 12 }, { x: 168, y: 64, z: 3 })
+
+// ── 261108 (quality pass 47): explore and air, natural world ──────────
+// The gather_craft-03-B explore spots and the 02-B river where she drowned.
+// Natural: run these alone right after the reset, like stone_02b_*.
+const NAT_YAW = { north: 180, south: 0, east: -90, west: 90 }
+const DIRV = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }
+const SOFT = /^(air|cave_air|short_grass|tall_grass|fern|large_fern|snow|dead_bush|.*flower.*|dandelion|poppy|.*tulip|oxeye_daisy|cornflower|azure_bluet|allium|lily_of_the_valley|bush|.*leaves)$/
+
+/** Standing y on the column x,z (top solid block + 1), from the player's view. */
+function surfaceY(pbot, x, z) {
+  for (let y = 120; y > 40; y--) {
+    const b = pbot.blockAt(new Vec3(x, y, z))
+    if (b && !SOFT.test(b.name) && b.name !== 'water') return y + 1
+    if (b && b.name === 'water') return y + 1
+  }
+  return 80
+}
+async function placeOnSurface(ctx, who, x, z, yawDeg = 0) {
+  await cmds([`tp ${who} ${x + 0.5} 100 ${z + 0.5}`])
+  await sleep(1200)
+  const y = surfaceY(ctx.pbot, x, z)
+  await cmds([`tp ${who} ${x + 0.5} ${y} ${z + 0.5} ${yawDeg} 0`])
+  return y
+}
+const hpos = (p) => p ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) } : null
+
+/**
+ * explore from `from`, facing `face` (the player stands `lead` blocks that
+ * way so the gaze keeps her looking there), each call in turn; with `follow`
+ * the player trails her from the second call on, so she looks back at them.
+ * `dir` is the way the player asked for; progress is measured along it.
+ */
+function exploreCase({ from, face, lead = 3, dir, calls, follow = false, need, pit = null }) {
+  return {
+    natural: true,
+    give: [],
+    async run(ctx) {
+      const [fx, fz] = DIRV[face]
+      await placeOnSurface(ctx, PLAYER, from.x + fx * lead, from.z + fz * lead)
+      // The tp right after the companion joins is sometimes lost (she stayed
+      // at the spawn): place her again until the probe agrees.
+      let p0 = null
+      for (let t = 0; t < 3; t++) {
+        if (pit) {
+          // 03-B: she was down in the 3x3 stone pit she had dug at the base.
+          await cmds([`fill ${from.x - 1} ${pit.floor + 1} ${from.z - 1} ${from.x + 1} ${pit.top} ${from.z + 1} air`])
+          await cmds([`tp ${ctx.bot} ${from.x + 0.5} ${pit.floor + 1} ${from.z + 0.5} ${NAT_YAW[face]} 0`])
+        } else {
+          await placeOnSurface(ctx, ctx.bot, from.x, from.z, NAT_YAW[face])
+        }
+        await sleep(2500)
+        p0 = (await ctx.comp.probe())?.pos
+        if (p0 && Math.hypot(p0.x - (from.x + 0.5), p0.z - (from.z + 0.5)) <= 3) break
+      }
+      const [vx, vz] = DIRV[dir]
+      const hops = []
+      for (let i = 0; i < calls.length; i++) {
+        if (follow && i === 1) {
+          const e = entityOf(ctx.pbot, ctx.bot)
+          if (e) ctx.pbot.pathfinder.setGoal(new goals.GoalFollow(e, 3), true)
+        }
+        const a = (await ctx.comp.probe())?.pos
+        const r = await ctx.exec('explore', calls[i], { timeoutMs: 90000, snap: true })
+        const b = (await ctx.comp.probe())?.pos
+        const text = String(r.result ?? r.error ?? '').replace(/,"image".*$/, '').slice(0, 260)
+        hops.push({
+          args: calls[i], shown: r.shown ?? null, result: text, ms: r.ms,
+          moved: a && b ? Number(Math.hypot(b.x - a.x, b.z - a.z).toFixed(1)) : null,
+          prog: a && b ? Number(((b.x - a.x) * vx + (b.z - a.z) * vz).toFixed(1)) : null,
+          end: hpos(b),
+        })
+        await sleep(1500)
+      }
+      try { ctx.pbot.pathfinder.setGoal(null) } catch {}
+      const pe = (await ctx.comp.probe())?.pos
+      const net = p0 && pe ? Number(((pe.x - p0.x) * vx + (pe.z - p0.z) * vz).toFixed(1)) : null
+      const back = hops.some((h, i) => i > 0 && h.prog != null && h.prog < -3)
+      return { dir, start: hpos(p0), end: hpos(pe), net, hops, success: net != null && net >= need && !back }
+    },
+  }
+}
+// 03-B A19: forward 32 with her facing east from the base -> cant_reach.
+CASES.explore_east_32 = exploreCase({ from: { x: 174, z: -7 }, face: 'east', dir: 'east', calls: [{ orientation: 'forward', blocks: 32 }], need: 12 })
+// 03-B A29: forward 32 facing west -> 10 of 32 (the 8s leg).
+CASES.explore_west_32 = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'west', calls: [{ orientation: 'forward', blocks: 32 }], need: 20 })
+// 03-B A33: left 20 facing west (left = south) -> timeout, no progress.
+CASES.explore_left_20 = exploreCase({ from: { x: 175, z: -7 }, face: 'west', dir: 'south', calls: [{ orientation: 'left', blocks: 20 }], need: 10 })
+// The same three from where they really started: down in the base pit
+// (y62, the surface is y65). Base: a 3D goal at the pit floor's height 32
+// blocks out is inside the hill (A19 cant_reach), and one 8s leg climbs out
+// and stops (A29 10 of 32, A33 timeout).
+const PIT = { floor: 61, top: 64 }
+CASES.explore_pit_east = exploreCase({ from: { x: 174, z: -7 }, face: 'east', dir: 'east', pit: PIT, calls: [{ orientation: 'forward', blocks: 32 }], need: 12 })
+CASES.explore_pit_west = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'west', pit: PIT, calls: [{ orientation: 'forward', blocks: 32 }], need: 20 })
+CASES.explore_pit_left = exploreCase({ from: { x: 174, z: -7 }, face: 'west', dir: 'south', pit: PIT, calls: [{ orientation: 'left', blocks: 20 }], need: 10 })
+// 03-B A34 -> A35: "keep going north", forward three times with the player
+// following behind; base walked back toward the player and the base.
+CASES.explore_chain_north = exploreCase({ from: { x: 174, z: -7 }, face: 'north', dir: 'north', follow: true, calls: [{ orientation: 'forward', blocks: 24 }, { orientation: 'forward', blocks: 24 }, { orientation: 'forward', blocks: 24 }], need: 40 })
+// The same ask said as a compass direction, the player behind her from the start.
+CASES.explore_compass_north = exploreCase({ from: { x: 174, z: -7 }, face: 'south', lead: 3, dir: 'north', follow: true, calls: [{ orientation: 'north', blocks: 24 }, { orientation: 'north', blocks: 24 }], need: 30 })
+
+/**
+ * 02-B A10: on the river bed with a wooden pickaxe, gather/dig stone. Watches
+ * her air and whether she drowns (the death message, read by the player).
+ */
+function riverCase(at, act) {
+  return {
+    natural: true,
+    give: ['wooden_pickaxe'],
+    async run(ctx) {
+      const deaths = []
+      const onMsg = (m) => { if (/drown|died|was slain/.test(m) && m.includes(ctx.bot)) deaths.push(m) }
+      ctx.pbot.on('messagestr', onMsg)
+      try {
+        await placeOnSurface(ctx, PLAYER, at.player.x, at.player.z)
+        await cmds([`tp ${ctx.bot} ${at.x + 0.5} ${at.y} ${at.z + 0.5}`])
+        await sleep(2000)
+        const t0 = Date.now()
+        let minOxy = 20
+        const trace = []
+        let done = false
+        const watch = (async () => {
+          while (!done) {
+            const pr = await ctx.comp.probe(1500)
+            if (pr) {
+              if (Number.isFinite(pr.oxy)) minOxy = Math.min(minOxy, pr.oxy)
+              trace.push(`${Math.round((Date.now() - t0) / 1000)}s:${pr.oxy ?? '?'}@${pr.pos ? `${Math.round(pr.pos.x)},${Math.round(pr.pos.y)},${Math.round(pr.pos.z)}` : '?'}`)
+            }
+            await sleep(1000)
+          }
+        })()
+        const results = await act(ctx)
+        done = true
+        await watch
+        await sleep(800)
+        const n = await itemCount(ctx.bot, 'cobblestone')
+        const ms = Date.now() - t0
+        return { results, ms, cobblestone: n, minOxy, drowned: deaths.length > 0, deaths, trace: trace.filter((_, i) => i % 3 === 0).join(' '), success: deaths.length === 0 }
+      } finally { ctx.pbot.off('messagestr', onMsg) }
+    },
+  }
+}
+const RIVER = { x: 192, y: 57, z: 24, player: { x: 187, z: 6 } }
+CASES.river_gather_stone = riverCase(RIVER, async (ctx) => {
+  const g = await ctx.exec('gather', { name: 'stone', count: 8, maxDistance: 16 }, { timeoutMs: 150000 })
+  return [String(g.result ?? g.error).slice(0, 300)]
+})
+// No action: only the drowning reflex, from the same spot under the bank.
+CASES.river_idle = riverCase(RIVER, async () => { await sleep(30000); return ['idle'] })
+CASES.river_dig_stone = riverCase(RIVER, async (ctx) => {
+  const out = []
+  for (let i = 0; i < 4; i++) {
+    const d = await ctx.exec('dig', { block: 'stone' }, { timeoutMs: 60000 })
+    out.push(String(d.result ?? d.error).slice(0, 200))
+  }
+  return out
+})
 
 async function main() {
   const which = (opt('cases', null) || Object.keys(CASES).join(',')).split(',').filter(Boolean)

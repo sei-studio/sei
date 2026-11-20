@@ -18,6 +18,7 @@ import type {
   WizardInstallResult,
   WizardProgressEvent,
 } from '@shared/ipc';
+import { userFacingError } from '../errors';
 
 /** Linear step machine; branch states (none-found / one-failed) don't advance the counter. */
 export type WizardStep =
@@ -143,7 +144,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         // the none-found branch instead: it carries Try-again / Open-settings
         // and no step number, which is the right UI for "couldn't scan".
         set({
-          error: (err as Error).message ?? t('Detection failed'),
+          error: userFacingError(err, t('Detection failed')),
           step: 'none-found',
         });
       }
@@ -200,7 +201,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
         set({ results, step: anyFailed ? 'one-failed' : 'done' });
       } catch (err) {
         set({
-          error: (err as Error).message ?? t('Install failed'),
+          error: userFacingError(err, t('Install failed')),
           step: 'one-failed',
         });
       } finally {

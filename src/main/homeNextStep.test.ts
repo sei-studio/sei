@@ -367,6 +367,63 @@ describe('files', () => {
     });
   });
 
+  // 261107: the next text chat uses up the plan the last text chat left, and
+  // nothing else (a game or call plan waits for its own surface).
+  describe('261107: a text chat start uses only a chat plan', () => {
+    const chat = { onlySurface: 'chat' as const };
+
+    it('uses up a plan tagged from a text chat', async () => {
+      await writeMemory([NOW - 60_000, 'Plan for next time: ask how the driving test went']);
+      await tagLatestPlan(dir, { surface: 'chat', line: 'Tell Lyra how the driving test went' }, NOW);
+      expect(await readHomeNextStep(dir, 'c1', NOW)).toMatchObject({ source: 'plan', surface: 'chat' });
+      expect(await consumeNextStep(dir, NOW + 1000, chat)).toBe(true);
+      expect((await ledger()).consumedAt).toBe(iso(NOW + 1000));
+      expect(await readHomeNextStep(dir, 'c1', NOW + 2000)).toBeNull();
+      // Once used, a later chat start writes nothing.
+      expect(await consumeNextStep(dir, NOW + 3000, chat)).toBe(false);
+      expect((await ledger()).consumedAt).toBe(iso(NOW + 1000));
+    });
+
+    it('leaves a game plan open (also one a chat check placed in a game)', async () => {
+      await writeMemory([NOW - 60_000, 'Plan for next time in Minecraft: dig copper for the lighthouse']);
+      await tagLatestPlan(dir, { surface: 'game', game: 'minecraft' }, NOW);
+      expect(await consumeNextStep(dir, NOW + 1000, chat)).toBe(false);
+      expect(await readHomeNextStep(dir, 'c1', NOW + 2000)).toMatchObject({ surface: 'game', game: 'minecraft' });
+      // Minecraft starting still uses it.
+      expect(await consumeNextStep(dir, NOW + 3000, { game: 'minecraft' })).toBe(true);
+    });
+
+    it('leaves a call plan, a backseat plan and an untagged plan open', async () => {
+      await writeMemory([NOW - 60_000, 'Plan for next time: plant parsnips']);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false); // untagged
+      await tagLatestPlan(dir, { surface: 'call' }, NOW);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      await tagLatestPlan(dir, { surface: 'backseat', game: 'roblox' }, NOW);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      expect((await ledger()).consumedAt).toBeUndefined();
+      expect(await readHomeNextStep(dir, 'c1', NOW)).toMatchObject({ source: 'plan', text: 'Plant parsnips' });
+    });
+
+    it('a newer game plan over an older chat plan stays open', async () => {
+      await writeMemory([NOW - 2 * HOUR, 'Plan for next time: ask about the trip']);
+      await tagLatestPlan(dir, { surface: 'chat' }, NOW - 2 * HOUR + 1000);
+      await writeMemory([NOW - 2 * HOUR, 'Plan for next time: ask about the trip'], [NOW - 60_000, 'Plan for next time in Stardew Valley: water the crops']);
+      await tagLatestPlan(dir, { surface: 'game', game: 'stardew' }, NOW);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      expect(await readHomeNextStep(dir, 'c1', NOW)).toMatchObject({ surface: 'game', game: 'stardew' });
+    });
+
+    it('no memory dir, no plan, or no ledger: nothing written, no throw', async () => {
+      expect(await consumeNextStep(path.join(dir, 'nope'), NOW, chat)).toBe(false);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      await writeMemory([NOW - HOUR, 'Alex likes boats.']);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      await writeMemory([NOW - HOUR, 'Plan for next time: plant parsnips']);
+      expect(await consumeNextStep(dir, NOW, chat)).toBe(false);
+      await expect(readFile(path.join(dir, LEDGER_FILE), 'utf8')).rejects.toThrow();
+    });
+  });
+
   it('reads goals from the per-game HEARTBEAT files', async () => {
     await writeFile(path.join(dir, 'HEARTBEAT.dontstarve.md'), `# Heartbeat\n\n- [${iso(NOW - HOUR)}] Build a science machine\n`);
     expect(await readHomeNextStep(dir, 'c1', NOW)).toMatchObject({ source: 'goal', game: 'dontstarve', surface: 'game' });

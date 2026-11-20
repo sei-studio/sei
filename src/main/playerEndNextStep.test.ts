@@ -6,12 +6,16 @@ import {
   PLAYER_END_MIN_MS,
   _resetPlayerEndNextStep,
   buildPlayerEndPrompt,
+  isFreeCloudPlan,
   isPlayerEndedGame,
   memoryEntries,
   noteSessionDigest,
+  notRunProps,
   parseNextStepReply,
   parseGameAnswer,
   parsePlayerEndReply,
+  reportGoodbyePlanSaved,
+  reportNextStepNotRun,
   resolvePlanPlace,
   runPlayerEndNextStep,
   startPlayerEndNextStep,
@@ -52,6 +56,7 @@ function deps(over: Partial<PlayerEndDeps> = {}, llm: LlmProvider = provider('fi
     buildProvider: async () => llm,
     isOnline: () => true,
     overLimit: async () => false,
+    freeCloud: async () => false,
     readText: async (file) => (file.includes('HEARTBEAT') ? GOALS : MEMORY),
     memoryFile: (id) => `/mem/${id}/MEMORY.md`,
     goalsFile: (id, game) => `/mem/${id}/${game === 'minecraft' ? 'HEARTBEAT.md' : `HEARTBEAT.${game}.md`}`,
@@ -108,14 +113,90 @@ describe('content gate', () => {
     expect(worthChecking({ durationMs: PLAYER_END_MIN_MS, playerLines: 0, goals: 1 })).toBe(true);
   });
 
-  it('skips a trivial session without building a provider or sending events', async () => {
+  it('skips a trivial session without building a provider, and says so (261107)', async () => {
     const build = vi.fn();
     const { d, saved, events } = deps({ buildProvider: build, readText: async () => '' });
     expect(await runPlayerEndNextStep(input({ durationMs: 60_000 }), d)).toBe('trivial');
     expect(await runPlayerEndNextStep(input({ playerLines: 1, goalsGame: null }), d)).toBe('trivial');
     expect(build).not.toHaveBeenCalled();
     expect(saved).toEqual([]);
-    expect(events).toEqual([]);
+    const base = { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft', saved: false, outcome: 'trivial', reached_model: false };
+    expect(events).toEqual([
+      ['next_step_checked', { ...base, duration_s: 60 }],
+      ['next_step_checked', { ...base, duration_s: 1500 }],
+    ]);
+  });
+});
+
+describe('261107: text chat and the free cloud gate', () => {
+  const chat = (over: Partial<PlayerEndInput> = {}) =>
+    input({ surface: 'chat', game: undefined, goalsGame: undefined, activity: 'a text chat', skipOnFreeCloud: true, minPlayerLines: 4, ...over });
+
+  it('a free cloud chat never builds a provider and reports not_covered with free_cloud', async () => {
+    const build = vi.fn();
+    const { d, saved, events } = deps({ buildProvider: build, freeCloud: async () => true });
+    expect(await runPlayerEndNextStep(chat(), d)).toBe('free_cloud');
+    expect(build).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
+    expect(events).toEqual([
+      [
+        'next_step_checked',
+        {
+          character_id: 'char-1',
+          source: 'player_end',
+          surface: 'chat',
+          saved: false,
+          outcome: 'not_covered',
+          skip_reason: 'free_cloud',
+          reached_model: false,
+          duration_s: 1500,
+        },
+      ],
+    ]);
+  });
+
+  it('a trivial chat is reported trivial before the plan read', async () => {
+    const free = vi.fn(async () => true);
+    const { d } = deps({ freeCloud: free });
+    expect(await runPlayerEndNextStep(chat({ playerLines: 3 }), d)).toBe('trivial');
+    expect(free).not.toHaveBeenCalled();
+  });
+
+  it('BYOK, local or paid: the chat check runs, saves under the app section and tags chat', async () => {
+    const tags: unknown[] = [];
+    const inGame: unknown[] = [];
+    const llm = provider('note: ask how the interview went\nplayer: Tell Sui how the interview went\ngame: none');
+    const { d, events } = deps(
+      {
+        save: async (_id, _line, opts) => {
+          inGame.push(opts?.inGame);
+          return true;
+        },
+        tagPlan: async (_id, surface, game, line) => {
+          tags.push([surface, game, line]);
+        },
+      },
+      llm,
+    );
+    expect(await runPlayerEndNextStep(chat(), d)).toBe('saved');
+    expect(inGame).toEqual([false]);
+    expect(tags).toEqual([['chat', undefined, 'Tell Sui how the interview went']]);
+    expect(llm.calls[0].messages[0].content).toContain('Session: a text chat');
+    expect(events.map((e) => e[0])).toEqual(['next_step_checked', 'next_step_saved']);
+    expect(events[1][1]).toEqual({ character_id: 'char-1', source: 'player_end', surface: 'chat' });
+  });
+
+  it('other inputs never consult the gate', async () => {
+    const free = vi.fn(async () => true);
+    const { d } = deps({ freeCloud: free });
+    expect(await runPlayerEndNextStep(input(), d)).toBe('saved');
+    expect(free).not.toHaveBeenCalled();
+  });
+
+  it('only quest and party leave the cost with the account', () => {
+    expect(isFreeCloudPlan('quest')).toBe(false);
+    expect(isFreeCloudPlan('party')).toBe(false);
+    for (const p of ['free', '', null, undefined, 'unknown']) expect(isFreeCloudPlan(p)).toBe(true);
   });
 });
 
@@ -133,7 +214,10 @@ describe('a player-ended session', () => {
     expect(user).toContain('player: ok I have to go eat, bye');
     expect(user).toContain('job interview');
     expect(events).toEqual([
-      ['next_step_checked', { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft', saved: true, outcome: 'saved' }],
+      [
+        'next_step_checked',
+        { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft', saved: true, outcome: 'saved', reached_model: true, duration_s: 1500 },
+      ],
       ['next_step_saved', { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft' }],
     ]);
     expect(JSON.stringify(events)).not.toMatch(/cabin|eat/);
@@ -144,7 +228,10 @@ describe('a player-ended session', () => {
     expect(await runPlayerEndNextStep(input(), d)).toBe('none');
     expect(saved).toEqual([]);
     expect(events).toEqual([
-      ['next_step_checked', { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft', saved: false, outcome: 'none' }],
+      [
+        'next_step_checked',
+        { character_id: 'char-1', source: 'player_end', surface: 'game', game: 'minecraft', saved: false, outcome: 'none', reached_model: true, duration_s: 1500 },
+      ],
     ]);
   });
 
@@ -163,13 +250,13 @@ describe('a player-ended session', () => {
 });
 
 describe('never a wall, never a block', () => {
-  it('out of allowance: no call, no event', async () => {
+  it('out of allowance: no call, and the skip is reported (261107)', async () => {
     const llm = provider('finish the cabin roof');
     const { d, saved, events } = deps({ overLimit: async () => true }, llm);
     expect(await runPlayerEndNextStep(input(), d)).toBe('over_limit');
     expect(llm.calls).toHaveLength(0);
     expect(saved).toEqual([]);
-    expect(events).toEqual([]);
+    expect(events).toEqual([['next_step_checked', expect.objectContaining({ saved: false, outcome: 'over_limit', reached_model: false })]]);
   });
 
   it('offline: skipped for a remote model, allowed for Ollama', async () => {
@@ -266,7 +353,7 @@ describe('never a wall, never a block', () => {
     expect(await runPlayerEndNextStep(input({ source: 'app_quit', eventProps: { late_hours: 14.5 } }), d)).toBe('saved');
     const base = { character_id: 'char-1', source: 'app_quit', surface: 'game', game: 'minecraft', late_hours: 14.5 };
     expect(events).toEqual([
-      ['next_step_checked', { ...base, saved: true, outcome: 'saved' }],
+      ['next_step_checked', { ...base, saved: true, outcome: 'saved', reached_model: true, duration_s: 1500 }],
       ['next_step_saved', base],
     ]);
   });
@@ -282,6 +369,21 @@ describe('never a wall, never a block', () => {
     now += 2;
     expect(await startPlayerEndNextStep(input(), d)).toBe('saved');
     expect(llm.calls).toHaveLength(3);
+  });
+
+  it('a deduped check is reported as busy, without a call (261107)', async () => {
+    const llm = provider('finish the cabin roof');
+    const { d, events } = deps({}, llm);
+    expect(await startPlayerEndNextStep(input(), d)).toBe('saved');
+    events.length = 0;
+    expect(await startPlayerEndNextStep(input({ surface: 'backseat', game: undefined }), d)).toBe('busy');
+    expect(llm.calls).toHaveLength(1);
+    expect(events).toEqual([
+      [
+        'next_step_checked',
+        { character_id: 'char-1', source: 'player_end', surface: 'backseat', saved: false, outcome: 'busy', reached_model: false, duration_s: 1500 },
+      ],
+    ]);
   });
 
   it('a plan whose write lost its scope (account switch) is not reported as saved', async () => {
@@ -629,5 +731,50 @@ describe('261020 review: none answers and the game: split', () => {
       line: 'Plant parsnips with Sui',
       game: 'stardew',
     });
+  });
+});
+
+describe('session ends that run no check (261107)', () => {
+  it('one next_step_checked with why, shape only', () => {
+    expect(notRunProps({ characterId: 'c', surface: 'game', game: 'stardew', outcome: 'not_covered', endReason: 'kicked', durationMs: 754_400 })).toEqual({
+      character_id: 'c',
+      source: 'player_end',
+      surface: 'game',
+      game: 'stardew',
+      saved: false,
+      outcome: 'not_covered',
+      reached_model: false,
+      end_reason: 'kicked',
+      duration_s: 754,
+    });
+    expect(notRunProps({ characterId: 'c', surface: 'chat', outcome: 'not_covered' })).toEqual({
+      character_id: 'c',
+      source: 'player_end',
+      surface: 'chat',
+      saved: false,
+      outcome: 'not_covered',
+      reached_model: false,
+    });
+  });
+
+  it('only a goodbye can count as saved', () => {
+    expect(notRunProps({ characterId: 'c', surface: 'call', outcome: 'goodbye', saved: true }).saved).toBe(true);
+    expect(notRunProps({ characterId: 'c', surface: 'call', outcome: 'goodbye', saved: false }).saved).toBe(false);
+    expect(notRunProps({ characterId: 'c', surface: 'call', outcome: 'deferred', saved: true }).saved).toBe(false);
+  });
+
+  it('reports through the given capture and never throws', () => {
+    const events: Array<[string, Record<string, unknown>]> = [];
+    reportNextStepNotRun({ characterId: 'c', surface: 'draw', outcome: 'not_covered', endReason: 'completed' }, (e, p) => events.push([e, p]));
+    reportGoodbyePlanSaved({ characterId: 'c', surface: 'game', game: 'minecraft' }, (e, p) => events.push([e, p]));
+    expect(events).toEqual([
+      ['next_step_checked', expect.objectContaining({ surface: 'draw', outcome: 'not_covered', end_reason: 'completed' })],
+      ['next_step_saved', { character_id: 'c', source: 'companion', surface: 'game', game: 'minecraft' }],
+    ]);
+    const boom = () => {
+      throw new Error('analytics down');
+    };
+    expect(() => reportNextStepNotRun({ characterId: 'c', surface: 'chat', outcome: 'not_covered' }, boom)).not.toThrow();
+    expect(() => reportGoodbyePlanSaved({ characterId: 'c', surface: 'call' }, boom)).not.toThrow();
   });
 });

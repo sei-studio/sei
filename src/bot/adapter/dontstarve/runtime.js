@@ -15,7 +15,13 @@
 //   heartbeat loss for heartbeat_loss_ms   => terminal GAME_WORLD_NOT_OPEN
 //   no contact by the spawn deadline       => terminal GAME_NOT_ANSWERING
 //   contact but no spawn by the deadline   => terminal DST_SPAWN_FAILED
-//   death                                  => brain turn, then terminal DST_BODY_DIED
+//   death (261104)                         => respawn.js decides:
+//     respawn: wait, despawn the corpse, re-summon beside the host under a
+//              new token (dst-listen respawn:true), then the brain's death
+//              turn (bodydied outcome 'respawned')
+//     cap / bad spot: the brain's death turn, then terminal
+//              DST_DIED_TOO_OFTEN / DST_DANGEROUS_SPOT
+//     no host, or no new body in time: terminal DST_BODY_DIED
 //   stop()                                 => despawn command, brain stop, close
 //
 // The four exports every game runtime provides (see adapter/minecraft/runtime.js):
@@ -28,12 +34,26 @@ import { createDontStarveAdapter } from './index.js'
 import { classifyConnectError } from './errors.js'
 import { createObservationState, createHandleRegistry, CMD_HOLD_MS, CMD_RESULT_TIMEOUT_MS, HEARTBEAT_LOSS_MS } from './protocol.js'
 import { modHasCaps } from './modVersion.js'
+import { isDarknessHit } from './darkness.js'
+import { createRespawnPolicy, describeDeathCause, sanitizeDeathCause, MAX_RESPAWNS, QUICK_DEATH_MS } from './respawn.js'
 
 const MAX_BODY_BYTES = 65_536
 const REPORT_MARGIN_MS = 3_000
 const MIN_SPAWN_WAIT_MS = 5_000
 const DEATH_GRACE_MS = 8_000
 const DESPAWN_WAIT_MS = 2_500
+// 261104: from the death to the corpse being removed (the death animation
+// plays and her items scatter first), then how long the fresh body may take
+// to appear (the offer rides the next 2 s heartbeat). Worst case, with the
+// despawn wait, is ~21.5 s, past the brain's 10 s death hold
+// (orchestrator DEATH_PENDING_MAX_MS), so the adapter reports `respawning`
+// and the brain keeps holding while it is true (261120).
+const RESPAWN_DELAY_MS = 4_000
+const RESPAWN_SPAWN_WAIT_MS = 15_000
+/** How recent a darkness hit must be for a cause-less death to be the dark. */
+const DARK_DEATH_WINDOW_MS = 15_000
+
+const BODY_DIED_MESSAGE = 'DST_BODY_DIED: Your companion died in the Constant. Summon them again to bring them back.'
 
 /**
  * DST shows inst.name over the survivor; spaces and most characters are fine.
@@ -123,7 +143,11 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
   const state = createObservationState()
   const handles = createHandleRegistry()
   const hold = Number.isFinite(holdMs) ? holdMs : (Number.isFinite(dst?.cmd_hold_ms) ? dst.cmd_hold_ms : CMD_HOLD_MS)
-  const tok = token ?? randomBytes(18).toString('base64url')
+  // Mutable since 261104: a respawn summons a new body under a NEW token.
+  // The mod's Despawn drops the link a second later only when its token is
+  // still the one it despawned with, so a reused token would cut the new
+  // body's link (companion.lua Despawn).
+  let tok = token ?? randomBytes(18).toString('base64url')
 
   const queue = []            // pending commands {seq, id, ...}
   const pending = new Map()   // id -> { resolve, timer }
@@ -162,7 +186,21 @@ export function createDstLink({ dst, logger = console, holdMs = null, resultTime
     body: { fight: true, followLabel: dst?.nearName || null },
     playerName: () => dst?.nearName || null,
     playerUserid: () => dst?.nearUserid || '',
-    send, say, setPaused, listen, close, flushWaiter, queueLength: () => queue.length,
+    send, say, setPaused, listen, close, flushWaiter, rotateToken, queueLength: () => queue.length,
+  }
+
+  /**
+   * 261104: the body died and a fresh one will be summoned. Commands meant
+   * for the dead body are dropped (their callers hear `reason`), an open
+   * poll is released, and a new token is minted for the next summon.
+   * @returns {string} the new token
+   */
+  function rotateToken(reason = 'interrupted: your body died') {
+    queue.splice(0, queue.length)
+    for (const [, p] of [...pending]) p.resolve(reason)
+    flushWaiter()
+    tok = randomBytes(18).toString('base64url')
+    return tok
   }
 
   function drainTo(since) {
@@ -325,15 +363,41 @@ export async function createRuntime(config, hooks) {
   let _stopped = false
   let _readyFired = false
   let _spawned = false
+  let _spawnedAt = 0
   let _spawnTimer = null
   let _hbTimer = null
   let _deathTimer = null
+  // 261104 respawn. _deathState: null (alive), 'respawning' (corpse going,
+  // fresh body on its way) or 'final' (the last death turn, then the end).
+  let _deathState = null
+  let _respawnTimer = null
+  /** From a death that will respawn until the new body is up or the respawn
+   * is abandoned (the brain holds its turns while this is true). */
+  let _respawnPending = false
+  let _respawnDeadline = null
+  /** The death being recovered from, until the fresh body spawns. */
+  let _awaitingSpawn = null
+  const policy = createRespawnPolicy({
+    maxRespawns: Number.isFinite(dst.max_respawns) ? dst.max_respawns : MAX_RESPAWNS,
+    quickDeathMs: Number.isFinite(dst.quick_death_ms) ? dst.quick_death_ms : QUICK_DEATH_MS,
+  })
 
-  const fail = (message) => {
+  /** Shape-only lives counters for bot_session_ended (main merges them). */
+  function postLives() {
+    try {
+      postPortMessage?.({ type: 'dst-lives', respawns: policy.respawns, deaths: policy.deaths, lastDeathCause: policy.lastCause })
+    } catch {}
+  }
+
+  // `end` (261107): {endReason} for a live session that ended, as in the
+  // Minecraft runtime: a world that stopped answering is the player closing
+  // it (`world_closed`, which runs main's "next time" check).
+  const fail = (message, end = null) => {
     if (_stopped) return
     _stopped = true
     clearTimers()
-    try { onError({ error: classifyConnectError(message), message }) } catch (err) {
+    const extra = end?.endReason ? { endReason: end.endReason } : {}
+    try { onError({ error: classifyConnectError(message), message, ...extra }) } catch (err) {
       logger.warn(`onError hook threw: ${err && err.message}`)
     }
   }
@@ -342,6 +406,8 @@ export async function createRuntime(config, hooks) {
     clearTimeout(_spawnTimer); _spawnTimer = null
     clearInterval(_hbTimer); _hbTimer = null
     clearTimeout(_deathTimer); _deathTimer = null
+    clearTimeout(_respawnTimer); _respawnTimer = null
+    clearTimeout(_respawnDeadline); _respawnDeadline = null
   }
 
   async function dropBrain() {
@@ -358,7 +424,11 @@ export async function createRuntime(config, hooks) {
   }
 
   async function bringUp(info) {
-    _adapter = createDontStarveAdapter({ link, config })
+    _adapter = createDontStarveAdapter({
+      link,
+      config,
+      respawning: () => !_stopped && _respawnPending,
+    })
     if (typeof onDashboard === 'function') {
       _dash = _adapter.createTelemetry({ emit: (s) => onDashboard({ ...s, game: 'dontstarve' }), logger })
       if (_dashWatching) _dash.setWatching(true)
@@ -381,8 +451,14 @@ export async function createRuntime(config, hooks) {
 
   // ── mod events that drive the lifecycle ──────────────────────────────────
   link.events.on('spawned', (info) => {
-    if (_spawned || _stopped) return
+    if (_stopped) return
+    if (_deathState === 'respawning' && _awaitingSpawn) {
+      onRespawned(info)
+      return
+    }
+    if (_spawned) return
     _spawned = true
+    _spawnedAt = Date.now()
     clearTimeout(_spawnTimer); _spawnTimer = null
     if (typeof info?.session === 'string' && info.session) link.session = info.session
     logger.info(`[sei] DST survivor spawned (${info?.prefab ?? dst.prefab}) as "${info?.name ?? dst.username}", helper mod ${link.modVersion ?? '< 0.3.0'}`)
@@ -391,14 +467,19 @@ export async function createRuntime(config, hooks) {
       fail(`DST_SPAWN_FAILED: ${err && err.message}`)
     })
     _hbTimer = setInterval(() => {
-      if (_stopped) return
+      // Between the corpse going and the fresh body arriving the mod has no
+      // link at all; the respawn has its own deadline.
+      if (_stopped || _deathState === 'respawning') return
       const gap = Date.now() - link.lastSeenAt
       const limit = Number.isFinite(dst.heartbeat_loss_ms) ? dst.heartbeat_loss_ms : HEARTBEAT_LOSS_MS
       if (gap > limit) {
         logger.info(`[sei] DST world stopped answering (${Math.round(gap / 1000)}s) — stopping.`)
         void dropBrain().then(() => {
           try { onDisconnected({ reason: 'heartbeat lost', willRetry: false }) } catch {}
-          fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world closed or stopped answering. Host the world again and press Play.")
+          fail(
+            "GAME_WORLD_NOT_OPEN: The Don't Starve Together world closed or stopped answering. Host the world again and press Play.",
+            { endReason: 'world_closed' },
+          )
         })
       }
     }, 1_000)
@@ -409,17 +490,51 @@ export async function createRuntime(config, hooks) {
     fail(`DST_SPAWN_FAILED: ${String(ev?.reason ?? 'the mod could not spawn the survivor')}`)
   })
   link.events.on('despawned', () => {
-    if (_stopped) return
+    // Our own despawn of a corpse (respawn, or the end after a final death).
+    if (_stopped || _deathState) return
     logger.info('[sei] DST body despawned by the world.')
     void dropBrain().then(() => {
       try { onDisconnected({ reason: 'despawned', willRetry: false }) } catch {}
       fail("GAME_WORLD_NOT_OPEN: The Don't Starve Together world removed your companion. Press Play to summon them again.")
     })
   })
-  link.events.on('death', () => {
-    if (_stopped || _deathTimer) return
-    // An ownerless survivor has no client to revive it: give the brain one
-    // turn to react (the sei:death prompt), then end the session honestly.
+  // Charlie kills through health with no attacker, so a helper before 0.3.2
+  // reports the cause as "NIL". The killing blow's `attacked` is posted
+  // after the death, but the hit before it (5-11 s earlier) names it.
+  let _lastDarkHitAt = 0
+  link.events.on('attacked', (p) => { if (isDarknessHit(p, link.state)) _lastDarkHitAt = Date.now() })
+  link.events.on('death', (raw) => {
+    if (_stopped || _deathState) return
+    const ev = sanitizeDeathCause(raw?.cause) === 'unknown' && Date.now() - _lastDarkHitAt < DARK_DEATH_WINDOW_MS
+      ? { ...raw, cause: 'darkness' }
+      : raw
+    // What killed her, where, and on which shard: a body that died in the
+    // dark caves seconds after spawn (261104) left no trace of why.
+    try {
+      const w = link.state.world
+      const since = _spawnedAt ? `${Math.round((Date.now() - _spawnedAt) / 1000)}s after spawn` : 'before spawn'
+      logger.info(`[sei] DST body died ${since}: cause=${String(ev?.cause ?? '?').slice(0, 40)} afflicter=${String(ev?.afflicter ?? '-').slice(0, 40)} at (${Math.round(Number(ev?.x) || 0)}, ${Math.round(Number(ev?.z) || 0)}) caves=${w?.caves ? 'yes' : 'no'} phase=${w?.phase ?? '?'}`)
+    } catch {}
+    const death = {
+      pos: typeof ev?.x === 'number' && typeof ev?.z === 'number' ? { x: ev.x, y: 0, z: ev.z } : null,
+      diedAt: Date.now(),
+      cause: sanitizeDeathCause(ev?.cause),
+      causeText: describeDeathCause(ev),
+    }
+    const verdict = policy.onDeath({ cause: ev?.cause })
+    postLives()
+    if (verdict.action === 'respawn') {
+      _deathState = 'respawning'
+      _respawnPending = true
+      logger.info(`[sei] DST respawn ${policy.respawns + 1} of ${policy.maxRespawns} in ${Math.round(respawnDelay() / 1000)}s`)
+      _respawnTimer = setTimeout(() => { _respawnTimer = null; void respawn(death) }, respawnDelay())
+      return
+    }
+    // The last death this session: one brain turn (the death prompt says she
+    // is not coming back and why), then end the session honestly.
+    _deathState = 'final'
+    logger.info(`[sei] DST no respawn (${verdict.reason}) after ${policy.respawns} respawns`)
+    emitBodyDied(death, { outcome: 'final', reason: verdict.reason })
     const grace = Number.isFinite(dst.death_grace_ms) ? dst.death_grace_ms : DEATH_GRACE_MS
     _deathTimer = setTimeout(() => {
       _deathTimer = null
@@ -427,10 +542,124 @@ export async function createRuntime(config, hooks) {
         await link.send({ kind: 'despawn' }, { timeoutMs: 1_500 })
         await dropBrain()
         try { onDisconnected({ reason: 'died', willRetry: false }) } catch {}
-        fail('DST_BODY_DIED: Your companion died in the Constant. Summon them again to bring them back.')
+        fail(finalMessage(verdict.reason))
       })()
     }, grace)
   })
+
+  function respawnDelay() {
+    return Number.isFinite(dst.respawn_delay_ms) ? dst.respawn_delay_ms : RESPAWN_DELAY_MS
+  }
+
+  function finalMessage(reason) {
+    if (reason === 'bad_spot') {
+      return 'DST_DANGEROUS_SPOT: Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer, then summon them again.'
+    }
+    return `DST_DIED_TOO_OFTEN: Your companion died ${policy.deaths} times this session and came back ${policy.respawns} times, so Sei stopped bringing them back. Summon them again when you are ready.`
+  }
+
+  /**
+   * The brain's death turn (fsmWires 'bodydied' -> handlers.onDeath). Next
+   * tick: the mod's `death` event has to reach the wires' onDying first.
+   */
+  function emitBodyDied(death, detail) {
+    setImmediate(() => {
+      if (_stopped) return
+      try {
+        link.events.emit('bodydied', {
+          pos: death.pos,
+          diedAt: death.diedAt,
+          deathText: death.causeText ? `killed by ${death.causeText}` : null,
+          detail: {
+            ...detail,
+            cause: death.causeText,
+            respawns: policy.respawns,
+            respawnsLeft: policy.respawnsLeft,
+            player: link.playerName(),
+          },
+        })
+      } catch (err) { logger.warn(`[sei] DST bodydied emit threw: ${err && err.message}`) }
+    })
+  }
+
+  /** Resolves on the mod's `despawned` event or after DESPAWN_WAIT_MS,
+   * whichever comes first; the listener goes either way (a leftover one
+   * would fire on a later despawn). */
+  function waitDespawned() {
+    return new Promise((r) => {
+      const onGone = () => { clearTimeout(t); r() }
+      const t = setTimeout(() => { link.events.off('despawned', onGone); r() }, DESPAWN_WAIT_MS)
+      link.events.once('despawned', onGone)
+    })
+  }
+
+  /** Remove the corpse, then ask main for a fresh body beside the host. */
+  async function respawn(death) {
+    if (_stopped) return
+    const gone = waitDespawned()
+    void link.send({ kind: 'despawn' }, { timeoutMs: DESPAWN_WAIT_MS })
+    await gone
+    if (_stopped) return
+    const token = link.rotateToken()
+    _awaitingSpawn = death
+    const wait = Number.isFinite(dst.respawn_timeout_ms) ? dst.respawn_timeout_ms : RESPAWN_SPAWN_WAIT_MS
+    _respawnDeadline = setTimeout(() => {
+      _respawnDeadline = null
+      giveUpRespawn('no new body appeared in time')
+    }, wait)
+    try {
+      postPortMessage?.({ type: 'dst-listen', port: link.port, token, respawn: true, nearUserid: dst.nearUserid || '' })
+    } catch (err) {
+      logger.warn(`postPortMessage threw: ${err && err.message}`)
+    }
+  }
+
+  function onRespawned(info) {
+    clearTimeout(_respawnDeadline); _respawnDeadline = null
+    _respawnPending = false
+    const death = _awaitingSpawn
+    _awaitingSpawn = null
+    _deathState = null
+    _spawnedAt = Date.now()
+    policy.onRespawned()
+    postLives()
+    logger.info(`[sei] DST survivor respawned (${info?.prefab ?? dst.prefab}) next to ${link.playerName() ?? 'the host'}, respawn ${policy.respawns} of ${policy.maxRespawns}`)
+    // The wires' onSpawn runs on this same event (greeting-guarded, so no
+    // second hello); the death turn follows with the new body's state.
+    emitBodyDied(death, { outcome: 'respawned' })
+  }
+
+  function giveUpRespawn(why) {
+    if (_stopped || _deathState !== 'respawning') return
+    logger.info(`[sei] DST respawn abandoned: ${why}`)
+    _awaitingSpawn = null
+    _respawnPending = false
+    void dropBrain().then(() => {
+      try { onDisconnected({ reason: 'died', willRetry: false }) } catch {}
+      fail(BODY_DIED_MESSAGE)
+    })
+  }
+
+  /**
+   * Main -> runtime port messages (bot/index.js forwards them). 261104:
+   * main's answer to a respawn offer: {type:'dst-respawn-offer', ok, reason,
+   * nearUserid, nearName}. Not ok = no host to spawn beside.
+   */
+  function handlePortMessage(data) {
+    if (!data || typeof data !== 'object') return
+    if (data.type !== 'dst-respawn-offer' || _deathState !== 'respawning' || !_awaitingSpawn) return
+    if (data.ok !== true) {
+      clearTimeout(_respawnDeadline); _respawnDeadline = null
+      giveUpRespawn(`main refused the offer (${String(data.reason ?? 'unknown').slice(0, 40)})`)
+      return
+    }
+    // The host it will stand beside (the original one, or whoever is there).
+    if (typeof data.nearUserid === 'string' && data.nearUserid) dst.nearUserid = data.nearUserid
+    if (typeof data.nearName === 'string' && data.nearName) {
+      dst.nearName = data.nearName
+      link.body.followLabel = data.nearName
+    }
+  }
 
   // ── listen + report + spawn deadline ─────────────────────────────────────
   try {
@@ -461,14 +690,14 @@ export async function createRuntime(config, hooks) {
       get adapter() { return _adapter },
       get telemetry() { return _dash },
       async stop() {
-        const wasLive = _spawned && !_stopped
+        const wasLive = _spawned && !_stopped && _deathState !== 'respawning'
+        // A respawn offer may still be waiting in main's watcher.
+        if (_awaitingSpawn) { try { postPortMessage?.({ type: 'dst-offer-cancel' }) } catch {} }
+        _awaitingSpawn = null
         _stopped = true
         clearTimers()
         if (wasLive) {
-          const gone = new Promise((r) => {
-            const t = setTimeout(r, DESPAWN_WAIT_MS)
-            link.events.once('despawned', () => { clearTimeout(t); r() })
-          })
+          const gone = waitDespawned()
           void link.send({ kind: 'despawn' }, { timeoutMs: DESPAWN_WAIT_MS })
           await gone
         }
@@ -487,6 +716,9 @@ export async function createRuntime(config, hooks) {
         _dashWatching = active === true
         try { _dash?.setWatching(_dashWatching) } catch {}
       },
+      handlePortMessage,
+      /** Respawn counters (tests, diagnostics). */
+      get lives() { return { respawns: policy.respawns, deaths: policy.deaths, lastDeathCause: policy.lastCause } },
       /** Test seam: the loopback link (port, token, events). */
       get link() { return link },
     }

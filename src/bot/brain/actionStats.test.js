@@ -227,3 +227,97 @@ describe('llmMetaFromConfig', () => {
       .toEqual({ provider_kind: 'chatgpt', llm_provider: 'chatgpt', model_id: 'gpt-6-luna' })
   })
 })
+
+describe('reply_latency samples (261106)', () => {
+  function withSink() {
+    const c = clock()
+    const s = createActionStats({ now: c.now })
+    const out = []
+    s.setLatencySink((x) => out.push(x))
+    return { c, s, out }
+  }
+
+  it('a say() answers the oldest waiting line, numbered per origin', () => {
+    const { c, s, out } = withSink()
+    s.notePlayerChat()
+    c.advance(1200)
+    s.notePlayerChat()
+    c.advance(800)
+    s.noteReply()
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 2000, outcome: 'replied', via: 'say' }])
+    s.notePlayerChat()
+    c.advance(500)
+    s.noteActionStarted()
+    expect(out[1]).toEqual({ origin: 'game', turn: 3, ms: 500, outcome: 'replied', via: 'action' })
+  })
+
+  it('a routed app chat is its own origin with its own turn count', () => {
+    const { c, s, out } = withSink()
+    s.notePlayerChat()
+    s.notePlayerChat({ origin: 'app' })
+    c.advance(900)
+    s.noteReply()
+    expect(out).toEqual([
+      { origin: 'game', turn: 1, ms: 900, outcome: 'replied', via: 'say' },
+      { origin: 'app', turn: 1, ms: 900, outcome: 'replied', via: 'say' },
+    ])
+  })
+
+  it('voice lines are never timed (the app voice clock owns calls)', () => {
+    const { c, s, out } = withSink()
+    s.notePlayerChat({ voice: true })
+    c.advance(100)
+    s.noteReply()
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out).toEqual([])
+  })
+
+  it('an unanswered line is silent, or error when the LLM failed after it arrived', () => {
+    const { c, s, out } = withSink()
+    s.noteLlmError({ status: 500 }) // before the line: does not count
+    c.advance(10)
+    s.notePlayerChat()
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: UNANSWERED_MS, outcome: 'silent' }])
+    s.notePlayerChat()
+    c.advance(1000)
+    s.noteLlmError({ status: 429 })
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out[1]).toMatchObject({ turn: 2, outcome: 'error' })
+  })
+
+  it('abandonPending reports waiting lines as aborted once and leaves the counters alone', () => {
+    const { c, s, out } = withSink()
+    s.notePlayerChat()
+    c.advance(3000)
+    s.abandonPending()
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 3000, outcome: 'aborted' }])
+    expect(s.snapshot().counters.pending_chats).toBe(1)
+    s.abandonPending()
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out).toHaveLength(1)
+  })
+
+  it('existing reply counters are unchanged by the sink', () => {
+    const { c, s } = withSink()
+    s.notePlayerChat()
+    c.advance(700)
+    s.noteReply()
+    const { counters } = s.snapshot()
+    expect(counters.replied).toBe(1)
+    expect(counters.reply_ms_total).toBe(700)
+  })
+
+  it('a throwing sink never breaks the stats', () => {
+    const c = clock()
+    const s = createActionStats({ now: c.now })
+    s.setLatencySink(() => { throw new Error('port gone') })
+    s.notePlayerChat()
+    expect(() => s.noteReply()).not.toThrow()
+    expect(s.snapshot().counters.replied).toBe(1)
+  })
+})

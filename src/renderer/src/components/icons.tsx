@@ -651,6 +651,18 @@ export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
+ * DotsIcon — a quiet overflow-menu trigger (three dots in a row, the Voice
+ * tab's Auto / No voice menu, 261120). Inherits currentColor.
+ */
+export const DotsIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <circle cx={5} cy={12} r={1.8} />
+    <circle cx={12} cy={12} r={1.8} />
+    <circle cx={19} cy={12} r={1.8} />
+  </svg>
+);
+
+/**
  * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
  * red via currentColor at the call site.
  */
@@ -929,6 +941,33 @@ export const BackseatIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
+/**
+ * SeilinkIcon (261105, T337): the SeiLink entry in the chat top bar. A
+ * desktop monitor with the companion inside it (head and shoulders), since
+ * SeiLink puts her on your desktop. Same 24-unit grid, stroke and caps as
+ * the Backseat monitor beside it, but no arrow or sparkle, so the two read
+ * apart at 18px.
+ */
+export const SeilinkIcon: React.FC<IconProps> = ({ size = 18 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.9}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2.5" y="3.5" width="19" height="13" rx="1.5" />
+    <path d="M12 16.5v3" />
+    <path d="M8.5 19.5h7" />
+    <circle cx="12" cy="8.4" r="2.1" />
+    <path d="M7.9 16.4c.6-2.2 2.2-3.5 4.1-3.5s3.5 1.3 4.1 3.5" />
+  </svg>
+);
+
 /** ScreenShareOffIcon — the same monitor, struck through (stop sharing). */
 export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
@@ -1039,6 +1078,29 @@ export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
   >
     <rect x={5} y={11} width={14} height={9} rx={1.5} />
     <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+/**
+ * KeyIcon — a key: round bow, shaft and two teeth. The usage-limit popup's
+ * "own API key or local model" option (261103). Stroke-only, currentColor.
+ */
+export const KeyIcon: React.FC<IconProps> = ({ size = 16 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx={8} cy={15} r={4} />
+    <path d="M10.8 12.2 20 3" />
+    <path d="M16.5 6.5 19 9" />
+    <path d="M14 9l2 2" />
   </svg>
 );
 

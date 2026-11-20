@@ -67,7 +67,10 @@ export function ModalShell({
   return (
     <div
       className={styles.scrim}
-      style={{ zIndex: TIER_Z[tier] }}
+      // 261105 (T336): --sei-modal-lift lifts every modal over a fullscreen surface
+      // that sets it (the room editor, z 2000), so a usage wall or the call
+      // inactivity check is never hidden behind it.
+      style={{ zIndex: `calc(${TIER_Z[tier]} + var(--sei-modal-lift, 0))` as unknown as number }}
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}

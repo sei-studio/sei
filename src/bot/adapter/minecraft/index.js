@@ -19,14 +19,15 @@ import { sessionActionStats, classifyActionOutcome } from '../../brain/actionSta
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { getProgression as readProgression } from './observers/progression.js'
 import { setWorldPaused } from './behaviors/pause.js'
-import { continueAttack } from './behaviors/attack.js'
-import { staleAttackerText } from './observers/staleAttacker.js'
+import { continueAttack, withAttackRunState } from './behaviors/attack.js'
+import { staleAttackerText, sameNameEventNote, sameFight, staleFightTurn } from './observers/staleAttacker.js'
 import { withWeaponState } from './observers/weaponState.js'
 import { minecraftVocabulary } from './vocabulary.js'
 import { closeContainerSession } from './behaviors/container.js'
 import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
+import { workItemsFor, carriedCounts, itemsNamedIn } from './observers/workItems.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   describeAction,
@@ -171,14 +172,21 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       const label = (config?.world_label && String(config.world_label).trim()) || `spawn ${x},${z}`
       return { fingerprint: `${dim}@${x},${y},${z}`, label }
     },
-    worldPrimer,
+    // 261111: the copper gear fact only when this version has copper armor.
+    worldPrimer: () => {
+      let copperGear = false
+      try { copperGear = !!bot.registry?.itemsByName?.copper_helmet } catch { copperGear = false }
+      return worldPrimer({ copperGear })
+    },
     capabilityParagraph: () => capabilityParagraph(config?.vision?.mode),
     actionRules: () => actionRules(config?.vision?.mode),
     cuboidGrammar,
     // 261019: an attack event whose mob died or left view before this turn
     // gets plain "it is gone" text instead of "attack it now".
     // 261030: a mob-fight event says so when she owns no weapon.
-    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? eventAddendum(event, withWeaponState(bot, event, data), config?.vision?.mode),
+    // 261111 (pass 51): a live mob that shares its name with one that just
+    // died is named as a different one.
+    eventAddendum: (event, data) => staleAttackerText(bot, event, data) ?? (eventAddendum(event, withAttackRunState(bot, event, withWeaponState(bot, event, data)), config?.vision?.mode) + sameNameEventNote(bot, event, data)),
     cantReachNudge,
     // 261013: item, block and mob names for the brain's repeat note
     // (vocabulary.js), so it never names the job as a habit.
@@ -278,6 +286,11 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // 261019 (pass 18): attackEntity again on the fight already running
     // tops it up instead of restarting it (behaviors/attack.js).
     continueRunningAction: (running, use) => continueAttack(bot, running, use),
+    // 261111 (pass 51): a different mob after the one she spoke about died is
+    // a new fight; a turn that attacks a mob that died while it was being
+    // written is not run (observers/staleAttacker.js).
+    sameFight: (prevMobId, data) => sameFight(bot, prevMobId, data),
+    staleTurn: (toolUses, sinceMs) => staleFightTurn(bot, toolUses, sinceMs),
     fightActions: ['attackEntity'],
     postProcessToolBatch: (toolUses, results, loopState) =>
       postProcessToolBatch(toolUses, results, loopState, cantReachNudge),
@@ -291,6 +304,12 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       const m = /^gave (\d+) (\S+) to (.+?), tossed/.exec(String(resultText ?? ''))
       return m ? { item: m[2], n: Number(m[1]), to: m[3] } : null
     },
+    // 261102 (pass 37): what an action works toward and how much of it she
+    // carries, so an open ask can name its items (observers/workItems.js).
+    workItems: (name, args) => workItemsFor(bot, name, args),
+    carriedCounts: (names) => carriedCounts(bot, names),
+    // 261111 (pass 52): which of them a player's line asked for.
+    namedItems: (line, items) => itemsNamedIn(line, items, { foods: bot.registry?.foodsByName }),
     surfaceBaseline: () => MINECRAFT_BASELINE,
     sessionEndClause: () => SESSION_END_CLAUSE,
     stuckNudges: () => ({ vision: ACTION_STUCK_NUDGE_VISION, noVision: ACTION_STUCK_NUDGE_NOVISION }),

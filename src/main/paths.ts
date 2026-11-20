@@ -91,6 +91,13 @@ export const paths = {
   profilesDir: () => path.join(userDataRoot(), 'profiles'),
   sessionPath: () => path.join(userDataRoot(), 'session.bin'),
   logsDir: () => path.join(userDataRoot(), 'logs'),
+  // 261104 SeiLink: installed room art packs (<dir>/<presetId>/manifest.json).
+  // Device-global, not per profile: art is the same for every account.
+  seilinkPacksDir: () => path.join(userDataRoot(), 'seilink', 'packs'),
+  // 261105 Anima: downloaded face sets (packs/<an-id>/) and which character
+  // uses which (index.json). Device-global: packs are content-addressed by
+  // the portrait, the same for every account that sees her.
+  animaDir: () => path.join(userDataRoot(), 'anima'),
   // Wizard state JSON. Persists which MC installs the user ticked,
   // `hasRunOnce` (gates the first-launch modal vs the settings-reopen flow),
   // and the last skin-server port (used for port-drift detection on bootstrap).
@@ -149,6 +156,8 @@ export const paths = {
   /** Active profile's data root. */
   profileRoot: profileRootDir,
   configPath: () => path.join(profileRootDir(), 'config.json'),
+  /** Avatar library rows this profile will not download again (failed import, refused delete). */
+  avatarLibrarySkipPath: () => path.join(profileRootDir(), 'avatar-library-skip.json'),
   charactersDir: () => path.join(profileRootDir(), 'characters'),
   characterPath: (id: string) => path.join(profileRootDir(), 'characters', `${id}.json`),
   characterPortraitPath: (id: string) => path.join(profileRootDir(), 'characters', `${id}.png`),
@@ -160,6 +169,9 @@ export const paths = {
   // BYOK ElevenLabs voice key (260725) — same safeStorage-encrypted blob
   // pattern as api_key.bin, profile-scoped for the same reason.
   elevenLabsKeyPath: () => path.join(profileRootDir(), 'elevenlabs_key.bin'),
+  // 261103: the user's own Fish Audio API key (Local voice > Fish Audio), the
+  // same safeStorage-encrypted blob pattern.
+  fishKeyPath: () => path.join(profileRootDir(), 'fish_audio_key.bin'),
   memoryDir: (characterId: string) => path.join(profileRootDir(), 'memory', characterId),
   // 260725 knowledge: user-uploaded reference files injected into every AI
   // surface (chat / voice / chess / Minecraft bot). Deliberately OUTSIDE
@@ -175,6 +187,10 @@ export const paths = {
   // references textures/expressions by relative path), so entry names are
   // sanitized at IMPORT time (avatarStore) rather than validated here.
   avatarsDir: (characterId: string) => path.join(profileRootDir(), 'avatars', characterId),
+  // 261104 SeiLink: a companion's room state (RoomState JSON, a few KB).
+  // Outside memoryDir so a memory reset keeps her room. The id is validated
+  // by roomStore (UUID) before this is called.
+  seilinkRoomPath: (characterId: string) => path.join(profileRootDir(), 'seilink', 'rooms', `${characterId}.json`),
   // Per-persona skin PNG storage. Files live under
   // <profileRoot>/skins/<personaId>.png. The persona id has already been
   // validated by main/ipc.ts's IdSchema (kebab-case slug regex, no '.', '/',
@@ -192,6 +208,11 @@ export const paths = {
   // normalization never has to defend against escape-attempting components.
   portraitPath: (uuid: string) => path.join(profileRootDir(), 'portraits', `${uuid}.png`),
   portraitsDir: () => path.join(profileRootDir(), 'portraits'),
+  // 261111: per-version copies of cloud portraits this profile has downloaded
+  // (cloud/portraitCache.ts), so a portrait is fetched at most once per
+  // version even after the character's own files are removed (reconcile
+  // sweep, re-open from the World tab).
+  portraitCacheDir: () => path.join(profileRootDir(), 'cache', 'portraits'),
 
   // Claude's Discretion (CONTEXT §sync retry queue shape):
   // JSON-file persistent queue mirroring apiKeyStore.ts atomic-write semantics.

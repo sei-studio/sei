@@ -81,6 +81,8 @@ export const BOT_ERROR_ROUTES: Record<GameId, Partial<Record<ErrorClass, Route>>
     DST_SPAWN_FAILED: genericRoute,
     DST_PORT_IN_USE: genericRoute,
     DST_BODY_DIED: genericRoute,
+    DST_DIED_TOO_OFTEN: genericRoute,
+    DST_DANGEROUS_SPOT: genericRoute,
   },
 };
 

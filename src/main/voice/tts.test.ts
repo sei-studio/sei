@@ -34,6 +34,9 @@ vi.mock('../auth/authState', () => ({
 }));
 vi.mock('./elevenLabsKeyStore', () => ({
   resolveElevenLabsRoute: mockResolveRoute,
+  // 261110: the speech route (Sei voices on the ChatGPT plan, else the
+  // ElevenLabs route); these tests drive both through the same mock.
+  resolveSpeakRoute: mockResolveRoute,
   resolveElevenLabsKey: mockResolveKey,
   resolveTtsRoute: mockResolveTtsRoute,
 }));
@@ -50,9 +53,16 @@ import {
   _resetOwnKeyFailuresForTests,
   _ownKeyFailureCountForTests,
   clearOwnKeyFailures,
+  isProxyVoiceRefusal,
 } from './tts';
 import type { TtsStreamEvent, TtsNotice } from './tts';
-import { ownVoiceStandInId } from './voiceAssign';
+import { libraryVoiceStandInId, ownVoiceStandInId } from './voiceAssign';
+import {
+  _resetLibraryVoicesForTests,
+  libraryVoiceRefused,
+  lookupLibraryVoice,
+  rememberLibraryRefusal,
+} from './libraryVoices';
 
 const VOICE = VOICES[0].id;
 const CHAR = { id: 'c1', name: 'Testy' };
@@ -682,6 +692,39 @@ describe('own ElevenLabs voices', () => {
   });
 });
 
+describe('voicePreviewTts by companion (261110, profile Overview sample)', () => {
+  it('plays the assigned pool voice and resolves it without writing anything', async () => {
+    mockGetCharacter.mockResolvedValue({ ...CHAR, metadata: { voiceId: VOICES[1].id } });
+    mockResolveVoiceId.mockClear();
+    fetchSpy.mockResolvedValue(okAudio());
+    await voicePreviewTts({ characterId: 'c1' });
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.sei.gg/tts/speech');
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body)).voice_id).toBe(VOICES[1].id);
+    expect(mockResolveVoiceId).not.toHaveBeenCalled();
+  });
+
+  it('a silent companion has no sample', async () => {
+    mockGetCharacter.mockResolvedValue({ ...CHAR, metadata: { voiceId: 'none' } });
+    await expect(voicePreviewTts({ characterId: 'c1' })).rejects.toThrow(/VOICE_DISABLED/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("someone else's own ElevenLabs voice samples as the voice they chose for others", async () => {
+    const foreign = {
+      ...CHAR,
+      owner: '22222222-2222-4222-8222-222222222222',
+      is_default: false,
+      metadata: { voiceId: 'aBcDeFgHiJkLmNoPqRsT', voiceOwn: { name: 'Clone', gender: 'female' }, voiceShared: VOICES[2].id },
+    };
+    mockGetCharacter.mockResolvedValue(foreign);
+    fetchSpy.mockResolvedValue(okAudio());
+    await voicePreviewTts({ characterId: 'c1' });
+    expect(JSON.parse(String((fetchSpy.mock.calls[0][1] as RequestInit).body)).voice_id).toBe(
+      ownVoiceStandInId(foreign as never),
+    );
+  });
+});
+
 describe('directElevenLabsError (BYOK account answers)', () => {
   it('voice missing → VOICE_NOT_IN_LIBRARY', () => {
     expect(directElevenLabsError(404, '{"detail":{"status":"voice_not_found"}}')).toMatch(/^VOICE_NOT_IN_LIBRARY/);
@@ -715,5 +758,121 @@ describe('directElevenLabsError (BYOK account answers)', () => {
     await expect(voiceTtsStream({ characterId: 'c1', text: 'hi' }, () => {})).rejects.toThrow(/VOICE_ELEVEN_QUOTA/);
     mockResolveRoute.mockResolvedValue({ kind: 'proxy' });
     await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.not.toThrow(/VOICE_ELEVEN_QUOTA/);
+  });
+});
+
+describe('Voice Library voices on Sei cloud (261119)', () => {
+  const LIB_ID = 'LibVoice0000000000aa';
+  const LIB_CHAR = {
+    ...CHAR,
+    owner: '22222222-2222-4222-8222-222222222222',
+    is_default: false,
+    metadata: { voiceId: LIB_ID, voiceLibrary: { name: 'Captain Wren', gender: 'female' } },
+  };
+  const refusal = (): Response =>
+    new Response(JSON.stringify({ error: 'invalid_request', message: 'unknown voice_id', reason: 'library_voice_unavailable' }), {
+      status: 400,
+    });
+  const streamOk = (): Response =>
+    new Response(new ReadableStream({ start(c) { c.enqueue(new Uint8Array([7])); c.close(); } }), { status: 200 });
+  const sentVoice = (i: number): string => JSON.parse((fetchSpy.mock.calls[i][1] as RequestInit).body as string).voice_id;
+  const collect = (): { notices: TtsNotice[]; off: () => void } => {
+    const notices: TtsNotice[] = [];
+    return { notices, off: onTtsNotice((n) => notices.push(n)) };
+  };
+
+  beforeEach(() => {
+    _resetLibraryVoicesForTests();
+    mockGetCharacter.mockResolvedValue(LIB_CHAR);
+    mockResolveVoiceId.mockResolvedValue(LIB_ID);
+  });
+
+  it('speaks the library voice through the proxy, metered like a pool voice, no notice', async () => {
+    const { notices, off } = collect();
+    fetchSpy.mockResolvedValue(okAudio());
+    await voiceTts({ characterId: 'c1', text: 'hi' });
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.sei.gg/tts/speech');
+    expect(sentVoice(0)).toBe(LIB_ID);
+    expect(mockResolveTtsRoute).toHaveBeenCalledWith({ own: false });
+    expect(notices).toEqual([]);
+    off();
+  });
+
+  it('a proxy refusal retries once with the stand-in, says so, and skips the voice for a while', async () => {
+    const { notices, off } = collect();
+    const standIn = libraryVoiceStandInId(LIB_CHAR as never);
+    expect((VOICES as Array<{ id: string; gender: string }>).find((v) => v.id === standIn)?.gender).toBe('female');
+    fetchSpy.mockImplementation(async (_u: string, init: RequestInit) =>
+      JSON.parse(init.body as string).voice_id === LIB_ID ? refusal() : okAudio(),
+    );
+    await voiceTts({ characterId: 'c1', text: 'hi' });
+    expect([sentVoice(0), sentVoice(1)]).toEqual([LIB_ID, standIn]);
+    await voiceTts({ characterId: 'c1', text: 'again' });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(sentVoice(2)).toBe(standIn);
+    expect(notices).toEqual([
+      { kind: 'library-voice-unavailable', characterId: 'c1' },
+      { kind: 'library-voice-unavailable', characterId: 'c1' },
+    ]);
+    expect(libraryVoiceRefused(LIB_ID)).toBe(true);
+    off();
+  });
+
+  it('the streaming path falls back the same way', async () => {
+    const { notices, off } = collect();
+    const standIn = libraryVoiceStandInId(LIB_CHAR as never);
+    fetchSpy.mockImplementation(async (_u: string, init: RequestInit) =>
+      JSON.parse(init.body as string).voice_id === LIB_ID ? refusal() : streamOk(),
+    );
+    const events: TtsStreamEvent[] = [];
+    await voiceTtsStream({ characterId: 'c1', text: 'hi' }, (e) => events.push(e));
+    expect([sentVoice(0), sentVoice(1)]).toEqual([LIB_ID, standIn]);
+    await vi.waitFor(() => expect(events.some((e) => 'done' in e)).toBe(true));
+    expect(events.some((e) => 'error' in e)).toBe(false);
+    expect(notices).toEqual([{ kind: 'library-voice-unavailable', characterId: 'c1' }]);
+    off();
+  });
+
+  it('other proxy errors are not treated as a removed voice', async () => {
+    fetchSpy.mockResolvedValue(new Response('{"error":"rate_limited"}', { status: 429 }));
+    await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.toThrow();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(libraryVoiceRefused(LIB_ID)).toBe(false);
+  });
+
+  it('isProxyVoiceRefusal matches the old and the new proxy body only on 400', () => {
+    expect(isProxyVoiceRefusal(400, '{"error":"invalid_request","message":"unknown voice_id"}')).toBe(true);
+    expect(isProxyVoiceRefusal(400, '{"reason":"library_voice_unavailable"}')).toBe(true);
+    expect(isProxyVoiceRefusal(400, '{"error":"invalid_request","message":"text too long"}')).toBe(false);
+    expect(isProxyVoiceRefusal(500, 'unknown voice_id')).toBe(false);
+  });
+
+  it("the companion sample plays the library voice, then the stand-in once it is gone", async () => {
+    fetchSpy.mockResolvedValue(okAudio());
+    await voicePreviewTts({ characterId: 'c1' });
+    expect(sentVoice(0)).toBe(LIB_ID);
+    fetchSpy.mockReset();
+    fetchSpy.mockImplementation(async (_u: string, init: RequestInit) =>
+      JSON.parse(init.body as string).voice_id === LIB_ID ? refusal() : okAudio(),
+    );
+    await voicePreviewTts({ characterId: 'c1' });
+    expect([sentVoice(0), sentVoice(1)]).toEqual([LIB_ID, libraryVoiceStandInId(LIB_CHAR as never)]);
+  });
+
+  it('the picker sample by voice id: unknown ids are refused, a removed voice is an error', async () => {
+    mockGetCharacter.mockResolvedValue(null);
+    await expect(voicePreviewTts({ voiceId: 'Unknown0000000000000' })).rejects.toThrow(/unknown voice/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockResolvedValue(refusal());
+    rememberLibraryRefusal('nothing-else');
+    // A voice looked up this session is allowed through to the proxy.
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true, voice: { voice_id: LIB_ID, name: 'Captain Wren', preview_url: null } }), {
+        status: 200,
+      }),
+    );
+    expect((await lookupLibraryVoice(LIB_ID)).ok).toBe(true);
+    await expect(voicePreviewTts({ voiceId: LIB_ID })).rejects.toThrow(/^VOICE_LIBRARY_UNAVAILABLE/);
+    expect(libraryVoiceRefused(LIB_ID)).toBe(true);
   });
 });

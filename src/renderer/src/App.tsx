@@ -22,10 +22,26 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
+import { profileSetUp } from './lib/profileSetUp';
 import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
+import { movedInId, useSeilinkStore } from './lib/stores/useSeilinkStore';
+import { SeilinkFlowHost } from './components/seilink/SeilinkFlowHost';
+import { introSeen } from './lib/seilink/introPref';
+import {
+  TOUR_FIRST_LOOK_MS,
+  TOUR_POLL_MS,
+  noteOnboardingThisSession,
+  onboardingRanThisSession,
+  pickTourCompanion,
+  readTourRecord,
+  retired,
+  tourDecision,
+  updateTourRecord,
+} from './lib/seilink/tourPref';
+import { beginSeilinkTour } from './lib/seilink/seilinkTour';
 import { useDataStore, subscribeIpc } from './lib/stores/useDataStore';
 import { MacosWindow } from './components/MacosWindow';
 import { IconRail } from './components/IconRail';
@@ -37,6 +53,7 @@ import { useTutorialStore, type TutorialStep } from './lib/stores/useTutorialSto
 import { useFirstMomentStore } from './lib/stores/useFirstMomentStore';
 import { firstMomentCompanion } from './lib/firstMoment';
 import { DEFAULT_CHARACTER_UUIDS } from '@shared/defaultCharacters';
+import { normalizeUiLanguage } from '@shared/uiLanguage';
 import type { WhatsNewEvent } from '@shared/ipc';
 import { SkinSetupScreen } from './screens/SkinSetupScreen';
 import { CharactersScreen } from './screens/CharactersScreen';
@@ -52,12 +69,14 @@ import { UniqueRevealScreen } from './screens/UniqueRevealScreen';
 import { CallMiniBar } from './components/call/CallMiniBar';
 import { MiniTile } from './components/MiniTile';
 import { CallOverlayPusher } from './components/CallOverlayPusher';
+import { SeilinkVoiceRelay } from './components/seilink/SeilinkVoiceRelay';
 import { CrossLaunchConfirmModal } from './components/CrossLaunchConfirmModal';
 import { ShareScreenModal } from './components/backseat/ShareScreenModal';
 import { BackseatGameModal } from './components/backseat/BackseatGameModal';
 import { GamesPickerModal } from './components/GamesPickerModal';
 import { SettingsScreen } from './screens/SettingsScreen';
-import { CreditsScreen } from './screens/CreditsScreen';
+import { PlaytimeScreen } from './screens/PlaytimeScreen';
+import { SpendAlertBanner } from './components/playtime/SpendAlertBanner';
 import { ReceiptScreen } from './screens/ReceiptScreen';
 import { McSetupModal } from './components/McSetupModal';
 import { SummonConflictModal } from './components/SummonConflictModal';
@@ -102,15 +121,17 @@ import { OfflineRetryModal } from './components/OfflineRetryModal';
 import { HardStopModal } from './components/HardStopModal';
 import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
-import { ImportLocalProfileModal } from './components/ImportLocalProfileModal';
+import { ImportLocalProfileModal, PARTY_FULL_LINE } from './components/ImportLocalProfileModal';
 import {
   BOOT_OFFER_FIRST_MS,
   BOOT_OFFER_POLL_MS,
   checkBootImportOffer,
   localImportOfferTiming,
   shouldOfferLocalImport,
+  importBlockedByParty,
   type BootOfferUi,
 } from './lib/localImportOffer';
+import { trackLocalImportPartyFull, type LocalImportEntry } from './lib/localImportTrack';
 import { liveSessionForRestart } from './components/UpdateRailButton';
 import { useVoiceStore } from './lib/stores/useVoiceStore';
 import { useBackseatStore } from './lib/stores/useBackseatStore';
@@ -118,6 +139,7 @@ import { useChessStore } from './lib/stores/useChessStore';
 import { useDrawStore } from './lib/stores/useDrawStore';
 import type { PeekLocalProfileResult } from '../../shared/ipc';
 import { usePermissionResume } from './lib/permissions/usePermissionResume';
+import { requestComposerFocus } from './lib/composerFocus';
 
 export function App(): React.ReactElement {
   const t = useT();
@@ -125,6 +147,35 @@ export function App(): React.ReactElement {
   // 260929: after "Restart Sei and continue" (a permission grant macOS would
   // only hand to a fresh process), reopen the share picker or the call.
   usePermissionResume();
+  // 261031 (T277): boot safety. The app UI is up, so this start counts as
+  // good once it stays up for a few seconds.
+  useEffect(() => {
+    try { sei.rendererReady?.(); } catch { /* older bridge */ }
+  }, []);
+  // 261104 SeiLink desktop host: she was clicked on the desktop wallpaper
+  // (main focused this window first; src/main/seilink/host/seilinkHost.ts).
+  useEffect(
+    () =>
+      sei.onSeilinkOpenChat?.((characterId) => {
+        // Product call (261116): a double click on her; her chat comes up ready to type.
+        requestComposerFocus(characterId);
+        useUiStore.getState().navigate({ kind: 'chat', characterId });
+      }),
+    [],
+  );
+  // 261104 SeiLink M4: availability + host status for the companion page and
+  // Settings, and the dock's edit button (her editor: on the desktop, 261106,
+  // or on her page in the app).
+  useEffect(() => useSeilinkStore.getState().init(), []);
+  useEffect(
+    () =>
+      sei.onSeilinkOpenRoomEditor?.((req) => {
+        useSeilinkStore.getState().requestEditor(req);
+        // 261106: on the desktop the app steps aside again when the editor closes; only the in-app editor lands on her page.
+        if (!req.desktop) useUiStore.getState().navigate({ kind: 'character', id: req.characterId });
+      }),
+    [],
+  );
   // ui-A7: developer-console visibility toggle. Default OFF — LogsBar only
   // mounts when the Settings → Show developer console toggle is flipped.
   const devConsoleVisible = useUiStore((s) => s.devConsoleVisible);
@@ -196,7 +247,18 @@ export function App(): React.ReactElement {
     peek: PeekLocalProfileResult;
     existingAccount: boolean;
     after?: () => void;
+    entry: LocalImportEntry;
   } | null>(null);
+  // 261116: the local companions would not fit the account's party, so the
+  // import was not offered; one dismissible line says to free a slot and
+  // import from Settings. Shown at most once per offer moment.
+  const [importPartyFull, setImportPartyFull] = useState(false);
+  const notePartyFull = useCallback((entry: LocalImportEntry, peek: PeekLocalProfileResult): void => {
+    setImportPartyFull(true);
+    trackLocalImportPartyFull(entry, peek.party);
+    // Counts as this account's answer: the boot offer does not repeat it.
+    void sei.profileImportOffered('set').catch(() => undefined);
+  }, []);
   // A sign-in landed while the first-run scene was up: offer the import when
   // the scene hands off (handleOnboardComplete).
   const importAfterOnboardRef = useRef(false);
@@ -445,7 +507,12 @@ export function App(): React.ReactElement {
         if (stopped) return;
         if (res.kind === 'show') {
           // `after` keeps the player where they are (Home); only data reloads.
-          setImportOffer({ peek: res.peek, existingAccount: true, after: () => undefined });
+          setImportOffer({ peek: res.peek, existingAccount: true, after: () => undefined, entry: 'boot' });
+          stopped = true;
+          return;
+        }
+        if (res.kind === 'party_full') {
+          notePartyFull('boot', res.peek);
           stopped = true;
           return;
         }
@@ -469,6 +536,50 @@ export function App(): React.ReactElement {
       if (timer) clearTimeout(timer);
     };
   }, [bootOfferUserId]);
+
+  // ── The guide's SeiLink tour (261105, T337). ─────────────────────────────
+  //    Once per account (with one snoozed second ask), only where SeiLink can
+  //    run, never in the session that ran onboarding, and only on a calm
+  //    Home (no modal, tour, first moment, call, game or share). The rules
+  //    are tourPref.tourDecision; this only polls for the calm moment.
+  const tourScope = bootOfferUserId ?? 'local';
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = (): void => {
+      if (stopped) return;
+      const ui = readCalmUi();
+      const calm = ui.viewKind === 'home' && !ui.popupModalOpen && !ui.tourActive && !ui.liveSession;
+      const seilink = useSeilinkStore.getState();
+      const characters = useDataStore.getState().characters;
+      const companionId = pickTourCompanion(
+        characters.map((c) => ({ id: c.id, lastAt: c.last_chatted ?? null })),
+        DEFAULT_CHARACTER_UUIDS.sui,
+      );
+      const decision = tourDecision({
+        record: readTourRecord(),
+        now: Date.now(),
+        available: seilink.availability?.enabled === true,
+        onboardedThisSession: onboardingRanThisSession(),
+        alreadyLinked: introSeen() || movedInId(seilink.status) != null,
+        hasCompanion: companionId != null,
+      });
+      if (decision.kind === 'retire') {
+        if (!readTourRecord().done) updateTourRecord(retired);
+        return;
+      }
+      if (decision.kind === 'show' && calm && companionId) {
+        beginSeilinkTour(companionId, decision.audience);
+        return;
+      }
+      timer = setTimeout(tick, TOUR_POLL_MS);
+    };
+    timer = setTimeout(tick, TOUR_FIRST_LOOK_MS);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [tourScope, readCalmUi]);
 
   // ── In-app updater subscriptions (quick/260604-uoy). ──────────────────────
   //    Wired ONCE at mount. onUpdateAvailable fires only for OPTIONAL updates
@@ -566,6 +677,12 @@ export function App(): React.ReactElement {
   useEffect(() => {
     return sei.onScopeChanged((ev) => {
       scopeChangesRef.current += 1;
+      // T283 review: this push's generation. Every await below can straddle
+      // the NEXT scope change (the profile-state read alone may take 5 s), and
+      // a stale handler that routes after it would send the new account to
+      // the old account's view. After each await, a newer push means stop.
+      const gen = scopeChangesRef.current;
+      const stale = (): boolean => scopeChangesRef.current !== gen;
       // Drop the previous account's in-memory data first (transcripts are
       // keyed by character id, and the defaults share ids across profiles).
       resetAccountScopedState();
@@ -576,6 +693,7 @@ export function App(): React.ReactElement {
         let skinPending = false;
         try {
           const cfg = await sei.getConfig();
+          if (stale()) return;
           onboardedName = (cfg.preferred_name ?? '').trim();
           skinPending = cfg.skin_setup_pending === true;
           // Default to the midnight "Summoning Terminal" theme on fresh
@@ -584,7 +702,7 @@ export function App(): React.ReactElement {
           setThemeMode(mode);
           applyTheme(mode);
           // App UI language follows the incoming profile's config (260730).
-          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
+          useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
           // Appearance & feel: seed the "Realistic typing" pacing toggle
           // (default ON) so useChatStore.send() reads the right value.
@@ -611,8 +729,11 @@ export function App(): React.ReactElement {
           // Fall through with empty onboardedName → onboarding (fresh profile).
         }
         // Replace the previous profile's character list + library state.
+        if (stale()) return;
         try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
+        if (stale()) return;
         try { await useLibraryStateStore.getState().refresh(); } catch { /* no hidden defaults */ }
+        if (stale()) return;
         // 261029 review: the boot routing has not picked the first view yet.
         // It owns that choice (it reads the profile again when a scope change
         // landed under it), so this handler only reloads data; routing here
@@ -655,6 +776,7 @@ export function App(): React.ReactElement {
           useCreditsStore.getState().reset();
           await useCreditsStore.getState().init();
         } catch { /* keep last */ }
+        if (stale()) return;
         // 260728 Sui onboarding: while the first-run scene is driving (view
         // 'onboard'), it owns navigation — the sign-in that just landed came
         // from the scene's own panel, and the scene continues into setup +
@@ -676,13 +798,23 @@ export function App(): React.ReactElement {
         if (offerTiming === 'now') {
           try {
             const peek = await sei.profilePeekLocal();
+            if (stale()) return;
             const existingAccount = Boolean(onboardedName);
             if (shouldOfferLocalImport(peek, existingAccount)) {
-              setImportOffer({ peek, existingAccount });
-              return;
+              // 261116: would not fit the party: no modal (it would import
+              // nothing), one line instead, then route as usual.
+              if (importBlockedByParty(peek)) notePartyFull('sign_in', peek);
+              else {
+                setImportOffer({ peek, existingAccount, entry: 'sign_in' });
+                return;
+              }
             }
           } catch { /* no offer; route as usual */ }
         }
+        // T283: no name, but set up before (settings recovered to defaults):
+        // not a fresh account, so home rather than onboarding.
+        const setUp = onboardedName ? true : (await profileSetUp(onboardedName)).setUp;
+        if (stale()) return;
         // Onboarded but skin-setup still pending → resume the dedicated step.
         if (onboardedName && skinPending) { navigate({ kind: 'skin-setup' }); return; }
         // Onboarded account → home, on the HOME tab (which shows the welcome
@@ -691,7 +823,7 @@ export function App(): React.ReactElement {
         // moment (260802): an unanswered questionnaire used to be interposed
         // right here, and now simply waits for the player to ask for a
         // companion, where Sui asks for it herself.
-        if (onboardedName) {
+        if (setUp) {
           useUiStore.getState().setHomeTab('home');
           navigate({ kind: 'home' });
           return;
@@ -726,8 +858,10 @@ export function App(): React.ReactElement {
     try { await useDataStore.getState().loadCharacters(); } catch { /* empty-state */ }
     // The import can add World companions / Sui to the roster (added_world_ids).
     try { await useLibraryStateStore.getState().refresh(); } catch { /* none */ }
-    if (!onboardedName) { navigate({ kind: 'onboard' }); return; }
-    if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
+    if (!onboardedName) {
+      // T283: set up before (settings recovered to defaults) → home, not onboarding.
+      if (!(await profileSetUp(onboardedName)).setUp) { navigate({ kind: 'onboard' }); return; }
+    } else if (skinPending) { navigate({ kind: 'skin-setup' }); return; }
     useUiStore.getState().setHomeTab('home');
     navigate({ kind: 'home' });
   }
@@ -795,6 +929,9 @@ export function App(): React.ReactElement {
       // resume-to-skin-setup routing below (set on onboarding submit, cleared
       // when the user finishes/skips the SkinSetupScreen).
       let skinPending = false;
+      // T283: a profile with no name that was set up before (settings
+      // recovered to defaults) is not a fresh install.
+      let returning = false;
       // 261029: hydrate from the active profile. Runs again below when the
       // data scope was still moving to the signed-in account at first read.
       const hydrate = async (): Promise<boolean> => {
@@ -804,13 +941,20 @@ export function App(): React.ReactElement {
           if (cancelled) return false;
           onboardedName = (cfg.preferred_name ?? '').trim();
           skinPending = cfg.skin_setup_pending === true;
+          returning = false;
+          if (!onboardedName) {
+            const st = await profileSetUp(onboardedName);
+            if (cancelled) return false;
+            returning = st.setUp;
+            onboardedName = st.name;
+          }
           // Default to the midnight "Summoning Terminal" theme on fresh
           // installs; legacy 'dark'/'light' values are clamped to the new names.
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
           // App UI language (260730): hydrate before the first localized render.
-          useLangStore.getState().setLang(cfg.ui_language === 'zh' ? 'zh' : 'en');
+          useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           // ui-A7: seed the developer-console visibility from persisted config
           // BEFORE the first render of any view that mounts LogsBar — the
           // gate below reads useUiStore.devConsoleVisible directly.
@@ -904,7 +1048,7 @@ export function App(): React.ReactElement {
         currentAuth: () => useAuthStore.getState().state,
         rehydrate: hydrate,
         scopeChangedSinceHydrate: () => scopeChangesRef.current !== scopeChangesAtStart,
-        profile: () => ({ onboardedName, skinPending }),
+        profile: () => ({ onboardedName, skinPending, returning }),
         isCancelled: () => cancelled,
       });
       if (dest === null) return;
@@ -1010,14 +1154,19 @@ export function App(): React.ReactElement {
           try {
             const peek = await sei.profilePeekLocal();
             if (useAuthStore.getState().state.kind === 'signed_in' && shouldOfferLocalImport(peek, true)) {
-              setImportOffer({ peek, existingAccount: true, after: () => void routeAfterOnboard() });
-              return;
+              if (importBlockedByParty(peek)) notePartyFull('onboarding', peek);
+              else {
+                setImportOffer({ peek, existingAccount: true, after: () => void routeAfterOnboard(), entry: 'onboarding' });
+                return;
+              }
             }
           } catch { /* no offer */ }
         }
         await routeAfterOnboard();
       })();
       async function routeAfterOnboard(): Promise<void> {
+        // 261105: the SeiLink tour never follows onboarding in the same session.
+        noteOnboardingThisSession({ newPlayer: res.tutorial === true });
         if (res.tutorial) {
           // The guided first moment (260926): a NEW player's tour ends in their
           // companion's chat, greeted first, with a next step to click. Only
@@ -1059,6 +1208,7 @@ export function App(): React.ReactElement {
     <ImportLocalProfileModal
       peek={importOffer.peek}
       existingAccount={importOffer.existingAccount}
+      entry={importOffer.entry}
       onDone={(d) => void handleImportOfferDone(d)}
     />
   ) : null;
@@ -1124,7 +1274,7 @@ export function App(): React.ReactElement {
     background: backgroundImage
       ? `color-mix(in srgb, var(--window) ${tintPct}%, transparent)`
       : 'var(--window)',
-    borderTopLeftRadius: 12,
+    borderTopLeftRadius: 'var(--radius)',
     borderTop: '1px solid var(--border)',
     borderLeft: '1px solid var(--border)',
   };
@@ -1203,6 +1353,12 @@ export function App(): React.ReactElement {
           {/* 260926: "Your free play is back", once, after the weekly reset
               lifts a credit wall this profile hit. Cloud accounts only. */}
           {authState.kind === 'signed_in' ? <FreePlayBackBanner /> : null}
+          {/* 261110: the own-key monthly spend alert (one line, never blocks). */}
+          <SpendAlertBanner />
+          {/* 261116: own-key companions not imported, the party is full. */}
+          {importPartyFull && authState.kind === 'signed_in' ? (
+            <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={() => setImportPartyFull(false)} />
+          ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
             {/*
@@ -1257,7 +1413,7 @@ export function App(): React.ReactElement {
                 )}
                 {view.kind === 'draw' && <DrawScreen characterId={view.characterId} />}
                 {view.kind === 'settings' && <SettingsScreen />}
-                {view.kind === 'credits' && <CreditsScreen />}
+                {view.kind === 'credits' && <PlaytimeScreen />}
                 {view.kind === 'receipt' && <ReceiptScreen />}
                 {view.kind === 'coming-soon' && <ComingSoonScreen />}
                 {view.kind === 'unique-reveal' && (
@@ -1293,6 +1449,8 @@ export function App(): React.ReactElement {
       {/* Task 4 — drives the always-on-top call overlay window (renders nothing;
           pushes call state to main, which owns the overlay window). */}
       <CallOverlayPusher />
+      {/* 261110: her voice moves her mouth in her desktop room too (renders nothing). */}
+      <SeilinkVoiceRelay />
       {/* Startup popup (261027, replaced the notices inbox). Self-mounting:
           renders nothing until main reports an unshown popup, then waits for a
           calm screen and shows only once the page has really loaded. Mounted
@@ -1348,7 +1506,7 @@ export function App(): React.ReactElement {
       ) : null}
       {/* 260929 — a backseat game tile (Roblox): intro + pick-your-game. */}
       {modal?.kind === 'backseat-game' ? (
-        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} />
+        <BackseatGameModal characterId={modal.characterId} gameId={modal.gameId} query={modal.query} />
       ) : null}
       {/* 260721 — launching a game while another one is active: confirm ends
           the previous session via its normal end path, then proceeds. */}
@@ -1467,6 +1625,8 @@ export function App(): React.ReactElement {
         GamesPickerModal.
       */}
       <TutorialOverlay />
+      {/* 261105: SeiLink's move-in sheet, room editor and first-link intro (above the tour). */}
+      <SeilinkFlowHost />
     </>
   );
 }

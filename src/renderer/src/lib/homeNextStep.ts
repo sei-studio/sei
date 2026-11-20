@@ -38,6 +38,7 @@ export type NextStepTarget =
   | { kind: 'game'; game: GameId }
   | { kind: 'backseat'; gameId: string }
   | { kind: 'call' }
+  | { kind: 'chat' }
   | { kind: 'picker' };
 
 /** What the card's button opens for this step. */
@@ -48,6 +49,8 @@ export function nextStepTarget(step: HomeNextStep): NextStepTarget {
     return { kind: 'call' };
   }
   if (step.surface === 'call') return { kind: 'call' };
+  // 261107: a plan from a text chat (not about a game) opens that chat.
+  if (step.surface === 'chat') return { kind: 'chat' };
   return { kind: 'picker' };
 }
 
@@ -62,6 +65,7 @@ export function nextStepButtonLabel(
   if (target.kind === 'game') return t('Play {game}', { game: botGameName(target.game) });
   if (target.kind === 'backseat') return t('Play {game}', { game: t(backseatGame(target.gameId)?.name ?? target.gameId) });
   if (target.kind === 'call') return t('Call {name}', { name });
+  if (target.kind === 'chat') return t('Message {name}', { name });
   return t('Play');
 }
 
@@ -143,6 +147,8 @@ export function launchHomeNextStep(step: HomeNextStep, now: number = Date.now())
     );
   } else if (target.kind === 'call') {
     startOrOpenCall(id);
+  } else if (target.kind === 'chat') {
+    useUiStore.getState().navigate({ kind: 'chat', characterId: id });
   } else {
     useUiStore.getState().openModal({ kind: 'games-picker', characterId: id });
   }

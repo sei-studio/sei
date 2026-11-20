@@ -1,8 +1,8 @@
 /**
- * Facepack pilot IPC (261028). Every handler answers "disabled" (null / [] /
- * enabled:false) unless the dev flag is on, so in a packaged build the only
- * effect of registering them is that the renderer's one facepack:info probe
- * gets a clean "off".
+ * Facepack IPC (261028 pilot). The dev handlers answer "disabled" (null / [] /
+ * enabled:false) unless the dev flag is on. Since 261105 manifest/file/
+ * forCharacter also serve the face sets the anima client downloaded (`an-`
+ * ids), in every build.
  */
 import { BrowserWindow, ipcMain } from 'electron';
 import { IpcChannel } from '../../shared/ipc';
@@ -10,7 +10,7 @@ import type { FaceCue } from '../../shared/facepack';
 import { getCharacter } from '../characterStore';
 import { facesEnabled } from './facepackDev';
 import { setFaceCueSink } from './faceEvents';
-import { facepackDevInfo, packIdForCharacterName, readPackFile, readPackManifest } from './facepackStore';
+import { facepackDevInfo, facepackIdForCharacter, readPackFile, readPackManifest } from './facepackStore';
 
 let previewWin: BrowserWindow | null = null;
 
@@ -35,10 +35,11 @@ export function registerFacepackIpc(opts: { preloadPath: string; rendererTarget:
     return readPackFile(a.id, a.path);
   });
 
+  // 261105: her downloaded anima pack in any build; the dev pack dir only under the flag.
   ipcMain.handle(IpcChannel.facepack.forCharacter, async (_e, characterId: unknown) => {
-    if (!facesEnabled() || typeof characterId !== 'string') return null;
+    if (typeof characterId !== 'string') return null;
     const c = await getCharacter(characterId).catch(() => null);
-    return c ? packIdForCharacterName(c.name) : null;
+    return c ? facepackIdForCharacter(characterId, c.name) : null;
   });
 
   ipcMain.handle(IpcChannel.facepack.openPreview, async () => {

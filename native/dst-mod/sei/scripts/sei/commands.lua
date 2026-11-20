@@ -34,6 +34,13 @@ local GATHER_RADIUS = 40
 local LIGHTFIRE_RADIUS = 12
 local GIVE_RANGE = 3
 local WALK_TIMEOUT_S = 30
+-- A walk for the slotted command that has not moved for this many brain
+-- ticks (0.5 s each) is blocked: water, a wall, a cliff edge (0.3.2).
+local BLOCKED_TICKS = 6
+-- How long gather keeps away from a target it could not walk to.
+local UNREACHABLE_S = 60
+-- Gather gives up after walking into this many blocked targets in a row.
+local MAX_BLOCKED = 3
 local WORK_ACTIONS = { CHOP = true, MINE = true, DIG = true, HAMMER = true }
 local WORK_TAG = { CHOP = "CHOP_workable", MINE = "MINE_workable", DIG = "DIG_workable", HAMMER = "HAMMER_workable" }
 local WORK_TOOL = { CHOP = "an axe", MINE = "a pickaxe", DIG = "a shovel", HAMMER = "a hammer" }
@@ -68,13 +75,23 @@ function Commands.Finish(inst, cmd, ok, text)
     result(cmd.id, ok, text)
 end
 
+--- While the body walks to its target the action sits on the locomotor, not
+--- on the entity, so ClearBufferedAction misses it and Stop keeps it. The
+--- DoAction node then stays RUNNING on the old action and never asks for the
+--- next command: a gather replaced mid-walk left the body standing until the
+--- app's 96 s timeout (quality eval, 0.3.2). Clear fails it, which ends the node.
 local function cancelCurrent(inst, why)
     local cur = inst.sei and inst.sei.cmd or nil
+    local old = cur ~= nil and cur.state ~= nil and cur.state.action or nil
     if cur ~= nil then
         Commands.Finish(inst, cur, false, why or "cancelled")
     end
     pcall(function() inst:ClearBufferedAction() end)
-    if inst.components.locomotor ~= nil then pcall(function() inst.components.locomotor:Stop() end) end
+    local loco = inst.components.locomotor
+    if loco ~= nil then
+        pcall(function() loco:Stop() end)
+        if old ~= nil and loco.bufferedaction == old then pcall(function() loco:Clear() end) end
+    end
 end
 
 -- ── helpers ─────────────────────────────────────────────────────────────────
@@ -108,6 +125,23 @@ local function countOf(inst, prefab)
     if inst.components.inventory == nil then return 0 end
     local _, n = inst.components.inventory:Has(prefab, 1)
     return n or 0
+end
+
+local function unreachable(inst, ent)
+    local u = inst.sei and inst.sei.unreachable or nil
+    local t = u ~= nil and u[ent] or nil
+    if t == nil then return false end
+    if GetTime() > t then u[ent] = nil return false end
+    return true
+end
+
+local function markUnreachable(inst, ent)
+    if inst.sei == nil or ent == nil then return end
+    inst.sei.unreachable = inst.sei.unreachable or {}
+    for e, t in pairs(inst.sei.unreachable) do
+        if GetTime() > t or not e:IsValid() then inst.sei.unreachable[e] = nil end
+    end
+    inst.sei.unreachable[ent] = GetTime() + UNREACHABLE_S
 end
 
 --- Walk to `target` through a WALKTO action (the locomotor reports arrival).
@@ -161,6 +195,19 @@ local function actionFor(inst, cmd)
         return nil
     end
     local b = BufferedAction(inst, target, act, invobject, pos, cmd.recipe)
+    -- An action that is invalid from the start (a plant already picked, an
+    -- item someone else took) is refused in PushBufferedAction with only an
+    -- "actionfailed" event: its fail callbacks never run, DoAction fails the
+    -- node, and this function builds the same dead action again every tick
+    -- until the command deadline (a stale "pickable" flag kept a pick in the
+    -- slot for 90 s). End the command here instead.
+    if not b:IsValid() then
+        local pickable = target ~= nil and target.components.pickable or nil
+        local why = (pickable ~= nil and not pickable:CanBePicked() and ("nothing left to pick on the " .. target.prefab))
+            or ("can't " .. string.lower(name) .. (target and (" the " .. target.prefab) or "") .. " right now")
+        Commands.Finish(inst, cmd, false, why)
+        return nil
+    end
     cmd.state.started = true
     b:AddFailAction(function()
         if WORK_ACTIONS[name] and keepWorking(name, target) then return end
@@ -178,6 +225,23 @@ local function actionFor(inst, cmd)
     return b
 end
 
+--- " (N out of reach: blocked by water or walls)" when gather walked into
+--- blocked targets, so the LLM does not send the same gather back there.
+local function blockedText(st)
+    local n = st.blockedTotal or 0
+    if n == 0 then return "" end
+    return " (" .. n .. " out of reach: blocked by water or walls)"
+end
+
+--- Gather's deadline, shared by gatherNext and Commands.Tick (the brain only
+--- asks gatherNext between actions, so a walk that never ends would
+--- otherwise hold the command past it).
+function Commands.GatherGiveUp(inst, cmd)
+    local st = cmd.state
+    local have = countOf(inst, cmd.prefab) - (st.start or countOf(inst, cmd.prefab))
+    Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " of " .. (cmd.count or 1) .. " " .. cmd.prefab .. " before giving up" .. blockedText(st))
+end
+
 local function gatherNext(inst, cmd)
     local st = cmd.state
     if st.start == nil then
@@ -190,26 +254,30 @@ local function gatherNext(inst, cmd)
         return nil
     end
     if GetTime() > st.deadline then
-        Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " of " .. (cmd.count or 1) .. " " .. cmd.prefab .. " before giving up")
+        Commands.GatherGiveUp(inst, cmd)
+        return nil
+    end
+    if (st.blockedTotal or 0) >= MAX_BLOCKED then
+        Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " " .. cmd.prefab .. "; could not reach the rest" .. blockedText(st))
         return nil
     end
     -- Loose items on the ground first, then pickable plants, then work targets
     -- whose product is what we want (a tree for logs, a boulder for rocks).
     local wantFlag = cmd.source
     local ground = nearestWith(inst, GATHER_RADIUS, function(v)
-        return v.prefab == cmd.prefab and v.components.inventoryitem ~= nil and v.components.inventoryitem.canbepickedup
+        return v.prefab == cmd.prefab and not unreachable(inst, v) and v.components.inventoryitem ~= nil and v.components.inventoryitem.canbepickedup
             and v.components.inventoryitem:GetGrandOwner() == nil and not v:HasTag("heavy")
     end)
     if ground ~= nil then return BufferedAction(inst, ground, ACTIONS.PICKUP) end
     local pick = nearestWith(inst, GATHER_RADIUS, function(v)
-        return v:HasTag("pickable") and (v.prefab == cmd.prefab or (wantFlag ~= nil and v.prefab == wantFlag)
+        return v:HasTag("pickable") and not unreachable(inst, v) and (v.prefab == cmd.prefab or (wantFlag ~= nil and v.prefab == wantFlag)
             or (v.components.pickable ~= nil and v.components.pickable.product == cmd.prefab))
     end)
     if pick ~= nil then return BufferedAction(inst, pick, ACTIONS.PICK) end
     if wantFlag ~= nil and WORK_TAG[wantFlag] ~= nil then
         local plant = inst.sei and Survivors.Get(inst.sei.prefab).plantFriend and wantFlag == "CHOP"
         if not plant then
-            local w = nearestWith(inst, GATHER_RADIUS, function(v) return v:HasTag(WORK_TAG[wantFlag]) and not v:HasTag("burnt") end)
+            local w = nearestWith(inst, GATHER_RADIUS, function(v) return v:HasTag(WORK_TAG[wantFlag]) and not v:HasTag("burnt") and not unreachable(inst, v) end)
             if w ~= nil then
                 if Reflexes.IsDark() and Util.DistXZ(inst, w) > WORK_JUDGE_DIST then
                     return BufferedAction(inst, w, ACTIONS.WALKTO)
@@ -223,7 +291,7 @@ local function gatherNext(inst, cmd)
             end
         end
     end
-    Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " " .. cmd.prefab .. "; none left nearby")
+    Commands.Finish(inst, cmd, have > 0, "gathered " .. have .. " " .. cmd.prefab .. "; none left nearby" .. blockedText(st))
     return nil
 end
 
@@ -450,6 +518,7 @@ function Commands.NextAction(inst)
         Net.ReportError(msg)
         Commands.Finish(inst, cmd, false, "error: " .. tostring(msg))
     end)
+    if action ~= nil and inst.sei.cmd == cmd then cmd.state.action = action end
     return action
 end
 
@@ -573,6 +642,52 @@ local function dispatch(inst, cmd)
     end
 end
 
+--- The DoAction slot only asks NextAction again once its action ends, and a
+--- walk into water or a wall never ends: the locomotor keeps pushing, the
+--- action stays valid, and the command (and every command after it) sat
+--- there until the app's 96 s timeout, with gather's own deadline never
+--- read (0.3.2, seen in the quality eval). So the brain tick watches the
+--- walk: a command's own action that has not moved the body for
+--- BLOCKED_TICKS is cleared. Gather marks that target out of reach and goes
+--- for the next one; every other command ends with cant_reach.
+local function superviseWalk(inst, cmd)
+    local st = cmd.state
+    if cmd.kind == "gather" and st.start ~= nil and GetTime() > st.deadline then
+        Commands.GatherGiveUp(inst, cmd)
+        pcall(function() inst:ClearBufferedAction() end)
+        if inst.components.locomotor ~= nil then pcall(function() inst.components.locomotor:Stop() end) end
+        return
+    end
+    local loco = inst.components.locomotor
+    local ba = loco ~= nil and loco.bufferedaction or nil
+    if ba == nil or ba ~= st.action or loco.dest == nil or (inst.sg ~= nil and inst.sg:HasStateTag("busy")) then
+        st.stillTicks, st.walkX, st.walkZ = 0, nil, nil
+        return
+    end
+    local x, _, z = inst.Transform:GetWorldPosition()
+    if st.walkX ~= nil and math.abs(st.walkX - x) < 0.05 and math.abs(st.walkZ - z) < 0.05 then
+        st.stillTicks = (st.stillTicks or 0) + 1
+    else
+        st.stillTicks = 0
+    end
+    st.walkX, st.walkZ = x, z
+    if st.stillTicks < BLOCKED_TICKS then return end
+    st.stillTicks, st.walkX, st.walkZ = 0, nil, nil
+    local target = ba.target
+    local what = target ~= nil and target.prefab or "there"
+    local d = target ~= nil and target:IsValid() and (" (" .. Util.Round1(Util.DistXZ(inst, target)) .. " away)") or ""
+    print("[sei] blocked walk: " .. cmd.kind .. " to " .. what .. d .. " in " .. tostring(inst.sg ~= nil and inst.sg.currentstate.name))
+    if cmd.kind == "gather" then
+        markUnreachable(inst, target)
+        st.blockedTotal = (st.blockedTotal or 0) + 1
+    else
+        Commands.Finish(inst, cmd, false, "cant_reach " .. what .. ": blocked by water or walls" .. d)
+    end
+    -- Clearing the locomotor fails the action, which ends the DoAction node.
+    loco:Stop()
+    loco:Clear()
+end
+
 --- Periodic supervision for the non-DoAction slots (goto arrival, attack
 --- outcome, flee expiry). Called from the brain's tick.
 function Commands.Tick(inst)
@@ -625,6 +740,8 @@ function Commands.Tick(inst)
         elseif inst.components.combat.target ~= target and not (inst.sg ~= nil and inst.sg:HasStateTag("attack")) then
             inst.components.combat:SetTarget(target)
         end
+    elseif Commands.IsActionSlot(cmd) then
+        superviseWalk(inst, cmd)
     end
 end
 

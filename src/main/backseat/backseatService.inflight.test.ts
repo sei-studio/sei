@@ -43,6 +43,7 @@ vi.mock('../llm', () => ({
 vi.mock('../chat/chatPrompts', () => ({
   buildSystemBlocks: () => [],
   markMessageCached: () => {},
+  clockTailNote: () => '[now: test]',
   REMEMBER_TOOL: { name: 'remember', description: '', input_schema: { type: 'object', properties: {} } },
 }));
 vi.mock('../chat/chatService', () => ({

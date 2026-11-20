@@ -17,6 +17,9 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Sort companions': '伙伴排序',
   'A–Z': 'A–Z',
   'Newest': '最新',
+  'Popular': '热门',
+  'Added by 1 player': '1 位玩家已添加',
+  'Added by {n} players': '{n} 位玩家已添加',
   'Party full': '队伍已满',
   '{open}/{max} slots open': '剩余 {open}/{max} 个空位',
   "Couldn't load World. {error}": '无法加载世界。{error}',
@@ -170,8 +173,8 @@ export const ZH_SCREENS_A: Record<string, string> = {
   'Knowledge': '知识',
   'Reset memory': '重置记忆',
   'Unbind': '解除羁绊',
-  'Going public needs a description. Add one, then close this window to continue publishing {name}.':
-    '公开发布需要一段简介。添加后关闭此窗口，即可继续发布{name}。',
+  'Going public needs a description. Add one and press Save to continue publishing {name}.':
+    '公开发布需要一段简介。添加后点击“保存”，即可继续发布{name}。',
   '{name} full art': '{name}的完整立绘',
   'Saved to {path}': '已保存到 {path}',
   'Close': '关闭',

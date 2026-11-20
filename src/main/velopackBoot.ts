@@ -1,7 +1,7 @@
 /**
  * Velopack startup hook for Windows (261030).
  *
- * Side-effect module. MUST be the second import of src/main/index.ts, right
+ * Side-effect module. MUST be the second import of src/main/boot.ts, right
  * after remoteDebugGuard: Velopack runs install/update/uninstall hooks by
  * launching Sei.exe with `--veloapp-*` arguments and expects the process to
  * handle them and exit within 15-30 s. ES module bodies evaluate in import
@@ -28,6 +28,8 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, 
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { bundleRequire } from './bundleRequire';
+import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+import { removeLoginValueForUninstall } from './seilink/loginItemUninstall';
 import {
   applyInProgress,
   isUpdaterImage,
@@ -75,6 +77,7 @@ export interface VelopackModule {
       setLogger(cb: (level: string, msg: string) => void): unknown;
       onRestarted(cb: (v: string) => void): unknown;
       onFirstRun(cb: (v: string) => void): unknown;
+      onBeforeUninstallFastCallback(cb: (v: string) => void): unknown;
       setAutoApplyOnStartup(autoApply: boolean): unknown;
       run(): void;
     };
@@ -265,7 +268,9 @@ function clearLeftoverRelaunch(file: string): void {
   }
 }
 
-if (process.platform === 'win32' && app.isPackaged) {
+// A SeiLink room host launch (the same exe, --seilink-host) is not an app start: it must never
+// run Velopack's hooks or startup apply (seilink/host/hostArgs.ts).
+if (process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(process.argv)) {
   try {
     mod = bundleRequire()('velopack') as VelopackModule;
     const builder = mod.VelopackApp.build();
@@ -278,6 +283,12 @@ if (process.platform === 'win32' && app.isPackaged) {
     });
     builder.onFirstRun((v) => {
       firstRunVersion = v;
+    });
+    // 261107: an uninstall takes the "Open on login" Run value with it
+    // (seilink/loginItemUninstall.ts). The hook exits right after this returns.
+    builder.onBeforeUninstallFastCallback(() => {
+      const root = velopackPathsFor(process.execPath)?.root;
+      if (root) removeLoginValueForUninstall(root, velopackLog);
     });
     builder.setAutoApplyOnStartup(false);
     builder.run();

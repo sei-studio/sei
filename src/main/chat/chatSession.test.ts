@@ -17,11 +17,46 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { captureSpy } = vi.hoisted(() => ({ captureSpy: vi.fn() }));
+const { captureSpy, consumeSpy, changedSpy } = vi.hoisted(() => ({
+  captureSpy: vi.fn(),
+  consumeSpy: vi.fn(async () => true),
+  changedSpy: vi.fn(),
+}));
 
 vi.mock('../analytics', () => ({ capture: captureSpy }));
+// 261107: a new chat session uses up the last chat's plan (homeNextStep.ts
+// pins the rule itself; here only the wiring).
+vi.mock('../homeNextStep', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../homeNextStep')>()),
+  consumeNextStep: consumeSpy,
+  noteHomeNextStepChanged: changedSpy,
+}));
+vi.mock('../paths', () => ({ paths: { memoryDir: (id: string) => `/mem/${id}` } }));
+// An idle end of a longer chat starts the model check in the background
+// (chatNextStep.ts, never awaited). The real one reads config and the
+// transcript from disk, so on a loaded CI runner its `next_step_checked`
+// landed several tests later and broke an exact event list there. Its own
+// suites (chatNextStep / playerEndNextStep tests) cover it; here only the
+// session wiring is under test.
+vi.mock('../playerEndNextStep', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../playerEndNextStep')>()),
+  startPlayerEndNextStep: vi.fn(),
+  yieldToNewSession: vi.fn(),
+}));
 
 import { noteChatMessage, endChatSession, endAllChatSessions } from './chatSession';
+// chatSession.ts reaches these through dynamic import() (a chat send never
+// waits on them). Load them here so those imports are cache hits: a cold load
+// is real disk and transform work that `advanceTimersByTimeAsync(0)` does not
+// wait for, so a test that ran first (shuffle) or on a starved CPU saw the
+// consume spy uncalled.
+import '../analytics';
+import '../homeNextStep';
+import '../profile/scopeBarrier';
+import '../playerEndNextStep';
+import '../chatNextStep';
+import '../quitNextStep';
+import './chatStore';
 
 /** Mirrors IDLE_TIMEOUT_MS in the module. */
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -40,6 +75,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-08-01T12:00:00Z'));
   captureSpy.mockClear();
+  consumeSpy.mockClear();
+  consumeSpy.mockImplementation(async () => true);
+  changedSpy.mockClear();
 });
 
 afterEach(async () => {
@@ -49,6 +87,17 @@ afterEach(async () => {
 });
 
 describe('noteChatMessage', () => {
+  it('returns the message number within its session (reply_latency turn index)', async () => {
+    expect(noteChatMessage('char-a')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(noteChatMessage('char-a')).toBe(2);
+    expect(noteChatMessage('char-b')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    await endChatSession('char-a', 'idle');
+    expect(noteChatMessage('char-a')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
   it('opens a session on the first message', async () => {
     await note('char-a');
     expect(events('chat_session_started')).toEqual([{ character_id: 'char-a' }]);
@@ -171,8 +220,54 @@ describe('session end', () => {
     expect(events('chat_session_ended')).toHaveLength(1);
   });
 
+  it('261107: every end reports its next step for surface chat (a short chat is trivial)', async () => {
+    await note('char-a');
+    await note('char-a');
+    await endChatSession('char-a', 'idle');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(events('next_step_checked')).toEqual([
+      expect.objectContaining({ character_id: 'char-a', surface: 'chat', outcome: 'trivial', end_reason: 'idle', reached_model: false }),
+    ]);
+  });
+
   it('is a no-op for a character that never talked', async () => {
     await endChatSession('char-never', 'quit');
     expect(events('chat_session_ended')).toHaveLength(0);
+  });
+});
+
+describe('261107: chat start uses up a chat plan', () => {
+  it('asks for a chat-only consume once per session, on the first message', async () => {
+    await note('char-a');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    expect(consumeSpy).toHaveBeenCalledWith('/mem/char-a', Date.parse('2026-08-01T12:00:00Z'), { onlySurface: 'chat' });
+    expect(changedSpy).toHaveBeenCalledWith('char-a');
+    await note('char-a');
+    await note('char-a');
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    // The next session (after the idle gap) asks again.
+    await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 1);
+    await note('char-a');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('no card push when nothing changed', async () => {
+    consumeSpy.mockImplementation(async () => false);
+    await note('char-b');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(consumeSpy).toHaveBeenCalledTimes(1);
+    expect(changedSpy).not.toHaveBeenCalled();
+  });
+
+  it('a failing consume never breaks the chat send', async () => {
+    consumeSpy.mockImplementation(async () => {
+      throw new Error('disk gone');
+    });
+    expect(noteChatMessage('char-c')).toBe(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(changedSpy).not.toHaveBeenCalled();
+    expect(events('chat_session_started')).toHaveLength(1);
   });
 });

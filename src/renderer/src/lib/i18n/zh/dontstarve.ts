@@ -113,4 +113,8 @@ export const ZH_DONTSTARVE: Record<string, string> = {
   'Another companion': '另一位伙伴',
   "Your companion's survivor died in the Constant. Press Play to summon them again.":
     '你伙伴的生存者在永恒大陆死去了。点击开始再次召唤。',
+  "Your companion died again after coming back 3 times this session, so Sei stopped bringing them back. Press Play to summon them again when you're ready.":
+    '你的伙伴本次已经复活了 3 次，又死了，所以 Sei 不再让 TA 复活。准备好后点击开始再次召唤。',
+  "Your companion died right after coming back, twice in a row, so Sei stopped bringing them back. Move somewhere safer (near a fire at night), then press Play.":
+    '你的伙伴连续两次刚复活就又死了，所以 Sei 不再让 TA 复活。先去更安全的地方（夜里待在火边），再点击开始。',
 };

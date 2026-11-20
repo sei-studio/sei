@@ -40,8 +40,10 @@ import { effectiveMcUsername, type Character } from '../shared/characterSchema';
 import type { CreditWallContext } from './creditWall';
 import { isGameId, type GameId } from '../shared/gameIpc';
 import { getGameModule, type GameModule } from './games';
-import { clampChatLanguage } from '../shared/chatLanguage';
+import type { DstGameModule, DstOfferResult } from './games/dontstarve';
+import { companionLanguageFor } from './companionLanguage';
 import { buildLlmInitSection, type LlmInitSection } from './llmInitSection';
+import { botProxySnapshot, SYSTEM_PROXY_ENV } from './systemProxy';
 import { chatgptSession } from './chatgptPlan';
 import {
   answerChatgptTokenRequest,
@@ -67,6 +69,7 @@ import { facesEnabled } from './facepack/facepackDev';
 import { emitFaceCue } from './facepack/faceEvents';
 import { resolveExpression, type FacePalette } from '../bot/brain/faceExpressions.js';
 import { facePaletteForCharacterName } from './facepack/facepackStore';
+import { parseBotReplyLatency, recordReplyLatency } from './replyLatency';
 
 /**
  * The READY budget: from the bot reporting "booted" (its init-ack) to
@@ -122,6 +125,9 @@ function summonCancelledError(): Error {
 }
 
 /** Per-attempt cancel handle, owned by summon() and armed by _summon. */
+/** The slice of the DST module the port handlers use (261104). */
+type DstOfferModule = Pick<DstGameModule, 'setSummonOffer'>;
+
 interface SummonControl {
   cancelled: boolean;
   /** Set once the child is forked: kill it and reject the summon now. */
@@ -313,7 +319,11 @@ function botEntryPath(): string {
   // code=1 — the regression captured in 260508-mun. Resolve up two
   // levels and into src/bot/index.js so dev launches against the real
   // source file.
-  return path.join(__dirname, '../../src/bot/index.js');
+  // 261031: from the app path (the repo root in dev), not __dirname: since
+  // main has two entries (boot.ts + index.ts) this module can be built into
+  // dist/main/chunks/, where the shim's __dirname is one level deeper.
+  // (Test doubles of `app` may not have getAppPath: the repo root is the cwd there.)
+  return path.join(typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd(), 'src/bot/index.js');
 }
 
 export interface BotSupervisorOptions {
@@ -389,6 +399,11 @@ export interface BotSupervisorOptions {
    * validates. Optional — undefined no-ops.
    */
   onActionStats?: (characterId: string, stats: unknown) => void;
+  /**
+   * 261104: the DST bot's lives counters ({type:'dst-lives'} after every
+   * death and respawn). Forwarded RAW; main validates. Optional.
+   */
+  onDstLives?: (characterId: string, raw: unknown) => void;
   /**
    * 261011: the session's recent conversation ({type:'session-digest'} port
    * message, every ~15s while changing plus once before any terminal
@@ -483,7 +498,10 @@ export interface BotSupervisor {
    * brain + prompt cache). Returns false if no session is live (caller falls
    * back to the standalone chat brain).
    */
-  sendSeiChat(characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean;
+  sendSeiChat(
+    characterId: string,
+    payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+  ): boolean;
   /**
    * 260708: record-only mirror of a group-call line into a live session's chat
    * history (context, no reply turn). Returns false if no session is live.
@@ -899,6 +917,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     backend: AiBackendKind | null;
     /** 261031: the bot's in-game name, once resolved; redacted to `[bot]`. */
     botName: string | null;
+    /** 261031 (T278): the player's mc_username / preferred_name, once read; redacted to `[player]`. */
+    playerNames: string[];
     /**
      * 260926: set at fork. `marks` is read live from the session at fire
      * time, so a failure carries every phase the bot reached.
@@ -916,12 +936,13 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     }): void;
   }
 
-  function createFailureReporter(characterId: string): FailureReporter {
+  function createFailureReporter(characterId: string, game: GameId): FailureReporter {
     const startedAtMs = Date.now();
     let fired = false;
     const reporter: FailureReporter = {
       backend: null,
       botName: null,
+      playerNames: [],
       boot: null,
       fire(partial) {
         if (fired) return;
@@ -939,6 +960,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
             durationMs: Date.now() - startedAtMs,
             backend: reporter.backend,
             ...(reporter.botName ? { botName: reporter.botName } : {}),
+            ...(reporter.playerNames.length ? { playerNames: reporter.playerNames } : {}),
+            game,
             boot: reporter.boot
               ? { attemptStartMs: startedAtMs, forkAtMs: reporter.boot.forkAtMs, marks: reporter.boot.marks() ?? {} }
               : undefined,
@@ -1028,6 +1051,9 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // branch's key guard needs userCfg.provider: ollama is keyless by design
     // (260817, china-compat W10). Same-function load, just earlier.
     const userCfg = await loadUserConfig();
+    reporter.playerNames = [userCfg.mc_username, userCfg.preferred_name].filter(
+      (n): n is string => typeof n === 'string' && n.trim() !== '',
+    );
     let apiKey: string = '';
     let cloudMode: { baseURL: string; authToken: string } | undefined;
     if (aiBackendKind === 'cloud-proxy') {
@@ -1124,7 +1150,12 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // 260709: bridge the conversation language into the bot's # LANGUAGE
     // directive. Fork-time like vision_mode — a Settings change applies at the
     // next summon (the chat surface re-reads it per turn).
-    const chatLanguage = clampChatLanguage(userCfg.chat_language);
+    // 261116: resolved per companion (own pin, else the player's language,
+    // else the UI language). A World character never carries its creator's
+    // pin and gets the adopted-language note in the bot prompt.
+    const companionLang = companionLanguageFor(character, userCfg);
+    const chatLanguage = companionLang.language;
+    const languageAdopted = companionLang.adopted;
     // 260816 (china-compat W2): bridge the Settings LLM provider picker into
     // the bot. UserConfig.provider + provider_config were written by Settings
     // and read by NOTHING until now — the init payload carried no llm config,
@@ -1342,6 +1373,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     // the logs reappear unmodified on the next bot fork.
     const seiBackend = aiBackendKind; // 'local' | 'cloud-proxy'
     const seiHasApiKey = apiKey ? '1' : '';
+    // 261103 (T303): the bot has no session to ask Chromium about the OS
+    // proxy, so main resolves the bot's LLM origins now. Undefined (all
+    // DIRECT, or the lookups failed) leaves the bot on plain Node fetch.
+    const proxySnapshot = await botProxySnapshot([llmInit?.base_url]).catch(() => undefined);
     const forkAtMs = Date.now();
     const child = utilityProcess.fork(botEntryPath(), [], {
       stdio: 'pipe', // Pitfall 2 — required for stdout/stderr access
@@ -1355,6 +1390,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         SEI_CHARACTER_ID: characterId,
         SEI_BACKEND: seiBackend,
         SEI_HAS_API_KEY: seiHasApiKey,
+        ...(proxySnapshot ? { [SYSTEM_PROXY_ENV]: proxySnapshot } : {}),
       },
     });
     const { port1, port2 } = new MessageChannelMain();
@@ -1517,6 +1553,24 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         }
         return;
       }
+      // 261110 Playtime: a completed bot LLM request. Recorded only off the
+      // Sei cloud (own key / ChatGPT plan); cloud usage is the proxy's.
+      if ((data as { type?: string }).type === 'llm-usage') {
+        const s = sessions.get(characterId);
+        if (s && s.backendKind === 'local') {
+          const d = data as { provider?: unknown; model?: unknown; usage?: unknown };
+          void import('./usage/llmUsageLedger')
+            .then(({ recordLlmUsage }) =>
+              recordLlmUsage({
+                provider: s.llmProvider ?? (typeof d.provider === 'string' ? d.provider.slice(0, 40) : 'unknown'),
+                model: typeof d.model === 'string' ? d.model.slice(0, 200) : '',
+                usage: d.usage,
+              }),
+            )
+            .catch(() => undefined);
+        }
+        return;
+      }
       // The in-game bot is replying to a message that was routed in from the
       // in-app chat (task 4). Deliver it to the chat transcript + renderer. Not
       // a BotStatus event, so return before lifecycleToStatus.
@@ -1566,6 +1620,15 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
         try { opts.onActionStats?.(characterId, (data as { stats?: unknown }).stats); } catch { /* telemetry never breaks the session */ }
         return;
       }
+      // 261106: one player turn's reply latency (shape only), re-validated
+      // and sampled in replyLatency.ts. Not a BotStatus event.
+      if ((data as { type?: string }).type === 'reply-latency') {
+        try {
+          const sample = parseBotReplyLatency(data);
+          if (sample) recordReplyLatency(sample);
+        } catch { /* telemetry never breaks the session */ }
+        return;
+      }
       if ((data as { type?: string }).type === 'session-digest') {
         try { opts.onSessionDigest?.(characterId, (data as { digest?: unknown }).digest); } catch { /* never breaks the session */ }
         return;
@@ -1575,16 +1638,41 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
       // can offer the summon to the mod on the next heartbeat. Not a
       // BotStatus event — return before lifecycleToStatus.
       if ((data as { type?: string }).type === 'dst-listen') {
+        const replyRespawn = (r: DstOfferResult): void => {
+          try { port1.postMessage({ type: 'dst-respawn-offer', ...r }); } catch { /* port gone: the bot's own deadline ends it */ }
+        };
         void (async () => {
+          let respawn = false;
           try {
             const { DstListenMessageSchema } = await import('../shared/dstIpc');
             const msg = DstListenMessageSchema.parse(data);
-            const mod = getGameModule('dontstarve') as { setSummonOffer?: (id: string, l: { port: number; token: string }) => Promise<void> } | null;
-            await mod?.setSummonOffer?.(characterId, { port: msg.port, token: msg.token });
+            respawn = msg.respawn === true;
+            const mod = getGameModule('dontstarve') as DstOfferModule | null;
+            const res = await mod?.setSummonOffer?.(characterId, {
+              port: msg.port,
+              token: msg.token,
+              respawn: msg.respawn,
+              nearUserid: msg.nearUserid,
+            });
+            // 261104: a respawn waits on this answer (no host = the session
+            // ends as DST_BODY_DIED instead of a body at the portal).
+            if (respawn) replyRespawn(res ?? { ok: false, reason: 'no_world' });
           } catch (err) {
             logger.warn(`dst-listen handoff failed for ${characterId}: ${(err as Error).message}`);
+            if (respawn) replyRespawn({ ok: false, reason: 'no_world' });
           }
         })();
+        return;
+      }
+      // 261104: the bot stopped while a respawn offer was still queued.
+      if ((data as { type?: string }).type === 'dst-offer-cancel') {
+        const mod = getGameModule('dontstarve') as DstOfferModule | null;
+        void mod?.setSummonOffer?.(characterId, null)?.catch(() => undefined);
+        return;
+      }
+      // 261104: DST deaths and respawns, for bot_session_ended. Not a status.
+      if ((data as { type?: string }).type === 'dst-lives') {
+        try { opts.onDstLives?.(characterId, data); } catch { /* telemetry never breaks the session */ }
         return;
       }
       // 260926: boot-phase snapshot (src/bot/bootTiming.js). Not a lifecycle
@@ -1828,6 +1916,8 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
               // 260709: conversation language (UserConfig.chat_language). The
               // bot's bootstrapWithInit reads this into config.chat_language.
               chatLanguage,
+              // 261116: World character; see bot/index.js languageAdopted.
+              languageAdopted,
               // 260618 (multi-agent): the OTHER AI companions already in this world,
               // so the new bot knows its teammates from its first tick. The new
               // session is already in `sessions` (added before this spawn handler),
@@ -2332,7 +2422,7 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
     if (pending) return pending;
     const game: GameId = isGameId(gameArg) ? gameArg : 'minecraft';
     lastGame.set(characterId, game);
-    const reporter = createFailureReporter(characterId);
+    const reporter = createFailureReporter(characterId, game);
     const ctl: SummonControl = { cancelled: false };
     summonControls.set(characterId, ctl);
     const attempt = _summon(characterId, reporter, game, ctl)
@@ -2403,7 +2493,10 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
      * event and replies back over the `type:'chat'` lifecycle. Returns false
      * (caller falls back to the standalone chat brain) if no session is live.
      */
-    sendSeiChat: (characterId: string, payload: { from: string; text: string; voice?: boolean }): boolean => {
+    sendSeiChat: (
+      characterId: string,
+      payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
+    ): boolean => {
       const session = sessions.get(characterId);
       if (!session) return false;
       try {
@@ -2414,6 +2507,11 @@ export function createBotSupervisor(opts: BotSupervisorOptions): BotSupervisor {
           // 260708: a live voice-call utterance, not an out-of-band app text.
           // The bot frames it as in-game speech instead of "Sei chat".
           voice: payload.voice === true,
+          // 261112: the voice line cut her off mid-line (renderer bargeCut.ts).
+          // The bot frames it as a cut-in instead of a stop order.
+          ...(payload.voice === true && payload.interrupted
+            ? { interrupted: true, cutLine: String(payload.interrupted.line ?? '') }
+            : {}),
         });
         return true;
       } catch {

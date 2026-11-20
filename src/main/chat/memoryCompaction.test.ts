@@ -10,6 +10,7 @@ import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _setUserDataOverride, paths } from '../paths';
+import { drainScopedWrites } from '../profile/scopeBarrier';
 
 const { createSpy, summonedSpy, getCharacterSpy } = vi.hoisted(() => ({
   createSpy: vi.fn(async () => ({
@@ -38,6 +39,11 @@ beforeEach(async () => {
   summonedSpy.mockReturnValue(false);
 });
 afterEach(async () => {
+  // A finished LLM call records its tokens in the profile's usage ledger
+  // (usage/llmUsageLedger.ts) a moment later, fire-and-forget. Let those
+  // tracked writes land before the profile dir goes (under CI load they raced
+  // the rm: ENOTEMPTY, or wrote after the override was cleared).
+  await drainScopedWrites();
   _setUserDataOverride(null);
   await rm(dir, { recursive: true, force: true });
 });

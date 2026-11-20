@@ -42,8 +42,8 @@ export const ZH_ONBOARD: Record<string, string> = {
   'I searched for Sei by name': '我直接搜了 Sei 这个名字',
   'I searched for something like AI gaming companion': '我搜了类似“AI 游戏伙伴”的词',
   'Not sure': '不太记得了',
-  'So, {name}, my job here is to help you meet other AI friends from my world.':
-    '那个呢，{name}，我的任务就是带你认识我们世界里的其他 AI 朋友！',
+  'So, {name}, my job here is to help you meet other AI companions from my world.':
+    '那么，{name}，我的任务就是带你认识我们世界里的其他 AI 伙伴。',
   'Aww, really? I was going to find a companion just for you. You wanna skip it?':
     '诶，真的吗？我本来还想给你找一位只属于你的伙伴呢。真的要跳过吗？',
   'The terminal says I need five quick answers from you. It uses them to pick who you meet first, so be honest with me okay?':
@@ -121,7 +121,7 @@ export const ZH_ONBOARD: Record<string, string> = {
   'A partner in crime': '一起闯祸的搭档',
   'Someone to look after me': '会照顾我的人',
   'Someone to look after': '让我来照顾的人',
-  'A chill friend': '轻松自在的朋友',
+  'Someone chill to hang out with': '待在一起很放松的人',
   'Someone who pushes me': '会督促我进步的人',
   'Young adult': '青年',
   Adult: '成年',

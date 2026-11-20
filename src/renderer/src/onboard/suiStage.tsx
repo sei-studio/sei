@@ -16,6 +16,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { t, useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import styles from './onboard.module.css';
+import { UI_LANGUAGES, UI_LANGUAGE_SHORT } from '@shared/uiLanguage';
 
 /* ── Voice preferences ───────────────────────────────────────────────────
    Volume/mute for Sui's voice-over, persisted in localStorage (not config:
@@ -251,22 +252,18 @@ export function CornerControls(props: {
         </button>
         {open === 'lang' ? (
           <div className={styles.langMenu} role="menu">
-            <button
-              type="button"
-              role="menuitem"
-              className={lang === 'en' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-              onClick={() => pick('en')}
-            >
-              EN
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={lang === 'zh' ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
-              onClick={() => pick('zh')}
-            >
-              中文
-            </button>
+            {UI_LANGUAGES.map((code) => (
+              <button
+                key={code}
+                type="button"
+                role="menuitem"
+                lang={code}
+                className={lang === code ? `${styles.langItem} ${styles.langItemOn}` : styles.langItem}
+                onClick={() => pick(code)}
+              >
+                {UI_LANGUAGE_SHORT[code]}
+              </button>
+            ))}
           </div>
         ) : null}
       </div>

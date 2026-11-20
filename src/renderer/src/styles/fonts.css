@@ -207,3 +207,154 @@
   font-style: normal;
   font-display: swap;
 }
+
+/* ── Cyrillic (261104, for the Russian UI) ────────────────────────────
+ * Rajdhani, Oswald, Noto Sans 600, JetBrains Mono 500/700, Roboto Mono,
+ * Pixelify Sans and Architects Daughter ship Latin only, so Russian text
+ * fell through to whatever system face came next in the stack (a
+ * different face per weight). These faces add the Cyrillic subset of the
+ * same family (Google Fonts' "cyrillic" subset files, one variable file
+ * each) under the SAME family name and the SAME weight descriptors as the
+ * Latin faces above, limited by unicode-range: the browser downloads them
+ * only when a Cyrillic character is on screen, and English, Chinese and
+ * the accented Latin of Portuguese and Spanish render exactly as before.
+ * Weight descriptors must match the Latin faces one for one: Chrome
+ * groups faces by their weight descriptor and only consults the group
+ * that matches best, so a 400-700 range face beside fixed-weight faces
+ * would be ignored.
+ * Rajdhani and Architects Daughter have no Cyrillic at all, so their
+ * stand-ins are Roboto Condensed (Apache-2.0) and Caveat (OFL-1.1),
+ * size-adjusted to the Latin face's x-height. Japanese is not bundled:
+ * like Chinese it uses the system CJK face picked by <html lang>.
+ */
+
+@font-face {
+  font-family: 'Oswald';
+  src: url('/fonts/oswald-cyrillic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Oswald';
+  src: url('/fonts/oswald-cyrillic.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Oswald';
+  src: url('/fonts/oswald-cyrillic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/roboto-condensed-cyrillic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  size-adjust: 96.5%;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/roboto-condensed-cyrillic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  size-adjust: 96.5%;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/roboto-condensed-cyrillic.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  size-adjust: 96.5%;
+}
+
+@font-face {
+  font-family: 'Rajdhani';
+  src: url('/fonts/roboto-condensed-cyrillic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  size-adjust: 96.5%;
+}
+
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/noto-sans-cyrillic.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/jetbrains-mono-cyrillic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('/fonts/roboto-mono-cyrillic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('/fonts/roboto-mono-cyrillic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Pixelify Sans';
+  src: url('/fonts/pixelify-sans-cyrillic.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+
+@font-face {
+  font-family: 'Architects Daughter';
+  src: url('/fonts/caveat-cyrillic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+  size-adjust: 107%;
+}

@@ -1,0 +1,389 @@
+/**
+ * SeiLink room host page (261104, milestone 3): the companion's room, full
+ * screen, drawn as the desktop wallpaper by the room host process.
+ *
+ * Talks only to `window.seiRoomHost` (src/preload/seilinkHost.ts):
+ * - in: her room (on start, after every save, when her portrait changes),
+ *   the frame cap (0 while covered, locked or asleep), pokes (clicks on her),
+ *   busy (chatting with her);
+ * - out: her box (the click area), frames drawn, the first frame.
+ * - M4: the dock (HostDock: its buttons join the click area, the host says
+ *   which was pressed, the page answers with the action), her lines (a
+ *   bubble above her head while her mouth moves), the work area (where the
+ *   dock sits) and the app language.
+ * - 261105: her face for a line (`emotion` / `face` on the line, set by main
+ *   from the line's face tag or its words), held while the bubble is up.
+ * - 261119: her arrival (HostArrival): main says whether she waits for her
+ *   look, holds, comes in or is just there; the page says when she is in.
+ *
+ * The avatar goes through the mount point in hostAvatar.tsx.
+ */
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
+import {
+  isSeilinkDockOffer,
+  type SeilinkBox,
+  type SeilinkDockAction,
+  type SeilinkDockButton,
+  type SeilinkDockOffer,
+  type SeilinkHostBridge,
+  type SeilinkHostLayout,
+  type SeilinkHostLine,
+  type SeilinkHostRoom,
+} from '@shared/seilinkHost';
+import { DESKTOP_STAGE, type RoomOverlay } from '@shared/seilinkDraw';
+import { isUiLanguage, uiLanguageForLocale } from '@shared/uiLanguage';
+import { useLangStore } from '../../../lib/i18n';
+import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
+import { FramePacer } from '../../../lib/framePacer';
+import { bubbleMs, HostBubble, HostDock, speakMs, type DockPress } from './HostDock';
+import { roomAvatarUse } from '../RoomAvatar';
+import { HostAvatar, type HostAvatarPoke, type VoiceLevel } from './hostAvatar';
+import { lineFaceHoldMs, NEUTRAL_LOOK, toNeutral, type HostAvatarLook } from './hostLook';
+import { HostArrival, type ArrivedReport } from './HostArrival';
+import { sanitizeArrival, type SeilinkArrival } from '@shared/seilinkEntrance';
+import styles from './SeilinkHost.module.css';
+
+const FRAMES_REPORT_MS = 500;
+/** She moves (idle motion, a walk off): re-measure her click area this often. */
+const BOX_POLL_MS = 250;
+/** No word from main on her arrival by then (it always sends one first): she is just shown, never left out. */
+const ARRIVAL_FALLBACK_MS = 4000;
+
+function sameBox(a: SeilinkBox | null, b: SeilinkBox | null): boolean {
+  if (!a || !b) return a === b;
+  return Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1 && Math.abs(a.w - b.w) < 1 && Math.abs(a.h - b.h) < 1;
+}
+
+function hexTriple(hex: string): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+}
+
+export interface SeilinkHostViewProps {
+  /** Dev preview: a fake bridge (the real page uses window.seiRoomHost). */
+  bridge?: SeilinkHostBridge;
+  /** Dev preview: pack URLs over HTTP instead of sei-room://. */
+  resolveFor?: (pack: SeilinkPack) => RoomUrlResolver;
+  /** Dev preview / screenshots: move out already asking. */
+  initialConfirm?: boolean;
+  /** Dev preview / screenshots: the decorate-together offer already up. */
+  initialOffer?: SeilinkDockOffer;
+  /** Dev preview / screenshots: a fixed reduced-motion answer for her entrance. */
+  reducedMotion?: boolean;
+}
+
+export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactElement {
+  const bridge = props.bridge ?? window.seiRoomHost;
+  const [room, setRoom] = useState<SeilinkHostRoom | null>(null);
+  const [layout, setLayout] = useState<SeilinkHostLayout | null>(null);
+  const [deafened, setDeafened] = useState(false);
+  const [offer, setOffer] = useState<SeilinkDockOffer>(props.initialOffer ?? 'none');
+  const [dockPress, setDockPress] = useState<DockPress | null>(null);
+  const [line, setLine] = useState<SeilinkHostLine | null>(null);
+  const [speaking, setSpeaking] = useState(false);
+  const [look, setLook] = useState<HostAvatarLook>(NEUTRAL_LOOK);
+  const [herBox, setHerBox] = useState<SeilinkBox | null>(null);
+  const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [fps, setFps] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [poke, setPoke] = useState<HostAvatarPoke | null>(null);
+  // 261110: the dock wakes near the cursor; her voice from a call in the main window; a press on her.
+  const [dockHover, setDockHover] = useState(false);
+  const [voice, setVoice] = useState(false);
+  const voiceLevel = useRef<VoiceLevel>({ level: 0, at: 0 });
+  const [pressSeq, setPressSeq] = useState(0);
+  // 261119: a bridge without arrivals (an old dev preview) shows her as before.
+  const [arrival, setArrival] = useState<SeilinkArrival | null>(() => (bridge && !bridge.onArrival ? { mode: 'show', trigger: 'move_in' } : null));
+  const frames = useRef(0);
+  const sceneReady = useRef(false);
+  const firstSent = useRef(false);
+  const fpsRef = useRef(0);
+  fpsRef.current = fps;
+
+  useEffect(() => {
+    if (!bridge) return;
+    const offs = [
+      bridge.onRoom((r) => {
+        setRoom(r);
+        // A new scene draws afresh: report its first frame again.
+        sceneReady.current = !r.pack;
+        firstSent.current = false;
+      }),
+      bridge.onFps(setFps),
+      bridge.onBusy(setBusy),
+      bridge.onPoke((kind) => setPoke((p) => ({ kind, n: (p?.n ?? 0) + 1 }))),
+      bridge.onLayout?.((l) => setLayout(l)) ?? (() => {}),
+      bridge.onDockState?.((st) => {
+        setDeafened(st.deafened === true);
+        setOffer(isSeilinkDockOffer(st.offer) ? st.offer : 'none');
+      }) ?? (() => {}),
+      bridge.onDockPress?.((id) => setDockPress((p) => ({ id, n: (p?.n ?? 0) + 1 }))) ?? (() => {}),
+      bridge.onLine?.((l) => setLine(l)) ?? (() => {}),
+      bridge.onHover?.((h) => setDockHover(h)) ?? (() => {}),
+      bridge.onVoice?.((v) => setVoice(v)) ?? (() => {}),
+      bridge.onLevel?.((level) => {
+        voiceLevel.current = { level, at: performance.now() };
+      }) ?? (() => {}),
+      bridge.onPress?.(() => setPressSeq((n) => n + 1)) ?? (() => {}),
+      bridge.onArrival?.((raw) => {
+        const a = sanitizeArrival(raw);
+        // Once she is in on this page, she stays in (a late enter or hold must not hide her again).
+        if (a) setArrival((was) => (was?.mode === 'show' ? was : a));
+      }) ?? (() => {}),
+    ];
+    bridge.ready();
+    const fallback = setTimeout(() => setArrival((a) => a ?? { mode: 'show', trigger: 'restore' }), ARRIVAL_FALLBACK_MS);
+    return () => {
+      clearTimeout(fallback);
+      offs.forEach((off) => off());
+    };
+  }, [bridge]);
+
+  const onArrived = useCallback(
+    (r: ArrivedReport) => {
+      setArrival((a) => (a ? { mode: 'show', trigger: a.trigger } : a));
+      bridge?.arrived?.(r);
+    },
+    [bridge],
+  );
+
+  // The dock and the bubble speak the app's language (no setting: the system's).
+  const uiLanguage = room?.uiLanguage;
+  useEffect(() => {
+    const lang = isUiLanguage(uiLanguage) ? uiLanguage : (uiLanguageForLocale(navigator.language) ?? 'en');
+    useLangStore.getState().setLang(lang);
+  }, [uiLanguage]);
+
+  useEffect(() => {
+    const on = (): void => setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+
+  // Her line: the bubble stays up long enough to read; her mouth moves for the first part.
+  // 261105: her face follows the line (hostLook.ts): the Live2D emotion while she says it (the model
+  // lingers on it for half the line, as on a call), the face set's word until her face goes back.
+  useEffect(() => {
+    if (!line) return;
+    setSpeaking(true);
+    if (line.emotion || line.face) setLook((l) => ({ emotion: line.emotion ?? null, face: line.face ?? l.face, seq: l.seq + 1 }));
+    const a = setTimeout(() => {
+      setSpeaking(false);
+      setLook((l) => (l.emotion ? { ...l, emotion: null } : l));
+    }, speakMs(line.text));
+    const b = setTimeout(() => setLine((l) => (l === line ? null : l)), bubbleMs(line.text));
+    const c = setTimeout(() => setLook(toNeutral), lineFaceHoldMs(line.text));
+    return () => {
+      clearTimeout(a);
+      clearTimeout(b);
+      clearTimeout(c);
+    };
+  }, [line]);
+  // A covered room drops the bubble (nobody can read it, and it would wait there), and her face with it.
+  useEffect(() => {
+    if (fps > 0) return;
+    setLine(null);
+    setSpeaking(false);
+    setLook(toNeutral);
+    // The dock's hover is the host's to say (it keeps checking while her frames are stopped and
+    // says it again every second; product call (261116): a reset here could leave it wrong).
+  }, [fps]);
+
+  const onDockAction = useCallback((action: SeilinkDockAction) => bridge?.dockAction?.(action), [bridge]);
+  const onDockButtons = useCallback((buttons: SeilinkDockButton[] | null) => bridge?.setDock?.(buttons), [bridge]);
+
+  const maybeFirstFrame = useCallback(() => {
+    if (!sceneReady.current || firstSent.current) return;
+    firstSent.current = true;
+    bridge?.firstFrame();
+  }, [bridge]);
+
+  // Frame ticker at the cap; stopped (a still picture) at 0.
+  useEffect(() => {
+    if (fps <= 0) return;
+    let raf = 0;
+    const pacer = new FramePacer();
+    const step = (t: number): void => {
+      if (pacer.due(t, fps)) {
+        frames.current++;
+        maybeFirstFrame();
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [fps, maybeFirstFrame]);
+
+  useEffect(() => {
+    if (!bridge) return;
+    const id = setInterval(() => bridge.frames(frames.current), FRAMES_REPORT_MS);
+    return () => clearInterval(id);
+  }, [bridge]);
+
+  const onSceneReady = useCallback(() => {
+    sceneReady.current = true;
+    // Covered at start: the still picture is the first frame.
+    if (fpsRef.current <= 0 || frames.current > 0) maybeFirstFrame();
+  }, [maybeFirstFrame]);
+
+  // ── Her click area: the box of what the avatar renders ──
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const lastBox = useRef<SeilinkBox | null>(null);
+  const measure = useCallback(() => {
+    const wrap = wrapRef.current;
+    let next: SeilinkBox | null = null;
+    if (wrap) {
+      const el = (wrap.querySelector('[data-seilink-hit]') as HTMLElement | null) ?? wrap;
+      const r = el.getBoundingClientRect();
+      // Hidden (she walked out of the frame): no click area, the desktop gets the clicks.
+      if (r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden') next = { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
+    if (sameBox(next, lastBox.current)) return;
+    lastBox.current = next;
+    setHerBox(next);
+    bridge?.setBox(next);
+  }, [bridge]);
+
+  const setWrap = useCallback(
+    (el: HTMLDivElement | null) => {
+      wrapRef.current = el;
+      measure();
+    },
+    [measure],
+  );
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    const ro = new ResizeObserver(() => measure());
+    if (wrap) ro.observe(wrap);
+    window.addEventListener('resize', measure);
+    const id = setInterval(measure, BOX_POLL_MS);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+      clearInterval(id);
+    };
+  });
+
+  const characterId = room?.characterId ?? '';
+  const avatarChoice = room?.state.avatar;
+  const use = useMemo(() => (avatarChoice ? roomAvatarUse(avatarChoice) : 'sei'), [avatarChoice]);
+  const avatarFor = (slot: RoomAvatarSlot): React.ReactNode => (
+    <HostAvatar
+      characterId={characterId}
+      name={room?.name ?? ''}
+      slot={slot}
+      fps={fps}
+      portrait={room?.portrait ?? null}
+      use={use}
+      busy={busy}
+      poke={poke}
+      speaking={speaking}
+      voice={voice}
+      voiceLevel={voiceLevel}
+      pressSeq={pressSeq}
+      emotion={look.emotion}
+      face={look.face}
+      faceSeq={look.seq}
+    />
+  );
+  // 261119: HostArrival decides whether she is drawn yet (waiting for her look, held, coming in, there).
+  const renderAvatar = (slot: RoomAvatarSlot): React.ReactNode => (
+    <div ref={setWrap} className={styles.measure}>
+      {arrival ? (
+        <HostArrival arrival={arrival} name={room?.name ?? ''} height={slot.height} fps={fps} reduced={props.reducedMotion} onArrived={onArrived}>
+          {avatarFor(slot)}
+        </HostArrival>
+      ) : (
+        <span data-seilink-hit="" className={styles.arrivalNone} />
+      )}
+    </div>
+  );
+
+  const pack = room?.pack ?? null;
+  const resolveFor = props.resolveFor;
+  const resolveUrl = useMemo(() => (pack ? (resolveFor ?? seilinkResolver)(pack) : null), [pack, resolveFor]);
+
+  if (!room) return <div className={styles.root} />;
+
+  // M4: the dock above the taskbar / Dock (261110: in the bottom-right corner); her line above her head.
+  const workArea = layout?.workArea ?? { x: 0, y: 0, w: size.w, h: size.h };
+  const ov = overlay ?? { color: pack?.manifest.overlay?.day ?? '#25304f', ink: pack ? '#1d1b22' : '#f4f1ee', light: Boolean(pack) };
+  const tint = { '--ov': hexTriple(ov.color), '--ink': hexTriple(ov.ink) } as React.CSSProperties;
+  const chrome = (
+    <>
+      {line && herBox ? <HostBubble key={line.id} text={line.text} her={herBox} workArea={workArea} /> : null}
+      {layout || props.bridge ? (
+        <HostDock
+          workArea={workArea}
+          pageWidth={size.w}
+          hover={dockHover}
+          deafened={deafened}
+          offer={offer}
+          name={room.name}
+          plain={room.state.plain === true}
+          press={dockPress}
+          onAction={onDockAction}
+          onButtons={onDockButtons}
+          initialConfirm={props.initialConfirm}
+        />
+      ) : null}
+    </>
+  );
+
+  if (!pack || !resolveUrl) {
+    return (
+      <div className={styles.root} style={tint}>
+        <FallbackRoom fps={fps} renderAvatar={renderAvatar} onReady={onSceneReady} />
+        {chrome}
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.root} style={tint}>
+      <RoomCanvas
+        manifest={pack.manifest}
+        state={room.state}
+        resolveUrl={resolveUrl}
+        fit="cover"
+        stage={DESKTOP_STAGE}
+        fps={fps}
+        avatar={renderAvatar}
+        onReady={onSceneReady}
+        onOverlay={setOverlay}
+      />
+      {chrome}
+    </div>
+  );
+}
+
+/** No pack installed for her preset yet: a plain backdrop with her in it. */
+function FallbackRoom(props: {
+  fps: number;
+  renderAvatar: (slot: RoomAvatarSlot) => React.ReactNode;
+  onReady(): void;
+}): React.ReactElement {
+  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const on = (): void => setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  const { onReady } = props;
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
+  // 261116: as tall as she is in a room (DESKTOP_STAGE), feet on the bottom edge.
+  const slot: RoomAvatarSlot = { x: size.w * 0.5, y: size.h, height: size.h * DESKTOP_STAGE.height, scale: 1, time: 'night', fps: props.fps };
+  return (
+    <div className={styles.root}>
+      <div className={styles.fallback} />
+      <div className={styles.fallbackSlot} style={{ left: slot.x, top: slot.y, height: slot.height }}>
+        {props.renderAvatar(slot)}
+      </div>
+    </div>
+  );
+}

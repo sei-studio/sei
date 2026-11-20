@@ -26,6 +26,15 @@
 // tic in every line looks like after a few minutes, which a single primed
 // greeting cannot show.
 //
+// Without --history every item is the second turn of a session, so the
+// own_repeats tic note (a word in 3 of her last 4 turns, ownRepeats.js) can
+// never fire: the tic rates are what the opening minutes of a session sound
+// like, before anything pulls a tic back. 261103 (pass 39), same dev code:
+// Roger's "big brother" was in 86% of items in the default mode and 21% with
+// --history-n 3, where the note fired in 7 of 15 situations. A card that puts
+// a tic in every opening line is still the problem; this is only how to read
+// the number. To try a card change, see card-edits.mjs.
+//
 // The Anthropic key is read from ~/.sei-dev/anthropic-test-key (or
 // ANTHROPIC_API_KEY) and never printed. Output: <out>/samples.jsonl, one row
 // per (character, situation, rep), plus <out>/requests/<char>-<situation>.json holding

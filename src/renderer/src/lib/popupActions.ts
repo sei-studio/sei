@@ -11,10 +11,10 @@
  * so a popup can never do anything the user could not do with one click in
  * the app.
  *
- *   chatgpt-plan  Settings, scrolled to the ChatGPT plan row (view.focus),
- *                 then whatever that row's own button would do right now:
+ *   chatgpt-plan  Playtime's ChatGPT tab (261110; Settings' ChatGPT rows
+ *                 before that), then whatever its own button would do now:
  *                 - not signed in to ChatGPT: start "Continue with ChatGPT"
- *                   (the browser sign-in; Settings shows the "finish in your
+ *                   (the browser sign-in; the tab shows the "finish in your
  *                   browser" line with Cancel), and once it succeeds run the
  *                   same "Use ChatGPT plan" switch the row runs;
  *                 - signed in but plan use was declined at that sign-in:
@@ -22,14 +22,17 @@
  *                   (enablePlan, the row's "Turn on ChatGPT plan"), and the
  *                   switch only if it then really is on;
  *                 - signed in, plan not in use: the "Use ChatGPT plan" switch
- *                   (view.useChatgptPlan: the cloud -> local confirm, or just
+ *                   (view.useChatgptPlan: the switch confirm, or just
  *                   the provider pick on the local backend). Nothing switches
  *                   away from Sei credits without that confirm;
  *                 - already using the plan, or a sign-in already running:
- *                   only show the row.
+ *                   only show the tab.
  *
  * One action at a time (the in-flight latch below), so a double click cannot
  * start two browser sign-ins.
+ *
+ * 261103: the usage-limit popup's "Use your ChatGPT plan" option runs the
+ * same flow through startChatgptPlan(), under the same latch.
  */
 import type { ChatgptStatus } from '@shared/chatgptPlan';
 import { isPopupAction } from '@shared/popupActions';
@@ -46,7 +49,7 @@ export type ChatgptPlanStep =
   | { kind: 'sign-in'; opts?: { accountId?: string | null; enablePlan?: boolean } };
 
 /**
- * Pure: mirror what the ChatGPT row in Settings offers for this status (see
+ * Pure: mirror what Playtime's ChatGPT tab offers for this status (see
  * ChatgptPlanSettings). `provider` is the local provider in use
  * (useUiStore.llmProvider), 'chatgpt' when the plan is already picked.
  */
@@ -92,20 +95,54 @@ async function runChatgptPlan(): Promise<void> {
   // The host loads the status at mount; a popup can beat that load.
   if (!chatgpt.status) await chatgpt.load();
   const step = planChatgptPlanAction(useChatgptStore.getState().status, ui.llmProvider);
-  ui.navigate({ kind: 'settings', focus: 'chatgpt-plan', ...(step.kind === 'switch' ? { useChatgptPlan: true } : {}) });
+  ui.navigate({ kind: 'credits', tab: 'chatgpt', ...(step.kind === 'switch' ? { useChatgptPlan: true } : {}) });
   if (step.kind !== 'sign-in') return;
   const res = await useChatgptStore.getState().signIn(step.opts);
   // Like the row's own button: a sign-in that worked goes on to the switch.
-  // Only while the player is still on Settings (one who wandered off during
+  // Only while the player is still on Playtime (one who wandered off during
   // the browser step keeps their place and finds the "Use ChatGPT plan"
-  // button on the row), and only if plan use really is on now: a sign-in that
+  // button on the tab), and only if plan use really is on now: a sign-in that
   // came back with it declined again has nothing to switch to, and leaves no
   // switch intent waiting for a plan that is not coming.
   const now = useUiStore.getState();
   const readyNow = chatgptReady(useChatgptStore.getState().status);
-  if (res?.ok && readyNow && now.view.kind === 'settings' && now.llmProvider !== 'chatgpt') {
-    now.navigate({ kind: 'settings', useChatgptPlan: true });
+  if (res?.ok && readyNow && now.view.kind === 'credits' && now.llmProvider !== 'chatgpt') {
+    now.navigate({ kind: 'credits', tab: 'chatgpt', useChatgptPlan: true });
   }
+}
+
+/**
+ * Run `fn` under the one-at-a-time latch. Returns false (and runs nothing)
+ * when another action is still in flight. Never throws.
+ */
+async function withActionLatch(fn: () => Promise<void>): Promise<boolean> {
+  // One at a time: a second click while the first is still running does
+  // nothing.
+  if (inFlight) return false;
+  const latch = setTimeout(() => {
+    if (inFlight === latch) inFlight = null;
+  }, POPUP_ACTION_LATCH_MS);
+  inFlight = latch;
+  try {
+    await fn();
+  } catch {
+    // The store calls already swallow their errors; this is a backstop so a
+    // click can never surface an unhandled rejection.
+  } finally {
+    clearTimeout(latch);
+    if (inFlight === latch) inFlight = null;
+  }
+  return true;
+}
+
+/**
+ * The chatgpt-plan flow for an in-app button (261103: the usage-limit
+ * popup): the same steps and the same latch as the popup action, so a
+ * popup click and a button click can never start two sign-ins. Returns
+ * whether it ran (false while another action is still running). Never throws.
+ */
+export function startChatgptPlan(): Promise<boolean> {
+  return withActionLatch(runChatgptPlan);
 }
 
 /**
@@ -114,27 +151,12 @@ async function runChatgptPlan(): Promise<void> {
  */
 export async function runPopupAction(name: unknown): Promise<boolean> {
   if (!isPopupAction(name)) return false;
-  // One at a time: a second click while the first is still running is a
-  // known action that does nothing.
-  if (inFlight) return true;
-  const latch = setTimeout(() => {
-    if (inFlight === latch) inFlight = null;
-  }, POPUP_ACTION_LATCH_MS);
-  inFlight = latch;
-  try {
-    switch (name) {
-      case 'chatgpt-plan':
-        await runChatgptPlan();
-        return true;
-      default:
-        return false;
-    }
-  } catch {
-    // The store calls already swallow their errors; this is a backstop so a
-    // popup click can never surface an unhandled rejection.
-    return true;
-  } finally {
-    clearTimeout(latch);
-    if (inFlight === latch) inFlight = null;
+  switch (name) {
+    case 'chatgpt-plan':
+      // A known action that finds another one in flight does nothing.
+      await startChatgptPlan();
+      return true;
+    default:
+      return false;
   }
 }

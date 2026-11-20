@@ -27,6 +27,10 @@ import {
   IDLE_MIN_MS,
   MIN_SPEAK_GAP_MS,
   nextIdleDelayMs,
+  quietExtraMs,
+  QUIET_FREE_LINES,
+  QUIET_MAX_EXTRA_MS,
+  QUIET_STEP_MS,
   SAMPLE_INTERVAL_MS,
 } from './backseatIpc';
 
@@ -207,5 +211,70 @@ describe('nextIdleDelayMs', () => {
     // An idle look sooner than MIN_SPEAK_GAP_MS would be composited, sent, and
     // dropped by the service for nothing.
     expect(IDLE_MIN_MS).toBeGreaterThan(MIN_SPEAK_GAP_MS);
+  });
+});
+
+/**
+ * 261103: the backoff while nobody answers her (free user, Valheim: too much
+ * chatter, quit after 15 minutes). Pure, so the numbers are pinned here.
+ */
+describe('quietExtraMs', () => {
+  it('keeps the normal pace for the hello and one more line', () => {
+    expect(QUIET_FREE_LINES).toBe(2);
+    expect(quietExtraMs(0)).toBe(0);
+    expect(quietExtraMs(1)).toBe(0);
+    expect(quietExtraMs(2)).toBe(0);
+  });
+
+  it('then grows one step per unanswered line', () => {
+    expect(quietExtraMs(3)).toBe(QUIET_STEP_MS);
+    expect(quietExtraMs(4)).toBe(2 * QUIET_STEP_MS);
+    expect(quietExtraMs(7)).toBe(5 * QUIET_STEP_MS);
+  });
+
+  it('caps, so a silent player still hears her every minute or two', () => {
+    expect(quietExtraMs(8)).toBe(QUIET_MAX_EXTRA_MS);
+    expect(quietExtraMs(500)).toBe(QUIET_MAX_EXTRA_MS);
+    // Worst case between lines: the gap floor plus the cap, under two minutes
+    // even at the idle ceiling.
+    expect(IDLE_MAX_MS + QUIET_MAX_EXTRA_MS).toBeLessThanOrEqual(120_000);
+  });
+
+  it('is never negative and ignores fractions', () => {
+    expect(quietExtraMs(-3)).toBe(0);
+    expect(quietExtraMs(3.9)).toBe(QUIET_STEP_MS);
+  });
+
+  it('halves the line rate of a player who never answers (modelled, 15 minutes)', () => {
+    // Event-level model of a silent player: the opening line, then idle looks
+    // (shifted by the backoff) with ~3 s from look to line, main's speak gap
+    // grown by the same backoff. Seeded LCG, 200 sessions per arm.
+    const LAT = 3_000;
+    const T = 15 * 60_000;
+    const lines = (backoff: boolean, seed: number): number => {
+      let x = seed;
+      const rand = (): number => {
+        x = (x * 1103515245 + 12345) % 2147483648;
+        return x / 2147483648;
+      };
+      const extra = (n: number): number => (backoff ? quietExtraMs(n) : 0);
+      let n = 1;
+      let last = 1_800 + LAT;
+      for (;;) {
+        const at = last + nextIdleDelayMs(rand) + extra(n);
+        if (at + LAT > T) return n;
+        last = at + LAT;
+        n++;
+      }
+    };
+    let before = 0;
+    let after = 0;
+    for (let i = 1; i <= 200; i++) {
+      before += lines(false, i * 7919);
+      after += lines(true, i * 7919);
+    }
+    expect(before / 200).toBeGreaterThan(25);
+    expect(after / 200).toBeLessThan(before / 200 / 2);
+    expect(after / 200).toBeGreaterThan(8);
   });
 });

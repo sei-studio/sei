@@ -385,7 +385,7 @@ export function ShareScreenModal({
             {t('Show avatar in screen recordings')}
             <InfoTip
               text={t('Keep this off unless you want to record the avatar.')}
-              label="About showing the avatar in screen recordings"
+              label={t('About showing the avatar in screen recordings')}
             />
           </span>
           <Toggle

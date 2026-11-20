@@ -81,8 +81,8 @@ describe('copy hygiene', () => {
     }
     skinPrepLine({ kind: 'running' }, 'Nova', t);
     for (const k of [
-      'Make Minecraft skin (uses credits)',
-      'Regenerate skin (uses credits)',
+      'Generate Minecraft skin',
+      'Regenerate skin',
       'Making skin...',
     ]) keys.add(k);
     expect(keys.size).toBeGreaterThan(8);

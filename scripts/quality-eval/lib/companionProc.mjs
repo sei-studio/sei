@@ -27,6 +27,15 @@ export const PLAYER = process.env.QE_PLAYER || 'Alex'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// QE_CHARACTER_BY_REPO: {repoDir: characterFile}, set by scorecard.mjs
+// --char-b so one arm of a compare plays a proposed card. Same username.
+function characterFor(botRepo) {
+  try {
+    const map = JSON.parse(process.env.QE_CHARACTER_BY_REPO || '{}')
+    return map[botRepo] || CHARACTER_FILE
+  } catch { return CHARACTER_FILE }
+}
+
 export function companionName() {
   let row = JSON.parse(fs.readFileSync(CHARACTER_FILE, 'utf8'))
   if (Array.isArray(row)) row = row[0]
@@ -43,7 +52,7 @@ export async function startCompanion({ sessDir, mode = 'brain', botRepo = harnes
     ...process.env,
     ELECTRON_RUN_AS_NODE: '1',
     LD_PRELOAD: process.env.QE_LD_PRELOAD ?? (fs.existsSync('/usr/lib/x86_64-linux-gnu/libstdc++.so.6') ? '/usr/lib/x86_64-linux-gnu/libstdc++.so.6' : ''),
-    QE_CHARACTER: CHARACTER_FILE,
+    QE_CHARACTER: characterFor(botRepo),
     QE_PORT: String(port),
     QE_PLAYER: PLAYER,
     QE_USERDATA: userDataDir,
@@ -84,18 +93,20 @@ export async function startCompanion({ sessDir, mode = 'brain', botRepo = harnes
     events, log, proc, userDataDir, bootMs: Date.now() - t0,
     get ready() { return ready }, get exited() { return exited }, get exitCode() { return exitCode },
     send,
-    execStart(name, args = {}) {
+    execStart(name, args = {}, { snap = false } = {}) {
       const id = `x${nextId++}`
       const doneP = new Promise((resolve) => {
         const on = (ev) => { if (ev.id === id) { events.off('qe_result', on); resolve(ev) } }
         events.on('qe_result', on)
         done.then(() => resolve({ id, error: 'companion exited' }))
       })
-      send({ type: 'qe-exec', id, name, args })
+      send({ type: 'qe-exec', id, name, args, snap })
       return { id, done: doneP }
     },
-    async exec(name, args = {}, { timeoutMs = 120000 } = {}) {
-      const { id, done: d } = c.execStart(name, args)
+    // snap: compose one prompt snapshot right before the action, the way the
+    // brain does on every turn (state that rides on "what she was shown").
+    async exec(name, args = {}, { timeoutMs = 120000, snap = false } = {}) {
+      const { id, done: d } = c.execStart(name, args, { snap })
       const tm = setTimeout(() => send({ type: 'qe-abort', id }), timeoutMs)
       try { return await d } finally { clearTimeout(tm) }
     },

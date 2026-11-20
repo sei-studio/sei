@@ -1,8 +1,9 @@
 /**
- * Electron main process entrypoint.
+ * Electron main process: the app. Loaded by the boot shim (boot.ts, the built
+ * dist/main/index.js) after the app name, the single-instance lock, the boot
+ * guard and the updater are set up; never loaded in safe mode.
  *
  * Composes:
- *   - Single-instance lock
  *   - First-launch migration (legacy persona → characters/sui.json)
  *   - BrowserWindow (1180x760, platform-branched chrome)
  *   - LAN watcher (shared UDP socket, 3s stale)
@@ -16,23 +17,32 @@
  *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
-// MUST stay the first import: refuses --remote-debugging-* / --inspect* /
-// --js-flags in packaged stable builds before anything else evaluates.
+// remoteDebugGuard, velopackBoot and velopackMigration's early boot run from
+// boot.ts, ahead of the single-instance lock; these imports are already
+// evaluated by the time this file loads.
 import './remoteDebugGuard';
-// Windows: Velopack hooks must run before the rest of main
-// evaluates; see velopackBoot.ts.
 import './velopackBoot';
-// Windows NSIS -> Velopack migration: its early boot must run before the
-// single-instance lock below; see velopackMigration.ts.
 import { scheduleVelopackMigration } from './velopackMigration';
-import { app, BrowserWindow, net, session, systemPreferences } from 'electron';
+import { app, BrowserWindow, ipcMain, net, Notification, session, systemPreferences } from 'electron';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
+import { launchSplashStatus, msSinceProcessStart } from './splashPage';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
+import { installCapNotices } from './capNotices';
 import { registerFacepackIpc } from './facepack/facepackIpc';
+import { openSeilinkPreview, registerSeilinkIpc } from './seilink/seilinkIpc';
+import { initSeilinkHost, restoreSeilinkHost, stopSeilinkHostForQuit } from './seilink/host/seilinkHost';
+import { initStageFlow, openDesktopEditor } from './seilink/stageFlow';
+import { closeDecorateOffer, initDecorateOffer, onDecorateOfferAnswer } from './seilink/decorateOffer';
+import { registerSeilinkProtocol, seilinkDevEnabled, SEILINK_SCHEME_PRIVILEGES } from './seilink/packs';
+import { devRoomSource, setGameSurfaceProbe, setRoomSource } from './seilink/roomContext';
+import { seilinkAvailability } from './seilink/gate';
+import { roomSource } from './seilink/roomStore';
 import { isAnalyticsActive, shutdownAnalytics, capture, captureAppQuit, noteSurface } from './analytics';
 import { reportOnboardingAbandoned } from './onboardingFunnel';
+import { initCrashReporting, appOpenedCrashProps, markStartFailed } from './crashReporting';
+import { installMainSystemProxy } from './systemProxy';
 import { notePreGateFailure, clearSummonBlock, clearSummonBlocksOfClass } from './summonGuard';
 import { createBotSupervisor, SUMMON_CANCELLED } from './botSupervisor';
 import { registerGameModule, getGameModule, listGameModules } from './games';
@@ -47,11 +57,14 @@ import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessi
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
 import { endCallsForAccountSwitch } from './voice/accountSwitchCalls';
+import { gameEndRoute, mainClosedCallRoute } from './nextStepReach';
+import type { GoodbyeNote } from './sessionGoodbye';
 import {
   bindPlayerEndRuntime,
   clearSessionDigest,
-  isPlayerEndedGame,
   noteSessionDigest,
+  reportGoodbyePlanSaved,
+  reportNextStepNotRun,
   startPlayerEndNextStep,
   takeSessionDigest,
   yieldToNewSession,
@@ -68,9 +81,19 @@ import {
   runPendingQuitNextSteps,
 } from './quitNextStep';
 import { formatPlayDuration, playSummaryText } from './chat/playSummary';
-import { handOffUpdatesToMigration, initUpdater, isUpdateReadyToInstall } from './updater';
+import { flushUpdatePushes, handOffUpdatesToMigration, isUpdateReadyToInstall } from './updater';
+import {
+  markProfileScopeReady,
+  noteMainWindowClosed,
+  noteNeutralExit,
+  noteRendererGone,
+  reportStartupFailure,
+  setMainWindowGetter,
+  setSecondLaunchHandler,
+  takeSafeModeReport,
+} from './bootContext';
 import { applyPendingAtLaunch, updateSplashStatusForLaunch } from './velopackUpdater';
-import { initNotices } from './notices';
+import { initNotices, refreshNotices } from './notices';
 import { installPopupFrameGuards } from './popupFrameGuards';
 import { createSkinServer, SKIN_SERVER_DEV_PORT } from './skinServer';
 import { runFirstLaunchMigration, runUuidRenameMigration, runDefaultsToWorldMigration } from './migration';
@@ -79,6 +102,17 @@ import { loadWizardState, saveWizardState } from './wizardStateStore';
 import { registerPortraitScheme, registerPortraitProtocol } from './portraitProtocol';
 import { cleanupRelocationLeftover } from './relocate';
 import { cleanupLegacyTraySettings } from './legacyTrayCleanup';
+import {
+  afterLoginReveal,
+  keepRunningOnLastWindowClosed,
+  launchedAtLogin,
+  loginLaunch,
+  noteRevealVia,
+  onSecondLaunch,
+  settleLoginLaunch,
+  startOpenAtLoginAtReady,
+  watchMainWindowShow,
+} from './seilink/loginLaunchRuntime';
 import { initMcDashboardService } from './mcDashboard/mcDashboardService';
 import {
   initGameDashboardService,
@@ -86,27 +120,18 @@ import {
   clearGameDashboard,
 } from './games/gameDashboardService';
 import { createMcSessionReporter } from './mcActionTelemetry';
+import { createDstLivesReporter } from './games/dontstarve/sessionLives';
 import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type LanState, type BotStatus, type LogBatch, type WizardProgressEvent, type ExpansionProgressEvent, type GenProgressEvent, type VisionCapability, type ChatMessage, type SpokenLineContext } from '../shared/ipc';
 
-// Lock the app name early so app.getPath('userData') resolves to
-// "Sei" (packaged) or "Sei Dev" (electron-vite dev) — keeping dev state
-// (your private personas) out of the shipped build.
-//
-// DEV-ONLY: SEI_DEV_USERDATA overrides the dev userData/app name so two dev
-// builds (e.g. this UI-revisions worktree + a separate MC-connecting one) can
-// run side by side. Each distinct name gets its own userData dir, which means a
-// distinct single-instance lock — otherwise the second launch quits. Defaults
-// to "Sei Dev" so normal `npm run dev` is unchanged.
-const devUserData = process.env.SEI_DEV_USERDATA?.trim() || 'Sei Dev';
-app.setName(app.isPackaged ? 'Sei' : devUserData);
-if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), devUserData));
-}
+// The app name + userData (and the SEI_DEV_USERDATA dev override) are set in
+// boot.ts, before the single-instance lock.
 
 // Register the `sei-portrait://` privileged scheme that serves locally-stored
 // character portraits to the renderer. MUST run before app 'ready'; the request
 // handler is attached in bootstrap() once userData/paths are resolved.
-registerPortraitScheme();
+// sei-room:// (261104, SeiLink room art packs) is registered in the same call:
+// Electron takes only one registerSchemesAsPrivileged per app.
+registerPortraitScheme([{ ...SEILINK_SCHEME_PRIVILEGES, privileges: { ...SEILINK_SCHEME_PRIVILEGES.privileges } }]);
 
 // Backseat (260728): ask Chromium for the macOS system-audio loopback path.
 // MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
@@ -136,8 +161,15 @@ const logger = {
 };
 
 let mainWindow: BrowserWindow | null = null;
-// Startup splash (260728) — shown from whenReady, closed when the main window
-// first paints (or by the failsafe timer).
+// Boot safety (261031): the updater and the boot guard reach the window through this.
+setMainWindowGetter(() => mainWindow);
+/** bootstrap() has run (or is running). A second run throws, see openMainWindowAgain. */
+let bootstrapStarted = false;
+/** bootstrap() made its main window; before that, a reopen leaves it to bootstrap. */
+let firstWindowMade = false;
+// Update splash (261030): shown from whenReady only on the launch right after
+// Update.exe restarted Sei, closed when the main window first paints (or by
+// the failsafe timer). A normal launch has none (product call 261108).
 let splashWindow: BrowserWindow | null = null;
 let latestLanState: LanState = { kind: 'closed' };
 // Game adapters (M0, 260908): the Minecraft GameModule wraps the LAN watcher;
@@ -168,6 +200,9 @@ let skinServer: { baseUrl: string; port: number; stop: () => Promise<void> } | n
 // before-quit cleanup chain.
 let loopbackAuthServer: { url: string; stop: () => Promise<void> } | null = null;
 
+/** How long after the page loads held updater pushes wait for the ready ping. */
+const UPDATE_PUSH_FALLBACK_MS = 15_000;
+
 function preloadPath(): string {
   // electron-vite outputs preload to dist/preload/index.cjs relative to dist/main/index.js.
   // .cjs extension is required because package.json sets "type": "module", which would
@@ -194,7 +229,34 @@ async function endVoiceCallsFromMain(reason: string): Promise<void> {
     closeOverlay: closeCallOverlay,
     capture,
     emitCallSession,
+    onClosed: (id, connectedMs, goodbye) => nextStepForMainClosedCall(reason, id, connectedMs, goodbye),
   });
+}
+
+/**
+ * 261107 (O2 reach): the "next time" check for a call main closed itself
+ * (nextStepReach.ts mainClosedCallRoute). Closing the window is a common way
+ * to end a call, and it used to run no check on any platform. Synchronous up
+ * to the check it starts, so the Windows quit that follows the window close
+ * still finds the pending file written.
+ */
+function nextStepForMainClosedCall(reason: string, id: string, connectedMs: number, goodbye: GoodbyeNote): void {
+  if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'call' }, capture);
+  const route = mainClosedCallRoute({
+    reason,
+    platform: process.platform,
+    companionEnded: goodbye.companionEnded,
+    inGame: onlineIds.has(id) || playStartedAt.has(id),
+  });
+  const notRun = { characterId: id, surface: 'call' as const, endReason: reason, durationMs: connectedMs };
+  if (route.kind === 'check') {
+    void startCallNextStep(id, connectedMs);
+  } else if (route.kind === 'persist') {
+    const kept = persistQuitSession({ characterId: id, surface: 'call', durationMs: connectedMs, endedAt: Date.now() });
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
+  } else if (route.kind === 'report') {
+    reportNextStepNotRun({ ...notRun, outcome: route.outcome, saved: goodbye.nextStepHook }, capture);
+  }
 }
 
 /**
@@ -224,12 +286,184 @@ function sweepVoiceCalls(reason: 'window_closed' | 'renderer_gone' | 'renderer_r
     .catch(() => {});
 }
 
+/** 261104 SeiLink: a click on her desktop wallpaper (or the dock), waiting for a main window to come up (macOS). */
+let pendingSeilinkOpen: { channel: string; payload: unknown } | null = null;
+
+/**
+ * From the desktop: bring Sei forward and open her chat (a click on her) or
+ * her room editor in the app window (the desktop editor goes through
+ * seilink/stageFlow.ts). `payload` is the push's one argument.
+ */
+function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopened' | 'deferred' {
+  const w = mainWindow;
+  // 261107: a hidden login launch counts this as opened from her room.
+  noteRevealVia('room');
+  if (w && !w.isDestroyed()) {
+    if (process.platform !== 'linux') w.setOpacity(1);
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    // The click landed in the host process, so Sei is not the active app.
+    if (process.platform === 'darwin') app.focus({ steal: true });
+    w.focus();
+    w.webContents.send(channel, payload);
+    return 'focused';
+  }
+  // macOS keeps running with no window: make one, like a Dock click, and open the chat once
+  // its UI says it is listening (app:renderer-ready).
+  pendingSeilinkOpen = { channel, payload };
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  if (mainWindow === null) {
+    openMainWindowAgain();
+    return 'reopened';
+  }
+  return 'deferred';
+}
+
+/**
+ * macOS: the last window was closed and Sei kept running; the Dock icon or a
+ * click on her desktop room asks for a window again. Before the first
+ * bootstrap that is bootstrap(). After it, ONLY the window is made again:
+ * everything else bootstrap() set up is still live (the Supabase storage
+ * adapter, protocol handlers, every IPC handler, the bot supervisor), and
+ * running it a second time threw on the first of those (step 0,
+ * SUPABASE_CLIENT_ALREADY_CREATED; protocol.handle on an already handled
+ * scheme), so no window came back at all.
+ */
+function openMainWindowAgain(): void {
+  if (!bootstrapStarted) {
+    bootstrap().catch((err) => logger.error(`bootstrap failed: ${(err as Error).message}`));
+    return;
+  }
+  // Still booting: bootstrap makes the window (and the pending SeiLink open waits for it).
+  if (!firstWindowMade) return;
+  try {
+    reopenMainWindow();
+  } catch (err) {
+    logger.error(`reopen window failed: ${(err as Error).message}`);
+  }
+}
+
+/**
+ * 261120: a click on a cap notice's OS notification (capNotices.ts). Bring the
+ * app window forward wherever it is (hidden by the desktop stage, minimized,
+ * behind a game) or make one (macOS keeps running with none). The notice
+ * itself is waiting there: the renderer reads it back on mount.
+ */
+function revealMainWindowForNotice(): void {
+  if (process.platform === 'darwin') app.focus({ steal: true });
+  const w = mainWindow;
+  if (w && !w.isDestroyed()) {
+    if (process.platform !== 'linux') w.setOpacity(1);
+    if (w.isMinimized()) w.restore();
+    if (!w.isVisible()) w.show();
+    w.focus();
+    return;
+  }
+  openMainWindowAgain();
+}
+
+/** The latest cap notification, held so it is not garbage collected before a click. */
+let capNotification: Notification | null = null;
+
+function installCapNoticeDeps(): void {
+  installCapNotices({
+    now: () => Date.now(),
+    mainWindow: () => mainWindow,
+    notificationSupported: () => Notification.isSupported(),
+    showNotification: (text, onClick) => {
+      const n = new Notification({ title: text.title, body: text.body });
+      n.on('click', onClick);
+      n.on('failed', (_e, error) => logger.warn(`[sei/cap-notice] notification failed: ${error}`));
+      capNotification = n;
+      n.show();
+    },
+    requestAttention: () => {
+      if (process.platform === 'darwin') {
+        app.dock?.bounce('informational');
+        return;
+      }
+      const w = mainWindow;
+      if (process.platform === 'win32' && w && !w.isDestroyed() && !w.isFocused()) {
+        w.flashFrame(true);
+        w.once('focus', () => {
+          if (!w.isDestroyed()) w.flashFrame(false);
+        });
+      }
+    },
+    revealMainWindow: revealMainWindowForNotice,
+    uiLanguage: async () => {
+      const { loadConfig } = await import('./configStore');
+      return (await loadConfig()).ui_language;
+    },
+    log: (m) => logger.info(m),
+  });
+  // Dev only: SEI_DEV_CAP_NOTICE=wall|spend raises that notice once, a few
+  // seconds after launch, so the whole path (push, modal or banner, OS
+  // notification, replay into a reopened window) can be checked without a
+  // spent account. SEI_DEV_CAP_NOTICE_HIDE=1 hides the window first (the
+  // "Sei not in front" case) and brings it back the way a notification click
+  // does after SEI_DEV_CAP_NOTICE_REVEAL_MS. Never in a packaged build.
+  const devNotice = !app.isPackaged ? process.env.SEI_DEV_CAP_NOTICE?.trim() : undefined;
+  if (devNotice === 'wall' || devNotice === 'spend') {
+    const delayMs = Number(process.env.SEI_DEV_CAP_NOTICE_DELAY_MS) || 8000;
+    setTimeout(() => {
+      logger.info(`[sei/cap-notice] dev trigger: ${devNotice}`);
+      if (process.env.SEI_DEV_CAP_NOTICE_HIDE === '1' && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.hide();
+        const revealMs = Number(process.env.SEI_DEV_CAP_NOTICE_REVEAL_MS) || 6000;
+        setTimeout(() => {
+          logger.info('[sei/cap-notice] dev trigger: reveal (as a notification click)');
+          revealMainWindowForNotice();
+        }, revealMs);
+      }
+      if (devNotice === 'wall') {
+        emitCreditsHardStop({ reason: 'depleted' }, { surface: 'unknown' });
+        return;
+      }
+      void import('./usage/llmUsageLedger').then((m) => m._emitSpendAlertForDev({ limitUsd: 5, spendMonthUsd: 5.12 }));
+    }, delayMs);
+  }
+}
+
+function reopenMainWindow(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  const win = createMainWindow({ preloadPath: preloadPath(), indexHtmlUrlOrPath: rendererTarget() });
+  mainWindow = win;
+  wireMainWindowEvents(win);
+  watchMainWindowShow(win);
+  installPopupFrameGuards(win);
+  // Auth pushes (and their replay on load) go to the new window.
+  void import('./auth/authState')
+    .then((m) => m.rebindAuthWindow(win))
+    .catch((err) => logger.warn(`auth window rebind failed: ${(err as Error).message}`));
+  logger.info('main window reopened');
+}
+
+function openSeilinkChat(characterId: string): 'focused' | 'reopened' | 'deferred' {
+  return openFromSeilink(IpcChannel.seilink.openChat, characterId);
+}
+
+ipcMain.on(IpcChannel.app.rendererReady, (e) => {
+  const pending = pendingSeilinkOpen;
+  if (!pending || !mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
+  pendingSeilinkOpen = null;
+  mainWindow.webContents.send(pending.channel, pending.payload);
+});
+
 /**
  * Wire the lifecycle listeners the main window needs (extracted 260728).
  */
 function wireMainWindowEvents(win: BrowserWindow): void {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
+    // Boot safety: judge an unjudged start now, not at a quit that may come
+    // hours later (macOS stays running with no window).
+    noteMainWindowClosed();
     // macOS keeps the app running when the last window closes; the call and
     // the share died with the window, so close them with that reason.
     sweepVoiceCalls('window_closed');
@@ -242,9 +476,23 @@ function wireMainWindowEvents(win: BrowserWindow): void {
         win.webContents.send(IpcChannel.world.state, mod.getWorldState());
       }
     }
+    // Updater pushes are held until the app UI says it is listening
+    // (app:renderer-ready, boot.ts). Deliver them anyway if it never does.
+    setTimeout(() => flushUpdatePushes(), UPDATE_PUSH_FALLBACK_MS).unref?.();
   });
   win.webContents.on('did-navigate', () => sweepVoiceCalls('renderer_reload'));
-  win.webContents.on('render-process-gone', () => sweepVoiceCalls('renderer_gone'));
+  win.webContents.on('render-process-gone', (_e, details) => {
+    sweepVoiceCalls('renderer_gone');
+    // Boot safety (261031): before the start has been judged good, a dead
+    // renderer is a failed start (ignored afterwards). Not a 'clean-exit',
+    // and not a 'killed' that comes with an OS shutdown (bootGuard.ts
+    // rendererGoneVerdict).
+    noteRendererGone(details.reason);
+  });
+  win.webContents.on('did-fail-load', (_e, errorCode, _desc, _url, isMainFrame) => {
+    // -3 = ERR_ABORTED (a navigation replaced by another), not a failure.
+    if (isMainFrame && errorCode !== -3) reportStartupFailure('renderer_load_failed');
+  });
 }
 
 function broadcastLan(state: LanState): void {
@@ -344,6 +592,8 @@ async function appendChatMessage(characterId: string, message: ChatMessage): Pro
 const playStartedAt = new Map<string, { at: number; game: GameId }>();
 /** 261011: Minecraft per-action outcome telemetry (mcActionTelemetry.ts). */
 const mcSessionReporter = createMcSessionReporter(capture);
+// 261104: DST deaths and respawns, folded into bot_session_ended.
+const dstLivesReporter = createDstLivesReporter();
 /** 260926: boot-phase props of the last summon-ready, consumed by the first-online capture. */
 const pendingBootProps = new Map<string, Record<string, number | string | null>>();
 
@@ -358,8 +608,11 @@ async function emitPlaySession(characterId: string, durationMs: number, game: Ga
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
     personaExpanded = c?.persona?.expanded;
-    const { characterLanguage } = await import('../shared/chatLanguage');
-    if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
+    // 261116: the companion's resolved language (own pin, else the player's
+    // language); a World character's creator pin no longer leaks in.
+    const { companionLanguageFor } = await import('./companionLanguage');
+    const { loadConfig } = await import('./configStore');
+    if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') rowLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
@@ -393,8 +646,10 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
     const { getCharacter } = await import('./characterStore');
     const c = await getCharacter(characterId);
     if (c?.name) name = c.name;
-    const { characterLanguage } = await import('../shared/chatLanguage');
-    if (characterLanguage(c?.metadata) === 'zh') callLanguage = 'zh';
+    // 261116: resolved like emitPlaySession above.
+    const { companionLanguageFor } = await import('./companionLanguage');
+    const { loadConfig } = await import('./configStore');
+    if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') callLanguage = 'zh';
   } catch {
     /* fall back to the generic name */
   }
@@ -457,6 +712,9 @@ function broadcastAction(
  * counterpart of summon_failed. No-op when the session never went live.
  */
 function closePlaySession(id: string, end: SessionEndProps, failed: boolean): void {
+  // Taken before the live check so a session that never went live leaves
+  // nothing behind for the next one.
+  const dstLives = dstLivesReporter.take(id);
   const started = playStartedAt.get(id);
   if (started === undefined) return;
   playStartedAt.delete(id);
@@ -492,6 +750,8 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
     duration_s: durationS,
     game: started.game,
     ...actionSummary,
+    // 261104: respawns, deaths and last_death_cause (a game id).
+    ...(started.game === 'dontstarve' ? dstLives : {}),
     ...end,
     // 261008: did the companion's goodbye set up a next session (retention).
     ...gameEndHookProps(goodbye),
@@ -501,12 +761,16 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
   if (failed) {
     capture('bot_session_failed', { character_id: id, duration_s: durationS, game: started.game, ...end });
   }
-  // 261013 (T120): the app is quitting, so there is no time for the
-  // player-end check below. Keep what it needs (synchronous, a few KB, never
-  // throws) and run it on the next launch (quitNextStep.ts). Skipped when a
-  // goodbye already ended the session or set up a plan.
-  if (end.reason === 'app_quit' && !goodbye.companionEnded && !goodbye.nextStepHook) {
-    persistQuitSession({
+  if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'game', game: started.game }, capture);
+  // 261107 (O2 reach, nextStepReach.ts): every end either runs the check
+  // below or reports why not, so next_step_checked covers every session end.
+  // 261013 (T120): an app quit leaves no time for the check, so 'persist'
+  // keeps what it needs (synchronous, a few KB, never throws) for the next
+  // launch (quitNextStep.ts). A goodbye that ended it or set a plan skips it.
+  const route = gameEndRoute({ reason: end.reason, companionGoodbye: goodbye.companionEnded || goodbye.nextStepHook });
+  const notRun = { characterId: id, surface: 'game' as const, game: started.game, endReason: end.reason, durationMs };
+  if (route.kind === 'persist') {
+    const kept = persistQuitSession({
       characterId: id,
       surface: 'game',
       game: started.game,
@@ -514,12 +778,15 @@ function closePlaySession(id: string, end: SessionEndProps, failed: boolean): vo
       endedAt: Date.now(),
       ...(digest ? { digest } : {}),
     });
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
+  } else if (route.kind === 'report') {
+    reportNextStepNotRun({ ...notRun, outcome: route.outcome, saved: goodbye.nextStepHook }, capture);
   }
   // 261011: the player ended it (Stop, closed the world), so no goodbye turn
   // set up a next session. One small background check after teardown decides
   // if there is a plan worth saving (playerEndNextStep.ts). Fire and forget:
   // it never delays this close, the bot's exit or the next summon.
-  if (isPlayerEndedGame(end.reason)) {
+  if (route.kind === 'check') {
     const gameName = getGameModule(started.game)?.displayName ?? started.game;
     void startPlayerEndNextStep({
       characterId: id,
@@ -589,8 +856,14 @@ function endAllPlaySessionsForQuit(): void {
 function persistCallsForQuit(): void {
   const now = Date.now();
   for (const c of liveCallsNow(now)) {
-    if (onlineIds.has(c.characterId) || playStartedAt.has(c.characterId)) continue;
-    persistQuitSession({ characterId: c.characterId, surface: 'call', durationMs: c.connectedMs, endedAt: now });
+    const notRun = { characterId: c.characterId, surface: 'call' as const, endReason: 'app_quit', durationMs: c.connectedMs };
+    if (onlineIds.has(c.characterId) || playStartedAt.has(c.characterId)) {
+      reportNextStepNotRun({ ...notRun, outcome: 'in_game' }, capture);
+      continue;
+    }
+    const kept = persistQuitSession({ characterId: c.characterId, surface: 'call', durationMs: c.connectedMs, endedAt: now });
+    // 261107: the call's voice_call_ended (app_quit) comes from main right after.
+    reportNextStepNotRun({ ...notRun, outcome: kept ? 'deferred' : 'trivial' }, capture);
   }
 }
 
@@ -747,7 +1020,33 @@ async function endGameSurfacesForQuit(): Promise<void> {
   await Promise.race([ends, new Promise((resolve) => setTimeout(resolve, QUIT_SURFACE_END_TIMEOUT_MS))]);
 }
 
+/**
+ * product call (261108): launch timing, now that no splash covers the start.
+ * `app_window_shown {startup_ms, update_screen}` once per process, at the
+ * first show of bootstrap's main window: `startup_ms` is process start to
+ * that show (the window stays hidden until ready-to-show, so this is the
+ * empty moment a user sees between the click and Sei). A hidden login launch
+ * is skipped: its first show is whenever the user opens Sei.
+ */
+function noteStartupWindowShown(win: BrowserWindow): void {
+  if (loginLaunch().isHidden()) return;
+  const updateScreen = splashWindow !== null;
+  win.once('show', () => {
+    let creationTime: number | undefined;
+    try {
+      creationTime = app.getAppMetrics().find((m) => m.type === 'Browser')?.creationTime;
+    } catch {
+      /* process.uptime() stands in */
+    }
+    capture('app_window_shown', {
+      startup_ms: msSinceProcessStart(Date.now(), creationTime, process.uptime()),
+      update_screen: updateScreen,
+    });
+  });
+}
+
 async function bootstrap(): Promise<void> {
+  bootstrapStarted = true;
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
   //        state under userData, which every later step starts creating. The
@@ -788,10 +1087,14 @@ async function bootstrap(): Promise<void> {
   //     network (the usual state after a restart), and a refresh that failed
   //     here set 'local' under a session initAuthState then restored, which
   //     locked the user on the sign-in panel (see persistedSessionUserId).
-  {
+  try {
     const { applyBootScope } = await import('./auth/bootScope');
     const bootScope = await applyBootScope({ warn: (m) => logger.warn(m) });
     logger.info(`active profile scope: ${bootScope ?? 'local'}`);
+  } finally {
+    // The updater (started before bootstrap, boot.ts) reads the beta-channel
+    // preference once the scope is known.
+    markProfileScopeReady();
   }
 
   // 0b. One-shot global→profile partition. Relocates a pre-existing install's
@@ -1030,11 +1333,17 @@ async function bootstrap(): Promise<void> {
   //    Attach the sei-portrait:// request handler first so the renderer can
   //    resolve <img src="sei-portrait://…"> the moment it loads.
   registerPortraitProtocol();
+  registerSeilinkProtocol();
+  // 261120: cap notices outside the window (OS notification, replay).
+  installCapNoticeDeps();
   mainWindow = createMainWindow({
     preloadPath: preloadPath(),
     indexHtmlUrlOrPath: rendererTarget(),
-    // Startup splash (260728): once the main window is ready, close the splash
-    // immediately (no fade, 260729) before the first show — the two never
+    // 261107: a login launch loads the window hidden (seilink/loginLaunch.ts);
+    // her room, the Dock or a second launch of Sei shows it.
+    startHidden: loginLaunch().isHidden(),
+    // Update splash: once the main window is ready, close the splash
+    // immediately (no fade, 260729) before the first show, so the two never
     // overlap. The failsafe timer in whenReady covers a bootstrap that never
     // gets here.
     beforeFirstShow: async () => {
@@ -1046,6 +1355,9 @@ async function bootstrap(): Promise<void> {
     },
   });
   wireMainWindowEvents(mainWindow);
+  watchMainWindowShow(mainWindow);
+  noteStartupWindowShown(mainWindow);
+  firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
   // be framed despite sei.gg's X-Frame-Options. See popupFrameGuards.ts.
@@ -1115,6 +1427,7 @@ async function bootstrap(): Promise<void> {
     // other games → gamedash:snapshot). Validated before the renderer sees it.
     onDashboard: publishGameDashboardSnapshot,
     onActionStats: (characterId, stats) => mcSessionReporter.stats(characterId, stats),
+    onDstLives: (characterId, raw) => dstLivesReporter.note(characterId, raw),
     // 261011: the session's recent conversation, kept in memory for the
     // player-end next-step check (never sent to analytics).
     onSessionDigest: (id, raw) => {
@@ -1204,7 +1517,13 @@ async function bootstrap(): Promise<void> {
       getMainWindow: () => mainWindow,
       endVoiceCalls: endVoiceCallsFromMain,
       // 261013 (T120): the new account's sessions an app quit ended.
-      onScopeSwitched: () => void runPendingQuitNextSteps(),
+      onScopeSwitched: () => {
+        // 261107: not on a login launch until Sei is opened (no LLM call at login).
+        afterLoginReveal(() => void runPendingQuitNextSteps());
+        // 261104 SeiLink: config is per profile; bring back whoever moved in on this one.
+        void restoreSeilinkHost();
+        void import('./seilink/desktopLines').then((m) => m.resetDesktopLineBudget()).catch(() => {});
+      },
     });
   }
 
@@ -1302,6 +1621,71 @@ async function bootstrap(): Promise<void> {
 
   // 261028 facepack pilot (dev flag only; handlers answer "disabled" otherwise).
   registerFacepackIpc({ preloadPath: preloadPath(), rendererTarget });
+
+  // 261104 SeiLink room: packs, room store IPC, dev preview (dev flag only:
+  // unpackaged + SEI_SEILINK_PACKS; SEI_SEILINK_PREVIEW=1 also opens it at boot).
+  registerSeilinkIpc({ preloadPath: preloadPath(), rendererTarget });
+  if (seilinkDevEnabled() && process.env.SEI_SEILINK_PREVIEW === '1') {
+    openSeilinkPreview({ preloadPath: preloadPath(), rendererTarget });
+  }
+  // 261104 SeiLink desktop host: her room as the live wallpaper, while
+  // SeiLink is available (a supported install, or the dev flag; seilink/gate.ts).
+  // Restores whoever moved in on this profile.
+  initSeilinkHost({
+    pushStatus: (status) => {
+      // 261106: she moved out (or the host went down): the decorate offer goes with her.
+      if (status.state === 'off' || status.state === 'failed' || status.state === 'unsupported') closeDecorateOffer();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.hostStatusChanged, status);
+    },
+    openChat: openSeilinkChat,
+    onClick: (characterId) => void import('./seilink/desktopLines').then((m) => m.onSeilinkPoke(characterId)),
+    // 261106: the dock's edit button opens her editor ON the desktop (seilink/stageFlow.ts).
+    openRoomEditor: (characterId) => openDesktopEditor(characterId, 'dock'),
+    onOfferAnswer: (characterId, answer) => onDecorateOfferAnswer(characterId, answer),
+    pushAvailability: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IpcChannel.seilink.availabilityChanged, seilinkAvailability());
+    },
+  });
+  // 261106: the desktop stage (the first-link intro and the room editor over the desktop) and the
+  // decorate-together offer after her first move-in into the blank room.
+  initStageFlow({
+    getMainWindow: () => mainWindow,
+    openWithWindow: (channel, payload) => void openFromSeilink(channel, payload),
+  });
+  initDecorateOffer({
+    openDesktopEditor: (characterId) => openDesktopEditor(characterId, 'offer'),
+    speak: (characterId, note) => import('./seilink/desktopLines').then((m) => m.speakDecorateOffer(characterId, note)),
+  });
+  void restoreSeilinkHost();
+  // M4: her desktop lines (a reply to a double click, rare idle lines, 261105 a reaction to room edits; seilink/desktopLines.ts).
+  void import('./seilink/desktopLines')
+    .then((m) => m.initDesktopLines({ occupied: (id) => onlineIds.has(id) || isCallActive(id), onCall: isCallActive, pushChatMessage }))
+    .catch((err) => console.warn(`[seilink] desktop lines not wired: ${(err as Error).message}`));
+  if (!app.isPackaged && process.env.SEI_SEILINK_SELFTEST) {
+    void import('./seilink/host/selfTest').then((m) => m.runSeilinkSelfTest({ getMainWindow: () => mainWindow }));
+  }
+  // 261104 SeiLink AI side (src/main/seilink/roomContext.ts): no room line and
+  // no look() while she is in chess, Draw! or a Backseat share (bot games
+  // arrive as inGame). The room source is the host's room store; it gives a
+  // companion a room only when a pack is installed.
+  void (async () => {
+    const [{ isChessActive }, { isDrawActive }, { getBackseatState }] = await Promise.all([
+      import('./chess/chessService'),
+      import('./draw/drawService'),
+      import('./backseat/backseatService'),
+    ]);
+    setGameSurfaceProbe((id) => isChessActive(id) || isDrawActive(id) || getBackseatState(id) !== null);
+  })().catch((err) => console.warn(`[seilink] game surface probe not wired: ${(err as Error).message}`));
+  {
+    // Dev only: unpackaged + SEI_SEILINK_ROOM=<room.json> ({packDir, state, characters}).
+    const devRoom = app.isPackaged ? '' : (process.env.SEI_SEILINK_ROOM ?? '').trim();
+    if (devRoom) {
+      setRoomSource(devRoomSource(devRoom));
+      console.log(`[seilink] dev room source: ${devRoom}`);
+    } else {
+      setRoomSource(roomSource);
+    }
+  }
 
   // 5. IPC handlers
   registerIpcHandlers({
@@ -1405,7 +1789,15 @@ async function bootstrap(): Promise<void> {
         );
       }
       // 261011: the player hung up (no companion goodbye), outside a game.
-      if (!goodbye.companionEnded && !onlineIds.has(id)) void startCallNextStep(id, connectedMs);
+      // 261107: the other two branches report why no check ran.
+      if (goodbye.nextStepHook) reportGoodbyePlanSaved({ characterId: id, surface: 'call' }, capture);
+      if (goodbye.companionEnded) {
+        reportNextStepNotRun({ characterId: id, surface: 'call', outcome: 'goodbye', saved: goodbye.nextStepHook, endReason: reason, durationMs: connectedMs }, capture);
+      } else if (onlineIds.has(id)) {
+        reportNextStepNotRun({ characterId: id, surface: 'call', outcome: 'in_game', endReason: reason, durationMs: connectedMs }, capture);
+      } else {
+        void startCallNextStep(id, connectedMs);
+      }
     },
     // Voice calls (260705): the call went live — companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an
@@ -1481,7 +1873,16 @@ async function bootstrap(): Promise<void> {
     if (takeInstallerFirstLaunch()) {
       capture('installer_first_launch', installerFirstLaunchProps(currentFirstLaunchEnv()));
     }
-    capture('app_opened');
+    // prev_exit / prev_version: how the previous session ended (crashReporting.ts).
+    // 261107: login_launch = started by "Open on login" (seilink/loginLaunch.ts).
+    capture('app_opened', { ...appOpenedCrashProps(), login_launch: launchedAtLogin() });
+    // Boot safety (261031). Packaged only: dev never counts starts.
+    if (app.isPackaged) {
+      const safe = takeSafeModeReport();
+      if (safe) capture('boot_safe_mode_entered', { reason: safe.reason, failures: safe.failures });
+      const { onConfigRecovered } = await import('./configStore');
+      onConfigRecovered((e) => capture('settings_recovered', { kind: e.kind }));
+    }
   } catch (err) {
     logger.warn(`analytics init failed: ${(err as Error).message}`);
   }
@@ -1546,14 +1947,18 @@ async function bootstrap(): Promise<void> {
   // Operator feed (260725; the startup popup since 261027) — wire the push
   // channel BEFORE initUpdater, which fires the startup refresh as the first
   // leg of the shared cadence.
+  // 261031 (T277): the updater itself starts in boot.ts before bootstrap, so a
+  // broken bootstrap can still be updated; the notices startup leg is here.
   initNotices({ getMainWindow: () => mainWindow });
-  initUpdater({ getMainWindow: () => mainWindow });
-  scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration });
+  void refreshNotices('startup');
+  // 261107: a login launch waits until Sei is opened (the hand-off restarts Sei into a window).
+  afterLoginReveal(() => scheduleVelopackMigration({ isUpdateReady: isUpdateReadyToInstall, handOff: handOffUpdatesToMigration }));
 
   // 5d. 261013 (T120): run the "next time" check for sessions the last quit
   //     ended, once auth and the token refresh have settled. Fire and forget;
   //     each check waits for a ready backend and never surfaces an error.
-  setTimeout(() => void runPendingQuitNextSteps(), LAUNCH_DELAY_MS).unref?.();
+  //     261107: a login launch runs it only once Sei is opened (no LLM call at login).
+  afterLoginReveal(() => setTimeout(() => void runPendingQuitNextSteps(), LAUNCH_DELAY_MS).unref?.());
 
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
   if (process.platform === 'linux' && safeStorageBackendKind() === 'basic_text') {
@@ -1567,19 +1972,28 @@ async function bootstrap(): Promise<void> {
 // SharedArrayBuffer for voice dictation is enabled in the single enable-features
 // switch near the top of this file.
 
-// Single-instance lock — second launch focuses existing window
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
+// The single-instance lock and second-instance focus live in boot.ts; this
+// module is only loaded by the instance that holds the lock.
+{
   app.whenReady().then(() => {
+    // 261031 (T278): crash, hang and unclean-exit reporting. First, so the
+    // session marker and the handlers cover everything after it. Synchronous,
+    // never throws. See crashReporting.ts.
+    initCrashReporting();
+
+    // 261103 (T303): Node's fetch (supabase-js auth, proxyClient, the ChatGPT
+    // token exchange, BYOK checks) ignores the OS proxy, so a VPN in "system
+    // proxy" mode covered the browser but not main. Route it the way Chromium
+    // does. Needs app ready (session.resolveProxy). See systemProxy.ts.
+    // Never allowed to stop startup: a failure leaves fetch direct.
+    try {
+      installMainSystemProxy().catch((err: unknown) =>
+        console.warn(`[sei] system proxy not installed, going direct: ${(err as Error)?.message ?? err}`),
+      );
+    } catch (err) {
+      console.warn(`[sei] system proxy not installed, going direct: ${(err as Error)?.message ?? err}`);
+    }
+
     // If a prior version's "Move to Applications" prompt moved us here from
     // ~/Downloads, trash the leftover copy now that we're running from
     // /Applications. The prompt itself was retired when the macOS download
@@ -1592,38 +2006,94 @@ if (!gotLock) {
     // file and the login item it may have registered. See legacyTrayCleanup.ts.
     cleanupLegacyTraySettings();
 
-    // Startup splash (260728): the white Sei logo, up before any heavy
-    // bootstrap work, closed when the main window first paints. The failsafe
-    // timer covers a bootstrap that errors before showing a window.
-    // Windows, right after Update.exe restarted Sei (261030): the same splash
-    // with "Updating…" under it, matching the update overlay it replaces.
-    splashWindow = createSplashWindow({ status: updateSplashStatusForLaunch() });
-    setTimeout(() => {
-      if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
-      splashWindow = null;
-    }, 15_000);
+    // 261120: Windows shows a toast (the cap notices, capNotices.ts) only for
+    // an AppUserModelID that a Start menu shortcut carries. Both installers
+    // stamp the appId on theirs (electron-builder NSIS: appId; Velopack:
+    // `--aumid com.sei.app` in scripts/velopack-pack.mjs); without this call
+    // Electron makes up `electron.app.Sei` on first use and the toast is
+    // dropped silently. AFTER the legacy cleanup: that removes a Run value
+    // named by the default AppUserModelID, so it must still see the old one.
+    // The open-at-login item has a fixed name of its own (WIN_RUN_NAME).
+    if (process.platform === 'win32') {
+      try {
+        app.setAppUserModelId(app.isPackaged ? 'com.sei.app' : process.execPath);
+      } catch (err) {
+        logger.warn(`setAppUserModelId failed: ${(err as Error).message}`);
+      }
+    }
+
+    // 261107: "Open on login". AFTER the legacy cleanup: both act on
+    // the same macOS login item (the cleanup leaves it when this setting holds
+    // it), and on Windows the sync puts back a missing item the user wants.
+    // Then classify the launch (seilink/loginLaunch.ts).
+    const login = startOpenAtLoginAtReady().login;
+    setSecondLaunchHandler((argv) =>
+      onSecondLaunch(argv, openMainWindowAgain, () => !!mainWindow && !mainWindow.isDestroyed()),
+    );
+
+    // Update splash (261030): on Windows, right after Update.exe restarted
+    // Sei, the white Sei logo with "Updating…" (or the error line) under it,
+    // matching the update overlay it replaces, closed when the main window
+    // first paints. product call (261108): a normal launch shows no splash,
+    // the main window appears on its own once it has painted (it stays hidden
+    // until ready-to-show, so there is never a blank window). Not on a login
+    // launch either: nothing shows until Sei is opened. The failsafe timer
+    // covers a bootstrap that errors before showing a window.
+    const splashStatus = launchSplashStatus(login, updateSplashStatusForLaunch);
+    splashWindow = splashStatus ? createSplashWindow(splashStatus) : null;
+    if (splashWindow) {
+      setTimeout(() => {
+        if (splashWindow && !splashWindow.isDestroyed()) closeSplashWindow(splashWindow);
+        splashWindow = null;
+      }, 15_000);
+    }
 
     // Windows: an update that was downloaded and staged but never applied
-    // (Sei was killed) is applied now, behind the splash, instead of booting.
-    void applyPendingAtLaunch(splashWindow)
+    // (Sei was killed) is applied now, behind the update splash (it puts one
+    // up itself when this launch has none), instead of booting.
+    // Not at login: a pending update applies on the next quit or the next
+    // launch the user starts, never as an update screen at login.
+    void (login ? Promise.resolve(false) : applyPendingAtLaunch(splashWindow))
       .catch(() => false)
       .then((applying) => {
-        if (applying) return;
-        bootstrap().catch((err) => {
+        if (applying) {
+          // Handing over to an update: says nothing about this build's start.
+          noteNeutralExit();
+          return;
+        }
+        bootstrap().then(() => settleLoginLaunch()).catch((err) => {
           logger.error(`bootstrap failed: ${(err as Error).message}`);
+          markProfileScopeReady();
+          // A failed start, not a clean quit (crashReporting.ts). Before the
+          // boot guard: in a packaged build it relaunches Sei at once.
+          markStartFailed();
+          // Packaged: counted, and Sei starts again (safe mode after two in a
+          // row). Dev: logged only, then exit as before.
+          reportStartupFailure('bootstrap', err);
           app.exit(1);
         });
       });
 
     app.on('activate', () => {
+      noteRevealVia('dock');
       if (BrowserWindow.getAllWindows().length === 0 && mainWindow === null) {
-        bootstrap().catch((err) => logger.error(`re-bootstrap failed: ${(err as Error).message}`));
+        openMainWindowAgain();
+        return;
+      }
+      // 261106: the desktop stage hides the window when it steps aside (seilink/desktopStage.ts); the Dock brings it back.
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible() && !mainWindow.isMinimized()) {
+        mainWindow.setOpacity(1);
+        mainWindow.show();
       }
     });
   });
 
   app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
+      // 261107 Windows: her desktop room keeps Sei running when the user asked
+      // for Sei at login; it quits when she moves out with no window open
+      // (seilink/loginLaunchRuntime.ts). Otherwise closing quits, as before.
+      if (keepRunningOnLastWindowClosed()) return;
       app.quit();
       return;
     }
@@ -1679,6 +2149,9 @@ if (!gotLock) {
     // be shut down after it (and backseat not at all), so their *_ended events
     // were lost on every quit. Bounded: their closing rows write to disk.
     await endGameSurfacesForQuit();
+    // 261104 SeiLink: take her off the desktop (seilink_ended app_quit before the flush; the
+    // move-in is kept, so she is back on the next start).
+    try { stopSeilinkHostForQuit(); } catch { /* best-effort */ }
     // Flush buffered analytics first so queued events survive the quit.
     try { await shutdownAnalytics(); } catch (err) { logger.warn(`analytics shutdown failed: ${(err as Error).message}`); }
     try { if (supervisor) await supervisor.shutdown(); } catch (err) { logger.warn(`supervisor shutdown failed: ${(err as Error).message}`); }
@@ -1687,8 +2160,10 @@ if (!gotLock) {
     // Draw!: clear turn timers and abort any in-flight guess/draw call.
     try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
     try { for (const mod of listGameModules()) mod.watcher.stop(); } catch { /* best-effort */ }
-    // Close the skin server's TCP listener so the port is
-    // freed promptly. server.close drains in-flight requests before resolving.
+    // Close the skin server's TCP listener so the port is freed promptly.
+    // Bounded (261031): stop() drops idle keep-alive sockets and gives up
+    // after SERVER_STOP_TIMEOUT_MS (httpServerStop.ts); before, a keep-alive
+    // socket could hold server.close, and so the quit, open forever.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
     // Same for the auth loopback callback server — release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }

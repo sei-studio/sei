@@ -8,6 +8,10 @@
  *   signed in, onboarded                     -> home (or a saved tutorial step)
  *   signed out, nothing configured           -> onboarding scene (fresh install)
  *   signed out, onboarded                    -> the scene's sign-in panel
+ *
+ * T283: a profile with no name that main says was set up before (`returning`:
+ * its settings were recovered to defaults) is never sent to onboarding:
+ * signed in it goes home, signed out to the sign-in panel.
  */
 import type { AuthSnapshot, AuthState } from '@shared/ipc';
 
@@ -16,14 +20,17 @@ export type BootDestination = 'onboard' | 'skin-setup' | 'home' | 'signin';
 export interface BootProfile {
   onboardedName: string;
   skinPending: boolean;
+  /** T283: set up before even though the config has no name (lib/profileSetUp.ts). */
+  returning?: boolean;
 }
 
 export function bootDestination(auth: AuthState, profile: BootProfile): BootDestination {
+  const setUp = Boolean(profile.onboardedName) || profile.returning === true;
   if (auth.kind === 'signed_in') {
-    if (!profile.onboardedName) return 'onboard';
+    if (!profile.onboardedName) return setUp ? 'home' : 'onboard';
     return profile.skinPending ? 'skin-setup' : 'home';
   }
-  return profile.onboardedName ? 'signin' : 'onboard';
+  return setUp ? 'signin' : 'onboard';
 }
 
 export interface BootRouteDeps {

@@ -1,0 +1,4 @@
+# actionlint 1.7.7 predates the macos-26 hosted runner label; declare it so the lint job passes.
+self-hosted-runner:
+  labels:
+    - macos-26

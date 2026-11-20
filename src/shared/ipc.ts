@@ -15,6 +15,13 @@
  */
 
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
+import type { SeilinkDevInfo, SeilinkPack, SeilinkRoomPayload } from './seilinkPack';
+import type { RoomState } from './seilinkRoom';
+import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
+import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
+import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
+import type { AnimaCutout, AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
+import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
 import { z } from 'zod';
 import type {
   Character,
@@ -28,11 +35,14 @@ import type {
 } from './characterSchema';
 import type { ErrorClass } from './errorClasses';
 import type { OverlayPointerSample } from './overlayPointer';
+import type { UiLanguage } from './uiLanguage';
 import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from './chatgptPlan';
 import type { RegionStatus } from './regionGate';
+import type { UsageSummary } from './llmUsage';
 import type { PopupAction } from './popupActions';
 import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
+import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
@@ -78,7 +88,7 @@ export type { OsPermissionKind, OsPermissionStatus, PermissionResume } from './p
 import type { McDashboardSnapshot, McDashboardSnapshotPush } from './mcDashboardIpc';
 import type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { HomeNextStep } from './homeNextStep';
-import { StardewIpcChannel, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
+import { StardewIpcChannel, type StardewChooseFolderResult, type StardewGameRunning, type StardewInstallState, type StardewInstallProgressEvent, type StardewLaunchResult } from './stardewIpc';
 import { GameIpcChannel } from './gameIpc';
 export type { GameId, WorldState, WorldStates, GameDashboardSnapshot } from './gameIpc';
 import type { GamePackProgressPush, GamePackState } from './gamePacks';
@@ -540,6 +550,13 @@ export interface ChatMessage {
    */
   voice?: boolean;
   /**
+   * WorldLink (product call (261116)): a line she said on the desktop as a
+   * speech bubble (a click on her, an idle line, a reaction to her room).
+   * Persisted so she remembers saying it, but HIDDEN in the chat UI like a
+   * voice row: desktop lines stay desktop bubbles.
+   */
+  desktop?: boolean;
+  /**
    * Backseat (260728): a clip the companion saved off the screen share while
    * watching the player. `path` is an absolute path to the .webm under
    * <profileRoot>/clips/<characterId>/; `reason` is the companion's own short
@@ -622,6 +639,53 @@ export interface VoiceInfo {
 }
 
 /**
+ * Voice Library voices on Sei cloud (261119, main/voice/libraryVoices.ts):
+ * why a pasted voice cannot be used. The first twelve come from the proxy;
+ * `no_session` and `rate_limited` are the client's own.
+ */
+export type LibraryVoiceReason =
+  | 'invalid_input'
+  | 'not_found'
+  | 'pool_voice'
+  | 'custom_rate'
+  | 'live_moderation'
+  | 'short_notice'
+  | 'delisted'
+  | 'restricted_category'
+  | 'daily_limit'
+  | 'voice_limit'
+  | 'capacity'
+  | 'unavailable'
+  | 'no_session'
+  | 'rate_limited';
+
+/** A Voice Library voice as the picker shows it (no owner id, no URL). */
+export interface LibraryVoiceInfo {
+  /** Persisted as metadata.voiceId when picked. */
+  voiceId: string;
+  name: string;
+  gender: string | null;
+  age: string | null;
+  accent: string | null;
+  description: string | null;
+  /** ElevenLabs has a preview clip (voiceLibraryPreview plays it). */
+  hasPreview: boolean;
+}
+
+export type LibraryVoiceLookupResult =
+  | { ok: true; voice: LibraryVoiceInfo }
+  | { ok: false; reason: LibraryVoiceReason };
+
+export type LibraryVoiceAddResult =
+  | { ok: true; voice: LibraryVoiceInfo; already: boolean }
+  | { ok: false; reason: LibraryVoiceReason };
+
+/** Whether a stored library voice still plays; 'error' = could not ask. */
+export type LibraryVoiceStatusResult =
+  | { status: 'active' | 'removed'; name: string; gender: string | null }
+  | { status: 'pool' | 'unknown' | 'error' };
+
+/**
  * One voice from the user's OWN ElevenLabs account (261019), listed by main
  * with the stored BYOK key (GET /v2/voices). Renderer-safe: no key, no
  * preview URL (main fetches preview bytes itself, see voiceOwnPreview).
@@ -668,6 +732,13 @@ export interface VoiceTtsChunkPush {
   error?: string;
 }
 
+/** usage:spend-alert push (261110): this month's own-key spend estimate
+ * reached the user's alert amount. Only a notice; nothing is blocked. */
+export interface SpendAlertPush {
+  limitUsd: number;
+  spendMonthUsd: number;
+}
+
 /** One voice:tts-notice push (260908): local TTS spoke a line with a
  * SUBSTITUTE voice pack because the pack matching the line's language (the
  * conversation language, or the line's own script when it is predominantly
@@ -691,6 +762,42 @@ export type VoiceTtsNoticePush =
       kind: 'own-voice-stand-in';
       characterId: string;
       reason: 'no-key' | 'key-invalid' | 'voice-missing' | 'quota' | 'plan';
+    }
+  | {
+      /** 261103: Fish Audio is the chosen local voice but could not speak
+       * this line, so the Fast voices spoke it. The line still plays; the
+       * call UI shows a system notice once per call. */
+      kind: 'fish-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
+      /** 261120: Fish Audio is the chosen cloud voice (Playtime > Sei >
+       * Advanced) but could not speak this line, so Sei's voices spoke it. */
+      kind: 'fish-cloud-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
+      /** 261102: Kokoro is the chosen local model but could not speak this
+       * line (pack not downloaded, or it would not load), so the Fast voices
+       * spoke it. The line still plays; the call UI shows a system notice. */
+      kind: 'kokoro-fallback';
+      characterId: string;
+      reason: 'pack-missing' | 'failed';
+    }
+  | {
+      /** 261110: "Sei voices" with the ChatGPT brain could not speak this
+       * line, so an on-device voice spoke it (main/voice/tts.ts). */
+      kind: 'sei-voices-fallback';
+      characterId: string;
+      reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+    }
+  | {
+      /** 261119: the character's Voice Library voice is no longer available
+       * on Sei cloud, so a close Sei voice spoke the line. */
+      kind: 'library-voice-unavailable';
+      characterId: string;
     };
 
 /**
@@ -724,8 +831,10 @@ export interface AvatarExpressionInfo {
 
 /** Manifest of a character's imported Live2D avatar model (260804), stored at
  * `<profileRoot>/avatars/<characterId>/manifest.json` alongside the extracted
- * model tree. LOCAL-ONLY: never cloud-synced (the bytes cannot follow), so a
- * character without one simply falls back to the static portrait tile. */
+ * model tree. Since 261106 the store is the local copy of the character's
+ * playing model from the avatar library (sei-proxy /avatars/v1): the owner's
+ * imports are uploaded, other users download the public ones. A character
+ * without one falls back to the face set or the portrait. */
 export interface AvatarManifest {
   /** Store format version (2 = ASCII-safe stored paths; v1 stores are lazily
    * re-normalized by main on read). */
@@ -753,6 +862,14 @@ export interface AvatarManifest {
    * frame, layered under the emotion expressions. Sparse; absent = off.
    */
   accessories?: Record<string, boolean>;
+  /**
+   * Avatar library link (261106, docs/agents/avatar-library.md): this local
+   * model IS the server avatar `avatarId` at content tag `rev` (the row's
+   * opaque `rev`, which changes when its bytes do).
+   * Absent = a local import not uploaded yet (the owner's next sync uploads
+   * it). A new import replaces the manifest, which drops the link.
+   */
+  library?: { avatarId: string; rev: string };
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
@@ -858,7 +975,7 @@ export interface CallOverlayState {
   captionsOn?: boolean;
   /** 261031: the app's UI language, so the overlay's button tooltips follow
    * it (the overlay window never boots the App that hydrates the store). */
-  lang?: 'en' | 'zh';
+  lang?: UiLanguage;
 }
 
 /**
@@ -1101,6 +1218,32 @@ export interface McInstall {
    */
   compatibility: 'full' | 'limited';
 }
+
+/** Third-party Java launchers the scan detects but cannot set up (261104). */
+export type McOtherLauncher = 'prism' | 'multimc' | 'modrinth' | 'atlauncher';
+
+/** One instance of a third-party launcher (detection only; src/main/mcOtherInstalls.ts). */
+export interface McOtherInstance {
+  launcher: McOtherLauncher;
+  /** The instance's folder name, shown in the setup step only (never sent). */
+  label: string;
+  mc_version: string | null;
+  loader: 'vanilla' | 'fabric' | 'quilt' | 'forge' | 'neoforge' | null;
+}
+
+/**
+ * What the install scan found besides usable installs (261104): third-party
+ * launcher instances, a Bedrock install, and whether the official launcher
+ * is installed at all. Rides on wizard:detect-installs next to `installs`.
+ */
+export interface McScanExtras {
+  others: McOtherInstance[];
+  bedrock: boolean;
+  launcherInstalled: boolean;
+}
+
+/** openMinecraftLauncher's answer (261104). */
+export type OpenLauncherResult = { ok: true; launcher: MinecraftLauncherKind } | { ok: false; reason: 'no_launcher' | 'launch_failed' };
 
 /** Which Minecraft Launcher build Start Minecraft opened. */
 export type MinecraftLauncherKind = 'mac' | 'windows' | 'windows-store';
@@ -1354,6 +1497,12 @@ export type AuthState =
   | { kind: 'local' }
   | { kind: 'signed_in'; user: AuthUser };
 
+/** T283: `config:profile-state`, see RendererApi.configProfileState. */
+export interface ProfileSetupState {
+  returning: boolean;
+  preferredName: string;
+}
+
 /**
  * 261029 (login lock on restart): main's auth state read on demand, for a
  * renderer that must route before main's first `auth:state` push can be relied
@@ -1436,7 +1585,11 @@ export type OAuthResult =
 export type ChatgptLoginCodeReason = 'existing_account' | 'new_device' | 'unverified_email';
 
 export type ChatgptLoginFailure =
+  // The Sei cloud region gate: login() checks it before the browser opens,
+  // since this login creates a Sei cloud session (261103, T303).
   | 'region_blocked'
+  // 261103 (T303): OpenAI itself refused the caller's region.
+  | 'provider_region'
   | 'cancelled'
   | 'denied'
   | 'timeout'
@@ -1614,13 +1767,69 @@ export interface BrowseEntry {
   creatorLabel: string;
   /** 4-char share code shown beside the name (null for pre-260703 rows). */
   publicId: string | null;
-  /** Public Storage URL (Pitfall 11: never round-trip to Mojang here). */
+  /**
+   * Public Storage URL of the full portrait (Pitfall 11: never round-trip to
+   * Mojang here), versioned `?v=<updated_at>` (shared/portraitUrls.ts).
+   */
   portraitUrl: string | null;
+  /**
+   * The small World-grid copy (`<owner>/<id>.thumb.webp`, versioned like
+   * portraitUrl). It may not exist yet for an older share: the card falls
+   * back to portraitUrl (browseArtSources). Null when there is no portrait.
+   */
+  thumbUrl: string | null;
   skinUrl: string | null;
   /** ISO timestamp. */
   updatedAt: string;
   /** Precomputed by main handler — true when the character JSON exists on local disk. */
   inMyLibrary: boolean;
+  /**
+   * How many accounts have this character in their library (cloud
+   * `character_library`, aggregate only; product call 261110). 0 when nobody
+   * added it, null when unknown (counts RPC not deployed, offline, error).
+   */
+  addCount: number | null;
+}
+
+/**
+ * The cloud facts behind a profile's Overview (product call 261110), from
+ * chars:overview-info (main/cloud/characterOverview.ts). Every field is
+ * best-effort: null = unknown, and the Overview leaves it out.
+ */
+export interface CharacterOverviewInfo {
+  /** The author's public display name; null for your own, built-ins and unnamed authors. */
+  creatorName: string | null;
+  /** Accounts with it in their library (the World card's number); null when unknown. */
+  addCount: number | null;
+  /**
+   * The curated-pool voice its sample plays (bundled clip, no TTS call).
+   * Null for "no voice", or an own ElevenLabs voice you can hear (that one
+   * is synthesized through voicePreview with the character id).
+   */
+  sampleVoiceId: string | null;
+}
+
+/**
+ * World tab sort (product call 261110). 'popular' (library adds desc) is the
+ * default. Applied server-side by `search_public_characters_sorted`; when that
+ * RPC is missing main falls back to the old newest-first RPC and reports
+ * `sorted: false`, so the renderer sorts the loaded pages itself.
+ */
+export const BROWSE_SORTS = ['popular', 'recent', 'alpha'] as const;
+export type BrowseSort = (typeof BROWSE_SORTS)[number];
+export const DEFAULT_BROWSE_SORT: BrowseSort = 'popular';
+
+/** One World page as main returns it. */
+export interface BrowsePage {
+  entries: BrowseEntry[];
+  hasMore: boolean;
+  /** True when the server applied `sort`; false = server order is newest first. */
+  sorted: boolean;
+  /**
+   * Shape-only failure class for analytics. 'rpc_failed' = the listing RPC
+   * errored (entries is empty). Absent on success.
+   */
+  failure?: 'rpc_failed';
 }
 
 /**
@@ -1838,6 +2047,10 @@ export const FeedbackSubmitArgsSchema = z.object({
   body: z.string().min(1).max(4000),
   email: z.string().max(320).optional(),
   claimReward: z.boolean().optional(),
+  /** 261109: analytics only, never sent to the proxy. Which form sent it, and
+   *  (Suggest a game) whether the "already works in Sei" hint showed. */
+  form: z.enum(['suggest_game']).optional(),
+  gameHintShown: z.boolean().optional(),
 });
 
 /**
@@ -1908,9 +2121,11 @@ export interface RendererApi {
   // that tags the streaming ExpansionProgressEvent ticks so the caller can
   // filter progress for THIS save. Ignored when skipExpansion is true (no LLM
   // call runs). When omitted, expansion still runs/streams but emits no ticks.
+  // `expandOnly` (261120): expand and return the result WITHOUT saving it (the
+  // caller writes the persona onto the then-current row itself).
   saveCharacter(
     character: Character,
-    options?: { skipExpansion?: boolean; expansionRequestId?: string },
+    options?: { skipExpansion?: boolean; expansionRequestId?: string; expandOnly?: boolean },
   ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
@@ -1954,6 +2169,8 @@ export interface RendererApi {
   charsPortraitRegenerate(characterId: string): Promise<PortraitRegenResult>;
   /** Make a stored version the active portrait (copies its bytes onto the canonical file). */
   charsPortraitSelect(args: { characterId: string; file: string }): Promise<PortraitVersionsState>;
+  /** 261110: creator name, library add count and game looks for the profile Overview. Never throws. */
+  charsOverviewInfo(characterId: string): Promise<CharacterOverviewInfo>;
 
   // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
@@ -2019,6 +2236,14 @@ export interface RendererApi {
 
   // User config + secret
   getConfig(): Promise<UserConfig>;
+  /**
+   * T283: whether the active profile was set up before. `returning` is true
+   * when the config names the player, or when it has no name but the profile
+   * shows earlier setup (a recovered config, quarantined copies, a backup
+   * with a name, chat transcripts or memories). `preferredName` is the name
+   * after main's cloud read-back for an account profile ('' when none).
+   */
+  configProfileState(): Promise<ProfileSetupState>;
   saveConfig(config: UserConfig): Promise<void>;
   saveApiKey(plaintext: string): Promise<void>;
   hasApiKey(): Promise<boolean>;
@@ -2047,8 +2272,16 @@ export interface RendererApi {
   chatHistoryBefore(characterId: string, beforeId: string): Promise<ChatMessage[]>;
   /** Send a chat message; returns the companion reply (+ launch signal if the companion launched a game).
    * `voicePeers` (multi-companion voice, 260706): names of the OTHER companions
-   * on the same call, so the reply is framed for a group call. Absent = solo. */
-  chatSend(args: { characterId: string; text: string; replyTo?: ChatReplyRef; voicePeers?: string[] }): Promise<ChatSendResult>;
+   * on the same call, so the reply is framed for a group call. Absent = solo.
+   * `interrupted` (261112): this voice line cut the companion off; `line` is
+   * what she was saying. Only an in-game companion uses it (deliverSeiChat). */
+  chatSend(args: {
+    characterId: string;
+    text: string;
+    replyTo?: ChatReplyRef;
+    voicePeers?: string[];
+    interrupted?: { line: string };
+  }): Promise<ChatSendResult>;
   /**
    * Multi-companion voice (260706): silently record a line spoken on the call
    * into `characterId`'s transcript WITHOUT generating a reply, so a companion
@@ -2100,6 +2333,30 @@ export interface RendererApi {
     name: string,
     on: boolean,
   ): Promise<AvatarManifest | null>;
+  /**
+   * Avatar library (261106, docs/agents/avatar-library.md): the character's
+   * server-stored avatars with their public locks and default. `sync` (the
+   * owner's card image and local model go up, a public model comes down)
+   * runs when the edit modal or the Avatar tab opens; plain reads use the
+   * main-side cache. Never throws: state 'none' when there is no library.
+   */
+  avatarLibraryList(characterId: string, opts?: { sync?: boolean; fresh?: boolean }): Promise<AvatarLibraryView>;
+  /** Owner: add an image (png/jpeg/webp bytes) as a portrait avatar. */
+  avatarLibraryAddImage(characterId: string, bytes: ArrayBuffer, name: string | null): Promise<AvatarLibraryResult>;
+  /** Owner: add a Live2D/rig zip as an avatar (imports it locally first, then uploads it). */
+  avatarLibraryAddModel(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarLibraryResult>;
+  /** Owner: flip an avatar's public lock and/or make it the default. 409s come back as an error code. */
+  avatarLibrarySetFlags(
+    characterId: string,
+    avatarId: string,
+    flags: { is_public?: boolean; is_default?: boolean },
+  ): Promise<AvatarLibraryResult>;
+  /** Owner: delete an avatar. */
+  avatarLibraryRemove(characterId: string, avatarId: string): Promise<AvatarLibraryResult>;
+  /** Anyone: their own pick of which avatar plays (null = the owner's default). */
+  avatarLibraryPick(characterId: string, avatarId: string | null): Promise<AvatarLibraryResult>;
+  /** Push: a character's library view changed (any window). */
+  onAvatarLibrary(cb: (update: { characterId: string; view: AvatarLibraryView }) => void): Unsubscribe;
   /** Subscribe to avatar manifest changes (any window). Live Live2D views use
    * it to re-apply accessory toggles without reloading the model. */
   onAvatarManifest(
@@ -2155,6 +2412,51 @@ export interface RendererApi {
   facepackForCharacter?(characterId: string): Promise<string | null>;
   facepackOpenPreview?(): Promise<boolean>;
   onFaceCue?(cb: (cue: FaceCue) => void): Unsubscribe;
+  // ── SeiLink room (261104; see src/main/seilink/) ──
+  seilinkDevInfo?(): Promise<SeilinkDevInfo>;
+  seilinkPacks?(): Promise<SeilinkPack[]>;
+  seilinkRoomGet?(characterId: string): Promise<SeilinkRoomPayload>;
+  seilinkRoomSet?(characterId: string, state: RoomState): Promise<SeilinkRoomPayload>;
+  onSeilinkRoomChanged?(cb: (characterId: string) => void): Unsubscribe;
+  seilinkOpenPreview?(): Promise<boolean>;
+  /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink available: a supported install or the dev flag). */
+  /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
+  /** 261119: `entrance: 'first_link'` when the first-link intro plays with this start (it shows her coming in). */
+  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean; entrance?: 'first_link' }): Promise<SeilinkHostStatus>;
+  seilinkHostStop?(opts?: { reason?: 'link_failed' }): Promise<SeilinkHostStatus>;
+  seilinkHostStatus?(): Promise<SeilinkHostStatus>;
+  /** 261107: the profile's Idle lines toggle; writes seilink_deafened (inverted). Resolves with the new state. */
+  seilinkSetIdleLines?(on: boolean): Promise<boolean>;
+  onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
+  /** She was clicked on the desktop: open her chat (characterId). */
+  onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
+  /** M4: whether this install can run the desktop host. */
+  seilinkAvailability?(): Promise<SeilinkAvailability>;
+  onSeilinkAvailability?(cb: (a: SeilinkAvailability) => void): Unsubscribe;
+  /** M4: the dock's edit button: open her room editor. 261106: also the offer's "Decorate together"; `desktop` = on the desktop stage. */
+  onSeilinkOpenRoomEditor?(cb: (req: SeilinkOpenEditor) => void): Unsubscribe;
+  /** 261106: the desktop stage (the first-link intro, the room editor on the desktop). Main window only. */
+  seilinkStage?(req: SeilinkStageRequest): Promise<SeilinkStageResult>;
+  /** 261106: the desktop shows her new blank room: offer to decorate it together. */
+  seilinkOffer?(characterId: string, via: SeilinkOfferVia): Promise<{ shown: boolean }>;
+  /** 261105 Anima: SeiLink opened for her; bake/download her face set in the background (src/main/anima/). */
+  seilinkAnimaPrepare?(characterId: string, trigger: AnimaTrigger): Promise<AnimaStatus>;
+  seilinkAnimaStatus?(characterId: string): Promise<AnimaStatus>;
+  onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
+  /** What a RoomAvatar ended up showing for her (analytics only). */
+  seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261118: the cloud's clean cut-out of her picture (no face to animate), or null. Any build, like facepackForCharacter. */
+  seilinkAnimaCutout?(characterId: string): Promise<AnimaCutout | null>;
+  /** 261110: a companion's voice (TTS) started or stopped here; main relays it to her desktop room when she is the one there. */
+  seilinkVoice?(characterId: string, speaking: boolean): void;
+  /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
+  seilinkEditorSession?(phase: 'open' | 'close', token: string, characterId: string): void;
+  /** 261105 (T336): decorating together. The editor's unsaved room, and main's events for it. */
+  seilinkEditorSync?(sync: SeilinkEditorSync): void;
+  onSeilinkEditorEvent?(cb: (ev: SeilinkEditorEvent) => void): Unsubscribe;
+  /** 261107: "Open on login" (packaged macOS / Windows with WorldLink; `supported` false elsewhere). */
+  seilinkLoginItemGet?(): Promise<OpenAtLoginState>;
+  seilinkLoginItemSet?(enabled: boolean, surface: OpenAtLoginUiSurface): Promise<OpenAtLoginState>;
   /**
    * Overlay window only (260806): stream a character's tile camera (zoom +
    * pan within the tile) while edit-mode wheel/drag adjusts it; `commit`
@@ -2406,6 +2708,14 @@ export interface RendererApi {
   stardewInstall(): Promise<StardewInstallState>;
   /** Start the game through SMAPI (no-op with a message when it is already running). */
   stardewLaunch(): Promise<StardewLaunchResult>;
+  /**
+   * 261104: pick the game folder when the scan found none. Validated by the
+   * game files being present (an Xbox `XboxGames\Stardew Valley` pick
+   * resolves to its Content folder), saved, then a fresh detection.
+   */
+  stardewChooseFolder?(): Promise<StardewChooseFolderResult>;
+  /** 261104: is the game running, and through SMAPI? (the "mod never answered" hint). */
+  stardewGameRunning?(): Promise<StardewGameRunning>;
   onStardewInstallProgress(cb: (ev: StardewInstallProgressEvent) => void): Unsubscribe;
   /**
    * 260725 play/pause: freeze/resume the in-game brain. Paused: no game LLM
@@ -2613,6 +2923,17 @@ export interface RendererApi {
    */
   voiceOwnPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
   /**
+   * Voice Library voices on Sei cloud (261119). Lookup resolves a pasted
+   * link or id through the proxy (no writes); add is the pick (the proxy
+   * validates again and adds it to Sei's ElevenLabs account); status says
+   * whether a stored one still plays; preview plays the ElevenLabs preview
+   * of a voice looked up this session. Lookup, add and status never throw.
+   */
+  voiceLibraryLookup(args: { input: string }): Promise<LibraryVoiceLookupResult>;
+  voiceLibraryAdd(args: { input: string }): Promise<LibraryVoiceAddResult>;
+  voiceLibraryStatus(args: { voiceId: string }): Promise<LibraryVoiceStatusResult>;
+  voiceLibraryPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
+  /**
    * The close Sei pool voice that others hear for this character when its
    * voice is the author's own ElevenLabs voice and no voice for others was
    * chosen (261019, voiceAssign closeSharedVoiceId). Deterministic from the
@@ -2659,6 +2980,21 @@ export interface RendererApi {
    * profile. Presence only — the full key is NEVER returned to the renderer.
    */
   voiceElevenKeyStatus(): Promise<{ present: boolean }>;
+  /**
+   * Fish Audio (261103): store (or clear, with null) the user's own Fish API
+   * key. Encrypted in main like the ElevenLabs key and never returned.
+   */
+  voiceFishKeySet(args: { key: string | null }): Promise<void>;
+  /** Fish Audio: whether a key is stored. Presence only. */
+  voiceFishKeyStatus(): Promise<{ present: boolean }>;
+  /** Fish Audio: synthesize one sample line with the stored key (the Settings
+   * Test button), or say why it failed. */
+  voiceFishTest(): Promise<FishAudioResult>;
+  /** Fish Audio: set a character's own voice from a fish.audio link or id
+   * (checked with the user's key), or clear it with `input: null`. */
+  voiceFishOverrideSet(args: { characterId: string; input: string | null }): Promise<FishOverrideResult>;
+  /** Fish Audio: the sample line in one voice (the voice-pick Preview). */
+  voiceFishVoicePreview(args: { voiceId: string }): Promise<FishAudioResult>;
 
   // --- User profile (Phase 19) ---
   /** The in-app user profile (avatar ref + preferred name). */
@@ -2707,7 +3043,7 @@ export interface RendererApi {
 
   // --- Setup wizard ---
   /** Scan known Minecraft launcher + CurseForge paths on the current platform. */
-  detectMcInstalls(): Promise<{ installs: McInstall[] }>;
+  detectMcInstalls(): Promise<{ installs: McInstall[]; extras?: McScanExtras | null }>;
   /**
    * Install Fabric Loader (vanilla) and/or drop CustomSkinLoader into each selected install. Emits progress via onWizardProgress.
    * `sessionId` is a renderer-generated opaque id (e.g. crypto.randomUUID()) that lets a subsequent wizardCancel(sessionId) abort THIS install run.
@@ -2741,6 +3077,11 @@ export interface RendererApi {
    * "Unable to update the launcher" error). Never throws.
    */
   minecraftRunning(): Promise<boolean | null>;
+  /**
+   * 261104: open the official Minecraft Launcher without selecting a profile
+   * (the Bedrock-only and never-played-Java notes). Never throws.
+   */
+  openMinecraftLauncher?(): Promise<OpenLauncherResult>;
   /** Returns the persisted wizard state (which installs are enabled, last setup timestamp, last skin server port). */
   getWizardState(): Promise<WizardState>;
   /**
@@ -2900,7 +3241,7 @@ export interface RendererApi {
    * the RPC fails or there are no rows; `hasMore` is true when the
    * returned page is full (renderer can request the next offset).
    */
-  browseList(args: { query: string; limit: number; offset: number }): Promise<{ entries: BrowseEntry[]; hasMore: boolean }>;
+  browseList(args: { query: string; limit: number; offset: number; sort?: BrowseSort }): Promise<BrowsePage>;
   // The legacy publish-with-moderation IPC method was removed in 260525-qy0
   // — moderation now runs inline inside chars.save / chars.setShared so the
   // renderer's existing calls to charsSave + charsSetShared trigger the gate.
@@ -2927,6 +3268,21 @@ export interface RendererApi {
    * every proxied Anthropic call.
    */
   creditsGet: () => Promise<CreditsStatus>;
+  /**
+   * 261110 Playtime: this profile's own count of off-cloud LLM use (ChatGPT
+   * plan replies, own-key tokens and estimated spend) for the last 7 days and
+   * this month. Never throws to the caller beyond IPC failure.
+   */
+  usageSummary?: () => Promise<UsageSummary>;
+  /** 261110: the "Alert me at $N a month" notice fired (once a month). */
+  onSpendAlert?: (cb: (e: SpendAlertPush) => void) => Unsubscribe;
+  /**
+   * 261120: the spend alert main still holds because no one dismissed it yet
+   * (it may have fired while no window was open). null when none.
+   */
+  usageSpendAlertPending?: () => Promise<SpendAlertPush | null>;
+  /** 261120: the banner was dismissed or clicked; main stops replaying it. */
+  usageSpendAlertAck?: () => Promise<void>;
   /**
    * 260725 — read the server-driven pricing catalog (plan cards + top up
    * packages) from the proxy's world-readable config tables. Cached in main;
@@ -2983,7 +3339,13 @@ export interface RendererApi {
    * when this account claimed before (the renderer retires the banner either
    * way). Error codes: PROXY_NO_SESSION | PROXY_RATE_LIMITED | PROXY_NETWORK.
    */
-  feedbackSubmit: (args: { body: string; email?: string; claimReward?: boolean }) => Promise<
+  feedbackSubmit: (args: {
+    body: string;
+    email?: string;
+    claimReward?: boolean;
+    form?: 'suggest_game';
+    gameHintShown?: boolean;
+  }) => Promise<
     | { ok: true; usage_reset: boolean; already_claimed: boolean }
     | { ok: false; code: string; status?: number; reason?: string }
   >;
@@ -3009,6 +3371,13 @@ export interface RendererApi {
    * Returns the unsubscribe fn.
    */
   onCreditsHardStop: (cb: (info: CreditsHardStopEvent) => void) => Unsubscribe;
+  /**
+   * 261120: a depleted-credit wall main still holds because the modal was not
+   * closed yet (it may have hit while no window was open). null when none.
+   */
+  creditsHardStopPending?: () => Promise<CreditsHardStopEvent | null>;
+  /** 261120: the wall modal was closed (or lifted); main stops replaying it. */
+  creditsHardStopAck?: () => Promise<void>;
   /**
    * Subscribe to `proxy:kind-changed` pushes — the effective ai_backend_kind,
    * emitted by main on every persisted change and at the end of every
@@ -3095,6 +3464,12 @@ export interface RendererApi {
    * (patch-only) updates download silently and never push this.
    */
   onUpdateAvailable(cb: (info: UpdateAvailableEvent) => void): Unsubscribe;
+  /**
+   * 261031 (T277): tell main the app UI mounted (boot safety: a start counts
+   * as good a few seconds later, and held updater pushes are delivered).
+   * Optional so stubs and older bridges need not provide it.
+   */
+  rendererReady?(): void;
   /** Fires when a manual update check starts (Settings → Checking…). */
   onUpdateChecking(cb: () => void): Unsubscribe;
   /** Fires when an update check completes with no newer version (Up to date). */
@@ -3118,7 +3493,7 @@ export interface RendererApi {
   /** Manually trigger an update check (Settings "Check for updates"). */
   checkForUpdates(): Promise<void>;
   /**
-   * Switch the update channel (Settings "Advanced updates" toggle). `advanced`
+   * Switch the update channel (Settings "Experimental updates" toggle). `advanced`
    * true tracks beta (pre-releases included); false tracks stable only. The
    * renderer persists `advanced_updates` in config; this applies it to the live
    * updater and, when enabling, re-checks so a waiting beta surfaces at once.
@@ -3314,6 +3689,25 @@ export interface PeekLocalProfileResult {
    * She alone does not earn the boot offer or the Settings row (261023).
    */
   untouchedSeedIds: string[];
+  /**
+   * 261116: whether bringing the local roster over fits the signed-in
+   * account's party (MAX_COMPANION_SLOTS). Absent when signed out (no account
+   * to fit into). `incoming` counts only companions the account's party does
+   * not already hold; memory-only companions take no slot.
+   */
+  party?: LocalImportPartyFit;
+}
+
+/** 261116: the party room an own-key import needs, in the signed-in account. */
+export interface LocalImportPartyFit {
+  /** Party members the account has now. */
+  count: number;
+  /** Local companions the import would add to the party. */
+  incoming: number;
+  /** The party limit (MAX_COMPANION_SLOTS). */
+  limit: number;
+  /** count + incoming stays within the limit (or nothing new comes in). */
+  fits: boolean;
 }
 
 /** Result of importing the `local` profile into the signed-in account (260603). */
@@ -3322,6 +3716,12 @@ export interface ImportLocalProfileResult {
   failed: string[];
   /** Whether mc_username / preferred_name were copied into the account profile. */
   copiedOnboarding: boolean;
+  /**
+   * 261116: 'party_full' = nothing was imported because the companions would
+   * not fit in the account's party; everything stays in the local profile,
+   * untouched, for a later import once a slot is free.
+   */
+  skipped?: 'party_full';
 }
 
 /** Payload pushed by main when an update is detected (quick/260604-uoy). */
@@ -3534,6 +3934,8 @@ export const IpcChannel = {
     portraitVersions: 'chars:portrait-versions',
     portraitRegenerate: 'chars:portrait-regenerate',
     portraitSelect: 'chars:portrait-select',
+    // 261110 — the profile Overview's cloud facts (creator, add count, game looks).
+    overviewInfo: 'chars:overview-info',
     // Phase 11 D-16 — toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
@@ -3591,6 +3993,8 @@ export const IpcChannel = {
     save: 'config:save',
     saveApiKey: 'config:save-api-key',
     hasApiKey: 'config:has-api-key',
+    // T283: whether a profile with no name was set up before (not a new user).
+    profileState: 'config:profile-state',
   },
   // 260707 — PostHog product analytics. `track` is fire-and-forget one-way
   // (renderer → main via ipcRenderer.send); getOptOut/setOptOut are the
@@ -3789,6 +4193,14 @@ export const IpcChannel = {
     ownList: 'voice:own-list',
     /** Invoke: sample bytes for one own voice ({voiceId}) → ArrayBuffer (261019). */
     ownPreview: 'voice:own-preview',
+    /** Invoke: Voice Library voice lookup ({input}) → LibraryVoiceLookupResult (261119). */
+    libraryLookup: 'voice:library-lookup',
+    /** Invoke: add a Voice Library voice ({input}) → LibraryVoiceAddResult (261119). */
+    libraryAdd: 'voice:library-add',
+    /** Invoke: does a stored library voice still play ({voiceId}) → LibraryVoiceStatusResult (261119). */
+    libraryStatus: 'voice:library-status',
+    /** Invoke: preview clip of a looked-up library voice ({voiceId}) → ArrayBuffer (261119). */
+    libraryPreview: 'voice:library-preview',
     /** Invoke: default voice for others on an own-voice character ({characterId, ownGender?}) → {voiceId} (261019). */
     sharedDefault: 'voice:shared-default',
     /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
@@ -3799,6 +4211,16 @@ export const IpcChannel = {
     elevenKeySet: 'voice:eleven-key-set',
     /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
+    /** Invoke: store/clear the user's Fish Audio key ({key: string | null}) (261103). */
+    fishKeySet: 'voice:fish-key-set',
+    /** Invoke: is a Fish Audio key stored? → {present} (261103). */
+    fishKeyStatus: 'voice:fish-key-status',
+    /** Invoke: Fish Audio test line → FishAudioResult (261103). */
+    fishTest: 'voice:fish-test',
+    /** Invoke: set/clear a character's own Fish voice ({characterId, input}) → FishOverrideResult (261103). */
+    fishOverrideSet: 'voice:fish-override-set',
+    /** Invoke: sample line in one Fish voice ({voiceId}) → FishAudioResult (261103). */
+    fishVoicePreview: 'voice:fish-voice-preview',
   },
   /** Local speech packs + SenseVoice STT (260816, src/main/speech/). */
   speech: {
@@ -3812,6 +4234,23 @@ export const IpcChannel = {
     packState: 'speech:pack-state',
     /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
     sttTranscribe: 'speech:stt-transcribe',
+  },
+  /** Avatar library (261106): server-stored avatars, public locks, default. */
+  avatarLibrary: {
+    /** Invoke: ({characterId, sync?, fresh?}) → AvatarLibraryView. */
+    list: 'avatar-library:list',
+    /** Invoke: ({characterId, bytes, name}) → AvatarLibraryResult. */
+    addImage: 'avatar-library:add-image',
+    /** Invoke: ({characterId, zip}) → AvatarLibraryResult. */
+    addModel: 'avatar-library:add-model',
+    /** Invoke: ({characterId, avatarId, is_public?, is_default?}) → AvatarLibraryResult. */
+    setFlags: 'avatar-library:set-flags',
+    /** Invoke: ({characterId, avatarId}) → AvatarLibraryResult. */
+    remove: 'avatar-library:remove',
+    /** Invoke: ({characterId, avatarId | null}) → AvatarLibraryResult. */
+    pick: 'avatar-library:pick',
+    /** Push (main → every window): {characterId, view}. */
+    changed: 'avatar-library:changed',
   },
   avatar: {
     /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
@@ -3892,6 +4331,9 @@ export const IpcChannel = {
   app: {
     ready: 'app:ready',
     warnings: 'app:warnings',
+    // 261031 (T277): the main window's React tree mounted (send, renderer →
+    // main). The boot guard counts a start as good a few seconds after it.
+    rendererReady: 'app:renderer-ready',
     // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
     // Push (main → renderer):
     updateAvailable: 'app:update-available',       // optional update detected
@@ -3978,6 +4420,8 @@ export const IpcChannel = {
     startMinecraft: 'wizard:start-minecraft',
     // 260929: is the launcher (or a game it started) still running?
     minecraftRunning: 'wizard:minecraft-running',
+    // 261104: open the official launcher with no Sei profile (no-Java notes).
+    openLauncher: 'wizard:open-launcher',
   },
   auth: {
     state: 'auth:state',
@@ -4111,6 +4555,15 @@ export const IpcChannel = {
     changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',
     hardStop: 'credits:hard-stop',
+    hardStopPending: 'credits:hard-stop-pending',
+    hardStopAck: 'credits:hard-stop-ack',
+  },
+  // 261110 Playtime: own-key / ChatGPT-plan usage ledger (main/usage/).
+  usage: {
+    summary: 'usage:summary',
+    spendAlert: 'usage:spend-alert',
+    spendAlertPending: 'usage:spend-alert-pending',
+    spendAlertAck: 'usage:spend-alert-ack',
   },
   subscription: {
     status: 'subscription:status',
@@ -4146,6 +4599,66 @@ export const IpcChannel = {
     openPreview: 'facepack:open-preview',
     /** Push (main → every window): a FaceCue. */
     cue: 'facepack:cue',
+  },
+  // 261104 SeiLink room (src/main/seilink/): packs served over sei-room://,
+  // a RoomState per companion. See shared/seilinkPack.ts.
+  seilink: {
+    /** Invoke: SeilinkDevInfo (dev flag: unpackaged + SEI_SEILINK_PACKS). */
+    devInfo: 'seilink:dev-info',
+    /** Invoke: every usable pack → SeilinkPack[]. */
+    packs: 'seilink:packs',
+    /** Invoke: a companion's room (characterId) → SeilinkRoomPayload. */
+    roomGet: 'seilink:room-get',
+    /** Invoke: save a companion's room ({characterId, state}) → SeilinkRoomPayload (sanitized). */
+    roomSet: 'seilink:room-set',
+    /** Push (main → every window): characterId whose room was saved. */
+    roomChanged: 'seilink:room-changed',
+    /** Invoke: open the dev preview window (dev flag only) → boolean. */
+    openPreview: 'seilink:open-preview',
+    /** Invoke: she moves in (characterId) → SeilinkHostStatus. SEILINK_DISABLED while SeiLink is off. */
+    hostStart: 'seilink:host-start',
+    /** Invoke: she moves out → SeilinkHostStatus. */
+    hostStop: 'seilink:host-stop',
+    /** Invoke: → SeilinkHostStatus. */
+    hostStatus: 'seilink:host-status',
+    /** Invoke (261107): (on: boolean) → boolean. The profile's Idle lines toggle (config seilink_deafened, inverted). */
+    setIdleLines: 'seilink:set-idle-lines',
+    /** Push (main → main window): SeilinkHostStatus on every change. */
+    hostStatusChanged: 'seilink:host-status-changed',
+    /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */
+    openChat: 'seilink:open-chat',
+    /** Invoke: → SeilinkAvailability (M4: whether this install can run the host). */
+    availability: 'seilink:availability',
+    /** Push (main → main window): SeilinkAvailability after the setting changes or the profile switches. */
+    availabilityChanged: 'seilink:availability-changed',
+    /** Push (main → main window): SeilinkOpenEditor; the dock's edit button or the offer, open her room editor (261106: on the desktop when `desktop`). */
+    openRoomEditor: 'seilink:open-room-editor',
+    /** Invoke (261106): SeilinkStageRequest → SeilinkStageResult. The main window steps out over the desktop and back (desktopStage.ts). */
+    stage: 'seilink:stage',
+    /** Invoke (261106): ({characterId, via}) → whether the decorate-together offer showed (decorateOffer.ts). */
+    offer: 'seilink:offer',
+    /** Invoke: SeiLink opened for her ({characterId, trigger}) → AnimaStatus. Starts her face-set bake/download in the background. */
+    animaPrepare: 'seilink:anima-prepare',
+    /** Invoke: characterId → AnimaStatus. */
+    animaStatus: 'seilink:anima-status',
+    /** Push (main → every window): AnimaStatus when it changes. */
+    animaChanged: 'seilink:anima-changed',
+    /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
+    animaShown: 'seilink:anima-shown',
+    /** Invoke (261118): characterId → AnimaCutout | null, her cloud cut-out PNG while it matches her picture. */
+    animaCutout: 'seilink:anima-cutout',
+    /** Send (261110): a companion's voice started or stopped in this window ({characterId, speaking}); her mouth moves on the desktop. */
+    voice: 'seilink:voice',
+    /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */
+    editorSession: 'seilink:editor-session',
+    /** Send (261105, T336): the editor's unsaved room ({token, characterId, state}), debounced (decorateTogether.ts). */
+    editorSync: 'seilink:editor-sync',
+    /** Push (261105, T336): her edits and the session counters for an open editor (SeilinkEditorEvent). */
+    editorEvent: 'seilink:editor-event',
+    /** Invoke (261107): "Open on login" (OpenAtLoginState). */
+    loginItemGet: 'seilink:login-item-get',
+    /** Invoke (261107): turn it on or off ({enabled, surface: setup|settings}) -> OpenAtLoginState after the OS read-back. */
+    loginItemSet: 'seilink:login-item-set',
   },
 } as const;
 

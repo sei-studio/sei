@@ -118,8 +118,12 @@ export async function createRuntime(config, hooks) {
   let _reconnectTimer = null
   let _spawnedName = null
 
-  const fail = (message) => {
-    try { onError({ error: classifyConnectError(message), message }) } catch (cbErr) {
+  // `end` (261107): {endReason} for a live session that ended, as in the
+  // Minecraft runtime, so main can tell the player closing the game
+  // (`world_closed`, which runs the "next time" check) from a failure.
+  const fail = (message, end = null) => {
+    const extra = end?.endReason ? { endReason: end.endReason } : {}
+    try { onError({ error: classifyConnectError(message), message, ...extra }) } catch (cbErr) {
       logger.warn(`onError hook threw: ${cbErr && cbErr.message}`)
     }
   }
@@ -238,7 +242,10 @@ export async function createRuntime(config, hooks) {
         _stopped = true
         logger.info(`[sei] Stardew Valley closed or unloaded the farm (${reason}); stopping.`)
         try { onDisconnected({ reason, willRetry: false }) } catch {}
-        fail(`GAME_WORLD_NOT_OPEN: Lost the farm (${reason}). Load your farm in Stardew Valley and press Launch again.`)
+        fail(
+          `GAME_WORLD_NOT_OPEN: Lost the farm (${reason}). Load your farm in Stardew Valley and press Launch again.`,
+          { endReason: 'world_closed' },
+        )
         return
       }
       _attempts += 1

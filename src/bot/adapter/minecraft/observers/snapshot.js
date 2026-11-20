@@ -3,13 +3,17 @@
 import { vitals } from './vitals.js'
 import { world } from './world.js'
 import { facingLine } from '../facing.js'
+import { airLine } from '../behaviors/air.js'
 import { inventory, heldItem } from './inventory.js'
+import { wornArmor, offHandItem, wornCounts } from '../behaviors/armor.js'
 import { aroundFeet } from './blocks.js'
 import { surveyBlocks } from './veins.js'
-import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths } from './entities.js'
+import { nearbyEntities, droppedItemName, isDeadEntity, trackEntityDeaths, sameNameDeathAge } from './entities.js'
+import { sameNameDeathTag } from '../../../brain/promptLibrary.js'
 import { givenDropFor } from './givenDrops.js'
+import { trackItemSources, pickupSourcesSince } from './itemSources.js'
 import { HOSTILE_MOBS } from '../behaviors/hostiles.js'
-import { CRITICAL_HP } from '../behaviors/attack.js'
+import { CRITICAL_HP, attackRunState, attackInFlightSuffix } from '../behaviors/attack.js'
 import { setHandles, HANDLE_TTL_MS } from './targeting.js'
 import { getCraftableEntries } from './craftable.js'
 import { getFollowTargetLabel, getFollowStuckInfo } from '../behaviors/follow.js'
@@ -20,6 +24,8 @@ import { nextMilestone, readProgressionState, recipeNote, pickaxeLine, furnaceLi
 import { getInFlightLineForSnapshot, idleLineForSnapshot } from '../../../brain/inflight.js'
 import { tallyAggro, aggroLine, AGGRO_PAIR_RANGE } from './aggro.js'
 import { liveInventoryItems } from './liveInventory.js'
+import { lostWeaponLine } from '../behaviors/weaponSelect.js'
+import { noteSeenStations, seenStationLine } from './seenStations.js'
 
 const MAX_ENTITIES = 6
 
@@ -89,6 +95,86 @@ export function ownerHealthClause(hp) {
   return `, hp ${hp}/20${hp <= OWNER_LOW_HP ? ' (low)' : ''}`
 }
 
+// 261110 (quality pass 50): the owner's death on their snapshot line. The
+// death reaches her as a chat line, but the owner line kept the dying body's
+// stale health ("hp 16/20" a tenth of a second after the creeper killed them)
+// and, after the respawn, a fresh 20/20 with nothing saying why. combat_night
+// evals 261109: "that one's gone, i'm still right here" right after the
+// player died, "you're fine, you're at full hp" after a drowning, "eat some
+// bread" to a player whose bread lay where they died, and "you're at 0 hp,
+// not dead yet". `death` is what behaviors/chat.js recordOwnerDeath keeps
+// ({ text, at, pos, entity }); the note stays for OWNER_DEATH_NOTE_MS, so a
+// session without a death adds nothing.
+export const OWNER_DEATH_NOTE_MS = 180_000
+// Right after the death message the dying body is still the same entity and
+// its health metadata can lag; a respawn replaces the entity.
+const OWNER_DEATH_STALE_BODY_MS = 5_000
+function agoText(ms) {
+  const s = Math.round(ms / 1000)
+  if (s < 2) return 'just now'
+  if (s < 90) return `${s}s ago`
+  return `${Math.round(s / 60)} min ago`
+}
+/**
+ * The health clause of the owner line, with their recent death when there is
+ * one. Pure; exported for tests.
+ * @param {number|null} hp  ownerHealth()
+ * @param {{text?:string, at:number, pos?:{x:number,y:number,z:number}|null, entity?:any}|null|undefined} death
+ * @param {any} ownerEnt  the owner's current entity object
+ * @param {{x:number,y:number,z:number}|null} [selfPos]  her position, for the distance to their things
+ * @param {number} [nowMs]
+ */
+export function ownerStateClause(hp, death, ownerEnt, selfPos = null, nowMs = Date.now()) {
+  const age = death && Number.isFinite(death.at) ? nowMs - death.at : NaN
+  const recent = age >= 0 && age <= OWNER_DEATH_NOTE_MS ? death : null
+  if (!recent) return hp === 0 ? ', hp 0/20: dead, has not respawned yet' : ownerHealthClause(hp)
+  const cause = typeof recent.text === 'string' && recent.text ? ` (${recent.text})` : ''
+  const sameBody = ownerEnt != null && recent.entity === ownerEnt
+  if (hp === 0 || (sameBody && (hp == null || age <= OWNER_DEATH_STALE_BODY_MS))) {
+    return `: dead, died ${agoText(age)}${cause} and has not respawned yet`
+  }
+  // A distance and compass direction, not coordinates: read out in chat,
+  // coordinates sound like a bot. With the distance alone she made up a
+  // direction ("8 blocks east" for a spot to the north, pass 50 compare).
+  // "Anything they carried": the bot cannot see their inventory, and a
+  // player with nothing drops nothing ("i got your stuff" before any
+  // pickup, same compare).
+  // keepInventory worlds: a respawned player who visibly holds or wears
+  // something kept their things, so "empty inventory" would be a wrong fact.
+  // The bot cannot read gamerules; the new body's equipment is what it sees.
+  let kept = false
+  try { kept = !sameBody && Array.isArray(ownerEnt?.equipment) && ownerEnt.equipment.some(Boolean) } catch { kept = false }
+  if (kept) return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with their gear still on them, so this world keeps inventory`
+  const spot = deathSpotFromYou(recent.pos, selfPos)
+  const where = spot ? `where they died, ${spot}` : 'where they died'
+  return `${ownerHealthClause(hp)}. They died ${agoText(age)}${cause} and respawned with an empty inventory, so they have no food or weapon unless you give them some. Anything they carried dropped ${where}, unless someone has picked it up since`
+}
+
+// 261113 (pass 54): when a turn's snapshot first showed the player's death.
+// The world's death message also wakes a turn (behaviors/chat.js); when a
+// turn that already saw the death has spoken since, that second turn only
+// made her react twice ("oof alex. creeper got you" then "oof alex. you
+// alright? the creeper got you fast", combat_night-01 11-12).
+function markOwnerDeathShown(bot) {
+  const d = bot?._seiOwnerDeath
+  if (d && !Number.isFinite(d.shownAt)) d.shownAt = Date.now()
+}
+
+// "9 blocks north of you", "right around you" within 2 blocks, or null
+// without positions. 8-way compass on the x/z offset
+// (north = -z, east = +x, as in facing.js).
+const COMPASS8 = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
+export function deathSpotFromYou(pos, selfPos) {
+  const d = ownerDistanceBlocks(pos, selfPos)
+  if (d == null) return null
+  if (d <= 2) return 'right around you'
+  const dx = pos.x - selfPos.x, dz = pos.z - selfPos.z
+  if (Math.hypot(dx, dz) < 2) return `${d} blocks ${pos.y > selfPos.y ? 'above' : 'below'} you`
+  // Clockwise angle from north (-z).
+  const deg = (Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360
+  return `${d} blocks ${COMPASS8[Math.round(deg / 45) % 8]} of you`
+}
+
 // 261012: how far a hostile is from you and from the player, on its
 // `nearby entities` line. Quality eval protect_player: at the order the two
 // zombies were listed with coords only, 21 blocks from a 10 hp player, and
@@ -149,6 +235,7 @@ export function composeSnapshot(bot, opts = {}) {
   const held = heldItem(bot)
   const inv = inventory(bot)
   const survey = surveyBlocks(bot, { radius: 16, maxNames: 10 })
+  try { noteSeenStations(bot, survey.groups) } catch { /* best-effort */ }
   // requireLineOfSight (260618): list only entities the bot can actually see
   // (within ENTITY_RADIUS and not occluded by terrain/fluids — so no underground
   // or behind-wall mobs). Entities behind the bot still count; the pinned owner
@@ -159,7 +246,16 @@ export function composeSnapshot(bot, opts = {}) {
   // it's what the owner-whereabouts line reads coords from below.
   const owner = resolveOwner(bot, pinUsername ?? null, companions)
   const ownerPinName = owner?.username ?? (pinUsername ?? null)
-  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: ownerPinName, pins: companions, requireLineOfSight: true })
+  // 261106 (quality pass 44): while attackEntity runs, the mob it is on is
+  // listed even when the sight filter would hide it (a zombie in the river),
+  // and the in_flight line below gives the kills so far and the next mob the
+  // fight goes on to by itself. See
+  // attackRunState in behaviors/attack.js.
+  let fight = null
+  if (inFlight?.name === 'attackEntity') {
+    try { fight = attackRunState(bot) } catch { fight = null }
+  }
+  const ents = nearbyEntities(bot, { radius: ENTITY_RADIUS, count: MAX_ENTITIES, pin: ownerPinName, pins: companions, pinIds: fight?.targetId != null ? [fight.targetId] : [], requireLineOfSight: true })
 
   const lines = []
   // Which world this is (multi-world memory). Surfaced first so the bot anchors
@@ -174,6 +270,13 @@ export function composeSnapshot(bot, opts = {}) {
   // (the 260731 Nether bridge, which ended in a lava death). Sits directly
   // under pos: the two together are the whole coordinate frame.
   lines.push(`facing: ${facingLine(w.facing)}`)
+  // 261108 (quality pass 47): remember the facing this snapshot SHOWED, so a
+  // relative explore ("left", "forward") turns against what the model read
+  // here, not wherever the gaze has turned the head by the time it runs.
+  try {
+    const f = w.facing?.forward
+    if (f && bot) bot._seiShownFacing = { yaw: Math.atan2(-f.dx, -f.dz), at: Date.now() }
+  } catch { /* best-effort */ }
   // Light levels are 0-15; sky is exposure to open sky (does not drop at
   // night), block is torches/lava. Lets the model answer "why is it dark"
   // from data instead of arguing with the player about the time of day.
@@ -193,6 +296,13 @@ export function composeSnapshot(bot, opts = {}) {
 
   // Vitals
   lines.push(`hp: ${v.hp}/20  food: ${v.food}/20  xp: lvl ${v.xp.level}`)
+  // 261108 (quality pass 47): her air, only while it is not full or her head
+  // is under water (behaviors/air.js), so "coming up for air" is something
+  // she can see rather than guess.
+  try {
+    const air = airLine(bot)
+    if (air) lines.push(air)
+  } catch { /* best-effort */ }
   // 261019 (pass 18): the attackEntity refusal line before she tries it. In
   // the combat_night eval she called attackEntity again right after it refused
   // at low health (on another mob, or after eating and expecting the bread to
@@ -216,7 +326,8 @@ export function composeSnapshot(bot, opts = {}) {
   // preserves the em-dash + y=<currentY> channels byte-stable;
   // only the elapsed trailer changes from `(Xs)` to `started=Xs ago`.
   // 261014: the gather line reads the same item counts as the inventory line.
-  const inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv })
+  let inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv })
+  if (inFlightLine && fight) inFlightLine += attackInFlightSuffix(fight, bot, pinUsername ?? ownerPinName ?? null)
   if (inFlightLine) lines.push(inFlightLine)
   // 261012: say so when nothing runs. The absence of an in_flight line was the
   // only signal, and in the scripted-convo eval she told the player "still
@@ -244,8 +355,17 @@ export function composeSnapshot(bot, opts = {}) {
   // 261012 (pass 4a): "N of 36 slots used", not "N/36": a fraction next to
   // item counts read as a count of items.
   lines.push(`inventory (${slotsUsed} of 36 slots used): ${invStr}`)
+  // 261111: what she wears. Armor slots are not in the inventory line, so a
+  // piece she put on used to vanish from her view. Only shown when filled.
+  const wornLine = wornLineFor(bot)
+  if (wornLine) lines.push(wornLine)
   try { lines.push(pickaxeLine(inv)) } catch { /* best-effort */ }
   try { const f = furnaceLine(bot._seiFurnaceCooking); if (f) lines.push(f) } catch { /* best-effort */ }
+  // 261101 (pass 35): only while she holds raw metal or ore and no furnace is
+  // in view (seenStations.js).
+  try { const s = seenStationLine(bot, survey.groups, inv); if (s) lines.push(s) } catch { /* best-effort */ }
+  // 261031 (pass 33): only after a death took her weapon (weaponSelect).
+  try { const w = lostWeaponLine(bot); if (w) lines.push(w) } catch { /* best-effort */ }
 
   // Craftable — what the bot can make RIGHT NOW from its materials. Gated by a
   // crafting table in reach: without one only 2×2 (inventory-grid) recipes show;
@@ -325,7 +445,15 @@ export function composeSnapshot(bot, opts = {}) {
       const x = Math.round(e.position.x)
       const y = Math.round(e.position.y)
       const z = Math.round(e.position.z)
-      lines.push(`  ${tag} ${label} @${x},${y},${z}${hostileDistances(e, bot.entity, owner?.player?.entity, pinUsername)}`)
+      let dists = hostileDistances(e, bot.entity, owner?.player?.entity, pinUsername)
+      // 261111 (pass 51): a hostile that turned up after another one with
+      // its name died says so, on its own line (sameNameDeathAge).
+      const other = HOSTILE_MOBS.has(e.name) ? sameNameDeathAge(bot, e) : null
+      if (other != null) {
+        const note = sameNameDeathTag(e.name, other)
+        dists = dists ? `${dists.slice(0, -1)}; ${note})` : ` (${note})`
+      }
+      lines.push(`  ${tag} ${label} @${x},${y},${z}${dists}`)
       handles.push([tag, { kind: 'entity', entityId: e.id, expiresAt }])
     }
     if (ents.more > 0) lines.push(`  +${ents.more} more`)
@@ -391,8 +519,9 @@ export function composeSnapshot(bot, opts = {}) {
       // (otherwise it can read them as two different people).
       const liveName = owner?.username && owner.username !== pinUsername ? ` (in-game ${owner.username})` : ''
       let hpClause = ''
-      try { hpClause = ownerHealthClause(ownerHealth(bot.registry, ownerEnt)) } catch { /* leave it out */ }
+      try { hpClause = ownerStateClause(ownerHealth(bot.registry, ownerEnt), bot._seiOwnerDeath, ownerEnt, me.position) } catch { /* leave it out */ }
       lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}${hpClause}`)
+      if (/\bdied\b/.test(hpClause)) markOwnerDeathShown(bot)
       // Who the hostiles are on (260731). Only worth printing when the two of
       // us are close enough for it to be ONE fight — see AGGRO_PAIR_RANGE. Not
       // line-of-sight filtered like `nearby entities`: a zombie hitting the
@@ -410,7 +539,15 @@ export function composeSnapshot(bot, opts = {}) {
         } catch { /* an inference line never breaks a snapshot tick */ }
       }
     } else {
-      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)`)
+      // 261110 (pass 50): a dead player's body leaves view before they respawn.
+      let died = ''
+      try {
+        const d = bot._seiOwnerDeath
+        const age = d && Number.isFinite(d.at) ? Date.now() - d.at : NaN
+        if (age >= 0 && age <= OWNER_DEATH_NOTE_MS) died = ` They died ${agoText(age)}${d.text ? ` (${d.text})` : ''}.`
+      } catch { /* leave it out */ }
+      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)${died}`)
+      if (died) markOwnerDeathShown(bot)
     }
   }
 
@@ -458,6 +595,18 @@ const FALLBACK_FOODS = new Set([
   'rabbit', 'cooked_rabbit', 'cod', 'cooked_cod', 'salmon', 'cooked_salmon', 'tropical_fish', 'pufferfish',
   'rotten_flesh', 'spider_eye',
 ])
+
+/** "wearing: a b; off-hand: c", or null when she wears and holds nothing there. */
+export function wornLineFor(bot) {
+  let armor = []
+  let off = null
+  try { armor = wornArmor(bot).map((w) => w.item.name) } catch { armor = [] }
+  try { off = offHandItem(bot)?.name ?? null } catch { off = null }
+  const parts = []
+  if (armor.length) parts.push(`wearing: ${armor.join(' ')}`)
+  if (off) parts.push(`off-hand: ${off}`)
+  return parts.length ? parts.join('; ') : null
+}
 
 /** Is this item something to equip or eat (a gift worth reacting to)? */
 export function isGearOrFood(item, isFood) {
@@ -514,6 +663,29 @@ export function splitOwnInventoryChanges(deltas, actions, sinceMs, nowMs, opts =
 }
 
 /**
+ * 261113 (pass 54): the gains her pickups explain. Gains she picked up off a
+ * mob that died go to `drops` (with `from`); gains a player tossed stay in
+ * `other` with `from` set; the rest are unchanged.
+ * @param {Array<{item:string, n:number}>} changes  unexplained deltas
+ * @param {Map<string, {kind:string, name:string}>} sources  pickupSourcesSince
+ */
+export function attributePickups(changes, sources) {
+  const drops = []
+  const other = []
+  for (const d of Array.isArray(changes) ? changes : []) {
+    const from = d.n > 0 ? sources?.get?.(d.item) : null
+    if (from?.kind === 'mob') drops.push({ ...d, from })
+    else if (from?.kind === 'player') other.push({ ...d, from })
+    else other.push(d)
+  }
+  return { drops, other }
+}
+
+function joinAnd(list) {
+  return list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+}
+
+/**
  * Does this change look like the whole inventory going at once (a death the
  * composer did not see, e.g. it was created after it)? Two or more kinds lost
  * and nothing left.
@@ -540,6 +712,8 @@ export function looksLikeWholeInventoryLost(prevInv, currInv) {
  */
 export function createSnapshotComposer({ bot }) {
   trackEntityDeaths(bot)
+  // 261113 (pass 54): where her pickups came from (a mob's drops, a toss).
+  trackItemSources(bot)
   let prevInventory = null
   let prevHp = null
   let prevTickAt = null
@@ -610,15 +784,25 @@ export function createSnapshotComposer({ bot }) {
     // 261014: changes her own actions explain (a gather's logs, a craft's
     // planks) are split from the rest, so they are not read as a gift.
     const died = diedSinceTick || looksLikeWholeInventoryLost(prevInventory, currInv)
-    const { own, ownNames, other: unexplained } = splitOwnInventoryChanges(deltas, recentActions, prevTickAt, now, { died, isFood })
+    const split = splitOwnInventoryChanges(deltas, recentActions, prevTickAt, now, { died, isFood })
+    const { own, ownNames } = split
+    // 261113 (pass 54): a gain she picked up off a mob that died is hers, not
+    // a gift ("thanks for the rotten flesh lol" after her own zombie kill,
+    // combat_night 11-12). It leaves the banner for a quiet line naming the
+    // mob; a gain the player tossed carries their name. See itemSources.js.
+    const { drops, other: unexplained } = attributePickups(split.other, pickupSourcesSince(bot, prevTickAt == null ? null : prevTickAt - OWN_ACTION_SLACK_MS))
     const cap = 6
-    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}`
+    let wornNow = new Set()
+    try { wornNow = new Set(wornArmor(bot).map((w) => w.item.name)) } catch { wornNow = new Set() }
+    const fmt = (d) => `${d.n > 0 ? '+' : '-'}${Math.abs(d.n)} ${d.item}${d.from?.kind === 'player' ? ` (${d.from.name} tossed it)` : ''}${d.n > 0 && wornNow.has(d.item) ? ' (put on)' : ''}`
     const capList = (list) => {
       const out = list.map(fmt)
       return out.length > cap ? [...out.slice(0, cap), `(+${out.length - cap} more)`] : out
     }
     const invCapped = capList(unexplained)
     const ownCapped = capList(own)
+    const dropsCapped = capList(drops)
+    const dropMobs = [...new Set(drops.map((d) => d.from.name))]
 
     const other = []
     // 2. Real creature deaths near the bot (from entityDead — see above). No
@@ -633,16 +817,22 @@ export function createSnapshotComposer({ bot }) {
       other.push(`hp -${prevHp - currHp}`)
     }
 
-    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained }
+    return { inv: invCapped, own: ownCapped, ownNames, other, unexplained, drops, dropsCapped, dropMobs }
   }
 
   return {
     next(opts = {}) {
       const base = composeSnapshot(bot, { ...opts, sessionStartedAtMs })
+      // 261111: worn armor and the off hand count as hers, so putting a piece
+      // on (by hand or automatically, behaviors/armor.js) is not a loss, and a
+      // gifted helmet she put on at once still shows as a gain.
       const currInv = inventory(bot)
+      let worn = {}
+      try { worn = wornCounts(bot) } catch { worn = {} }
+      for (const [k, n] of Object.entries(worn)) currInv[k] = (currInv[k] ?? 0) + n
       const currHp = Math.round(bot.health ?? 0)
       const now = Date.now()
-      const { inv, own, ownNames, other, unexplained } = computeEvents(currInv, currHp, opts.recentActions, now)
+      const { inv, own, ownNames, other, unexplained, drops, dropsCapped, dropMobs } = computeEvents(currInv, currHp, opts.recentActions, now)
       // 261018 (pass 16): items that came in without an action of hers (a
       // gift, a pickup) go to the caller too, so the brain can write them into
       // the conversation record. The banner below is shown on this one
@@ -652,7 +842,7 @@ export function createSnapshotComposer({ bot }) {
       // knocks loose (dirt, cobblestone) also count as unexplained and filled
       // the 12 event lines that recall answers rely on (pass 16 review).
       if (typeof opts.onUnexplainedGains === 'function') {
-        const gains = unexplained.filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
+        const gains = [...unexplained, ...drops].filter((d) => d.n > 0 && isGearOrFood(d.item, isFood))
         if (gains.length > 0) { try { opts.onUnexplainedGains(gains) } catch { /* never break a snapshot */ } }
       }
 
@@ -663,7 +853,7 @@ export function createSnapshotComposer({ bot }) {
       diedSinceTick = false
       deaths = new Map()   // drain the death buffer for the next window
 
-      if (inv.length === 0 && own.length === 0 && other.length === 0) return base
+      if (inv.length === 0 && own.length === 0 && other.length === 0 && dropsCapped.length === 0) return base
       const lines = base.split('\n')
       const invIdx = () => lines.findIndex(l => l.startsWith('inventory ('))
 
@@ -678,13 +868,22 @@ export function createSnapshotComposer({ bot }) {
         else lines.unshift(ownLine)
       }
 
+      // 261113 (pass 54): what she picked up off a mob that died, quiet like
+      // her own haul.
+      if (dropsCapped.length > 0) {
+        const dropLine = `since last tick you picked up what the ${joinAnd(dropMobs)} that died dropped: ${dropsCapped.join(', ')} (already counted on the inventory line above)`
+        const i = invIdx()
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0), 0, dropLine)
+        else lines.unshift(dropLine)
+      }
+
       // Inventory changes get a LOUD, dedicated section right under the
       // inventory line — the bot reads inventory there, so a handoff / pickup /
       // drop is impossible to miss, and it knows to act on what just arrived.
       if (inv.length > 0) {
         const invLine = `*** INVENTORY JUST CHANGED ***: ${inv.join(', ')}  <- items entered or left your inventory since last tick (the player handed you something, you picked it up, or you used/dropped it). React to it: equip a new tool, eat new food, build with new blocks. If you were waiting on something you asked for, this is it arriving.`
         const i = invIdx()
-        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0), 0, invLine)
+        if (i >= 0) lines.splice(i + 1 + (own.length > 0 ? 1 : 0) + (dropsCapped.length > 0 ? 1 : 0), 0, invLine)
         else lines.unshift(invLine)
       }
 

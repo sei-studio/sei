@@ -95,9 +95,11 @@ export function DevArtShot(): React.ReactElement {
     creatorLabel: 'by anonymous',
     publicId: 'K7QX',
     portraitUrl: a.art,
+    thumbUrl: null,
     skinUrl: null,
     updatedAt: new Date().toISOString(),
     inMyLibrary: false,
+    addCount: null,
   }));
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'var(--window)', padding: 24 }}>

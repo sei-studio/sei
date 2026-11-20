@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { mcUsernameFromName } from '../bot/names.js';
+import { UI_LANGUAGES } from './uiLanguage';
 
 /**
  * 260516-0yw: persona is now an object with `source` (user's short blurb,
@@ -173,6 +174,36 @@ export function portraitActiveOf(c: Pick<Character, 'metadata'>): string | null 
 export function portraitRegenCountOf(c: Pick<Character, 'metadata'>): number {
   const raw = (c.metadata as Record<string, unknown> | undefined)?.portrait_regen_count;
   return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
+/**
+ * Where the card image showing now came from (product call 261110: no
+ * Regenerate for a picture the player put in themselves).
+ *   - 'generated': drawn by Sei. An Awakened ('unique') companion's art is
+ *     generated at creation, a built-in's art is Sei's, and a Regenerate
+ *     result is stored as a 'regen' version.
+ *   - 'uploaded': anything else. A user-made ('custom') companion only ever
+ *     gets a card image from the image picker (creation, the editor, the
+ *     card image popup), so its original and its 'upload' versions are the
+ *     player's own pictures.
+ *   - 'none': no card image.
+ * `state` is the versions read (chars:portrait-versions) when the caller has
+ * it; without it the recorded metadata decides, and an unversioned image
+ * counts by kind.
+ */
+export type CardImageOrigin = 'generated' | 'uploaded' | 'none';
+
+export function cardImageOrigin(
+  c: Pick<Character, 'kind' | 'is_default' | 'metadata' | 'portrait_image'>,
+  state?: { versions: PortraitVersion[]; active: string | null } | null,
+): CardImageOrigin {
+  const hasImage = state ? state.active !== null : !!c.portrait_image;
+  if (!hasImage) return 'none';
+  if (c.is_default || c.kind === 'unique') return 'generated';
+  const versions = state ? state.versions : portraitVersionsOf(c);
+  const active = state ? state.active : portraitActiveOf(c);
+  const entry = active ? versions.find((v) => v.file === active) : undefined;
+  return entry?.source === 'regen' ? 'generated' : 'uploaded';
 }
 
 /** Server-assigned public tag: 4 chars, A-Z / 0-9 (cloud `characters.public_id`). */
@@ -577,10 +608,11 @@ export const UserConfigSchema = z.object({
    * CHAT_LANGUAGES (src/shared/chatLanguage.ts) and CHAT_LANGUAGE_NAMES
    * (src/bot/brain/promptLibrary.js — the bot can't import this module).
    */
-  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es']).optional(),
+  chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).optional(),
   /**
-   * 260730: APP UI language. 'zh' switches every renderer surface to Chinese
-   * AND stamps characters created while it is active with
+   * 260730: APP UI language (the list is UI_LANGUAGES in uiLanguage.ts;
+   * 261104 added ja, ru, pt-BR and es, which translate the interface only).
+   * 'zh' switches every renderer surface to Chinese AND stamps characters created while it is active with
    * metadata.language 'zh', which makes their AI surfaces (persona
    * generation, chat, games, the Minecraft bot) run on Chinese prompts.
    * Distinct from chat_language above, which is the auto-detected
@@ -589,7 +621,7 @@ export const UserConfigSchema = z.object({
    * literals don't all need to spell it out — same convention as
    * chat_language.
    */
-  ui_language: z.enum(['en', 'zh']).optional(),
+  ui_language: z.enum(UI_LANGUAGES).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**
@@ -650,7 +682,8 @@ export const UserConfigSchema = z.object({
    */
   dev_console_visible: z.boolean().optional().default(false),
   /**
-   * "Advanced updates" (About). When on, this install tracks the beta channel:
+   * "Experimental updates" (About; labelled "Advanced updates" before 261103).
+   * When on, this install tracks the beta channel:
    * the updater sets `autoUpdater.allowPrerelease = true` and offers ANY newer
    * release, including GitHub pre-releases. Off (the default) tracks stable
    * only, so a normal user is NEVER moved onto a beta build. Every release ships
@@ -715,6 +748,8 @@ export const UserConfigSchema = z.object({
         always_bright: z.boolean().optional(),
         /** Which profile sub-tab (Static / Live2D) was last chosen. */
         tab: z.enum(['static', 'live2d']).optional(),
+        /** 261106: the viewer's pick from her avatar library (an avatar id), absent = the owner's default. */
+        avatar_id: z.string().max(64).optional(),
       }),
     )
     .optional(),
@@ -974,6 +1009,18 @@ export const UserConfigSchema = z.object({
   web_search_provider: z.enum(['auto', 'brave', 'tavily', 'serper', 'ddg', 'bing', 'wikipedia']).optional(),
   web_search_api_key: z.string().optional(),
   /**
+   * 261110 Playtime > My keys: "Alert me at $N a month". When on, a one-line
+   * notice shows once a calendar month after the own-key spend ESTIMATE
+   * (shared/llmUsage.ts) reaches spend_alert_usd. It only warns, never
+   * blocks. spend_alert_fired_month (`YYYY-MM`, main-owned) remembers that
+   * this month's notice already went out. All optional, no defaults.
+   */
+  spend_alert_enabled: z.boolean().optional(),
+  spend_alert_usd: z.number().positive().max(100_000).optional(),
+  spend_alert_fired_month: z.string().optional(),
+  /** 261120: the amount that month's alert fired at (main-owned); a higher amount re-arms it. */
+  spend_alert_fired_usd: z.number().optional(),
+  /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside
    * the per-character `playtime_ms`) so the total survives a character being
@@ -1071,8 +1118,82 @@ export const UserConfigSchema = z.object({
    * pool id); the local engine maps that voice's gender + the conversation
    * language to a local voice pack at synthesis time, and
    * metadata.voicePitch still applies through the pitch shifter.
+   * 261110: 'sei' = Sei's cloud voices while the brain is the ChatGPT plan
+   * (seiVoicesActive in shared/ttsEngine.ts); read only in that setup.
    */
-  tts_engine: z.enum(['elevenlabs', 'local']).optional(),
+  tts_engine: z.enum(['elevenlabs', 'local', 'sei']).optional(),
+  /**
+   * 261102: which on-device model speaks when local TTS is in use (Settings
+   * > Voice > Local voice). 'fast' = the sherpa-onnx Piper/icefall voice
+   * packs (the original local voices); 'kokoro' = Kokoro-82M, more natural
+   * but slower and a ~126 MB download. Optional and NOT defaulted: absent
+   * means 'fast', so every profile from before this key keeps its voices.
+   * Read through localTtsModel() (shared/ttsEngine.ts). A Kokoro line whose
+   * pack is missing or broken, or whose language/gender Kokoro has no voice
+   * for, is spoken with the Fast voices instead (main/voice/tts.ts).
+   * 261103: 'fish' = Fish Audio's free online model with the user's own
+   * key (main/voice/fishTts.ts); any Fish failure speaks the line with the
+   * Fast voices.
+   * (The unreleased PR #49 preview wrote `local_tts_voice` and a third
+   * tts_engine value; neither shipped, and configStore keeps the stray key
+   * as an unknown key.)
+   */
+  local_tts_model: z.enum(['fast', 'kokoro', 'fish']).optional(),
+  /**
+   * 261120: who speaks on a Sei (cloud) account, chosen in Playtime > Sei >
+   * Voice > Advanced. 'fish' = Fish Audio with the user's own key (their
+   * account pays for the audio, never Sei's); a Fish failure speaks the line
+   * with Sei's voices. Absent = 'sei'. Read through cloudVoiceProvider()
+   * (shared/ttsEngine.ts) and only on the cloud backend: tts_engine and
+   * local_tts_model never send a cloud line to Fish.
+   */
+  cloud_tts_provider: z.enum(['sei', 'fish']).optional(),
+  /**
+   * 261103: per-character Fish Audio voice picks, SPARSE like avatar_prefs: an
+   * absent character id means "automatic" (shared/fishVoices.ts maps the
+   * character's voice gender + the line's language to a curated licensed
+   * voice). Read only while local_tts_model is 'fish'. `id` is a fish.audio
+   * voice id, `name` its title when it was checked, `speed` prosody.speed
+   * (absent = FISH_OVERRIDE_DEFAULT_SPEED). A picked voice plays WITHOUT the
+   * voicePitch shift: the user chose that exact voice. Lives here and not in
+   * character.metadata (metadata cloud-syncs verbatim and is not editable on
+   * foreign or default characters). Main-owned: written only by the
+   * voice:fish-override-set IPC, after it checked the voice with the user's
+   * key. No `.default({})` on purpose.
+   */
+  fish_voice_overrides: z
+    .record(
+      z.object({
+        id: z.string().regex(/^[0-9a-f]{32}$/),
+        name: z.string().max(120),
+        speed: z.number().min(0.5).max(2).optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * 261104 — SeiLink desktop host: the companion who "moved in" (her room is
+   * the live wallpaper). Main-owned (src/main/seilink/host/seilinkHost.ts):
+   * written by start(), cleared by a user stop, read at app start and after
+   * an account switch to bring her back. Absent or null = off. Per profile,
+   * like the rest of config.json.
+   */
+  seilink_moved_in: z
+    .object({
+      character_id: z.string().uuid(),
+      moved_in_at: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .optional(),
+  // 261105 (T337): `seilink_enabled` (the Settings > Labs "Desktop room"
+  // toggle) was removed. SeiLink is available wherever the OS supports it
+  // (src/main/seilink/gate.ts). z.object strips the old key on read, so an
+  // old config is simply ignored; `seilink_moved_in` above is untouched.
+  /**
+   * 261104 (M4) — the dock's deafen button: no idle desktop lines from the
+   * companion who moved in. Main-owned (seilink/desktopLines.ts). A poke
+   * still gets a reply.
+   */
+  seilink_deafened: z.boolean().optional(),
   /**
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
@@ -1133,6 +1254,14 @@ export const UserConfigSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Config schema version (261031). Stamped by configStore on every write
+   * (CONFIG_SCHEMA_VERSION, never lowered) and read by its upgrade
+   * migrations. A file from a NEWER Sei carries a higher number, which tells
+   * an older build to keep the values it cannot read. Absent = written
+   * before versioning. Main-owned.
+   */
+  schema_version: z.number().int().min(0).optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;

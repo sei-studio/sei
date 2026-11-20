@@ -135,6 +135,6 @@
   color: var(--text-1);
   background: var(--surface-2, var(--bg-2));
   border: 1px solid var(--border);
-  border-radius: 0;
+  border-radius: var(--radius);
   padding: 2px var(--space-xs);
 }

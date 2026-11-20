@@ -89,9 +89,15 @@ export async function readPortraitWithRetry(
   }
 }
 
-/** Register the privileged scheme. MUST be called before app 'ready'. */
-export function registerPortraitScheme(): void {
+/**
+ * Register the privileged scheme. MUST be called before app 'ready'.
+ * Electron allows ONE registerSchemesAsPrivileged call per app (a second
+ * replaces the first), so other custom schemes (261104: sei-room://) ride
+ * along in `extra`.
+ */
+export function registerPortraitScheme(extra: Electron.CustomScheme[] = []): void {
   protocol.registerSchemesAsPrivileged([
+    ...extra,
     {
       scheme: PORTRAIT_SCHEME,
       // corsEnabled + the ACAO header below let the renderer fetch() portrait

@@ -78,6 +78,15 @@ describe('bootDestination', () => {
     expect(bootDestination(local, done)).toBe('signin');
     expect(bootDestination(local, { onboardedName: '', skinPending: false })).toBe('onboard');
   });
+
+  it('T283: a nameless profile that was set up before is never onboarded', () => {
+    const recovered: BootProfile = { onboardedName: '', skinPending: false, returning: true };
+    expect(bootDestination(signedIn, recovered)).toBe('home');
+    expect(bootDestination(local, recovered)).toBe('signin');
+    // returning: false is the fresh install it always was.
+    expect(bootDestination(signedIn, { ...recovered, returning: false })).toBe('onboard');
+    expect(bootDestination(local, { ...recovered, returning: false })).toBe('onboard');
+  });
 });
 
 describe('resolveBootRoute with a loaded:false snapshot (review 261029)', () => {

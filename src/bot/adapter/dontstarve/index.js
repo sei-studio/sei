@@ -33,7 +33,7 @@ export const DST_CHAT_MAX_CHARS = 160
  * @param {import('./runtime.js').Link} args.link
  * @param {object} args.config  Parsed bot config (adapter.kind === 'dontstarve').
  */
-export function createDontStarveAdapter({ link, config }) {
+export function createDontStarveAdapter({ link, config, respawning }) {
   if (!link) throw new Error('createDontStarveAdapter: link required')
   if (!config) throw new Error('createDontStarveAdapter: config required')
   const dst = config.adapter?.dontstarve ?? {}
@@ -94,6 +94,8 @@ export function createDontStarveAdapter({ link, config }) {
         playerName: config.player_username ?? null,
         hasCaps,
         darkNeedsBrain: () => !lightMeans(link.state).any,
+        state: () => link.state,
+        respawning,
       })
       // Proactive alerts (observers/alerts.js): the situations a good
       // partner notices. Only with the 0.3.0 habits: an older helper still

@@ -20,7 +20,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
-import { uiLanguage, useT } from '../lib/i18n';
+import { uiLocale, useT } from '../lib/i18n';
 import { useEmailCode } from '../lib/useEmailCode';
 import { useChatgptLogin, chatgptCodeReasonCopy } from '../lib/useChatgptLogin';
 import { Button } from './Button';
@@ -31,6 +31,7 @@ import { ContinueWithChatGPTButton } from './ContinueWithChatGPTButton';
 import { TextField } from './TextField';
 import { OAuthInterstitialModal } from './OAuthInterstitialModal';
 import styles from './SignInModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface SignInModalProps {
   /**
@@ -136,6 +137,19 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       cancelled = true;
     };
   }, []);
+  // 261103 (T303): the verdict is never cached, so the blocked body can ask again.
+  const [regionChecking, setRegionChecking] = useState(false);
+  const recheckRegion = (): void => {
+    if (regionChecking) return;
+    setRegionChecking(true);
+    sei.regionStatus().then(
+      (s) => {
+        setRegionChecking(false);
+        if (!s.blocked) setRegionBlocked(false);
+      },
+      () => setRegionChecking(false),
+    );
+  };
 
   useEffect(() => {
     // ESC closes (when not mid-submit so we don't drop a pending sign-in).
@@ -170,8 +184,8 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           // locally) rather than showing it as an inline field error.
           setRegionBlocked(true);
         } else {
-          setError(res.message);
-          setHintFor(res.code === 'invalid_credentials' ? res.message : null);
+          setError(userFacingError(res.message));
+          setHintFor(res.code === 'invalid_credentials' ? userFacingError(res.message) : null);
         }
       } else {
         // F-10 — DOB triple is required in signup mode. The submit button
@@ -210,9 +224,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           // "Use Continue with Google"), and the Google button is right below.
           setMode('signin');
           setPassword('');
-          setError(res.message);
+          setError(userFacingError(res.message));
         } else {
-          setError(res.message);
+          setError(userFacingError(res.message));
         }
       }
     } finally {
@@ -249,7 +263,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       } else {
         // rate_limited / network — surface the copy inline; the email field
         // stays filled so the user can retry.
-        setError(res.message);
+        setError(userFacingError(res.message));
       }
     } finally {
       setSubmitting(false);
@@ -271,6 +285,8 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // region, so the whole form is replaced by the blocking message and one
   // acknowledging button. The gate never touches an existing session; this
   // modal only ever fronts signup/sign-in, so blocking it whole is correct.
+  // 261103 (T303): the verdict is no longer cached, so the body can be
+  // re-checked. "Continue with ChatGPT" is a cloud account and stays off here.
   if (regionBlocked) {
     return (
       <ModalShell title={titleText} width={460} onClose={onClose}>
@@ -278,6 +294,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           {t('Our servers do not currently support your region. Please continue with local mode.')}
         </p>
         <ModalFooter>
+          <Button kind="quiet" size="md" onClick={recheckRegion} disabled={regionChecking}>
+            {t('Check again')}
+          </Button>
           <Button kind="accent" size="md" onClick={onClose}>
             {t('Got it')}
           </Button>
@@ -471,7 +490,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                     <option key={m} value={String(m)}>
                       {new Date(2000, m - 1, 1).toLocaleString(
-                        uiLanguage() === 'zh' ? 'zh-CN' : 'en-US',
+                        uiLocale(),
                         { month: 'short' },
                       )}
                     </option>

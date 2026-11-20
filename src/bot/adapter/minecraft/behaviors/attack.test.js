@@ -6,7 +6,8 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
-import { weakWeaponNote, attackEntityAction, goneResult, CRITICAL_HP, continueAttack, fightHealthNote } from './attack.js'
+import { weakWeaponNote, attackEntityAction, goneResult, CRITICAL_HP, continueAttack, fightHealthNote, attackRunState, attackInFlightSuffix, withAttackRunState } from './attack.js'
+import { DEFEND_ADDENDUM } from '../../../brain/promptLibrary.js'
 
 function makeBot({ held = null, items = [] } = {}) {
   return {
@@ -360,5 +361,92 @@ describe('attackEntity says what the fight cost her (261022)', () => {
     bot.entities[7] = { id: 7, type: 'player', username: 'Alex', position: new Vec3(1, 64, 0), height: 1.8 }
     const r = await attackEntityAction({ entity_id: 7, times: 1 }, bot, {})
     expect(r).not.toMatch(/in this fight/)
+  })
+})
+
+// 261106 (quality pass 44): what a turn sees while attackEntity runs. In the
+// combat_night eval the mob the attack was on stood in the river (hidden by
+// the sight filter), and she told the player "zombies are down" and called
+// goTo, which ended the fight.
+describe('the running attack, as the turn sees it (261106)', () => {
+  const running = { name: 'attackEntity', input: { entity: 'zombie', times: 8 } }
+  const again = (input) => ({ name: 'attackEntity', input })
+  // Two zombies: 7 in reach of her, 9 by the player. She and Alex stand close.
+  const twoZombies = () => {
+    const bot = fightBot()
+    bot.entities[9] = { id: 9, name: 'zombie', type: 'hostile', position: new Vec3(3.5, 64, 1), height: 1.95 }
+    bot._seiOwnerNames = ['alex']
+    bot.players = { Alex: { entity: { username: 'Alex', position: new Vec3(3, 64, 0) } } }
+    bot.nearestEntity = (match) => Object.values(bot.entities)
+      .filter((e) => match(e))
+      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0] ?? null
+    return bot
+  }
+  // Run the attack and call `probe` between the first two swings.
+  async function midFight(bot, probe, times = 2) {
+    let out
+    bot.attack.mockImplementationOnce(() => setTimeout(() => { out = probe() }, 50))
+    await attackEntityAction({ entity_id: 7, times }, bot, {})
+    return out
+  }
+
+  it('is null with no attack running', () => {
+    expect(attackRunState(fightBot())).toBeNull()
+    expect(attackInFlightSuffix(null, fightBot(), 'Alex')).toBe('')
+  })
+
+  it('says where the fight goes on to next', async () => {
+    const bot = twoZombies()
+    const out = await midFight(bot, () => {
+      const st = attackRunState(bot)
+      return { st, text: attackInFlightSuffix(st, bot, 'Alex') }
+    })
+    expect(out.st.targetId).toBe(7)
+    expect(out.st.next?.id).toBe(9)
+    expect(out.text).toBe(', after this kill it goes on by itself to the zombie 1 block from Alex.')
+    // Over once the action returns.
+    expect(attackRunState(bot)).toBeNull()
+  })
+
+  it('counts the kills so far and drops the next-target sentence when there is none', async () => {
+    const bot = fightBot()
+    const out = await midFight(bot, () => {
+      bot._seiAttackRun.ctx.tagged.add(5)
+      bot._seiAttackRun.ctx.deadIds.add(5)
+      return attackInFlightSuffix(attackRunState(bot), bot, 'Alex')
+    })
+    expect(out).toBe(', 1 killed so far.')
+  })
+
+  it('a repeat call by name for another mob of the same kind keeps the fight in reach going', async () => {
+    const bot = twoZombies()
+    const reply = await midFight(bot, () => continueAttack(bot, running, again({ entity: 'zombie', times: 1 })))
+    expect(reply).toMatch(/^your attackEntity is already swinging at a zombie next to you \(1 swing so far\), so it keeps going with up to 1 more instead of switching, and after this kill it goes on by itself to the next one near Alex\./)
+    expect(reply).toMatch(/call attackEntity with its # handle/)
+  })
+
+  it('a # handle, an id or another kind still switches', async () => {
+    const bot = twoZombies()
+    const seen = await midFight(bot, () => [
+      continueAttack(bot, running, again({ entity_id: 9 })),
+      continueAttack(bot, running, again({ entity: 'skeleton' })),
+    ])
+    expect(seen).toEqual([null, null])
+  })
+
+  it('the defend turn on the mob the attack is on reads as handled, and says it goes on to the next', async () => {
+    const bot = twoZombies()
+    const data = { attackerKind: 'defend', attacker: bot.entities[7], attackerLabel: 'zombie', ownerLabel: 'Alex', distance: 1, engaged: true, othersOnOwner: 1, ownerHp: 17 }
+    const out = await midFight(bot, () => withAttackRunState(bot, 'sei:attacked', data))
+    expect(out.actionOnIt).toBe(true)
+    expect(out.runGoesOn).toBe(true)
+    const text = DEFEND_ADDENDUM('zombie', out)
+    expect(text).toMatch(/the mob your attackEntity is already going after/)
+    expect(text).toMatch(/After this kill it goes on by itself to the next one near them\.$/)
+    expect(text).not.toMatch(/nothing is swinging at/)
+    // Another mob, a threat, or no attack: unchanged.
+    const other = { ...data, attacker: bot.entities[9] }
+    expect(withAttackRunState(bot, 'sei:attacked', other)).toBe(other)
+    expect(withAttackRunState(bot, 'sei:attacked', data)).toBe(data)
   })
 })

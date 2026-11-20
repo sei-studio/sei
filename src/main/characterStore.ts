@@ -29,6 +29,7 @@ import { deletePortraitFiles } from './portraitFiles';
 import { expandPersona, fetchServerExpansionSystem, type ExpansionProgress } from './personaExpansion';
 import { characterLanguage } from '../shared/chatLanguage';
 import { loadApiKey, getAiBackendKind } from './apiKeyStore';
+import { noteCharacterSaved } from './characterSignals';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 
@@ -155,6 +156,21 @@ export async function listCharacters(): Promise<Character[]> {
   return out;
 }
 
+/**
+ * Keys a pre-260516 character file can carry. listCharacters DELETES a
+ * "legacy shape" file, so the check must not match a file written by a NEWER
+ * Sei that reshaped `persona` (261031, T277: running an older build after a
+ * downgrade must never destroy data). A file with any key outside this set
+ * and the current schema, or with a version stamp, is only skipped.
+ */
+const LEGACY_CHARACTER_KEYS = new Set(['persona_prompt', 'description', 'traits', 'voice', 'style']);
+const CHARACTER_KEYS = new Set(Object.keys(CharacterSchema.shape));
+
+function looksLikePreSchemaFile(obj: Record<string, unknown>): boolean {
+  if (obj.schema_version !== undefined) return false;
+  return Object.keys(obj).every((k) => CHARACTER_KEYS.has(k) || LEGACY_CHARACTER_KEYS.has(k));
+}
+
 export async function getCharacter(id: string): Promise<Character | null> {
   const data = await readJson<unknown>(paths.characterPath(id));
   if (!data) return null;
@@ -166,7 +182,7 @@ export async function getCharacter(id: string): Promise<Character | null> {
       typeof obj.persona_prompt !== 'undefined' ||
       (typeof obj.description !== 'undefined' && typeof obj.persona === 'undefined');
     const hasNew = obj.persona && typeof obj.persona === 'object';
-    if (hasLegacy && !hasNew) {
+    if (hasLegacy && !hasNew && looksLikePreSchemaFile(obj)) {
       throw new Error(
         `character ${id} has legacy shape (persona_prompt/description); delete characters/${id}.json or re-create via the GUI`,
       );
@@ -239,6 +255,7 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
     idx.order.push(validated.id);
     await writeIndex(idx);
   }
+  noteCharacterSaved(validated.id);
 }
 
 // 260705: unlocked write core shared by saveCharacterRaw and patchCharacter —
@@ -280,6 +297,7 @@ export async function patchCharacter(
     return validated;
   });
   if (!patched) return null;
+  noteCharacterSaved(id);
   // An existing character already has its memory dir and index entry (created
   // by the original saveCharacter), so only the cloud mirror follows the write.
   enqueueCloudMirror(patched);
@@ -299,7 +317,12 @@ export async function patchCharacter(
  * IPC handler surfaces the thrown message to the renderer for display.
  */
 export async function expandAndSaveCharacter(
-  input: { character: Character; onProgress?: (p: ExpansionProgress) => void },
+  input: {
+    character: Character;
+    onProgress?: (p: ExpansionProgress) => void;
+    /** false = expand and return, write nothing (the profile Regenerate, 261120). */
+    persist?: boolean;
+  },
 ): Promise<Character> {
   const { character, onProgress } = input;
   const validated = CharacterSchema.parse(character);
@@ -389,7 +412,7 @@ export async function expandAndSaveCharacter(
       expanded,
     },
   };
-  await saveCharacter(merged);
+  if (input.persist !== false) await saveCharacter(merged);
   return merged;
 }
 
@@ -543,6 +566,10 @@ export async function deleteCharacter(id: string): Promise<void> {
   await rm(paths.knowledgeDir(id), { recursive: true, force: true });
   // Remove avatar dir (260804; same reasoning as knowledge)
   await rm(paths.avatarsDir(id), { recursive: true, force: true });
+  // Remove her SeiLink room (261104)
+  await rm(paths.seilinkRoomPath(id), { force: true });
+  // 261104 SeiLink M4: if she moved in, she moves out (and the move-in is cleared).
+  void import('./seilink/host/seilinkHost').then((m) => m.onSeilinkCharacterRemoved(id)).catch(() => {});
 
   // Remove from index
   const idx = await loadIndex();
@@ -581,6 +608,8 @@ export async function deleteCharacter(id: string): Promise<void> {
             // Same path used in both buckets — the cron iterates both per
             // storage_purge_extend's `bucket_id in ('skins','portraits')`.
             `${owner}/${id}.png`,
+            // 261111: the World grid thumbnail the proxy made at publish.
+            `${owner}/${id}.thumb.webp`,
           ]);
         } catch (err) {
           console.warn(`[sei] deletion_queue insert failed for ${id}: ${(err as Error).message}`);
@@ -594,6 +623,7 @@ export async function deleteCharacter(id: string): Promise<void> {
         await enqueueDelete(id, [
           { bucket: 'skins',     name: `${owner}/${id}.png` },
           { bucket: 'portraits', name: `${owner}/${id}.png` },
+          { bucket: 'portraits', name: `${owner}/${id}.thumb.webp` },
         ]);
         void processNext();
       } catch (err) {

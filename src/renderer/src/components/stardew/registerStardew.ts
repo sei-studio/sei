@@ -45,6 +45,10 @@ BOT_ERROR_ROUTES.stardew = {
   ...BOT_ERROR_ROUTES.stardew,
   STARDEW_FARMHAND_NO_MOD: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
   SMAPI_INSTALL_FAILED: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
+  SMAPI_NETWORK_FAILED: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
+  SMAPI_PERMISSION_DENIED: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
+  SMAPI_GAME_RUNNING: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
+  SMAPI_ANTIVIRUS_SUSPECTED: (s, game) => ({ kind: 'game-error', game, characterId: s.characterId, error: s.error, message: s.message }),
 };
 
 registerGameSettingsSection({ game: 'stardew', title: 'Stardew Valley', Section: StardewSettingsSection });

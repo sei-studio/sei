@@ -22,12 +22,14 @@ import { useLangStore } from '../../lib/i18n';
 import { applyTheme, clampThemeMode } from '../../lib/theme';
 import { MicAccessCardBody } from './MicAccessCard';
 import { ShareScreenModal } from '../backseat/ShareScreenModal';
+import { isUiLanguage } from '@shared/uiLanguage';
 
 const CHAR = 'perms-char';
 
 function seed(): void {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('lang') === 'zh') useLangStore.getState().setLang('zh');
+  const shotLang = params.get('lang');
+  if (isUiLanguage(shotLang)) useLangStore.getState().setLang(shotLang);
   applyTheme(clampThemeMode(params.get('theme') ?? 'system'));
   useDataStore.setState((s) => ({
     characters: [

@@ -1,0 +1,601 @@
+{
+  "format": "sei-room",
+  "version": 1,
+  "id": "cozy",
+  "place": "your bedroom",
+  "canvas": [2560, 1440],
+  "avatar": {
+    "x": 1300,
+    "y": 1440,
+    "height": 720
+  },
+  "slots": {
+    "view": {
+      "z": 0,
+      "options": [
+        "view_city",
+        "view_forest",
+        "view_sea",
+        "view_neon",
+        "view_blank"
+      ]
+    },
+    "shell": {
+      "z": 10,
+      "options": [
+        "cozy_room",
+        "blank_room"
+      ]
+    },
+    "rug": {
+      "z": 20,
+      "options": [
+        "round_rug"
+      ],
+      "optional": true
+    },
+    "curtains": {
+      "z": 30,
+      "options": [
+        "linen_curtains"
+      ],
+      "optional": true
+    },
+    "shelf": {
+      "z": 40,
+      "options": [
+        "floating_shelves"
+      ],
+      "optional": true
+    },
+    "bed": {
+      "z": 50,
+      "options": [
+        "wooden_bed"
+      ],
+      "optional": true
+    },
+    "lamp": {
+      "z": 60,
+      "options": [
+        "green_floor_lamp"
+      ],
+      "optional": true
+    },
+    "chair": {
+      "z": 90,
+      "options": [
+        "velvet_armchair",
+        "plain_armchair"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "view_city",
+      "slot": "view",
+      "name": "city skyline",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/city_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/city_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/city_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_forest",
+      "slot": "view",
+      "name": "forest valley",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/forest_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/forest_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/forest_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_sea",
+      "slot": "view",
+      "name": "seaside town",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/sea_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/sea_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/sea_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_neon",
+      "slot": "view",
+      "name": "neon city",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/neon_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/neon_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/neon_night.webp"
+        }
+      }
+    },
+    {
+      "id": "view_blank",
+      "slot": "view",
+      "name": "plain grey sky",
+      "box": [1341, 16, 1219, 1292],
+      "fit": "cover",
+      "focus": [0.5, 0.5],
+      "frames": {
+        "day": {
+          "src": "_shared/views/blank_day.webp"
+        },
+        "dusk": {
+          "src": "_shared/views/blank_dusk.webp"
+        },
+        "night": {
+          "src": "_shared/views/blank_night.webp"
+        }
+      }
+    },
+    {
+      "id": "cozy_room",
+      "slot": "shell",
+      "name": "walls",
+      "tintable": true,
+      "defaultTint": "#B5C2A0",
+      "accentSwatches": ["#f3ede2", "#d9cdb9", "#c2cfae", "#c79a7e", "#9fae8c", "#8f7f6d", "#5f7257"],
+      "swatches": ["#b5c2a0", "#efe8dc", "#ecd9a0", "#e8c2b4", "#cbbda6", "#b6c8d0", "#c9b4c8", "#7a8b6c"],
+      "frames": {
+        "day": {
+          "src": "shell_day.webp",
+          "mask": "shell_mask.webp"
+        },
+        "dusk": {
+          "src": "shell_dusk.webp",
+          "mask": "shell_mask.webp"
+        },
+        "night": {
+          "src": "shell_night.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_glow_night.webp"
+        }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [465, 145], [465, 1115], [0, 1214]],
+          "size": [481, 970]
+        },
+        {
+          "quad": [[465, 145], [2560, -180], [2560, 1341], [465, 1115]],
+          "size": [1809, 970],
+          "uv": [481, 0]
+        }
+      ]
+    },
+    {
+      "id": "blank_room",
+      "slot": "shell",
+      "name": "bare white walls",
+      "tintable": true,
+      "defaultTint": "#FFFFFF",
+      "accentSwatches": ["#f3ede2", "#d9cdb9", "#c2cfae", "#c79a7e", "#9fae8c", "#8f7f6d", "#5f7257"],
+      "swatches": ["#ffffff", "#b5c2a0", "#efe8dc", "#ecd9a0", "#e8c2b4", "#cbbda6", "#b6c8d0", "#c9b4c8"],
+      "frames": {
+        "day": {
+          "src": "shell_blank_day.webp",
+          "mask": "shell_mask.webp"
+        },
+        "dusk": {
+          "src": "shell_blank_dusk.webp",
+          "mask": "shell_mask.webp"
+        },
+        "night": {
+          "src": "shell_blank_night.webp",
+          "mask": "shell_mask.webp",
+          "glow": "shell_blank_glow_night.webp"
+        }
+      },
+      "patternSurface": "walls",
+      "patternQuads": [
+        {
+          "quad": [[0, 0], [465, 145], [465, 1115], [0, 1214]],
+          "size": [481, 970]
+        },
+        {
+          "quad": [[465, 145], [2560, -180], [2560, 1341], [465, 1115]],
+          "size": [1809, 970],
+          "uv": [481, 0]
+        }
+      ]
+    },
+    {
+      "id": "round_rug",
+      "slot": "rug",
+      "name": "round rug",
+      "tintable": true,
+      "defaultTint": "#EAE3D6",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#eae3d6", "#d6c09a", "#e0a99e", "#b9c3a1", "#c89b52", "#b5694d", "#667f9c", "#5a4639"],
+      "frames": {
+        "day": {
+          "src": "rug_day.webp",
+          "mask": "rug_mask.webp"
+        },
+        "dusk": {
+          "src": "rug_dusk.webp",
+          "mask": "rug_mask.webp"
+        },
+        "night": {
+          "src": "rug_night.webp",
+          "mask": "rug_mask.webp"
+        }
+      },
+      "patternSurface": "rugs",
+      "patternQuads": [
+        {
+          "quad": [[1654, 1289], [2272, 1361], [2261, 1534], [1501, 1421]],
+          "size": [390, 313],
+          "uv": [1254, 128]
+        }
+      ]
+    },
+    {
+      "id": "linen_curtains",
+      "slot": "curtains",
+      "name": "curtains",
+      "tintable": true,
+      "defaultTint": "#ECE6DA",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#ece6da", "#dccbb0", "#e0b4a8", "#d6aa55", "#c27a5c", "#7487a3", "#7f875c", "#3d4a68"],
+      "frames": {
+        "day": {
+          "src": "curtains_day.webp",
+          "mask": "curtains_mask.webp"
+        },
+        "dusk": {
+          "src": "curtains_dusk.webp",
+          "mask": "curtains_mask.webp"
+        },
+        "night": {
+          "src": "curtains_night.webp",
+          "mask": "curtains_mask.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[2168, 1280], [2560, 1280], [2560, 1420], [2500, 1401], [2400, 1406], [2300, 1394], [2250, 1364], [2200, 1374], [2168, 1366]]
+        ],
+        "wall": [
+          [[1085, 40], [1470, 40], [1470, 800], [1085, 800]],
+          [[2165, 0], [2560, 0], [2560, 1420], [2165, 1420]]
+        ]
+      },
+      "patternSurface": "curtains",
+      "patternQuads": [
+        {
+          "quad": [[1100, 74], [1458, 20], [1458, 814], [1100, 806]],
+          "size": [326, 625],
+          "uv": [733, 23]
+        },
+        {
+          "quad": [[2159, -7], [2577, -63], [2577, 1440], [2159, 1388]],
+          "size": [247, 956],
+          "uv": [1572, 77]
+        }
+      ]
+    },
+    {
+      "id": "floating_shelves",
+      "slot": "shelf",
+      "name": "wall shelves",
+      "frames": {
+        "day": {
+          "src": "shelf_day.webp"
+        },
+        "dusk": {
+          "src": "shelf_dusk.webp"
+        },
+        "night": {
+          "src": "shelf_night.webp"
+        }
+      },
+      "blocks": {
+        "wall": [
+          [[0, 227], [530, 322], [530, 354], [0, 277]],
+          [[0, 408], [530, 466], [530, 496], [0, 451]],
+          [[0, 588], [530, 609], [530, 639], [0, 626]]
+        ]
+      },
+      "surfaceTops": [
+        {
+          "area": [[25, 229], [526, 329], [526, 349], [25, 254]],
+          "lip": [[0, 232.5], [1.5, 231.5], [4.5, 231.5], [5.5, 230.5], [10.5, 230.5], [11.5, 229.5], [17.5, 229.5], [18.5, 228.5], [25, 228.5], [25, 251.4], [29.5, 251.6], [46.5, 255.1], [87.5, 262.4], [121.5, 269.3], [177.5, 279.5], [200.5, 284.3], [203.5, 284.5], [251.5, 293.3], [286.5, 300.3], [331.5, 308.6], [364.5, 315.3], [387.5, 319.3], [512.5, 343.2], [515.5, 343.5], [522.5, 345.3], [528, 345.8], [528, 348.7], [500.5, 351], [474.5, 354.3], [462.5, 354.7], [458.5, 354.2], [447.5, 352], [439.5, 351], [438.5, 350.5], [409.5, 345], [367.5, 337.6], [361.5, 337], [356.5, 335.6], [326.5, 330.2], [279.5, 322], [277.5, 322], [240.5, 315], [192.5, 307], [158.5, 300], [138.5, 297.1], [114.5, 292.6], [108.5, 292], [107.5, 291.4], [86.5, 288], [72.5, 285.1], [47.5, 281], [30.5, 277.6], [24.5, 277], [21.5, 276], [19.5, 276], [6.5, 273.4], [0, 272.8]]
+        },
+        {
+          "area": [[25, 412], [526, 472], [526, 492], [25, 437]],
+          "lip": [[0, 413.5], [3.5, 413.5], [4.5, 412.5], [13.5, 412.5], [14.5, 411.5], [25, 411.5], [25, 433.7], [119.5, 443.5], [166.5, 449.1], [346.5, 469.1], [482.5, 484.1], [528, 488.7], [528, 491.4], [526.5, 492.2], [525.5, 491.4], [513.5, 491.7], [472.5, 495], [462.5, 495], [460.5, 494], [451.5, 493], [385.5, 487], [384.5, 486.6], [376.5, 486], [269.5, 474], [249.5, 472], [245.5, 472], [239.5, 471], [207.5, 468], [183.5, 465.1], [101.5, 457], [100.5, 456.5], [92.5, 456], [91.5, 455.6], [41.5, 450.1], [0, 446.3]]
+        },
+        {
+          "area": [[25, 594], [526, 615], [526, 635], [25, 619]],
+          "lip": [[0, 593.5], [25, 593.5], [25, 614.9], [163.5, 619.4], [176.5, 620.2], [256.5, 622.5], [292.5, 624], [375.5, 626.1], [448.5, 628.5], [460.5, 629.3], [528, 631.3], [528, 633.6], [468.5, 634], [467.5, 635], [461.5, 635], [460.5, 634.6], [431.5, 634], [411.5, 633], [309.5, 630], [259.5, 628], [0, 621]]
+        }
+      ]
+    },
+    {
+      "id": "wooden_bed",
+      "slot": "bed",
+      "name": "bed",
+      "tintable": true,
+      "defaultTint": "#F3EEE4",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#f3eee4", "#e3d5bc", "#e6bab0", "#b3c3d4", "#b9c4a5", "#d8b062", "#c4805f", "#465372"],
+      "frames": {
+        "day": {
+          "src": "bed_day.webp",
+          "mask": "bed_mask.webp"
+        },
+        "dusk": {
+          "src": "bed_dusk.webp",
+          "mask": "bed_mask.webp"
+        },
+        "night": {
+          "src": "bed_night.webp",
+          "mask": "bed_mask.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[0, 1080], [895, 1080], [895, 1208], [834, 1208], [834, 1148], [800, 1155], [700, 1182], [600, 1211], [500, 1241], [400, 1271], [300, 1306], [200, 1330], [96, 1360], [96, 1480], [0, 1480]]
+        ],
+        "wall": [
+          [[0, 970], [200, 956], [300, 934], [400, 884], [446, 820], [892, 826], [897, 1214], [0, 1260]]
+        ]
+      },
+      "surfaceTops": [
+        {
+          "area": [[230, 985], [700, 975], [748, 1022], [480, 1024], [240, 1030]],
+          "sink": 8
+        }
+      ],
+      "patternSurface": "bedding",
+      "patternQuads": [
+        {
+          "quad": [[-300, 985], [430, 960], [850, 995], [-300, 1075]],
+          "size": [940, 582]
+        },
+        {
+          "quad": [[-300, 1075], [850, 995], [850, 1110], [-300, 1560]],
+          "size": [940, 150],
+          "uv": [0, 582]
+        },
+        {
+          "quad": [[431, 857], [855, 873], [821, 995], [392, 966]],
+          "size": [582, 128]
+        }
+      ]
+    },
+    {
+      "id": "green_floor_lamp",
+      "slot": "lamp",
+      "name": "green glass floor lamp",
+      "frames": {
+        "day": {
+          "src": "lamp_day.webp"
+        },
+        "dusk": {
+          "src": "lamp_dusk.webp",
+          "glow": "lamp_glow_dusk.webp"
+        },
+        "night": {
+          "src": "lamp_night.webp",
+          "glow": "lamp_glow_night.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[834, 1140], [915, 1140], [915, 1262], [834, 1262]]
+        ],
+        "wall": [
+          [[770, 460], [946, 460], [946, 1135], [910, 1262], [834, 1262], [834, 655], [770, 655]]
+        ]
+      }
+    },
+    {
+      "id": "velvet_armchair",
+      "slot": "chair",
+      "name": "green velvet armchair",
+      "frames": {
+        "day": {
+          "src": "chair_day.webp"
+        },
+        "dusk": {
+          "src": "chair_dusk.webp"
+        },
+        "night": {
+          "src": "chair_night.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[878, 1140], [1724, 1140], [1724, 1200], [1706, 1250], [1664, 1300], [1658, 1350], [1654, 1480], [953, 1480], [949, 1350], [943, 1300], [901, 1250], [878, 1200]]
+        ],
+        "wall": [
+          [[876, 1150], [948, 1100], [998, 1076], [1046, 772], [1300, 762], [1556, 772], [1604, 1076], [1652, 1100], [1726, 1160], [1726, 1260], [1656, 1440], [948, 1440]]
+        ]
+      }
+    },
+    {
+      "id": "plain_armchair",
+      "slot": "chair",
+      "name": "plain grey armchair",
+      "frames": {
+        "day": {
+          "src": "chair_plain_day.webp"
+        },
+        "dusk": {
+          "src": "chair_plain_dusk.webp"
+        },
+        "night": {
+          "src": "chair_plain_night.webp"
+        }
+      },
+      "blocks": {
+        "floor": [
+          [[878, 1140], [1724, 1140], [1724, 1200], [1706, 1250], [1664, 1300], [1658, 1350], [1654, 1480], [953, 1480], [949, 1350], [943, 1300], [901, 1250], [878, 1200]]
+        ],
+        "wall": [
+          [[876, 1150], [948, 1100], [998, 1076], [1046, 772], [1300, 762], [1556, 772], [1604, 1076], [1652, 1100], [1726, 1160], [1726, 1260], [1656, 1440], [948, 1440]]
+        ]
+      }
+    },
+    {
+      "id": "desk_lamp",
+      "slot": "item",
+      "name": "green banker's lamp",
+      "placement": "surface",
+      "box": [153, 449, 274, 175],
+      "frames": {
+        "day": {
+          "src": "item_desk_lamp_day.webp"
+        },
+        "dusk": {
+          "src": "item_desk_lamp_dusk.webp",
+          "glow": "item_desk_lamp_glow_dusk.webp"
+        },
+        "night": {
+          "src": "item_desk_lamp_night.webp",
+          "glow": "item_desk_lamp_glow_night.webp"
+        }
+      },
+      "foot": 9
+    },
+    {
+      "id": "books",
+      "slot": "item",
+      "name": "stack of books",
+      "placement": "surface",
+      "box": [527, 891, 166, 127],
+      "frames": {
+        "day": {
+          "src": "item_books_day.webp"
+        },
+        "dusk": {
+          "src": "item_books_dusk.webp"
+        },
+        "night": {
+          "src": "item_books_night.webp"
+        }
+      },
+      "foot": 14
+    },
+    {
+      "id": "succulent",
+      "slot": "item",
+      "name": "little succulent",
+      "placement": "surface",
+      "box": [346, 368, 88, 103],
+      "frames": {
+        "day": {
+          "src": "item_succulent_day.webp"
+        },
+        "dusk": {
+          "src": "item_succulent_dusk.webp"
+        },
+        "night": {
+          "src": "item_succulent_night.webp"
+        }
+      },
+      "foot": 6
+    },
+    {
+      "id": "monstera",
+      "slot": "item",
+      "name": "potted monstera plant",
+      "placement": "floor",
+      "box": [1767, 881, 416, 583],
+      "frames": {
+        "day": {
+          "src": "item_monstera_day.webp"
+        },
+        "dusk": {
+          "src": "item_monstera_dusk.webp"
+        },
+        "night": {
+          "src": "item_monstera_night.webp"
+        }
+      },
+      "foot": 36
+    },
+    {
+      "id": "cushion",
+      "slot": "item",
+      "name": "floor cushion",
+      "placement": "floor",
+      "box": [2052, 1236, 346, 228],
+      "frames": {
+        "day": {
+          "src": "item_cushion_day.webp",
+          "mask": "item_cushion_mask.webp"
+        },
+        "dusk": {
+          "src": "item_cushion_dusk.webp",
+          "mask": "item_cushion_mask.webp"
+        },
+        "night": {
+          "src": "item_cushion_night.webp",
+          "mask": "item_cushion_mask.webp"
+        }
+      },
+      "tintable": true,
+      "defaultTint": "#E3A9A6",
+      "accentSwatches": ["#f5efe3", "#dccbb0", "#d9a79b", "#d2a24a", "#9aa984", "#b8664a", "#4a5a7a"],
+      "swatches": ["#e3a9a6", "#f0e7d8", "#e8cf8f", "#adbd94", "#c97a58", "#7a8fab", "#82586c", "#5f7457"],
+      "foot": 30,
+      "patternSurface": "cushions"
+    }
+  ],
+  "overlay": {
+    "day": "#FFF7EC",
+    "dusk": "#F6DCE4",
+    "night": "#25304F"
+  },
+  "horizon": 705,
+  "floorAreas": [
+    [[0, 1246], [465, 1146], [1300, 1240], [2560, 1390], [2560, 1470], [0, 1470]]
+  ],
+  "wallAreas": [
+    [[0, 18], [463, 150], [463, 1114], [0, 1214]],
+    [[467, 150], [1298, 16], [1298, 1203], [467, 1114]],
+    [[2476, 0], [2560, 0], [2560, 1342], [2476, 1334]]
+  ]
+}

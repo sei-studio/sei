@@ -29,7 +29,9 @@ import {
   sanitizeEntryPath,
   buildSafePathMap,
   setAvatarAccessory,
+  setAvatarLibraryLink,
   parseRigSpec,
+  zipStoredAvatar,
   MANIFEST_VERSION,
 } from './avatarStore';
 
@@ -37,6 +39,34 @@ const REAL_ZIP = '/Users/ouen/Downloads/_雪熊企划_雪熊少女.zip';
 const REAL_RIG_ZIP = '/Users/ouen/slop/sei-studio/chibi-rig/chibi-rig-avatar.zip';
 
 let dir: string;
+
+/**
+ * A PNG header the store accepts (signature, IHDR w x h, optional acTL, IEND;
+ * CRCs are not checked), tagged with `n` after IEND so files differ.
+ */
+function pngOf(w: number, h: number, o: { actl?: boolean } = {}, ...n: number[]): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length, 0);
+    return Buffer.concat([len, Buffer.from(type, 'latin1'), data, Buffer.alloc(4)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    ...(o.actl ? [chunk('acTL', Buffer.from([0, 0, 0, 2, 0, 0, 0, 0]))] : []),
+    chunk('IEND', Buffer.alloc(0)),
+    Buffer.from(n),
+  ]);
+}
+/** A small static PNG (the store only keeps PNG/JPEG/WebP images), tagged with `n`. */
+const png = (...n: number[]): Buffer => pngOf(2, 2, {}, ...n);
+/** A baseline JPEG header (SOI, APP0, SOF0 2x2). */
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, 0xc0, 0, 11, 8, 0, 2, 0, 2, 1, 1, 0x11, 0]);
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'sei-avatar-'));
@@ -69,7 +99,7 @@ async function syntheticZip(opts?: {
   };
   zip.file('mymodel/model.model3.json', JSON.stringify(settings));
   zip.file('mymodel/model.moc3', Buffer.from([1, 2, 3]));
-  zip.file('mymodel/tex/texture_00.png', Buffer.from([4, 5, 6]));
+  zip.file('mymodel/tex/texture_00.png', png(4, 5, 6));
   zip.file('mymodel/declared.exp3.json', JSON.stringify({ Type: 'Live2D Expression' }));
   zip.file('mymodel/生气.exp3.json', JSON.stringify({ Type: 'Live2D Expression' }));
   zip.file('mymodel/__MACOSX/._junk', Buffer.from([0]));
@@ -228,7 +258,7 @@ describe('importAvatarZip (synthetic)', () => {
     await writeP(path.join(storeDir, '雪熊少女.model3.json'), JSON.stringify(settings));
     await writeP(path.join(storeDir, '雪熊少女.moc3'), Buffer.from([1]));
     await mkdirP(path.join(storeDir, '雪熊少女.4096'), { recursive: true });
-    await writeP(path.join(storeDir, '雪熊少女.4096', 'texture_00.png'), Buffer.from([2]));
+    await writeP(path.join(storeDir, '雪熊少女.4096', 'texture_00.png'), png(2));
     await writeP(path.join(storeDir, '8 生气.exp3.json'), JSON.stringify({ Type: 'Live2D Expression' }));
     await writeP(
       path.join(storeDir, 'manifest.json'),
@@ -410,10 +440,10 @@ describe('importAvatarZip (rig)', () => {
         ],
       }),
     );
-    zip.file('back.png', Buffer.from([1]));
-    zip.file('body.png', Buffer.from([2]));
-    zip.file('eyes_open.png', Buffer.from([3]));
-    if (!opts?.dropImage) zip.file('eyes closed 图.png', Buffer.from([4]));
+    zip.file('back.png', png(1));
+    zip.file('body.png', png(2));
+    zip.file('eyes_open.png', png(3));
+    if (!opts?.dropImage) zip.file('eyes closed 图.png', png(4));
     return zip.generateAsync({ type: 'nodebuffer' });
   }
 
@@ -472,4 +502,152 @@ describe.skipIf(!existsSync(REAL_RIG_ZIP))('importAvatarZip (real chibi-rig zip)
       }
     }
   }, 30_000);
+});
+
+/**
+ * Rewrite the declared uncompressed size of `name` in both its local header
+ * and its central directory entry (what a hand-made zip bomb does).
+ */
+function forgeSize(zip: Buffer, name: string, size: number): Buffer {
+  const out = Buffer.from(zip);
+  const n = Buffer.from(name);
+  for (let i = 0; i + 46 <= out.length; i++) {
+    const sig = out.readUInt32LE(i);
+    if (sig === 0x04034b50 && out.readUInt16LE(i + 26) === n.length && out.subarray(i + 30, i + 30 + n.length).equals(n)) {
+      out.writeUInt32LE(size, i + 22);
+    }
+    if (sig === 0x02014b50 && out.readUInt16LE(i + 28) === n.length && out.subarray(i + 46, i + 46 + n.length).equals(n)) {
+      out.writeUInt32LE(size, i + 24);
+    }
+  }
+  return out;
+}
+
+describe('importAvatarZip limits and image rules (261106)', () => {
+  async function model(extra: Record<string, Buffer | string> = {}, textures = ['t.png']): Promise<JSZip> {
+    const zip = new JSZip();
+    zip.file('m.model3.json', JSON.stringify({ FileReferences: { Moc: 'm.moc3', Textures: textures } }));
+    zip.file('m.moc3', Buffer.from([1]));
+    zip.file('t.png', png(1));
+    for (const [k, v] of Object.entries(extra)) zip.file(k, v);
+    return zip;
+  }
+
+  it('stops inflating an entry that expands past its declared size (zip bomb)', async () => {
+    const zip = await model({ 'pad.bin': Buffer.alloc(4 * 1024 * 1024) });
+    const honest = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    expect(honest.byteLength).toBeLessThan(64 * 1024);
+    const bomb = forgeSize(honest, 'pad.bin', 1000);
+    await expect(importAvatarZip('bomb', bomb)).rejects.toThrow(/declared size/);
+    expect(await getAvatarManifest('bomb')).toBeNull();
+    // an entry that inflates to fewer bytes than it declares is refused too
+    // (JSZip's own end-of-entry size check may answer first; either way it is refused)
+    await expect(importAvatarZip('short', forgeSize(honest, 'pad.bin', 4 * 1024 * 1024 + 7))).rejects.toThrow(/declared size|size mismatch/);
+  });
+
+  it('refuses declared sizes over the per-file or total cap before inflating anything', async () => {
+    const zip = await model({ 'a.bin': 'x', 'b.bin': 'y', 'c.bin': 'z', 'd.bin': 'w', 'e.bin': 'v' });
+    const raw = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    await expect(importAvatarZip('big1', forgeSize(raw, 'a.bin', 65 * 1024 * 1024))).rejects.toThrow(/too large/);
+    let many = raw;
+    for (const n of ['a.bin', 'b.bin', 'c.bin', 'd.bin', 'e.bin']) many = forgeSize(many, n, 60 * 1024 * 1024);
+    await expect(importAvatarZip('big2', many)).rejects.toThrow(/expands too large/);
+  });
+
+  it('every texture must be a PNG, JPEG or WebP', async () => {
+    const notImage = await (await model({ 'tex.dat': 'not an image' }, ['tex.dat'])).generateAsync({ type: 'nodebuffer' });
+    await expect(importAvatarZip('tex1', notImage)).rejects.toThrow(/not a PNG, JPEG or WebP/);
+    const gif = await (await model({ 'anim.png': Buffer.from('GIF89a\x01\x00\x01\x00') }, ['anim.png'])).generateAsync({ type: 'nodebuffer' });
+    await expect(importAvatarZip('tex2', gif)).rejects.toThrow(/texture/);
+    const jpeg = await (await model({ 'j.jpg': JPEG }, ['t.png', 'j.jpg'])).generateAsync({ type: 'nodebuffer' });
+    expect((await importAvatarZip('tex3', jpeg)).entry).toBe('m.model3.json');
+    const notList = new JSZip();
+    notList.file('m.model3.json', JSON.stringify({ FileReferences: { Moc: 'm.moc3', Textures: 't.png' } }));
+    notList.file('m.moc3', Buffer.from([1]));
+    notList.file('t.png', png(1));
+    await expect(importAvatarZip('tex4', await notList.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow(/Textures/);
+  });
+
+  it('every rig layer src and state must be a PNG, JPEG or WebP', async () => {
+    const zip = new JSZip();
+    zip.file('rig.json', JSON.stringify({ canvas: [10, 10], layers: [{ id: 'a', z: 0, src: 'a.bin' }] }));
+    zip.file('a.bin', 'nope');
+    await expect(importAvatarZip('rig-bad', await zip.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow(/not a PNG, JPEG or WebP/);
+  });
+
+  it('leaves out images the library cannot moderate, so the stored model always uploads', async () => {
+    const zip = await model({
+      'preview.gif': Buffer.from('GIF89a\x01\x00\x01\x00'),
+      'broken.png': 'not really',
+      'hidden.bin': Buffer.from('GIF89a\x02\x00'),
+      'notes.txt': 'kept',
+    });
+    await importAvatarZip('drop', await zip.generateAsync({ type: 'nodebuffer' }));
+    const stored = new Set((await readAvatarModelFiles('drop')).map((f) => f.path));
+    expect(stored.has('preview.gif') || stored.has('broken.png') || stored.has('hidden.bin')).toBe(false);
+    expect(stored.has('notes.txt')).toBe(true);
+    // the stable zip only holds what is stored
+    const back = await JSZip.loadAsync((await zipStoredAvatar('drop'))!);
+    expect(Object.keys(back.files).some((n) => /preview\.gif|broken\.png|hidden\.bin/.test(n))).toBe(false);
+  });
+
+  // Image rules on import (261106): what the library proxy refuses never gets stored.
+  it('refuses a model whose texture is an APNG or larger than 8192 px, keeping any previous store', async () => {
+    await importAvatarZip('anim', await syntheticZip());
+    const apng = await (await model({ 'a.png': pngOf(4, 4, { actl: true }) }, ['a.png'])).generateAsync({ type: 'nodebuffer' });
+    await expect(importAvatarZip('anim', apng)).rejects.toThrow(/animated/);
+    const huge = await (await model({ 'h.png': pngOf(8193, 16) }, ['h.png'])).generateAsync({ type: 'nodebuffer' });
+    await expect(importAvatarZip('anim', huge)).rejects.toThrow(/larger than 8192 px/);
+    expect((await getAvatarManifest('anim'))?.entry).toBeTruthy();
+    const edge = await (await model({ 'e.png': pngOf(8192, 16) }, ['e.png'])).generateAsync({ type: 'nodebuffer' });
+    expect((await importAvatarZip('edge', edge)).entry).toBe('m.model3.json');
+  });
+
+  it('refuses an animated rig layer and drops unreferenced animated or oversized images', async () => {
+    const rig = new JSZip();
+    rig.file('rig.json', JSON.stringify({ canvas: [10, 10], layers: [{ id: 'a', z: 0, src: 'a.png' }] }));
+    rig.file('a.png', pngOf(10, 10, { actl: true }));
+    await expect(importAvatarZip('rig-anim', await rig.generateAsync({ type: 'nodebuffer' }))).rejects.toThrow(/animated/);
+
+    const zip = await model({ 'spare.png': pngOf(4, 4, { actl: true }), 'poster.png': pngOf(9000, 9000), 'ok.png': pngOf(3, 3) });
+    await importAvatarZip('drop-anim', await zip.generateAsync({ type: 'nodebuffer' }));
+    const stored = new Set((await readAvatarModelFiles('drop-anim')).map((f) => f.path));
+    expect(stored.has('spare.png') || stored.has('poster.png')).toBe(false);
+    expect(stored.has('ok.png')).toBe(true);
+  });
+});
+
+describe('setAvatarLibraryLink (261106)', () => {
+  it('links and unlinks the stored model', async () => {
+    await importAvatarZip('link', await syntheticZip());
+    const m = await setAvatarLibraryLink('link', { avatarId: 'a', rev: 'r1' });
+    expect(m?.library).toEqual({ avatarId: 'a', rev: 'r1' });
+    expect((await getAvatarManifest('link'))?.library).toEqual({ avatarId: 'a', rev: 'r1' });
+    expect((await setAvatarLibraryLink('link', null))?.library).toBeUndefined();
+    expect(await setAvatarLibraryLink('none', { avatarId: 'a', rev: 'r1' })).toBeNull();
+  });
+
+  it('reads the manifest inside the lock: a removal queued first is never undone', async () => {
+    await importAvatarZip('race', await syntheticZip());
+    const removal = removeAvatar('race');
+    const link = setAvatarLibraryLink('race', { avatarId: 'a', rev: 'r1' });
+    await removal;
+    expect(await link).toBeNull();
+    expect(await getAvatarManifest('race')).toBeNull();
+  });
+
+  it('an import that lands first is not overwritten with the old manifest', async () => {
+    await importAvatarZip('race2', await syntheticZip());
+    const other = new JSZip();
+    other.file('rig.json', JSON.stringify({ name: 'second', canvas: [10, 10], layers: [{ id: 'a', z: 0, src: 'a.png' }] }));
+    other.file('a.png', png(9));
+    const bytes = await other.generateAsync({ type: 'nodebuffer' });
+    const imp = importAvatarZip('race2', bytes);
+    await new Promise((r) => setTimeout(r, 0));
+    const link = setAvatarLibraryLink('race2', { avatarId: 'a', rev: 'r1' });
+    await Promise.all([imp, link]);
+    const m = await getAvatarManifest('race2');
+    expect(m?.kind).toBe('rig');
+    expect(m?.name).toBe('second');
+  });
 });

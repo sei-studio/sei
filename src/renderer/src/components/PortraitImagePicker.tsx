@@ -1,6 +1,6 @@
 /**
- * PortraitImagePicker — image-upload control used by EditCharacterModal and
- * AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
+ * PortraitImagePicker — image-upload control used by the card image popup
+ * (PortraitVersionsModal), Settings and AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
  * the image as a base64 data URL — instead it:
  *
  *   1. Loads the picked file into an HTMLImageElement
@@ -23,7 +23,9 @@ import { portraitSrc } from '../lib/portraitSrc';
 import { t as tBare, useT } from '../lib/i18n';
 import { PortraitCropModal } from './PortraitCropModal';
 import { UserIcon } from './icons';
+import { Button } from './Button';
 import avatarStyles from './PortraitImagePicker.module.css';
+import { userFacingError } from '../lib/errors';
 
 /** D-28 size budget (mirrors PORTRAIT_MAX_BYTES in src/main/portraitImageUtil.ts). */
 const MAX_BYTES = 500 * 1024;
@@ -52,8 +54,10 @@ export interface PortraitImagePickerProps {
    * Presentation. 'default' = square preview + Upload/Change/Remove buttons.
    * 'avatar' = a circular preview that reveals a "Change" overlay on hover and
    * opens the picker on click (the user's profile picture in Settings).
+   * 'buttons' = Upload/Change + Remove only, fill-only buttons, no preview
+   * (the profile's card image popup, 261107, which shows the image itself).
    */
-  variant?: 'default' | 'avatar';
+  variant?: 'default' | 'avatar' | 'buttons';
 }
 
 export function PortraitImagePicker({
@@ -109,7 +113,7 @@ export function PortraitImagePicker({
       cropUrlRef.current = objectUrl;
       setCropImg(img);
     } catch (err) {
-      setError((err as Error).message ?? t('Could not open that image.'));
+      setError(userFacingError(err, t('Could not open that image.')));
     }
   };
 
@@ -133,7 +137,7 @@ export function PortraitImagePicker({
       setBust((b) => b + 1);
       onChange(ref);
     } catch (err) {
-      setError(prettifyError((err as Error).message ?? t('Failed to apply portrait.')));
+      setError(prettifyError(userFacingError(err, t('Failed to apply portrait.'))));
     } finally {
       setBusy(false);
       closeCrop();
@@ -149,7 +153,7 @@ export function PortraitImagePicker({
       else await sei.charsRemovePortrait(characterId as string);
       onChange(null);
     } catch (err) {
-      setError((err as Error).message ?? t('Failed to remove portrait.'));
+      setError(userFacingError(err, t('Failed to remove portrait.')));
     } finally {
       setBusy(false);
     }
@@ -200,6 +204,35 @@ export function PortraitImagePicker({
     );
   }
 
+  if (variant === 'buttons') {
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-control)', flexWrap: 'wrap' }}>
+          {hiddenInput}
+          <Button kind="secondary" size="sm" disabled={busy} onClick={onPick}>
+            {busy ? t('Working…') : value ? t('Upload a new image') : t('Upload')}
+          </Button>
+          {value ? (
+            <Button kind="dangerSoft" size="sm" disabled={busy} onClick={() => void onRemove()}>
+              {t('Remove')}
+            </Button>
+          ) : null}
+          {error ? (
+            <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>{error}</span>
+          ) : null}
+        </div>
+        {cropImg ? (
+          <PortraitCropModal
+            image={cropImg}
+            busy={busy}
+            onCancel={closeCrop}
+            onConfirm={(canvas) => void onCropConfirm(canvas)}
+          />
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -212,7 +245,7 @@ export function PortraitImagePicker({
             height: 56,
             objectFit: 'cover',
             border: '1px solid var(--border)',
-            borderRadius: 4,
+            borderRadius: 'var(--radius)',
           }}
         />
       ) : (
@@ -224,7 +257,7 @@ export function PortraitImagePicker({
             alignItems: 'center',
             justifyContent: 'center',
             border: '1px dashed var(--border)',
-            borderRadius: 4,
+            borderRadius: 'var(--radius)',
             color: 'var(--muted)',
             fontSize: 11,
             fontFamily: 'var(--mono)',
@@ -240,41 +273,15 @@ export function PortraitImagePicker({
         onChange={(e) => void onFile(e)}
         style={{ display: 'none' }}
       />
-      <button
-        type="button"
-        onClick={onPick}
-        disabled={busy}
-        style={{
-          fontFamily: 'inherit',
-          fontSize: 13,
-          padding: '6px 12px',
-          border: '1px solid var(--border)',
-          background: 'transparent',
-          color: 'var(--text)',
-          cursor: busy ? 'wait' : 'pointer',
-          opacity: busy ? 0.6 : 1,
-        }}
-      >
+      {/* The shared Button, like BackgroundImagePicker (261103): these two
+          were hand-rolled with a fainter border than every other secondary. */}
+      <Button kind="ghost" size="sm" disabled={busy} onClick={onPick}>
         {busy ? t('Working…') : value ? t('Change') : t('Upload')}
-      </button>
+      </Button>
       {value ? (
-        <button
-          type="button"
-          onClick={() => void onRemove()}
-          disabled={busy}
-          style={{
-            fontFamily: 'inherit',
-            fontSize: 13,
-            padding: '6px 12px',
-            border: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--red)',
-            cursor: busy ? 'wait' : 'pointer',
-            opacity: busy ? 0.6 : 1,
-          }}
-        >
+        <Button kind="danger" size="sm" disabled={busy} onClick={() => void onRemove()}>
           {t('Remove')}
-        </button>
+        </Button>
       ) : null}
       {error ? (
         <span style={{ color: 'var(--red)', fontSize: 12, fontFamily: 'var(--mono)' }}>

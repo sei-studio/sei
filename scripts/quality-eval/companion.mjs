@@ -259,11 +259,12 @@ function qeProbe(msg) {
   const inv = {}
   try { for (const it of b?.inventory?.items?.() ?? []) inv[it.name] = (inv[it.name] || 0) + it.count } catch {}
   const p = b?.entity?.position
-  emit({ kind: 'qe_probe', id: msg.id ?? null, pos: p ? { x: p.x, y: p.y, z: p.z } : null, hp: b?.health ?? null, food: b?.food ?? null, held: b?.heldItem?.name ?? null, inv })
+  emit({ kind: 'qe_probe', id: msg.id ?? null, pos: p ? { x: p.x, y: p.y, z: p.z } : null, hp: b?.health ?? null, food: b?.food ?? null, oxy: b?.oxygenLevel ?? null, yaw: b?.entity?.yaw ?? null, held: b?.heldItem?.name ?? null, inv })
 }
 
 // ── direct mode: actions called by the orchestrator ────────────────────
 let directAdapter = null
+let qeComposer = null
 const qeRunning = new Map()
 async function qeExec(msg) {
   const id = msg.id
@@ -273,13 +274,21 @@ async function qeExec(msg) {
   const t0 = Date.now()
   emit({ kind: 'action_call', name: msg.name, args: msg.args ?? {} })
   let result = null, error = null
+  let shown = null
+  if (msg.snap) {
+    try {
+      qeComposer ??= directAdapter.createSnapshotComposer?.() ?? null
+      const snap = qeComposer?.next?.() ?? ''
+      shown = String(snap).split('\n').find((l) => l.startsWith('facing:')) ?? null
+    } catch (e) { shown = `snapshot failed: ${e?.message}` }
+  }
   try {
     result = await directAdapter.executeAction(msg.name, msg.args ?? {}, { signal: ac.signal })
   } catch (e) { error = String(e?.message || e) }
   qeRunning.delete(id)
   const text = error ? `error: ${error}` : (typeof result === 'string' ? result : JSON.stringify(result))
   emit({ kind: 'action_result', action: msg.name, result: String(text).slice(0, 600) })
-  emit({ kind: 'qe_result', id, result: String(text).slice(0, 600), error, aborted: ac.signal.aborted, ms: Date.now() - t0 })
+  emit({ kind: 'qe_result', id, result: String(text).slice(0, 600), error, aborted: ac.signal.aborted, ms: Date.now() - t0, ...(shown ? { shown } : {}) })
 }
 
 async function startDirect() {

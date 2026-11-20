@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CharacterSchema, UserConfigSchema, cloudAvatarOf, effectiveMcUsername } from './characterSchema';
+import { CharacterSchema, UserConfigSchema, cardImageOrigin, cloudAvatarOf, effectiveMcUsername } from './characterSchema';
 
 /**
  * Plan 11-03 Task 1 — Schema contract tests for the UUID identity model,
@@ -190,5 +190,37 @@ describe('effectiveMcUsername — accented names fold, never drop (261027)', () 
     expect(effectiveMcUsername({ username: null, name: '诗诗' })).toBe('Sei');
     expect(effectiveMcUsername({ username: null, name: 'Йордан' })).toBe('Sei');
     expect(effectiveMcUsername({ username: null, name: '민지 (Min-ji)' })).toBe('Minji');
+  });
+});
+
+describe('cardImageOrigin (product call 261110: no Regenerate for an uploaded image)', () => {
+  const base = { kind: 'custom' as const, is_default: false, metadata: {}, portrait_image: 'c.png' };
+  const v = (file: string, source: 'original' | 'regen' | 'upload') => ({ file, created_at: '2026-11-10T00:00:00Z', source });
+
+  it('a custom companion picture is uploaded, unversioned or not', () => {
+    expect(cardImageOrigin(base)).toBe('uploaded');
+    expect(cardImageOrigin(base, { versions: [v('c.png', 'original')], active: 'c.png' })).toBe('uploaded');
+    expect(cardImageOrigin(base, { versions: [v('c-v1.png', 'upload')], active: 'c-v1.png' })).toBe('uploaded');
+  });
+
+  it('a Regenerate result is generated, and only while it is the one showing', () => {
+    const versions = [v('c-v1.png', 'original'), v('c-v2.png', 'regen')];
+    expect(cardImageOrigin(base, { versions, active: 'c-v2.png' })).toBe('generated');
+    expect(cardImageOrigin(base, { versions, active: 'c-v1.png' })).toBe('uploaded');
+    // From the recorded metadata when there is no versions read.
+    const meta = { portrait_versions: versions, portrait_active: 'c-v2.png' };
+    expect(cardImageOrigin({ ...base, metadata: meta })).toBe('generated');
+  });
+
+  it('Awakened and built-in art is generated', () => {
+    expect(cardImageOrigin({ ...base, kind: 'unique' }, { versions: [v('c-v1.png', 'upload')], active: 'c-v1.png' })).toBe(
+      'generated',
+    );
+    expect(cardImageOrigin({ ...base, is_default: true })).toBe('generated');
+  });
+
+  it('no card image is none', () => {
+    expect(cardImageOrigin({ ...base, portrait_image: null })).toBe('none');
+    expect(cardImageOrigin(base, { versions: [], active: null })).toBe('none');
   });
 });

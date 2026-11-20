@@ -55,6 +55,7 @@ describe('survival drowning narration rate limit', () => {
     }
     expect(emits).toHaveLength(1)
     expect(emits[0].kind).toBe('drowning')
+    expect(emits[0].air).toBe(5) // 261109 (pass 48): the air left rides along
 
     vi.setSystemTime(Date.now() + 30_000)
     bot._headWet = true

@@ -25,6 +25,8 @@ export interface AvatarViewProps {
   camera?: AvatarCamera | null;
   className?: string;
   onStatus?: (status: 'loading' | 'ready' | 'error') => void;
+  /** Frame cap passed to the view (261104, SeiLink): absent = default, 0 = paused. */
+  fps?: number;
 }
 
 export function AvatarView(props: AvatarViewProps): React.ReactElement | null {

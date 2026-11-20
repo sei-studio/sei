@@ -26,8 +26,11 @@ import {
   type PortraitRegenResult,
   type SkinGenResult,
   type PortraitVersionsState,
+  type CharacterOverviewInfo,
   type PrefsGetResult,
   type BrowseEntry,
+  type BrowsePage,
+  BROWSE_SORTS,
   type CreditsStatus,
   type SubscriptionStatusInfo,
   type CreditsHardStopEvent,
@@ -39,8 +42,11 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
+import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
+import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
+import type { FishAudioResult, FishOverrideResult } from '../shared/fishVoices';
 import { CharacterSchema, UserConfigSchema, UserPreferencesSchema, MAX_COMPANION_SLOTS, type Character, type UserConfig } from '../shared/characterSchema';
 import { SHOWN_PROVIDERS, GRANDFATHERED_PROVIDERS, type ProviderKind } from '../shared/llmCatalog';
 import { loadConfig } from './configStore';
@@ -65,12 +71,34 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import {
+  REPLY_LATENCY_EVENT,
+  recordReplyLatency,
+  sanitizeRendererReplyLatency,
+  startChatReplyClock,
+  type ChatReplyClock,
+} from './replyLatency';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
+import {
+  ackPendingHardStop,
+  ackPendingSpendAlert,
+  capNoticeHardStop,
+  capNoticeSpendAlert,
+  peekPendingHardStop,
+  peekPendingSpendAlert,
+} from './capNotices';
 import { observeOnboardingEvent } from './onboardingFunnel';
+import { getLanDiagnosis } from './lanSources';
+import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
+import { GAME_SETUP_EVENT } from '../shared/setupTelemetry';
+import { isSeilinkRendererEvent, sanitizeSeilinkTrack } from '../shared/seilinkTelemetry';
+import { isSeilinkIntroEvent, sanitizeSeilinkIntroTrack } from '../shared/seilinkIntroTelemetry';
+import { isSeilinkSetupEvent, sanitizeSeilinkSetupTrack } from '../shared/seilinkSetupTelemetry';
 import { registerPermissionHandlers } from './permissions/permissionsService';
 import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
+import { noteSeilinkAvatarChanged } from './seilink/host/hostSignals';
 
 // ── Moderation kill-switch ─────────────────────────────────────────────────
 // When false, publishing a shared character SKIPS the image/prompt moderation
@@ -486,6 +514,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   async function runModerationGate(
     characterId: string,
   ): Promise<import('./cloud/moderationGate').PublishResult> {
+    const result = await runModerationGateInner(characterId);
+    // 261111: a published character gets its World grid thumbnail made by the
+    // proxy from the stored (now clean) portrait. Fire-and-forget; the grid
+    // falls back to the full portrait until it exists.
+    if (result.ok) {
+      void import('./cloud/portraitThumb')
+        .then((m) => m.requestPortraitThumb(characterId))
+        .catch(() => {});
+    }
+    return result;
+  }
+
+  async function runModerationGateInner(
+    characterId: string,
+  ): Promise<import('./cloud/moderationGate').PublishResult> {
     const { isCloudWriteAllowed } = await import('./auth/authState');
     if (!(await isCloudWriteAllowed())) {
       return {
@@ -795,6 +838,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
 
+    // 261120 `expandOnly`: run the persona expansion and return the expanded
+    // character WITHOUT writing it. The profile Regenerate uses it so the
+    // write happens afterwards on the row as it is THEN (the renderer's
+    // character save queue re-reads it and applies only the persona fields):
+    // a whole-row write at the end of a ~30 s expansion reverted any edit
+    // saved meanwhile. No write means no create, quota, owner or moderation
+    // step here; the renderer's follow-up save runs those as usual.
+    if (
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { expandOnly?: unknown }).expandOnly === true
+    ) {
+      const requestId = (optsArg as { expansionRequestId?: unknown }).expansionRequestId;
+      return await expandAndSaveCharacter({
+        character: parsedCharacter,
+        persist: false,
+        onProgress:
+          typeof requestId === 'string'
+            ? (p: { fraction: number; section: string }): void =>
+                deps.sendExpansionProgress({ requestId, ...p })
+            : undefined,
+      });
+    }
+
     // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
     // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
     // character are always allowed (they don't add a slot). Defaults are never
@@ -952,6 +1019,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         return removed ? { ...cfg, added_default_ids: added } : cfg;
       });
       if (removed) void (await import('./cloud/librarySync')).syncLibraryRoster('default-removed');
+      // 261104 SeiLink M4: a removed default that had moved in moves out.
+      if (removed) void (await import('./seilink/host/seilinkHost')).onSeilinkCharacterRemoved(id);
       return;
     }
     await deleteCharacter(id);
@@ -1113,6 +1182,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary avatar dir ${id}: ${(err as Error).message}`);
     }
+    try {
+      await rm(paths.seilinkRoomPath(id), { force: true });
+    } catch (err) {
+      console.warn(`[sei] removeFromLibrary seilink room ${id}: ${(err as Error).message}`);
+    }
     // Drop from the character index so chars.list doesn't re-surface it.
     try {
       const { readFile, writeFile, mkdir } = await import('node:fs/promises');
@@ -1131,6 +1205,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } catch (err) {
       console.warn(`[sei] removeFromLibrary index for ${id}: ${(err as Error).message}`);
     }
+    // 261104 SeiLink M4: if she moved in, she moves out.
+    void import('./seilink/host/seilinkHost').then((m) => m.onSeilinkCharacterRemoved(id)).catch(() => {});
   });
   ipcMain.handle(IpcChannel.chars.resetMemory, async (_event, idArg: unknown): Promise<void> => {
     const id = IdSchema.parse(idArg);
@@ -1256,6 +1332,34 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { getPortraitVersions } = await import('./portraitStore');
     return await getPortraitVersions(id);
   });
+  // 261110 — the profile Overview's cloud facts. Never throws past parsing.
+  ipcMain.handle(IpcChannel.chars.overviewInfo, async (_event, idArg: unknown): Promise<CharacterOverviewInfo> => {
+    const id = z.string().uuid().parse(idArg);
+    const { characterOverviewInfo } = await import('./cloud/characterOverview');
+    const { getProfileNames } = await import('./cloud/cloudCharacterClient');
+    const { fetchAddCounts } = await import('./cloud/browseQuery');
+    const { getCurrentAuthState } = await import('./auth/authState');
+    const { getClient } = await import('./auth/supabaseClient');
+    const { previewVoiceIdFor } = await import('./voice/voiceAssign');
+    const { isPoolVoiceId } = await import('../shared/poolVoiceIds');
+    const { NO_VOICE_ID } = await import('../shared/voiceIds');
+    const { SHOW_ADD_COUNTS } = await import('../shared/addCounts');
+    return await characterOverviewInfo(id, {
+      getCharacter,
+      currentUserId: () => {
+        const auth = getCurrentAuthState();
+        return auth.kind === 'signed_in' ? auth.user.id : null;
+      },
+      profileNames: getProfileNames,
+      // Nothing shows the count while it is hidden, so it is not read.
+      addCounts: SHOW_ADD_COUNTS ? (ids) => fetchAddCounts(getClient(), ids) : null,
+      sampleVoiceId: (c) => {
+        if (c.metadata?.voiceId === NO_VOICE_ID) return null;
+        const voice = previewVoiceIdFor(c);
+        return isPoolVoiceId(voice) ? voice : null;
+      },
+    });
+  });
   ipcMain.handle(IpcChannel.chars.portraitSelect, async (_event, argsRaw: unknown): Promise<PortraitVersionsState> => {
     const args = z.object({
       characterId: z.string().uuid(),
@@ -1323,6 +1427,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
+    // 261106 reply_latency: the player's wait starts when the send arrives
+    // (the world-detection pass below is part of it). replyLatency.ts.
+    const sentAt = Date.now();
     const args = z
       .object({
         characterId: IdSchema,
@@ -1334,6 +1441,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           .optional(),
         // Multi-companion voice (260706): names of the other companions on the call.
         voicePeers: z.array(z.string()).optional(),
+        // 261112: the voice line cut the companion off mid-line (bargeCut.ts).
+        interrupted: z.object({ line: z.string().max(CHAT_TEXT_MAX).catch('') }).optional(),
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
@@ -1383,14 +1492,25 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // event — chess and Draw! have already declined, and a mid-call line is
     // covered by voice_call_ended — so counting here can never double-bill
     // playtime. See chat/chatSession.ts for the session model.
+    // 261106: same choke point for reply_latency (surface chat): a mid-call
+    // line is timed by the renderer's voice clock instead.
+    let replyClock: ChatReplyClock | null = null;
     if (!inCall) {
       const { noteChatMessage } = await import('./chat/chatSession');
-      noteChatMessage(args.characterId);
+      const turn = noteChatMessage(args.characterId);
+      if (turn > 0) replyClock = startChatReplyClock({ turn, startedAt: sentAt });
     }
-    return await sendChatMessage(
+    const turnPromise = sendChatMessage(
       // voiceCall (260705): while a call is open the reply is spoken aloud, so
       // the prompt leads with the voice-call primer (spoken register).
-      { characterId: args.characterId, text: args.text, replyTo: args.replyTo, voiceCall: inCall, voicePeers: args.voicePeers },
+      {
+        characterId: args.characterId,
+        text: args.text,
+        replyTo: args.replyTo,
+        voiceCall: inCall,
+        voicePeers: args.voicePeers,
+        interrupted: args.interrupted,
+      },
       {
         getLanState: deps.getLanState,
         getWorldStates: deps.getWorldStates,
@@ -1412,9 +1532,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // the instant it completes, so TTS starts on sentence 1.
         // `speech` carries the sentence's place in its reply, which is what
         // TTS conditions the clip's opening and closing contour on (260729).
-        emitReply: (id, message, speech) => deps.pushChatMessage?.(id, message, speech),
+        // 261106: a pushed companion line (the early line before a web
+        // lookup) is the first thing the player sees, so it stops the clock.
+        emitReply: (id, message, speech) => {
+          if (message.role === 'companion') replyClock?.replied();
+          deps.pushChatMessage?.(id, message, speech);
+        },
       },
     );
+    if (replyClock) {
+      const clock = replyClock;
+      turnPromise.then((r) => clock.settle(r), (err) => clock.settle(null, err));
+    }
+    return await turnPromise;
   });
 
   // ── Chess minigame (260710) ──────────────────────────────────────────────
@@ -1982,7 +2112,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     let grant: import('./games/dontstarve/install').MacGrant | undefined;
     if (process.platform === 'darwin') {
       const { createMacGrant } = await import('./games/dontstarve/macGrant');
-      const language = await loadConfig().then((c) => (c.ui_language === 'zh' ? 'zh' : 'en') as 'en' | 'zh', () => 'en' as const);
+      const language = await loadConfig().then((c) => normalizeUiLanguage(c.ui_language), () => 'en' as const);
       grant = createMacGrant({ window: BrowserWindow.fromWebContents(event.sender), language });
     }
     return mod.runInstall(
@@ -2028,7 +2158,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   let stardewInstallInFlight: Promise<unknown> | null = null;
   ipcMain.handle(IpcChannel.stardew.installState, async () => {
     const { detectStardew } = await import('./games/stardew/install');
-    return detectStardew();
+    const state = await detectStardew();
+    trackStardewScan(state);
+    return state;
   });
   ipcMain.handle(IpcChannel.stardew.install, async () => {
     if (stardewInstallInFlight) return stardewInstallInFlight;
@@ -2051,13 +2183,34 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { launchStardew } = await import('./games/stardew/launch');
     return launchStardew();
   });
+  // 261104: Choose folder when the scan found no game (validated in main by
+  // the game files being present; saved under userData).
+  ipcMain.handle(IpcChannel.stardew.chooseFolder, async (event) => {
+    const { chooseStardewFolder } = await import('./games/stardew/install');
+    const { dialog } = await import('electron');
+    const res = await chooseStardewFolder(async () => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'treatPackageAsDirectory'] };
+      const r = win && !win.isDestroyed() ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
+    });
+    if (res.ok) {
+      trackStardewScan(res.state);
+      void deps.worldCheckNow?.('stardew').catch(() => {});
+    }
+    return res;
+  });
+  ipcMain.handle(IpcChannel.stardew.gameRunning, async () => {
+    const { stardewGameRunning } = await import('./games/stardew/launch');
+    return stardewGameRunning();
+  });
 
   // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
   // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
   // Everything the renderer reads is named in the schemas here — zod strips
   // undeclared keys silently (the backseat gridSmall lesson).
-  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'stt-sensevoice']);
+  const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'tts-kokoro', 'stt-sensevoice']);
   let speechPushWired = false;
   const wireSpeechPush = async (): Promise<void> => {
     if (speechPushWired) return;
@@ -2083,7 +2236,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.speech.packRemove, async (_event, argsRaw: unknown): Promise<void> => {
     const args = z.object({ packId: SpeechPackIdSchema }).parse(argsRaw);
     await wireSpeechPush();
-    const { removePack } = await import('./speech');
+    const { removePack, releaseKokoroEngines } = await import('./speech');
+    // 261102: drop loaded Kokoro engines with their files.
+    if (args.packId === 'tts-kokoro') releaseKokoroEngines('pack removed');
     await removePack(args.packId);
   });
   // SenseVoice dictation transcription (renderer VAD-cut utterance → text).
@@ -2108,8 +2263,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       let chatLanguage: string | undefined;
       try {
         const { loadConfig } = await import('./configStore');
-        const { clampChatLanguage } = await import('../shared/chatLanguage');
-        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+        const { userChatLanguage } = await import('../shared/chatLanguage');
+        // 261116: the player's language (chat_language, else the UI language).
+        chatLanguage = userChatLanguage(await loadConfig());
       } catch {
         /* auto-detect */
       }
@@ -2141,6 +2297,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             // 261031: absent from a renderer that predates them = 0.
             no_voice: z.number().int().nonnegative().default(0),
             no_word: z.number().int().nonnegative().default(0),
+            // 261112: absent from an older renderer = 0.
+            cut_lines: z.number().int().nonnegative().default(0),
           })
           .optional(),
       })
@@ -2311,7 +2469,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         lastSpoken: z.string().max(4000).nullable().optional(),
         lastSpokenId: z.string().max(64).nullable().optional(),
         // 261031: UI language for the overlay's button tooltips.
-        lang: z.enum(['en', 'zh']).optional(),
+        lang: z.enum(UI_LANGUAGES).optional(),
       })
       .parse(stateRaw);
     const { updateCallOverlay } = await import('./callOverlay');
@@ -2335,7 +2493,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
     const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
-    return importAvatarZip(id, bytes);
+    const manifest = await importAvatarZip(id, bytes);
+    noteSeilinkAvatarChanged(id, manifest);
+    // 261106: the owner's new model goes up to her avatar library (background).
+    void import('./avatarLibrary/avatarLibraryRuntime')
+      .then((m) => m.avatarLibrary.sync(id))
+      .catch(() => {});
+    return manifest;
   });
 
   // Cloud avatar download (260819): main resolves the URL from the character
@@ -2354,7 +2518,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!res.ok) throw new Error(`avatar download failed: ${res.status}`);
     const bytes = Buffer.from(await res.arrayBuffer());
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
-    return importAvatarZip(id, bytes);
+    const manifest = await importAvatarZip(id, bytes);
+    noteSeilinkAvatarChanged(id, manifest);
+    return manifest;
   });
 
   ipcMain.handle(IpcChannel.avatar.get, async (_event, idArg: unknown) => {
@@ -2365,8 +2531,78 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.avatar.remove, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    const { removeAvatar } = await import('./avatar/avatarStore');
+    const { removeAvatar, getAvatarManifest } = await import('./avatar/avatarStore');
+    const link = (await getAvatarManifest(id).catch(() => null))?.library ?? null;
     await removeAvatar(id);
+    noteSeilinkAvatarChanged(id, null);
+    // 261106: a library-backed model: the owner deletes it there too, anyone
+    // else switches their pick so it is not downloaded again.
+    if (link) {
+      void import('./avatarLibrary/avatarLibraryRuntime')
+        .then((m) => m.avatarLibrary.modelRemovedLocally(id, link))
+        .catch(() => {});
+    }
+  });
+
+  // ── Avatar library (261106, docs/agents/avatar-library.md) ─────────────
+  // Main owns every URL and upload: the renderer names a character and an
+  // avatar id, never a storage path. Writes answer AvatarLibraryResult.
+  const AvatarIdSchema = z.string().uuid();
+  // Structured clone may hand over an ArrayBuffer or a view (avatar:import accepts both).
+  const BytesSchema = z
+    .custom<ArrayBuffer | ArrayBufferView>((v) => v instanceof ArrayBuffer || ArrayBuffer.isView(v), 'bytes')
+    .transform((v) => (v instanceof ArrayBuffer ? Buffer.from(v) : Buffer.from(v.buffer, v.byteOffset, v.byteLength)));
+  ipcMain.handle(IpcChannel.avatarLibrary.list, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, sync: z.boolean().optional(), fresh: z.boolean().optional() }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return a.sync ? avatarLibrary.sync(a.characterId) : avatarLibrary.view(a.characterId, { fresh: a.fresh === true });
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.addImage, async (_event, argsRaw: unknown) => {
+    const a = z
+      .object({ characterId: IdSchema, bytes: BytesSchema, name: z.string().max(80).nullable() })
+      .parse(argsRaw);
+    if (a.bytes.byteLength > 10 * 1024 * 1024) return { ok: false, error: 'too_big' };
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.addPortrait(a.characterId, a.bytes, a.name);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.addModel, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, zip: BytesSchema }).parse(argsRaw);
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    if (a.zip.byteLength > AVATAR_ZIP_MAX_BYTES) return { ok: false, error: 'too_big' };
+    let manifest;
+    try {
+      manifest = await importAvatarZip(a.characterId, a.zip);
+    } catch {
+      return { ok: false, error: 'import_failed' };
+    }
+    noteSeilinkAvatarChanged(a.characterId, manifest);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannel.avatar.manifestState, { characterId: a.characterId, manifest });
+    }
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.addLocalModel(a.characterId);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.setFlags, async (_event, argsRaw: unknown) => {
+    const a = z
+      .object({
+        characterId: IdSchema,
+        avatarId: AvatarIdSchema,
+        is_public: z.boolean().optional(),
+        is_default: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.setFlags(a.characterId, a.avatarId, { is_public: a.is_public, is_default: a.is_default });
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.remove, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, avatarId: AvatarIdSchema }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.remove(a.characterId, a.avatarId);
+  });
+  ipcMain.handle(IpcChannel.avatarLibrary.pick, async (_event, argsRaw: unknown) => {
+    const a = z.object({ characterId: IdSchema, avatarId: AvatarIdSchema.nullable() }).parse(argsRaw);
+    const { avatarLibrary } = await import('./avatarLibrary/avatarLibraryRuntime');
+    return avatarLibrary.setPick(a.characterId, a.avatarId);
   });
 
   ipcMain.handle(IpcChannel.avatar.modelFiles, async (_event, idArg: unknown) => {
@@ -2384,6 +2620,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .parse(argsRaw);
     const { setAvatarAccessory } = await import('./avatar/avatarStore');
     const manifest = await setAvatarAccessory(args.characterId, args.name, args.on);
+    noteSeilinkAvatarChanged(args.characterId, manifest);
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(IpcChannel.avatar.manifestState, {
@@ -2402,6 +2639,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const args = z.object({ id: z.string().max(64), level: z.number().min(0).max(1) }).parse(argsRaw);
     const { forwardOverlayLevel } = await import('./callOverlay');
     forwardOverlayLevel(args.id, args.level);
+    // 261110: her desktop room too, when she is the one on the desktop (her mouth moves there).
+    const { sendSeilinkVoiceLevel } = await import('./seilink/host/seilinkHost');
+    sendSeilinkVoiceLevel(args.id, args.level);
   });
 
   // Overlay window chrome hover: flip the window between click-through and
@@ -2561,6 +2801,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await voicePreviewTts({ voiceId: args.voiceId });
   });
 
+  // Voice Library voices on Sei cloud (261119, voice/libraryVoices.ts). The
+  // proxy validates and records; main only relays with the JWT. Lookup, add
+  // and status never throw (reason / status fields).
+  ipcMain.handle(IpcChannel.voice.libraryLookup, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { lookupLibraryVoice } = await import('./voice/libraryVoices');
+    return lookupLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryAdd, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { addLibraryVoice } = await import('./voice/libraryVoices');
+    return addLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryStatus, async (_event, argsRaw: unknown) => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoiceStatus } = await import('./voice/libraryVoices');
+    return libraryVoiceStatus(args.voiceId);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryPreview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoicePreviewBytes } = await import('./voice/libraryVoices');
+    return libraryVoicePreviewBytes(args.voiceId);
+  });
+
   // Voice for others (261019): the close pool voice an adopter hears for a
   // character whose voice is the author's own ElevenLabs voice, when the
   // author has not chosen one. Same roll resolveVoiceId uses on their side.
@@ -2624,6 +2888,49 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.voice.elevenKeyStatus, async (): Promise<{ present: boolean }> => {
     const { hasElevenLabsKey } = await import('./voice/elevenLabsKeyStore');
     return { present: await hasElevenLabsKey() };
+  });
+
+  // Fish Audio (261103): the user's own key, called straight from main. Same
+  // write-only handling as the ElevenLabs key above.
+  ipcMain.handle(IpcChannel.voice.fishKeySet, async (_event, argsRaw: unknown): Promise<void> => {
+    const args = z.object({ key: z.string().min(8).max(200).nullable() }).parse(argsRaw);
+    const { setFishKey } = await import('./voice/fishKeyStore');
+    await setFishKey(args.key);
+    const { clearFishFailures } = await import('./voice/fishTts');
+    clearFishFailures();
+  });
+
+  ipcMain.handle(IpcChannel.voice.fishKeyStatus, async (): Promise<{ present: boolean }> => {
+    const { hasFishKey } = await import('./voice/fishKeyStore');
+    return { present: await hasFishKey() };
+  });
+
+  const fishAudioResult = async (run: () => Promise<ArrayBuffer>): Promise<FishAudioResult> => {
+    try {
+      return { ok: true, audio: await run() };
+    } catch (err) {
+      const { fishFailureReason } = await import('./voice/fishTts');
+      return { ok: false, reason: fishFailureReason(err) ?? 'failed' };
+    }
+  };
+
+  ipcMain.handle(IpcChannel.voice.fishTest, async (): Promise<FishAudioResult> => {
+    const { fishSampleTts } = await import('./voice/tts');
+    return fishAudioResult(() => fishSampleTts());
+  });
+
+  ipcMain.handle(IpcChannel.voice.fishVoicePreview, async (_event, argsRaw: unknown): Promise<FishAudioResult> => {
+    const args = z.object({ voiceId: z.string().regex(/^[0-9a-f]{32}$/) }).parse(argsRaw);
+    const { fishSampleTts } = await import('./voice/tts');
+    return fishAudioResult(() => fishSampleTts({ voiceId: args.voiceId }));
+  });
+
+  // A character's own Fish voice: parse the link, check it with the user's
+  // key, store it sparsely in the main-owned fish_voice_overrides.
+  ipcMain.handle(IpcChannel.voice.fishOverrideSet, async (_event, argsRaw: unknown): Promise<FishOverrideResult> => {
+    const args = z.object({ characterId: IdSchema, input: z.string().max(300).nullable() }).parse(argsRaw);
+    const { setFishVoiceOverride } = await import('./voice/fishOverride');
+    return await setFishVoiceOverride(args.characterId, args.input);
   });
 
   // First-meeting greeting (thoughts consumer #1). The renderer calls this when
@@ -2814,10 +3121,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         bytes = Buffer.from(await res.arrayBuffer());
       } else if (ref.includes('/')) {
         // Bundled default portrait ('./img/x.png'): the file ships with the
-        // renderer build (out/renderer when packaged, public/ in dev).
+        // renderer build (dist/renderer when packaged, public/ in dev).
         const rel = ref.replace(/^\.\//, '');
         const base = app.isPackaged
-          ? path.join(app.getAppPath(), 'out', 'renderer')
+          ? path.join(app.getAppPath(), 'dist', 'renderer')
           : path.join(app.getAppPath(), 'src', 'renderer', 'public');
         bytes = await readFile(path.join(base, rel));
       } else {
@@ -3022,8 +3329,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // AbortController in src/main/wizard.ts.
   ipcMain.handle(IpcChannel.wizard.detectInstalls, async () => {
     const { scanMcInstalls } = await import('./mcInstallScan');
-    const installs = await scanMcInstalls();
-    return { installs };
+    // 261104: also what the scan cannot use (Bedrock, other launchers, a
+    // launcher with no .minecraft yet) so the setup step can say why, and
+    // one game_setup_step per distinct answer.
+    const { scanMcExtras } = await import('./mcOtherInstalls');
+    const [installs, extras] = await Promise.all([
+      scanMcInstalls(),
+      scanMcExtras().catch(() => null),
+    ]);
+    trackMcScan(installs, extras);
+    return { installs, extras };
   });
 
   ipcMain.handle(IpcChannel.wizard.install, async (_event, argsRaw: unknown) => {
@@ -3068,7 +3383,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .optional()
       .parse(argsRaw ?? {});
     const { startMinecraft } = await import('./mcLauncher');
-    return await startMinecraft({ mcVersion: args?.mcVersion });
+    const res = await startMinecraft({ mcVersion: args?.mcVersion });
+    trackStartMinecraft(res);
+    return res;
+  });
+
+  ipcMain.handle(IpcChannel.wizard.openLauncher, async () => {
+    const { openMinecraftLauncher } = await import('./mcLauncher');
+    const res = await openMinecraftLauncher();
+    trackOpenLauncher(res);
+    return res;
   });
 
   ipcMain.handle(IpcChannel.wizard.minecraftRunning, async () => {
@@ -3085,6 +3409,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.config.get, async (): Promise<UserConfig> => {
     return await loadConfig();
   });
+  ipcMain.handle(IpcChannel.config.profileState, async () => {
+    const { readProfileSetupState } = await import('./profileSetupState');
+    return await readProfileSetupState();
+  });
   ipcMain.handle(IpcChannel.config.save, async (_event, cfgArg: unknown): Promise<void> => {
     const cfg = UserConfigSchema.parse(cfgArg);
     // 260725: renderer saves are wholesale (stale-copy hazard) and must never
@@ -3092,6 +3420,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // configStore.saveConfigFromRenderer.
     const { saveConfigFromRenderer } = await import('./configStore');
     await saveConfigFromRenderer(cfg);
+    // 261102: switching away from Kokoro frees its engines (~250 MB each)
+    // now instead of at the idle timeout.
+    if (cfg.tts_engine !== 'local' || localTtsModel(cfg) !== 'kokoro') {
+      try {
+        const { releaseKokoroEngines } = await import('./speech');
+        releaseKokoroEngines('model switched');
+      } catch {
+        /* freeing memory early is never load-bearing (idle release covers it) */
+      }
+    }
     // Keep the analytics ui_language property current — both surfaces that
     // write it (Settings and the onboarding Sui stage) save through here.
     if ('ui_language' in (cfgArg as Record<string, unknown>)) {
@@ -3103,6 +3441,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if ('preferred_name' in (cfgArg as Record<string, unknown>)) {
       const { setProfileOnboarded } = await import('./analytics');
       setProfileOnboarded(cfg.preferred_name);
+    }
+    // 261031 (T278): ai_provider / model_family on every event, and the
+    // player's own names for the crash-log scrub. Renderer saves are
+    // wholesale, so cfg is the whole profile config.
+    {
+      const { noteAnalyticsConfig } = await import('./analytics');
+      noteAnalyticsConfig(cfg);
     }
     // Provider/model changes move the active LLM's vision verdict; mirror it
     // to the renderer (ai_backend_kind never rides a renderer save, so the
@@ -3192,6 +3537,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const r = await chatgptAccountLogin().connectPlan(args);
     // A new account brings a new model catalog (default model + vision).
     if (r.ok) void import('./llm/capability').then((m) => m.pushLlmCapability());
+    else if (r.reason !== 'cancelled') {
+      // 261107 (T363): failures after the browser step were invisible (the
+      // renderer shows one generic line, nothing was logged or counted).
+      const { signInFailureDetail } = await import('./chatgptPlan/session');
+      const detail = signInFailureDetail(r.message);
+      console.warn(`[chatgpt] plan sign-in failed: ${r.reason}${detail ? ` (${detail})` : ''}`);
+      trackAnalytics('chatgpt_plan_sign_in_failed', {
+        reason: r.reason,
+        detail: detail ?? 'none',
+        renewal: typeof args.accountId === 'string',
+        enable_plan: args.enablePlan === true,
+      });
+    }
     return r;
   });
   ipcMain.handle(IpcChannel.chatgpt.cancelSignIn, async () => {
@@ -3235,7 +3593,27 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
-      trackAnalytics(event, props);
+      // 261106: the renderer's voice reply clock. Rebuilt from closed enums
+      // and sampled in main (replyLatency.ts); never passed through raw.
+      if (event === REPLY_LATENCY_EVENT) {
+        const sample = sanitizeRendererReplyLatency(props);
+        if (sample) recordReplyLatency(sample);
+        return;
+      }
+      // 261104: setup steps are rebuilt from closed enums (shape only).
+      // 261105: so are the SeiLink editor, move-in sheet and first-link events.
+      trackAnalytics(
+        event,
+        event === GAME_SETUP_EVENT
+          ? sanitizeRendererSetupProps(props, getLanDiagnosis())
+          : isSeilinkRendererEvent(event)
+            ? sanitizeSeilinkTrack(event, props)
+            : isSeilinkIntroEvent(event)
+              ? sanitizeSeilinkIntroTrack(event, props)
+              : isSeilinkSetupEvent(event)
+                ? sanitizeSeilinkSetupTrack(event, props)
+                : props,
+      );
       // 261005: remember where onboarding is, so a quit can report it.
       observeOnboardingEvent(event, props);
     } catch {
@@ -3805,8 +4183,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // 260603 per-profile partitioning — anonymous(local)→account on-device import.
   ipcMain.handle(IpcChannel.profile.peekLocal, async () => {
-    const { peekLocalProfile } = await import('./profile/localImport');
-    return peekLocalProfile();
+    const { peekLocalProfile, localImportPartyFit } = await import('./profile/localImport');
+    const peek = await peekLocalProfile();
+    // 261116: signed in, also say whether the roster fits the account's party.
+    const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
+    const scope = getActiveScope();
+    if (scope === SCOPE_LOCAL) return peek;
+    try {
+      return { ...peek, party: await localImportPartyFit(scope, peek.migratableCharacterIds) };
+    } catch (err) {
+      // Unknown: the import itself still checks before it writes anything.
+      console.warn(`[sei] profile.peekLocal party fit failed: ${(err as Error).message}`);
+      return peek;
+    }
   });
 
   ipcMain.handle(IpcChannel.profile.importFromLocal, async (_event, idsArg: unknown) => {
@@ -3855,24 +4244,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // for anon callers. Main pre-joins each row with the public Storage URL
   // and computes inMyLibrary against the local characters/index.json so the
   // renderer never crosses two stores per row.
+  //
+  // 261110 (product call): `sort` ('popular' default in the renderer,
+  // 'recent', 'alpha') is applied server-side by
+  // search_public_characters_sorted, and each entry carries its library add
+  // count (character_library_counts, aggregate only). Both degrade: no sorted
+  // RPC = the old newest-first RPC with `sorted: false` (the renderer sorts
+  // the loaded pages, as before); no counts RPC = `addCount: null` (hidden).
+  // See cloud/browseQuery.ts.
   const BrowseListSchema = z.object({
     query: z.string().max(200),
     limit: z.number().int().min(1).max(50),
     offset: z.number().int().min(0),
+    sort: z.enum(BROWSE_SORTS).optional(),
   });
-  ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<{ entries: BrowseEntry[]; hasMore: boolean }> => {
+  ipcMain.handle(IpcChannel.browse.list, async (_event, argsRaw: unknown): Promise<BrowsePage> => {
     const parsed = BrowseListSchema.parse(argsRaw);
     const { getClient } = await import('./auth/supabaseClient');
-    const { getStoragePublicUrl } = await import('./cloud/cloudCharacterClient');
-    const { data: rows, error } = await getClient().rpc('search_public_characters', {
-      search_query: parsed.query,
-      page_limit: parsed.limit,
-      page_offset: parsed.offset,
-    });
-    if (error) {
-      console.warn(`[sei] browse:list rpc failed: ${error.message}`);
-      return { entries: [], hasMore: false };
+    const { getStoragePublicUrl, getStorageObjectPublicUrl } = await import('./cloud/cloudCharacterClient');
+    const { withVersion, portraitThumbPath } = await import('../shared/portraitUrls');
+    const { fetchBrowseRows, fetchAddCounts } = await import('./cloud/browseQuery');
+    const listing = await fetchBrowseRows(getClient(), parsed);
+    if (listing.error !== null) {
+      return { entries: [], hasMore: false, sorted: false, failure: 'rpc_failed' };
     }
+    const rows = listing.rows;
 
     // Precompute the in-library set so each BrowseEntry.inMyLibrary is O(1).
     // Strict definition (the World pill must match what HomeGrid actually
@@ -3920,7 +4316,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .map((r) => (typeof r.owner === 'string' ? r.owner : ''))
       .filter((x) => !!x);
     const { getProfileNames } = await import('./cloud/cloudCharacterClient');
-    const nameByOwner = await getProfileNames(ownerIdsForNames);
+    const [nameByOwner, addCounts] = await Promise.all([
+      getProfileNames(ownerIdsForNames),
+      fetchAddCounts(getClient(), rowsArr.map((r) => String(r.id))),
+    ]);
 
     const entries: BrowseEntry[] = rowsArr.map((row: Record<string, unknown>) => {
       const personaSource = typeof row.persona_source === 'string' ? row.persona_source : '';
@@ -3932,8 +4331,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // Use the same Storage layout as cloudCharacterClient.uploadPortrait /
       // uploadSkin (`<owner>/<id>.png`). getStoragePublicUrl is a sync,
       // network-free helper from supabase-js so we can call it inline.
-      const portraitUrl = row.portrait_image && ownerStr
-        ? getStoragePublicUrl('portraits', ownerStr, id)
+      //
+      // 261111: both portrait URLs carry `?v=<updated_at>` (portraits are
+      // overwritten in place and new uploads cache for a year, see
+      // shared/portraitUrls.ts), and the grid loads the small
+      // `<owner>/<id>.thumb.webp` first, falling back to the full portrait
+      // when a character has no thumbnail yet.
+      const version = typeof row.updated_at === 'string' ? row.updated_at : null;
+      const hasPortrait = !!(row.portrait_image && ownerStr);
+      const portraitUrl = hasPortrait
+        ? withVersion(getStoragePublicUrl('portraits', ownerStr, id), version)
+        : null;
+      const thumbUrl = hasPortrait
+        ? withVersion(getStorageObjectPublicUrl('portraits', portraitThumbPath(ownerStr, id)), version)
         : null;
       const skinUrl = row.skin_png_sha256 && ownerStr
         ? getStoragePublicUrl('skins', ownerStr, id)
@@ -3951,14 +4361,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // column rides along; older rows without one show no tag.
         publicId: typeof row.public_id === 'string' ? row.public_id : null,
         portraitUrl,
+        thumbUrl,
         skinUrl,
         updatedAt: typeof row.updated_at === 'string'
           ? row.updated_at
           : (typeof row.created_at === 'string' ? row.created_at : ''),
         inMyLibrary: localIds.has(id),
+        addCount: addCounts ? (addCounts.get(id) ?? 0) : null,
       };
     });
-    return { entries, hasMore: entries.length === parsed.limit };
+    return { entries, hasMore: entries.length === parsed.limit, sorted: listing.sorted };
   });
 
   // --- Phase 12 — Publish-with-moderation: TOMBSTONE (260525-qy0 Task 4) ---
@@ -4128,6 +4540,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // A leftover tray-settings.json (retired tray mode) is the only record
         // that Sei registered a login item: remove the item before the wipe.
         try { (await import('./legacyTrayCleanup')).cleanupLegacyTraySettings(); } catch { /* best-effort */ }
+        // 261107: and the "Open on login" item, before the wipe takes the file that records it.
+        try { (await import('./seilink/openAtLogin')).unregisterOpenAtLoginForReset(); } catch { /* best-effort */ }
       },
     });
   });
@@ -4175,6 +4589,35 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.credits.get, async (): Promise<CreditsStatus> => {
     const { creditsGet } = await import('./cloud/proxyClient');
     return creditsGet();
+  });
+
+  // usage:summary — 261110 Playtime: the profile's own off-cloud usage ledger
+  // (ChatGPT plan replies, own-key tokens and spend estimate).
+  ipcMain.handle(IpcChannel.usage.summary, async () => {
+    const { readUsageSummary } = await import('./usage/llmUsageLedger');
+    return readUsageSummary();
+  });
+  // usage:spend-alert — the ledger checks the "Alert me at $N a month" setting
+  // after each own-key request; the notice goes to every window.
+  void import('./usage/llmUsageLedger')
+    .then(({ onSpendAlert }) =>
+      onSpendAlert((e) => {
+        for (const w of BrowserWindow.getAllWindows()) {
+          if (!w.isDestroyed()) w.webContents.send(IpcChannel.usage.spendAlert, e);
+        }
+        // 261120: kept until dismissed + OS notification when Sei is not in front.
+        capNoticeSpendAlert(e);
+      }),
+    )
+    .catch(() => undefined);
+  // 261120: replay of a notice that fired before this window mounted, and its ack.
+  ipcMain.handle(IpcChannel.usage.spendAlertPending, () => peekPendingSpendAlert());
+  ipcMain.handle(IpcChannel.usage.spendAlertAck, () => {
+    ackPendingSpendAlert();
+  });
+  ipcMain.handle(IpcChannel.credits.hardStopPending, () => peekPendingHardStop());
+  ipcMain.handle(IpcChannel.credits.hardStopAck, () => {
+    ackPendingHardStop();
   });
 
   // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
@@ -4225,9 +4668,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // product mapping and the upgrade usage-reset (guarded by max_tier_rank).
   ipcMain.handle(IpcChannel.credits.changePlan, async (_e, argsRaw: unknown) => {
     const parsed = CreditsChangePlanArgsSchema.parse(argsRaw);
-    trackAnalytics('plan_changed', { tier: String(parsed.tier) });
     const { changePlan } = await import('./cloud/proxyClient');
-    return changePlan(parsed.tier);
+    const res = await changePlan(parsed.tier);
+    // 261031: on success only (it used to fire on the request). Never fired
+    // in October, so no dashboard depends on the old timing.
+    if (res.ok) trackAnalytics('plan_changed', { tier: String(parsed.tier) });
+    return res;
   });
 
   // subscription:status — Plan 13-13 wired path. Reads subscription_status
@@ -4338,6 +4784,9 @@ export function emitCreditsHardStop(info: CreditsHardStopEvent, ctx?: CreditWall
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
   }
+  // 261120: keep it for a window that opens later, and tell the player with
+  // an OS notification when the app window is not in front (capNotices.ts).
+  capNoticeHardStop(info);
 }
 
 /**

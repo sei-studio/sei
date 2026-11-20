@@ -15,7 +15,7 @@
  * Windows lets the loaded DLL be replaced. A failed pack fetch or copy is
  * logged and the game starts with the mod it has.
  */
-import type { StardewLaunchResult } from '../../../shared/stardewIpc';
+import type { StardewGameRunning, StardewLaunchResult } from '../../../shared/stardewIpc';
 import { defaultEnv, detectStardew, spawnGame, upgradeModIfNewer, type StardewInstallEnv } from './install';
 import { probeHello } from './watcher';
 
@@ -30,6 +30,9 @@ export async function launchStardew(deps: LaunchDeps = {}): Promise<StardewLaunc
   const logger = deps.logger ?? { info: (m: string) => console.log(m), warn: (m: string) => console.warn(m) };
   const state = await detectStardew(env);
   if (!state.gamePath) return { launched: false, via: 'none', message: 'GAME_NOT_INSTALLED: Stardew Valley was not found on this computer.' };
+  if (state.smapiRemoved) {
+    return { launched: false, via: 'none', message: 'SMAPI_ANTIVIRUS_SUSPECTED: StardewModdingAPI.exe is gone from the game folder; allow it in your antivirus, then run the Stardew setup again.' };
+  }
   if (!state.smapiInstalled || !state.modInstalled) {
     return { launched: false, via: 'none', message: 'GAME_INSTALL_FAILED: run the Stardew setup first so SMAPI and the Sei companion mod are installed.' };
   }
@@ -49,5 +52,39 @@ export async function launchStardew(deps: LaunchDeps = {}): Promise<StardewLaunc
     return { launched: true, via };
   } catch (err) {
     return { launched: false, via: 'none', message: String((err as Error)?.message ?? err) };
+  }
+}
+
+/* ── Is the game running? (261104) ───────────────────────────────────── */
+
+/**
+ * The game's processes in a process listing (`tasklist /FO CSV /NH` on
+ * Windows, `ps -eo args=` elsewhere). SMAPI runs the game as its own
+ * process (StardewModdingAPI.exe / StardewModdingAPI), so "running and not
+ * SMAPI" is the vanilla game started from Steam or the Xbox app, where the
+ * helper mod never loads.
+ */
+export function parseStardewProcesses(listing: string, platform: StardewInstallEnv['platform']): StardewGameRunning {
+  const lines = listing.split(/\r?\n/);
+  const smapi = lines.some((l) => (platform === 'win32' ? /^"StardewModdingAPI\.exe"/i.test(l) : /StardewModdingAPI(\s|$)/.test(l)));
+  const vanilla = lines.some((l) =>
+    platform === 'win32' ? /^"Stardew Valley\.exe"/i.test(l) : /(^|\/)Stardew Valley(\s|$)|\/StardewValley(\s|$)/.test(l),
+  );
+  const running = smapi || vanilla;
+  return { running, smapi: running ? smapi : null };
+}
+
+export async function stardewGameRunning(platform: StardewInstallEnv['platform'] = defaultEnv().platform): Promise<StardewGameRunning> {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  try {
+    const { stdout } =
+      platform === 'win32'
+        ? await run('tasklist', ['/FO', 'CSV', '/NH'], { timeout: 5000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 })
+        : await run('ps', ['-eo', 'args='], { timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+    return parseStardewProcesses(String(stdout ?? ''), platform);
+  } catch {
+    return { running: null, smapi: null };
   }
 }

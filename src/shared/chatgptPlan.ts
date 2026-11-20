@@ -222,7 +222,10 @@ export type ChatgptSignInFailure =
   | 'id_token_invalid'
   | 'network'
   | 'keychain_unavailable'
-  | 'browser_failed';
+  | 'browser_failed'
+  // 261103 (T303): OpenAI refused the caller's region (authorize callback
+  // or token exchange answered unsupported_country_region_territory).
+  | 'region_unsupported';
 
 export type ChatgptSignInResult =
   | { ok: true; status: ChatgptStatus; planEnabled: boolean }
