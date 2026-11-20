@@ -38,6 +38,25 @@ chat with a `[think]` prefix for live debugging; default `'chat'` keeps it
 hidden. The prompt contract lives in `BASELINE_INSTRUCTIONS` and the tool
 description in `PERSONALITY_TOOL_DESCRIPTIONS.say` (`src/bot/brain/prompts.js`).
 
+**Claims ahead of the action (261120, pass 59).** A say() sent with a world
+action is heard before the action runs, but Haiku writes the action call
+first and the say() after it in the same generation, so the line often
+narrates the outcome ("table's down, grab it") before the result exists.
+`scripts/quality-eval/pass59-probe.mjs` measured this at 57-77% on a
+craft-then-place turn (n=30 per arm) under every prompt wording tried: a
+timing sentence in the loop description, in `SPEAK_REMINDER`, an explicit
+"call say() first", a reworded craft placeNote, and dropping the CORE
+"announces it adds nothing" line. None moved it beyond noise, and none
+changed the tool order (say-first 0/30). It is unfixed; the remaining
+levers are turn structure (what she has seen before she speaks), not more
+prompt text. What did work: the give() in_flight line said "handing N item
+to X" for the whole walk over, and asked "hows it going" 22 blocks out she
+said "coal's tossing your way now, check your feet". The adapter now passes
+`giveWalking` (`giveStillWalking` in `observers/snapshot.js`, out of
+give.js `TOSS_RANGE`) and the line reads "still walking over to X to hand
+them N item. Nothing is tossed until you get there": delivered claims 9/30
+to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 

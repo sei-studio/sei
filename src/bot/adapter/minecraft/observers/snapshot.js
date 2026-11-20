@@ -30,6 +30,29 @@ import { whereFromYou } from './whereFromYou.js'
 
 const MAX_ENTITIES = 6
 
+// 261120 (quality pass 59): true while a running give() is still walking to
+// the player it hands to, false once it is within toss range, null when that
+// player cannot be seen. The in_flight line said "handing 1 coal to Alex" for
+// the whole walk, and asked "hows it going" 22 blocks out she answered
+// "coal's tossing your way now, check your feet" (pass 55 errands-01-A).
+// Same value as behaviors/give.js TOSS_RANGE (importing it here would make an
+// import cycle, give.js imports resolveOwner from this file).
+export const GIVE_TOSS_RANGE = 4
+export function giveStillWalking(bot, inFlight, ownerPinName, companions) {
+  try {
+    if (!inFlight || inFlight.name !== 'give') return null
+    const named = typeof inFlight.args?.player === 'string' && inFlight.args.player.trim() ? inFlight.args.player.trim() : null
+    const players = bot?.players || {}
+    const target = named
+      ? Object.entries(players).find(([name]) => name.toLowerCase() === named.toLowerCase())?.[1] ?? null
+      : resolveOwner(bot, ownerPinName ?? null, companions)?.player ?? null
+    const pos = target?.entity?.position
+    const me = bot?.entity?.position
+    if (!pos || !me || typeof me.distanceTo !== 'function') return null
+    return me.distanceTo(pos) > GIVE_TOSS_RANGE
+  } catch { return null }
+}
+
 // Resolve the owner's live player entry. `pinUsername` is the name the bot
 // calls the player (config.player_username — often a preferred_name like
 // "Ouen"), but on a LAN world bot.players is keyed by the actual login (e.g.
@@ -327,7 +350,7 @@ export function composeSnapshot(bot, opts = {}) {
   // preserves the em-dash + y=<currentY> channels byte-stable;
   // only the elapsed trailer changes from `(Xs)` to `started=Xs ago`.
   // 261014: the gather line reads the same item counts as the inventory line.
-  let inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv })
+  let inFlightLine = getInFlightLineForSnapshot(inFlight, Date.now(), { inventory: inv, giveWalking: giveStillWalking(bot, inFlight, ownerPinName, companions) })
   if (inFlightLine && fight) inFlightLine += attackInFlightSuffix(fight, bot, pinUsername ?? ownerPinName ?? null)
   if (inFlightLine) lines.push(inFlightLine)
   // 261012: say so when nothing runs. The absence of an in_flight line was the

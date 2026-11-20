@@ -599,7 +599,7 @@ export function cantReachNudge({ x, y, z, range }) {
 // wrote "yo." into its private text and called placeBlock with no say(), so the
 // player got silence despite the reply existing.
 export const SPEAK_REMINDER =
-  `Remember to use say() if you intend to speak to the player this turn — words in your text output never reach the player.`
+  `Remember to use say() if you intend to speak to the player this turn; words in your text output never reach the player.`
 
 // 260703: sticky greeting hint. The full FIRST CONTACT block rides only the
 // first idle tick; when that loop is preempted (attack, chat) before the model
