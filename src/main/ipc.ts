@@ -2451,6 +2451,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
                 .enum(['happy', 'sad', 'shy', 'angry', 'love', 'excited', 'surprised'])
                 .nullable()
                 .optional(),
+              // 261120: the WorldLink figure (RoomAvatar with the room's avatar choice).
+              figure: z.enum(['auto', 'sei', 'imported']).optional(),
             }),
           )
           .max(12),

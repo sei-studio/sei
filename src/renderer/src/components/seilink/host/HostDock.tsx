@@ -28,13 +28,18 @@
  * background (first-link v3: no room yet) the offer is to set her room up
  * together ("Set up together"), which opens the editor's guided setup.
  *
+ * 261120 (product call (261120)): the pin button, first in the row. Pin = she
+ * leaves the room and floats on top of every window (the avatar overlay); the
+ * room stays, drawn without her. Pressed again (it shows as on while she is
+ * pinned), she is back in her room. shared/seilinkPin.ts has the rules.
+ *
  * Colours come from the room (RoomCanvas onOverlay: light room, light glass),
  * never the app theme. No border lines on buttons.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SeilinkBox, SeilinkDockAction, SeilinkDockButton, SeilinkDockOffer } from '@shared/seilinkHost';
 import { useT } from '../../../lib/i18n';
-import { BrushIcon, BubbleIcon, BubbleOffIcon, MoveOutIcon } from '../roomEditorIcons';
+import { BrushIcon, BubbleIcon, BubbleOffIcon, MoveOutIcon, PinIcon } from '../roomEditorIcons';
 import { dockAwake, dockCorner } from '../../../lib/seilink/dockPlace';
 import styles from './HostDock.module.css';
 
@@ -58,6 +63,8 @@ export interface HostDockProps {
   /** 261110: the cursor is near the dock (the host polls it): full strength. */
   hover?: boolean;
   deafened: boolean;
+  /** 261120: she is pinned on top (the pin button shows as on). */
+  pinned?: boolean;
   /** 261106: the decorate-together offer ('none' = the usual dock). */
   offer?: SeilinkDockOffer;
   /** Her name, for the offer's question. */
@@ -106,11 +113,12 @@ export function HostDock(props: HostDockProps): React.ReactElement {
     }
     setConfirming(false);
     if (press.id === 'deafen') setCaption({ text: deafened ? t('Idle lines on') : t('Idle lines off'), ms: CAPTION_MS });
+    else if (press.id === 'pin') setCaption({ text: props.pinned ? t('Back in the room') : t('Pinned on top'), ms: CAPTION_MS });
     else if (press.id === 'later')
       setCaption({ text: props.plain ? t('Set up the room anytime with the brush.') : t('Decorate anytime with the brush.'), ms: LATER_CAPTION_MS });
     else if (press.id === 'edit' || press.id === 'decorate') setCaption({ text: t('Opening the room editor'), ms: CAPTION_MS });
     onAction(press.id);
-  }, [press, confirming, deafened, onAction, t, props.plain]);
+  }, [press, confirming, deafened, onAction, t, props.plain, props.pinned]);
 
   useEffect(() => {
     if (!pressed) return;
@@ -201,6 +209,15 @@ export function HostDock(props: HostDockProps): React.ReactElement {
         </div>
       ) : null}
       <div className={styles.dock}>
+        <span
+          data-dock="pin"
+          {...flag('pin')}
+          className={cls('pin', props.pinned ? styles.on : '')}
+          aria-label={props.pinned ? t('Back to the room') : t('Pin on top')}
+          aria-pressed={props.pinned === true}
+        >
+          <PinIcon size={15} />
+        </span>
         <span data-dock="edit" {...flag('edit')} className={cls('edit')} aria-label={t('Edit room')}>
           <BrushIcon size={15} />
         </span>

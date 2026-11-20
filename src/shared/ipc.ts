@@ -930,6 +930,13 @@ export interface CallOverlayParticipant {
    * when neutral/unknown. The Live2D tile maps it through the manifest's
    * emotion table; the static tile ignores it. */
   emotion?: AvatarEmotion | null;
+  /**
+   * 261120: draw her as WorldLink draws her in her room (RoomAvatar: her imported model,
+   * else her face set, else her picture cut out), full figure, instead of a portrait tile.
+   * The value is the room's avatar choice (roomAvatarUse). Set for the pinned WorldLink
+   * companion, the only one the overlay shows since 261120 (shared/seilinkPin.ts).
+   */
+  figure?: 'auto' | 'sei' | 'imported';
 }
 
 /**
@@ -946,9 +953,9 @@ export interface AvatarCamera {
 }
 
 /** State of the always-on-top avatar overlay window (main window → main →
- * overlay + caption windows). `enabled` folds together the avatar mode AND
- * the mode's activity condition: the overlay shows iff enabled and there is
- * at least one participant. `cameras` and `captionsOn` are enriched by MAIN
+ * overlay + caption windows). The overlay shows iff `enabled` and there is
+ * at least one participant (261120: only the pinned WorldLink companion,
+ * shared/seilinkPin.ts floatingAvatarIds). `cameras` and `captionsOn` are enriched by MAIN
  * from config before forwarding — the main-window pusher never sends them. */
 export interface CallOverlayState {
   enabled: boolean;
@@ -2420,6 +2427,13 @@ export interface RendererApi {
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   /** 261107: the profile's Idle lines toggle; writes seilink_deafened (inverted). Resolves with the new state. */
   seilinkSetIdleLines?(on: boolean): Promise<boolean>;
+  /**
+   * 261120: pin the WorldLink companion on top (she floats in the always-on-top avatar
+   * overlay, her room draws without her) or bring her back into her room. The avatar
+   * overlay's "back to the room" button sends `via: 'overlay'`. Resolves with the status
+   * (its `pinned`); a refused toggle (nobody moved in, WorldLink unavailable) leaves it as it was.
+   */
+  seilinkPinSet?(pinned: boolean, via: 'overlay'): Promise<SeilinkHostStatus>;
   onSeilinkHostStatus?(cb: (status: SeilinkHostStatus) => void): Unsubscribe;
   /** She was clicked on the desktop: open her chat (characterId). */
   onSeilinkOpenChat?(cb: (characterId: string) => void): Unsubscribe;
@@ -4598,6 +4612,8 @@ export const IpcChannel = {
     hostStatus: 'seilink:host-status',
     /** Invoke (261107): (on: boolean) → boolean. The profile's Idle lines toggle (config seilink_deafened, inverted). */
     setIdleLines: 'seilink:set-idle-lines',
+    /** Invoke (261120): ({pinned, via}) → SeilinkHostStatus. Pin on top / back to her room (seilinkHost.setSeilinkPinned). */
+    pinSet: 'seilink:pin-set',
     /** Push (main → main window): SeilinkHostStatus on every change. */
     hostStatusChanged: 'seilink:host-status-changed',
     /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */

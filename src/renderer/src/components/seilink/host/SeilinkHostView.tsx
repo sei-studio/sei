@@ -42,6 +42,7 @@ import { HostAvatar, type HostAvatarPoke, type VoiceLevel } from './hostAvatar';
 import { lineFaceHoldMs, NEUTRAL_LOOK, toNeutral, type HostAvatarLook } from './hostLook';
 import { HostArrival, type ArrivedReport } from './HostArrival';
 import { sanitizeArrival, type SeilinkArrival } from '@shared/seilinkEntrance';
+import { roomShowsHer } from '@shared/seilinkPin';
 import styles from './SeilinkHost.module.css';
 
 const FRAMES_REPORT_MS = 500;
@@ -71,6 +72,8 @@ export interface SeilinkHostViewProps {
   initialOffer?: SeilinkDockOffer;
   /** Dev preview / screenshots: a fixed reduced-motion answer for her entrance. */
   reducedMotion?: boolean;
+  /** Dev preview / screenshots: she starts pinned on top (261120). */
+  initialPinned?: boolean;
 }
 
 export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactElement {
@@ -79,6 +82,8 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
   const [layout, setLayout] = useState<SeilinkHostLayout | null>(null);
   const [deafened, setDeafened] = useState(false);
   const [offer, setOffer] = useState<SeilinkDockOffer>(props.initialOffer ?? 'none');
+  // 261120: pinned on top, she floats in the always-on-top overlay; her room stays, without her.
+  const [pinned, setPinned] = useState(props.initialPinned === true);
   const [dockPress, setDockPress] = useState<DockPress | null>(null);
   const [line, setLine] = useState<SeilinkHostLine | null>(null);
   const [speaking, setSpeaking] = useState(false);
@@ -118,6 +123,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
       bridge.onDockState?.((st) => {
         setDeafened(st.deafened === true);
         setOffer(isSeilinkDockOffer(st.offer) ? st.offer : 'none');
+        setPinned(st.pinned === true);
       }) ?? (() => {}),
       bridge.onDockPress?.((id) => setDockPress((p) => ({ id, n: (p?.n ?? 0) + 1 }))) ?? (() => {}),
       bridge.onLine?.((l) => setLine(l)) ?? (() => {}),
@@ -290,9 +296,11 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
     />
   );
   // 261119: HostArrival decides whether she is drawn yet (waiting for her look, held, coming in, there).
+  // 261120: pinned on top, the room draws without her (she is in the overlay; never two of her).
+  // The hidden wrap measures as no click area, so the desktop gets the clicks there.
   const renderAvatar = (slot: RoomAvatarSlot): React.ReactNode => (
-    <div ref={setWrap} className={styles.measure}>
-      {arrival ? (
+    <div ref={setWrap} className={styles.measure} style={roomShowsHer(pinned) ? undefined : { visibility: 'hidden' }}>
+      {!roomShowsHer(pinned) ? null : arrival ? (
         <HostArrival arrival={arrival} name={room?.name ?? ''} height={slot.height} fps={fps} reduced={props.reducedMotion} onArrived={onArrived}>
           {avatarFor(slot)}
         </HostArrival>
@@ -321,6 +329,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
           pageWidth={size.w}
           hover={dockHover}
           deafened={deafened}
+          pinned={pinned}
           offer={offer}
           name={room.name}
           plain={room.state.plain === true}

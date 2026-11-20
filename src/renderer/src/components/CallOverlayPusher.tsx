@@ -1,54 +1,45 @@
 /**
- * AvatarOverlayPusher (260706 as CallOverlayPusher; 260804 avatar rework) —
- * bridges app state to the always-on-top avatar overlay window. Renders
- * nothing; it watches the avatar mode + activity surfaces + call state and
- * pushes the overlay's desired state to main (voice:overlay-set), which
- * spawns/positions/tears down the overlay window and forwards the state to it.
+ * AvatarOverlayPusher (260706 as CallOverlayPusher; 260804 avatar rework;
+ * 261120 WorldLink pin) — bridges app state to the always-on-top avatar
+ * overlay window. Renders nothing; it pushes the overlay's desired state to
+ * main (voice:overlay-set), which spawns/positions/tears down the overlay
+ * window and forwards the state to it.
  *
  * Lives in the MAIN window (mounted in the App shell), where the character
- * roster is available to resolve each participant's name + portrait. Reading
- * the roster via getState() inside the effect keeps it OFF the dependency
- * list, so a routine character-status update does not re-push.
+ * roster is available to resolve the name + portrait. Reading the roster via
+ * getState() inside the effect keeps it OFF the dependency list, so a routine
+ * character-status update does not re-push.
  *
- * 260804: the player's own tile is GONE — the overlay is the companion's
- * presence on the desktop, not a mirror. Which companions show is
- * computeAvatarIds (pure, tested): 'activity' = call members + live game/
- * share/summon characters; 'always' falls back to the most recently
- * interacted companion (the Home wall's ordering).
+ * 261120: who shows is floatingAvatarIds (shared/seilinkPin.ts, pure,
+ * tested): only the WorldLink companion while she is pinned on top, and
+ * never while the app draws her in her room itself (her room editor, the
+ * WorldLink intro). Calls, games, shares and summons add nobody; a call
+ * with her still drives her mouth, emotion, mute, interrupt and captions
+ * here. She is drawn the way her room draws her (`figure`: the room's
+ * avatar choice, RoomAvatar in the overlay).
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { useChessStore } from '../lib/stores/useChessStore';
-import { useDrawStore } from '../lib/stores/useDrawStore';
 import { useBackseatStore } from '../lib/stores/useBackseatStore';
-import { useAvatarStore } from '../lib/stores/useAvatarStore';
-import { computeAvatarIds } from '../lib/avatar/overlayParticipants';
+import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { classifyEmotion } from '../lib/avatar/emotion';
-import { lastInteractionAt } from '../lib/lastInteraction';
 import { setAvatarLevelTapEnabled } from '../lib/voice/avatarLevelTap';
 import { sei } from '../lib/ipcClient';
 import { t, useLangStore } from '../lib/i18n';
+import { floatingAvatarIds } from '@shared/seilinkPin';
+import { roomAvatarUse, type RoomAvatarUse } from './seilink/RoomAvatar';
 
 export function CallOverlayPusher(): null {
-  const mode = useUiStore((s) => s.avatarMode);
-  const avatarPrefs = useUiStore((s) => s.avatarPrefsByCharacter);
-  // The 'always' fallback: the last-interacted companion, same recency the
-  // Home wall sorts by. The selector returns a bare id string, so routine
-  // roster updates re-render this component only when the LEADER changes.
-  const lastInteractedId = useDataStore((s) => {
-    let best: string | null = null;
-    let bestAt = '';
-    for (const c of s.characters) {
-      const at = lastInteractionAt(c) ?? '';
-      if (at > bestAt) {
-        bestAt = at;
-        best = c.id;
-      }
-    }
-    return best;
-  });
+  const available = useSeilinkStore((s) => s.availability?.enabled === true);
+  const hostState = useSeilinkStore((s) => s.status.state);
+  const hostCharacterId = useSeilinkStore((s) => s.status.characterId);
+  const hostPinned = useSeilinkStore((s) => s.status.pinned === true);
+  // The app drawing her in her room itself: the room editor (also the
+  // first-link flow on the desktop) and the intro.
+  const editorId = useSeilinkStore((s) => (s.flow?.kind === 'editor' ? s.flow.characterId : null));
+  const introId = useSeilinkStore((s) => s.intro?.characterId ?? null);
   const participants = useVoiceStore((s) => s.participants);
   const callStatus = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);
@@ -56,55 +47,48 @@ export function CallOverlayPusher(): null {
   const lastSpokenId = useVoiceStore((s) => s.lastSpokenId);
   const callMuted = useUiStore((s) => s.callMuted);
   const lang = useLangStore((s) => s.lang);
-  const chessGames = useChessStore((s) => s.games);
-  const drawGames = useDrawStore((s) => s.games);
   const backseatActive = useBackseatStore((s) => s.active);
-  const summons = useDataStore((s) => s.summons);
-  const manifests = useAvatarStore((s) => s.manifests);
-  const ensureManifest = useAvatarStore((s) => s.ensure);
 
-  // Activity surfaces beyond the call itself — same definitions as
-  // activeGameFor/avatarActivityBadge, inlined over subscribed slices so a
-  // game starting/ending re-pushes.
-  const activityIds = [
-    ...Object.keys(chessGames).filter((id) => {
-      const g = chessGames[id];
-      return g != null && g.status !== 'ended';
-    }),
-    ...Object.keys(drawGames).filter((id) => {
-      const g = drawGames[id];
-      return g != null && g.phase !== 'gallery' && g.phase !== 'setup';
-    }),
-    ...Object.keys(backseatActive).filter((id) => backseatActive[id]),
-    ...Object.keys(summons).filter((id) => {
-      const k = summons[id]?.kind;
-      return k === 'online' || k === 'connecting';
-    }),
-  ];
-
-  const callActive = callStatus === 'live' || callStatus === 'connecting';
-  const backseatLive = Object.keys(backseatActive).some((id) => backseatActive[id]);
-  const ids = computeAvatarIds({
-    mode,
-    callParticipants: callActive ? participants : [],
-    activityIds,
-    lastInteractedId,
+  const ids = floatingAvatarIds({
+    available,
+    status: { state: hostState, characterId: hostCharacterId, pinned: hostPinned },
+    inRoomViews: [editorId, introId].filter((x): x is string => !!x),
   });
-  const idsKey = ids.join(',');
+  const id = ids[0] ?? null;
 
-  // Live2D presence is read from the manifest cache; ask for any id we have
-  // never asked about (fire-and-forget; the answer re-renders and re-pushes).
+  // Her figure follows her room's avatar choice (imported model or the Sei
+  // avatar). The Sei avatar until the room answers (what her room shows with
+  // no saved choice); a room edit re-reads it.
+  const [figure, setFigure] = useState<{ id: string; use: RoomAvatarUse } | null>(null);
   useEffect(() => {
-    for (const id of ids) ensureManifest(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, ensureManifest]);
+    if (!id) return;
+    let dead = false;
+    const load = (): void => {
+      void sei
+        .seilinkRoomGet?.(id)
+        .then((r) => {
+          if (!dead && r) setFigure({ id, use: roomAvatarUse(r.state.avatar) });
+        })
+        .catch(() => {
+          /* the default stands */
+        });
+    };
+    load();
+    const off = sei.onSeilinkRoomChanged?.((changed) => {
+      if (changed === id) load();
+    });
+    return () => {
+      dead = true;
+      off?.();
+    };
+  }, [id]);
+  const use: RoomAvatarUse = figure && figure.id === id ? figure.use : 'sei';
 
-  // Arm the TTS level tap only while a shown participant is Live2D — the tap
-  // has a real cost on the no-pitch audio path (see avatarLevelTap).
+  // Arm the TTS level tap only while she floats: the tap has a real cost on
+  // the no-pitch audio path (see avatarLevelTap).
   useEffect(() => {
-    setAvatarLevelTapEnabled(mode !== 'off' && ids.some((id) => !!manifests[id]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, idsKey, manifests]);
+    setAvatarLevelTapEnabled(id !== null);
+  }, [id]);
 
   // The overlay's mute button relays through main; the mic's single source of
   // truth stays HERE (useUiStore.callMuted, which dictation subscribes to).
@@ -124,42 +108,44 @@ export function CallOverlayPusher(): null {
     return () => off?.();
   }, []);
 
+  const callActive = callStatus === 'live' || callStatus === 'connecting';
+  // Her call controls show only when SHE is on the call (or sharing): a call
+  // with someone else is not hers to mute from her overlay.
+  const herCall = !!id && ((callActive && participants.includes(id)) || backseatActive[id] === true);
+
   useEffect(() => {
     const chars = useDataStore.getState().characters;
     void sei
       .voiceOverlaySet?.({
-        enabled: mode !== 'off',
+        enabled: id !== null,
         // Call-surface extras (260806): gate the overlay's mute + captions
         // buttons and feed the caption box.
-        onCall: callActive || backseatLive,
+        onCall: herCall,
         muted: callMuted,
         lang,
-        lastSpoken: lastSpoken || null,
-        lastSpokenId,
-        participants: ids.map((id) => {
-          const c = chars.find((x) => x.id === id);
-          const prefs = avatarPrefs[id];
-          const speaking = speakingId === id;
-          return {
-            id,
-            name: c?.name ?? t('Companion'),
-            portrait: c?.portrait_image ?? null,
-            speaking,
-            frame: prefs?.frame ?? 'circle',
-            alwaysBright: prefs?.always_bright === true,
-            live2d: !!manifests[id],
-            // Only the audibly-speaking companion wears an emotion, classified
-            // from the line it is saying (lastSpoken is set at first audible
-            // sample alongside speakingId).
-            emotion: speaking && lastSpokenId === id ? classifyEmotion(lastSpoken) : null,
-          };
-        }),
+        lastSpoken: herCall && lastSpokenId === id ? lastSpoken || null : null,
+        lastSpokenId: herCall ? lastSpokenId : null,
+        participants: id
+          ? [id].map((pid) => {
+              const c = chars.find((x) => x.id === pid);
+              const speaking = speakingId === pid;
+              return {
+                id: pid,
+                name: c?.name ?? t('Companion'),
+                portrait: c?.portrait_image ?? null,
+                speaking,
+                figure: use,
+                // Only while she is audibly speaking does she wear an emotion,
+                // classified from the line she is saying.
+                emotion: speaking && lastSpokenId === pid ? classifyEmotion(lastSpoken) : null,
+              };
+            })
+          : [],
       })
       .catch(() => {
         /* overlay is best-effort; a failed push never affects the app */
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, mode, speakingId, lastSpoken, lastSpokenId, avatarPrefs, manifests, callActive, backseatLive, callMuted, lang]);
+  }, [id, use, herCall, speakingId, lastSpoken, lastSpokenId, callMuted, lang]);
 
   return null;
 }

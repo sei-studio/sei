@@ -61,6 +61,12 @@
   background: rgb(var(--ink) / 0.16);
 }
 
+/* 261120: pinned on top: the pin button reads as switched on (a soft ink fill, no border). */
+.on {
+  color: rgb(var(--ink));
+  background: rgb(var(--ink) / 0.16);
+}
+
 /* Idle lines muted: the button reads as switched off. */
 .off {
   color: rgb(var(--ink) / 0.55);

@@ -23,7 +23,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
 import { profileSetUp } from './lib/profileSetUp';
-import { effectiveAvatarMode } from '@shared/characterSchema';
 import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
@@ -709,9 +708,8 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
-          // Appearance & feel: avatar overlay mode (default OFF; folds in the
-          // deprecated call_overlay_enabled boolean) + per-character prefs.
-          useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));
+          // Per-character avatar prefs. (261120: the avatar overlay mode is
+          // gone; the overlay is WorldLink's pin, see shared/seilinkPin.ts.)
           useUiStore.getState().setAvatarPrefs(cfg.avatar_prefs ?? {});
           // Conversation starters on quiet calls (default ON).
           useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);
@@ -966,9 +964,7 @@ export function App(): React.ReactElement {
           useUiStore.getState().setRealisticTyping(cfg.realistic_typing !== false);
           // Appearance & feel: call captions (default OFF when absent).
           useUiStore.getState().setCallCaptions(cfg.call_captions === true);
-          // Appearance & feel: avatar overlay mode (default OFF when absent;
-          // folds in the deprecated call_overlay_enabled) + per-character prefs.
-          useUiStore.getState().setAvatarMode(effectiveAvatarMode(cfg));
+          // Per-character avatar prefs (261120: no overlay mode any more).
           useUiStore.getState().setAvatarPrefs(cfg.avatar_prefs ?? {});
           // Conversation starters on quiet calls (default ON when absent).
           useUiStore.getState().setConvoStartersEnabled(cfg.call_convo_starters !== false);

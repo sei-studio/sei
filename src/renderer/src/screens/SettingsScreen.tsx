@@ -27,7 +27,6 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { applyTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
 import { Button } from '../components/Button';
-import { Seg } from '../components/Seg';
 import { Toggle } from '../components/Toggle';
 import { TextField } from '../components/TextField';
 import { SignOutConfirmModal } from '../components/SignOutConfirmModal';
@@ -42,7 +41,7 @@ import { BackgroundImagePicker } from '../components/BackgroundImagePicker';
 import { InfoTip } from '../components/InfoTip';
 import { CopyIcon } from '../components/icons';
 import { useLangStore, useT, type UiLanguage } from '../lib/i18n';
-import type { AvatarMode, UserConfig } from '@shared/characterSchema';
+import type { UserConfig } from '@shared/characterSchema';
 import styles from './SettingsScreen.module.css';
 import { GamesSettingsGroup } from '../components/settings/GamesSettingsGroup';
 import { SearchSettingsSection } from '../components/settings/SearchSettingsSection';
@@ -102,9 +101,7 @@ export function SettingsScreen(): React.ReactElement {
   const analyticsOptOut = useUiStore((s) => s.analyticsOptOut);
   const setAnalyticsOptOut = useUiStore((s) => s.setAnalyticsOptOut);
   const callCaptions = useUiStore((s) => s.callCaptions);
-  const avatarMode = useUiStore((s) => s.avatarMode);
   const convoStartersEnabled = useUiStore((s) => s.convoStartersEnabled);
-  const setAvatarMode = useUiStore((s) => s.setAvatarMode);
   const setConvoStartersEnabled = useUiStore((s) => s.setConvoStartersEnabled);
   const setCallCaptions = useUiStore((s) => s.setCallCaptions);
   const authState = useAuthStore((s) => s.state);
@@ -382,25 +379,6 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (call_captions) failed', err);
       setCallCaptions(!next);
-    }
-  };
-
-  // Appearance & feel: avatar overlay mode (260804, default OFF). Writes
-  // avatar_mode; the deprecated call_overlay_enabled boolean is never written
-  // again (effectiveAvatarMode folds it in only while avatar_mode is absent).
-  // The overlay window itself is spawned/torn down by the pusher in App.tsx.
-  const onSelectAvatarMode = async (next: AvatarMode): Promise<void> => {
-    const prev = avatarMode;
-    setAvatarMode(next);
-    if (!cfg) return;
-    try {
-      const updated: UserConfig = { ...cfg, avatar_mode: next };
-      await sei.saveConfig(updated);
-      setCfg(updated);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('[SettingsScreen] saveConfig (avatar_mode) failed', err);
-      setAvatarMode(prev);
     }
   };
 
@@ -886,31 +864,9 @@ export function SettingsScreen(): React.ReactElement {
               onChange={() => void onToggleCallCaptions()}
             />
           </div>
-          {/* Avatar overlay (260804, grew out of the 260706 call overlay):
-              always-on-top companion tiles (static portrait or Live2D). Three
-              levels: off / during activity (calls, games, screenshare,
-              Minecraft) / always while the app is open. */}
-          <div className={styles.row}>
-            <span className={styles.label}>
-              {t('Avatar')}
-              <InfoTip
-                label={t('About the avatar')}
-                text={t(
-                  'Floats your companion on top of every app: their picture, or a Live2D model from their profile. "When active" shows it during calls, games, screensharing and Minecraft; "Always" keeps it up while Sei is open. Hover it to move or resize.',
-                )}
-              />
-            </span>
-            <Seg<AvatarMode>
-              aria-label={t('Avatar')}
-              options={[
-                { value: 'off', label: t('Off') },
-                { value: 'activity', label: t('When active') },
-                { value: 'always', label: t('Always') },
-              ]}
-              value={avatarMode}
-              onChange={(next) => void onSelectAvatarMode(next)}
-            />
-          </div>
+          {/* 261120: the Avatar row (overlay off / when active / always) is
+              gone. The floating avatar is WorldLink's "pin on top" now, on
+              her desktop dock (shared/seilinkPin.ts). */}
           {/* 261107: "Open on login" (WorldLink back after a restart).
               Packaged macOS / Windows only; renders nothing elsewhere. */}
           <OpenAtLoginRow />

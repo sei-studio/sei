@@ -39,6 +39,15 @@
  * Tile size is pure CSS off the window height (main sizes the window;
  * height = tile + 2*16px chrome padding), so every resize path stays
  * consistent by construction.
+ *
+ * 261120 (WorldLink pin, product call (261120)): the overlay shows only the
+ * WorldLink companion pinned on top, drawn as her room draws her (a
+ * participant with `figure`: RoomAvatar, held in place, no walk-offs). Her
+ * edit-mode camera is a transform on the figure, or her imported model's
+ * own camera. The chrome is one borderless button primitive (`.btn`, theme
+ * glass, filled when toggled) and keeps the column: view mode shows
+ * move + pencil (+ mute and interrupt on her call); the rarely used ones
+ * (captions, "Back to the room" which unpins her) wait in edit mode.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { AvatarCamera, AvatarEmotion, CallOverlayState } from '@shared/ipc';
@@ -52,6 +61,10 @@ import { portraitSrc } from './lib/portraitSrc';
 import { pickPalette } from './lib/portraitPalettes';
 import { PixelPortrait } from './components/PixelPortrait';
 import { AvatarView } from './lib/avatar/AvatarView';
+import { RoomAvatar, type RoomAvatarKind } from './components/seilink/RoomAvatar';
+import type { RoomAvatarSlot } from './components/seilink/RoomCanvas';
+import { CheckIcon, MoveIcon, PinIcon, CaptionsIcon } from './components/seilink/roomEditorIcons';
+import { HandIcon, MicIcon, MicOffIcon, PencilIcon } from './components/icons';
 import { useLangStore, useT } from './lib/i18n';
 import styles from './CallOverlay.module.css';
 
@@ -116,6 +129,8 @@ export function CallOverlay(): React.ReactElement | null {
   const polledRef = useRef<OverlayPointerSample | null>(null);
   /** Live2D tiles that failed to load — they fall back to the static tile. */
   const [live2dFailed, setLive2dFailed] = useState<Record<string, boolean>>({});
+  /** What each figure resolved to (an imported model takes the camera itself). */
+  const [figureKind, setFigureKind] = useState<Record<string, RoomAvatarKind>>({});
   const { w: winW, h: winH } = useWindowSize();
   const tilePx = Math.max(MIN_TILE, winH - PAD_TOP);
 
@@ -374,8 +389,11 @@ export function CallOverlay(): React.ReactElement | null {
   );
 
   if (!state || !state.enabled || state.participants.length === 0) return null;
-  const hasLive2d = state.participants.some((p) => p.live2d && !live2dFailed[p.id]);
+  // A figure or a Live2D companion stays frameless in view mode (a box around a
+  // transparent character reads as a bug, 260806).
+  const hasLive2d = state.participants.some((p) => p.figure !== undefined || (p.live2d && !live2dFailed[p.id]));
   const onCall = state.onCall === true;
+  const hasFigure = state.participants.some((p) => p.figure !== undefined);
   const tileWPx = tileWFor(winW, state.participants.length);
 
   return (
@@ -395,6 +413,44 @@ export function CallOverlay(): React.ReactElement | null {
       <div className={styles.row}>
         {state.participants.map((p) => {
           const speaking = p.speaking;
+          if (p.figure) {
+            const cam = camFor(p.id);
+            const kind = figureKind[p.id];
+            const imported = kind === 'live2d' || kind === 'rig';
+            const slot: RoomAvatarSlot = { x: 0, y: 0, height: tilePx, scale: 1, time: 'day', fps: 30 };
+            return (
+              <div
+                key={p.id}
+                className={`${styles.figureTile} ${editing ? styles.live2dEditing : ''}`}
+                title={p.name}
+                onWheel={editing ? onTileWheel(p.id) : undefined}
+                onPointerDown={editing ? (e) => beginTilePan(e, p.id) : undefined}
+              >
+                <div
+                  className={styles.figureCam}
+                  style={
+                    imported
+                      ? undefined
+                      : { transform: `translate(${cam.x * tilePx}px, ${cam.y * tilePx}px) scale(${cam.zoom})` }
+                  }
+                >
+                  <RoomAvatar
+                    slot={slot}
+                    characterId={p.id}
+                    name={p.name}
+                    use={p.figure}
+                    portrait={p.portrait}
+                    speaking={speaking}
+                    levelRef={levelRefFor(p.id)}
+                    emotion={(p.emotion ?? null) as AvatarEmotion | null}
+                    busy
+                    camera={imported ? cam : undefined}
+                    onKind={(k) => setFigureKind((prev) => (prev[p.id] === k ? prev : { ...prev, [p.id]: k }))}
+                  />
+                </div>
+              </div>
+            );
+          }
           const useLive2d = p.live2d && !live2dFailed[p.id];
           if (useLive2d) {
             return (
@@ -464,8 +520,9 @@ export function CallOverlay(): React.ReactElement | null {
       {/* Chrome buttons, stacked bottom-right (column-reverse: first child at
           the bottom): the mode button (pencil/tick), then the hold-to-drag
           button directly above it (the only way to MOVE the window, both
-          modes since 260806), then mute + captions while a call/backseat is
-          live. The column is the overlay's only interactive region in view
+          modes since 260806), then mute + interrupt while her call/backseat
+          is live; edit mode adds captions (on a call) and "Back to the room"
+          (261120). The column is the overlay's only interactive region in view
           mode — its enter/leave (or the polled pointer inside its rect)
           drive the click-through flip. Shown by overlayChromeVisible: the
           same rule for a Live2D, rig or static tile. */}
@@ -479,122 +536,78 @@ export function CallOverlay(): React.ReactElement | null {
         >
           <button
             type="button"
-            className={styles.chromeBtn}
+            className={`${styles.btn} ${editing ? styles.btnOn : ''}`}
             title={editing ? t('Done') : t('Edit')}
             aria-label={editing ? t('Done') : t('Edit')}
+            aria-pressed={editing}
             onClick={() => setEditing((v) => !v)}
           >
-            {editing ? (
-              <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
-                <path
-                  d="M2 6.5 L4.8 9.2 L10 3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            ) : (
-              <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
-                <path
-                  d="M8.6 1.6 L10.4 3.4 L4.2 9.6 L1.6 10.4 L2.4 7.8 Z"
-                  fill="currentColor"
-                />
-              </svg>
-            )}
+            {editing ? <CheckIcon size={14} /> : <PencilIcon size={13} />}
           </button>
 
-          <div className={styles.dragBtn} title={t('Hold to move')} onPointerDown={beginWindowMove}>
-            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-              <circle cx="2" cy="2" r="1" /><circle cx="5" cy="2" r="1" /><circle cx="8" cy="2" r="1" />
-              <circle cx="2" cy="5" r="1" /><circle cx="5" cy="5" r="1" /><circle cx="8" cy="5" r="1" />
-              <circle cx="2" cy="8" r="1" /><circle cx="5" cy="8" r="1" /><circle cx="8" cy="8" r="1" />
-            </svg>
+          <div
+            className={`${styles.btn} ${styles.btnMove}`}
+            title={t('Hold to move')}
+            aria-label={t('Hold to move')}
+            role="button"
+            onPointerDown={beginWindowMove}
+          >
+            <MoveIcon size={14} />
           </div>
 
           {onCall && (
             <button
               type="button"
-              className={`${styles.chromeBtn} ${state.muted ? styles.chromeBtnToggled : ''}`}
+              className={`${styles.btn} ${state.muted ? styles.btnOn : ''}`}
               title={state.muted ? t('Unmute') : t('Mute')}
               aria-label={state.muted ? t('Unmute') : t('Mute')}
               aria-pressed={state.muted === true}
               onClick={() => void sei.avatarOverlayMuteToggle?.().catch(() => {})}
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                <rect x="4.4" y="1" width="3.2" height="6" rx="1.6" fill="currentColor" />
-                <path
-                  d="M2.6 5.6 a3.4 3.4 0 0 0 6.8 0 M6 9 v2"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-                {state.muted ? (
-                  <path
-                    d="M1.6 1.6 L10.4 10.4"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                ) : null}
-              </svg>
+              {state.muted ? <MicOffIcon size={14} /> : <MicIcon size={14} />}
             </button>
           )}
 
           {onCall && (
             <button
               type="button"
-              className={styles.chromeBtn}
+              className={styles.btn}
               title={t('Interrupt')}
               aria-label={t('Interrupt')}
               onClick={() => void sei.avatarOverlayInterrupt?.().catch(() => {})}
             >
-              {/* Raised palm (HandIcon), redrawn on the 12px chrome grid. */}
-              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  d="M18 11V6a2 2 0 0 0-4 0 M14 10V4a2 2 0 0 0-4 0v6 M10 10.5V6a2 2 0 0 0-4 0v8 M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-6-2.3l-3.6-3.6a2 2 0 0 1 2.8-2.8L7 15"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <HandIcon size={14} />
             </button>
           )}
 
-          {onCall && (
+          {/* Rarely used: only in edit mode. */}
+          {editing && onCall && (
             <button
               type="button"
-              className={`${styles.chromeBtn} ${state.captionsOn ? styles.chromeBtnToggled : ''}`}
+              className={`${styles.btn} ${state.captionsOn ? styles.btnOn : ''}`}
               title={state.captionsOn ? t('Hide captions') : t('Show captions')}
               aria-label={state.captionsOn ? t('Hide captions') : t('Show captions')}
               aria-pressed={state.captionsOn === true}
               onClick={() => void sei.avatarOverlayCaptionsToggle?.().catch(() => {})}
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                <rect
-                  x="1"
-                  y="2.4"
-                  width="10"
-                  height="7.2"
-                  rx="1.6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                />
-                <path
-                  d="M3 5.4 h2.6 M7 5.4 h2 M3 7.4 h3.6 M8 7.4 h1"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <CaptionsIcon size={14} />
             </button>
           )}
 
+          {editing && hasFigure && (
+            <button
+              type="button"
+              className={styles.btn}
+              title={t('Back to the room')}
+              aria-label={t('Back to the room')}
+              onClick={() => {
+                setEditing(false);
+                void sei.seilinkPinSet?.(false, 'overlay').catch(() => {});
+              }}
+            >
+              <PinIcon size={14} />
+            </button>
+          )}
         </div>
       )}
     </div>

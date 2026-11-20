@@ -82,6 +82,13 @@ export interface SeilinkHostStatus {
   fps: number;
   /** Set when state is failed or unsupported. */
   failure?: SeilinkHostFailure;
+  /**
+   * 261120 (product call (261120)): she is pinned on top. She left her room
+   * (the wallpaper draws it without her) and floats in the always-on-top
+   * avatar overlay instead. Saved as `seilink_moved_in.pinned`; absent = false.
+   * See shared/seilinkPin.ts.
+   */
+  pinned?: boolean;
 }
 
 /**
@@ -207,8 +214,10 @@ export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';
  * deafen (mute her idle desktop lines; replies to a poke still show), move
  * out (a second press confirms). 261106: while the decorate-together offer
  * is up the dock shows two text buttons instead, `decorate` and `later`.
+ * 261120: `pin` toggles "pin on top" (she floats over every window, her room
+ * stays without her; shared/seilinkPin.ts).
  */
-export const SEILINK_DOCK_ACTIONS = ['edit', 'deafen', 'moveout', 'decorate', 'later'] as const;
+export const SEILINK_DOCK_ACTIONS = ['edit', 'deafen', 'moveout', 'decorate', 'later', 'pin'] as const;
 export type SeilinkDockAction = (typeof SEILINK_DOCK_ACTIONS)[number];
 
 export function isSeilinkDockAction(v: unknown): v is SeilinkDockAction {
@@ -237,6 +246,8 @@ export interface SeilinkDockState {
   deafened: boolean;
   /** 261106: the decorate-together offer (absent = none). */
   offer?: SeilinkDockOffer;
+  /** 261120: she is pinned on top: the room draws without her and the dock's pin button is on. */
+  pinned?: boolean;
 }
 
 export interface SeilinkHostLayout {

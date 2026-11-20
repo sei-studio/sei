@@ -8,7 +8,8 @@ import { IpcChannel } from '../../shared/ipc';
 import { listPacks, publicPack, seilinkDevEnabled, seilinkDevInfo } from './packs';
 import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
-import { seilinkHostStatus, sendSeilinkVoice, setSeilinkIdleLines, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
+import { seilinkHostStatus, sendSeilinkVoice, setSeilinkIdleLines, setSeilinkPinned, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
+import { isPinSource } from '../../shared/seilinkPin';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
 import { anima, readAnimaCutout } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
@@ -67,6 +68,12 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   ipcMain.handle(IpcChannel.seilink.setIdleLines, async (_e, on: unknown) => {
     if (typeof on !== 'boolean') throw new Error('SEILINK_BAD_ARG');
     return setSeilinkIdleLines(on);
+  });
+  // 261120: pin on top / back to her room (the overlay's button; the dock's goes through the host).
+  ipcMain.handle(IpcChannel.seilink.pinSet, async (_e, args: unknown) => {
+    const a = args as { pinned?: unknown; via?: unknown } | null;
+    if (typeof a?.pinned !== 'boolean') throw new Error('SEILINK_BAD_ARG');
+    return setSeilinkPinned(a.pinned, isPinSource(a.via) ? a.via : 'overlay');
   });
   ipcMain.handle(IpcChannel.seilink.availability, async () => seilinkAvailability());
   // 261107: "Open on login" (openAtLogin.ts). Main sends the analytics.

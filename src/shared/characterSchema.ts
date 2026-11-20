@@ -712,23 +712,18 @@ export const UserConfigSchema = z.object({
   call_captions: z.boolean().optional().default(false),
   /**
    * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
-   * `avatar_mode`. Kept so existing config.json files still parse and so
-   * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never
-   * written anymore (Settings writes `avatar_mode`); do not add new readers.
+   * `avatar_mode`, itself retired 261120. Kept so existing config.json files
+   * still parse. Never read and never written; do not add readers.
    */
   call_overlay_enabled: z.boolean().optional().default(false),
   /**
-   * "Avatar" (Appearance & feel, 260804; grew out of the 260706 call overlay).
-   * When the always-on-top avatar overlay (companion tiles, optionally Live2D)
-   * is shown:
-   *   'off'      — never.
-   *   'activity' — while any companion has a live surface: a voice call, a
-   *                chess/Draw!/backseat session, or a Minecraft summon.
-   *   'always'   — whenever the app is open (falls back to the open chat's
-   *                companion when nothing is active).
-   * OPTIONAL with no default on purpose: an absent field means "never chosen",
-   * and `effectiveAvatarMode` derives the value from the deprecated boolean so
-   * users who had the old toggle on keep their overlay without a migration.
+   * DEPRECATED (261120, product call (261120)) — the retired Settings >
+   * Appearance > Avatar control ('off' | 'activity' | 'always', 260804).
+   * The always-on-top avatar overlay now shows ONLY the WorldLink companion
+   * while she is pinned on top (`seilink_moved_in.pinned`, the dock's pin
+   * button; shared/seilinkPin.ts). Kept so existing config.json files still
+   * parse; never read, so an old 'activity' / 'always' cannot bring the
+   * overlay up (a user without WorldLink never sees it).
    */
   avatar_mode: z.enum(['off', 'activity', 'always']).optional(),
   /**
@@ -1170,6 +1165,13 @@ export const UserConfigSchema = z.object({
     .object({
       character_id: z.string().uuid(),
       moved_in_at: z.number().int().nonnegative(),
+      /**
+       * 261120 (product call (261120)): she is pinned on top (floats in the
+       * always-on-top avatar overlay, her room stays without her). Lives on
+       * the move-in so it ends with it: a move-out or a new move-in starts
+       * unpinned; a restart or a restore keeps it. Absent = false.
+       */
+      pinned: z.boolean().optional(),
     })
     .nullable()
     .optional(),
@@ -1255,23 +1257,9 @@ export const UserConfigSchema = z.object({
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 
-/** The avatar overlay's visibility levels (UserConfig.avatar_mode). */
+/** The retired avatar overlay levels (UserConfig.avatar_mode, never read since 261120). */
 export type AvatarMode = 'off' | 'activity' | 'always';
 
 /** One character's entry in UserConfig.avatar_prefs. */
 export type AvatarPrefs = NonNullable<UserConfig['avatar_prefs']>[string];
 
-/**
- * The avatar mode a config actually means, folding in the deprecated boolean:
- * an explicit `avatar_mode` wins; otherwise the old "Call overlay" toggle maps
- * onto its historical behavior (`true` ≈ shown during calls, the closest level
- * being 'activity') so nobody's overlay disappears on update. Both hydration
- * paths and Settings read the mode through this ONE function — never read
- * `avatar_mode` or `call_overlay_enabled` directly.
- */
-export function effectiveAvatarMode(cfg: {
-  avatar_mode?: AvatarMode;
-  call_overlay_enabled?: boolean;
-}): AvatarMode {
-  return cfg.avatar_mode ?? (cfg.call_overlay_enabled === true ? 'activity' : 'off');
-}

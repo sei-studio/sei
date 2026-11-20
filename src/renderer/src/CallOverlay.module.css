@@ -9,6 +9,11 @@
  * flush with the window's bottom edge (260806). --tile is set inline from
  * the window height, so every resize path (our corner handles, anything
  * else) stays consistent.
+ *
+ * 261120 (WorldLink pin): the chrome follows the app's current look: one
+ * borderless button primitive (.btn: dark glass, background only, filled
+ * when toggled, no border lines or glow), a quieter edit outline and plain
+ * corner handles. The pinned companion is a standing figure (.figureTile).
  */
 
 .stage {
@@ -43,11 +48,9 @@
 .outline {
   position: absolute;
   inset: 5px;
-  border-radius: 14px;
-  border: 1px solid rgba(127, 176, 255, 0.85);
-  box-shadow:
-    0 0 8px rgba(127, 176, 255, 0.45),
-    inset 0 0 6px rgba(127, 176, 255, 0.18);
+  border-radius: var(--radius, 2px);
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  background: rgba(20, 22, 28, 0.08);
   opacity: 0;
   transition: opacity 160ms ease;
   pointer-events: none;
@@ -134,7 +137,31 @@
   height: 100%;
 }
 
-/* ── Hover chrome: resize handles + drag button ────────────────────────── */
+/* ── WorldLink figure (261120) ─────────────────────────────────────────── */
+
+/* Her standing figure (RoomAvatar), feet on the window's bottom edge. The
+ * stage inside may be wider than the tile; it centres and clips at the sides. */
+.figureTile {
+  width: var(--tile-w, var(--tile, 220px));
+  height: var(--tile, 220px);
+  flex: 0 0 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* Edit-mode zoom + pan for a figure without its own camera, about her feet. */
+.figureCam {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+
+/* ── Hover chrome: resize handles + buttons ────────────────────────────── */
 
 .handle {
   position: absolute;
@@ -147,10 +174,10 @@
 .handle::after {
   content: '';
   position: absolute;
-  inset: 3px;
-  border-radius: 2px;
-  background: rgba(127, 176, 255, 0.9);
-  box-shadow: 0 0 6px rgba(127, 176, 255, 0.6);
+  inset: 4px;
+  border-radius: var(--radius, 2px);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .tl { top: 0; left: 0; cursor: nwse-resize; }
@@ -162,7 +189,7 @@
  * sees), clear of the corner RESIZE handle at the true corner and raised one
  * button height off the bottom edge (260806). column-reverse stacks upward:
  * mode button at the bottom, then the hold-to-drag button (both modes), then
- * mute + captions (call/backseat only). The padding is a slightly generous
+ * mute + interrupt (her call), and in edit mode captions + back to the room. The padding is a slightly generous
  * hover zone: the column is the window's only interactive region in view
  * mode, and entering/leaving it flips click-through (CallOverlay.tsx). */
 .btnCol {
@@ -176,53 +203,60 @@
   z-index: 4;
 }
 
-.chromeBtn,
-.dragBtn {
-  width: 20px;
-  height: 20px;
+/* The one button primitive (261120): background only, no border lines; it
+ * darkens and presses in when pressed and fills with the accent while its
+ * state is on (edit mode, mic muted, captions showing). Dark glass because
+ * the window floats over any app. Never a drag region. */
+.btn {
+  width: 26px;
+  height: 26px;
   padding: 0;
-  border-radius: var(--radius-sm);
+  border: none;
+  border-radius: var(--radius, 2px);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(20, 22, 28, 0.92);
-  border: 1px solid rgba(127, 176, 255, 0.6);
-  box-shadow: 0 0 8px rgba(127, 176, 255, 0.35);
-}
-
-/* Real buttons (pencil/tick, mute, captions) — never a drag region. */
-.chromeBtn {
-  color: rgba(127, 176, 255, 0.95);
+  background: rgba(20, 22, 28, 0.62);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.86);
   cursor: pointer;
   -webkit-app-region: no-drag;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
 }
 
-.chromeBtn:hover {
-  border-color: rgba(127, 176, 255, 0.95);
-  box-shadow: 0 0 10px rgba(127, 176, 255, 0.55);
-}
-
-/* Lit while its state is ON (mic muted / captions showing). */
-.chromeBtnToggled {
-  background: rgba(127, 176, 255, 0.3);
+.btn:hover {
+  background: rgba(20, 22, 28, 0.8);
   color: #ffffff;
-  border-color: rgba(127, 176, 255, 0.95);
 }
 
-/* Hold-to-drag button: holding it streams a window-move to main
- * (avatar:overlay-move). Ordinary chrome, NOT an app-region — a drag region
- * swallows pointer events, which would blind the column's enter/leave
- * tracking that drives click-through. Shown in BOTH modes; still the ONLY
- * way to move the window (260806). */
-.dragBtn {
+.btn:active {
+  transform: scale(0.92);
+  background: rgba(20, 22, 28, 0.92);
+}
+
+.btnOn,
+.btnOn:hover {
+  background: var(--accent, #3f6fc4);
+  color: var(--accent-text, #ffffff);
+}
+
+.btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 1px;
+}
+
+/* Hold-to-drag (avatar:overlay-move): ordinary chrome, NOT an app-region (a
+ * drag region swallows pointer events and would blind the column's
+ * enter/leave tracking that drives click-through). Shown in both modes; the
+ * only way to move the window (260806). */
+.btnMove {
   cursor: grab;
-  -webkit-app-region: no-drag;
 }
 
-.dragBtn:active {
+.btnMove:active {
   cursor: grabbing;
-}
-
-.dragBtn svg {
-  fill: rgba(127, 176, 255, 0.95);
 }

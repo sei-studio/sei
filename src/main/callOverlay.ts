@@ -1,6 +1,13 @@
 /**
  * Always-on-top avatar overlay window (260706 as the "call overlay"; 260804
- * avatar rework).
+ * avatar rework; 261120: WorldLink "pin on top").
+ *
+ * 261120: the overlay only ever shows the WorldLink companion while she is
+ * pinned on top (shared/seilinkPin.ts holds the rules; CallOverlayPusher
+ * pushes `enabled` + at most one participant). The old Settings > Appearance
+ * > Avatar modes are gone; this module is unchanged in how it reconciles the
+ * window, and reports `avatar_overlay_shown` (how long it stayed up,
+ * bucketed) and `avatar_overlay_failed` (shape only).
  *
  * A frameless, transparent BrowserWindow showing the companions' avatar tiles
  * (static portrait or Live2D) on top of every other app. The main-window
@@ -41,6 +48,8 @@
 import { BrowserWindow, screen, app } from 'electron';
 import { IpcChannel, type AvatarCamera, type CallOverlayState } from '../shared/ipc';
 import { loadConfig, updateConfig } from './configStore';
+import { loadAnalytics } from './lazyAnalytics';
+import { pinDurationBucket, type OverlayFailure } from '../shared/seilinkPin';
 import {
   samplePointer,
   shouldPushPointer,
@@ -70,7 +79,11 @@ let lastState: CallOverlayState | null = null;
 // and do NOT scale with the tile. No bottom padding (260806): the avatar's
 // bottom edge sits flush on the window's bottom edge, so she stands ON
 // whatever the window is placed against instead of floating above it.
-const DEFAULT_TILE = 76;
+// 261120: she floats as a standing figure now (RoomAvatar), not a round
+// portrait tile, so the default box is a tall rectangle. A size saved by the
+// old overlay is kept (the user chose it).
+const DEFAULT_TILE = 220;
+const DEFAULT_TILE_W = 150;
 const GAP = 10;
 const PAD_X = 14;
 const PAD_TOP = 16; // window height = tileSize + PAD_TOP (bottom is flush)
@@ -84,7 +97,7 @@ let tileSize = DEFAULT_TILE;
  * corner handles stream both axes, so the window can be any rectangle. Equal
  * to tileSize (square) until the user drags a corner off-diagonal; configs
  * from before `width` existed hydrate square. */
-let tileWidth = DEFAULT_TILE;
+let tileWidth = DEFAULT_TILE_W;
 /** Stored window origin (user has dragged/resized), null = default corner. */
 let storedPos: { x: number; y: number } | null = null;
 /** Per-character tile cameras (260806): character zoom + pan WITHIN the tile,
@@ -115,6 +128,21 @@ const CURSOR_POLL_MS = 120;
 /** Last window-local pointer sample pushed (null = none since the window
  * came up), so a cursor resting elsewhere costs one push, not one per tick. */
 let lastPointer: OverlayPointerSample | null = null;
+/** When the current window was revealed (avatar_overlay_shown's duration), 0 = not shown. */
+let shownAt = 0;
+
+/** Overlay analytics, shape only (no ids, no text). Never throws. */
+function captureOverlay(event: 'avatar_overlay_shown' | 'avatar_overlay_failed', props: Record<string, unknown>): void {
+  void loadAnalytics()
+    .then((a) => a.capture(event, props))
+    .catch(() => {
+      /* analytics is optional */
+    });
+}
+
+function overlayFailed(failure: OverlayFailure): void {
+  captureOverlay('avatar_overlay_failed', { failure_class: failure });
+}
 
 export function initCallOverlay(config: OverlayConfig): void {
   cfg = config;
@@ -279,53 +307,59 @@ function ensureWindow(): BrowserWindow | null {
   if (overlayWin && !overlayWin.isDestroyed()) return overlayWin;
   if (!cfg) return null;
 
-  const win = new BrowserWindow({
-    width: 220,
-    height: tileSize + PAD_TOP,
-    show: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    // NOT resizable: a frameless resizable window keeps invisible OS
-    // resize-frame regions along its edges — exactly where the corner handles
-    // sit — and a click there is window-frame interaction: macOS ACTIVATED the
-    // app ("clicking the corner opens up the app") and the frame region fought
-    // the handles' CSS resize cursor. All real resizing goes through setBounds
-    // (resizeOverlay), which ignores `resizable`; the corner handles stream
-    // both tile axes, so any rectangle is reachable (free-form since 260807).
-    resizable: false,
-    // Moving goes through the hold-to-drag button's moveAvatarOverlay stream
-    // (setBounds ignores `movable`, so this is belt-and-braces only).
-    movable: true,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    skipTaskbar: true,
-    focusable: false,
-    hasShadow: false,
-    alwaysOnTop: true,
-    // macOS: without this, the FIRST click into the overlay while Sei is not
-    // the active app is treated as an activation click — AppKit activates Sei
-    // and raises the main window ("clicking the resize handle pops open the
-    // app", 260806) and the click never reaches the handle. acceptFirstMouse
-    // delivers that click to the page instead; focusable:false + the panel
-    // type below keep the window itself from ever taking key status.
-    acceptFirstMouse: true,
-    // macOS: a non-activating NSPanel floats above other windows without ever
-    // becoming the app's key/main window, so spawning it can't reorder or hide
-    // the main Sei window (the "app disappears when a call starts" report).
-    ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
-    title: 'Sei avatar overlay',
-    webPreferences: {
-      preload: cfg.preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      // A Live2D tile must keep animating while a fullscreen game occludes
-      // the window — same reasoning as the main window (windowChrome.ts).
-      backgroundThrottling: false,
-    },
-  });
+  let win: BrowserWindow;
+  try {
+    win = new BrowserWindow({
+      width: 220,
+      height: tileSize + PAD_TOP,
+      show: false,
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      // NOT resizable: a frameless resizable window keeps invisible OS
+      // resize-frame regions along its edges — exactly where the corner handles
+      // sit — and a click there is window-frame interaction: macOS ACTIVATED the
+      // app ("clicking the corner opens up the app") and the frame region fought
+      // the handles' CSS resize cursor. All real resizing goes through setBounds
+      // (resizeOverlay), which ignores `resizable`; the corner handles stream
+      // both tile axes, so any rectangle is reachable (free-form since 260807).
+      resizable: false,
+      // Moving goes through the hold-to-drag button's moveAvatarOverlay stream
+      // (setBounds ignores `movable`, so this is belt-and-braces only).
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      focusable: false,
+      hasShadow: false,
+      alwaysOnTop: true,
+      // macOS: without this, the FIRST click into the overlay while Sei is not
+      // the active app is treated as an activation click — AppKit activates Sei
+      // and raises the main window ("clicking the resize handle pops open the
+      // app", 260806) and the click never reaches the handle. acceptFirstMouse
+      // delivers that click to the page instead; focusable:false + the panel
+      // type below keep the window itself from ever taking key status.
+      acceptFirstMouse: true,
+      // macOS: a non-activating NSPanel floats above other windows without ever
+      // becoming the app's key/main window, so spawning it can't reorder or hide
+      // the main Sei window (the "app disappears when a call starts" report).
+      ...(process.platform === 'darwin' ? { type: 'panel' as const } : {}),
+      title: 'Sei avatar overlay',
+      webPreferences: {
+        preload: cfg.preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        // A Live2D tile must keep animating while a fullscreen game occludes
+        // the window — same reasoning as the main window (windowChrome.ts).
+        backgroundThrottling: false,
+      },
+    });
+  } catch {
+    overlayFailed('create_failed');
+    return null;
+  }
 
   // Float above fullscreen apps (a game/stream), across every workspace.
   win.setAlwaysOnTop(true, 'screen-saver');
@@ -349,11 +383,17 @@ function ensureWindow(): BrowserWindow | null {
   keepAppForeground();
 
   const t = cfg.rendererUrlOrPath;
-  if (t.startsWith('http://') || t.startsWith('https://') || t.startsWith('file://')) {
-    void win.loadURL(`${t}${t.includes('?') ? '&' : '?'}overlay=1`);
-  } else {
-    void win.loadFile(t, { search: 'overlay=1' });
-  }
+  const loading =
+    t.startsWith('http://') || t.startsWith('https://') || t.startsWith('file://')
+      ? win.loadURL(`${t}${t.includes('?') ? '&' : '?'}overlay=1`)
+      : win.loadFile(t, { search: 'overlay=1' });
+  loading.catch(() => {
+    // A teardown mid-load also rejects; only a live window's failure counts.
+    if (!win.isDestroyed() && overlayWin === win) overlayFailed('load_failed');
+  });
+  win.webContents.on('render-process-gone', () => {
+    if (overlayWin === win) overlayFailed('renderer_gone');
+  });
 
   // Persist the position after any native move (safety net — the hold-to-drag
   // button streams through moveAvatarOverlay/setBounds now, which persists at
@@ -382,6 +422,7 @@ function ensureWindow(): BrowserWindow | null {
   const reveal = (): void => {
     if (revealed || win.isDestroyed()) return;
     revealed = true;
+    if (!shownAt) shownAt = Date.now();
     pushState();
     win.showInactive();
     // showInactive on an all-workspaces panel can itself trigger the demotion;
@@ -390,7 +431,10 @@ function ensureWindow(): BrowserWindow | null {
   };
   win.once('ready-to-show', reveal);
   win.webContents.once('did-finish-load', reveal);
-  setTimeout(reveal, 1500);
+  setTimeout(() => {
+    if (!revealed && !win.isDestroyed()) overlayFailed('reveal_backstop');
+    reveal();
+  }, 1500);
   win.on('closed', () => {
     if (overlayWin === win) overlayWin = null;
   });
@@ -563,7 +607,8 @@ function pushCursorSample(): void {
       overlayWin.webContents.send(IpcChannel.avatar.overlayPointerState, sample);
     }
     lastPointer = sample;
-    if (!lastState?.participants.some((p) => p.live2d === true)) return;
+    // Gaze: a Live2D tile, or a figure that may be her imported model (RoomAvatar).
+    if (!lastState?.participants.some((p) => p.live2d === true || p.figure !== undefined)) return;
     const b = overlayWin.getBounds();
     const disp = screen.getDisplayMatching(b).bounds;
     const halfW = Math.max(1, disp.width / 2);
@@ -658,6 +703,10 @@ export function closeCallOverlay(): void {
   }
   lastPointer = null;
   moveStartPos = null;
+  if (shownAt) {
+    captureOverlay('avatar_overlay_shown', { duration_bucket: pinDurationBucket(Date.now() - shownAt), source: 'worldlink_pin' });
+    shownAt = 0;
+  }
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;
 }

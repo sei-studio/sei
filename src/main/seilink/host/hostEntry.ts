@@ -188,6 +188,8 @@ let downTarget: PressTarget = { kind: 'none' };
 let deafened = false;
 /** 261106: the decorate-together offer on the dock (decorateOffer.ts). */
 let offer: SeilinkDockOffer = 'none';
+/** 261120: she is pinned on top (the page draws the room without her). */
+let pinned = false;
 let lineSeq = 0;
 
 const activity = new RoomActivity(SEILINK_HOST_FPS, (a) => {
@@ -296,7 +298,8 @@ function onCommand(m: ToHost): void {
     case 'dock-state':
       deafened = m.deafened === true;
       offer = isSeilinkDockOffer(m.offer) ? m.offer : 'none';
-      toPage(CH.dockState, { deafened, offer });
+      pinned = m.pinned === true;
+      toPage(CH.dockState, { deafened, offer, pinned });
       break;
     case 'line': {
       const text = String(m.text ?? '').slice(0, 400).trim();
@@ -499,7 +502,7 @@ ipcMain.on(CH.ready, (e) => {
   e.sender.send(CH.fps, activity.current.fps);
   e.sender.send(CH.busy, busy);
   e.sender.send(CH.layout, layoutNow());
-  e.sender.send(CH.dockState, { deafened, offer });
+  e.sender.send(CH.dockState, { deafened, offer, pinned });
   if (arrival) e.sender.send(CH.arrival, arrival);
   if (room) e.sender.send(CH.room, room);
 });

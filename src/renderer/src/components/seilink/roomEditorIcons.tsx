@@ -148,6 +148,33 @@ export const MoveOutIcon = (p: P): React.ReactElement => (
   </Svg>
 );
 
+/**
+ * 261120: pin on top (a pushpin). The dock's pin button and the avatar overlay's
+ * "back to her room" button; the pressed look says which way it is.
+ */
+export const PinIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M9 3.5h6M10 3.5v6L6.5 13.5h11L14 9.5v-6" />
+    <path d="M12 13.5V20.5" />
+  </Svg>
+);
+
+/** 261120: the overlay's hold-to-move button (four arrows). */
+export const MoveIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <path d="M12 3.5v17M3.5 12h17" />
+    <path d="M9.5 6L12 3.5 14.5 6M9.5 18l2.5 2.5 2.5-2.5M6 9.5L3.5 12 6 14.5M18 9.5l2.5 2.5-2.5 2.5" />
+  </Svg>
+);
+
+/** 261120: the overlay's captions toggle (a caption box with two lines). */
+export const CaptionsIcon = (p: P): React.ReactElement => (
+  <Svg {...p}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="1.5" />
+    <path d="M7 11h4M13 11h4M7 14.5h6M15 14.5h2" />
+  </Svg>
+);
+
 // ── Editor rail (261105): one line icon per slot, in place of image previews ──
 
 /** Avatar: a person. */

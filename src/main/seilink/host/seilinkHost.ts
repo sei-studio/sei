@@ -20,6 +20,15 @@
  * M4: seilink_moved_in {character_id, swapped, preset, first_room, blank_room (261106)} when the
  * user moves someone in (not on a restore), seilink_moved_out
  * {character_id, via} when the user moves her out from the app or the dock.
+ *
+ * 261120 (product call (261120)): "pin on top". The dock's pin button (or the
+ * overlay's own unpin) floats her over every window in the avatar overlay and
+ * the room draws without her (shared/seilinkPin.ts has the rules). The pin is
+ * saved on the move-in (`seilink_moved_in.pinned`) and carried in
+ * SeilinkHostStatus.pinned (the main window's overlay pusher reads it) and in
+ * the dock state (the host page hides her). seilink_pin {pinned, via,
+ * character_id}, seilink_pin_ended {duration_bucket, reason, character_id},
+ * seilink_pin_failed {failure_class, via}.
  */
 import { app, nativeTheme } from 'electron';
 import { isBlankRoom, isPlainRoom } from '../../../shared/seilinkRoom';
@@ -79,6 +88,7 @@ import {
   type WatchdogEmit,
 } from './hostTelemetry';
 import { beginSessionStart } from '../../profile/scopeBarrier';
+import { pinDurationBucket, savedPinned, withPinned, worldlinkCompanion, type PinFailure, type PinSource } from '../../../shared/seilinkPin';
 
 export interface SeilinkHostDeps {
   /** Status to the main window. */
@@ -194,6 +204,12 @@ let sessionSeq = 0;
 const unavailableSent = new Set<string>();
 /** The tail of the start / stop / restore queue (see serial). */
 let opChain: Promise<unknown> = Promise.resolve();
+/**
+ * 261120: who is pinned on top (her move-in's `pinned`), and since when in this app run
+ * (seilink_pin_ended's duration). Outlives a failed session: she keeps floating while her
+ * room is down. Cleared with the move-in, on an account switch and on quit.
+ */
+let pin: { characterId: string; since: number } | null = null;
 
 /**
  * Start, stop and restore run one at a time, in call order. Without this a
@@ -233,7 +249,10 @@ function availability(): ReturnType<typeof addonAvailability> {
   return addonAvailability({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() });
 }
 
-function setStatus(next: SeilinkHostStatus): void {
+function setStatus(raw: SeilinkHostStatus): void {
+  // 261120: `pinned` is only ever true for the companion who lives there (absent otherwise).
+  const { pinned: _was, ...rest } = raw;
+  const next: SeilinkHostStatus = pin && rest.characterId === pin.characterId ? { ...rest, pinned: true } : rest;
   status = next;
   const key = JSON.stringify(next);
   if (key === lastPushed) return;
@@ -353,6 +372,10 @@ async function startNow(
   const swapped = session !== null;
   if (session) await endSession('replaced');
   if (!guard.stillValid()) throw new Error('ACCOUNT_SWITCHING');
+  // 261120: a new move-in starts unpinned (its saved move-in below has no pin); a restore keeps the saved one.
+  const keepPin = opts?.restored === true && savedPinned(await loadConfig().catch(() => null), characterId);
+  if (!keepPin) endPin('replaced');
+  else if (pin?.characterId !== characterId) pin = { characterId, since: Date.now() };
   if (!opts?.restored) {
     await updateConfig((c) => ({ ...c, seilink_moved_in: { character_id: characterId, moved_in_at: Date.now() } }));
     const room = await getRoomPayload(characterId).catch(() => null);
@@ -388,6 +411,8 @@ async function stopNow(reason: SeilinkEndReason, via: 'app' | 'dock'): Promise<S
   }
   if (session) await endSession(reason);
   if (reason === 'user_stop' || reason === 'disabled' || reason === 'character_removed' || reason === 'link_failed') {
+    // 261120: she is back from the desktop altogether, so she stops floating too (the pin rides the move-in).
+    endPin(reason === 'user_stop' ? 'move_out' : reason);
     await updateConfig((c) => (c.seilink_moved_in ? { ...c, seilink_moved_in: null } : c)).catch((err) =>
       log(`clear moved-in failed: ${(err as Error).message}`),
     );
@@ -400,7 +425,11 @@ export function stopSeilinkHostForAccountSwitch(): Promise<void> {
   // 261105: her face-set polls stop too; the next account asks for itself.
   anima.reset();
   avatarLibrary.reset();
-  return serial(() => (session ? endSession('account_switch') : Promise.resolve()));
+  return serial(async () => {
+    if (session) await endSession('account_switch');
+    // 261120: a pin kept over a failed room (no session) ends with the account too.
+    endPin('account_switch');
+  });
 }
 
 /** App quit: synchronous enough for before-quit (the host also exits when the pipe closes). */
@@ -435,6 +464,7 @@ async function restoreNow(): Promise<void> {
     const id = cfg.seilink_moved_in?.character_id;
     if (!id) {
       if (session) await endSession('replaced');
+      endPin('replaced');
       return;
     }
     // She may have been deleted since (another device, a hand-cleaned profile, a removal while
@@ -476,6 +506,7 @@ export function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
         await stopNow('character_removed', 'app');
         return;
       }
+      if (pin?.characterId === characterId) endPin('character_removed');
       await updateConfig((c) => (c.seilink_moved_in?.character_id === characterId ? { ...c, seilink_moved_in: null } : c));
     } catch (err) {
       log(`character removed cleanup failed: ${(err as Error).message}`);
@@ -729,8 +760,10 @@ function onConnection(s: Session, sock: net.Socket): void {
         s.connPid = pid;
         sendTo(s, { type: 'set-fps', fps: fpsCap });
         sendTo(s, { type: 'busy', busy: s.busy.busy });
-        // Before her room, so the page never draws her before it knows how she arrives.
+        // Before her room, so the page never draws her before it knows how she arrives
+        // (and, 261120, whether she is pinned on top: then the room draws without her).
         s.arrival.resend();
+        sendDockState(s);
         void sendRoom(s);
         void loadConfig().then(
           (c) => {
@@ -900,6 +933,11 @@ async function onDockAction(s: Session, action: SeilinkDockAction): Promise<void
     deps?.openRoomEditor?.(characterId);
     return;
   }
+  if (action === 'pin') {
+    // 261120: seilink_pin has it (setSeilinkPinned).
+    void setSeilinkPinned(pin?.characterId !== characterId, 'dock');
+    return;
+  }
   if (action === 'decorate' || action === 'later') {
     // Only while the offer is up (a stale press after it closed does nothing). seilink_decorate_offer has it.
     if (s.offer === 'none') return;
@@ -984,7 +1022,56 @@ export function sendSeilinkVoiceLevel(characterId: string, level: number): void 
 
 /** M4: who is on the desktop right now (attached and drawing), for desktopLines.ts. */
 function sendDockState(s: Session): void {
-  sendTo(s, { type: 'dock-state', deafened: s.deafened, offer: s.offer });
+  sendTo(s, { type: 'dock-state', deafened: s.deafened, offer: s.offer, pinned: pin?.characterId === s.characterId });
+}
+
+// ── 261120: pin on top ──────────────────────────────────────────────────────
+
+/** The pin span ends (analytics once per span); the status and her dock follow. */
+function endPin(reason: 'unpin' | 'move_out' | 'replaced' | 'disabled' | 'character_removed' | 'link_failed' | 'account_switch' | 'app_quit'): void {
+  const p = pin;
+  if (!p) return;
+  pin = null;
+  capture('seilink_pin_ended', { character_id: p.characterId, reason, duration_bucket: pinDurationBucket(Date.now() - p.since) });
+  if (session && !session.ending && session.characterId === p.characterId) sendDockState(session);
+  if (status.characterId === p.characterId) setStatus(status);
+}
+
+function pinFailed(failure: PinFailure, via: PinSource): SeilinkHostStatus {
+  capture('seilink_pin_failed', { failure_class: failure, via });
+  log(`pin failed: ${failure}`);
+  return status;
+}
+
+/**
+ * 261120: pin her on top (she floats in the always-on-top avatar overlay, her room draws
+ * without her) or bring her back into her room. Only for the companion who lives in WorldLink
+ * now (running, starting, restarting, or failed with her move-in kept). Saved on her move-in.
+ * Runs in the start / stop queue, so a move-in or move-out in flight finishes first.
+ */
+export function setSeilinkPinned(pinned: boolean, via: PinSource): Promise<SeilinkHostStatus> {
+  return serial(async () => {
+    if (!seilinkEnabled()) return pinFailed('unavailable', via);
+    const live = session && !session.ending ? session.characterId : null;
+    const characterId = live ?? worldlinkCompanion(status);
+    if (!characterId) return pinFailed('not_moved_in', via);
+    if ((pin?.characterId === characterId) === pinned) return status;
+    try {
+      await updateConfig((c) => withPinned(c, characterId, pinned));
+    } catch (err) {
+      log(`pin write failed: ${(err as Error).message}`);
+      return pinFailed('config_write', via);
+    }
+    capture('seilink_pin', { pinned, via, character_id: characterId });
+    if (pinned) {
+      pin = { characterId, since: Date.now() };
+      if (session && !session.ending && session.characterId === characterId) sendDockState(session);
+      setStatus(status);
+    } else {
+      endPin('unpin');
+    }
+    return status;
+  });
 }
 
 /**
@@ -1161,6 +1248,8 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
     ...factProps(s.facts),
   });
   log(`host ended (${reason}${failure ? `, ${failure}` : ''})`);
+  // 261120: the pin span ends with the app run or the account; the saved pin stays for the restore.
+  if (reason === 'account_switch' || reason === 'app_quit') endPin(reason);
   // A failure keeps who it was for, so her page can say her room stopped.
   setStatus(failure ? { ...SEILINK_HOST_OFF, state: 'failed', characterId: s.characterId, failure } : baseStatus());
   if (live !== null) {

@@ -149,7 +149,7 @@ export function budgetAllows(kind: 'idle' | 'poke', budget: LineBudget): boolean
   return kind === 'poke' && budget === 'free';
 }
 
-export type IdleBlock = 'covered' | 'paused' | 'deafened' | 'away' | 'busy' | 'occupied';
+export type IdleBlock = 'covered' | 'paused' | 'pinned' | 'deafened' | 'away' | 'busy' | 'occupied';
 
 /** Why the budget refused a line: a free account over its weekly cap, a paid one over its limit, no plan read. */
 export type BudgetRefusal = 'free_plan' | 'free_cap' | 'over_limit' | 'no_plan';
@@ -233,6 +233,8 @@ export function pokeEventAllowed(last: Map<string, number>, outcome: PokeOutcome
 export function idleBlock(s: {
   covered: boolean;
   paused: boolean;
+  /** 261120: pinned on top, she is not in her room (the room draws without her): no bubble there. */
+  pinned?: boolean;
   deafened: boolean;
   idleSeconds: number;
   busy: boolean;
@@ -240,6 +242,7 @@ export function idleBlock(s: {
 }): IdleBlock | null {
   if (s.covered) return 'covered';
   if (s.paused) return 'paused';
+  if (s.pinned) return 'pinned';
   if (s.deafened) return 'deafened';
   if (s.idleSeconds >= AWAY_AFTER_S) return 'away';
   if (s.busy) return 'busy';
@@ -331,6 +334,7 @@ async function tick(): Promise<void> {
   const block = idleBlock({
     covered: st.covered,
     paused: st.paused,
+    pinned: st.pinned === true,
     deafened: cfg?.seilink_deafened === true,
     idleSeconds: systemIdleSeconds(),
     busy: seilinkHostBusy(),

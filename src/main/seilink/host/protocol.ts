@@ -31,7 +31,7 @@ export type ToHost =
   /** Frame cap while visible. */
   | { type: 'set-fps'; fps: number }
   /** M4: the dock's state (her idle lines muted; 261106 the decorate-together offer). */
-  | { type: 'dock-state'; deafened: boolean; offer?: SeilinkDockOffer }
+  | { type: 'dock-state'; deafened: boolean; offer?: SeilinkDockOffer; pinned?: boolean }
   /** M4: a line she says on the desktop (a bubble near her). */
   | { type: 'line'; text: string; kind: 'idle' | 'poke'; emotion?: AvatarEmotion | null; face?: string | null }
   /**

@@ -13,7 +13,8 @@
  *   portrait=<url>        her portrait (else her silhouette)
  *   name=<name>           her name (default Sui)
  *   lang=<code>           UI language
- *   press=edit|deafen     simulate a dock press after the line shows (the caption)
+ *   press=edit|deafen|pin simulate a dock press after the line shows (the caption)
+ *   pinned=1              261120: she is pinned on top (the room draws without her, the pin is on)
  *   state=<json>          261105: the room as saved (slots, items; sanitized like the store's), e.g. after an edit
  *   arrival=<mode>        261119: her arrival as main would send it: wait | hold | enter | show, or sim
  *                         (the waiting line, then her entrance at `arriveat`). Absent: she is just shown.
@@ -50,7 +51,8 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
   const later = (fn: () => void, ms: number): void => void setTimeout(fn, ms);
   // Deafen flips like the real host's answer (seilinkHost.onDockAction).
   let deafened = params.get('deafened') === '1';
-  let dockState: Cb<{ deafened: boolean }> | null = null;
+  let pinned = params.get('pinned') === '1';
+  let dockState: Cb<{ deafened: boolean; pinned: boolean }> | null = null;
   const hooks = window as unknown as DevHooks;
   const press = new Set<() => void>();
   const pokes = new Set<Cb<SeilinkPokeKind>>();
@@ -140,20 +142,21 @@ function fakeBridge(params: URLSearchParams): SeilinkHostBridge {
     },
     onDockState: (cb) => {
       dockState = cb;
-      later(() => cb({ deafened }), 0);
+      later(() => cb({ deafened, pinned }), 0);
       return () => {};
     },
     onDockPress: (cb: Cb<SeilinkDockAction>) => {
       const p = params.get('press');
-      if (p === 'edit' || p === 'deafen') later(() => cb(p), 2600);
+      if (p === 'edit' || p === 'deafen' || p === 'pin') later(() => cb(p), 2600);
       return () => {};
     },
     setDock: () => {},
     dockAction: (a) => {
       console.log(`[dev host] dock action ${a}`);
-      if (a !== 'deafen') return;
-      deafened = !deafened;
-      dockState?.({ deafened });
+      if (a === 'pin') pinned = !pinned;
+      else if (a === 'deafen') deafened = !deafened;
+      else return;
+      dockState?.({ deafened, pinned });
     },
     onLine: (cb) => {
       const text = params.get('line');
