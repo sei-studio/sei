@@ -50,6 +50,11 @@ const ENERGY_FLOOR_DB = -60;
  *  would backfill segments no tick will ever read. */
 const MAX_PENDING_MS = 10_000;
 
+/** A job slower than this stops holding up the tick that flushed it (the
+ *  tick goes with what the ring already has). The job itself keeps running
+ *  and still owns the stream until it answers; see dispatch(). */
+const STT_SLOW_JOB_MS = 15_000;
+
 export interface SttStream {
   /** Feed normalized PCM: mono Float32 at STT_SAMPLE_RATE. */
   push(pcm: Float32Array): void;
@@ -157,13 +162,20 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
 
     busy = true;
     const id = nextId++;
+    // 261121: a slow job releases the tick waiting on it, NOT the stream.
+    // This used to clear `busy` here too, so a Whisper that ran slower than
+    // real time (a CPU-starved machine: a game, two 720p60 clip encoders and
+    // the call's own Whisper all at once) was handed a new job every 15 s on
+    // top of the ones it had not finished. The worker runs every message it
+    // gets concurrently, so the backlog grew without bound, each job holding
+    // its own inference buffers: measured on a 1-core quota, 5+ jobs in
+    // flight at 30-60 s each and renderer malloc climbing past 1.4 GB, which
+    // is the v0.7.0 backseat renderer OOM. Now there is exactly one job in
+    // flight; audio that arrives meanwhile stays capped at MAX_PENDING_MS,
+    // so a late answer is followed by the newest audio, not a queue of old.
     const timeout = setTimeout(() => {
-      // A wedged worker must not silence the rest of the session.
-      if (waiters.delete(id)) {
-        busy = false;
-        settle();
-      }
-    }, 15_000);
+      if (waiters.has(id)) settle();
+    }, STT_SLOW_JOB_MS);
     waiters.set(id, (text) => {
       clearTimeout(timeout);
       busy = false;
@@ -231,11 +243,17 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
       // Bounded wait: let the current job finish and the tail go through, but
       // never hold a tick longer than STT_FLUSH_WAIT_MS past its trigger.
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, STT_FLUSH_WAIT_MS);
-        settleWaiters.push(() => {
+        const waiter = (): void => {
           clearTimeout(timer);
           resolve();
-        });
+        };
+        // On timeout the waiter leaves the list too: with one job allowed in
+        // flight, a slow Whisper can hold the list open for a long time.
+        const timer = setTimeout(() => {
+          settleWaiters = settleWaiters.filter((w) => w !== waiter);
+          resolve();
+        }, STT_FLUSH_WAIT_MS);
+        settleWaiters.push(waiter);
         maybeDispatch(true);
       });
       return windowText(segments, Date.now(), TICK_TRANSCRIPT_MS, TICK_TRANSCRIPT_MAX_CHARS);
