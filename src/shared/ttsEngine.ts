@@ -14,6 +14,19 @@ export function localTtsModel(config: { local_tts_model?: unknown } | null | und
 }
 
 /**
+ * Who speaks on a Sei (cloud) account (261120, product call 261120): Sei's
+ * voices, the default, or Fish Audio with the user's own Fish key, chosen
+ * only in Playtime > Sei > Voice > Advanced. Absent or unknown means 'sei',
+ * so no line goes to Fish unless the user picked it there (a BYOK Fish setup
+ * carried over to cloud does not count). Read only on the cloud backend.
+ */
+export type CloudVoiceProvider = 'sei' | 'fish';
+
+export function cloudVoiceProvider(config: { cloud_tts_provider?: unknown } | null | undefined): CloudVoiceProvider {
+  return config?.cloud_tts_provider === 'fish' ? 'fish' : 'sei';
+}
+
+/**
  * Sei voices for ChatGPT-plan users: OFF until the proxy meters voice
  * (review 261110). Today a ChatGPT-plan user never draws on the Sei
  * allowance, so this choice would be unlimited cloud speech at Sei's cost.

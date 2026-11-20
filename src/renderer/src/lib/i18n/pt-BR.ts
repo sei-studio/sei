@@ -2589,4 +2589,8 @@ export const PT_BR: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "Tentativas demais. Espere um pouco e tente de novo.",
   "Could not reach the Voice Library right now. Try again in a moment.": "Não foi possível acessar a Biblioteca de Vozes agora. Tente de novo em instantes.",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[falado com uma voz parecida da Sei, a voz da Biblioteca de Vozes não está mais disponível]",
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "Provedor de voz",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[falado com uma voz da Sei, adicione sua chave do Fish Audio em Tempo de jogo]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[falado com uma voz da Sei, o Fish Audio não conseguiu falar esta frase]",
 };

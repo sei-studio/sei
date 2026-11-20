@@ -149,8 +149,33 @@ describe('Fish Audio TTS routing', () => {
     expect(m.fishSynth).not.toHaveBeenCalled();
   });
 
+  it('never sends a cloud line to Fish unless it was picked in Playtime > Sei > Advanced (261120)', async () => {
+    // A BYOK Fish setup (tts_engine local + local_tts_model fish) carried over
+    // to a Sei account, with a key stored: still Sei's voices, no Fish call.
+    m.backend = 'cloud-proxy';
+    m.route.mockRejectedValue(new Error('cloud route reached'));
+    await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('cloud route reached');
+    m.fishOpen.mockResolvedValue({ body: new ReadableStream(), ctrl: new AbortController() });
+    await expect(voiceTtsStream({ characterId: 'c1', text: 'Hello.' }, () => {})).rejects.toThrow('cloud route reached');
+    expect(m.fishSynth).not.toHaveBeenCalled();
+    expect(m.fishOpen).not.toHaveBeenCalled();
+    // Sei voices picked explicitly: the same.
+    m.config.cloud_tts_provider = 'sei';
+    await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('cloud route reached');
+    expect(m.fishSynth).not.toHaveBeenCalled();
+  });
+
+  it('cloud_tts_provider fish is ignored on a BYOK account', async () => {
+    m.config.local_tts_model = 'fast';
+    m.config.cloud_tts_provider = 'fish';
+    await voiceTts({ characterId: 'c1', text: 'Hello.' });
+    expect(m.fishSynth).not.toHaveBeenCalled();
+    expect(m.local).toHaveBeenCalled();
+  });
+
   it('speaks with Fish on a cloud account too (261118)', async () => {
     m.backend = 'cloud-proxy';
+    m.config.cloud_tts_provider = 'fish';
     const buf = await voiceTts({ characterId: 'c1', text: 'Hello.' });
     expect(buf).toBe(MP3);
     expect(m.fishSynth).toHaveBeenCalledTimes(1);
@@ -160,19 +185,21 @@ describe('Fish Audio TTS routing', () => {
     expect(m.local).not.toHaveBeenCalled();
   });
 
-  it('falls back to the ElevenLabs route, not the Fast voices, when Fish fails on cloud', async () => {
+  it("falls back to Sei's voices (the proxy route), not the Fast voices, when Fish fails on cloud", async () => {
     m.backend = 'cloud-proxy';
+    m.config.cloud_tts_provider = 'fish';
     m.fishSynth.mockRejectedValue(new Error('FISH_FAILED: fetch failed'));
     m.route.mockRejectedValue(new Error('cloud route reached'));
     await expect(voiceTts({ characterId: 'c1', text: 'Hello.' })).rejects.toThrow('cloud route reached');
     expect(m.route).toHaveBeenCalled();
-    // The local packs are BYOK-only, so no Fast clip and no fish-fallback notice.
+    // The local packs are BYOK-only, so no Fast clip; the cloud notice instead.
     expect(m.local).not.toHaveBeenCalled();
-    expect(notices).toEqual([]);
+    expect(notices).toEqual([{ kind: 'fish-cloud-fallback', characterId: 'c1', reason: 'failed' }]);
   });
 
   it('streams Fish on a cloud account too (261118)', async () => {
     m.backend = 'cloud-proxy';
+    m.config.cloud_tts_provider = 'fish';
     const body = new ReadableStream<Uint8Array>({
       start(c) { c.enqueue(new Uint8Array([1])); c.close(); },
     });

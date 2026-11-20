@@ -162,6 +162,10 @@ Fish Audio is the third Local voice next to Fast and Kokoro
   `fish-fallback` notice is sent only once that clip exists. The renderer shows
   it once per reason per call. With no Fast pack installed, the usual
   pack-missing error appears instead.
+- On a Sei (cloud) account Fish speaks ONLY when picked in Playtime > Sei >
+  Voice > Advanced (`cloud_tts_provider: 'fish'`, 261120). tts_engine and
+  local_tts_model never send a cloud line to Fish. A failed cloud Fish line is
+  spoken by Sei's voices with the `fish-cloud-fallback` notice.
 - Three table voices are pvc voices with retire dates. Replace them in
   `src/shared/fishVoices.ts` before these dates: ivish (en male) 2029-10-25,
   桃桃 (zh female) 2028-10-26, 温柔沉稳男声 (zh male) 2028-10-15.

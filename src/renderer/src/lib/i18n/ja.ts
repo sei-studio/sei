@@ -2589,4 +2589,8 @@ export const JA: Record<string, string> = {
   "Too many tries. Wait a little and try again.": "試行回数が多すぎます。少し待ってからもう一度お試しください。",
   "Could not reach the Voice Library right now. Try again in a moment.": "今はボイスライブラリにつながりません。少し待ってからもう一度お試しください。",
   "[spoken with a similar Sei voice, their Voice Library voice is no longer available]": "[似たSeiのボイスで読み上げました。ボイスライブラリのボイスはもう使えません]",
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "音声の提供元",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[Seiのボイスで読み上げました。「プレイ時間」でFish AudioのAPIキーを追加してください]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[Seiのボイスで読み上げました。Fish Audioはこの一文を読み上げられませんでした]",
 };

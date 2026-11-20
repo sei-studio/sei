@@ -44,7 +44,8 @@ import { createHash } from 'node:crypto';
 import { getClient } from '../auth/supabaseClient';
 import { getCharacter } from '../characterStore';
 import { loadConfig } from '../configStore';
-import { localTtsModel } from '../../shared/ttsEngine';
+import { cloudVoiceProvider, localTtsModel } from '../../shared/ttsEngine';
+import { loadAnalytics } from '../lazyAnalytics';
 import { voiceStabilityFor } from '../../shared/voicePitch';
 import type { Character } from '../../shared/characterSchema';
 import type { AiBackendKind } from '../apiKeyStore';
@@ -406,9 +407,9 @@ async function getJwtOrNull(): Promise<string | null> {
  * with `tts_engine: 'local'` synthesize through the sherpa-onnx voice packs in
  * main (src/main/speech/) instead of ElevenLabs. Absent means 'elevenlabs'.
  *
- * 261118: the local voice PACKS stay BYOK-only, but Fish Audio (see
- * fishSelected) also speaks on a cloud account — the text still bills Sei's
- * credits, the user's own Fish key only generates the audio.
+ * 261118: the local voice PACKS stay BYOK-only, but Fish Audio also speaks
+ * on a cloud account (see fishOnCloud) — the text still bills Sei's credits,
+ * the user's own Fish key only generates the audio.
  */
 async function localTtsSelected(backend?: AiBackendKind | null): Promise<boolean> {
   try {
@@ -431,9 +432,40 @@ async function aiBackendKind(): Promise<AiBackendKind | null> {
 }
 
 /** Fish Audio is offered on cloud too (261118). Its fallback differs by
- * backend: the Fast voices on a local one, the ElevenLabs route on cloud. */
+ * backend: the Fast voices on a local one, Sei's voices (the proxy route) on
+ * cloud. 261120 (privacy): on cloud it speaks ONLY when the user picked it in
+ * Playtime > Sei > Voice > Advanced (cloud_tts_provider 'fish'). tts_engine
+ * and local_tts_model are BYOK settings and never send a cloud line to Fish. */
 async function fishOnCloud(backend: AiBackendKind | null): Promise<boolean> {
-  return backend === 'cloud-proxy' && (await fishSelected());
+  if (backend !== 'cloud-proxy') return false;
+  return cloudVoiceProvider(await loadConfigOrNull()) === 'fish';
+}
+
+/** Fish failure classes already reported this run (analytics, shape only). */
+const fishCloudFailuresReported = new Set<string>();
+let fishCloudUseReported = false;
+
+/** A cloud Fish line failed: Sei's voices speak it (the caller falls
+ * through), the call shows one notice per reason, and analytics gets the
+ * failure class once per run. */
+function noteFishCloudFallback(characterId: string, reason: FishFailureReason, stage: 'clip' | 'stream'): void {
+  console.warn(`[sei/voice] Fish Audio unavailable (${reason}) on cloud, using Sei voices`);
+  emitTtsNotice({ kind: 'fish-cloud-fallback', characterId, reason });
+  const key = `${stage}:${reason}`;
+  if (fishCloudFailuresReported.has(key)) return;
+  fishCloudFailuresReported.add(key);
+  void loadAnalytics()
+    .then((a) => a.capture('voice_fish_cloud_failed', { reason, stage }))
+    .catch(() => {});
+}
+
+/** First cloud line Fish spoke this run (analytics, shape only). */
+function noteFishCloudSpoke(stage: 'clip' | 'stream'): void {
+  if (fishCloudUseReported) return;
+  fishCloudUseReported = true;
+  void loadAnalytics()
+    .then((a) => a.capture('voice_fish_cloud_spoke', { stage }))
+    .catch(() => {});
 }
 
 /**
@@ -467,6 +499,13 @@ export type TtsNotice =
        * this line (see fishTts.ts for the reasons), so it was spoken with the
        * Fast voices. */
       kind: 'fish-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
+      /** 261120: Fish Audio is the chosen CLOUD voice but could not speak
+       * this line, so Sei's voices (the proxy route) spoke it instead. */
+      kind: 'fish-cloud-fallback';
       characterId: string;
       reason: FishFailureReason;
     }
@@ -1036,14 +1075,18 @@ export async function voiceTts(args: {
   const library = libraryVoicePickOf(character);
   const genderHint = own?.gender ?? library?.gender;
   const backend = await aiBackendKind();
-  // 261118: Fish Audio on a cloud account. A failure here falls through to
-  // the ElevenLabs route below, never to the Fast voices (BYOK-only packs).
+  // 261118: Fish Audio on a cloud account (261120: only when picked in
+  // Playtime > Sei > Advanced). A failure here falls through to Sei's voices
+  // below, never to the Fast voices (BYOK-only packs).
   if (await fishOnCloud(backend)) {
     const fishText = speechTextFor(args.text, language);
     if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
     const fish = await trySynthesizeFishLine(args.characterId, fishText, voiceId, language, genderHint);
-    if ('audio' in fish) return fish.audio;
-    console.warn(`[sei/voice] Fish Audio unavailable (${fish.fail}) on cloud, using ElevenLabs`);
+    if ('audio' in fish) {
+      noteFishCloudSpoke('clip');
+      return fish.audio;
+    }
+    noteFishCloudFallback(args.characterId, fish.fail, 'clip');
   }
   if (await localTtsSelected(backend)) {
     const localText = speechTextFor(args.text, language);
@@ -1254,21 +1297,23 @@ export async function voiceTtsStream(
   const library = libraryVoicePickOf(character);
   const genderHint = own?.gender ?? library?.gender;
   const backend = await aiBackendKind();
-  // 261118: Fish Audio streams its mp3 on a cloud account too. A failure
-  // before the first byte falls through to the ElevenLabs stream below; a
+  // 261118: Fish Audio streams its mp3 on a cloud account too (261120: only
+  // when picked in Playtime > Sei > Advanced). A failure before the first
+  // byte falls through to Sei's voices stream below; a
   // failure mid-body ends the stream with an error, like any other stream.
   if (await fishOnCloud(backend)) {
     const fishText = speechTextFor(args.text, language);
     if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
     const prep = await prepareFishLine(args.characterId, fishText, voiceId, language, genderHint);
     if ('fail' in prep) {
-      console.warn(`[sei/voice] Fish Audio unavailable (${prep.fail}) on cloud, using ElevenLabs`);
+      noteFishCloudFallback(args.characterId, prep.fail, 'stream');
     } else {
       try {
         const opened = await openFishStream(prep.key, fishText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
+        noteFishCloudSpoke('stream');
         return pumpTtsStream(opened, sink);
       } catch (err) {
-        console.warn(`[sei/voice] Fish Audio stream unavailable (${noteFishFailure(err, prep)}) on cloud, using ElevenLabs`);
+        noteFishCloudFallback(args.characterId, noteFishFailure(err, prep), 'stream');
       }
     }
   }

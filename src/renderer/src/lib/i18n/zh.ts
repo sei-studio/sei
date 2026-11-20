@@ -188,4 +188,8 @@ export const ZH: Record<string, string> = {
   'Downloading... {pct}%': '下载中……{pct}%',
   // 'The download failed...' lives in common.ts (shared with the chess panel).
   'You can keep going; it finishes in the background.': '可以继续下一步，下载会在后台完成。',
+  // 261120: Playtime > Sei > Voice > Advanced (Fish Audio on cloud).
+  "Voice provider": "语音提供方",
+  "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[已用 Sei 声音朗读，请在游玩时长中添加你的 Fish Audio 密钥]",
+  "[spoken with a Sei voice, Fish Audio could not speak this line]": "[已用 Sei 声音朗读，Fish Audio 未能朗读这句话]",
 };
