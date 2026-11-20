@@ -47,9 +47,19 @@ stays in Settings > Account because it is an account setting).
 - The renderer reads it through `sei.usageSummary()` (`useUsageStore`, every
   60 s while the page is open).
 - Spend alert: `spend_alert_enabled` + `spend_alert_usd` (config). After each
-  own-key record, main fires once per calendar month
-  (`spend_alert_fired_month`), pushes `usage:spend-alert` and the renderer
-  shows `SpendAlertBanner` (a NoticeLine). It only warns; nothing is paused.
+  own-key record, main fires once per calendar month per amount
+  (`spend_alert_fired_month` + `spend_alert_fired_usd`: raising the amount
+  re-arms it), pushes `usage:spend-alert` and the renderer shows
+  `SpendAlertBanner` (a NoticeLine). It only warns; nothing is paused.
+- 261120 (`main/capNotices.ts`, also the credit wall): main keeps the alert
+  until the banner is dismissed (`usage:spend-alert-pending` / `-ack`), so a
+  window opened after it fired (macOS with no window, a reload) still shows
+  it, and when the app window is not in front it posts an OS notification
+  (Electron Notification; Windows needs `app.setAppUserModelId('com.sei.app')`,
+  set in index.ts) plus a Dock bounce / taskbar flash. Dev check:
+  `SEI_DEV_CAP_NOTICE=spend|wall` (+ `SEI_DEV_CAP_NOTICE_HIDE=1`), unpackaged
+  only. Packaged check of the wall: `scripts/cap-wall-stub.mjs` +
+  `SEI_PROXY_URL`.
 
 ## Voice
 

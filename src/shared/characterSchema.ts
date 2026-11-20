@@ -1018,6 +1018,8 @@ export const UserConfigSchema = z.object({
   spend_alert_enabled: z.boolean().optional(),
   spend_alert_usd: z.number().positive().max(100_000).optional(),
   spend_alert_fired_month: z.string().optional(),
+  /** 261120: the amount that month's alert fired at (main-owned); a higher amount re-arms it. */
+  spend_alert_fired_usd: z.number().optional(),
   /**
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside

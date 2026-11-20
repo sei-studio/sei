@@ -80,6 +80,14 @@ import {
 } from './replyLatency';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
+import {
+  ackPendingHardStop,
+  ackPendingSpendAlert,
+  capNoticeHardStop,
+  capNoticeSpendAlert,
+  peekPendingHardStop,
+  peekPendingSpendAlert,
+} from './capNotices';
 import { observeOnboardingEvent } from './onboardingFunnel';
 import { getLanDiagnosis } from './lanSources';
 import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
@@ -4597,9 +4605,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         for (const w of BrowserWindow.getAllWindows()) {
           if (!w.isDestroyed()) w.webContents.send(IpcChannel.usage.spendAlert, e);
         }
+        // 261120: kept until dismissed + OS notification when Sei is not in front.
+        capNoticeSpendAlert(e);
       }),
     )
     .catch(() => undefined);
+  // 261120: replay of a notice that fired before this window mounted, and its ack.
+  ipcMain.handle(IpcChannel.usage.spendAlertPending, () => peekPendingSpendAlert());
+  ipcMain.handle(IpcChannel.usage.spendAlertAck, () => {
+    ackPendingSpendAlert();
+  });
+  ipcMain.handle(IpcChannel.credits.hardStopPending, () => peekPendingHardStop());
+  ipcMain.handle(IpcChannel.credits.hardStopAck, () => {
+    ackPendingHardStop();
+  });
 
   // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
   // world-readable plan_config/topup_config tables (cached in
@@ -4765,6 +4784,9 @@ export function emitCreditsHardStop(info: CreditsHardStopEvent, ctx?: CreditWall
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
   }
+  // 261120: keep it for a window that opens later, and tell the player with
+  // an OS notification when the app window is not in front (capNotices.ts).
+  capNoticeHardStop(info);
 }
 
 /**

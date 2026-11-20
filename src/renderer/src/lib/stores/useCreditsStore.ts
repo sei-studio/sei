@@ -522,6 +522,21 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
 
     set({ unsubStatus, unsubHardStop, unsubKind, unsubFocus });
 
+    // 261120: a depleted wall main still holds (it hit while no window was
+    // open, or this window was opened, reloaded or reset after it without
+    // the modal being closed). Main keeps it until acknowledgeHardStop.
+    // Applied only while this init's subscription is still the live one.
+    void (async () => {
+      try {
+        const pending = (await sei.creditsHardStopPending?.()) ?? null;
+        if (pending && pending.reason === 'depleted' && get().unsubHardStop === unsubHardStop && !get().hardStopActive) {
+          set({ hardStopActive: true, hardStopReason: 'depleted', rateLimitedUntil: null });
+        }
+      } catch {
+        /* older main, or IPC failed: the live push still works */
+      }
+    })();
+
     // Overlay the server pricing catalog (260725). Fire-and-forget: the
     // bundled copy renders meanwhile, and a failure just keeps it.
     void get().loadCatalog();
@@ -677,8 +692,14 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
   },
 
   acknowledgeHardStop: (): void => {
-    // Local UI state only — server is NOT called.
+    // Local UI state only — server is NOT called. Main stops replaying the
+    // wall into windows that mount later (261120, capNotices.ts).
     set({ hardStopActive: false, hardStopReason: null });
+    try {
+      void Promise.resolve(sei.creditsHardStopAck?.()).catch(() => undefined);
+    } catch {
+      /* best-effort */
+    }
   },
 
   reset: (): void => {

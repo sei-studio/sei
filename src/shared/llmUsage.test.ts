@@ -137,6 +137,16 @@ describe('shouldFireSpendAlert (warns once a month, never blocks)', () => {
       shouldFireSpendAlert({ spend_alert_enabled: true, spend_alert_usd: 10, spend_alert_fired_month: '2026-10' }, 50, now),
     ).toBe(true);
   });
+  it('raising the amount after it fired re-arms it this month (261120)', () => {
+    const fired = { spend_alert_enabled: true, spend_alert_fired_month: '2026-11', spend_alert_fired_usd: 5 };
+    // Same or lower amount: already told.
+    expect(shouldFireSpendAlert({ ...fired, spend_alert_usd: 5 }, 50, now)).toBe(false);
+    // Raised to $20: silent until spend reaches it, then fires.
+    expect(shouldFireSpendAlert({ ...fired, spend_alert_usd: 20 }, 12, now)).toBe(false);
+    expect(shouldFireSpendAlert({ ...fired, spend_alert_usd: 20 }, 20, now)).toBe(true);
+    // A fire at $20 does not re-fire when lowered back to $5.
+    expect(shouldFireSpendAlert({ ...fired, spend_alert_fired_usd: 20, spend_alert_usd: 5 }, 50, now)).toBe(false);
+  });
 });
 
 describe('formatting', () => {

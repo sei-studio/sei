@@ -631,6 +631,8 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.usage.spendAlert, handler);
     return () => ipcRenderer.off(IpcChannel.usage.spendAlert, handler);
   },
+  usageSpendAlertPending: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertPending),
+  usageSpendAlertAck: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertAck),
   creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
   creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
@@ -652,6 +654,8 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.credits.hardStop, handler);
     return () => ipcRenderer.off(IpcChannel.credits.hardStop, handler);
   },
+  creditsHardStopPending: () => ipcRenderer.invoke(IpcChannel.credits.hardStopPending),
+  creditsHardStopAck: () => ipcRenderer.invoke(IpcChannel.credits.hardStopAck),
   onAiBackendKindChanged(cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) {
     const handler = (
       _e: Electron.IpcRendererEvent,
