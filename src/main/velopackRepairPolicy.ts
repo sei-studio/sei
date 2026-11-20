@@ -16,20 +16,28 @@
  * Signals (at most ONE counted per launch, so a single bad session cannot
  * trigger a reinstall):
  *
- *   - update-exe-missing / not-installed: this launch runs from a Velopack
- *     layout (<root>\current\Sei.exe with sq.version) but Update.exe is gone
- *     or Velopack no longer recognises the install. Decisive: nothing else can
- *     ever update this copy, so the repair is due at once.
+ *   - update-exe-missing: this launch runs from a Velopack layout
+ *     (<root>\current\Sei.exe with sq.version) but Update.exe is gone.
+ *     Decisive: nothing else can ever update this copy, so the repair is due
+ *     at once.
+ *   - not-installed: the same layout, but Velopack's module or UpdateManager
+ *     would not load. Counted like the rest (it can be a passing lock or an
+ *     antivirus scan), so it takes three launches.
  *   - check / download: the update check or the package download threw while
  *     the feed itself answered (velopackRepair.ts probes it first, so being
- *     offline never counts).
+ *     offline never counts). Network-class errors never count: Velopack's
+ *     HTTP client and the probe can take different routes (a proxy, the
+ *     GitHub fallback), and a reinstall cannot fix a network path.
  *   - stage-spawn / apply-spawn: Update.exe would not start.
  *   - apply-no-effect: an apply to T was started from version F and the next
  *     launch is still F.
  *
  * FAILURE_THRESHOLD such launches in a row make the repair due. A real check
  * that finds nothing to install, or a version change through a normal
- * update, clears the streak. Attempts are capped per epoch of the remote
+ * update, clears the streak; a check that finds an update clears a check
+ * failure, a finished download clears check and download failures (neither
+ * says anything about Update.exe applying). A streak older than
+ * STREAK_MAX_AGE_MS starts over. Attempts are capped per epoch of the remote
  * rule (MAX_REPAIR_ATTEMPTS); only a later normal update (proof the updater
  * works again) or a raised epoch gives an install fresh attempts, so a
  * machine whose antivirus keeps eating Update.exe is repaired at most three
@@ -50,6 +58,8 @@ import { parseSetupManifest, type SetupManifest } from './velopackMigrationPolic
 export const REPAIR_STATE_FILE = 'velopack-repair.json';
 /** Failing launches in a row before a repair is due (decisive signals skip this). */
 export const FAILURE_THRESHOLD = 3;
+/** A streak whose first failure is older than this starts over (failures weeks apart are not a broken install). */
+export const STREAK_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 /** Repairs per epoch of repair.<channel>.json. */
 export const MAX_REPAIR_ATTEMPTS = 3;
 /** A hand-off younger than this with its runner alive is still installing. */
@@ -79,7 +89,25 @@ const KINDS: readonly FailureKind[] = [
 ];
 
 /** Signals that mean nothing but a reinstall can update this copy. */
-export const DECISIVE: readonly FailureKind[] = ['update-exe-missing', 'not-installed'];
+export const DECISIVE: readonly FailureKind[] = ['update-exe-missing'];
+
+/** What a working check proves: the check itself works. */
+export const CHECK_OK_CLEARS: readonly FailureKind[] = ['check'];
+/** What a finished download proves: check and download work (not the apply). */
+export const DOWNLOAD_OK_CLEARS: readonly FailureKind[] = ['check', 'download'];
+
+/**
+ * A check or download error that is about the network path (timeouts, DNS,
+ * refused or reset connections, TLS, proxies, HTTP statuses). Never counted:
+ * a reinstall cannot fix it. Velopack's messages come from reqwest/ureq and
+ * the OS; IO errors on the install (os error 183, access denied) do not match.
+ */
+export function networkFailure(detail: string | undefined): boolean {
+  if (!detail) return false;
+  return /network|https?\b|request|timed? ?out|timeout|\bdns\b|resolve|lookup|connect|connection|tls|ssl|certificate|handshake|socket|reset by peer|refused|unreachable|proxy|status code|\bstatus\b\D{0,12}\b[45]\d\d\b|os error (10050|10051|10053|10054|10060|10061|10064|10065|11001|11002|11004|12002|12007|12029|12030|12157|12175)\b/i.test(
+    detail,
+  );
+}
 
 export interface KnownSetup extends SetupManifest {
   channel: string;
@@ -106,6 +134,8 @@ export interface RepairReady {
   file: string;
   manifest: KnownSetup;
   at: number;
+  /** The channel whose repair.<channel>.json allowed it (re-read before the install). */
+  ruleChannel?: string;
 }
 
 export interface RepairReport {
@@ -205,7 +235,14 @@ export function parseRepairState(json: unknown): RepairState {
   const r = obj(s.ready);
   const rm = parseKnownSetup(r?.manifest);
   if (r && rm && str(r.dir) && str(r.file)) {
-    out.ready = { attempt: num(r.attempt) ?? 0, dir: str(r.dir)!, file: str(r.file)!, manifest: rm, at: num(r.at) ?? 0 };
+    out.ready = {
+      attempt: num(r.attempt) ?? 0,
+      dir: str(r.dir)!,
+      file: str(r.file)!,
+      manifest: rm,
+      at: num(r.at) ?? 0,
+      ruleChannel: str(r.ruleChannel),
+    };
   }
   if (Array.isArray(s.reports)) {
     out.reports = s.reports
@@ -245,18 +282,26 @@ export function noteFailure(s: RepairState, k: FailureKind, c: FailureContext): 
     lastFailure: { kind: k, at: c.now, version: c.version, target: c.target, detail: c.detail?.slice(0, 120) },
   };
   if (s.lastCountedLaunch === c.launch) return { state: next, counted: false };
-  next.streak = s.streak + 1;
+  const fresh = s.streak === 0 || s.firstFailureAt === undefined || streakExpired(s, c.now);
+  next.streak = fresh ? 1 : s.streak + 1;
   next.lastCountedLaunch = c.launch;
-  next.firstFailureAt = s.streak === 0 || s.firstFailureAt === undefined ? c.now : s.firstFailureAt;
+  next.firstFailureAt = fresh ? c.now : s.firstFailureAt;
   return { state: next, counted: true };
 }
 
+export function streakExpired(s: RepairState, now: number): boolean {
+  return s.streak > 0 && s.firstFailureAt !== undefined && now - s.firstFailureAt > STREAK_MAX_AGE_MS;
+}
+
 /**
- * The updater worked end to end for what it was asked (a check that found
- * nothing to install). Clears the streak, not the attempts.
+ * The updater worked for what it was asked. With no `clears`, everything it
+ * was asked worked (a check that found nothing to install). With `clears`,
+ * only a streak whose last failure is one of those kinds is cleared (a check
+ * that found an update says nothing about a failing apply). Never the attempts.
  */
-export function noteHealthy(s: RepairState): RepairState {
+export function noteHealthy(s: RepairState, clears?: readonly FailureKind[]): RepairState {
   if (s.streak === 0 && !s.lastFailure && s.firstFailureAt === undefined) return s;
+  if (clears && s.lastFailure && !clears.includes(s.lastFailure.kind)) return s;
   return { ...s, streak: 0, firstFailureAt: undefined, lastFailure: undefined, lastCountedLaunch: undefined };
 }
 
@@ -370,6 +415,11 @@ export function evaluateLaunch(prev: RepairState, f: LaunchFacts): LaunchOutcome
   }
   s.lastVersion = f.version;
 
+  if (streakExpired(s, f.now)) {
+    notes.push(`a streak of ${s.streak} from ${new Date(s.firstFailureAt ?? 0).toISOString()} expired`);
+    s = noteHealthy(s);
+  }
+
   if (s.apply) {
     const a = s.apply;
     s.apply = undefined;
@@ -417,6 +467,16 @@ export function repairAllowed(rule: RepairRule, installId: string): boolean {
   if (rule.percent <= 0) return false;
   if (rule.percent >= 100) return true;
   return repairBucket(installId) < rule.percent;
+}
+
+/**
+ * The updater should stand still from the start of a launch: a Setup is
+ * downloaded, or a repair is due and nothing refused it yet in this epoch
+ * (a refusal is re-decided by runRepair, and the startup check goes ahead
+ * meanwhile).
+ */
+export function holdsAtLaunch(s: RepairState): boolean {
+  return !!s.ready || (repairDue(s) && !s.heldReported);
 }
 
 /** The repair is due: a decisive signal, or enough failing launches in a row. */

@@ -35,6 +35,9 @@
 #   repair-update-missing       Update.exe deleted: the first launch repairs
 #                               (CI restart mode = hand-off at once)
 #   repair-update-missing-safe  the same, started in safe mode
+#   repair-update-missing-unicode  the same with a non-ASCII %TEMP% (a user
+#                               name like Jos\u00e9 or a CJK one): the Setup,
+#                               runner and runner.json live there
 #   repair-update-corrupt       Update.exe overwritten with junk before the
 #                               first check: Sei ends on the target either way
 #                               (the download may heal it, or a repair does)
@@ -916,8 +919,17 @@ switch -Regex ($Scenario) {
     if (-not $l) { Fail "the next launch did not apply $Target" }
   }
 
-  '^repair-update-missing(-safe)?$' {
+  '^repair-update-missing(-safe|-unicode)?$' {
     $safe = $Scenario -like '*-safe'
+    $unicode = $Scenario -like '*-unicode'
+    if ($unicode) {
+      # Built from code points so this file stays ASCII.
+      $uniTemp = Join-Path $env:TEMP ('sei ci ' + [char]0x6D4B + [char]0x8BD5 + ' Jos' + [char]0xE9)
+      New-Item -ItemType Directory -Force -Path $uniTemp | Out-Null
+      $env:TEMP = $uniTemp
+      $env:TMP = $uniTemp
+      $results.temp = $uniTemp
+    }
     Seed-UserData
     Break-UpdateExe 'delete'
     Remove-Item $marks -Force -ErrorAction SilentlyContinue
@@ -926,6 +938,17 @@ switch -Regex ($Scenario) {
     $rec = Start-Rec $Scenario 150
     $how = Repair-Launch 1 300
     if ($how -ne 'handoff') { Fail "the broken launch did not hand off ($how)" }
+    if ($unicode) {
+      # The runner is installing now; its folder is under the non-ASCII %TEMP%.
+      $cfgFile = Get-ChildItem -LiteralPath $uniTemp -Directory -Filter 'sei-repair-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Join-Path $_.FullName 'runner.json' } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+      if (-not $cfgFile) { Fail 'no runner.json under the non-ASCII %TEMP%' }
+      else {
+        $raw = [IO.File]::ReadAllBytes($cfgFile)
+        if (@($raw | Where-Object { $_ -gt 127 }).Count -gt 0) { Fail 'runner.json is not ASCII' }
+        $results.runner_json = [IO.File]::ReadAllText($cfgFile)
+      }
+    }
     $i = Mark 'repair-init' $From
     if (-not $i -or $i.broken -ne 'update-exe-missing') { Fail "repair-init did not see Update.exe missing: $($i | ConvertTo-Json -Compress)" }
     if ($i -and [bool]$i.safeMode -ne $safe) { Fail "safe mode was $($i.safeMode), expected $safe" }

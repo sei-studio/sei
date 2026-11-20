@@ -52,7 +52,14 @@ import { safeModeForced, type SafeModeReason } from './bootGuard';
 import { bakedChannel, processSessionId, resolveChannel, uuidv7 } from './analyticsContext';
 import { recordFailedStart, SESSION_MARKER_FILE } from './sessionMarker';
 import { noteLaunch } from './firstLaunch';
-import { flushUpdatePushes, handOffUpdatesToRepair, initUpdater, sendRepairFailed, sendRepairProgress } from './updater';
+import {
+  flushUpdatePushes,
+  handOffUpdatesToRepair,
+  initUpdater,
+  recheckAfterRepairHold,
+  sendRepairFailed,
+  sendRepairProgress,
+} from './updater';
 import { applyPendingAtLaunch } from './velopackUpdater';
 import { handOffRepairAtLaunch, initVelopackRepair, scheduleVelopackRepair } from './velopackRepair';
 import { openSafeModeWindow, safeModeWindow } from './safeMode/safeModeWindow';
@@ -215,7 +222,12 @@ function recordFailedStartsForCrashAnalytics(unfinished: { at: number; appVersio
 /** The self-repair reports through the updater's own pushes (progress, ready, error). */
 function scheduleRepair(): void {
   try {
-    scheduleVelopackRepair({ progress: sendRepairProgress, failed: sendRepairFailed, ready: handOffUpdatesToRepair });
+    scheduleVelopackRepair({
+      progress: sendRepairProgress,
+      failed: sendRepairFailed,
+      ready: handOffUpdatesToRepair,
+      released: recheckAfterRepairHold,
+    });
   } catch (err) {
     log(`repair schedule failed (${(err as Error)?.name ?? 'Error'})`);
   }

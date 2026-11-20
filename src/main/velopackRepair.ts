@@ -24,17 +24,17 @@
  * SEI_VELOPACK_CI / SEI_VELOPACK_FEED / SEI_VELOPACK_CI_MODE, plus
  * SEI_REPAIR_DELAY_MS for the start delay.
  */
-import { app, nativeTheme, net } from 'electron';
+import { app, nativeTheme, net, session } from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { noteNeutralExit } from './bootContext';
+import { noteNeutralExit, requestNormalStartNext } from './bootContext';
 import { writeFileDurableSync } from './durableWrite';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
-import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } from './velopackBoot';
+import { ciMark, pidRunsImage, userDataInstallId, velopackInstalled, velopackLoadError, velopackLog } from './velopackBoot';
 import { compareVersions, parseRolloutRule, velopackPathsFor, type VelopackPaths } from './velopackFastApply';
 import {
   enoughDiskForMigration,
@@ -43,12 +43,18 @@ import {
   velopackRootFor,
   type SetupManifest,
 } from './velopackMigrationPolicy';
+import { normalizeUiLanguage, type UiLanguage } from '../shared/uiLanguage';
+import { VELOPACK_REPAIR_ADDED } from '../shared/addedLanguageCopy';
 import {
+  CHECK_OK_CLEARS,
   DEFAULT_REPAIR_RULE,
+  DOWNLOAD_OK_CLEARS,
   FAILURE_THRESHOLD,
   REPAIR_STATE_FILE,
   emptyRepairState,
   evaluateLaunch,
+  holdsAtLaunch,
+  networkFailure,
   noteApplyLaunched as recordApply,
   noteFailure,
   noteHealthy,
@@ -74,6 +80,7 @@ import {
   RUNNER_CONFIG,
   RUNNER_SCRIPT,
   runnerArgs,
+  runnerConfigJson,
   type RunnerConfig,
 } from './velopackRepairRunner';
 import { downloadSetup, freeBytes, setupUnchanged } from './velopackSetupFetch';
@@ -89,6 +96,9 @@ const PROBE_DELAY_MS = 3 * 60 * 1000;
 /** How long Sei waits for the runner to report it is running before it gives up and stays open. */
 const RUNNER_START_TIMEOUT_MS = 20 * 1000;
 const FETCH_TIMEOUT_MS = 10 * 1000;
+/** %TEMP%\sei-repair-* folders older than this are left over (a cancelled runner, a crash) and removed at startup. */
+const STALE_DIR_MS = 24 * 60 * 60 * 1000;
+const REPAIR_DIR_RE = /^sei-repair-[0-9a-f]+$/i;
 
 const ci = process.env.SEI_VELOPACK_CI === '1';
 let active = process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(process.argv);
@@ -106,6 +116,8 @@ export interface RepairDeps {
    * `forced` = it is about to run on its own.
    */
   ready: (restart: () => void, version: string, forced: boolean) => void;
+  /** The hold is over and a check was skipped while it lasted: check again. */
+  released?: () => void;
 }
 
 interface Layout {
@@ -124,6 +136,8 @@ let attemptedThisProcess = false;
 let handingOff = false;
 /** Repair or hand-off work in flight (tests wait on it). */
 let inflight = 0;
+/** The updater skipped a check while holding: release() asks for a new one. */
+let checkHeld = false;
 
 function log(line: string): void {
   velopackLog(`[repair] ${line}`);
@@ -218,19 +232,22 @@ export function initVelopackRepair(opts: { safeMode: boolean }): void {
     const h = prev.handoff;
     const result = h ? readText(path.join(h.dir, 'result.txt')) : null;
     const runnerPid = h ? Number(readText(path.join(h.dir, 'started'))?.trim()) : NaN;
+    // A pid alone is not enough: after a reboot it can belong to anything.
     const out = evaluateLaunch(prev, {
       launch: launchId,
       version: app.getVersion(),
       now: Date.now(),
       broken: lay.broken,
       handoffResult: result,
-      handoffRunnerAlive: Number.isInteger(runnerPid) && runnerPid > 0 && pidAlive(runnerPid),
+      handoffRunnerAlive: Number.isInteger(runnerPid) && runnerPid > 0 && pidRunsImage(runnerPid, 'powershell.exe'),
     });
     for (const n of out.notes) log(n);
     if (out.leave) {
       ciMark('repair-left-during-repair', { target: h?.target });
+      noteNeutralExit(); // boot safety: Setup is replacing this copy, not a failed start
       process.exit(0);
     }
+    if (lay.broken === 'not-installed') log(`Velopack does not see this install: ${velopackLoadError() ?? 'no detail'}`);
     let s = out.state;
     if (h && out.removeDir) {
       // What Setup and the runner said, for the support log, then the folder goes.
@@ -255,7 +272,7 @@ export function initVelopackRepair(opts: { safeMode: boolean }): void {
       s = { ...s, betaId: beta };
     }
     writeState(s);
-    holding = repairDue(s) || !!s.ready;
+    holding = holdsAtLaunch(s);
     ciMark('repair-init', {
       broken: lay.broken,
       streak: s.streak,
@@ -302,6 +319,26 @@ export interface FailureInfo {
    * broken install.
    */
   probe?: { url: string; json?: boolean };
+  /** The updater is on its GitHub fallback (the probe would test a different host). */
+  viaGithub?: boolean;
+}
+
+/** Why a check/download failure says nothing about the install, or null when it may count. */
+async function networkReason(kind: FailureKind, info: FailureInfo): Promise<string | null> {
+  if (kind !== 'check' && kind !== 'download') return null;
+  if (networkFailure(info.detail)) return 'network';
+  if (info.viaGithub) return 'github';
+  if (info.probe) {
+    // Velopack's own HTTP client ignores the system proxy; net.fetch follows it.
+    // Behind a proxy the probe proves nothing about Velopack's route.
+    try {
+      const route = await session.defaultSession.resolveProxy(info.probe.url);
+      if (route.trim().toUpperCase() !== 'DIRECT') return 'proxy';
+    } catch {
+      return 'proxy';
+    }
+  }
+  return null;
 }
 
 async function probeOk(probe: { url: string; json?: boolean }): Promise<boolean> {
@@ -324,6 +361,12 @@ async function probeOk(probe: { url: string; json?: boolean }): Promise<boolean>
 export async function noteUpdaterFailure(kind: FailureKind, info: FailureInfo = {}): Promise<void> {
   if (!inited) return;
   try {
+    const why = await networkReason(kind, info);
+    if (why) {
+      log(`${kind} failed on the network path (${why}); not counted (${info.detail ?? ''})`);
+      ciMark('repair-signal', { kind, counted: false, why });
+      return;
+    }
     if (info.probe && !(await probeOk(info.probe))) {
       log(`${kind} failed but ${info.probe.url} does not answer either; not counted (${info.detail ?? ''})`);
       ciMark('repair-signal', { kind, counted: false, why: 'probe' });
@@ -346,15 +389,27 @@ export async function noteUpdaterFailure(kind: FailureKind, info: FailureInfo = 
   }
 }
 
-/** A real check found nothing to install: the updater works. */
-export function noteUpdaterHealthy(): void {
+/**
+ * Part of the updater worked. 'none' = a check found nothing to install
+ * (everything it was asked worked); 'found' = a check found an update (clears
+ * a check failure); 'downloaded' = a download finished (clears check and
+ * download failures). Neither of the last two says the apply works.
+ */
+export function noteUpdaterHealthy(what: 'none' | 'found' | 'downloaded' = 'none'): void {
   if (!inited) return;
   const prev = readRepairState();
   if (prev.streak === 0 && !prev.lastFailure) return;
   if (prev.lastFailure && DECISIVE.includes(prev.lastFailure.kind) && layoutInfo?.broken) return;
-  writeState(noteHealthy(prev));
-  log('a check worked; streak cleared');
-  ciMark('repair-signal', { kind: 'healthy' });
+  const next = noteHealthy(prev, what === 'found' ? CHECK_OK_CLEARS : what === 'downloaded' ? DOWNLOAD_OK_CLEARS : undefined);
+  if (next === prev) return;
+  writeState(next);
+  log(`the updater worked (${what}); streak cleared`);
+  ciMark('repair-signal', { kind: 'healthy', what });
+}
+
+/** The updater skipped a check because of the hold (velopackUpdater.ts). */
+export function noteCheckHeld(): void {
+  checkHeld = true;
 }
 
 /** Update.exe was started to apply `target`. Sync: it runs while Sei quits. */
@@ -444,6 +499,25 @@ function release(why: string): void {
   if (!holding) return;
   holding = false;
   log(`updates resume (${why})`);
+  if (checkHeld) {
+    checkHeld = false;
+    deps?.released?.();
+  }
+}
+
+function repairFailedText(lang: UiLanguage): string {
+  if (lang === 'zh') return 'Sei 这次没能修复更新程序，稍后会再试。';
+  if (lang === 'en') return "Sei couldn't repair its updater this time. It will try again later.";
+  return VELOPACK_REPAIR_ADDED[lang].failed;
+}
+
+async function failedMessage(): Promise<string> {
+  try {
+    const { loadConfig } = await import('./configStore');
+    return repairFailedText(normalizeUiLanguage((await loadConfig()).ui_language));
+  } catch {
+    return repairFailedText('en');
+  }
 }
 
 function supportedRoot(root: string): boolean {
@@ -526,7 +600,7 @@ async function runRepair(reason: string): Promise<void> {
       log(`repair ${decision.ok ? decision.attempt : 0} failed at ${stage}: ${detail}`);
       ciMark('repair-failed', { stage, class: cls, detail: detail.slice(0, 200) });
       report({ phase: 'failed', stage, class: cls, attempt: decision.ok ? decision.attempt : 0, mode: mode() });
-      deps?.failed(detail);
+      void failedMessage().then((m) => deps?.failed(m));
       release(`failed at ${stage}`);
     };
 
@@ -564,7 +638,10 @@ async function runRepair(reason: string): Promise<void> {
       return;
     }
     if ('skipped' in sig) log('signature check off: this build is unsigned');
-    update((st) => ({ ...st, ready: { attempt: decision.ok ? decision.attempt : 0, dir: tmp, file, manifest: m, at: Date.now() } }));
+    update((st) => ({
+      ...st,
+      ready: { attempt: decision.ok ? decision.attempt : 0, dir: tmp, file, manifest: m, at: Date.now(), ruleChannel: chans[0] },
+    }));
     ciMark('repair-ready', { target: m.version });
     log(`Setup ${m.version} downloaded and verified`);
 
@@ -659,11 +736,13 @@ async function handOffInner(how: string): Promise<boolean> {
   if (!r || !lay) return false;
   handingOff = true;
   holding = true;
-  const dropReady = (cls: string, detail: string) => {
+  const dropReady = (cls: string, detail: string, keepDir = false) => {
     log(`hand-off failed: ${detail}`);
     ciMark('repair-failed', { stage: 'handoff', class: cls, detail });
     update((st) => pushReport({ ...st, ready: undefined, handoff: undefined }, { phase: 'failed', stage: 'handoff', class: cls, attempt: r.attempt, mode: how }));
-    void removeDir(r.dir);
+    // A runner that may still start late must find its cancel file: the
+    // folder stays (the startup sweep removes it after a day).
+    if (!keepDir) void removeDir(r.dir);
     release('hand-off failed');
     handingOff = false;
     return false;
@@ -676,7 +755,7 @@ async function handOffInner(how: string): Promise<boolean> {
     const script = path.join(r.dir, RUNNER_SCRIPT);
     const config: RunnerConfig = { setup: r.file, sha256: r.manifest.sha256, root: lay.paths.root, waitPid: process.pid };
     writeFileSync(script, REPAIR_RUNNER_PS1.replace(/\r?\n/g, '\r\n'), 'ascii');
-    writeFileSync(path.join(r.dir, RUNNER_CONFIG), JSON.stringify(config));
+    writeFileSync(path.join(r.dir, RUNNER_CONFIG), runnerConfigJson(config), 'ascii');
     for (const f of ['started', 'cancel', 'result.txt']) rmSync(path.join(r.dir, f), { force: true });
 
     update((st) => ({
@@ -710,9 +789,11 @@ async function handOffInner(how: string): Promise<boolean> {
       }
       helper?.kill();
       for (const l of tail(readText(path.join(r.dir, 'runner.log')), 10)) log(`runner: ${l}`);
-      return dropReady('runner-blocked', 'the repair runner did not start');
+      return dropReady('runner-blocked', 'the repair runner did not start', true);
     }
     log(`handed off to the runner (repair ${r.attempt}, ${how}); quitting`);
+    // The repaired copy must start normally, also when it is the same version.
+    if (safeMode) requestNormalStartNext();
     ciMark('repair-handoff', { attempt: r.attempt, target: r.manifest.version, mode: how, progressWindow: !!helper });
     noteNeutralExit(); // boot safety: a hand-over, not a failed start
     app.quit();
@@ -737,9 +818,20 @@ export async function handOffRepairAtLaunch(): Promise<boolean> {
     release('stale download');
     return false;
   }
+  // Downloaded for a decisive signal that is gone (an antivirus put
+  // Update.exe back) with too few failures otherwise: not needed any more.
+  if (s.lastFailure && DECISIVE.includes(s.lastFailure.kind) && s.streak < FAILURE_THRESHOLD && !detectLayout()?.broken) {
+    log('the layout is whole again; dropping the downloaded Setup');
+    update((st) => ({ ...noteHealthy(st), ready: undefined }));
+    void removeDir(r.dir);
+    release('the layout is whole again');
+    return false;
+  }
   // The kill switch still wins: switched off since the download = no install.
-  // Unreachable = go ahead (it was allowed when the download started).
-  const res = await fetchJson(`${feedBase()}/repair.${r.manifest.channel}.json`);
+  // Unreachable = go ahead (it was allowed when the download started). Same
+  // channel's switch as the decision read.
+  const ruleChannel = r.ruleChannel ?? (await channels())[0];
+  const res = await fetchJson(`${feedBase()}/repair.${ruleChannel}.json`);
   const rule = res.status === 200 ? parseRepairRule(res.json) : res.status === 404 ? DEFAULT_REPAIR_RULE : null;
   if (rule && rule.percent <= 0) {
     log('repair switched off since the download; dropping it');
@@ -757,10 +849,31 @@ function delay(fallback: number): number {
   return Number.isFinite(v) && v >= 0 ? v : fallback;
 }
 
+/** Removes %TEMP%\sei-repair-<hex> folders older than a day that no hand-off or download points at. */
+async function sweepStaleDirs(): Promise<void> {
+  try {
+    const tmp = app.getPath('temp');
+    const s = readRepairState();
+    const keep = new Set([s.handoff?.dir, s.ready?.dir].filter((d): d is string => !!d).map((d) => path.resolve(d).toLowerCase()));
+    for (const name of await readdir(tmp)) {
+      if (!REPAIR_DIR_RE.test(name)) continue;
+      const dir = path.join(tmp, name);
+      if (keep.has(path.resolve(dir).toLowerCase())) continue;
+      const st = await stat(dir).catch(() => null);
+      if (!st?.isDirectory() || Date.now() - st.mtimeMs < STALE_DIR_MS) continue;
+      log(`removing a leftover ${name}`);
+      await removeDir(dir);
+    }
+  } catch (err) {
+    log(`stale folder sweep failed: ${(err as Error).message}`);
+  }
+}
+
 /** Called from boot.ts after initUpdater (normal and safe mode). No-op outside a Velopack install. */
 export function scheduleVelopackRepair(d: RepairDeps): void {
   if (!inited) return;
   deps = d;
+  setTimeout(() => void sweepStaleDirs(), 60_000).unref?.();
   const due = repairDue(readRepairState());
   setTimeout(() => void runRepair('launch'), delay(due ? DUE_DELAY_MS : PROBE_DELAY_MS)).unref?.();
 }

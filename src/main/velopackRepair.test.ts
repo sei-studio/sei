@@ -6,9 +6,10 @@
  * (repair-* scenarios); here its spawn is mocked and reports `started`.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -23,7 +24,12 @@ const h = vi.hoisted(() => ({
   quit: vi.fn(),
   checkSigned: vi.fn(),
   ciMark: vi.fn(),
-  pidAlive: vi.fn(() => false),
+  pidRunsImage: vi.fn((_pid: number, _image: string) => false),
+  loadError: null as string | null,
+  route: 'DIRECT',
+  neutralExit: vi.fn(),
+  normalNext: vi.fn(),
+  config: {} as Record<string, unknown>,
 }));
 
 vi.mock('electron', () => ({
@@ -34,6 +40,7 @@ vi.mock('electron', () => ({
     quit: h.quit,
   },
   nativeTheme: { shouldUseDarkColors: false },
+  session: { defaultSession: { resolveProxy: async () => h.route } },
   net: {
     fetch: async (url: string) => {
       h.fetched.push(url);
@@ -48,13 +55,14 @@ vi.mock('electron', () => ({
 vi.mock('node:child_process', () => ({ spawn: h.spawn }));
 vi.mock('./velopackBoot', () => ({
   ciMark: h.ciMark,
-  pidAlive: h.pidAlive,
+  pidRunsImage: h.pidRunsImage,
+  velopackLoadError: () => h.loadError,
   userDataInstallId: () => 'install-1',
   velopackInstalled: () => h.installed,
   velopackLog: () => {},
 }));
-vi.mock('./bootContext', () => ({ noteNeutralExit: () => {} }));
-vi.mock('./configStore', () => ({ loadConfig: async () => ({}) }));
+vi.mock('./bootContext', () => ({ noteNeutralExit: h.neutralExit, requestNormalStartNext: h.normalNext }));
+vi.mock('./configStore', () => ({ loadConfig: async () => h.config }));
 vi.mock('./velopackVerify', () => ({ checkSigned: h.checkSigned }));
 vi.mock('./winPowerShell', () => ({ powerShellExe: () => 'powershell.exe', powerShellEnv: (e: NodeJS.ProcessEnv) => e }));
 vi.mock('./updateProgressHelper', () => ({
@@ -74,11 +82,13 @@ vi.mock('./velopackMigrationPolicy', async (importOriginal) => {
 const repair = await import('./velopackRepair');
 const { REPAIR_STATE_FILE, FAILURE_THRESHOLD, MAX_REPAIR_ATTEMPTS, repairBucket } = await import('./velopackRepairPolicy');
 const { rolloutBucket } = await import('./velopackFastApply');
+const { runnerConfigJson, REPAIR_RUNNER_PS1 } = await import('./velopackRepairRunner');
+const { VELOPACK_REPAIR_ADDED } = await import('../shared/addedLanguageCopy');
 
 const env = { LOCALAPPDATA: process.env.LOCALAPPDATA, SEI_VELOPACK_CI: process.env.SEI_VELOPACK_CI };
 const realExecPath = process.execPath;
 let root = '';
-const deps = { progress: vi.fn(), failed: vi.fn(), ready: vi.fn() };
+const deps = { progress: vi.fn(), failed: vi.fn(), ready: vi.fn(), released: vi.fn() };
 
 function state(): Record<string, any> {
   return JSON.parse(readFileSync(path.join(h.dir, 'userData', REPAIR_STATE_FILE), 'utf8'));
@@ -90,7 +100,7 @@ async function settle(): Promise<void> {
   for (;;) {
     await vi.runAllTimersAsync();
     if (!repair.__test.busy() || Date.now() > until) return;
-    await new Promise((r) => setImmediate(r));
+    await sleep(200); // real time: an async removal would have finished
   }
 }
 
@@ -150,7 +160,12 @@ beforeEach(() => {
   h.quit.mockReset();
   h.ciMark.mockReset();
   h.checkSigned.mockReset().mockResolvedValue({ ok: true, skipped: true });
-  h.pidAlive.mockReset().mockReturnValue(false);
+  h.pidRunsImage.mockReset().mockReturnValue(false);
+  h.neutralExit.mockReset();
+  h.normalNext.mockReset();
+  h.loadError = null;
+  h.route = 'DIRECT';
+  h.config = {};
   for (const f of Object.values(deps)) f.mockReset();
   vi.useFakeTimers({ toFake: ['setTimeout'] });
 });
@@ -182,10 +197,45 @@ describe('detection', () => {
     expect(state()).toMatchObject({ streak: 1, lastFailure: { kind: 'update-exe-missing' } });
   });
 
-  it('a Velopack layout Velopack no longer recognises is decisive too', () => {
+  it('a layout Velopack no longer recognises counts per launch, but is not decisive', () => {
     h.installed = false;
+    h.loadError = 'UpdateManager: boom';
     launch();
-    expect(state().lastFailure.kind).toBe('not-installed');
+    expect(state()).toMatchObject({ streak: 1, lastFailure: { kind: 'not-installed' } });
+    expect(repair.repairHoldsUpdates()).toBe(false);
+    launch();
+    launch();
+    expect(repair.repairHoldsUpdates()).toBe(true);
+  });
+
+  it('never counts a failure on the network path', async () => {
+    h.feed['releases.win.json'] = { Assets: [{ Version: '0.7.1' }] };
+    const probe = { url: 'http://feed/pkg.nupkg' };
+    launch();
+    await repair.noteUpdaterFailure('download', { detail: 'error sending request: operation timed out', probe });
+    await repair.noteUpdaterFailure('check', { detail: 'IO error', probe, viaGithub: true });
+    h.route = 'PROXY corp:8080';
+    await repair.noteUpdaterFailure('download', { detail: 'ENOTDIR', probe });
+    expect(state().streak ?? 0).toBe(0);
+    const why = h.ciMark.mock.calls.filter(([n]) => n === 'repair-signal').map(([, d]) => d.why);
+    expect(why).toEqual(['network', 'github', 'proxy']);
+    h.route = 'DIRECT';
+    await repair.noteUpdaterFailure('download', { detail: 'IO error: (os error 183)', probe });
+    expect(state().streak).toBe(1);
+  });
+
+  it('a check that finds an update or a finished download only clears what it proves', async () => {
+    await failDownloads(2);
+    repair.noteUpdaterHealthy('found');
+    expect(state().streak).toBe(2); // the check worked, the download did not
+    repair.noteUpdaterHealthy('downloaded');
+    expect(state().streak).toBe(0);
+    launch();
+    repair.noteApplyLaunched('0.7.1');
+    launch();
+    repair.noteUpdaterHealthy('found');
+    repair.noteUpdaterHealthy('downloaded');
+    expect(state()).toMatchObject({ streak: 1, lastFailure: { kind: 'apply-no-effect' } });
   });
 
   it('counts a failure only when the feed answers, once per launch', async () => {
@@ -242,6 +292,9 @@ describe('repair', () => {
     expect(readFileSync(cfg.setup)).toEqual(h.setupBytes);
     expect(readFileSync(path.join(dir, 'sei-repair-runner.ps1'), 'utf8')).toContain('--silent --installto');
     expect(h.quit).toHaveBeenCalledTimes(1);
+    // the repaired copy starts normally, also when it is the same version
+    expect(h.normalNext).toHaveBeenCalledTimes(1);
+    expect(h.neutralExit).toHaveBeenCalledTimes(1);
     expect(state()).toMatchObject({ attempts: 1, handoff: { attempt: 1, from: '0.7.0', target: '0.7.1', mode: 'safe', dir } });
     expect(state().reports.at(-1)).toMatchObject({ phase: 'triggered', trigger: 'update-exe-missing', mode: 'safe' });
   });
@@ -271,10 +324,14 @@ describe('repair', () => {
     runnerStarts();
     launch({ safeMode: true });
     await settle();
-    h.pidAlive.mockReturnValue(true);
+    h.pidRunsImage.mockImplementation((pid, image) => pid === 4242 && image === 'powershell.exe');
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    h.neutralExit.mockReset();
     launch();
     expect(exit).toHaveBeenCalledWith(0);
+    // a hand-over, not a failed start (no safe mode, no crash report)
+    expect(h.neutralExit).toHaveBeenCalledTimes(1);
+    expect(h.neutralExit.mock.invocationCallOrder[0]).toBeLessThan(exit.mock.invocationCallOrder[0]);
     exit.mockRestore();
   });
 
@@ -290,6 +347,64 @@ describe('repair', () => {
     await settle();
     expect(h.spawn).toHaveBeenCalledTimes(1);
     expect(h.quit).toHaveBeenCalled();
+    expect(h.normalNext).not.toHaveBeenCalled();
+  });
+
+  it('runner.json is pure ASCII for any user name, and the runner reads it as UTF-8', () => {
+    for (const user of ['José', '测试', 'Zoë Ølund']) {
+      const cfg = {
+        setup: `C:\\Users\\${user}\\AppData\\Local\\Temp\\sei-repair-ab12\\Sei-Setup.exe`,
+        sha256: 'a'.repeat(64),
+        root: `C:\\Users\\${user}\\AppData\\Local\\Sei`,
+        waitPid: 1234,
+      };
+      const text = runnerConfigJson(cfg);
+      expect(text).toMatch(/^[\x20-\x7e]*$/);
+      expect(JSON.parse(text)).toEqual(cfg);
+    }
+    expect(REPAIR_RUNNER_PS1).toMatch(/^[\x00-\x7f]*$/);
+    expect(REPAIR_RUNNER_PS1).toContain('[System.IO.File]::ReadAllText($cfgFile, [System.Text.Encoding]::UTF8)');
+  });
+
+  it('the hand-off writes runner.json as ASCII', async () => {
+    rmSync(path.join(root, 'Update.exe'));
+    runnerStarts();
+    launch({ safeMode: true });
+    await settle();
+    const [, args] = h.spawn.mock.calls[0];
+    const raw = readFileSync(path.join(args[args.indexOf('-Dir') + 1] as string, 'runner.json'));
+    expect([...raw].every((b) => b < 0x80)).toBe(true);
+  });
+
+  it('the next launch drops a Setup downloaded for a decisive signal that went away', async () => {
+    rmSync(path.join(root, 'Update.exe'));
+    launch();
+    await settle();
+    expect(deps.ready).toHaveBeenCalledWith(expect.any(Function), '0.7.1', false);
+    const dir = state().ready.dir as string;
+    writeFileSync(path.join(root, 'Update.exe'), 'upd'); // an antivirus put it back
+    launch();
+    expect(repair.repairHoldsUpdates()).toBe(true);
+    await expect(repair.handOffRepairAtLaunch()).resolves.toBe(false);
+    expect(h.spawn).not.toHaveBeenCalled();
+    expect(state()).toMatchObject({ streak: 0 });
+    expect(state().ready).toBeUndefined();
+    expect(repair.repairHoldsUpdates()).toBe(false);
+    await vi.waitFor(() => expect(existsSync(dir)).toBe(false));
+  });
+
+  it('the launch hand-off reads the kill switch of the channel the decision used', async () => {
+    runnerStarts();
+    await failDownloads(FAILURE_THRESHOLD);
+    await settle();
+    expect(state().ready.ruleChannel).toBe('win');
+    // switched off on that channel since, while the settings now say beta
+    h.feed['repair.win.json'] = { percent: 0, epoch: 0 };
+    h.config = { advanced_updates: true };
+    launch();
+    await expect(repair.handOffRepairAtLaunch()).resolves.toBe(false);
+    expect(h.spawn).not.toHaveBeenCalled();
+    expect(state().reports.at(-1)).toMatchObject({ phase: 'held', reason: 'disabled' });
   });
 
   it('the next launch hands off a Setup an earlier run downloaded', async () => {
@@ -324,6 +439,16 @@ describe('repair', () => {
     expect(h.spawn).not.toHaveBeenCalled();
     expect(state().reports.at(-1)).toMatchObject({ phase: 'failed', stage: 'signature' });
     expect(repair.repairHoldsUpdates()).toBe(false);
+    await vi.waitFor(() => expect(deps.failed).toHaveBeenCalledWith("Sei couldn't repair its updater this time. It will try again later."));
+  });
+
+  it('the failure notice follows the UI language', async () => {
+    h.config = { ui_language: 'ja' };
+    h.checkSigned.mockResolvedValue({ ok: false, reason: 'NotSigned' });
+    rmSync(path.join(root, 'Update.exe'));
+    launch({ safeMode: true });
+    await settle();
+    await vi.waitFor(() => expect(deps.failed).toHaveBeenCalledWith(VELOPACK_REPAIR_ADDED.ja.failed));
   });
 
   it('a sha256 mismatch never gets to the signature check', async () => {
@@ -343,6 +468,12 @@ describe('repair', () => {
     expect(h.quit).not.toHaveBeenCalled();
     expect(state().handoff).toBeUndefined();
     expect(state().reports.at(-1)).toMatchObject({ phase: 'failed', class: 'runner-blocked' });
+    // a runner that starts late must still find its cancel file
+    const [, args] = h.spawn.mock.calls[0];
+    const dir = args[args.indexOf('-Dir') + 1] as string;
+    await sleep(200); // real time: an async removal would have finished
+    expect(existsSync(path.join(dir, 'cancel'))).toBe(true);
+    expect(existsSync(path.join(dir, 'runner.json'))).toBe(true);
   });
 });
 
@@ -357,6 +488,18 @@ describe('guard rails', () => {
     expect(h.fetched.some((u) => u.endsWith('Sei-win-Setup.exe'))).toBe(false);
     expect(state().reports.filter((r: { phase: string }) => r.phase === 'held')).toEqual([{ phase: 'held', reason: 'disabled' }]);
     expect(repair.repairHoldsUpdates()).toBe(false);
+  });
+
+  it('a refused repair does not hold the next startup check, and a released hold reruns a skipped check', async () => {
+    h.feed['repair.win.json'] = { percent: 0, epoch: 0 };
+    rmSync(path.join(root, 'Update.exe'));
+    launch();
+    expect(repair.repairHoldsUpdates()).toBe(true); // nothing refused it yet
+    repair.noteCheckHeld();
+    await settle();
+    expect(deps.released).toHaveBeenCalledTimes(1);
+    launch();
+    expect(repair.repairHoldsUpdates()).toBe(false); // refused in this epoch: the check goes ahead
   });
 
   it('a partial rule follows the install bucket', async () => {
@@ -420,5 +563,30 @@ describe('guard rails', () => {
     expect(s.attempts).toBe(MAX_REPAIR_ATTEMPTS);
     expect(h.spawn).toHaveBeenCalledTimes(MAX_REPAIR_ATTEMPTS);
     expect(s.reports.filter((r: { phase: string }) => r.phase === 'gave_up')).toEqual([{ phase: 'gave_up', attempts: MAX_REPAIR_ATTEMPTS }]);
+  });
+});
+
+describe('leftover folders', () => {
+  it('removes sei-repair-<hex> folders older than a day, and nothing else', async () => {
+    const tmp = path.join(h.dir, 'temp');
+    const make = (name: string, ageMs: number) => {
+      const d = path.join(tmp, name);
+      mkdirSync(d, { recursive: true });
+      writeFileSync(path.join(d, 'x'), 'x');
+      const t = (Date.now() - ageMs) / 1000;
+      utimesSync(d, t, t);
+      return d;
+    };
+    const day = 24 * 60 * 60 * 1000;
+    const old = make('sei-repair-0a1b2c3d', 2 * day);
+    const fresh = make('sei-repair-11223344', 60_000);
+    const otherName = make('sei-repair-notes', 2 * day);
+    const unrelated = make('something-else', 2 * day);
+    launch();
+    await settle();
+    await vi.waitFor(() => expect(existsSync(old)).toBe(false));
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(otherName)).toBe(true);
+    expect(existsSync(unrelated)).toBe(true);
   });
 });

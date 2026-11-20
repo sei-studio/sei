@@ -7,9 +7,14 @@ import {
   MAX_KNOWN_SETUPS,
   MAX_REPAIR_ATTEMPTS,
   MAX_REPORTS,
+  CHECK_OK_CLEARS,
+  DOWNLOAD_OK_CLEARS,
+  STREAK_MAX_AGE_MS,
   emptyRepairState,
   evaluateLaunch,
   handoffResultClass,
+  holdsAtLaunch,
+  networkFailure,
   noteApplyLaunched,
   noteFailure,
   noteHealthy,
@@ -139,10 +144,32 @@ describe('evaluateLaunch', () => {
 
   it('an apply failure plus a broken layout in one launch count once', () => {
     const s = noteApplyLaunched(emptyRepairState(), '0.7.0', '0.7.1', 1);
-    const o = evaluateLaunch(s, facts({ broken: 'not-installed' }));
+    const o = evaluateLaunch(s, facts({ broken: 'update-exe-missing' }));
     expect(o.state.streak).toBe(1);
-    expect(o.state.lastFailure?.kind).toBe('not-installed');
+    expect(o.state.lastFailure?.kind).toBe('update-exe-missing');
     expect(repairDue(o.state)).toBe(true);
+  });
+
+  it('a layout Velopack does not see counts per launch but is not decisive', () => {
+    let s = emptyRepairState();
+    for (let i = 1; i < FAILURE_THRESHOLD; i++) {
+      s = evaluateLaunch(s, facts({ launch: `L${i}`, broken: 'not-installed' })).state;
+      expect(s.lastFailure?.kind).toBe('not-installed');
+      expect(repairDue(s)).toBe(false);
+    }
+    s = evaluateLaunch(s, facts({ launch: 'Lx', broken: 'not-installed' })).state;
+    expect(s.streak).toBe(FAILURE_THRESHOLD);
+    expect(repairDue(s)).toBe(true);
+  });
+
+  it('a streak older than its max age starts over', () => {
+    let s = failLaunches(emptyRepairState(), FAILURE_THRESHOLD - 1);
+    const later = 1000 + STREAK_MAX_AGE_MS + 1;
+    s = noteFailure(s, 'download', { launch: 'late', version: '0.7.0', now: later }).state;
+    expect(s).toMatchObject({ streak: 1, firstFailureAt: later });
+    // and a launch with no failure resets it outright
+    const old = failLaunches(emptyRepairState(), FAILURE_THRESHOLD - 1);
+    expect(evaluateLaunch(old, facts({ now: later })).state.streak).toBe(0);
   });
 
   const handoff = { attempt: 1, from: '0.7.0', target: '0.7.1', channel: 'win', at: 900_000, dir: 'C:\\tmp\\r', trigger: 'download' as const, mode: 'normal' };
@@ -319,5 +346,58 @@ describe('repairDecision', () => {
     const r1 = recordDecision(s, d, 'normal');
     expect(r1.reports.at(-1)).toEqual({ phase: 'held', reason: 'rollout-held' });
     expect(recordDecision(r1, d, 'normal').reports).toHaveLength(r1.reports.length);
+  });
+});
+
+describe('which failures count', () => {
+  it.each([
+    'error sending request for url (https://dl.sei.gg/releases.win.json)',
+    'operation timed out',
+    'dns error: failed to lookup address information',
+    'tcp connect error: No connection could be made because the target machine actively refused it. (os error 10061)',
+    'invalid peer certificate: UnknownIssuer',
+    'HTTP status client error (403 Forbidden) for url',
+    'Http error: status 404',
+    'io error: (os error 10054)',
+  ])('a network-path error is not the install: %s', (detail) => {
+    expect(networkFailure(detail)).toBe(true);
+  });
+
+  it.each([
+    'IO error: Cannot create a file when that file already exists. (os error 183)',
+    'Access is denied. (os error 5)',
+    'ENOTDIR',
+    'Package 0.7.404 is corrupt',
+    'Update.exe exited with status 1',
+    undefined,
+  ])('an install error counts: %s', (detail) => {
+    expect(networkFailure(detail)).toBe(false);
+  });
+});
+
+describe('partial health', () => {
+  const failed = (kind: 'check' | 'download' | 'apply-no-effect') => noteFailure(failLaunches(emptyRepairState(), 2), kind, { launch: 'K', version: '0.7.0', now: 5000 }).state;
+
+  it('a check that found an update clears a check streak only', () => {
+    expect(noteHealthy(failed('check'), CHECK_OK_CLEARS).streak).toBe(0);
+    expect(noteHealthy(failed('download'), CHECK_OK_CLEARS).streak).toBe(3);
+    expect(noteHealthy(failed('apply-no-effect'), CHECK_OK_CLEARS).streak).toBe(3);
+  });
+
+  it('a finished download clears check and download, never an apply that did not take', () => {
+    expect(noteHealthy(failed('download'), DOWNLOAD_OK_CLEARS).streak).toBe(0);
+    expect(noteHealthy(failed('apply-no-effect'), DOWNLOAD_OK_CLEARS).streak).toBe(3);
+    expect(noteHealthy(failed('apply-no-effect')).streak).toBe(0);
+  });
+});
+
+describe('holdsAtLaunch', () => {
+  it('holds a due repair until it was refused in this epoch, and always a downloaded Setup', () => {
+    const due = failLaunches(emptyRepairState(), FAILURE_THRESHOLD);
+    expect(holdsAtLaunch(due)).toBe(true);
+    const refused = recordDecision(due, { ok: false, reason: 'disabled' }, 'normal');
+    expect(refused.heldReported).toBe('disabled');
+    expect(holdsAtLaunch(refused)).toBe(false);
+    expect(holdsAtLaunch(failLaunches(emptyRepairState(), 1))).toBe(false);
   });
 });

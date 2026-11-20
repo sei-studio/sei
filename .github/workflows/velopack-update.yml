@@ -324,6 +324,7 @@ jobs:
           - session-end
           - repair-update-missing
           - repair-update-missing-safe
+          - repair-update-missing-unicode
           - repair-update-corrupt
           - repair-packages-corrupt
           - repair-apply-fails

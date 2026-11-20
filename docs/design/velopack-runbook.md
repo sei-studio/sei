@@ -190,17 +190,27 @@ runner in `velopackRepairRunner.ts`). It runs in normal mode and in safe mode.
 **When.** State lives in `%APPDATA%\Sei\velopack-repair.json` (written and
 fsynced like the boot guard's). Each launch counts at most one failure:
 
-- `update-exe-missing`, `not-installed` (Update.exe gone, or Velopack does not
-  see the install): decisive, the repair is due on that launch;
+- `update-exe-missing` (Update.exe gone): decisive, the repair is due on that
+  launch;
+- `not-installed` (Velopack's module or `UpdateManager` throws on this
+  layout; the error goes to the log);
 - `check`, `download` failures, counted only when the feed answers (the
-  releases file or the package), so offline or a broken feed never counts;
+  releases file or the package), so offline or a broken feed never counts.
+  Never counted either: errors on the network path (timeouts, DNS, connect,
+  TLS, proxy, HTTP status), failures while the updater is on its GitHub
+  fallback, and failures when the system proxy for the feed is not DIRECT
+  (Velopack's HTTP client ignores the proxy that the probe follows). A
+  reinstall cannot fix a network path;
 - `stage-spawn`, `apply-spawn` (Update.exe would not start);
 - `apply-no-effect`: Update.exe was started to apply a version and the next
   launch is still on the old one.
 
-Three failing launches in a row make it due. A check that finds nothing, or
-an update that lands, clears the count. A newer version reached by a normal
-update also resets the attempts.
+Three failing launches in a row make it due; a streak whose first failure
+is older than 14 days starts over. A check that finds nothing, or an update
+that lands, clears the count. A check that finds an update clears a `check`
+streak, a finished download clears `check` and `download`; neither clears
+an apply that did not take. A newer version reached by a normal update also
+resets the attempts.
 
 **What.** The repair reads `repair.<channel>.json`, `setup.<channel>.json` and
 `rollout.<channel>.json`, picks the newest Setup the rollout allows for this
@@ -210,9 +220,15 @@ checks size and sha256, then Authenticode (fail closed), and hands off:
 
 - **safe mode:** at once;
 - **normal mode:** the "Update Sei" button installs it now, otherwise the
-  next launch installs it before the app boots.
+  next launch installs it before the app boots. If that Setup was downloaded
+  for a missing Update.exe that is back by then (an antivirus restored it)
+  and fewer than 3 launches failed, it is dropped instead.
 
-The hand-off writes a small PowerShell runner and quits. The runner waits for
+The hand-off writes a small PowerShell runner and its `runner.json` (ASCII,
+non-ASCII path characters escaped as `\uXXXX`, read as UTF-8 so user names
+like `José` or `测试` survive Windows PowerShell 5.1) and quits. A safe-mode
+hand-off asks for a normal start next, so a same-version repair does not
+come back in safe mode. The runner waits for
 Sei to exit, checks the sha256 again and runs
 `Setup.exe --silent --installto %LOCALAPPDATA%\Sei --log <dir>\setup.log`.
 Velopack's Setup stops anything running from that folder, renames it aside,
@@ -223,14 +239,23 @@ result, keeps the old `packages\.betaId` (same rollout bucket) and reports.
 The update progress window shows while Setup works.
 
 **Guard rails.** At most 3 attempts per epoch; a launch that sees another
-repair running leaves at once; a failed attempt releases the updater again.
-While a repair is due or downloaded, the Velopack updater does not check or
-apply, and electron-updater never takes over a broken Velopack copy.
+repair's runner alive (its pid running `powershell.exe`, within 20 minutes)
+leaves at once, as a neutral exit for the boot guard; a failed attempt
+releases the updater again and reruns a startup check it held. While a
+repair is due or downloaded, the Velopack updater does not check or apply,
+and electron-updater never takes over a broken Velopack copy. A due repair
+that was already refused in this epoch (switched off, capped, held by the
+rollout) does not hold the startup check. A runner that starts after Sei
+gave up on it finds its `cancel` file (or no `runner.json`) and exits.
+`%TEMP%\sei-repair-<hex>` folders older than a day that no hand-off points
+at are removed at startup.
 
 **Kill switch:** `repair.<channel>.json` (`{percent, epoch}`; a 404 means on
 at 100%). Off for everyone:
 `gh workflow run velopack-rollout.yml -f channel=<win|beta> -f kind=repair -f percent=0 -f dry_run=false`.
-A Setup downloaded before the switch went off is dropped at the next launch.
+A Setup downloaded before the switch went off is dropped at the next launch
+(the switch of the channel the decision read, also if the update channel
+changed since).
 Raising `epoch` gives every install 3 new attempts (after a fix to the
 Setup or the repair itself).
 

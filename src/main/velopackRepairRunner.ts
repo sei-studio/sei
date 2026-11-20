@@ -13,7 +13,8 @@
  *
  *   1. writes `started` (its pid) so Sei knows it may quit,
  *   2. waits for Sei to exit (60 s cap; Setup stops a Sei that is stuck),
- *      and leaves if Sei wrote `cancel` (Sei gave up waiting and stays open),
+ *      and leaves if Sei wrote `cancel` or runner.json is gone (Sei gave up
+ *      waiting and stays open),
  *   3. checks the Setup's sha256 again,
  *   4. runs `Setup.exe --silent --installto <root> --log <dir>\setup.log`
  *      and waits for it (20 min cap),
@@ -25,7 +26,9 @@
  *
  * ASCII only and cmdlets rather than .NET calls where it can (Windows
  * PowerShell 5.1 reads a BOM-less script as ANSI; a locked-down machine may
- * run it in ConstrainedLanguage mode).
+ * run it in ConstrainedLanguage mode). runner.json is pure ASCII too
+ * (runnerConfigJson escapes everything else as \uXXXX) and is read as UTF-8,
+ * so a user name like José or 测试 in the paths survives either way.
  */
 
 export const RUNNER_SCRIPT = 'sei-repair-runner.ps1';
@@ -38,6 +41,11 @@ export interface RunnerConfig {
   sha256: string;
   root: string;
   waitPid: number;
+}
+
+/** runner.json's text: JSON with every non-ASCII character escaped, so any decoding reads the same paths. */
+export function runnerConfigJson(cfg: RunnerConfig): string {
+  return JSON.stringify(cfg).replace(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
 }
 
 export const REPAIR_RUNNER_PS1 = String.raw`# Sei Velopack self-repair runner (src/main/velopackRepairRunner.ts).
@@ -62,8 +70,15 @@ if (-not $Detached) {
 
 Put 'started' ([string]$PID)
 Log ('runner pid ' + $PID)
-$cfg = Get-Content -LiteralPath (Join-Path $Dir 'runner.json') -Raw | ConvertFrom-Json
+$cfgFile = Join-Path $Dir 'runner.json'
 $cancel = Join-Path $Dir 'cancel'
+# Sei gave up on this runner (cancel written, or its folder emptied): do nothing.
+function Cancelled { (Test-Path -LiteralPath $cancel) -or -not (Test-Path -LiteralPath $cfgFile) }
+if (Cancelled) { Log 'cancelled before start'; exit 0 }
+$raw = $null
+try { $raw = [System.IO.File]::ReadAllText($cfgFile, [System.Text.Encoding]::UTF8) } catch { }
+if ($null -eq $raw) { try { $raw = Get-Content -LiteralPath $cfgFile -Raw -Encoding UTF8 -ErrorAction Stop } catch { Log ('runner.json unreadable: ' + $_.Exception.Message); exit 0 } }
+$cfg = $raw | ConvertFrom-Json
 $exe = Join-Path ([string]$cfg.root) 'current\Sei.exe'
 
 function Relaunch {
@@ -79,14 +94,15 @@ function Relaunch {
 
 $waited = 0
 while ($waited -lt 600) {
-  if (Test-Path -LiteralPath $cancel) { Log 'cancelled by Sei'; exit 0 }
+  if (Cancelled) { Log 'cancelled by Sei'; exit 0 }
   if (-not (Get-Process -Id ([int]$cfg.waitPid) -ErrorAction SilentlyContinue)) { break }
   Start-Sleep -Milliseconds 100
   $waited++
 }
-if (Test-Path -LiteralPath $cancel) { Log 'cancelled by Sei'; exit 0 }
+if (Cancelled) { Log 'cancelled by Sei'; exit 0 }
 Log ('Sei gone after ' + ($waited * 100) + ' ms')
 Start-Sleep -Milliseconds 500
+if (Cancelled) { Log 'cancelled by Sei'; exit 0 }
 
 $hash = ''
 try { $hash = (Get-FileHash -LiteralPath ([string]$cfg.setup) -Algorithm SHA256 -ErrorAction Stop).Hash } catch { Log ('hash failed: ' + $_.Exception.Message) }

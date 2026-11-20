@@ -316,6 +316,13 @@ export function sendRepairFailed(message: string): void {
   send(IpcChannel.app.updateError, message);
 }
 
+/** The self-repair stopped holding the updater after it skipped a check: check now. */
+export function recheckAfterRepairHold(): void {
+  if (!autoUpdater) return;
+  lastBackgroundCheckAt = 0;
+  maybeBackgroundCheck('repair-hold-released');
+}
+
 /* -------------------------------------------------------------------------- */
 /*  version.json fetch (ported from updateChecker.ts)                          */
 /* -------------------------------------------------------------------------- */

@@ -64,7 +64,7 @@ import {
 } from './velopackFastApply';
 import { closeSplashWindow, createSplashWindow, renderSplashFrames } from './windowChrome';
 import { hasPassingVerdict, verifyPackage } from './velopackVerify';
-import { noteApplyLaunched, noteUpdaterFailure, noteUpdaterHealthy, repairHoldsUpdates } from './velopackRepair';
+import { noteApplyLaunched, noteCheckHeld, noteUpdaterFailure, noteUpdaterHealthy, repairHoldsUpdates } from './velopackRepair';
 import { normalizeUiLanguage } from '../shared/uiLanguage';
 
 /** The feed: releases.<channel>.json plus packages, served from R2 behind dl.sei.gg. */
@@ -493,6 +493,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         // A reinstall is due or under way (velopackRepair.ts): nothing to apply meanwhile.
         log('a repair is due or running; not checking');
         ciMark('check-held-by-repair');
+        noteCheckHeld();
         events.emit('update-not-available');
         return null;
       }
@@ -518,6 +519,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
           events.emit('update-not-available');
           return null;
         }
+        noteUpdaterHealthy('found');
         if (pending?.TargetFullRelease.Version !== version) downloaded = false;
         pending = info;
         ciMark('check-found', {
@@ -531,6 +533,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
         void noteUpdaterFailure('check', {
           detail: (err as Error)?.message,
           probe: { url: `${feedUrl()}/releases.${channel()}.json`, json: true },
+          viaGithub: useGithub,
         });
         events.emit('error', err);
         throw err;
@@ -549,11 +552,13 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
           detail: (err as Error)?.message,
           target: info.TargetFullRelease.Version,
           probe: { url: `${feedUrl()}/${encodeURIComponent(path.basename(info.TargetFullRelease.FileName))}` },
+          viaGithub: useGithub,
         });
         events.emit('error', err);
         throw err;
       }
       ciMark('download-done');
+      noteUpdaterHealthy('downloaded');
       // CI only: SEI_VELOPACK_CI_NOSTAGE exercises the stock extraction path.
       if (!(process.env.SEI_VELOPACK_CI === '1' && process.env.SEI_VELOPACK_CI_NOSTAGE === '1')) {
         await stage(p, packagePath(info.TargetFullRelease), STAGE_OFFER_WAIT_MS);
