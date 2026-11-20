@@ -74,6 +74,7 @@ import { resolveSpeakRoute, resolveTtsRoute, type ElevenLabsRoute } from './elev
 import { isOwnVoiceId } from './ownVoices';
 import type { SpeechPackId } from '../speech/packs';
 import { noteCreditWall } from '../creditWall';
+import { newTtsTrace, reportTtsFailure, type TtsProvider, type TtsTrace } from './ttsFailure';
 import { resolveFishKey } from './fishKeyStore';
 import {
   fishFailureReason,
@@ -546,6 +547,13 @@ export function _resetSeiVoicesPauseForTests(): void {
 
 function isSeiVoicesRoute(route: ElevenLabsRoute): boolean {
   return route.kind === 'proxy' && route.seiVoices === true;
+}
+
+/** The voice_tts_failed provider for a speech route (see ttsFailure.ts). */
+function providerOfRoute(route: ElevenLabsRoute): TtsProvider {
+  if (route.kind === 'direct') return 'elevenlabs_key';
+  if (route.kind === 'unconfigured') return 'unconfigured';
+  return route.seiVoices === true ? 'sei_voices' : 'sei_cloud';
 }
 
 /** The fallback reason for a failed "Sei voices" request, or null when the
@@ -1041,7 +1049,9 @@ export function prewarmTts(): void {
   })();
 }
 
-/** Synthesize `text` in `characterId`'s voice; resolves to audio/mpeg bytes. */
+/** Synthesize `text` in `characterId`'s voice; resolves to audio/mpeg bytes.
+ * A failure is reported as voice_tts_failed (phase `clip`, see ttsFailure.ts)
+ * and rethrown unchanged. */
 export async function voiceTts(args: {
   characterId: string;
   text: string;
@@ -1050,6 +1060,19 @@ export async function voiceTts(args: {
   /** The line of the SAME reply spoken immediately before this one. */
   prev?: string;
 }): Promise<ArrayBuffer> {
+  const trace = newTtsTrace();
+  try {
+    return await voiceTtsClip(args, trace);
+  } catch (err) {
+    reportTtsFailure('clip', trace.provider, err);
+    throw err;
+  }
+}
+
+async function voiceTtsClip(
+  args: { characterId: string; text: string; more?: boolean; prev?: string },
+  trace: TtsTrace,
+): Promise<ArrayBuffer> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   // Explicit "no voice" pick (260720): a silent companion never synthesizes.
@@ -1079,6 +1102,7 @@ export async function voiceTts(args: {
   // Playtime > Sei > Advanced). A failure here falls through to Sei's voices
   // below, never to the Fast voices (BYOK-only packs).
   if (await fishOnCloud(backend)) {
+    trace.provider = 'fish_cloud';
     const fishText = speechTextFor(args.text, language);
     if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
     const fish = await trySynthesizeFishLine(args.characterId, fishText, voiceId, language, genderHint);
@@ -1089,13 +1113,16 @@ export async function voiceTts(args: {
     noteFishCloudFallback(args.characterId, fish.fail, 'clip');
   }
   if (await localTtsSelected(backend)) {
+    trace.provider = 'local';
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
     // 261103: Fish Audio, when chosen, speaks first; any failure falls back
     // to the Fast voices below, with a notice once that clip exists.
     if (await fishSelected()) {
+      trace.provider = 'fish';
       const fish = await trySynthesizeFishLine(args.characterId, localText, voiceId, language, genderHint);
       if ('audio' in fish) return fish.audio;
+      trace.provider = 'local';
       const clip = await synthesizeLocalClip(localText, voiceId, language, args.characterId, genderHint);
       emitFishFallback(args.characterId, fish.fail);
       return clip;
@@ -1107,6 +1134,7 @@ export async function voiceTts(args: {
   // voice through the proxy instead (planSpeech). The pick is never swapped.
   const plan = await planSpeech(character, voiceId, own !== null, library !== null);
   const { route } = plan;
+  trace.provider = providerOfRoute(route);
   // BYOK on the ElevenLabs engine with no key stored (260908): before failing
   // with the setup hint, try any installed local voice pack — an accented or
   // substitute local voice beats a silent call, and the hint still shows when
@@ -1158,6 +1186,7 @@ export async function voiceTts(args: {
     // Cloud + own voice + a key ElevenLabs refused: speak this line with the
     // stand-in pool voice through the proxy (the notice already went out).
     if (!ownKeyFallback(plan, character, err)) throw err;
+    trace.provider = 'sei_cloud';
     const proxyText = clipForRoute(spoken, PROXY_ROUTE);
     return await synthesize(
       proxyText,
@@ -1275,6 +1304,22 @@ export async function voiceTtsStream(
   args: { characterId: string; text: string; more?: boolean; prev?: string },
   sink: (event: TtsStreamEvent) => void,
 ): Promise<{ streamId: string }> {
+  // voice_tts_failed (261121): a rejection here is a line that failed before
+  // any audio arrived; pumpTtsStream reports failures inside the body.
+  const trace = newTtsTrace();
+  try {
+    return await voiceTtsStreamOpen(args, sink, trace);
+  } catch (err) {
+    reportTtsFailure('pre_audio', trace.provider, err);
+    throw err;
+  }
+}
+
+async function voiceTtsStreamOpen(
+  args: { characterId: string; text: string; more?: boolean; prev?: string },
+  sink: (event: TtsStreamEvent) => void,
+  trace: TtsTrace,
+): Promise<{ streamId: string }> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
   // Silent companion (see voiceTts) — reject before any network work.
@@ -1302,6 +1347,7 @@ export async function voiceTtsStream(
   // byte falls through to Sei's voices stream below; a
   // failure mid-body ends the stream with an error, like any other stream.
   if (await fishOnCloud(backend)) {
+    trace.provider = 'fish_cloud';
     const fishText = speechTextFor(args.text, language);
     if (!fishText) throw new Error('VOICE_TTS_FAILED: empty text');
     const prep = await prepareFishLine(args.characterId, fishText, voiceId, language, genderHint);
@@ -1311,13 +1357,14 @@ export async function voiceTtsStream(
       try {
         const opened = await openFishStream(prep.key, fishText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
         noteFishCloudSpoke('stream');
-        return pumpTtsStream(opened, sink);
+        return pumpTtsStream(opened, sink, trace.provider);
       } catch (err) {
         noteFishCloudFallback(args.characterId, noteFishFailure(err, prep), 'stream');
       }
     }
   }
   if (await localTtsSelected(backend)) {
+    trace.provider = 'local';
     const localText = speechTextFor(args.text, language);
     if (!localText) throw new Error('VOICE_TTS_FAILED: empty text');
     // 261103: Fish Audio streams its mp3 like the ElevenLabs path. A failure
@@ -1334,7 +1381,7 @@ export async function voiceTtsStream(
       } else {
         try {
           const opened = await openFishStream(prep.key, localText.slice(0, MAX_TTS_CHARS), prep.plan, prep.language);
-          return pumpTtsStream(opened, sink);
+          return pumpTtsStream(opened, sink, 'fish');
         } catch (err) {
           fishFail = noteFishFailure(err, prep);
         }
@@ -1352,6 +1399,7 @@ export async function voiceTtsStream(
   // Own-account voice (see voiceTts / planSpeech).
   const plan = await planSpeech(character, voiceId, own !== null, library !== null);
   const { route } = plan;
+  trace.provider = providerOfRoute(route);
   // Spoken register BEFORE the cap (see voiceTts / speechTextFor).
   const spoken = speechTextFor(args.text, language);
   const text = clipForRoute(spoken, route);
@@ -1398,7 +1446,7 @@ export async function voiceTtsStream(
       const sOpened = await withLibraryStandIn(plan, character, (id) =>
         openTtsStream(route, id, text, language, stability, ttsContextFor(text, language, prev, more)),
       );
-      return pumpTtsStream(sOpened, sink);
+      return pumpTtsStream(sOpened, sink, 'sei_voices');
     } catch (err) {
       const reason = seiVoicesFallbackReason(err);
       if (!reason) throw err;
@@ -1416,6 +1464,7 @@ export async function voiceTtsStream(
     // Cloud + own voice + a key ElevenLabs refused: stand-in via the proxy
     // (see voiceTts). Pre-flight only, so nothing has reached the sink yet.
     if (!ownKeyFallback(plan, character, err)) throw err;
+    trace.provider = 'sei_cloud';
     const proxyText = clipForRoute(spoken, PROXY_ROUTE);
     opened = await openTtsStream(
       PROXY_ROUTE,
@@ -1426,7 +1475,7 @@ export async function voiceTtsStream(
       ttsContextFor(proxyText, language, prev, more),
     );
   }
-  return pumpTtsStream(opened, sink);
+  return pumpTtsStream(opened, sink, trace.provider);
 }
 
 /**
@@ -1437,6 +1486,7 @@ export async function voiceTtsStream(
 function pumpTtsStream(
   opened: OpenedTtsStream | OpenedFishStream,
   sink: (event: TtsStreamEvent) => void,
+  provider: TtsProvider = 'unknown',
 ): { streamId: string } {
   const { body: resBody, ctrl } = opened;
   const streamId = `tts-${nextStreamSeq++}`;
@@ -1452,6 +1502,8 @@ function pumpTtsStream(
   // TTS_STREAM_STALL_MS: read() rejects and the catch emits the {error}.
   const reader = resBody.getReader();
   let stallTimer = setTimeout(() => ctrl.abort(), TTS_STREAM_STALL_MS);
+  /** Any audio reached the sink: a failure after this is mid_stream. */
+  let sentAudio = false;
   void (async () => {
     try {
       for (;;) {
@@ -1463,6 +1515,7 @@ function pumpTtsStream(
           // Copy out of the pooled buffer before it crosses the IPC boundary.
           const chunk = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
           sink({ streamId, chunk });
+          sentAudio = true;
         }
       }
       sink({ streamId, done: true });
@@ -1479,6 +1532,10 @@ function pumpTtsStream(
           captureSurfaceError('voice', cls === 'aborted' ? 'tts_stream_stall' : `tts_stream_${cls}`);
         } catch { /* analytics is never load-bearing */ }
       })();
+      // 261121: the same failure on voice_tts_failed, split by whether the
+      // player heard any of the line (a stall before the first byte is a
+      // silent line, like a pre-flight failure).
+      reportTtsFailure(sentAudio ? 'mid_stream' : 'pre_audio', provider, err, true);
     } finally {
       clearTimeout(stallTimer);
     }

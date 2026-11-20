@@ -107,7 +107,11 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // Mute lives in the UI store so it is shared with GameSurface's in-game
   // call cluster (the user tile below dims while muted).
   const muted = useUiStore((s) => s.callMuted);
-  const captionsOn = useUiStore((s) => s.callCaptions);
+  const captionsSetting = useUiStore((s) => s.callCaptions);
+  // 261121 (T507): while a line could not be voiced, its text is the only
+  // way to know what was said, so captions show whatever the setting says.
+  const voiceFailing = useVoiceStore((s) => s.voiceFailing);
+  const captionsOn = captionsSetting || voiceFailing;
 
   const status = useVoiceStore((s) => s.status);
   const speakingId = useVoiceStore((s) => s.speakingId);

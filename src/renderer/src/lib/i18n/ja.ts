@@ -2593,4 +2593,6 @@ export const JA: Record<string, string> = {
   "Voice provider": "音声の提供元",
   "[spoken with a Sei voice, add your Fish Audio key in Playtime]": "[Seiのボイスで読み上げました。「プレイ時間」でFish AudioのAPIキーを追加してください]",
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[Seiのボイスで読み上げました。Fish Audioはこの一文を読み上げられませんでした]",
+  "[voice could not load, check your connection]": "[音声を読み込めませんでした。接続を確認してください]",
+  "[voice could not play this line]": "[この一文の音声を再生できませんでした]",
 };
