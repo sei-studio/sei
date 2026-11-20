@@ -28,6 +28,25 @@
 #   session-end        Windows ends the session (WM_QUERYENDSESSION and
 #                      WM_ENDSESSION sent to Sei's windows): the quit does not
 #                      start an apply, and the next launch applies
+#
+# Self-repair (velopackRepair.ts, 261120): the updater is broken on purpose and
+# Sei must reinstall itself from setup.win.json's full Setup, end on the
+# target with Update.exe whole and %APPDATA%\Sei untouched.
+#   repair-update-missing       Update.exe deleted: the first launch repairs
+#                               (CI restart mode = hand-off at once)
+#   repair-update-missing-safe  the same, started in safe mode
+#   repair-update-corrupt       Update.exe overwritten with junk before the
+#                               first check: Sei ends on the target either way
+#                               (the download may heal it, or a repair does)
+#   repair-packages-corrupt     packages\ replaced by a file: check/download
+#                               fail on every launch, the third one repairs
+#   repair-apply-fails          downloaded and staged, then Update.exe swapped
+#                               for a program that does nothing: two launch
+#                               applies and one quit apply have no effect, the
+#                               next launch downloads the Setup and offers it,
+#                               and the launch after that installs it
+#   repair-apply-fails-safe     the same, but the repairing launch is in safe
+#                               mode, which installs at once
 param(
   [Parameter(Mandatory = $true)][string]$Scenario,
   [string]$Feed = 'feed',
@@ -153,6 +172,18 @@ function Start-Feed {
   foreach ($a in $keep) { New-Item -ItemType HardLink -Path (Join-Path $d $a.FileName) -Target (Join-Path $Feed "vp\$($a.FileName)") | Out-Null }
   $copy = $all.PSObject.Copy(); $copy.Assets = $keep
   $copy | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $d 'releases.win.json') -Encoding utf8
+  # The full Setup a self-repair installs (setup.win.json names setup/<tag>/<file>).
+  $setupJson = Join-Path $Feed 'vp\setup.win.json'
+  if (Test-Path $setupJson) {
+    $sm = Get-Content $setupJson -Raw | ConvertFrom-Json
+    if ([version]$sm.version -le [version]$Target) {
+      Copy-Item $setupJson (Join-Path $d 'setup.win.json')
+      $sd = Join-Path $d "setup\$($sm.tag)"
+      New-Item -ItemType Directory -Force -Path $sd | Out-Null
+      New-Item -ItemType HardLink -Path (Join-Path $sd $sm.file) -Target (Join-Path $Feed "vp\setup\$($sm.tag)\$($sm.file)") | Out-Null
+      Write-Host "feed $Target setup -> $($sm.version) $($sm.tag)/$($sm.file)"
+    }
+  }
   Write-Host "feed $Target -> $(($keep | ForEach-Object { "$($_.Version)/$($_.Type) $([math]::Round($_.Size / 1MB, 1)) MB" }) -join ', ')"
   $script:srv = Start-Process -FilePath python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', $steps -PassThru -WindowStyle Hidden
   # Wait until it answers: a fixed sleep lost the race on a busy runner once
@@ -396,6 +427,137 @@ function Finish {
   if ($failures.Count -gt 0) { exit 1 }
   Write-Host "PASS: $Scenario"
   exit 0
+}
+
+# ------------------------------------------------------------------ self-repair
+# Files under %APPDATA%\Sei the repair must leave alone.
+$dataFiles = [ordered]@{}
+function Seed-UserData {
+  $dir = Join-Path $userData 'ci-repair-data'
+  New-Item -ItemType Directory -Force -Path (Join-Path $dir 'nested') | Out-Null
+  foreach ($rel in 'ci-repair-data\notes.txt', 'ci-repair-data\nested\memory.md') {
+    $f = Join-Path $userData $rel
+    Set-Content -LiteralPath $f -Value ("ci " + [guid]::NewGuid()) -Encoding ascii
+    $dataFiles[$rel] = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash
+  }
+}
+function Check-UserData {
+  $bad = @()
+  foreach ($rel in $dataFiles.Keys) {
+    $f = Join-Path $userData $rel
+    if (-not (Test-Path -LiteralPath $f)) { $bad += "$rel missing"; continue }
+    if ((Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash -ne $dataFiles[$rel]) { $bad += "$rel changed" }
+  }
+  $results.user_data_intact = $bad.Count -eq 0
+  if ($bad.Count -gt 0) { Fail "user data touched by the repair: $($bad -join ', ')" }
+}
+function RepairEnv([string]$mode, [switch]$Safe, [switch]$Trigger) {
+  # Like Prepare, but keeps the marks: a repair scenario spans several launches.
+  # No trigger file = an update that does download runs its mode at once.
+  $env:SEI_VELOPACK_CI = '1'
+  $env:SEI_VELOPACK_CI_MODE = $mode
+  $env:SEI_VELOPACK_CI_TRIGGER = if ($Trigger) { $trigger } else { '' }
+  $env:SEI_VELOPACK_FEED = "http://127.0.0.1:8765/$Target"
+  $env:SEI_VELOPACK_CI_NOSTAGE = ''
+  $env:SEI_VELOPACK_CI_PUBLISHER = ''
+  $env:SEI_REPAIR_DELAY_MS = '3000'
+  if ($Safe) { $env:SEI_SAFE_MODE = '1' } else { Remove-Item Env:SEI_SAFE_MODE -ErrorAction SilentlyContinue }
+}
+function PidMark([string]$ev, [int]$procId, [scriptblock]$where = $null) {
+  Events | Where-Object { $_.ev -eq $ev -and $_.pid -eq $procId -and (-not $where -or (& $where $_)) } | Select-Object -First 1
+}
+function Wait-Exit($proc, [int]$timeoutS) {
+  if (-not $proc.WaitForExit($timeoutS * 1000)) { return $false }
+  # the browser process is gone; give its helpers a moment
+  for ($i = 0; $i -lt 50 -and (SeiProcs).Count -gt 0; $i++) { Start-Sleep -Milliseconds 200 }
+  $true
+}
+$repairLaunches = [System.Collections.Generic.List[object]]::new()
+# One launch of a scenario that drives Sei until it repairs. Returns how it ended:
+# handoff (quit into the runner), target (already on $Target), exited, counted
+# (a failure was counted and nothing else happened for a while), timeout.
+function Repair-Launch([int]$n, [int]$timeoutS = 240) {
+  $p = Start-Sei
+  $t = Now
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  $how = 'timeout'; $countedAt = $null
+  while ($sw.Elapsed.TotalSeconds -lt $timeoutS) {
+    if (PidMark 'repair-handoff' $p.Id) { $how = 'handoff'; break }
+    if (Mark 'window-loaded' $Target $isApp) { $how = 'target'; break }
+    if ($p.HasExited) { $how = 'exited'; break }
+    # A failure counted in this process and no repair due: give it 30 s more, then end the launch.
+    if ($null -eq $countedAt -and (PidMark 'repair-signal' $p.Id { param($e) $e.counted -eq $true })) { $countedAt = $sw.Elapsed.TotalSeconds }
+    if ($null -ne $countedAt -and -not (PidMark 'repair-due' $p.Id) -and $sw.Elapsed.TotalSeconds - $countedAt -gt 30) { $how = 'counted'; break }
+    Start-Sleep -Milliseconds 250
+  }
+  $init = PidMark 'repair-init' $p.Id
+  $row = [ordered]@{
+    launch = $n; pid = $p.Id; ended = $how; ms = (Now) - $t
+    broken = if ($init) { $init.broken } else { $null }
+    streak = if ($init) { $init.streak } else { $null }
+    due = if ($init) { $init.due } else { $null }
+    signals = @(Events | Where-Object { $_.ev -eq 'repair-signal' -and $_.pid -eq $p.Id } | ForEach-Object { "$($_.kind):$($_.counted):$($_.streak)" })
+  }
+  $repairLaunches.Add($row)
+  Write-Host ("LAUNCH " + ($row | ConvertTo-Json -Compress))
+  if ($how -eq 'handoff') {
+    if (-not (Wait-Exit $p 60)) { Fail "launch $n handed off but did not quit" }
+  } elseif ($how -ne 'target') {
+    if (-not $p.HasExited) { Stop-Sei }
+  }
+  $how
+}
+# After a hand-off: the runner installs the Setup and starts the repaired Sei.
+function Assert-Repaired([long]$t0) {
+  $r = WaitMark 'repair-result' $Target 600
+  $l = WaitMark 'window-loaded' $Target 180 $isApp
+  Start-Sleep -Seconds 3
+  Shot "$Scenario-after"
+  $h = Mark 'repair-handoff' $From
+  $results.repair_launches = @($repairLaunches)
+  $results.repair_handoff_ms = if ($h) { $h.t - $t0 } else { $null }
+  $results.repair_result = if ($r) { $r.result } else { $null }
+  $results.repair_report = if ($r) { $r.reports } else { $null }
+  $results.repair_to_loaded_ms = if ($h -and $l) { $l.t - $h.t } else { $null }
+  $results.repair_decision = if ($d = Mark 'repair-decision' $From) { $d.decision } else { $null }
+  $results.repair_failed = @(Events | Where-Object { $_.ev -eq 'repair-failed' } | ForEach-Object { "$($_.stage)/$($_.class): $($_.detail)" })
+  $dir = Join-Path $env:TEMP 'sei-repair-*'
+  foreach ($f in 'runner.log', 'setup.log') {
+    Get-ChildItem $dir -Filter $f -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+      Write-Host "### $($_.FullName)"; Get-Content $_.FullName -Tail 60 | ForEach-Object { Write-Host $_ }
+      Copy-Item $_.FullName (Join-Path $Out "repair-$f") -ErrorAction SilentlyContinue
+    }
+  }
+  Timeline $t0
+  if (-not $h) { Fail 'no repair-handoff mark' }
+  if (-not $r) { Fail "the repaired Sei never reported the repair result" }
+  elseif ($r.result -ne 'setup-exit 0') { Fail "Setup result: $($r.result)" }
+  elseif (-not $r.reports -or @($r.reports)[0].phase -ne 'repaired') { Fail "no repaired report: $($r.reports | ConvertTo-Json -Compress -Depth 4)" }
+  if (-not $l) { Fail "Sei $Target never loaded after the repair" }
+  if ((CurrentVersion) -ne $Target) { Fail "installed version is $(CurrentVersion), not $Target" }
+  $upd = Join-Path $root 'Update.exe'
+  if (-not (Test-Path $upd)) { Fail 'Update.exe still missing after the repair' }
+  elseif ($script:badUpdateHash -and (Get-FileHash $upd -Algorithm SHA256).Hash -eq $script:badUpdateHash) { Fail 'Update.exe is still the broken one' }
+  if (-not (Test-Path "$root\packages" -PathType Container)) { Fail 'packages\ is not a folder after the repair' }
+  $nsis = Join-Path $env:LOCALAPPDATA 'Programs\sei'
+  if (Test-Path $nsis) { Fail "an NSIS copy appeared at $nsis" }
+  if ((SeiProcs).Count -lt 1) { Fail 'no Sei running after the repair' }
+  $aside = @(Get-ChildItem $env:LOCALAPPDATA -Directory -Filter 'Sei.*' -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  $results.repair_leftover_dirs = $aside
+  Check-UserData
+  if ($results.repair_failed.Count -gt 0) { Fail "repair-failed marks: $($results.repair_failed -join '; ')" }
+  Remove-Item Env:SEI_SAFE_MODE -ErrorAction SilentlyContinue
+}
+function Break-UpdateExe([string]$how) {
+  $upd = Join-Path $root 'Update.exe'
+  switch ($how) {
+    'delete' { Remove-Item -LiteralPath $upd -Force }
+    'junk' { $b = New-Object byte[] 65536; (New-Object Random 7).NextBytes($b); [System.IO.File]::WriteAllBytes($upd, $b) }
+    # A real program that starts and exits at once with an error: the spawn works, nothing is applied.
+    'noop' { Copy-Item -LiteralPath (Join-Path $env:SystemRoot 'System32\where.exe') -Destination $upd -Force }
+  }
+  $script:badUpdateHash = if (Test-Path $upd) { (Get-FileHash $upd -Algorithm SHA256).Hash } else { $null }
+  Write-Host "Update.exe: $how"
 }
 
 # ------------------------------------------------------------------ runner facts
@@ -751,6 +913,132 @@ switch -Regex ($Scenario) {
     $results.launch_apply_mark = [bool](Mark 'launch-apply' $From)
     $results.next_launch_loaded_ms = if ($l) { $l.t - $t } else { $null }
     if (-not $l) { Fail "the next launch did not apply $Target" }
+  }
+
+  '^repair-update-missing(-safe)?$' {
+    $safe = $Scenario -like '*-safe'
+    Seed-UserData
+    Break-UpdateExe 'delete'
+    Remove-Item $marks -Force -ErrorAction SilentlyContinue
+    RepairEnv 'restart' -Safe:$safe
+    $t0 = Now
+    $rec = Start-Rec $Scenario 150
+    $how = Repair-Launch 1 300
+    if ($how -ne 'handoff') { Fail "the broken launch did not hand off ($how)" }
+    $i = Mark 'repair-init' $From
+    if (-not $i -or $i.broken -ne 'update-exe-missing') { Fail "repair-init did not see Update.exe missing: $($i | ConvertTo-Json -Compress)" }
+    if ($i -and [bool]$i.safeMode -ne $safe) { Fail "safe mode was $($i.safeMode), expected $safe" }
+    Assert-Repaired $t0
+    Stop-Rec $rec
+  }
+
+  '^repair-update-corrupt$' {
+    Seed-UserData
+    Break-UpdateExe 'junk'
+    Remove-Item $marks -Force -ErrorAction SilentlyContinue
+    RepairEnv 'restart'
+    $t0 = Now
+    $how = ''
+    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) { $how = Repair-Launch $n 180 }
+    $results.corrupt_path = $how
+    if ($how -eq 'handoff') {
+      Assert-Repaired $t0
+    } elseif ($how -eq 'target') {
+      # The download replaced Update.exe from the package and the ordinary update worked.
+      $results.repair_launches = @($repairLaunches)
+      Timeline $t0
+      if ((CurrentVersion) -ne $Target) { Fail "installed version is $(CurrentVersion), not $Target" }
+      if ((Get-FileHash (Join-Path $root 'Update.exe') -Algorithm SHA256).Hash -eq $script:badUpdateHash) { Fail 'Update.exe is still the junk one' }
+      Check-UserData
+    } else {
+      $results.repair_launches = @($repairLaunches)
+      Timeline $t0
+      Fail "neither an update nor a repair after 5 launches ($how)"
+    }
+  }
+
+  '^repair-packages-corrupt$' {
+    Seed-UserData
+    $pk = Join-Path $root 'packages'
+    Remove-Item -LiteralPath $pk -Recurse -Force
+    Set-Content -LiteralPath $pk -Value 'not a folder' -Encoding ascii
+    Remove-Item $marks -Force -ErrorAction SilentlyContinue
+    RepairEnv 'restart'
+    $t0 = Now
+    $how = ''
+    for ($n = 1; $n -le 5 -and $how -ne 'handoff' -and $how -ne 'target'; $n++) { $how = Repair-Launch $n 180 }
+    if ($how -ne 'handoff') { $results.repair_launches = @($repairLaunches); Timeline $t0; Fail "no repair after $($n - 1) launches ($how)" }
+    else {
+      $results.repair_launch_count = $repairLaunches.Count
+      if ($repairLaunches.Count -gt 3) { Fail "took $($repairLaunches.Count) launches (threshold is 3)" }
+      Assert-Repaired $t0
+    }
+  }
+
+  '^repair-apply-fails(-safe)?$' {
+    $safe = $Scenario -like '*-safe'
+    Seed-UserData
+    # 1. A normal download + stage with the real Update.exe, then Sei is killed.
+    Prepare 'download-only'
+    $env:SEI_REPAIR_DELAY_MS = '3000'
+    $p = Start-Sei
+    Wait-Downloaded | Out-Null
+    if ($results.stage_result -notlike 'ok*') {
+      $s = WaitMark 'stage-done' $From 600
+      $results.stage_result = if ($s) { $s.result } else { 'not finished in 10 min' }
+    }
+    if ($results.stage_result -notlike 'ok*') { Fail "stage did not finish: $($results.stage_result)"; Finish }
+    Stop-Sei
+    # 2. Update.exe now does nothing: every apply is a no-op.
+    Break-UpdateExe 'noop'
+    $t0 = Now
+    RepairEnv 'download-only'
+    # Two launch applies (MAX_LAUNCH_APPLY_ATTEMPTS): each launch quits into "Update.exe".
+    foreach ($n in 1, 2) {
+      $how = Repair-Launch $n 180
+      if ($how -ne 'exited') { Fail "launch $n did not quit into the launch apply ($how)" }
+    }
+    if (@(Events | Where-Object { $_.ev -eq 'launch-apply' }).Count -lt 2) { Fail 'expected two launch applies' }
+    # 3. The launch-apply cap is spent: this launch boots and applies on quit.
+    RepairEnv 'quit' -Trigger
+    Remove-Item $trigger -Force -ErrorAction SilentlyContinue
+    $p = Start-Sei
+    $d = WaitMark 'downloaded' $From 300 { param($e) $e.pid -eq $p.Id }
+    if (-not $d) { Fail 'the third launch never offered the update' }
+    Set-Content $trigger '1'
+    if (-not (Wait-Exit $p 90)) { Fail 'the third launch did not quit'; Stop-Sei }
+    Remove-Item $trigger -Force -ErrorAction SilentlyContinue
+    if (-not (PidMark 'apply-launch' $p.Id)) { Fail 'the quit did not start an apply' }
+    $i3 = PidMark 'repair-init' $p.Id
+    $repairLaunches.Add([ordered]@{ launch = 3; pid = $p.Id; ended = 'quit-apply'; streak = if ($i3) { $i3.streak } else { $null } })
+    # 4. Three applies without effect: this launch repairs.
+    if ($safe) {
+      RepairEnv 'download-only' -Safe
+      $rec = Start-Rec $Scenario 150
+      $how = Repair-Launch 4 300
+      if ($how -ne 'handoff') { Fail "the safe-mode launch did not hand off ($how)" }
+    } else {
+      # Normal mode downloads the Setup and offers it ("Update Sei"); the user
+      # closes Sei, and the next launch installs it before the app boots.
+      RepairEnv 'download-only'
+      $p = Start-Sei
+      $ready = WaitMark 'repair-ready' $From 300 { param($e) $e.pid -eq $p.Id }
+      $i4 = PidMark 'repair-init' $p.Id
+      $repairLaunches.Add([ordered]@{ launch = 4; pid = $p.Id; ended = if ($ready) { 'ready' } else { 'no-ready' }; streak = if ($i4) { $i4.streak } else { $null }; due = if ($i4) { $i4.due } else { $null } })
+      if (-not $ready) { Fail 'the fourth launch did not download the Setup' }
+      if (PidMark 'repair-handoff' $p.Id) { Fail 'normal mode handed off without the user' }
+      Start-Sleep -Seconds 2
+      Stop-Sei
+      $rec = Start-Rec $Scenario 150
+      $how = Repair-Launch 5 180
+      if ($how -ne 'handoff') { Fail "the launch after the offer did not install it ($how)" }
+      if (-not (Mark 'repair-launch-handoff' $From)) { Fail 'no repair-launch-handoff mark' }
+    }
+    $i = Events | Where-Object { $_.ev -eq 'repair-due' } | Select-Object -First 1
+    $results.repair_due = $i
+    if (-not $i -or $i.last -ne 'apply-no-effect' -or $i.streak -lt 3) { Fail "repair was not due on apply-no-effect x3: $($i | ConvertTo-Json -Compress)" }
+    Assert-Repaired $t0
+    Stop-Rec $rec
   }
 
   default { throw "unknown scenario $Scenario" }

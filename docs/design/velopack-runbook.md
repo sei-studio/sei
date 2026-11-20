@@ -167,6 +167,10 @@ Do all three, in this order:
 Each takes effect within about a minute (client cache). Installs that already
 took the version keep it.
 
+The self-repair (below) follows step 1: it never installs a version whose
+update rollout is 0 for the install, and falls back to an older Setup it has
+seen that is still allowed (never below the running version).
+
 ## Rollback means roll forward
 
 There is no downgrade. Velopack only moves forward, `setup.<channel>.json`
@@ -174,11 +178,73 @@ never moves backwards, and electron-updater does not downgrade either. To
 undo a bad version: kill it (above), fix, ship X.Y.(Z+1), and open the
 rollout for that. Installs on the bad version update to the fix like any
 other update, provided the bad version can still start and check for
-updates. If it cannot, see below.
+updates. If it cannot update, it repairs itself (below).
 
-## A broken Velopack copy: the user's way out
+## A broken Velopack copy: Sei repairs itself
 
-If a Velopack install cannot start or update:
+Since product call (261120) a Velopack install that cannot update reinstalls
+itself from the newest full Setup, with no action from the user
+(`src/main/velopackRepair.ts`, rules in `velopackRepairPolicy.ts`, the
+runner in `velopackRepairRunner.ts`). It runs in normal mode and in safe mode.
+
+**When.** State lives in `%APPDATA%\Sei\velopack-repair.json` (written and
+fsynced like the boot guard's). Each launch counts at most one failure:
+
+- `update-exe-missing`, `not-installed` (Update.exe gone, or Velopack does not
+  see the install): decisive, the repair is due on that launch;
+- `check`, `download` failures, counted only when the feed answers (the
+  releases file or the package), so offline or a broken feed never counts;
+- `stage-spawn`, `apply-spawn` (Update.exe would not start);
+- `apply-no-effect`: Update.exe was started to apply a version and the next
+  launch is still on the old one.
+
+Three failing launches in a row make it due. A check that finds nothing, or
+an update that lands, clears the count. A newer version reached by a normal
+update also resets the attempts.
+
+**What.** The repair reads `repair.<channel>.json`, `setup.<channel>.json` and
+`rollout.<channel>.json`, picks the newest Setup the rollout allows for this
+install (never below the running version, never a version whose rollout is
+0 for this install's bucket), downloads it to `%TEMP%\sei-repair-<hex>`,
+checks size and sha256, then Authenticode (fail closed), and hands off:
+
+- **safe mode:** at once;
+- **normal mode:** the "Update Sei" button installs it now, otherwise the
+  next launch installs it before the app boots.
+
+The hand-off writes a small PowerShell runner and quits. The runner waits for
+Sei to exit, checks the sha256 again and runs
+`Setup.exe --silent --installto %LOCALAPPDATA%\Sei --log <dir>\setup.log`.
+Velopack's Setup stops anything running from that folder, renames it aside,
+installs fresh, and deletes the old copy (or renames it back if the install
+fails). It never touches `%APPDATA%\Sei`. The runner then starts the
+repaired `current\Sei.exe` (without safe mode). The next launch reads the
+result, keeps the old `packages\.betaId` (same rollout bucket) and reports.
+The update progress window shows while Setup works.
+
+**Guard rails.** At most 3 attempts per epoch; a launch that sees another
+repair running leaves at once; a failed attempt releases the updater again.
+While a repair is due or downloaded, the Velopack updater does not check or
+apply, and electron-updater never takes over a broken Velopack copy.
+
+**Kill switch:** `repair.<channel>.json` (`{percent, epoch}`; a 404 means on
+at 100%). Off for everyone:
+`gh workflow run velopack-rollout.yml -f channel=<win|beta> -f kind=repair -f percent=0 -f dry_run=false`.
+A Setup downloaded before the switch went off is dropped at the next launch.
+Raising `epoch` gives every install 3 new attempts (after a fix to the
+Setup or the repair itself).
+
+**Analytics:** `velopack_repair` with `phase` = `triggered` (attempt,
+trigger, streak, mode, to), `repaired` (attempt, recover_ms, trigger, mode,
+same_version, from, to), `failed` (stage, class, attempt, mode), `held`
+(reason: disabled, rollout-held, rollout-unreadable, no-target, low-disk,
+unsupported-layout, ...), `gave_up` (attempts).
+
+**What it cannot fix:** a Sei that crashes before `boot.ts` runs (the boot
+guard and safe mode still start), an install outside `%LOCALAPPDATA%\Sei`
+(`unsupported-layout`), no network or no reachable feed, a Setup that keeps
+failing 3 times in an epoch, and a machine whose policy blocks PowerShell or
+running a downloaded Setup (`runner-blocked`). For those, the manual way out:
 
 1. **Install the newest NSIS build from sei.gg.** It writes its shortcuts
    over the Velopack ones and Sei retargets the taskbar pin. An NSIS build
@@ -203,7 +269,9 @@ that touch the updater code (and on dispatch):
 - **scenarios** (Velopack 0.6.90 to 0.6.91 on a clean runner): restart,
   restart-defender-off, restart-norec, restart-unstaged, rollback-swap1,
   rollback-swap2, launch-during-apply, quit, next-launch, low-disk, rollout,
-  sig-reject, sig-accept, restart-spawn-fail, session-end (header of
+  sig-reject, sig-accept, restart-spawn-fail, session-end, and the
+  self-repair ones: repair-update-missing (and -safe), repair-update-corrupt,
+  repair-packages-corrupt, repair-apply-fails (and -safe) (header of
   `scripts/velopack-ci/scenario.ps1`);
 - **migrate** (a real older NSIS release to Velopack): peruser-default,
   peruser-custom, peruser-unicode (`C:\游戏\Sei 测试`), permachine,
