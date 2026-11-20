@@ -244,7 +244,9 @@ export function PlaytimeScreen(): React.ReactElement {
             <>
               <SeiPlanTab />
               <section className={styles.section} aria-label={t('Voice')}>
-                <h3 className={styles.sectionTitle}>{t('Voice')}</h3>
+                {/* 261120 product call: no Voice heading on the Sei tab. Most
+                    users never change voices here, so the tab ends with one
+                    collapsed Advanced line that holds every voice setting. */}
                 <div className={styles.panel}>
                   {/* 261120: the ElevenLabs key (own ElevenLabs voices), who
                       speaks (Sei voices or Fish Audio on the user's own key)
