@@ -74,6 +74,100 @@ export function loadRoomImage(url: string): Promise<ImageBitmap> {
   return remember(`img:${url}`, () => fetchBitmap(url));
 }
 
+/** Below this alpha a seat-fitted part's edge pixels are dropped (cleanEdges). */
+const CLEAN_ALPHA = 90;
+
+/**
+ * 261121: a frame drawn larger by a seat fit (seilinkRoom RoomSeatFit) with
+ * its matte tidied. The art's cut-out edge carries a faint dark halo and
+ * stray specks (alpha under about 35%) that are invisible at 1x and read as
+ * dark specks once enlarged: they are dropped, and the edge left behind is
+ * softened inward only (each alpha becomes at most a 1-2-1 blur of its
+ * neighbours), so no pixel gains alpha or colour it did not have.
+ */
+export function loadRoomImageClean(url: string): Promise<ImageBitmap> {
+  return remember(`clean:${url}`, async () => {
+    const src = await loadRoomImage(url);
+    const c = makeCanvas(src.width, src.height);
+    const ctx = ctx2d(c, { willReadFrequently: true });
+    ctx.drawImage(src, 0, 0);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    cleanEdges(img.data, c.width, c.height);
+    ctx.putImageData(img, 0, 0);
+    return createImageBitmap(c);
+  });
+}
+
+/** In place on RGBA (straight alpha): see loadRoomImageClean. Exported for tests. */
+export function cleanEdges(d: Uint8ClampedArray, w: number, h: number, cut = CLEAN_ALPHA): void {
+  const a = new Uint8Array(w * h);
+  let x0 = w;
+  let y0 = h;
+  let x1 = -1;
+  let y1 = -1;
+  for (let p = 0; p < a.length; p++) {
+    const v = d[p * 4 + 3];
+    a[p] = v < cut ? 0 : v;
+    if (a[p]) {
+      const x = p % w;
+      const y = (p - x) / w;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  // Only the opaque part's bounds (grown by the 3x3 reach) can change.
+  x0 = Math.max(0, x0 - 2);
+  y0 = Math.max(0, y0 - 2);
+  x1 = Math.min(w - 1, x1 + 2);
+  y1 = Math.min(h - 1, y1 + 2);
+  // A 3x3 opening (min then max) takes off the one-pixel nicks and hairs the matte left on the
+  // outline; it never raises a pixel above its own alpha.
+  const opened = morph(morph(a, w, h, x0, y0, x1, y1, Math.min), w, h, x0, y0, x1, y1, Math.max);
+  for (let p = 0; p < a.length; p++) if (opened[p] < a[p]) a[p] = opened[p] < cut ? 0 : opened[p];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      const v = a[p];
+      if (v === 0) {
+        d[p * 4] = d[p * 4 + 1] = d[p * 4 + 2] = d[p * 4 + 3] = 0;
+        continue;
+      }
+      // 1-2-1 in both directions (weights sum to 16); outside the image counts as the pixel itself.
+      let sum = 0;
+      for (let j = -1; j <= 1; j++) {
+        const yy = y + j < 0 || y + j >= h ? y : y + j;
+        const wy = j === 0 ? 2 : 1;
+        for (let i = -1; i <= 1; i++) {
+          const xx = x + i < 0 || x + i >= w ? x : x + i;
+          sum += a[yy * w + xx] * wy * (i === 0 ? 2 : 1);
+        }
+      }
+      d[p * 4 + 3] = Math.min(v, Math.round(sum / 16));
+    }
+  }
+}
+
+/** A separable 3x3 min or max over [x0..x1] x [y0..y1] (outside it the input is copied). */
+function morph(a: Uint8Array, w: number, h: number, x0: number, y0: number, x1: number, y1: number, op: (p: number, q: number) => number): Uint8Array {
+  const row = a.slice();
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const p = y * w + x;
+      row[p] = op(op(a[p], a[x > 0 ? p - 1 : p]), a[x < w - 1 ? p + 1 : p]);
+    }
+  }
+  const out = row.slice();
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const p = y * w + x;
+      out[p] = op(op(row[p], row[y > 0 ? p - w : p]), row[y < h - 1 ? p + w : p]);
+    }
+  }
+  return out;
+}
+
 /** Lit bounds of a converted mask, in its own px: [x, y, w, h], or null when it is empty. */
 const MASK_BOUNDS = new WeakMap<ImageBitmap, [number, number, number, number] | null>();
 

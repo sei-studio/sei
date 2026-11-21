@@ -10,7 +10,7 @@
  */
 import { itemRect, roomDrawPlan, type RoomLayer } from '@shared/seilinkDraw';
 import { pointInPolygon } from '@shared/seilinkPlace';
-import type { RoomPresetManifest, RoomSlotId, RoomState, RoomTime } from '@shared/seilinkRoom';
+import type { RoomFigure, RoomPresetManifest, RoomSlotId, RoomState, RoomTime } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { ctx2d, loadRoomImage, makeCanvas } from './roomImages';
 
@@ -31,10 +31,15 @@ export type RoomPick = { kind: 'item'; index: number } | { kind: 'slot'; slot: R
 export class RoomPicker {
   private maps = new Map<string, AlphaMap>();
   private pending = new Map<string, Promise<void>>();
+  /**
+   * 261121: the figure in her slot (RoomCanvas onFigure), so a part redrawn
+   * by the pack's seat fit is picked, outlined and highlighted where it shows.
+   */
+  figure: RoomFigure | null = null;
 
   /** Load the alpha maps a plan needs. Resolves when all are ready (failures are skipped). */
   async prepare(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver): Promise<void> {
-    const plan = roomDrawPlan(manifest, state, time);
+    const plan = roomDrawPlan(manifest, state, time, { figure: this.figure });
     const jobs: Array<Promise<void>> = [];
     for (const l of plan.layers) {
       if (l.kind === 'avatar') continue;
@@ -77,7 +82,7 @@ export class RoomPicker {
     y: number,
     slots: ReadonlySet<RoomSlotId>,
   ): RoomPick | null {
-    const plan = roomDrawPlan(manifest, state, time);
+    const plan = roomDrawPlan(manifest, state, time, { figure: this.figure });
     // Under a plank's lip (drawn over the items on that top) no item can be picked, even when the
     // plank itself is not pickable: you can't click an item through the plank.
     let underLip = false;
@@ -117,7 +122,7 @@ export class RoomPicker {
 
   /** Canvas-px rect of a placed item, or null until its frame is prepared. */
   itemRect(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver, index: number): [number, number, number, number] | null {
-    const plan = roomDrawPlan(manifest, state, time);
+    const plan = roomDrawPlan(manifest, state, time, { figure: this.figure });
     const l = plan.layers.find((x) => x.kind === 'item' && x.index === index);
     if (!l || l.kind !== 'item') return null;
     if (l.size) return itemRect(l, l.size);
@@ -131,7 +136,7 @@ export class RoomPicker {
    * null until its frame is prepared or when the slot is empty.
    */
   slotRect(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, resolve: RoomUrlResolver, slot: RoomSlotId): [number, number, number, number] | null {
-    const plan = roomDrawPlan(manifest, state, time);
+    const plan = roomDrawPlan(manifest, state, time, { figure: this.figure });
     let out: [number, number, number, number] | null = null;
     for (const l of plan.layers) {
       if (l.kind !== 'slot' || l.slot !== slot) continue;

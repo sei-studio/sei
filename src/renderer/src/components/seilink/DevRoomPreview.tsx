@@ -36,6 +36,9 @@
  * one in the editor (demo ids: clock, date, text, progress), and
  * light.brightness=, light.dim=, light.warmth= (numbers), light.char=1.
  *
+ * 261121: with portrait=<url> the editor draws her from it too (as the
+ * desktop editor does), so its seat fit shows; without it, the glass figure.
+ *
  * 261121: stage=desktop frames the room the way the desktop wallpaper does
  * (DESKTOP_STAGE, stageViewport: her slot 70% of the height, floor line on
  * the bottom edge). Without it the preview is a plain cover fit, where she is
@@ -213,6 +216,7 @@ function DevRoomEditor({ onClose }: { onClose(): void }): React.ReactElement {
       fps={Number(params.get('fps') ?? 30) || 0}
       initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null, widget: params.get('widget') }}
       together={params.has('together') ? devTogether : undefined}
+      {...(AVATAR.portrait ? { characterId: AVATAR.characterId, portrait: AVATAR.portrait, name: 'Sui' } : {})}
     />
   );
 }

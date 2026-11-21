@@ -36,7 +36,7 @@ import {
 import type { RoomBox, RoomPolygon } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { mipTile, type MipTile } from '@shared/seilinkPatterns';
-import { ctx2d, loadPatternTileGrey, loadRoomGlow, loadRoomGlowGrey, loadRoomImage, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
+import { ctx2d, loadPatternTileGrey, loadRoomGlow, loadRoomGlowGrey, loadRoomImage, loadRoomImageClean, loadRoomMask, makeCanvas, maskBounds, type AnyCanvas, type AnyContext2D, type TrimmedGlow } from './roomImages';
 import { patternColour } from './roomPattern';
 
 /**
@@ -64,10 +64,11 @@ export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'
   const assets: RoomAssets = into ?? { images: new Map(), masks: new Map(), glows: new Map() };
   const errors: RoomAssetError[] = [];
   const jobs: Array<Promise<void>> = [];
-  const want = <T>(map: Map<string, T>, rel: string, load: (url: string) => Promise<T>): void => {
+  /** `from`: the pack file when `rel` is a derived key (a cleaned image). */
+  const want = <T>(map: Map<string, T>, rel: string, load: (url: string) => Promise<T>, from = rel): void => {
     if (map.has(rel)) return;
     jobs.push(
-      load(resolve(rel)).then(
+      load(resolve(from)).then(
         (v) => void map.set(rel, v),
         (err: unknown) => void errors.push({ file: rel, message: err instanceof Error ? err.message : String(err) }),
       ),
@@ -75,7 +76,8 @@ export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'
   };
   for (const l of plan.layers) {
     if (l.kind === 'avatar') continue;
-    want(assets.images, l.frame.src, loadRoomImage);
+    if (l.kind === 'slot' && l.fitted) want(assets.images, imageKey(l), loadRoomImageClean, l.frame.src);
+    else want(assets.images, l.frame.src, loadRoomImage);
     if (l.tint && l.frame.mask) want(assets.masks, l.frame.mask, loadRoomMask);
     // 261105: an indoor shell's window glass (where rain runs and view particles show).
     if (l.frame.glass && plan.particles?.length) want(assets.masks, l.frame.glass, loadRoomMask);
@@ -90,9 +92,14 @@ export async function loadPlanAssets(plan: Pick<RoomDrawPlan, 'layers' | 'glows'
   return { assets, errors };
 }
 
+/** 261121: where a layer's image lives in RoomAssets.images (a seat-fitted part has its edge tidied, loadRoomImageClean). */
+export function imageKey(layer: SlotLayer | ItemLayer): string {
+  return layer.kind === 'slot' && layer.fitted ? `${layer.frame.src}#clean` : layer.frame.src;
+}
+
 /** Destination rect (canvas px) of a slot or item layer, or null until its image is loaded. */
 export function layerRect(layer: SlotLayer | ItemLayer, canvas: readonly [number, number], assets: RoomAssets): RoomBox | null {
-  const img = assets.images.get(layer.frame.src);
+  const img = assets.images.get(imageKey(layer));
   if (!img) return null;
   if (layer.kind === 'slot') return layer.box ?? [0, 0, canvas[0], canvas[1]];
   return itemRect(layer, [img.width, img.height]);
@@ -353,7 +360,7 @@ export function drawRoomLayers(
   clip?: RoomBox,
 ): void {
   for (const l of layers) {
-    const img = assets.images.get(l.frame.src);
+    const img = assets.images.get(imageKey(l));
     const rect = layerRect(l, canvas, assets);
     if (!img || !rect) continue;
     if (l.kind === 'slot' && l.clip?.length) {
@@ -384,10 +391,16 @@ export function drawRoomLayers(
       drawSunk(ctx, l, look, img, rect, assets, scale);
       ctx.restore();
     } else {
-      drawPlain(ctx, l, img, rect, assets, scale, clip);
+      // 261121: a seat fit draws a part larger than the canvas; tint only what can show.
+      const inside = clip ?? (l.kind === 'slot' && overflows(rect, canvas) ? ([0, 0, canvas[0], canvas[1]] as RoomBox) : undefined);
+      drawPlain(ctx, l, img, rect, assets, scale, inside);
     }
     if (cut) ctx.restore();
   }
+}
+
+function overflows([x, y, w, h]: RoomBox, canvas: readonly [number, number]): boolean {
+  return x < 0 || y < 0 || x + w > canvas[0] || y + h > canvas[1];
 }
 
 /** Intersect ctx's clip with the union of polygons (canvas px). */
@@ -446,6 +459,68 @@ function colouredGlow(glow: TrimmedGlow, colour: string, cycling: boolean): AnyC
   return c;
 }
 
+const cutGlows = new Map<string, AnyCanvas>();
+const cutIds = new WeakMap<object, number>();
+let nextCutId = 1;
+const CUT_MAX = 12;
+
+/**
+ * 261121: a glow as it lands on `dest` (mirrored when `flip`), with the
+ * pixels of the parts a seat fit drew larger in front of it taken out
+ * (GlowLayer.occluders), at the glow's own resolution. Cached per source,
+ * colour and geometry, so a pulsing glow (only its opacity moves) costs one
+ * blit a frame; a cycling light's canvas is recoloured in place, hence the
+ * colour in the key. null when no occluder overlaps it (draw it as usual).
+ */
+function occludedGlow(
+  src: ImageBitmap | AnyCanvas,
+  size: readonly [number, number],
+  dest: RoomBox,
+  flip: boolean,
+  occluders: readonly SlotLayer[],
+  canvas: readonly [number, number],
+  assets: RoomAssets,
+  colour: string,
+): AnyCanvas | null {
+  const [dx, dy, dw, dh] = dest;
+  const [w, h] = size;
+  if (w <= 0 || h <= 0 || dw <= 0 || dh <= 0) return null;
+  const hits: Array<{ img: ImageBitmap; rect: RoomBox }> = [];
+  for (const o of occluders) {
+    const img = assets.images.get(imageKey(o));
+    const rect = layerRect(o, canvas, assets);
+    if (!img || !rect) continue;
+    if (rect[0] >= dx + dw || rect[1] >= dy + dh || rect[0] + rect[2] <= dx || rect[1] + rect[3] <= dy) continue;
+    hits.push({ img, rect });
+  }
+  if (!hits.length) return null;
+  let id = cutIds.get(src);
+  if (!id) cutIds.set(src, (id = nextCutId++));
+  const key = `${id}|${colour}|${flip ? 1 : 0}|${dest.map((v) => v.toFixed(1)).join(',')}|${hits.map((o) => o.rect.map((v) => v.toFixed(1)).join(',')).join(';')}`;
+  const hit = cutGlows.get(key);
+  if (hit) {
+    cutGlows.delete(key);
+    cutGlows.set(key, hit);
+    return hit;
+  }
+  const c = makeCanvas(w, h);
+  const sc = ctx2d(c);
+  if (flip) {
+    sc.translate(w, 0);
+    sc.scale(-1, 1);
+  }
+  sc.drawImage(src, 0, 0, w, h, 0, 0, w, h);
+  sc.setTransform(1, 0, 0, 1, 0, 0);
+  sc.globalCompositeOperation = 'destination-out';
+  const kx = w / dw;
+  const ky = h / dh;
+  for (const o of hits) sc.drawImage(o.img, (o.rect[0] - dx) * kx, (o.rect[1] - dy) * ky, o.rect[2] * kx, o.rect[3] * ky);
+  sc.globalCompositeOperation = 'source-over';
+  cutGlows.set(key, c);
+  while (cutGlows.size > CUT_MAX) cutGlows.delete(cutGlows.keys().next().value as string);
+  return c;
+}
+
 /**
  * Draw glows (into a layer that is screen-blended over the scene). `alpha(g)`
  * is each glow's opacity; `colour(g)` (261105) the colour a light is lit in,
@@ -475,7 +550,10 @@ export function drawRoomGlows(
     const grey = tint ? assets.glowsGrey?.get(g.src) : undefined;
     const lit = grey && tint ? colouredGlow(grey, tint, !!g.cycle) : null;
     const dest: RoomBox = [gx, y + glow.y * sy, glow.w * sx, glow.h * sy];
-    if (lit && grey) {
+    const cut = g.occluders?.length ? occludedGlow(lit && grey ? lit : glow.bitmap, lit && grey ? [grey.w, grey.h] : [glow.bitmap.width, glow.bitmap.height], dest, flip, g.occluders, canvas, assets, tint ?? '') : null;
+    if (cut) {
+      ctx.drawImage(cut, 0, 0, cut.width, cut.height, dest[0], dest[1], dest[2], dest[3]);
+    } else if (lit && grey) {
       if (flip) {
         ctx.save();
         ctx.translate(dest[0] + dest[2], dest[1]);

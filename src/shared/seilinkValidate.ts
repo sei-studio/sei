@@ -5,6 +5,7 @@
  */
 import {
   ROOM_EDITOR_GROUPS,
+  ROOM_FIGURES,
   ROOM_SETUP_STEPS,
   ROOM_PRESET_IDS,
   ROOM_TIMES,
@@ -26,6 +27,8 @@ import {
   type RoomTime,
   type RoomPatternTile,
   type RoomSlotChoice,
+  type RoomSeatFit,
+  type RoomAvatarSpot,
   PLAIN_PATTERN,
   resolvePattern,
 } from './seilinkRoom';
@@ -277,6 +280,37 @@ function parsePatternTiles(v: unknown): RoomPatternTile[] | undefined {
 }
 
 /** A pack's manifest.json, checked. null when anything load-bearing is wrong. */
+/** Biggest seat fit scale (261121): enough for a bust in a chibi-sized chair, not a room-sized chair. */
+const SEAT_FIT_SCALE_MAX = 3;
+
+/**
+ * 261121: `avatar.fit` (RoomSeatFit per figure kind). A fit, or a slot in it,
+ * that is malformed or names a slot whose parts carry surface tops (items on
+ * a moved top would float) is dropped, never the whole pack.
+ */
+function parseSeatFits(
+  raw: unknown,
+  slots: RoomPresetManifest['slots'],
+  components: readonly RoomComponent[],
+): RoomAvatarSpot['fit'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const out: NonNullable<RoomAvatarSpot['fit']> = {};
+  for (const fig of ROOM_FIGURES) {
+    const f = (raw as Record<string, unknown>)[fig] as Record<string, unknown> | undefined;
+    if (!f || typeof f !== 'object' || !isNum(f.scale) || f.scale <= 0 || f.scale > SEAT_FIT_SCALE_MAX || !isPoint(f.origin) || !Array.isArray(f.slots)) continue;
+    const fitted = f.slots.filter(
+      (k): k is RoomSlotId =>
+        typeof k === 'string' &&
+        slots[k as RoomSlotId] !== undefined &&
+        !components.some((c) => c.slot === k && (c.surfaceTops?.length || c.surfaceLines?.length || c.surfaceAreas?.length || c.surfaces?.length)),
+    );
+    if (!fitted.length) continue;
+    const fit: RoomSeatFit = { slots: [...new Set(fitted)], scale: f.scale, origin: [f.origin[0], f.origin[1]] };
+    out[fig] = fit;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Record<string, unknown>;
@@ -339,6 +373,8 @@ export function parseRoomManifest(raw: unknown): RoomPresetManifest | null {
   }
   const tiles = parsePatternTiles(m.patternTiles);
   if (tiles) out.patternTiles = tiles;
+  const fit = parseSeatFits(av.fit, slots, components);
+  if (fit) out.avatar.fit = fit;
   return out;
 }
 
