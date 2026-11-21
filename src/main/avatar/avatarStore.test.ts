@@ -33,7 +33,11 @@ import {
   parseRigSpec,
   zipStoredAvatar,
   MANIFEST_VERSION,
+  importPngRemix,
+  isPngRemixUpload,
 } from './avatarStore';
+import { PNGREMIX_ENTRY, validatePngRemixSpec } from '../../shared/pngremix/pngRemix';
+import { fakeOld, fakePng, fakeV14 } from '../../shared/pngremix/__fixtures__/godotEncode';
 
 const REAL_ZIP = '/Users/ouen/Downloads/_雪熊企划_雪熊少女.zip';
 const REAL_RIG_ZIP = '/Users/ouen/slop/sei-studio/chibi-rig/chibi-rig-avatar.zip';
@@ -649,5 +653,51 @@ describe('setAvatarLibraryLink (261106)', () => {
     const m = await getAvatarManifest('race2');
     expect(m?.kind).toBe('rig');
     expect(m?.name).toBe('second');
+  });
+});
+
+describe('importPngRemix (261122 spike, synthetic)', () => {
+  const on = { visible: true };
+  const remix = (): Uint8Array =>
+    fakeV14({
+      images: [
+        { id: 1, png: fakePng(6, 8, {}, 1) },
+        { id: 2, png: fakePng(2, 2, {}, 2) },
+      ],
+      states: [{}, {}, {}],
+      names: ['Neutral', 'Smug', 'Angry face'],
+      sprites: [
+        { id: 1, name: 'body', image: 1, states: [on, on, on] },
+        { id: 2, parent: 1, name: 'mouth', image: 2, states: [{ should_talk: true }, on, on] },
+      ],
+    });
+
+  it('stores the spec and one PNG per image, with states as expressions', async () => {
+    const { manifest, parsed } = await importPngRemix('rx', remix(), 'Pickles');
+    expect(manifest.kind).toBe('pngremix');
+    expect(manifest.entry).toBe(PNGREMIX_ENTRY);
+    expect(manifest.name).toBe('Pickles');
+    expect(manifest.expressions.map((e) => e.name)).toEqual(['Neutral', 'Smug', 'Angry face']);
+    // The first state is the resting one; the others map by keyword.
+    expect(manifest.emotions).toMatchObject({ happy: 'Smug', angry: 'Angry face' });
+    expect(parsed.spec.layers.length).toBe(2);
+    expect(await getAvatarManifest('rx')).toMatchObject({ kind: 'pngremix' });
+    const files = await readAvatarModelFiles('rx');
+    expect(files.map((f) => f.path).sort()).toEqual(['img/0.png', 'img/1.png', PNGREMIX_ENTRY]);
+    const spec = JSON.parse(Buffer.from(files.find((f) => f.path === PNGREMIX_ENTRY)!.bytes).toString('utf8'));
+    expect(() => validatePngRemixSpec(spec)).not.toThrow();
+  });
+
+  it('a failed import keeps the previous avatar', async () => {
+    await importPngRemix('keep', remix(), 'First');
+    const broken = fakeOld({ sprites: [{ id: 1, image: Uint8Array.from([1, 2, 3]), states: [on] }] });
+    await expect(importPngRemix('keep', broken)).rejects.toMatchObject({ code: 'no_layers' });
+    expect((await getAvatarManifest('keep'))?.name).toBe('First');
+  });
+
+  it('isPngRemixUpload tells a Remix save from a zip', async () => {
+    expect(isPngRemixUpload(remix())).toBe(true);
+    expect(isPngRemixUpload(new Uint8Array(await syntheticZip()))).toBe(false);
+    expect(isPngRemixUpload(new Uint8Array(4))).toBe(false);
   });
 });

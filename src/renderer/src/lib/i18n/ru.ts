@@ -2598,4 +2598,9 @@ export const RU: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "Не удалось открыть оплату",
   "Nothing was charged. Check your connection and try again.": "Деньги не списаны. Проверьте подключение и попробуйте ещё раз.",
+  // 261122 PNGTuber Remix avatar import (spike)
+  "Upload Live2D or PNGTuber model": "Загрузить модель Live2D или PNGTuber",
+  "That file is not a .zip or .pngRemix file.": "Это не файл .zip или .pngRemix.",
+  "Could not read that PNGTuber Remix model. Save it again in PNGTuber Remix and pick the new .pngRemix file.": "Не удалось прочитать модель PNGTuber Remix. Сохраните её заново в PNGTuber Remix и выберите новый файл .pngRemix.",
+  "{name}, PNGTuber model": "{name}, модель PNGTuber",
 };

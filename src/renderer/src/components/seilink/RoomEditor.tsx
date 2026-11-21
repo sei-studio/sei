@@ -1202,9 +1202,11 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     if (!source.avatar) return;
     setAvatarError(null);
     analytics.avatarUpload('start');
-    if (!/\.zip$/i.test(file.name)) {
+    // 261122 spike: a PNGTuber Remix save imports too (main sniffs the bytes; the name only picks the message).
+    const remix = /\.pngremix$/i.test(file.name);
+    if (!remix && !/\.zip$/i.test(file.name)) {
       analytics.avatarUpload('fail', 'not_zip');
-      setAvatarError(t('That file is not a .zip archive.'));
+      setAvatarError(t('That file is not a .zip or .pngRemix file.'));
       return;
     }
     if (file.size > ZIP_MAX_BYTES) {
@@ -1214,14 +1216,18 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
     setAvatarBusy(true);
     try {
-      const m = await source.avatar.importZip(await file.arrayBuffer());
+      const m = await source.avatar.importZip(await file.arrayBuffer(), file.name);
       setModel(m);
       edit((s) => setRoomAvatar(s, { kind: 'live2d', modelPath: m.entry }));
       analytics.avatarUpload('ok');
     } catch (err) {
-      analytics.avatarUpload('fail', 'import_failed');
+      analytics.avatarUpload('fail', remix ? 'pngremix_failed' : 'import_failed');
       console.warn('[seilink editor] avatar import failed', err);
-      setAvatarError(t('Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.'));
+      setAvatarError(
+        remix
+          ? t('Could not read that PNGTuber Remix model. Save it again in PNGTuber Remix and pick the new .pngRemix file.')
+          : t('Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.'),
+      );
     } finally {
       setAvatarBusy(false);
     }
@@ -1600,15 +1606,15 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 aria-label={model.name}
                 onClick={() => edit((s) => setRoomAvatar(s, { kind: 'live2d', modelPath: model.entry }))}
               >
-                <span className={styles.optionWord}>Live2D</span>
+                <span className={styles.optionWord}>{model.kind === 'pngremix' ? 'PNGTuber' : 'Live2D'}</span>
               </button>
             )}
             {source.avatar && (
               <button
                 type="button"
                 className={styles.option}
-                title={t('Upload Live2D')}
-                aria-label={t('Upload Live2D')}
+                title={t('Upload Live2D or PNGTuber model')}
+                aria-label={t('Upload Live2D or PNGTuber model')}
                 disabled={avatarBusy}
                 onClick={() => fileRef.current?.click()}
               >
@@ -1625,7 +1631,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           <input
             ref={fileRef}
             type="file"
-            accept=".zip"
+            accept=".zip,.pngRemix,.pngremix"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];

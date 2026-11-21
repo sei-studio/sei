@@ -2598,4 +2598,9 @@ export const JA: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "決済ページを開けませんでした",
   "Nothing was charged. Check your connection and try again.": "料金は発生していません。接続を確認して、もう一度お試しください。",
+  // 261122 PNGTuber Remix avatar import (spike)
+  "Upload Live2D or PNGTuber model": "Live2DまたはPNGTuberモデルをアップロード",
+  "That file is not a .zip or .pngRemix file.": "このファイルは .zip でも .pngRemix でもありません。",
+  "Could not read that PNGTuber Remix model. Save it again in PNGTuber Remix and pick the new .pngRemix file.": "このPNGTuber Remixモデルを読み込めませんでした。PNGTuber Remixで保存し直して、新しい .pngRemix ファイルを選んでください。",
+  "{name}, PNGTuber model": "{name}、PNGTuberモデル",
 };

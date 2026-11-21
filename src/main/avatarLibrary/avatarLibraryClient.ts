@@ -232,6 +232,9 @@ export class AvatarLibraryClient {
       const manifest = await this.d.models.manifest(characterId);
       if (!manifest) throw new OpError('import_failed');
       if (manifest.library) return;
+      // A PNGTuber Remix model (261122 spike) stays on this device: the
+      // library only takes Live2D and rig zips.
+      if (manifest.kind === 'pngremix') return;
       await this.pushLocalModel(characterId, list, manifest, 'user');
     });
   }
@@ -569,7 +572,7 @@ export class AvatarLibraryClient {
         // Deleted on the server (another device): the local copy goes too.
         await this.d.models.remove(characterId);
         this.d.onModel(characterId, null);
-      } else if (!manifest.library) {
+      } else if (!manifest.library && manifest.kind !== 'pngremix') {
         if (await this.pushLocalModel(characterId, list, manifest, 'migration')) changed = true;
       }
     }

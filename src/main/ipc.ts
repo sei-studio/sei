@@ -2485,14 +2485,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // ── Live2D avatar store + overlay window controls (260804) ─────────────
 
-  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown) => {
+  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown, nameArg: unknown) => {
     const id = IdSchema.parse(idArg);
     if (!(zipArg instanceof ArrayBuffer) && !ArrayBuffer.isView(zipArg)) {
       throw new Error('avatar import expects zip bytes');
     }
     const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
-    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
+    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES, isPngRemixUpload } = await import('./avatar/avatarStore');
     if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
+    // 261122 spike: a PNGTuber Remix save is converted, stays local (never uploaded to the library).
+    if (isPngRemixUpload(bytes)) {
+      const { importPngRemixTracked } = await import('./avatar/pngRemixImport');
+      const manifest = await importPngRemixTracked(id, bytes, typeof nameArg === 'string' ? nameArg : null);
+      noteSeilinkAvatarChanged(id, manifest);
+      return manifest;
+    }
     const manifest = await importAvatarZip(id, bytes);
     noteSeilinkAvatarChanged(id, manifest);
     // 261106: the owner's new model goes up to her avatar library (background).

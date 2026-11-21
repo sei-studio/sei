@@ -28,6 +28,8 @@ export interface EditorAvatarModel {
   name: string;
   /** The model entry inside her avatar store (RoomState avatar.modelPath). */
   entry: string;
+  /** Its format (AvatarManifest.kind); absent = Live2D. */
+  kind?: 'live2d' | 'rig' | 'pngremix';
 }
 
 export interface RoomEditorSource {
@@ -39,7 +41,8 @@ export interface RoomEditorSource {
   /** The custom Live2D avatar, when the host can import one. */
   avatar?: {
     get(): Promise<EditorAvatarModel | null>;
-    importZip(bytes: ArrayBuffer): Promise<EditorAvatarModel>;
+    /** A Live2D/rig zip, or (261122 spike) a PNGTuber Remix file; `fileName` names the model. */
+    importZip(bytes: ArrayBuffer, fileName?: string): Promise<EditorAvatarModel>;
   };
   /** Someone else saved her room (the AI, another window). */
   onChanged?(cb: () => void): () => void;
@@ -65,13 +68,13 @@ export function ipcRoomEditorSource(characterId: string): RoomEditorSource {
     avatar: {
       async get() {
         const m = await sei.avatarGet(characterId);
-        return m ? { name: m.name, entry: m.entry } : null;
+        return m ? { name: m.name, entry: m.entry, kind: m.kind ?? 'live2d' } : null;
       },
-      async importZip(bytes) {
-        const m = await sei.avatarImport(characterId, bytes);
+      async importZip(bytes, fileName) {
+        const m = await sei.avatarImport(characterId, bytes, fileName);
         // Keep the profile's Avatar tab and the overlay in step.
         useAvatarStore.getState().setManifest(characterId, m);
-        return { name: m.name, entry: m.entry };
+        return { name: m.name, entry: m.entry, kind: m.kind ?? 'live2d' };
       },
     },
     onChanged(cb) {

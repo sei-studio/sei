@@ -98,7 +98,8 @@ export type EditType = (typeof EDIT_TYPES)[number];
 export const EDITOR_ERRORS = ['load_failed', 'no_packs', 'save_failed', 'avatar_import_failed'] as const;
 export type EditorError = (typeof EDITOR_ERRORS)[number];
 
-export const AVATAR_UPLOAD_FAILS = ['not_zip', 'too_big', 'import_failed'] as const;
+/** 'pngremix_failed' (261122 spike): a .pngRemix file main could not convert (reason in seilink_pngremix_import). */
+export const AVATAR_UPLOAD_FAILS = ['not_zip', 'too_big', 'import_failed', 'pngremix_failed'] as const;
 export type AvatarUploadFail = (typeof AVATAR_UPLOAD_FAILS)[number];
 
 export const EDITOR_OUTCOMES = ['saved', 'no_changes', 'discarded'] as const;

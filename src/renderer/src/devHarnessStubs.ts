@@ -601,6 +601,30 @@ if (
         avatarModelFiles: rigFiles,
       }
     : {};
+  // &pngremix=<url of a .pngRemix file> (261122): parse it here, in the page,
+  // with the same reader main uses on import, and answer as an imported
+  // 'pngremix' avatar. &pngremixemo=happy:1,sad:2 maps emotions to state indices.
+  const remixUrl = harnessParams.get('pngremix');
+  if (remixUrl) {
+    const parsed = (async () => {
+      const { parsePngRemix, PNGREMIX_ENTRY } = await import('@shared/pngremix/pngRemix');
+      const p = parsePngRemix(new Uint8Array(await (await fetch(remixUrl)).arrayBuffer()));
+      const names = p.spec.states.map((st) => st.name);
+      const emotions: Record<string, string> = {};
+      for (const pair of (harnessParams.get('pngremixemo') ?? '').split(',')) {
+        const [emo, idx] = pair.split(':');
+        if (emo && idx !== undefined && names[Number(idx)] !== undefined) emotions[emo] = names[Number(idx)]!;
+      }
+      const manifest = { version: 2, kind: 'pngremix', name: 'dev pngremix', entry: PNGREMIX_ENTRY, importedAt: '', bytes: 0, expressions: names.map((name) => ({ name, file: PNGREMIX_ENTRY })), emotions };
+      const files = [
+        { path: PNGREMIX_ENTRY, bytes: new TextEncoder().encode(JSON.stringify(p.spec)) },
+        ...p.spec.images.map((im, i) => ({ path: im.path, bytes: p.images[i]! })),
+      ];
+      return { manifest, files };
+    })();
+    answers.avatarGet = async () => (await parsed).manifest;
+    answers.avatarModelFiles = async () => (await parsed).files;
+  }
   const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
   const packId = harnessParams.get('facepackid');
   if (packsBase && packId) {

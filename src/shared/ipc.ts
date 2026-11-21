@@ -842,8 +842,12 @@ export interface AvatarManifest {
   /** Which model format this store holds (260817). Absent = 'live2d' (every
    * store predating the field is a Cubism model). 'rig' = a simple layered
    * rig: a rig.json + aligned PNG layers, rendered by RigView instead of the
-   * Cubism pipeline. */
-  kind?: 'live2d' | 'rig';
+   * Cubism pipeline. 'pngremix' (261122 spike) = a PNGTuber Remix model,
+   * converted at import to a pngremix.json spec + PNG layers
+   * (shared/pngremix/pngRemix.ts) and rendered by PngRemixView; its
+   * expressions are the model's states. Local only, never uploaded to the
+   * avatar library. */
+  kind?: 'live2d' | 'rig' | 'pngremix';
   /** Display name (derived from the model3.json filename). */
   name: string;
   /** Relative path of the (normalized) .model3.json entry file. */
@@ -2322,8 +2326,10 @@ export interface RendererApi {
    * Import a Live2D model zip for a character (260804). Main extracts,
    * validates, normalizes (expression registration + EyeBlink group) and
    * stores it under the profile's avatars dir; returns the manifest.
+   * 261122 spike: the bytes may also be a PNGTuber Remix `.pngRemix` save
+   * (sniffed, not trusted by name); `fileName` names the model then.
    */
-  avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  avatarImport(characterId: string, zipBytes: ArrayBuffer, fileName?: string): Promise<AvatarManifest>;
   /**
    * Download the character's CLOUD-hosted avatar zip (metadata.avatar, see
    * cloudAvatarOf in characterSchema) and import it into the local store —

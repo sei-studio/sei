@@ -1,7 +1,8 @@
 /**
  * AvatarView (260817) — renders whichever avatar model the character has
- * imported: a real Live2D Cubism model (Live2DView) or a simple layered rig
- * (RigView), chosen by the manifest's `kind`. Hosts pass the shared surface
+ * imported: a real Live2D Cubism model (Live2DView), a simple layered rig
+ * (RigView) or a PNGTuber Remix model (PngRemixView, 261122 spike), chosen
+ * by the manifest's `kind`. Hosts pass the shared surface
  * contract once and never care which format is behind it; both the profile
  * preview and the overlay tile use this instead of Live2DView directly.
  *
@@ -14,6 +15,7 @@ import type { AvatarCamera, AvatarEmotion } from '@shared/ipc';
 import { sei } from '../ipcClient';
 import { Live2DView } from '../live2d/Live2DView';
 import { RigView } from '../rig/RigView';
+import { PngRemixView } from '../pngremix/PngRemixView';
 
 export interface AvatarViewProps {
   characterId: string;
@@ -27,11 +29,13 @@ export interface AvatarViewProps {
   onStatus?: (status: 'loading' | 'ready' | 'error') => void;
   /** Frame cap passed to the view (261104, SeiLink): absent = default, 0 = paused. */
   fps?: number;
+  /** PNGTuber model only (261122): stand it on the box's bottom edge instead of centring it. */
+  anchor?: 'center' | 'bottom';
 }
 
 export function AvatarView(props: AvatarViewProps): React.ReactElement | null {
   const { characterId, onStatus } = props;
-  const [kind, setKind] = useState<'live2d' | 'rig' | 'none' | null>(null);
+  const [kind, setKind] = useState<'live2d' | 'rig' | 'pngremix' | 'none' | null>(null);
 
   useEffect(() => {
     setKind(null);
@@ -62,9 +66,13 @@ export function AvatarView(props: AvatarViewProps): React.ReactElement | null {
   }, [kind]);
 
   if (kind === 'rig') {
-    const { emotion: _emotion, ...rest } = props;
+    const { emotion: _emotion, anchor: _anchor, ...rest } = props;
     return <RigView {...rest} />;
   }
-  if (kind === 'live2d') return <Live2DView {...props} />;
+  if (kind === 'pngremix') return <PngRemixView {...props} />;
+  if (kind === 'live2d') {
+    const { anchor: _anchor, ...rest } = props;
+    return <Live2DView {...rest} />;
+  }
   return null;
 }

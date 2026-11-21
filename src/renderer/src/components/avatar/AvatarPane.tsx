@@ -234,12 +234,16 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
               <p className={styles.subHint}>
                 {manifest.kind === 'rig'
                   ? t('{name}, layered rig', { name: manifest.name })
-                  : t('{name}, {count} expressions', {
+                  : manifest.kind === 'pngremix'
+                    ? t('{name}, PNGTuber model', { name: manifest.name })
+                    : t('{name}, {count} expressions', {
                       name: manifest.name,
                       count: String(manifest.expressions.length),
                     })}
               </p>
               {(() => {
+                // A PNGTuber model's expressions are its states, not item toggles.
+                if (manifest.kind === 'pngremix') return null;
                 const emotionNames = new Set(Object.values(manifest.emotions ?? {}));
                 const items = manifest.expressions.filter((e) => !emotionNames.has(e.name));
                 if (items.length === 0) return null;

@@ -347,6 +347,17 @@ describe('AvatarLibraryClient', () => {
     expect(commit.is_public).toBeUndefined();
   });
 
+  it('a PNGTuber Remix model stays on this device: never added or migrated (261122)', async () => {
+    const h = harness();
+    h.local.manifest = manifest({ kind: 'pngremix', entry: 'pngremix.json' });
+    h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody({}, [item(A_CARD, { source: 'card', is_default: true })]) }));
+    await h.client.addLocalModel(CHAR);
+    await h.client.sync(CHAR);
+    expect(h.calls.some((c) => c.path.endsWith('/upload') || c.path.endsWith('/commit') && (c.body as { kind?: string }).kind !== 'portrait')).toBe(false);
+    expect(h.puts).toHaveLength(0);
+    expect(h.local.manifest?.kind).toBe('pngremix');
+  });
+
   it('skips the PUT when the server already has the bytes (dedupe)', async () => {
     const h = harness();
     h.local.manifest = manifest();

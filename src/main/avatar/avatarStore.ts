@@ -37,6 +37,13 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { paths } from '../paths';
 import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
+import {
+  looksLikePngRemix,
+  parsePngRemix,
+  PNGREMIX_ENTRY,
+  PngRemixError,
+  type PngRemixParsed,
+} from '../../shared/pngremix/pngRemix';
 import type {
   AvatarEmotion,
   AvatarManifest,
@@ -86,7 +93,7 @@ const EMOTION_KEYWORDS: ReadonlyArray<readonly [AvatarEmotion, RegExp]> = [
   ['love', /爱心|心眼|heart|love/i],
   ['excited', /星星|兴奋|激动|闪亮|star|sparkle|excited|wow/i],
   ['surprised', /吃惊|惊讶|惊|surprise|shock/i],
-  ['happy', /开心|高兴|微笑|笑|喜|happy|smile|joy|grin/i],
+  ['happy', /开心|高兴|微笑|笑|喜|happy|smile|joy|grin|smug|laugh/i],
 ];
 
 /** Map available expression names onto the closed emotion set. Exported for
@@ -621,6 +628,51 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   if (files.length === 0) throw new Error('avatar zip is empty');
 
   return withLock(characterId, () => normalizeAndWrite(characterId, files, undefined, true));
+}
+
+/**
+ * Import a PNGTuber Remix model (261122 spike, docs/agents/pngremix-format.md)
+ * for `characterId`: parse the `.pngRemix` save (plain values and PNGs only,
+ * never an object or script), and store Sei's own spec (pngremix.json) plus
+ * one PNG per layer image, replacing any previous avatar. The original file
+ * is not kept. Throws PngRemixError (closed `code`) when the file is unusable;
+ * the previous avatar survives a failed import.
+ */
+export async function importPngRemix(
+  characterId: string,
+  bytes: Uint8Array,
+  name = 'PNGTuber model',
+): Promise<{ manifest: AvatarManifest; parsed: PngRemixParsed }> {
+  const parsed = parsePngRemix(bytes);
+  // The same image rules as every other avatar (static, size capped).
+  for (const img of parsed.images) {
+    const problem = avatarImageProblem(img, MAX_TEXTURE_SIDE);
+    if (problem) throw new PngRemixError(problem === 'image_too_large' ? 'image_too_large' : 'malformed', `layer image refused: ${problem}`);
+  }
+  const byRel = new Map<string, ExtractedFile>();
+  const specBytes = Buffer.from(JSON.stringify(parsed.spec), 'utf8');
+  byRel.set(PNGREMIX_ENTRY, { rel: PNGREMIX_ENTRY, bytes: specBytes });
+  parsed.spec.images.forEach((im, i) => {
+    byRel.set(im.path, { rel: im.path, bytes: Buffer.from(parsed.images[i]!) });
+  });
+  const stateNames = parsed.spec.states.map((st) => st.name);
+  const manifest: AvatarManifest = {
+    version: MANIFEST_VERSION,
+    kind: 'pngremix',
+    name: name.slice(0, 80) || 'PNGTuber model',
+    entry: PNGREMIX_ENTRY,
+    importedAt: new Date().toISOString(),
+    bytes: [...byRel.values()].reduce((n, f) => n + f.bytes.byteLength, 0),
+    expressions: stateNames.map((n) => ({ name: n, file: PNGREMIX_ENTRY })),
+    emotions: mapEmotions(stateNames.slice(1)),
+  };
+  const stored = await withLock(characterId, () => replaceStore(characterId, byRel, (rel) => rel, manifest));
+  return { manifest: stored, parsed };
+}
+
+/** Does this upload look like a PNGTuber Remix save (not a zip)? */
+export function isPngRemixUpload(bytes: Uint8Array): boolean {
+  return !(bytes[0] === 0x50 && bytes[1] === 0x4b) && looksLikePngRemix(bytes);
 }
 
 /** An entry's uncompressed size as its central directory declares it. */

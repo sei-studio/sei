@@ -203,4 +203,9 @@ export const ZH_SEILINK: Record<string, string> = {
   "Could not change this setting. Turn Sei on in Windows Settings > Apps > Startup, or in Task Manager > Startup apps.": "无法更改此设置。请在 Windows 的“设置 > 应用 > 启动”或“任务管理器 > 启动应用”中开启 Sei。",
   "Could not change this setting. Add Sei in System Settings > General > Login Items.": "无法更改此设置。请在“系统设置 > 通用 > 登录项”中添加 Sei。",
   "Contact support": "联系支持",
+  // 261122 PNGTuber Remix avatar import (spike)
+  "Upload Live2D or PNGTuber model": "上传 Live2D 或 PNGTuber 模型",
+  "That file is not a .zip or .pngRemix file.": "该文件不是 .zip 或 .pngRemix 文件。",
+  "Could not read that PNGTuber Remix model. Save it again in PNGTuber Remix and pick the new .pngRemix file.": "无法读取该 PNGTuber Remix 模型。请在 PNGTuber Remix 中重新保存，然后选择新的 .pngRemix 文件。",
+  "{name}, PNGTuber model": "{name}，PNGTuber 模型",
 };

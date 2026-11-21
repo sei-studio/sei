@@ -66,8 +66,9 @@ export const ANIMA_TRIGGERS: readonly AnimaTrigger[] = ['move_in_sheet', 'editor
 /**
  * The avatar kinds RoomAvatar can show (RoomAvatarKind), for the `shown` analytics event.
  * 'cutout' (261118): the cloud's clean cut-out of her picture, for a portrait with no face to animate.
+ * 'pngremix' (261122 spike): an imported PNGTuber Remix model.
  */
-export const ANIMA_SHOWN_KINDS = ['live2d', 'rig', 'facepack', 'cutout', 'portrait', 'placeholder'] as const;
+export const ANIMA_SHOWN_KINDS = ['live2d', 'rig', 'pngremix', 'facepack', 'cutout', 'portrait', 'placeholder'] as const;
 export type AnimaShownKind = (typeof ANIMA_SHOWN_KINDS)[number];
 
 export function isAnimaShownKind(v: unknown): v is AnimaShownKind {

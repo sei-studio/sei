@@ -186,6 +186,7 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/call-scenes.md`](docs/agents/call-scenes.md) | Call scenes and the backdrop toggle |
 | [`docs/agents/avatar-overlay.md`](docs/agents/avatar-overlay.md) | Avatar overlay (always-on-top call overlay, desktop avatar) |
 | [`docs/agents/seilink-host.md`](docs/agents/seilink-host.md) | WorldLink desktop host: her room as the live wallpaper (native addon, host process, supervisor, CI check) |
+| [`docs/agents/pngremix-format.md`](docs/agents/pngremix-format.md) | PNGTuber Remix (`.pngRemix`) avatars in WorldLink: safe file reader, what is read and ignored, renderer, gaps |
 | [`docs/agents/seilink-analytics.md`](docs/agents/seilink-analytics.md) | WorldLink analytics: event table (did it show, health, pokes, move-in, editor funnel, errors) |
 | [`docs/agents/backseat.md`](docs/agents/backseat.md) | Backseat: screen watching, looks, chatter pacing |
 | [`docs/agents/minecraft-setup-wizard.md`](docs/agents/minecraft-setup-wizard.md) | Minecraft setup wizard and target version |

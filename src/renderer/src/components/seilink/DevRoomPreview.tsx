@@ -22,7 +22,10 @@
  * browser stub answers it), use=auto|sei|imported, busy=1, speak=1 (a fake
  * voice level), motion=0 (no idle motion), walk=<s> (force a walk-off that
  * many seconds after the room is ready), away=<s> (how long it keeps her
- * away). The HUD "walk" button forces one now.
+ * away). The HUD "walk" button forces one now. pngremix=<url of a .pngRemix
+ * file> for an imported PNGTuber Remix model (the stub parses it in the page;
+ * pngremixemo=happy:1 maps an emotion to a state index), emotion=<name> for
+ * the line's emotion.
  *
  * `&editor=1` opens the room editor (RoomEditor) instead, over an in-memory
  * source (saves last until reload). Every `&pack=<url>` is one preset, so
@@ -61,6 +64,7 @@ import { useLangStore, type UiLanguage } from '../../lib/i18n';
 import { RoomAvatar, type RoomAvatarKind, type RoomAvatarUse } from './RoomAvatar';
 import { urlPackSource } from '../../lib/facepack/facepackSource';
 import type { IdlePhase } from '../../lib/seilink/idleMotion';
+import type { AvatarEmotion } from '@shared/ipc';
 
 const params = new URLSearchParams(window.location.search);
 const TIMES = ['auto', 'day', 'dusk', 'night'] as const;
@@ -152,6 +156,7 @@ const AVATAR = {
   facepack: params.get('faces') ? urlPackSource(params.get('face') ?? 'sui', params.get('faces')!) : undefined,
   busy: params.get('busy') === '1',
   speak: params.get('speak') === '1',
+  emotion: (params.get('emotion') as AvatarEmotion | null) ?? null,
   motion: params.get('motion') === '0' ? (false as const) : {},
   walkAt: params.get('walk') ? Number(params.get('walk')) * 1000 : null,
   awayMs: params.get('away') ? Number(params.get('away')) * 1000 : undefined,
@@ -348,6 +353,7 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
             facepack={AVATAR.facepack}
             busy={AVATAR.busy}
             speaking={AVATAR.speak}
+            emotion={AVATAR.emotion}
             levelRef={levelRef}
             motion={AVATAR.motion}
             walkOffSignal={walkSignal}

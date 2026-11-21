@@ -9,7 +9,7 @@
  *
  * What she looks like, best first (each step falls through when the one
  * above is missing or fails to load):
- *  1. her imported avatar (Live2D or rig, through AvatarView), unless the
+ *  1. her imported avatar (Live2D, rig or PNGTuber Remix, through AvatarView), unless the
  *     room says to use the Sei avatar (`use: 'sei'`);
  *  2. the Sei avatar: her baked face set (facepack: blink, mouth, head
  *     turns), from `facepack` or main's dev pack dir;
@@ -64,7 +64,7 @@ import {
 import type { RoomAvatarSlot } from './RoomCanvas';
 import styles from './RoomAvatar.module.css';
 
-export type RoomAvatarKind = 'live2d' | 'rig' | 'facepack' | 'cutout' | 'portrait' | 'placeholder';
+export type RoomAvatarKind = 'live2d' | 'rig' | 'pngremix' | 'facepack' | 'cutout' | 'portrait' | 'placeholder';
 
 /** Kinds with no face to move: they bounce when she talks and lean toward her gaze. */
 function faceless(kind: RoomAvatarKind | null | undefined): boolean {
@@ -148,10 +148,10 @@ async function resolveKind(
   portrait: string | null,
   failed: ReadonlySet<RoomAvatarKind>,
 ): Promise<Resolved> {
-  if (use !== 'sei' && !failed.has('live2d') && !failed.has('rig')) {
+  if (use !== 'sei' && !failed.has('live2d') && !failed.has('rig') && !failed.has('pngremix')) {
     try {
       const m = await sei?.avatarGet?.(characterId);
-      if (m) return { kind: m.kind === 'rig' ? 'rig' : 'live2d' };
+      if (m) return { kind: m.kind === 'rig' || m.kind === 'pngremix' ? m.kind : 'live2d' };
     } catch {
       /* no bridge, or no model */
     }
@@ -560,7 +560,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
 
   let figW = figH * 0.75;
   let view: React.ReactNode = null;
-  if (kind === 'live2d' || kind === 'rig') {
+  if (kind === 'live2d' || kind === 'rig' || kind === 'pngremix') {
     figW = figH * 1.1;
     view = (
       <AvatarView
@@ -568,7 +568,10 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
         speaking={speaking}
         levelRef={levelRef}
         emotion={emotion}
-        camera={camera ?? BUST_CAMERA}
+        // 261122: a PNGTuber model is drawn whole, standing on the slot's
+        // bottom edge (the SINK band hides its cut edge like a bust's).
+        camera={kind === 'pngremix' ? (camera ?? null) : (camera ?? BUST_CAMERA)}
+        anchor={kind === 'pngremix' ? 'bottom' : undefined}
         fps={viewFps}
         className={styles.fill}
         onStatus={onViewStatus(kind)}
@@ -640,7 +643,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
       aria-label={name}
       data-avatar-kind={kind ?? 'loading'}
       data-avatar-phase={phase}
-      data-avatar-face={kind === 'facepack' || kind === 'live2d' ? ((face !== undefined ? face : emotion) ?? undefined) : undefined}
+      data-avatar-face={kind === 'facepack' || kind === 'live2d' || kind === 'pngremix' ? ((face !== undefined ? face : emotion) ?? undefined) : undefined}
     >
       <div ref={bodyRef} className={away ? `${styles.body} ${styles.away}` : styles.body}>
         <div className={styles.figure} style={{ bottom: -h * SINK, height: figH, width: figW || undefined, filter: TIME_GRADE[slot.time] }}>

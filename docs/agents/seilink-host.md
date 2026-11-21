@@ -360,6 +360,10 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     timing. Cubism 2 models get the gaze through the focusController.
   - rig: head translation from the GazeDriver's head, Blinker lids (no
     separate irises).
+  - PNGTuber Remix (`pngremix`, 261122 spike): the model's own Remix motion
+    (bounce, wobble, drag), Blinker on its blink layers, the speech level on
+    its talk layers, emotions to states by name; no gaze. Format, safety and
+    gaps: [pngremix-format.md](pngremix-format.md).
   - portrait cutout and silhouette: no eyes; breathing (now also widening
     the shoulders, `BREATH_WIDTH`), sway, a weight shift at least 9 s apart (about every 35 s
     on average), and a slight lean toward where she would look (`gazeLean`).
