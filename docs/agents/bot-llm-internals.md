@@ -57,6 +57,24 @@ give.js `TOSS_RANGE`) and the line reads "still walking over to X to hand
 them N item. Nothing is tossed until you get there": delivered claims 9/30
 to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
 
+**The player saying the same thing again (261121, pass 60).** In free-play
+combat_night the nervous scripted player says "ok sui thx. stay close pls"
+every 10 s, and each reply was another "staying right here, you're safe" in
+new words (11-20 scorecard: 14 of 42 combat_night off labels; replies to a
+line the player had nearly said before were off 50 of 73 times over
+11-11..11-20). The own-lines note could not name it: stay/here/close are
+answer words (`PLAIN_WORDS`, `STOP` in `ownRepeats.js`) and the wording
+changed every time. `repeatedPlayerAsk` looks at the player's side instead:
+their newest line shares two or more content words with at least two of
+their own lines in the last 150 s, at most a third of its words are new, it
+is not a question, and she spoke after each. Then `repeatedAskNote` (says it
+is the Nth time, they know her answer, give them something new or do it if
+she is not doing it yet) goes right under "Their line" on a plain reply, and
+at the end of a mid-loop line's tail. Inside the own-lines note, several
+blocks above the line, it moved the probe half as much
+(`scripts/quality-eval/pass60-probe.mjs`: base 23/24 loop replies, in the
+note 11/24, under the line 5/24). Zero tokens unless it fires.
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 

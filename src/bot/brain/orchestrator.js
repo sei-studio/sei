@@ -55,7 +55,7 @@ import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGa
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
-import { ownRepeatsNote, recentOwnTurns } from './ownRepeats.js'
+import { ownRepeatsNote, recentOwnTurns, repeatedAskNote } from './ownRepeats.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import {
   describeActionEvent, describeAttackEvent, describeDeathEvent, actionEventKey,
@@ -1666,6 +1666,18 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     } catch { return null }
   }
   const ownRepeatsTail = (mode) => { const t = ownRepeatsText(mode); return t ? `\n\n${t}` : '' }
+  // 261121 (pass 60): the player saying much the same line for the third
+  // time or more, after she answered each one (ownRepeats.js
+  // repeatedPlayerAsk). Placed right under their line. Never throws.
+  function repeatedAskText() {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      return repeatedAskNote(playerLines, selfLines, {
+        names: [config?.player_display_name, config?.player_username, ...companions],
+        selfNames: [config?.persona?.name, ownUsername()],
+      })
+    } catch { return null }
+  }
   // 261020 (pass 20): the turn after one of her actions finished carried no
   // line of hers, so a line she had just said went out again: "hey alex"
   // twice when a dig came back out of range, "you're welcome" on the "thanks"
@@ -3001,6 +3013,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       fromTeammate: teammate === true,
       ownAction,
     })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '') +
+      (humanLine && !crossed && !voiceCallActive ? ((t) => (t ? `\n\n${t}` : ''))(repeatedAskText()) : '') +
       // 261112: their line cut her off mid-line (see cutInOf).
       (humanLine && cutIn && !unanswered ? `\n\n${NUDGES.cutOff(cutIn.line)}` : '')
   }
@@ -3786,6 +3799,7 @@ function maybeWarnByteCap(loop, warned) {
           (fromTeammate ? '' : goodbyeNotStartedTail()) +
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
           (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
+          (plainReply && !fromTeammate && !crossed ? ((t) => (t ? `\n${t}` : ''))(repeatedAskText()) : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
