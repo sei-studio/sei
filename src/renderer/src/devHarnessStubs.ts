@@ -531,6 +531,18 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           chatgptLoginResendCode: async () => ({ ok: true }),
         }
       : {}),
+    // ?dashshot=creditwall&checkout=fail (261122): the checkout session
+    // cannot be created, so the plan page shows its "Couldn't open checkout"
+    // state instead of "finish in your browser". Records the call either way.
+    ...(creditWallMode
+      ? {
+          creditsOpenCheckout: async (kind: string, source?: string) => {
+            const dev = window as unknown as { __seiDevCheckout?: Array<{ kind: string; source?: string }> };
+            (dev.__seiDevCheckout ??= []).push({ kind, source });
+            return params.get('checkout') === 'fail' ? { ok: false, code: 'PROXY_NETWORK' } : { ok: true };
+          },
+        }
+      : {}),
     // ?dashshot=onboard and ?dashshot=creditwall (the usage-limit popup's
     // credit_wall_action clicks, 261103) record track calls. So does
     // ?dashshot=roblox (the Suggest-a-game hint events, 261109).

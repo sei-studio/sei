@@ -17,11 +17,11 @@ describe('Playtime deep links', () => {
     const s = read('screens/SettingsScreen.tsx');
     const at = s.indexOf('data-testid="settings-open-playtime"');
     expect(at).toBeGreaterThan(-1);
-    expect(s.slice(at, at + 400)).toContain("navigate({ kind: 'credits' })");
+    expect(s.slice(at, at + 400)).toContain("navigate({ kind: 'credits', from: 'settings' })");
   });
 
   it('the rail star opens Playtime on every reported backend', () => {
-    expect(read('components/IconRail.tsx')).toContain("onClick={() => navigate({ kind: 'credits' })}");
+    expect(read('components/IconRail.tsx')).toContain("onClick={() => navigate({ kind: 'credits', from: 'nav' })}");
   });
 
   it('the credit wall: ChatGPT to the ChatGPT tab, own key to My keys', () => {

@@ -194,4 +194,7 @@ export const ZH: Record<string, string> = {
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[已用 Sei 声音朗读，Fish Audio 未能朗读这句话]",
   "[voice could not load, check your connection]": "[语音加载失败，请检查网络连接]",
   "[voice could not play this line]": "[语音无法播放这句话]",
+  // 261122 checkout clarity
+  "Couldn't open checkout": "无法打开结账页面",
+  "Nothing was charged. Check your connection and try again.": "未产生任何扣款。请检查网络连接后重试。",
 };

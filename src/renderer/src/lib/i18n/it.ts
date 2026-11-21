@@ -2394,4 +2394,7 @@ export const IT: Record<string, string> = {
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[detto con una voce di Sei, Fish Audio non è riuscito a dire questa frase]",
   "[voice could not load, check your connection]": "[impossibile caricare la voce, controlla la connessione]",
   "[voice could not play this line]": "[impossibile riprodurre questa frase]",
+  // 261122 checkout clarity
+  "Couldn't open checkout": "Impossibile aprire il pagamento",
+  "Nothing was charged. Check your connection and try again.": "Non è stato addebitato nulla. Controlla la connessione e riprova.",
 };

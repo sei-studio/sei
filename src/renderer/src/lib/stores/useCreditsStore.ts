@@ -40,7 +40,7 @@
  */
 
 import { create, type StoreApi } from 'zustand';
-import type { CreditsStatus, CreditsHardStopEvent, PlanTier } from '@shared/ipc';
+import type { CheckoutSource, CreditsStatus, CreditsHardStopEvent, PlanTier } from '@shared/ipc';
 import { sei } from '../ipcClient';
 import {
   PLANS,
@@ -308,13 +308,19 @@ interface CreditsState {
   /**
    * Checkout-watch state for the "complete your purchase in your browser" modal.
    *   - 'idle'      → no modal
+   *   - 'opening'   → asking the proxy for the checkout session (261122)
+   *   - 'failed'    → the session could not be created or the browser could
+   *                   not be handed it (261122): nothing opened, offer a retry
+   *                   instead of "finish in your browser"
    *   - 'waiting'   → browser checkout open; polling creditsGet for the change
    *   - 'confirmed' → the change landed
    *   - 'timeout'   → polling gave up; the focus-refetch backstop takes over
    */
-  checkoutStatus: 'idle' | 'waiting' | 'confirmed' | 'timeout';
+  checkoutStatus: 'idle' | 'opening' | 'failed' | 'waiting' | 'confirmed' | 'timeout';
   /** Which billing action the in-flight watch is for (drives modal copy). */
   checkoutKind: CheckoutKind | null;
+  /** Where the in-flight purchase started (261122), kept for the retry. */
+  checkoutSource: CheckoutSource | null;
   /**
    * The user asked for the top up packages from somewhere other than the plan
    * screen (the hard-stop popup). The plan screen consumes this on mount and
@@ -369,7 +375,10 @@ interface CreditsActions {
    */
   loadCatalog: () => Promise<void>;
   /** Open the Polar checkout for a new subscription or a top up package. */
-  openCheckout: (kind: Exclude<CheckoutKind, 'resume'>) => Promise<void>;
+  openCheckout: (
+    kind: Exclude<CheckoutKind, 'resume'>,
+    source?: CheckoutSource,
+  ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
    * Change the tier of an EXISTING subscription (Polar subscription update, not
    * a fresh checkout). Refreshes afterwards so the cards re-paint as soon as the
@@ -385,7 +394,7 @@ interface CreditsActions {
    */
   beginPurchase: (
     kind: Exclude<CheckoutKind, 'resume'>,
-    opts?: { alreadyOpened?: boolean },
+    opts?: { alreadyOpened?: boolean; source?: CheckoutSource },
   ) => Promise<void>;
   /**
    * Resume a to-be-cancelled subscription: opens the Polar customer portal
@@ -435,6 +444,7 @@ const INITIAL: Omit<CreditsState, 'unsubStatus' | 'unsubHardStop' | 'unsubFocus'
   snapshotFailed: false,
   checkoutStatus: 'idle',
   checkoutKind: null,
+  checkoutSource: null,
   topUpRequested: false,
   planCards: [...PLANS],
   topUpPackages: [...TOP_UPS],
@@ -620,8 +630,15 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
     }
   },
 
-  openCheckout: async (kind): Promise<void> => {
-    await sei.creditsOpenCheckout(kind);
+  openCheckout: async (kind, source): Promise<{ ok: true } | { ok: false; code: string }> => {
+    try {
+      const res = source ? await sei.creditsOpenCheckout(kind, source) : await sei.creditsOpenCheckout(kind);
+      // An older main (or a mock) may resolve with nothing: treat as opened,
+      // which is what every caller assumed before 261122.
+      return res ?? { ok: true };
+    } catch {
+      return { ok: false, code: 'IPC_ERROR' };
+    }
   },
 
   changePlan: async (tier): Promise<{ ok: true } | { ok: false; code: string }> => {
@@ -643,13 +660,26 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       subscription_status_raw: s.subscription_status_raw,
     };
     lastBillingActionAt = Date.now();
-    set({ checkoutStatus: 'waiting', checkoutKind: kind });
+    const source = opts?.source ?? null;
 
     // Open the hosted checkout in the system browser unless an earlier step
     // (the consent modal) already launched it.
     if (!opts?.alreadyOpened) {
-      await get().openCheckout(kind);
+      // 261122: the modal says "finish in your browser" only once the browser
+      // actually has the page. Until then it shows 'opening', and a failed
+      // mint shows 'failed' with a retry (it used to say "finish checking out"
+      // over nothing).
+      set({ checkoutStatus: 'opening', checkoutKind: kind, checkoutSource: source });
+      const res = await get().openCheckout(kind, source ?? undefined);
+      const now = get();
+      // Closed (or restarted) while the session was being created: leave it.
+      if (now.checkoutStatus !== 'opening' || now.checkoutKind !== kind) return;
+      if (!res.ok) {
+        set({ checkoutStatus: 'failed' });
+        return;
+      }
     }
+    set({ checkoutStatus: 'waiting', checkoutKind: kind, checkoutSource: source });
     startCheckoutWatch(kind, get, set);
   },
 
@@ -662,7 +692,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
       subscription_status_raw: s.subscription_status_raw,
     };
     lastBillingActionAt = Date.now();
-    set({ checkoutStatus: 'waiting', checkoutKind: 'resume' });
+    set({ checkoutStatus: 'waiting', checkoutKind: 'resume', checkoutSource: null });
 
     // Open the Polar customer portal (Polar's uncancel/resume surface). Reuses
     // cancelSubscription, which is the portal opener (manage / cancel / resume).
@@ -672,7 +702,7 @@ export const useCreditsStore = create<CreditsState & CreditsActions>((set, get) 
 
   dismissCheckout: (): void => {
     clearCheckoutTimers();
-    set({ checkoutStatus: 'idle', checkoutKind: null });
+    set({ checkoutStatus: 'idle', checkoutKind: null, checkoutSource: null });
   },
 
   requestTopUp: (): void => {

@@ -2015,7 +2015,20 @@ export const ProxyConfigureArgsSchema = z.object({
  */
 export const CreditsCheckoutArgsSchema = z.object({
   kind: z.string().min(1).max(64),
+  /**
+   * 261122: the app surface the purchase started from (CheckoutSource), sent
+   * to the proxy (Polar checkout metadata) and on checkout_opened /
+   * checkout_open_failed. A short slug; optional so older callers still parse.
+   */
+  source: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/).optional(),
 });
+
+/**
+ * 261122: where a checkout started, i.e. how the user reached the plan page
+ * (or its top up packages): the usage-limit popup, Settings, the rail, or
+ * anything else ('pricing_page').
+ */
+export type CheckoutSource = 'cap_popup' | 'settings' | 'nav' | 'pricing_page';
 /**
  * 260724: change the tier of an EXISTING subscription (a Polar subscription
  * update, not a fresh checkout). Upgrades additionally reset weekly usage
@@ -3300,6 +3313,7 @@ export interface RendererApi {
    */
   creditsOpenCheckout: (
     kind: string,
+    source?: CheckoutSource,
   ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
    * Change the tier of an EXISTING subscription (Polar subscription update, not

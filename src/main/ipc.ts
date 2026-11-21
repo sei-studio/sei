@@ -42,7 +42,7 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
-import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
+import { UI_LANGUAGES, normalizeUiLanguage, uiLocaleTag } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
@@ -4641,10 +4641,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // push (no success-detection wiring needed).
   ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
     const parsed = CreditsCheckoutArgsSchema.parse(argsRaw);
-    trackAnalytics('checkout_opened', { kind: String(parsed.kind) });
+    // 261122: `source` (which app surface) on both events, and checkout_opened
+    // now fires only once the session exists and the browser was handed the
+    // URL, with Polar's checkout_id so it joins the proxy's webhook funnel
+    // events (checkout_session_*, purchase_completed). A failed mint used to
+    // be invisible (the event fired first); it is checkout_open_failed now.
+    // Attempts = checkout_opened + checkout_open_failed.
+    const source = parsed.source ?? 'unknown';
+    const failed = (code: string, status?: number): { ok: false; code: string } => {
+      trackAnalytics('checkout_open_failed', {
+        kind: String(parsed.kind),
+        source,
+        code,
+        ...(status !== undefined ? { status } : {}),
+      });
+      return { ok: false as const, code };
+    };
     const { openCheckout } = await import('./cloud/proxyClient');
-    const res = await openCheckout(parsed.kind);
-    if (!res.ok) return res;
+    const locale = await loadConfig().then(
+      (c) => uiLocaleTag(normalizeUiLanguage(c.ui_language)),
+      () => undefined,
+    );
+    const res = await openCheckout(parsed.kind, { source: parsed.source, locale });
+    if (!res.ok) return failed(res.code, res.status);
 
     // Defense in depth: the URL was already protocol-validated in proxyClient
     // before being returned, but we re-assert here before the OS handoff.
@@ -4652,11 +4671,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     try {
       assertSafeExternalUrl(res.url);
     } catch {
-      return { ok: false as const, code: 'PROXY_NETWORK' as const };
+      return failed('PROXY_NETWORK');
     }
 
     const { shell } = await import('electron');
-    await shell.openExternal(res.url);
+    try {
+      await shell.openExternal(res.url);
+    } catch {
+      return failed('OPEN_EXTERNAL_FAILED');
+    }
+    trackAnalytics('checkout_opened', {
+      kind: String(parsed.kind),
+      source,
+      ...(res.checkoutId ? { checkout_id: res.checkoutId } : {}),
+    });
     // Return the {ok}/{ok:false,code} contract the renderer expects (the
     // renderer's useCreditsStore.openCheckout is Promise<void> and ignores the
     // body, so dropping the URL here is fine — it stays in the main process).

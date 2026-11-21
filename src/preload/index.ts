@@ -634,7 +634,8 @@ const api: RendererApi = {
   usageSpendAlertPending: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertPending),
   usageSpendAlertAck: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertAck),
   creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
-  creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
+  creditsOpenCheckout: (kind, source) =>
+    ipcRenderer.invoke(IpcChannel.credits.openCheckout, source ? { kind, source } : { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
   subscriptionStatus: () => ipcRenderer.invoke(IpcChannel.subscription.status),
   subscriptionCancel: () => ipcRenderer.invoke(IpcChannel.subscription.cancel),

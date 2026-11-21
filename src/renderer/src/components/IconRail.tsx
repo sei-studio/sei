@@ -474,7 +474,7 @@ export function IconRail(): React.ReactElement {
           {aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local' ? (
             <RailButton
               active={view.kind === 'credits'}
-              onClick={() => navigate({ kind: 'credits' })}
+              onClick={() => navigate({ kind: 'credits', from: 'nav' })}
               title={
                 aiBackendKind === 'cloud-proxy' && usageKnown
                   ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) })

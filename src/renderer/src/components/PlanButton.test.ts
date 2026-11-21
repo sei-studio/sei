@@ -60,6 +60,11 @@ describe('PlanButton', () => {
     expect(CREDITS).toMatch(/card\.tier === RECOMMENDED_TIER && isUpgrade/);
   });
 
+  it('P.3b Quest is the recommended plan (product call 261122)', async () => {
+    const { RECOMMENDED_TIER } = await import('../lib/planCatalog');
+    expect(RECOMMENDED_TIER).toBe('quest');
+  });
+
   it('P.4 new labels are translated to zh', () => {
     for (const key of ['Get {name}', 'Upgrade to {name}', 'Resume {name}', 'Recommended', 'Buy for {price}']) {
       expect(ZH).toContain(`'${key}':`);
