@@ -170,6 +170,28 @@ GONE; the overlay is AI-only. Design doc: `docs/design/avatar-v06-260804.md`.
   lip-sync level arming, cursor polling, overlay camera) works unchanged
   because the flag just means "has an imported avatar". Rigs have no
   expressions, so emotion/accessory plumbing no-ops on them.
+- **VRM avatars (261122, experimental, branch only).** The import also takes
+  a bare `.vrm` (VRM 0.x or 1.0): `importAvatarFile` sniffs the GLB magic and
+  sends it to `importAvatarVrm`, which runs `parseVrm` (`avatar/vrmImport.ts`,
+  pure + tested): one GLB with a JSON and at most one BIN chunk, no external
+  or data: URIs, every bufferView inside the BIN, embedded PNG/JPEG/WebP
+  images whose bytes match their mime and pass `avatarImageProblem`, an
+  allowlist for `extensionsRequired`, a humanoid with hips and head, 100 MB
+  cap. The bytes are stored untouched as `model.vrm` with `kind: 'vrm'` and
+  the licence meta (normalized to 1.0 words) in `manifest.vrm`. The licence
+  is shown (`VrmLicenseNote`), never enforced, and VRMs are never uploaded to
+  the avatar library. Rendering is `lib/vrm/VrmView.tsx`: three.js +
+  @pixiv/three-vrm, loaded only through the dynamic `vrmStack.ts` import, one
+  low-power WebGL context at 30 fps max, stopped at fps 0. It keeps the
+  Live2DView contract: Blinker on `blink`, the level-driven mouth split over
+  aa/ih/ou/ee/oh (`VisemeMixer`, aa always opens), GazeDriver + the cursor
+  feed on neck/head bones and VRM lookAt, AvatarEmotion mapped onto the
+  presets (or matching custom names) at import, breath and sway on the
+  normalized bones, spring bones on. A 0.x model's normalized bones flip the
+  sign of x and z rotations after `rotateVRM0`. `AvatarCamera` means the same
+  as for Live2D (`frameModel`), centered on the hips. Proof shots in a
+  browser: DevRoomPreview `&vrm=<url>&use=imported`, plus
+  `window.__seiVrmForce = {blink, mouth}` in dev.
 - **Rendering** (`src/renderer/src/lib/live2d/`): pixi.js 7 +
   `pixi-live2d-display-lipsyncpatch` (cubism4), ALL dynamically imported.
   The proprietary Cubism 5 Core is fetched at build time by

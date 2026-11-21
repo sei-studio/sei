@@ -370,8 +370,8 @@ const api: RendererApi = {
   },
   voiceOverlayGetState: () => ipcRenderer.invoke(IpcChannel.voice.overlayGet),
   // Live2D avatar store + overlay window controls (260804)
-  avatarImport: (characterId, zipBytes) =>
-    ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes),
+  avatarImport: (characterId, zipBytes, fileName) =>
+    ipcRenderer.invoke(IpcChannel.avatar.import, characterId, zipBytes, fileName),
   avatarDownload: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.download, characterId),
   avatarGet: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.get, characterId),
   avatarRemove: (characterId) => ipcRenderer.invoke(IpcChannel.avatar.remove, characterId),

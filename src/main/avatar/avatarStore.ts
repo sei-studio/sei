@@ -37,6 +37,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { paths } from '../paths';
 import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
+import { looksLikeGlb, parseVrm, VRM_ENTRY, VRM_MAX_BYTES } from './vrmImport';
 import type {
   AvatarEmotion,
   AvatarManifest,
@@ -623,6 +624,45 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   return withLock(characterId, () => normalizeAndWrite(characterId, files, undefined, true));
 }
 
+/**
+ * Import a VRM file (261122, experimental) for `characterId`: strict checks
+ * and meta read in vrmImport.ts, then the untouched bytes are stored as
+ * model.vrm next to a kind 'vrm' manifest. Throws VrmImportError on a file it
+ * refuses; the previous avatar survives a failed import.
+ */
+export async function importAvatarVrm(characterId: string, bytes: Buffer, fileName?: string): Promise<AvatarManifest> {
+  const parsed = parseVrm(bytes, fileName);
+  const manifest: AvatarManifest = {
+    version: MANIFEST_VERSION,
+    kind: 'vrm',
+    name: parsed.name,
+    entry: VRM_ENTRY,
+    importedAt: new Date().toISOString(),
+    bytes: bytes.byteLength,
+    // VRM expressions live in manifest.vrm: this list is the Live2D accessory/expression UI's.
+    expressions: [],
+    emotions: parsed.emotions,
+    vrm: parsed.info,
+  };
+  return withLock(characterId, () =>
+    replaceStore(characterId, new Map([[VRM_ENTRY, { rel: VRM_ENTRY, bytes }]]), (rel) => rel, manifest),
+  );
+}
+
+/** Largest file the avatar import takes: a VRM may be bigger than a model zip. */
+export const AVATAR_IMPORT_MAX_BYTES = Math.max(AVATAR_ZIP_MAX_BYTES, VRM_MAX_BYTES);
+
+/**
+ * The user's own import (profile Avatar tab, WorldLink editor): a .vrm by its
+ * GLB magic, else a Live2D / rig zip. Library downloads stay zip-only
+ * (importAvatarZip).
+ */
+export async function importAvatarFile(characterId: string, bytes: Buffer, fileName?: string): Promise<AvatarManifest> {
+  if (looksLikeGlb(bytes)) return importAvatarVrm(characterId, bytes, fileName);
+  if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error(`avatar zip too large (${bytes.byteLength} bytes)`);
+  return importAvatarZip(characterId, bytes);
+}
+
 /** An entry's uncompressed size as its central directory declares it. */
 function declaredSize(entry: JSZip.JSZipObject): number {
   const n = (entry as unknown as { _data?: { uncompressedSize?: unknown } })._data?.uncompressedSize;
@@ -794,6 +834,9 @@ const STORED_EXT_RE = /\.(png|jpe?g|webp)$/i;
 export async function zipStoredAvatar(characterId: string): Promise<Buffer | null> {
   const manifest = await getAvatarManifest(characterId);
   if (!manifest) return null;
+  // 261122: a VRM stays on this device (the library and its moderation take
+  // Live2D / rig zips only, and a VRM licence may forbid redistribution).
+  if (manifest.kind === 'vrm') return null;
   const files = await withLock(characterId, () => readStoredFiles(characterId));
   if (files.length === 0) return null;
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));

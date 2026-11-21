@@ -41,6 +41,7 @@
  * the bottom edge). Without it the preview is a plain cover fit, where she is
  * only her slot's share of the canvas (about half the height in cozy).
  */
+import type { AvatarEmotion } from '@shared/ipc';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, type RoomPresetManifest, type RoomSlotId, type RoomState } from '@shared/seilinkRoom';
 import { parseRoomManifest } from '@shared/seilinkValidate';
@@ -152,6 +153,8 @@ const AVATAR = {
   facepack: params.get('faces') ? urlPackSource(params.get('face') ?? 'sui', params.get('faces')!) : undefined,
   busy: params.get('busy') === '1',
   speak: params.get('speak') === '1',
+  /** 261122: emotion=<AvatarEmotion> for the imported model's face (VRM / Live2D shots). */
+  emotion: (params.get('emotion') || null) as AvatarEmotion | null,
   motion: params.get('motion') === '0' ? (false as const) : {},
   walkAt: params.get('walk') ? Number(params.get('walk')) * 1000 : null,
   awayMs: params.get('away') ? Number(params.get('away')) * 1000 : undefined,
@@ -348,6 +351,7 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
             facepack={AVATAR.facepack}
             busy={AVATAR.busy}
             speaking={AVATAR.speak}
+            emotion={AVATAR.emotion}
             levelRef={levelRef}
             motion={AVATAR.motion}
             walkOffSignal={walkSignal}

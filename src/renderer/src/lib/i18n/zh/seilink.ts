@@ -203,4 +203,17 @@ export const ZH_SEILINK: Record<string, string> = {
   "Could not change this setting. Turn Sei on in Windows Settings > Apps > Startup, or in Task Manager > Startup apps.": "无法更改此设置。请在 Windows 的“设置 > 应用 > 启动”或“任务管理器 > 启动应用”中开启 Sei。",
   "Could not change this setting. Add Sei in System Settings > General > Login Items.": "无法更改此设置。请在“系统设置 > 通用 > 登录项”中添加 Sei。",
   "Contact support": "联系支持",
+  // 261122 VRM avatars (experimental)
+  'Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.': '无法读取这个 VRM 文件。它需要是 VRM 0.x 或 1.0 模型，并且所有内容都在文件内。',
+  '{name} by {author}': '{name}，作者 {author}',
+  'Who may use it: {who}. Commercial use: {what}. Redistribution: {share}.': '谁可以使用：{who}。商业用途：{what}。再分发：{share}。',
+  'Everyone': '所有人',
+  'Only the author': '仅作者',
+  'Licensed people': '获得授权的人',
+  'Not stated': '未注明',
+  'Personal, non-profit': '个人，非营利',
+  'Personal, for profit': '个人，可营利',
+  'Companies too': '企业也可以',
+  'Allowed': '允许',
+  'Not allowed': '不允许',
 };

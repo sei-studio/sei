@@ -589,6 +589,8 @@ export class AvatarLibraryClient {
     manifest: AvatarManifest,
     origin: 'user' | 'migration',
   ): Promise<boolean> {
+    // 261122: a VRM is never uploaded (local only, see zipStoredAvatar).
+    if (manifest.kind === 'vrm') return false;
     const maxZip = list.limits?.max_zip_bytes;
     const zip = await this.d.models.zip(characterId);
     if (!zip) return false;

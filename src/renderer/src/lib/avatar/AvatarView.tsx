@@ -1,7 +1,8 @@
 /**
  * AvatarView (260817) — renders whichever avatar model the character has
- * imported: a real Live2D Cubism model (Live2DView) or a simple layered rig
- * (RigView), chosen by the manifest's `kind`. Hosts pass the shared surface
+ * imported: a real Live2D Cubism model (Live2DView), a simple layered rig
+ * (RigView) or a VRM (VrmView, 261122 experimental), chosen by the
+ * manifest's `kind`. Hosts pass the shared surface
  * contract once and never care which format is behind it; both the profile
  * preview and the overlay tile use this instead of Live2DView directly.
  *
@@ -14,6 +15,7 @@ import type { AvatarCamera, AvatarEmotion } from '@shared/ipc';
 import { sei } from '../ipcClient';
 import { Live2DView } from '../live2d/Live2DView';
 import { RigView } from '../rig/RigView';
+import { VrmView } from '../vrm/VrmView';
 
 export interface AvatarViewProps {
   characterId: string;
@@ -31,7 +33,7 @@ export interface AvatarViewProps {
 
 export function AvatarView(props: AvatarViewProps): React.ReactElement | null {
   const { characterId, onStatus } = props;
-  const [kind, setKind] = useState<'live2d' | 'rig' | 'none' | null>(null);
+  const [kind, setKind] = useState<'live2d' | 'rig' | 'vrm' | 'none' | null>(null);
 
   useEffect(() => {
     setKind(null);
@@ -66,5 +68,7 @@ export function AvatarView(props: AvatarViewProps): React.ReactElement | null {
     return <RigView {...rest} />;
   }
   if (kind === 'live2d') return <Live2DView {...props} />;
+  // 261122 (experimental): a VRM model, three.js + three-vrm, loaded lazily.
+  if (kind === 'vrm') return <VrmView {...props} />;
   return null;
 }

@@ -131,6 +131,7 @@ import { RoomAvatar } from './RoomAvatar';
 import { PlacementGuide } from './PlacementGuide';
 import { ColorPickTelemetryContext, CustomColor, useColorPickTelemetry, type ColorPickTelemetry } from './RoomColorPicker';
 import type { EditorAvatarModel, EditorPack, RoomEditorSource } from './roomEditorSource';
+import { VrmLicenseNote } from '../avatar/VrmLicenseNote';
 import {
   AutoIcon,
   BagIcon,
@@ -198,6 +199,8 @@ const SCENE_SLOTS: ReadonlySet<RoomSlotId> = new Set(['view', 'shell']);
 
 /** The avatar store and avatar library cap (64 MB). */
 const ZIP_MAX_BYTES = 64 * 1024 * 1024;
+/** A .vrm file (261122, experimental; main's VRM_MAX_BYTES). */
+const VRM_MAX_BYTES = 100 * 1024 * 1024;
 
 export interface RoomEditorProps {
   source: RoomEditorSource;
@@ -1202,26 +1205,32 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     if (!source.avatar) return;
     setAvatarError(null);
     analytics.avatarUpload('start');
-    if (!/\.zip$/i.test(file.name)) {
+    // 261122 (experimental): a .vrm goes through the same import (main tells it apart by its bytes).
+    const isVrm = /\.vrm$/i.test(file.name);
+    if (!isVrm && !/\.zip$/i.test(file.name)) {
       analytics.avatarUpload('fail', 'not_zip');
       setAvatarError(t('That file is not a .zip archive.'));
       return;
     }
-    if (file.size > ZIP_MAX_BYTES) {
+    if (file.size > (isVrm ? VRM_MAX_BYTES : ZIP_MAX_BYTES)) {
       analytics.avatarUpload('fail', 'too_big');
       setAvatarError(t('That archive is too large.'));
       return;
     }
     setAvatarBusy(true);
     try {
-      const m = await source.avatar.importZip(await file.arrayBuffer());
+      const m = await source.avatar.importZip(await file.arrayBuffer(), file.name);
       setModel(m);
       edit((s) => setRoomAvatar(s, { kind: 'live2d', modelPath: m.entry }));
       analytics.avatarUpload('ok');
     } catch (err) {
       analytics.avatarUpload('fail', 'import_failed');
       console.warn('[seilink editor] avatar import failed', err);
-      setAvatarError(t('Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.'));
+      setAvatarError(
+        isVrm
+          ? t('Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.')
+          : t('Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.'),
+      );
     } finally {
       setAvatarBusy(false);
     }
@@ -1600,7 +1609,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 aria-label={model.name}
                 onClick={() => edit((s) => setRoomAvatar(s, { kind: 'live2d', modelPath: model.entry }))}
               >
-                <span className={styles.optionWord}>Live2D</span>
+                <span className={styles.optionWord}>{model.kind === 'vrm' ? 'VRM' : 'Live2D'}</span>
               </button>
             )}
             {source.avatar && (
@@ -1617,6 +1626,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
             )}
           </div>
           {avatarError && <p className={styles.note}>{avatarError}</p>}
+          {!avatarError && model?.vrm && state.avatar.kind === 'live2d' && <VrmLicenseNote className={styles.note} info={model.vrm} name={model.name} />}
           {!avatarError && props.avatarNote && (
             <p className={styles.note} role="status">
               {props.avatarNote}
@@ -1625,7 +1635,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           <input
             ref={fileRef}
             type="file"
-            accept=".zip"
+            accept=".zip,.vrm"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];

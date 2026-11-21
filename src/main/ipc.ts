@@ -2485,15 +2485,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // ── Live2D avatar store + overlay window controls (260804) ─────────────
 
-  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown) => {
+  ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown, nameArg?: unknown) => {
     const id = IdSchema.parse(idArg);
     if (!(zipArg instanceof ArrayBuffer) && !ArrayBuffer.isView(zipArg)) {
       throw new Error('avatar import expects zip bytes');
     }
+    const fileName = typeof nameArg === 'string' ? nameArg.slice(0, 255) : undefined;
     const bytes = zipArg instanceof ArrayBuffer ? Buffer.from(zipArg) : Buffer.from(zipArg.buffer, zipArg.byteOffset, zipArg.byteLength);
-    const { importAvatarZip, AVATAR_ZIP_MAX_BYTES } = await import('./avatar/avatarStore');
-    if (bytes.byteLength > AVATAR_ZIP_MAX_BYTES) throw new Error('avatar zip too large');
-    const manifest = await importAvatarZip(id, bytes);
+    const { importAvatarFile, AVATAR_IMPORT_MAX_BYTES } = await import('./avatar/avatarStore');
+    // 261122 (experimental): a .vrm rides the same handler, told apart by its GLB magic.
+    const { looksLikeGlb, vrmImportFailProps, vrmImportedProps } = await import('./avatar/vrmImport');
+    const isVrm = looksLikeGlb(bytes);
+    let manifest;
+    try {
+      if (bytes.byteLength > AVATAR_IMPORT_MAX_BYTES) throw new Error('avatar file too large');
+      manifest = await importAvatarFile(id, bytes, fileName);
+    } catch (err) {
+      if (isVrm) trackAnalytics('avatar_vrm_import_failed', vrmImportFailProps(err, bytes.byteLength));
+      throw err;
+    }
+    if (isVrm && manifest.vrm) trackAnalytics('avatar_vrm_imported', vrmImportedProps(manifest.vrm, bytes.byteLength));
     noteSeilinkAvatarChanged(id, manifest);
     // 261106: the owner's new model goes up to her avatar library (background).
     void import('./avatarLibrary/avatarLibraryRuntime')

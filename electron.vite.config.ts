@@ -1,6 +1,28 @@
 import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
+import type { Plugin } from 'vite';
+
+/**
+ * VRM avatars (261122, experimental): the lazy VRM chunk (lib/vrm/vrmStack.ts,
+ * @pixiv/three-vrm, GLTFLoader) gets its own copy of three.js from three's
+ * source entry. The entry chunk already holds three for chess, and one shared
+ * module would carry every class the VRM stack uses into what loads at startup
+ * (about 150 kB). Two copies never meet: no three object crosses between chess
+ * and a VRM. Build only; the dev server pre-bundles deps on its own.
+ */
+function vrmOwnThree(): Plugin {
+  const vrmSide = /[\\/](?:@pixiv[\\/]three-vrm[^\\/]*|three[\\/]examples[\\/]jsm)[\\/]|[\\/]lib[\\/]vrm[\\/]vrmStack\.ts$/;
+  return {
+    name: 'sei-vrm-own-three',
+    apply: 'build',
+    enforce: 'pre',
+    resolveId(id, importer) {
+      if (id !== 'three' || !importer || !vrmSide.test(importer)) return null;
+      return this.resolve('three/src/Three.js', importer, { skipSelf: true });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   // Pull optional overrides from .env at config load. Empty prefix = read all
@@ -115,7 +137,7 @@ export default defineConfig(({ mode }) => {
         input: { index: path.resolve('src/renderer/index.html'), seilinkHost: path.resolve('src/renderer/seilink-host.html') },
       },
     },
-    plugins: [react()],
+    plugins: [react(), vrmOwnThree()],
     // Voice dictation (260705): the Whisper STT worker
     // (lib/voice/whisperWorker.ts) imports @huggingface/transformers, which
     // code-splits — Vite's default iife worker format can't hold multiple

@@ -64,7 +64,7 @@ import {
 import type { RoomAvatarSlot } from './RoomCanvas';
 import styles from './RoomAvatar.module.css';
 
-export type RoomAvatarKind = 'live2d' | 'rig' | 'facepack' | 'cutout' | 'portrait' | 'placeholder';
+export type RoomAvatarKind = 'live2d' | 'rig' | 'vrm' | 'facepack' | 'cutout' | 'portrait' | 'placeholder';
 
 /** Kinds with no face to move: they bounce when she talks and lean toward her gaze. */
 function faceless(kind: RoomAvatarKind | null | undefined): boolean {
@@ -148,10 +148,10 @@ async function resolveKind(
   portrait: string | null,
   failed: ReadonlySet<RoomAvatarKind>,
 ): Promise<Resolved> {
-  if (use !== 'sei' && !failed.has('live2d') && !failed.has('rig')) {
+  if (use !== 'sei' && !failed.has('live2d') && !failed.has('rig') && !failed.has('vrm')) {
     try {
       const m = await sei?.avatarGet?.(characterId);
-      if (m) return { kind: m.kind === 'rig' ? 'rig' : 'live2d' };
+      if (m) return { kind: m.kind === 'rig' ? 'rig' : m.kind === 'vrm' ? 'vrm' : 'live2d' };
     } catch {
       /* no bridge, or no model */
     }
@@ -560,7 +560,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
 
   let figW = figH * 0.75;
   let view: React.ReactNode = null;
-  if (kind === 'live2d' || kind === 'rig') {
+  if (kind === 'live2d' || kind === 'rig' || kind === 'vrm') {
     figW = figH * 1.1;
     view = (
       <AvatarView

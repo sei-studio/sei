@@ -2598,4 +2598,17 @@ export const RU: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "Не удалось открыть оплату",
   "Nothing was charged. Check your connection and try again.": "Деньги не списаны. Проверьте подключение и попробуйте ещё раз.",
+  // 261122 VRM avatars (experimental)
+  "Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.": "Не удалось прочитать этот файл VRM. Нужна модель VRM 0.x или 1.0, в которой всё хранится внутри файла.",
+  "{name} by {author}": "{name}, автор: {author}",
+  "Who may use it: {who}. Commercial use: {what}. Redistribution: {share}.": "Кто может использовать: {who}. Коммерческое использование: {what}. Распространение: {share}.",
+  "Everyone": "Все",
+  "Only the author": "Только автор",
+  "Licensed people": "Лица с лицензией",
+  "Not stated": "Не указано",
+  "Personal, non-profit": "Лично, некоммерчески",
+  "Personal, for profit": "Лично, с прибылью",
+  "Companies too": "Также компании",
+  "Allowed": "Разрешено",
+  "Not allowed": "Запрещено",
 };

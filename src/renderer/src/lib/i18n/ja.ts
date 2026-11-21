@@ -2598,4 +2598,17 @@ export const JA: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "決済ページを開けませんでした",
   "Nothing was charged. Check your connection and try again.": "料金は発生していません。接続を確認して、もう一度お試しください。",
+  // 261122 VRM avatars (experimental)
+  "Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.": "このVRMファイルを読み込めませんでした。すべてのデータを含むVRM 0.xまたは1.0のモデルが必要です。",
+  "{name} by {author}": "{name}（作者: {author}）",
+  "Who may use it: {who}. Commercial use: {what}. Redistribution: {share}.": "利用できる人: {who}。商用利用: {what}。再配布: {share}。",
+  "Everyone": "全員",
+  "Only the author": "作者のみ",
+  "Licensed people": "許可された人",
+  "Not stated": "記載なし",
+  "Personal, non-profit": "個人・非営利",
+  "Personal, for profit": "個人・営利",
+  "Companies too": "法人も可",
+  "Allowed": "可",
+  "Not allowed": "不可",
 };

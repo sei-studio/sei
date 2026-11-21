@@ -2598,4 +2598,17 @@ export const ES: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "No se pudo abrir el pago",
   "Nothing was charged. Check your connection and try again.": "No se cobró nada. Revisa tu conexión e inténtalo de nuevo.",
+  // 261122 VRM avatars (experimental)
+  "Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.": "No se pudo leer ese archivo VRM. Tiene que ser un modelo VRM 0.x o 1.0 con todo dentro del archivo.",
+  "{name} by {author}": "{name}, de {author}",
+  "Who may use it: {who}. Commercial use: {what}. Redistribution: {share}.": "Quién puede usarlo: {who}. Uso comercial: {what}. Redistribución: {share}.",
+  "Everyone": "Todos",
+  "Only the author": "Solo el autor",
+  "Licensed people": "Personas con licencia",
+  "Not stated": "No indicado",
+  "Personal, non-profit": "Personal, sin fines de lucro",
+  "Personal, for profit": "Personal, con fines de lucro",
+  "Companies too": "También empresas",
+  "Allowed": "Permitida",
+  "Not allowed": "No permitida",
 };

@@ -21,12 +21,15 @@ import { Seg } from '../Seg';
 import { Toggle } from '../Toggle';
 import { AvatarView } from '../../lib/avatar/AvatarView';
 import { AvatarLibraryPicker } from './AvatarLibraryTiles';
+import { VrmLicenseNote } from './VrmLicenseNote';
 import styles from './AvatarPane.module.css';
 
 /** Client-side mirror of avatarStore's zip cap (the server-side check is the
  * authority; this just fails fast with a readable message). */
 /** The avatar store and avatar library cap (64 MB). */
 const ZIP_MAX_BYTES = 64 * 1024 * 1024;
+/** A .vrm file (261122, experimental; main's VRM_MAX_BYTES). */
+const VRM_MAX_BYTES = 100 * 1024 * 1024;
 
 interface AvatarPaneProps {
   characterId: string;
@@ -97,27 +100,31 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
 
   const onPickZip = async (file: File): Promise<void> => {
     setImportError(null);
-    if (!/\.zip$/i.test(file.name)) {
+    // 261122 (experimental): a .vrm rides the same import (main tells it apart by its bytes).
+    const isVrm = /\.vrm$/i.test(file.name);
+    if (!isVrm && !/\.zip$/i.test(file.name)) {
       setImportError(t('That file is not a .zip archive.'));
       return;
     }
-    if (file.size > ZIP_MAX_BYTES) {
+    if (file.size > (isVrm ? VRM_MAX_BYTES : ZIP_MAX_BYTES)) {
       setImportError(t('That archive is too large.'));
       return;
     }
     setImporting(true);
     try {
       const bytes = await file.arrayBuffer();
-      const imported = await sei.avatarImport(characterId, bytes);
+      const imported = await sei.avatarImport(characterId, bytes, file.name);
       setManifest(characterId, imported);
       setPreviewStatus('loading');
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error('[AvatarPane] import failed', err);
       setImportError(
-        t(
-          'Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.',
-        ),
+        isVrm
+          ? t('Could not read that VRM file. It needs to be a VRM 0.x or 1.0 model with everything inside the file.')
+          : t(
+              'Could not read that model. It needs a .model3.json with its .moc3 and textures, or a rig.json with its layer images.',
+            ),
       );
     } finally {
       setImporting(false);
@@ -231,6 +238,9 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
                   <span className={styles.previewNote}>{t('This model could not be rendered.')}</span>
                 ) : null}
               </div>
+              {manifest.kind === 'vrm' && manifest.vrm ? (
+                <VrmLicenseNote className={styles.subHint} info={manifest.vrm} name={manifest.name} />
+              ) : (
               <p className={styles.subHint}>
                 {manifest.kind === 'rig'
                   ? t('{name}, layered rig', { name: manifest.name })
@@ -239,6 +249,7 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
                       count: String(manifest.expressions.length),
                     })}
               </p>
+              )}
               {(() => {
                 const emotionNames = new Set(Object.values(manifest.emotions ?? {}));
                 const items = manifest.expressions.filter((e) => !emotionNames.has(e.name));
@@ -351,7 +362,7 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
           <input
             ref={fileInputRef}
             type="file"
-            accept=".zip"
+            accept=".zip,.vrm"
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];

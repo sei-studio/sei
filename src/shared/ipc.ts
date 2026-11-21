@@ -842,8 +842,9 @@ export interface AvatarManifest {
   /** Which model format this store holds (260817). Absent = 'live2d' (every
    * store predating the field is a Cubism model). 'rig' = a simple layered
    * rig: a rig.json + aligned PNG layers, rendered by RigView instead of the
-   * Cubism pipeline. */
-  kind?: 'live2d' | 'rig';
+   * Cubism pipeline. 'vrm' (261122, experimental) = one VRM 0.x / 1.0 file
+   * (`entry` = model.vrm), rendered by VrmView (three.js + three-vrm). */
+  kind?: 'live2d' | 'rig' | 'vrm';
   /** Display name (derived from the model3.json filename). */
   name: string;
   /** Relative path of the (normalized) .model3.json entry file. */
@@ -870,6 +871,43 @@ export interface AvatarManifest {
    * it). A new import replaces the manifest, which drops the link.
    */
   library?: { avatarId: string; rev: string };
+  /** kind 'vrm' only (261122): the file's VRM meta, read at import (main/avatar/vrmImport.ts). */
+  vrm?: AvatarVrmInfo;
+}
+
+/**
+ * A VRM file's meta (261122, experimental), normalized to the VRM 1.0
+ * vocabulary (VRM 0.x values are mapped; 'unknown' / null = not stated or not
+ * expressible in 0.x). Recorded and shown, never enforced. Every string is
+ * the author's, clipped; URLs are http(s) only.
+ */
+export interface AvatarVrmInfo {
+  specVersion: '0.x' | '1.0';
+  title?: string;
+  modelVersion?: string;
+  authors: string[];
+  contact?: string;
+  references: string[];
+  copyright?: string;
+  /** VRM 0.x licence enum (CC0, CC_BY, Redistribution_Prohibited, Other, ...). */
+  licenseName?: string;
+  licenseUrl?: string;
+  otherLicenseUrl?: string;
+  otherPermissionUrl?: string;
+  avatarPermission: 'onlyAuthor' | 'onlySeparatelyLicensedPerson' | 'everyone' | 'unknown';
+  commercialUsage: 'personalNonProfit' | 'personalProfit' | 'corporation' | 'unknown';
+  violentUsage: boolean | null;
+  sexualUsage: boolean | null;
+  politicalOrReligiousUsage: boolean | null;
+  antisocialOrHateUsage: boolean | null;
+  creditNotation: 'required' | 'unnecessary' | 'unknown';
+  redistribution: boolean | null;
+  modification: 'prohibited' | 'allowModification' | 'allowModificationRedistribution' | 'unknown';
+  /** Expression names the model offers (VRM 1.0 preset names + custom names). */
+  expressions: string[];
+  maxTextureSide: number;
+  /** Spring bone groups (hair / cloth physics). */
+  springBones: number;
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
@@ -2323,7 +2361,8 @@ export interface RendererApi {
    * validates, normalizes (expression registration + EyeBlink group) and
    * stores it under the profile's avatars dir; returns the manifest.
    */
-  avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
+  /** A Live2D / rig zip, or (261122, experimental) a .vrm file by its GLB magic; `fileName` names a VRM with no title. */
+  avatarImport(characterId: string, zipBytes: ArrayBuffer, fileName?: string): Promise<AvatarManifest>;
   /**
    * Download the character's CLOUD-hosted avatar zip (metadata.avatar, see
    * cloudAvatarOf in characterSchema) and import it into the local store —

@@ -601,6 +601,21 @@ if (
         avatarModelFiles: rigFiles,
       }
     : {};
+  // &vrm=<url of a .vrm> (261122, experimental): her imported avatar is that VRM.
+  const vrmUrl = harnessParams.get('vrm');
+  if (vrmUrl) {
+    answers.avatarGet = async () => ({
+      version: 2,
+      kind: 'vrm',
+      name: 'dev vrm',
+      entry: 'model.vrm',
+      importedAt: '',
+      bytes: 0,
+      expressions: [],
+      emotions: { happy: 'happy', excited: 'happy', love: 'relaxed', shy: 'relaxed', sad: 'sad', angry: 'angry', surprised: 'surprised' },
+    });
+    answers.avatarModelFiles = async () => [{ path: 'model.vrm', bytes: new Uint8Array(await (await fetch(vrmUrl)).arrayBuffer()) }];
+  }
   const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
   const packId = harnessParams.get('facepackid');
   if (packsBase && packId) {

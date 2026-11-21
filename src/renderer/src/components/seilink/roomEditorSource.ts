@@ -8,6 +8,7 @@
  * Avatar tab). The dev preview in a plain browser tab has no IPC, so it uses
  * memoryRoomEditorSource over packs fetched by URL.
  */
+import type { AvatarVrmInfo } from '@shared/ipc';
 import type { RoomPresetId, RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import { sanitizeRoomState } from '@shared/seilinkValidate';
 import { seilinkResolver, type RoomUrlResolver } from '@shared/seilinkPack';
@@ -28,6 +29,9 @@ export interface EditorAvatarModel {
   name: string;
   /** The model entry inside her avatar store (RoomState avatar.modelPath). */
   entry: string;
+  /** 261122 (experimental): which format, and a VRM's licence meta. */
+  kind?: 'live2d' | 'rig' | 'vrm';
+  vrm?: AvatarVrmInfo;
 }
 
 export interface RoomEditorSource {
@@ -39,7 +43,8 @@ export interface RoomEditorSource {
   /** The custom Live2D avatar, when the host can import one. */
   avatar?: {
     get(): Promise<EditorAvatarModel | null>;
-    importZip(bytes: ArrayBuffer): Promise<EditorAvatarModel>;
+    /** A Live2D / rig zip, or a .vrm (261122, experimental). */
+    importZip(bytes: ArrayBuffer, fileName?: string): Promise<EditorAvatarModel>;
   };
   /** Someone else saved her room (the AI, another window). */
   onChanged?(cb: () => void): () => void;
@@ -65,13 +70,13 @@ export function ipcRoomEditorSource(characterId: string): RoomEditorSource {
     avatar: {
       async get() {
         const m = await sei.avatarGet(characterId);
-        return m ? { name: m.name, entry: m.entry } : null;
+        return m ? { name: m.name, entry: m.entry, kind: m.kind, vrm: m.vrm } : null;
       },
-      async importZip(bytes) {
-        const m = await sei.avatarImport(characterId, bytes);
+      async importZip(bytes, fileName) {
+        const m = await sei.avatarImport(characterId, bytes, fileName);
         // Keep the profile's Avatar tab and the overlay in step.
         useAvatarStore.getState().setManifest(characterId, m);
-        return { name: m.name, entry: m.entry };
+        return { name: m.name, entry: m.entry, kind: m.kind, vrm: m.vrm };
       },
     },
     onChanged(cb) {
