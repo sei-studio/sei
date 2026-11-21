@@ -10,7 +10,7 @@
  * Liveliness model (AIRI-informed, own constants — see
  * docs/design/avatar-v06-260804.md):
  *  - Breath/sway + blink come FREE from the Cubism SDK on a motionless model
- *    (import guarantees the EyeBlink group exists), physics on top.
+ *    (import fills the EyeBlink group from the resolved eye ids), physics on top.
  *  - Gaze (261116, product call 261116: "head tilt jumps", "linear A to
  *    B"): motion/organic.ts GazeDriver. The eyes make quick minimum-jerk
  *    saccades between short fixations; the head follows on a critically
@@ -22,6 +22,13 @@
  *    of the things she looks at, and she follows it while it moves; where
  *    the feed never arrives her eyes simply wander. Cubism 2 models (no
  *    separate ids) get the gaze through the focusController as before.
+ *  - Parameter ids (261122): the mouth, eyes, head and blink ids come from
+ *    the manifest's resolved roles (shared/live2dParams.ts; resolved here
+ *    from the model's own files when an older manifest has none), each
+ *    scaled to the parameter's real range, so a model that names its mouth
+ *    `ParamBocca` lip-syncs and one with an empty EyeBlink group blinks. A
+ *    model with no eye or head parameters leans slightly toward her gaze
+ *    instead.
  *  - Blink: the SDK's EyeBlink, set to a natural lid timing (65 ms close,
  *    45 ms hold, 105 ms open).
  *  - Mouth: driven per frame from `speaking` + `levelRef` (0..1 RMS envelope
@@ -43,6 +50,7 @@ import { resolveEmotionExpression } from '../avatar/emotion';
 import { BLINK_CLOSE_MS, BLINK_HOLD_MS, BLINK_OPEN_MS, GazeDriver, type GazeConfig, type GazeInput, type GazeOutput } from '../motion/organic';
 import { parseExpressionParams, computeAccessoryTargets } from '../avatar/accessoryParams';
 import { loadCubismCore } from './loadCore';
+import { effectiveLive2DParams, LIVE2D_STANDARD_IDS, resolveLive2DParams, resolveLive2DParamsFromFiles, type Live2DRole } from '@shared/live2dParams';
 
 export interface Live2DViewProps {
   characterId: string;
@@ -91,6 +99,12 @@ const HEAD_PITCH_DEG = 24;
 const HEAD_ROLL_DEG = 9;
 const BODY_YAW_DEG = 8;
 const EYEBALL_GAIN = 1.6;
+/** The standard parameters' half ranges the gains above are written for (angles ±30, body ±10, eyeballs ±1). */
+const STD_HALF_ANGLE = 30;
+const STD_HALF_BODY = 10;
+const STD_HALF_EYEBALL = 1;
+/** A model with no eye or head parameters leans this far (deg, about her bottom) at a full head turn. */
+const LEAN_DEG = 1.1;
 /** Mouth smoothing per frame (fast attack, slower release). */
 const MOUTH_ATTACK = 0.5;
 const MOUTH_RELEASE = 0.18;
@@ -102,6 +116,7 @@ type Live2DModelT = {
   position: { set: (x: number, y: number) => void };
   scale: { set: (s: number) => void };
   destroy: (opts?: unknown) => void;
+  rotation: number;
   expression: (id?: number | string) => Promise<boolean>;
   internalModel: {
     coreModel: {
@@ -109,6 +124,8 @@ type Live2DModelT = {
       getParameterIndex: (id: string) => number;
       getParameterCount: () => number;
       getParameterDefaultValue: (index: number) => number;
+      getParameterMinimumValue: (index: number) => number;
+      getParameterMaximumValue: (index: number) => number;
     };
     focusController: { focus: (x: number, y: number, instant?: boolean) => void };
     motionManager: {
@@ -272,6 +289,29 @@ export function Live2DView({
           applyAccessoryToggles(update.manifest);
         });
 
+        // ── Parameter ids (261122) ───────────────────────────────────────
+        // The stored roles (main resolves them at import), else resolved here
+        // from the model's own files; only ids the model really has are used.
+        const core = model.internalModel.coreModel;
+        const rangeOf = (id: string): { min: number; max: number; def: number } | null => {
+          const idx = core.getParameterIndex(id);
+          if (idx >= core.getParameterCount()) return null;
+          return { min: core.getParameterMinimumValue(idx), max: core.getParameterMaximumValue(idx), def: core.getParameterDefaultValue(idx) };
+        };
+        const paramMap = effectiveLive2DParams(
+          manifest.params ?? resolveLive2DParamsFromFiles(rawFiles, manifest.entry) ?? resolveLive2DParams({ params: null }),
+          manifest.paramOverrides,
+        );
+        const roleId = (role: Live2DRole): string | undefined => {
+          const id = paramMap.roles[role];
+          return id && rangeOf(id) ? id : undefined;
+        };
+        /** Half the parameter's range over the standard one's: 1 for a standard parameter. */
+        const rangeScale = (id: string, stdHalf: number): number => {
+          const r = rangeOf(id);
+          return r && r.max > r.min ? (r.max - r.min) / 2 / stdHalf : 1;
+        };
+
         // ── Gaze (261116) ─────────────────────────────────────────────────
         const cursor = { x: 0, y: 0, at: 0 };
         const gazeDriver = new GazeDriver(performance.now(), LIVE2D_GAZE);
@@ -279,47 +319,92 @@ export function Live2DView({
         const cursorPt = { x: 0, y: 0 };
         const im = model.internalModel as unknown as {
           updateFocus?: () => void;
-          idParamEyeBallX?: unknown;
-          idParamEyeBallY?: unknown;
-          idParamAngleX?: unknown;
-          idParamAngleY?: unknown;
-          idParamAngleZ?: unknown;
-          idParamBodyAngleX?: unknown;
           coreModel: { addParameterValueById?: (id: unknown, v: number) => void };
           eyeBlink?: { setBlinkingSetting?: (closing: number, closed: number, opening: number) => void } | null;
+          breath?: { getParameters?: () => Array<{ parameterId?: unknown }> } | null;
         };
         // Gaze per frame (eyes on gaze.eye*, head on gaze.head*), read by updateFocus below.
         let gaze: GazeOutput | null = null;
-        const separate =
-          typeof im.updateFocus === 'function' &&
-          typeof im.coreModel.addParameterValueById === 'function' &&
-          im.idParamEyeBallX !== undefined &&
-          im.idParamAngleX !== undefined;
+        const eyeBallX = roleId('eyeBallX');
+        const eyeBallY = roleId('eyeBallY');
+        const angleX = roleId('angleX');
+        const angleY = roleId('angleY');
+        const angleZ = roleId('angleZ');
+        const bodyAngleX = roleId('bodyAngleX');
+        const gazeWrites: Array<[string, (g: GazeOutput) => number]> = [];
+        // Live2D's y is up-positive; the driver's is down-positive.
+        if (eyeBallX) {
+          const k = rangeScale(eyeBallX, STD_HALF_EYEBALL);
+          gazeWrites.push([eyeBallX, (g) => Math.max(-1, Math.min(1, g.eyeX * EYEBALL_GAIN)) * k]);
+        }
+        if (eyeBallY) {
+          const k = rangeScale(eyeBallY, STD_HALF_EYEBALL);
+          gazeWrites.push([eyeBallY, (g) => Math.max(-1, Math.min(1, -g.eyeY * EYEBALL_GAIN)) * k]);
+        }
+        if (angleX) {
+          const k = rangeScale(angleX, STD_HALF_ANGLE);
+          gazeWrites.push([angleX, (g) => g.headX * HEAD_YAW_DEG * k]);
+        }
+        if (angleY) {
+          const k = rangeScale(angleY, STD_HALF_ANGLE);
+          gazeWrites.push([angleY, (g) => -g.headY * HEAD_PITCH_DEG * k]);
+        }
+        if (angleZ) {
+          const k = rangeScale(angleZ, STD_HALF_ANGLE);
+          gazeWrites.push([angleZ, (g) => g.headRoll * HEAD_ROLL_DEG * k]);
+        }
+        if (bodyAngleX) {
+          const k = rangeScale(bodyAngleX, STD_HALF_BODY);
+          gazeWrites.push([bodyAngleX, (g) => g.headX * BODY_YAW_DEG * k]);
+        }
+        const separate = typeof im.updateFocus === 'function' && typeof im.coreModel.addParameterValueById === 'function';
         if (separate) {
           im.updateFocus = () => {
             const g = gaze;
             const add = im.coreModel.addParameterValueById;
             if (!g || !add) return;
-            const cm = im.coreModel;
-            // Live2D's y is up-positive; the driver's is down-positive.
-            add.call(cm, im.idParamEyeBallX, Math.max(-1, Math.min(1, g.eyeX * EYEBALL_GAIN)));
-            add.call(cm, im.idParamEyeBallY, Math.max(-1, Math.min(1, -g.eyeY * EYEBALL_GAIN)));
-            add.call(cm, im.idParamAngleX, g.headX * HEAD_YAW_DEG);
-            add.call(cm, im.idParamAngleY, -g.headY * HEAD_PITCH_DEG);
-            if (im.idParamAngleZ !== undefined) add.call(cm, im.idParamAngleZ, g.headRoll * HEAD_ROLL_DEG);
-            if (im.idParamBodyAngleX !== undefined) add.call(cm, im.idParamBodyAngleX, g.headX * BODY_YAW_DEG);
+            for (const [id, value] of gazeWrites) add.call(im.coreModel, id, value(g));
           };
         }
+        // No eyes or head to move: the whole figure leans toward her gaze.
+        const lean = separate && gazeWrites.length === 0;
+        // The SDK's breath writes the standard ids; point it at the model's own.
         try {
-          // Seconds: a quick close, a short hold, a slower open.
-          im.eyeBlink?.setBlinkingSetting?.(BLINK_CLOSE_MS / 1000, BLINK_HOLD_MS / 1000, BLINK_OPEN_MS / 1000);
+          const std = new Map<string, string | undefined>([
+            [LIVE2D_STANDARD_IDS.angleX, angleX],
+            [LIVE2D_STANDARD_IDS.angleY, angleY],
+            [LIVE2D_STANDARD_IDS.angleZ, angleZ],
+            [LIVE2D_STANDARD_IDS.bodyAngleX, bodyAngleX],
+            [LIVE2D_STANDARD_IDS.breath, roleId('breath')],
+          ]);
+          for (const b of im.breath?.getParameters?.() ?? []) {
+            const to = typeof b.parameterId === 'string' ? std.get(b.parameterId) : undefined;
+            if (to) b.parameterId = to;
+          }
         } catch {
-          /* an SDK without the setter keeps its own timing */
+          /* an SDK without breath parameters */
         }
-
+        // Blink: an EyeBlink group with no ids (or none at all) gave the model
+        // no blink; the resolved eye ids get one (main also fills the group).
+        try {
+          const blinkIds = paramMap.blink.filter((id) => rangeOf(id));
+          const EyeBlink = (plugin as unknown as { CubismEyeBlink?: { create: (s: unknown) => unknown } }).CubismEyeBlink;
+          if (!im.eyeBlink && blinkIds.length > 0 && EyeBlink) {
+            im.eyeBlink = EyeBlink.create({ getEyeBlinkParameters: () => blinkIds }) as typeof im.eyeBlink;
+          }
+        } catch {
+          /* keeps the SDK's own blink, if any */
+        }
         // Mouth writer + gaze pursuit, layered INSIDE the SDK's update so
         // blink/breath/physics still run after it in the same frame.
         let mouth = 0;
+        /** Where fit() put her (the lean slides from here). */
+        let base: { x: number; y: number } | null = null;
+        // The mouth parameter and its closed/open values (closed = its rest value, else its minimum).
+        const mouthId = roleId('mouthOpen');
+        const mouthRange = mouthId ? rangeOf(mouthId) : null;
+        const mouthClosed = mouthRange ? (mouthRange.def > mouthRange.min && mouthRange.def < mouthRange.max ? mouthRange.def : mouthRange.min) : 0;
+        const mouthOpen = mouthRange ? mouthRange.max : 1;
         const mm = model.internalModel.motionManager;
         const originalUpdate = mm.update.bind(mm);
         let pseudoPhase = 0;
@@ -338,7 +423,7 @@ export function Live2DView({
               }
             }
             mouth += (target - mouth) * (target > mouth ? MOUTH_ATTACK : MOUTH_RELEASE);
-            model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouth);
+            if (mouthId) core.setParameterValueById(mouthId, mouthClosed + mouth * (mouthOpen - mouthClosed));
 
             // Accessory toggles: absolute targets, every frame. This runs
             // inside motionManager.update, i.e. BEFORE saveParameters and
@@ -361,6 +446,12 @@ export function Live2DView({
             gazeIn.engaged = speakingRef.current;
             gaze = gazeDriver.update(now, gazeIn);
             if (!separate) model.internalModel.focusController.focus(gaze.gazeX, -gaze.gazeY, true);
+            else if (lean && base) {
+              // About her bottom edge: the anchor is the centre, so slide by half her height.
+              const t = (gaze.headX * LEAN_DEG * Math.PI) / 180;
+              model.rotation = t;
+              model.position.set(base.x + (model.height / 2) * t, base.y);
+            }
           } catch {
             /* a mid-destroy frame must never throw into the ticker */
           }
@@ -380,7 +471,8 @@ export function Live2DView({
           const s = Math.min(w / naturalW, h / naturalH) * (cam?.zoom ?? 1);
           model.scale.set(s);
           model.anchor.set(0.5, 0.5);
-          model.position.set(w / 2 + (cam?.x ?? 0) * w, h / 2 + (cam?.y ?? 0) * h);
+          base = { x: w / 2 + (cam?.x ?? 0) * w, y: h / 2 + (cam?.y ?? 0) * h };
+          model.position.set(base.x, base.y);
         };
         fitRef.current = fit;
         (pixiApp.stage as unknown as { addChild: (c: unknown) => void }).addChild(model);

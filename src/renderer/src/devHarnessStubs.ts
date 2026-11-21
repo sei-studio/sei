@@ -595,12 +595,29 @@ if (
     const refs = spec.layers.flatMap((l) => [l.src, l.states?.open, l.states?.closed]).filter((r): r is string => !!r);
     return Promise.all(['rig.json', ...refs].map(get));
   };
+  // &live2d=<url of a model dir>&live2dentry=<x.model3.json> (261122): a Live2D model the same
+  // way, as an older store hands it over (no resolved `params`, so Live2DView resolves them from
+  // the files, the fallback path).
+  const l2dBase = harnessParams.get('live2d')?.replace(/\/?$/, '/') ?? null;
+  const l2dEntry = harnessParams.get('live2dentry') ?? 'model.model3.json';
+  const l2dFiles = async (): Promise<Array<{ path: string; bytes: Uint8Array }>> => {
+    if (!l2dBase) return [];
+    const get = async (rel: string): Promise<{ path: string; bytes: Uint8Array }> => ({ path: rel, bytes: new Uint8Array(await (await fetch(l2dBase + rel)).arrayBuffer()) });
+    const refs = ((await (await fetch(l2dBase + l2dEntry)).json()) as { FileReferences?: Record<string, unknown> }).FileReferences ?? {};
+    const list = [refs.Moc, refs.Physics, refs.Pose, refs.DisplayInfo, ...((refs.Textures as string[] | undefined) ?? []), ...((refs.Expressions as Array<{ File: string }> | undefined) ?? []).map((e) => e.File)];
+    return Promise.all([l2dEntry, ...list.filter((r): r is string => typeof r === 'string' && !!r)].map(get));
+  };
   const answers: Record<string, unknown> = rigBase
     ? {
         avatarGet: async () => ({ version: 2, kind: 'rig', name: 'dev rig', entry: 'rig.json', importedAt: '', bytes: 0, expressions: [], emotions: {} }),
         avatarModelFiles: rigFiles,
       }
-    : {};
+    : l2dBase
+      ? {
+          avatarGet: async () => ({ version: 2, name: 'dev live2d', entry: l2dEntry, importedAt: '', bytes: 0, expressions: [], emotions: {} }),
+          avatarModelFiles: l2dFiles,
+        }
+      : {};
   const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
   const packId = harnessParams.get('facepackid');
   if (packsBase && packId) {

@@ -10,6 +10,7 @@ import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
 import { seilinkHostStatus, sendSeilinkVoice, setSeilinkIdleLines, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
+import { live2dManifestShape } from '../../shared/live2dParams';
 import { anima, readAnimaCutout } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
 import { onTogetherClosed, onTogetherOpened, onTogetherSync } from './decorateTogether';
@@ -104,7 +105,18 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   });
   ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; kind?: unknown } | null;
-    if (isRoomCharacterId(a?.characterId) && isAnimaShownKind(a?.kind)) anima.noteShown(a.characterId, a.kind, 'editor');
+    if (!isRoomCharacterId(a?.characterId) || !isAnimaShownKind(a?.kind)) return;
+    const id = a.characterId;
+    const kind = a.kind;
+    if (kind !== 'live2d') {
+      anima.noteShown(id, kind, 'editor');
+      return;
+    }
+    // 261122: a Live2D model's resolved parameters (shape only).
+    void import('../avatar/avatarStore')
+      .then((m) => m.getAvatarManifest(id))
+      .catch(() => null)
+      .then((manifest) => anima.noteShown(id, kind, 'editor', live2dManifestShape(manifest)));
   });
 
   // 261105 (T335): the companion editor's session, for her one reaction line to the edits.

@@ -373,9 +373,11 @@ describe('AnimaClient', () => {
     h.client.noteShown(CHAR, 'portrait', 'desktop');
     h.client.noteShown(CHAR, 'facepack', 'desktop');
     h.client.noteShown('not-a-uuid', 'facepack', 'desktop');
+    h.client.noteShown(CHAR, 'live2d', 'editor', { l2d_ids: 'standard', l2d_mouth: true });
     expect(h.events).toEqual([
       { phase: 'shown', avatar_kind: 'portrait', surface: 'desktop', anima_state: 'idle' },
       { phase: 'shown', avatar_kind: 'facepack', surface: 'desktop', anima_state: 'idle' },
+      { phase: 'shown', avatar_kind: 'live2d', surface: 'editor', anima_state: 'idle', l2d_ids: 'standard', l2d_mouth: true },
     ]);
   });
 

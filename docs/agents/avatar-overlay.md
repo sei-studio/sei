@@ -136,7 +136,11 @@ GONE; the overlay is AI-only. Design doc: `docs/design/avatar-v06-260804.md`.
   for third-party avatars. Import NORMALIZES the stored model3.json
   because real VTuber exports ship expressions the settings never reference
   and sometimes no EyeBlink group (both measured on the first test model):
-  it registers every `*.exp3.json`, ensures the EyeBlink group, maps
+  it registers every `*.exp3.json`, fills an empty EyeBlink/LipSync group
+  from the resolved parameter ids (`shared/live2dParams.ts`, 261122; the
+  map is stored as `manifest.params`), drops expressions that change
+  nothing (no parameters, unknown ids, Add 0, Multiply 1) from
+  `manifest.expressions` so the AI is never offered a no-op face, maps
   expression names → the closed `AvatarEmotion` set by bilingual filename
   keywords (泪→sad, 害羞→shy, ...), and rejects traversal/junk entries. Zip
   filenames decode GBK-first (VTube Studio on Chinese Windows; cp437 is the

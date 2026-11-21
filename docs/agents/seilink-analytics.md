@@ -188,7 +188,7 @@ per app run.
 | `failed` | the bake, the download or the install failed | reason (the bake's, or `network`/`poll_timeout`/`hash_mismatch`/`bad_archive`/`bad_entry`/`too_big`/`no_manifest`/`download`/`bad_reply`/`http_<n>`; for a cut-out `cutout_` + `hash_mismatch`/`too_big`/`bad_image`/`download`/`bad_reply`), trigger | Breakage |
 | `unavailable` | the proxy will not bake her | reason `not_configured`/`no_portrait`/`portrait_unreadable`/`moderation`/`not_found` (no cloud row)/`forbidden`, trigger | Characters that cannot get a look |
 | `skipped` | nothing was asked | reason `offline`/`signed_out`, trigger | Signed-out and offline WorldLink use |
-| `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`cutout` (261118, the cloud cut-out)/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready` | What people actually see |
+| `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`cutout` (261118, the cloud cut-out)/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready`; for live2d (261122, `live2dManifestShape`) l2d_ids `standard`/`remapped`/`unknown`, l2d_mouth, l2d_blink (bools), l2d_gaze `eyes_head`/`eyes`/`head`/`none`, l2d_expr_usable, l2d_expr_noop (counts). Shape only, never ids or names | What people actually see; how many imported models get a mouth, blink and gaze |
 
 ## Room editor
 

@@ -22,6 +22,7 @@ import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
 import type { AnimaCutout, AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
+import type { Live2DParamMap, Live2DParamOverrides } from './live2dParams';
 import { z } from 'zod';
 import type {
   Character,
@@ -870,6 +871,19 @@ export interface AvatarManifest {
    * it). A new import replaces the manifest, which drops the link.
    */
   library?: { avatarId: string; rev: string };
+  /**
+   * Which of the model's parameters the views drive (261122,
+   * shared/live2dParams.ts): mouth, eyes, head, blink. Resolved once by main
+   * at import (and on the first read of an older store). Absent on a rig.
+   */
+  params?: Live2DParamMap;
+  /** Per-role corrections that win over `params` (null = the role is off). Nothing writes it yet. */
+  paramOverrides?: Live2DParamOverrides;
+  /**
+   * Expressions that change nothing (no parameters, or none the model has),
+   * left out of `expressions` and `emotions` so no face is a no-op (261122).
+   */
+  unusableExpressions?: string[];
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
