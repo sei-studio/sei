@@ -281,13 +281,15 @@ export class AnimaClient {
   }
 
   /** What a view ended up showing for her (once per character, surface and kind per run). */
-  noteShown(characterId: string, kind: AnimaShownKind, surface: 'desktop' | 'editor'): void {
+  noteShown(characterId: string, kind: AnimaShownKind, surface: 'desktop' | 'editor', extra?: Record<string, unknown>): void {
     if (!UUID_RE.test(characterId)) return;
     this.once(`shown|${characterId}|${surface}|${kind}`, {
       phase: 'shown',
       avatar_kind: kind,
       surface,
       anima_state: this.ui.get(characterId) ?? 'idle',
+      // 261122: a Live2D model's resolved parameters (standard or remapped ids, mouth/blink/gaze), shape only.
+      ...(extra ?? {}),
     });
   }
 

@@ -125,6 +125,8 @@ const MOTION_FPS_MAX = 30;
 /** Gaze lean for faceless figures: degrees and body heights at a full head turn. */
 const GAZE_LEAN_DEG = 0.9;
 const GAZE_LEAN_X = 0.004;
+/** The cursor feed (host poll, call overlay) is stale after this: she looks around instead (261122). */
+const CURSOR_FRESH_MS = 2_000;
 /** How often the frame edges are re-measured for a walk-off. */
 const EXIT_MEASURE_MS = 1_000;
 /** Portrait to face set (or cloud cut-out): the fade, and how long the old figure waits for the new one to draw. */
@@ -275,6 +277,14 @@ function useIdleMotion(
     let talk = 0;
     const gaze = new GazeDriver(clock.current);
     const gazeIn: GazeInput = {};
+    // 261122: the faceless lean follows the cursor too, as the face views do.
+    const cursor = { x: 0, y: 0, at: 0 };
+    const cursorPt = { x: 0, y: 0 };
+    const offCursor = sei?.onAvatarOverlayCursor?.((pt) => {
+      cursor.x = pt.x;
+      cursor.y = pt.y;
+      cursor.at = Date.now();
+    });
     const held: IdlePose = { ...REST_POSE };
     // 261110: an even cadence, and up to 60 fps while she walks (motionFps).
     const pacer = new FramePacer();
@@ -295,6 +305,10 @@ function useIdleMotion(
       let out = p;
       if (L.gazeLean && p.phase === 'seated') {
         gazeIn.engaged = L.speaking;
+        const fresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
+        cursorPt.x = cursor.x;
+        cursorPt.y = -cursor.y;
+        gazeIn.cursor = fresh ? cursorPt : null;
         const g = gaze.update(clock.current, gazeIn);
         Object.assign(held, p);
         held.lean = p.lean + g.headX * GAZE_LEAN_DEG;
@@ -313,7 +327,10 @@ function useIdleMotion(
       }
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      offCursor?.();
+    };
   }, [running, opts.enabled, configKey, stageRef, bodyRef]);
 
   // A slot resize while still: re-apply the held pose at the new height.

@@ -355,14 +355,31 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
     the opaque patches showed the iris through the lid). No WebGL2, a failed
     setup or a lost context falls back to the old 2D renderer.
     `data-renderer="webgl"|"2d"` on the canvas says which.
-  - Live2D: `updateFocus` is replaced so eyes (ParamEyeBallX/Y) and head
-    (ParamAngleX/Y/Z, ParamBodyAngleX) move apart; EyeBlink set to the lid
-    timing. Cubism 2 models get the gaze through the focusController.
+  - Live2D: `updateFocus` is replaced so eyes and head move apart. The
+    ids are the model's own, resolved per model (`shared/live2dParams.ts`,
+    261122): the model3 LipSync/EyeBlink groups first, then the standard
+    ids, then the moc3 parameter table and cdi3 display names scored with
+    multilingual words (ParamBocca, PARAM_EYE_BALL_X, 口 開閉, Auge offen).
+    Main stores the map in the manifest (`params`, computed at import, healed
+    once for older stores) and fills an empty EyeBlink/LipSync group, so a
+    VTube Studio export with empty groups blinks and lip-syncs. Writes are
+    scaled to each parameter's real range; the mouth closes to its rest
+    value. A model with no eye or head parameter leans the whole figure
+    toward her gaze (`LEAN_DEG`). Cubism 2 models get the gaze through the
+    focusController. `paramOverrides` on the manifest (role -> id or null)
+    wins over the resolver; nothing writes it yet. Note the SDK rolls focus
+    and blink writes back after each frame (`loadParameters` at the end of
+    update), so read them on `beforeModelUpdate`, not between frames.
+    Some VTube Studio models key their faces (and a background card) on one
+    stepped parameter set by VTS hotkeys and ship empty exp3 files; those
+    expressions are dropped (`unusableExpressions`) and the rest pose is
+    whatever the moc default is.
   - rig: head translation from the GazeDriver's head, Blinker lids (no
     separate irises).
   - portrait cutout and silhouette: no eyes; breathing (now also widening
     the shoulders, `BREATH_WIDTH`), sway, a weight shift at least 9 s apart (about every 35 s
-    on average), and a slight lean toward where she would look (`gazeLean`).
+    on average), and a slight lean toward where she would look (`gazeLean`),
+    which follows the cursor feed while it is fresh (261122).
 - **Cursor.** The host's hover poll feeds her gaze (`CH.cursor`, see "The
   dock" above; it used to have none). The harness makes the same feed from
   the page's pointer with `&cursorfeed=1`.

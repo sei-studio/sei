@@ -41,6 +41,26 @@ describe('avatarShown (261105, analytics)', () => {
     await expect(answerHostAvatarCall('her', 'avatarShown', ['her', 'bogus'], s)).resolves.toBeNull();
     expect(seen).toEqual([['her', 'facepack']]);
   });
+
+  it('adds the Live2D model\'s parameter shape for a live2d avatar (261122)', async () => {
+    const seen: Array<[string, string, Record<string, unknown> | undefined]> = [];
+    const s: HostAvatarStores = {
+      ...stores,
+      avatarManifest: async () => ({
+        entry: 'm.model3.json',
+        expressions: [],
+        unusableExpressions: ['Angry'],
+        params: { v: 1, roles: { mouthOpen: 'ParamBocca' }, blink: [], source: 'moc' },
+      }),
+      noteShown: (id, kind, extra) => seen.push([id, kind, extra]),
+    };
+    await answerHostAvatarCall('her', 'avatarShown', ['her', 'live2d'], s);
+    await answerHostAvatarCall('her', 'avatarShown', ['her', 'portrait'], s);
+    expect(seen).toEqual([
+      ['her', 'live2d', { l2d_ids: 'remapped', l2d_mouth: true, l2d_blink: false, l2d_gaze: 'none', l2d_expr_usable: 0, l2d_expr_noop: 1 }],
+      ['her', 'portrait', undefined],
+    ]);
+  });
 });
 
 describe('animaCutout (261118)', () => {

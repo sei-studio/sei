@@ -1058,7 +1058,7 @@ const avatarStores: HostAvatarStores = {
   },
   facepackManifest: (id) => readPackManifest(id),
   facepackFilePath: (id, rel) => packFilePath(id, rel),
-  noteShown: (id, kind) => anima.noteShown(id, kind, 'desktop'),
+  noteShown: (id, kind, extra) => anima.noteShown(id, kind, 'desktop', extra),
   animaCutoutFile: (id) => anima.cutoutFor(id),
 };
 

@@ -20,6 +20,7 @@ vi.mock('electron', () => ({
 }));
 
 import { _setUserDataOverride } from '../paths';
+import { fakeMoc3 } from '../../shared/moc3Fixture';
 import {
   importAvatarZip,
   getAvatarManifest,
@@ -78,6 +79,9 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+/** An expression that changes something (an empty one is left out of the manifest since 261122). */
+const EXPR = JSON.stringify({ Type: 'Live2D Expression', Parameters: [{ Id: 'ParamCheek', Value: 1, Blend: 'Add' }] });
+
 /** A minimal, valid synthetic model zip. */
 async function syntheticZip(opts?: {
   withExpressionRefs?: boolean;
@@ -100,8 +104,8 @@ async function syntheticZip(opts?: {
   zip.file('mymodel/model.model3.json', JSON.stringify(settings));
   zip.file('mymodel/model.moc3', Buffer.from([1, 2, 3]));
   zip.file('mymodel/tex/texture_00.png', png(4, 5, 6));
-  zip.file('mymodel/declared.exp3.json', JSON.stringify({ Type: 'Live2D Expression' }));
-  zip.file('mymodel/生气.exp3.json', JSON.stringify({ Type: 'Live2D Expression' }));
+  zip.file('mymodel/declared.exp3.json', EXPR);
+  zip.file('mymodel/生气.exp3.json', EXPR);
   zip.file('mymodel/__MACOSX/._junk', Buffer.from([0]));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
@@ -259,7 +263,7 @@ describe('importAvatarZip (synthetic)', () => {
     await writeP(path.join(storeDir, '雪熊少女.moc3'), Buffer.from([1]));
     await mkdirP(path.join(storeDir, '雪熊少女.4096'), { recursive: true });
     await writeP(path.join(storeDir, '雪熊少女.4096', 'texture_00.png'), png(2));
-    await writeP(path.join(storeDir, '8 生气.exp3.json'), JSON.stringify({ Type: 'Live2D Expression' }));
+    await writeP(path.join(storeDir, '8 生气.exp3.json'), EXPR);
     await writeP(
       path.join(storeDir, 'manifest.json'),
       JSON.stringify({
@@ -340,6 +344,123 @@ describe.skipIf(!existsSync(REAL_ZIP))('importAvatarZip (real Snow Bear Girl zip
         });
     }
   }, 30_000);
+});
+
+/**
+ * 261122: a fan model named its parameters in Italian, shipped EyeBlink and
+ * LipSync groups with no ids and nine empty expressions, so it never blinked,
+ * never moved its mouth and every face was a no-op. Synthetic stand-in (the
+ * real model is third-party and stays off the repo).
+ */
+async function customIdZip(opts: { eyes?: boolean } = {}): Promise<Buffer> {
+  const zip = new JSZip();
+  const params = [
+    { id: 'ParamEspressioni', min: 0, max: 8, def: 0 },
+    { id: 'ParamHairFront', min: -1, max: 1, def: 0 },
+    { id: 'ParamBocca', min: 0, max: 1, def: 0 },
+    ...(opts.eyes
+      ? [
+          { id: 'OcchioSx', min: 0, max: 1, def: 1 },
+          { id: 'OcchioDx', min: 0, max: 1, def: 1 },
+        ]
+      : []),
+  ];
+  const settings = {
+    Version: 3,
+    FileReferences: {
+      Moc: 'Model.moc3',
+      Textures: ['tex/texture_00.png'],
+      DisplayInfo: 'Model.cdi3.json',
+      Expressions: [
+        { Name: 'Angry', File: 'Angry.exp3.json' },
+        { Name: 'Happy', File: 'Happy.exp3.json' },
+      ],
+    },
+    Groups: [
+      { Target: 'Parameter', Name: 'EyeBlink', Ids: [] },
+      { Target: 'Parameter', Name: 'LipSync', Ids: [] },
+    ],
+  };
+  zip.file('Model.model3.json', JSON.stringify(settings));
+  zip.file('Model.moc3', Buffer.from(fakeMoc3(params)));
+  zip.file(
+    'Model.cdi3.json',
+    JSON.stringify({
+      Parameters: [
+        { Id: 'ParamBocca', Name: 'BoccaAperta' },
+        { Id: 'OcchioSx', Name: 'Occhio Sinistro Aperto' },
+        { Id: 'OcchioDx', Name: 'Occhio Destro Aperto' },
+      ],
+    }),
+  );
+  zip.file('tex/texture_00.png', png(1));
+  zip.file('Angry.exp3.json', JSON.stringify({ Version: 3, Type: 'Live2D Expression', Parameters: [] }));
+  zip.file('Happy.exp3.json', JSON.stringify({ Type: 'Live2D Expression', Parameters: [{ Id: 'ParamEspressioni', Value: 3, Blend: 'Overwrite' }] }));
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function storedSettings(id: string, entry: string): Promise<{ Groups: Array<{ Name: string; Ids: string[] }> }> {
+  const files = await readAvatarModelFiles(id);
+  return JSON.parse(Buffer.from(files.find((f) => f.path === entry)!.bytes).toString('utf8'));
+}
+
+describe('parameter roles and no-op expressions (261122)', () => {
+  it('resolves custom ids at import, fills empty EyeBlink / LipSync groups, drops empty expressions', async () => {
+    const m = await importAvatarZip('char-it', await customIdZip({ eyes: true }));
+    expect(m.params?.source).toBe('moc');
+    expect(m.params?.roles).toEqual({ mouthOpen: 'ParamBocca', eyeLOpen: 'OcchioSx', eyeROpen: 'OcchioDx' });
+    const settings = await storedSettings('char-it', m.entry);
+    expect(settings.Groups.find((g) => g.Name === 'EyeBlink')?.Ids).toEqual(['OcchioSx', 'OcchioDx']);
+    expect(settings.Groups.find((g) => g.Name === 'LipSync')?.Ids).toEqual(['ParamBocca']);
+    // The empty "Angry" is not offered; the working "Happy" is.
+    expect(m.expressions.map((e) => e.name)).toEqual(['Happy']);
+    expect(m.unusableExpressions).toEqual(['Angry']);
+    expect(m.emotions).toEqual({ happy: 'Happy' });
+  });
+
+  it('a model with no eye parameters keeps an empty EyeBlink (nothing to close)', async () => {
+    const m = await importAvatarZip('char-it2', await customIdZip());
+    expect(m.params?.blink).toEqual([]);
+    const settings = await storedSettings('char-it2', m.entry);
+    expect(settings.Groups.find((g) => g.Name === 'EyeBlink')?.Ids).toEqual([]);
+    expect(settings.Groups.find((g) => g.Name === 'LipSync')?.Ids).toEqual(['ParamBocca']);
+  });
+
+  it('heals a store imported before the roles existed on its first read, keeping its library link', async () => {
+    const { writeFile: writeP, readFile: readP } = await import('node:fs/promises');
+    const m = await importAvatarZip('char-old', await customIdZip({ eyes: true }));
+    const storeDir = path.join(dir, 'profiles', 'local', 'avatars', 'char-old');
+    // What an older build stored: the author's empty groups, every expression listed, no roles.
+    const settingsPath = path.join(storeDir, m.entry);
+    const settings = JSON.parse(await readP(settingsPath, 'utf8'));
+    for (const g of settings.Groups) g.Ids = [];
+    await writeP(settingsPath, JSON.stringify(settings));
+    const old = {
+      ...m,
+      expressions: [
+        { name: 'Angry', file: 'Angry.exp3.json' },
+        { name: 'Happy', file: 'Happy.exp3.json' },
+      ],
+      emotions: { angry: 'Angry', happy: 'Happy' },
+      accessories: { Angry: true },
+      library: { avatarId: 'a-1', rev: 'r-1' },
+    } as Record<string, unknown>;
+    delete old.params;
+    delete old.unusableExpressions;
+    await writeP(path.join(storeDir, 'manifest.json'), JSON.stringify(old));
+
+    const healed = await getAvatarManifest('char-old');
+    expect(healed?.params?.roles.mouthOpen).toBe('ParamBocca');
+    expect(healed?.expressions.map((e) => e.name)).toEqual(['Happy']);
+    expect(healed?.emotions).toEqual({ happy: 'Happy' });
+    expect(healed?.accessories).toBeUndefined();
+    expect(healed?.unusableExpressions).toEqual(['Angry']);
+    expect(healed?.library).toEqual({ avatarId: 'a-1', rev: 'r-1' });
+    const fixed = await storedSettings('char-old', m.entry);
+    expect(fixed.Groups.find((g) => g.Name === 'EyeBlink')?.Ids).toEqual(['OcchioSx', 'OcchioDx']);
+    // Written once: the next read is the stored manifest.
+    expect(JSON.parse(await readP(path.join(storeDir, 'manifest.json'), 'utf8')).params.roles.mouthOpen).toBe('ParamBocca');
+  });
 });
 
 describe('setAvatarAccessory', () => {
