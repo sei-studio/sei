@@ -521,7 +521,7 @@ export function repeatedPlayerAsk(playerLines, selfLines, {
   if (similar.length < minEarlier) return null
   const first = similar[0]
   // She answered: at least one turn of hers after each of the earlier ones.
-  const turns = groupTurns(selfLines).filter((t) => !Number.isFinite(first.at) || !Number.isFinite(t.at) || t.at > first.at)
+  const turns = groupTurns(selfLines).filter((t) => !Number.isFinite(first.at) || !Number.isFinite(t.at) || t.at >= first.at)
   if (turns.length < similar.length) return null
   const seconds = Number.isFinite(first.at) ? Math.max(1, Math.round((t0 - first.at) / 1000)) : null
   return { times: similar.length + 1, seconds, earlier: similar.at(-1).text }
