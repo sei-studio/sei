@@ -11,7 +11,7 @@
 
 import { create } from 'zustand';
 import type { ThemeMode } from '../theme';
-import type { LanHost, LanHostWarning } from '@shared/ipc';
+import type { CheckoutSource, LanHost, LanHostWarning } from '@shared/ipc';
 import type { GameId } from '@shared/gameIpc';
 import type { BackseatGameSelection } from '@shared/backseatGames';
 import type { ErrorClass } from '@shared/errorClasses';
@@ -63,7 +63,9 @@ export type View =
   // ChatGPT sign-in (the plan offer, the startup popup, the usage-limit
   // popup); the page runs the "Use ChatGPT plan" switch once, with the cloud
   // confirm. Cleared once handled.
-  | { kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean }
+  // `from` (261122): which surface sent the user here, carried onto the
+  // checkout (CheckoutSource) and pricing_viewed. Absent = 'pricing_page'.
+  | { kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean; from?: CheckoutSource }
   | { kind: 'coming-soon' }
   // 260703 procgen — the "unique companion" (system-generated) flow. Both are
   // renderer-only full-page surfaces (rail hidden), routed from Awaken:

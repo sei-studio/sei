@@ -74,7 +74,7 @@ describe('SettingsScreen (Party restyle structure)', () => {
   it('S.2: the AI group is one row that opens Playtime; Playtime owns the switch (261110)', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes("t('Brain, voice and plan')")).toBe(true);
-    expect(src.includes("navigate({ kind: 'credits' })")).toBe(true);
+    expect(src.includes("navigate({ kind: 'credits', from: 'settings' })")).toBe(true);
     // Nothing of the old AI and voice config is left in Settings.
     for (const gone of ['SwitchBackendConfirmModal', '<ProviderSelect', 'llmListModels', 'speechPackStatus', "t('Backend')"]) {
       expect(src.includes(gone)).toBe(false);
@@ -516,7 +516,7 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(credits).not.toContain('ChatGPT plan, separate from Sei plans');
     expect(credits).not.toContain('Have ChatGPT Plus or Pro?');
     expect(readFileSync(USE_UI_STORE_TS, 'utf8')).toContain(
-      "{ kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean }",
+      "{ kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean; from?: CheckoutSource }",
     );
     expect(readFileSync(USE_UI_STORE_TS, 'utf8')).not.toContain('SettingsFocus');
     expect(settings).not.toContain('chatgptPlanIntent');

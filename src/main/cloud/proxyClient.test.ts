@@ -418,6 +418,30 @@ describe('openCheckout', () => {
     vi.unstubAllGlobals();
   });
 
+  // 261122: source + locale go to the proxy; checkout_id comes back for analytics.
+  it('sends source and locale, returns the checkout_id, and keeps the status on failure', async () => {
+    signIn();
+    const id = '0b6f3c2e-1d2a-4c3b-9e8f-7a6b5c4d3e2f';
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, url: 'https://buy.polar.sh/polar_c_x', checkout_id: id }),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { openCheckout } = await import('./proxyClient');
+    const res = await openCheckout('quest', { source: 'cap_popup', locale: 'pt-BR' });
+    expect(res).toEqual({ ok: true, url: 'https://buy.polar.sh/polar_c_x', checkoutId: id });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/billing/checkout'),
+      expect.objectContaining({ body: JSON.stringify({ kind: 'quest', source: 'cap_popup', locale: 'pt-BR' }) }),
+    );
+
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({}) });
+    expect(await openCheckout('quest')).toEqual({ ok: false, code: 'PROXY_NETWORK', status: 502 });
+    fetchSpy.mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) });
+    expect(await openCheckout('quest')).toEqual({ ok: false, code: 'PROXY_RATE_LIMITED', status: 429 });
+    vi.unstubAllGlobals();
+  });
+
   it('passes each of the four product kinds through to the proxy', async () => {
     signIn();
     const fetchSpy = vi.fn().mockResolvedValue({

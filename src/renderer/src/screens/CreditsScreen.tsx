@@ -49,9 +49,10 @@
  *   - src/renderer/src/lib/stores/useCreditsStore.ts (selectors + actions)
  */
 
-import React, { useEffect, useState } from 'react';
-import type { PlanTier } from '@shared/ipc';
+import React, { useEffect, useRef, useState } from 'react';
+import type { CheckoutSource, PlanTier } from '@shared/ipc';
 import { useCreditsStore, type CheckoutKind } from '../lib/stores/useCreditsStore';
+import { useUiStore } from '../lib/stores/useUiStore';
 import { Button } from '../components/Button';
 import { PlanButton, PlanCheckIcon } from '../components/PlanButton';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
@@ -141,6 +142,13 @@ export function SeiPlanTab(): React.ReactElement {
   const dismissCheckout = useCreditsStore((s) => s.dismissCheckout);
   const checkoutStatus = useCreditsStore((s) => s.checkoutStatus);
   const checkoutKind = useCreditsStore((s) => s.checkoutKind);
+  const checkoutSourceInFlight = useCreditsStore((s) => s.checkoutSource);
+  // 261122: which surface sent the user to this page (the usage-limit popup,
+  // Settings, the rail). Rides onto every checkout started here and onto
+  // pricing_viewed. Anything else is 'pricing_page'.
+  const checkoutSource: CheckoutSource = useUiStore((s) =>
+    s.view.kind === 'credits' ? (s.view.from ?? 'pricing_page') : 'pricing_page',
+  );
   const cancelSubscription = useCreditsStore((s) => s.cancelSubscription);
   const changePlan = useCreditsStore((s) => s.changePlan);
   const refresh = useCreditsStore((s) => s.refresh);
@@ -180,8 +188,10 @@ export function SeiPlanTab(): React.ReactElement {
   const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
   // Analytics (260707): pricing/plan surface viewed — top of the monetization
   // funnel (pairs with checkout_opened downstream).
+  // 261122: with the entry surface (read once at mount).
+  const sourceAtMount = useRef(checkoutSource);
   useEffect(() => {
-    sei.track('pricing_viewed');
+    sei.track('pricing_viewed', { source: sourceAtMount.current });
   }, []);
 
   useEffect(() => {
@@ -242,7 +252,7 @@ export function SeiPlanTab(): React.ReactElement {
       return;
     }
     setInPlaceChange(false);
-    void beginPurchase(tier);
+    void beginPurchase(tier, { source: checkoutSource });
   };
 
   // Confirmed in PlanChangeConfirmModal. Order matters (260725): changePlan()
@@ -529,7 +539,7 @@ export function SeiPlanTab(): React.ReactElement {
           onClose={() => setShowTopUp(false)}
           onProceed={(kind) => {
             setInPlaceChange(false);
-            void beginPurchase(kind);
+            void beginPurchase(kind, { source: checkoutSource });
           }}
         />
       ) : null}
@@ -556,6 +566,12 @@ export function SeiPlanTab(): React.ReactElement {
           kind={checkoutKind}
           inPlace={inPlaceChange}
           onClose={dismissCheckout}
+          onRetry={() => {
+            // Same kind and source as the attempt that failed.
+            if (checkoutKind && checkoutKind !== 'resume') {
+              void beginPurchase(checkoutKind, { source: checkoutSourceInFlight ?? checkoutSource });
+            }
+          }}
         />
       ) : null}
 
@@ -656,8 +672,9 @@ function CheckoutWaitingModal({
   kind,
   inPlace,
   onClose,
+  onRetry,
 }: {
-  status: 'waiting' | 'confirmed' | 'timeout';
+  status: 'opening' | 'failed' | 'waiting' | 'confirmed' | 'timeout';
   kind: CheckoutKind | null;
   /**
    * 260725 — this watch is following an in-place tier change (the proxy applies
@@ -666,6 +683,8 @@ function CheckoutWaitingModal({
    */
   inPlace: boolean;
   onClose: () => void;
+  /** 'failed' only: start the same checkout again. */
+  onRetry: () => void;
 }): React.ReactElement {
   const t = useT();
   const planCards = useCreditsStore((s) => s.planCards);
@@ -681,7 +700,9 @@ function CheckoutWaitingModal({
       : t('your plan');
 
   const title =
-    status === 'waiting'
+    status === 'failed'
+      ? t("Couldn't open checkout")
+      : status === 'waiting' || status === 'opening'
       ? isResume
         ? t('Resume your subscription')
         : inPlace
@@ -705,7 +726,18 @@ function CheckoutWaitingModal({
       aria-label={isResume ? t('Resume subscription status') : t('Checkout status')}
     >
       <div className={styles.checkoutBody}>
-        {status === 'waiting' ? (
+        {status === 'opening' ? (
+          // 261122: the session is being created; nothing is in the browser
+          // yet, so no "finish in your browser" until it is.
+          <>
+            <span className={styles.checkoutSpinner} aria-hidden="true" />
+            <p className={styles.checkoutMsg}>{t('Opening…')}</p>
+          </>
+        ) : status === 'failed' ? (
+          <p className={styles.checkoutMsg} role="alert">
+            {t('Nothing was charged. Check your connection and try again.')}
+          </p>
+        ) : status === 'waiting' ? (
           <>
             <span className={styles.checkoutSpinner} aria-hidden="true" />
             <p className={styles.checkoutMsg}>
@@ -751,6 +783,15 @@ function CheckoutWaitingModal({
           <Button kind="primary" size="md" onClick={onClose}>
             {t('Done')}
           </Button>
+        ) : status === 'failed' ? (
+          <>
+            <Button kind="quiet" size="md" onClick={onClose}>
+              {t('Close')}
+            </Button>
+            <Button kind="primary" size="md" onClick={onRetry}>
+              {t('Try again')}
+            </Button>
+          </>
         ) : (
           <Button kind="quiet" size="md" onClick={onClose}>
             {t('Close')}

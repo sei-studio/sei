@@ -89,7 +89,7 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
   it('Test 7: preserves the cloud-proxy StarIcon credits branch and Settings link', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('StarIcon')).toBe(true);
-    expect(source.includes("navigate({ kind: 'credits' })")).toBe(true);
+    expect(source.includes("navigate({ kind: 'credits', from: 'nav' })")).toBe(true);
     expect(source.includes("navigate({ kind: 'settings' })")).toBe(true);
   });
 

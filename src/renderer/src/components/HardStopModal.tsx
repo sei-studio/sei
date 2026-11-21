@@ -275,7 +275,7 @@ export function HardStopModal(): React.ReactElement | null {
   const handleUpgrade = (): void => {
     trackWallAction('upgrade', hardStopReason, openedAt);
     acknowledgeHardStop();
-    navigate({ kind: 'credits' });
+    navigate({ kind: 'credits', from: 'cap_popup' });
   };
 
   // Same destination, but the plan screen opens the packages on arrival.
@@ -283,7 +283,7 @@ export function HardStopModal(): React.ReactElement | null {
     trackWallAction('topup', hardStopReason, openedAt);
     requestTopUp();
     acknowledgeHardStop();
-    navigate({ kind: 'credits' });
+    navigate({ kind: 'credits', from: 'cap_popup' });
   };
 
   const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider });

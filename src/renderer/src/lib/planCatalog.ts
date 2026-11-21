@@ -104,10 +104,12 @@ export const TOP_UPS: readonly TopUpPackage[] = [
 /**
  * The plan the plan screen points people at (261023): its card gets the
  * accent edge and a "Recommended" tag while it is an upgrade from the
- * current plan. Presentation only, no price or allowance rides on it. Party,
- * because Sei is a gaming companion and Party is the plan sized for games.
+ * current plan. Presentation only, no price or allowance rides on it.
+ * 261122 (product call): Quest. Checkout funnel report 2026-11-22: Quest
+ * checkouts converted at about three times Party's rate (6 of 24 users vs
+ * 2 of 21) while Party carried the badge.
  */
-export const RECOMMENDED_TIER: PlanTier = 'party';
+export const RECOMMENDED_TIER: PlanTier = 'quest';
 
 /** Rank order, free < quest < party. Used to label Upgrade vs Downgrade. */
 export const TIER_ORDER: Record<PlanTier, number> = { free: 0, quest: 1, party: 2 };

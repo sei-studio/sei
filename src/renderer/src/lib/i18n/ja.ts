@@ -2595,4 +2595,7 @@ export const JA: Record<string, string> = {
   "[spoken with a Sei voice, Fish Audio could not speak this line]": "[Seiのボイスで読み上げました。Fish Audioはこの一文を読み上げられませんでした]",
   "[voice could not load, check your connection]": "[音声を読み込めませんでした。接続を確認してください]",
   "[voice could not play this line]": "[この一文の音声を再生できませんでした]",
+  // 261122 checkout clarity
+  "Couldn't open checkout": "決済ページを開けませんでした",
+  "Nothing was charged. Check your connection and try again.": "料金は発生していません。接続を確認して、もう一度お試しください。",
 };
