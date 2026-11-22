@@ -1,37 +1,37 @@
-/**
- * Phase 11 plan 11-19 — Cache-on-demand sync (D-19 / LIB-04).
+﻿/**
+ * Phase 11 plan 11-19 â€” Cache-on-demand sync (D-19 / LIB-04).
  *
  * On a new machine after sign-in, the Characters page lists cloud rows.
  * When the user opens a character we don't yet have locally, fetch the row
  * + skin + portrait once and write to <userData>/. Subsequent opens are
- * offline-safe — that's the LIB-04 invariant: bot loop reads from local
+ * offline-safe â€” that's the LIB-04 invariant: bot loop reads from local
  * files only, so anything cached here works without cloud.
  *
  * Source: 11-CONTEXT D-19 (cache-on-demand, no eager prefetch) + 11-RESEARCH
- *         §Pitfall 5 (conflict shadow path).
+ *         Â§Pitfall 5 (conflict shadow path).
  *
- * MAIN PROCESS ONLY — uses node:fs, Buffer, and lazy-imports the cloud
+ * MAIN PROCESS ONLY â€” uses node:fs, Buffer, and lazy-imports the cloud
  * client / supabase / characterStore (matches the lazy-import discipline
  * established by syncQueue.ts so module-init cycles are impossible).
  *
  * Two exports:
  *
  *   ensureLocallyCached(uuid)
- *     - existsSync(<userData>/characters/<uuid>.json) → return immediately
+ *     - existsSync(<userData>/characters/<uuid>.json) â†’ return immediately
  *       (cache hit; works offline).
- *     - Local exists + sync queue has a pending op for this uuid →
+ *     - Local exists + sync queue has a pending op for this uuid â†’
  *       conflict path: download cloud row, write to <uuid>.json.conflict
  *       shadow file, log warning, DO NOT overwrite local. Pitfall 5 minimum
  *       viable.
- *     - Cache miss → fetch cloud row via cloudCharacterClient.downloadCharacter
+ *     - Cache miss â†’ fetch cloud row via cloudCharacterClient.downloadCharacter
  *       (throws CLOUD_CHARACTER_NOT_FOUND if cloud returns null), write JSON
- *       via saveCharacterRaw (BYPASSES the cloud-mirror enqueue — we don't
+ *       via saveCharacterRaw (BYPASSES the cloud-mirror enqueue â€” we don't
  *       want to re-upload what we just downloaded), then best-effort download
  *       + atomic-write skin + portrait.
  *
  *   listMerged()
  *     - Returns { characters: Array<{ id, name, is_default, source }> } where
- *       source ∈ {'local','cloud','both'}. Local rows win on the name field
+ *       source âˆˆ {'local','cloud','both'}. Local rows win on the name field
  *       when both exist (the local cache is what the user has actually
  *       interacted with). Used by HomeScreen to render cloud-only characters
  *       alongside local ones with a CLOUD chip.
@@ -47,7 +47,7 @@ import { paths } from '../paths';
 import type { Character } from '../../shared/characterSchema';
 
 /**
- * HR-02 — per-uuid in-flight guard.
+ * HR-02 â€” per-uuid in-flight guard.
  *
  * Concurrent invocations for the same uuid (HomeScreen double-click, React
  * Strict-Mode double-invoke on CharacterPage mount, parallel card click +
@@ -61,7 +61,7 @@ import type { Character } from '../../shared/characterSchema';
  * Map<uuid, Promise<void>>: concurrent calls share the in-flight promise;
  * the entry is cleaned up on resolve/reject so a future re-open re-checks
  * disk. Both the cache-hit short-circuit and the cache-miss download path
- * run inside the shared promise — the first caller that wins the Map insert
+ * run inside the shared promise â€” the first caller that wins the Map insert
  * does the work, every subsequent caller awaits the same resolution.
  *
  * Same-tick callers also share: the Map is checked synchronously at function
@@ -112,9 +112,9 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
         }
         return;
       }
-      // No conflict — local cache is good. First, check the cloud row for a
+      // No conflict â€” local cache is good. First, check the cloud row for a
       // newer version and re-pull the whole stored set if the upstream author
-      // (or a bundled default's system row) shipped changes — this is what
+      // (or a bundled default's system row) shipped changes â€” this is what
       // makes opening a foreign / default character's page deliver prompt /
       // image / description updates. No-op for characters the local user
       // authors (those are locally authoritative). Then Item 6: heal any
@@ -133,9 +133,9 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
     }
   }
 
-  // Cache miss — fetch from cloud. NOTE: no sign-in requirement. Public
-  // (shared) rows are readable by anon — RLS `characters_select_own_or_shared`
-  // is `shared = true OR owner = auth.uid()` with no role restriction — so a
+  // Cache miss â€” fetch from cloud. NOTE: no sign-in requirement. Public
+  // (shared) rows are readable by anon â€” RLS `characters_select_own_or_shared`
+  // is `shared = true OR owner = auth.uid()` with no role restriction â€” so a
   // SIGNED-OUT user can open a World character to view it (item 5). The
   // download returns null for rows not visible to the caller (a private row
   // they don't own), which surfaces as CLOUD_CHARACTER_NOT_FOUND below.
@@ -148,7 +148,7 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
     throw new Error(`CLOUD_CHARACTER_NOT_FOUND: ${uuid}`);
   }
 
-  // Storage path is `<owner>/<uuid>.png` — for a foreign / World character the
+  // Storage path is `<owner>/<uuid>.png` â€” for a foreign / World character the
   // bytes live under the ORIGINAL CREATOR's path (cloud.owner), NOT the current
   // user's. Fall back to the session only for legacy null-owner rows; when
   // signed out and the row somehow has no owner, skip the asset downloads.
@@ -166,7 +166,7 @@ async function ensureLocallyCachedImpl(uuid: string): Promise<void> {
   await saveCharacterRaw(toCache);
 
   if (ownerUuid) {
-    // Skin + portrait bytes — best-effort and INDEPENDENT, so download them
+    // Skin + portrait bytes â€” best-effort and INDEPENDENT, so download them
     // concurrently. Failure of either does NOT abort the cache-on-demand; the
     // character JSON is already on disk and the bot renders with the default
     // skin. User can re-open later to retry, or apply a new skin.
@@ -240,7 +240,7 @@ async function writePortrait(
 }
 
 /**
- * Item 6 — re-fetch a character's skin / portrait bytes when the local JSON
+ * Item 6 â€” re-fetch a character's skin / portrait bytes when the local JSON
  * exists but an asset file is missing on disk. ensureLocallyCached's cache-hit
  * short-circuit otherwise never retries the best-effort asset downloads, so a
  * single failed download at first-open left the detail page's 3D skin preview
@@ -284,10 +284,10 @@ async function healMissingAssets(uuid: string): Promise<void> {
  * current `updated_at` (`cloudTs`). Returns true when the cloud copy is newer
  * and a re-pull is warranted.
  *
- *   - No cloud timestamp → nothing to compare against, skip (defensive: legacy
+ *   - No cloud timestamp â†’ nothing to compare against, skip (defensive: legacy
  *     rows missing the column).
- *   - No local timestamp → never tracked (pre-feature cache, or a freshly
- *     seeded default whose local JSON predates this field) → treat as stale so
+ *   - No local timestamp â†’ never tracked (pre-feature cache, or a freshly
+ *     seeded default whose local JSON predates this field) â†’ treat as stale so
  *     we adopt the latest and backfill the watermark. The adopted content is
  *     usually identical, so this self-heals to a no-op on the next open.
  *   - Otherwise strict ISO/epoch comparison.
@@ -304,28 +304,28 @@ function isCloudNewer(localTs: string | null, cloudTs: string | null): boolean {
 
 /**
  * Refresh a locally-cached character from its cloud row when the upstream copy
- * is newer. Powers the "open the page → get the author's / default's latest
+ * is newer. Powers the "open the page â†’ get the author's / default's latest
  * prompt, image, and description" behavior.
  *
- * SCOPE — only characters the local user does NOT author are refreshed:
+ * SCOPE â€” only characters the local user does NOT author are refreshed:
  *   - bundled defaults (sui / lyra / clawd), whose canonical copy is a
  *     system-owned PUBLIC row, so local users receive prompt updates to the
  *     three defaults even though they have no other foreign characters; and
  *   - added World characters (owner !== current user).
- * A character the local user owns is locally authoritative — its edits mirror
+ * A character the local user owns is locally authoritative â€” its edits mirror
  * UP to cloud, so we must never pull-overwrite it here. The conflict path above
  * already returns before this runs whenever a local sync op is pending.
  *
  * PRESERVED across a refresh (NOT overwritten from cloud):
  *   - the memory directory (lives outside the character JSON; never touched);
  *   - local usage stats (`last_launched`, `playtime_ms`) and the immutable
- *     `created` stamp — those are the local user's, not the author's;
- *   - `is_default` and `owner` — identity flags that govern editability and
+ *     `created` stamp â€” those are the local user's, not the author's;
+ *   - `is_default` and `owner` â€” identity flags that govern editability and
  *     re-seeding (the cloud download hardcodes is_default=false and would carry
  *     the system owner, which must not leak onto a locally-editable default).
  *
  * Best-effort: any failure (offline, timeout, row gone) is swallowed so the
- * cache-hit return is never blocked — the local copy already works (LIB-04).
+ * cache-hit return is never blocked â€” the local copy already works (LIB-04).
  */
 async function refreshFromCloud(uuid: string): Promise<void> {
   try {
@@ -339,9 +339,9 @@ async function refreshFromCloud(uuid: string): Promise<void> {
 
     // Bundled defaults (sui/lyra/clawd) are authoritative from the APP BUNDLE,
     // never the cloud. refreshSeededDefaults re-asserts their authored fields
-    // (persona, metadata.proactiveness, skin, …) from the shipped source on
+    // (persona, metadata.proactiveness, skin, â€¦) from the shipped source on
     // every launch, so they auto-update through app releases. Pulling their
-    // cloud row HERE adopts a STALE cloud copy and clobbers the bundle value —
+    // cloud row HERE adopts a STALE cloud copy and clobbers the bundle value â€”
     // e.g. Sui flips from the bundle's Agentic back to the cloud row's Reactive
     // moments after launch (the "showed agentic for a second, then dropped to
     // reactive" report). Skip them entirely; the bundle is the single source of
@@ -362,7 +362,7 @@ async function refreshFromCloud(uuid: string): Promise<void> {
 
     const { downloadCharacter } = await import('./cloudCharacterClient');
     const cloud = await downloadCharacter(uuid);
-    // Row absent / unpublished — leave the local copy in place. Eviction of
+    // Row absent / unpublished â€” leave the local copy in place. Eviction of
     // unshared added-world chars is reconcileLocalOwnership's job, not ours.
     if (!cloud) return;
 
@@ -379,7 +379,7 @@ async function refreshFromCloud(uuid: string): Promise<void> {
       slug: cloud.slug,
       username: cloud.username,
       // `kind` is an author-owned classification (custom / world / unique), so
-      // it rides along with the other content fields — otherwise a cloud-side
+      // it rides along with the other content fields â€” otherwise a cloud-side
       // reclassification (e.g. the sui/lyra/marv defaults becoming normal
       // `custom` public characters on 260706) never reaches an already-cached
       // local copy, leaving CharacterPage's kind-gated viewOnly wrong.
@@ -391,7 +391,7 @@ async function refreshFromCloud(uuid: string): Promise<void> {
     };
 
     // Images: only adopt a cloud portrait/skin REFERENCE once its bytes are
-    // cached locally — otherwise keep the local (bundled) reference so the
+    // cached locally â€” otherwise keep the local (bundled) reference so the
     // offline baseline keeps rendering. Bundled defaults carry portrait_image=
     // null / skin.source='bundled' in their cloud row, so wantX is false and
     // the local art is untouched; once their cloud row is flipped to point at
@@ -418,7 +418,7 @@ async function refreshFromCloud(uuid: string): Promise<void> {
 
     // Advance the watermark only when everything we wanted to adopt landed. A
     // failed asset download keeps the prior (stale) watermark so the NEXT open
-    // retries the full refresh — content re-adoption is idempotent, and this is
+    // retries the full refresh â€” content re-adoption is idempotent, and this is
     // how a transient asset 404 self-heals without the separate heal path
     // needing to know the (system) owner the bytes live under.
     const allAssetsOk = portraitOk && skinOk;
@@ -498,12 +498,12 @@ export async function listMerged(): Promise<{ characters: MergedCharacterListing
 }
 
 /**
- * Item 4 (cross-device) — eagerly pull the signed-in user's OWN cloud
+ * Item 4 (cross-device) â€” eagerly pull the signed-in user's OWN cloud
  * characters into the local library on sign-in, so they appear in the IconRail
  * + Home grid immediately instead of only after being opened from the World /
  * Summons list (which is what triggered cache-on-demand before). Each
- * `ensureLocallyCached` cache-misses → writes the JSON + appends to the index
- * (so listCharacters surfaces it), or cache-hits → refreshes from cloud. Runs
+ * `ensureLocallyCached` cache-misses â†’ writes the JSON + appends to the index
+ * (so listCharacters surfaces it), or cache-hits â†’ refreshes from cloud. Runs
  * BEFORE the renderer re-bootstraps (called from profileScope.switchScopeForAuth)
  * so the post-sign-in character reload sees them. Best-effort throughout.
  */
@@ -527,3 +527,7 @@ export async function cacheMyCloudCharacters(ownerUuid: string): Promise<void> {
     console.warn(`[sei] cacheMyCloudCharacters failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

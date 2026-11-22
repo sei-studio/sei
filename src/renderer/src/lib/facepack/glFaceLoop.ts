@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FacepackView's WebGL frame loop (261116, product call 261116). Same inputs
  * and the same face rules as the 2D loop in FacepackView (expression
  * timeline and decay, visemes from the clip tap, files decoded before a
@@ -159,7 +159,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   let stopped = false;
   let raf = 0;
 
-  // ── sizing ──────────────────────────────────────────────────────────────
+  // â”€â”€ sizing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let viewW = 1;
   let viewH = 1;
   const fit = (): void => {
@@ -172,7 +172,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
   const ro = new ResizeObserver(fit);
   ro.observe(host);
 
-  // ── composites ──────────────────────────────────────────────────────────
+  // â”€â”€ composites â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const comp = document.createElement('canvas');
   comp.width = W;
   comp.height = H;
@@ -240,7 +240,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     return set;
   };
 
-  // ── gaze frames ─────────────────────────────────────────────────────────
+  // â”€â”€ gaze frames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const irisCv = document.createElement('canvas');
   const ig = irisCv.getContext('2d');
   if (!ig) throw new Error('2d context unavailable');
@@ -477,7 +477,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     gl.setLids(hl, cb && closed ? { key: closed, src: cb } : null);
   };
 
-  // ── state ───────────────────────────────────────────────────────────────
+  // â”€â”€ state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const t0 = performance.now();
   const blink = new Blinker(t0);
   const gaze = new GazeDriver(t0);
@@ -832,3 +832,7 @@ export function runGlFace(env: GlFaceEnv): { resume(): void; stop(): void } {
     },
   };
 }
+
+
+
+

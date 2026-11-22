@@ -1,4 +1,4 @@
-/** Opt-in real runtime test. Point SEI_KOKORO_LIVE_DIR at staged userData.
+﻿/** Opt-in real runtime test. Point SEI_KOKORO_LIVE_DIR at staged userData.
  * Requires speech-models/tts-kokoro/pack.json and the extracted release tree.
  * Runs outside Electron; does not certify the packaged app. */
 import { describe, expect, it, vi } from 'vitest';
@@ -14,8 +14,8 @@ describe.skipIf(!process.env.SEI_KOKORO_LIVE_DIR)('Kokoro real runtime', () => {
       ['ef_dora', 'Hola Marco, esta es una prueba de voz local.'],
       ['em_alex', 'Hola Marco, esta es una prueba de voz local.'],
       ['ff_siwis', 'Bonjour Marco, ceci est un test de voix locale.'],
-      ['if_sara', 'Ciao Marco, questa è una prova della voce italiana locale.'],
-      ['im_nicola', 'Ciao Marco, questa è una prova della voce italiana locale.'],
+      ['if_sara', 'Ciao Marco, questa Ã¨ una prova della voce italiana locale.'],
+      ['im_nicola', 'Ciao Marco, questa Ã¨ una prova della voce italiana locale.'],
     ] as const) {
       const start = performance.now();
       const audio = await synthesizeKokoro(text, voice);
@@ -27,3 +27,7 @@ describe.skipIf(!process.env.SEI_KOKORO_LIVE_DIR)('Kokoro real runtime', () => {
     }
   }, 240000);
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `credit_wall_hit` (261005): one analytics event per credit-wall occurrence.
  *
  * Why: the 261005 retention analysis found 46% of new cloud users spend the
@@ -57,7 +57,7 @@ export const CREDIT_WALL_QUIET_MS = 10 * 60_000;
  * hold the event back long, and a failed read ships the event with nulls. */
 export const CREDIT_WALL_SNAPSHOT_TIMEOUT_MS = 5000;
 
-/** µ$ per display credit, same constant as pricingCatalog / the server. */
+/** Âµ$ per display credit, same constant as pricingCatalog / the server. */
 const MICRO_PER_CREDIT = 5000;
 
 /**
@@ -93,7 +93,7 @@ export interface CreditWallPropsInput {
   installedAt: number | null;
   /** Account snapshot read right after the wall; null when the read failed. */
   snapshot: CreditsStatus | null;
-  /** This period's weekly allowance in µ$ (snapshot, else the plan's catalog
+  /** This period's weekly allowance in Âµ$ (snapshot, else the plan's catalog
    * figure); null when neither is known. */
   allowanceMicro: number | null;
   repeatsBefore: number;
@@ -139,7 +139,7 @@ export interface CreditWallDeps {
   now: () => number;
   installedAt: () => number | null;
   readSnapshot: () => Promise<CreditsStatus | null>;
-  /** Catalog weekly allowance (µ$) for a plan tier, or null when unknown.
+  /** Catalog weekly allowance (Âµ$) for a plan tier, or null when unknown.
    * Only consulted when the snapshot has no allowance_micro. */
   allowanceMicroFor: (plan: CreditsStatus['plan']) => Promise<number | null>;
   capture: (event: string, props: Record<string, Scalar>) => void | Promise<void>;
@@ -218,10 +218,10 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   });
 }
 
-// ── Process-level wiring ────────────────────────────────────────────────────
+// â”€â”€ Process-level wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** First launch of this install, set once at boot from the install marker
- * (index.ts → firstLaunch.installedAtMs). Pushed in rather than read here so
+ * (index.ts â†’ firstLaunch.installedAtMs). Pushed in rather than read here so
  * this module never imports electron. */
 let installedAtCache: number | null = null;
 
@@ -263,3 +263,7 @@ export function _resetCreditWallForTests(): void {
   reporter.reset();
   installedAtCache = null;
 }
+
+
+
+

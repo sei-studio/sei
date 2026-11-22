@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Avatar library (261106): a character's server-stored avatars, each with a
  * public/private lock and one default. Shared between main and the renderer.
  * Design: docs/agents/avatar-library.md. Server: sei-proxy /avatars/v1/*.
@@ -230,3 +230,7 @@ export function isLastPublicDeleteBlocked(list: AvatarLibraryList, item: AvatarI
 export function mbBucket(bytes: number): number {
   return Math.round(bytes / 1e5) / 10;
 }
+
+
+
+

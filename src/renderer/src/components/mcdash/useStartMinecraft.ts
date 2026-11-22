@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Start Minecraft (R1b, 260929): one button that selects the Sei profile in
  * the Minecraft Launcher and opens the launcher (main: mcLauncher.ts). The
  * player still presses Play.
@@ -243,3 +243,7 @@ export function useFirewallHint(): string | null {
     ? t('Windows may ask whether Java can use the network. You can press Cancel. Sei joins your world from this computer, so it still works.')
     : null;
 }
+
+
+
+

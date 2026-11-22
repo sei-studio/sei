@@ -1,26 +1,26 @@
-/**
- * Tests for Phase 11 D-23 slug→UUID rename migration.
+﻿/**
+ * Tests for Phase 11 D-23 slugâ†’UUID rename migration.
  * Source: 11-05-PLAN Task 1 behavior contract.
  *
  * Test surface:
- *   1. Idempotency — manifest existence short-circuits the migration
- *   2. Default character slug rename — sui/lyra/marv resolve to frozen UUIDs
- *   3. User-created slug rename — fresh UUID, slug field carries old kebab name
- *   4. Portrait data URL migration — decoded to <profileRoot>/portraits/<uuid>.png
- *   5. Memory dir rename — <profileRoot>/memory/<slug>/ → <profileRoot>/memory/<uuid>/
+ *   1. Idempotency â€” manifest existence short-circuits the migration
+ *   2. Default character slug rename â€” sui/lyra/marv resolve to frozen UUIDs
+ *   3. User-created slug rename â€” fresh UUID, slug field carries old kebab name
+ *   4. Portrait data URL migration â€” decoded to <profileRoot>/portraits/<uuid>.png
+ *   5. Memory dir rename â€” <profileRoot>/memory/<slug>/ â†’ <profileRoot>/memory/<uuid>/
  *   6. Index + defaults-seeded.json rewriting to UUIDs
  *   7. No-character fresh-install case writes manifest with empty entries
- *   8. Grep gate — body of migration.ts contains zero supabase calls
+ *   8. Grep gate â€” body of migration.ts contains zero supabase calls
  *
  * Test harness pattern matches sessionStore.test.ts:
  *   - vi.mock('electron') so electron's app/safeStorage isn't required
  *   - _setUserDataOverride to point paths.* at an os.tmpdir() scratch dir
  *
  * 260603 partition note: per-account stores now live under
- * <userData>/profiles/<scope>/… . These tests run at the default 'local'
+ * <userData>/profiles/<scope>/â€¦ . These tests run at the default 'local'
  * scope and address every per-account fixture/assertion through the `paths`
  * helpers so they follow the profile root rather than the device root. The
- * slug→UUID migrate marker (paths.migrationManifestPath) stays device-global.
+ * slugâ†’UUID migrate marker (paths.migrationManifestPath) stays device-global.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile, mkdir, stat } from 'node:fs/promises';
@@ -109,13 +109,13 @@ describe('runUuidRenameMigration', () => {
 
     await runUuidRenameMigration();
 
-    // sui.json should still be slug-keyed — migration was a no-op
+    // sui.json should still be slug-keyed â€” migration was a no-op
     expect(await fileExists(paths.characterPath('sui'))).toBe(true);
     expect(await fileExists(paths.characterPath(DEFAULT_CHARACTER_UUIDS.sui))).toBe(false);
   });
 
   it('writes a manifest with empty entries when no characters/index.json exists', async () => {
-    // Fresh install — characters/ dir is empty
+    // Fresh install â€” characters/ dir is empty
     expect(await fileExists(paths.migrationManifestPath())).toBe(false);
     await runUuidRenameMigration();
     expect(await fileExists(paths.migrationManifestPath())).toBe(true);
@@ -299,7 +299,7 @@ describe('runDefaultsToWorldMigration', () => {
     await writeFile(paths.characterPath(row.id as string), JSON.stringify(row, null, 2), 'utf8');
   }
 
-  it('self-heals a partially-converted default (is_default:false but kind:world → custom) even with the marker set', async () => {
+  it('self-heals a partially-converted default (is_default:false but kind:world â†’ custom) even with the marker set', async () => {
     // The Lyra case: an older build converted is_default/owner but not kind, and
     // the user never opened her (so refreshFromCloud never adopted kind). The
     // marker is already set, but the heal must still fix the kind.
@@ -330,7 +330,7 @@ describe('runDefaultsToWorldMigration', () => {
       kind: 'custom',
       shared: false,
       cloud_updated_at: '2026-06-01T00:00:00.000Z',
-      // Healthy (cloud-cached) portrait ref: a './img/…' ref would itself
+      // Healthy (cloud-cached) portrait ref: a './img/â€¦' ref would itself
       // trigger the stale-bundled-portrait heal (tested below).
       portrait_image: `${DEFAULT_CHARACTER_UUIDS.sui}.png`,
     });
@@ -343,9 +343,9 @@ describe('runDefaultsToWorldMigration', () => {
     expect(sui.cloud_updated_at).toBe('2026-06-01T00:00:00.000Z'); // watermark not busted
   });
 
-  it('heals a legacy bundled portrait ref (./img/…) even on an otherwise-final default', async () => {
+  it('heals a legacy bundled portrait ref (./img/â€¦) even on an otherwise-final default', async () => {
     // The bundled portrait assets were deleted with the bundle baseline
-    // (5d1261b), so a leftover './img/sui.png' ref can never load again —
+    // (5d1261b), so a leftover './img/sui.png' ref can never load again â€”
     // Home cards and the IconRail rendered blank off it. The heal nulls the
     // ref (procedural sprite takes over) and busts the watermark so the next
     // open re-adopts the cloud portrait.
@@ -364,7 +364,7 @@ describe('runDefaultsToWorldMigration', () => {
 
     const sui = (await listCharacters()).find((c) => c.id === DEFAULT_CHARACTER_UUIDS.sui)!;
     expect(sui.portrait_image ?? null).toBeNull(); // dead ref cleared
-    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted → re-adopt on next open
+    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted â†’ re-adopt on next open
     expect(sui.shared).toBe(false); // repair still preserves the share choice
   });
 
@@ -385,11 +385,11 @@ describe('runDefaultsToWorldMigration', () => {
     expect(sui.owner).toBe(DEFAULT_CHARACTERS_OWNER);
     expect(sui.shared).toBe(true);
     expect(sui.kind).toBe('custom'); // reclassified so viewOnly (kind-gated) unlocks for the owner
-    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted → forces cloud re-pull
+    expect(sui.cloud_updated_at ?? null).toBeNull(); // watermark busted â†’ forces cloud re-pull
     expect((await loadConfig()).defaults_to_world_migrated).toBe(true);
   });
 
-  it('moves an INVITED default from added_default_ids → added_world_ids', async () => {
+  it('moves an INVITED default from added_default_ids â†’ added_world_ids', async () => {
     const suiId = DEFAULT_CHARACTER_UUIDS.sui;
     await seedChar(defaultChar(suiId, 'Sui', 'sui'));
     await seedIndex([suiId]);
@@ -414,3 +414,7 @@ describe('runDefaultsToWorldMigration', () => {
     expect(custom.shared).toBe(false);
   });
 });
+
+
+
+

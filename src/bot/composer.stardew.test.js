@@ -1,4 +1,4 @@
-// The composer boots the REAL stardew runtime (dynamic import by kind)
+﻿// The composer boots the REAL stardew runtime (dynamic import by kind)
 // against the fake mod, with the brain mocked: no mineflayer, no Electron,
 // no game. Pins that a `stardew` init lands on adapter/stardew/runtime.js
 // and that the port forwarders reach the brain the runtime hands over.
@@ -55,3 +55,7 @@ describe('composer + real stardew runtime + fake mod', () => {
     expect(brain.stop).toHaveBeenCalled()
   })
 })
+
+
+
+

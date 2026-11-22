@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261031 (T278): analytics.ts end to end with posthog-node mocked (nothing
  * leaves the machine): dev/test-build suppression, the device id as the
  * anonymous distinct_id (persisted across launches in userData), property
@@ -263,3 +263,7 @@ describe('opt-out', () => {
     expect(h.identify).not.toHaveBeenCalled();
   });
 });
+
+
+
+

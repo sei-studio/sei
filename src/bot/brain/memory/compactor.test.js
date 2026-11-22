@@ -1,4 +1,4 @@
-// src/bot/brain/memory/compactor.test.js
+﻿// src/bot/brain/memory/compactor.test.js
 //
 // 261024: compaction output-cap safety. A segment sent whole could need a
 // reply longer than the output cap; the cut-off reply was accepted (it had
@@ -59,7 +59,7 @@ describe('chunkEntries (261024)', () => {
 describe('compactor output-cap safety (261024)', () => {
   it('keeps the originals of a chunk whose reply hit max_tokens, compacts the rest', async () => {
     const entries = Array.from({ length: 250 }, (_, i) => entry(i))
-    await writeFile(file, HEADER + '## World 1 — One\n' + entries.join('\n') + '\n', 'utf8')
+    await writeFile(file, HEADER + '## World 1 â€” One\n' + entries.join('\n') + '\n', 'utf8')
     const calls = []
     const anthropic = {
       async call(req) {
@@ -90,7 +90,7 @@ describe('compactor output-cap safety (261024)', () => {
     for (const l of entryLines(calls[0].messages[0].content)) expect(raw).toContain(l)
     expect(raw).not.toContain('partial list')
     expect(raw).toContain('merged chunk 2')
-    expect(raw).toContain('## World 1 — One')
+    expect(raw).toContain('## World 1 â€” One')
   })
 
   it('writes nothing when every reply hit max_tokens, and also honours stop_reason', async () => {
@@ -107,3 +107,7 @@ describe('compactor output-cap safety (261024)', () => {
     expect(await readFile(file, 'utf8')).toBe(body)
   })
 })
+
+
+
+

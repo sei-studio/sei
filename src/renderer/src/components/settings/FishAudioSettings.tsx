@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Settings > Voice > Local voice > Fish Audio (261103): the user's own Fish
  * Audio key (write-only, like the ElevenLabs key: only its presence comes
  * back), where to get a free one, a Test button that speaks one line, and
@@ -145,7 +145,7 @@ export function FishAudioSettings(props: {
             {/* On the cloud tab the key is optional (Sei voices speak without
                 it), so "Not set" is a plain state there, a warning elsewhere. */}
             <span className={hasKey || surface === 'cloud' ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}>
-              {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
+              {hasKey ? 'â€¢'.repeat(KEY_BULLETS) : t('Not set')}
             </span>
             <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>
               {hasKey ? t('Update') : t('Set')}
@@ -153,7 +153,7 @@ export function FishAudioSettings(props: {
             {hasKey ? (
               <>
                 <Button kind="ghost" size="sm" disabled={test.kind === 'testing'} onClick={() => void onTest()}>
-                  {test.kind === 'testing' ? t('Testing…') : t('Test')}
+                  {test.kind === 'testing' ? t('Testingâ€¦') : t('Test')}
                 </Button>
                 <Button kind="quiet" size="sm" onClick={() => void onRemove()}>
                   {t('Remove')}
@@ -183,3 +183,7 @@ export function FishAudioSettings(props: {
     </>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room source seam (261104).
  *
  * The AI side (roomContext.ts: the prompt's room line and the look() tool)
@@ -34,3 +34,7 @@ export interface RoomSource {
    */
   onChange?(cb: (characterId: string) => void): () => void;
 }
+
+
+
+

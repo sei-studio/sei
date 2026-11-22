@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Voice Library voices on Sei cloud (261119), main side.
  *
  * A cloud user pastes an ElevenLabs Voice Library link (or id) into the voice
@@ -53,7 +53,7 @@ const SERVER_REASONS: ReadonlySet<string> = new Set<LibraryVoiceReason>([
   'unavailable',
 ]);
 
-// ── Refusal memory (tts.ts) ─────────────────────────────────────────────────
+// â”€â”€ Refusal memory (tts.ts) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** How long a refused library voice speaks the stand-in without asking. */
 export const LIBRARY_REFUSAL_TTL_MS = 10 * 60_000;
@@ -82,9 +82,9 @@ export function forgetLibraryRefusal(voiceId: string): void {
   refusals.delete(voiceId);
 }
 
-// ── Known ids + preview URLs ────────────────────────────────────────────────
+// â”€â”€ Known ids + preview URLs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/** voiceId → preview URL from the proxy (null: the voice has none). */
+/** voiceId â†’ preview URL from the proxy (null: the voice has none). */
 const known = new Map<string, string | null>();
 
 function remember(voiceId: string, previewUrl: string | null): void {
@@ -129,7 +129,7 @@ async function libraryVoicesInUse(): Promise<string[]> {
   }
 }
 
-// ── Proxy calls ─────────────────────────────────────────────────────────────
+// â”€â”€ Proxy calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ProxyAnswer = { status: number; body: unknown } | { fail: 'no_session' | 'unavailable' };
 
@@ -174,7 +174,7 @@ function str(v: unknown, max: number): string | null {
   return typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null;
 }
 
-/** The proxy's public voice → the renderer's shape (no URL crosses IPC). */
+/** The proxy's public voice â†’ the renderer's shape (no URL crosses IPC). */
 function toInfo(raw: unknown): LibraryVoiceInfo | null {
   if (!raw || typeof raw !== 'object') return null;
   const v = raw as Record<string, unknown>;
@@ -208,7 +208,7 @@ function parseResult(a: ProxyAnswer): { ok: true; voice: LibraryVoiceInfo; body:
   return { ok: false, reason: reason as LibraryVoiceReason };
 }
 
-/** Paste → the voice (name, details, whether it has a preview) or why not. */
+/** Paste â†’ the voice (name, details, whether it has a preview) or why not. */
 export async function lookupLibraryVoice(input: string): Promise<LibraryVoiceLookupResult> {
   const trimmed = input.trim();
   if (!trimmed) return { ok: false, reason: 'invalid_input' };
@@ -276,3 +276,7 @@ export async function libraryVoicePreviewBytes(voiceId: string): Promise<ArrayBu
   if (buf.byteLength > PREVIEW_MAX_BYTES) throw new Error('VOICE_TTS_FAILED: preview too large');
   return buf;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// 261008: the Haiku 5 request rules (anthropicModelDefaults.js). Haiku 5
+﻿// 261008: the Haiku 5 request rules (anthropicModelDefaults.js). Haiku 5
 // thinks unless told not to and rejects a fixed thinking budget, sampling
 // params and assistant prefill with HTTP 400, so every request builder runs
 // its body through applyAnthropicModelDefaults. Other models pass untouched.
@@ -77,3 +77,7 @@ describe('applyAnthropicModelDefaults', () => {
     expect(applyAnthropicModelDefaults(undefined)).toBeUndefined()
   })
 })
+
+
+
+

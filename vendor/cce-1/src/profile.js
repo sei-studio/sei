@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Chess profile: the persona config consumed by the engine.
  *
  * Only `elo` is required; every skill parameter derives from it via the
  * paper formulas unless explicitly overridden. `styleNote` is free text the
  * caller can surface to its LLM (aggressive, cautious, loves knights...);
- * the engine itself ignores it — strength is determined here, style is
+ * the engine itself ignores it â€” strength is determined here, style is
  * expressed by whoever picks from the candidate set.
  */
 
@@ -57,3 +57,7 @@ export function resolveProfile(input) {
     probFloor: CONSTANTS.probFloor,
   };
 }
+
+
+
+

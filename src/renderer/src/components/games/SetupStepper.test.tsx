@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SetupStepper (260909): static renders over fixed step data.
  *   1. setup mode opens on the first step that is not done.
  *   2. help mode opens on step 1 even when later steps are the open ones.
@@ -34,14 +34,14 @@ describe('SetupStepper', () => {
   it('Test 2: help mode opens on step 1', async () => {
     const html = await render([true, true, false], 'help');
     expect(html).toContain('data-step="s1"');
-    expect(html).toContain('✓ Title 1');
+    expect(html).toContain('âœ“ Title 1');
     expect(html).toContain('Step 1 of 3');
   });
 
   it('Test 3: everything done shows the last step, checked', async () => {
     const html = await render([true, true, true], 'setup');
     expect(html).toContain('data-step="s3"');
-    expect(html).toContain('✓ Title 3');
+    expect(html).toContain('âœ“ Title 3');
   });
 
   it('Test 4: nav chrome; Back is disabled on the first step', async () => {
@@ -52,3 +52,7 @@ describe('SetupStepper', () => {
     expect(html.match(/<button[^>]*disabled=""[^>]*>Back</)).not.toBeNull();
   });
 });
+
+
+
+

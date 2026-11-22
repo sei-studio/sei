@@ -1,25 +1,25 @@
-/**
- * Mojang username → UUID → texture PNG resolver.
+﻿/**
+ * Mojang username â†’ UUID â†’ texture PNG resolver.
  *
  * Three sequential HTTPS requests, each wrapped in its own AbortController with
  * a 15s wall-clock timeout (per CONTEXT.md "Every external call has a timeout"
- * and CLAUDE.md "every external call has a timeout — no exceptions"):
+ * and CLAUDE.md "every external call has a timeout â€” no exceptions"):
  *
  *   1. GET https://api.mojang.com/users/profiles/minecraft/<name>
- *        → { id: <uuid-no-dashes>, name: <canonical-name> }   (HTTP 200)
- *        → HTTP 204 / 404                                     (no such user)
- *        → HTTP 429                                           (rate limited)
+ *        â†’ { id: <uuid-no-dashes>, name: <canonical-name> }   (HTTP 200)
+ *        â†’ HTTP 204 / 404                                     (no such user)
+ *        â†’ HTTP 429                                           (rate limited)
  *
  *   2. GET https://sessionserver.mojang.com/session/minecraft/profile/<uuid>
- *        → properties array; pick `name === 'textures'`; base64-decode `value`
- *          → { textures: { SKIN: { url, metadata: { model } } } }
+ *        â†’ properties array; pick `name === 'textures'`; base64-decode `value`
+ *          â†’ { textures: { SKIN: { url, metadata: { model } } } }
  *
  *   3. GET <textures.SKIN.url>                                (textures.minecraft.net)
- *        → binary PNG bytes (may be legacy 64×32 OR modern 64×64)
+ *        â†’ binary PNG bytes (may be legacy 64Ã—32 OR modern 64Ã—64)
  *
  * Step 4 (LOCAL): pipe bytes through skinImageUtil.normalize64x64 so ancient
- * legacy 64×32 skins (e.g. Notch's pre-2014 upload) are upscaled to 64×64
- * BEFORE returning. applyPng gates strictly on 64×64; without this
+ * legacy 64Ã—32 skins (e.g. Notch's pre-2014 upload) are upscaled to 64Ã—64
+ * BEFORE returning. applyPng gates strictly on 64Ã—64; without this
  * normalization, every legacy account would surface as "SKIN_FILE_INVALID" in
  * the renderer.
  *
@@ -30,9 +30,9 @@
  * suffixes ("no Minecraft account named X", "rate-limited", "invalid characters")
  * let the UI distinguish for copy-tweaking without parsing the URL stack.
  *
- * NOT cached — `applyPng` writes the PNG once the user clicks "Apply", and
+ * NOT cached â€” `applyPng` writes the PNG once the user clicks "Apply", and
  * from then on the local file is the source of truth (no persistent
- * dependency on Mojang per CONTEXT §decisions).
+ * dependency on Mojang per CONTEXT Â§decisions).
  *
  * Sources:
  *   - CLAUDE.md "Every external call has a timeout"
@@ -41,28 +41,28 @@
 import crypto from 'node:crypto';
 import { normalize64x64 } from './skinImageUtil';
 
-/** 15s wall-clock budget per Mojang request. Worst case 3 × 15s = 45s. */
+/** 15s wall-clock budget per Mojang request. Worst case 3 Ã— 15s = 45s. */
 export const TIMEOUT_MS = 15_000;
 
 const USER_AGENT = 'sei-electron/0.1.0';
 const USERNAME_REGEX = /^[A-Za-z0-9_]{1,32}$/;
 
 /**
- * Resolved Mojang skin payload. `pngBytes` are guaranteed 64×64 RGBA (legacy
- * 64×32 inputs are normalized via skinImageUtil before this struct is built).
+ * Resolved Mojang skin payload. `pngBytes` are guaranteed 64Ã—64 RGBA (legacy
+ * 64Ã—32 inputs are normalized via skinImageUtil before this struct is built).
  */
 export interface MojangSkinResult {
   /** Canonical username as Mojang spells it (case-corrected from user input). */
   resolvedUsername: string;
-  /** 64×64 PNG bytes ready for applyPng. */
+  /** 64Ã—64 PNG bytes ready for applyPng. */
   pngBytes: Buffer;
-  /** Base64 of pngBytes — convenience for the renderer (skips a Buffer.toString call in the IPC handler). */
+  /** Base64 of pngBytes â€” convenience for the renderer (skips a Buffer.toString call in the IPC handler). */
   pngBase64: string;
   /** SHA-256 of pngBytes (hex). Same as what applyPng/skinStore would compute. */
   sha256: string;
   /** Original textures.minecraft.net URL (informational; not surfaced to the UI). */
   textureUrl: string;
-  /** Mojang model variant — 'slim' (Alex, 3-pixel-wide arms) or 'classic' (Steve, 4-pixel-wide arms). */
+  /** Mojang model variant â€” 'slim' (Alex, 3-pixel-wide arms) or 'classic' (Steve, 4-pixel-wide arms). */
   model: 'classic' | 'slim';
 }
 
@@ -106,7 +106,7 @@ function classify(err: unknown, stage: string): Error {
  * See file header for the contract + error-classification rules.
  */
 export async function lookupMojangSkin(username: string): Promise<MojangSkinResult> {
-  // ── Input validation ───────────────────────────────────────────────────
+  // â”€â”€ Input validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const trimmed = (username ?? '').trim();
   if (trimmed === '') {
     throw new Error('MOJANG_LOOKUP_FAILED: empty username');
@@ -115,7 +115,7 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
     throw new Error('MOJANG_LOOKUP_FAILED: invalid characters in username');
   }
 
-  // ── Step 1: username → UUID ────────────────────────────────────────────
+  // â”€â”€ Step 1: username â†’ UUID â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let uuid: string;
   let canonicalName: string;
   try {
@@ -142,7 +142,7 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
     throw classify(err, 'username-to-uuid');
   }
 
-  // ── Step 2: UUID → texture URL + model ─────────────────────────────────
+  // â”€â”€ Step 2: UUID â†’ texture URL + model â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let textureUrl: string;
   let model: 'classic' | 'slim';
   try {
@@ -171,7 +171,7 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
       throw new Error('MOJANG_LOOKUP_FAILED: sessionserver returned no textures property');
     }
     // Base64 unwrap of the textures property. Mojang documents this as a
-    // base64-encoded JSON blob (RESEARCH.md §4).
+    // base64-encoded JSON blob (RESEARCH.md Â§4).
     let decoded: unknown;
     try {
       decoded = JSON.parse(Buffer.from(tex.value, 'base64').toString('utf8'));
@@ -191,7 +191,7 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
     throw classify(err, 'uuid-to-texture');
   }
 
-  // ── Step 3: download PNG bytes ─────────────────────────────────────────
+  // â”€â”€ Step 3: download PNG bytes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let rawPngBytes: Buffer;
   try {
     const r3 = await fetchWithTimeout(textureUrl, TIMEOUT_MS);
@@ -212,9 +212,9 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
     throw classify(err, 'texture-download');
   }
 
-  // ── Step 4: legacy 64×32 → 64×64 normalization ─────────────────────────
-  // applyPng gates on 64×64 strictly. Mojang still serves legacy
-  // 64×32 skins for ancient accounts; we upscale here so the renderer never
+  // â”€â”€ Step 4: legacy 64Ã—32 â†’ 64Ã—64 normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // applyPng gates on 64Ã—64 strictly. Mojang still serves legacy
+  // 64Ã—32 skins for ancient accounts; we upscale here so the renderer never
   // sees a sub-spec PNG.
   let pngBytes: Buffer;
   try {
@@ -234,3 +234,7 @@ export async function lookupMojangSkin(username: string): Promise<MojangSkinResu
     model,
   };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// Types for voices.js, added in the Sei vendor copy (261024) so Sei's shared
+﻿// Types for voices.js, added in the Sei vendor copy (261024) so Sei's shared
 // code (src/shared/poolVoiceIds.ts) can import the voice table directly, in
 // both the main and the renderer TypeScript programs. Only the voice table is
 // declared: it is the only export Sei imports from this file.
@@ -13,3 +13,7 @@ export declare const VOICES: ReadonlyArray<{
   /** false = picker only: listed in the voice picker, never rolled (261119). */
   roll?: false;
 }>;
+
+
+
+

@@ -1,24 +1,24 @@
-/**
+﻿/**
  * Notices state persistence (260725).
  *
- * Persisted JSON at `<userDataRoot>/notices.json` (DEVICE-GLOBAL — a notice is
+ * Persisted JSON at `<userDataRoot>/notices.json` (DEVICE-GLOBAL â€” a notice is
  * an announcement to the install, mirroring update-state.json's tier). Records:
- *   - notices — the last successfully fetched feed, cached so the inbox opens
+ *   - notices â€” the last successfully fetched feed, cached so the inbox opens
  *     instantly and still works offline.
- *   - announcedIds — ids the inbox has already auto-opened for. This is what
+ *   - announcedIds â€” ids the inbox has already auto-opened for. This is what
  *     makes "opens once when received" true: a notice whose id is missing here
  *     triggers the one auto-open, and the renderer acks so it never fires again.
- *   - readIds — ids the user actually selected in the inbox. Drives the unread
+ *   - readIds â€” ids the user actually selected in the inbox. Drives the unread
  *     dot. A superset relationship does NOT hold in either direction: a notice
  *     can be announced-but-unread (two arrived, the user read one).
- *   - popupShownIds (261027) — startup-popup ids this install has shown. A
+ *   - popupShownIds (261027) â€” startup-popup ids this install has shown. A
  *     popup id is shown at most once (see startupPopup.ts).
  *
  * 261027: the inbox UI is gone (replaced by the startup popup), so builds from
  * v0.6.10 no longer write notices / announcedIds / readIds. They are still
  * read and written back untouched, so a downgrade sees what it left.
  *
- * Atomic writes via `atomicWrite` + `withFileLock` — same discipline as
+ * Atomic writes via `atomicWrite` + `withFileLock` â€” same discipline as
  * updateStateStore.ts. Defensive parsing: any structural defect (missing field,
  * wrong type, non-JSON) resets to defaults rather than crashing boot.
  *
@@ -112,7 +112,7 @@ export function coerceNotices(raw: unknown): Notice[] {
 
 /**
  * Coerce an arbitrary JSON-parsed value into a valid NoticesState, falling back
- * to defaults for any field that isn't strictly typed correctly. Defensive —
+ * to defaults for any field that isn't strictly typed correctly. Defensive â€”
  * never throws on malformed input.
  */
 export function coerceNoticesState(raw: unknown): NoticesState {
@@ -129,7 +129,7 @@ export function coerceNoticesState(raw: unknown): NoticesState {
 
 /**
  * Read `<userDataRoot>/notices.json`. Returns defaults on ENOENT or any parse
- * failure (corrupted file → don't crash boot, just reset).
+ * failure (corrupted file â†’ don't crash boot, just reset).
  */
 export async function loadNoticesState(): Promise<NoticesState> {
   const target = paths.noticesStatePath();
@@ -162,3 +162,7 @@ export async function saveNoticesState(next: NoticesState): Promise<void> {
     await atomicWrite(target, JSON.stringify(validated, null, 2) + '\n');
   });
 }
+
+
+
+

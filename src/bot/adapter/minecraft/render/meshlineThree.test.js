@@ -1,4 +1,4 @@
-// 260926: reproduces the game-pack layout behind `Cannot find module 'three'`
+﻿// 260926: reproduces the game-pack layout behind `Cannot find module 'three'`
 // (0.6.5-beta.1): three.meshline hoisted to the top node_modules, the only
 // `three` nested under prismarine-viewer. Fake packages keep it fast and free
 // of the real three / native deps.
@@ -79,3 +79,7 @@ describe('loadMeshlineWithViewerThree', () => {
     }
   })
 })
+
+
+
+

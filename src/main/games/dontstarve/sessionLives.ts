@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261104: DST deaths and respawns for `bot_session_ended`. The bot posts
  * `{type:'dst-lives', respawns, deaths, lastDeathCause}` after every death
  * and respawn (src/bot/adapter/dontstarve/runtime.js postLives); main keeps
@@ -40,3 +40,7 @@ export function createDstLivesReporter(): DstLivesReporter {
     },
   };
 }
+
+
+
+

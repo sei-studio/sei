@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew Valley: the cross-process contract (game-adapters M1, 260908).
  *
  * Mirrors native/stardew-mod/PROTOCOL.md for everything main validates (the
@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import type { StardewAppearance } from './stardewAppearance';
 
-/* ── Mod defaults ─────────────────────────────────────────────────────── */
+/* â”€â”€ Mod defaults â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** The port the mod's config.json defaults to (the installer keeps it). */
 export const STARDEW_DEFAULT_PORT = 27431;
@@ -39,7 +39,7 @@ export const STARDEW_MOD_PACK_PATH = ['assets', 'stardew-mod', STARDEW_MOD_FOLDE
 export const STARDEW_MOD_UNIQUE_ID = 'Sei.SeiCompanion';
 export const STARDEW_PROTOCOL_VERSION = 1;
 
-/* ── /hello (watcher) ─────────────────────────────────────────────────── */
+/* â”€â”€ /hello (watcher) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const StardewHelloSaveSchema = z.object({
   loaded: z.boolean(),
@@ -64,7 +64,7 @@ export const StardewHelloSchema = z.object({
 });
 export type StardewHello = z.infer<typeof StardewHelloSchema>;
 
-/* ── Mod config.json (written by the installer, read by the watcher) ───── */
+/* â”€â”€ Mod config.json (written by the installer, read by the watcher) â”€â”€â”€â”€â”€ */
 
 export const StardewModConfigSchema = z.object({
   Port: z.number().int().min(1).max(65535).default(STARDEW_DEFAULT_PORT),
@@ -85,7 +85,7 @@ export const StardewModConfigSchema = z.object({
 });
 export type StardewModConfig = z.infer<typeof StardewModConfigSchema>;
 
-/* ── World state member (src/shared/gameIpc.ts WorldState) ────────────── */
+/* â”€â”€ World state member (src/shared/gameIpc.ts WorldState) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type StardewWorldState =
   | {
@@ -106,7 +106,7 @@ export type StardewWorldState =
   /** Kept for the generic consumers written against GenericWorldState. */
   | { kind: 'unavailable' };
 
-/* ── Join target (main → bot init payload) ────────────────────────────── */
+/* â”€â”€ Join target (main â†’ bot init payload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface StardewJoinTarget {
   port: number;
@@ -124,7 +124,7 @@ export interface StardewJoinTarget {
   appearance?: StardewAppearance;
 }
 
-/* ── Dashboard snapshot (bot → main → renderer, gamedash:snapshot) ────── */
+/* â”€â”€ Dashboard snapshot (bot â†’ main â†’ renderer, gamedash:snapshot) â”€â”€â”€â”€â”€â”€ */
 
 export interface StardewDashItem {
   name: string;
@@ -165,7 +165,7 @@ export function isStardewDashboardSnapshot(s: unknown): s is StardewDashboardSna
   return !!s && typeof s === 'object' && (s as { game?: unknown }).game === 'stardew' && Array.isArray((s as { items?: unknown }).items);
 }
 
-/* ── Install state + progress (renderer ↔ main) ───────────────────────── */
+/* â”€â”€ Install state + progress (renderer â†” main) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type StardewGameFolderType = 'valid' | 'legacy' | 'invalid' | 'none';
 
@@ -238,17 +238,17 @@ export interface StardewLaunchResult {
 }
 
 export const StardewIpcChannel = {
-  /** Invoke: () → StardewInstallState (fresh detection). */
+  /** Invoke: () â†’ StardewInstallState (fresh detection). */
   installState: 'stardew:install-state',
-  /** Invoke: () → StardewInstallState after the install job settles (rejects on failure with the ErrorClass message). */
+  /** Invoke: () â†’ StardewInstallState after the install job settles (rejects on failure with the ErrorClass message). */
   install: 'stardew:install',
-  /** Invoke: () → StardewLaunchResult. */
+  /** Invoke: () â†’ StardewLaunchResult. */
   launch: 'stardew:launch',
-  /** Invoke: () → StardewChooseFolderResult (folder picker, validated, saved). */
+  /** Invoke: () â†’ StardewChooseFolderResult (folder picker, validated, saved). */
   chooseFolder: 'stardew:choose-folder',
-  /** Invoke: () → StardewGameRunning (is the game process up, and through SMAPI?). */
+  /** Invoke: () â†’ StardewGameRunning (is the game process up, and through SMAPI?). */
   gameRunning: 'stardew:game-running',
-  /** Push (main → renderer): StardewInstallProgressEvent while an install runs. */
+  /** Push (main â†’ renderer): StardewInstallProgressEvent while an install runs. */
   installProgress: 'stardew:install-progress',
 } as const;
 
@@ -257,3 +257,7 @@ export function steamLaunchOption(gamePath: string): string {
   const exe = gamePath.replace(/\//g, '\\').replace(/\\+$/, '') + '\\StardewModdingAPI.exe';
   return `"${exe}" %command%`;
 }
+
+
+
+

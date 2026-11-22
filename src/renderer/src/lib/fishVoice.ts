@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fish Audio (261103), renderer side: the copy for a Fish failure, shared by
  * the Settings Test button and a character's own-voice field.
  */
@@ -32,3 +32,7 @@ export function clipMimeType(buf: ArrayBuffer): 'audio/wav' | 'audio/mpeg' {
   const riff = head.length === 4 && head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
   return riff ? 'audio/wav' : 'audio/mpeg';
 }
+
+
+
+

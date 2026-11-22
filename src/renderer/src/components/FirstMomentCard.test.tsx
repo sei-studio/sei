@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FirstMomentCard (260926): the next-step tiles under the first greeting.
  *
  * Zustand v5 server-renders a store's INITIAL state (getServerSnapshot), so
@@ -116,8 +116,12 @@ describe('FirstMomentCard', () => {
   it('every label has a zh translation and no em dash', () => {
     for (const s of ['Show me your game', 'Play chess now', 'Summon me in Minecraft', 'Call me', 'Not now']) {
       expect(ZH[s], s).toBeTruthy();
-      expect(s).not.toContain('—');
-      expect(ZH[s]).not.toContain('—');
+      expect(s).not.toContain('â€”');
+      expect(ZH[s]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

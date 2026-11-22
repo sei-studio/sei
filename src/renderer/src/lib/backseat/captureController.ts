@@ -1,5 +1,5 @@
-/**
- * Backseat capture controller (260728) — the renderer half of the session.
+﻿/**
+ * Backseat capture controller (260728) â€” the renderer half of the session.
  *
  * Owns the shared MediaStream and everything downstream of it: the worker that
  * keeps the ring buffer and composites grids, the normalized PCM pipeline that
@@ -8,15 +8,15 @@
  * scheduled idle look, and the jolt).
  *
  * Audio (260728): the model never hears sound. Screen audio exists for two
- * local consumers only — the GAIN signal (the jolt trigger's gain arm) and the
+ * local consumers only â€” the GAIN signal (the jolt trigger's gain arm) and the
  * STT TRANSCRIPT (sttStream.ts, the packaged Whisper model). Whatever the
  * platform source, audio is normalized to mono Float32 at STT_SAMPLE_RATE
  * before either consumer sees it, so the pipeline below the source line is
  * identical everywhere. 260801: audio no longer influences WHICH frames the
- * grid uses — the offset table does, unconditionally.
+ * grid uses â€” the offset table does, unconditionally.
  *
  * It decides only WHEN to hand main a grid. Whether that grid becomes a spoken
- * line is entirely main's call — see src/main/backseat/backseatService.ts.
+ * line is entirely main's call â€” see src/main/backseat/backseatService.ts.
  */
 
 import { sei } from '../ipcClient';
@@ -61,7 +61,7 @@ const USER_GRID_MAX_AGE_MS = 30_000;
  * the older-running one has been recording for between STAGGER and PERIOD, so
  * stopping it always yields ONE complete, playable file that contains the whole
  * requested window. The cost is that a saved clip runs 15-30 s rather than
- * exactly 15 — it always covers the moment asked for, sometimes with more lead
+ * exactly 15 â€” it always covers the moment asked for, sometimes with more lead
  * in. That is the right way to be wrong here.
  */
 const CLIP_PERIOD_MS = CLIP_MS * 2;
@@ -203,7 +203,7 @@ async function findLoopbackDevice(): Promise<string | null> {
  *
  * So the source order is:
  *   Windows   inline desktop loopback (works, documented).
- *   macOS     the bundled ScreenCaptureKit tap, spawned by main — the same
+ *   macOS     the bundled ScreenCaptureKit tap, spawned by main â€” the same
  *             OS facility OBS records desktop audio with, verified live
  *             (probe 260728: silence reads -inf, a tone reads ~-28 dB). No
  *             install, no extra permission (it rides Screen Recording, which
@@ -280,7 +280,7 @@ async function openStream(
  * Normalize an audio source into 16 kHz mono PCM and fan it out to the two
  * consumers (gain + STT). For the macOS tap it also regenerates a REAL audio
  * track (MediaStreamTrackGenerator) and adds it to the stream, so clip
- * recordings keep sound on macOS too — the loopback/virtual paths already
+ * recordings keep sound on macOS too â€” the loopback/virtual paths already
  * carry a real track.
  *
  * Returns a stop() that tears down whichever source was in use.
@@ -434,7 +434,7 @@ export async function startCapture(
     /* English is the right default */
   }
 
-  // ── The switch dwell (260806) ───────────────────────────────────────────
+  // â”€â”€ The switch dwell (260806) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Content switches (a colour discontinuity, a changed share label) no longer
   // raise a tick at the moment of the change: reacting AT the swipe meant the
   // grid was five cells of the old reel and one sliver of the new, and the
@@ -457,7 +457,7 @@ export async function startCapture(
   /** When the companion last spoke, mirrored from noteSpoke. The dwell often
    *  expires just inside main's MIN_SPEAK_GAP_MS (a swipe tends to follow a
    *  line about the previous reel by a second or two), and main DROPS a gapped
-   *  tick rather than queueing it — so the settled switch would go unremarked
+   *  tick rather than queueing it â€” so the settled switch would go unremarked
    *  until the next idle look. Deferring the fire past the gap keeps the
    *  reaction; a change during the deferral cancels it like any other. */
   let lastSpokeLocalAt = 0;
@@ -487,7 +487,7 @@ export async function startCapture(
     });
   }
 
-  // ── What is being shared ────────────────────────────────────────────────
+  // â”€â”€ What is being shared â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // One short line naming the surface, re-read on a slow timer because titles
   // move under a fixed source id (a browser tab switch changes the screen
   // completely). The pick-time name is the seed so the very first tick, which
@@ -501,7 +501,7 @@ export async function startCapture(
   let shareLabel: string | null = sourceName || null;
   // The seed is the pick-time source name, which rarely matches the polled
   // title byte for byte, so the first poll result is a BASELINE, never a
-  // switch signal — otherwise every session opened with a phantom switch.
+  // switch signal â€” otherwise every session opened with a phantom switch.
   let labelBaselined = false;
   const pollShareLabel = (): void => {
     void sei
@@ -536,7 +536,7 @@ export async function startCapture(
     processor.readable as unknown as Transferable,
   ]);
 
-  // ── Audio: gain + transcript, one normalized feed ───────────────────────
+  // â”€â”€ Audio: gain + transcript, one normalized feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The transcript ring runs for the whole session; the same 16 kHz mono PCM
   // drives the gain signal in ~32 ms windows, so every frame the worker sees
   // has a loudness reading about as fresh as the old analyser gave it.
@@ -570,7 +570,7 @@ export async function startCapture(
     }
   };
 
-  // ── Rolling recorders (clip export) ─────────────────────────────────────
+  // â”€â”€ Rolling recorders (clip export) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const rollers: Array<Rolling | null> = [null, null];
   const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
     ? 'video/webm;codecs=vp9'
@@ -637,7 +637,7 @@ export async function startCapture(
     return btoa(bin);
   };
 
-  // ── Grid requests ───────────────────────────────────────────────────────
+  // â”€â”€ Grid requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // `offsets` is what the worker ACTUALLY achieved per cell, in seconds before
   // capturedAt (null = the cell was left black). Diagnostics only: it is logged
   // so a session can be checked for whether the log spacing held, and nothing
@@ -678,7 +678,7 @@ export async function startCapture(
   /** Grid latched when the player began speaking or typing. */
   let held: Grid | null = null;
   /** Single-flight guard so a burst of keystrokes composites once, not once
-   *  per character — the "avoid overloading" case. */
+   *  per character â€” the "avoid overloading" case. */
   let arming = false;
 
   const sendTick = async (
@@ -804,7 +804,7 @@ export async function startCapture(
     }
   };
 
-  // ── The scheduled look ──────────────────────────────────────────────────
+  // â”€â”€ The scheduled look â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The steady-state wake, and the only one with no opinion about the screen:
   // a randomised timer (nextIdleDelayMs) composites a grid and hands it up. All
   // of the "was that worth saying anything about" judgement happens in the
@@ -853,7 +853,7 @@ export async function startCapture(
   };
   scheduleIdle();
 
-  // ── The opening look (260803) ───────────────────────────────────────────
+  // â”€â”€ The opening look (260803) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Sharing a screen is the player making an opening move, and the session used
   // to answer it with silence: nothing has jolted yet and the idle floor is
   // 12 s, so pressing Share and waiting looked like the companion had not
@@ -896,7 +896,7 @@ export async function startCapture(
     ? 0
     : window.setTimeout(() => void openingLook(0), START_LOOK_MS);
 
-  // ── Clip requests from main ─────────────────────────────────────────────
+  // â”€â”€ Clip requests from main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const offClip = sei.onBackseatClipRequest(({ characterId: id, requestId }) => {
     if (id !== characterId || stopped) return;
     void (async () => {
@@ -994,7 +994,7 @@ export async function startCapture(
         grid = await composite();
       }
       if (!grid) return;
-      // What the game said around the moment they reacted to — the flush
+      // What the game said around the moment they reacted to â€” the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
       // 260925 act: after the flush above, the screen transcript covers the
@@ -1045,3 +1045,7 @@ export function stopCapture(): void {
   active?.stop();
   active = null;
 }
+
+
+
+

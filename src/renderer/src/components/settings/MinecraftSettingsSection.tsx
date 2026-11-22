@@ -1,5 +1,5 @@
-/**
- * MinecraftSettingsSection — the body of the Settings "Minecraft" group
+﻿/**
+ * MinecraftSettingsSection â€” the body of the Settings "Minecraft" group
  * (moved verbatim out of SettingsScreen.tsx by game adapters M0, 260908, so
  * a per-game group can be added by registration; see
  * lib/gameSettingsSections.ts). Content unchanged: the skin-setup row and the
@@ -51,3 +51,7 @@ export function MinecraftSettingsSection({ config, writeConfig }: GameSettingsSe
     </>
   );
 }
+
+
+
+

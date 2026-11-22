@@ -1,5 +1,5 @@
-/**
- * McDashMinimap — top-down minimap canvas for the Minecraft dashboard
+﻿/**
+ * McDashMinimap â€” top-down minimap canvas for the Minecraft dashboard
  * (260721). Renders the bot's packed cell grid (palette index + height
  * shading per byte, see src/shared/mcDashboardIpc.ts) at 1px per cell and
  * lets CSS scale it up with image-rendering: pixelated for the chunky
@@ -91,3 +91,7 @@ export function McDashMinimap({ map, yaw, sizePx }: McDashMinimapProps): React.R
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// Ollama local provider — uses `/api/chat` (NOT `/v1/chat/completions`).
+﻿// Ollama local provider â€” uses `/api/chat` (NOT `/v1/chat/completions`).
 // Per ROADMAP Phase 14 Pitfall 7, Ollama's OpenAI-compatibility endpoint
 // silently drops `tool_calls` under streaming. The native `/api/chat` route
 // returns tool calls reliably with `stream: false`.
@@ -227,3 +227,7 @@ function ollamaResponseToAnthropic(data) {
     stopReason: data?.done_reason ?? 'stop',
   }
 }
+
+
+
+

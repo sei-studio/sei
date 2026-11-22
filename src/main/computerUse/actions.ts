@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the action vocabulary. Basic controls only: move,
  * click (left/right), double_click, drag, scroll, key combo, hold a key for
  * ms, type text, wait ms. Plus `choose` (pick a numbered option from the
@@ -331,3 +331,7 @@ export function describeAction(a: ParsedAction): string {
       return a.name;
   }
 }
+
+
+
+

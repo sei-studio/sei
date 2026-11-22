@@ -1,4 +1,4 @@
-// 261111 (user feedback ae9a758e): "Sui leaves the game and pops back in",
+﻿// 261111 (user feedback ae9a758e): "Sui leaves the game and pops back in",
 // and two sessions ended as world_closed on a world that was open again a
 // minute later. The post-spawn liveness check now tries three pings before
 // calling the world closed, and every drop is counted (with its class) in
@@ -97,3 +97,7 @@ describe('post-spawn drop', () => {
     expect(c.body_rejoins ?? 0).toBe(0)
   })
 })
+
+
+
+

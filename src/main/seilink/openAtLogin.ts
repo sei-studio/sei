@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Open Sei when I log in" (261107, product call 261107): the OS login item
  * that brings WorldLink back after a restart.
  *
@@ -503,3 +503,7 @@ export function unregisterOpenAtLoginForReset(d: OpenAtLoginDeps | null = inject
     d.log(`reset removal failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

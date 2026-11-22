@@ -1,4 +1,4 @@
-# Backseat control (M0 spike)
+﻿# Backseat control (M0 spike)
 
 Dev-only general computer use from Backseat mode: the companion drives the
 player's Mac on the WINDOW they shared. Off unless `SEI_BACKSEAT_ACT=1` (or
@@ -87,7 +87,7 @@ things the screen cannot write: the tick kind and the player's own words.
   counts (`isAffirmation`): yes / yeah / yep / sure / do it / go ahead,
   optionally with please or ok, and nothing else ("yeah thanks sui",
   "sure thing", a lone "ok" are not yes); CJK: the line is made only of
-  listed yes pieces (好, 好的, 可以, はい, うん, お願い, 네, ...). A yes starts it
+  listed yes pieces (å¥½, å¥½çš„, å¯ä»¥, ã¯ã„, ã†ã‚“, ãŠé¡˜ã„, ë„¤, ...). A yes starts it
   with origin `confirmed`; anything else drops it; after 30 s it has
   expired. A control() call in the reply to that yes is ignored (the run
   already started). The same goal is not offered twice while on offer.
@@ -144,7 +144,7 @@ backseat turn --control({goal, request})--> ControlGate --run--> actSession.star
    counts as unchanged. 3 unchanged actions = a stall. First stall: note +
    force the vision chooser. Second stall: give up.
 3. **Perceive** (`perception.ts`): AX tree of the target app (`ax_dump`),
-   focused element (`ax_focused`) and OCR → a state text and numbered
+   focused element (`ax_focused`) and OCR â†’ a state text and numbered
    options. AX controls (buttons, links, fields, menu items, ...) that are
    enabled, >= 4 pt, and centred inside the target; OCR text (conf >= 0.4) not
    already inside an AX control; then generic options: "type text into the
@@ -224,9 +224,9 @@ The step cap defaults to 40 steps. Override the caps with `SEI_ACT_MAX_STEPS`
 and `SEI_ACT_MAX_SECONDS`. There is no pause: user input always wins, and the
 run ends.
 
-Status mapping: `done` → done; `gave_up`, `stalled`, `scope` → gave_up;
-`step_cap`, `time_cap` → timeout; `stopped`, `user_input`, `replaced`,
-`error` → aborted.
+Status mapping: `done` â†’ done; `gave_up`, `stalled`, `scope` â†’ gave_up;
+`step_cap`, `time_cap` â†’ timeout; `stopped`, `user_input`, `replaced`,
+`error` â†’ aborted.
 
 ## Player input
 
@@ -340,3 +340,7 @@ client, `driveOverlay.ts` Stop pill, `actSession.ts` wiring,
 run-or-offer policy and the pending offer (`ControlGate`), `directAnthropic.ts`
 dev client. Latency probe: `npx tsx scripts/act-latency-probe.ts`; chooser
 eval: `npx tsx scripts/act-chooser-eval.ts`.
+
+
+
+

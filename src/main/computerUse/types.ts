@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act (M0 spike): shared types for the computer-use loop.
  *
  * Coordinate spaces, named everywhere they appear:
@@ -121,3 +121,7 @@ export interface ImageBudget {
   /** Visual tokens, ceil(w/28) * ceil(h/28). */
   maxTokens: number;
 }
+
+
+
+

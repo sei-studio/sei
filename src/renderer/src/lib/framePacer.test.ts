@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { FramePacer } from './framePacer';
 
 describe('FramePacer (261110)', () => {
@@ -70,3 +70,7 @@ describe('FramePacer (261110)', () => {
     expect(after).toEqual([true, false, true, false, true]);
   });
 });
+
+
+
+

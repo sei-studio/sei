@@ -1,4 +1,4 @@
-// 261112: quality pass 53, an order she answered in words while busy
+﻿// 261112: quality pass 53, an order she answered in words while busy
 // outlives the completion turn that brings it back when that turn hands
 // something over first (errands-03, 11-12 scorecard: "get me like 8 logs"
 // heard on the walk back with the coal, the coal given first, then her own
@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { NUDGES } from './promptLibrary.js'
 import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 
-// ─── orchestrator harness ───────────────────────────────────────────────
+// â”€â”€â”€ orchestrator harness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -213,6 +213,10 @@ describe('an order put off behind a hand-over', () => {
     expect(one).toContain('before your own goal')
     const two = NUDGES.deferredNote({ who: null, lines: ['a', 'b'] })
     expect(two).toContain('the player said "a" and then "b"')
-    expect(two).not.toMatch(/—/)
+    expect(two).not.toMatch(/â€”/)
   })
 })
+
+
+
+

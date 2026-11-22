@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The room editor for one companion, over IPC (261104, editor pass). The
  * companion page loads this lazily behind the SeiLink dev flag, so nothing
  * of the editor ships in the main chunk or shows without the flag.
@@ -153,7 +153,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
   const token = useEditorSession(characterId);
   const name = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.name ?? '');
   const portrait = useDataStore((s) => s.characters.find((c) => c.id === characterId)?.portrait_image ?? null);
-  const avatarNote = look === 'preparing' && name ? t("Preparing {name}'s look…", { name }) : null;
+  const avatarNote = look === 'preparing' && name ? t("Preparing {name}'s lookâ€¦", { name }) : null;
   // Only the companion who lives on the desktop shares the editor (main checks the same before anything is said).
   const resident = useSeilinkStore((s) => Boolean(s.availability?.enabled) && movedInId(s.status) === characterId);
   const together = useCallback(
@@ -175,3 +175,7 @@ export default function CompanionRoomEditor({ characterId, onClose, openedFrom =
     />
   );
 }
+
+
+
+

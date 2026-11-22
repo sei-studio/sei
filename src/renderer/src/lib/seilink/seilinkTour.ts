@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The guide's SeiLink tour, its answers (261105, T337). The decision of WHEN
  * it is offered is tourPref.tourDecision (App.tsx asks it on a calm screen);
  * this file records what the player did with it and starts the tour mode of
@@ -62,3 +62,7 @@ export function seilinkTourDropped(step: TourStepName): void {
   updateTourRecord(retired);
   useTutorialStore.getState().end();
 }
+
+
+
+

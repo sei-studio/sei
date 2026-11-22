@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The NSIS side of the Velopack migration, end to end on a temp folder: feed,
  * download, signature (skipped: unsigned build), Setup start, state file. The
  * Setup start is a mocked spawn, the rest is the real code (T293: a busy
@@ -234,3 +234,7 @@ describe('installVelopack: starting Setup', () => {
     expect(tempLeft()).toEqual([]);
   });
 });
+
+
+
+

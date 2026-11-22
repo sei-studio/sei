@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -104,3 +104,7 @@ describe('cleanupLegacyTraySettings', () => {
     expect(existsSync(file)).toBe(true);
   });
 });
+
+
+
+

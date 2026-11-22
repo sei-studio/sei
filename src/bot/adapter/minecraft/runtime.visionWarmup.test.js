@@ -1,4 +1,4 @@
-// 260926: the post-spawn render-stack warm-up runs only when the model can see.
+﻿// 260926: the post-spawn render-stack warm-up runs only when the model can see.
 // A text-only model never gets look(), so loading the natives for it is pure
 // cost (and on a slow Windows machine, a risk to the keep-alive).
 import { describe, it, expect } from 'vitest'
@@ -21,3 +21,7 @@ describe('visionWarmupWanted', () => {
     expect(visionWarmupWanted({ vision: { mode: 'on-demand' } }, { visionCapable: () => { throw new Error('x') } })).toBe(false)
   })
 })
+
+
+
+

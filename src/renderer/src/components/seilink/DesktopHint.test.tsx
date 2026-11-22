@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { DesktopHintView } from './DesktopHint';
@@ -28,3 +28,7 @@ describe('DesktopHintView (product call (261116))', () => {
     expect(sanitizeSeilinkSetupTrack(SEILINK_DESKTOP_HINT_EVENT, { action: 'nope', kind: 'nope' })).toMatchObject({ action: 'shown', kind: 'opened' });
   });
 });
+
+
+
+

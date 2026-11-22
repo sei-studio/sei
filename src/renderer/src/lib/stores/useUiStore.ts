@@ -1,12 +1,12 @@
-/**
- * UI store — current view, modal stack, theme override, pending summon id.
+﻿/**
+ * UI store â€” current view, modal stack, theme override, pending summon id.
  *
  * Pure state machine for what's on screen. Subscriptions and side-effects live
- * in App.tsx (theme apply, IPC subscribe) — this store is only concerned with
+ * in App.tsx (theme apply, IPC subscribe) â€” this store is only concerned with
  * what the user is currently looking at.
  *
  * Source: 04-CONTEXT.md (Onboarding/Home/AddCharacter/CharacterPage/Settings/ComingSoon
- * view list) + 04-UI-SPEC.md §Interaction Contracts (modal lifecycle).
+ * view list) + 04-UI-SPEC.md Â§Interaction Contracts (modal lifecycle).
  */
 
 import { create } from 'zustand';
@@ -25,7 +25,7 @@ export type View =
   // First-run Sui onboarding scene (260728): the full-window animated ritual
   // (OnboardApp). Fresh installs and fresh accounts land here; the legacy
   // 'onboarding' QuestionShell flow below remains for Settings re-onboard.
-  // signin (260729): mount directly at the sign-in panel on the empty sky —
+  // signin (260729): mount directly at the sign-in panel on the empty sky â€”
   // no walk-in, no dialogue. Used wherever an already-onboarded profile
   // needs to (re)auth: BOOT while signed out, and sign-out from Settings
   // (both replaced AuthChoice). One click to proceed, like the old chooser;
@@ -34,24 +34,24 @@ export type View =
   | { kind: 'onboarding'; isReonboard: boolean }
   // Full-screen Minecraft skin setup page (wizard inline). Legacy resume
   // surface: onboarding no longer arms UserConfig.skin_setup_pending (260725,
-  // skin setup moved to the first Minecraft open — see lib/gameLaunch.ts),
+  // skin setup moved to the first Minecraft open â€” see lib/gameLaunch.ts),
   // but profiles that armed it under the old flow still resume here once.
   | { kind: 'skin-setup' }
   | { kind: 'home' }
-  // Party redesign §4.3 — the "awaken a companion" chooser view (replaces
+  // Party redesign Â§4.3 â€” the "awaken a companion" chooser view (replaces
   // AddCompanionChooserModal). A normal in-app surface: the rail stays visible.
   | { kind: 'awaken' }
   // `importFirst` (260725): entered via the Awaken "Import from another
-  // platform" tile — the wizard opens with the knowledge-upload phase before
+  // platform" tile â€” the wizard opens with the knowledge-upload phase before
   // the usual questions.
   | { kind: 'add-character'; importFirst?: boolean }
   | { kind: 'character'; id: string }
-  // Phase 18/19 — Discord-style in-app chat with a companion, plus a
+  // Phase 18/19 â€” Discord-style in-app chat with a companion, plus a
   // placeholder Discord-style voice-call surface. Both are normal in-app
   // surfaces (the IconRail stays visible, unlike the full-page entry flows).
   | { kind: 'chat'; characterId: string }
   | { kind: 'voice-call'; characterId: string }
-  // 260727 Draw! — the sketch-guessing minigame. A full-page surface (rail
+  // 260727 Draw! â€” the sketch-guessing minigame. A full-page surface (rail
   // hidden) because it is deliberately its own visual world: a white page in
   // a handdrawn register, canvas beside chat, rather than the chat screen's
   // top/bottom game split.
@@ -67,15 +67,15 @@ export type View =
   // checkout (CheckoutSource) and pricing_viewed. Absent = 'pricing_page'.
   | { kind: 'credits'; tab?: PlaytimeTab; useChatgptPlan?: boolean; from?: CheckoutSource }
   | { kind: 'coming-soon' }
-  // 260703 procgen — the "unique companion" (system-generated) flow. Both are
+  // 260703 procgen â€” the "unique companion" (system-generated) flow. Both are
   // renderer-only full-page surfaces (rail hidden), routed from Awaken:
-  //   - sui-meet          : "meet my companion", run by Sui — any unanswered
+  //   - sui-meet          : "meet my companion", run by Sui â€” any unanswered
   //                          preference questions, the gender question, her
   //                          walk-off, and the casting bar (replaced
   //                          unique-gender + unique-casting, 260731).
   //   - unique-reveal     : the "meet <name>" moment after a successful gen.
   //
-  // 260802: there was a third, `profile-questions` — the questionnaire as a
+  // 260802: there was a third, `profile-questions` â€” the questionnaire as a
   // dark-chrome FORM, routed here by whichever gate noticed a gap first (a
   // Home gate on sign-in, the Awaken cast gate, the tail of onboarding). It
   // is deleted, gates and all. The questionnaire is only ever asked by Sui
@@ -83,11 +83,11 @@ export type View =
   // answer it does not have, or sui-prefs when they came to change one.
   | { kind: 'sui-meet' }
   | { kind: 'unique-reveal'; characterId: string }
-  // 260731 — "update my preferences", asked by Sui in the onboarding scene
+  // 260731 â€” "update my preferences", asked by Sui in the onboarding scene
   // rather than as a form. `next` is the surface the entry link lives on, and
   // where leaving the scene returns to.
   | { kind: 'sui-prefs'; next: 'awaken' | 'settings' }
-  // quick/260525-sbo Task 6 — FTC 16 CFR §425.5 in-app receipt after a
+  // quick/260525-sbo Task 6 â€” FTC 16 CFR Â§425.5 in-app receipt after a
   // first-time subscription activation. Auto-navigated by useCreditsStore
   // when the plan moves up into a paid tier (once per
   // transition; guarded by a module-level prevPlan ref).
@@ -106,7 +106,7 @@ export type Modal =
   // collides with an already-summoned one (the world would kick the second
   // with `name_taken`). Carries both names + the shared username for the copy.
   | { kind: 'summon-conflict'; attemptedName: string; conflictName: string; username: string }
-  // 260709 — pre-summon compatibility disclaimer. Shown once per session per
+  // 260709 â€” pre-summon compatibility disclaimer. Shown once per session per
   // warning kind when the detected LAN host is modded (Forge/NeoForge/Fabric)
   // or Lunar Client. "Summon anyway" resumes the summon, except for the
   // 'forge' warning (260929), which blocks and offers no summon at all.
@@ -117,63 +117,63 @@ export type Modal =
       host: LanHost;
       fromChat: boolean;
     }
-  // 260709 — the world runs a Minecraft version outside what Sei's networking
+  // 260709 â€” the world runs a Minecraft version outside what Sei's networking
   // stack supports. Opened centrally from the onStatus subscription
   // (useDataStore.wireIpc) so EVERY summon entry point surfaces it: the Play
   // flow previously failed silently (the error only reached the character
   // page's model row). `message` is the already-humanized bot error text.
   | { kind: 'unsupported-version'; characterId: string; message: string }
-  // 260720 — a summon died with LAN_NOT_OPEN (world closed, kicked, or the
+  // 260720 â€” a summon died with LAN_NOT_OPEN (world closed, kicked, or the
   // pre-gate raced a closing world). Opened centrally from the onStatus
   // subscription like unsupported-version, so every summon entry point gets
   // the step-by-step "open to LAN" guidance instead of a one-line status.
   | { kind: 'lan-not-open'; characterId: string }
-  // 260806 — the world runs Forge/NeoForge and requires its mods client-side,
+  // 260806 â€” the world runs Forge/NeoForge and requires its mods client-side,
   // so it kicks Sei's vanilla client. Split out of lan-not-open, which was
   // telling players to re-open a world that was open the whole time.
   // 261007: `message` is the bot's humanized kick, which says whether the
   // host is Fabric and names the mods a Fabric registry-sync kick listed.
   | { kind: 'modded-host'; characterId: string; message?: string }
-  // 260720 — a LIVE bot session died unexpectedly (BotStatus error with
+  // 260720 â€” a LIVE bot session died unexpectedly (BotStatus error with
   // midSession, e.g. the child was killed or crashed) with no dedicated
   // surface for its error class. Opened centrally from the onStatus
   // subscription; before this, a mid-session death showed nothing at all.
   | { kind: 'bot-crash'; characterId: string }
-  // Game adapters (M0, 260908) — the generic per-game setup window for a
+  // Game adapters (M0, 260908) â€” the generic per-game setup window for a
   // bot-backed game other than Minecraft (whose window is mc-setup). Opened by
   // the generic summon flow when the game's world is not open; auto-resumes
   // the pending summon when world:state flips open. The game agents fill the
   // body (GameSetupModal is a placeholder in M0).
   | { kind: 'game-setup'; game: GameId }
-  // Game adapters (M0) — a bot-backed game session failed with one of the
+  // Game adapters (M0) â€” a bot-backed game session failed with one of the
   // game-neutral error classes (GAME_*). Generic popup carrying ERROR_COPY;
   // Minecraft's classes keep their dedicated modals above.
   | { kind: 'game-error'; game: GameId; characterId: string; error: ErrorClass; message: string }
-  // Phase 18/19 — chat "Games" affordance: a tiled grid of supported games.
+  // Phase 18/19 â€” chat "Games" affordance: a tiled grid of supported games.
   // Per-game info is a hover-only popup inside the picker (no about modal).
   | { kind: 'games-picker'; characterId: string }
-  // 260721 — launching a game while ANOTHER game is active for the same
+  // 260721 â€” launching a game while ANOTHER game is active for the same
   // companion. Confirming ends the previous session via its normal end path
   // (lib/gameLaunch.ts holds the parked launch), then proceeds.
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'CONNECT4' | 'BATTLESHIP';
       fromName: string;
       toName: string;
     }
-  // 260803 — the screen-share source picker, opened from the call controls.
+  // 260803 â€” the screen-share source picker, opened from the call controls.
   // Not a games-picker panel any more: sharing is a call feature, not a game.
   // 260929: `game` when it was reached from a backseat game tile (Roblox).
   | { kind: 'share-screen'; characterId: string; game?: BackseatGameSelection; manual?: boolean }
-  // 260929 — a backseat game tile: the one-time intro, then the optional
+  // 260929 â€” a backseat game tile: the one-time intro, then the optional
   // "which game are you playing?" step, then the share picker above.
   // 261109: `query` prefills (and runs) the pick step's search, from the
   // Suggest-a-game hint ("Roblox Forsaken").
   | { kind: 'backseat-game'; characterId: string; gameId: string; query?: string };
 
 /**
- * B4 — which tab CharactersScreen should open on. The compass icon in the
+ * B4 â€” which tab CharactersScreen should open on. The compass icon in the
  * IconRail (B3) sets this to 'world' before navigating to home, so
  * CharactersScreen reads it on mount and applies the World tab as default.
  * Default 'home'.
@@ -190,10 +190,10 @@ interface UiState {
    */
   pendingSummonId: string | null;
   /**
-   * Phase 18/19 (task 6) — when a summon is launched from the chat surface (the
+   * Phase 18/19 (task 6) â€” when a summon is launched from the chat surface (the
    * "Play together" games popup), the user should be RETURNED to that chat once
    * the bot joins, not yanked to the profile page. This records that intent so a
-   * deferred summon (LAN-not-open → McSetupModal auto-resume) lands back in chat
+   * deferred summon (LAN-not-open â†’ McSetupModal auto-resume) lands back in chat
    * too. Set alongside pendingSummonId; consumed + cleared by the resume.
    */
   pendingSummonReturnToChat: boolean;
@@ -203,10 +203,10 @@ interface UiState {
    * through GameSetupModal when its world:state flips open.
    */
   pendingSummonGame: GameId;
-  /** B3/B4 — IconRail compass + CharactersScreen tab persistence. */
+  /** B3/B4 â€” IconRail compass + CharactersScreen tab persistence. */
   homeTab: HomeTab;
   /**
-   * ui-A7 — Show the developer console (LogsBar) at the bottom of the
+   * ui-A7 â€” Show the developer console (LogsBar) at the bottom of the
    * window. Default OFF; persisted via UserConfig.dev_console_visible so
    * a relaunch preserves the choice. App.tsx's bootstrap hydrates this
    * from getConfig() before the first render of a view that would mount
@@ -223,31 +223,31 @@ interface UiState {
    */
   realisticTyping: boolean;
   /**
-   * 260707 — product-analytics opt-OUT flag (PostHog). Default false
+   * 260707 â€” product-analytics opt-OUT flag (PostHog). Default false
    * (analytics on) per the disclosed opt-out model. Persisted via
    * UserConfig.analytics_opt_out and hydrated at App.tsx bootstrap; the
    * Settings "Usage analytics" toggle flips it (main persists + applies).
    */
   analyticsOptOut: boolean;
   /**
-   * 260705 — the chat presence side panel is open by default; hiding it is a
+   * 260705 â€” the chat presence side panel is open by default; hiding it is a
    * sticky preference across companions and app restarts. Persisted via
    * UserConfig.chat_panel_hidden and hydrated here at App.tsx bootstrap (same
    * pattern as realisticTyping); ChatScreen persists changes on toggle.
    */
   chatPanelHidden: boolean;
   /**
-   * Phase 15 (D-10/VIS-03) — whether the active bot's LLM provider is
-   * vision-capable. Fed by the `vision:capability` push (bot→main→renderer,
+   * Phase 15 (D-10/VIS-03) â€” whether the active bot's LLM provider is
+   * vision-capable. Fed by the `vision:capability` push (botâ†’mainâ†’renderer,
    * subscribed in useDataStore.subscribeIpc). The 15-05 Settings auto-render
    * toggle reads `useUiStore(s => s.visionCapable)` to gate its `disabled`
-   * state — a REAL provider signal, not an ai_backend_kind inference and not a
+   * state â€” a REAL provider signal, not an ai_backend_kind inference and not a
    * deferral. Default FALSE (fail-closed): the toggle stays disabled until a
    * VLM-backed bot reports true, so a non-VLM provider can never enable it.
    */
   visionCapable: boolean;
   /**
-   * china-compat W1 — vision verdict of the ACTIVE chat backend, derived from
+   * china-compat W1 â€” vision verdict of the ACTIVE chat backend, derived from
    * config (provider + model through llmCatalog; cloud-proxy is always
    * 'yes'). Fed by the `llm:capability` push + the capability-get seed in
    * useDataStore.subscribeIpc. Deliberately separate from the bot-session
@@ -268,7 +268,7 @@ interface UiState {
   llmProvider: string | null;
   /**
    * Session-only flag: flips true the first time the user leaves the Home
-   * screen — either by navigating to another view (character/settings/etc.)
+   * screen â€” either by navigating to another view (character/settings/etc.)
    * or by switching CharactersScreen to the World tab. The Home header
    * greeting ("Welcome to Sei" / "Welcome back") shows only while this is
    * false; once the user has left Home once, it reads "Companions" for the rest
@@ -277,7 +277,7 @@ interface UiState {
    */
   homeGreetingDismissed: boolean;
   /**
-   * Phase 18/19 — when the CharacterPage is opened FROM a chat (the chat
+   * Phase 18/19 â€” when the CharacterPage is opened FROM a chat (the chat
    * header's Profile button), this records the originating character id so the
    * page's back button returns to that chat instead of going home. Cleared by
    * CharacterPage once it routes back. null = the page was opened the normal way
@@ -315,7 +315,7 @@ interface UiState {
    * UserConfig.call_convo_starters; App.tsx hydrates. ON by default. */
   convoStartersEnabled: boolean;
   /**
-   * 260730 — call backdrop mode, per character: true = show the character's
+   * 260730 â€” call backdrop mode, per character: true = show the character's
    * scene (or their art) instead of the avatar tiles. Keyed by the DIALED
    * character's id, which is also the key a group call uses, so "how I like
    * calling Sui" survives inviting someone else along.
@@ -323,14 +323,14 @@ interface UiState {
    * A character absent from the map has no stored preference, and the default
    * depends on them: someone with a custom scene opens in it, everyone else
    * opens on the familiar avatar view. That is why this is a sparse map and
-   * not a boolean per character defaulted to false — writing false for every
+   * not a boolean per character defaulted to false â€” writing false for every
    * character on first call would erase the distinction.
    *
    * Persisted via UserConfig.call_backdrop; App.tsx hydrates.
    */
   callBackdropByCharacter: Record<string, boolean>;
   /**
-   * 260724 — custom app background. `backgroundImage` is the portrait path ref
+   * 260724 â€” custom app background. `backgroundImage` is the portrait path ref
    * ('_bg.png', served via sei-portrait://) or null when no background is set;
    * opacity (0..1, how visible the image is through the theme's window color)
    * and brightness (0.2..1) are the two Theme-section sliders. Persisted via
@@ -344,7 +344,7 @@ interface UiState {
   backgroundBrightness: number;
   backgroundBust: number;
   /**
-   * 260728 — IN-APP fullscreen for a game surface. Not the OS window's
+   * 260728 â€” IN-APP fullscreen for a game surface. Not the OS window's
    * fullscreen (that is what this button used to do, and it was the wrong
    * verb: a game does not need the whole display, it needs the whole app).
    * True means "give the mounted game every pixel the app has": the IconRail
@@ -426,7 +426,7 @@ export const useUiStore = create<UiState>((set) => ({
   analyticsOptOut: false,
   // Panel open by default; App.tsx re-hydrates from UserConfig.chat_panel_hidden.
   chatPanelHidden: false,
-  // Phase 15 (D-10/VIS-03): fail-closed — false until a VLM-backed bot reports
+  // Phase 15 (D-10/VIS-03): fail-closed â€” false until a VLM-backed bot reports
   // capabilities.vision === true over the vision:capability push.
   visionCapable: false,
   // 'unknown' until the seed/push lands; consumers treat unknown as usable
@@ -491,3 +491,7 @@ export const useUiStore = create<UiState>((set) => ({
     set((s) => ({ callBackdropByCharacter: { ...s.callBackdropByCharacter, [characterId]: on } })),
   endCall: () => set({ callMuted: false, callDeafened: false }),
 }));
+
+
+
+

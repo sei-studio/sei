@@ -1,7 +1,7 @@
-// 261111: quality pass 52, item bookkeeping (11-11 scorecard, dev 9c1bca50).
+﻿// 261111: quality pass 52, item bookkeeping (11-11 scorecard, dev 9c1bca50).
 //  - work_session: an open ask kept every item of the work she answered a
 //    line with, so "yeah sounds good" answered with craft(wooden_pickaxe)
-//    became "you are walking to Alex carrying wooden_pickaxe×1, which you got
+//    became "you are walking to Alex carrying wooden_pickaxeÃ—1, which you got
 //    for their line "yeah sounds good"" on her next walk to the player, and
 //    the arrival note offered it to them. All three 11-11 work_sessions
 //    carried one, on the turns where she gave her pickaxe away unasked and
@@ -179,7 +179,7 @@ describe('orchestrator: an ask keeps only the items its line names', () => {
     const t = allText(arrivalCalls().at(-1))
     expect(t).not.toContain(CARRYING)
     expect(t).not.toContain(GENERAL)
-    expect(t).not.toContain('wooden_pickaxe×')
+    expect(t).not.toContain('wooden_pickaxeÃ—')
   })
 
   it('"grab me some coal" still names the coal on arrival', async () => {
@@ -190,7 +190,7 @@ describe('orchestrator: an ask keeps only the items its line names', () => {
       turn(act('e1', 'end_loop')),
     ], { inv })
     await send('grab me some coal')
-    expect(allText(arrivalCalls().at(-1))).toContain('coal×6, which you got for their line')
+    expect(allText(arrivalCalls().at(-1))).toContain('coalÃ—6, which you got for their line')
   })
 
   it('"make me a crafting table": the logs stay hers, the table is theirs', async () => {
@@ -204,8 +204,8 @@ describe('orchestrator: an ask keeps only the items its line names', () => {
     await send('make me a crafting table')
     const t = allText(arrivalCalls().at(-1))
     expect(t).toContain(CARRYING)
-    expect(t).toContain('crafting_table×1')
-    expect(t).not.toContain('oak_log×')
+    expect(t).toContain('crafting_tableÃ—1')
+    expect(t).not.toContain('oak_logÃ—')
   })
 
   it('"get me some food" answered with a hunt names the beef', async () => {
@@ -216,6 +216,10 @@ describe('orchestrator: an ask keeps only the items its line names', () => {
       turn(act('e1', 'end_loop')),
     ], { inv })
     await send('get me some food')
-    expect(allText(arrivalCalls().at(-1))).toContain('beef×3')
+    expect(allText(arrivalCalls().at(-1))).toContain('beefÃ—3')
   })
 })
+
+
+
+

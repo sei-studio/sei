@@ -1,15 +1,15 @@
-/**
- * SetNewPasswordModal — choose a new password after a password-reset link lands.
+﻿/**
+ * SetNewPasswordModal â€” choose a new password after a password-reset link lands.
  *
- * Flow: the user taps "Forgot your password?" in SignInModal → main emails a
- * reset link → clicking it lands a recovery session (main pushes
- * auth:password-recovery) → App.tsx mounts this modal. The user enters a new
- * password (typed twice) and submits → sei.updatePassword → success.
+ * Flow: the user taps "Forgot your password?" in SignInModal â†’ main emails a
+ * reset link â†’ clicking it lands a recovery session (main pushes
+ * auth:password-recovery) â†’ App.tsx mounts this modal. The user enters a new
+ * password (typed twice) and submits â†’ sei.updatePassword â†’ success.
  *
  * The user is already SIGNED IN via the recovery session by the time this
  * mounts. They reached here by deliberately clicking a password-reset link, so
  * the modal is completion-only (260605): there is no "Maybe later" dismiss and
- * ESC does not close it — finishing the reset (or the success "Back to Sei") is
+ * ESC does not close it â€” finishing the reset (or the success "Back to Sei") is
  * the single way out. This prevents leaving an account in a half-reset state.
  *
  * Mirrors SignInModal's modal frame, Button, and TextField usage so the
@@ -66,8 +66,8 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
   };
 
   // BLOCKING recovery gate (tier 'recovery', z 1200): ESC does not close and
-  // there is no scrim-click dismiss — finishing the reset is the only way out.
-  // Success sub-state — confirm and let the user dismiss back into the app.
+  // there is no scrim-click dismiss â€” finishing the reset is the only way out.
+  // Success sub-state â€” confirm and let the user dismiss back into the app.
   if (done) {
     return (
       <ModalShell title={t('Password updated')} width={460} tier="recovery" escClose={false}>
@@ -125,9 +125,13 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
           type="submit"
           disabled={submitting || !password || !confirm}
         >
-          {submitting ? t('Saving…') : t('Save new password')}
+          {submitting ? t('Savingâ€¦') : t('Save new password')}
         </Button>
       </form>
     </ModalShell>
   );
 }
+
+
+
+

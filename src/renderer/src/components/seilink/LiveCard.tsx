@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "{name} lives on your desktop now" (261110, product call 261110). When the
  * room first goes live, one card says where she is and how to reach her:
  *  - she is part of the wallpaper, so open windows cover her;
@@ -175,3 +175,7 @@ export function LiveCard({ characterId, name, surface, onDone }: LiveCardProps):
   const canMinimize = os !== 'linux' && Boolean(sei.seilinkStage);
   return <LiveCardView name={name} os={os} placement={surface === 'intro_end' ? 'stage' : 'app'} busy={busy} onMinimize={canMinimize ? minimize : undefined} onDismiss={() => finish('dismissed')} />;
 }
+
+
+
+

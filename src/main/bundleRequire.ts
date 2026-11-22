@@ -1,4 +1,4 @@
-/**
+﻿/**
  * A CommonJS `require` anchored to THIS bundle, for loading native addons and
  * CJS-only packages from the ESM main process (package.json `"type": "module"`,
  * electron-vite emits dist/main as ESM).
@@ -26,3 +26,7 @@ export function bundleRequire(): NodeJS.Require {
   if (!cached) cached = createRequire(import.meta.url);
   return cached;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261008: remember() on the chat surface. Typed chat and voice calls both
  * offer the chat-only CHAT_REMEMBER_TOOL (same schema as REMEMBER_TOOL, so
  * the dispatcher and honorRememberCalls see the same input), and the status
@@ -88,9 +88,9 @@ describe('memory check in the status block', () => {
   });
 
   it('is plain text with no em-dashes', () => {
-    expect(CHAT_SEARCH_CHECK).not.toMatch(/—/);
-    expect(CHAT_MEMORY_CHECK).not.toMatch(/—/);
-    expect(CHAT_REMEMBER_TOOL.description).not.toMatch(/—/);
+    expect(CHAT_SEARCH_CHECK).not.toMatch(/â€”/);
+    expect(CHAT_MEMORY_CHECK).not.toMatch(/â€”/);
+    expect(CHAT_REMEMBER_TOOL.description).not.toMatch(/â€”/);
   });
 });
 
@@ -170,3 +170,7 @@ describe('buildSystemBlocks persona placeholders (T111)', () => {
     expect(text).toContain('You trust the player.');
   });
 });
+
+
+
+

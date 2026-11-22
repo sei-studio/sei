@@ -1,4 +1,4 @@
-/**
+﻿/**
  * worldlinkTipPref (261119): the one-time "New" tip's memory. The tip hangs
  * under the WorldLink button in the CHAT HEADER once, and then never again.
  *
@@ -152,3 +152,7 @@ export function __resetWorldlinkTipSessionForTest(): void {
   shownThisSession.clear();
   useWorldlinkTipStore.setState({ rev: 0 });
 }
+
+
+
+

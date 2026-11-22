@@ -1,5 +1,5 @@
-/**
- * ChatgptPlanBadge — "Using ChatGPT plan" + Manage usage, under the chat
+﻿/**
+ * ChatgptPlanBadge â€” "Using ChatGPT plan" + Manage usage, under the chat
  * composer (261017, issue #46). OpenAI's UI guidelines ask for this near the
  * composer or model selector whenever requests run on the user's plan.
  * Renders nothing unless the active local provider is the ChatGPT plan and
@@ -29,3 +29,7 @@ export function ChatgptPlanBadge(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

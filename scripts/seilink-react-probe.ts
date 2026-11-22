@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room-edit reaction probe (261105, T335): do her reaction lines read
  * naturally in character and actually name the change?
  *
@@ -163,3 +163,7 @@ main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });
+
+
+
+

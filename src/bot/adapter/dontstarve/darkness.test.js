@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { isDarknessHit, torchShortfall } from './darkness.js'
 
 const night = (self) => ({ self: { inLight: false, inv: [], equip: {}, ...self }, world: { phase: 'night' } })
@@ -28,3 +28,7 @@ describe('DST darkness: Charlie vs a monster', () => {
     expect(torchShortfall({})).toBeNull()
   })
 })
+
+
+
+

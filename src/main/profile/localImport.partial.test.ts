@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Own-key import under partial failure and a scope change mid-import (review
  * of 261023). Every case here is a way the merge could lose or mislabel a
  * player's companion data even though each step on its own is idempotent:
@@ -138,7 +138,7 @@ describe('a crash between the world merge and the memory merge', () => {
 
     await seedChar('local', OWN, null);
     await seedFiles(path.join(root('local'), 'memory', OWN), {
-      'MEMORY.md': HEADER + '## World 1 — Local Farm\n- [2026-09-01T10:00:00.000Z] farm fact\n',
+      'MEMORY.md': HEADER + '## World 1 â€” Local Farm\n- [2026-09-01T10:00:00.000Z] farm fact\n',
       'worlds.json': JSON.stringify({ version: 1, worlds: [{ num: 1, fingerprint: 'fpLocal', label: 'Local Farm' }] }),
     });
 
@@ -150,7 +150,7 @@ describe('a crash between the world merge and the memory merge', () => {
     await rm(path.join(acctMem, 'MEMORY.md'), { recursive: true, force: true });
     await writeFile(
       path.join(acctMem, 'MEMORY.md'),
-      HEADER + '## World 1 — Acct\n- [2026-10-01T10:00:00.000Z] acct fact\n',
+      HEADER + '## World 1 â€” Acct\n- [2026-10-01T10:00:00.000Z] acct fact\n',
       'utf8',
     );
 
@@ -158,8 +158,8 @@ describe('a crash between the world merge and the memory merge', () => {
     expect(second.failed).toEqual([]);
     const memory = await readFile(path.join(acctMem, 'MEMORY.md'), 'utf8');
     // The farm is world 2 in the account's registry, and its fact is filed there.
-    expect(memory).toMatch(/## World 2 — Local Farm\n- \[2026-09-01T10:00:00.000Z\] farm fact/);
-    expect(memory).not.toMatch(/## World 1 — Local Farm/);
+    expect(memory).toMatch(/## World 2 â€” Local Farm\n- \[2026-09-01T10:00:00.000Z\] farm fact/);
+    expect(memory).not.toMatch(/## World 1 â€” Local Farm/);
   });
 });
 
@@ -223,3 +223,7 @@ describe('a World companion whose local copy lost its owner stamp', () => {
     void OTHER_AUTHOR;
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * DeleteConfirmModal — sharp-cornered confirm dialog for character deletion.
+﻿/**
+ * DeleteConfirmModal â€” sharp-cornered confirm dialog for character deletion.
  *
  * Renders through ModalShell (Party redesign): the shell owns scrim, panel,
  * title, Esc and the mount animation; this file supplies body copy and the
@@ -7,7 +7,7 @@
  * are verbatim from the spec.
  *
  * D-49 note: Delete is only offered when `id !== 'sui'`; that gate is enforced
- * by the caller — this component only renders the confirm UI.
+ * by the caller â€” this component only renders the confirm UI.
  *
  * Esc and Cancel both invoke `onCancel`.
  */
@@ -48,3 +48,7 @@ export function DeleteConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

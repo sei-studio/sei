@@ -1,5 +1,5 @@
-/**
- * Voice-sample disk cache (260720) — MAIN only.
+﻿/**
+ * Voice-sample disk cache (260720) â€” MAIN only.
  *
  * The creation picker's per-voice sample line is identical for every play, so
  * each (voiceId, sample text) pair is synthesized at most once per machine:
@@ -9,7 +9,7 @@
  * old entries instead of replaying stale audio.
  *
  * The cache is strictly best-effort: any filesystem or electron failure makes
- * reads miss and writes no-op — the picker then just synthesizes as before.
+ * reads miss and writes no-op â€” the picker then just synthesizes as before.
  * `previewCacheKey` is pure (no electron import) so it is unit-testable.
  */
 import { createHash } from 'node:crypto';
@@ -34,7 +34,7 @@ async function cacheDir(): Promise<string | null> {
     const { app } = await import('electron');
     return path.join(app.getPath('userData'), CACHE_DIR_NAME);
   } catch {
-    return null; // non-electron context (tests) — cache disabled
+    return null; // non-electron context (tests) â€” cache disabled
   }
 }
 
@@ -68,3 +68,7 @@ export async function writeCachedPreview(key: string, bytes: ArrayBuffer): Promi
     console.warn(`[sei/voice] preview cache write failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

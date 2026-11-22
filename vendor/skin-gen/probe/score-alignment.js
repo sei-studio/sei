@@ -1,6 +1,6 @@
-// Score how well a generated atlas image aligns with the 64x64 skin layout.
+﻿// Score how well a generated atlas image aligns with the 64x64 skin layout.
 // Measures, per face rect, the fraction of cells that are background vs
-// textured, and reports faces that look empty (background-colored) — the
+// textured, and reports faces that look empty (background-colored) â€” the
 // signal for "the model drifted from the reference layout".
 // Usage: node probe/score-alignment.js <atlas.png> [variant]
 import { downsampleToSkin } from '../src/downsample.js';
@@ -57,3 +57,7 @@ if (weak.length) console.log('weak faces:', weak.join(', '));
 console.log('flat base faces:', flatBaseFaces(rgba, { variant }).join(', ') || 'none');
 const aligned = wsScore > 0.85 && fillScore > 0.85;
 console.log(aligned ? 'ALIGNMENT: GOOD' : 'ALIGNMENT: POOR');
+
+
+
+

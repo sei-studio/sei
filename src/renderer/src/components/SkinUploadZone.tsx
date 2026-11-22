@@ -1,11 +1,11 @@
-/**
- * SkinUploadZone — drag-and-drop + click-to-browse source-of-skin entry point.
+﻿/**
+ * SkinUploadZone â€” drag-and-drop + click-to-browse source-of-skin entry point.
  *
  * Behaviors:
- *   - Click / Enter / Space → invoke the Electron native file picker via
+ *   - Click / Enter / Space â†’ invoke the Electron native file picker via
  *     `sei.uploadSkinPng()`. On success, hand the bytes to `onUpload`. On
  *     cancel, no-op. On error, surface the classifier's copy via `onError`.
- *   - Drag a File from the OS shell → validate PNG type, magic, and 64×64
+ *   - Drag a File from the OS shell â†’ validate PNG type, magic, and 64Ã—64
  *     dimensions client-side (defense-in-depth against the main-side gate
  *     already in skinUpload.ts), compute sha256 via Web Crypto, hand bytes
  *     to `onUpload`. On any failure: `onError(ERROR_COPY.SKIN_FILE_INVALID)`.
@@ -13,7 +13,7 @@
  * a11y:
  *   - root is `role="button" tabIndex=0`; Enter/Space activates the picker
  *   - `aria-describedby` points at the secondary "Files stay on your computer" hint
- *   - drag-over visual change is mirrored in copy ("Drop to upload") — not color-only
+ *   - drag-over visual change is mirrored in copy ("Drop to upload") â€” not color-only
  */
 
 import React, { useRef, useState } from 'react';
@@ -29,16 +29,16 @@ export interface SkinUploadZoneProps {
   disabled?: boolean;
 }
 
-// PNG magic bytes — first 8 bytes of every PNG file (RFC 2083 §3.1).
+// PNG magic bytes â€” first 8 bytes of every PNG file (RFC 2083 Â§3.1).
 //   0x89  P  N  G  CR LF SUB LF
 const PNG_MAGIC: readonly number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
- * Validate that a Uint8Array buffer is a 64×64 PNG. Mirrors src/main/skinImageUtil.ts
- * `parsePngIhdr` minimal contract — only checks what's needed to reject obviously
+ * Validate that a Uint8Array buffer is a 64Ã—64 PNG. Mirrors src/main/skinImageUtil.ts
+ * `parsePngIhdr` minimal contract â€” only checks what's needed to reject obviously
  * wrong files BEFORE handing bytes to the main-side strict gate. The main-side
  * validator stays the source of truth; this is a UX nicety so users get feedback
- * without a round-trip when they drop a JPG/16×16 PNG/etc.
+ * without a round-trip when they drop a JPG/16Ã—16 PNG/etc.
  */
 function validatePng64x64(bytes: Uint8Array): { ok: true } | { ok: false; reason: string } {
   if (bytes.length < 24) {
@@ -58,14 +58,14 @@ function validatePng64x64(bytes: Uint8Array): { ok: true } | { ok: false; reason
   const height =
     ((bytes[20] ?? 0) << 24) | ((bytes[21] ?? 0) << 16) | ((bytes[22] ?? 0) << 8) | (bytes[23] ?? 0);
   if (width !== 64 || height !== 64) {
-    return { ok: false, reason: `Wrong dimensions: ${width}×${height} (expected 64×64).` };
+    return { ok: false, reason: `Wrong dimensions: ${width}Ã—${height} (expected 64Ã—64).` };
   }
   return { ok: true };
 }
 
-/** Base64-encode a small (≤2KB) byte buffer via btoa(String.fromCharCode(...)). */
+/** Base64-encode a small (â‰¤2KB) byte buffer via btoa(String.fromCharCode(...)). */
 function bytesToBase64(bytes: Uint8Array): string {
-  // 64×64 PNG is <2KB; String.fromCharCode(...bytes) is safe at this size.
+  // 64Ã—64 PNG is <2KB; String.fromCharCode(...bytes) is safe at this size.
   let binary = '';
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) {
@@ -93,7 +93,7 @@ export function SkinUploadZone({
   const [dragOver, setDragOver] = useState<boolean>(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Hidden <input type=file> kept for fallback keyboard activation if the
-  // native picker IPC ever fails (extremely defensive — primary path is `sei.uploadSkinPng`).
+  // native picker IPC ever fails (extremely defensive â€” primary path is `sei.uploadSkinPng`).
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleClick = async (): Promise<void> => {
@@ -152,7 +152,7 @@ export function SkinUploadZone({
         return;
       }
       const pngBase64 = bytesToBase64(bytes);
-      // Web Crypto subtle digest — runs in the renderer process; same algorithm
+      // Web Crypto subtle digest â€” runs in the renderer process; same algorithm
       // as main's sha256 so the persisted png_sha256 matches between paths.
       const digest = await crypto.subtle.digest('SHA-256', buf);
       const sha256 = bufferToHex(digest);
@@ -184,7 +184,7 @@ export function SkinUploadZone({
       onDragLeave={handleDragLeave}
       onDrop={(e) => void handleDrop(e)}
     >
-      {/* Hidden fallback input — never actually triggered in the happy path, but
+      {/* Hidden fallback input â€” never actually triggered in the happy path, but
           kept around for environments where the IPC native picker fails (e.g.
           test harnesses that don't expose window.sei). */}
       <input
@@ -204,3 +204,7 @@ export function SkinUploadZone({
     </div>
   );
 }
+
+
+
+

@@ -1,11 +1,11 @@
-/**
- * ChatTopBar — the ONE companion top bar (260721), shared by ChatScreen and
+﻿/**
+ * ChatTopBar â€” the ONE companion top bar (260721), shared by ChatScreen and
  * VoiceCallScreen so games and calls keep an identical header: back chevron,
  * avatar, bold name + dim #tag (opens the profile page), and the top-right
  * game-controller + phone buttons.
  *
  * Context-aware behavior, identical structure:
- *   - back:  chat → home; call view → back to that chat (the call keeps
+ *   - back:  chat â†’ home; call view â†’ back to that chat (the call keeps
  *            running; GameSurface's chrome row / the icon-rail badge carry it).
  *   - controller: opens the games picker, including mid-call. It carried the
  *            one-time "New games added" tip (260929) until the tip moved to
@@ -28,11 +28,11 @@
  *            It carries the one-time "New" tip (261119, lib/worldlinkTipPref),
  *            which keeps out of the way of WorldLink's own tour, sheet and
  *            intro; clicking the button retires it.
- *   - phone: no call → start one. With a game surface open the call starts IN
+ *   - phone: no call â†’ start one. With a game surface open the call starts IN
  *            PLACE (260722, startOrOpenCall: this screen stays, GameSurface's
  *            chrome row shows the compact controls); otherwise the fullscreen
  *            call view opens (its gate handles consent/install before
- *            dialing). On the call view → back to chat (toggles the SURFACE;
+ *            dialing). On the call view â†’ back to chat (toggles the SURFACE;
  *            hanging up stays on the red button).
  */
 
@@ -170,8 +170,8 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
 
   const onPhone = (): void => {
     // On the call view the phone toggles the SURFACE back to chat. Otherwise
-    // startOrOpenCall routes: game surface open → start the call in place
-    // (no navigation); no game → open the fullscreen call view (whose gate
+    // startOrOpenCall routes: game surface open â†’ start the call in place
+    // (no navigation); no game â†’ open the fullscreen call view (whose gate
     // owns the install/consent step before dialing).
     if (onCallView) navigate({ kind: 'chat', characterId });
     else startOrOpenCall(characterId);
@@ -306,3 +306,7 @@ export function ChatTopBar({ characterId, gameOpen = false }: ChatTopBarProps): 
     </header>
   );
 }
+
+
+
+

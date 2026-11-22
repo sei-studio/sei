@@ -1,15 +1,15 @@
-/**
- * Tests for plan 10-05 — startGoogleOAuth loopback PKCE server.
+﻿/**
+ * Tests for plan 10-05 â€” startGoogleOAuth loopback PKCE server.
  *
  * Stubs:
  *   - ./supabaseClient (signInWithOAuth + exchangeCodeForSession)
- *   - 'electron' (shell.openExternal — via _setOpenExternalForTests stub
+ *   - 'electron' (shell.openExternal â€” via _setOpenExternalForTests stub
  *      so the real electron module isn't loaded outside an Electron runtime)
  *
  * The tests spawn `startGoogleOAuth` against the OS-chosen ephemeral port,
  * intercept the `data.url` returned to openExternal (which surfaces the
  * `redirectTo` the loopback expects), and then issue a real HTTP GET to
- * `http://127.0.0.1:<port>/callback?…` to simulate the system browser
+ * `http://127.0.0.1:<port>/callback?â€¦` to simulate the system browser
  * completing (or failing) the OAuth flow.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,7 +76,7 @@ afterEach(() => {
 describe('startGoogleOAuth', () => {
   it('happy path: receives ?code=, exchanges for session, returns {ok:true}', async () => {
     signInWithOAuthMock.mockResolvedValue({
-      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?…' },
+      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?â€¦' },
       error: null,
     });
     exchangeCodeForSessionMock.mockResolvedValue({ data: { session: { user: { id: 'u1' } } }, error: null });
@@ -102,7 +102,7 @@ describe('startGoogleOAuth', () => {
 
   it('timeout: never receives callback, returns {ok:false, reason:"timeout"}', async () => {
     signInWithOAuthMock.mockResolvedValue({
-      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?…' },
+      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?â€¦' },
       error: null,
     });
     _setOpenExternalForTests(async () => {
@@ -119,7 +119,7 @@ describe('startGoogleOAuth', () => {
 
   it('abort: signal aborted after start, returns {ok:false, reason:"user_cancelled"}', async () => {
     signInWithOAuthMock.mockResolvedValue({
-      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?…' },
+      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?â€¦' },
       error: null,
     });
     _setOpenExternalForTests(async () => {
@@ -137,12 +137,12 @@ describe('startGoogleOAuth', () => {
 
   it('google error param: receives ?error=access_denied, returns {ok:false, reason:"google_rejected"}', async () => {
     signInWithOAuthMock.mockResolvedValue({
-      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?…' },
+      data: { url: 'https://accounts.google.com/o/oauth2/v2/auth?â€¦' },
       error: null,
     });
     _setOpenExternalForTests(async () => {
       const port = portFromSignInCall();
-      // Fire-and-forget — we don't need to await the HTTP response in this test.
+      // Fire-and-forget â€” we don't need to await the HTTP response in this test.
       void getLocalhost(port, '/callback?error=access_denied');
     });
 
@@ -171,3 +171,7 @@ describe('startGoogleOAuth', () => {
     expect(exchangeCodeForSessionMock).not.toHaveBeenCalled();
   });
 });
+
+
+
+

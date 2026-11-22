@@ -1,5 +1,5 @@
-/**
- * botErrorRouting — which modal (if any) a terminal BotStatus error opens
+﻿/**
+ * botErrorRouting â€” which modal (if any) a terminal BotStatus error opens
  * (game adapters M0, 260908). Keyed by (game, errorClass).
  *
  * Minecraft's table is the pre-M0 routing from useDataStore.wireIpc, moved
@@ -20,16 +20,16 @@ type ErrorStatus = Extract<BotStatus, { kind: 'error' }>;
 type Route = (status: ErrorStatus, game: GameId) => Modal;
 
 const MINECRAFT_ROUTES: Partial<Record<ErrorClass, Route>> = {
-  // 260709 — unsupported world version gets a popup, not just a model-row
+  // 260709 â€” unsupported world version gets a popup, not just a model-row
   // status: the Play flow otherwise fails with no visible feedback.
   UNSUPPORTED_MC_VERSION: (s) => ({ kind: 'unsupported-version', characterId: s.characterId, message: s.message }),
-  // 260720 — LAN_NOT_OPEN failures open the popup with numbered "open to
+  // 260720 â€” LAN_NOT_OPEN failures open the popup with numbered "open to
   // LAN" steps instead of only the model-row line.
   LAN_NOT_OPEN: (s) => ({ kind: 'lan-not-open', characterId: s.characterId }),
-  // 260806 — a Forge/NeoForge world that requires its mods client-side
+  // 260806 â€” a Forge/NeoForge world that requires its mods client-side
   // needs its own surface: the resolution is a different world.
   MODDED_HOST_REJECTED: (s) => ({ kind: 'modded-host', characterId: s.characterId, message: s.message }),
-  // 261007 — the world checks Minecraft accounts (online mode). Used to retry
+  // 261007 â€” the world checks Minecraft accounts (online mode). Used to retry
   // three times and land on LAN_NOT_OPEN's "open to LAN" steps for a world
   // that was open. The generic popup carries ERROR_COPY (the fix is a server
   // or mod setting) and a Try again for after the player changes it. The
@@ -41,7 +41,7 @@ const MINECRAFT_ROUTES: Partial<Record<ErrorClass, Route>> = {
     error: s.error,
     message: '',
   }),
-  // 260929 — the supervisor's Forge pre-gate refused the summon (a path that
+  // 260929 â€” the supervisor's Forge pre-gate refused the summon (a path that
   // skipped the renderer's host gate, e.g. a voice-call launch). Same blocking
   // surface the Summon button shows. The status carries only the message, so
   // the loader is read back from it (forgeHostBlockedMessage names it).
@@ -84,6 +84,10 @@ export const BOT_ERROR_ROUTES: Record<GameId, Partial<Record<ErrorClass, Route>>
     DST_DIED_TOO_OFTEN: genericRoute,
     DST_DANGEROUS_SPOT: genericRoute,
   },
+  // Battleship: main-side minigame, no bot error routes.
+  BATTLESHIP: {},
+  // Forza 4: main-side minigame, no bot error routes.
+  CONNECT4: {},
 };
 
 /**
@@ -100,3 +104,7 @@ export function modalForBotStatus(status: BotStatus): Modal | null {
   if (status.midSession === true) return { kind: 'bot-crash', characterId: status.characterId };
   return null;
 }
+
+
+
+

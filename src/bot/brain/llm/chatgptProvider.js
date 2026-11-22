@@ -1,4 +1,4 @@
-// 261017 (issue #46): ChatGPT-plan provider for the bot brains ("Continue
+﻿// 261017 (issue #46): ChatGPT-plan provider for the bot brains ("Continue
 // with ChatGPT"). Responses API over the shared wire module
 // (responsesWire.js), with the same call shape as every other bot provider.
 //
@@ -86,7 +86,7 @@ export function createChatgptProvider(config, { fetchImpl = globalThis.fetch, ur
   }
 
   async function call({ systemBlocks, tools, messages, signal, timeoutMs, onSay, spokenSay, namedUserBlocks }) {
-    // Same [haiku?]/[haiku!]/[haiku✗] turn log as anthropicClient, so the
+    // Same [haiku?]/[haiku!]/[haikuâœ—] turn log as anthropicClient, so the
     // LogsBar, the quality-eval harness (snapshots, usage, scratchpad) and
     // post-mortems read a ChatGPT session the same way.
     logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks })
@@ -216,3 +216,7 @@ export function collapseSay(resp, spokenSay) {
   const toolUses = content.filter(b => b.type === 'tool_use').map(b => ({ id: b.id, name: b.name, input: b.input }))
   return { ...resp, content, toolUses }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The desktop stage (261106, first-link flow): the main window steps out
  * over the desktop to play the first-link intro and to hold the room
  * editor ON the desktop, above the desktop icons, then steps aside again.
@@ -194,7 +194,7 @@ export function planExit(saved: StageSaved, reveal: boolean): StageOp[] {
   return ops;
 }
 
-// ── Runtime ─────────────────────────────────────────────────────────────────
+// â”€â”€ Runtime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Staged {
   win: BrowserWindow;
@@ -369,3 +369,7 @@ export function exitDesktopStage(win: BrowserWindow | null, reveal: boolean): { 
     return { ok: false, stagedMs };
   }
 }
+
+
+
+

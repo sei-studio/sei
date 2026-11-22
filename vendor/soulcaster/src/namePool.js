@@ -1,4 +1,4 @@
-// Given-name pool for the soulcaster character generator.
+﻿// Given-name pool for the soulcaster character generator.
 //
 // Why this exists: when the model picked names freely it mode-collapsed hard
 // (prod 261027: 705 companions, only 358 distinct names; Akane x32, Priya x18,
@@ -17,7 +17,7 @@
 // Romanization: Korean uses hyphenated given names (Seo-yeon), Chinese uses
 // toneless pinyin written as one word (Mingyu). Plain ASCII letters only (no
 // diacritics): a generated character has no username, so its Minecraft name
-// is name.replace(/[^A-Za-z0-9_]/g, '') and "Sofía" would become "Sofa".
+// is name.replace(/[^A-Za-z0-9_]/g, '') and "SofÃ­a" would become "Sofa".
 // Hyphens are fine ("Min-jun" plays as "Minjun"). Every name must also
 // sanitize to 3-16 characters, the Minecraft username length range.
 //
@@ -360,3 +360,7 @@ export const NAME_POOL_SOURCE = {
     `,
   },
 };
+
+
+
+

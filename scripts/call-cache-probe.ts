@@ -1,5 +1,5 @@
-/**
- * scripts/call-cache-probe.ts — per-turn prompt-cache usage on a scripted
+﻿/**
+ * scripts/call-cache-probe.ts â€” per-turn prompt-cache usage on a scripted
  * voice call (261024, free call budget work).
  *
  * Free calls showed about 1,119 cache-write tokens per Haiku turn, the biggest
@@ -85,7 +85,7 @@ interface TurnLog {
   reply: string;
 }
 
-/** µ$ at Haiku 5.5 list price: $0.10 in, 1.25x write, 0.1x read, $0.50 out per MTok. */
+/** Âµ$ at Haiku 5.5 list price: $0.10 in, 1.25x write, 0.1x read, $0.50 out per MTok. */
 function micro(u: { input_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; output_tokens: number }): number {
   return u.input_tokens * 0.1 + (u.cache_creation_input_tokens ?? 0) * 0.125 + (u.cache_read_input_tokens ?? 0) * 0.01 + u.output_tokens * 0.5;
 }
@@ -190,7 +190,7 @@ async function runArm(arm: Arm, nonce: string): Promise<TurnLog[]> {
     console.log(
       `${arm.padEnd(6)} t${String(turn).padStart(2)} ${kind.padEnd(8)} rows=${String(log.rows).padStart(2)} in=${String(log.input).padStart(5)} ` +
         `read=${String(log.cacheRead).padStart(5)} write=${String(log.cacheWrite).padStart(5)} out=${String(log.output).padStart(3)} ` +
-        `${log.micro.toFixed(0).padStart(4)}µ$ ${log.ms}ms ${toolNames.length ? `[${toolNames.join(',')}] ` : ''}${JSON.stringify(log.reply)}`,
+        `${log.micro.toFixed(0).padStart(4)}Âµ$ ${log.ms}ms ${toolNames.length ? `[${toolNames.join(',')}] ` : ''}${JSON.stringify(log.reply)}`,
     );
   }
   return logs;
@@ -202,8 +202,8 @@ function summarize(arm: string, logs: TurnLog[]): void {
   const avg = (f: (l: TurnLog) => number) => steady.reduce((n, l) => n + f(l), 0) / Math.max(1, steady.length);
   console.log(
     `${arm.padEnd(6)} steady turns=${steady.length} avg in=${avg((l) => l.input).toFixed(0)} read=${avg((l) => l.cacheRead).toFixed(0)} ` +
-      `write=${avg((l) => l.cacheWrite).toFixed(0)} out=${avg((l) => l.output).toFixed(0)} cost=${avg((l) => l.micro).toFixed(1)}µ$/turn ` +
-      `(${(avg((l) => l.micro) * 6.4).toFixed(0)}µ$/min at 6.4 req/min) greeting=${logs[0].micro.toFixed(0)}µ$`,
+      `write=${avg((l) => l.cacheWrite).toFixed(0)} out=${avg((l) => l.output).toFixed(0)} cost=${avg((l) => l.micro).toFixed(1)}Âµ$/turn ` +
+      `(${(avg((l) => l.micro) * 6.4).toFixed(0)}Âµ$/min at 6.4 req/min) greeting=${logs[0].micro.toFixed(0)}Âµ$`,
   );
   // Per kind, plus the turn right after each idle/companion turn (a wasted
   // write on the note turn can also leave the next turn without a warm prefix).
@@ -213,7 +213,7 @@ function summarize(arm: string, logs: TurnLog[]): void {
     const a = (f: (l: TurnLog) => number) => ls.reduce((n, l) => n + f(l), 0) / ls.length;
     console.log(
       `${arm.padEnd(6)}   ${k.padEnd(9)} n=${String(ls.length).padStart(2)} in=${a((l) => l.input).toFixed(0)} read=${a((l) => l.cacheRead).toFixed(0)} ` +
-        `write=${a((l) => l.cacheWrite).toFixed(0)} out=${a((l) => l.output).toFixed(0)} cost=${a((l) => l.micro).toFixed(1)}µ$`,
+        `write=${a((l) => l.cacheWrite).toFixed(0)} out=${a((l) => l.output).toFixed(0)} cost=${a((l) => l.micro).toFixed(1)}Âµ$`,
     );
   }
   const next = logs.filter((l, i) => i > 0 && (logs[i - 1].kind === 'idle' || logs[i - 1].kind === 'companion'));
@@ -221,7 +221,7 @@ function summarize(arm: string, logs: TurnLog[]): void {
     const a = (f: (l: TurnLog) => number) => next.reduce((n, l) => n + f(l), 0) / next.length;
     console.log(
       `${arm.padEnd(6)}   ${'next-turn'.padEnd(9)} n=${String(next.length).padStart(2)} in=${a((l) => l.input).toFixed(0)} read=${a((l) => l.cacheRead).toFixed(0)} ` +
-        `write=${a((l) => l.cacheWrite).toFixed(0)} out=${a((l) => l.output).toFixed(0)} cost=${a((l) => l.micro).toFixed(1)}µ$`,
+        `write=${a((l) => l.cacheWrite).toFixed(0)} out=${a((l) => l.output).toFixed(0)} cost=${a((l) => l.micro).toFixed(1)}Âµ$`,
     );
   }
 }
@@ -238,3 +238,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

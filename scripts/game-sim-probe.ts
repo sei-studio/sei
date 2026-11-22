@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * scripts/game-sim-probe.ts — Haiku 4.5 vs Haiku 5.5 across the game surfaces
+ * scripts/game-sim-probe.ts â€” Haiku 4.5 vs Haiku 5.5 across the game surfaces
  * (261008): Minecraft, Stardew, Don't Starve Together, chess, Draw! and
  * Backseat.
  *
@@ -63,7 +63,7 @@ register('./lib/electronStubHooks.mjs', import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MAIA_MODEL = process.env.SEI_MAIA_MODEL ?? join(root, '..', 'sei', 'mirror-out', 'chess', 'maia3-5m.onnx');
 
-// ── arms + prices ───────────────────────────────────────────────────────────
+// â”€â”€ arms + prices â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Price = { in: number; cw: number; cr: number; out: number }; // $/MTok
 const PRICES: Record<string, Price> = {
   'claude-haiku-4-5': { in: 1.0, cw: 1.25, cr: 0.1, out: 5.0 },
@@ -101,7 +101,7 @@ function resolveApiKey(): string | undefined {
   }
 }
 
-// ── result types ────────────────────────────────────────────────────────────
+// â”€â”€ result types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Block = { type: string; text?: string; name?: string; id?: string; input?: any; thinking?: string };
 type Usage = {
   input_tokens: number;
@@ -173,7 +173,7 @@ async function main() {
   const CP = (chess as any).__chessPromptProbe;
   if (!CP) throw new Error('chessService.__chessPromptProbe missing');
 
-  // ── persona / shared context ──────────────────────────────────────────────
+  // â”€â”€ persona / shared context â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const SUI = JSON.parse(readFileSync(join(root, 'demo/fixtures/default-characters/sui.json'), 'utf8')).persona as { source: string; expanded?: string };
   const SUI_TEXT = SUI.expanded || SUI.source;
   const PERSONA_BLOCK = renderPersona({ name: 'Sui', expanded: SUI_TEXT });
@@ -194,7 +194,7 @@ async function main() {
     return !!v(tu.input);
   };
 
-  // ── streaming call (TTFT = first visible text or tool-arg delta) ──────────
+  // â”€â”€ streaming call (TTFT = first visible text or tool-arg delta) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const apiErrors: Array<{ arm: string; scene: string; status?: number; message: string }> = [];
   async function streamCall(arm: string, body: Record<string, unknown>, maxTokens: number): Promise<CallResult> {
     const a = ARMS[arm];
@@ -239,13 +239,13 @@ async function main() {
   const textOf = (content: Block[]) => content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n').trim();
   const toolUsesOf = (content: Block[]) => content.filter((b) => b.type === 'tool_use');
   const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
-  const hasDash = (s: string) => /[—–]/.test(s);
+  const hasDash = (s: string) => /[â€”â€“]/.test(s);
   /** Stage-direction / reasoning leaked into a spoken line ("nothing to say, so silence"). */
   const META_SPOKEN = /\b(so silence|stay(ing)? (quiet|silent)|that'?s filler|no comment( yet)?|nothing (specific |much )?to say|no comment needed|i('| a)m (reading|analy[sz]ing)|let me think)\b/i;
 
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // GAME BRAIN (minecraft / stardew / dontstarve)
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   type BrainSurface = { blocks: string[]; tools: any[]; adapter: any; playerName: string; username: string };
 
   /** anthropicClient.buildCachedSystem: static blocks + "Available actions" prose, marker on the last. */
@@ -322,8 +322,8 @@ async function main() {
     const opener = teammate ? `your teammate ${teammate} just spoke to you` : 'the player just spoke to you';
     const playerMessageText =
       `${opener}. respond to THIS, not to the scene around you:\n"${text}"\n` +
-      'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-      'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.';
+      'Reply with the say() tool â€” a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+      'Your text output is a private scratchpad the player can NEVER see â€” a reply that exists only in your text is silence to them; only say() reaches them.';
     return { eventText: `Event: player_chat${add}`, playerMessageText };
   }
   /** Safety events take the adapter's one-line framing alone (isSafetyEvent). */
@@ -383,7 +383,7 @@ async function main() {
       if (invalid.length) issues.push(`invalid-args:${invalid.join('+')}`);
       if (res.stop === 'max_tokens') issues.push('max_tokens');
       if (s.mustSay && !says.length) issues.push(rawText ? 'LEAK(text-no-say)' : 'silent');
-      if (tools.filter((t) => t.name === 'say').length > 1) issues.push(`say×${says.length}`);
+      if (tools.filter((t) => t.name === 'say').length > 1) issues.push(`sayÃ—${says.length}`);
       if (s.anyOf && !names.some((n) => s.anyOf!.includes(n))) issues.push(`missing:${s.anyOf.join('|')}`);
       if (s.noneOf) for (const n of names) if (s.noneOf.includes(n)) issues.push(`bad:${n}`);
       for (const line of says) {
@@ -398,12 +398,12 @@ async function main() {
     }
   }
 
-  // ── Minecraft scenes ──────────────────────────────────────────────────────
+  // â”€â”€ Minecraft scenes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const SNAP_LOWHP_FIGHT = `snapshot: pos: -3,88,22
 biome: plains  surroundings: outside  time: night (17134)
 hp: 4/20  food: 9/20  xp: lvl 0
 holding: stone_sword
-inventory (3/36 slots): dirt×4 stone_sword×1 bread×1
+inventory (3/36 slots): dirtÃ—4 stone_swordÃ—1 breadÃ—1
 terrain at feet: 16 stone, 8 grass_block, 6 dirt
 nearby blocks:
   #1 grass_block x369 @-3,88,21
@@ -418,7 +418,7 @@ recent_events: hp -3 (zombie), hp -4 (zombie)`;
 biome: plains  surroundings: outside  time: day (2400)
 hp: 20/20  food: 19/20  xp: lvl 1
 holding: (empty)
-inventory (2/36 slots): dirt×6 wheat_seeds×3
+inventory (2/36 slots): dirtÃ—6 wheat_seedsÃ—3
 terrain at feet: 24 grass_block, 4 short_grass
 nearby blocks:
   #1 oak_log x18 @46,72,-15
@@ -431,7 +431,7 @@ owner SSk1tz: @42,71,-6 (3 blocks away)`;
 biome: plains  surroundings: outside  time: day (5200)
 hp: 20/20  food: 18/20  xp: lvl 3
 holding: stone_pickaxe
-inventory (4/36 slots): oak_planks×10 oak_log×6 stone_pickaxe×1 cobblestone×31
+inventory (4/36 slots): oak_planksÃ—10 oak_logÃ—6 stone_pickaxeÃ—1 cobblestoneÃ—31
 terrain at feet: 20 grass_block, 6 dirt
 nearby blocks:
   #1 oak_log x9 @18,71,2
@@ -443,7 +443,7 @@ owner SSk1tz: @20,70,6 (13 blocks away)`;
 biome: forest  surroundings: outside  time: day (1200)
 hp: 20/20  food: 18/20  xp: lvl 0
 holding: oak_log
-inventory (2/36 slots): oak_log×3 dirt×1
+inventory (2/36 slots): oak_logÃ—3 dirtÃ—1
 terrain at feet: 20 grass_block, 6 oak_leaves
 nearby blocks:
   #1 oak_log x12 @62,71,-14
@@ -456,7 +456,7 @@ owner SSk1tz: @67,70,-15 (4 blocks away)`;
 biome: plains  surroundings: outside  time: day (9200)
 hp: 20/20  food: 18/20  xp: lvl 3
 holding: stone_axe
-inventory (4/36 slots): oak_planks×4 stone_axe×1 cobblestone×12 torch×4
+inventory (4/36 slots): oak_planksÃ—4 stone_axeÃ—1 cobblestoneÃ—12 torchÃ—4
 terrain at feet: 20 grass_block, 6 dirt
 nearby blocks:
   #1 oak_planks x58 @10,70,-6
@@ -470,7 +470,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
 biome: plains  surroundings: outside  time: dusk (12400)
 hp: 20/20  food: 17/20  xp: lvl 3
 holding: stone_sword
-inventory (5/36 slots): oak_planks×22 stone_sword×1 cobblestone×31 torch×4 bread×3
+inventory (5/36 slots): oak_planksÃ—22 stone_swordÃ—1 cobblestoneÃ—31 torchÃ—4 breadÃ—3
 terrain at feet: 20 grass_block, 6 dirt
 nearby blocks:
   #1 oak_planks x58 @10,70,-6
@@ -522,7 +522,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
     event: chatEvent(MC, "what got added in the newest minecraft update? i havent played in like a year"), anyOf: ['search'],
   });
 
-  // ── Stardew scenes ────────────────────────────────────────────────────────
+  // â”€â”€ Stardew scenes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const sdSnap = (mut?: (o: any) => void, last: string | null = null) => {
     const o = JSON.parse(JSON.stringify(sdObsBase));
     mut?.(o);
@@ -547,7 +547,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
     anyOf: ['water', 'harvest', 'ship', 'give', 'till', 'plant', 'chop', 'mine', 'gather'],
   });
 
-  // ── DST scenes ────────────────────────────────────────────────────────────
+  // â”€â”€ DST scenes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function dstSnap(mut: (f: any) => void, opts: { last?: string | null; phase?: string } = {}) {
     const st = createObservationState();
     const mod = createFakeMod({ botPort: 1, token: 'x' });
@@ -628,9 +628,9 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
     },
   };
 
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // CHAT-FAMILY SURFACES (chess / draw / backseat)
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const PINNED_CLOCK = clockNow();
   const gameSystem = (extraStable: string, proactiveness = 1, surface: 'game' | 'chat' = 'game') =>
     buildSystemBlocks({
@@ -638,7 +638,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
       openWorldDetected: false, inGame: false, voiceCall: false, language: 'en', extraStable, pinnedClock: PINNED_CLOCK,
     });
 
-  // ── chess ─────────────────────────────────────────────────────────────────
+  // â”€â”€ chess â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let enginePromise: Promise<any> | null = null;
   const engine = () => (enginePromise ??= import('cce-1').then(({ CharacterChessEngine }: any) => CharacterChessEngine.create({ maiaModelPath: MAIA_MODEL })));
   const PIECES = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'];
@@ -742,7 +742,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
     };
   }
 
-  // ── Draw! ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Draw! â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   type Stroke = { points: Array<{ x: number; y: number }>; closed?: boolean; smooth?: boolean };
   async function renderCanvas(strokes: Stroke[], file?: string): Promise<string> {
     const paths = strokes
@@ -817,7 +817,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
   }
   SCENES.DR_DRAW = {
     surface: 'draw',
-    note: 'her turn to draw CAT: pen strokes on-canvas, never says the word (≤5 hops)',
+    note: 'her turn to draw CAT: pen strokes on-canvas, never says the word (â‰¤5 hops)',
     run: async (arm) => {
       const word = 'cat';
       const tools = [drawPrompts.PEN_TOOL, drawPrompts.CLEAR_TOOL, REMEMBER_TOOL];
@@ -879,7 +879,7 @@ owner SSk1tz: @14,70,-2 (3 blocks away)`;
     },
   };
 
-  // ── Backseat ──────────────────────────────────────────────────────────────
+  // â”€â”€ Backseat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** Compose a grid exactly like the renderer: gridLayout(n), CELL_W x CELL_H cells, JPEG. */
   async function grid(frames: Buffer[], file: string, scale = 1): Promise<string> {
     const { cols, w, h } = gridLayout(frames.length);
@@ -1056,9 +1056,9 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
     };
   }
 
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // RUN
-  // ════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   const scenes = Object.entries(SCENES).filter(([id, s]) => (!ONLY_SURFACE || s.surface === ONLY_SURFACE) && (!ONLY_SCENE || id === ONLY_SCENE));
   console.log(`arms=${ARM_KEYS.join(',')} reps=${REPS} scenes=${scenes.length} out=${OUT}`);
   writeFileSync(OUT, '');
@@ -1120,7 +1120,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
           `  [${arm}] #${r + 1} ${out.issues.length ? 'FAIL ' + out.issues.join(',') : 'ok'}  ttft=${first.ttftMs ?? '-'}ms total=${totalMs}ms ` +
             `in=${u.input_tokens}+cw${u.cache_creation_input_tokens}+cr${u.cache_read_input_tokens} out=${u.output_tokens}${thinking ? ` think=${thinking}` : ''} $${cost.toFixed(5)}`,
         );
-        console.log(`      says: ${out.spoken.length ? out.spoken.map((x) => `“${x}”`).join(' ') : '(nothing)'}`);
+        console.log(`      says: ${out.spoken.length ? out.spoken.map((x) => `â€œ${x}â€`).join(' ') : '(nothing)'}`);
         const others = out.tools.filter((t) => t.name !== 'say').map((t) => `${t.name}(${JSON.stringify(t.input)})`).join(' ');
         if (others) console.log(`      tools: ${others.slice(0, 300)}`);
         if (out.dropped.length) console.log(`      dropped: ${out.dropped.join(' | ').slice(0, 300)}`);
@@ -1169,7 +1169,7 @@ ${['Continue', 'New Game', 'Load Game', 'Settings', 'Quit'].map((t, i) => `<rect
   const spent = Object.values(stats).flatMap((byArm) => Object.entries(byArm).map(([, s]) => s.cost.reduce((x, y) => x + y, 0))).reduce((x, y) => x + y, 0);
   console.log(`\napi errors: ${apiErrors.length}`);
   for (const e of apiErrors) console.log(`  ${e.arm} ${e.scene} ${e.status ?? ''} ${e.message.slice(0, 200)}`);
-  console.log(`total spend ≈ $${spent.toFixed(3)}`);
+  console.log(`total spend â‰ˆ $${spent.toFixed(3)}`);
   appendFileSync(OUT, JSON.stringify({ summary, scenePass, apiErrors, spent }) + '\n');
 }
 
@@ -1180,3 +1180,7 @@ main().then(
     process.exit(1);
   },
 );
+
+
+
+

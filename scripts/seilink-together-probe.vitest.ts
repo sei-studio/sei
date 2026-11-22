@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink decorating-together probe (261105, T336): the REAL chat turns
  * (chatService: prompt assembly, tool list, hop loop, decorate, the call
  * picture, the transcript) against a real model, with the editor's side
@@ -356,7 +356,7 @@ describe("decorating together, live", () => {
 
         say(`=== ${name}`);
         try {
-          // ── Session 1: off a call, she watches ──
+          // â”€â”€ Session 1: off a call, she watches â”€â”€
           say("-- session 1: edits, then a live line");
           openTogether(TOKEN, CHAR, savedRoom(), {
             now: Date.now(),
@@ -413,7 +413,7 @@ describe("decorating together, live", () => {
           await live("live line 2");
           await turnLine("talk, no change", "what do you think so far?");
 
-          // ── Session 2: make it cozier, then undo ──
+          // â”€â”€ Session 2: make it cozier, then undo â”€â”€
           say("-- session 2: make it cozier, apply, undo");
           const beforeHers = structuredClone(editorRoom.state);
           await turnLine("cozier", "make it cozier, your turn");
@@ -435,7 +435,7 @@ describe("decorating together, live", () => {
           );
           closeTogether(TOKEN);
 
-          // ── Session 3: on a call ──
+          // â”€â”€ Session 3: on a call â”€â”€
           say("-- session 3: on a call, the picture");
           setCallActive(CHAR, true);
           editorRoom = savedRoom();
@@ -502,3 +502,7 @@ describe("decorating together, live", () => {
 });
 
 void homedir;
+
+
+
+

@@ -1,13 +1,13 @@
-/**
- * Tests for callEdgeFunction — the typed fetch wrapper that Phase 10 uses for
+﻿/**
+ * Tests for callEdgeFunction â€” the typed fetch wrapper that Phase 10 uses for
  * delete-me, and Phase 11/12 reuse for admin/moderation Edge Functions
  * (CONTEXT D-13).
  *
  * Covers four cases:
- *   1. 204 No Content → ok:true with undefined json.
- *   2. 401 with JSON error body → ok:false, message extracted from body.error.
- *   3. fetch throws (network error) → ok:false, status:0, message: error message.
- *   4. Timeout via AbortController → ok:false, status:0, message:'timeout'.
+ *   1. 204 No Content â†’ ok:true with undefined json.
+ *   2. 401 with JSON error body â†’ ok:false, message extracted from body.error.
+ *   3. fetch throws (network error) â†’ ok:false, status:0, message: error message.
+ *   4. Timeout via AbortController â†’ ok:false, status:0, message:'timeout'.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { callEdgeFunction } from './edgeFunctionClient';
@@ -70,3 +70,7 @@ describe('callEdgeFunction', () => {
     expect(res).toEqual({ ok: false, status: 0, message: 'timeout' });
   });
 });
+
+
+
+

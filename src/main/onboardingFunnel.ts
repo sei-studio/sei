@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `onboarding_abandoned` on quit (261005).
  *
  * The renderer reports each onboarding screen (`onboarding_step`, see
@@ -103,3 +103,7 @@ export function _resetOnboardingFunnelForTests(): void {
   state = null;
   closed = false;
 }
+
+
+
+

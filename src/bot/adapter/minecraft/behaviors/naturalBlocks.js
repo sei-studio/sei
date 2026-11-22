@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/naturalBlocks.js
+﻿// src/bot/adapter/minecraft/behaviors/naturalBlocks.js
 //
 // Generated ground vs player builds. Split out of climbOut.js (261017) so
 // build.js can use it without an import cycle (climbOut imports build.js).
@@ -25,3 +25,7 @@ export function isNaturalBlock(name) {
   if (name.endsWith('_terracotta') && !name.includes('glazed')) return TERRACOTTA_COLORS.has(name.slice(0, -'_terracotta'.length))
   return false
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 review: App's boot routing on main's auth state. Drives the real
  * waitForAuthScope (fake clock) into resolveBootRoute, the function App's
  * boot effect calls, so a snapshot sequence maps to the first view.
@@ -156,3 +156,7 @@ describe('resolveBootRoute with a loaded:false snapshot (review 261029)', () => 
     expect(await resolveBootRoute({ ...h.deps, isCancelled: () => true })).toBeNull();
   });
 });
+
+
+
+

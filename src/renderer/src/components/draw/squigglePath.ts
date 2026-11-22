@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Squiggly UI linework for the Draw! surface.
  *
  * Every rule, border and underline on this screen is a hand-drawn wobble
@@ -133,7 +133,7 @@ export function squiggleRect(
 }
 
 /**
- * A closed, rough blob filling w x h — the marker swipe behind a selected or
+ * A closed, rough blob filling w x h â€” the marker swipe behind a selected or
  * hovered button (260728).
  *
  * A CSS background is a perfect rectangle, which is the one shape nothing else
@@ -201,3 +201,7 @@ export function squiggleEllipse(w: number, h: number, seed: string, amp = 1.6): 
   }
   return `M ${pts.join(' L ')}`;
 }
+
+
+
+

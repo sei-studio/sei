@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Decorate together?" (261106, first-link flow). After her first move-in
  * onto the plain background (plainRoomState, first-link v3; the blank room
  * (blankRoomState) of the first pass still counts), once the app has stepped aside and
@@ -219,3 +219,7 @@ export function __resetDecorateOfferForTest(): void {
   pending.clear();
   deps = null;
 }
+
+
+
+

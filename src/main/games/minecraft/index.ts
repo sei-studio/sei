@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Minecraft game module (M0, 260908): a thin wrapper over what main already
- * had — lanWatcher (world detection), effectiveMcUsername (naming) and the
+ * had â€” lanWatcher (world detection), effectiveMcUsername (naming) and the
  * cached LAN port + MOTD (join target). No behavior change; this is the
  * registry shape the supervisor and the world:* channels dispatch on.
  */
@@ -58,7 +58,7 @@ export function createMinecraftGameModule(): GameModule {
       return {
         port: latest.port,
         motd: latest.motd ?? null,
-        // mc_username is no longer collected in the GUI (260605) — it stays in
+        // mc_username is no longer collected in the GUI (260605) â€” it stays in
         // the DB but may be empty; the bot derives player recognition from
         // preferred_name when it is absent.
         mc_username: (ctx.userConfig.mc_username ?? '').trim(),
@@ -89,6 +89,10 @@ export function createMinecraftGameModule(): GameModule {
       }
       return null;
     },
-    // install: undefined in M0 — the skin-setup wizard stays where it is.
+    // install: undefined in M0 â€” the skin-setup wizard stays where it is.
   };
 }
+
+
+
+

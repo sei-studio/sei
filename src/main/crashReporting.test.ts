@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261031 (T278): crash reporting core. Unclean-exit detection across
  * launches (the session marker), crash payload scrubbing (log vs PostHog),
  * per-process caps, renderer / child process / hang events.
@@ -390,3 +390,7 @@ describe('the boot-guard seam (T280)', () => {
     expect(state.pending).toBeNull();
   });
 });
+
+
+
+

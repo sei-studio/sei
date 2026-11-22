@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Preload for the safe-mode screen (261031, T277).
  *
  * Imports ONLY 'electron': the window is sandboxed, and a sandboxed preload
@@ -59,3 +59,7 @@ const api = {
 if (typeof contextBridge?.exposeInMainWorld === 'function') {
   contextBridge.exposeInMainWorld('seiSafeMode', api);
 }
+
+
+
+

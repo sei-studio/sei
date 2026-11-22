@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CI driver for the Windows update progress window (261030).
  *
  * Runs the REAL launcher (src/main/updateProgressHelper.ts) the way
@@ -74,3 +74,7 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+
+
+

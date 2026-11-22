@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/observers/progression.js — the Stardew Valley
+﻿// src/bot/adapter/stardew/observers/progression.js â€” the Stardew Valley
 // progression frontier (260910), the counterpart of the Minecraft spine
 // (adapter/minecraft/observers/progression.js) for the brain's heartbeat.
 //
@@ -178,3 +178,7 @@ export function readProgressionState(obs, latches) {
 export function getProgression(obs, latches) {
   return computeProgression(readProgressionState(obs, latches))
 }
+
+
+
+

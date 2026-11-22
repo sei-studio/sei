@@ -1,4 +1,4 @@
-// 261111: the allowlisted class of a connection drop for session telemetry.
+﻿// 261111: the allowlisted class of a connection drop for session telemetry.
 import { describe, it, expect } from 'vitest'
 import { dropClassFor } from './connect.js'
 
@@ -12,3 +12,7 @@ describe('dropClassFor', () => {
     expect(dropClassFor('socketClosed', 'timeout')).toBe('kick')
   })
 })
+
+
+
+

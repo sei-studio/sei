@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Survivor pick (game-adapters M2, 260908): which Don't Starve Together
  * survivor a character plays as. The CHARACTER chooses on first launch (plan
  * section 8, decision 3) through a one-off LLM call over the persona plus the
@@ -158,3 +158,7 @@ async function persist(characterId: string, pick: DstSurvivorPick, deps: Survivo
     deps.log?.(`survivor pick persist failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

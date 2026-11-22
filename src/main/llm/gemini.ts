@@ -1,5 +1,5 @@
-/**
- * Google Gemini adapter — v1beta generateContent REST, key in the query
+﻿/**
+ * Google Gemini adapter â€” v1beta generateContent REST, key in the query
  * string, non-streaming v1 (an onTextDelta sink gets the whole text once the
  * response lands; voice sentences arriving at hop end is the accepted
  * degradation). Schema sanitize + tool_result idToName reconstruction live in
@@ -116,3 +116,7 @@ export function createGeminiProvider(opts: {
     streaming: false,
   };
 }
+
+
+
+

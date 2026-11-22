@@ -1,4 +1,4 @@
-# Don't Starve Together companion body: research report
+﻿# Don't Starve Together companion body: research report
 
 Date: 2026-09-08. Scope: can the existing Sei brain (Node: LLM + Zod action
 registry + FSM, currently bodied by mineflayer) drive a visible, autonomous
@@ -111,7 +111,7 @@ Don't Starve, unlicensed, and only partly portable.
 | DontStarveAI (Artificial Wilson LLM) | https://github.com/pedropcamellon/DontStarveAI | "Public domain / MIT" for additions; base is DS-AI (unlicensed) | 2026-03-17 | Lua + Python | DS-AI plus a Python/Ollama goal planner reading a JSON state file the mod writes | Medium. Single-player DS, file bridge (`io.open` write, which DST blocked in 2025); goal/planner code is Python |
 | DST-MOD-REST-API | https://github.com/Hicsy/DST-MOD-REST-API | none | 2020-09-10 | Lua | Server-only mod: POSTs server status, polls a command queue every 3 s and `loadstring`-executes commands | Medium. Minimal, clean `QueryServer` GET/POST usage; `all_clients_require_mod=false` |
 | Chat Announcements (Discord) | https://github.com/gyroplast/mod-dont-starve-chat-announcements | CC0-1.0 | 2021-12-25 | Lua | Server-only mod POSTing JSON embeds to a Discord webhook via `QueryServer` | Medium. Confirms POST with JSON body works (Discord requires JSON); broke for external URLs after 2025-01 |
-| DST_Bridge (游戏消息桥) | https://github.com/Sodium-Aluminate/DST-Mods (DST_Bridge) | GPL-3.0 | 2023-05-29 | Lua + Java | Server-only mod bridging in-game chat with Telegram/Bilibili via an HTTP server: hooks `Networking_Say`, pushes JSON, polls | Medium. Reference for chat hook + poll loop. GPL: read only |
+| DST_Bridge (æ¸¸æˆæ¶ˆæ¯æ¡¥) | https://github.com/Sodium-Aluminate/DST-Mods (DST_Bridge) | GPL-3.0 | 2023-05-29 | Lua + Java | Server-only mod bridging in-game chat with Telegram/Bilibili via an HTTP server: hooks `Networking_Say`, pushes JSON, polls | Medium. Reference for chat hook + poll loop. GPL: read only |
 | dst-mod-moderator | https://github.com/jupitersh/dst-mod-moderator | GPL-3.0 | 2021-04-07 | Lua | Chat-command moderation by wrapping `Networking_Say` | Low. Chat hook pattern. GPL |
 | dst-broadcasts (core.ListenSay) | https://github.com/zhzwz/dst-broadcasts | none | 2026-08-11 | Lua | Current-era mod with a clean server/client `Networking_Say` listener abstraction | Low-medium. Confirms hook still valid in 2026 |
 | dont-starve-AIbot (peter-zx) | https://github.com/peter-zx/dont-starve-AIbot | MIT | 2025-05-06 | Python + Lua stub | Screenshot + pyautogui + LLM controlling the *player's own* character | Low. Screen-driving; not a companion |
@@ -129,7 +129,7 @@ Lua sandbox).
 
 ## 3. Per-project deep dives
 
-### 3.1 FAtiMA-DST (hineios, MIT) — `research/dst/FAtiMA-DST/`
+### 3.1 FAtiMA-DST (hineios, MIT) â€” `research/dst/FAtiMA-DST/`
 
 Files: `FAtiMA-DST/modmain.lua` (95 lines), `FAtiMA-DST/scripts/brains/fatimabrain.lua`
 (508 lines), `FAtiMA-Server/*.cs` (C# `HttpListener` on `http://localhost:8080`).
@@ -146,7 +146,7 @@ Files: `FAtiMA-DST/modmain.lua` (95 lines), `FAtiMA-DST/scripts/brains/fatimabra
   `inst:GetTemperature()`, `IsFreezing`, `IsOverheating`, `GetMoisture`,
   position. POSTed as JSON to `/<guid>/perceptions`. World state via
   `inst:WatchWorldState("phase"|"season"|...)` and `ListenForEvent("clocktick", ..., TheWorld)`
-  → POST `/<guid>/events`. Combat events: `killed`, `attacked`, `death`,
+  â†’ POST `/<guid>/events`. Combat events: `killed`, `attacked`, `death`,
   `onhitother`, `onmissother`.
 - **Action** (`Decide`, GET `/<guid>/decide/Behaviour` every 2 s, `/Dialogue`
   every 10 s): response JSON `{Type:"Action", Action:"CHOP", Target:guid,
@@ -169,7 +169,7 @@ Files: `FAtiMA-DST/modmain.lua` (95 lines), `FAtiMA-DST/scripts/brains/fatimabra
 - **Reusable:** the whole brain skeleton (perception encoder, DoAction wrapper,
   KeepWorking rule, world-state watchers). MIT.
 
-### 3.2 DST-AICompanion (votus777, MIT) — `research/dst/DST-AICompanion/`
+### 3.2 DST-AICompanion (votus777, MIT) â€” `research/dst/DST-AICompanion/`
 
 `DST Mod/modmain.lua` is FAtiMA's plus CSV logging through `io.open(MODROOT.."graph_data.csv","w")`
 (this write path was blocked by DST 651414 in Jan 2025). Spawns `wx78` instead
@@ -178,14 +178,14 @@ interval 0.5 s, decision 1.5 s, a `follower` leader with
 `Follow(inst, fn->leader, min, target, max)`, `RunAway(inst, "hostile", ...)`
 and `RunAway(inst, fn->combat.target, 6, 10)` nodes, distance tracking to the
 human (`UpdatePlayerDist`), a "vision score", speech via `talker:Say`, and a
-"speech system" where player utterances go DST → FAtiMA → external speech
+"speech system" where player utterances go DST â†’ FAtiMA â†’ external speech
 service ("Agent not only replies to player's utterances, it can perform proper
 actions", e.g. come closer when asked for help). README: "Mod files depend on
 the game version"; recommends Ctrl+R world reload when the AI gets stuck.
 Ships the FAtiMA-Server binaries (no C# source in this fork). Also confirms the
-approach ran on 2023-era DST with the host in "Host Game → Friends Only".
+approach ran on 2023-era DST with the host in "Host Game â†’ Friends Only".
 
-### 3.3 Artificial Wilson / DS-AI (KingofTown, unlicensed) — `research/dst/DS-AI/`
+### 3.3 Artificial Wilson / DS-AI (KingofTown, unlicensed) â€” `research/dst/DS-AI/`
 
 Single-player Don't Starve (`api_version = 6`, `GetPlayer()`, `GetWorld()`),
 0.3 from 2021. `modmain.lua` either replaces the player's brain
@@ -205,7 +205,7 @@ port (2571021979, "Artifical Wilson (DST)", 2021-08, updated 2021-11, "Bot
 Limit Per Player" setting) never got a public repo. No license file: treat as
 read-only reference; re-implement rather than copy.
 
-### 3.4 DontStarveAI (pedropcamellon) — `research/dst/DontStarveAI/`
+### 3.4 DontStarveAI (pedropcamellon) â€” `research/dst/DontStarveAI/`
 
 DS-AI with an `llm_state_exporter` component that writes
 `state/game_state.json` via `io.open("../mods/ds_llm/state/...","w")` (DS, not
@@ -218,7 +218,7 @@ executable, persistent strings under `Documents/Klei/...`, JSON global
 `json.encode/decode`. Its own additions are "Public domain / MIT"; the base is
 DS-AI (unlicensed).
 
-### 3.5 DST-MOD-REST-API (Hicsy, unlicensed) — `research/dst/DST-MOD-REST-API/`
+### 3.5 DST-MOD-REST-API (Hicsy, unlicensed) â€” `research/dst/DST-MOD-REST-API/`
 
 `modmain.lua`: guarded by `TheNet:GetIsServer()`; builds a status report
 (`TheNet:GetClientTable()`, `TheWorld.state`, topology) and POSTs it with
@@ -230,7 +230,7 @@ and runs each with `loadstring(cmd)` in `pcall`, POSTing `{status}` back. Uses
 encode() is not json compliant, only use encode_compliant()". Confirms the
 poll-for-commands shape and server-only packaging.
 
-### 3.6 Chat Announcements (gyroplast, CC0) — `research/dst/chat-announcements/`
+### 3.6 Chat Announcements (gyroplast, CC0) â€” `research/dst/chat-announcements/`
 
 Server-only (`all_clients_require_mod = false`). `client/discord.lua` posts
 `json.encode({username=..., embeds={...}})` with `TheSim:QueryServer(url, cb, "POST", body)`
@@ -240,7 +240,7 @@ this is evidence that POST bodies go through in a form Discord accepts
 (content type not controllable from Lua). CC0: freely reusable
 (`lib/logging.lua`, `lib/util.lua` are small utilities).
 
-### 3.7 DST_Bridge (Sodium-Aluminate, GPL-3.0) — fetched via API, not cloned
+### 3.7 DST_Bridge (Sodium-Aluminate, GPL-3.0) â€” fetched via API, not cloned
 
 Server-only chat bridge. Hooks `GLOBAL.Networking_Say = function(guid, userid, name, prefab, message, colour, whisper, isemote) if TheNet:GetIsServer() and inst.ismastershard then ... end; return old(...) end`,
 POSTs `{name, message}` JSON to `/sendMessage`, polls `/getMessage` with
@@ -259,7 +259,7 @@ actually calls" and it installs the hook in `AddSimPostInit`.
 
 ## 4. Technical facts
 
-### 4.1 Spawning a separate AI-controlled survivor from a server-side mod — HIGH (works), MEDIUM (edge cases)
+### 4.1 Spawning a separate AI-controlled survivor from a server-side mod â€” HIGH (works), MEDIUM (edge cases)
 
 What `SpawnPrefab("wilson")` gives you on the master sim (Klei
 `prefabs/player_common.lua`, build 747465, `MakePlayerCharacter`):
@@ -285,8 +285,8 @@ What `SpawnPrefab("wilson")` gives you on the master sim (Klei
 
 Consequences and what existing mods did:
 
-- Movement/actions: brains issue `BufferedAction` → `locomotor:PushAction` →
-  on arrival `EntityScript:PushBufferedAction` → `SGwilson` `ActionHandler`
+- Movement/actions: brains issue `BufferedAction` â†’ `locomotor:PushAction` â†’
+  on arrival `EntityScript:PushBufferedAction` â†’ `SGwilson` `ActionHandler`
   picks the state (chop/pickup/eat/build/attack...). This is the path FAtiMA,
   AICompanion and c_spawn'd characters use; it needs no controller. HIGH.
 - Crafting: `builder:MakeRecipe(recipe, pt, rot, skin, onsuccess)` requires no
@@ -314,7 +314,7 @@ Consequences and what existing mods did:
   LOW). Mitigation: wrap risky calls, keep the brain alive with
   `inst.entity:SetCanSleep(false)` (AICompanion does; otherwise entities far
   from real players go to sleep and the brain stops).
-- Ghost/death: `ex_fns.OnPlayerDeath` → `makeplayerghost` etc. are wired for
+- Ghost/death: `ex_fns.OnPlayerDeath` â†’ `makeplayerghost` etc. are wired for
   players; a dead bot becomes a ghost with no client to respawn it. Handle
   `death` in the brain: despawn and re-summon, or use `TheWorld` resurrection
   helpers. TEST.
@@ -336,7 +336,7 @@ FAtiMA `modmain.lua`; AICompanion `modmain.lua`; Steam discussion
 https://steamcommunity.com/app/322330/discussions/0/3277925755442724646/
 ("c_spawn "wilson" ... wouldn't move or do anything, but he can be interacted with").
 
-### 4.2 A real second player slot via a headless client — NOT FEASIBLE (HIGH)
+### 4.2 A real second player slot via a headless client â€” NOT FEASIBLE (HIGH)
 
 - The only headless binary is `dontstarve_dedicated_server_nullrenderer`
   (server). The client (`dontstarve_steam`) needs Steam running and a Klei
@@ -385,7 +385,7 @@ Sandbox state (HIGH, verbatim Klei patch notes):
 
 Channels:
 
-(a) **HTTP to localhost via `TheSim:QueryServer(url, callback, method, data)`** — RECOMMENDED. HIGH.
+(a) **HTTP to localhost via `TheSim:QueryServer(url, callback, method, data)`** â€” RECOMMENDED. HIGH.
 - Callback signature `(result, isSuccessful, resultCode)` (Klei
   `screens/emailsignupscreen.lua`, REST-API mod, Discord mod). Async; the
   engine's curl runs off the sim thread and the callback fires on the sim
@@ -404,7 +404,7 @@ Channels:
   bodies blow up memory ("sending a 70 kb data dump requires more than 2 GB",
   Klei bug tracker r2846) so keep observation payloads well under ~20 KB and
   send deltas; the overall request timeout is undocumented, so long-poll holds
-  should stay short (≤1 s) until measured (TEST). No documented rate limit;
+  should stay short (â‰¤1 s) until measured (TEST). No documented rate limit;
   FAtiMA ran 2 req/s perceptions + 0.67 req/s decisions + events for hours.
 - Latency: localhost HTTP round trip is milliseconds; the effective command
   latency is the poll interval. Design: mod GETs `/commands?since=<seq>` at
@@ -412,7 +412,7 @@ Channels:
   (bounded long-poll), and POSTs observations at 2-4 Hz plus event-driven
   POSTs (chat line, attacked, death). One in-flight request per channel.
 
-(b) **File mailbox via persistent strings** — viable fallback, MEDIUM.
+(b) **File mailbox via persistent strings** â€” viable fallback, MEDIUM.
 - `TheSim:SetPersistentString(name, data, encode, cb)` /
   `GetPersistentString(name, cb(success, str))` (async callbacks). For a
   client-hosted world they land in the cluster's shard save dir: DemoThree's
@@ -430,12 +430,12 @@ Channels:
   root for relative paths is the data folder and exact resolution is
   undocumented (LOW).
 
-(c) **Remote console / `c_remote` / `TheNet:SendRemoteExecute`** — HIGH that it
+(c) **Remote console / `c_remote` / `TheNet:SendRemoteExecute`** â€” HIGH that it
 exists, but it runs from an ADMIN CLIENT's game (`consolecommands.lua:201`),
 i.e. it requires driving the host's in-game console UI. Not automatable
 without keystroke injection. Not usable.
 
-(d) **Dedicated-server stdin** — HIGH that it works (`-console`,
+(d) **Dedicated-server stdin** â€” HIGH that it works (`-console`,
 `console_enabled = true`; Klei/wiki guides; every server panel uses it), but
 only for a dedicated server we launch ourselves (Plan B). A "Host Game" world
 without caves has no server process to attach to; with caves, DST launches the
@@ -450,7 +450,7 @@ https://forums.kleientertainment.com/klei-bug-tracker/dont-starve-together/thesi
 forum threads 63113 (timeout) and 67548 (methods);
 https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
 
-### 4.4 Installing and enabling the mod for a non-technical host — HIGH on mechanism
+### 4.4 Installing and enabling the mod for a non-technical host â€” HIGH on mechanism
 
 - Local mods: `<install>/mods/<modname>/` with `modinfo.lua` + `modmain.lua`.
   `MODS_ROOT` is an engine constant pointing there. Windows:
@@ -475,9 +475,9 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
      also loaded in the front end. Slot-independent; survives new worlds. Risk:
      Steam "verify files" or a game update can rewrite `modsettings.lua`
      (it ships with the game); re-apply on each launch.
-  2. Per-world `modoverrides.lua`: what the Host Game → Mods tab writes
-     (`ShardSaveIndex:SetSlotEnabledServerMods` → `ShardIndex:SetEnabledServerMods`
-     → `TheSim:SetPersistentStringInClusterSlot(slot, "Master", "../modoverrides.lua", ...)`),
+  2. Per-world `modoverrides.lua`: what the Host Game â†’ Mods tab writes
+     (`ShardSaveIndex:SetSlotEnabledServerMods` â†’ `ShardIndex:SetEnabledServerMods`
+     â†’ `TheSim:SetPersistentStringInClusterSlot(slot, "Master", "../modoverrides.lua", ...)`),
      read back by `ModIndex:LoadModOverides`. Path:
      `<Documents>/Klei/DoNotStarveTogether/<KU_id>/Cluster_<n>/Master/modoverrides.lua`.
      Format: `return { ["sei"] = { enabled = true, configuration_options = {} } }`
@@ -494,7 +494,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   nothing (`networking.lua DownloadMods` only temp-enables/downloads
   `all_clients_require_mod` mods).
 
-### 4.5 Chat — HIGH
+### 4.5 Chat â€” HIGH
 
 - Reading player chat on the server: wrap the global.
   ```lua
@@ -512,7 +512,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   host is not, so prefer the global hook). `whisper` lines are range-filtered
   only on the client display; the server hook sees them all.
 - Speaking:
-  - `bot.components.talker:Say(text)` → `TheNet:Talker(text, entity, duration, filter_ctx, netid)`
+  - `bot.components.talker:Say(text)` â†’ `TheNet:Talker(text, entity, duration, filter_ctx, netid)`
     broadcasts the bubble to every client (`components/talker.lua` sayfn).
     Character-name prefixing is not needed; the bubble hangs over the bot.
     Klei applies `GetSpecialCharacterPostProcess` (e.g. WX-78 casing). Length
@@ -531,7 +531,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
     mod one could set `talker.resolvechatterfn`; not for v1.
   - Emotes: `TheNet:Say(emotename, true, true)` is client-side only.
 
-### 4.6 Pathfinding, movement, actions, brains — HIGH (read from source)
+### 4.6 Pathfinding, movement, actions, brains â€” HIGH (read from source)
 
 - `LocoMotor:GoToPoint(pt, bufferedaction, run)`, `GoToEntity(target, bufferedaction, run)`,
   `PushAction(bufferedaction, run, try_instant)` (walks to the target's
@@ -568,7 +568,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   to `ACTIONS.<NAME>` plus a few composite verbs (gather N of prefab, build
   recipe, follow player, flee), exactly like the Minecraft adapter registry.
 
-### 4.7 Observation — HIGH
+### 4.7 Observation â€” HIGH
 
 - `TheSim:FindEntities(x, y, z, radius, musttags, canttags, mustoneoftags)`
   (radius ~20-30 is what the prior mods used; exclude
@@ -589,7 +589,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   handful of capability flags derived from tags) and deltas; the memory bug
   above makes big JSON dangerous.
 
-### 4.8 Distribution: what other clients need — MEDIUM-HIGH
+### 4.8 Distribution: what other clients need â€” MEDIUM-HIGH
 
 - A server-only mod may only use prefabs and assets that exist on clients.
   Our body is a vanilla character prefab; our brain/behaviours are server-side
@@ -601,7 +601,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   as a named player), that is a `all_clients_require_mod = true` Workshop mod
   and friends must subscribe (Steam auto-subscribes when joining if enabled).
 
-### 4.9 Versioning — MEDIUM
+### 4.9 Versioning â€” MEDIUM
 
 - `api_version = 10` has been the DST mod API version since 2015 and is still
   what 2026 mods declare. Klei ships the full Lua and changes internals
@@ -613,7 +613,7 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
   The 2025 sandbox change shows Klei will tighten APIs abruptly; localhost was
   explicitly kept, which is a good sign but not a guarantee.
 
-### 4.10 Despawn and persistence — HIGH (persistence), TEST (despawn)
+### 4.10 Despawn and persistence â€” HIGH (persistence), TEST (despawn)
 
 - Player prefabs set `inst.persists = false`; real players are saved by the
   player-spawner per userid. An ownerless bot is therefore NOT written to the
@@ -635,12 +635,12 @@ https://dst-api-docs.fandom.com/wiki/TheSim; QueryServer Fix workshop page.
 
 ```
 Electron main                    Node bot process (utilityProcess)                DST (host game process, or caves shards)
-  botSupervisor ── summon ──▶  src/bot/adapter/dst/                          mods/sei/  (server-only Lua)
-                               ├─ bridge/httpServer  127.0.0.1:<port>  ◀── QueryServer POST /obs, /event, /chat
-                               │     GET /cmd?since=N (bounded long-poll) ──▶  brain executes BufferedActions
-                               ├─ registry.js  (Zod tools → command JSON)
-                               ├─ observers    (obs JSON → snapshotText)
-                               └─ existing brain: orchestrator + fsm + memory
+  botSupervisor â”€â”€ summon â”€â”€â–¶  src/bot/adapter/dst/                          mods/sei/  (server-only Lua)
+                               â”œâ”€ bridge/httpServer  127.0.0.1:<port>  â—€â”€â”€ QueryServer POST /obs, /event, /chat
+                               â”‚     GET /cmd?since=N (bounded long-poll) â”€â”€â–¶  brain executes BufferedActions
+                               â”œâ”€ registry.js  (Zod tools â†’ command JSON)
+                               â”œâ”€ observers    (obs JSON â†’ snapshotText)
+                               â””â”€ existing brain: orchestrator + fsm + memory
 ```
 
 Mod side (`mods/sei/`, ~1-2k lines of our own Lua, MIT):
@@ -685,7 +685,7 @@ Node side:
   detector (heartbeat arrived), summon gate shared with Minecraft (mutually
   exclusive with MC/chess/Draw per character via `gameLaunch.ts`).
 - Chat: `/chat` POSTs feed the same `P1_CHAT` path as Minecraft chat; `say`
-  → `talker:Say` bubble + `TheNet:Announce("Sui: ...")` (make the announce
+  â†’ `talker:Say` bubble + `TheNet:Announce("Sui: ...")` (make the announce
   optional; bubbles alone may be enough when following the player).
 
 Latency budget: poll 100-250 ms + Node LLM turn; comparable to the Minecraft
@@ -748,10 +748,10 @@ adapter. Observation cadence 2-4 Hz keeps CPU trivial (FAtiMA ran 2 Hz on
 - **FAtiMA-DST** (MIT) and **DST-AICompanion** (MIT): freely reusable with
   attribution; the C# server is irrelevant to us.
 - **Chat Announcements** (CC0): freely reusable.
-- **DS-AI / Artificial Wilson**: no license file → all rights reserved; use
+- **DS-AI / Artificial Wilson**: no license file â†’ all rights reserved; use
   as design reference only, re-implement. **DontStarveAI**: its own additions
   are declared public domain/MIT but sit on the unlicensed base; same rule.
-- **DST-MOD-REST-API**: no license → reference only (it is 200 lines; nothing
+- **DST-MOD-REST-API**: no license â†’ reference only (it is 200 lines; nothing
   needs copying).
 - **DST_Bridge, dst-mod-moderator** (GPL-3.0): patterns only, no code.
 - **QueryServer Fix**: unlicensed proxy; not needed.
@@ -766,15 +766,15 @@ adapter. Observation cadence 2-4 Hz keeps CPU trivial (FAtiMA ran 2 Hz on
 Copy/adapt (permissive):
 
 - `research/dst/FAtiMA-DST/FAtiMA-DST/scripts/brains/fatimabrain.lua`
-  — `Entity()` capability encoder (lines 44-70), `KeepWorking`/`IsWorkAction`
+  â€” `Entity()` capability encoder (lines 44-70), `KeepWorking`/`IsWorkAction`
   (77-85), the `Perceptions()` snapshot (177-233), the `DoAction`+`Wander`
   root with `AddFailAction`/`AddSuccessAction` bookkeeping (355-420), the
   world-state watcher registration/unregistration (300-355, 436-500). MIT.
-- `research/dst/FAtiMA-DST/FAtiMA-DST/modmain.lua` — `FindPortal()` and the
+- `research/dst/FAtiMA-DST/FAtiMA-DST/modmain.lua` â€” `FindPortal()` and the
   `AddSimPostInit` spawn block (61-95). MIT.
-- `research/dst/FAtiMA-DST/README.md` — the curated action table (50
+- `research/dst/FAtiMA-DST/README.md` â€” the curated action table (50
   actions with argument shapes) as the seed of our Zod registry. MIT.
-- `research/dst/DST-AICompanion/DST Mod/scripts/brains/fatimabrain.lua` —
+- `research/dst/DST-AICompanion/DST Mod/scripts/brains/fatimabrain.lua` â€”
   `Follow(...)` leader wiring (1840-1900), `RunAway` from hostiles (1745-1770),
   `UpdatePlayerDist` tracking (1635), inventory helpers, "Sorry, I don't have
   enough items." style feedback. MIT.
@@ -793,10 +793,10 @@ Reference only (unlicensed/GPL):
 
 - `research/dst/DS-AI/scripts/behaviours/*.lua` (gather/cook/science/light/
   clothes loops) and `scripts/brains/artificalwilson.lua` (`CanIBuildThis`,
-  `GATHER_LIST`) — behaviour design; DS APIs differ from DST
-  (`GetPlayer()`→`AllPlayers`, `GetWorld()`→`TheWorld`, no replicas).
-- `research/dst/DST-MOD-REST-API/modmain.lua` — poll/command loop shape.
-- DST_Bridge `modmain.lua` (fetched, not cloned) — `Networking_Say` hook +
+  `GATHER_LIST`) â€” behaviour design; DS APIs differ from DST
+  (`GetPlayer()`â†’`AllPlayers`, `GetWorld()`â†’`TheWorld`, no replicas).
+- `research/dst/DST-MOD-REST-API/modmain.lua` â€” poll/command loop shape.
+- DST_Bridge `modmain.lua` (fetched, not cloned) â€” `Networking_Say` hook +
   push/pull loop.
 
 ---
@@ -825,3 +825,7 @@ Thesis: hineios, "Creating an Agent-Based Framework for Don't Starve Together"
 Docs: https://dst-api-docs.fandom.com/wiki/TheSim, https://vietnd69.github.io/dst-api-webdocs/,
 https://universalsplitscreen.github.io/docs/guides/dst/.
 Repos: listed in section 2, all cloned or fetched on 2026-09-08.
+
+
+
+

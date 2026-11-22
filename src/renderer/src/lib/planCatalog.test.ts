@@ -1,8 +1,8 @@
-// Vitest tests for planCatalog (260725 server-driven pricing).
+﻿// Vitest tests for planCatalog (260725 server-driven pricing).
 //
 // The normalizers are the seam between the proxy's plan_config/topup_config
 // rows (cents + credits + optional blurb) and the copy every money surface
-// renders — including the legally disclosed amounts — so the formatting
+// renders â€” including the legally disclosed amounts â€” so the formatting
 // contract is pinned here.
 
 import { afterEach, describe, it, expect } from 'vitest';
@@ -143,8 +143,12 @@ describe('localized plan display (261104)', () => {
     expect(formatResetsIn(at, now)).toBe('2d 23h');
     expect(resetsInLine(formatResetsIn(new Date(now + 30_000).toISOString(), now))).toBe('Resets soon');
     useLangStore.getState().setLang('ja');
-    expect(formatResetsIn(at, now)).toBe('2日23時間');
+    expect(formatResetsIn(at, now)).toBe('2æ—¥23æ™‚é–“');
     useLangStore.getState().setLang('ru');
     expect(resetsInLine(formatResetsIn(at, now))).not.toMatch(/\d+d|\d+h/);
   });
 });
+
+
+
+

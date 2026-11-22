@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Portrait cut-out for the SeiLink room (261104): a character portrait is a
  * rectangle with a background, and she must sit in the room as a figure,
  * never a card. Two ways out, tried in order:
@@ -980,3 +980,7 @@ function trimToFigure(canvas: HTMLCanvasElement, d: Uint8ClampedArray, w: number
   out.getContext('2d')?.drawImage(canvas, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
   return out;
 }
+
+
+
+

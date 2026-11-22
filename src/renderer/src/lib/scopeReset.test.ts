@@ -1,4 +1,4 @@
-/**
+﻿/**
  * resetAccountScopedState (260926): what app:scope-changed clears in the
  * renderer so nothing one account read shows to the next.
  */
@@ -127,3 +127,7 @@ describe('resetAccountScopedState', () => {
     expect(useChessStore.getState().games).toEqual({});
   });
 });
+
+
+
+

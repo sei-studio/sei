@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   CODE_PATTERNS,
   codeTile,
@@ -204,3 +204,7 @@ describe('UV quad warp', () => {
     expect(2560 * 1440 * s * s).toBeCloseTo(1_200_000, -2);
   });
 });
+
+
+
+

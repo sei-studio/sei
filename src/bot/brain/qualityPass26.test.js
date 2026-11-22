@@ -1,4 +1,4 @@
-// 261024: quality pass 26, one order and one status line.
+﻿// 261024: quality pass 26, one order and one status line.
 //  - a stop on a player line that did not ask her to stop or wait gets one
 //    more call in the same loop (NUDGES.stopThenNext), so "forget the logs,
 //    just meet me over here" answered with stop + say() can still start the
@@ -17,7 +17,7 @@ import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 
 afterEach(() => { vi.restoreAllMocks() })
 
-// ─── orchestrator harness ───────────────────────────────────────────────
+// â”€â”€â”€ orchestrator harness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -237,3 +237,7 @@ describe('goodbye text: whose plan it is', () => {
     }
   })
 })
+
+
+
+

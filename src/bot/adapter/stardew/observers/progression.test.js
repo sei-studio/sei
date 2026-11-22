@@ -1,4 +1,4 @@
-// The Stardew first-fortnight frontier (260910). Pure: a state in, the
+﻿// The Stardew first-fortnight frontier (260910). Pure: a state in, the
 // reachable list out; the latches read verb results and observations.
 import { describe, it, expect } from 'vitest'
 import { computeProgression, createProgressionFlags, getProgression, readProgressionState, SPINE } from './progression.js'
@@ -64,3 +64,7 @@ describe('stardew progression frontier', () => {
     }
   })
 })
+
+
+
+

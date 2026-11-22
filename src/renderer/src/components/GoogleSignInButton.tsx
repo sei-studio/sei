@@ -1,11 +1,11 @@
-/**
- * GoogleSignInButton — the official "Sign in with Google" button.
+﻿/**
+ * GoogleSignInButton â€” the official "Sign in with Google" button.
  *
  * This is deliberately NOT built on the app's <Button> primitive and does NOT
  * pull from the Summoning-Terminal design tokens. Google's branding guidelines
  * (https://developers.google.com/identity/branding-guidelines) mandate the
  * exact logo, colors, typography (Roboto Medium 14px), 40px height, 12px
- * padding and ~4px corner radius — altering them violates the guidelines. The
+ * padding and ~4px corner radius â€” altering them violates the guidelines. The
  * literal hex/px below are intentional brand-asset values, not design-system
  * drift. We use the dark variant so it reads correctly on Sei's dark surfaces.
  *
@@ -78,3 +78,7 @@ export function GoogleSignInButton({
     </button>
   );
 }
+
+
+
+

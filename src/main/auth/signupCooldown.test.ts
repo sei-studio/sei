@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Escalating per-device signup cooldown (anti-abuse Layer 1) tests.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -74,7 +74,7 @@ describe('signupCooldown', () => {
     await recordSignupAttempt(() => now); // 2nd
     now += COOLDOWN_LADDER_MS[2] + 1;
     await recordSignupAttempt(() => now); // 3rd
-    // Now there are 3 attempts in-window → the 4th must wait COOLDOWN_LADDER_MS[3].
+    // Now there are 3 attempts in-window â†’ the 4th must wait COOLDOWN_LADDER_MS[3].
     const d = await checkSignupCooldown(() => now);
     expect(d.allowed).toBe(false);
     expect(d.retryAfterMs).toBe(COOLDOWN_LADDER_MS[3]);
@@ -83,7 +83,7 @@ describe('signupCooldown', () => {
   it('prunes attempts older than the 24h window', async () => {
     let now = 1_000_000;
     await recordSignupAttempt(() => now);
-    // Jump past the window — the old attempt is pruned, so a new signup is instant.
+    // Jump past the window â€” the old attempt is pruned, so a new signup is instant.
     now += COOLDOWN_WINDOW_MS + 1;
     const d = await checkSignupCooldown(() => now);
     expect(d.allowed).toBe(true);
@@ -97,9 +97,13 @@ describe('signupCooldown', () => {
     expect(raw.attempts.length).toBe(1);
   });
 
-  it('tolerates a corrupt attempts file (treats as empty → allowed)', async () => {
+  it('tolerates a corrupt attempts file (treats as empty â†’ allowed)', async () => {
     await writeFile(paths.signupAttemptsPath(), 'garbage', 'utf8');
     const d = await checkSignupCooldown(() => 1_000_000);
     expect(d.allowed).toBe(true);
   });
 });
+
+
+
+

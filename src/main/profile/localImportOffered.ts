@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which accounts were already offered the own-key (local profile) import on
  * this device (261023).
  *
@@ -53,3 +53,7 @@ export async function markLocalImportOffered(account: string, now: Date = new Da
     await atomicWrite(file, JSON.stringify(cur, null, 2) + '\n');
   });
 }
+
+
+
+

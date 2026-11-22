@@ -1,5 +1,5 @@
-/**
- * ReportCompanionModal — in-app companion report form (260706).
+﻿/**
+ * ReportCompanionModal â€” in-app companion report form (260706).
  *
  * Replaces the old mailto:dmca@sei.gg link on foreign-owned character pages.
  * Common reasons render as checkboxes; "Other" requires a comment. Submits to
@@ -149,10 +149,14 @@ export function ReportCompanionModal({
             {t('Cancel')}
           </Button>
           <Button kind="danger" size="md" type="submit" disabled={!canSubmit}>
-            {submitting ? t('Sending…') : t('Submit report')}
+            {submitting ? t('Sendingâ€¦') : t('Submit report')}
           </Button>
         </ModalFooter>
       </form>
     </ModalShell>
   );
 }
+
+
+
+

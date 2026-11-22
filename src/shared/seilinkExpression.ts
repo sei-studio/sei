@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her face for a SeiLink desktop line (261105, T332).
  *
  * The desktop avatar shows the expression her line already carries, the
@@ -78,3 +78,7 @@ export function desktopLineFace(text: string, tag: string | null = null): LineFa
   const emotion = classifyEmotion(text);
   return { emotion, face: emotion ? EMOTION_FACE[emotion] : null };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ollama adapter (260915): thinking is switched OFF on the wire. Ollama enables
  * it by default on qwen3/deepseek-r1/gemma4-class models and charges the
  * reasoning against num_predict, so a 200-token chat turn came back with an
@@ -226,3 +226,7 @@ describe('createOllamaProvider: setup errors are tagged', () => {
     await expect(p.call(params)).rejects.toThrow(/^OLLAMA_MODEL_MISSING: Ollama has no model named qwen3:14b/);
   });
 });
+
+
+
+

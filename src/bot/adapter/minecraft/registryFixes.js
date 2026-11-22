@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/registryFixes.js — correct the tool speed table
+﻿// src/bot/adapter/minecraft/registryFixes.js â€” correct the tool speed table
 // (registry.materials) that prismarine-block's digTime reads.
 //
 // 261111 (user feedback ae9a758e, on Minecraft 26.3): two data faults made
@@ -97,3 +97,7 @@ export function fixToolMaterials(registry, mcDataLib) {
   registry._seiMaterialsFixed = true
   return result
 }
+
+
+
+

@@ -1,11 +1,11 @@
-/**
- * OfflineRetryModal — dismissible "you're offline" notice (260610).
+﻿/**
+ * OfflineRetryModal â€” dismissible "you're offline" notice (260610).
  *
  * Mounts when a signed-in user's ToS status check came back inconclusive
  * (tosCheckFailed in useAuthStore): the app couldn't reach the database, so
  * we genuinely don't know whether they've accepted the current legal terms.
  * Before this existed, that state mis-showed the BLOCKING AcceptToSModal to
- * users who had already accepted — and their re-accept hit the composite-PK
+ * users who had already accepted â€” and their re-accept hit the composite-PK
  * duplicate error with no way out.
  *
  * Unlike AcceptToSModal this is NOT blocking: local play works offline by
@@ -40,8 +40,8 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
     if (retrying) return;
     setRetrying(true);
     setRetryFailed(false);
-    await refreshTosStatus(); // never throws — failures land in tosCheckFailed
-    // Still mounted ⇒ the check is still inconclusive (parent unmounts us on
+    await refreshTosStatus(); // never throws â€” failures land in tosCheckFailed
+    // Still mounted â‡’ the check is still inconclusive (parent unmounts us on
     // success). Surface that so "Retry" visibly did something.
     setRetryFailed(useAuthStore.getState().tosCheckFailed);
     setRetrying(false);
@@ -63,12 +63,12 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
     <ModalShell title={t("You're offline")} onClose={onDismiss}>
       <p className={styles.body}>
         {t(
-          'Sei couldn’t reach the cloud to check your account. You can keep playing locally. Cloud features like character sync will reconnect once you’re back online.',
+          'Sei couldnâ€™t reach the cloud to check your account. You can keep playing locally. Cloud features like character sync will reconnect once youâ€™re back online.',
         )}
       </p>
       {retryFailed ? (
         <p className={styles.errorText} role="alert">
-          {t('Still can’t connect. Check your internet connection and try again.')}
+          {t('Still canâ€™t connect. Check your internet connection and try again.')}
         </p>
       ) : null}
       <ModalFooter>
@@ -76,9 +76,13 @@ export function OfflineRetryModal({ onDismiss }: OfflineRetryModalProps): React.
           {t('Continue offline')}
         </Button>
         <Button kind="primary" size="md" onClick={() => void retry()} disabled={retrying}>
-          {retrying ? t('Retrying…') : t('Retry')}
+          {retrying ? t('Retryingâ€¦') : t('Retry')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

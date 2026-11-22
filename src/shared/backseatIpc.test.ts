@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The image-grid geometry is the one thing in backseat that fails SILENTLY if
  * it drifts: an oversized grid is not rejected by the API, it is downscaled
  * server-side, so the only symptom is the companion quietly getting worse at
@@ -44,7 +44,7 @@ const STANDARD_MAX_TOKENS = 1568;
 describe('backseat image grid', () => {
   it('is the 6-frame 3x2 layout IG-VLM found best', () => {
     // N=6 beat 4/9/12/16/20 in the paper's ablation, and near-square grids beat
-    // wide ones — which for 16:9 cells means 3 rows of 2, not 2 rows of 3.
+    // wide ones â€” which for 16:9 cells means 3 rows of 2, not 2 rows of 3.
     expect(GRID_FRAMES).toBe(6);
     expect(GRID_ROWS).toBe(3);
     expect(GRID_COLS).toBe(2);
@@ -278,3 +278,7 @@ describe('quietExtraMs', () => {
     expect(after / 200).toBeGreaterThan(8);
   });
 });
+
+
+
+

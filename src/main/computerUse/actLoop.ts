@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the act loop. One action per step:
  *
  *   capture (full frame, thumb for change detection, OCR when perceiving)
@@ -551,3 +551,7 @@ export class ActRun {
     }
   }
 }
+
+
+
+

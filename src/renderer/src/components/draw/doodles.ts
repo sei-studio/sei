@@ -1,5 +1,5 @@
-/**
- * Traced doodles for the Draw! start page. GENERATED — do not edit by hand.
+﻿/**
+ * Traced doodles for the Draw! start page. GENERATED â€” do not edit by hand.
  * Regenerate with scripts/trace-doodles.py (see that file for the why).
  *
  * These are centrelines, not outlines: each path is the middle of one pen
@@ -129,3 +129,7 @@ export const horse: Doodle = {
     [[720.0,862.9],[725.7,840.0]],
   ],
 };
+
+
+
+

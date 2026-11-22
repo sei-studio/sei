@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ollama vision capability, asked of Ollama itself (261010).
  *
  * POST {base}/api/show {model} answers `capabilities: ["completion",
@@ -121,3 +121,7 @@ export async function checkOllamaForGame(
     clearTimeout(timer);
   }
 }
+
+
+
+

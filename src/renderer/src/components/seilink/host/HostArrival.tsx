@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Her arrival on the wallpaper (261119, product call (261119)). Main decides
  * the mode (main/seilink/host/arrival.ts, rules in shared/seilinkEntrance.ts);
  * this draws it around her avatar:
  *
  *  - wait:  her look is still being made. In her place, one quiet status line
  *           in the intro's style, typed in with cycling dots ("Inviting
- *           {name}…"); it is her click area, and a click lets her in now.
+ *           {name}â€¦"); it is her click area, and a click lets her in now.
  *           `quiet` (the wait passed LINK_TIMEOUT_MS): the same line, dimmer.
  *  - hold:  nothing (the app has not stepped aside yet), and no click area.
  *  - enter: her avatar mounts unseen; once it has resolved what to show (and
@@ -141,7 +141,7 @@ function Her(props: HostArrivalProps): React.ReactElement {
 /** The waiting line: typed in like the intro's status lines, then its dots cycle until her look lands. */
 function WaitingLine(props: { name: string; height: number; quiet: boolean; fps: number }): React.ReactElement {
   const t = useT();
-  const text = t('Inviting {name}…', { name: props.name });
+  const text = t('Inviting {name}â€¦', { name: props.name });
   const reduced = prefersReduced();
   const [line, setLine] = useState<Typed>(() => typedAt(text, 0, reduced));
   const start = useRef(performance.now());
@@ -187,3 +187,7 @@ function WaitingLine(props: { name: string; height: number; quiet: boolean; fps:
     </div>
   );
 }
+
+
+
+

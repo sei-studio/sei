@@ -1,5 +1,5 @@
-/**
- * uniqueCasting — running a unique-companion generation and turning its stage
+﻿/**
+ * uniqueCasting â€” running a unique-companion generation and turning its stage
  * events into a progress bar (260703 procgen; extracted from the standalone
  * UniqueCastingScreen at 260731 when the flow moved into Sui's scene).
  *
@@ -42,7 +42,7 @@ const CREEP_RATE = 0.05;
  *
  * These are the only words on screen while she is away, so they set what the
  * player thinks just happened. The first cut described the machine doing the
- * work — casting a soul, giving them a face, weaving their skin — which reads
+ * work â€” casting a soul, giving them a face, weaving their skin â€” which reads
  * as assembling a person to order, and lands somewhere between unsettling and
  * sad once you are supposed to like them.
  *
@@ -52,11 +52,11 @@ const CREEP_RATE = 0.05;
  * out about a person, not building one, and the last one is her walking back.
  */
 export const STAGE_COPY: Record<GenStage, string> = {
-  sheet: 'Finding someone for you…',
-  portrait: 'Seeing their face…',
-  skin: "Sorting out what they'll wear…",
-  persona: 'Hearing their story…',
-  saving: 'Bringing them over…',
+  sheet: 'Finding someone for youâ€¦',
+  portrait: 'Seeing their faceâ€¦',
+  skin: "Sorting out what they'll wearâ€¦",
+  persona: 'Hearing their storyâ€¦',
+  saving: 'Bringing them overâ€¦',
 };
 
 export type CastErrorCode = Extract<GenerateUniqueResult, { ok: false }>['code'];
@@ -71,15 +71,15 @@ export const CAST_ERROR_COPY: Record<CastErrorCode, { title: string; body: strin
     body: 'Free up one of your companion slots, then cast again.',
   },
   daily_limit: {
-    title: 'That’s enough casting for today',
-    body: 'You’ve reached today’s limit. Come back tomorrow to meet someone new.',
+    title: 'Thatâ€™s enough casting for today',
+    body: 'Youâ€™ve reached todayâ€™s limit. Come back tomorrow to meet someone new.',
   },
   generation_failed: {
-    title: 'The cast didn’t take',
-    body: 'Something went wrong weaving your companion. Let’s try once more.',
+    title: 'The cast didnâ€™t take',
+    body: 'Something went wrong weaving your companion. Letâ€™s try once more.',
   },
   network: {
-    title: 'Couldn’t reach the aether',
+    title: 'Couldnâ€™t reach the aether',
     body: 'Check your connection and try the ritual again.',
   },
 };
@@ -87,7 +87,7 @@ export const CAST_ERROR_COPY: Record<CastErrorCode, { title: string; body: strin
 export interface CastingState {
   /** Smoothed 0-100 progress. */
   pct: number;
-  /** The earliest in-flight stage — the honest headline (portrait and persona
+  /** The earliest in-flight stage â€” the honest headline (portrait and persona
    * run in parallel). */
   stage: GenStage;
   portraitFailed: boolean;
@@ -114,7 +114,7 @@ export function useUniqueCasting(gender: UniqueGender | null): CastingState {
   const [errDetail, setErrDetail] = useState<string | null>(null);
   // Bumping `attempt` re-runs the generation effect (Try again).
   const [attempt, setAttempt] = useState(0);
-  // Smoothed bar value — creeps toward the ceiling between stage events.
+  // Smoothed bar value â€” creeps toward the ceiling between stage events.
   const [displayPct, setDisplayPct] = useState(0);
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export function useUniqueCasting(gender: UniqueGender | null): CastingState {
     };
   }, [gender, attempt]);
 
-  // ── Progress accounting ──────────────────────────────────────────────────
+  // â”€â”€ Progress accounting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // 'error' counts as settled: portrait/skin errors are non-fatal (the pipeline
   // continues without art), so the bar must still reach 100% on a successful
   // cast instead of stalling and jumping to the reveal.
@@ -202,3 +202,7 @@ export function useUniqueCasting(gender: UniqueGender | null): CastingState {
     retry: () => setAttempt((a) => a + 1),
   };
 }
+
+
+
+

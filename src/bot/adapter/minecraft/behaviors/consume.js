@@ -1,4 +1,4 @@
-// src/behaviors/consume.js — eat the held food (D-22, Pitfall 3)
+﻿// src/behaviors/consume.js â€” eat the held food (D-22, Pitfall 3)
 import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000
@@ -18,7 +18,7 @@ export async function consumeItemAction(args, bot, config) {
     }
   }
 
-  // Common case: food bar full means consume() will reject silently — surface it.
+  // Common case: food bar full means consume() will reject silently â€” surface it.
   if (typeof bot.food === 'number' && bot.food >= 20) {
     return 'food bar full'
   }
@@ -45,3 +45,7 @@ export async function consumeItemAction(args, bot, config) {
 
   return Promise.race([op, tmo, abrt])
 }
+
+
+
+

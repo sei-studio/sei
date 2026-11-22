@@ -1,5 +1,5 @@
-/**
- * Supabase client singleton — main-process only.
+﻿/**
+ * Supabase client singleton â€” main-process only.
  *
  * SECURITY: This module is main-process only. The renderer NEVER imports
  * from here. utilityProcess receives only the access-token JWT over
@@ -13,7 +13,7 @@
  *     the first getClient() call.
  *
  * Sources:
- *   - 10-RESEARCH §Pattern 1 (Supabase client with safeStorage adapter)
+ *   - 10-RESEARCH Â§Pattern 1 (Supabase client with safeStorage adapter)
  *   - 10-CONTEXT D-13 (clone apiKeyStore.ts pattern)
  *   - Supabase docs: https://supabase.com/docs/reference/javascript/initializing
  *   - PKCE flow: https://supabase.com/docs/guides/auth/sessions/pkce-flow
@@ -40,7 +40,7 @@ let storageAdapter: StorageAdapter | null = null;
  * during bootstrap, before any auth IPC handler is registered.
  *
  * If called after getClient() has already instantiated the singleton,
- * throws a named error indicating client-already-created — re-wiring storage
+ * throws a named error indicating client-already-created â€” re-wiring storage
  * mid-flight would orphan the in-memory session.
  */
 export function setStorageAdapter(adapter: StorageAdapter): void {
@@ -51,19 +51,19 @@ export function setStorageAdapter(adapter: StorageAdapter): void {
 }
 
 /**
- * Return the singleton SupabaseClient. Lazy — instantiates on first call so
+ * Return the singleton SupabaseClient. Lazy â€” instantiates on first call so
  * test harnesses that import auth modules but never call into Supabase don't
  * trip the env-var check in env.ts.
  *
- * Configuration is locked (see the config block below — do not edit without a
+ * Configuration is locked (see the config block below â€” do not edit without a
  * cross-referenced research update). The five auth options bake in:
- *   - the adapter wired by setStorageAdapter (REQUIRED — throws if missing)
+ *   - the adapter wired by setStorageAdapter (REQUIRED â€” throws if missing)
  *   - automatic token refresh (Supabase rotates JWT 5 min before expiry)
  *   - session persistence via the storage adapter on every change
  *   - URL-based session detection disabled (main process is not a browser)
  *   - PKCE flow (RFC 8252; required for the loopback OAuth flow in plan 05)
  *
- * Source: RESEARCH §Pattern 1.
+ * Source: RESEARCH Â§Pattern 1.
  */
 export function getClient(): SupabaseClient {
   if (client !== null) return client;
@@ -279,15 +279,15 @@ export async function dropSessionLocally(deps: { client?: SupabaseClient } = {})
  *
  * Why this exists: relying on the singleton's ambient session to attach the
  * access token to outgoing PostgREST requests proved unreliable in the main
- * process — `getClient().auth.getSession()` returns a session, but the
+ * process â€” `getClient().auth.getSession()` returns a session, but the
  * persisted-session token was not consistently applied to data requests, so
- * RLS saw an anonymous caller and `auth.uid()` returned null → the user's own
+ * RLS saw an anonymous caller and `auth.uid()` returned null â†’ the user's own
  * rows came back empty (a fresh trial grant read as a 0 balance + the
  * trial_claims row read as absent). Sending `Authorization: Bearer <jwt>`
  * explicitly is the same pattern the Edge Functions' userClient uses and makes
  * RLS resolve `auth.uid()` deterministically.
  *
- * persistSession:false + autoRefreshToken:false — this client never owns the
+ * persistSession:false + autoRefreshToken:false â€” this client never owns the
  * session lifecycle (the singleton does); it's a thin per-request read client,
  * so it touches no storage and starts no refresh timer.
  */
@@ -303,3 +303,7 @@ export function _resetForTests(): void {
   client = null;
   storageAdapter = null;
 }
+
+
+
+

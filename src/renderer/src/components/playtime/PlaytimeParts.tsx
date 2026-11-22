@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Small pieces the Playtime tabs share (261110, product call 261110): the
  * segmented choice control, the panel row, the 7-day mini bars, the spend
  * chart, the model select and the copy for a typed model-list error.
@@ -104,7 +104,7 @@ export function SpendChart(props: { days: UsageDayPoint[] }): React.ReactElement
           return (
             <div key={d.day} className={styles.chartCol}>
               <span className={styles.chartValue} aria-hidden={i !== peak}>
-                {i === peak ? (priced ? formatUsd(v) : formatTokens(v)) : ' '}
+                {i === peak ? (priced ? formatUsd(v) : formatTokens(v)) : 'Â '}
               </span>
               <span className={styles.chartBarTrack}>
                 <span
@@ -202,3 +202,7 @@ export function ModelSelect(props: {
     </select>
   );
 }
+
+
+
+

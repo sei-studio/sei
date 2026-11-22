@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-character Live2D avatar store (260804).
  *
  * A user-imported Live2D Cubism model (moc3 + model3.json + textures +
@@ -15,7 +15,7 @@
  * Import NORMALIZES the stored model, because real-world VTuber exports are
  * sloppy in three specific ways (all measured on the first test model):
  *   1. `.exp3.json` expression files ship in the zip but are NOT referenced in
- *      `FileReferences.Expressions` — the renderer's loader only knows what
+ *      `FileReferences.Expressions` â€” the renderer's loader only knows what
  *      the settings file names, so unreferenced expressions would not exist.
  *   2. The `EyeBlink` parameter group can be missing, or present with no ids
  *      (and LipSync likewise), which silently disables the SDK's automatic
@@ -26,8 +26,8 @@
  *      (`unusableExpressions`). A v2 store without `params` is healed on its
  *      first read (`healLive2DParams`: reads only the settings, moc, cdi3 and
  *      expression files).
- *   3. Filenames are Chinese with spaces ("【雪熊企划】雪熊少女.moc3",
- *      "1 帽.exp3.json"). pixi-live2d-display's FileLoader compares
+ *   3. Filenames are Chinese with spaces ("ã€é›ªç†Šä¼åˆ’ã€‘é›ªç†Šå°‘å¥³.moc3",
+ *      "1 å¸½.exp3.json"). pixi-live2d-display's FileLoader compares
  *      `encodeURI(webkitRelativePath)` against the RAW refs resolved from the
  *      settings JSON, so ANY name encodeURI changes (non-ASCII, spaces) fails
  *      its existence check and the model refuses to load. Measured live: the
@@ -93,17 +93,17 @@ function withLock<T>(characterId: string, fn: () => Promise<T>): Promise<T> {
  * Emotion mapping by expression NAME keywords, bilingual (zh/en) because the
  * VTuber-model ecosystem is overwhelmingly Chinese/Japanese-named. First
  * matching expression per emotion wins; expressions matching nothing (item
- * toggles like 帽/手机) stay importable but unmapped. Deliberately avoids
- * over-generic single characters (bare 心 would make 开心 read as love).
+ * toggles like å¸½/æ‰‹æœº) stay importable but unmapped. Deliberately avoids
+ * over-generic single characters (bare å¿ƒ would make å¼€å¿ƒ read as love).
  */
 const EMOTION_KEYWORDS: ReadonlyArray<readonly [AvatarEmotion, RegExp]> = [
-  ['sad', /泪|哭|伤心|难过|悲|tear|cry|sad/i],
-  ['shy', /害羞|脸红|红脸|羞|blush|shy|embarrass/i],
-  ['angry', /生气|愤怒|黑脸|怒|angry|mad|rage|grr/i],
-  ['love', /爱心|心眼|heart|love/i],
-  ['excited', /星星|兴奋|激动|闪亮|star|sparkle|excited|wow/i],
-  ['surprised', /吃惊|惊讶|惊|surprise|shock/i],
-  ['happy', /开心|高兴|微笑|笑|喜|happy|smile|joy|grin/i],
+  ['sad', /æ³ª|å“­|ä¼¤å¿ƒ|éš¾è¿‡|æ‚²|tear|cry|sad/i],
+  ['shy', /å®³ç¾ž|è„¸çº¢|çº¢è„¸|ç¾ž|blush|shy|embarrass/i],
+  ['angry', /ç”Ÿæ°”|æ„¤æ€’|é»‘è„¸|æ€’|angry|mad|rage|grr/i],
+  ['love', /çˆ±å¿ƒ|å¿ƒçœ¼|heart|love/i],
+  ['excited', /æ˜Ÿæ˜Ÿ|å…´å¥‹|æ¿€åŠ¨|é—ªäº®|star|sparkle|excited|wow/i],
+  ['surprised', /åƒæƒŠ|æƒŠè®¶|æƒŠ|surprise|shock/i],
+  ['happy', /å¼€å¿ƒ|é«˜å…´|å¾®ç¬‘|ç¬‘|å–œ|happy|smile|joy|grin/i],
 ];
 
 /** Map available expression names onto the closed emotion set. Exported for
@@ -120,7 +120,7 @@ export function mapEmotions(names: string[]): Partial<Record<AvatarEmotion, stri
 /**
  * Decode a zip entry name that lacks the UTF-8 flag. The bytes are cp437 per
  * the spec, but every real archive in this ecosystem is GBK (VTube Studio on
- * Chinese Windows) — try GBK first, fall back to latin1 so a weird name still
+ * Chinese Windows) â€” try GBK first, fall back to latin1 so a weird name still
  * imports (the name only has to round-trip to disk and back, not be pretty).
  */
 function decodeZipName(bytes: string[] | Uint8Array | Buffer): string {
@@ -204,7 +204,7 @@ function safeSegment(seg: string): string {
 /**
  * Map every stored path to an ASCII-safe equivalent, consistently per
  * directory (the same original dir always maps to the same safe dir) and
- * collision-free per parent ("雪熊.png" and "企划.png" both slug to "_.png";
+ * collision-free per parent ("é›ªç†Š.png" and "ä¼åˆ’.png" both slug to "_.png";
  * the second becomes "_-2.png"). Exported for tests.
  */
 export function buildSafePathMap(rels: string[]): Map<string, string> {
@@ -358,7 +358,7 @@ function refusedMessage(problem: ImageProblem | undefined, ref: string): string 
 }
 
 /** Replace the avatar dir with the given file set + manifest. Shared tail of
- * both normalize paths; the manifest goes last — its presence is what "an
+ * both normalize paths; the manifest goes last â€” its presence is what "an
  * avatar exists" means. */
 async function replaceStore(
   characterId: string,
@@ -468,14 +468,14 @@ function expressionUsable(bytes: Buffer | Uint8Array | undefined, facts: Live2DM
 }
 /**
  * Validate + normalize an extracted (or previously stored) file set and write
- * it as `characterId`'s avatar. Does NOT take the per-character lock — every
+ * it as `characterId`'s avatar. Does NOT take the per-character lock â€” every
  * caller wraps it (a nested chain-lock acquisition would deadlock).
  */
 async function normalizeAndWrite(
   characterId: string,
   incoming: ExtractedFile[],
-  /** Accessory toggles to carry over (the v1→v2 heal path; a fresh import
-   * starts clean — a new model's expression names owe it nothing). */
+  /** Accessory toggles to carry over (the v1â†’v2 heal path; a fresh import
+   * starts clean â€” a new model's expression names owe it nothing). */
   keepAccessories?: Record<string, boolean>,
   /** A fresh import applies the image rules (avatarImage.ts); the v1 heal of
    * a store already on disk does not (it keeps rendering what it had). */
@@ -495,7 +495,7 @@ async function normalizeAndWrite(
     : all;
   const byRel = new Map(stripped.map((f) => [f.rel, f]));
 
-  // ── Locate + parse the model3.json ──────────────────────────────────────
+  // â”€â”€ Locate + parse the model3.json â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const candidates = stripped.filter((f) => f.rel.toLowerCase().endsWith('.model3.json'));
   let entryFile: ExtractedFile | null = null;
   let settings: ModelSettings | null = null;
@@ -512,7 +512,7 @@ async function normalizeAndWrite(
     }
   }
   if (!entryFile || !settings?.FileReferences) {
-    // Not a Cubism zip — a simple rig zip instead (260817)? The shallowest
+    // Not a Cubism zip â€” a simple rig zip instead (260817)? The shallowest
     // rig.json wins, mirroring the model3.json candidate walk.
     const rigEntry = stripped
       .filter((f) => (f.rel.split('/').pop() ?? '') === 'rig.json')
@@ -524,7 +524,7 @@ async function normalizeAndWrite(
     ? entryFile.rel.slice(0, entryFile.rel.lastIndexOf('/'))
     : '';
 
-  // ── Validate the referenced core files exist ────────────────────────────
+  // â”€â”€ Validate the referenced core files exist â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const refs = settings.FileReferences;
   const mocRel = resolveRef(entryDir, refs.Moc!);
   if (!byRel.has(mocRel)) throw new Error(`model references missing moc3 file: ${refs.Moc}`);
@@ -536,8 +536,8 @@ async function normalizeAndWrite(
     if (!sniffAvatarImage(f.bytes)) throw new Error(`model texture is not a PNG, JPEG or WebP: ${tex}`);
   }
 
-  // ── Normalize: register expressions + ensure EyeBlink group ─────────────
-  const declared = new Map<string, string>(); // file rel → name
+  // â”€â”€ Normalize: register expressions + ensure EyeBlink group â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const declared = new Map<string, string>(); // file rel â†’ name
   for (const e of refs.Expressions ?? []) {
     if (e?.File && byRel.has(resolveRef(entryDir, e.File))) {
       declared.set(resolveRef(entryDir, e.File), e.Name || e.File);
@@ -547,15 +547,15 @@ async function normalizeAndWrite(
     if (!f.rel.toLowerCase().endsWith('.exp3.json')) continue;
     if (declared.has(f.rel)) continue;
     // Only register expressions living beside (or under) the entry dir, and
-    // name them by filename stem — the only name the author gave them.
+    // name them by filename stem â€” the only name the author gave them.
     if (entryDir && !f.rel.startsWith(`${entryDir}/`)) continue;
     const base = f.rel.slice(f.rel.lastIndexOf('/') + 1);
     const name = base.replace(/\.exp3\.json$/i, '');
     declared.set(f.rel, name);
   }
 
-  // ── Parameter roles (261122): fill empty EyeBlink / LipSync groups, and
-  // leave out expressions that change nothing ─────────────────────────────
+  // â”€â”€ Parameter roles (261122): fill empty EyeBlink / LipSync groups, and
+  // leave out expressions that change nothing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const facts = live2dModelFacts(
     stripped.map((f) => ({ path: f.rel, bytes: f.bytes })),
     entryFile.rel,
@@ -566,7 +566,7 @@ async function normalizeAndWrite(
     [...declared.keys()].filter((rel) => !expressionUsable(byRel.get(rel)?.bytes, facts)),
   );
 
-  // ── Rename to ASCII-safe paths + rewrite every ref to match ─────────────
+  // â”€â”€ Rename to ASCII-safe paths + rewrite every ref to match â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const safeMap = buildSafePathMap([...byRel.keys()]);
   const safe = (rel: string): string => safeMap.get(rel) ?? rel;
   const safeEntry = safe(entryFile.rel);
@@ -578,7 +578,7 @@ async function normalizeAndWrite(
       ? safeRel.slice(safeEntryDir.length + 1)
       : safeRel;
   /** Rewrite one settings ref (relative to the entry) onto the safe tree.
-   * A ref to a file that does not exist is left as-is — the loader treats
+   * A ref to a file that does not exist is left as-is â€” the loader treats
    * optional refs as absent either way. */
   const reRef = (ref: string | undefined): string | undefined => {
     if (typeof ref !== 'string' || ref.length === 0) return ref;
@@ -638,7 +638,7 @@ async function normalizeAndWrite(
     if (Object.keys(kept).length > 0) manifest.accessories = kept;
   }
 
-  // ── Replace the avatar dir atomically-ish (validated before we wipe) ────
+  // â”€â”€ Replace the avatar dir atomically-ish (validated before we wipe) â”€â”€â”€â”€
   return replaceStore(characterId, byRel, safe, manifest);
 }
 
@@ -655,8 +655,8 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   }
   const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
 
-  // ── Check every declared size BEFORE inflating anything (a 1 MB zip can
-  // declare, and inflate to, a gigabyte) ────────────────────────────────────
+  // â”€â”€ Check every declared size BEFORE inflating anything (a 1 MB zip can
+  // declare, and inflate to, a gigabyte) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const wanted: Array<{ rel: string; entry: JSZip.JSZipObject; size: number }> = [];
   let declaredTotal = 0;
   for (const entry of Object.values(archive.files)) {
@@ -671,7 +671,7 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
     if (wanted.length > AVATAR_MAX_ENTRIES) throw new Error('avatar zip has too many files');
   }
 
-  // ── Extract into memory, each entry capped at its declared size ─────────
+  // â”€â”€ Extract into memory, each entry capped at its declared size â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const files: ExtractedFile[] = [];
   for (const w of wanted) {
     const bytes = await readEntryCapped(w.entry, w.size);
@@ -760,7 +760,7 @@ async function readStoredFiles(characterId: string): Promise<ExtractedFile[]> {
 /**
  * The character's avatar manifest, or null when none is imported. A version-1
  * store (imported before the ASCII-safe rename existed) is re-normalized in
- * place — same pipeline as import, run over the stored tree — so it heals to
+ * place â€” same pipeline as import, run over the stored tree â€” so it heals to
  * version 2 the first time anything asks for it.
  */
 export async function getAvatarManifest(characterId: string): Promise<AvatarManifest | null> {
@@ -862,7 +862,7 @@ async function healLive2DParams(characterId: string): Promise<AvatarManifest | n
 /**
  * Flip a persistent accessory toggle (260806): `name` must be one of the
  * manifest's expression names. Returns the updated manifest, or null when the
- * character has no imported avatar. The record stays sparse — turning a
+ * character has no imported avatar. The record stays sparse â€” turning a
  * toggle off removes its entry.
  */
 export async function setAvatarAccessory(
@@ -994,3 +994,7 @@ export async function readAvatarModelFiles(characterId: string): Promise<AvatarM
   }
   return out;
 }
+
+
+
+

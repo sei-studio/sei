@@ -1,14 +1,14 @@
-// src/bot/brain/anthropicClient.rescueRetry.test.js
+﻿// src/bot/brain/anthropicClient.rescueRetry.test.js
 //
 // Rescue-retry policy (post-260610). Transient failures (5xx / 429 /
-// connection blips) are origin-wide — vision and plain turns share the same
-// proxy origin — so call() gives EVERY request up to MAX_RESCUE_RETRIES (2)
+// connection blips) are origin-wide â€” vision and plain turns share the same
+// proxy origin â€” so call() gives EVERY request up to MAX_RESCUE_RETRIES (2)
 // retries, under the unchanged deadline controller (total wall-clock is still
-// hard-capped by the call budget; sleeps stay short, capped, abortable —
+// hard-capped by the call budget; sleeps stay short, capped, abortable â€”
 // the 260609 frozen-bot constraints all hold). These tests assert:
-//   1. Two transient failures, then success → response returned (3 requests).
-//   2. Three transient failures → terminal (allowance exhausted, 3 requests).
-//   3. Non-retryable 4xx → terminal immediately (1 request).
+//   1. Two transient failures, then success â†’ response returned (3 requests).
+//   2. Three transient failures â†’ terminal (allowance exhausted, 3 requests).
+//   3. Non-retryable 4xx â†’ terminal immediately (1 request).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -92,3 +92,7 @@ describe('rescue-retry policy', () => {
     expect(createMock).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

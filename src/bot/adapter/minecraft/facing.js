@@ -1,22 +1,22 @@
-// src/bot/adapter/minecraft/facing.js
+﻿// src/bot/adapter/minecraft/facing.js
 //
-// Yaw ↔ world-axis grammar. Pure: no mineflayer, no natives, safe to import
-// from the observer path (which is why it is not in visualize.js — that module
+// Yaw â†” world-axis grammar. Pure: no mineflayer, no natives, safe to import
+// from the observer path (which is why it is not in visualize.js â€” that module
 // statically imports renderPov, which pulls in native gl/canvas).
 //
 // 260803. The bot had no facing ANYWHERE: not in the snapshot, not in the
 // result of look({orientation}). So "behind you", "to your left" and "that
 // island over there" were unanswerable questions, and look({orientation:
-// "backward"}) silently rotated the bot 180° without telling it which way it
+// "backward"}) silently rotated the bot 180Â° without telling it which way it
 // now pointed. Live (260731 Nether log): asked to bridge to an island directly
 // behind her, the model turned around, rendered a frame it could not place on
-// any axis, and INVENTED a span 12 blocks off its own body — then died in lava
+// any axis, and INVENTED a span 12 blocks off its own body â€” then died in lava
 // walking to it. This module is the answer to "which way is that".
 //
 // ONE CONVENTION, STATED ONCE. A mineflayer yaw's ground vector is
 //   [dx, dz] = (-sin yaw, -cos yaw)
 // and its inverse is yaw = atan2(-dx, -dz). Both appear already in gaze.js
-// (aimAt), survival.js, reflex.js and the povRenderer camera — this module is
+// (aimAt), survival.js, reflex.js and the povRenderer camera â€” this module is
 // where they get a name. Under it, INCREASING yaw turns LEFT, yaw 0 looks down
 // -z (north), and the CLOCKWISE cardinal order is -z, +x, +z, -x.
 
@@ -39,8 +39,8 @@ export function yawToUnit(yaw) {
 
 /**
  * Index into CARDINALS for the cardinal NEAREST `yaw`. A diagonal facing snaps
- * to the closer of its two neighbours; an exact 45° tie rounds CLOCKWISE
- * (northeast → east). Snapping rather than reporting "northeast" is deliberate
+ * to the closer of its two neighbours; an exact 45Â° tie rounds CLOCKWISE
+ * (northeast â†’ east). Snapping rather than reporting "northeast" is deliberate
  * for now: every consumer of this (build spans, the look grammar, the player's
  * "over there") is axis-aligned, so a diagonal answer would have to be resolved
  * to an axis by the model, which is the guessing this module exists to remove.
@@ -90,3 +90,7 @@ export function facingLine(frame) {
   if (!frame?.forward) return 'unknown'
   return `${frame.forward.compass}. forward ${frame.forward.axis}, back ${frame.backward.axis}, left ${frame.left.axis}, right ${frame.right.axis}`
 }
+
+
+
+

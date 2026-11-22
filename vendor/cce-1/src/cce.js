@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Character Chess Engine: skill-conditioned candidate generation.
  *
  * Pipeline per position (the paper's architecture):
@@ -209,3 +209,7 @@ function sideWinFromMate(mate, toMove) {
   const sideWins = mate > 0 ? 0.99 : 0.01;
   return toMove === 'w' ? sideWins : 1 - sideWins;
 }
+
+
+
+

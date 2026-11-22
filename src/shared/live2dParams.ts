@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Live2D parameter roles (261122, product call 261122: imported models that
  * do not blink, lip-sync or look at the cursor).
  *
@@ -15,7 +15,7 @@
  *   2. the standard id, when the model has it;
  *   3. the standard id written another way (`PARAM_EYE_BALL_X`);
  *   4. words in the id and its display name (cdi3.json), in several
- *      languages (mouth/Mund/bocca/boca/bouche/口..., open/aperta/開...),
+ *      languages (mouth/Mund/bocca/boca/bouche/å£..., open/aperta/é–‹...),
  *      never a per-model table.
  * The parameter list comes from the moc3 itself (`readMoc3Parameters`, the
  * same table the Cubism Core reads, checked against the Core on the SDK's
@@ -72,7 +72,7 @@ export interface Live2DParamInfo {
 export interface Live2DParamMap {
   /** LIVE2D_RESOLVER_VERSION that made it. */
   v: number;
-  /** Role → the model's parameter id. A missing role: the model has nothing for it. */
+  /** Role â†’ the model's parameter id. A missing role: the model has nothing for it. */
   roles: Partial<Record<Live2DRole, string>>;
   /** The ids the SDK's EyeBlink closes on a blink (empty: the model cannot blink). */
   blink: string[];
@@ -83,7 +83,7 @@ export interface Live2DParamMap {
 /** A user's correction (AvatarManifest.paramOverrides): an id, or null to turn the role off. */
 export type Live2DParamOverrides = Partial<Record<Live2DRole, string | null>>;
 
-// ── moc3 parameter table ────────────────────────────────────────────────────
+// â”€â”€ moc3 parameter table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Header size; the section offset table follows it. */
 const MOC3_HEADER = 64;
@@ -168,74 +168,74 @@ export function groupIds(settings: unknown, name: string): string[] {
   return Array.isArray(g?.Ids) ? g.Ids.filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
 }
 
-// ── words ───────────────────────────────────────────────────────────────────
+// â”€â”€ words â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Words matched at the start of a word of the id or display name (latin, Cyrillic, Thai...). */
 type Words = { prefix: readonly string[]; cjk?: readonly string[] };
 
 const W = {
   mouth: {
-    prefix: ['mouth', 'mund', 'maul', 'bocca', 'boca', 'bouche', 'mond', 'usta', 'ust', 'рот', 'ağız', 'agiz', 'mulut', 'miệng', 'mieng', 'ปาก', 'kuchi'],
-    cjk: ['口', '嘴', 'くち', '입'],
+    prefix: ['mouth', 'mund', 'maul', 'bocca', 'boca', 'bouche', 'mond', 'usta', 'ust', 'Ñ€Ð¾Ñ‚', 'aÄŸÄ±z', 'agiz', 'mulut', 'miá»‡ng', 'mieng', 'à¸›à¸²à¸', 'kuchi'],
+    cjk: ['å£', 'å˜´', 'ãã¡', 'ìž…'],
   },
   open: {
-    prefix: ['open', 'offen', 'auf', 'apert', 'abiert', 'abert', 'ouvert', 'otwar', 'откр', 'açı', 'acik', 'buka', 'mở', 'aperto', 'opening'],
-    cjk: ['開', '开', '張', '张', '열', 'あけ', 'ひらき'],
+    prefix: ['open', 'offen', 'auf', 'apert', 'abiert', 'abert', 'ouvert', 'otwar', 'Ð¾Ñ‚ÐºÑ€', 'aÃ§Ä±', 'acik', 'buka', 'má»Ÿ', 'aperto', 'opening'],
+    cjk: ['é–‹', 'å¼€', 'å¼µ', 'å¼ ', 'ì—´', 'ã‚ã‘', 'ã²ã‚‰ã'],
   },
   close: {
-    prefix: ['close', 'shut', 'geschlossen', 'zu', 'chius', 'cerrad', 'fechad', 'ferm', 'zamkn', 'закр', 'kapal', 'tutup', 'nhắm'],
-    cjk: ['閉', '闭', '닫', '감'],
+    prefix: ['close', 'shut', 'geschlossen', 'zu', 'chius', 'cerrad', 'fechad', 'ferm', 'zamkn', 'Ð·Ð°ÐºÑ€', 'kapal', 'tutup', 'nháº¯m'],
+    cjk: ['é–‰', 'é—­', 'ë‹«', 'ê°'],
   },
   mouthNot: {
-    prefix: ['form', 'shape', 'smile', 'grin', 'frown', 'pucker', 'tongue', 'teeth', 'tooth', 'cheek', 'corner', 'width', 'wide', 'forma', 'lächel', 'sorris', 'sonris', 'sourire', 'улыб', 'zunge', 'lingua', 'lengua', 'dent', 'zähn'],
-    cjk: ['形', '変形', '笑', '舌', '歯', '牙', '角'],
+    prefix: ['form', 'shape', 'smile', 'grin', 'frown', 'pucker', 'tongue', 'teeth', 'tooth', 'cheek', 'corner', 'width', 'wide', 'forma', 'lÃ¤chel', 'sorris', 'sonris', 'sourire', 'ÑƒÐ»Ñ‹Ð±', 'zunge', 'lingua', 'lengua', 'dent', 'zÃ¤hn'],
+    cjk: ['å½¢', 'å¤‰å½¢', 'ç¬‘', 'èˆŒ', 'æ­¯', 'ç‰™', 'è§’'],
   },
   eye: {
-    prefix: ['eye', 'auge', 'occhi', 'occhio', 'ojo', 'olho', 'oeil', 'œil', 'yeux', 'oog', 'ogen', 'oko', 'oczy', 'глаз', 'göz', 'goz', 'mata', 'mắt', 'ตา', 'me'],
-    cjk: ['目', '眼', '눈', '瞳'],
+    prefix: ['eye', 'auge', 'occhi', 'occhio', 'ojo', 'olho', 'oeil', 'Å“il', 'yeux', 'oog', 'ogen', 'oko', 'oczy', 'Ð³Ð»Ð°Ð·', 'gÃ¶z', 'goz', 'mata', 'máº¯t', 'à¸•à¸²', 'me'],
+    cjk: ['ç›®', 'çœ¼', 'ëˆˆ', 'çž³'],
   },
   ball: {
-    prefix: ['ball', 'pupil', 'iris', 'pupill', 'pupila', 'pupille', 'зрач', 'bulbo', 'globo', 'augapfel', 'iride', 'medama', 'hitomi'],
-    cjk: ['瞳', '眼球', '目玉', '黒目', '눈동자', '동공', '眼珠'],
+    prefix: ['ball', 'pupil', 'iris', 'pupill', 'pupila', 'pupille', 'Ð·Ñ€Ð°Ñ‡', 'bulbo', 'globo', 'augapfel', 'iride', 'medama', 'hitomi'],
+    cjk: ['çž³', 'çœ¼çƒ', 'ç›®çŽ‰', 'é»’ç›®', 'ëˆˆë™ìž', 'ë™ê³µ', 'çœ¼ç '],
   },
   brow: {
-    prefix: ['brow', 'eyebrow', 'augenbraue', 'braue', 'soprac', 'ceja', 'sobrancel', 'sourcil', 'бров', 'kaş', 'alis', 'mayu'],
-    cjk: ['眉', '눈썹'],
+    prefix: ['brow', 'eyebrow', 'augenbraue', 'braue', 'soprac', 'ceja', 'sobrancel', 'sourcil', 'Ð±Ñ€Ð¾Ð²', 'kaÅŸ', 'alis', 'mayu'],
+    cjk: ['çœ‰', 'ëˆˆì¹'],
   },
   eyeNot: {
-    prefix: ['smile', 'form', 'shape', 'lash', 'tear', 'highlight', 'light', 'shine', 'lächel', 'sorris', 'sonris', 'sourire', 'улыб', 'wimper', 'lacrim', 'lágrim', 'larme'],
-    cjk: ['笑', '形', '変形', '涙', 'ハイライト', '睫'],
+    prefix: ['smile', 'form', 'shape', 'lash', 'tear', 'highlight', 'light', 'shine', 'lÃ¤chel', 'sorris', 'sonris', 'sourire', 'ÑƒÐ»Ñ‹Ð±', 'wimper', 'lacrim', 'lÃ¡grim', 'larme'],
+    cjk: ['ç¬‘', 'å½¢', 'å¤‰å½¢', 'æ¶™', 'ãƒã‚¤ãƒ©ã‚¤ãƒˆ', 'ç«'],
   },
   left: {
-    prefix: ['left', 'links', 'sinistr', 'izquierd', 'esquerd', 'gauche', 'lev', 'лев', 'kiri', 'trái', 'trai', 'hidari'],
-    cjk: ['左', '왼'],
+    prefix: ['left', 'links', 'sinistr', 'izquierd', 'esquerd', 'gauche', 'lev', 'Ð»ÐµÐ²', 'kiri', 'trÃ¡i', 'trai', 'hidari'],
+    cjk: ['å·¦', 'ì™¼'],
   },
   right: {
-    prefix: ['right', 'rechts', 'destr', 'derech', 'direit', 'droit', 'prav', 'прав', 'kanan', 'phải', 'phai', 'migi'],
-    cjk: ['右', '오른'],
+    prefix: ['right', 'rechts', 'destr', 'derech', 'direit', 'droit', 'prav', 'Ð¿Ñ€Ð°Ð²', 'kanan', 'pháº£i', 'phai', 'migi'],
+    cjk: ['å³', 'ì˜¤ë¥¸'],
   },
   head: {
-    prefix: ['angle', 'head', 'face', 'kopf', 'gesicht', 'winkel', 'testa', 'viso', 'angolo', 'cabeza', 'cara', 'ángulo', 'angulo', 'cabeç', 'cabec', 'rosto', 'tête', 'tete', 'visage', 'hoofd', 'głow', 'glow', 'голов', 'лиц', 'угол', 'baş', 'bas', 'kepala', 'wajah', 'đầu', 'atama', 'kao'],
-    cjk: ['角度', '頭', '头', '顔', '脸', '臉', '머리', '얼굴', '고개'],
+    prefix: ['angle', 'head', 'face', 'kopf', 'gesicht', 'winkel', 'testa', 'viso', 'angolo', 'cabeza', 'cara', 'Ã¡ngulo', 'angulo', 'cabeÃ§', 'cabec', 'rosto', 'tÃªte', 'tete', 'visage', 'hoofd', 'gÅ‚ow', 'glow', 'Ð³Ð¾Ð»Ð¾Ð²', 'Ð»Ð¸Ñ†', 'ÑƒÐ³Ð¾Ð»', 'baÅŸ', 'bas', 'kepala', 'wajah', 'Ä‘áº§u', 'atama', 'kao'],
+    cjk: ['è§’åº¦', 'é ­', 'å¤´', 'é¡”', 'è„¸', 'è‡‰', 'ë¨¸ë¦¬', 'ì–¼êµ´', 'ê³ ê°œ'],
   },
   body: {
-    prefix: ['body', 'körper', 'korper', 'koerper', 'corpo', 'cuerpo', 'corps', 'lichaam', 'ciało', 'cialo', 'тел', 'туловищ', 'vücut', 'vucut', 'badan', 'tubuh', 'thân', 'torso', 'karada'],
-    cjk: ['体', '身体', '體', '몸', '胴'],
+    prefix: ['body', 'kÃ¶rper', 'korper', 'koerper', 'corpo', 'cuerpo', 'corps', 'lichaam', 'ciaÅ‚o', 'cialo', 'Ñ‚ÐµÐ»', 'Ñ‚ÑƒÐ»Ð¾Ð²Ð¸Ñ‰', 'vÃ¼cut', 'vucut', 'badan', 'tubuh', 'thÃ¢n', 'torso', 'karada'],
+    cjk: ['ä½“', 'èº«ä½“', 'é«”', 'ëª¸', 'èƒ´'],
   },
   limb: {
-    prefix: ['hair', 'haar', 'capell', 'pelo', 'cabel', 'cheveu', 'волос', 'arm', 'hand', 'leg', 'foot', 'tail', 'coda', 'ear', 'ohr', 'orecch', 'oreja', 'oreille', 'ribbon', 'skirt', 'cloth', 'braccio', 'brazo', 'bein', 'gamba', 'pierna', 'hat', 'hut', 'cappell', 'sombrero', 'chapeau', 'wing', 'flügel', 'ali', 'shoulder', 'schulter', 'spalla', 'hombro'],
-    cjk: ['髪', '发', '髮', '腕', '手', '足', '脚', '尾', '耳', '帽', '肩', '袖', '服', '머리카락', '팔', '다리', '꼬리'],
+    prefix: ['hair', 'haar', 'capell', 'pelo', 'cabel', 'cheveu', 'Ð²Ð¾Ð»Ð¾Ñ', 'arm', 'hand', 'leg', 'foot', 'tail', 'coda', 'ear', 'ohr', 'orecch', 'oreja', 'oreille', 'ribbon', 'skirt', 'cloth', 'braccio', 'brazo', 'bein', 'gamba', 'pierna', 'hat', 'hut', 'cappell', 'sombrero', 'chapeau', 'wing', 'flÃ¼gel', 'ali', 'shoulder', 'schulter', 'spalla', 'hombro'],
+    cjk: ['é«ª', 'å‘', 'é«®', 'è…•', 'æ‰‹', 'è¶³', 'è„š', 'å°¾', 'è€³', 'å¸½', 'è‚©', 'è¢–', 'æœ', 'ë¨¸ë¦¬ì¹´ë½', 'íŒ”', 'ë‹¤ë¦¬', 'ê¼¬ë¦¬'],
   },
   breath: {
-    prefix: ['breath', 'atem', 'atmung', 'respir', 'souffle', 'adem', 'oddech', 'дыхан', 'nefes', 'napas', 'thở', 'tho', 'kokyu'],
-    cjk: ['呼吸', '숨'],
+    prefix: ['breath', 'atem', 'atmung', 'respir', 'souffle', 'adem', 'oddech', 'Ð´Ñ‹Ñ…Ð°Ð½', 'nefes', 'napas', 'thá»Ÿ', 'tho', 'kokyu'],
+    cjk: ['å‘¼å¸', 'ìˆ¨'],
   },
-  axisX: { prefix: ['x', 'horizontal', 'yaw', 'turn', 'side'], cjk: ['左右', '横'] },
-  axisY: { prefix: ['y', 'vertical', 'pitch', 'nod', 'updown'], cjk: ['上下', '縦'] },
-  axisZ: { prefix: ['z', 'roll', 'tilt', 'lean'], cjk: ['傾', '斜'] },
+  axisX: { prefix: ['x', 'horizontal', 'yaw', 'turn', 'side'], cjk: ['å·¦å³', 'æ¨ª'] },
+  axisY: { prefix: ['y', 'vertical', 'pitch', 'nod', 'updown'], cjk: ['ä¸Šä¸‹', 'ç¸¦'] },
+  axisZ: { prefix: ['z', 'roll', 'tilt', 'lean'], cjk: ['å‚¾', 'æ–œ'] },
 } as const satisfies Record<string, Words>;
 
-/** The id and display name split into lower-case words ("ParamEyeLOpen" → "param eye l open"). */
+/** The id and display name split into lower-case words ("ParamEyeLOpen" â†’ "param eye l open"). */
 function wordsOf(p: Live2DParamInfo): string[] {
   const text = `${p.id} ${p.name ?? ''}`
     .replace(/([\p{Ll}\d])(\p{Lu})/gu, '$1 $2')
@@ -256,7 +256,7 @@ function has(words: readonly string[], raw: string, set: Words): boolean {
   return !!set.cjk?.some((c) => raw.includes(c));
 }
 
-/** The standard id written another way: "PARAM_EYE_BALL_X" and "ParamEyeBallX" → "eyeballx". */
+/** The standard id written another way: "PARAM_EYE_BALL_X" and "ParamEyeBallX" â†’ "eyeballx". */
 function normId(id: string): string {
   return id.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^param/, '');
 }
@@ -271,7 +271,7 @@ interface Cand {
 /** A mouth or eye score at or above this had an "open" word. */
 const OPEN_SCORE = 3;
 
-/** A score for a parameter as `role` (≤ 0: not it). */
+/** A score for a parameter as `role` (â‰¤ 0: not it). */
 function score(role: Live2DRole, c: Cand): number {
   const { words, raw } = c;
   const is = (set: Words): boolean => has(words, raw, set);
@@ -563,3 +563,7 @@ export function live2dManifestShape(
     l2d_expr_noop: m?.unusableExpressions?.length ?? 0,
   };
 }
+
+
+
+

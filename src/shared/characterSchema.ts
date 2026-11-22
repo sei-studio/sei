@@ -1,4 +1,4 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { mcUsernameFromName } from '../bot/names.js';
 import { UI_LANGUAGES } from './uiLanguage';
 
@@ -6,7 +6,7 @@ import { UI_LANGUAGES } from './uiLanguage';
  * 260516-0yw: persona is now an object with `source` (user's short blurb,
  * required) and `expanded` (LLM-generated long prompt produced at
  * character-save time by src/main/personaExpansion.ts). The legacy
- * `description` and `persona_prompt` fields are DROPPED outright — no
+ * `description` and `persona_prompt` fields are DROPPED outright â€” no
  * .optional(), no .default(''), no migration shim per CLAUDE.md
  * ("no backwards-compat hacks"). Existing characters JSON whose shape
  * does not include `persona.source` will fail Zod parsing explicitly so
@@ -32,15 +32,15 @@ export type Persona = z.infer<typeof PersonaSchema>;
  * empty/loaded states in the SkinEditor AND so the local skin HTTP server
  * can resolve `/skins/<username>.png` deterministically:
  *
- *   - 'bundled'  → ships under `resources/skins/<id>.png` (the 3 default personas)
- *   - 'upload'   → user-supplied PNG saved at `<userData>/skins/<id>.png`
- *   - 'username' → fetched from Mojang's textures endpoint via username search,
+ *   - 'bundled'  â†’ ships under `resources/skins/<id>.png` (the 3 default personas)
+ *   - 'upload'   â†’ user-supplied PNG saved at `<userData>/skins/<id>.png`
+ *   - 'username' â†’ fetched from Mojang's textures endpoint via username search,
  *                  then cached at `<userData>/skins/<id>.png` (no persistent
  *                  dependency on Mojang once cached)
- *   - 'none'     → user-created persona with no skin yet (server falls through
+ *   - 'none'     â†’ user-created persona with no skin yet (server falls through
  *                  to default Steve/Alex from CustomSkinLoader)
  *
- * Source: CONTEXT.md §decisions "Skin source: bundled PNG + username search" +
+ * Source: CONTEXT.md Â§decisions "Skin source: bundled PNG + username search" +
  *         UI spec for skin editor copy ("empty state", "Default skin badge").
  */
 export const SkinSourceSchema = z.enum(['bundled', 'upload', 'username', 'none']);
@@ -59,10 +59,10 @@ export type Skin = z.infer<typeof SkinSchema>;
 
 /**
  * Character JSON shape stored at `<userData>/characters/<id>.json`.
- * Source: CONTEXT D-09, D-11, D-14 + PATTERNS §characterSchema.ts.
+ * Source: CONTEXT D-09, D-11, D-14 + PATTERNS Â§characterSchema.ts.
  *
  * 260516-0yw: `description` + `persona_prompt` replaced by `persona`
- * object — see PersonaSchema docblock above.
+ * object â€” see PersonaSchema docblock above.
  *
  * `skin` (SkinSchema) + `username` (per-persona MC in-game name): `username`
  * is null by default so existing bot connect logic
@@ -72,12 +72,12 @@ export type Skin = z.infer<typeof SkinSchema>;
  */
 /**
  * 260703 procgen: how a companion entered the user's library.
- *   - 'unique' — system-generated ("Meet your unique companion"): soulcaster-1
+ *   - 'unique' â€” system-generated ("Meet your unique companion"): soulcaster-1
  *                sheet + generated portrait/skin. Cloud-stored from birth,
  *                NOT editable (remove / reset-memory only).
- *   - 'custom' — user-created from scratch (the classic AddCharacter wizard).
+ *   - 'custom' â€” user-created from scratch (the classic AddCharacter wizard).
  *                Fully editable. All pre-existing characters default here.
- *   - 'world'  — a public character invited from the World tab (foreign-owned
+ *   - 'world'  â€” a public character invited from the World tab (foreign-owned
  *                or a bundled default). Not editable.
  */
 export const CharacterKindSchema = z.enum(['unique', 'custom', 'world']);
@@ -87,14 +87,14 @@ export type CharacterKind = z.infer<typeof CharacterKindSchema>;
 export const MAX_COMPANION_SLOTS = 4;
 
 /**
- * 260705: daily character-creation cap (rolling 24h, ALL backends — BYOK
+ * 260705: daily character-creation cap (rolling 24h, ALL backends â€” BYOK
  * included). Deliberately equals MAX_COMPANION_SLOTS: with only 4 Home slots,
  * more than 4 creations/day is create-delete churn, and each creation burns
  * real upstream spend (persona expansion, portrait, skin panel). Enforced
- * locally in main (characterStore.checkCreateQuota / recordCreation — the
+ * locally in main (characterStore.checkCreateQuota / recordCreation â€” the
  * renderer's CreationLimitModal keys off it); the proxy's persona_daily /
  * image_daily / skin_daily buckets stay the server-side abuse backstops.
- * The proxy's skinDailyGate (SKIN_DAILY_LIMIT) mirrors this value — update
+ * The proxy's skinDailyGate (SKIN_DAILY_LIMIT) mirrors this value â€” update
  * both together.
  */
 export const MAX_CREATIONS_PER_DAY = 4;
@@ -211,7 +211,7 @@ export const PUBLIC_ID_REGEX = /^[A-Z0-9]{4}$/;
 
 export const CharacterSchema = z.object({
   // D-23: UUID v4 is canonical. Slug-based ids are LEGACY and rejected at the
-  // boundary — Plan 11-05 (slug→UUID migration) rewrites existing local rows.
+  // boundary â€” Plan 11-05 (slugâ†’UUID migration) rewrites existing local rows.
   // No backward-compat shim (CLAUDE.md: no backwards-compat hacks).
   id: z.string().uuid({ message: 'characterId must be a UUID v4' }),
   // 260703 procgen: origin discriminator (see CharacterKindSchema). Optional +
@@ -242,7 +242,7 @@ export const CharacterSchema = z.object({
   playtime_ms: z.number().int().min(0).default(0),    // accumulated (D-11)
   // D-28: portrait_image is a path reference (e.g., '<uuid>.png') or null.
   // Plan 11-06 added a refinement REJECTING legacy data URLs at the IPC
-  // boundary — Plan 11-05 migration decodes any on-disk data URLs into files
+  // boundary â€” Plan 11-05 migration decodes any on-disk data URLs into files
   // BEFORE this refinement applies, so existing characters round-trip safely
   // through Zod. New characters can never reintroduce a data URL because
   // PortraitImagePicker no longer produces one (D-28 + Pitfall 2).
@@ -266,17 +266,17 @@ export const CharacterSchema = z.object({
   /**
    * Watermark of the cloud row's `updated_at` (the value we last pulled into
    * this local cache). Lets the cache-on-demand refresh on the Characters page
-   * detect when the upstream author — or a bundled default's system row — has
+   * detect when the upstream author â€” or a bundled default's system row â€” has
    * shipped a newer version, and re-pull the whole stored set (prompt / image /
    * description) without re-downloading on every open. Null/undefined for
    * local-only characters that never round-tripped through cloud, and for
    * caches written before this field existed (which the next open backfills).
-   * NEVER uploaded — the cloud trigger owns the source `updated_at`.
+   * NEVER uploaded â€” the cloud trigger owns the source `updated_at`.
    */
   cloud_updated_at: z.string().nullable().optional(),
   /**
    * Human-facing description (NOT prompted to the LLM). Separate from
-   * persona.source — the persona is the model's voice/personality input,
+   * persona.source â€” the persona is the model's voice/personality input,
    * the description is what other players read on a World card and on
    * CharacterPage. Required when a character is shared=true (the World tab
    * needs SOMETHING readable); allowed empty/null for private characters.
@@ -298,7 +298,7 @@ export type Character = z.infer<typeof CharacterSchema>;
  * All fields nullable: null = not answered yet.
  */
 /**
- * 260705: relationship dynamics — what the user is looking for in a companion.
+ * 260705: relationship dynamics â€” what the user is looking for in a companion.
  * Keys mirror soulcaster's DYNAMICS table (src/tables.js there); each biases
  * the personality roll and the sheet's `player_dynamic` for one cast.
  */
@@ -324,7 +324,7 @@ export const UserPreferencesSchema = z.object({
    * 260705: RANKED relationship dynamics from the questionnaire ("rank what
    * you're looking for"). Array order IS the ranking: the user's first unique
    * cast uses [0], the second [1], and so on (see resolveDynamic in
-   * src/main/uniqueGeneration.ts). Partial rankings are fine — casts past the
+   * src/main/uniqueGeneration.ts). Partial rankings are fine â€” casts past the
    * end of the list free-roll. `[]` = the user explicitly chose "Surprise me";
    * null = never asked (profiles completed before this question existed).
    */
@@ -335,7 +335,7 @@ export const UserPreferencesSchema = z.object({
 export type UserPreferences = z.infer<typeof UserPreferencesSchema>;
 
 /**
- * 260706: partial questionnaire update — what prefs:save accepts. Only the
+ * 260706: partial questionnaire update â€” what prefs:save accepts. Only the
  * ANSWER fields are settable (completed_at is stamped main-side on every
  * save, so device-vs-cloud recency comparisons in resolvePrefs stay honest).
  * Omitted keys leave the stored answer untouched; the merge happens in main
@@ -352,7 +352,7 @@ export type UserPreferencesPatch = z.infer<typeof UserPreferencesPatchSchema>;
 /**
  * The individually answerable questionnaire questions, in ASK ORDER (every
  * surface that asks them walks this list in order). `null` means
- * unanswered — note companion_dynamics uses `[]` for an explicit "Surprise
+ * unanswered â€” note companion_dynamics uses `[]` for an explicit "Surprise
  * me", which counts as answered.
  */
 export const PREF_QUESTIONS = ['companion_age_range', 'companion_dynamics', 'art_style'] as const;
@@ -373,11 +373,11 @@ export function missingPrefQuestions(profile: UserPreferences | null | undefined
 /**
  * The in-game Minecraft username a summoned bot connects under: the per-persona
  * `username` when set, else the persona `name` with accented Latin letters
- * folded to plain ones ("Sofía" -> "Sofia", 261027) and then sanitized to MC's
- * constraints ([A-Za-z0-9_], ≤16 chars, non-empty → 'Sei'). The derivation is
+ * folded to plain ones ("SofÃ­a" -> "Sofia", 261027) and then sanitized to MC's
+ * constraints ([A-Za-z0-9_], â‰¤16 chars, non-empty â†’ 'Sei'). The derivation is
  * src/bot/names.js `mcUsernameFromName`, the same function the bot's
  * botUsernameFor (adapter/minecraft/runtime.js) calls, so callers in main and
- * renderer compute the SAME name the bot will actually use — used by the
+ * renderer compute the SAME name the bot will actually use â€” used by the
  * multi-summon duplicate-name guard (two bots can't share a username; the
  * server kicks the second with `multiplayer.disconnect.name_taken`).
  */
@@ -437,18 +437,18 @@ export function skinPendingOf(c: Pick<Character, 'metadata'>): boolean {
  * visibly non-full grid, or vice versa).
  *
  * Rule:
- *   - bundled defaults (is_default) → shown only when invited into a slot
+ *   - bundled defaults (is_default) â†’ shown only when invited into a slot
  *     (addedDefaultIds);
  *   - signed in: own / legacy null-owner chars shown; foreign-owned chars
  *     (owner set, !== current user) shown only when added from World
  *     (addedWorldIds);
  *   - signed out: legacy null-owner chars shown, PLUS foreign-owned chars the
  *     user explicitly invited (addedWorldIds). 260728: the invite check was
- *     added for the fresh-onboarding Sui seed — a local-only (BYOK) profile now
+ *     added for the fresh-onboarding Sui seed â€” a local-only (BYOK) profile now
  *     starts with Sui in added_world_ids, and an explicit invite recorded in
  *     the user's own config is a party membership regardless of auth. A merely
  *     CACHED copy of someone else's public character (owner stamped, never
- *     invited) still never reads as a party member — that was the 260706 bug
+ *     invited) still never reads as a party member â€” that was the 260706 bug
  *     this branch exists to prevent.
  */
 export function countsAsHomeSlot(
@@ -487,7 +487,7 @@ export const UserConfigSchema = z.object({
   mc_username: z.string().default(''),                            // Minecraft account display name
   preferred_name: z.string().default(''),                          // what bot calls the user
   /**
-   * In-app chat user profile picture — a portrait path ref ('_user.png'),
+   * In-app chat user profile picture â€” a portrait path ref ('_user.png'),
    * resolved via the sei-portrait:// protocol like character portraits. Used as
    * the player's avatar in the Discord-style chat. Must NOT be a data: URL
    * (same boundary as character portrait_image). Null/absent = no picture.
@@ -508,21 +508,21 @@ export const UserConfigSchema = z.object({
    * (characterStore.checkCreateQuota / recordCreation). Local-first so the
    * cap covers BYOK users too (no server bucket exists for them). Optional
    * (not defaulted) so the many manual UserConfig literals don't all need to
-   * spell it out; absent ≡ [].
+   * spell it out; absent â‰¡ [].
    */
   creation_times: z.array(z.string()).optional(),
-  // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends — the
+  // ui-A1: Phase 14 widened the LLM provider matrix to 13 backends â€” the
   // factory in src/bot/brain/llm/index.js (`SUPPORTED_PROVIDERS`) is the
   // canonical list. Anthropic remains the default for backward-compat with
   // existing config.json files. The OpenAI-compatible providers share a
   // single adapter w/ provider-specific baseURL; gemini + ollama have their
   // own adapters.
   //
-  // 260816 (china-compat): the PICKER list shrank to 8 — anthropic, openai,
+  // 260816 (china-compat): the PICKER list shrank to 8 â€” anthropic, openai,
   // deepseek, qwen, gemini, grok, ollama, openrouter (SHOWN_PROVIDERS in
   // src/shared/llmCatalog.ts). The enum deliberately keeps every legacy
   // value: a config already set to a dropped provider (mistral, together,
-  // groq, fireworks, cerebras, perplexity) must keep parsing and working —
+  // groq, fireworks, cerebras, perplexity) must keep parsing and working â€”
   // the picker just stops OFFERING it unless it is the current selection.
   // 'qwen' is new (DashScope OpenAI-compatible mode).
   provider: z
@@ -569,7 +569,7 @@ export const UserConfigSchema = z.object({
     )
     .default('system'),
   /**
-   * 260724: custom app background image — a path ref ('_bg.png') stored in the
+   * 260724: custom app background image â€” a path ref ('_bg.png') stored in the
    * per-profile portraits dir and served via sei-portrait://, sitting UNDER the
    * theme's window color on the main content panel. Null/absent = no custom
    * background. Same no-data-URL boundary as profile_picture.
@@ -584,29 +584,29 @@ export const UserConfigSchema = z.object({
    * How visible the custom background image is through the theme's window
    * color (0 = invisible, 1 = fully visible). Only read when background_image
    * is set. Optional (not defaulted) so manual UserConfig literals don't all
-   * need to spell it out; absent ≡ 0.5.
+   * need to spell it out; absent â‰¡ 0.5.
    */
   background_opacity: z.number().min(0).max(1).optional(),
   /**
    * Brightness applied to the custom background image (0.2 = heavily dimmed,
-   * 1 = original). Only read when background_image is set. Absent ≡ 1.
+   * 1 = original). Only read when background_image is set. Absent â‰¡ 1.
    */
   background_brightness: z.number().min(0.2).max(1).optional(),
   /**
-   * 260709: CONVERSATION language — what the companion speaks and understands
+   * 260709: CONVERSATION language â€” what the companion speaks and understands
    * in chat, on voice calls, and in game. NOT an app/UI locale (UI strings
    * stay English). 260725: no longer user-picked (the onboarding step and
-   * Settings row were removed) — AUTO-DETECTED from the player's voice:
+   * Settings row were removed) â€” AUTO-DETECTED from the player's voice:
    * ElevenLabs Scribe reports a language per call utterance and
    * src/main/voice/languageAutoSwitch.ts persists a confident repeated
    * detection here. Main is the only writer; saveConfigFromRenderer keeps
    * the on-disk value against renderer wholesale saves. Optional
-   * and NOT defaulted (absent ≡ 'en' everywhere it is read, via
+   * and NOT defaulted (absent â‰¡ 'en' everywhere it is read, via
    * clampChatLanguage in src/shared/chatLanguage.ts) so the many manual
-   * UserConfig literals don't all need to spell it out — same convention as
+   * UserConfig literals don't all need to spell it out â€” same convention as
    * analytics_opt_out / creation_times. Keep the enum in sync with
    * CHAT_LANGUAGES (src/shared/chatLanguage.ts) and CHAT_LANGUAGE_NAMES
-   * (src/bot/brain/promptLibrary.js — the bot can't import this module).
+   * (src/bot/brain/promptLibrary.js â€” the bot can't import this module).
    */
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).optional(),
   /**
@@ -617,66 +617,66 @@ export const UserConfigSchema = z.object({
    * generation, chat, games, the Minecraft bot) run on Chinese prompts.
    * Distinct from chat_language above, which is the auto-detected
    * CONVERSATION language for voice calls. Optional and NOT defaulted
-   * (absent ≡ 'en' everywhere it is read) so the many manual UserConfig
-   * literals don't all need to spell it out — same convention as
+   * (absent â‰¡ 'en' everywhere it is read) so the many manual UserConfig
+   * literals don't all need to spell it out â€” same convention as
    * chat_language.
    */
   ui_language: z.enum(UI_LANGUAGES).optional(),
   /** Plan 07: Linux basic_text safeStorage warning Banner dismissal (Pitfall A2). */
   linuxBasicTextWarnDismissed: z.boolean().default(false),
   /**
-   * 260721 — pre-summon host disclaimers, "Don't show this again" persistence
+   * 260721 â€” pre-summon host disclaimers, "Don't show this again" persistence
    * (LanHostWarningModal). Two independent flags because the two warnings say
    * different things:
-   *   - hide_vanilla_host_warning → the vanilla-host heads-up (world runs
+   *   - hide_vanilla_host_warning â†’ the vanilla-host heads-up (world runs
    *     vanilla MC without Sei's Fabric skin setup, companion gets a default
    *     Minecraft skin).
-   *   - hide_modded_host_warning  → the modded-host heads-up (Forge/NeoForge/
+   *   - hide_modded_host_warning  â†’ the modded-host heads-up (Forge/NeoForge/
    *     Quilt, or Fabric with mods besides Sei's skin mod; content mods can
    *     refuse the vanilla-protocol join).
    * Set only when the user ticks the checkbox AND confirms "Summon anyway".
-   * Optional and NOT defaulted (absent ≡ false; readers check `=== true`) so
+   * Optional and NOT defaulted (absent â‰¡ false; readers check `=== true`) so
    * the many manual UserConfig literals don't all need to spell it out, same
    * convention as daily_limited_until / creation_times.
    */
   hide_vanilla_host_warning: z.boolean().optional(),
   hide_modded_host_warning: z.boolean().optional(),
   /**
-   * Phase 13 — Plan 13-02 (PROXY-11, D-57). Which AI backend is active:
-   *   - 'local'       → BYOK; bot calls Anthropic directly with the user's
+   * Phase 13 â€” Plan 13-02 (PROXY-11, D-57). Which AI backend is active:
+   *   - 'local'       â†’ BYOK; bot calls Anthropic directly with the user's
    *                     on-disk api-key.bin. NO credits UI surfaces in the
    *                     renderer.
-   *   - 'cloud-proxy' → Sei's Fly.io proxy gates Anthropic. Renderer shows
+   *   - 'cloud-proxy' â†’ Sei's Fly.io proxy gates Anthropic. Renderer shows
    *                     the pricing icon, credits screen, hard-stop modal.
    *
    * D-57: this field is the SINGLE source of truth for credits-UI visibility.
    * apiKeyStore.{getAiBackendKind,setAiBackendKind} are the only legitimate
-   * readers/writers — every UI gate reads from a renderer-store value that
+   * readers/writers â€” every UI gate reads from a renderer-store value that
    * shadows this, never via duplicated logic.
    *
    * `.optional().default('local')` keeps existing config.json files
    * backward-compatible (same pattern theme_mode used when it was
    * introduced) and ensures pre-Phase-13 users see no behavior change.
    *
-   * B4: prior sibling `browse_enabled` flag was removed — the World
+   * B4: prior sibling `browse_enabled` flag was removed â€” the World
    * (formerly Browse) tab is always available.
    */
   ai_backend_kind: z.enum(['local', 'cloud-proxy']).optional().default('local'),
   /**
    * 260703: who last set `ai_backend_kind`.
-   *   - 'default' → a sign-in/onboarding/boot default (or a pre-existing config
+   *   - 'default' â†’ a sign-in/onboarding/boot default (or a pre-existing config
    *                 from before this field). Sign-in may re-assert the cloud
    *                 default over it.
-   *   - 'user'    → an explicit user action (the Settings ACCOUNT MODE switch /
-   *                 the API-key setup modal, via proxy:configure →
+   *   - 'user'    â†’ an explicit user action (the Settings ACCOUNT MODE switch /
+   *                 the API-key setup modal, via proxy:configure â†’
    *                 apiKeyStore.setAiBackendKind). Sign-in defaults MUST NOT
-   *                 stomp it — a user who deliberately chose BYOK stays on BYOK
+   *                 stomp it â€” a user who deliberately chose BYOK stays on BYOK
    *                 across sign-out/sign-in cycles.
    * Written only by apiKeyStore; read by the cloud-default helpers there.
    */
   ai_backend_kind_source: z.enum(['default', 'user']).optional().default('default'),
   /**
-   * ui-A7: developer console (LogsBar) visibility. Off by default —
+   * ui-A7: developer console (LogsBar) visibility. Off by default â€”
    * shipping users almost never need the raw bot log. Settings exposes a
    * toggle that flips this and App.tsx gates `<LogsBar />` on it.
    */
@@ -697,7 +697,7 @@ export const UserConfigSchema = z.object({
    * "read" your message before the typing indicator appears (scaled to your
    * message length at a fast-reader speed), then keeps the indicator up for a
    * stretch proportional to each reply bubble at a fast-typist speed. The same
-   * pacing is bridged to the in-game Minecraft bot (botSupervisor →
+   * pacing is bridged to the in-game Minecraft bot (botSupervisor â†’
    * config.realistic_typing). Off makes replies appear as soon as the model
    * returns. Default on for a more human feel; `.optional().default(true)`
    * keeps existing config.json files (which lack the field) on the new default.
@@ -706,12 +706,12 @@ export const UserConfigSchema = z.object({
   /**
    * "Call captions" (Appearance & feel, 260705). When on, the voice-call
    * screen shows the two live caption lines (companion's last spoken line +
-   * your last transcribed utterance). Off by default — a call should feel
+   * your last transcribed utterance). Off by default â€” a call should feel
    * like audio, not subtitles; captions are an accessibility/debugging aid.
    */
   call_captions: z.boolean().optional().default(false),
   /**
-   * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
+   * DEPRECATED (260804) â€” the old boolean "Call overlay" toggle, superseded by
    * `avatar_mode`. Kept so existing config.json files still parse and so
    * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never
    * written anymore (Settings writes `avatar_mode`); do not add new readers.
@@ -721,10 +721,10 @@ export const UserConfigSchema = z.object({
    * "Avatar" (Appearance & feel, 260804; grew out of the 260706 call overlay).
    * When the always-on-top avatar overlay (companion tiles, optionally Live2D)
    * is shown:
-   *   'off'      — never.
-   *   'activity' — while any companion has a live surface: a voice call, a
+   *   'off'      â€” never.
+   *   'activity' â€” while any companion has a live surface: a voice call, a
    *                chess/Draw!/backseat session, or a Minecraft summon.
-   *   'always'   — whenever the app is open (falls back to the open chat's
+   *   'always'   â€” whenever the app is open (falls back to the open chat's
    *                companion when nothing is active).
    * OPTIONAL with no default on purpose: an absent field means "never chosen",
    * and `effectiveAvatarMode` derives the value from the deprecated boolean so
@@ -737,8 +737,8 @@ export const UserConfigSchema = z.object({
    * preferences about how a companion's overlay tile renders on THIS profile,
    * which is why they live here and not in `character.metadata` (metadata is
    * cloud-synced verbatim and not editable on foreign characters).
-   *   frame         — tile shape ('circle' | 'square').
-   *   always_bright — true disables the talking indicator entirely: no idle
+   *   frame         â€” tile shape ('circle' | 'square').
+   *   always_bright â€” true disables the talking indicator entirely: no idle
    *                   dim, no speaking ring; the tile stays lit.
    */
   avatar_prefs: z
@@ -768,7 +768,7 @@ export const UserConfigSchema = z.object({
       x: z.number().int().optional(),
       y: z.number().int().optional(),
       /**
-       * 260806 — per-character tile camera: how the character is framed WITHIN
+       * 260806 â€” per-character tile camera: how the character is framed WITHIN
        * its tile (edit-mode wheel = zoom, drag on the tile = pan). `zoom`
        * multiplies the contain-fit scale; `x`/`y` are pan offsets in tile
        * fractions. Sparse: absent id = default framing (whole model, centered).
@@ -805,7 +805,7 @@ export const UserConfigSchema = z.object({
    * captions button toggles while on a call/backseat: white companion lines
    * over a darkened box, click-through outside edit mode. Geometry absent =
    * default placement (bottom-center of the work area). `font_size` is FIXED
-   * at render time — a bigger font does not grow the box, the text just
+   * at render time â€” a bigger font does not grow the box, the text just
    * breaks into more chunks.
    */
   avatar_captions: z
@@ -821,13 +821,13 @@ export const UserConfigSchema = z.object({
   /**
    * "Conversation starters" (260707). When on (the default), a live voice call
    * that has gone quiet for a while (5-60s, resampled each stretch) nudges a
-   * companion to bring up a topic on its own — the call equivalent of the
+   * companion to bring up a topic on its own â€” the call equivalent of the
    * in-game idle tick. The companion may also choose to stay silent. Off = the
    * companions only speak when spoken to.
    */
   call_convo_starters: z.boolean().optional().default(true),
   /**
-   * 260730 — call backdrop mode, per character id: true = open the call in the
+   * 260730 â€” call backdrop mode, per character id: true = open the call in the
    * character's scene (or, for characters with no scene, on their art) instead
    * of the avatar-tile view. Toggled from the call's own controls, not
    * Settings, and remembered so the next call opens the way you left it.
@@ -855,10 +855,10 @@ export const UserConfigSchema = z.object({
    * Onboarding skin-setup gate. Set true when the user finishes the name/API
    * onboarding step, cleared when they finish OR skip the dedicated skin-setup
    * page. While true, the app routes to `{ kind: 'skin-setup' }` instead of home
-   * on launch — this is what makes the skin-setup step resumable if the user
+   * on launch â€” this is what makes the skin-setup step resumable if the user
    * quits mid-setup. `.optional().default(false)` keeps existing config.json
    * files (and the first-summon nudge path for users who predate this step)
-   * backward-compatible — they're treated as not-pending and never forced in.
+   * backward-compatible â€” they're treated as not-pending and never forced in.
    */
   skin_setup_pending: z.boolean().optional().default(false),
   /**
@@ -892,7 +892,7 @@ export const UserConfigSchema = z.object({
   removed_default_ids: z.array(z.string().uuid()).optional().default([]),
   /**
    * 260703 procgen: bundled defaults the user has EXPLICITLY invited into a
-   * Home slot. Semantics inverted from removed_default_ids — defaults now live
+   * Home slot. Semantics inverted from removed_default_ids â€” defaults now live
    * in the World tab and are hidden from Home unless listed here. The old
    * removed_default_ids field is retained (harmless) but no longer consulted
    * by the Home grid.
@@ -917,7 +917,7 @@ export const UserConfigSchema = z.object({
    * `is_default` copies and became normal user-owned public World characters
    * (owner = DEFAULT_CHARACTERS_OWNER). This migration flips any pre-existing
    * local `is_default:true` copy to a normal owned/shared character and moves
-   * its id from added_default_ids → added_world_ids so it stays on Home. Fresh
+   * its id from added_default_ids â†’ added_world_ids so it stays on Home. Fresh
    * installs have no local `is_default` copies, so the migration only flips
    * this marker. `.optional().default(false)` keeps existing config.json files
    * backward-compatible.
@@ -937,12 +937,12 @@ export const UserConfigSchema = z.object({
    * true so every subsequent app open shows "Welcome back, <name>!" instead.
    * Profile-scoped (config.json is per-account), so it tracks first login
    * per user. `.optional().default(false)` keeps existing config.json files
-   * backward-compatible — pre-existing users get one "Welcome to Sei" on the
+   * backward-compatible â€” pre-existing users get one "Welcome to Sei" on the
    * first open after upgrade, which is harmless.
    */
   has_been_welcomed: z.boolean().optional().default(false),
   /**
-   * 260706 — local mirror of the once-per-account feedback reward. Flipped
+   * 260706 â€” local mirror of the once-per-account feedback reward. Flipped
    * true when the proxy reports the reward granted OR already claimed, so the
    * Playtime screen's reward banner retires and the standing "Submit feedback"
    * button takes its place. Server-side the claim stays authoritative (partial
@@ -959,7 +959,7 @@ export const UserConfigSchema = z.object({
    */
   draw_intro_done: z.boolean().optional(),
   /**
-   * 260926 — "Your free play is back" launch banner. The weekly reset time
+   * 260926 â€” "Your free play is back" launch banner. The weekly reset time
    * (CreditsStatus.resets_at) remembered the last time an account was seen
    * AT the credit wall, keyed by that account's user id because config.json
    * is per profile, not per account, and survives switching accounts. null or
@@ -969,23 +969,23 @@ export const UserConfigSchema = z.object({
    */
   free_play_wall: z.object({ user_id: z.string(), resets_at: z.string() }).nullable().optional(),
   /**
-   * Looking (vision) mode — how the companion sees the world:
-   *   'off'        — never looks; plays from world data only. No look()/explore()
+   * Looking (vision) mode â€” how the companion sees the world:
+   *   'off'        â€” never looks; plays from world data only. No look()/explore()
    *                  pictures and no automatic views.
-   *   'on-demand'  — the model can call look() / explore() when it needs to; it
+   *   'on-demand'  â€” the model can call look() / explore() when it needs to; it
    *                  never receives a view it did not ask for.
-   *   'continuous' — everything 'on-demand' offers PLUS an automatic view is fed
+   *   'continuous' â€” everything 'on-demand' offers PLUS an automatic view is fed
    *                  in as it plays.
    * Settings writes this through the existing saveConfig IPC (switching ON the
-   * automatic views — 'continuous' — is gated behind the cost confirm popup,
+   * automatic views â€” 'continuous' â€” is gated behind the cost confirm popup,
    * D-06); main bridges it into the forked bot's `config.vision.mode` at summon
-   * time (botSupervisor → bot init payload → src/bot/index.js ConfigSchema
+   * time (botSupervisor â†’ bot init payload â†’ src/bot/index.js ConfigSchema
    * build). Persistent and always editable; a non-VLM provider simply skips
    * pictures at runtime.
    *
    * MIGRATION: the pre-simplification values 'passive' and 'active' (both of
    * which streamed automatic views) collapse to 'continuous'. configStore parses
-   * with .parse() — it THROWS on an unknown enum — so the remap must happen here,
+   * with .parse() â€” it THROWS on an unknown enum â€” so the remap must happen here,
    * before validation, or existing configs would fail to load.
    */
   vision_mode: z
@@ -1024,7 +1024,7 @@ export const UserConfigSchema = z.object({
    * Cumulative bot playtime for THIS profile, in ms, summed across every
    * character's session. Accumulated at session-end in botSupervisor (alongside
    * the per-character `playtime_ms`) so the total survives a character being
-   * deleted — a deleted character's time is already folded in here. Drives the
+   * deleted â€” a deleted character's time is already folded in here. Drives the
    * "played Xh Ym" figure in the UsageBar tooltip. Profile-scoped because
    * config.json lives under the active profile root (paths.configPath()).
    */
@@ -1061,7 +1061,7 @@ export const UserConfigSchema = z.object({
    * 260706: relationship dynamics already granted to a unique cast on this
    * device. Each RANKED preference is granted at most once, top pick first
    * (resolveDynamic in src/main/uniqueGeneration.ts); once the list is
-   * exhausted — or was never ranked — casts roll a random dynamic, which is
+   * exhausted â€” or was never ranked â€” casts roll a random dynamic, which is
    * NOT recorded here. Appended under the config file lock after a cast
    * saves (configStore.updateConfig). Device-local by design: deliberately
    * not mirrored to the cloud prefs row.
@@ -1071,12 +1071,12 @@ export const UserConfigSchema = z.object({
    * 260707 analytics: opt-OUT flag for PostHog product analytics. Default false
    * (analytics ON) per the opt-out consent model disclosed in privacy.html.
    * The Settings "Usage analytics" toggle flips this; src/main/analytics.ts
-   * reads it as the consent gate — when true, capture() is a hard no-op and no
+   * reads it as the consent gate â€” when true, capture() is a hard no-op and no
    * events leave the machine. `.optional().default(false)` keeps existing
    * config.json files (which lack the field) analytics-on, matching the
-   * disclosed default. Optional and NOT defaulted (absent ≡ false everywhere it
+   * disclosed default. Optional and NOT defaulted (absent â‰¡ false everywhere it
    * is read: `analytics_opt_out === true`) so the many manual UserConfig
-   * literals don't all need to spell it out — same convention as
+   * literals don't all need to spell it out â€” same convention as
    * creation_times above.
    */
   analytics_opt_out: z.boolean().optional(),
@@ -1095,11 +1095,11 @@ export const UserConfigSchema = z.object({
    * 260725 BYOK voice: which speech-recognition engine the user picked for
    * voice calls. 'scribe' = ElevenLabs Scribe (cloud; via the user's own key
    * on BYOK, via the proxy on cloud accounts); 'whisper' = the local Whisper
-   * worker only. Optional and NOT defaulted (absent ≡ 'scribe' semantics,
+   * worker only. Optional and NOT defaulted (absent â‰¡ 'scribe' semantics,
    * decided renderer-side) so the many manual UserConfig literals don't all
-   * need to spell it out — same convention as chat_language.
+   * need to spell it out â€” same convention as chat_language.
    *
-   * 260816 (china-compat): + 'sensevoice' — the local SenseVoice-small
+   * 260816 (china-compat): + 'sensevoice' â€” the local SenseVoice-small
    * engine (zh-strong, CPU realtime; roughly half Whisper's Chinese error
    * rate). Local like 'whisper', just a different model in the same worker
    * seam. Cloud users never persist it, but the renderer's fallback policy
@@ -1112,8 +1112,8 @@ export const UserConfigSchema = z.object({
    * 260816 local speech (china-compat W3+W4): which TTS engine speaks a
    * companion's lines in local mode. 'local' routes synthesis through the
    * sherpa-onnx voice packs in main (speech/) instead of ElevenLabs.
-   * Read ONLY when ai_backend_kind === 'local' — cloud accounts ignore it
-   * entirely. Optional and NOT defaulted (absent ≡ 'elevenlabs').
+   * Read ONLY when ai_backend_kind === 'local' â€” cloud accounts ignore it
+   * entirely. Optional and NOT defaulted (absent â‰¡ 'elevenlabs').
    * Characters always KEEP their designated metadata.voiceId (an ElevenLabs
    * pool id); the local engine maps that voice's gender + the conversation
    * language to a local voice pack at synthesis time, and
@@ -1171,7 +1171,7 @@ export const UserConfigSchema = z.object({
     )
     .optional(),
   /**
-   * 261104 — SeiLink desktop host: the companion who "moved in" (her room is
+   * 261104 â€” SeiLink desktop host: the companion who "moved in" (her room is
    * the live wallpaper). Main-owned (src/main/seilink/host/seilinkHost.ts):
    * written by start(), cleared by a user stop, read at app start and after
    * an account switch to bring her back. Absent or null = off. Per profile,
@@ -1189,7 +1189,7 @@ export const UserConfigSchema = z.object({
   // (src/main/seilink/gate.ts). z.object strips the old key on read, so an
   // old config is simply ignored; `seilink_moved_in` above is untouched.
   /**
-   * 261104 (M4) — the dock's deafen button: no idle desktop lines from the
+   * 261104 (M4) â€” the dock's deafen button: no idle desktop lines from the
    * companion who moved in. Main-owned (seilink/desktopLines.ts). A poke
    * still gets a reply.
    */
@@ -1198,7 +1198,7 @@ export const UserConfigSchema = z.object({
    * 260725: cloud users' opt-in to the local Whisper fallback. Set true once
    * the user accepts the Whisper-install prompt after a Scribe failure, so
    * later calls fall back to local recognition without re-asking. Optional
-   * and NOT defaulted (absent ≡ false) — same convention as analytics_opt_out.
+   * and NOT defaulted (absent â‰¡ false) â€” same convention as analytics_opt_out.
    */
   stt_local_fallback: z.boolean().optional(),
   /**
@@ -1275,9 +1275,9 @@ export type AvatarPrefs = NonNullable<UserConfig['avatar_prefs']>[string];
 /**
  * The avatar mode a config actually means, folding in the deprecated boolean:
  * an explicit `avatar_mode` wins; otherwise the old "Call overlay" toggle maps
- * onto its historical behavior (`true` ≈ shown during calls, the closest level
+ * onto its historical behavior (`true` â‰ˆ shown during calls, the closest level
  * being 'activity') so nobody's overlay disappears on update. Both hydration
- * paths and Settings read the mode through this ONE function — never read
+ * paths and Settings read the mode through this ONE function â€” never read
  * `avatar_mode` or `call_overlay_enabled` directly.
  */
 export function effectiveAvatarMode(cfg: {
@@ -1286,3 +1286,7 @@ export function effectiveAvatarMode(cfg: {
 }): AvatarMode {
   return cfg.avatar_mode ?? (cfg.call_overlay_enabled === true ? 'activity' : 'off');
 }
+
+
+
+

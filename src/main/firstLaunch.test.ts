@@ -1,4 +1,4 @@
-/**
+﻿/**
  * installer_first_launch (260926): the once-per-install marker and the event
  * shape. The marker is device-global and created exclusively, so the event can
  * fire at most once per userData dir, and never for an install that predates
@@ -122,7 +122,7 @@ describe('macAppLocation', () => {
     ['/Volumes/Sei 0.6.5-arm64/Sei.app/Contents/MacOS/Sei', false, 'volume'],
     ['/Users/pat/Downloads/Sei.app/Contents/MacOS/Sei', false, 'downloads'],
     ['/Users/pat/Desktop/Sei.app/Contents/MacOS/Sei', false, 'other'],
-  ] as const)('%s → %s', (exe, inApps, expected) => {
+  ] as const)('%s â†’ %s', (exe, inApps, expected) => {
     expect(macAppLocation(exe, home, inApps)).toBe(expected);
   });
 
@@ -170,3 +170,7 @@ describe('installerFirstLaunchProps', () => {
     expect(props).toEqual({ platform: 'win32', arch: 'x64', os_version: '10.0.26100', packaged: true, arm64_translation: false });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Search QA, Minecraft in-world bot (261003).
  *
  *   npx vitest run --config scripts/search-qa/vitest.config.ts minecraft
@@ -40,7 +40,7 @@ const SNAPSHOT = `snapshot: pos: 212,71,-140
 biome: forest  surroundings: outside  time: day (4210)
 hp: 20/20  food: 18/20  xp: lvl 14
 holding: iron_pickaxe
-inventory (11/36 slots): iron_pickaxe cobblestone×64 oak_log×12 torch×23 bread×6 iron_ingot×9 coal×17 raw_iron×4 oak_planks×20 string×3 bone×2
+inventory (11/36 slots): iron_pickaxe cobblestoneÃ—64 oak_logÃ—12 torchÃ—23 breadÃ—6 iron_ingotÃ—9 coalÃ—17 raw_ironÃ—4 oak_planksÃ—20 stringÃ—3 boneÃ—2
 terrain at feet: 22 grass_block, 9 short_grass
 nearby blocks:
   #1 oak_log x14 @209,72,-143
@@ -175,3 +175,7 @@ describe('search QA: minecraft bot', () => {
     await writeFile(path.join(OUT, `minecraft-${process.env.SEI_QA_TAG || 'run'}.json`), JSON.stringify(results, null, 2));
   }, 3_600_000);
 });
+
+
+
+

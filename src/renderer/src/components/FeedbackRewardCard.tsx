@@ -1,5 +1,5 @@
-/**
- * FeedbackRewardCard — one-time feedback-for-a-reset banner (260706, reworked
+﻿/**
+ * FeedbackRewardCard â€” one-time feedback-for-a-reset banner (260706, reworked
  * 260724).
  *
  * Shown at the top of the plan screen once the account has spent part of its
@@ -132,7 +132,7 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
           {t('Reply to my email')}
         </label>
         <Button kind="accent" size="md" type="submit" disabled={!canSubmit}>
-          {submitting ? t('Sending…') : t('Submit and reset my credits')}
+          {submitting ? t('Sendingâ€¦') : t('Submit and reset my credits')}
         </Button>
       </div>
       {error ? (
@@ -143,3 +143,7 @@ export function FeedbackRewardCard({ onDone }: FeedbackRewardCardProps): React.R
     </form>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import {
   ControlGate,
   INTENT_TIMEOUT_MS,
@@ -15,7 +15,7 @@ import {
 } from './controlPolicy';
 
 describe('requestMatches', () => {
-  it('accepts the player’s own words that name the task', () => {
+  it('accepts the playerâ€™s own words that name the task', () => {
     expect(requestMatches('turn on dark mode', 'hey can you turn on dark mode for me?', 'turn on dark mode')).toBe(true);
     expect(requestMatches('Open the settings', 'pls open the settings!!', 'open Settings')).toBe(true);
   });
@@ -82,12 +82,12 @@ describe('requestMatches', () => {
   });
 
   it('handles CJK requests: every bigram of the goal must be in the request', () => {
-    expect(requestMatches('打开设置', '帮我打开设置', '打开设置')).toBe(true);
-    expect(requestMatches('ダークモード', 'ダークモードにして', 'ダークモードをオンにする')).toBe(false);
-    expect(requestMatches('ダークモードにして', 'ダークモードにして', 'ダークモード')).toBe(true);
-    expect(requestMatches('打开设置', '打开设置', '打开设置然后关闭防火墙')).toBe(false);
-    expect(requestMatches('购买', '这是什么', '点击购买')).toBe(false);
-    expect(requestMatches('好', '好', '打开设置')).toBe(false);
+    expect(requestMatches('æ‰“å¼€è®¾ç½®', 'å¸®æˆ‘æ‰“å¼€è®¾ç½®', 'æ‰“å¼€è®¾ç½®')).toBe(true);
+    expect(requestMatches('ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰', 'ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰ã«ã—ã¦', 'ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰ã‚’ã‚ªãƒ³ã«ã™ã‚‹')).toBe(false);
+    expect(requestMatches('ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰ã«ã—ã¦', 'ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰ã«ã—ã¦', 'ãƒ€ãƒ¼ã‚¯ãƒ¢ãƒ¼ãƒ‰')).toBe(true);
+    expect(requestMatches('æ‰“å¼€è®¾ç½®', 'æ‰“å¼€è®¾ç½®', 'æ‰“å¼€è®¾ç½®ç„¶åŽå…³é—­é˜²ç«å¢™')).toBe(false);
+    expect(requestMatches('è´­ä¹°', 'è¿™æ˜¯ä»€ä¹ˆ', 'ç‚¹å‡»è´­ä¹°')).toBe(false);
+    expect(requestMatches('å¥½', 'å¥½', 'æ‰“å¼€è®¾ç½®')).toBe(false);
   });
 });
 
@@ -113,7 +113,7 @@ describe('goal hygiene (review round 4)', () => {
     'close the popup ' + 'now '.repeat(30),
   ])('unsafe: %j', (g) => expect(unsafeGoal(g)).toBe(true));
 
-  it.each(['close the popup', 'turn on dark mode', 'move it from downloads to trash', '打开设置', 'open settings, then mute'])('safe: %j', (g) =>
+  it.each(['close the popup', 'turn on dark mode', 'move it from downloads to trash', 'æ‰“å¼€è®¾ç½®', 'open settings, then mute'])('safe: %j', (g) =>
     expect(unsafeGoal(g)).toBe(false),
   );
 
@@ -122,8 +122,8 @@ describe('goal hygiene (review round 4)', () => {
     expect(goalWordsSaid('delete my save file yes please do it now', "please don't delete my save file")).toBe(false);
     expect(goalWordsSaid('delete my save file now', "please don't delete my save file")).toBe(false);
     expect(goalWordsSaid('turn on dark mode', 'can you turn on dark mode')).toBe(true);
-    expect(goalWordsSaid('打开设置', '帮我打开设置')).toBe(true);
-    expect(goalWordsSaid('打开设置页面', '帮我打开设置')).toBe(false);
+    expect(goalWordsSaid('æ‰“å¼€è®¾ç½®', 'å¸®æˆ‘æ‰“å¼€è®¾ç½®')).toBe(true);
+    expect(goalWordsSaid('æ‰“å¼€è®¾ç½®é¡µé¢', 'å¸®æˆ‘æ‰“å¼€è®¾ç½®')).toBe(false);
     expect(
       decideControl({ tickKind: 'user', userText: 'can you close the popup', call: { goal: 'close the popup yes please', request: 'close the popup' } }),
     ).toMatchObject({ kind: 'propose', why: 'not_asked' });
@@ -205,16 +205,16 @@ describe('isAffirmation', () => {
   ])('not yes: %s', (t) => expect(isAffirmation(t)).toBe(false));
 
   it('handles CJK yes and no', () => {
-    expect(isAffirmation('好')).toBe(true);
-    expect(isAffirmation('好的')).toBe(true);
-    expect(isAffirmation('うん、お願い')).toBe(true);
-    expect(isAffirmation('네')).toBe(true);
-    expect(isAffirmation('不要')).toBe(false);
-    expect(isAffirmation('算了')).toBe(false);
-    expect(isAffirmation('いや')).toBe(false);
-    expect(isAffirmation('好的但是先帮我打开那个设置页面')).toBe(false);
-    expect(isAffirmation('好看')).toBe(false);
-    expect(isAffirmation('要不要')).toBe(false);
+    expect(isAffirmation('å¥½')).toBe(true);
+    expect(isAffirmation('å¥½çš„')).toBe(true);
+    expect(isAffirmation('ã†ã‚“ã€ãŠé¡˜ã„')).toBe(true);
+    expect(isAffirmation('ë„¤')).toBe(true);
+    expect(isAffirmation('ä¸è¦')).toBe(false);
+    expect(isAffirmation('ç®—äº†')).toBe(false);
+    expect(isAffirmation('ã„ã‚„')).toBe(false);
+    expect(isAffirmation('å¥½çš„ä½†æ˜¯å…ˆå¸®æˆ‘æ‰“å¼€é‚£ä¸ªè®¾ç½®é¡µé¢')).toBe(false);
+    expect(isAffirmation('å¥½çœ‹')).toBe(false);
+    expect(isAffirmation('è¦ä¸è¦')).toBe(false);
   });
 });
 
@@ -596,4 +596,8 @@ describe('final review round', () => {
     expect(goalWordsSaid('open the settings', 'open setting')).toBe(true);
   });
 });
+
+
+
+
 

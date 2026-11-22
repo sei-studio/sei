@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useStardewStore (game adapters M1, 260908): the renderer's view of the
  * Stardew Valley install (src/main/games/stardew): the detection state, the
  * running install's progress (stardew:install-progress push), and the
@@ -124,3 +124,7 @@ export const useStardewStore = create<StardewStore>((set, get) => ({
     }
   },
 }));
+
+
+
+

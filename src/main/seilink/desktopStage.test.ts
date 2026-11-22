@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const electron = vi.hoisted(() => ({
   windows: [] as unknown[],
@@ -238,3 +238,7 @@ describe('runtime', () => {
     exitDesktopStage(s as never, false);
   });
 });
+
+
+
+

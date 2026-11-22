@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { createDefaultRegistry, itemPrefab, recipeId, gatherSource } from './registry.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
@@ -179,3 +179,7 @@ describe('DST registry', () => {
     expect(gatherSource('unknown_thing')).toBeNull()
   })
 })
+
+
+
+

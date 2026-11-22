@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-game character profiles in the cloud (260925). MAIN PROCESS ONLY.
  *
  * Some games need per-character data an LLM derives once (first case: the
@@ -133,3 +133,7 @@ export async function writeGameProfile(args: {
     clearTimeout(handle);
   }
 }
+
+
+
+

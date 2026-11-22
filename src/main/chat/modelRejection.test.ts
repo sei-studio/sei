@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261024: the summary fold and chat memory compaction retry with CHAT_MODEL
  * only when the error says the model or the thinking field was refused. Every Anthropic 400 carries
  * "invalid_request_error", so matching "invalid" + "model" retried unrelated
@@ -33,3 +33,7 @@ describe('isModelRequestRejection', () => {
     expect(isModelRequestRejection(msg)).toBe(false);
   });
 });
+
+
+
+

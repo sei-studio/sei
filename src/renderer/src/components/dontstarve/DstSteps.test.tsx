@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useDstSetupSteps + DstLaunchPanel (260909). Static renders over a mocked
  * install store. Invariants:
  *   1. Game found, helper missing: the window opens on the helper step
@@ -159,9 +159,13 @@ describe('useDstSetupSteps + DstLaunchPanel', () => {
     expect(all.length).toBeGreaterThanOrEqual(20);
     const { ZH } = await import('../../lib/i18n/zh');
     for (const k of all) {
-      expect(k, `em dash in "${k}"`).not.toContain('—');
+      expect(k, `em dash in "${k}"`).not.toContain('â€”');
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(ZH[k]).not.toContain('—');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

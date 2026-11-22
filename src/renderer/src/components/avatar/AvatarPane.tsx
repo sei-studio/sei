@@ -1,10 +1,10 @@
-/**
- * AvatarPane (260804) — the character profile's "Avatar" tab: how this
+﻿/**
+ * AvatarPane (260804) â€” the character profile's "Avatar" tab: how this
  * companion appears on the always-on-top overlay.
  *
  * Two sub-tabs:
  *  - Static: tile shape ("frame", circle-only today) + "Always bright"
- *    (disables the talking indicator). USER preferences — they live in
+ *    (disables the talking indicator). USER preferences â€” they live in
  *    UserConfig.avatar_prefs (sparse, per character), never in
  *    character.metadata, so they work on foreign characters and never sync.
  *  - Live2D (beta): import/replace/remove a Live2D model zip and preview it
@@ -364,3 +364,7 @@ export function AvatarPane({ characterId, cloudAvatar, showPicker = true }: Avat
     </div>
   );
 }
+
+
+
+

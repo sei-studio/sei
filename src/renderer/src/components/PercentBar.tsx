@@ -1,5 +1,5 @@
-/**
- * PercentBar — accessible progress-bar primitive (Phase 13 Plan 18).
+﻿/**
+ * PercentBar â€” accessible progress-bar primitive (Phase 13 Plan 18).
  *
  * Reusable across CreditsScreen (lg), analytics surfaces (md), and any future
  * inline micro-bar (sm). The progressbar ARIA role + `aria-valuenow` makes
@@ -10,7 +10,7 @@
  * the proxy (`X-Sei-Remaining-Pct` should be 0..100 per D-41) can't paint a
  * fill rect that overflows the track or goes negative.
  *
- * Source: 13-18-PLAN.md (Task 1) + 13-PATTERNS.md §components/PercentBar.
+ * Source: 13-18-PLAN.md (Task 1) + 13-PATTERNS.md Â§components/PercentBar.
  */
 
 import React from 'react';
@@ -22,7 +22,7 @@ export interface PercentBarProps {
   value: number;
   /**
    * Optional accessible label. Defaults to "{value} percent" if not provided
-   * — sufficient for the icon-rail micro-bar but consumers like CreditsScreen
+   * â€” sufficient for the icon-rail micro-bar but consumers like CreditsScreen
    * pass richer phrasing.
    */
   label?: string;
@@ -67,3 +67,7 @@ export function PercentBar({
     </div>
   );
 }
+
+
+
+

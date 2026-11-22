@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room renderer (261104). The imperative core behind RoomCanvas; the
  * desktop host and the editor can drive it directly.
  *
@@ -333,7 +333,7 @@ export class RoomRenderer {
     return this.target;
   }
 
-  // ── internals ─────────────────────────────────────────────────────────────
+  // â”€â”€ internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private onVisibility = (): void => {
     // Back from hidden: the step after the gap is capped (particleDt), nothing jumps.
@@ -478,7 +478,7 @@ export class RoomRenderer {
     return { still: glowStill, animated };
   }
 
-  // ── recolour fast path ────────────────────────────────────────────────────
+  // â”€â”€ recolour fast path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private async retint(): Promise<void> {
     if (this.retinting) {
@@ -699,7 +699,7 @@ export class RoomRenderer {
     return false;
   }
 
-  // ── particles ─────────────────────────────────────────────────────────────
+  // â”€â”€ particles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** The particle layers of the caches on screen, with their crossfade weights. */
   private particleParts(): Array<[TimeCache, number]> {
@@ -832,3 +832,7 @@ function sampleColour(back: AnyCanvas, front: AnyCanvas | null): string {
 
 /** Re-exported so callers need one import for the avatar z. */
 export { AVATAR_Z };
+
+
+
+

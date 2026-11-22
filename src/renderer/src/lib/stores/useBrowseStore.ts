@@ -1,5 +1,5 @@
-/**
- * useBrowseStore — Phase 12 Plan 09 Browse tab state.
+﻿/**
+ * useBrowseStore â€” Phase 12 Plan 09 Browse tab state.
  *
  * Source of truth for the Browse grid + search field on CharactersScreen.
  * Mirrors useCloudCharactersStore's state/actions split + useSyncStore's
@@ -8,7 +8,7 @@
  * Lifecycle:
  *   - The store does NOT self-bootstrap. CharactersScreen's BrowseTab calls
  *     `useBrowseStore.getState().refresh()` from a useEffect on first mount,
- *     mirroring the way App.tsx wires useSyncStore.init() — keeps test
+ *     mirroring the way App.tsx wires useSyncStore.init() â€” keeps test
  *     determinism (no IPC fires on module import) and prevents the store from
  *     trying to call window.sei before the preload bridge is ready.
  *
@@ -27,7 +27,7 @@
  *     post-report refresh (12-13 may opt-in or not).
  *
  *   - `reset()` returns the store to its initial state AND cancels any
- *     pending debounce — important so a queued refresh from a recent
+ *     pending debounce â€” important so a queued refresh from a recent
  *     setQuery doesn't fire after the consumer thought it had wiped state.
  *
  * 261110 (product call): World auto-loads on scroll (no "Load more" button)
@@ -45,8 +45,8 @@
  *   - Each page fires `world_page_loaded` (shape only).
  *
  * Constants:
- *   - PAGE_SIZE = 24 (CONTEXT D-31b — infinite-scroll page size).
- *   - DEBOUNCE_MS = 250 (CONTEXT D-31a — search input debounce).
+ *   - PAGE_SIZE = 24 (CONTEXT D-31b â€” infinite-scroll page size).
+ *   - DEBOUNCE_MS = 250 (CONTEXT D-31a â€” search input debounce).
  *
  * Type note (Pitfall 8 + 12-PATTERNS.md):
  *   - The debounce timer handle is `window.setTimeout(...)` so the TS return
@@ -55,8 +55,8 @@
  *
  * Sources:
  *   - 12-09-PLAN.md
- *   - 12-CONTEXT.md §D-31a/b/c/d
- *   - 12-PATTERNS.md §useBrowseStore
+ *   - 12-CONTEXT.md Â§D-31a/b/c/d
+ *   - 12-PATTERNS.md Â§useBrowseStore
  *   - 12-08-SUMMARY.md (IPC contract: window.sei.browseList)
  */
 
@@ -89,9 +89,9 @@ interface BrowseState {
   error: string | null;
   /** The last NEXT-page fetch failed; auto-load pauses until a retry. */
   loadMoreFailed: boolean;
-  /** Internal — current debounce timer handle, null when no debounce pending. */
+  /** Internal â€” current debounce timer handle, null when no debounce pending. */
   _debounceHandle: number | null;
-  /** Internal — bumps on every refresh/reset; stale answers are dropped. */
+  /** Internal â€” bumps on every refresh/reset; stale answers are dropped. */
   _seq: number;
 }
 
@@ -108,7 +108,7 @@ interface BrowseActions {
   refresh: () => Promise<void>;
   /**
    * Warm the first page IF the store is cold (no entries, not already loading,
-   * no active search query). Idempotent and non-destructive — safe to call
+   * no active search query). Idempotent and non-destructive â€” safe to call
    * from a hover handler on the World rail icon so the grid is already
    * populated by the time the tab mounts. Unlike refresh() it never wipes a
    * populated grid or clobbers an in-flight/searched state.
@@ -294,7 +294,7 @@ export const useBrowseStore = create<BrowseState & BrowseActions>((set, get) => 
 
     prefetch: async (): Promise<void> => {
       const s = get();
-      // Already warm, already fetching, or a search is active — nothing to do.
+      // Already warm, already fetching, or a search is active â€” nothing to do.
       if (s.loading || s.entries.length > 0 || s.query) return;
       await fetchPage(true, 'initial');
     },
@@ -307,3 +307,7 @@ export const useBrowseStore = create<BrowseState & BrowseActions>((set, get) => 
     },
   };
 });
+
+
+
+

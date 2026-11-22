@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Local crash / error log (261031, T278, scale plan C4).
  *
  * `<userData>/logs/crash/crash.log`, one block per crash or error: time,
@@ -186,3 +186,7 @@ export function errorFingerprint(name: string, message: string, stack: string): 
   }
   return createHash('sha256').update(`${name}|${msg}|${frames.join('>')}`).digest('hex').slice(0, 12);
 }
+
+
+
+

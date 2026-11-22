@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The WorldLink status lines typed out letter by letter, like a typewriter,
  * with cycling dots (product feedback (261106), letters (261107)). Pure and
  * deterministic, so a seeked frame (the review renders) shows exactly what
@@ -8,7 +8,7 @@
  * clusters, so an emoji, a flag or an accented letter is one unit; CJK one
  * character each) and a trailing ellipsis, which is not typed but turns into
  * dots that cycle ".", "..", "..." once the letters are in (`splitEllipsis`:
- * "…", "...", "。。。" or "⋯", in any locale's catalog; the catalogs keep
+ * "â€¦", "...", "ã€‚ã€‚ã€‚" or "â‹¯", in any locale's catalog; the catalogs keep
  * their text as it is). Each letter takes 14 to 20 ms (a fixed spread from
  * the text; product call (261116): twice as fast as before, in place of
  * the Skip button), a little longer after a space or punctuation (`typeDelays`),
@@ -24,7 +24,7 @@ export const TYPE_CHAR_MS = 17;
 export const TYPE_SPREAD_MS = 3;
 /** Added after a space (the small beat between words). */
 export const TYPE_SPACE_MS = 6;
-/** Added after punctuation (",", ".", "、", "。" ...). */
+/** Added after punctuation (",", ".", "ã€", "ã€‚" ...). */
 export const TYPE_PUNCT_MS = 24;
 /** A whole line types in within this (a long translation types faster). Under the 1.7 s dwell with TYPE_START_MS. */
 export const TYPE_MAX_MS = 900;
@@ -33,20 +33,20 @@ export const CHAR_IN_MS = 12;
 /** The dots step every this long: ".", "..", "...", "." ... */
 export const DOT_STEP_MS = 400;
 
-/** A trailing ellipsis: "…", "...", "。。。", "⋯" (and repeats, like "……"). */
-const ELLIPSIS_RE = /(?:…+|\.{3,}|。{3,}|⋯+)\s*$/u;
+/** A trailing ellipsis: "â€¦", "...", "ã€‚ã€‚ã€‚", "â‹¯" (and repeats, like "â€¦â€¦"). */
+const ELLIPSIS_RE = /(?:â€¦+|\.{3,}|ã€‚{3,}|â‹¯+)\s*$/u;
 
 export interface SplitLine {
   /** The text before the ellipsis (the letters that type in). */
   body: string;
-  /** The dot the cycling dots are made of ("." or "。"), or null: the line has no ellipsis. */
+  /** The dot the cycling dots are made of ("." or "ã€‚"), or null: the line has no ellipsis. */
   dot: string | null;
 }
 
 export function splitEllipsis(text: string): SplitLine {
   const m = ELLIPSIS_RE.exec(text);
   if (!m) return { body: text, dot: null };
-  return { body: text.slice(0, m.index), dot: m[0].trimEnd().startsWith('。') ? '。' : '.' };
+  return { body: text.slice(0, m.index), dot: m[0].trimEnd().startsWith('ã€‚') ? 'ã€‚' : '.' };
 }
 
 type Segmenter = { segment(s: string): Iterable<{ segment: string }> };
@@ -163,7 +163,7 @@ export interface Typed {
   done: boolean;
   /** How many dots show (0 to 3; 0 until the letters are in, always 0 without an ellipsis). */
   dots: number;
-  /** The dot ("." or "。"), or null: no cycling dots (no ellipsis, or reduced motion, where the line keeps its own). */
+  /** The dot ("." or "ã€‚"), or null: no cycling dots (no ellipsis, or reduced motion, where the line keeps its own). */
   dot: string | null;
 }
 
@@ -190,3 +190,7 @@ export function typedAt(text: string, age: number, reduced = false): Typed {
   const dots = done && dot ? 1 + (Math.floor((age - end) / DOT_STEP_MS) % 3) : 0;
   return { typed, fresh, freshIn, rest: body.slice(typed.length + fresh.length), done, dots, dot };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for worldlinkTipPref (261119): the one-time "New" tip under the chat
  * header's WorldLink button. It replaced the games tip (260929), which had
  * replaced the Backseat tip (260803), and keeps their storage rules.
@@ -228,3 +228,7 @@ describe('claimTipShown', () => {
     expect(claimTipShown()).toBe(true);
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * scripts/backseat-cache-probe.ts — per-look prompt-cache usage on a scripted
+﻿/**
+ * scripts/backseat-cache-probe.ts â€” per-look prompt-cache usage on a scripted
  * backseat session (261102, free-minute cost work).
  *
  * Free backseat sessions on v0.6.10+ showed cache_read flat at the system
@@ -75,7 +75,7 @@ interface LookLog {
   reply: string;
 }
 
-/** µ$ at Haiku 5.5 list price: $0.10 in, 1.25x write, 0.1x read, $0.50 out per MTok. */
+/** Âµ$ at Haiku 5.5 list price: $0.10 in, 1.25x write, 0.1x read, $0.50 out per MTok. */
 function micro(u: { input_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; output_tokens: number }): number {
   return u.input_tokens * 0.1 + (u.cache_creation_input_tokens ?? 0) * 0.125 + (u.cache_read_input_tokens ?? 0) * 0.01 + u.output_tokens * 0.5;
 }
@@ -161,7 +161,7 @@ async function runArm(arm: Arm, nonce: string): Promise<LookLog[]> {
     console.log(
       `${arm.padEnd(6)} l${String(look).padStart(2)} ${kind.padEnd(5)} rows=${String(log.rows).padStart(2)} in=${String(log.input).padStart(5)} ` +
         `read=${String(log.cacheRead).padStart(5)} write=${String(log.cacheWrite).padStart(5)} out=${String(log.output).padStart(3)} ` +
-        `${log.micro.toFixed(0).padStart(4)}µ$ ${JSON.stringify(log.reply)}`,
+        `${log.micro.toFixed(0).padStart(4)}Âµ$ ${JSON.stringify(log.reply)}`,
     );
   }
   return logs;
@@ -173,8 +173,8 @@ function summarize(arm: string, logs: LookLog[]): void {
   const avg = (f: (l: LookLog) => number) => steady.reduce((n, l) => n + f(l), 0) / Math.max(1, steady.length);
   console.log(
     `${arm.padEnd(6)} steady looks=${steady.length} avg in=${avg((l) => l.input).toFixed(0)} read=${avg((l) => l.cacheRead).toFixed(0)} ` +
-      `write=${avg((l) => l.cacheWrite).toFixed(0)} out=${avg((l) => l.output).toFixed(0)} cost=${avg((l) => l.micro).toFixed(1)}µ$/look ` +
-      `(cache part ${avg((l) => l.cacheWrite * 0.125 + l.cacheRead * 0.01).toFixed(1)}µ$) first=${logs[0].micro.toFixed(0)}µ$`,
+      `write=${avg((l) => l.cacheWrite).toFixed(0)} out=${avg((l) => l.output).toFixed(0)} cost=${avg((l) => l.micro).toFixed(1)}Âµ$/look ` +
+      `(cache part ${avg((l) => l.cacheWrite * 0.125 + l.cacheRead * 0.01).toFixed(1)}Âµ$) first=${logs[0].micro.toFixed(0)}Âµ$`,
   );
 }
 
@@ -190,3 +190,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

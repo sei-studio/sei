@@ -1,5 +1,5 @@
-/**
- * CallBackdrop — the character-art call backdrop.
+﻿/**
+ * CallBackdrop â€” the character-art call backdrop.
  *
  * This is what backdrop mode falls back to for everyone who has no custom
  * scene, and what group calls always get (a scene stages ONE actor, so there
@@ -7,14 +7,14 @@
  * window. Group: one equal column per participant, split down the middle.
  *
  * The art is painted `cover` and can be dragged VERTICALLY to change what you
- * are looking at — a portrait cropped to a landscape window loses most of
+ * are looking at â€” a portrait cropped to a landscape window loses most of
  * itself, and which part it loses should be the player's choice, not the
  * layout's. Horizontal drag is deliberately absent: cover on a wide pane is
  * width-driven, so there is no horizontal slack to move through. See
  * `lib/callBackdrop.ts` for why one rule covers both pane shapes.
  *
  * Characters with no uploaded art fall back to their procedural portrait,
- * blown up and left pixelated — the same identity the tiles show, just used
+ * blown up and left pixelated â€” the same identity the tiles show, just used
  * as wallpaper.
  */
 
@@ -99,7 +99,7 @@ function BackdropPane({
       onPointerCancel={endDrag}
     >
       {src ? (
-        // Off-screen probe purely for naturalWidth/Height — the drag needs the
+        // Off-screen probe purely for naturalWidth/Height â€” the drag needs the
         // art's real size to track the cursor 1:1, and a CSS background has no
         // way to report it.
         <img
@@ -149,3 +149,7 @@ export function CallBackdrop({
     </div>
   );
 }
+
+
+
+

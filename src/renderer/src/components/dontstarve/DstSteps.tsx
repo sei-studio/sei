@@ -1,5 +1,5 @@
-/**
- * useDstSetupSteps — the Don't Starve Together setup steps as DATA (260909),
+﻿/**
+ * useDstSetupSteps â€” the Don't Starve Together setup steps as DATA (260909),
  * shared by the launch panel's one-step window (SetupStepper, in the
  * game's register) and the setup modal a pending summon opens (DstSteps,
  * the token-styled numbered list below). One hook so the two surfaces can
@@ -222,7 +222,7 @@ function installingLine(step: string, t: ReturnType<typeof useT>): string {
   }
 }
 
-/* ── The token-styled numbered list (the setup modal's body) ── */
+/* â”€â”€ The token-styled numbered list (the setup modal's body) â”€â”€ */
 
 function TokenStepButton({ kind, disabled, onClick, children }: StepButtonProps): React.ReactElement {
   return (
@@ -247,7 +247,7 @@ function Step({ index, tone, children }: { index: number; tone: Tone; children: 
   return (
     <li className={`${styles.step} ${cls}`} aria-current={tone === 'now' ? 'step' : undefined}>
       <span className={styles.stepNumber} aria-hidden="true">
-        {tone === 'done' ? '✓' : String(index).padStart(2, '0')}
+        {tone === 'done' ? 'âœ“' : String(index).padStart(2, '0')}
       </span>
       <div className={styles.stepBody}>{children}</div>
     </li>
@@ -255,7 +255,7 @@ function Step({ index, tone, children }: { index: number; tone: Tone; children: 
 }
 
 /**
- * DstSteps — every step at once, in the app's tokens: the body of the setup
+ * DstSteps â€” every step at once, in the app's tokens: the body of the setup
  * modal (DstSetupBody), where a player who pressed Play early sees what is
  * missing with the one button each step needs.
  */
@@ -273,3 +273,7 @@ export function DstSteps(): React.ReactElement {
     </ol>
   );
 }
+
+
+
+

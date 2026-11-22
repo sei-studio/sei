@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/dashboard/telemetry.js — Minecraft dashboard
+﻿// src/bot/adapter/minecraft/dashboard/telemetry.js â€” Minecraft dashboard
 // telemetry loop (260721).
 //
 // While the renderer reports it is watching (the dashboard tile/panel is on
@@ -26,9 +26,9 @@ const SLOT_MIN = 5
 const SLOT_MAX = 45
 const MAX_ITEMS = 46
 
-/** Strip a namespaced id ("minecraft:stone" → "stone"). The stripped name
+/** Strip a namespaced id ("minecraft:stone" â†’ "stone"). The stripped name
  * doubles as the renderer's texture key (GET /mcassets/<v>/item/<name>.png,
- * src/main/mcAssets.ts) — mineflayer item names ARE the minecraft item ids,
+ * src/main/mcAssets.ts) â€” mineflayer item names ARE the minecraft item ids,
  * so keep this a pure namespace strip. */
 function plainName(name) {
   return String(name ?? '').replace(/^minecraft:/, '')
@@ -136,7 +136,7 @@ export function createDashboardTelemetry({ bot, emit, logger = console, interval
       const changed = (name ?? null) !== actionName
       actionName = name ?? null
       actionArgs = args
-      // "Plus immediately on change" — but the map still rides its own 2s cap.
+      // "Plus immediately on change" â€” but the map still rides its own 2s cap.
       if (changed) tick()
     },
     isWatching() {
@@ -148,3 +148,7 @@ export function createDashboardTelemetry({ bot, emit, logger = console, interval
     },
   }
 }
+
+
+
+

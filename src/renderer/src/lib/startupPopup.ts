@@ -1,5 +1,5 @@
-/**
- * Startup popup (261027) — pure renderer rules: when the popup may appear and
+﻿/**
+ * Startup popup (261027) â€” pure renderer rules: when the popup may appear and
  * how big its page is. The component is components/StartupPopup.tsx; the
  * feed, allow-list and show-once rules live in main (src/main/startupPopup.ts).
  */
@@ -127,3 +127,7 @@ export function armShownPopup(deps: ShownPopupDeps): () => void {
     unsubAction();
   };
 }
+
+
+
+

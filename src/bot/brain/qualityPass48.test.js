@@ -1,4 +1,4 @@
-// src/bot/brain/qualityPass48.test.js
+﻿// src/bot/brain/qualityPass48.test.js
 //
 // 261109 (pass 48): free-play wrong_or_hallucinated lines. say() is heard
 // before the actions called with it run, and the drowning heads-up names the
@@ -16,7 +16,7 @@ describe('say() timing', () => {
   it('says the line is heard before the actions called with it run', () => {
     expect(PERSONALITY_TOOL_DESCRIPTIONS.say).toContain('It is heard before any action you call with it runs')
     expect(PERSONALITY_TOOL_DESCRIPTIONS.say).toContain('use the count on your inventory line this turn')
-    expect(PERSONALITY_TOOL_DESCRIPTIONS.say).not.toMatch(/—/)
+    expect(PERSONALITY_TOOL_DESCRIPTIONS.say).not.toMatch(/â€”/)
   })
 })
 
@@ -26,7 +26,7 @@ describe('drowning heads-up', () => {
     expect(t).toContain('10 of 20 air left')
     expect(t).toContain('not a near-drowning')
     expect(t).not.toContain('nearly drowned')
-    expect(t).not.toMatch(/—/)
+    expect(t).not.toMatch(/â€”/)
   })
 
   it('keeps the old line when air is nearly gone or unknown', () => {
@@ -39,3 +39,7 @@ describe('drowning heads-up', () => {
     expect(t).toContain('17 of 20 air left')
   })
 })
+
+
+
+

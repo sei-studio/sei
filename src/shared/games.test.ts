@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { GAME_CATALOG, renderGamesDirective } from './games';
 
 describe('game catalog', () => {
@@ -34,7 +34,7 @@ describe('game catalog', () => {
     expect(renderGamesDirective()).toContain('Roblox (by screen share)');
   });
 
-  it('only Minecraft is self-launchable — the launch tool takes nothing else', () => {
+  it('only Minecraft is self-launchable â€” the launch tool takes nothing else', () => {
     expect(GAME_CATALOG.filter((g) => g.selfLaunch).map((g) => g.id)).toEqual(['minecraft']);
   });
 
@@ -47,3 +47,7 @@ describe('game catalog', () => {
     expect(text.length).toBeLessThan(400);
   });
 });
+
+
+
+

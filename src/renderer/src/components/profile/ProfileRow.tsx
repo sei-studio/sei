@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileRow (261107, profile v0.7): one settings row on a companion's
  * profile. Label, current value, action button(s). Nothing else: an
  * explanation is a hover tooltip on the label (HoverTip), and a row the
@@ -128,3 +128,7 @@ export function RowValue({
 export function ActionChip({ children }: { children: React.ReactNode }): React.ReactElement {
   return <span className={styles.chip}>{children}</span>;
 }
+
+
+
+

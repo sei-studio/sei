@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared summon-attempt flow, per game (game adapters M0, 260908).
  *
  * Every summon entry point (a launch panel's Launch button, crash-modal
@@ -6,7 +6,7 @@
  * order. `summonFlows[game]` holds one flow per bot-backed game, all sharing
  * `launchSummon` (the summon itself + post-summon navigation):
  *
- *   - minecraft: the pre-M0 pipeline, unchanged — the username-conflict guard,
+ *   - minecraft: the pre-M0 pipeline, unchanged â€” the username-conflict guard,
  *     then the LAN gate: if connected, summon (behind the host-compatibility
  *     disclaimer); otherwise stash the pending id and open the Minecraft setup
  *     window on its "Connecting to world" tab in searching mode, which
@@ -20,7 +20,7 @@
  * Centralised here (rather than duplicated per screen) so the gate order
  * lives in one place. The old first-summon skin-setup nudge moved to the
  * first OPEN of the Minecraft surface (maybeOfferSkinSetup in gameLaunch.ts,
- * 260725) — by the time a summon fires the user has already been offered
+ * 260725) â€” by the time a summon fires the user has already been offered
  * setup.
  */
 
@@ -33,10 +33,10 @@ import { useDataStore } from './stores/useDataStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
 
 /**
- * 260709 — pre-summon host-compatibility disclaimer bookkeeping. Session-scoped
+ * 260709 â€” pre-summon host-compatibility disclaimer bookkeeping. Session-scoped
  * on purpose: the disclaimer is a heads-up, not a gate, so once the user has
  * seen (and summoned past) it for a given warning kind we stay quiet until the
- * next app launch. Not persisted — a modded world is worth one reminder per
+ * next app launch. Not persisted â€” a modded world is worth one reminder per
  * session, zero per click.
  */
 const acknowledgedHostWarnings = new Set<LanHostWarning>();
@@ -52,12 +52,12 @@ export function acknowledgeHostWarning(kind: LanHostWarning): void {
  */
 export function launchSummon(id: string, fromChat: boolean, game: GameId = 'minecraft'): void {
   // 260725: the dashboard's runtime controls (pause + reactive/proactive) are
-  // per-summon state. Drop any leftovers from a previous session here — the
+  // per-summon state. Drop any leftovers from a previous session here â€” the
   // fresh bot process always starts unpaused and proactive, and a stale
   // renderer "paused" flag would misreport it.
   useMcDashboardStore.getState().reset(id);
   void sei.summon(id, game).catch(() => {
-    // Errors surface via onStatus → BotStatus.error; the model row owns display.
+    // Errors surface via onStatus â†’ BotStatus.error; the model row owns display.
   });
   useUiStore.getState().navigate(fromChat ? { kind: 'chat', characterId: id } : { kind: 'character', id });
 }
@@ -113,7 +113,7 @@ export async function summonWithHostGate(
 }
 
 /**
- * Multi-summon guard. Two bots cannot share an in-game username — the world
+ * Multi-summon guard. Two bots cannot share an in-game username â€” the world
  * kicks the second with `multiplayer.disconnect.name_taken`. If a
  * currently-summoned (online or connecting) character already uses the target's
  * effective MC username, open the conflict popup and return true (refuse). The
@@ -151,14 +151,14 @@ function launchedFromChat(id: string): boolean {
 
 /**
  * Run the LAN gate and summon (Minecraft). Always navigates to the character
- * page on the connected path — harmless when the caller is already on that
+ * page on the connected path â€” harmless when the caller is already on that
  * page (CharacterPage) and matches the CharactersScreen card behavior.
  */
 async function proceedMinecraftSummon(id: string): Promise<void> {
   const ui = useUiStore.getState();
   // 260703: gate on a FRESH LAN read, not the store snapshot. The background
-  // poll damps open→closed transitions (OPEN_MISS_TOLERANCE), so a world that
-  // actually closed can keep reporting 'open' in the store for up to ~4s — long
+  // poll damps openâ†’closed transitions (OPEN_MISS_TOLERANCE), so a world that
+  // actually closed can keep reporting 'open' in the store for up to ~4s â€” long
   // enough that a summon click would fire sei.summon(id) into a dead port and
   // surface a connection error instead of the "open your world" setup window.
   // The fresh check reads live ground truth; fall back to the store snapshot if
@@ -167,13 +167,13 @@ async function proceedMinecraftSummon(id: string): Promise<void> {
   // refreshes main's cached LAN state, so the port the actual summon reads is
   // fresh too.
   const lan = await sei.lanCheckNow().catch(() => useDataStore.getState().lan);
-  // Task 6 — if this summon was launched from THIS character's chat (the games
+  // Task 6 â€” if this summon was launched from THIS character's chat (the games
   // popup opens over the chat view), keep the user in that chat once the bot
   // joins rather than yanking them to the profile page. The floating widget +
   // summon toast still surface the live session from anywhere.
   const fromChat = launchedFromChat(id);
   if (lan.kind === 'open') {
-    // 260709 — compatibility disclaimer: a vanilla (no skin mod), modded, or
+    // 260709 â€” compatibility disclaimer: a vanilla (no skin mod), modded, or
     // Lunar host gets a one-time heads-up before the first summon of the
     // session. The modal's "Summon anyway" acknowledges and resumes via
     // launchSummon; Cancel simply drops the attempt.
@@ -231,6 +231,10 @@ export const summonFlows: Record<GameId, SummonFlow> = {
   minecraft: minecraftFlow,
   stardew: makeDefaultSummonFlow('stardew'),
   dontstarve: makeDefaultSummonFlow('dontstarve'),
+  // Forza 4 is launched from its own panel; keep the type satisfied.
+  CONNECT4: makeDefaultSummonFlow('CONNECT4'),
+  // Battleship is launched from its own panel; keep the type satisfied.
+  BATTLESHIP: makeDefaultSummonFlow('BATTLESHIP'),
 };
 
 /** Replace a game's flow (the game agents' seam). */
@@ -245,3 +249,7 @@ export function registerSummonFlow(game: GameId, flow: SummonFlow): void {
 export async function attemptSummon(id: string, game: GameId = 'minecraft'): Promise<void> {
   await summonFlows[game].attempt(id);
 }
+
+
+
+

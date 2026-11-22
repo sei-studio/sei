@@ -1,4 +1,4 @@
-/**
+﻿/**
  * stardewDashboard helpers (260909): the game facts the Stardew dashboard paints.
  */
 import { describe, it, expect } from 'vitest';
@@ -49,3 +49,7 @@ describe('stardewDashboard', () => {
     expect(pct(5, 0)).toBe(0);
   });
 });
+
+
+
+

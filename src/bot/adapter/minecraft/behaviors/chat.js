@@ -1,16 +1,16 @@
-/**
+﻿/**
  * Chat behavior: emits sei:chat_received when the player chats, addresses
  * the bot, or speaks nearby. Responses are LLM-generated.
  *
  * Stop-verb fast path: when the player says stop/halt/cancel/nevermind, we
- * hard-cancel the body BEFORE dispatch — the body stops immediately rather
+ * hard-cancel the body BEFORE dispatch â€” the body stops immediately rather
  * than waiting for the next LLM turn to abort it. The chat message still
  * flows through normal dispatch so the LLM acknowledges in-character;
  * no hardcoded confirmation string.
  *
  * Death lines (260730): a PLAYER's death ("Alex was blown up by Creeper")
  * arrives as SYSTEM chat, so it used to be relabeled as "ran a command
- * (in-game, not a message or instruction to you): ..." — the model duly
+ * (in-game, not a message or instruction to you): ..." â€” the model duly
  * discounted it, and live, Sui asked the player how they died with the cause
  * sitting verbatim in its own context. Death lines are now detected and framed
  * as what they are, and they WAKE a turn (the companion should react to its
@@ -88,11 +88,11 @@ function forceCancelBody(bot) {
 }
 
 // 260618: whole-word, case-insensitive name match. Minecraft names are
-// [A-Za-z0-9_], so we require the name not be glued to other name characters —
+// [A-Za-z0-9_], so we require the name not be glued to other name characters â€”
 // "sui" matches "sui go" and "hey sui!" but NOT "suit" or "result". Used to tell
 // whether a message is aimed at this bot or at one of its sibling companions.
 // 261027: the message is accent-folded first (the name already is, see
-// src/bot/names.js), so "hey sofía" reaches the bot that joined as "Sofia".
+// src/bot/names.js), so "hey sofÃ­a" reaches the bot that joined as "Sofia".
 function mentionsName(message, name) {
   if (!name) return false
   const text = foldLatin(String(message))
@@ -104,7 +104,7 @@ function mentionsName(message, name) {
 
 export function startChat(bot, config, orchestrator = null) {
   // Mineflayer's high-level `chat` event is fired by a DEPRECATED catch-all
-  // pattern (LEGACY_VANILLA_CHAT_REGEX) that runs against EVERY `messagestr` —
+  // pattern (LEGACY_VANILLA_CHAT_REGEX) that runs against EVERY `messagestr` â€”
   // including systemChat lines (Minecraft command feedback like "Set own game
   // mode to Creative Mode" after the player runs /gamemode). Those loosely match
   // the pattern and arrive here looking exactly like a player chat, so the model
@@ -154,7 +154,7 @@ export function startChat(bot, config, orchestrator = null) {
     const labeled = `just DIED in-game. This is the world's own death message, not something they said to you, and it names the cause: ${death.text}`
     logChatIn(who, labeled)
     _deathHandled = death.text
-    // playerSpoke:false — the player did not speak, so this must not preempt a
+    // playerSpoke:false â€” the player did not speak, so this must not preempt a
     // running action the way a real chat line does. suppressInterrupt is false:
     // it does wake a turn, because a companion that says nothing when its
     // player dies in front of it reads as not having noticed.
@@ -216,7 +216,7 @@ export function startChat(bot, config, orchestrator = null) {
 
     const playerSpoke = !fromCompanion
     // Substitute the in-game username with the preferred display name before
-    // anything the LLM reads — but ONLY for the human. A sibling AI companion
+    // anything the LLM reads â€” but ONLY for the human. A sibling AI companion
     // keeps its own in-game name, otherwise the bot would think its teammate's
     // chatter came from the player.
     const displayName = fromCompanion ? username : (config.player_display_name || username)
@@ -227,11 +227,11 @@ export function startChat(bot, config, orchestrator = null) {
     const addressedToSibling = roster.some(c => mentionsName(message, c))
     // M1: this bot is NOT the intended recipient when the message names ONLY a
     // sibling (let that companion field it) or a fellow bot is just chattering
-    // (don't wake on teammate small-talk → no bot-to-bot ping-pong loop).
+    // (don't wake on teammate small-talk â†’ no bot-to-bot ping-pong loop).
     // EXCEPTION (260619): a companion that addresses THIS bot BY NAME ("marv,
     // mine that stone") is a DIRECTED request and DOES wake us. The player can
     // delegate task-giving to a teammate ("sui, give marv tasks. marv, listen to
-    // sui"), and a sibling's by-name command is exactly that — blanket-suppressing
+    // sui"), and a sibling's by-name command is exactly that â€” blanket-suppressing
     // it left the directed bot idle while its teammate kept asking (the Marv
     // multi-agent deadlock). Only UN-addressed companion chatter stays
     // record-but-no-wake, which still blocks the ping-pong loop (an acknowledgement
@@ -239,7 +239,7 @@ export function startChat(bot, config, orchestrator = null) {
     // So suppress reduces to: a line that does NOT name this bot AND is either a
     // teammate talking or a message aimed at a sibling. Either way the line is
     // still recorded to chat history (brain.onChat records before it checks this
-    // flag), so a suppressed line still surfaces on the next wake — it just
+    // flag), so a suppressed line still surfaces on the next wake â€” it just
     // doesn't interrupt.
     const suppressInterrupt = !addressed && (fromCompanion || addressedToSibling)
 
@@ -252,7 +252,7 @@ export function startChat(bot, config, orchestrator = null) {
       if (STOP_VERBS.has(trimmed)) {
         forceCancelBody(bot)
         try { orchestrator.currentLoop?.abortController?.abort() } catch {}
-        // Fall through to dispatch — LLM acknowledges in its own voice.
+        // Fall through to dispatch â€” LLM acknowledges in its own voice.
       }
     }
 
@@ -278,3 +278,7 @@ export function startChat(bot, config, orchestrator = null) {
     }
   })
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 import { deviceThumbPx, thumbScale } from './roomThumbs';
 
 describe('thumbnail scale (261110: crisp on 150% and Retina screens)', () => {
@@ -13,3 +13,7 @@ describe('thumbnail scale (261110: crisp on 150% and Retina screens)', () => {
     expect(thumbScale()).toBe(1);
   });
 });
+
+
+
+

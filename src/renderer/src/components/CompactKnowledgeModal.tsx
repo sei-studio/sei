@@ -1,5 +1,5 @@
-/**
- * CompactKnowledgeModal — shown when the create flow detects a large amount
+﻿/**
+ * CompactKnowledgeModal â€” shown when the create flow detects a large amount
  * of imported knowledge (over the compact-suggest threshold). Offers to
  * LLM-compress the stored copies into one compact file; the user's original
  * files on disk are never touched (the app only ever stores copies made at
@@ -48,3 +48,7 @@ export function CompactKnowledgeModal({
     </ModalShell>
   );
 }
+
+
+
+

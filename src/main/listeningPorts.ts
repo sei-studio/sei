@@ -1,13 +1,13 @@
-/**
- * Enumerate the local machine's listening TCP ports — the loopback replacement
+﻿/**
+ * Enumerate the local machine's listening TCP ports â€” the loopback replacement
  * for Minecraft's multicast LAN beacon (see src/main/mcPing.ts header for why
  * multicast was dropped). Minecraft's "open to LAN" server binds a *random*
  * free port each session and advertises it only via the beacon; reading the
  * live socket table here recovers that port directly, so a port that changes
- * every time is a non-issue — we never cache or guess it.
+ * every time is a non-issue â€” we never cache or guess it.
  *
  * macOS / Linux use `lsof`; Windows uses `netstat` (plus a memoized `tasklist`
- * lookup for process names — netstat can't name socket owners without
+ * lookup for process names â€” netstat can't name socket owners without
  * elevation). All ship with the OS and none needs elevated privileges or any
  * networking entitlement. Each entry carries the owning process command when
  * available so the watcher can ping likely Minecraft (java) ports first.
@@ -37,7 +37,7 @@ export function parseLsof(out: string): ListeningPort[] {
     const parts = line.trim().split(/\s+/);
     if (parts.length < 9) continue;
     const command = parts[0];
-    // PID column (col 2). Best-effort — a non-numeric token degrades to null.
+    // PID column (col 2). Best-effort â€” a non-numeric token degrades to null.
     const pidNum = Number(parts[1]);
     const pid = Number.isInteger(pidNum) && pidNum > 0 ? pidNum : null;
     // NAME column: `*:61871`, `127.0.0.1:54321`, `[::1]:25565`, `localhost:8080`.
@@ -58,7 +58,7 @@ export function parseNetstat(out: string): ListeningPort[] {
   const ports = new Map<number, number | null>();
   for (const line of out.split('\n')) {
     const parts = line.trim().split(/\s+/);
-    // TCP rows (both address families — issue #5: modern Java binds "Open to
+    // TCP rows (both address families â€” issue #5: modern Java binds "Open to
     // LAN" as a dual-stack socket that appears ONLY in the IPv6 table):
     //   `TCP  0.0.0.0:61871  0.0.0.0:0  LISTENING  1234`
     //   `TCP  [::]:61871     [::]:0     LISTENING  1234`
@@ -70,8 +70,8 @@ export function parseNetstat(out: string): ListeningPort[] {
     if (parts.length < 4) continue;
     if (!/^TCP/i.test(parts[0])) continue;
     // Locale-proof LISTENING detection (issue #5): localized Windows
-    // translates the state word (German "ABHÖREN"), so match the shape
-    // instead — only a listening socket has a foreign endpoint of port 0
+    // translates the state word (German "ABHÃ–REN"), so match the shape
+    // instead â€” only a listening socket has a foreign endpoint of port 0
     // (`0.0.0.0:0` / `[::]:0`); every other state carries a real peer port.
     if (!/:0$/.test(parts[2])) continue;
     const m = parts[1].match(/:(\d+)$/);
@@ -86,8 +86,8 @@ export function parseNetstat(out: string): ListeningPort[] {
 }
 
 /**
- * Parse `tasklist /fo csv /nh` into pid → image name. Rows look like
- * `"javaw.exe","41234","Console","1","1,204,556 K"` — only the first two
+ * Parse `tasklist /fo csv /nh` into pid â†’ image name. Rows look like
+ * `"javaw.exe","41234","Console","1","1,204,556 K"` â€” only the first two
  * fields matter, and the image name cannot contain a quote, so a simple
  * anchored match is enough.
  */
@@ -103,11 +103,11 @@ export function parseTasklist(out: string): Map<number, string> {
 }
 
 // netstat cannot name a socket's owning process without elevation (`-b`), so
-// `parseNetstat` rows carry `command: ''` — which silently disabled the
+// `parseNetstat` rows carry `command: ''` â€” which silently disabled the
 // watcher's java-first ping ordering on Windows (issue #5). Resolve names via
 // `tasklist`, but NEVER once per poll: the watcher polls every 2s and the
 // no-per-poll-subprocess rule (see hostClient.ts) applies. Pids are memoized
-// for the app session — tasklist runs only when an unseen pid shows up (a new
+// for the app session â€” tasklist runs only when an unseen pid shows up (a new
 // listener, e.g. the world being opened to LAN), and a broken tasklist
 // disables the lookup for the session. Best effort throughout: any failure
 // leaves `command: ''`, which just means unordered pings, never an error.
@@ -133,7 +133,7 @@ async function winFillCommands(ports: ListeningPort[]): Promise<void> {
 
 /**
  * Returns the deduped set of listening TCP ports. Throws when the underlying OS
- * tool is missing or fails — the watcher maps that to the `unavailable` state.
+ * tool is missing or fails â€” the watcher maps that to the `unavailable` state.
  */
 export async function listeningPorts(): Promise<ListeningPort[]> {
   if (process.platform === 'win32') {
@@ -334,3 +334,7 @@ export async function winStatelessListeners(
   if (!complete) throw new Error('GET_NETTCPCONNECTION_INCOMPLETE');
   return statelessListenerCandidates(rows, new Set(javaPids));
 }
+
+
+
+

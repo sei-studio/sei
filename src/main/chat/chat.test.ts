@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Chat persistence + cross-surface continuity watermark.
  *
  * Pins the two pieces of novel logic in the chat backend:
  *   - chatStore append/read/clear round-trips inside the per-character memory dir.
  *   - continuity recursive-summary watermark (260702 batch cadence): folds run in
- *     BATCHES of 50 — the unsummarized tail grows to 99 verbatim messages, then a
+ *     BATCHES of 50 â€” the unsummarized tail grows to 99 verbatim messages, then a
  *     single fold covers the oldest 50, leaving exactly 50. An unchanged window
  *     costs ZERO LLM calls; a single aged-out message never triggers a fold.
  *     Folding happens ONLY via foldIfDue (fired in the background after chat
@@ -82,11 +82,11 @@ describe('chatStore', () => {
 
   it('readBefore pages backwards from an id cursor (infinite scrollback)', async () => {
     await seed(10);
-    // Page of 3 immediately before m7 → m4..m6.
+    // Page of 3 immediately before m7 â†’ m4..m6.
     expect((await chatStore.readBefore(CHAR, 'm7', 3)).map((m) => m.id)).toEqual(['m4', 'm5', 'm6']);
     // Short page at the top: only m0..m2 exist before m3.
     expect((await chatStore.readBefore(CHAR, 'm3', 5)).map((m) => m.id)).toEqual(['m0', 'm1', 'm2']);
-    // Cursor at the very first row, or unknown → [] (top reached / reset).
+    // Cursor at the very first row, or unknown â†’ [] (top reached / reset).
     expect(await chatStore.readBefore(CHAR, 'm0', 5)).toEqual([]);
     expect(await chatStore.readBefore(CHAR, 'nope', 5)).toEqual([]);
   });
@@ -96,7 +96,7 @@ describe('chatStore', () => {
     const legacyFail: ChatMessage = {
       id: 'l2',
       role: 'system',
-      text: "Couldn't join your world — is it still open to LAN?",
+      text: "Couldn't join your world â€” is it still open to LAN?",
       ts: 1500,
     };
     const play: ChatMessage = {
@@ -137,7 +137,7 @@ describe('chatStore', () => {
   });
 });
 
-describe('splitReply — blank line → separate messages (task 8)', () => {
+describe('splitReply â€” blank line â†’ separate messages (task 8)', () => {
   it('splits a reply on a blank line into two messages (casual default drops trailing periods)', () => {
     expect(
       splitReply(
@@ -153,9 +153,9 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
     expect(splitReply('just one line here')).toEqual(['just one line here']);
   });
 
-  // 260722: ANY newline splits, not just blank lines — a model that writes one
+  // 260722: ANY newline splits, not just blank lines â€” a model that writes one
   // thought per line (texting style) lands as separate bubbles, not a wall.
-  it('splits on a single newline too (one line → one bubble)', () => {
+  it('splits on a single newline too (one line â†’ one bubble)', () => {
     expect(splitReply('first thought\nsecond thought\nthird')).toEqual([
       'first thought',
       'second thought',
@@ -164,7 +164,7 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
   });
 
   it('collapses whitespace-only replies to a single placeholder', () => {
-    expect(splitReply('   \n\n  ')).toEqual(['…']);
+    expect(splitReply('   \n\n  ')).toEqual(['â€¦']);
   });
 
   it('drops empty chunks from runs of blank lines', () => {
@@ -172,7 +172,7 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
   });
 
   // 260705: punctuation register (character.metadata.punctuation).
-  it('casual strips ONLY a lone trailing period — keeps ellipsis, ? and !', () => {
+  it('casual strips ONLY a lone trailing period â€” keeps ellipsis, ? and !', () => {
     expect(splitReply('hm...')).toEqual(['hm...']);
     expect(splitReply('you nearby?')).toEqual(['you nearby?']);
     expect(splitReply('WATCH THIS!')).toEqual(['WATCH THIS!']);
@@ -187,7 +187,7 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
   });
 
   // 260729: on a voice call these bubbles ARE the text handed to TTS, and
-  // ElevenLabs reads the terminal period as "this thought ended" — stripping it
+  // ElevenLabs reads the terminal period as "this thought ended" â€” stripping it
   // rendered every statement with continuation prosody (no closing pitch fall).
   // `spoken` turns the strip off regardless of the character's texting register.
   it('spoken (voice call) keeps the trailing period a casual character would drop', () => {
@@ -199,7 +199,7 @@ describe('splitReply — blank line → separate messages (task 8)', () => {
   });
 });
 
-describe('toMessages — every row flows through the same-role merge (Finding 1)', () => {
+describe('toMessages â€” every row flows through the same-role merge (Finding 1)', () => {
   const play = (id: string, ts: number, mins: number): ChatMessage => ({
     id,
     role: 'system',
@@ -259,14 +259,14 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
       play('p1', 3000, 5),
       user('u2', 4000, 'that was fun'),
     ]);
-    // companion, then play+user fold into one user turn → [user, assistant, user].
+    // companion, then play+user fold into one user turn â†’ [user, assistant, user].
     expect(out.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
     assertAlternates(out);
   });
 
   it('a transcript opening on companion turns keeps them behind a marker user turn (first-meeting greeting)', () => {
     // First meeting: the companion greeted (two bubbles), the player replied.
-    // The greeting must SURVIVE as an assistant turn — the old shift-off left
+    // The greeting must SURVIVE as an assistant turn â€” the old shift-off left
     // the model with only "the latter :)" and it asked what it was replying to.
     const out = toMessages([
       companion('c1', 1000, "yo what's up, i'm sui"),
@@ -302,7 +302,7 @@ describe('toMessages — every row flows through the same-role merge (Finding 1)
   });
 });
 
-describe('thoughts queue — push/drain semantics', () => {
+describe('thoughts queue â€” push/drain semantics', () => {
   const A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
@@ -315,7 +315,7 @@ describe('thoughts queue — push/drain semantics', () => {
     pushThought(A, 'first');
     pushThought(A, 'second');
     expect(drainThoughts(A)).toEqual(['first', 'second']);
-    // Draining clears — a second drain sees nothing.
+    // Draining clears â€” a second drain sees nothing.
     expect(drainThoughts(A)).toEqual([]);
   });
 
@@ -353,7 +353,7 @@ describe('thoughts queue — push/drain semantics', () => {
   });
 });
 
-describe('foldUserNote — alternation-safe note fold (three call sites)', () => {
+describe('foldUserNote â€” alternation-safe note fold (three call sites)', () => {
   type Msg = { role: 'user' | 'assistant'; content: unknown };
 
   it('folds into a trailing user turn (string content)', () => {
@@ -383,7 +383,7 @@ describe('foldUserNote — alternation-safe note fold (three call sites)', () =>
     const messages: Msg[] = [{ role: 'user', content: [{ type: 'tool_result' }] }];
     foldUserNote(messages, '[note]');
     // Non-string trailing user content cannot be string-concatenated, so a fresh
-    // user message is pushed (still alternation-safe — the model reads both).
+    // user message is pushed (still alternation-safe â€” the model reads both).
     expect(messages).toHaveLength(2);
     expect(messages[1]).toEqual({ role: 'user', content: '[note]' });
   });
@@ -423,14 +423,14 @@ describe('continuity watermark (batch cadence, background folds)', () => {
   });
 
   it('clearContinuity wipes the rolling summary so a cleared chat cannot re-seed it', async () => {
-    await seed(100); // window(50) + batch(50) → a fold is due
+    await seed(100); // window(50) + batch(50) â†’ a fold is due
     await foldIfDue(CHAR);
     expect(await readSummary(CHAR)).toBe('ROLLED SUMMARY');
     await clearContinuity(CHAR);
     expect(await readSummary(CHAR)).toBe('');
   });
 
-  it('reads are pure — buildLaunchContinuity and readChatContext never call the LLM', async () => {
+  it('reads are pure â€” buildLaunchContinuity and readChatContext never call the LLM', async () => {
     await seed(150); // way past the fold trigger
     const launch = await buildLaunchContinuity(CHAR);
     const chat = await readChatContext(CHAR);
@@ -441,8 +441,8 @@ describe('continuity watermark (batch cadence, background folds)', () => {
     expect(launch!.summary).toBe('');
   });
 
-  it('folds in batches of 50 — the verbatim window grows to 99, then resets to 50', async () => {
-    // 99 unsummarized → below the window+batch trigger: NO fold, all verbatim.
+  it('folds in batches of 50 â€” the verbatim window grows to 99, then resets to 50', async () => {
+    // 99 unsummarized â†’ below the window+batch trigger: NO fold, all verbatim.
     await seed(99);
     await foldIfDue(CHAR);
     const first = await buildLaunchContinuity(CHAR);
@@ -450,7 +450,7 @@ describe('continuity watermark (batch cadence, background folds)', () => {
     expect(first!.summary).toBe('');
     expect(createSpy).not.toHaveBeenCalled();
 
-    // 100th message → fold the oldest 50 (msg 0..49), leaving exactly 50 verbatim.
+    // 100th message â†’ fold the oldest 50 (msg 0..49), leaving exactly 50 verbatim.
     await seed(1, 99);
     await foldIfDue(CHAR);
     const second = await buildLaunchContinuity(CHAR);
@@ -462,14 +462,14 @@ describe('continuity watermark (batch cadence, background folds)', () => {
     expect(fold1.prompt).toContain('msg 49');
     expect(fold1.prompt).not.toContain('msg 50');
 
-    // 49 more (99 unsummarized again) → still no new fold; window grows.
+    // 49 more (99 unsummarized again) â†’ still no new fold; window grows.
     await seed(49, 100);
     await foldIfDue(CHAR);
     const third = await buildLaunchContinuity(CHAR);
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(third!.recent).toHaveLength(99);
 
-    // One more → second batch folds exactly msg 50..99, nothing re-folded.
+    // One more â†’ second batch folds exactly msg 50..99, nothing re-folded.
     await seed(1, 149);
     await foldIfDue(CHAR);
     expect(createSpy).toHaveBeenCalledTimes(2);
@@ -525,3 +525,7 @@ describe('continuity watermark (batch cadence, background folds)', () => {
     expect(createSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+
+
+

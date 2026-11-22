@@ -1,5 +1,5 @@
-/**
- * Live2DView (260804) — renders a character's imported Live2D model with the
+﻿/**
+ * Live2DView (260804) â€” renders a character's imported Live2D model with the
  * idle/talk behaviors, shared by the profile Avatar tab's preview and the
  * always-on-top overlay tile.
  *
@@ -7,7 +7,7 @@
  * dynamically imported on mount, so surfaces that never show a Live2D model
  * pay nothing.
  *
- * Liveliness model (AIRI-informed, own constants — see
+ * Liveliness model (AIRI-informed, own constants â€” see
  * docs/design/avatar-v06-260804.md):
  *  - Breath/sway + blink come FREE from the Cubism SDK on a motionless model
  *    (import fills the EyeBlink group from the resolved eye ids), physics on top.
@@ -40,7 +40,7 @@
  *    (with fallback resolution for unmapped emotions); applied via
  *    model.expression(), decayed to neutral after the line's linger.
  *  - Accessories (260806): manifest.accessories toggles item expressions
- *    (hat, coat...) as per-frame absolute parameter writes — persistent, and
+ *    (hat, coat...) as per-frame absolute parameter writes â€” persistent, and
  *    independent of the single-slot expressionManager the emotions use.
  */
 import React, { useEffect, useRef } from 'react';
@@ -56,7 +56,7 @@ export interface Live2DViewProps {
   characterId: string;
   /** True while this character is audibly speaking (drives the mouth). */
   speaking?: boolean;
-  /** Latest mouth level 0..1, mutated externally at ~25 Hz. Read per frame —
+  /** Latest mouth level 0..1, mutated externally at ~25 Hz. Read per frame â€”
    * a ref so level samples never re-render React. */
   levelRef?: React.MutableRefObject<number>;
   /** Emotion of the line being spoken (null = neutral). */
@@ -78,7 +78,7 @@ export interface Live2DViewProps {
 
 /**
  * An expression lives for 150% of its line: it holds while the line is spoken,
- * then this fraction of the line's duration longer, then decays to neutral —
+ * then this fraction of the line's duration longer, then decays to neutral â€”
  * unless a new line's emotion refreshes it first. A 2 s quip flashes its face
  * for ~3 s; a long story holds it long after the last word.
  */
@@ -99,7 +99,7 @@ const HEAD_PITCH_DEG = 24;
 const HEAD_ROLL_DEG = 9;
 const BODY_YAW_DEG = 8;
 const EYEBALL_GAIN = 1.6;
-/** The standard parameters' half ranges the gains above are written for (angles ±30, body ±10, eyeballs ±1). */
+/** The standard parameters' half ranges the gains above are written for (angles Â±30, body Â±10, eyeballs Â±1). */
 const STD_HALF_ANGLE = 30;
 const STD_HALF_BODY = 10;
 const STD_HALF_EYEBALL = 1;
@@ -165,7 +165,7 @@ export function Live2DView({
   fpsRef.current = fps;
   const applyFpsRef = useRef<(() => void) | null>(null);
 
-  // ── Mount: load libs + model, wire idle + mouth, handle resize ──────────
+  // â”€â”€ Mount: load libs + model, wire idle + mouth, handle resize â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let cancelled = false;
     let app: { destroy: (removeView?: boolean, opts?: unknown) => void; renderer: { resize: (w: number, h: number) => void } } | null = null;
@@ -217,7 +217,7 @@ export function Live2DView({
         // goes FIRST: the loader picks its settings file with
         // `find(name.endsWith("model.json") || name.endsWith("model3.json"))`,
         // and VTube Studio exports ship extras like items_pinned_to_model.json
-        // that match that sniff — whichever readdir happened to list first won.
+        // that match that sniff â€” whichever readdir happened to list first won.
         rawFiles.sort((a, b) =>
           a.path === manifest.entry ? -1 : b.path === manifest.entry ? 1 : 0,
         );
@@ -240,7 +240,7 @@ export function Live2DView({
         }
         modelRef.current = model;
 
-        // ── Accessories (260806): toggled item expressions (hat, coat...)
+        // â”€â”€ Accessories (260806): toggled item expressions (hat, coat...)
         // resolved to ABSOLUTE parameter targets, written every frame by the
         // update wrapper below. They cannot ride the expressionManager: it
         // holds ONE expression, so the next emotion expression would knock
@@ -289,7 +289,7 @@ export function Live2DView({
           applyAccessoryToggles(update.manifest);
         });
 
-        // ── Parameter ids (261122) ───────────────────────────────────────
+        // â”€â”€ Parameter ids (261122) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // The stored roles (main resolves them at import), else resolved here
         // from the model's own files; only ids the model really has are used.
         const core = model.internalModel.coreModel;
@@ -312,7 +312,7 @@ export function Live2DView({
           return r && r.max > r.min ? (r.max - r.min) / 2 / stdHalf : 1;
         };
 
-        // ── Gaze (261116) ─────────────────────────────────────────────────
+        // â”€â”€ Gaze (261116) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const cursor = { x: 0, y: 0, at: 0 };
         const gazeDriver = new GazeDriver(performance.now(), LIVE2D_GAZE);
         const gazeIn: GazeInput = { cursor: null, engaged: false };
@@ -429,7 +429,7 @@ export function Live2DView({
             // inside motionManager.update, i.e. BEFORE saveParameters and
             // the SDK's expression pass, so the values persist frame to
             // frame; an emotion expression touching the same parameter
-            // (none do — emotions drive faces, accessories drive items)
+            // (none do â€” emotions drive faces, accessories drive items)
             // would win only while it plays.
             for (const [id, v] of accessoryTargets) {
               model.internalModel.coreModel.setParameterValueById(id, v);
@@ -458,7 +458,7 @@ export function Live2DView({
           return result;
         };
 
-        // Layout: contain the whole model, centered — then the camera on top
+        // Layout: contain the whole model, centered â€” then the camera on top
         // (zoom multiplies the contain fit, pan offsets in view fractions, so
         // a framing survives any tile resize).
         const fit = (): void => {
@@ -548,10 +548,10 @@ export function Live2DView({
     fitRef.current?.();
   }, [camera?.zoom, camera?.x, camera?.y]);
 
-  // ── Expressions: apply on a line's emotion, decay at 150% of the line ────
+  // â”€â”€ Expressions: apply on a line's emotion, decay at 150% of the line â”€â”€â”€â”€
   // The emotion prop is per-LINE (the pusher classifies the audibly-playing
   // line and sends null between lines), so an emotion CHANGE marks a new line
-  // and `speaking` falling marks its end. Nothing resets on emotion → null —
+  // and `speaking` falling marks its end. Nothing resets on emotion â†’ null â€”
   // the face outlives the line by EXPRESSION_LINGER_FRACTION of its duration.
   const appliedRef = useRef<AvatarEmotion | null>(null);
   const lineStartRef = useRef(0);
@@ -568,7 +568,7 @@ export function Live2DView({
         mgr?.resetExpression();
         // resetExpression deliberately KEEPS currentExpression (the SDK's
         // restoreExpression semantics), but setExpression refuses a name
-        // equal to currentExpression — so without this, a decayed face could
+        // equal to currentExpression â€” so without this, a decayed face could
         // never come back on the next line with the SAME emotion (and happy
         // is the most common one). Mirror the manager's init state instead.
         if (mgr) mgr.currentExpression = mgr.defaultExpression;
@@ -615,3 +615,7 @@ export function Live2DView({
 
   return <div ref={hostRef} className={className} />;
 }
+
+
+
+

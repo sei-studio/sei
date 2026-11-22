@@ -1,14 +1,14 @@
-/**
- * UpdatePopup — in-app updater modal (quick/260604-uoy).
+﻿/**
+ * UpdatePopup â€” in-app updater modal (quick/260604-uoy).
  *
  * Replaces the old bottom-right UpdateToast (notify-and-redirect). Prop-driven,
  * single-modal surface for every updater state the renderer can be in:
  *
- *   - available-optional → minor/major update detected; shows the changelog up
- *     front with [Update now] / [Later]. "Update now" → sei.downloadUpdate().
- *   - forced → non-dismissable "Applying the update — restarting…" (apply:'now'
+ *   - available-optional â†’ minor/major update detected; shows the changelog up
+ *     front with [Update now] / [Later]. "Update now" â†’ sei.downloadUpdate().
+ *   - forced â†’ non-dismissable "Applying the update â€” restartingâ€¦" (apply:'now'
  *     mandatory path; main restarts automatically after a short delay).
- *   - whats-new → post-update changelog with [Got it].
+ *   - whats-new â†’ post-update changelog with [Got it].
  *
  * The download itself is NOT here (260801): progress and the "ready, restart to
  * apply" prompt moved out of the modal (260801), and since 261023 they live in
@@ -20,7 +20,7 @@
  * + a sharp-cornered card built from design tokens (never literal hex/px),
  * reusing Button (kinds primary/accent/ghost/quiet/danger) and PercentBar.
  * The changelog renders with a tiny inline markdown subset (## heading, -
- * bullet) — no new dependency.
+ * bullet) â€” no new dependency.
  *
  * Source:
  *   - src/renderer/src/components/AutoRenewalConsentModal.tsx (modal template)
@@ -43,7 +43,7 @@ export type UpdatePopupState =
 
 export interface UpdatePopupProps {
   state: UpdatePopupState;
-  /** Accept an optional update → download. */
+  /** Accept an optional update â†’ download. */
   onUpdateNow?: () => void;
   /** Dismiss a dismissable state (Later / Got it). Omitted for forced. */
   onDismiss?: () => void;
@@ -56,9 +56,9 @@ export interface UpdatePopupProps {
 }
 
 /**
- * Render a minimal markdown subset to React nodes: `## heading` → a styled
- * heading, `- bullet` → a list item, everything else → a paragraph line. No
- * HTML is ever injected (no dangerouslySetInnerHTML) — plain text only, so a
+ * Render a minimal markdown subset to React nodes: `## heading` â†’ a styled
+ * heading, `- bullet` â†’ a list item, everything else â†’ a paragraph line. No
+ * HTML is ever injected (no dangerouslySetInnerHTML) â€” plain text only, so a
  * malicious/garbled changelog can't inject markup.
  */
 function renderChangelog(text: string): React.ReactNode {
@@ -122,7 +122,7 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss, platform }: UpdateP
       body = (
         <>
           <p className={styles.body}>
-            {t('Sei {latest} is ready. You’re on {current}.', {
+            {t('Sei {latest} is ready. Youâ€™re on {current}.', {
               latest: state.latestVersion,
               current: state.currentVersion,
             })}
@@ -148,20 +148,20 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss, platform }: UpdateP
       title = t('Update ready');
       body = (
         <div className={styles.copy}>
-          <p className={styles.body}>{t('Applying the update. Sei will restart in a moment…')}</p>
+          <p className={styles.body}>{t('Applying the update. Sei will restart in a momentâ€¦')}</p>
           {showsWindowsUpdateNote(platform) ? <p className={styles.body}>{t(WINDOWS_UPDATE_NOTE)}</p> : null}
         </div>
       );
       break;
 
     case 'whats-new':
-      title = t('What’s new in {version}', { version: state.version });
+      title = t('Whatâ€™s new in {version}', { version: state.version });
       // 261020: the feed's changelog usually opens with the same "What's new
       // in X" line; don't show the title twice.
       body = (
         <div className={styles.changelog}>
           {renderChangelog(
-            stripDuplicateTitleHeading(state.changelog, [title, `What’s new in ${state.version}`]),
+            stripDuplicateTitleHeading(state.changelog, [title, `Whatâ€™s new in ${state.version}`]),
           )}
         </div>
       );
@@ -188,3 +188,7 @@ export function UpdatePopup({ state, onUpdateNow, onDismiss, platform }: UpdateP
     </ModalShell>
   );
 }
+
+
+
+

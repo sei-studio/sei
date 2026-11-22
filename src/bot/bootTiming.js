@@ -1,4 +1,4 @@
-// src/bot/bootTiming.js — boot-phase timestamps for the summon diagnostics (260926).
+﻿// src/bot/bootTiming.js â€” boot-phase timestamps for the summon diagnostics (260926).
 //
 // BOT_START_TIMEOUT was the top summon failure on Windows (14 people in 30
 // days): the child spent ~21-24s between fork and createBot, and nothing
@@ -51,3 +51,7 @@ export function __resetBootMarks() {
   for (const k of Object.keys(marks)) delete marks[k]
   listener = null
 }
+
+
+
+

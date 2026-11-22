@@ -1,5 +1,5 @@
-/**
- * worldList — pure helpers for the World tab (product call 261110).
+﻿/**
+ * worldList â€” pure helpers for the World tab (product call 261110).
  *
  *   - mergeWorldEntries: the cloud pages plus the bundled defaults, in the
  *     order the grid shows them.
@@ -105,3 +105,7 @@ export function formatAddCount(n: number | null | undefined, localeTag = 'en-US'
   }
   return fmt.format(value);
 }
+
+
+
+

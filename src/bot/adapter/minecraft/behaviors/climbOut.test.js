@@ -1,4 +1,4 @@
-// 261015 quality pass 10: climbing out of a self-dug 1x1 shaft, and the
+﻿// 261015 quality pass 10: climbing out of a self-dug 1x1 shaft, and the
 // short memory of unreachable targets.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -300,9 +300,9 @@ describe('unreachable target memory', () => {
 
   it('counts only results that blame the target', () => {
     expect(isUnreachableResult('cant_reach (closest=6.5m to target 1,2,3)')).toBe(true)
-    expect(isUnreachableResult('timeout — unreachable — try build to Y=77')).toBe(true)
+    expect(isUnreachableResult('timeout â€” unreachable â€” try build to Y=77')).toBe(true)
     expect(isUnreachableResult('stuck at 1,2,3, 4.0m from 5,6,7: the path kept failing')).toBe(true)
-    expect(isUnreachableResult('out of range (5.7m, need ≤4.5) for oak_log @1,2,3')).toBe(true)
+    expect(isUnreachableResult('out of range (5.7m, need â‰¤4.5) for oak_log @1,2,3')).toBe(true)
     expect(isUnreachableResult('reached')).toBe(false)
     expect(isUnreachableResult('aborted')).toBe(false)
     expect(isUnreachableResult('stuck in a hole at 0,65,0: could not climb out')).toBe(false)
@@ -409,3 +409,7 @@ describe('escapeUp (any hole, after a failed walk)', () => {
     expect(r.line).toMatch(/^stuck in a hole at 2,64,0: 7 blocks below where you are going/)
   })
 })
+
+
+
+

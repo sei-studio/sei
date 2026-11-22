@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { createDontStarveAdapter } from './index.js'
 import { createObservationState, createHandleRegistry } from './protocol.js'
@@ -71,3 +71,7 @@ describe('DST adapter: mod 0.3.0 wiring', () => {
     adapter.detach()
   })
 })
+
+
+
+

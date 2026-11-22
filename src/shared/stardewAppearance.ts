@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew Valley companion appearance (260921): the farmer-customization
  * knobs a companion is drawn with, the same ones the game's new-farm
  * character creator offers (gender, skin, hair + color, eyes, shirt, pants +
@@ -358,3 +358,7 @@ export const STARDEW_APPEARANCE_LEGENDS = {
   pants: renderRows(STARDEW_PANTS_LEGEND),
   accessory: renderRows(STARDEW_ACCESSORY_LEGEND),
 } as const;
+
+
+
+

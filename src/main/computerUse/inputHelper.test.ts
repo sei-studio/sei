@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+﻿import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { isAbortError } from './abortable';
@@ -127,3 +127,7 @@ describe('MacInputHelper protocol', () => {
     expect(helperPath(false, '/R', '/A')).toBe('/A/resources/mac-input/sei-mac-input');
   });
 });
+
+
+
+

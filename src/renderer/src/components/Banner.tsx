@@ -1,10 +1,10 @@
-/**
- * Banner — top-of-window dismissible notification strip (GUI-05).
+﻿/**
+ * Banner â€” top-of-window dismissible notification strip (GUI-05).
  *
  * Used for system-level warnings that aren't tied to a specific action,
  * e.g. KEYCHAIN_FALLBACK_PLAINTEXT on Linux without kwallet/libsecret.
  *
- * Source: 04-09 PLAN Task 1; 04-UI-SPEC §"Plain-English error copy".
+ * Source: 04-09 PLAN Task 1; 04-UI-SPEC Â§"Plain-English error copy".
  */
 import React from 'react';
 import { useT } from '../lib/i18n';
@@ -28,9 +28,13 @@ export function Banner({ kind, message, onDismiss }: BannerProps): React.ReactEl
           onClick={onDismiss}
           aria-label={t('Dismiss')}
         >
-          ×
+          Ã—
         </button>
       ) : null}
     </div>
   );
 }
+
+
+
+

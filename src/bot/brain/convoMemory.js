@@ -1,5 +1,5 @@
-/**
- * Short-term conversation memory — player-said / self-said ring buffers.
+﻿/**
+ * Short-term conversation memory â€” player-said / self-said ring buffers.
  *
  * Two split sub-buffers, capacity 40 each, 240-char per-line truncation.
  * They are STORED split (the say() gates ask "what did I last say" and "has
@@ -238,3 +238,7 @@ export function createConvoMemory({ onLine = null, trackHandOvers = false } = {}
     },
   }
 }
+
+
+
+

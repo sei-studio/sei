@@ -1,5 +1,5 @@
-/**
- * useChatgptStore — the renderer's view of the ChatGPT-plan sign-in
+﻿/**
+ * useChatgptStore â€” the renderer's view of the ChatGPT-plan sign-in
  * ("Continue with ChatGPT", 261017, issue #46).
  *
  * Main owns the OAuth session and every token (src/main/chatgptPlan); this
@@ -152,3 +152,7 @@ export const useChatgptStore = create<ChatgptState>((set, get) => {
     },
   };
 });
+
+
+
+

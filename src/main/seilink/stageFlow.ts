@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The desktop stage over IPC, and the room editor ON the desktop (261106,
  * first-link flow). desktopStage.ts moves the window; this decides when.
  *
@@ -248,3 +248,7 @@ export function __resetStageFlowForTest(): void {
   onStage = null;
   deps = null;
 }
+
+
+
+

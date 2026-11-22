@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Side-effect module: refuse Chromium remote debugging in packaged STABLE
  * builds. Policy and rationale: `remoteDebugPolicy.ts`.
  *
@@ -41,3 +41,7 @@ if (verdict.block) {
       `${app.isPackaged ? `prerelease v${app.getVersion()}` : 'dev'}.`,
   );
 }
+
+
+
+

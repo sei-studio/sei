@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CAPTCHA / Turnstile token seam (anti-abuse Layer 2) tests.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -23,7 +23,7 @@ describe('captcha seam', () => {
   it('stores and consumes a token (single-use)', () => {
     setCaptchaToken('tok-123');
     expect(consumeCaptchaToken()).toBe('tok-123');
-    // Consumed — a second read is undefined (no reuse of a stale token).
+    // Consumed â€” a second read is undefined (no reuse of a stale token).
     expect(consumeCaptchaToken()).toBeUndefined();
   });
 
@@ -46,3 +46,7 @@ describe('captcha seam', () => {
     expect(isCaptchaEnabled()).toBe(false);
   });
 });
+
+
+
+

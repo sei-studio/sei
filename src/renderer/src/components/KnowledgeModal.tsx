@@ -1,5 +1,5 @@
-/**
- * KnowledgeModal — per-character Knowledge manager (260725). Opened from the
+﻿/**
+ * KnowledgeModal â€” per-character Knowledge manager (260725). Opened from the
  * companion settings gear menu (next to Reset memory / Unbind), available for
  * EVERY character (not just user-created ones).
  *
@@ -156,7 +156,7 @@ export function KnowledgeModal({
                   <span className={styles.rowTitle}>{e.title}</span>
                   <span className={styles.rowMeta}>
                     {Math.max(1, Math.round(e.bytes / 1024))} KB
-                    {e.source === 'compacted' ? t(' · compacted') : e.source === 'text' ? t(' · text') : ''}
+                    {e.source === 'compacted' ? t(' Â· compacted') : e.source === 'text' ? t(' Â· text') : ''}
                   </span>
                 </div>
                 <div className={styles.rowActions}>
@@ -196,7 +196,7 @@ export function KnowledgeModal({
                     kb: Math.max(1, totalKb),
                   })}
               {totalBytes > KNOWLEDGE_COMPACT_SUGGEST_BYTES
-                ? t(' · large knowledge can slow down replies on calls and in games')
+                ? t(' Â· large knowledge can slow down replies on calls and in games')
                 : ''}
             </div>
           ) : null}
@@ -260,7 +260,7 @@ export function KnowledgeModal({
               onClick={() => void saveForm()}
               disabled={formBusy || formTitle.trim() === '' || formContent.trim() === ''}
             >
-              {formBusy ? t('Saving…') : t('Save')}
+              {formBusy ? t('Savingâ€¦') : t('Save')}
             </Button>
           </ModalFooter>
         </ModalShell>
@@ -268,3 +268,7 @@ export function KnowledgeModal({
     </ModalShell>
   );
 }
+
+
+
+

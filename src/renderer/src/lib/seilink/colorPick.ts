@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The room editor's custom colour picker (261105 colour pass, T333): colour
  * math, the "recent" row and the frame throttle for live preview. Pure
  * except the recent row's storage, which is a per-user editor preference in
@@ -52,7 +52,7 @@ export function hexToHsv(hex: string, hue = 0): Hsv {
   return { h, s: max === 0 ? 0 : d / max, v: max };
 }
 
-// ── recent colours ──────────────────────────────────────────────────────────
+// â”€â”€ recent colours â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const RECENT_MAX = 6;
 const KEY = 'sei.seilinkRecentColors';
@@ -108,7 +108,7 @@ export function useRecentColors(): string[] {
   return list;
 }
 
-// ── live preview throttle ───────────────────────────────────────────────────
+// â”€â”€ live preview throttle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Calls `fn` at most once per animation frame with the latest value, so a
@@ -144,3 +144,7 @@ export function frameThrottle<T>(
     },
   };
 }
+
+
+
+

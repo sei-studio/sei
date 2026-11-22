@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for runtime profile-scope switching (260603).
  *
  * Surface:
@@ -75,7 +75,7 @@ describe('switchScopeForAuth', () => {
   it('re-flips a DEFAULT-sourced local profile to cloud-proxy on a fresh sign-in', async () => {
     // A 'local' that came from a default write (a pre-source-field config, or a
     // build that never wrote the cloud default) is re-asserted to cloud on
-    // every genuine sign-in transition — it was never a deliberate BYOK choice.
+    // every genuine sign-in transition â€” it was never a deliberate BYOK choice.
     await switchScopeForAuth(UUID_A);
     const { setAiBackendKind, getAiBackendKind } = await import('../apiKeyStore');
     await setAiBackendKind('local', 'default'); // schema-default-flavored local
@@ -85,9 +85,9 @@ describe('switchScopeForAuth', () => {
   });
 
   it('keeps an EXPLICIT user choice of local across sign-out/sign-in (260703)', async () => {
-    // The user flipped ACCOUNT MODE to BYOK themselves (proxy:configure →
+    // The user flipped ACCOUNT MODE to BYOK themselves (proxy:configure â†’
     // setAiBackendKind, default source 'user'). Re-login must NOT stomp it back
-    // to cloud billing — that silently moved their calls onto paid credits.
+    // to cloud billing â€” that silently moved their calls onto paid credits.
     await switchScopeForAuth(UUID_A);
     const { setAiBackendKind, getAiBackendKind } = await import('../apiKeyStore');
     await setAiBackendKind('local'); // source defaults to 'user' (explicit)
@@ -97,11 +97,11 @@ describe('switchScopeForAuth', () => {
   });
 
   it('signs in: heals a legacy is_default default left in the signed-in profile', async () => {
-    // Repro of the 0.3.x→0.4.0 upgrade gap: the boot-time defaults heal ran only
+    // Repro of the 0.3.xâ†’0.4.0 upgrade gap: the boot-time defaults heal ran only
     // against the boot scope ('local' on a session-restore launch), so a
     // signed-in profile that still holds a pre-0.4.0 is_default copy of a bundled
     // default was never converted. Seed that stale copy into UUID_A's profile,
-    // then simulate boot-landed-on-local and sign in — the switch must heal it.
+    // then simulate boot-landed-on-local and sign in â€” the switch must heal it.
     const { mkdir } = await import('node:fs/promises');
     setActiveScope(UUID_A);
     await mkdir(paths.charactersDir(), { recursive: true });
@@ -112,11 +112,11 @@ describe('switchScopeForAuth', () => {
         slug: 'sui',
         name: 'Sui',
         persona: { source: 'Sui persona.', expanded: '' },
-        is_default: true, // ← the stale pre-0.4.0 shape
+        is_default: true, // â† the stale pre-0.4.0 shape
         shared: true,
         owner: null,
         // kind/public_id omitted like the real pre-0.4.0 files (schema defaults
-        // kind→'custom', public_id→null); the heal fires on is_default:true.
+        // kindâ†’'custom', public_idâ†’null); the heal fires on is_default:true.
         created: '2026-05-21T00:00:00.000Z',
         last_launched: null,
         playtime_ms: 0,
@@ -156,7 +156,7 @@ describe('switchScopeForAuth', () => {
     expect(getActiveScope()).toBe(UUID_A);
   });
 
-  it('signs out: scope → local, reason sign-out', async () => {
+  it('signs out: scope â†’ local, reason sign-out', async () => {
     await switchScopeForAuth(UUID_A);
     sendMock.mockClear();
 
@@ -166,7 +166,7 @@ describe('switchScopeForAuth', () => {
     expect(sendMock).toHaveBeenCalledWith(IpcChannel.app.scopeChanged, { scope: 'local', reason: 'sign-out' });
   });
 
-  it('account swap: A → B, reason switch', async () => {
+  it('account swap: A â†’ B, reason switch', async () => {
     await switchScopeForAuth(UUID_A);
     sendMock.mockClear();
 
@@ -185,3 +185,7 @@ describe('switchScopeForAuth', () => {
     expect(seen).toEqual([UUID_A]);
   });
 });
+
+
+
+

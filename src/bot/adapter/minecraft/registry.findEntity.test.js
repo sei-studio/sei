@@ -1,4 +1,4 @@
-// 261011: find("sheep") answered "no known IDs for sheep" in the quality eval.
+﻿// 261011: find("sheep") answered "no known IDs for sheep" in the quality eval.
 // A creature name now finds the nearest loaded entity of that type.
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -41,3 +41,7 @@ describe('find on a creature name', () => {
     expect(r).toEqual({ found: false, reason: 'no sheep within 32m' })
   })
 })
+
+
+
+

@@ -1,9 +1,9 @@
-/**
- * ResetMemoryConfirmModal — confirm dialog for the per-character "Reset memory"
+﻿/**
+ * ResetMemoryConfirmModal â€” confirm dialog for the per-character "Reset memory"
  * action. Reset only clears what the character remembers (the app-side memory
  * dir); it CANNOT touch the bot's in-game inventory or position, which live in
  * the Minecraft world save on the LAN host (offline-mode playerdata, keyed by
- * the in-game username) — the app has no path to that save. The copy is
+ * the in-game username) â€” the app has no path to that save. The copy is
  * explicit about that so the user isn't surprised, and points at the only real
  * ways to reset game state (do it in-world, or start a fresh world).
  *
@@ -47,3 +47,7 @@ export function ResetMemoryConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StardewDashboardPanel (260909). Rendered with react-dom/server against
  * seeded stores (no @testing-library in this repo). Invariants:
  *   1. No snapshot -> the waiting line, nothing else.
@@ -168,9 +168,13 @@ describe('StardewDashboardPanel', () => {
     expect(all.length).toBeGreaterThanOrEqual(30);
     const { ZH } = await import('../../lib/i18n/zh');
     for (const k of all) {
-      expect(k, `em dash in "${k}"`).not.toContain('—');
+      expect(k, `em dash in "${k}"`).not.toContain('â€”');
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(ZH[k]).not.toContain('—');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

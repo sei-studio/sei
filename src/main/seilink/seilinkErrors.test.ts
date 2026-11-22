@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const captured: Array<[string, Record<string, unknown>]> = [];
 vi.mock('../lazyAnalytics', () => ({
@@ -49,3 +49,7 @@ describe('seilink error analytics (261105)', () => {
     expect(JSON.stringify(captured)).not.toContain('secret');
   });
 });
+
+
+
+

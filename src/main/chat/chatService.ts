@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chat turn orchestration (main process). Builds the prompt, calls Anthropic,
  * runs the single `launch` tool loop, persists both sides, returns the reply.
  *
@@ -79,7 +79,7 @@ export interface ChatDeps {
   getWorldStates?: () => WorldStates;
   /** Fork the bot into `game` (default 'minecraft'). */
   summon: (characterId: string, game?: GameId) => Promise<void>;
-  /** Task 4 — true when the character's bot is fully spawned in-world right now. */
+  /** Task 4 â€” true when the character's bot is fully spawned in-world right now. */
   isInGame?: (characterId: string) => boolean;
   /**
    * 261020 (review): the game of the character's live play session, or null.
@@ -88,7 +88,7 @@ export interface ChatDeps {
    */
   liveGame?: (characterId: string) => GameId | null;
   /**
-   * Task 4 — route a message INTO the live game session (shared brain + prompt
+   * Task 4 â€” route a message INTO the live game session (shared brain + prompt
    * cache). Returns false if no session took it, so the caller can fall back to
    * the standalone chat brain.
    */
@@ -96,11 +96,11 @@ export interface ChatDeps {
     characterId: string,
     payload: { from: string; text: string; voice?: boolean; interrupted?: { line: string } },
   ) => boolean;
-  /** The (non-blocking) join kicked off by launch() failed — report it to the
+  /** The (non-blocking) join kicked off by launch() failed â€” report it to the
    * player in the companion's own voice (index.ts sendLaunchFailedTurn). */
   onLaunchFailed?: (characterId: string, reason: string) => void;
   /**
-   * Task 5 — the companion called quit() from chat: leave the game and end the
+   * Task 5 â€” the companion called quit() from chat: leave the game and end the
    * live session (supervisor.stop). A no-op when no session is live.
    */
   leaveGame?: (characterId: string) => void;
@@ -109,19 +109,19 @@ export interface ChatDeps {
    * renderer immediately (the `chat:message` channel, no re-persist). Used by the
    * streaming voice turn to emit each sentence the moment it completes, so TTS
    * starts on sentence 1 while the rest still generates. Wired to pushChatMessage
-   * in index.ts; absent → the turn falls back to the blocking, all-at-once path.
+   * in index.ts; absent â†’ the turn falls back to the blocking, all-at-once path.
    *
    * `speech` places the line inside its own reply for TTS utterance conditioning
-   * (260729) — the streamed path's equivalent of the reveal loop's prev/more.
+   * (260729) â€” the streamed path's equivalent of the reveal loop's prev/more.
    */
   emitReply?: (characterId: string, message: ChatMessage, speech?: SpokenLineContext) => void;
   /**
    * 260828 retry-loop guard: returns the error class of the character's last
    * summon pre-gate refusal while automatic re-attempts are blocked, else null.
-   * When set, launch() refuses to summon and tells the model not to retry —
+   * When set, launch() refuses to summon and tells the model not to retry â€”
    * production caught an LLM re-calling launch() into the same deterministic
    * refusal every ~14s. Wired to summonGuard.blockedAutoSummon in ipc.ts;
-   * absent → no blocking (tests, legacy callers).
+   * absent â†’ no blocking (tests, legacy callers).
    */
   blockedAutoLaunch?: (characterId: string) => string | null;
 }
@@ -291,7 +291,7 @@ async function followUpWebTools(p: {
  * Voice calls (260706): cap the transcript sent to the model to the recent rows.
  * Memory (MEMORY.md) + the rolling summary still carry older context, so the
  * companion keeps continuity, but a live call sends a tiny window instead of the
- * full 50-99 verbatim tail — the prompt (and the cache-write during dialing) is
+ * full 50-99 verbatim tail â€” the prompt (and the cache-write during dialing) is
  * much smaller, which is the dominant per-turn latency. Typed chat is unbounded
  * (its window is capped only by the fold watermark) since latency matters less
  * there and richer context reads better.
@@ -310,7 +310,7 @@ const VOICE_WINDOW_STEP = 10;
 /**
  * In-flight chat turn per character (chat #9). A new send for the same character
  * aborts the previous one's LLM call and supersedes it, so the user can fire a
- * follow-up (or correction) without waiting — the stale turn never appends a
+ * follow-up (or correction) without waiting â€” the stale turn never appends a
  * reply. Keyed by characterId; the entry is the current turn's controller.
  */
 const inflight = new Map<string, AbortController>();
@@ -326,7 +326,7 @@ function isAbortError(err: unknown): boolean {
 
 /**
  * 260705: external interrupt for a character's in-flight chat turn.
- * resetMemoryForCharacter calls this before wiping the memory dir — a reply
+ * resetMemoryForCharacter calls this before wiping the memory dir â€” a reply
  * still in the LLM would otherwise append to chat.jsonl AFTER the wipe,
  * repopulating the "blank slate" with one orphan companion message. Rides the
  * existing supersede path: the aborted turn throws the CHAT_ABORTED sentinel
@@ -378,7 +378,7 @@ async function readMemoryTail(characterId: string): Promise<string> {
 
 /**
  * Honor remember() calls in a SINGLE-SHOT voice turn (greeting, companion
- * reaction) — those turns offer the tool for the shared cache prefix but run no
+ * reaction) â€” those turns offer the tool for the shared cache prefix but run no
  * tool loop, so without this the write would be silently dropped. Best-effort;
  * a failed append never breaks the spoken reply.
  */
@@ -444,16 +444,16 @@ async function honorNextStep(characterId: string, input: unknown, liveGame: Game
 /**
  * Split a reply into the separate chat messages the UI should send. ANY newline
  * run is a split point (260722: was blank-lines-only, which rendered a reply
- * written one-thought-per-line as a single wall of text — a model prompted to
+ * written one-thought-per-line as a single wall of text â€” a model prompted to
  * "keep lines short like texting" separates thoughts with single newlines, not
- * blank ones). One line → one bubble, matching the bot's in-game
+ * blank ones). One line â†’ one bubble, matching the bot's in-game
  * splitChatMessages. Empty chunks are dropped; a reply with no content collapses
- * to a single "…" so the turn is never message-less.
+ * to a single "â€¦" so the turn is never message-less.
  *
  * `spoken` is set on a VOICE CALL, and it turns the trailing-period strip off.
  * The bubbles this returns are ALSO the text handed to TTS on a call (both the
  * streamed emit and persistReplies), so the strip was deleting the one mark
- * ElevenLabs reads as "this thought ended" — 260729: a one-sentence spoken reply
+ * ElevenLabs reads as "this thought ended" â€” 260729: a one-sentence spoken reply
  * came out with no terminal pitch fall, sounding cut off mid-sentence. On a call
  * the line is speech being transcribed, not a text message, so it keeps its
  * punctuation everywhere: in the clip, in the caption and in the transcript.
@@ -487,7 +487,7 @@ export { splitReplyParts, type ReplyPart };
  *     REPEAT_MIN_KEY_CHARS ("no. no.") are exempt because they repeat on purpose;
  *   - when the provider reports the reply was cut by the token cap
  *     (stopReason 'max_tokens'), an unterminated trailing fragment is dropped
- *     rather than spoken as a half sentence — unless it is all there is;
+ *     rather than spoken as a half sentence â€” unless it is all there is;
  *   - `maxSentences` caps how much is kept (LOCAL_VOICE_MAX_SENTENCES on a
  *     call with a local model, which is prompted for one short line and
  *     ignores it; cloud models comply and never hit it).
@@ -497,7 +497,7 @@ export { splitReplyParts, type ReplyPart };
  */
 export const LOCAL_VOICE_MAX_SENTENCES = 4;
 const REPEAT_MIN_KEY_CHARS = 12;
-const TERMINATED_RE = /[.!?。！？…]["'”’)\]]*$/;
+const TERMINATED_RE = /[.!?ã€‚ï¼ï¼Ÿâ€¦]["'â€â€™)\]]*$/;
 
 export interface ReplyGate {
   /** true = keep this sentence; false = drop it (a verbatim repeat, or over the cap). */
@@ -523,7 +523,7 @@ export function createReplyGate(opts: { maxSentences?: number } = {}): ReplyGate
       }
       const key = unit.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
       // A Han character carries about a word, so it counts double toward the
-      // interjection exemption: "你好呀，今天想干嘛？" is a full sentence.
+      // interjection exemption: "ä½ å¥½å‘€ï¼Œä»Šå¤©æƒ³å¹²å˜›ï¼Ÿ" is a full sentence.
       const weight = key.length + (key.match(/\p{Script=Han}/gu)?.length ?? 0);
       if (weight >= REPEAT_MIN_KEY_CHARS) {
         if (seen.has(key)) {
@@ -542,7 +542,7 @@ export function createReplyGate(opts: { maxSentences?: number } = {}): ReplyGate
 function joinUnits(units: string[]): string {
   let out = '';
   for (const u of units) {
-    if (out) out += /[。！？]["'”’)\]]*$/.test(out) ? '' : ' ';
+    if (out) out += /[ã€‚ï¼ï¼Ÿ]["'â€â€™)\]]*$/.test(out) ? '' : ' ';
     out += u;
   }
   return out;
@@ -555,7 +555,7 @@ export function tidyReply(
   const gate = createReplyGate({ maxSentences: opts.maxSentences });
   // Per line: the admitted units, plus the line verbatim when nothing in it
   // was dropped, so an untouched line is reproduced byte for byte instead of
-  // being re-joined (CJK sentences carry no space after 。！？).
+  // being re-joined (CJK sentences carry no space after ã€‚ï¼ï¼Ÿ).
   const lines: Array<{ units: string[]; verbatim?: string }> = [];
   let lastWasFragment = false;
   for (const rawLine of text.split('\n')) {
@@ -607,7 +607,7 @@ export function tidyReply(
  * with an interjection, first audio waits for the next sentence to finish
  * generating. Kept to interjections, that is a few hundred ms on a clip that
  * would itself have been a few hundred ms of audio. A short sentence with
- * nothing after it never waits — the trailing flush emits it as soon as the
+ * nothing after it never waits â€” the trailing flush emits it as soon as the
  * stream ends.
  */
 const MERGE_SHORT_SENTENCE_CHARS = 10;
@@ -623,10 +623,10 @@ const MERGE_SHORT_SENTENCE_CHARS = 10;
 export function takeSentences(buf: string): { sentences: string[]; rest: string } {
   const sentences: string[] = [];
   // Western boundaries require trailing whitespace (and the digit guard keeps
-  // "1.618" whole). CJK sentences end with 。！？ and NO space after — without
+  // "1.618" whole). CJK sentences end with ã€‚ï¼ï¼Ÿ and NO space after â€” without
   // their own branch (260709) a Chinese reply never split, so the whole
   // generation had to finish before the first bubble/TTS clip.
-  const re = /(?<!\d)[.!?]+\s+|[。！？]+\s*/g;
+  const re = /(?<!\d)[.!?]+\s+|[ã€‚ï¼ï¼Ÿ]+\s*/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(buf)) !== null) {
@@ -641,9 +641,9 @@ export function takeSentences(buf: string): { sentences: string[]; rest: string 
 
 /**
  * Transcript-continuation stop (260722). Live capture: during a voice-call
- * chess game, Lyra's chat-reply turn kept generating past her own lines — a
+ * chess game, Lyra's chat-reply turn kept generating past her own lines â€” a
  * fabricated player turn ("Human: [22 Jul 11:32] *plays Nc6*") followed by an
- * invented game direction ("(Lyra, it is now your turn to move...)") — and the
+ * invented game direction ("(Lyra, it is now your turn to move...)") â€” and the
  * whole continuation was persisted as voice rows and SPOKEN by TTS, because
  * every turn runner treats the model's text output as the companion's speech.
  * Each marker here is a line-start token only the OTHER side of the transcript
@@ -651,7 +651,7 @@ export function takeSentences(buf: string): { sentences: string[]; rest: string 
  * Player label, our "(game)"/"(watch)" nudge prefixes), so generation ends the
  * instant the model starts writing somebody else's turn: the fabricated text
  * never exists to persist or speak. This is API-level plumbing
- * (stop_sequences), not an output scrub — nothing legitimate is removed, the
+ * (stop_sequences), not an output scrub â€” nothing legitimate is removed, the
  * turn simply cannot cross its own boundary. Every main-process turn runner
  * that persists or speaks reply text must pass these (chat, voice greetings/
  * nudges/companion turns, chess, watch).
@@ -700,7 +700,7 @@ export function foldUserNote(
 
 /**
  * 260725: proactiveness is a runtime-only Minecraft mode now, never read from
- * character metadata. Chat/voice surfaces always run at the reactive tier —
+ * character metadata. Chat/voice surfaces always run at the reactive tier â€”
  * the chat directive for level 1 is the one that matches "replies, sometimes
  * follows up, no agenda of its own".
  */
@@ -710,21 +710,21 @@ const CHAT_PROACTIVENESS = 1;
  * Texting punctuation register off character.metadata.punctuation (260705).
  * Only the exact 'deliberate' value opts out of the casual trailing-period
  * strip; anything else (missing, junk) reads as 'casual'. MIRROR of the read
- * in src/bot/index.js (the bot cannot import from src/main) — keep in sync.
+ * in src/bot/index.js (the bot cannot import from src/main) â€” keep in sync.
  */
 function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
   return raw === 'deliberate' ? 'deliberate' : 'casual';
 }
 
 /**
- * Shared prompt assembly for a chat turn — getCharacter, loadConfig, the
+ * Shared prompt assembly for a chat turn â€” getCharacter, loadConfig, the
  * summary+memory reads, the system blocks, and the
  * alternating messages array. Returns null when the character is missing.
  * Both sendChatMessage and sendLaunchFailedTurn build on this; the two callers
  * differ only in the per-turn openWorldDetected/inGame truth they pass in.
  *
  * NOTE: sendChatMessage appends the player's new message to the transcript
- * BEFORE calling this, so readChatContext here already includes it — do not
+ * BEFORE calling this, so readChatContext here already includes it â€” do not
  * hoist this call above that append.
  */
 async function prepareChatTurn(
@@ -744,7 +744,7 @@ async function prepareChatTurn(
   if (!character) return null;
   const config = await loadConfig();
   // Watermark-based context (260702): every not-yet-summarized message verbatim
-  // (50-99 between folds) + the rolling summary. Pure read — the batch fold runs
+  // (50-99 between folds) + the rolling summary. Pure read â€” the batch fold runs
   // in the background AFTER the reply (see foldIfDue).
   const [{ summary, history, base }, memory, knowledge] = await Promise.all([
     readChatContext(characterId),
@@ -778,7 +778,7 @@ async function prepareChatTurn(
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
-    // 260709: conversation language — read per turn (loadConfig above), so a
+    // 260709: conversation language â€” read per turn (loadConfig above), so a
     // Settings change applies from the very next message with no restart.
     // 260730: a character created under the Chinese UI carries
     // metadata.language, which pins its surfaces regardless of auto-detect.
@@ -818,14 +818,14 @@ async function prepareChatTurn(
 
 /**
  * Split a reply on blank lines (task 8) into separate persisted companion
- * messages — each its own bubble in the UI, revealed one at a time — and append
+ * messages â€” each its own bubble in the UI, revealed one at a time â€” and append
  * them in order (ascending ts so ordering is stable). Shared by the normal turn
  * and the launch-failed turn.
  */
 /**
  * Silence-by-convention (260707): models cannot produce an empty reply, but
- * they reliably WRITE a placeholder — "(silence)", "(staying silent)",
- * "[says nothing]" — when told quiet is fine. That is the official silence
+ * they reliably WRITE a placeholder â€” "(silence)", "(staying silent)",
+ * "[says nothing]" â€” when told quiet is fine. That is the official silence
  * mechanism on the chat surface for VOICE CALLS only: the call prompts
  * instruct "reply with exactly (silence)", and every voice reply path parses
  * it out, so
@@ -834,7 +834,7 @@ async function prepareChatTurn(
  * the convention, so there a "*stays silent*" is a real in-character beat and
  * must pass through untouched (the game services apply the drop on ALL their
  * turns instead, because their prompts sanction silence throughout).
- * The detector itself — variants, embellished/localized forms, shape rules —
+ * The detector itself â€” variants, embellished/localized forms, shape rules â€”
  * is the shared src/bot/brain/silenceFiller.js, also used by the bot's
  * postProcessSay and the chess/watch turn runners; re-exported here for
  * main-process consumers.
@@ -844,16 +844,16 @@ export { isSilenceFiller };
 /**
  * Peer-impersonation drop (260708). On a group call the transcript attributes
  * other companions' lines as "(Name, on the call): ...", and a model
- * occasionally ECHOES the convention — writing a fabricated line for the OTHER
+ * occasionally ECHOES the convention â€” writing a fabricated line for the OTHER
  * companion inside its own reply (live capture: Marv's streamed reply opened
  * with "(Sui, on the call): oh let's go..." spoken in Marv's TTS voice, and a
  * ghost Sui line landed in the transcript she never said). The prefix is ours,
- * injected only on heard lines — a companion's own reply never legitimately
- * starts with it — so any reply part carrying it is fabricated dialogue and is
+ * injected only on heard lines â€” a companion's own reply never legitimately
+ * starts with it â€” so any reply part carrying it is fabricated dialogue and is
  * dropped before it is persisted or spoken. Voice paths only, next to the
  * silence-filler drop. Line-level, operating on the raw reply (it splits on
  * every newline itself), so only the impersonated lines are removed and the
- * rest is rejoined — independent of how splitReply later bubbles the text.
+ * rest is rejoined â€” independent of how splitReply later bubbles the text.
  */
 const PEER_IMPERSONATION_RE = /^\s*\(\s*[^()\n]{1,60},\s*on the call\s*\)\s*:/i;
 export function stripPeerImpersonation(text: string): string {
@@ -917,9 +917,9 @@ async function persistReplies(
     role: 'companion',
     text: p.text,
     ts: now + i,
-    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
+    // Spoken on a live call â†’ hidden in the chat UI (see ChatMessage.voice).
     ...(opts?.voice ? { voice: true } : {}),
-    // A WorldLink desktop bubble → hidden in the chat UI too (see ChatMessage.desktop).
+    // A WorldLink desktop bubble â†’ hidden in the chat UI too (see ChatMessage.desktop).
     ...(opts?.desktop ? { desktop: true } : {}),
   }));
   // Face cues go out BEFORE the replies return, so the renderer holds them
@@ -944,7 +944,7 @@ async function sendChatMessageImpl(
   },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
-  // #9 — supersede any in-flight turn for this character: abort its LLM call so
+  // #9 â€” supersede any in-flight turn for this character: abort its LLM call so
   // this new message interrupts + replaces it. `superseded()` catches the race
   // where the old call resolved between abort() and the abort taking effect.
   inflight.get(args.characterId)?.abort();
@@ -963,13 +963,13 @@ async function sendChatMessageImpl(
       text: args.text,
       ts: Date.now(),
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
-      // Sent during a live call (a transcribed utterance, or typed mid-call —
-      // either way the exchange is spoken) → hidden in the chat UI.
+      // Sent during a live call (a transcribed utterance, or typed mid-call â€”
+      // either way the exchange is spoken) â†’ hidden in the chat UI.
       ...(args.voiceCall === true ? { voice: true } : {}),
     };
     await appendTurnRow(args.characterId, userMsg);
 
-    // Task 4 — if the companion is live in-game, route this message INTO that
+    // Task 4 â€” if the companion is live in-game, route this message INTO that
     // session (same brain + prompt cache) instead of the standalone chat brain,
     // so the two surfaces are one conversation. The bot receives it as an
     // out-of-band "message via Sei chat" and replies asynchronously over the
@@ -992,10 +992,10 @@ async function sendChatMessageImpl(
         })
       ) {
         // In-game chatter appends to the transcript without ever running a
-        // standalone chat turn, so drain any fold backlog from here too —
+        // standalone chat turn, so drain any fold backlog from here too â€”
         // otherwise a long play session could grow the window unbounded.
         if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
-        // A routed exchange is still a chat — stamp last_chatted here too, or
+        // A routed exchange is still a chat â€” stamp last_chatted here too, or
         // the Home card keeps calling a companion the player talks to in-game
         // "New". Best-effort, same as the standalone-turn stamp below.
         try {
@@ -1009,9 +1009,9 @@ async function sendChatMessageImpl(
 
     // Build the prompt AFTER the user message is appended above, so the turn's
     // context includes it. Per-turn truth passed in:
-    //   openWorldDetected — is an open-to-LAN world detected right now? Lets the
+    //   openWorldDetected â€” is an open-to-LAN world detected right now? Lets the
     //     model decide launch() vs. open-to-LAN instructions.
-    //   inGame — usually false here (a live session routes messages in-game), but
+    //   inGame â€” usually false here (a live session routes messages in-game), but
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
     const prep = await prepareChatTurn(args.characterId, {
       openWorldDetected: deps.getLanState().kind === 'open',
@@ -1032,7 +1032,7 @@ async function sendChatMessageImpl(
     // so they ride this prompt once and never persist). Not drained on the
     // routed-to-bot path above: in-game routing is out of scope for thoughts.
     foldUserNote(messages, renderThoughtNote(drainThoughts(args.characterId)));
-    // Prompt caching (260706): mark the last message AFTER every foldUserNote —
+    // Prompt caching (260706): mark the last message AFTER every foldUserNote â€”
     // the transcript is then cached prefix-incrementally across the call's turns.
     markLastMessageCached(messages);
     // 261024: the call clock goes after the breakpoint (no-op in typed chat).
@@ -1051,7 +1051,7 @@ async function sendChatMessageImpl(
     // does NOT re-speak the returned replies.
     // Typed chat NEVER streams (settled 260709 after two live trials): the
     // casual texting register writes punctuation-less lines separated by blank
-    // lines, so sentence streaming finds no boundaries — the reply still
+    // lines, so sentence streaming finds no boundaries â€” the reply still
     // arrived all at once, then splitReply dumped it as an unpaced wall of
     // bubbles. Typed chat keeps the blocking path in BOTH realistic-typing
     // modes; its latency floor is the model round trip.
@@ -1071,7 +1071,7 @@ async function sendChatMessageImpl(
     /**
      * The line emitted just before this one, WITHIN this reply (260729). It
      * rides out with each push as `speech.prev` so TTS can condition the clip's
-     * opening on it (previous_text — see voice/tts.ts ttsContextFor). The
+     * opening on it (previous_text â€” see voice/tts.ts ttsContextFor). The
      * renderer cannot supply it on this path: its own prev/more bookkeeping
      * lives in the blocking reveal loop, which a streamed reply skips
      * entirely, so every clip on a live call was reaching ElevenLabs with no
@@ -1098,7 +1098,7 @@ async function sendChatMessageImpl(
           role: 'companion',
           text: b,
           ts: Date.now() + streamedReplies.length, // monotonic within the turn
-          // Spoken on a live call → hidden in the chat UI; typed bubbles show.
+          // Spoken on a live call â†’ hidden in the chat UI; typed bubbles show.
           ...(args.voiceCall === true ? { voice: true } : {}),
         };
         streamedReplies.push(msg);
@@ -1117,15 +1117,15 @@ async function sendChatMessageImpl(
     /** The hop that produced `replyText` also called remember() (noteLeak's
      * second tier, same as the single-shot voice turns). */
     let replyRememberCalled = false;
-    // Task 2 — the actual summon is deferred until AFTER the reply is persisted,
+    // Task 2 â€” the actual summon is deferred until AFTER the reply is persisted,
     // so the companion's "hopping in" acknowledgement lands in chat before the
     // live-session popup (SummonedWidget) appears. Set when launch() resolves to
     // an open world; fired at the end of the turn.
     let startSummon = false;
-    // Voice calls (260705) — the model called end_call(): returned to the
+    // Voice calls (260705) â€” the model called end_call(): returned to the
     // renderer, which speaks the goodbye replies first, then hangs up.
     let endCallRequested = false;
-    // Set when the model logged off (quit) this turn — pairs with endCallRequested
+    // Set when the model logged off (quit) this turn â€” pairs with endCallRequested
     // for the double-goodbye guard below.
     let quitCalled = false;
     // Set when the model called launch this turn. A quit+launch ("log off and hop
@@ -1161,7 +1161,7 @@ async function sendChatMessageImpl(
       // Hard cap kept low so a reply can't ratchet into paragraphs. Each turn
       // feeds the model its own prior replies (toMessages), and with a generous
       // ceiling it self-conditions on the last (longest) turn and creeps up a
-      // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
+      // sentence each time. 200 tokens comfortably fits the 1â€“2 sentence target
       // from the system prompt without truncating mid-sentence.
       const t0 = Date.now();
       // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
@@ -1171,7 +1171,7 @@ async function sendChatMessageImpl(
       // `more` is only ever asserted from text we ALREADY hold: another
       // extracted sentence, or a partial left in the buffer. Mid-stream we
       // cannot know whether the model is about to write a further
-      // sentence, and guessing the wrong way is the expensive direction —
+      // sentence, and guessing the wrong way is the expensive direction â€”
       // a false `more` sends next_text on what turns out to be the last
       // line and takes its terminal fall away, which is the very bug this
       // change exists to fix. Unknown therefore means false: the clip
@@ -1199,7 +1199,7 @@ async function sendChatMessageImpl(
             }
           }
         : undefined;
-      // #9 — abortable: a follow-up send aborts this signal.
+      // #9 â€” abortable: a follow-up send aborts this signal.
       const res = await llm.call({
         maxTokens: replyMaxTokens(tools),
         system,
@@ -1213,7 +1213,7 @@ async function sendChatMessageImpl(
       if (isStreaming) {
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation),
-        // carrying any held lead-in — which is also how a reply that is NOTHING
+        // carrying any held lead-in â€” which is also how a reply that is NOTHING
         // but a short line ("ok.") gets spoken: the hold ends with the stream.
         // Nothing more is known to follow: a further hop may still speak, but
         // only after a tool round trip, which is a new utterance by then.
@@ -1268,7 +1268,7 @@ async function sendChatMessageImpl(
       // With two tools offered the model may call both in one response (e.g.
       // quit + launch for "log off and hop back in"). Every tool_use id in an
       // assistant turn MUST get a matching tool_result in the next user message
-      // or the follow-up create() 400s — so answer ALL of them, not just the
+      // or the follow-up create() 400s â€” so answer ALL of them, not just the
       // first.
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
       if (!toolUses.length) break;
@@ -1346,14 +1346,14 @@ async function sendChatMessageImpl(
               .then((a) => a.capture('summon_blocked', props))
               .catch(() => { /* analytics is never load-bearing */ });
           }
-          // Defer the real join — don't fire summon mid-loop (task 2).
+          // Defer the real join â€” don't fire summon mid-loop (task 2).
           if (result.summon) {
             startSummon = true;
             launchGame = result.game;
           }
           note = result.note;
         } else if (toolUse.name === 'quit_game') {
-          // Task 5 — leave the game from chat. End the live session (no-op when
+          // Task 5 â€” leave the game from chat. End the live session (no-op when
           // none is live) and tell the model it has logged off.
           quitCalled = true;
           // 261008: only a live world has a session for bot_session_ended to
@@ -1364,22 +1364,22 @@ async function sendChatMessageImpl(
           if (inGame) noteCompanionGoodbye(args.characterId, 'game', nextStepHook);
           deps.leaveGame?.(args.characterId);
           note =
-            'You have left the Minecraft world and logged off. You are back in chat only now — ' +
+            'You have left the Minecraft world and logged off. You are back in chat only now â€” ' +
             'say a short goodbye if you have not already. Do not claim you are still in the game.';
         } else if (toolUse.name === 'end_call') {
-          // Voice calls (260705) — hang up. The actual teardown is renderer-side
+          // Voice calls (260705) â€” hang up. The actual teardown is renderer-side
           // (it must finish speaking the goodbye first), so just flag the result.
           endCallRequested = true;
           noteCompanionGoodbye(args.characterId, 'call', await honorNextStep(args.characterId, toolUse.input));
           note =
-            'You are hanging up the call — it ends right after this turn. ' +
+            'You are hanging up the call â€” it ends right after this turn. ' +
             'If you have not said goodbye yet, say it now (it is still spoken aloud). ' +
             'The player can still reach you in text chat afterward.';
         } else if (toolUse.name === 'remember') {
-          // Voice calls (260707) — same MEMORY.md the game brain writes, so what
+          // Voice calls (260707) â€” same MEMORY.md the game brain writes, so what
           // the player shares on a call carries into future sessions everywhere.
           // Best-effort like honorRememberCalls: a failed write (disk full,
-          // permissions) must never abort the turn — the reply still lands.
+          // permissions) must never abort the turn â€” the reply still lands.
           const memText = String((toolUse.input as { text?: string })?.text ?? '').trim();
           if (memText) {
             try {
@@ -1425,7 +1425,7 @@ async function sendChatMessageImpl(
           }
         } else {
           // Unreachable with the closed tool set, but an unanswered tool_use
-          // would poison the next hop — answer it rather than break mid-turn.
+          // would poison the next hop â€” answer it rather than break mid-turn.
           note = `The tool "${toolUse.name}" is not available. Reply without using tools.`;
         }
         toolResults.push({ type: 'tool_result', tool_use_id: toolUse.id, content: note });
@@ -1435,7 +1435,7 @@ async function sendChatMessageImpl(
       // Double-goodbye guard (260706): the quit/end_call tool notes tell the model
       // to "say goodbye if you have not already". If it ALREADY spoke this turn,
       // running another hop just produces a redundant second farewell (the "double
-      // message" on hang-up / log-off). Stop here — the reply + endCall/quit side
+      // message" on hang-up / log-off). Stop here â€” the reply + endCall/quit side
       // effects are already recorded. Keep looping only when nothing was said yet
       // (the goodbye still needs to land) or a relaunch is pending (quit+launch
       // "log off and hop back in" needs its follow-up "hopping back in" line).
@@ -1466,7 +1466,7 @@ async function sendChatMessageImpl(
       if (answeredBeforeTools && decorateClean && decorateOps <= 1 && toolUses.every((b) => NO_FOLLOW_UP_TOOLS.has(b.name) || b.name === DECORATE_TOOL_NAME)) break;
     }
 
-    // #9 — if a newer send arrived (or we were aborted) while this turn ran,
+    // #9 â€” if a newer send arrived (or we were aborted) while this turn ran,
     // drop the reply rather than append a stale one.
     if (ctrl.signal.aborted || superseded()) {
       const e = new Error(CHAT_ABORTED);
@@ -1478,8 +1478,8 @@ async function sendChatMessageImpl(
     // reuse those rows. Typed chat (and the non-streaming voice fallback) persists
     // the whole reply here as usual. On a VOICE turn a "(silence)" reply persists
     // NOTHING: the voice-scoped filler filter inside persistReplies removes it
-    // before the "…" fallback could ever apply (splitReply already returned a
-    // non-empty part). Typed chat keeps such lines — they are real replies there.
+    // before the "â€¦" fallback could ever apply (splitReply already returned a
+    // non-empty part). Typed chat keeps such lines â€” they are real replies there.
     // A typed turn whose only text rode out early beside a web lookup (see the
     // hop loop) has nothing left to persist; do not let the empty-reply
     // fallback add a bubble after a line that already landed.
@@ -1495,12 +1495,12 @@ async function sendChatMessageImpl(
         : [];
 
     // Background compaction (260702): the reply is persisted, so if 50+
-    // messages have aged past the window, fold them NOW — while the player is
-    // typing — rather than making some future turn (or a summon) pay for it.
+    // messages have aged past the window, fold them NOW â€” while the player is
+    // typing â€” rather than making some future turn (or a summon) pay for it.
     // Fire-and-forget; single-flighted inside foldIfDue.
     if (scopedTurnCurrent()) void foldIfDue(args.characterId, character.persona.expanded).catch(() => {});
 
-    // Task 2 — NOW that the "hopping in" reply is persisted (and about to be
+    // Task 2 â€” NOW that the "hopping in" reply is persisted (and about to be
     // returned + rendered), kick off the real join. Firing it here rather than
     // mid-loop guarantees the acknowledgement message lands before the live-
     // session popup appears. Still non-blocking: a full join can take many
@@ -1511,11 +1511,11 @@ async function sendChatMessageImpl(
       });
     }
 
-    // #6 — stamp last_chatted on a successful reply so a plain chat counts as a
+    // #6 â€” stamp last_chatted on a successful reply so a plain chat counts as a
     // "last interaction" for the card date + ordering (device-local, like
-    // last_launched; the cloud upsert omits it). Best-effort — a persistence
+    // last_launched; the cloud upsert omits it). Best-effort â€” a persistence
     // hiccup must not fail the chat turn. 260705: patchCharacter, never a spread
-    // of the turn-opening `character` snapshot — it predates the LLM round-trip,
+    // of the turn-opening `character` snapshot â€” it predates the LLM round-trip,
     // and spreading that stale copy would silently revert any edit the player
     // saved while the reply was generating.
     try {
@@ -1537,7 +1537,7 @@ async function sendChatMessageImpl(
       throw e;
     }
     // Analytics (260828): a GENUINE chat turn failure (aborts returned above).
-    // Shape only — the classified token, never the message. Lazy import +
+    // Shape only â€” the classified token, never the message. Lazy import +
     // fire-and-forget per the analytics convention; capture() no-ops when
     // analytics is off.
     void (async () => {
@@ -1557,12 +1557,12 @@ async function sendChatMessageImpl(
 /**
  * 260702 (task 2): the deferred join kicked off by launch() failed AFTER the
  * companion already told the player it was hopping in. Without a correcting
- * turn, the companion's own transcript says it joined — so later turns insist
+ * turn, the companion's own transcript says it joined â€” so later turns insist
  * "i'm already in" while nothing is in the world. Run a short persona-voiced
  * turn around an ephemeral system note so the companion (a) learns the join
  * failed and (b) tells the player in its own words; its reply is persisted, so
  * the correction survives into every future turn's history. No tools are
- * offered — this turn reports the failure, it must not retry the launch.
+ * offered â€” this turn reports the failure, it must not retry the launch.
  * Replies are persisted here; the caller pushes them to the renderer.
  */
 async function sendLaunchFailedTurnImpl(
@@ -1571,12 +1571,12 @@ async function sendLaunchFailedTurnImpl(
 ): Promise<ChatMessage[]> {
   const prep = await prepareChatTurn(characterId, {
     openWorldDetected: false,
-    // This turn exists BECAUSE the join failed — the companion is not in-game.
+    // This turn exists BECAUSE the join failed â€” the companion is not in-game.
     inGame: false,
   });
   if (!prep) return [];
   const { system, messages } = prep;
-  // Keep the model-facing reason to a single sanitized line — the raw summon
+  // Keep the model-facing reason to a single sanitized line â€” the raw summon
   // error can carry a multi-line stderr tail.
   const shortReason = (reason || 'unknown error').split('\n')[0].slice(0, 200);
   // 260929: the supervisor's Forge pre-gate (voice launch honors reach it).
@@ -1586,9 +1586,9 @@ async function sendLaunchFailedTurnImpl(
     ? '[System note, not the player speaking: you could not join the Minecraft world, and you are still here in chat. ' +
       `The reason: ${shortReason.slice(forgePrefix.length)} ` +
       'Tell the player that in your own words, in one or two short lines. Do not offer to try again in this world, and do not pretend you got in.]'
-    : `[System note — not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
+    : `[System note â€” not the player speaking: your attempt to join the Minecraft world just failed (${shortReason}). ` +
       'You never made it in; you are NOT in the world, you are still here in chat. ' +
-      'Tell the player the join failed and that you can try again — one short line, in your own voice. Do not pretend you got in.]';
+      'Tell the player the join failed and that you can try again â€” one short line, in your own voice. Do not pretend you got in.]';
   // Anthropic requires strict role alternation; fold the note into a trailing
   // user turn (e.g. the player typed something while the join was dying) rather
   // than appending a second user message.
@@ -1622,7 +1622,7 @@ const firstMeetingInflight = new Map<string, Promise<ChatMessage[]>>();
 /**
  * First-meeting greeting (thoughts consumer #1). When the player first opens chat
  * with a freshly met companion, the companion speaks FIRST, steered by
- * THOUGHT_FIRST_MEETING. Applies to ALL three companion kinds — 'unique'
+ * THOUGHT_FIRST_MEETING. Applies to ALL three companion kinds â€” 'unique'
  * (system-cast), 'custom' (user-authored), and 'world' (invited from the World
  * tab, incl. bundled defaults): each is "just summoned by this human" from its
  * own perspective, and its persona (already folded into the system prompt by
@@ -1654,7 +1654,7 @@ async function sendFirstMeetingTurnImpl(
     const character = await getCharacter(characterId);
     if (!character) return [];
     // All companion kinds get the first-meeting greeting (unique / custom /
-    // world) — the kind gate that once restricted this to system-cast uniques
+    // world) â€” the kind gate that once restricted this to system-cast uniques
     // was dropped so user-authored and World-invited companions greet too.
     if (character.last_chatted) return [];
     const transcript = await chatStore.readAll(characterId);
@@ -1680,7 +1680,7 @@ async function sendFirstMeetingTurnImpl(
 
     // Register in the per-character `inflight` slot (like sendVoiceGreetingTurn)
     // so a user message sent while this greeting is in flight aborts/supersedes
-    // it — otherwise the two run concurrently and the reply persists first, then
+    // it â€” otherwise the two run concurrently and the reply persists first, then
     // the cold greeting lands out of order. The firstMeetingInflight map above
     // still dedupes duplicate chat:opened events; this guards the user-race.
     inflight.get(characterId)?.abort();
@@ -1704,7 +1704,7 @@ async function sendFirstMeetingTurnImpl(
         local: llm.backend === 'local',
       });
     } catch (err) {
-      // Superseded by a real user message — the greeting is best-effort, so a
+      // Superseded by a real user message â€” the greeting is best-effort, so a
       // deliberate abort is not a failure; drop it silently. Real errors still
       // propagate to the caller.
       if (isAbortError(err) || ctrl.signal.aborted || inflight.get(characterId) !== ctrl) {
@@ -1724,7 +1724,7 @@ async function sendFirstMeetingTurnImpl(
 
 /**
  * Voice calls (260705): the call pipeline just went LIVE and the character has
- * no in-game session — run a short persona-voiced turn so the companion speaks
+ * no in-game session â€” run a short persona-voiced turn so the companion speaks
  * FIRST (like answering the phone), instead of dead air until the player talks.
  * Same ephemeral-system-note pattern as sendLaunchFailedTurn; the reply is
  * persisted (it is a real thing the companion said) and returned for the
@@ -1764,7 +1764,7 @@ async function sendVoiceGreetingTurnImpl(
 
     const llm = await buildLlmProvider();
     // Cache PREWARM (260706): this greeting fires while the call is still
-    // dialing. Offer the SAME tools a live user turn does — tools sit at the
+    // dialing. Offer the SAME tools a live user turn does â€” tools sit at the
     // front of the prompt-cache prefix, so a greeting with no tools warms a
     // DIFFERENT cache than the user turn reads (the "first reply was a cacheWrite,
     // not a cacheRead" symptom). Matching them writes the tools+system prefix
@@ -1796,7 +1796,7 @@ async function sendVoiceGreetingTurnImpl(
       local: llm.backend === 'local',
     });
   } catch (err) {
-    // Superseded by a real message (or a real failure) — the greeting is
+    // Superseded by a real message (or a real failure) â€” the greeting is
     // best-effort either way; the call works without it.
     if (!isAbortError(err)) {
       void raiseUsageLimitPopup(err, 'voice');
@@ -1839,7 +1839,7 @@ export async function observeVoiceLine(
 /**
  * Multi-companion voice (260706): companion `characterId` HEARD another
  * companion (`speakerName`) say `text` on the same call, and gets a turn to
- * react in character — or to stay silent (returns [] when the model produces no
+ * react in character â€” or to stay silent (returns [] when the model produces no
  * text). This is the seam the renderer's voice director uses to make two
  * companions actually converse: after A speaks, B is handed A's line here.
  *
@@ -1865,12 +1865,12 @@ async function sendCompanionVoiceTurnImpl(
     depth?: number;
     /** 260708: live LAN truth. This turn used to hardcode `false`, so a
      * call-only companion whose sibling was already IN the world was told no
-     * world existed — and repeated the "open to LAN" instructions to a player
+     * world existed â€” and repeated the "open to LAN" instructions to a player
      * standing in their open world. */
     openWorldDetected?: boolean;
     /** 260708: honor a launch() call from this single-shot turn (no tool loop
      * runs here, so without this the model says "hopping in" and nothing
-     * happens — the join only worked once the in-game sibling disconnected). */
+     * happens â€” the join only worked once the in-game sibling disconnected). */
     onLaunch?: () => void;
   },
 ): Promise<ChatMessage[]> {
@@ -1904,7 +1904,7 @@ async function sendCompanionVoiceTurnImpl(
         ? ' This back-and-forth has gone on a while, so let it breathe: only add another line if you genuinely have something new, otherwise let it rest by replying with exactly (silence).'
         : '';
     const note =
-      `[System note — not the player speaking: ${ctx.speakerName} just said the line above on the call. ` +
+      `[System note â€” not the player speaking: ${ctx.speakerName} just said the line above on the call. ` +
       'If there is a live thread worth continuing, react in your own voice in ONE short spoken line, building on it rather than closing it off. ' +
       'If the exchange has genuinely run its course, reply with exactly (silence) and nothing else; it is never spoken, it just ends your turn quietly.' +
       windDown +
@@ -1933,10 +1933,10 @@ async function sendCompanionVoiceTurnImpl(
     const res = await followUpWebTools({ characterId, llm, system, tools, messages, res: first, ctrl, config: prep.config, room: prep.room });
     if (ctrl.signal.aborted || inflight.get(characterId) !== ctrl) return [];
     await honorRememberCalls(characterId, res.content);
-    // 260708: honor launch() the same single-shot way remember() is honored —
+    // 260708: honor launch() the same single-shot way remember() is honored â€”
     // the caller (ipc) gates it on a live open world and fires the summon.
     if (ctx.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
-      try { ctx.onLaunch(); } catch { /* best-effort — the reply still lands */ }
+      try { ctx.onLaunch(); } catch { /* best-effort â€” the reply still lands */ }
     }
     const rememberCalled = res.content.some((b) => b.type === 'tool_use' && b.name === 'remember');
     const replyText = textOf(res.content);
@@ -1963,7 +1963,7 @@ async function sendCompanionVoiceTurnImpl(
  * Idle conversation starter (260707). The renderer's call-idle timer fires this
  * when a live call has been quiet for a stretch: `characterId` gets a nudge to
  * start a topic, or to stay quiet by replying (silence). Unlike every other turn, this
- * must NOT preempt a real one — if anything is already in flight for this
+ * must NOT preempt a real one â€” if anything is already in flight for this
  * character (the player just spoke, a greeting is generating), the conversation
  * is not actually idle, so the nudge is skipped instead of aborting it. Once
  * running it sits in the same `inflight` slot, so a real player message
@@ -1979,7 +1979,7 @@ async function sendVoiceIdleTurnImpl(
   quietSeconds: number,
   peers: string[] = [],
   /** 260708: live LAN truth + single-shot launch honor (see
-   * sendCompanionVoiceTurn) — an idle nudge that says "i'll hop in" must
+   * sendCompanionVoiceTurn) â€” an idle nudge that says "i'll hop in" must
    * actually join instead of hanging. */
   opts: { openWorldDetected?: boolean; onLaunch?: () => void; awaitingAnswer?: boolean } = {},
 ): Promise<{ messages: ChatMessage[]; endCall?: boolean }> {
@@ -2015,17 +2015,17 @@ async function sendVoiceIdleTurnImpl(
     // companion gets the take-it-or-leave-it nudge with silence sanctioned.
     const quiet = Math.max(1, Math.round(quietSeconds));
     // 260730: two nudges, not one. The generic "start a topic" note read wrong
-    // after the companion had just ASKED something — the reply that follows a
+    // after the companion had just ASKED something â€” the reply that follows a
     // question is an answer, and a fresh topic on top of the unanswered one
     // drops it. The follow-up note is deliberately unpressured: no "still
     // there?", no repeating the question at them, and silence is still a fine
     // answer. Fires at most once per question (see the renderer's idle clock).
     const note = opts.awaitingAnswer
-      ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
+      ? `[System note â€” not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
         'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
         'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
         'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
-      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+      : `[System note â€” not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
         'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
         'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
         'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
@@ -2052,11 +2052,11 @@ async function sendVoiceIdleTurnImpl(
     // No tool loop runs here, so honor end_call by flagging it for the caller:
     // "well, I'll let you go, bye" must actually hang up, not just be spoken
     // while later nudges keep firing. 260708: launch() is now honored too (via
-    // opts.onLaunch, gated on a live open world by the caller) — a nudge turn
+    // opts.onLaunch, gated on a live open world by the caller) â€” a nudge turn
     // that says "i'll hop in" used to just hang. quit_game() stays unhonored
     // (the tool list is kept identical for prompt-cache warmth).
     if (opts.onLaunch && res.content.some((b) => b.type === 'tool_use' && b.name === 'launch')) {
-      try { opts.onLaunch(); } catch { /* best-effort — the reply still lands */ }
+      try { opts.onLaunch(); } catch { /* best-effort â€” the reply still lands */ }
     }
     const endCallUse = res.content.find((b) => b.type === 'tool_use' && b.name === 'end_call');
     const endCall = endCallUse !== undefined;
@@ -2110,7 +2110,7 @@ function resolveLaunch(
     const names = SELF_LAUNCH_GAMES.map((g) => g.name);
     const only = names.length <= 1 ? `only ${names[0] ?? 'Minecraft'} can be launched right now` : `only ${names.join(', ')} can be launched right now`;
     return {
-      note: `The game "${game}" is not available yet — ${only}. Tell the player it is coming soon.`,
+      note: `The game "${game}" is not available yet â€” ${only}. Tell the player it is coming soon.`,
       launch: { game, status: 'lan-not-open' },
       summon: false,
       game: 'minecraft',
@@ -2269,7 +2269,7 @@ function blockedReason(errorClass: string): string {
   }
 }
 
-// ── SeiLink desktop lines (261104, M4) ──────────────────────────────────────
+// â”€â”€ SeiLink desktop lines (261104, M4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Model-facing notes for a desktop line (plain, see the prompt style note). */
 export const DESKTOP_LINE_NOTES = {
@@ -2371,7 +2371,7 @@ async function sendDesktopLineTurnImpl(
   }
 }
 
-// ── Account-scoped turn entry points (260926) ─────────────────────────────────
+// â”€â”€ Account-scoped turn entry points (260926) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Every exported LLM turn runs under withScopedTurn: refused while an account
 // switch is running, and tagged with the scope it began in so its writes are
 // dropped if the account changes before it lands (turnMayWrite). The bodies
@@ -2425,3 +2425,7 @@ export function sendDesktopLineTurn(
 
 export { readRecent } from './chatStore';
 export const chatStoreApi = chatStore;
+
+
+
+

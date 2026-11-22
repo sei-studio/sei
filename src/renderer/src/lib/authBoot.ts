@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 (login lock on restart): read main's auth state on demand instead of
  * trusting the renderer's default and whatever pushes happened to land.
  *
@@ -121,3 +121,7 @@ export async function waitForAuthScope(
   }
   return { snapshot, waited };
 }
+
+
+
+

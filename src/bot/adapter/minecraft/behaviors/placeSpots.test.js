@@ -1,4 +1,4 @@
-// placeSpots + placeBlock's spot search (261108, quality pass 46): tables and
+﻿// placeSpots + placeBlock's spot search (261108, quality pass 46): tables and
 // furnaces in grass, beside her own hitbox, in water, in a pit.
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -150,3 +150,7 @@ describe('placeBlockAction spot search', () => {
     expect(bot.placeBlock).not.toHaveBeenCalled()
   })
 })
+
+
+
+

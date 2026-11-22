@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { BrowseEntry } from '@shared/ipc';
 import { compareWorldEntries, formatAddCount, mergeWorldEntries } from './worldList';
 
@@ -108,7 +108,11 @@ describe('formatAddCount', () => {
   });
 
   it('uses the UI locale and survives a bad tag', () => {
-    expect(formatAddCount(12345, 'ja-JP')).toBe('1.2万');
+    expect(formatAddCount(12345, 'ja-JP')).toBe('1.2ä¸‡');
     expect(formatAddCount(1140, 'not a locale!!')).toBe('1.1K');
   });
 });
+
+
+
+

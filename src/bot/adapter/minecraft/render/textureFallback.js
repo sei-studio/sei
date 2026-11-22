@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/textureFallback.js
+﻿// src/bot/adapter/minecraft/render/textureFallback.js
 //
 // A missing texture must never kill the bot (260806).
 //
@@ -21,7 +21,7 @@
 //
 //     new Entity('1.16.4', entity.name, scene)
 //
-// with the version HARDCODED — entity textures always resolve under
+// with the version HARDCODED â€” entity textures always resolve under
 // `public/textures/1.16.4/`, whatever version the world runs. The packaging
 // prune in electron-builder.yml excluded that whole tree, so in a shipped build
 // the FIRST entity to enter the bot's POV render killed the process. (The
@@ -31,7 +31,7 @@
 // Why a placeholder rather than skipping the entity: povRenderer's
 // `modelRenderable()` already skips entities with no model or a broken skeleton,
 // and skipping is the right answer THERE because those cannot be drawn at all.
-// A missing texture is different — the geometry is fine, only the paint is gone,
+// A missing texture is different â€” the geometry is fine, only the paint is gone,
 // and the entity in question is very often the PLAYER (`textures/entity/steve`).
 // Skipping it would make the human the bot is playing with invisible in its own
 // vision, which is a worse failure than an untextured figure and a much quieter
@@ -49,7 +49,7 @@
 //                                     ? require('../utils.electron.js')
 //                                     : require('../utils')
 //
-// so replacing the export AFTER those modules load changes nothing — they are
+// so replacing the export AFTER those modules load changes nothing â€” they are
 // holding the original function reference. `installTextureFallback` must run
 // before the first `require('prismarine-viewer/viewer')`. povRenderer.js calls
 // it at the top of the module for exactly that reason; do not move it below the
@@ -159,7 +159,7 @@ export function createSafeLoadTexture (deps) {
     // `!loadImage` is the degraded-native-module case (see installTextureFallback):
     // no decoder means nothing is loadable regardless of what is on disk.
     if (!loadImage || !present(file)) {
-      warn(`[sei/vision] missing texture "${texture}" — drawing a placeholder`)
+      warn(`[sei/vision] missing texture "${texture}" â€” drawing a placeholder`)
       const tex = getPlaceholder()
       cache.set(texture, tex)
       cb(tex)
@@ -176,7 +176,7 @@ export function createSafeLoadTexture (deps) {
         cb(tex)
       })
       .catch((err) => {
-        warn(`[sei/vision] texture "${texture}" failed to decode (${err && err.message}) — drawing a placeholder`)
+        warn(`[sei/vision] texture "${texture}" failed to decode (${err && err.message}) â€” drawing a placeholder`)
         const tex = getPlaceholder()
         cache.set(texture, tex)
         cb(tex)
@@ -213,12 +213,12 @@ export function installTextureFallback (pvRequire, opts = {}) {
   // degrades to an empty object, so this file must be at least as tolerant: an
   // install that THREW here would turn a graceful CANT_SEE into a hard failure to
   // import povRenderer at all. When the loader is unavailable every texture takes
-  // the placeholder path, which is the correct degrade — nothing can be decoded.
+  // the placeholder path, which is the correct degrade â€” nothing can be decoded.
   let loadImage = null
   try {
     ({ loadImage } = pvRequire('node-canvas-webgl/lib'))
   } catch (err) {
-    warn(`[sei/vision] image loader unavailable (${err && err.message}) — all textures will be placeholders`)
+    warn(`[sei/vision] image loader unavailable (${err && err.message}) â€” all textures will be placeholders`)
   }
   if (typeof loadImage !== 'function') loadImage = null
 
@@ -264,3 +264,7 @@ export function installTextureFallback (pvRequire, opts = {}) {
   }
   return patched
 }
+
+
+
+

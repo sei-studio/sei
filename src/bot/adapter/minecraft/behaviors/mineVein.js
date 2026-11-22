@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/mineVein.js — `gather` action.
+﻿// src/bot/adapter/minecraft/behaviors/mineVein.js â€” `gather` action.
 //
 // `gather` is a dig-wrapper for "harvest N of a block" tasks where the exact
 // location of each mined block doesn't matter. It resolves a name (loose term
@@ -10,28 +10,28 @@
 //
 // 260708: name-mode no longer stops at one connected component. A single oak
 // tree is often 1-5 logs, so `gather(oak_log, count:16)` used to finish after
-// one tree and report `gathered 1/1` — a tiny harvest that READ as full
+// one tree and report `gathered 1/1` â€” a tiny harvest that READ as full
 // success, so the model believed the wood task was done (Lyra post-mortem).
 // Now it re-anchors on the next unvisited component and keeps going until the
 // REQUESTED count is attempted or no more of the block is findable. An
 // explicit x,y,z anchor still means "this vein here" and stays single-component.
 //
 // Result-string contract (W = requested count, K = actually dug):
-//   - 'aborted'                                     — signal already aborted at entry
-//   - `aborted after K/W <name>`                    — player-chat preempt mid-batch
-//   - `gathered K/W <name>`                         — completed the requested count
+//   - 'aborted'                                     â€” signal already aborted at entry
+//   - `aborted after K/W <name>`                    â€” player-chat preempt mid-batch
+//   - `gathered K/W <name>`                         â€” completed the requested count
 //                                                     (K may be < W if some digs failed)
 //   - `gathered K/W <name> (no more <name> reachable nearby)`
-//                                                   — ran out of findable blocks first;
+//                                                   â€” ran out of findable blocks first;
 //                                                     if K < W the model should NOT
 //                                                     treat the task as satisfied
-//   - `gathered K/W <name> (that vein had only A)`  — coord-mode: the explicit vein
+//   - `gathered K/W <name> (that vein had only A)`  â€” coord-mode: the explicit vein
 //                                                     was smaller than the request
-//   - `no <term> in loaded chunks`                  — name resolved to nothing
-//   - `no block at anchor`                          — anchor coord is air/null
-//   - 'must specify name or x,y,z'                  — defensive (registry refine should catch)
+//   - `no <term> in loaded chunks`                  â€” name resolved to nothing
+//   - `no block at anchor`                          â€” anchor coord is air/null
+//   - 'must specify name or x,y,z'                  â€” defensive (registry refine should catch)
 //
-// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.gather.
+// LLM-facing tool description moved to ../prompts.js â†’ ACTION_DESCRIPTIONS.gather.
 
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
@@ -82,7 +82,7 @@ function isItemEntity(e) {
  * Walk to nearby dropped items so mineflayer's auto-pickup collects them.
  * The per-dig pickup walk (dig.js) catches the common case, but drops that
  * bounce off the trunk, land somewhere else, or spawn later from decaying
- * leaves (saplings, sticks, apples) were left behind — the live symptom was
+ * leaves (saplings, sticks, apples) were left behind â€” the live symptom was
  * a "finished" gather leaving a trail of items on the ground. Best-effort
  * and bounded: closest-first, drops well above the bot (canopy) are skipped
  * so the pathfinder never climbs for them.
@@ -108,7 +108,7 @@ async function sweepDrops(bot, goTo, signal, sleep = (ms) => new Promise(r => se
     for (const e of Object.values(bot.entities ?? {})) {
       if (!isItemEntity(e) || !e.position || e.isValid === false) continue
       if (attempted.has(e.id ?? e)) continue
-      if (e.position.y > here.y + 2) continue // canopy drop — never climb for one item
+      if (e.position.y > here.y + 2) continue // canopy drop â€” never climb for one item
       if (givenDropFor(bot, e)) continue // 261017: tossed to the player, theirs
       const d = e.position.distanceTo(here)
       if (d <= SWEEP_RADIUS && d < bestD) { bestD = d; best = e }
@@ -157,7 +157,7 @@ export function dropItemsFor(bot, blockName) {
  * @param {import('mineflayer').Bot} bot
  * @param {{ signal?: AbortSignal, pathfinder_timeout_ms?: number, onProgress?: (p:{dug:number,total:number,items?:string[],before?:number})=>void }} [config]
  * @param {{ goTo?: typeof realGoTo, digAction?: typeof realDigAction, sleep?: (ms:number)=>Promise<void> }} [_deps]
- *        Optional dependency injection — used by unit tests to stub the
+ *        Optional dependency injection â€” used by unit tests to stub the
  *        per-block side effects. Defaults fall through to the real imports
  *        so the registry call site `(args, bot, config)` is unaffected.
  * @returns {Promise<string>}
@@ -176,7 +176,7 @@ export async function gatherAction(args, bot, config, _deps) {
   // Hard-capped at BATCH_CAP. (260618)
   const want = Math.max(1, Math.min(BATCH_CAP, Math.floor(Number(args?.count ?? 16)) || 16))
   // Per-block pathfinding is shorter than the whole-action budget: vein blocks
-  // are adjacent, so a block that needs a long path usually isn't worth it —
+  // are adjacent, so a block that needs a long path usually isn't worth it â€”
   // cap the walk so one unreachable block can't burn the full 12s. (260618)
   const perBlockTimeoutMs = Math.min(timeoutMs, 6000)
 
@@ -231,7 +231,7 @@ export async function gatherAction(args, bot, config, _deps) {
 
   // Shared across re-anchor rounds: every position ever swept by a flood-fill
   // (dug or failed) stays in `visited`, so a component whose digs all failed
-  // can never be re-anchored — that is the no-infinite-loop guarantee.
+  // can never be re-anchored â€” that is the no-infinite-loop guarantee.
   const visited = new Set()
   const key = (x, y, z) => `${x},${y},${z}`
   let skippedUnreachable = 0
@@ -309,14 +309,14 @@ export async function gatherAction(args, bot, config, _deps) {
       if (signal?.aborted) return 'aborted'
 
       // 17-02: yield to a reflex creeper-flee that owns the goal (bot._seiReflexActive,
-      // Plan 01 mutex). Pause the batch — non-destructively, the vein is not
-      // cancelled — until the flee releases the goal, then resume mining the same
+      // Plan 01 mutex). Pause the batch â€” non-destructively, the vein is not
+      // cancelled â€” until the flee releases the goal, then resume mining the same
       // remaining blocks. (goTo below also yields internally; this stands the
       // whole batch down so we don't even pick/dig the next block mid-flee.)
       if (bot._seiReflexActive) {
         const w = await waitForReflexClear(bot, signal, timeoutMs)
         if (w === 'aborted') return 'aborted'
-        // on 'timeout' fall through — re-check abort and retry the block next loop
+        // on 'timeout' fall through â€” re-check abort and retry the block next loop
       }
 
       // 261108 (quality pass 47): low on air under water: stop, swim up and
@@ -350,7 +350,7 @@ export async function gatherAction(args, bot, config, _deps) {
       if (got() >= want) return dug
 
       const np = nextEntry.p
-      // Skip the pathfind when the block is already within dig reach — the common
+      // Skip the pathfind when the block is already within dig reach â€” the common
       // case in a contiguous vein, where the previous swing left us adjacent. Only
       // walk when it's genuinely out of reach. 260709: measured from the EYES
       // (dig reach is eye-anchored), so the upper trunk logs of a tree are dug
@@ -360,7 +360,7 @@ export async function gatherAction(args, bot, config, _deps) {
       // meant climbing.
       let walk = null
       if (digReachDistance(bot, np) > DIG_REACH) {
-        // Pre-pathfind to dig reach (Pitfall 2 — dig.js does NOT pathfind in).
+        // Pre-pathfind to dig reach (Pitfall 2 â€” dig.js does NOT pathfind in).
         // 261012: never scaffold with what we are gathering.
         walk = await goTo(bot, np.x, np.y, np.z, 3, perBlockTimeoutMs, signal, { reach: DIG_REACH - 0.3, ...(dropItems.length ? { keepItems: dropItems } : {}) })
       }
@@ -415,7 +415,7 @@ export async function gatherAction(args, bot, config, _deps) {
         noteUnreachable(bot, np, 'out of reach')
         outOfRangeRun++
         if (outOfRangeRun >= 2) {
-          // Unreachable tail — mark the whole remainder done and move on to
+          // Unreachable tail â€” mark the whole remainder done and move on to
           // the next component (or finish). Only out-of-range counts here: a
           // slow dig ('timeout') or a stale block is not a reachability signal.
           for (const entry of positions) entry.done = true
@@ -430,7 +430,7 @@ export async function gatherAction(args, bot, config, _deps) {
       // mark done and continue. Failures are surfaced only via aggregate K<W.
       nextEntry.done = true
       // 260513-wkd: push progress tick after each entry is marked done so the
-      // snapshot's `in_flight: gather(...) — K/W` line tracks the batch in real
+      // snapshot's `in_flight: gather(...) â€” K/W` line tracks the batch in real
       // time. Same onProgress channel as cuboid build/dig.
       tick()
     }
@@ -514,7 +514,7 @@ export async function gatherAction(args, bot, config, _deps) {
         firstRound = false
         roundAnchor = anchor
       } else if (coordMode) {
-        // Explicit x,y,z means "this vein here" — never wander to another one.
+        // Explicit x,y,z means "this vein here" â€” never wander to another one.
         break
       } else {
         roundAnchor = nextAnchor()
@@ -542,7 +542,7 @@ export async function gatherAction(args, bot, config, _deps) {
     }
 
     // Collect what the digs dropped before reporting done (skipped when
-    // nothing was dug — no drops of ours to chase, and a failed gather should
+    // nothing was dug â€” no drops of ours to chase, and a failed gather should
     // not stall).
     if (progress.dug > 0 && !progress.noHarvest) {
       await sweepDrops(bot, goTo, signal, _deps?.sleep, blockName)
@@ -596,3 +596,7 @@ export async function gatherAction(args, bot, config, _deps) {
   }
   return `gathered ${have}/${want} ${label}${note}${lostNote}${countItems ? '' : dropNote}${pickNote}`
 }
+
+
+
+

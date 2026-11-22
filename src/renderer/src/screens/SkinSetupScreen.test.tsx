@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the dedicated skin-setup onboarding step (SkinSetupScreen).
  *
  * Project convention (no @testing-library/react installed): exercise the source
@@ -12,7 +12,7 @@
  *   3. The `skin-setup` view exists in the UI store's View union.
  *   4. UserConfigSchema carries the `skin_setup_pending` gate.
  *   5. OnboardingScreen no longer arms the gate (260725: game setup moved to
- *      the first Minecraft open — maybeOfferSkinSetup in lib/gameLaunch.ts).
+ *      the first Minecraft open â€” maybeOfferSkinSetup in lib/gameLaunch.ts).
  *   6. App.tsx renders SkinSetupScreen, hides the IconRail for it, suppresses the
  *      global wizard modal there, and resumes the step while skin_setup_pending.
  *   7. SetupWizardModal exports the reusable WizardStepMachine.
@@ -34,7 +34,7 @@ const ONBOARD = r('src', 'renderer', 'src', 'screens', 'OnboardingScreen.tsx');
 const APP = r('src', 'renderer', 'src', 'App.tsx');
 const WIZARD = r('src', 'renderer', 'src', 'components', 'SetupWizardModal.tsx');
 
-describe('SkinSetupScreen — dedicated onboarding step', () => {
+describe('SkinSetupScreen â€” dedicated onboarding step', () => {
   it('Test 1: screen exists and renders the wizard step machine inline', () => {
     expect(/export\s+function\s+SkinSetupScreen\s*\(/.test(SCREEN)).toBe(true);
     expect(SCREEN.includes('WizardStepMachine')).toBe(true);
@@ -70,7 +70,7 @@ describe('SkinSetupScreen — dedicated onboarding step', () => {
 
   it('Test 6: App.tsx renders, isolates, and resumes the step', () => {
     expect(APP.includes('<SkinSetupScreen />')).toBe(true);
-    // IconRail hidden for the full-page step — now via the shared `railHidden`
+    // IconRail hidden for the full-page step â€” now via the shared `railHidden`
     // flag (which includes 'skin-setup'); the rail is gated on `!railHidden`.
     expect(/const railHidden =[\s\S]*?'skin-setup'/.test(APP)).toBe(true);
     expect(APP.includes('!railHidden ? <IconRail />')).toBe(true);
@@ -85,3 +85,7 @@ describe('SkinSetupScreen — dedicated onboarding step', () => {
     expect(/export\s+function\s+WizardStepMachine\s*\(/.test(WIZARD)).toBe(true);
   });
 });
+
+
+
+

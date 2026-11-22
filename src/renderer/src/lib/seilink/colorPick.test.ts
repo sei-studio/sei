@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { frameThrottle, hexToHsv, hsvToHex, parseHex, pushRecent, readRecentColors, rememberRecentColor, RECENT_MAX } from './colorPick';
 
 describe('colour math', () => {
@@ -96,3 +96,7 @@ describe('frameThrottle', () => {
     expect(sent).toEqual([3, 4]);
   });
 });
+
+
+
+

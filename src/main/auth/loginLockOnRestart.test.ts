@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Regression: "sometimes when I restart the app it locks me in the login page
  * and won't let me enter with my account" (Discord, 261028).
  *
@@ -670,3 +670,7 @@ describe('sign-out', () => {
     expect(getCurrentAuthState().kind).toBe('local');
   });
 });
+
+
+
+

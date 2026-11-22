@@ -1,49 +1,49 @@
-// src/bot/names.test.js: accent folding for in-game names (261027).
+﻿// src/bot/names.test.js: accent folding for in-game names (261027).
 import { describe, it, expect } from 'vitest'
 import { foldLatin, mcUsernameFromName, legacyMcUsernameFromName, MC_USERNAME_MAX, stardewNameFromRaw, STARDEW_NAME_MAX } from './names.js'
 
 describe('foldLatin', () => {
   it.each([
-    ['Sofía', 'Sofia'],
-    ['Lucía', 'Lucia'],
-    ['Élodie', 'Elodie'],
-    ['Björn', 'Bjorn'],
-    ['Zoë', 'Zoe'],
-    ['Łukasz', 'Lukasz'],
-    ['Straße', 'Strasse'],
-    ['STRAẞE', 'STRASSE'],
-    ['Søren', 'Soren'],
-    ['ØYSTEIN', 'OYSTEIN'],
-    ['İpek', 'Ipek'],
-    ['Kadıköy', 'Kadikoy'],
-    ['Æsa', 'AEsa'],
-    ['Cæcilie', 'Caecilie'],
-    ['Œdipe', 'OEdipe'],
-    ['Cœur', 'Coeur'],
-    ['Đorđe', 'Dorde'],
-    ['Ðóra', 'Dora'],
-    ['Skaðr', 'Skadr'],
-    ['Þóra', 'Thora'],
-    ['Ásþór', 'Asthor'],
-    ['Ħal', 'Hal'],
-    ['Ħħ', 'Hh'],
-    ['Chén Huǒ', 'Chen Huo'],
-    ['Lǜyè', 'Luye'],
-    ['Nguyễn Xuân', 'Nguyen Xuan'],
-    ['François', 'Francois'],
-    ['Ñuño', 'Nuno'],
-    ['Dvořák', 'Dvorak'],
+    ['SofÃ­a', 'Sofia'],
+    ['LucÃ­a', 'Lucia'],
+    ['Ã‰lodie', 'Elodie'],
+    ['BjÃ¶rn', 'Bjorn'],
+    ['ZoÃ«', 'Zoe'],
+    ['Åukasz', 'Lukasz'],
+    ['StraÃŸe', 'Strasse'],
+    ['STRAáºžE', 'STRASSE'],
+    ['SÃ¸ren', 'Soren'],
+    ['Ã˜YSTEIN', 'OYSTEIN'],
+    ['Ä°pek', 'Ipek'],
+    ['KadÄ±kÃ¶y', 'Kadikoy'],
+    ['Ã†sa', 'AEsa'],
+    ['CÃ¦cilie', 'Caecilie'],
+    ['Å’dipe', 'OEdipe'],
+    ['CÅ“ur', 'Coeur'],
+    ['ÄorÄ‘e', 'Dorde'],
+    ['ÃÃ³ra', 'Dora'],
+    ['SkaÃ°r', 'Skadr'],
+    ['ÃžÃ³ra', 'Thora'],
+    ['ÃsÃ¾Ã³r', 'Asthor'],
+    ['Ä¦al', 'Hal'],
+    ['Ä¦Ä§', 'Hh'],
+    ['ChÃ©n HuÇ’', 'Chen Huo'],
+    ['LÇœyÃ¨', 'Luye'],
+    ['Nguyá»…n XuÃ¢n', 'Nguyen Xuan'],
+    ['FranÃ§ois', 'Francois'],
+    ['Ã‘uÃ±o', 'Nuno'],
+    ['DvoÅ™Ã¡k', 'Dvorak'],
   ])('%s -> %s', (input, want) => {
     expect(foldLatin(input)).toBe(want)
   })
 
   it('folds a name typed in decomposed form the same as the composed one', () => {
-    expect(foldLatin('Sofía')).toBe('Sofia')
-    expect(foldLatin('Zoë')).toBe('Zoe')
+    expect(foldLatin('SofiÌa')).toBe('Sofia')
+    expect(foldLatin('ZoeÌˆ')).toBe('Zoe')
   })
 
   it('leaves non-Latin scripts exactly as they are', () => {
-    for (const s of ['诗诗', '晨辉', '민준', 'さくら', 'ガブリエル', 'Йордан', 'Ёлка', 'Ἀθηνᾶ', 'אורי', 'سارة']) {
+    for (const s of ['è¯—è¯—', 'æ™¨è¾‰', 'ë¯¼ì¤€', 'ã•ãã‚‰', 'ã‚¬ãƒ–ãƒªã‚¨ãƒ«', 'Ð™Ð¾Ñ€Ð´Ð°Ð½', 'ÐÐ»ÐºÐ°', 'á¼ˆÎ¸Î·Î½á¾¶', '××•×¨×™', 'Ø³Ø§Ø±Ø©']) {
       expect(foldLatin(s)).toBe(s)
     }
   })
@@ -58,28 +58,28 @@ describe('foldLatin', () => {
 
 describe('mcUsernameFromName', () => {
   it.each([
-    ['Sofía', 'Sofia'],
-    ['Björn', 'Bjorn'],
-    ['Łukasz', 'Lukasz'],
-    ['Straße', 'Strasse'],
-    ['Søren', 'Soren'],
-    ['İpek', 'Ipek'],
-    ['Zoë', 'Zoe'],
-    ['Élodie', 'Elodie'],
-    ['Lucía Herrera', 'LuciaHerrera'],
-    ['晨辉 (Chénhuī)', 'Chenhui'],
-    ['Ho’olheyak', 'Hoolheyak'],
+    ['SofÃ­a', 'Sofia'],
+    ['BjÃ¶rn', 'Bjorn'],
+    ['Åukasz', 'Lukasz'],
+    ['StraÃŸe', 'Strasse'],
+    ['SÃ¸ren', 'Soren'],
+    ['Ä°pek', 'Ipek'],
+    ['ZoÃ«', 'Zoe'],
+    ['Ã‰lodie', 'Elodie'],
+    ['LucÃ­a Herrera', 'LuciaHerrera'],
+    ['æ™¨è¾‰ (ChÃ©nhuÄ«)', 'Chenhui'],
+    ['Hoâ€™olheyak', 'Hoolheyak'],
   ])('%s -> %s', (input, want) => {
     expect(mcUsernameFromName(input)).toBe(want)
   })
 
   it('names in non-Latin scripts get exactly what the old rule gave them', () => {
-    for (const s of ['诗诗', '민준', 'さくら', 'Йордан', 'Ἀθηνᾶ', '민지 (Min-ji)', 'Ёлка 2']) {
+    for (const s of ['è¯—è¯—', 'ë¯¼ì¤€', 'ã•ãã‚‰', 'Ð™Ð¾Ñ€Ð´Ð°Ð½', 'á¼ˆÎ¸Î·Î½á¾¶', 'ë¯¼ì§€ (Min-ji)', 'ÐÐ»ÐºÐ° 2']) {
       expect(mcUsernameFromName(s)).toBe(legacyMcUsernameFromName(s))
     }
-    expect(mcUsernameFromName('诗诗')).toBe('Sei')
-    expect(mcUsernameFromName('Йордан')).toBe('Sei')
-    expect(mcUsernameFromName('민지 (Min-ji)')).toBe('Minji')
+    expect(mcUsernameFromName('è¯—è¯—')).toBe('Sei')
+    expect(mcUsernameFromName('Ð™Ð¾Ñ€Ð´Ð°Ð½')).toBe('Sei')
+    expect(mcUsernameFromName('ë¯¼ì§€ (Min-ji)')).toBe('Minji')
   })
 
   it('plain ASCII names are unchanged', () => {
@@ -90,21 +90,21 @@ describe('mcUsernameFromName', () => {
 
   it('cuts at 16 after folding, so a letter that expands cannot overflow', () => {
     expect(MC_USERNAME_MAX).toBe(16)
-    expect(mcUsernameFromName('Catalina Vásquez')).toBe('CatalinaVasquez')
-    expect(mcUsernameFromName('Straßenmusikantin')).toBe('Strassenmusikant')
-    expect(mcUsernameFromName('Straßenmusikantin')).toHaveLength(16)
-    expect(mcUsernameFromName('ßßßßßßßßßß')).toBe('ssssssssssssssss')
+    expect(mcUsernameFromName('Catalina VÃ¡squez')).toBe('CatalinaVasquez')
+    expect(mcUsernameFromName('StraÃŸenmusikantin')).toBe('Strassenmusikant')
+    expect(mcUsernameFromName('StraÃŸenmusikantin')).toHaveLength(16)
+    expect(mcUsernameFromName('ÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸ')).toBe('ssssssssssssssss')
   })
 
   it('keeps the Sei fallback and adds no padding', () => {
     expect(mcUsernameFromName('')).toBe('Sei')
     expect(mcUsernameFromName(null)).toBe('Sei')
     expect(mcUsernameFromName('!!!')).toBe('Sei')
-    expect(mcUsernameFromName('Bø')).toBe('Bo')
+    expect(mcUsernameFromName('BÃ¸')).toBe('Bo')
   })
 
   it('output is always a valid Minecraft name', () => {
-    for (const s of ['Sofía', 'Æþ', 'İ', 'Chén Huǒ', '诗诗', 'a'.repeat(40), 'ﬁona', 'Ｓｕｉ']) {
+    for (const s of ['SofÃ­a', 'Ã†Ã¾', 'Ä°', 'ChÃ©n HuÇ’', 'è¯—è¯—', 'a'.repeat(40), 'ï¬ona', 'ï¼³ï½•ï½‰']) {
       expect(mcUsernameFromName(s)).toMatch(/^[A-Za-z0-9_]{1,16}$/)
     }
   })
@@ -112,26 +112,30 @@ describe('mcUsernameFromName', () => {
 
 describe('legacyMcUsernameFromName', () => {
   it('is the pre-261027 rule (accents deleted)', () => {
-    expect(legacyMcUsernameFromName('Sofía')).toBe('Sofa')
-    expect(legacyMcUsernameFromName('Lucía')).toBe('Luca')
-    expect(legacyMcUsernameFromName('Élodie')).toBe('lodie')
-    expect(legacyMcUsernameFromName('诗诗')).toBe('Sei')
+    expect(legacyMcUsernameFromName('SofÃ­a')).toBe('Sofa')
+    expect(legacyMcUsernameFromName('LucÃ­a')).toBe('Luca')
+    expect(legacyMcUsernameFromName('Ã‰lodie')).toBe('lodie')
+    expect(legacyMcUsernameFromName('è¯—è¯—')).toBe('Sei')
   })
 })
 
 describe('stardewNameFromRaw', () => {
   it('folds accents, keeps spaces and hyphens, cuts at 24 after folding', () => {
     expect(STARDEW_NAME_MAX).toBe(24)
-    expect(stardewNameFromRaw('Martín Salazar')).toBe('Martin Salazar')
-    expect(stardewNameFromRaw('Jean-Élodie')).toBe('Jean-Elodie')
-    expect(stardewNameFromRaw('  Zoë!  ')).toBe('Zoe')
-    expect(stardewNameFromRaw('ß'.repeat(13))).toHaveLength(24)
+    expect(stardewNameFromRaw('MartÃ­n Salazar')).toBe('Martin Salazar')
+    expect(stardewNameFromRaw('Jean-Ã‰lodie')).toBe('Jean-Elodie')
+    expect(stardewNameFromRaw('  ZoÃ«!  ')).toBe('Zoe')
+    expect(stardewNameFromRaw('ÃŸ'.repeat(13))).toHaveLength(24)
   })
 
   it('non-Latin names give exactly what the old rule gave', () => {
     const old = (raw) => String(raw ?? '').replace(/[^A-Za-z0-9_ \-]/g, '').trim().slice(0, 24) || 'Sei'
-    for (const s of ['诗诗', '민지 (Min-ji)', 'Йордан', 'さくら 2', 'Sui', 'Big Bob-99']) {
+    for (const s of ['è¯—è¯—', 'ë¯¼ì§€ (Min-ji)', 'Ð™Ð¾Ñ€Ð´Ð°Ð½', 'ã•ãã‚‰ 2', 'Sui', 'Big Bob-99']) {
       expect(stardewNameFromRaw(s)).toBe(old(s))
     }
   })
 })
+
+
+
+

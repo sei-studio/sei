@@ -1,5 +1,5 @@
-/**
- * Gallery PNG composer — the shareable tile.
+﻿/**
+ * Gallery PNG composer â€” the shareable tile.
  *
  * SQUARE on purpose (260728): the file exists to be posted, and every place it
  * gets posted crops or letterboxes a wide image. So the output is a fixed
@@ -174,7 +174,7 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   try {
     await (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
   } catch {
-    /* font loading API unavailable — fall through with the fallback face */
+    /* font loading API unavailable â€” fall through with the fallback face */
   }
 
   const columns = Math.max(1, state.rounds);
@@ -190,9 +190,9 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // ── title: big, centred, alone ──────────────────────────────────────────
+  // â”€â”€ title: big, centred, alone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // "draw!", in the surface's own lowercase, with the highlighter behind it
-  // (260729, matching the web tile — which says "draw! with sui" because it
+  // (260729, matching the web tile â€” which says "draw! with sui" because it
   // fronts one character; the app tile stays just "draw!").
   const title = 'draw!';
   ctx.textAlign = 'center';
@@ -214,7 +214,7 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   ctx.fillText(title, SIZE / 2, titleBase);
   ctx.textAlign = 'left';
 
-  // ── the two rows, vertically centred in what is left ───────────────────
+  // â”€â”€ the two rows, vertically centred in what is left â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const headBottom = PAD + TITLE_DROP + TITLE_PX;
   const footTop = SIZE - PAD - BODY_PX * 1.6;
   // Deliberate air under the title: at this size the word is the loudest thing
@@ -234,7 +234,7 @@ export async function composeGalleryPng(state: DrawGameState): Promise<string> {
   y += ROW_GAP;
   drawRow(ctx, { x, y, name: state.aiName, entries: aiEntries, columns, cell });
 
-  // ── footer ─────────────────────────────────────────────────────────────
+  // â”€â”€ footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ctx.fillStyle = '#000000';
   ctx.font = `${BODY_PX}px ${HAND_FONT}`;
   ctx.textAlign = 'right';
@@ -261,7 +261,7 @@ export async function composeCellPng(
   try {
     await (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready;
   } catch {
-    /* font loading API unavailable — fall through with the fallback face */
+    /* font loading API unavailable â€” fall through with the fallback face */
   }
 
   const c = document.createElement('canvas');
@@ -273,9 +273,9 @@ export async function composeCellPng(
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // ── caption: two centred lines, broken after the comma ───────────────────
+  // â”€â”€ caption: two centred lines, broken after the comma â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const word = entry.word.toLowerCase();
-  const broken = /^(.*?[,，、])\s*(.*)$/.exec(captionTemplate);
+  const broken = /^(.*?[,ï¼Œã€])\s*(.*)$/.exec(captionTemplate);
   const line1 = broken ? broken[1] : '';
   const line2t = broken ? broken[2] : captionTemplate;
   const [pre = '', post = ''] = line2t.split('{word}');
@@ -297,7 +297,7 @@ export async function composeCellPng(
   const line2W = preW + wordW + ctx.measureText(post).width;
   const x2 = (SIZE - line2W) / 2;
 
-  // ── the drawing box, placed before the caption is ────────────────────────
+  // â”€â”€ the drawing box, placed before the caption is â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The caption used to hang from the top pad with the box hung off it, which
   // left visibly more air below the text than above. The box is placed off a
   // NOMINAL caption bottom instead, and the caption is then centred in the air
@@ -338,7 +338,7 @@ export async function composeCellPng(
   ctx.fillText(word, x2 + preW, base2);
   ctx.fillText(post, x2 + preW + wordW, base2);
 
-  // ── the drawing ──────────────────────────────────────────────────────────
+  // â”€â”€ the drawing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // amp 7: the wobble has to scale with the frame to still read as a pen.
   squiggleFrame(ctx, x, y, w, h, `cell-pop-${entry.drawer}-${entry.round}`, 7);
   ctx.save();
@@ -354,7 +354,7 @@ export async function composeCellPng(
   });
   ctx.restore();
 
-  // ── footer ───────────────────────────────────────────────────────────────
+  // â”€â”€ footer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ctx.fillStyle = '#000000';
   ctx.font = `${BODY_PX}px ${HAND_FONT}`;
   ctx.textAlign = 'right';
@@ -379,3 +379,7 @@ function byRound(
 }
 
 export { byRound as galleryByRound };
+
+
+
+

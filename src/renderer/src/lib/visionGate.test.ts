@@ -1,11 +1,11 @@
-/**
- * china-compat W9 — the renderer vision gate: the shared reason copy and the
+﻿/**
+ * china-compat W9 â€” the renderer vision gate: the shared reason copy and the
  * three entry points that must lock on a confident 'no' and NEVER on
  * 'unknown' (BYOK Anthropic before any capability fetch must not lose
  * backseat or Draw!).
  *
  * The helper is exercised directly; the components are pinned grep-style
- * (project convention, no @testing-library/react — mirrors IconRail.test.tsx
+ * (project convention, no @testing-library/react â€” mirrors IconRail.test.tsx
  * and UsageBar.test.tsx).
  *
  * Invariants under test:
@@ -38,7 +38,7 @@ const t: Translate = (en, params) => {
 };
 
 describe('visionBlocked', () => {
-  it("Test 1: locks only on 'no' — 'unknown' must stay usable", () => {
+  it("Test 1: locks only on 'no' â€” 'unknown' must stay usable", () => {
     expect(visionBlocked('no')).toBe(true);
     expect(visionBlocked('yes')).toBe(false);
     expect(visionBlocked('unknown')).toBe(false);
@@ -66,8 +66,8 @@ describe('visionGateReason', () => {
 
   it('Test 2c: no em dashes in the user-facing copy', () => {
     for (const surface of ['draw', 'backseat'] as const) {
-      expect(visionGateReason(t, surface, 'm')).not.toContain('—');
-      expect(visionGateReason(t, surface, null)).not.toContain('—');
+      expect(visionGateReason(t, surface, 'm')).not.toContain('â€”');
+      expect(visionGateReason(t, surface, null)).not.toContain('â€”');
     }
   });
 });
@@ -144,10 +144,14 @@ describe('zh dictionary coverage', () => {
     ];
     for (const key of keys) {
       expect(ZH[key], `missing zh entry for: ${key}`).toBeTruthy();
-      expect(ZH[key]).not.toContain('—');
+      expect(ZH[key]).not.toContain('â€”');
     }
     // {model} must survive translation verbatim (dictionary rule).
     expect(ZH[keys[0]]).toContain('{model}');
     expect(ZH[keys[2]]).toContain('{model}');
   });
 });
+
+
+
+

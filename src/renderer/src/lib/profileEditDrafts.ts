@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unsaved inline edits on your own companion's profile (261119).
  *
  * The profile tabs are the edit surface now. Switching tabs keeps every
@@ -65,3 +65,7 @@ export function forgetEditDrafts(characterId: string): void {
   }
   releases.set(characterId, editReleaseCount(characterId) + 1);
 }
+
+
+
+

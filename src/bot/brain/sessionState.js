@@ -1,18 +1,18 @@
-/**
- * Session lifecycle — player identity recognition + per-session counters.
+﻿/**
+ * Session lifecycle â€” player identity recognition + per-session counters.
  *
  * Owns:
  *   - cached PlayerData (loaded once at construction; updated on each
  *     player encounter and persisted via savePlayer)
  *   - active player UUID (null when the human player is offline)
  *
- * Recognition rules (v1.0 single-human LAN — no username gating; the first
+ * Recognition rules (v1.0 single-human LAN â€” no username gating; the first
  * human we see is the owner):
- *   1. Warm path — PLAYER.md exists with player_uuid → recognize ONLY that
+ *   1. Warm path â€” PLAYER.md exists with player_uuid â†’ recognize ONLY that
  *      UUID (a second joiner can't hijack the session).
- *   2. Fallback — PLAYER.md exists but player_uuid is null → adopt any
+ *   2. Fallback â€” PLAYER.md exists but player_uuid is null â†’ adopt any
  *      player, capture UUID.
- *   3. Cold — no PLAYER.md → adopt any player, create file.
+ *   3. Cold â€” no PLAYER.md â†’ adopt any player, create file.
  *
  * Spawn timing: bot.players populates a few server ticks after `spawn`.
  * onSpawn schedules a deferred check (config.memory.spawn_settle_delay_ms,
@@ -35,7 +35,7 @@ export async function createSessionState({ playerMdPath, config, bot, logger = c
   let onSpawnLatePlayerListener = null
 
   // The user's GUI-set "Name" (preferred_name) rides in as player_display_name.
-  // Seed it into PLAYER.md so the bot always has the player's name on hand —
+  // Seed it into PLAYER.md so the bot always has the player's name on hand â€”
   // formatPlayerSeedBlock surfaces preferred_name to the LLM every loop, even
   // when the player isn't actively chatting. The GUI is the only writer of
   // preferred_name now, so it's authoritative: a non-empty config value wins
@@ -118,7 +118,7 @@ export async function createSessionState({ playerMdPath, config, bot, logger = c
       if (username && bot.players[username]) return bot.players[username]
       return null
     }
-    // No owner captured yet — adopt any present player that isn't the bot.
+    // No owner captured yet â€” adopt any present player that isn't the bot.
     // (Single-human LAN; the first human we find is the owner.)
     for (const name of Object.keys(bot.players)) {
       if (name === bot.username) continue
@@ -168,3 +168,7 @@ export async function createSessionState({ playerMdPath, config, bot, logger = c
     },
   }
 }
+
+
+
+

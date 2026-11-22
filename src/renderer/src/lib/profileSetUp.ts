@@ -1,4 +1,4 @@
-/**
+﻿/**
  * T283: is the active profile set up, when its config has no name?
  *
  * Onboarding is keyed on `preferred_name`. A config recovered to defaults
@@ -31,3 +31,7 @@ export async function profileSetUp(configName: string | null | undefined): Promi
     return { setUp: false, name: '' };
   }
 }
+
+
+
+

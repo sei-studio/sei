@@ -1,4 +1,4 @@
-/**
+﻿/**
  * What the safe-mode screen's buttons do, minus the window (261031, T277).
  *
  * Safe mode never signs in or loads the auth stack (it may be the part that
@@ -84,3 +84,7 @@ export async function openLogsFolder(openPath: (p: string) => Promise<string>): 
     return false;
   }
 }
+
+
+
+

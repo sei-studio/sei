@@ -1,5 +1,5 @@
-/**
- * 260828 — auto-retry guard for summon pre-gate refusals. Pins the contract
+﻿/**
+ * 260828 â€” auto-retry guard for summon pre-gate refusals. Pins the contract
  * the retry-loop fix depends on: an automatic summon is blocked after a
  * pre-gate refusal until user action, success, or the age-out window.
  */
@@ -27,7 +27,7 @@ describe('summonGuard', () => {
     expect(blockedAutoSummon('char-1', T0 + 14_000)).toBe('PREFERRED_NAME_MISSING');
   });
 
-  it('is per-character — another character is unaffected', () => {
+  it('is per-character â€” another character is unaffected', () => {
     notePreGateFailure('char-1', 'LOCAL_NO_API_KEY', T0);
     expect(blockedAutoSummon('char-2', T0 + 1)).toBeNull();
   });
@@ -62,3 +62,7 @@ describe('summonGuard', () => {
     expect(blockedAutoSummon('char-3', T0 + 1)).toBe('LOCAL_NO_API_KEY');
   });
 });
+
+
+
+

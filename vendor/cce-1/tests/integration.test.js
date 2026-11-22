@@ -1,4 +1,4 @@
-/**
+﻿/**
  * End-to-end candidate generation against the real Maia-3 model and the
  * bundled Stockfish. Skipped when the model file is absent (CI without the
  * 21 MB download); locally the dev copy lives at ~/.sei-dev/cce/.
@@ -60,3 +60,7 @@ test('candidateSet end to end', { skip: !hasModel && 'maia model not present' },
     await engine.dispose();
   }
 });
+
+
+
+

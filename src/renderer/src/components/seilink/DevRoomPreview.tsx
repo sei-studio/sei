@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dev-only SeiLink room preview (261104). Mounted by main.tsx when
  * `import.meta.env.DEV` and the URL carries `?seilink=1`:
  *   - in the app: main's dev window (unpackaged + SEI_SEILINK_PACKS; open it
@@ -401,3 +401,7 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
     </div>
   );
 }
+
+
+
+

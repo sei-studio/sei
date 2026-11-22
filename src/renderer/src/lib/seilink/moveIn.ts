@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink move-in rules for the companion page (261104, M4). Pure, so the
  * page decides without loading the sheet (MoveInSheet is a lazy chunk).
  */
@@ -22,3 +22,7 @@ export function needsMoveInSheet(opts: { saved: boolean; movedInId: string | nul
 export function moveInFailed(status: SeilinkHostStatus): boolean {
   return status.state === 'failed' || status.state === 'unsupported' || status.state === 'off';
 }
+
+
+
+

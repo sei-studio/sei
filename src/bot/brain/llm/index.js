@@ -1,4 +1,4 @@
-// LlmProvider factory. Picks an adapter based on `config.llm.provider`
+﻿// LlmProvider factory. Picks an adapter based on `config.llm.provider`
 // (defaults to 'anthropic' for backwards compatibility with existing
 // config.json files that pre-date this phase).
 //
@@ -17,14 +17,14 @@ import { createOllamaProvider } from './ollamaProvider.js'
 import { createChatgptProvider } from './chatgptProvider.js'
 
 // These providers share the OpenAI Chat Completions wire format with
-// provider-specific baseURL + bearer auth. Mirrored (deliberately duplicated —
+// provider-specific baseURL + bearer auth. Mirrored (deliberately duplicated â€”
 // this process cannot import shared TS) by OPENAI_COMPAT_BASE_URLS in
 // src/shared/llmCatalog.ts; keep the two in sync.
 //
 // 260816 (china-compat): + qwen (Alibaba DashScope "compatible mode"; the CN
 // endpoint is the default, international Model Studio accounts override
 // base_url to dashscope-intl). mistral/together/groq/fireworks/cerebras/
-// perplexity are GRANDFATHERED — no longer offered by the picker
+// perplexity are GRANDFATHERED â€” no longer offered by the picker
 // (llmCatalog.ts SHOWN_PROVIDERS) but kept here so existing configs run.
 // Exported (260828) so llmCatalogSync.test.js can assert this mirror against
 // llmCatalog.ts OPENAI_COMPAT_BASE_URLS.
@@ -94,3 +94,7 @@ export function createLlmProvider(config, deps = {}) {
   const kind = config.llm?.provider ?? 'anthropic'
   return meterProvider(createRawLlmProvider(config, deps, kind), kind)
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * DevWorldShot — dev-only screenshot harness for the World tab (261110).
+﻿/**
+ * DevWorldShot â€” dev-only screenshot harness for the World tab (261110).
  *
  * The real CharactersScreen (World tab) or a CharacterPage opened from World,
  * in the real shell (MacosWindow + IconRail), over a fixture World listing
@@ -91,7 +91,7 @@ const FIXTURES: Fixture[] = [
   { id: uid(27), name: 'Katya', persona: 'Blunt engineer who builds iron farms and judges your hopper placement.', art: null, adds: 4, daysAgo: 37, author: 'volt', code: '21J6' },
   { id: uid(28), name: 'Maximilius', persona: 'A pompous knight who narrates his own victories in the third person.', art: null, adds: 3, daysAgo: 44, author: 'lance', code: 'C8HY' },
   { id: uid(29), name: 'Laila', persona: 'Desert nomad who trades stories for sand and always knows where the temples are.', art: null, adds: 2, daysAgo: 48, author: 'dune', code: '0J9M' },
-  { id: uid(30), name: 'Matías', persona: 'Sleepy farmer who only wakes up for harvest day and pumpkin pie.', art: null, adds: 1, daysAgo: 52, author: 'sol', code: 'SCZC' },
+  { id: uid(30), name: 'MatÃ­as', persona: 'Sleepy farmer who only wakes up for harvest day and pumpkin pie.', art: null, adds: 1, daysAgo: 52, author: 'sol', code: 'SCZC' },
   { id: uid(31), name: 'Haruhi', persona: 'Club president with grand plans for a secret base and no patience for boredom.', art: null, adds: 1, daysAgo: 58, author: 'sos', code: '0OQC' },
   { id: uid(32), name: 'Rocky', persona: 'An alien engineer who speaks in musical chords and fixes everything with xenonite.', art: null, adds: 1, daysAgo: 61, author: 'grace', code: 'N4GW' },
   { id: uid(33), name: 'Pebble', persona: 'A tiny stone golem who collects shiny rocks and speaks in short, earnest sentences.', art: null, adds: 0, daysAgo: 1, author: 'quartz', code: 'PBBL' },
@@ -104,7 +104,7 @@ function toEntry(f: Fixture) {
   return {
     id: f.id,
     name: f.name,
-    personaSnippet: f.persona.length > 120 ? f.persona.slice(0, 120).trimEnd() + '…' : f.persona,
+    personaSnippet: f.persona.length > 120 ? f.persona.slice(0, 120).trimEnd() + 'â€¦' : f.persona,
     creatorLabel: `by ${f.author}`,
     publicId: f.code,
     portraitUrl: f.art,
@@ -275,3 +275,7 @@ export function DevWorldShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

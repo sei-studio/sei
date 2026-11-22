@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261010: the Ollama name heuristic (the fallback for when /api/show cannot
  * answer). It used to end in `return 'no'` over a stale list, so the most
  * popular local vision models were judged blind and Draw!/backseat locked.
@@ -47,3 +47,7 @@ describe('ollamaVisionHeuristic', () => {
     expect(ollamaVisionHeuristic('someone/text-model:vl-tag')).toBe('unknown');
   });
 });
+
+
+
+

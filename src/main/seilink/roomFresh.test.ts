@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261105 (T335): the room a chat or call turn reads is the room as saved now,
  * never a copy cached from before an edit, and room edits she did not react
  * to reach that turn once.
@@ -89,3 +89,7 @@ describe('room context after an edit', () => {
     expect(roomChangeTurnNote(CHAR, moved)).toContain('moved you to your gaming room');
   });
 });
+
+
+
+

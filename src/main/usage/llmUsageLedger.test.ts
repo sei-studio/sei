@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Playtime usage ledger, main half (261110): recording, the summary the
  * page reads, the meter wrapper, and the once-a-month spend alert.
  */
@@ -128,3 +128,7 @@ describe('spend alert', () => {
     expect(h.captured).toEqual([]);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Module customization hooks for the game pack loader (260908). Installed by
  * packLoader.js via `module.register()`; runs on Node's loader thread, so it
  * must stay self-contained (no imports from the rest of the bot).
@@ -39,3 +39,7 @@ export async function resolve(specifier, context, nextResolve) {
     return nextResolve(specifier, { ...context, parentURL: packParentURL })
   }
 }
+
+
+
+

@@ -1,10 +1,10 @@
-// src/behaviors/shelter.js — thin shelter convenience (MCRAFT-06, D-09).
+﻿// src/behaviors/shelter.js â€” thin shelter convenience (MCRAFT-06, D-09).
 //
 // NOT a new world primitive: a shelter is a COMPOSITION of the existing
-// build()/dig() cuboid actions — four hollow walls + a solid roof layer, with a
+// build()/dig() cuboid actions â€” four hollow walls + a solid roof layer, with a
 // one-block-wide, two-tall doorway carved out of the front wall. Keeping it a
 // composition preserves the closed-registry invariant (no new place/dig path)
-// and the 256-cell guarantee (ShelterSchema caps size to 5 → ≤48 wall + 25 roof
+// and the 256-cell guarantee (ShelterSchema caps size to 5 â†’ â‰¤48 wall + 25 roof
 // cells, well under the cap that buildAction's own schema enforces).
 import { Vec3 } from 'vec3'
 import { buildAction, enumerateBuildCells, isOccupied, bodyInCell } from './build.js'
@@ -435,3 +435,7 @@ function placedSome(r) {
 function buildComplete(r) {
   return /^built \d+ placed, \d+ skipped \(already solid\), of \d+ cells$/.test(r)
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import type { BotStatus } from '@shared/ipc';
+﻿import type { BotStatus } from '@shared/ipc';
 import { t as defaultT } from './i18n';
 
 /**
@@ -16,3 +16,7 @@ export function connectingLabel(
   if (summon?.kind === 'connecting' && summon.stage === 'joining') return tr('Joining your world...');
   return tr('Starting companion...');
 }
+
+
+
+

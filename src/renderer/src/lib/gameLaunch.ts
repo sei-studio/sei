@@ -1,5 +1,5 @@
-/**
- * gameLaunch — the ONE cross-launch gate for every game entry point (260721).
+﻿/**
+ * gameLaunch â€” the ONE cross-launch gate for every game entry point (260721).
  *
  * Launching a game while ANOTHER game is active for the same companion must
  * always go through the same confirm popup ("X is still running. End it and
@@ -27,6 +27,8 @@
 import { useUiStore } from './stores/useUiStore';
 import { useDataStore } from './stores/useDataStore';
 import { useChessStore } from './stores/useChessStore';
+import { useConnect4Store } from './stores/useConnect4Store';
+import { useBattleshipStore } from './stores/useBattleshipStore';
 import { useDrawStore } from './stores/useDrawStore';
 import { useBackseatStore } from './stores/useBackseatStore';
 import { useMcDashboardStore } from './stores/useMcDashboardStore';
@@ -39,7 +41,7 @@ import type { GameId } from '@shared/gameIpc';
 
 /** The launchable games (the picker's coming-soon tiles are never active).
  *  Game adapters (M0, 260908): + the two bot-backed games. */
-export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+export type LaunchGameId = 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'CONNECT4' | 'BATTLESHIP';
 
 /** The bot-backed ("summon") games: one utilityProcess bot per character. */
 export const BOT_GAME_IDS: readonly GameId[] = ['minecraft', 'stardew', 'dontstarve'];
@@ -76,6 +78,10 @@ export function activeGameFor(characterId: string): ActiveGameInfo | null {
   if (draw && draw.phase !== 'gallery' && draw.phase !== 'setup') {
     return { id: 'draw', name: t('Draw!') };
   }
+  const forza = useConnect4Store.getState().games[characterId];
+  if (forza && forza.status !== 'ended') return { id: 'CONNECT4', name: t('Forza 4') };
+  const bn = useBattleshipStore.getState().games[characterId];
+  if (bn && bn.status !== 'ended') return { id: 'BATTLESHIP', name: t('Battleship') };
   // A screen share is not launched from the picker any more (260803: it is a
   // call control), but it still counts as active here, because the gate's real
   // job is the one exclusion that is physical: a companion cannot be watching
@@ -106,6 +112,14 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
     await useDrawStore.getState().end(characterId);
     return;
   }
+  if (id === 'CONNECT4') {
+    await useConnect4Store.getState().end(characterId);
+    return;
+  }
+  if (id === 'BATTLESHIP') {
+    await useBattleshipStore.getState().end(characterId);
+    return;
+  }
   if (id === 'backseat') {
     await useBackseatStore.getState().end(characterId);
     return;
@@ -126,7 +140,7 @@ export async function endActiveGame(characterId: string, id: LaunchGameId): Prom
  * FIRST opened, not during onboarding (the post-onboarding activity picker +
  * skin-setup page were removed). The first time this account opens the
  * Minecraft surface having never run skin setup, open the setup wizard over
- * the launch panel — the welcome step carries "Set up later", so it informs
+ * the launch panel â€” the welcome step carries "Set up later", so it informs
  * rather than blocks, and it stays re-runnable from Settings. Gated by the
  * same profile-scoped wizardPromptShown flag the old first-summon nudge used,
  * so it shows at most once per account (users already nudged before this
@@ -141,7 +155,7 @@ async function maybeOfferSkinSetup(): Promise<void> {
     await sei.wizardPromptShown('set');
     useWizardStore.getState().openWizard(false);
   } catch {
-    // Best-effort — never let setup bookkeeping block opening the game.
+    // Best-effort â€” never let setup bookkeeping block opening the game.
   }
 }
 
@@ -149,7 +163,7 @@ async function maybeOfferSkinSetup(): Promise<void> {
  * Open a game's surface in the chat game area (the picker tile action).
  * Clears the OTHER surfaces' open-intent first so the single aside swaps to
  * the requested game instead of staying on a stale panel (chess has top
- * precedence in ChatScreen's ordering). Never clears a LIVE session — the
+ * precedence in ChatScreen's ordering). Never clears a LIVE session â€” the
  * cross-launch confirm has already ended it by the time this runs.
  */
 export function openGame(characterId: string, gameId: LaunchGameId): void {
@@ -171,6 +185,8 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
 
   useUiStore.getState().navigate({ kind: 'chat', characterId });
   const chess = useChessStore.getState();
+  const forza = useConnect4Store.getState();
+  const bn = useBattleshipStore.getState();
   const dash = useMcDashboardStore.getState();
 
   if (gameId !== 'chess') {
@@ -183,6 +199,10 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
 
   if (gameId === 'chess') {
     chess.openPanel(characterId);
+  } else if (gameId === 'CONNECT4') {
+    forza.openPanel(characterId);
+  } else if (gameId === 'BATTLESHIP') {
+    bn.openPanel(characterId);
   } else if (isBotGame(gameId)) {
     if (useDataStore.getState().summons[characterId]?.kind !== 'online') {
       // A bot-backed game with a live bot needs no flag: the dashboard is
@@ -190,7 +210,7 @@ export function openGame(characterId: string, gameId: LaunchGameId): void {
       // open THIS game's launch panel (GAME_SURFACES[gameId].LaunchPanel).
       dash.setLaunch(characterId, gameId);
     }
-    // First Minecraft open for a never-set-up account → skin-setup wizard
+    // First Minecraft open for a never-set-up account â†’ skin-setup wizard
     // over the launch panel (async, best-effort). Minecraft only.
     if (gameId === 'minecraft') void maybeOfferSkinSetup();
   }
@@ -241,3 +261,7 @@ export function cancelCrossLaunch(): void {
   pendingLaunch = null;
   useUiStore.getState().closeModal();
 }
+
+
+
+

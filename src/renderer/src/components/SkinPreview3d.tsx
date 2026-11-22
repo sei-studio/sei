@@ -1,12 +1,12 @@
-/**
- * SkinPreview3d — 240×320 canvas wrapping skinview3d for a live 3D Minecraft skin preview.
+﻿/**
+ * SkinPreview3d â€” 240Ã—320 canvas wrapping skinview3d for a live 3D Minecraft skin preview.
  *
- * Source: 09-UI-SPEC.md §"Skin editor (persona page section) — copy" + §"Animation & Motion"
+ * Source: 09-UI-SPEC.md Â§"Skin editor (persona page section) â€” copy" + Â§"Animation & Motion"
  * (slow 30s rotate when in viewport + prefers-reduced-motion respected) +
- * §"Accessibility Contracts" (role=img + aria-label).
+ * Â§"Accessibility Contracts" (role=img + aria-label).
  *
  * Key contracts (planner WARNINGs):
- *   - skinview3d is LAZY-imported via dynamic `import('skinview3d')` inside useEffect —
+ *   - skinview3d is LAZY-imported via dynamic `import('skinview3d')` inside useEffect â€”
  *     keeps it out of the initial renderer chunk (~50KB gz). A top-level static import
  *     would defeat that AND would also error at module-init in environments without
  *     WebGL (degrades to the 2D fallback below).
@@ -24,7 +24,7 @@ import { useT } from '../lib/i18n';
 import styles from './SkinPreview3d.module.css';
 
 export interface SkinPreview3dProps {
-  /** data:image/png;base64,... — null shows the "Loading preview…" empty state. */
+  /** data:image/png;base64,... â€” null shows the "Loading previewâ€¦" empty state. */
   pngDataUrl: string | null;
   /** Persona name for aria-label and screen-reader narration. */
   personaName: string;
@@ -34,7 +34,7 @@ export interface SkinPreview3dProps {
 /**
  * Minimal subset of the skinview3d API surface we actually call. Kept narrow so
  * the lazy `import('skinview3d')` doesn't propagate the full module type into our
- * compile graph (it would force tsc to walk three.js types — slow + irrelevant here).
+ * compile graph (it would force tsc to walk three.js types â€” slow + irrelevant here).
  */
 interface SkinViewerLike {
   loadSkin(source: string): Promise<void> | void;
@@ -61,12 +61,12 @@ export function SkinPreview3d({
   const [fallback, setFallback] = useState<boolean>(false);
   const [ready, setReady] = useState<boolean>(false);
 
-  // ── Mount the SkinViewer once on first render that has a pngDataUrl. ────
+  // â”€â”€ Mount the SkinViewer once on first render that has a pngDataUrl. â”€â”€â”€â”€
   //
   // We re-run this effect when pngDataUrl flips between null and a value
   // (mount/unmount the viewer accordingly) AND when the URL itself changes
   // (refresh the skin texture). The boolean `fallback` short-circuits to the
-  // 2D <img> path on any failure — never re-enters the WebGL path until a
+  // 2D <img> path on any failure â€” never re-enters the WebGL path until a
   // page reload (no point retrying with the same failed environment).
   useEffect(() => {
     if (fallback) return;
@@ -80,7 +80,7 @@ export function SkinPreview3d({
       // Split WebGL-init failures (fall back to 2D) from per-skin load
       // failures (keep the live viewer, ignore the bad skin). A loadSkin
       // failure on a server URL after Apply must NOT collapse the 3D
-      // canvas — the WebGL context is still healthy.
+      // canvas â€” the WebGL context is still healthy.
       let mod: Skinview3dModule;
       try {
         mod = (await import('skinview3d')) as unknown as Skinview3dModule;
@@ -116,7 +116,7 @@ export function SkinPreview3d({
         // Skin URL failed (commonly /skins/<username>.png 404 when the
         // user hasn't applied a skin yet). Keep the viewer mounted so the
         // default Steve silhouette renders, and mark ready so the loading
-        // hint clears. Do NOT flip to the 2D fallback — the WebGL context
+        // hint clears. Do NOT flip to the 2D fallback â€” the WebGL context
         // is still healthy.
         if (!cancelled) setReady(true);
       }
@@ -127,14 +127,14 @@ export function SkinPreview3d({
     };
   }, [pngDataUrl, fallback]);
 
-  // ── Dispose on unmount so the WebGL context + scene graph release cleanly.
+  // â”€â”€ Dispose on unmount so the WebGL context + scene graph release cleanly.
   useEffect(() => {
     return () => {
       if (viewerRef.current) {
         try {
           viewerRef.current.dispose();
         } catch {
-          // ignore — best-effort cleanup
+          // ignore â€” best-effort cleanup
         }
         viewerRef.current = null;
       }
@@ -144,7 +144,7 @@ export function SkinPreview3d({
   const ariaLabel = t("3D preview of {name}'s skin", { name: personaName });
   const frameClass = [styles.frame, className].filter(Boolean).join(' ');
 
-  // ── Loading state: empty card frame with the "Loading preview…" copy. ───
+  // â”€â”€ Loading state: empty card frame with the "Loading previewâ€¦" copy. â”€â”€â”€
   if (!pngDataUrl) {
     return (
       <div className={frameClass}>
@@ -153,7 +153,7 @@ export function SkinPreview3d({
     );
   }
 
-  // ── 2D fallback (WebGL unavailable / lazy-import failure). ──────────────
+  // â”€â”€ 2D fallback (WebGL unavailable / lazy-import failure). â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (fallback) {
     return (
       <div className={frameClass}>
@@ -171,7 +171,7 @@ export function SkinPreview3d({
     );
   }
 
-  // ── 3D path: skinview3d-managed <canvas>. ───────────────────────────────
+  // â”€â”€ 3D path: skinview3d-managed <canvas>. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <div className={frameClass}>
       <canvas
@@ -189,3 +189,7 @@ export function SkinPreview3d({
     </div>
   );
 }
+
+
+
+

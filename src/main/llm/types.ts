@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260816 (china-compat W1): the main-process multi-provider LLM layer's shared
  * contract. TypeScript port of the bot's provider factory contract
  * (src/bot/brain/llm/index.js) plus what main's call sites need on top:
@@ -117,3 +117,7 @@ export interface LlmProvider {
   /** True when onTextDelta receives real incremental deltas. */
   streaming: boolean;
 }
+
+
+
+

@@ -1,8 +1,8 @@
-/**
- * UnbindConfirmModal — confirm dialog for the CharacterPage "Unbind"/"Release"
+﻿/**
+ * UnbindConfirmModal â€” confirm dialog for the CharacterPage "Unbind"/"Release"
  * action (260704). Unbinding drops a companion out of the user's library (a
  * default returns to the World tab unless re-invited; an added-from-World
- * companion is uncached locally; a custom/unique companion is deleted) — it's
+ * companion is uncached locally; a custom/unique companion is deleted) â€” it's
  * destructive to the library slot but NOT to the companion's memory, which is
  * why the copy reassures the user their saved memories aren't wiped.
  *
@@ -46,3 +46,7 @@ export function UnbindConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

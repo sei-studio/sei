@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Renderer half of the 261027 lazy Minecraft skins (main/skinGeneration.ts).
  *
  * A new companion starts with a free painted skin; its real (Gemini, billed)
@@ -107,3 +107,7 @@ export function useMinecraftSkinPrep(characterId: string): SkinPrepState {
   }, [characterId, pending]);
   return prep.id === characterId ? prep.state : { kind: 'idle' };
 }
+
+
+
+

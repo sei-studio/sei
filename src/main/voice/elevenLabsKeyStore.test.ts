@@ -1,5 +1,5 @@
-/**
- * BYOK ElevenLabs key store (260725) — persistence + resolution precedence.
+﻿/**
+ * BYOK ElevenLabs key store (260725) â€” persistence + resolution precedence.
  *
  * Pins:
  *   - set/get round-trips through the (mocked) safeStorage blob; trim on set;
@@ -232,3 +232,7 @@ describe('Sei voices for ChatGPT-plan users stay off (review 261110)', () => {
     expect(await resolveSpeakRoute()).toEqual({ kind: 'proxy' });
   });
 });
+
+
+
+

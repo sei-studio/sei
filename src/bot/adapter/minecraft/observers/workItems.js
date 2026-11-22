@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/observers/workItems.js
+﻿// src/bot/adapter/minecraft/observers/workItems.js
 //
 // 261102 (quality pass 37): which items an action works toward, and how many
 // of them she carries now. The brain keeps the player's asks open until a
@@ -111,7 +111,7 @@ function itemWords(item) {
  * 261111 (quality pass 52): an open ask kept every item of the work she
  * answered a line with, so her own plan became theirs: "yeah sounds good"
  * answered with craft(wooden_pickaxe) left "hand-over: you are walking to
- * Alex carrying wooden_pickaxe×1, which you got for their line "yeah sounds
+ * Alex carrying wooden_pickaxeÃ—1, which you got for their line "yeah sounds
  * good"" on her follow, and the arrival note offered it to them. In the 11-11
  * scorecard every work_session carried one of these (pass 49 compare: 7 of
  * 10), and that is where she handed her pickaxe over unasked and credited the
@@ -157,3 +157,7 @@ export function carriedCounts(bot, names) {
   }
   return out
 }
+
+
+
+

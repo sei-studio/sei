@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorldLink wallpaper widgets (261119): the clock, date, text and progress
  * modules drawn over her room (shared/seilinkWidgets.ts has the format and
  * the rules). RoomCanvas mounts one layer per room, so the editor and the
@@ -163,3 +163,7 @@ function WidgetBody({ w, now, locale, editing, t }: { w: RoomWidget; now: Date; 
     }
   }
 }
+
+
+
+

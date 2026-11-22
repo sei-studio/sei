@@ -1,5 +1,5 @@
-/**
- * Updater log sink — `<userData>/logs/updater.log`.
+﻿/**
+ * Updater log sink â€” `<userData>/logs/updater.log`.
  *
  * WHY THIS EXISTS (260803). A Windows user's update from 0.4.3 to 0.5.2 failed
  * for eight days with no diagnosable trace anywhere on the machine. The
@@ -9,7 +9,7 @@
  *   Sign verification failed, installer signed with incorrect certificate: ...
  *
  * deleted the download, and emitted `error`. That one warning was the entire
- * explanation, and it went to `console.warn` — electron-updater's DEFAULT
+ * explanation, and it went to `console.warn` â€” electron-updater's DEFAULT
  * logger is bare `console`, and this app never overrode it. In a packaged
  * Windows build there is no console attached, so the line evaporated. The
  * app's own `logs/` directory had not been written to in three weeks, because
@@ -46,7 +46,7 @@ function ensureFile(): string | null {
     try {
       if (statSync(full).size > MAX_BYTES) truncateSync(full, 0);
     } catch {
-      /* absent or unreadable — appendFileSync will create it */
+      /* absent or unreadable â€” appendFileSync will create it */
     }
     filePath = full;
     return filePath;
@@ -115,3 +115,7 @@ export const updaterLog = {
 export function updaterLogPath(): string | null {
   return ensureFile();
 }
+
+
+
+

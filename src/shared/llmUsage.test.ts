@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Playtime usage ledger, pure half (261110): provider usage shapes,
  * the spend estimate, the ChatGPT reply counter and the spend alert rule.
  */
@@ -170,3 +170,7 @@ describe('SPEND_ALERT_ENABLED (261120)', () => {
     expect(mod.SPEND_ALERT_ENABLED).toBe(false);
   });
 });
+
+
+
+

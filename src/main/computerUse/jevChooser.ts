@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: Jev (TypeSafe AI "System One") as a text chooser.
  *
  * Jev picks one option out of a menu from TEXT state and returns
@@ -108,3 +108,7 @@ export function buildJevChooser(env: NodeJS.ProcessEnv, fetchFn?: typeof fetch):
   const model = env.SEI_JEV_MODEL?.trim() || JEV_DEFAULT_MODEL;
   return new ProbabilityChooser('jev', model, makeJevScore({ apiKey, model, fetchFn }));
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46, review round 2): the Settings Test for the ChatGPT plan
  * is a tiny, capped prompt (the route has no max_output_tokens).
  */
@@ -24,3 +24,7 @@ describe('testCallParams', () => {
     expect(testCallParams('openai')).toMatchObject({ maxTokens: 1, messages: [{ role: 'user', content: 'hi' }] });
   });
 });
+
+
+
+

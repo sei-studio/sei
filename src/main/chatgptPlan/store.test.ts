@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46, review round 2): an undecryptable ChatGPT vault is moved
  * aside to a .bak before the session treats it as empty, so the next save
  * (a fresh sign-in) never overwrites the only copy.
@@ -80,3 +80,7 @@ describe('electronVault', () => {
     });
   }
 });
+
+
+
+

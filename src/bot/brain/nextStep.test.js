@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { normalizeNextStep, nextStepMemoryLine, parsePlanLine, parsePlanGameField, PLAN_GAMES, NEXT_STEP_MAX_CHARS } from './nextStep.js'
 import { GAME_CATALOG } from '../../shared/games'
 import { NEXT_TIME_GREETING } from './prompts.js'
@@ -66,14 +66,14 @@ describe('normalizePlayerLine', () => {
   it('hard-caps a runaway line at a word with an ellipsis', () => {
     const out = normalizePlayerLine('Mine diamonds with Marv at the deep strip mine under the old stone tower by the birch forest past the lava lake')
     expect(out.length).toBeLessThanOrEqual(PLAYER_LINE_HARD_MAX_CHARS)
-    expect(out.endsWith('…')).toBe(true)
-    expect(out).not.toMatch(/\s(?:the|and)…$/)
+    expect(out.endsWith('â€¦')).toBe(true)
+    expect(out).not.toMatch(/\s(?:the|and)â€¦$/)
   })
 
   it('leaves a possessive relative day alone (review 261014)', () => {
     expect(normalizePlayerLine("Watch tonight's stream with Sui")).toBe("Watch tonight's stream with Sui")
     expect(normalizePlayerLine("Finish the Tonight's the Night quest")).toBe("Finish the Tonight's the Night quest")
-    expect(normalizePlayerLine('Watch tonight’s stream')).toBe('Watch tonight’s stream')
+    expect(normalizePlayerLine('Watch tonightâ€™s stream')).toBe('Watch tonightâ€™s stream')
   })
 
   it('cuts at an early clause break too', () => {
@@ -162,7 +162,7 @@ describe('greeting cues (261014)', () => {
     const cue = nextTimeGreeting('finish the "cabin" roof')
     expect(cue).toContain(`"finish the 'cabin' roof"`)
     expect(cue).toMatch(/main thing your greeting is about/)
-    expect(cue).not.toMatch(/[—–]/)
+    expect(cue).not.toMatch(/[â€”â€“]/)
   })
 
   it('null = none open (no cue); undefined = the soft hint', () => {
@@ -281,3 +281,7 @@ describe('next_time_game field (261020 review)', () => {
     expect(FIRST_CONTACT({ gameName: 'Stardew Valley', known: true, plan: 'plant parsnips' })).not.toContain('not saved as something to do')
   })
 })
+
+
+
+

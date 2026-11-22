@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Startup popup actions, renderer side (261029): the chatgpt-plan action
  * mirrors what Playtime's ChatGPT tab offers, and an unknown name does
  * nothing at all.
@@ -254,3 +254,7 @@ describe('runPopupAction', () => {
     expect(useUiStore.getState().view).toEqual({ kind: 'home' });
   });
 });
+
+
+
+

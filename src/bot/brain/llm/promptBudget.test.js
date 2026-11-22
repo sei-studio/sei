@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import {
   LONG_PROMPT_TIER_TOKENS, TRIM_NOTE, IMAGE_STUB,
   longPromptTierFor, contextLimitFor,
@@ -50,7 +50,7 @@ describe('estimator', () => {
     expect(estimateTextTokens('hello world')).toBe(4) // ceil(5/3.5) * 2
     expect(estimateTextTokens('12345')).toBe(2)
     expect(estimateTextTokens('a, b.')).toBe(4)
-    expect(estimateTextTokens('こんにちは')).toBe(7) // 5 * 1.4
+    expect(estimateTextTokens('ã“ã‚“ã«ã¡ã¯')).toBe(7) // 5 * 1.4
   })
   it('over-counts measured English prose (3.17 chars/token on haiku-5-5)', () => {
     const prose = 'The companion walks over to the crafting table and asks the player what they want to build next. '.repeat(50)
@@ -206,3 +206,7 @@ describe('fitPromptBudget mechanics', () => {
     expect(estimateRequestTokens(ws)).toBeGreaterThan(3_000)
   })
 })
+
+
+
+

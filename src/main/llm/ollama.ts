@@ -1,5 +1,5 @@
-/**
- * Ollama local adapter — the native `/api/chat` route (NOT /v1/chat/completions:
+﻿/**
+ * Ollama local adapter â€” the native `/api/chat` route (NOT /v1/chat/completions:
  * Ollama's OpenAI-compat endpoint drops tool_calls under streaming, the same
  * pitfall the bot's adapter documents), stream:false. No API key. Non-streaming
  * v1: an onTextDelta sink gets the whole text at completion. Ollama has no
@@ -256,3 +256,7 @@ export function createOllamaProvider(opts: {
     streaming: false,
   };
 }
+
+
+
+

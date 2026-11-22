@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the vision chooser (Claude via the main LLM layer, so
  * cloud, Anthropic BYOK and other vision BYOK providers run the same code)
  * and the completion check.
@@ -137,7 +137,7 @@ export class VisionChooser implements Chooser {
   }
 }
 
-// ── Completion check ────────────────────────────────────────────────────────
+// â”€â”€ Completion check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const VERDICT_TOOL: LlmToolDef = {
   name: 'verdict',
@@ -201,3 +201,7 @@ export function parseVerdict(res: Pick<LlmResult, 'toolUses' | 'text'>): { achie
   if (m) return { achieved: m[1]!.toLowerCase() === 'yes', why: m[2]!.trim().slice(0, 300) };
   return { achieved: false, why: 'the completion check gave no clear answer' };
 }
+
+
+
+

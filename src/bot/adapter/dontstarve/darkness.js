@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/darkness.js: telling Charlie's hit apart from a
+﻿// src/bot/adapter/dontstarve/darkness.js: telling Charlie's hit apart from a
 // monster's (261104, DST quality pass 1).
 //
 // The grue (components/grue.lua) hits through combat:GetAttacked with NO
@@ -46,3 +46,7 @@ export function torchShortfall(state) {
   const haveTwigs = countOf(self, 'twigs')
   return { grass: Math.max(0, 2 - haveGrass), twigs: Math.max(0, 2 - haveTwigs), haveGrass, haveTwigs }
 }
+
+
+
+

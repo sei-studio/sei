@@ -1,4 +1,4 @@
-# Game adapters: Stardew Valley + Don't Starve Together (260908)
+﻿# Game adapters: Stardew Valley + Don't Starve Together (260908)
 
 The companion can be launched into the player's own Stardew Valley farm or
 hosted Don't Starve Together world the way it is launched into a Minecraft
@@ -885,3 +885,7 @@ it found and what changed:
 **Credits:** every reused project is in `CREDITS.md` (linked from the README
 License section) with its license (user decision 7); copied code carries a header
 credit and `native/<mod>/THIRD_PARTY_NOTICES.md`.
+
+
+
+

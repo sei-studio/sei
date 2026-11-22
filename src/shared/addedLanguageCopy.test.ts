@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { SAFE_MODE_ADDED, UPDATE_WINDOW_ADDED, FREE_PLAY_RESET_ADDED, VELOPACK_SPLASH_ADDED, DST_GRANT_ADDED, VELOPACK_REPAIR_ADDED } from './addedLanguageCopy';
 import { formatMessage } from './uiLanguage';
 
@@ -17,7 +17,7 @@ describe.each([
     expect(Object.keys(italian).sort()).toEqual(Object.keys(reference).sort());
     for (const [key, value] of Object.entries(italian)) {
       expect(value.trim(), key).not.toBe('');
-      expect(value, key).not.toContain('—');
+      expect(value, key).not.toContain('â€”');
       expect(names(value), key).toEqual(names(reference[key]));
       for (const n of [0, 1, 2, 5]) {
         const params = Object.fromEntries(names(value).map(name => [name, n]));
@@ -26,3 +26,7 @@ describe.each([
     }
   });
 });
+
+
+
+

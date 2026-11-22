@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261111 World egress: the card loads the small thumbnail (not the full
  * portrait), and a card without a thumbnail loads the full portrait.
  */
@@ -41,3 +41,7 @@ describe('BrowseCard art source', () => {
     expect(html).toContain('src="https://x/portraits/o/c1.png?v=t1"');
   });
 });
+
+
+
+

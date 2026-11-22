@@ -1,5 +1,5 @@
-/**
- * GAME_SURFACES — the per-game chat-aside panels (game adapters M0, 260908).
+﻿/**
+ * GAME_SURFACES â€” the per-game chat-aside panels (game adapters M0, 260908).
  *
  * ChatScreen mounts a bot-backed game through this registry instead of
  * naming Minecraft's components: `LaunchPanel` shows while the bot is offline
@@ -36,6 +36,11 @@ export const GAME_SURFACES: Record<GameId, GameSurface> = {
   minecraft: { LaunchPanel: McLaunchPanel, DashboardPanel: McDashboardPanel },
   stardew: withGame('stardew'),
   dontstarve: withGame('dontstarve'),
+  // Forza 4 mounts its own panel from ChatScreen; this is only so the
+  // Record<GameId, GameSurface> type is satisfied.
+  CONNECT4: withGame('CONNECT4'),
+  // Battleship mounts its own panel from ChatScreen; placeholder.
+  BATTLESHIP: withGame('BATTLESHIP'),
 };
 
 export function registerGameSurface(game: GameId, surface: GameSurface): void {
@@ -45,3 +50,7 @@ export function registerGameSurface(game: GameId, surface: GameSurface): void {
 export function getGameSurface(game: GameId | string | null | undefined): GameSurface {
   return GAME_SURFACES[(game as GameId) ?? 'minecraft'] ?? GAME_SURFACES.minecraft;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SkinGenerateButton (261027 lazy skins): the profile's "make / regenerate
  * the Minecraft skin" control, shown under the skin preview for characters
  * the player owns that have a picture.
@@ -122,3 +122,7 @@ export function SkinGenerateButton({
     </div>
   );
 }
+
+
+
+

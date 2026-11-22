@@ -1,8 +1,8 @@
-/**
- * DmcaContactModal — published in SettingsScreen → Legal panel as "Report
+﻿/**
+ * DmcaContactModal â€” published in SettingsScreen â†’ Legal panel as "Report
  * copyright infringement (DMCA)".
  *
- * §512(c)(2) requires the Designated Agent's full name, mailing address,
+ * Â§512(c)(2) requires the Designated Agent's full name, mailing address,
  * phone, and email to live on the website at a public URL. The terms.html
  * page at sei.gg/terms publishes them; this in-app modal intentionally
  * shows only the email + a link to the public USCO directory listing,
@@ -67,7 +67,7 @@ export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.Reac
           {t('Open USCO directory listing')}
         </Button>
         <Button kind="ghost" size="md" onClick={() => void sei.openExternal(TERMS_URL)}>
-          {t('Open Terms §7')}
+          {t('Open Terms Â§7')}
         </Button>
       </div>
       <ModalFooter>
@@ -78,3 +78,7 @@ export function DmcaContactModal({ onClose }: DmcaContactModalProps): React.Reac
     </ModalShell>
   );
 }
+
+
+
+

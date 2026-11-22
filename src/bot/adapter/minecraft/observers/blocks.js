@@ -1,4 +1,4 @@
-// src/observers/blocks.js — pure function of bot state
+﻿// src/observers/blocks.js â€” pure function of bot state
 import mcDataLib from 'minecraft-data'
 import { Vec3 } from 'vec3'
 import { getHealedPos } from './posHealer.js'
@@ -7,10 +7,10 @@ const COLORS = ['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'p
 const WOODS = ['oak', 'birch', 'spruce', 'jungle', 'acacia', 'dark_oak', 'mangrove', 'cherry']
 const ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'copper_ore', 'redstone_ore', 'lapis_ore', 'emerald_ore']
 
-// Terrain block names added per D-1sk-05 — surfaces "what am I standing on"
-// info to the personality/movement LLMs (sand, dirt, grass_block, …).
-// Exported for snapshot tier-aware ranking (260505-twx) — non-terrain
-// "interesting" blocks (logs, ores, chests, …) sort BEFORE terrain
+// Terrain block names added per D-1sk-05 â€” surfaces "what am I standing on"
+// info to the personality/movement LLMs (sand, dirt, grass_block, â€¦).
+// Exported for snapshot tier-aware ranking (260505-twx) â€” non-terrain
+// "interesting" blocks (logs, ores, chests, â€¦) sort BEFORE terrain
 // regardless of distance so 8 nearby grass_blocks don't crowd out a
 // single oak_log 14m away.
 export const TERRAIN = [
@@ -36,7 +36,7 @@ export const INTERESTING_BLOCK_NAMES = new Set([
 
 // Names that count as "see-through" for the exposure predicate. Water and lava
 // are treated as see-through because a player on shore can plainly see blocks
-// bordering water/lava — filtering them out would hide the entire shoreline.
+// bordering water/lava â€” filtering them out would hide the entire shoreline.
 // (D-1sk-01)
 const SEE_THROUGH_NAMES = new Set(['air', 'cave_air', 'void_air', 'water', 'lava'])
 
@@ -69,7 +69,7 @@ export function isExposed(bot, pos) {
  * Find nearby "interesting" blocks, closest-first, capped at `count`.
  * Filters out blocks fully encased in opaque material (no xray). If the
  * exposure-filtered result is sparse and the caller did not override the
- * radius, retries once at 2× radius before giving up. (D-1sk-04, D-1sk-08)
+ * radius, retries once at 2Ã— radius before giving up. (D-1sk-04, D-1sk-08)
  *
  * @param {import('mineflayer').Bot} bot
  * @param {{ radius?:number, count?:number, interesting?:Set<string>|((name:string)=>boolean) }} [opts]
@@ -119,7 +119,7 @@ export function nearbyBlocks(bot, opts = {}) {
 
   let { exposedFound, more } = scan(radius)
 
-  // Sparse-expand fallback — one retry only at 2× radius if initial scan was
+  // Sparse-expand fallback â€” one retry only at 2Ã— radius if initial scan was
   // thin and the caller used the default radius. (D-1sk-04)
   if (
     !radiusOverridden &&
@@ -143,8 +143,8 @@ export function nearbyBlocks(bot, opts = {}) {
   // bot.findBlocks already returns closest-first, but be defensive.
   positions.sort((a, b) => a._d - b._d)
   // Tier-aware secondary sort (260505-twx): non-terrain "interesting"
-  // blocks (logs, ores, chests, crafting_table, beds, …) come BEFORE
-  // terrain (grass_block, dirt, sand, stone, …) regardless of distance.
+  // blocks (logs, ores, chests, crafting_table, beds, â€¦) come BEFORE
+  // terrain (grass_block, dirt, sand, stone, â€¦) regardless of distance.
   // Within each tier, the prior distance-sort order is preserved
   // (Array.prototype.sort is stable in V8). Without this, 8 nearby
   // grass_blocks crowd out the oak_log 14 blocks away.
@@ -160,15 +160,15 @@ export function nearbyBlocks(bot, opts = {}) {
 }
 
 // Skip air variants when grouping the around-feet cube. Water and lava ARE
-// counted (they're interesting terrain context — "I'm in water").
+// counted (they're interesting terrain context â€” "I'm in water").
 const AROUND_FEET_SKIP = new Set(['air', 'cave_air', 'void_air'])
 
 /**
- * Summarize every non-air block in a 5×4×5 cube centered on the bot's feet,
+ * Summarize every non-air block in a 5Ã—4Ã—5 cube centered on the bot's feet,
  * grouped by name with counts and sorted by count desc, then name asc.
  * Cap at 8 distinct names; surplus is reported via `more`.
  *
- * Cube spans dx=-2..+2, dy=-1..+2, dz=-2..+2 around floor(bot pos) — covers
+ * Cube spans dx=-2..+2, dy=-1..+2, dz=-2..+2 around floor(bot pos) â€” covers
  * ground (y-1, y0), torso (y+1), and head (y+2). 100 blockAt calls per call.
  * (D-1sk-02, D-1sk-03)
  *
@@ -206,3 +206,7 @@ export function aroundFeet(bot) {
   const more = Math.max(0, allGroups.length - cap)
   return { groups, total, more }
 }
+
+
+
+

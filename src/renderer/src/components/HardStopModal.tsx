@@ -1,21 +1,21 @@
-/**
- * HardStopModal — weekly-limit popup (260724).
+﻿/**
+ * HardStopModal â€” weekly-limit popup (260724).
  *
  * Mounted at the App root when `useCreditsStore.hardStopActive === true`. The
  * main process fires `credits:hard-stop` and `useCreditsStore.onCreditsHardStop`
  * flips `hardStopActive`, gating this popup. Two trigger paths, both surfaced
  * here with the SAME copy:
- *   - pre-flight summon gate (botSupervisor → cloudOverLimit): you tried to
+ *   - pre-flight summon gate (botSupervisor â†’ cloudOverLimit): you tried to
  *     summon while over the limit, so the bot never joined.
  *   - mid-session 402 (orchestrator latches + tears down, botSupervisor relays
- *     CLOUD_CREDITS_DEPLETED → emitHardStop): the running bot spent the last of
+ *     CLOUD_CREDITS_DEPLETED â†’ emitHardStop): the running bot spent the last of
  *     the weekly allowance and quietly left the world.
  *
  * Single state (the SPEC's "one modal") with exactly two CTAs:
- *   - "Upgrade" → dismiss + navigate to the plan screen. Dismiss FIRST: this
+ *   - "Upgrade" â†’ dismiss + navigate to the plan screen. Dismiss FIRST: this
  *     modal renders at the App root over every screen, so leaving
  *     `hardStopActive` set would keep it covering that page.
- *   - "Top up"  → the same navigation, with `requestTopUp()` so the plan screen
+ *   - "Top up"  â†’ the same navigation, with `requestTopUp()` so the plan screen
  *     opens the packages on arrival. The purchase then runs where the checkout
  *     watcher lives, instead of polling behind a popup with no progress UI.
  * 261103: ONE CTA (product feedback: two buttons to the same page read as if topping up
@@ -25,14 +25,14 @@
  * this is a notice, not a blocking gate. 261023: the two CTAs are full-width
  * PlanButtons under the copy (Upgrade the loud one); Close stays in the footer.
  *
- * 260725 — TWO reasons, two presentations. `reason: 'rate_limited'`
+ * 260725 â€” TWO reasons, two presentations. `reason: 'rate_limited'`
  * (botSupervisor relays the proxy's IP / abuse gate as DAILY_LIMIT_REACHED and
  * drains the bot) is a TIME window, not a balance: it spends no credits and no
  * billing action can clear it, so that branch gets its own copy, the retry
  * time from `rateLimitedUntil`, a single Close, and full immunity from the
  * over_limit auto-dismiss below.
  *
- * 260725 — auto-dismiss freshness. A hard-stop push carries no usage snapshot
+ * 260725 â€” auto-dismiss freshness. A hard-stop push carries no usage snapshot
  * and nothing else refetches one, so `over_limit` in the store is whatever the
  * last poll left behind (normally false). The old `if (hardStopActive &&
  * !overLimit) acknowledge()` therefore unmounted the popup on its FIRST effect
@@ -42,7 +42,7 @@
  * confirmed limit, and only auto-dismisses when that confirmed limit clears (a
  * top up, an upgrade reset, or the weekly rollover).
  *
- * 261103 (T307) — "Keep playing free". A week is a long wait for a free
+ * 261103 (T307) â€” "Keep playing free". A week is a long wait for a free
  * player who hits the wall on their first day, so a free player at the wall
  * now also gets two ways to keep playing on an account of their own, under
  * an "or" below Upgrade (wallFreeOptions), own key first, ChatGPT last:
@@ -55,7 +55,7 @@
  *     (view.focus 'ai-backend').
  * Both dismiss the popup FIRST, like Upgrade, then navigate.
  *
- * Sources: SPEC §5.B, AcceptToSModal.tsx (structural template),
+ * Sources: SPEC Â§5.B, AcceptToSModal.tsx (structural template),
  *          useCreditsStore.ts (hardStopActive / acknowledgeHardStop wire).
  */
 
@@ -86,7 +86,7 @@ const RETRY_TIME_MIN_MS = 5 * 60_000;
 /**
  * When a rate-limit window ends: "9:30 PM" for later today, "Tuesday at
  * 9:30 AM" otherwise. Empty string when there is no usable window (null,
- * already elapsed, or too short to be worth a clock time — see
+ * already elapsed, or too short to be worth a clock time â€” see
  * RETRY_TIME_MIN_MS) so the copy uses the "in a moment" clause instead of
  * inventing a time. Exported for the unit test.
  */
@@ -197,7 +197,7 @@ export function HardStopModal(): React.ReactElement | null {
     acknowledgeHardStop();
   };
 
-  // ESC dismissal is owned by ModalShell (escClose default true → onClose).
+  // ESC dismissal is owned by ModalShell (escClose default true â†’ onClose).
 
   // The push tells us a limit was hit but ships no numbers. Pull the snapshot
   // that the auto-dismiss below is allowed to trust. refresh() never rejects
@@ -218,7 +218,7 @@ export function HardStopModal(): React.ReactElement | null {
   }, [hardStopActive, isRateLimited, refresh]);
 
   // Latch the limit once a FRESH snapshot confirms it. Only a confirmed limit
-  // can later "clear" — a stale or failed snapshot can never dismiss the popup.
+  // can later "clear" â€” a stale or failed snapshot can never dismiss the popup.
   const [confirmedOverLimit, setConfirmedOverLimit] = useState(false);
   useEffect(() => {
     if (!hardStopActive) {
@@ -270,7 +270,7 @@ export function HardStopModal(): React.ReactElement | null {
     );
   }
 
-  // Dismiss the popup THEN route to the plan screen — otherwise this modal
+  // Dismiss the popup THEN route to the plan screen â€” otherwise this modal
   // (mounted at the App root) would keep covering it.
   const handleUpgrade = (): void => {
     trackWallAction('upgrade', hardStopReason, openedAt);
@@ -289,7 +289,7 @@ export function HardStopModal(): React.ReactElement | null {
   const free = wallFreeOptions({ reason: hardStopReason, plan, llmProvider });
 
   return (
-    // Click-outside intentionally does NOT dismiss (scrimClose omitted) — Close,
+    // Click-outside intentionally does NOT dismiss (scrimClose omitted) â€” Close,
     // the CTAs, and ESC are the deliberate dismiss paths. Base tier: the consent
     // gate and the top up modal stack above this at 1100.
     <ModalShell title={t('Usage limit reached')} width={440} onClose={closeTracked}>
@@ -357,3 +357,7 @@ export function HardStopModal(): React.ReactElement | null {
     </ModalShell>
   );
 }
+
+
+
+

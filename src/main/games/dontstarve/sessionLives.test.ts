@@ -1,4 +1,4 @@
-/** 261104: DST lives counters for bot_session_ended. */
+﻿/** 261104: DST lives counters for bot_session_ended. */
 import { describe, it, expect } from 'vitest';
 import { createDstLivesReporter } from './sessionLives';
 
@@ -21,3 +21,7 @@ describe('createDstLivesReporter', () => {
     expect(r.take('c2')).toEqual({ respawns: 0, deaths: 0 });
   });
 });
+
+
+
+

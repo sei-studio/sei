@@ -1,4 +1,4 @@
-# Contributing to Sei
+﻿# Contributing to Sei
 
 Thanks for helping out. Here is how it works.
 
@@ -32,3 +32,7 @@ Questions, feedback, and show-and-tell go on [Discord](https://discord.gg/Gguvha
 If you want to work more closely with us, email me at [ouen@sei.gg](mailto:ouen@sei.gg).
 
 ouen
+
+
+
+

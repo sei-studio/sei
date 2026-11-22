@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sign-in owner reconciliation.
  *
  * Cleans up the on-disk character cache when the user signs in. Two failure
@@ -16,16 +16,16 @@
  *      HomeGrid filter) are correct.
  *
  * Rules per non-default local character (every char is checked against cloud,
- * because a stale local owner-stamp can be a lie — e.g., a previous save
+ * because a stale local owner-stamp can be a lie â€” e.g., a previous save
  * force-stamped owner=current-user onto a leaked-from-another-account file):
- *   - cloud row exists, owner === current user → stamp local owner (no-op
+ *   - cloud row exists, owner === current user â†’ stamp local owner (no-op
  *     if already correct).
- *   - cloud row exists, owner !== current user → DELETE local file +
+ *   - cloud row exists, owner !== current user â†’ DELETE local file +
  *     drop any sync-queue ops for this id. This is the Eris-leak fix.
- *   - cloud row missing, local owner == current user → keep (legitimately
+ *   - cloud row missing, local owner == current user â†’ keep (legitimately
  *     local, you own it).
- *   - cloud row missing, local owner == null → claim: stamp owner = current user.
- *   - cloud row missing, local owner != current user → DELETE local
+ *   - cloud row missing, local owner == null â†’ claim: stamp owner = current user.
+ *   - cloud row missing, local owner != current user â†’ DELETE local
  *     (orphaned foreign content; the cloud row was already torn down or
  *     never existed).
  *
@@ -61,7 +61,7 @@ export async function reconcileLocalOwnershipOnSignIn(
     return;
   }
 
-  // Chars the user explicitly added from the World tab are NOT leaks — they're
+  // Chars the user explicitly added from the World tab are NOT leaks â€” they're
   // foreign-owned by design. Skip them in the cloud.owner !== currentUserId
   // delete branch below, otherwise reconcile undoes every "+ Add to Mine"
   // click as soon as the user signs in (or re-signs in).
@@ -70,7 +70,7 @@ export async function reconcileLocalOwnershipOnSignIn(
     const cfg = await loadConfig();
     addedWorldIds = new Set(cfg.added_world_ids ?? []);
   } catch {
-    /* empty set — worst case we wrongly delete an added world char, but
+    /* empty set â€” worst case we wrongly delete an added world char, but
        the user can re-add it; better than crashing reconcile. */
   }
 
@@ -83,17 +83,17 @@ export async function reconcileLocalOwnershipOnSignIn(
     if (scopeMoved()) break;
     if (c.is_default) continue;
     if (addedWorldIds.has(c.id)) {
-      // Item 10 — unpublish cleanup. A character the user added from the World
+      // Item 10 â€” unpublish cleanup. A character the user added from the World
       // tab whose source row is no longer shared (author flipped it
-      // public→private) or was deleted should leave the user's library. Per
+      // publicâ†’private) or was deleted should leave the user's library. Per
       // the product decision: drop the persona CONTENT (character JSON + skin +
-      // portrait — the author's work; deleteLocalChar never touches the user's
+      // portrait â€” the author's work; deleteLocalChar never touches the user's
       // memory files, which we deliberately keep) and remove it from
       // added_world_ids so it disappears from Home/World.
       //
       // Safety: only act on a DEFINITIVE cloud answer. downloadCharacter
       // returns null when the query SUCCEEDED but RLS returned no row
-      // (foreign row is unshared, or deleted) and THROWS on a network error —
+      // (foreign row is unshared, or deleted) and THROWS on a network error â€”
       // so a transient blip can't wrongly evict a still-valid add.
       try {
         const cloud = await downloadCharacter(c.id);
@@ -104,17 +104,17 @@ export async function reconcileLocalOwnershipOnSignIn(
           addedWorldIds.delete(c.id);
           evictedWorldIds.add(c.id);
           console.log(
-            `[sei] reconcile: world char ${c.id} no longer shared — dropped persona content, kept memory`,
+            `[sei] reconcile: world char ${c.id} no longer shared â€” dropped persona content, kept memory`,
           );
         }
       } catch {
-        // Network error — keep the char (avoid a false eviction on a blip).
+        // Network error â€” keep the char (avoid a false eviction on a blip).
       }
       continue;
     }
 
     try {
-      // Always consult the cloud as authoritative — a local owner-stamp can
+      // Always consult the cloud as authoritative â€” a local owner-stamp can
       // be a lie if a previous save force-stamped current-user onto a leaked
       // foreign-owned file (the original Eris symptom).
       const cloud = await downloadCharacter(c.id);
@@ -127,7 +127,7 @@ export async function reconcileLocalOwnershipOnSignIn(
           }
           continue;
         }
-        // Cloud says someone else owns this — delete the local leak.
+        // Cloud says someone else owns this â€” delete the local leak.
         await deleteLocalChar(c.id);
         await dropOpsForUuid(c.id).catch(() => {});
         console.log(
@@ -138,11 +138,11 @@ export async function reconcileLocalOwnershipOnSignIn(
       // No cloud row.
       if (c.owner === currentUserId) continue; // legitimately local-only.
       if (c.owner == null) {
-        // Legacy null-owner — claim it.
+        // Legacy null-owner â€” claim it.
         await saveCharacterRaw({ ...c, owner: currentUserId });
         continue;
       }
-      // Stamped foreign owner + no cloud row → orphaned leak. Drop locally.
+      // Stamped foreign owner + no cloud row â†’ orphaned leak. Drop locally.
       await deleteLocalChar(c.id);
       await dropOpsForUuid(c.id).catch(() => {});
       console.log(
@@ -180,7 +180,7 @@ export async function reconcileLocalOwnershipOnSignIn(
 
 async function deleteLocalChar(id: string): Promise<void> {
   // Hand-rolled rather than calling characterStore.deleteCharacter so we
-  // skip the cloud-mirror delete enqueue — the cloud row is owned by someone
+  // skip the cloud-mirror delete enqueue â€” the cloud row is owned by someone
   // else and we have no business asking Supabase to delete it.
   const targets = [
     paths.characterPath(id),
@@ -222,3 +222,7 @@ async function deleteLocalChar(id: string): Promise<void> {
     );
   }
 }
+
+
+
+

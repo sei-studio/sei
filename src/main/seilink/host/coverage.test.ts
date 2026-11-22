@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import { clipRect, computeActivity, INITIAL_INPUTS, RoomActivity } from './coverage';
 
 describe('seilink room activity', () => {
@@ -64,3 +64,7 @@ describe('clipRect', () => {
     expect(clipRect({ x: 1100, y: 100, w: 50, h: 50 }, area)).toBeNull();
   });
 });
+
+
+
+

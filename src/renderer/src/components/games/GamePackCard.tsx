@@ -1,5 +1,5 @@
-/**
- * GamePackCard (260908, game-adapters M0b) — the "Download Minecraft support
+﻿/**
+ * GamePackCard (260908, game-adapters M0b) â€” the "Download Minecraft support
  * (about 120 MB)" card a game's launch surface shows before its first launch.
  *
  * One card per game, driven entirely by useGamePackStore's mirror of main's
@@ -51,7 +51,7 @@ export function GamePackCard({ game, className }: GamePackCardProps): React.Reac
     const pct = packProgressPct(state.received, total);
     return (
       <section className={cls} aria-live="polite" data-state="downloading">
-        <h3 className={styles.title}>{t('Downloading {name} support…', { name: desc.name })}</h3>
+        <h3 className={styles.title}>{t('Downloading {name} supportâ€¦', { name: desc.name })}</h3>
         <PercentBar
           value={pct}
           size="md"
@@ -100,3 +100,7 @@ export function GamePackCard({ game, className }: GamePackCardProps): React.Reac
     </section>
   );
 }
+
+
+
+

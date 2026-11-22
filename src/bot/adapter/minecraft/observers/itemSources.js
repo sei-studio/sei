@@ -1,4 +1,4 @@
-// 261113 (quality pass 54): where an item she picked up came from.
+﻿// 261113 (quality pass 54): where an item she picked up came from.
 //
 // combat_night free play (11-12 scorecard, dev 38d818a2): she killed a zombie,
 // walked over its rotten flesh and said "thanks for the rotten flesh lol"
@@ -126,3 +126,7 @@ export function pickupSourcesSince(bot, sinceMs) {
   for (const item of mixed) out.delete(item)
   return out
 }
+
+
+
+

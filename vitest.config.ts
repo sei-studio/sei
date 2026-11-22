@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -28,12 +28,12 @@ export default defineConfig({
       'test/**/*.test.mjs',
       // Supabase Edge Functions are Deno tests (jsr:/std specifiers, Deno
       // globals). They run under `deno test` from inside each function dir,
-      // never under Node/vitest — exclude so the vitest suite doesn't try to
+      // never under Node/vitest â€” exclude so the vitest suite doesn't try to
       // resolve Deno-only imports.
       'supabase/functions/**',
       // `tsc --build` (typecheck) emits a `.js` twin next to every renderer
       // `.test.tsx` / `.test.ts` (tsconfig.web.json has no outDir/noEmit).
-      // These are gitignored build artifacts — running them would double every
+      // These are gitignored build artifacts â€” running them would double every
       // renderer test AND run STALE assertions in the window between a source
       // edit and the next typecheck. The `.tsx`/`.ts` source is the only copy
       // vitest should execute. (Hand-authored `.test.js` live under src/bot/**,
@@ -41,8 +41,12 @@ export default defineConfig({
       'src/renderer/**/*.test.js',
       // Same twin hazard for src/shared (also in tsconfig.web's include): CI
       // runs typecheck before test, so without this the shared suite runs
-      // twice — once from the stale emitted `.js`.
+      // twice â€” once from the stale emitted `.js`.
       'src/shared/**/*.test.js',
     ],
   },
 });
+
+
+
+

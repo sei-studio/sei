@@ -1,14 +1,14 @@
-/**
+﻿/**
  * 260816 (china-compat W1): main-process LLM provider factory. One layer, all
  * main-side call sites (chat, voice one-shots, folds, compactions, chess,
  * Draw!, backseat, persona expansion BYOK).
  *
  * Resolution order:
- *   - cloud-proxy backend → the EXACT current Anthropic SDK path (zero change
+ *   - cloud-proxy backend â†’ the EXACT current Anthropic SDK path (zero change
  *     for cloud users, cache_control breakpoints included).
- *   - local + provider 'anthropic' (the default) → the exact current BYOK
+ *   - local + provider 'anthropic' (the default) â†’ the exact current BYOK
  *     path (buildChatSdk, LOCAL_NO_API_KEY guard).
- *   - local + anything else → the matching adapter, configured from
+ *   - local + anything else â†’ the matching adapter, configured from
  *     UserConfig.provider_config[provider] ({model?, base_url?}) with
  *     llmCatalog defaults. The single BYOK key in apiKeyStore is THE key for
  *     whatever provider is selected (Settings wipes it on provider switch).
@@ -114,7 +114,7 @@ export function withRegionRefusal(kind: ProviderKind, provider: LlmProvider): Ll
 async function buildLocalProviderRaw(kind: ProviderKind, modelOverride?: string): Promise<LlmProvider> {
   if (kind === 'anthropic') {
     // The exact current BYOK path (or cloud, if that is what the backend says
-    // — buildChatSdk reads it fresh; callers on this branch are local).
+    // â€” buildChatSdk reads it fresh; callers on this branch are local).
     return createAnthropicProvider('local');
   }
   const cfg = await loadConfig();
@@ -134,7 +134,7 @@ async function buildLocalProviderRaw(kind: ProviderKind, modelOverride?: string)
       session: chatgptSession(),
     });
   }
-  // Every remaining provider needs the BYOK key. Missing → the same visible
+  // Every remaining provider needs the BYOK key. Missing â†’ the same visible
   // failure class as Anthropic BYOK (never a silent cloud fallback).
   if (!(await hasApiKey())) {
     throw new Error(
@@ -205,7 +205,7 @@ export async function buildLlmProvider(): Promise<LlmProvider> {
 
 /**
  * Vision capability of the ACTIVE chat backend, computed from config (plus,
- * for Ollama, a local /api/show probe) — no key required, never throws. cloud-proxy → 'yes' (Haiku sees). Feeds the
+ * for Ollama, a local /api/show probe) â€” no key required, never throws. cloud-proxy â†’ 'yes' (Haiku sees). Feeds the
  * llm:capability push and the backseat session-start hard gate.
  */
 export async function activeLlmVision(): Promise<VisionVerdict> {
@@ -266,3 +266,7 @@ export function providerTimeoutMs(provider: Pick<LlmProvider, 'kind'>, ms: numbe
   if (provider.kind === 'anthropic' || provider.kind === 'gemini' || provider.kind === 'chatgpt') return ms;
   return openaiCompatTimeoutMs(provider.kind as ProviderKind, ms);
 }
+
+
+
+

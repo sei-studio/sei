@@ -1,5 +1,5 @@
-/**
- * UsernameSearchField — TextField + "Look up" button + inline result state.
+﻿/**
+ * UsernameSearchField â€” TextField + "Look up" button + inline result state.
  *
  * Wraps `sei.searchMojangSkin(name)` with the error/success copy. Every failure
  * path from main throws an Error whose message begins with
@@ -68,7 +68,7 @@ function mapMojangError(
       isNetwork: false,
     };
   }
-  // Network-class shapes — classifyRendererError already routes ENOTFOUND/etc.
+  // Network-class shapes â€” classifyRendererError already routes ENOTFOUND/etc.
   // to NETWORK_OFFLINE. We treat that one as the "Couldn't reach Mojang" copy.
   const classified = classifyRendererError({ message: rawMessage });
   if (classified.class === 'NETWORK_OFFLINE') {
@@ -77,7 +77,7 @@ function mapMojangError(
       isNetwork: true,
     };
   }
-  // Generic Mojang failure — UI-SPEC copy from ERROR_COPY[MOJANG_LOOKUP_FAILED].
+  // Generic Mojang failure â€” UI-SPEC copy from ERROR_COPY[MOJANG_LOOKUP_FAILED].
   return { copy: tBare(ERROR_COPY.MOJANG_LOOKUP_FAILED), isNetwork: false };
 }
 
@@ -122,7 +122,7 @@ export function UsernameSearchField({
             value={input}
             onChange={(v) => {
               setInput(v);
-              // Reset stale result state on edit — the next click is a new lookup.
+              // Reset stale result state on edit â€” the next click is a new lookup.
               if (state.kind !== 'idle' && state.kind !== 'searching') {
                 setState({ kind: 'idle' });
               }
@@ -157,3 +157,7 @@ export function UsernameSearchField({
     </div>
   );
 }
+
+
+
+

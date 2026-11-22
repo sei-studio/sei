@@ -1,4 +1,4 @@
-/** 261031 (T278): channel, send gate, device id + bucket, provider props, purchase detection. */
+﻿/** 261031 (T278): channel, send gate, device id + bucket, provider props, purchase detection. */
 import { describe, expect, it } from 'vitest';
 import {
   analyticsDeviceId,
@@ -169,3 +169,7 @@ describe('detectPurchase', () => {
     });
   });
 });
+
+
+
+

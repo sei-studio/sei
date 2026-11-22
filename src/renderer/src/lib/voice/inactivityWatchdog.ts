@@ -1,15 +1,15 @@
-/**
- * Inactivity watchdog for voice calls (260810) — pure decision logic.
+﻿/**
+ * Inactivity watchdog for voice calls (260810) â€” pure decision logic.
  *
  * Why this exists: a call left running unattended used to idle-nudge (and
  * bill LLM turns) forever. Worse, before the echo gate (260807) a video
  * playing into the mic manufactured phantom "player" turns every few seconds
  * for close to an hour. The echo gate means an unattended call now reads as
- * SILENT — this watchdog is the layer that then ends it gracefully.
+ * SILENT â€” this watchdog is the layer that then ends it gracefully.
  *
  * ACTIVITY is the player actually doing something: a confirmed, dispatched
  * utterance (post junk-filter, post echo-gate), or typing a chat message to
- * an on-call companion. Companion speech deliberately does NOT count — a
+ * an on-call companion. Companion speech deliberately does NOT count â€” a
  * companion idle-nudging itself alive is exactly the failure mode. An active
  * screenshare (backseat) counts as continuous presence: while `sharing` the
  * watchdog never fires, and the caller resets the clock so ending the share
@@ -40,7 +40,7 @@ export interface InactivityArgs {
   promptAt: number | null;
   /** Wall-clock now. */
   now: number;
-  /** A backseat screenshare is live — the watchdog never fires during one. */
+  /** A backseat screenshare is live â€” the watchdog never fires during one. */
   sharing: boolean;
 }
 
@@ -58,7 +58,11 @@ export function decideInactivity(args: InactivityArgs): InactivityDecision {
   return now - lastActivityAt >= INACTIVITY_PROMPT_AFTER_MS ? 'prompt' : 'ok';
 }
 
-/** Whole seconds left on the countdown (10 → 0), for the popup body. */
+/** Whole seconds left on the countdown (10 â†’ 0), for the popup body. */
 export function countdownSecondsLeft(promptAt: number, now: number): number {
   return Math.max(0, Math.ceil((promptAt + INACTIVITY_COUNTDOWN_MS - now) / 1000));
 }
+
+
+
+

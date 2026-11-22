@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Renderer caches that belong to ONE account (260926).
  *
  * Main re-points every per-profile store on app:scope-changed (sign-in,
@@ -118,3 +118,7 @@ export function resetAccountScopedState(): void {
   // 261110: Playtime's usage summary is read from this profile's ledger.
   useUsageStore.getState().reset();
 }
+
+
+
+

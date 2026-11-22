@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+﻿import Anthropic from '@anthropic-ai/sdk'
 import { logHaikuQuery, logHaikuResponse, logHaikuError } from './log.js'
 import { applyAnthropicModelDefaults } from './llm/anthropicModelDefaults.js'
 import { applyPromptBudget, describeBudgetReport } from './llm/promptBudget.js'
@@ -6,7 +6,7 @@ import { applyPromptBudget, describeBudgetReport } from './llm/promptBudget.js'
 /**
  * Per-call URL path for the proxy's explicit-vision route (15-02, VIS-07/D-09).
  * Passed as `call({ ..., path: VISION_MESSAGES_PATH })` for EXACTLY the one LLM
- * turn that follows an explicit `visualize`, and ONLY in cloud-proxy mode — the
+ * turn that follows an explicit `visualize`, and ONLY in cloud-proxy mode â€” the
  * SDK joins this onto the proxy baseURL (api.sei.gg, no path component).
  * 260705: the proxy's vision_hourly cap was REMOVED (explicit renders are
  * metered by the credit ledger like any turn); the route survives purely so
@@ -31,21 +31,21 @@ export function stampLastToolCacheControl(tools) {
 
 /**
  * 260730: moving cache breakpoint for the loop conversation. Without it, every
- * iteration re-bills the ENTIRE accumulated thread at full input price — the
+ * iteration re-bills the ENTIRE accumulated thread at full input price â€” the
  * one quadratic cost in a long action chain (measured live: the uncached share
- * of a call grew 1.2k → 13k tokens across a 9-minute session while the cached
+ * of a call grew 1.2k â†’ 13k tokens across a 9-minute session while the cached
  * prefix stayed flat).
  *
  * The marker goes on the last block of the last ASSISTANT turn, never the last
  * message: the final user turn is volatile (buildAnthropicPayload strips its
- * snapshot block the moment it stops being last — D-43 — so its bytes change
+ * snapshot block the moment it stops being last â€” D-43 â€” so its bytes change
  * on the next call), while everything up to and including the last assistant
  * turn is already in final form and re-sent verbatim. Each call therefore
  * cache-reads the whole prior thread and pays full price only for the newest
  * turn-and-a-half. Thinking blocks are skipped as a stamp target (cache_control
  * is not accepted there); with tool calls present the last block is a tool_use
  * anyway. Known cache-buster: demoteOlderImages rewrites an old frame block in
- * place when a new one arrives, costing one full re-bill — rare and accepted.
+ * place when a new one arrives, costing one full re-bill â€” rare and accepted.
  *
  * Returns the ORIGINAL array untouched when there is no assistant turn to
  * stamp (the fresh-loop seed call); callers use that to fall back to the tools
@@ -80,7 +80,7 @@ export function stampThreadCacheControl(messages) {
  * v0.91.1 (13-15 CHECKER warning #1 + #2):
  *   - `authToken` is stored on `this.authToken` at construction (line 78) and
  *     read PER REQUEST by `bearerAuth()` (lines 129-134). So live rotation
- *     works by mutating `sdk.authToken = newJwt` — no SDK re-init needed.
+ *     works by mutating `sdk.authToken = newJwt` â€” no SDK re-init needed.
  *   - `process.env.ANTHROPIC_AUTH_TOKEN` is read ONCE at construction
  *     (`readEnv` on line 50). A per-call env read does NOT propagate to the
  *     SDK after construction. We therefore expose `setAuthToken()` for the
@@ -88,19 +88,19 @@ export function stampThreadCacheControl(messages) {
  *   - `authHeaders()` concatenates BOTH `apiKey`-based `X-Api-Key` AND
  *     `authToken`-based `Authorization: Bearer` headers if both are set
  *     (lines 120-134). Passing a dummy `apiKey: 'unused'` would leak
- *     `X-Api-Key: unused` upstream. We pass `apiKey: null` instead — line 77
+ *     `X-Api-Key: unused` upstream. We pass `apiKey: null` instead â€” line 77
  *     coerces non-string to null, and `apiKeyAuth()` returns undefined when
  *     `this.apiKey == null` (line 124), so NO X-Api-Key header is emitted.
  */
 function buildSdkOptions(config) {
-  // 260610: SDK auto-retries are OFF — `call()` owns retrying. The SDK's
+  // 260610: SDK auto-retries are OFF â€” `call()` owns retrying. The SDK's
   // retry loop honors a server `Retry-After` header by `await sleep(...)`
   // with NO abort-signal wiring and NO cap in v0.91.1 ("If the API asks us
   // to wait a certain amount of time, just do what it says"). The Sei proxy's
   // rate-limit gate sends `Retry-After: <seconds-to-window-reset>` (up to
   // 60); one such 429 parked a messages.create() in a 30s un-abortable sleep
   // that ignored BOTH the 20s deadline controller and the player-chat
-  // preempt abort — the bot read as frozen for 30s (260609 incident).
+  // preempt abort â€” the bot read as frozen for 30s (260609 incident).
   // call() re-implements the single rescue retry with a short, ABORTABLE
   // sleep under the same deadline controller.
   const maxRetries = 0
@@ -115,10 +115,10 @@ function buildSdkOptions(config) {
   return { apiKey: config.anthropic.api_key, maxRetries }
 }
 
-// ── Retry policy for call()'s own (SDK-independent) retry ─────────────────
+// â”€â”€ Retry policy for call()'s own (SDK-independent) retry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Up to two rescue retries, only when the failure is transient and there is
 // enough budget left for the next attempt to plausibly finish. Transient
-// failures (5xx / 429 / connection blips) are origin-wide — the vision path
+// failures (5xx / 429 / connection blips) are origin-wide â€” the vision path
 // and plain /v1/messages share the same proxy origin, so the policy is shared
 // too. Extra attempts trade remaining budget, not worst-case latency: the
 // deadline controller stays the authoritative wall-clock cap, and every sleep
@@ -131,7 +131,7 @@ const RETRY_MIN_REMAINING_MS = 2_500
 // Retry-After): 500ms catches a connection blip / single dropped response;
 // 1.5s rides out a short origin restart (a Fly machine cycles in ~1-2s).
 const RETRY_SLEEP_DEFAULTS_MS = [500, 1_500]
-// Sleep ceiling: server Retry-After is honored but never beyond this — a
+// Sleep ceiling: server Retry-After is honored but never beyond this â€” a
 // denied early retry is a cheap rejection, a long sleep is a frozen bot.
 const RETRY_SLEEP_CAP_MS = 2_000
 
@@ -172,7 +172,7 @@ function abortableSleep(ms, signal) {
  */
 export function createAnthropicClient(config) {
   // `let` (not `const`): setBackend() rebuilds this instance on a live
-  // cloud↔local switch (WR-05 follow-up). `call` reads `sdk` per invocation
+  // cloudâ†”local switch (WR-05 follow-up). `call` reads `sdk` per invocation
   // through the closure, so a reassignment here is picked up by the next
   // outbound request without re-summoning the bot.
   let sdk = new Anthropic(buildSdkOptions(config))
@@ -184,15 +184,15 @@ export function createAnthropicClient(config) {
    * @param {object} req
    * @param {{type:'text',text:string,cache_control?:{type:'ephemeral'}}[]} req.systemBlocks  // last block carries cache_control (D-17/D-18)
    * @param {{name:string,description:string,input_schema:object}[]} req.tools
-   * @param {{role:'user'|'assistant',content:string|Array<any>}[]} req.messages — content may be a `ContentBlockParam[]` (text blocks, tool_use, tool_result). The SDK union accepts both `string` and block-array shapes; Loop.buildAnthropicPayload() emits the block-array form.
+   * @param {{role:'user'|'assistant',content:string|Array<any>}[]} req.messages â€” content may be a `ContentBlockParam[]` (text blocks, tool_use, tool_result). The SDK union accepts both `string` and block-array shapes; Loop.buildAnthropicPayload() emits the block-array form.
    * @param {AbortSignal} [req.signal]
    * @param {number} [req.timeoutMs]
    * @param {number} [req.maxTokens]
    * @param {Array<{role:string, content:Array<{type:string, name?:string, text?:string}>}>} [req.namedUserBlocks] Canonical pre-strip messages array carrying `name` fields on text blocks; used by log.js for cache-prefix hash elision. Logger-only; not sent to API.
-   * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it — D-11). When undefined the SDK uses its built-in `/v1/messages`.
+   * @param {string} [req.path] Per-call SDK request path override. Used ONLY by the post-explicit-`visualize` turn to hit the proxy `/vision/v1/messages` vision-cap gate (15-02, VIS-07/D-09), and ONLY in cloud-proxy mode (BYOK/local providers never set it â€” D-11). When undefined the SDK uses its built-in `/v1/messages`.
    * @param {string} [req.model] Per-call model override (260703). Used by the MEMORY.md compactor to run on the latest Sonnet while the main loop stays on the configured (Haiku) model. When undefined the client's configured model is used.
-   * @param {(text: string, toolUseId: string) => void} [req.onSay] Voice-call latency (260724): when set, the request is made with SSE streaming and this fires the moment the FIRST `say` tool_use block's input JSON completes — typically seconds before the full turn finishes — so the caller can start TTS while the rest of the turn (remaining scratchpad, world-action calls) is still generating. Fires at most once per call(). The resolved response is byte-identical in shape to the non-streaming path. 260725: an error after it fired is no longer terminal — the retry REPLAYS the spoken line instead of speaking a new one (see below), so the tool calls bundled after the say() are recovered.
-   * @param {{id:string,text:string}} [req.spokenSay] A say() line the caller ALREADY delivered to the player in an earlier attempt of this same turn (the orchestrator's timeout retry). Suppresses `onSay` for this call and collapses every say block in the response down to this one — same tool_use id, same text the player heard — so the caller's early-say bookkeeping still pairs up and the bot never repeats itself. call() sets this for itself on its own rescue retries.
+   * @param {(text: string, toolUseId: string) => void} [req.onSay] Voice-call latency (260724): when set, the request is made with SSE streaming and this fires the moment the FIRST `say` tool_use block's input JSON completes â€” typically seconds before the full turn finishes â€” so the caller can start TTS while the rest of the turn (remaining scratchpad, world-action calls) is still generating. Fires at most once per call(). The resolved response is byte-identical in shape to the non-streaming path. 260725: an error after it fired is no longer terminal â€” the retry REPLAYS the spoken line instead of speaking a new one (see below), so the tool calls bundled after the say() are recovered.
+   * @param {{id:string,text:string}} [req.spokenSay] A say() line the caller ALREADY delivered to the player in an earlier attempt of this same turn (the orchestrator's timeout retry). Suppresses `onSay` for this call and collapses every say block in the response down to this one â€” same tool_use id, same text the player heard â€” so the caller's early-say bookkeeping still pairs up and the bot never repeats itself. call() sets this for itself on its own rescue retries.
    * @returns {Promise<{toolUses:Array<{id:string,name:string,input:any}>, text:string, usage:object, stopReason:string}>}
    */
   async function call({ systemBlocks, tools, messages, signal, timeoutMs, maxTokens = 1024, namedUserBlocks, thinking, path, model: modelOverride, onSay, spokenSay }) {
@@ -202,7 +202,7 @@ export function createAnthropicClient(config) {
     // the moving thread marker on continuation calls (260730); a seed-only
     // call has no assistant turn to stamp, so it keeps the fourth on the last
     // tool entry as before (260502-h6i). Tools render before system in the
-    // cache prefix, so the system marker covers them on continuation calls —
+    // cache prefix, so the system marker covers them on continuation calls â€”
     // dropping their own marker there loses only the fallback for a
     // mid-session system-prefix change (mode switch), which aborts the loop
     // anyway.
@@ -222,7 +222,7 @@ export function createAnthropicClient(config) {
     // MUST be preserved in conversation history when the same assistant turn
     // also produced a tool_use (Anthropic 400s otherwise). Caller gets the
     // raw content array so it can round-trip thinking blocks intact.
-    // Budget is the smallest allowed (1024) by default — keeps latency low
+    // Budget is the smallest allowed (1024) by default â€” keeps latency low
     // while still giving the model a structured scratchpad to separate
     // private reasoning from in-character speech.
     const req = {
@@ -240,8 +240,8 @@ export function createAnthropicClient(config) {
     applyAnthropicModelDefaults(req)
 
     // 260607: bound the TOTAL wall-clock of this call across the SDK's internal
-    // retries. The SDK `timeout` is PER-ATTEMPT, so maxRetries×timeout (+backoff)
-    // is the true ceiling — that is the mechanism behind the 30-60s freezes.
+    // retries. The SDK `timeout` is PER-ATTEMPT, so maxRetriesÃ—timeout (+backoff)
+    // is the true ceiling â€” that is the mechanism behind the 30-60s freezes.
     // A single controller aborts the request on EITHER the caller's signal (FSM
     // preempt) OR a wall-clock budget, whichever fires first, so the in-flight
     // request is actually cancelled (not left running to burn a proxy
@@ -258,7 +258,7 @@ export function createAnthropicClient(config) {
 
     // 260724: the say() line handed to onSay is already in the player's ear.
     // 260725: rather than making every later failure terminal (which dropped
-    // the come()/remember() calls the model bundled AFTER the say — the player
+    // the come()/remember() calls the model bundled AFTER the say â€” the player
     // heard "sure, coming!" and the bot never moved), the block is kept here
     // and REPLAYED onto any retried attempt: onSay never fires twice, and the
     // retry's own say blocks are collapsed into this one, so the turn's tool
@@ -278,10 +278,10 @@ export function createAnthropicClient(config) {
      * Collapse a REPLAYED attempt's say blocks down to the one line the player
      * already heard: the first say block becomes `spoken` (same id, so the
      * caller's early-say record still matches and its tool_result bookkeeping
-     * is unchanged), any further say blocks are dropped, and everything else —
-     * the tool calls this retry existed to recover — passes through untouched.
+     * is unchanged), any further say blocks are dropped, and everything else â€”
+     * the tool calls this retry existed to recover â€” passes through untouched.
      * If the retry produced no say at all the spoken block is appended (never
-     * prepended — a `thinking` block must stay first), so the assistant turn
+     * prepended â€” a `thinking` block must stay first), so the assistant turn
      * always carries exactly one record of what was said.
      */
     function replaySpokenSay(content, spoken) {
@@ -347,7 +347,7 @@ export function createAnthropicClient(config) {
       // Attempt loop: an optional 404 vision-path reroute plus up to
       // MAX_RESCUE_RETRIES transient-failure retries, ALL under the SAME
       // deadline controller. SDK auto-retry is disabled (buildSdkOptions)
-      // because its Retry-After sleep is un-abortable and uncapped — the
+      // because its Retry-After sleep is un-abortable and uncapped â€” the
       // mechanism behind the 30s frozen-bot incident (260609). Our rescue
       // sleeps are short, capped, and abort with the controller.
       let rescueRetries = 0
@@ -363,7 +363,7 @@ export function createAnthropicClient(config) {
           const remainingMs = budgetMs - (Date.now() - startedAt)
           // VIS-07/D-09: a per-call `path` (set only on the post-visualize turn
           // in cloud mode) routes this single request to the proxy's vision
-          // route (observability only since 260705 — no hourly cap); undefined
+          // route (observability only since 260705 â€” no hourly cap); undefined
           // keeps the SDK default `/v1/messages`.
           const reqOpts = { signal: ctrl.signal, timeout: Math.max(1_000, remainingMs + 2_000), ...(path ? { path } : {}) }
           // 260724: onSay callers get the streaming attempt (early say emit);
@@ -385,7 +385,7 @@ export function createAnthropicClient(config) {
           const elapsedMs = Date.now() - startedAt
           // Budget exhaustion: normalize to an AbortError so runIterations
           // treats it as a clean dropped-turn (loop + any in-flight
-          // long-runner stay intact), not a hard error — and surface it
+          // long-runner stay intact), not a hard error â€” and surface it
           // (previously a slow call was invisible: a [haiku?] with no
           // [haiku!]).
           if (timedOut) {
@@ -396,7 +396,7 @@ export function createAnthropicClient(config) {
             throw e
           }
           // External preempt (player chat / attack) is expected, not a
-          // failure — bail out immediately, never retry across it.
+          // failure â€” bail out immediately, never retry across it.
           if (signal?.aborted || ctrl.signal.aborted) {
             logHaikuError({ elapsedMs, name: 'AbortError', message: 'aborted (preempt)', status: err?.status })
             throw err
@@ -404,23 +404,23 @@ export function createAnthropicClient(config) {
           // Vision-path fallback: a 404 on the per-call `path` override means
           // the deployed proxy doesn't expose /vision/v1/messages (route added
           // client-side ahead of the proxy rollout). Strip the override and
-          // re-hit the default /v1/messages instead of dropping the turn — the
+          // re-hit the default /v1/messages instead of dropping the turn â€” the
           // vision route is a proxy-side observability split, not worth a dead reply
           // after a successful render. Cannot loop: `path` is cleared before
           // the continue, so this branch fires at most once per call. It is a
-          // REROUTE, not a retry — it deliberately does not touch
+          // REROUTE, not a retry â€” it deliberately does not touch
           // rescueRetries, so the fallback request keeps its full transient-
           // failure allowance (a 502 right after the 404 detour killed a
           // rendered frame on 260610).
           if (path && err?.status === 404) {
-            logHaikuError({ elapsedMs, name: 'NotFoundError', message: `404 on ${path} — falling back to /v1/messages`, status: 404 })
+            logHaikuError({ elapsedMs, name: 'NotFoundError', message: `404 on ${path} â€” falling back to /v1/messages`, status: 404 })
             path = undefined
             continue
           }
           // 260725: an error after the early say() emit is NOT terminal any
           // more. It used to be (a retry could speak a second, different
           // line), but that dropped every tool call the model bundled after
-          // the say — the player heard "sure, coming!" and the bot never
+          // the say â€” the player heard "sure, coming!" and the bot never
           // moved, with no retry anywhere. The retry now rides the normal
           // rescue path below with `spokenSayBlock` set, which suppresses a
           // second onSay and replays the spoken line into the response.
@@ -439,7 +439,7 @@ export function createAnthropicClient(config) {
             logHaikuError({
               elapsedMs,
               name: err?.name ?? 'Error',
-              message: `${err?.message ?? String(err)} — retry ${rescueRetries}/${MAX_RESCUE_RETRIES} in ${sleepMs}ms`,
+              message: `${err?.message ?? String(err)} â€” retry ${rescueRetries}/${MAX_RESCUE_RETRIES} in ${sleepMs}ms`,
               status: err?.status,
             })
             await abortableSleep(sleepMs, ctrl.signal)
@@ -449,7 +449,7 @@ export function createAnthropicClient(config) {
             // timedOut / preempt branches above with correct attribution.
             continue
           }
-          // Terminal: 402 (depleted ledger), 4xx, exhausted retry — caller
+          // Terminal: 402 (depleted ledger), 4xx, exhausted retry â€” caller
           // handles by status.
           logHaikuError({
             elapsedMs,
@@ -471,15 +471,15 @@ export function createAnthropicClient(config) {
    * on the LAST (tool) block per D-18. The caller provides the ordered list
    * of static text blocks; the tool block is appended automatically.
    *
-   * Block order (current orchestrator wiring — see rebuildPersonalitySystem):
-   *   0. baseline instructions (brain/prompts.js → BASELINE_INSTRUCTIONS)
-   *   1. persona + still-learning line (brain/prompts.js → renderPersona)
-   *   2. capability paragraph (adapter/<game>/prompts.js → CAPABILITY_PARAGRAPH)
-   *   3. world primer (adapter/<game>/prompts.js → WORLD_PRIMER)
-   *   4. game-specific action rules (adapter/<game>/prompts.js → ACTION_RULES)
-   *   5. tool list ← cache_control here
+   * Block order (current orchestrator wiring â€” see rebuildPersonalitySystem):
+   *   0. baseline instructions (brain/prompts.js â†’ BASELINE_INSTRUCTIONS)
+   *   1. persona + still-learning line (brain/prompts.js â†’ renderPersona)
+   *   2. capability paragraph (adapter/<game>/prompts.js â†’ CAPABILITY_PARAGRAPH)
+   *   3. world primer (adapter/<game>/prompts.js â†’ WORLD_PRIMER)
+   *   4. game-specific action rules (adapter/<game>/prompts.js â†’ ACTION_RULES)
+   *   5. tool list â† cache_control here
    *
-   * log.js indexes [1] for persona and [2] for capability — keep those slots
+   * log.js indexes [1] for persona and [2] for capability â€” keep those slots
    * stable if you reorder.
    *
    * @param {string[]} staticBlocks
@@ -518,19 +518,19 @@ export function createAnthropicClient(config) {
 
   /**
    * Live-swap the backend between cloud-proxy and BYOK without re-summoning
-   * the bot (WR-05 follow-up — was previously deferred to a "restart your bot"
+   * the bot (WR-05 follow-up â€” was previously deferred to a "restart your bot"
    * banner). Rebuilds the SDK instance rather than mutating individual fields:
    * this is robust regardless of which options the SDK reads at construction
    * vs per-request (only `authToken` is documented as per-request; `baseURL`
    * and `apiKey` are read at construction in v0.91.1), and reuses the exact
    * `buildSdkOptions` semantics (apiKey:null suppresses X-Api-Key in cloud
    * mode). The captured `config.anthropic` is mutated in lockstep so
-   * `setAuthToken`'s cloudMode guard stays correct after the switch — i.e. a
+   * `setAuthToken`'s cloudMode guard stays correct after the switch â€” i.e. a
    * stray rotation tick no-ops once we're back on BYOK, and JWT rotation
    * resumes once we're on cloud.
    *
    * An in-flight `call` keeps using the SDK instance it already captured; the
-   * NEXT call uses the rebuilt one. No re-validation through ConfigSchema —
+   * NEXT call uses the rebuilt one. No re-validation through ConfigSchema â€”
    * we're past parse time, and BYOK-with-empty-key is a legal runtime state.
    *
    * @param {{cloudMode?:{baseURL:string,authToken:string}, api_key?:string}} backend
@@ -551,3 +551,7 @@ export function createAnthropicClient(config) {
 
   return { call, buildCachedSystem, model, setAuthToken, setBackend }
 }
+
+
+
+

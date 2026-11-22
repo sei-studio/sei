@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "session open" marker (261031, T278, scale plan C4).
  *
  * A crash that kills the main process sends nothing: 37% of October's app
@@ -256,3 +256,7 @@ export function uncleanExitProps(marker: SessionMarker): Record<string, string |
       : {}),
   };
 }
+
+
+
+

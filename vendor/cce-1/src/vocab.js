@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Maia-3 move vocabulary: 4352 indices.
  *
  * Layout (matches get_all_possible_moves() in the official CSSLab/maia3
@@ -60,3 +60,7 @@ export function moveToIndex(uci) {
 export function indexToMove(index) {
   return vocab.toUci[index];
 }
+
+
+
+

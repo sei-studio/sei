@@ -1,5 +1,5 @@
-/**
- * SeiPixelMark — inline recolored Sei wordmark.
+﻿/**
+ * SeiPixelMark â€” inline recolored Sei wordmark.
  *
  * Uses CSS mask-image so a single-color SVG can be tinted via background-color.
  * Used in OnboardingScreen step 0 ("Welcome to <SeiPixelMark/>.") and elsewhere
@@ -28,21 +28,21 @@ export function SeiPixelMark(props: SeiPixelMarkProps): React.ReactElement {
         display: 'inline-block',
         height,
         // Match the box to the wordmark's true aspect ratio (sei-text.png is
-        // 928×300 ≈ 3.09:1). mask-size:contain + center keep the glyph centered
+        // 928Ã—300 â‰ˆ 3.09:1). mask-size:contain + center keep the glyph centered
         // in the box on the (centered) auth screen.
         width: height * (928 / 300),
         backgroundColor: color,
         // RASTER source, not the old sei-logo-small.svg. That SVG was a Inkscape
         // <text> element (live font, not outlined paths); used as a CSS
-        // mask-image it rendered EMPTY whenever the font wasn't resolvable —
+        // mask-image it rendered EMPTY whenever the font wasn't resolvable â€”
         // which is exactly what happened on the auth/login screen (the wordmark
         // was invisible). A transparent-background PNG carries the glyph in its
         // alpha channel, so it has no font dependency and always renders; the
-        // backgroundColor below (var(--accent) → #7fb0ff on the dark theme)
+        // backgroundColor below (var(--accent) â†’ #7fb0ff on the dark theme)
         // tints it through the mask. The asset lives in the renderer's public/
         // dir; we prefix it with import.meta.env.BASE_URL ('/' in dev, './' in
         // the packaged build) so the url() resolves under both the dev server
-        // and the file:// protocol — a bare absolute `/img/…` resolves to the
+        // and the file:// protocol â€” a bare absolute `/img/â€¦` resolves to the
         // filesystem root under file:// and renders empty (the v0.3.0 bug).
         WebkitMaskImage: `url('${import.meta.env.BASE_URL}img/sei-text.png')`,
         maskImage: `url('${import.meta.env.BASE_URL}img/sei-text.png')`,
@@ -59,3 +59,7 @@ export function SeiPixelMark(props: SeiPixelMarkProps): React.ReactElement {
     />
   );
 }
+
+
+
+

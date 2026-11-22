@@ -1,4 +1,4 @@
-/**
+﻿/**
  * What is on the shared surface, in one short line (260804).
  *
  * The companion was reading six frames and a transcript and having to infer,
@@ -26,7 +26,7 @@
  * CGWindowListCopyWindowInfo with kCGWindowListOptionOnScreenOnly, which
  * returns windows front to back. The first entry that is not one of ours is
  * therefore the frontmost window. That is a documented ordering of the
- * underlying API rather than of Electron's wrapper, so it is a heuristic — but
+ * underlying API rather than of Electron's wrapper, so it is a heuristic â€” but
  * a wrong answer here costs one slightly-off line, and the alternative was no
  * answer at all.
  *
@@ -41,12 +41,12 @@ const MAX_LABEL_CHARS = 70;
 /** Our own windows are never the answer: on a whole-screen share Sei is often
  *  frontmost (the player just clicked the share button), and naming ourselves
  *  would tell the companion it is watching itself. */
-const OURS = /^Sei($| [-—|])/;
+const OURS = /^Sei($| [-â€”|])/;
 
 function tidy(name: string): string | null {
   const clean = name.replace(/\s+/g, ' ').trim();
   if (!clean) return null;
-  return clean.length <= MAX_LABEL_CHARS ? clean : `${clean.slice(0, MAX_LABEL_CHARS - 1)}…`;
+  return clean.length <= MAX_LABEL_CHARS ? clean : `${clean.slice(0, MAX_LABEL_CHARS - 1)}â€¦`;
 }
 
 export async function readShareLabel(sourceId: string): Promise<string | null> {
@@ -68,3 +68,7 @@ export async function readShareLabel(sourceId: string): Promise<string | null> {
     return null;
   }
 }
+
+
+
+

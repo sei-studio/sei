@@ -1,14 +1,14 @@
-/**
+﻿/**
  * Source-contract tests for OnboardApp's W6 local-mode onboarding
  * (260817, china-compat). Repo convention (no @testing-library/react):
  * grep-style checks over the source, mirroring AuthChoiceScreen.test.tsx.
  *
  * Invariants under test:
- *   1. CLOUD PATH UNTOUCHED — runCloudSetup still saves the cloud config,
+ *   1. CLOUD PATH UNTOUCHED â€” runCloudSetup still saves the cloud config,
  *      persists the questionnaire (prefsSave), and generates the companion,
  *      and the cloud branch of the setup dispatch runs it exactly when no
  *      local choices are armed.
- *   2. LOCAL PATH RESTORED — runLocalSetup mirrors the full cloud arc:
+ *   2. LOCAL PATH RESTORED â€” runLocalSetup mirrors the full cloud arc:
  *      config save with the picked provider + model (provider_config, where
  *      the llm layer reads it), prefsSave, BYOK generateUnique, and the
  *      'return' scene so a generated companion reaches the FULL tutorial.
@@ -64,7 +64,7 @@ describe('OnboardApp W6: local path restored (full onboarding)', () => {
     expect(local).toContain('genCharacterIdRef.current = characterId');
     expect(local).toContain("setPhase({ k: 'return' })");
   });
-  it('writes stt/tts engines only when chosen — absent keys keep default semantics', () => {
+  it('writes stt/tts engines only when chosen â€” absent keys keep default semantics', () => {
     expect(local).toContain('...(choices.stt ? { stt_engine: choices.stt } : {})');
     expect(local).toContain('...(choices.tts ? { tts_engine: choices.tts } : {})');
   });
@@ -218,7 +218,7 @@ describe('OnboardApp 261005: step analytics', () => {
     expect(src).toContain("stepTrackerRef.current?.abandon('left_view')");
   });
   it('marks the skip buttons', () => {
-    const ctl = src.slice(src.indexOf('function LineControls('), src.indexOf('/* ── Auth panel'));
+    const ctl = src.slice(src.indexOf('function LineControls('), src.indexOf('/* â”€â”€ Auth panel'));
     expect(ctl.match(/markStep\('skip'\)/g)).toHaveLength(3);
   });
   it('the boot sign-in variant is not tracked', () => {
@@ -239,7 +239,7 @@ describe('OnboardApp 261007: returning-panel local mode on an unset-up computer'
     expect(adv).toContain("goLine('nameQ');");
   });
   it('the new line advances on click and gets the continue hint', () => {
-    const hints = src.slice(src.indexOf('const HINT_LINES'), src.indexOf('/* ── Machine'));
+    const hints = src.slice(src.indexOf('const HINT_LINES'), src.indexOf('/* â”€â”€ Machine'));
     expect(hints).toContain("'noProfile'");
   });
 });
@@ -286,7 +286,7 @@ describe('OnboardApp 261029: the sign-in panel never waits on a push it missed',
   // wiring: every signal goes through the gate, and nothing else marks the
   // profile ready.
   it('routes both pushes and the mount-time check through the sign-in scope gate', () => {
-    const plumbing = src.slice(src.indexOf('const scopeGateRef = useRef'), src.indexOf('// ── Scene choreography'));
+    const plumbing = src.slice(src.indexOf('const scopeGateRef = useRef'), src.indexOf('// â”€â”€ Scene choreography'));
     expect(plumbing).toContain('createSignInScopeGate({');
     expect(plumbing).toContain('readSnapshot: readAuthSnapshot');
     expect(plumbing).toContain('sei.onAuthState((s) => gate.onAuth(s))');
@@ -307,3 +307,7 @@ describe('OnboardApp 261029: the sign-in panel never waits on a push it missed',
     expect(src).toContain("if (authRef.current.kind === 'signed_in' && scopeReadyRef.current) {");
   });
 });
+
+
+
+

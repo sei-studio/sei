@@ -1,5 +1,5 @@
-/**
- * McSetupModal — the Minecraft setup window (260721, replaces LanModal).
+﻿/**
+ * McSetupModal â€” the Minecraft setup window (260721, replaces LanModal).
  *
  * Opened from the Minecraft launch panel's "How do I set up launch?" link
  * (searching=false) and from a Launch attempt that found no open world
@@ -89,7 +89,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
   const action = useSeiProfileAction();
   const firewallHint = useFirewallHint();
 
-  // ── lan_wait telemetry (261104): shown, and how it ended ────────────────
+  // â”€â”€ lan_wait telemetry (261104): shown, and how it ended â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // One start per searching window; the first end wins (closing after the
   // world opened is still world_open). Unmounted any other way = left.
   const waitStart = useRef<number | null>(null);
@@ -115,7 +115,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
     return () => endWaitRef.current('left');
   }, [searching]);
 
-  // ── Auto-resume on open world (D-56) ────────────────────────────────────
+  // â”€â”€ Auto-resume on open world (D-56) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (!searching) return;
     if (lan.kind !== 'open') return;
@@ -144,7 +144,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
     setPendingSummonReturnToChat,
   ]);
 
-  // ── Dismiss (D-24): in searching mode, closing also cancels the summon. ──
+  // â”€â”€ Dismiss (D-24): in searching mode, closing also cancels the summon. â”€â”€
   const onClose = (): void => {
     if (searching) {
       endWait('closed');
@@ -216,7 +216,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
                 <span />
                 <span />
               </span>
-              {t('Searching for an open LAN world…')}
+              {t('Searching for an open LAN worldâ€¦')}
             </div>
           ) : null}
         </>
@@ -248,3 +248,7 @@ export function McSetupModal({ tab: initialTab, searching }: McSetupModalProps):
     </ModalShell>
   );
 }
+
+
+
+

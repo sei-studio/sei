@@ -1,5 +1,5 @@
-/**
- * 260817 (china-compat W10) — clearApiKey.
+﻿/**
+ * 260817 (china-compat W10) â€” clearApiKey.
  *
  * The provider-switch key wipe must UNLINK the key file: hasApiKey() is
  * file-existence based, so storing an encrypted empty string would still read
@@ -54,3 +54,7 @@ describe('clearApiKey (W10)', () => {
     expect(await hasApiKey()).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { SEILINK_HOST_OFF, type SeilinkHostStatus } from '@shared/seilinkHost';
 import { BOOT_QUIET_MS, openedHintFor, updatedHintFor } from './desktopHint';
 
@@ -31,3 +31,7 @@ describe('updatedHintFor', () => {
     expect(updatedHintFor({ characterId: 'a', desktop: false }, new Set(['a']), 'b')).toBe(false);
   });
 });
+
+
+
+

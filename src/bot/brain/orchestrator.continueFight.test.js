@@ -1,4 +1,4 @@
-// 261019 (quality pass 18): her own repeat call no longer aborts the fight
+﻿// 261019 (quality pass 18): her own repeat call no longer aborts the fight
 // that is running.
 //
 // combat_night eval, 10 runs: 27 attackEntity calls ended "aborted after N/8
@@ -285,3 +285,7 @@ describe('261019 a hit during a mid-action call does not tear down a running fig
     expect(claimed).toBe(false)
   })
 })
+
+
+
+

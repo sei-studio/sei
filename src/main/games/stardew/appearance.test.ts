@@ -1,4 +1,4 @@
-/** Stardew appearance (260921): the one-off derivation with a stubbed LLM. */
+﻿/** Stardew appearance (260921): the one-off derivation with a stubbed LLM. */
 import { describe, it, expect, vi } from 'vitest';
 import {
   APPEARANCE_CLOUD_WAIT_WITH_LOCAL_MS,
@@ -79,7 +79,7 @@ describe('the shared legend', () => {
   });
 
   it('has no em dash in any legend line (the lines are model-facing, but keep the house style)', () => {
-    for (const row of [...STARDEW_HAIR_LEGEND, ...STARDEW_SHIRT_LEGEND]) expect(row.look).not.toMatch(/—/);
+    for (const row of [...STARDEW_HAIR_LEGEND, ...STARDEW_SHIRT_LEGEND]) expect(row.look).not.toMatch(/â€”/);
   });
 
   it('salvages field by field: a bad field takes the default, the rest survive', () => {
@@ -456,3 +456,7 @@ describe('slow cloud reads (260925)', () => {
     }
   });
 });
+
+
+
+

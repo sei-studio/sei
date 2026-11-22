@@ -1,5 +1,5 @@
-/**
- * browseQuery — the two cloud reads behind the World tab (product call 261110).
+﻿/**
+ * browseQuery â€” the two cloud reads behind the World tab (product call 261110).
  *
  *   - fetchBrowseRows: one page of shared characters in the requested order.
  *     Tries `search_public_characters_sorted` (server-side Popular / Newest /
@@ -138,3 +138,7 @@ export async function fetchAddCounts(
     return null;
   }
 }
+
+
+
+

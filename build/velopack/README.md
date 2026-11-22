@@ -1,4 +1,4 @@
-# Sei's patched Velopack Update.exe
+﻿# Sei's patched Velopack Update.exe
 
 Windows updates run on [Velopack](https://github.com/velopack/velopack) (MIT).
 Sei ships a patched `Update.exe` so an in-app restart takes a few seconds
@@ -18,7 +18,7 @@ restart only swaps two folders.
 | `Update.exe stage --package <nupkg>` | Extracts the package into `packages\SeiStaged\v<version>.partial` at below-normal CPU priority (normal I/O), verifies every file's size, renames it to `v<version>` and writes `v<version>.ok`. Skips itself (`last-result.txt` says why) when the volume would be left with less than 1 GiB free. One stage at a time (`.lock`); stale folders are removed by the next stage. A stage killed at any point leaves no `.ok`, so it is never used. |
 | `apply` uses the staged copy | When `v<version>.ok` matches the package (name and size) and the tree verifies, `current` is swapped with it (two renames, with upstream's rollback if the second fails). The backup folder's parent (`packages\VelopackTemp`) is created first: upstream only made it while extracting there, so on an install that had never applied a delta every swap failed with os error 3 (261031 CI, sig-accept). Otherwise the stock extraction runs. |
 | `apply --noHooks` | No app hooks (Sei handles none), and the new Sei is started right after the swap, before the uninstall-entry, shortcut and cleanup work. |
-| `apply --seiOverlay <dir>` | A native click-through topmost window showing PNG frames Sei rendered (its splash with "Updating…", a time estimate after `slowAfterMs`, an error frame). Up before Update.exe waits for Sei to exit, closed when the restarted Sei shows a window. On failure: the error frame for 2.5 s, then the old version starts. See `windows/sei_overlay.rs` for `overlay.txt`. |
+| `apply --seiOverlay <dir>` | A native click-through topmost window showing PNG frames Sei rendered (its splash with "Updatingâ€¦", a time estimate after `slowAfterMs`, an error frame). Up before Update.exe waits for Sei to exit, closed when the restarted Sei shows a window. On failure: the error frame for 2.5 s, then the old version starts. See `windows/sei_overlay.rs` for `overlay.txt`. |
 | Waiting for Sei to exit | The stock wait opens Sei's process for SYNCHRONIZE, which is denied for Sei's main process (every CI run logged "Access is denied" and went straight on). The patch then polls the process list every 50 ms until the pid is gone (60 s cap), and the swap renames retry every 100 ms (same 10 s / 30 s budgets as upstream's 1 s retries). |
 | Image prewarm | After a stage, every top-level `.exe`/`.dll` of the staged copy is mapped as an image once and unmapped, so creating the image section (a full read of the 190 MB `Sei.exe`, plus the on-execute scan) happens before the restart instead of inside it. |
 | `packages\SeiStaged\applying.pid` | Present while an apply runs. A Sei launched during it leaves `relaunch` and exits (`velopackBoot.ts`); a no-restart apply starts Sei when it finishes. |
@@ -54,3 +54,7 @@ before packing. Windows only: the patch is `cfg(target_os = "windows")`.
 Rebase the patch onto a newer upstream commit, rebuild, bump the `velopack`
 npm package and `VPK_VERSION` to the matching release, and rerun
 `velopack-update.yml`.
+
+
+
+

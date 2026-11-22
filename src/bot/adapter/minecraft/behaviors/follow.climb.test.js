@@ -1,4 +1,4 @@
-// 261015 quality pass 10: the follow trail climbs out of a 1x1 shaft before
+﻿// 261015 quality pass 10: the follow trail climbs out of a 1x1 shaft before
 // it re-installs GoalFollow (errands eval: 30s of follow, still underground).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -121,3 +121,7 @@ describe('follow climbs out of a shaft (261015)', () => {
     expect(climbOut).toHaveBeenCalledTimes(2) // tries again after the back-off
   })
 })
+
+
+
+

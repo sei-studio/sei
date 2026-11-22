@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Anthropic-shape <-> OpenAI / Gemini / Ollama wire-shape translation for the
  * main-process LLM layer. TypeScript port of src/bot/brain/llm/messageMappers.js
  * (do NOT import the bot's JS from main), extended with what main needs:
@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { LlmMessage, LlmToolDef, LlmToolUse, LlmUsage } from './types';
 
-// ── Anthropic system → flat system string ─────────────────────────────────
+// â”€â”€ Anthropic system â†’ flat system string â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function flattenSystem(system: string | Array<{ type?: string; text?: string }> | undefined): string {
   if (system == null) return '';
   if (typeof system === 'string') return system;
@@ -44,7 +44,7 @@ function contentBlocks(content: unknown): AnyBlock[] {
   return [{ type: 'text', text: String(content ?? '') }];
 }
 
-// ── Anthropic messages → OpenAI messages ──────────────────────────────────
+// â”€â”€ Anthropic messages â†’ OpenAI messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // tool_result user blocks split out into separate {role:'tool'} messages;
 // an image block becomes an image_url data-URL part, which forces the user
@@ -110,7 +110,7 @@ export function anthropicToOpenAIMessages(
   return out;
 }
 
-// ── Anthropic messages → Ollama native /api/chat messages ─────────────────
+// â”€â”€ Anthropic messages â†’ Ollama native /api/chat messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // 261010: Ollama's NATIVE route is not the OpenAI shape, and reusing the
 // OpenAI mapper broke it in two ways (both 400 on Ollama 0.40):
@@ -203,12 +203,12 @@ export function anthropicToolsToOpenAITools(
   }));
 }
 
-/** Anthropic forced tool_choice → OpenAI's function form. */
+/** Anthropic forced tool_choice â†’ OpenAI's function form. */
 export function toolChoiceToOpenAI(tc: { type: 'tool'; name: string }): Record<string, unknown> {
   return { type: 'function', function: { name: tc.name } };
 }
 
-// ── Synthesized anthropic-shaped assistant content ────────────────────────
+// â”€â”€ Synthesized anthropic-shaped assistant content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function synthesizeContent(text: string, toolUses: LlmToolUse[]): Anthropic.Messages.ContentBlock[] {
   const blocks: unknown[] = [];
   if (text) blocks.push({ type: 'text', text });
@@ -216,7 +216,7 @@ export function synthesizeContent(text: string, toolUses: LlmToolUse[]): Anthrop
   return blocks as Anthropic.Messages.ContentBlock[];
 }
 
-// ── stopReason normalization ──────────────────────────────────────────────
+// â”€â”€ stopReason normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function normalizeOpenAIStopReason(finishReason: string | null | undefined): string | null {
   switch (finishReason) {
     case 'stop': return 'end_turn';
@@ -245,7 +245,7 @@ export function normalizeOllamaStopReason(doneReason: string | null | undefined)
   }
 }
 
-// ── usage normalization ───────────────────────────────────────────────────
+// â”€â”€ usage normalization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function normalizeOpenAIUsage(usage: unknown): LlmUsage {
   const u = (usage ?? {}) as {
     prompt_tokens?: number;
@@ -284,7 +284,7 @@ export function normalizeOllamaUsage(data: unknown): LlmUsage {
   };
 }
 
-// ── OpenAI response tool_calls → LlmToolUse[] ─────────────────────────────
+// â”€â”€ OpenAI response tool_calls â†’ LlmToolUse[] â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // OpenAI's `arguments` is a JSON string (Draw!'s 120-point pen arrays must
 // survive the round trip; JSON.parse handles them). An unparseable payload is
 // preserved under `_raw` rather than dropped.
@@ -305,7 +305,7 @@ export function openAIToolCallsToUses(toolCalls: unknown): LlmToolUse[] {
   return out;
 }
 
-// ── Anthropic schema → Gemini-friendly schema ─────────────────────────────
+// â”€â”€ Anthropic schema â†’ Gemini-friendly schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Strip every field Gemini's functionDeclarations.parameters rejects (the
 // zod-emitted JSON Schema often includes default/additionalProperties/$schema).
 const GEMINI_REJECTED_FIELDS = new Set([
@@ -337,8 +337,8 @@ export function anthropicToolsToGeminiTools(tools: LlmToolDef[] | undefined): un
   }];
 }
 
-// ── Anthropic messages → Gemini contents ──────────────────────────────────
-// Pre-pass builds id → name for every assistant tool_use, because Gemini's
+// â”€â”€ Anthropic messages â†’ Gemini contents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Pre-pass builds id â†’ name for every assistant tool_use, because Gemini's
 // functionResponse.name must match the prior functionCall.name while Anthropic
 // tool_result blocks only carry tool_use_id.
 export function anthropicToGeminiContents(messages: LlmMessage[]): Array<Record<string, unknown>> {
@@ -404,7 +404,7 @@ export function geminiPartsToResult(resp: unknown): { text: string; toolUses: Ll
   return { text, toolUses };
 }
 
-// ── Forced-tool fallback parse ────────────────────────────────────────────
+// â”€â”€ Forced-tool fallback parse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * The prompt appended to the system text when a provider cannot force a tool
  * call: tells the model to answer with ONLY the tool's input JSON.
@@ -447,3 +447,7 @@ export function textOfContent(content: Array<{ type?: string; text?: string }>):
     .join('')
     .trim();
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * T283 review: fetchMyProfileName / fetchMyProfile read the AUTH SESSION
  * user's name. With an expected user id, a session for anyone else answers
  * null and never queries, so one account's name cannot land in another's
@@ -79,3 +79,7 @@ describe('fetchMyProfileName with an expected user', () => {
     expect(await fetchMyProfileName(A)).toBeNull();
   });
 });
+
+
+
+

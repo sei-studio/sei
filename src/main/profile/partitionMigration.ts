@@ -1,22 +1,22 @@
-/**
- * Global → per-profile partition migration (260603). One-shot.
+﻿/**
+ * Global â†’ per-profile partition migration (260603). One-shot.
  *
  * Before this change, every per-account store lived directly under
- * `<userData>/…` (a single global bucket). After it, each account scope owns an
- * isolated subtree under `<userData>/profiles/<scopeId>/…`. This migration
+ * `<userData>/â€¦` (a single global bucket). After it, each account scope owns an
+ * isolated subtree under `<userData>/profiles/<scopeId>/â€¦`. This migration
  * relocates a pre-existing install's global per-account data into the profile
  * that owns it at first boot of the new build.
  *
  * The OWNING scope is decided by the caller (src/main/index.ts) and applied via
  * `setActiveScope()` BEFORE this runs:
- *   - signed in at boot  → the account's UUID  (their global data was theirs)
- *   - signed out at boot → `'local'`           (anonymous bucket)
+ *   - signed in at boot  â†’ the account's UUID  (their global data was theirs)
+ *   - signed out at boot â†’ `'local'`           (anonymous bucket)
  *
  * Idempotency: guarded by `paths.partitionMarkerPath()` (a device-global file).
  * On a fresh install there is nothing to move; the marker is still written so
  * the scan never repeats.
  *
- * What moves (device-global → profileRoot): config.json, api_key.bin,
+ * What moves (device-global â†’ profileRoot): config.json, api_key.bin,
  * characters/, skins/, portraits/, memory/, sync-queue.json,
  * defaults-seeded.json, migration-modal-shown.json.
  *
@@ -40,7 +40,7 @@ async function exists(p: string): Promise<boolean> {
 
 /**
  * Per-account files/dirs that lived directly under `<userData>/` in the
- * pre-partition layout. Names only — both the device-global source and the
+ * pre-partition layout. Names only â€” both the device-global source and the
  * profile-scoped target are derived from this list.
  */
 const PARTITIONED_ENTRIES = [
@@ -82,7 +82,7 @@ async function moveInto(name: string, profileRoot: string): Promise<boolean> {
 }
 
 /**
- * Run the one-shot global→profile partition. Assumes the caller has already
+ * Run the one-shot globalâ†’profile partition. Assumes the caller has already
  * called `setActiveScope()` with the owning scope. Best-effort per entry: a
  * single failed move is logged and the rest still proceed, but the marker is
  * only written once the pass completes so a hard failure retries next boot.
@@ -98,7 +98,7 @@ export async function migrateGlobalToProfile(): Promise<void> {
     try {
       if (await moveInto(name, profileRoot)) {
         moved += 1;
-        logger.info(`moved ${name} → ${path.relative(paths.userData(), path.join(profileRoot, name))}`);
+        logger.info(`moved ${name} â†’ ${path.relative(paths.userData(), path.join(profileRoot, name))}`);
       }
     } catch (err) {
       logger.warn(`failed to move ${name}: ${(err as Error).message}`);
@@ -111,5 +111,9 @@ export async function migrateGlobalToProfile(): Promise<void> {
     JSON.stringify({ version: 1, partitionedAt: new Date().toISOString(), movedCount: moved }, null, 2) + '\n',
     'utf8',
   );
-  logger.info(moved > 0 ? `completed: ${moved} entries → profiles/${getActiveScope()}` : 'fresh install — nothing to move');
+  logger.info(moved > 0 ? `completed: ${moved} entries â†’ profiles/${getActiveScope()}` : 'fresh install â€” nothing to move');
 }
+
+
+
+

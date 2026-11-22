@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ModdedHostModal (261007): a Fabric kick reads as Fabric even when the host
  * classifier said "unknown" (both 0.6.7 cases), names the mods the world
  * asked for, and no longer recommends minimaps.
@@ -34,3 +34,7 @@ describe('ModdedHostModal', () => {
     expect(html).not.toContain('The world asked for these mods');
   });
 });
+
+
+
+

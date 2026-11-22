@@ -1,5 +1,5 @@
-/**
- * DstSettingsSection — the Settings "Don't Starve Together" group (game
+﻿/**
+ * DstSettingsSection â€” the Settings "Don't Starve Together" group (game
  * adapters M2, 260908): install status (game found, helper installed and
  * enabled, with the one-click add) and the game folder. The discovery port
  * row is GONE (260909): main binds the first free port of a fixed list and
@@ -62,3 +62,7 @@ export function DstSettingsSection(_props: GameSettingsSectionProps): React.Reac
     </>
   );
 }
+
+
+
+

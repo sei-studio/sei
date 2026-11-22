@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Analytics for the own-key (local) companion import (261116). Shape only:
  * where it was offered, counts and an outcome, never names or ids.
  *
@@ -43,3 +43,7 @@ export function trackLocalImportResult(
 ): void {
   track('local_import_result', { entry, outcome, imported_n: importedN, failed_n: failedN });
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { wireStardewEvents, activityFor, morningText, DAY_OBS_WAIT_MS, ACTIVITY_SETTLE_MS, ACTIVITY_MIN_GAP_MS, ACTIVITY_REPEAT_MS } from './fsmWires.js'
 
@@ -29,15 +29,15 @@ describe('stardew fsm wires', () => {
     expect(h.onChat).toHaveBeenCalledTimes(3)
   })
 
-  it('matches names through accents (261027): "martín" addresses Martin, "björn" is a sibling', () => {
+  it('matches names through accents (261027): "martÃ­n" addresses Martin, "bjÃ¶rn" is a sibling', () => {
     const c = fakeClient()
     const h = handlers()
     const dispose = wireStardewEvents(c, h, { botName: 'Martin Salazar', companions: () => ['Bjorn'] })
-    c.emit('chat', { from: 'Ouen', text: 'martín salazar ven aquí', sameLocation: true })
+    c.emit('chat', { from: 'Ouen', text: 'martÃ­n salazar ven aquÃ­', sameLocation: true })
     expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: true, suppressInterrupt: false }))
-    c.emit('chat', { from: 'Ouen', text: 'björn water the crops', sameLocation: true })
+    c.emit('chat', { from: 'Ouen', text: 'bjÃ¶rn water the crops', sameLocation: true })
     expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: false, suppressInterrupt: true }))
-    c.emit('chat', { from: 'Ouen', text: 'martin salazaré', sameLocation: true })
+    c.emit('chat', { from: 'Ouen', text: 'martin salazarÃ©', sameLocation: true })
     expect(h.onChat).toHaveBeenLastCalledWith(expect.objectContaining({ addressed: false }))
     dispose()
   })
@@ -228,3 +228,7 @@ describe('stardew fsm wires', () => {
     expect(h.onIdleNudge).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

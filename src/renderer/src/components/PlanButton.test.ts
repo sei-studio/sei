@@ -1,23 +1,23 @@
-/**
+﻿/**
  * Tests for PlanButton, the big buy / upgrade button on the plan surfaces
  * (261023). Grep-style source checks, the project convention (no
  * @testing-library/react installed).
  *
  * Invariants:
- *   P.1 — reduced motion drops the lift, press and shine but keeps the colour
+ *   P.1 â€” reduced motion drops the lift, press and shine but keeps the colour
  *         transitions.
- *   P.2 — every checkout entry point renders a PlanButton: the plan cards, the
+ *   P.2 â€” every checkout entry point renders a PlanButton: the plan cards, the
  *         credit packs and the usage-limit popup.
- *   P.3 — the recommended badge only shows on an upgrade target, so a Party
+ *   P.3 â€” the recommended badge only shows on an upgrade target, so a Party
  *         subscriber's own card never reads "Recommended".
- *   P.4 — new labels have a zh translation.
- *   P.5 — flat and borderless (261027): no top highlight, no gradient
+ *   P.4 â€” new labels have a zh translation.
+ *   P.5 â€” flat and borderless (261027): no top highlight, no gradient
  *         band, no shadow under the primary, no border line on either kind.
- *   P.6 — the primary carries the old Summon glint (ef346069 .deployBtn), on a
+ *   P.6 â€” the primary carries the old Summon glint (ef346069 .deployBtn), on a
  *         1.8s loop (261027, was 3.4s) scaled by --flux, moved by transform,
  *         and not on a disabled button. Every glint shares one phase (261027:
  *         the plan buttons sweep together), no offset class.
- *   P.7 — the primary fill is its own --plan-cta token family (the old
+ *   P.7 â€” the primary fill is its own --plan-cta token family (the old
  *         Summon blue), set in every theme and falling back to --accent.
  *         On midnight the global accent itself is brighter (261027), so the
  *         plan tokens point at it; ice keeps its calmer global accent.
@@ -115,3 +115,7 @@ describe('PlanButton', () => {
     expect(blocks[0]).toMatch(/--accent:\s*#3f6fc4/);
   });
 });
+
+
+
+

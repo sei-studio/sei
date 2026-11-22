@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { createSentenceTts } from './sentenceTts';
 import type { AudioQueue } from './audioQueue';
 
@@ -81,8 +81,12 @@ describe('sentence-sized local speech', () => {
   });
   it('keeps decimals, CJK and a final unpunctuated tail', async () => {
     const f = fixture(); f.synthesize.mockResolvedValue(new ArrayBuffer(4));
-    await f.speak({ characterId: 'c1', text: 'The value is 3.14. 你好。これは試験です！ Final tail', more: true }, f.opts);
-    expect(f.slots.map((s) => s.text)).toEqual(['The value is 3.14.', '你好。', 'これは試験です！', 'Final tail']);
+    await f.speak({ characterId: 'c1', text: 'The value is 3.14. ä½ å¥½ã€‚ã“ã‚Œã¯è©¦é¨“ã§ã™ï¼ Final tail', more: true }, f.opts);
+    expect(f.slots.map((s) => s.text)).toEqual(['The value is 3.14.', 'ä½ å¥½ã€‚', 'ã“ã‚Œã¯è©¦é¨“ã§ã™ï¼', 'Final tail']);
     expect(f.synthesize.mock.calls.every(([r]) => r.more === true)).toBe(true);
   });
 });
+
+
+
+

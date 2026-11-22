@@ -1,12 +1,12 @@
-// src/adapter/minecraft/behaviors/survival.js
+﻿// src/adapter/minecraft/behaviors/survival.js
 //
-// Automatic, LLM-independent survival micro-controllers — the same "reflex tier"
+// Automatic, LLM-independent survival micro-controllers â€” the same "reflex tier"
 // as behaviors/reflex.js, but for two failure modes reflex.js does NOT cover:
 //
-//   1. DROWNING  — oxygen drops underwater and NOTHING in the codebase reacts
+//   1. DROWNING  â€” oxygen drops underwater and NOTHING in the codebase reacts
 //      to bot.oxygenLevel (verified: no other usage). Sei drowned in a flooded
 //      cave in the last live run. This loop swims her up before the bar empties.
-//   2. CRITICAL-HP RETREAT — the model repeatedly chose attackEntity at 1-2 HP
+//   2. CRITICAL-HP RETREAT â€” the model repeatedly chose attackEntity at 1-2 HP
 //      instead of backing off (3 deaths in one run), so prompt advice alone is
 //      demonstrably not enough. This loop force-disengages: it takes the
 //      pathfinder and flees the nearest hostile until health recovers.
@@ -14,25 +14,25 @@
 // Like reflex.js this lives ENTIRELY on the adapter side. It is a ~20 Hz
 // physicsTick loop; it never enters src/bot/brain/fsm.js and never aborts an
 // in-flight LLM action. It emits `sei:survival` (mirroring reflex's `sei:reflex`)
-// so the brain CAN narrate — but the physical response never waits on the LLM.
+// so the brain CAN narrate â€” but the physical response never waits on the LLM.
 //
-// ── Goal-ownership rules (this file's contract) ──────────────────────────────
+// â”€â”€ Goal-ownership rules (this file's contract) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // reflex.js owns  bot._seiReflexActive / bot._seiSavedGoal  for its creeper flee.
 // This file owns its OWN, DISJOINT slots so the two never collide:
-//     bot._seiSurvivalActive    (bool)  — true while a survival controller owns
+//     bot._seiSurvivalActive    (bool)  â€” true while a survival controller owns
 //                                          movement (swim-up OR critical flee)
-//     bot._seiCriticalRetreat   (bool)  — true while the critical-HP flee is up
-//     bot._seiSurvivalSavedGoal (goal)  — the action goal to restore on exit
+//     bot._seiCriticalRetreat   (bool)  â€” true while the critical-HP flee is up
+//     bot._seiSurvivalSavedGoal (goal)  â€” the action goal to restore on exit
 // CREEPER FLEE WINS: whenever bot._seiReflexActive is set we stand DOWN entirely
-// (release our control states, leave the goal to reflex) — a fusing creeper is
+// (release our control states, leave the goal to reflex) â€” a fusing creeper is
 // the more urgent threat and reflex's flee already respects pathfind.js's mutex.
 //
-// ── Interaction with attack.js (documented per task) ─────────────────────────
+// â”€â”€ Interaction with attack.js (documented per task) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // attack.js pursues a mob by calling goTo() (bot.pathfinder.goto) on a loop, and
 // pathfind.js only yields to reflex's flag, NOT ours. So during a critical
 // retreat the attack loop and our flee tug over the pathfinder. We WIN by
 // re-asserting our flee goal whenever we detect the goal was stolen (a non-self
-// goal_updated) — at 20 Hz that is far faster than attack's ~2.5 s per-pursuit
+// goal_updated) â€” at 20 Hz that is far faster than attack's ~2.5 s per-pursuit
 // goTo, so attack's goto() keeps getting GoalChanged-rejected, reads as
 // cant_reach, and its loop times out while the bot flees. This is the intended
 // outcome: at <=6 HP we do NOT let the model keep swinging.
@@ -44,7 +44,7 @@ import { airToLeave, findBreathPath, breathPathSideways, breathSteer } from './a
 const { goals } = pkg
 
 // Columns that drown you: open water/bubbles PLUS kelp and seagrass, which are
-// waterlogged by definition — a bot submerged in a kelp/seagrass column loses
+// waterlogged by definition â€” a bot submerged in a kelp/seagrass column loses
 // oxygen just the same, so the swim-up must trigger there too.
 const WATER = new Set(['water', 'bubble_column', 'kelp', 'kelp_plant', 'seagrass', 'tall_seagrass'])
 const AIR = new Set(['air', 'cave_air', 'void_air'])
@@ -84,7 +84,7 @@ function headCell(pos) {
  *   - bot._seiSurvivalActive   (bool)
  *   - bot._seiCriticalRetreat  (bool)
  *   - bot._seiSurvivalSavedGoal (goal)
- *   - bot.emit('sei:survival', { kind, threatLabel, count }) — one per engagement,
+ *   - bot.emit('sei:survival', { kind, threatLabel, count }) â€” one per engagement,
  *     at most once per kind per survival_emit_cooldown_ms (default 30s)
  */
 export function startSurvival(bot, config) {
@@ -92,7 +92,7 @@ export function startSurvival(bot, config) {
   if (mc.survival_enabled === false) return () => {}
 
   // Idempotent re-arm: a dimension-change 'spawn' fires WITHOUT a 'death' and
-  // connect.js re-arms on every non-first spawn — tear down any previous install
+  // connect.js re-arms on every non-first spawn â€” tear down any previous install
   // first, or each portal trip stacks a duplicate physicsTick loop.
   if (typeof bot._seiSurvivalDispose === 'function') { try { bot._seiSurvivalDispose() } catch (_) {} }
 
@@ -106,7 +106,7 @@ export function startSurvival(bot, config) {
 
   let _disposed = false
 
-  // ── Goal tracking (our own, disjoint from reflex's) ───────────────────────
+  // â”€â”€ Goal tracking (our own, disjoint from reflex's) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // We track the externally-set action goal via `goal_updated` (pathfinder ^2.4
   // does not expose bot.pathfinder.goal). `_selfSetting` masks our own set/clear
   // so we never snapshot our own flee goal as the goal to restore, and
@@ -120,7 +120,7 @@ export function startSurvival(bot, config) {
   function onGoalUpdated(goal, dynamic) {
     if (_selfSetting) return
     // While a controller owns movement, a foreign goal set is a STEAL, not the
-    // action goal — record it for re-assert but do NOT overwrite the frozen
+    // action goal â€” record it for re-assert but do NOT overwrite the frozen
     // saved goal captured at engage time.
     if (bot._seiSurvivalActive) { _goalStolen = true; return }
     _trackedGoal = goal
@@ -134,7 +134,7 @@ export function startSurvival(bot, config) {
     } catch (_) {} finally { _selfSetting = false }
   }
 
-  // ── Shared movement-takeover bookkeeping ──────────────────────────────────
+  // â”€â”€ Shared movement-takeover bookkeeping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function beginOwnership() {
     if (!bot._seiSurvivalActive) {
       bot._seiSurvivalSavedGoal = _trackedGoal ?? null
@@ -158,7 +158,7 @@ export function startSurvival(bot, config) {
     }
   }
 
-  // ═══════════════════════ 1. DROWNING SWIM-UP ═════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• 1. DROWNING SWIM-UP â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   let _drownActive = false
   let _drownStartMs = 0
   let _drownStartY = 0
@@ -259,7 +259,7 @@ export function startSurvival(bot, config) {
       drownEngage()
     }
 
-    // Foreign goal grabbed the pathfinder while we own movement — clear it again.
+    // Foreign goal grabbed the pathfinder while we own movement â€” clear it again.
     if (_goalStolen) { setGoalSelf(null, false); _goalStolen = false }
 
     // The way to air: sideways when there is a ceiling over her.
@@ -282,7 +282,7 @@ export function startSurvival(bot, config) {
     const rose = bot.entity.position.y - _drownStartY
     const blocked = (Date.now() - _drownStartMs) > TH.survival_blocked_ms && rose < 0.5
     if (!blocked) {
-      // Ascending fine — look straight up, no horizontal drift.
+      // Ascending fine â€” look straight up, no horizontal drift.
       try { bot.setControlState('forward', false) } catch (_) {}
       try { bot.look(bot.entity.yaw, -Math.PI / 2, false) } catch (_) {}
       return true
@@ -301,14 +301,14 @@ export function startSurvival(bot, config) {
       try { bot.look(yaw, 0, false) } catch (_) {}
       try { bot.setControlState('forward', true) } catch (_) {}
     } else {
-      // No pocket found — keep jumping and hope the surface is straight up.
+      // No pocket found â€” keep jumping and hope the surface is straight up.
       try { bot.setControlState('forward', false) } catch (_) {}
       try { bot.look(bot.entity.yaw, -Math.PI / 2, false) } catch (_) {}
     }
     return true
   }
 
-  // ═══════════════════════ 2. CRITICAL-HP RETREAT ══════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• 2. CRITICAL-HP RETREAT â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   let _retreatActive = false
   let _retreatMobId = null
 
@@ -378,13 +378,13 @@ export function startSurvival(bot, config) {
       }
       return
     }
-    // Not engaged: cheap HP gate — only scan entities when HP is actually low.
+    // Not engaged: cheap HP gate â€” only scan entities when HP is actually low.
     if (health > TH.critical_hp_enter) return
     const near = nearestHostile(pos, TH.critical_hostile_enter_blocks)
     if (near) retreatEngage(near, pos)
   }
 
-  // ── Emit (rising-edge, once per engagement; mirrors reflex's emitReflex) ──
+  // â”€â”€ Emit (rising-edge, once per engagement; mirrors reflex's emitReflex) â”€â”€
   // 261011: at most once per kind per cooldown window. The swim-up flaps at
   // the surface: the head bobs out of the water (disengage), dips back in with
   // oxygen still low (engage), and every engage emitted. Quality eval
@@ -403,7 +403,7 @@ export function startSurvival(bot, config) {
     } catch (_) {}
   }
 
-  // ═══════════════════════════════ TICK ════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• TICK â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   function tick() {
     if (_disposed) return
     // 260725 play/pause: the body is frozen, and a frozen player drowns like
@@ -427,33 +427,33 @@ export function startSurvival(bot, config) {
     const pos = bot.entity?.position
     const vel = bot.entity?.velocity
     if (!pos || !vel) return
-    // T-17-01: a malformed knockback packet can produce non-finite pos — skip
+    // T-17-01: a malformed knockback packet can produce non-finite pos â€” skip
     // rather than read garbage (same guard as reflex.js).
     if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) || !Number.isFinite(pos.z)) return
     if (bot.health != null && bot.health <= 0) return
 
-    // CREEPER FLEE WINS: reflex owns movement — stand fully down.
+    // CREEPER FLEE WINS: reflex owns movement â€” stand fully down.
     if (bot._seiReflexActive) {
       if (_drownActive) { _drownActive = false; bot._seiDrowning = false; _airDir = null; releaseControls() }
       if (_retreatActive) { _retreatActive = false; _retreatMobId = null; bot._seiCriticalRetreat = false }
-      // Do NOT restore the goal here — reflex owns it and will restore its own
+      // Do NOT restore the goal here â€” reflex owns it and will restore its own
       // saved goal on flee exit. Just drop our ownership flag if we held it.
       if (bot._seiSurvivalActive) { bot._seiSurvivalActive = false; bot._seiSurvivalSavedGoal = null; _goalStolen = false }
       return
     }
 
-    // Drowning has priority over the HP retreat — you die in seconds underwater.
+    // Drowning has priority over the HP retreat â€” you die in seconds underwater.
     const oxy = bot.oxygenLevel
     if (updateDrown(pos, oxy)) {
       // Drowning just took over from an active critical retreat. Drop the
-      // retreat's OWN state but do NOT call retreatDisengage() — its
+      // retreat's OWN state but do NOT call retreatDisengage() â€” its
       // endOwnership() would restore the pre-retreat action goal and clear
       // _seiSurvivalActive WHILE the swim-up is still running, steering the
       // pathfinder back toward the old goal and making follow/attack/gaze stop
       // yielding, so the bot fails to surface and drowns (the exact death this
       // reflex prevents). drownEngage()'s beginOwnership() was a no-op (retreat
       // already held ownership), so bot._seiSurvivalSavedGoal still holds the
-      // original action goal — drowning keeps that ownership and restores it on
+      // original action goal â€” drowning keeps that ownership and restores it on
       // drownDisengage(). Mirrors the reflex-wins retreat sub-branch above; no
       // releaseControls() here because updateDrown() already set this tick's
       // swim-up controls.
@@ -487,7 +487,7 @@ export function startSurvival(bot, config) {
   }
 
   bot.on('physicsTick', tick)
-  // Dispose on BOTH death and end (kick/disconnect — no 'death' fires there).
+  // Dispose on BOTH death and end (kick/disconnect â€” no 'death' fires there).
   // dispose is _disposed-guarded, so firing on both is safe.
   bot.once('death', dispose)
   bot.once('end', dispose)
@@ -495,3 +495,7 @@ export function startSurvival(bot, config) {
   bot._seiSurvivalDispose = dispose
   return dispose
 }
+
+
+
+

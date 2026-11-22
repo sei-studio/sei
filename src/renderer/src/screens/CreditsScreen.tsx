@@ -1,5 +1,5 @@
-/**
- * SeiPlanTab — the Sei tab of the Playtime page (screens/PlaytimeScreen.tsx):
+﻿/**
+ * SeiPlanTab â€” the Sei tab of the Playtime page (screens/PlaytimeScreen.tsx):
  * plan + weekly usage (260724 subscription model, 260725 sketch layout).
  *
  * 261110 (product call 261110): moved into the Playtime tabs and restyled
@@ -8,7 +8,7 @@
  * note moved into an info tip, and the ChatGPT plan row moved to the ChatGPT
  * tab.
  *
- * Layout: a centered column —
+ * Layout: a centered column â€”
  *   - BackRow + a USAGE section (sketch 260725): two label/bar/value rows.
  *     Row 1: "{Plan} plan" + "Resets in Xd Yh" on the left, the allowance bar,
  *     "{pct}%" on the right (plain text color at every value; only the bar
@@ -24,7 +24,7 @@
  *     upgrade. A first subscription goes straight to the hosted Polar
  *     checkout; a tier change on an existing subscription is applied in place
  *     by the proxy. 260725 operator decision: the in-app auto-renewal consent
- *     modal was REMOVED — the recurring terms are disclosed on the Polar
+ *     modal was REMOVED â€” the recurring terms are disclosed on the Polar
  *     hosted checkout page instead (Polar is the Merchant of Record).
  *     260725 follow-up: that only covers the NOT-yet-subscribed branch. An
  *     existing subscriber's tier change never opens a browser page (it is a
@@ -34,7 +34,7 @@
  *     Downgrading to Free is a cancellation, so it routes to the Polar
  *     customer portal.
  *   - A "Manage billing" footer (Polar customer-portal flow via handleManage)
- *     plus the carry-over note. The button shows an "Opening…" pending state and
+ *     plus the carry-over note. The button shows an "Openingâ€¦" pending state and
  *     an inline error when the portal can't be opened, so it is never a silent
  *     no-op.
  *
@@ -75,12 +75,12 @@ import { t, uiLocale, useT } from '../lib/i18n';
 import styles from './CreditsScreen.module.css';
 import { InfoTip } from '../components/InfoTip';
 
-/** What carries over and what does not (SPEC §2): the extra-credits info tip. */
+/** What carries over and what does not (SPEC Â§2): the extra-credits info tip. */
 const CARRY_OVER_NOTE =
   'Unused weekly credits do not carry over. Extra credits never expire.';
 
 /**
- * 260706 — how much of the weekly allowance must be spent before the one-time
+ * 260706 â€” how much of the weekly allowance must be spent before the one-time
  * feedback prompt appears. By a quarter of the week's credits the user has
  * played enough to have real opinions. (It used to key off lifetime dollars
  * spent, which no longer reaches the renderer.)
@@ -178,7 +178,7 @@ export function SeiPlanTab(): React.ReactElement {
   const usedPct = Math.max(0, Math.min(100, Math.round(usagePct)));
   const atLimit = usedPct >= 100;
 
-  // 260706 — feedback reward banner. `null` = config not read yet (render
+  // 260706 â€” feedback reward banner. `null` = config not read yet (render
   // neither the banner nor the standing button, so nothing flashes).
   const [rewardClaimed, setRewardClaimed] = useState<boolean | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -186,7 +186,7 @@ export function SeiPlanTab(): React.ReactElement {
   // session, and the reward is a server-side usage reset. BYOK/local users never
   // see the banner or the standing button.
   const cloudMode = useCreditsStore((s) => s.ai_backend_kind) === 'cloud-proxy';
-  // Analytics (260707): pricing/plan surface viewed — top of the monetization
+  // Analytics (260707): pricing/plan surface viewed â€” top of the monetization
   // funnel (pairs with checkout_opened downstream).
   // 261122: with the entry surface (read once at mount).
   const sourceAtMount = useRef(checkoutSource);
@@ -224,7 +224,7 @@ export function SeiPlanTab(): React.ReactElement {
     return () => clearInterval(id);
   }, [refresh]);
 
-  // Single bottom "Manage billing" button → Polar customer-portal flow. The
+  // Single bottom "Manage billing" button â†’ Polar customer-portal flow. The
   // store action returns { ok, code }; surface a pending label while the portal
   // request is in flight and an inline error when it can't be opened (no Polar
   // customer yet, signed out, network) so the button isn't a silent no-op.
@@ -259,7 +259,7 @@ export function SeiPlanTab(): React.ReactElement {
   // refreshes internally, so calling it FIRST wrote the new tier into the store
   // and beginPurchase's baseline then equalled the post-change state. No
   // isPurchaseConfirmed clause could fire, the watcher polled for its full 3
-  // minutes and ended in 'timeout' — a successful change presented as a
+  // minutes and ended in 'timeout' â€” a successful change presented as a
   // failure. beginPurchase snapshots the baseline synchronously (alreadyOpened
   // skips the browser hop), so taking it before the change makes the flip
   // detectable on the first poll.
@@ -325,7 +325,7 @@ export function SeiPlanTab(): React.ReactElement {
           <FeedbackRewardCard onDone={() => setRewardClaimed(true)} />
         ) : null}
 
-        {/* Usage — two label/bar/value rows per the 260725 sketch, in one
+        {/* Usage â€” two label/bar/value rows per the 260725 sketch, in one
             panel (261110, mock 01). */}
         <div className={styles.usage}>
           <h3 className={styles.sectionTitle}>{t('Usage')}</h3>
@@ -348,7 +348,7 @@ export function SeiPlanTab(): React.ReactElement {
               </div>
               {/* 260725: the percentage stays the normal text color at 100. The
                   bar fill still turns red, which is signal enough. */}
-              <span className={styles.usagePct}>{snapshotFailed ? '–%' : `${usedPct}%`}</span>
+              <span className={styles.usagePct}>{snapshotFailed ? 'â€“%' : `${usedPct}%`}</span>
             </div>
 
             {/* Row 2: the separate, non-expiring extra-credits bucket. */}
@@ -366,7 +366,7 @@ export function SeiPlanTab(): React.ReactElement {
                 />
               </div>
               <span className={styles.usageEnd}>
-                <span className={styles.usagePct}>{snapshotFailed ? '–' : extraLeft}</span>
+                <span className={styles.usagePct}>{snapshotFailed ? 'â€“' : extraLeft}</span>
                 <Button
                   kind="ghost"
                   size="md"
@@ -389,7 +389,7 @@ export function SeiPlanTab(): React.ReactElement {
           ) : null}
         </div>
 
-        {/* Plans — Free / Quest / Party, current one highlighted. */}
+        {/* Plans â€” Free / Quest / Party, current one highlighted. */}
         <div className={styles.plans}>
           <h3 className={styles.sectionTitle}>{t('Plan')}</h3>
           <div className={styles.plansRow}>
@@ -440,7 +440,7 @@ export function SeiPlanTab(): React.ReactElement {
                         disabled={managing}
                         onClick={() => void handleManage()}
                       >
-                        {managing ? t('Opening…') : t('Downgrade')}
+                        {managing ? t('Openingâ€¦') : t('Downgrade')}
                       </PlanButton>
                     ) : isUpgrade ? (
                       // First subscription: "Get Party". An existing
@@ -504,7 +504,7 @@ export function SeiPlanTab(): React.ReactElement {
 
         {/*
           Footer: "Manage billing" (Polar customer-portal flow via handleManage,
-          shown for everyone; never-subscribed users no-op gracefully — FTC
+          shown for everyone; never-subscribed users no-op gracefully â€” FTC
           Click-to-Cancel online cancel path). The carry-over note lives under
           the extra-credits bar (260725).
         */}
@@ -517,7 +517,7 @@ export function SeiPlanTab(): React.ReactElement {
               aria-disabled={managing}
               onClick={() => void handleManage()}
             >
-              {managing ? t('Opening…') : t('Manage billing')}
+              {managing ? t('Openingâ€¦') : t('Manage billing')}
             </Button>
           </div>
           {manageError ? <p className={styles.manageError}>{manageError}</p> : null}
@@ -556,7 +556,7 @@ export function SeiPlanTab(): React.ReactElement {
         />
       ) : null}
 
-      {/* "Complete your purchase in your browser" watcher — stays up while we
+      {/* "Complete your purchase in your browser" watcher â€” stays up while we
           poll for the webhook-driven change (useCreditsStore.beginPurchase).
           Dismissing it stops polling; the focus-refetch backstop still catches
           a payment completed after the user closes this. */}
@@ -575,7 +575,7 @@ export function SeiPlanTab(): React.ReactElement {
         />
       ) : null}
 
-      {/* Standing feedback form (260706) — reachable once the reward banner
+      {/* Standing feedback form (260706) â€” reachable once the reward banner
           has been used. */}
       {showFeedbackModal ? <FeedbackModal onClose={() => setShowFeedbackModal(false)} /> : null}
     </>
@@ -583,7 +583,7 @@ export function SeiPlanTab(): React.ReactElement {
 }
 
 /**
- * PlanChangeConfirmModal — in-app confirmation for a tier change on an EXISTING
+ * PlanChangeConfirmModal â€” in-app confirmation for a tier change on an EXISTING
  * subscription (260725).
  *
  * The hosted Polar checkout page carries the recurring terms for a FIRST
@@ -677,7 +677,7 @@ function CheckoutWaitingModal({
   status: 'opening' | 'failed' | 'waiting' | 'confirmed' | 'timeout';
   kind: CheckoutKind | null;
   /**
-   * 260725 — this watch is following an in-place tier change (the proxy applies
+   * 260725 â€” this watch is following an in-place tier change (the proxy applies
    * it against the card on file), so there is no browser tab to finish in and
    * the copy must not send the user looking for one.
    */
@@ -689,7 +689,7 @@ function CheckoutWaitingModal({
   const t = useT();
   const planCards = useCreditsStore((s) => s.planCards);
   const isResume = kind === 'resume';
-  // 260725: top up SKUs are an open, server-driven set — anything that is not
+  // 260725: top up SKUs are an open, server-driven set â€” anything that is not
   // a paid tier or 'resume' is a top up (mirrors isPurchaseConfirmed).
   const isPlan = kind === 'quest' || kind === 'party';
   const isTopUp = kind !== null && !isResume && !isPlan;
@@ -731,7 +731,7 @@ function CheckoutWaitingModal({
           // yet, so no "finish in your browser" until it is.
           <>
             <span className={styles.checkoutSpinner} aria-hidden="true" />
-            <p className={styles.checkoutMsg}>{t('Opening…')}</p>
+            <p className={styles.checkoutMsg}>{t('Openingâ€¦')}</p>
           </>
         ) : status === 'failed' ? (
           <p className={styles.checkoutMsg} role="alert">
@@ -760,7 +760,7 @@ function CheckoutWaitingModal({
         ) : status === 'confirmed' ? (
           <>
             <span className={styles.checkoutCheck} aria-hidden="true">
-              ✓
+              âœ“
             </span>
             <p className={styles.checkoutMsg}>
               {isResume
@@ -801,3 +801,7 @@ function CheckoutWaitingModal({
     </ModalShell>
   );
 }
+
+
+
+

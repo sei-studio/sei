@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { BLINK_CLOSE_MS, BLINK_HOLD_MS, BLINK_MS, Blinker, GazeDriver, Wander, lidCurve, minJerk, springStep, type SpringState } from './organic';
 
 /** Deterministic rng (mulberry32). */
@@ -275,3 +275,7 @@ describe('GazeDriver', () => {
     expect(a).toBe(b);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261111 (quality pass 51): a turn written against a fight that changed
+﻿// 261111 (quality pass 51): a turn written against a fight that changed
 // while it was being written is not run, and the "already told the player
 // about this fight" note does not carry over to a new mob after a kill.
 //
@@ -120,7 +120,7 @@ describe('261111 a turn written before the fight changed is not run', () => {
     const text = lastUserText(provider.calls[1])
     expect(text).toContain('Nothing from your last turn ran')
     expect(text).toContain('the spider you went for died 1s ago')
-    expect(text.split('\n')[0]).not.toMatch(/—/)
+    expect(text.split('\n')[0]).not.toMatch(/â€”/)
     const results = toolResultsOf(provider.calls[1])
     expect(results.find((r) => r.tool_use_id === 's1')?.content).toMatch(/^not said/)
     expect(results.find((r) => r.tool_use_id === 'a1')?.content).toMatch(/^not run/)
@@ -195,3 +195,7 @@ describe('261111 the "already told" note follows the mob, not just the clock', (
     expect(asked.at(-1)).toEqual([7, 8])
   })
 })
+
+
+
+

@@ -1,8 +1,8 @@
-/**
- * Button — primary / accent / secondary / soft / ghost / quiet / danger /
- * dangerSoft × sm / md / lg.
+﻿/**
+ * Button â€” primary / accent / secondary / soft / ghost / quiet / danger /
+ * dangerSoft Ã— sm / md / lg.
  *
- * Source: 04-UI-SPEC.md §Component Inventory → Button (variants × size matrix).
+ * Source: 04-UI-SPEC.md Â§Component Inventory â†’ Button (variants Ã— size matrix).
  * Visual contract: --radius corners; native :focus-visible 1.5px accent ring.
  */
 
@@ -23,7 +23,7 @@ interface ButtonProps {
   type?: 'button' | 'submit';
   'aria-label'?: string;
   'aria-disabled'?: boolean;
-  /** Toggle/segmented selection state — also drives the pressed visual. */
+  /** Toggle/segmented selection state â€” also drives the pressed visual. */
   'aria-pressed'?: boolean;
   /** A menu trigger (261120): the menu it opens, and whether it is open. */
   'aria-haspopup'?: 'menu';
@@ -31,7 +31,7 @@ interface ButtonProps {
   style?: React.CSSProperties;
   className?: string;
   title?: string;
-  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  /** Tutorial spotlight anchor (260728) â€” see components/tutorial. */
   'data-tutorial'?: string;
 }
 
@@ -82,3 +82,7 @@ export function Button({
     </button>
   );
 }
+
+
+
+

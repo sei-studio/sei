@@ -1,9 +1,9 @@
-/**
+﻿/**
  * llm:list-models + llm:test backing (china-compat W1).
  *
- * listProviderModels: live model listing with the user's own key — Anthropic
+ * listProviderModels: live model listing with the user's own key â€” Anthropic
  * GET /v1/models, the OpenAI-compat set GET {base}/models, Gemini ListModels,
- * Ollama GET /api/tags — merged with the catalog's modelVision verdicts
+ * Ollama GET /api/tags â€” merged with the catalog's modelVision verdicts
  * (Ollama: each model's own /api/show capabilities, heuristic as fallback).
  * 10s timeout; typed error strings, never a raw throw.
  *
@@ -193,3 +193,7 @@ export async function testProvider(provider: ProviderKind, model: string): Promi
     return { ok: false, error: typedError(err) };
   }
 }
+
+
+
+

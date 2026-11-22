@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/observers/liveInventory.js
+﻿// src/bot/adapter/minecraft/observers/liveInventory.js
 //
 // 261012 (quality pass 5): what is in her bag RIGHT NOW, and a way to wait
 // until the server has stopped changing it.
@@ -85,3 +85,7 @@ export function waitInventoryQuiet(bot, { quietMs = 250, minMs = 0, maxMs = 1500
     arm()
   })
 }
+
+
+
+

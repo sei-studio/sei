@@ -1,5 +1,5 @@
-/**
- * ApiKeySetupModal (260915): Ollama is keyless — the key field is replaced by a
+﻿/**
+ * ApiKeySetupModal (260915): Ollama is keyless â€” the key field is replaced by a
  * note and Save is enabled with an empty key, so the modal can actually switch
  * to a local model (it used to gate Save on a non-empty field for every
  * provider, contradicting its own empty-key-is-valid-for-ollama rule).
@@ -22,3 +22,7 @@ describe('ApiKeySetupModal: keyless Ollama', () => {
     expect(src).toContain('if (key) await sei.saveApiKey(key);');
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the IconRail avatar activity badge (v0.5 games).
  *
  * Follows the IconRail.test.tsx convention (no @testing-library/react):
@@ -65,12 +65,12 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(badge('a', quiet)).toBe(null);
   });
 
-  it('Test 2: call participant on a live or connecting call → call; others → not', async () => {
+  it('Test 2: call participant on a live or connecting call â†’ call; others â†’ not', async () => {
     const badge = await loadBadgeFn();
     const live = { ...quiet, callStatus: 'live', callParticipants: ['a', 'b'] };
     expect(badge('a', live)).toBe('call');
     expect(badge('b', live)).toBe('call');
-    // Not on the call → no badge.
+    // Not on the call â†’ no badge.
     expect(badge('c', live)).toBe(null);
     // First dial still connecting counts (the call surface is already open).
     expect(badge('a', { ...live, callStatus: 'connecting' })).toBe('call');
@@ -79,7 +79,7 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(badge('a', { ...live, callStatus: 'error' })).toBe(null);
   });
 
-  it('Test 3: chess (not ended) or online summon → game', async () => {
+  it('Test 3: chess (not ended) or online summon â†’ game', async () => {
     const badge = await loadBadgeFn();
     expect(badge('a', { ...quiet, chessGames: { a: { status: 'active' } } })).toBe('game');
     // Engine warm-up: the game session exists from the player's POV.
@@ -124,3 +124,7 @@ describe('avatarActivityBadge (pure helper)', () => {
     expect(css.includes('border: 2px solid var(--rail)')).toBe(true);
   });
 });
+
+
+
+

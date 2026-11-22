@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/fsmWires.js — translate the mod's pushed events
+﻿// src/bot/adapter/stardew/fsmWires.js â€” translate the mod's pushed events
 // (PROTOCOL.md) into the brain's AdapterHandlers (src/bot/brain/types.js).
 // Thin: no business logic, the same shape as the Minecraft wires.
 //
@@ -75,7 +75,7 @@ export function morningText(obs) {
 }
 
 const NAME_RE_CACHE = new Map()
-// 261027: the text and the name are accent-folded first, so "martín ven"
+// 261027: the text and the name are accent-folded first, so "martÃ­n ven"
 // addresses a companion whose in-game name is "Martin".
 function mentions(text, name) {
   name = foldLatin(name)
@@ -294,3 +294,7 @@ export function wireStardewEvents(client, handlers, { botName, companions = () =
     client.off('night_soon', onNightSoon)
   }
 }
+
+
+
+

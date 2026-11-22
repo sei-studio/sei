@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Region gate (W7, china-compat stream 260816).
  *
  * Users whose IP region is unsupported by Anthropic (the cloud LLM behind the
@@ -49,14 +49,14 @@ export interface RegionStatus {
  *
  *   1. The china-compat stream decision: mainland China + Hong Kong + Macao
  *      (260816).
- *   2. The complement of Anthropic's published supported-countries list —
+ *   2. The complement of Anthropic's published supported-countries list â€”
  *      https://www.anthropic.com/supported-countries (retrieved 2026-08-16).
  *      Every sovereign state and listed region NOT on that page appears
  *      below. Note the page's own carve-out for Ukraine (supported except
  *      Crimea/Donetsk/Kherson/Luhansk/Zaporizhzhia) is NOT expressible at
  *      country-code granularity (Cloudflare returns loc=UA for all of it),
  *      so UA stays allowed per the fail-open rule.
- *   3. Polar/Stripe restricted buyer regions — Polar supports payments
+ *   3. Polar/Stripe restricted buyer regions â€” Polar supports payments
  *      globally except US-sanctioned countries (Cuba, Russia, Iran, North
  *      Korea, Syria): https://polar.sh/docs/merchant-of-record/supported-countries
  *      (retrieved 2026-08-16). All five are already excluded by (2), so
@@ -94,7 +94,7 @@ export const BLOCKED_REGIONS: ReadonlySet<string> = new Set([
 /**
  * True when the detected region is blocked from cloud auth.
  *
- * Null / empty / 'unknown' / anything not a listed code returns false —
+ * Null / empty / 'unknown' / anything not a listed code returns false â€”
  * the gate FAILS OPEN by construction.
  */
 export function isRegionBlocked(loc: string | null | undefined): boolean {
@@ -108,7 +108,7 @@ export function isRegionBlocked(loc: string | null | undefined): boolean {
  * endpoint returns one `key=value` pair per line).
  *
  * Returns null for garbage, a missing loc line, or Cloudflare's non-country
- * codes (XX = unknown, T1 = Tor exit) — all of which mean 'unknown' and
+ * codes (XX = unknown, T1 = Tor exit) â€” all of which mean 'unknown' and
  * therefore ALLOWED upstream.
  */
 export function parseTraceLoc(body: string): string | null {
@@ -124,3 +124,7 @@ export function parseTraceLoc(body: string): string | null {
   }
   return null;
 }
+
+
+
+

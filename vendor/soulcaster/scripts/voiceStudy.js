@@ -1,4 +1,4 @@
-// Voice roll distribution + collision study.
+﻿// Voice roll distribution + collision study.
 //
 //   node scripts/voiceStudy.js
 //
@@ -8,7 +8,7 @@
 //   - pairwise collision probability for two INDEPENDENT rolls (sum of p^2)
 //   - roster collision rate: rolling a 4-companion roster (the app's slot
 //     cap) WITHOUT takenVoiceIds vs WITH takenVoiceIds threaded through.
-// With takenVoiceIds the roster rate must be exactly 0 — the exclusion is a
+// With takenVoiceIds the roster rate must be exactly 0 â€” the exclusion is a
 // hard filter until the pool empties, and 4 slots never exhaust any pool.
 
 import { rollFields, mulberry32 } from '../src/index.js';
@@ -40,7 +40,7 @@ for (const gender of GENDERS) {
   console.log(`independent pairwise collision: ${(100 * pairwise).toFixed(1)}%`);
 
   // Roster study: 4 companions, mixed genders would collide even less, so use
-  // the worst case — all four the same gender.
+  // the worst case â€” all four the same gender.
   let naiveCollisions = 0;
   let excludedCollisions = 0;
   for (let i = 0; i < ROSTERS; i += 1) {
@@ -57,3 +57,7 @@ for (const gender of GENDERS) {
   }
   console.log(`4-companion roster with a repeat: naive ${((100 * naiveCollisions) / ROSTERS).toFixed(1)}%  |  with takenVoiceIds ${((100 * excludedCollisions) / ROSTERS).toFixed(1)}%`);
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fast Windows updates on Velopack (261030): pure helpers, no electron import,
  * so they unit-test on any host.
  *
@@ -16,7 +16,7 @@
  *       folder swap, before the bookkeeping. With a staged copy the swap is
  *       two renames, so the restart gap is roughly "Sei quits + Sei starts".
  *   `apply ... --seiOverlay <dir>`
- *       Shows <dir>'s frames (Sei's own update splash with "Updating…",
+ *       Shows <dir>'s frames (Sei's own update splash with "Updatingâ€¦",
  *       rendered by Sei) as a native topmost window, from before Update.exe
  *       waits for Sei to exit until the restarted Sei shows its own window.
  *
@@ -32,7 +32,7 @@ import { formatMessage, joinSentences, type UiLanguage } from '../shared/uiLangu
 export const STAGE_DIR = 'SeiStaged';
 /** Folder (inside the packages dir) the overlay frames are written to. */
 export const OVERLAY_DIR = 'SeiOverlay';
-/** The overlay switches from "Updating…" to a time estimate after this. */
+/** The overlay switches from "Updatingâ€¦" to a time estimate after this. */
 export const SLOW_AFTER_MS = 8000;
 /** Time-estimate frames, in seconds. Anything longer shows the "few minutes" frame. */
 export const ETA_BUCKETS = [10, 20, 30, 45, 60, 120] as const;
@@ -125,7 +125,7 @@ export interface UpdateScreenText {
 /**
  * The status line under the logo. Short on purpose: it sits in a 320 px wide
  * splash. The time estimate only appears when an update is slower than
- * expected (see SLOW_AFTER_MS); it keeps "Updating…" so the line never reads
+ * expected (see SLOW_AFTER_MS); it keeps "Updatingâ€¦" so the line never reads
  * as a different screen.
  */
 export function updateScreenText(lang: UpdateLang): UpdateScreenText {
@@ -143,19 +143,19 @@ export function updateScreenText(lang: UpdateLang): UpdateScreenText {
     return { updating: c.updating, error: c.error, eta };
   }
   const zh = lang === 'zh';
-  const updating = zh ? '正在更新…' : 'Updating…';
+  const updating = zh ? 'æ­£åœ¨æ›´æ–°â€¦' : 'Updatingâ€¦';
   const eta: Record<string, string> = {};
   for (const s of ETA_BUCKETS) {
     let rest: string;
-    if (s < 60) rest = zh ? `大约还需 ${s} 秒` : `about ${s} seconds left`;
-    else if (s === 60) rest = zh ? '大约还需 1 分钟' : 'about a minute left';
-    else rest = zh ? `大约还需 ${s / 60} 分钟` : `about ${s / 60} minutes left`;
+    if (s < 60) rest = zh ? `å¤§çº¦è¿˜éœ€ ${s} ç§’` : `about ${s} seconds left`;
+    else if (s === 60) rest = zh ? 'å¤§çº¦è¿˜éœ€ 1 åˆ†é’Ÿ' : 'about a minute left';
+    else rest = zh ? `å¤§çº¦è¿˜éœ€ ${s / 60} åˆ†é’Ÿ` : `about ${s / 60} minutes left`;
     eta[`eta-${s}`] = zh ? `${updating}${rest}` : `${updating} ${rest}`;
   }
-  eta['eta-long'] = zh ? `${updating}还需几分钟` : `${updating} a few more minutes`;
+  eta['eta-long'] = zh ? `${updating}è¿˜éœ€å‡ åˆ†é’Ÿ` : `${updating} a few more minutes`;
   return {
     updating,
-    error: zh ? '更新失败，正在打开 Sei…' : "Couldn't update. Opening Sei…",
+    error: zh ? 'æ›´æ–°å¤±è´¥ï¼Œæ­£åœ¨æ‰“å¼€ Seiâ€¦' : "Couldn't update. Opening Seiâ€¦",
     eta,
   };
 }
@@ -332,3 +332,7 @@ export function compareVersions(a: string, b: string): number {
   }
   return 0;
 }
+
+
+
+

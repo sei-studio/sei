@@ -1,4 +1,4 @@
-/**
+﻿/**
  * notices.ts (261027): the feed's `popup` field drives the startup popup.
  * Pins the open-once flow (owed until recorded, never again after), take-down,
  * an unreachable feed keeping the last state, and the dev-only feed override.
@@ -263,3 +263,7 @@ describe('dev feed override', () => {
     expect(await m.getStartupPopup()).toBeNull();
   });
 });
+
+
+
+

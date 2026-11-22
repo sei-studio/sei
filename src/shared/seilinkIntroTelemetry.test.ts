@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first-link intro, the guide's SeiLink tour and the entry clicks
  * (261105, T337): main rebuilds every renderer-sent prop from closed enums,
  * so nothing free-form (a name, a path) can ride along, and a junk value
@@ -128,7 +128,7 @@ describe('seilink_intro_link (261106 v6)', () => {
       slowest_ms: 150_000,
       anima_start: 'queued',
       character_id: CID,
-      text: 'Sending signal to World 123456…',
+      text: 'Sending signal to World 123456â€¦',
     });
     expect(out).toEqual({
       outcome: 'failed',
@@ -271,3 +271,7 @@ describe('the guided setup (261106)', () => {
     expect([...SETUP_OPENED_FROM]).toEqual([...EDITOR_OPENED_FROM]);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-# Backseat v2: scheduled wake, log-spaced grid, real gain/colour signals
+﻿# Backseat v2: scheduled wake, log-spaced grid, real gain/colour signals
 
 Branch: `v0.5-backseat`, worktree `.claude/worktrees/v0.5-backseat`
 Date: 260801. Supersedes `.planning/backseat-redesign-260731.md` (kept for the Stage 0 measurements, marked superseded).
@@ -147,13 +147,13 @@ that has passed, which reads as confusion rather than lateness.
 switches on kind, so this is a rewrite of three branches, in the requested
 wording:
 
-- `idle` — you are watching their stream, nothing in particular set this off,
+- `idle` â€” you are watching their stream, nothing in particular set this off,
   see whether something worth reacting to happened; if it did, say what you
   think; if it did not, reply with exactly (silence).
-- `jolt` — something may have just changed on the screen (the sound spiked /
+- `jolt` â€” something may have just changed on the screen (the sound spiked /
   the picture changed a lot), see what is happening; it may be nothing, and
   staying quiet is fine if it was.
-- `user` — the player just said this and here is what was on screen, answer them.
+- `user` â€” the player just said this and here is what was on screen, answer them.
 
 One thing in `BACKSEAT_CONTRACT` has to move with this. Its "WHEN TO SAY
 NOTHING" paragraph currently claims "you are only shown the screen when
@@ -285,13 +285,13 @@ The same script without `--dry` runs the whole clip: idle timer on a seeded RNG
 priority ladder, the real `BACKSEAT_CONTRACT` and `tickNote`, and a real Haiku
 call per wake. Output:
 
-- `voiceover.md` — `[01:23] color -> "..."` per line, silences included as
+- `voiceover.md` â€” `[01:23] color -> "..."` per line, silences included as
   `(silence)` so the misses are as visible as the hits,
-- `voiceover.json` — the same with signal scores and the actual frame offsets
+- `voiceover.json` â€” the same with signal scores and the actual frame offsets
   achieved per tick,
-- `grids/tick-NN.jpg` — every grid the model saw, so a line that reads wrong can
+- `grids/tick-NN.jpg` â€” every grid the model saw, so a line that reads wrong can
   be traced to the pixels that caused it,
-- `signals.csv` — gain and colour per 100 ms, so thresholds can be re-tuned
+- `signals.csv` â€” gain and colour per 100 ms, so thresholds can be re-tuned
   without re-running the model,
 - per-tick `cache_read` / `cache_creation` token counts, which is how step 3 is
   proved rather than asserted.
@@ -310,14 +310,14 @@ sources, and not a test of how any particular companion sounds.
 
 ## Verification
 
-- **`npm test`** — new unit tests for `nextIdleDelayMs` (bounds, and that the
+- **`npm test`** â€” new unit tests for `nextIdleDelayMs` (bounds, and that the
   mean sits where claimed over 10k draws), the offset-to-sample resolver,
   `thumbDelta` / the block-max variant, and one asserting the tick message
   carries no `cache_control` while the last history message does.
   `backseatIpc.test.ts` must pass unchanged; it pins the 1548-token budget.
   `salienceGate.test.ts` keeps passing against its parked module.
-- **`npx tsx scripts/backseat-sim.ts --dry`** — the threshold loop for step 5.
-- **`npx tsx scripts/backseat-sim.ts`** — the voice-over, which is the combined
+- **`npx tsx scripts/backseat-sim.ts --dry`** â€” the threshold loop for step 5.
+- **`npx tsx scripts/backseat-sim.ts`** â€” the voice-over, which is the combined
   review artefact asked for.
 - **Live, by you.** I do not launch Electron; it spams Sei Safe Storage keychain
   prompts. You run a session and I read what it leaves behind: the per-session
@@ -334,14 +334,14 @@ sources, and not a test of how any particular companion sounds.
 - [x] 2a. Small VLM unwired and parked (`c36f378`)
 - [x] 2b. Idle wake: `nextIdleDelayMs`, self-rescheduling timer, reset on speech (`c36f378`)
 - [x] 2c. Priority ladder + per-kind tick notes (`c36f378`)
-- [x] 3. Cache layout: breakpoint off the image and onto the history tail, anchored history window (`c36f378`) — NOT yet verified, see below
+- [x] 3. Cache layout: breakpoint off the image and onto the history tail, anchored history window (`c36f378`) â€” NOT yet verified, see below
 - [x] 4. `signals.ts` extracted, worker calls into it (`4cfe922`)
 - [x] 5a. `backseat-sim.ts` + `--dry` on the clip with current thresholds (`4cfe922`)
 - [x] 5b. Thresholds retuned (`260802`): block-max + dual lookback + MAD-relative
       bar + per-arm refractory. Which events are the RIGHT ones is still open.
 - [x] 6. Voice-over run (`4cfe922`); cache hit rates NOT obtainable offline
 - [x] Mark `.planning/backseat-redesign-260731.md` superseded; commit this file as `.planning/backseat-v2-260801.md` (`95c7267`)
-- [x] Update CLAUDE.md "Backseat (260728)" to match (`260803` — the section had
+- [x] Update CLAUDE.md "Backseat (260728)" to match (`260803` â€” the section had
       gone stale two rounds back and described the gate, the argmax ring and the
       overlay; rewritten whole)
 - [ ] Mirror to `sei-studio/backseat`
@@ -368,7 +368,7 @@ that continuous gunfire holds the gain median high and that averaging over a
 steps clear +18 dB and 37 of 1863 clear 0.34, collapsing to 7 jolts under the
 20 s refractory. The averaging argument is still true (a unit test pins that
 one block of a 4x3 split going fully white moves the global mean by 1/12,
-below any usable threshold) — it just does not matter for whole-screen events,
+below any usable threshold) â€” it just does not matter for whole-screen events,
 which is what actually fires the arm.
 
 So neither MAD-relative thresholds nor block-max has been applied. They were
@@ -757,7 +757,7 @@ the item this document has been carrying since 260801 as unverifiable offline.
 Reading the same path to check it turned up something else. The zod schema for
 `backseat:tick` in `main/ipc.ts` never declared `gridSmall`, and zod strips what
 it does not name. The previous-grid memory added on 260802 has therefore been
-shipping, documented, and reaching the model **never** — invisible because a
+shipping, documented, and reaching the model **never** â€” invisible because a
 null `prevGrid` is a legal state on the first tick of every session. Declared
 now, along with the two new fields.
 
@@ -769,8 +769,8 @@ grounds that it answered the wrong question. A HUD full of numbers does not tell
 you whether you are watching a game or a stream of that game, and the window
 title does, in four words, for one enumeration every five seconds instead of a
 recognition pass on every other frame. `shareLabel` carries the shared window's
-CURRENT title — re-read, not pinned, because a browser tab switch changes the
-screen completely under a fixed source id — or on a whole-screen share the
+CURRENT title â€” re-read, not pinned, because a browser tab switch changes the
+screen completely under a fixed source id â€” or on a whole-screen share the
 frontmost window's.
 
 Deleted with it: `native/mac-ocr`, `visionOcr.ts`, `ocrWorker.ts`,
@@ -824,7 +824,7 @@ answer at all.
 
 `hasSpokenWord` is stricter than the junk filter used on finished utterances,
 because it runs on 400 ms of audio where every engine invents. Its
-repeated-letter rule is scoped to Latin script: 等等 is a word, and two tests
+repeated-letter rule is scoped to Latin script: ç­‰ç­‰ is a word, and two tests
 written before the code was read caught both that and `(music)` slipping
 through.
 
@@ -1078,3 +1078,7 @@ re-measuring on footage where every transition is a swipe.
   plus two measurements.
 - Everything under round four's "Still owed" that is not listed here still
   stands.
+
+
+
+

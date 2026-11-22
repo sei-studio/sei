@@ -1,17 +1,17 @@
-/**
- * OnboardScene — the animated stage behind the first-run ritual (260728).
+﻿/**
+ * OnboardScene â€” the animated stage behind the first-run ritual (260728).
  *
  * Layer stack (all art 1500x1000):
  *   layer1  flat sky, always present (also the backdrop of the sign-in phase)
- *   layer2  ground + haze — slides up from the bottom with the grass
- *   (Sui sits here: on the ground, behind the tufts — but see .suiFrontClip,
+ *   layer2  ground + haze â€” slides up from the bottom with the grass
+ *   (Sui sits here: on the ground, behind the tufts â€” but see .suiFrontClip,
  *    which brings her back in front of them over two bands of the stage)
- *   layer3/4/5  grass tuft variations — cycled to make the grass sway
+ *   layer3/4/5  grass tuft variations â€” cycled to make the grass sway
  *
  * SCALE LOCK: the layers AND the Sui sprite live inside one fixed-aspect
  * (3:2) `.stage` element that covers the window bottom-anchored. Everything
  * scales by the same single factor, so the art's line thickness always
- * matches the sprite's — scaling them independently (e.g. object-fit: cover
+ * matches the sprite's â€” scaling them independently (e.g. object-fit: cover
  * on the layers but %-of-window on the sprite) visibly mismatches the pen
  * weight the moment the window aspect drifts from 3:2.
  *
@@ -52,13 +52,13 @@ const SUI = {
   talk: './img/onboard/sui-talk.png',
   shock: './img/onboard/sui-shock.png',
 };
-// Grass footsteps (260730): Kenney "Impact Sounds", CC0 — see
+// Grass footsteps (260730): Kenney "Impact Sounds", CC0 â€” see
 // public/sfx/README.md. Two samples alternated so consecutive steps never
 // sound identical; one plays on every stride frame swap.
 const FOOTSTEPS = ['./sfx/footstep-grass-0.ogg', './sfx/footstep-grass-1.ogg'];
 
 // Slower stride to match the slower walk slide (260729). The CSS bob cycle
-// (suiBob, 520ms) is 2x this on purpose (260730): a steps(1) SNAP — down
+// (suiBob, 520ms) is 2x this on purpose (260730): a steps(1) SNAP â€” down
 // for the stand frame, up for the stride frame, cutting the instant the
 // sprite swaps. Both clocks start on the same pose change; change one
 // period and you must change the other.
@@ -93,7 +93,7 @@ export interface OnboardSceneProps {
 export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
   const { groundIn, sui } = props;
 
-  // Grass sway — only while the ground is on screen.
+  // Grass sway â€” only while the ground is on screen.
   const [grassFrame, setGrassFrame] = useState(0);
   useEffect(() => {
     if (!groundIn) return;
@@ -132,7 +132,7 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
       return () => clearInterval(t);
     }
     if (sui === 'talking') {
-      // Open the mouth on the FIRST frame — waiting a full interval before
+      // Open the mouth on the FIRST frame â€” waiting a full interval before
       // the first flap made short lines look mimed.
       setFlip(true);
       const t = setInterval(() => setFlip((f) => !f), TALK_FRAME_MS);
@@ -158,7 +158,7 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
   const cbs = useRef(props);
   cbs.current = props;
 
-  // ── Stage gates (261012) ──────────────────────────────────────────────
+  // â”€â”€ Stage gates (261012) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // One gate per CHANGE of groundIn (mount is not a change: nothing slides),
   // and one per entering/leaving pose. A newer change cancels the older gate,
   // so a superseded stage never fires its callback.
@@ -206,7 +206,7 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
   }, [instant]);
 
   // Sui lives INSIDE the ground element (behind the grass tufts), so her
-  // slide's transitionend bubbles up to the ground's handler — each handler
+  // slide's transitionend bubbles up to the ground's handler â€” each handler
   // must only react to its own element's transition.
   const onGroundEnd = (e: React.TransitionEvent): void => {
     if (e.target !== e.currentTarget || e.propertyName !== 'transform') return;
@@ -262,7 +262,7 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
           {/* Sui stands ON the ground art but BEHIND the grass tufts, so the
               tufts overlap her feet and she reads as in the field rather than
               pasted on top of it. Riding inside the ground element also means
-              she slides with it — she is always hidden/off-stage when it
+              she slides with it â€” she is always hidden/off-stage when it
               moves, so that is never visible.
 
               She is rendered TWICE: this behind-grass copy, and a duplicate
@@ -288,3 +288,7 @@ export function OnboardScene(props: OnboardSceneProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * World thumbnail hit / fallback counters (261111). Cards count a thumbnail
  * that loaded and a thumbnail that failed (so the full portrait was loaded
  * instead); the counts ride on the next `world_page_loaded` event (no new
@@ -24,3 +24,7 @@ export function takeThumbStats(): { loads: number; fallbacks: number } {
   fallbacks = 0;
   return out;
 }
+
+
+
+

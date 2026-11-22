@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room editor (261104, milestone 2). Full-window: her room is the
  * hero, drawn full-bleed by RoomCanvas, and the editor floats over it in
  * translucent panels tinted by the ROOM (manifest.overlay for the time of
@@ -334,7 +334,7 @@ function hexTriple(hex: string): string {
   return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
 }
 
-// ── Thumbnails ──────────────────────────────────────────────────────────────
+// â”€â”€ Thumbnails â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PartThumb({ pack, component, tint, time, cover }: { pack: EditorPack; component: RoomComponent; tint: string | null; time: RoomTime; cover?: boolean }): React.ReactElement {
   const t = useDebounced(tint, 140);
@@ -360,7 +360,7 @@ function RoomCard({ pack, state, time, width }: { pack: EditorPack; state: RoomS
   return url ? <img className={styles.cardImg} src={url} alt="" draggable={false} /> : <span className={styles.cardWait} />;
 }
 
-// ── Avatar ──────────────────────────────────────────────────────────────────
+// â”€â”€ Avatar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Her figure when she uses the Sei avatar here: frosted glass in her shape, so the room reads through. */
 function GlassFigure({ height }: { height: number }): React.ReactElement {
@@ -390,7 +390,7 @@ function EditorAvatar({
   return <GlassFigure height={slot.height} />;
 }
 
-// ── Item drag ghost ─────────────────────────────────────────────────────────
+// â”€â”€ Item drag ghost â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The item being dragged, drawn above the room at the pointer (it rejoins its layer on drop). */
 function ItemGhost({
@@ -519,7 +519,7 @@ function LipGhost({ pack, state, time, vp, top }: { pack: EditorPack; state: Roo
   return <canvas ref={ref} className={styles.lipGhost} style={style} data-lip-ghost="" />;
 }
 
-// ── Swatches ────────────────────────────────────────────────────────────────
+// â”€â”€ Swatches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Swatches({
   component,
@@ -600,7 +600,7 @@ function Swatches({
   );
 }
 
-// ── Patterns (261105) ───────────────────────────────────────────────────────
+// â”€â”€ Patterns (261105) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PatternSwatch({ pack, def, base, accent }: { pack: EditorPack; def: PatternDef; base: string; accent: string }): React.ReactElement {
   const b = useDebounced(base, 140);
@@ -742,7 +742,7 @@ function WidgetGuides({ drag, box, stage }: { drag: { guideX: number | null; gui
   );
 }
 
-// ── The editor ──────────────────────────────────────────────────────────────
+// â”€â”€ The editor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const { source, characterId, onClose, clock, fps = 30, initial, inline, telemetry, together } = props;
@@ -804,7 +804,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     const m = st ? packsRef.current?.find((p) => p.id === st.preset)?.manifest : undefined;
     return st && m ? roomShapeOf(m, st, lastPattern.current) : undefined;
   }, []);
-  // ── the guided setup: its steps for the room now, the step on screen, and the panel that step shows ──
+  // â”€â”€ the guided setup: its steps for the room now, the step on screen, and the panel that step shows â”€â”€
   const guiding = guide !== null;
   const presentNow = history?.present ?? null;
   const guideSteps = useMemo(() => {
@@ -835,7 +835,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   }, [shownPanel]);
   const colorTelemetry = useMemo<ColorPickTelemetry>(() => ({ pickerOpened: analytics.pickerOpened, picked: analytics.colorPicked }), [analytics.pickerOpened, analytics.colorPicked]);
 
-  // ── load ──
+  // â”€â”€ load â”€â”€
   const loadAll = useCallback(async (): Promise<void> => {
     try {
       const [list, saved] = await Promise.all([source.packs(), source.load().catch(() => null)]);
@@ -961,7 +961,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   }, [selected, state]);
   useEffect(() => setPaletteOpen(false), [selected]);
 
-  // ── actions ──
+  // â”€â”€ actions â”€â”€
   const doUndo = useCallback(() => setHistory((h) => (h ? undo(h) : h)), []);
 
   // 261105 (T336): her commits, one undo step each, and their undo.
@@ -1026,7 +1026,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     else edit((s) => switchPreset(s, id));
   };
 
-  // ── the guided setup's analytics (shape only; the companion editor only) and buttons ──
+  // â”€â”€ the guided setup's analytics (shape only; the companion editor only) and buttons â”€â”€
   const trackSetup = useCallback(
     (event: typeof SEILINK_SETUP_EVENT | typeof SEILINK_SETUP_STEP_EVENT, props: Record<string, string | number | boolean | null>): void => {
       if (!telemetry) return;
@@ -1128,7 +1128,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setGuide({ ...g, step: prev });
   };
 
-  // ── 261107: the "Open on login" step (lib/seilink/loginStep.ts) ──
+  // â”€â”€ 261107: the "Open on login" step (lib/seilink/loginStep.ts) â”€â”€
   const openAtLogin = props.openAtLogin ?? null;
   const openLoginStep = (resumed: boolean): void => {
     loginDue.current = false;
@@ -1227,13 +1227,13 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
   };
 
-  // ── pointer: select, open, drag ──
+  // â”€â”€ pointer: select, open, drag â”€â”€
   const pointerCanvas = (e: React.PointerEvent): [number, number] => {
     const r = stageRef.current!.getBoundingClientRect();
     return viewportToCanvas(vp, e.clientX - r.left, e.clientY - r.top);
   };
 
-  // ── 261119: wallpaper widgets on the stage (DOM boxes drawn by RoomCanvas) ──
+  // â”€â”€ 261119: wallpaper widgets on the stage (DOM boxes drawn by RoomCanvas) â”€â”€
   const widgetBox = (): DOMRect | null =>
     (stageRef.current?.closest('[data-room-editor]')?.querySelector('[data-room-widgets]') as HTMLElement | null)?.getBoundingClientRect() ?? null;
   const widgetAt = (clientX: number, clientY: number): string | null => {
@@ -1349,7 +1349,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     }
   };
 
-  // ── keyboard ──
+  // â”€â”€ keyboard â”€â”€
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const target = e.target as HTMLElement | null;
@@ -1426,7 +1426,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmClose, selected, widgetSel, panel, manifest, doUndo, doSave, requestClose, edit, endEditGesture]);
 
-  // ── overlay tint (the room's, not the theme's) ──
+  // â”€â”€ overlay tint (the room's, not the theme's) â”€â”€
   const ov = overlay ?? { color: manifest?.overlay?.[time] ?? '#efe6da', light: true, ink: '#1d1b22' };
   const rootStyle = { '--ov': hexTriple(ov.color), '--ink': hexTriple(ov.ink) } as React.CSSProperties;
   const tone = ov.light ? styles.light : styles.dark;
@@ -1572,7 +1572,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     );
   };
 
-  // ── panels ──
+  // â”€â”€ panels â”€â”€
   const renderPanel = (): React.ReactNode => {
     const panel = shownPanel;
     if (!panel) return null;
@@ -1835,7 +1835,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     </section>
   );
 
-  const savedLabel = saving === 'saving' ? t('Saving…') : dirty ? t('Save') : t('Saved');
+  const savedLabel = saving === 'saving' ? t('Savingâ€¦') : dirty ? t('Save') : t('Saved');
 
   const body = (
     <div className={`${styles.root} ${tone} ${inline ? styles.inline : ''}`} style={rootStyle} data-room-editor="1">
@@ -2068,3 +2068,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   );
   return wrap(<ColorPickTelemetryContext.Provider value={colorTelemetry}>{body}</ColorPickTelemetryContext.Provider>);
 }
+
+
+
+

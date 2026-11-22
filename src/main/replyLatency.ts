@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reply latency telemetry (261106, retention O2 item 6: "first_reply_ms on
  * chat and voice turns. No latency telemetry exists.").
  *
@@ -217,3 +217,7 @@ export function startChatReplyClock(opts: {
     },
   };
 }
+
+
+
+

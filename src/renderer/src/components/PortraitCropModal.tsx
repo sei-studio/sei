@@ -1,9 +1,9 @@
-/**
- * PortraitCropModal — in-app crop/preview popup for character images.
+﻿/**
+ * PortraitCropModal â€” in-app crop/preview popup for character images.
  *
  * Shown by PortraitImagePicker after a file is decoded, BEFORE it is
  * compressed + applied. The user pans (drag) and zooms (slider / wheel) the
- * source image inside a fixed portrait frame (the 210:312 card aspect — the
+ * source image inside a fixed portrait frame (the 210:312 card aspect â€” the
  * hero display; the square avatar/preview center-crop this acceptably). On
  * confirm we render the visible frame region to an output canvas at full
  * working resolution and hand it back; the picker's compressor then guarantees
@@ -13,7 +13,7 @@
  * + panel padding) so the stage, zoom slider and footer all align. Esc and
  * scrim-click dismiss unless the parent is busy compressing/uploading.
  *
- * Zero dependencies — pointer events + canvas only (no crop library).
+ * Zero dependencies â€” pointer events + canvas only (no crop library).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -24,14 +24,14 @@ import styles from './PortraitCropModal.module.css';
 
 // On-screen crop frame dimensions per shape. 'card' is the portrait card aspect
 // (210:312, the hero display); 'avatar' is a square frame with an avatar-shaped cutout
-// (the round profile picture). Output stays ≤ 1024 on both axes (PORTRAIT_MAX_DIM).
+// (the round profile picture). Output stays â‰¤ 1024 on both axes (PORTRAIT_MAX_DIM).
 const FRAME_DIMS = {
-  card: { w: 268, h: Math.round(268 * (312 / 210)) }, // 268 × 398
+  card: { w: 268, h: Math.round(268 * (312 / 210)) }, // 268 Ã— 398
   avatar: { w: 320, h: 320 }, // square
 } as const;
 const OUT_W = 600;
 const MAX_ZOOM = 4;
-// ModalShell panel padding (20px each side) — the panel width is the frame plus
+// ModalShell panel padding (20px each side) â€” the panel width is the frame plus
 // this so the stage fills the content box exactly.
 const PANEL_PAD = 40;
 
@@ -208,9 +208,13 @@ export function PortraitCropModal({
           {t('Cancel')}
         </Button>
         <Button kind="primary" size="md" onClick={confirm} disabled={busy}>
-          {busy ? t('Working…') : t('Use photo')}
+          {busy ? t('Workingâ€¦') : t('Use photo')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

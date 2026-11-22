@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261013 (T111): fill card {{user}} / {{char}} placeholders in a character's
  * persona text for the background prompts that only get the raw text (the
  * summary fold, chat memory compaction). Cards without placeholders return
@@ -34,3 +34,7 @@ export async function resolvePersonaText(
   }
   return fillPersonaPlaceholders(text, { charName, userName });
 }
+
+
+
+

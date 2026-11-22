@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first view after launch (App.tsx's boot effect), as plain functions so
  * the auth part of the decision is testable without rendering App.
  *
@@ -68,3 +68,7 @@ export async function resolveBootRoute(deps: BootRouteDeps): Promise<BootDestina
   if (deps.isCancelled()) return null;
   return bootDestination(deps.currentAuth(), deps.profile());
 }
+
+
+
+

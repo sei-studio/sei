@@ -1,5 +1,5 @@
-/**
- * PostHog product analytics — main-process owner (260707).
+﻿/**
+ * PostHog product analytics â€” main-process owner (260707).
  *
  * Consent model: OPT-OUT (analytics ON by default), disclosed in
  * ../sei-website/privacy.html. `capture()` is a hard no-op when
@@ -7,7 +7,7 @@
  * build, so a build with no key (self-hosters / from-source) sends nothing.
  *
  * Privacy invariant: NEVER send PII. Only counts, enums, durations, versions,
- * and platform facts leave the machine — never chat/persona text, world names,
+ * and platform facts leave the machine â€” never chat/persona text, world names,
  * Minecraft usernames, or emails. `sanitize()` is a backstop that drops
  * free-form objects and truncates strings on every renderer-supplied payload.
  *
@@ -79,8 +79,8 @@ const logger = {
 /**
  * Public, write-only PostHog project API key. `phc_` keys can only INGEST
  * events (never read data), so they are safe to embed in a distributed client
- * — this is how PostHog is designed to ship. Overridable at build time via a
- * POSTHOG_KEY define (electron.vite.config.ts). Empty / placeholder ⇒ analytics
+ * â€” this is how PostHog is designed to ship. Overridable at build time via a
+ * POSTHOG_KEY define (electron.vite.config.ts). Empty / placeholder â‡’ analytics
  * disabled (no-op), keeping .env-less from-source builds silent.
  */
 const POSTHOG_KEY = (process.env.POSTHOG_KEY ?? 'phc_srnfn2HQDxcGyadVKFz9qRzEv7Rr2XTtzMpNbgPc2F7R').trim();
@@ -157,7 +157,7 @@ function keyConfigured(): boolean {
 /**
  * Initialize the client, read the anonymous id (install id or device id),
  * and cache the opt-out flag + backend kind. Call once from bootstrap() after config is
- * reachable. Never throws — analytics must never block startup.
+ * reachable. Never throws â€” analytics must never block startup.
  */
 export async function initAnalytics(): Promise<void> {
   try {
@@ -172,7 +172,7 @@ async function initAnalyticsInner(): Promise<void> {
   try {
     appVersion = app.getVersion();
   } catch {
-    /* app not fully ready — version stays default */
+    /* app not fully ready â€” version stays default */
   }
   try {
     packagedBuild = app.isPackaged === true;
@@ -223,7 +223,7 @@ async function initAnalyticsInner(): Promise<void> {
     /* default 'local' */
   }
   if (!keyConfigured()) {
-    logger.info('analytics: no ingestion key configured — analytics disabled');
+    logger.info('analytics: no ingestion key configured â€” analytics disabled');
     return;
   }
   // 261031: dev and test builds send nothing (they wrote ~90 fake persons
@@ -372,7 +372,7 @@ export function analyticsChannel(): ReleaseChannel {
 }
 
 /**
- * Cached UserConfig.ui_language (one of UI_LANGUAGES), the APP UI language — not the
+ * Cached UserConfig.ui_language (one of UI_LANGUAGES), the APP UI language â€” not the
  * per-character conversation language. 260801: before this, the only trace of
  * a non-English user anywhere in the cloud was `characters.metadata.language`,
  * which is stamped at character CREATION, so anyone who only ever used the
@@ -561,7 +561,7 @@ export function _resetPreInitForTests(done = false): void {
   checkoutOpenedAt = null;
 }
 
-/** Event name → product surface, for app_quit.last_surface. null = not a surface event. */
+/** Event name â†’ product surface, for app_quit.last_surface. null = not a surface event. */
 export function surfaceForEvent(event: string): string | null {
   // *_ended events often fire from timers (idle chat close), not from the user.
   if (event.endsWith('_ended')) return null;
@@ -731,16 +731,16 @@ export function resetDiagThrottleForTest(): void {
   diagThrottle.clear();
 }
 
-// ── Surface errors (260828) ─────────────────────────────────────────────────
+// â”€â”€ Surface errors (260828) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The non-Minecraft AI surfaces. Until 260828 only the summon path emitted a
- * failure event — chat, voice calls, chess, Draw!, and backseat failures were
+ * failure event â€” chat, voice calls, chess, Draw!, and backseat failures were
  * invisible in analytics.
  */
 export type ErrorSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat';
 
-/** error_class must be a short stable snake token — never a raw message. */
+/** error_class must be a short stable snake token â€” never a raw message. */
 const ERROR_CLASS_RE = /^[a-z0-9_]{1,64}$/;
 
 /**
@@ -748,7 +748,7 @@ const ERROR_CLASS_RE = /^[a-z0-9_]{1,64}$/;
  * error class token. Shape-never-content: a value that does not look like a
  * snake token (someone passed a raw error message) ships as 'invalid_class'
  * rather than the string. Same no-op gating as capture(); never throws.
- * Emit only on genuine failures — never on user-initiated ends or aborts.
+ * Emit only on genuine failures â€” never on user-initiated ends or aborts.
  */
 export function captureSurfaceError(
   surface: ErrorSurface,
@@ -821,7 +821,7 @@ export function identifyUser(userId: string): void {
   }
 }
 
-/** Detach from the signed-in account (sign-out) — revert to the anonymous id. */
+/** Detach from the signed-in account (sign-out) â€” revert to the anonymous id. */
 export function resetUser(): void {
   signedInUserId = null;
   planTier = null;
@@ -851,7 +851,7 @@ export async function setAnalyticsOptOut(optOut: boolean): Promise<void> {
 
 /**
  * Privacy re-consent (260720): the user just ACCEPTED the current Terms +
- * Privacy versions (AcceptToSModal → tos:accept). The current privacy.html
+ * Privacy versions (AcceptToSModal â†’ tos:accept). The current privacy.html
  * discloses product analytics + crash diagnostics, so an explicit acceptance
  * re-baselines consent: clear any prior opt-out in the same profile-scoped
  * config.json that capture() reads. The Settings "Usage analytics" toggle
@@ -888,3 +888,7 @@ export async function shutdownAnalytics(timeoutMs: number = ANALYTICS_SHUTDOWN_T
   }
   client = null;
 }
+
+
+
+

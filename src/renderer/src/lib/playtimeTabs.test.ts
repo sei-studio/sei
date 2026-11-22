@@ -1,4 +1,4 @@
-/** Playtime opens on the tab that matches the current setup (261110). */
+﻿/** Playtime opens on the tab that matches the current setup (261110). */
 import { describe, expect, it } from 'vitest';
 import { PLAYTIME_TABS, isActiveSetupTab, playtimeTabForSetup } from './playtimeTabs';
 
@@ -30,3 +30,7 @@ describe('isActiveSetupTab', () => {
     expect(PLAYTIME_TABS.some((t) => isActiveSetupTab(t, null, 'chatgpt'))).toBe(false);
   });
 });
+
+
+
+

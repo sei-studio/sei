@@ -1,4 +1,4 @@
-// Branch B: map a canonical dual-panel (front|back) Minecraft-style character
+﻿// Branch B: map a canonical dual-panel (front|back) Minecraft-style character
 // render onto the 64x64 skin atlas.
 //
 // Panel contract (see PANEL_PROMPT): square image, front view centered in the
@@ -42,7 +42,7 @@ function borderBackground(img) {
   for (let y = 0; y < h; y++) { push(0, y); push(w - 1, y); }
   let best = null;
   for (const b of buckets.values()) if (!best || b.n > best.n) best = b;
-  // If transparency dominates the border, the background IS transparency —
+  // If transparency dominates the border, the background IS transparency â€”
   // opaque border pixels are just the character touching the edge.
   if (!best || transparent > best.n) return null;
   return [best.r / best.n, best.g / best.n, best.b / best.n];
@@ -444,3 +444,7 @@ export async function panelToAtlas(panelImage, { variant = 'classic' } = {}) {
   }
   return atlas;
 }
+
+
+
+

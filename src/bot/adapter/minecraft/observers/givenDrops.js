@@ -1,4 +1,4 @@
-// 261017 (pass 14): items she tossed to the player with give().
+﻿// 261017 (pass 14): items she tossed to the player with give().
 //
 // give() tosses at the player's feet, and in the scripted eval the player
 // did not always walk over them. The next pickup (or a gather's drop sweep)
@@ -98,3 +98,7 @@ export function givenDropFor(bot, entity, now = Date.now()) {
   }
   return null
 }
+
+
+
+

@@ -1,19 +1,19 @@
-/**
- * Tests for src/main/cloud/cacheOnDemand.ts — Phase 11 plan 11-19
+﻿/**
+ * Tests for src/main/cloud/cacheOnDemand.ts â€” Phase 11 plan 11-19
  *
  * Covers the cache-on-demand sync model (D-19, LIB-04):
  *   1. ensureLocallyCached(uuid) on an existing local JSON: no-op
- *   2. Cache miss + cloud row present → writes character JSON + skin + portrait
- *   3. Cache miss + cloud returns null → throws CLOUD_CHARACTER_NOT_FOUND
- *   4. Conflict path: local exists + sync queue has pending → writes shadow file
- *   5. Not signed in + public row → still downloads + caches (item 5)
+ *   2. Cache miss + cloud row present â†’ writes character JSON + skin + portrait
+ *   3. Cache miss + cloud returns null â†’ throws CLOUD_CHARACTER_NOT_FOUND
+ *   4. Conflict path: local exists + sync queue has pending â†’ writes shadow file
+ *   5. Not signed in + public row â†’ still downloads + caches (item 5)
  *   6. listMerged dedupes by id with correct source annotation
  *
  * Mock strategy: vi.mock the cloudCharacterClient, supabaseClient (auth),
  * characterStore (saveCharacterRaw + listCharacters), and syncQueue (getStatus).
  * cacheOnDemand uses dynamic imports throughout so vi.mock intercepts them.
  *
- * Real filesystem under os.tmpdir() via _setUserDataOverride — mirrors the
+ * Real filesystem under os.tmpdir() via _setUserDataOverride â€” mirrors the
  * syncQueue.test.ts and portraitStore.test.ts pattern.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -160,7 +160,7 @@ describe('ensureLocallyCached', () => {
   it('signed-out users CAN download + cache a public character (item 5)', async () => {
     // Public (shared) rows are anon-readable (RLS shared = true OR owner = uid),
     // so a local/signed-out user opening a World character must still cache it
-    // to view it — no early "not signed in" throw.
+    // to view it â€” no early "not signed in" throw.
     getSessionMock.mockResolvedValue({ data: { session: null } });
     const cloudChar = makeCharacter({ owner: OWNER, shared: true });
     downloadCharacterMock.mockResolvedValue(cloudChar);
@@ -176,7 +176,7 @@ describe('ensureLocallyCached', () => {
     expect(downloadSkinMock).toHaveBeenCalledWith(OWNER, UUID_A);
   });
 
-  it('conflict path: local exists + sync queue pending → writes <uuid>.json.conflict and does NOT overwrite local', async () => {
+  it('conflict path: local exists + sync queue pending â†’ writes <uuid>.json.conflict and does NOT overwrite local', async () => {
     await makeLocal(UUID_A);
     const cloudChar = makeCharacter({ name: 'CloudEdit' });
     downloadCharacterMock.mockResolvedValue(cloudChar);
@@ -315,7 +315,7 @@ describe('per-version portrait cache (261111)', () => {
   });
 });
 
-describe('ensureLocallyCached — refresh-on-open', () => {
+describe('ensureLocallyCached â€” refresh-on-open', () => {
   const AUTHOR = '99999999-9999-4999-8999-999999999999';
 
   // A locally-cached Character (what getCharacter returns), distinct shape from
@@ -350,8 +350,8 @@ describe('ensureLocallyCached — refresh-on-open', () => {
         name: 'Updated Name',
         persona: { source: 'new src', expanded: 'new expanded' },
         description: 'new description',
-        last_launched: '2099-01-01T00:00:00.000Z', // author's stat — must NOT be adopted
-        playtime_ms: 123456,                        // author's stat — must NOT be adopted
+        last_launched: '2099-01-01T00:00:00.000Z', // author's stat â€” must NOT be adopted
+        playtime_ms: 123456,                        // author's stat â€” must NOT be adopted
         cloud_updated_at: '2026-04-01T00:00:00.000Z',
       }),
     );
@@ -389,10 +389,10 @@ describe('ensureLocallyCached — refresh-on-open', () => {
     expect(saveCharacterRawMock).not.toHaveBeenCalled();
   });
 
-  it('own char + NEWER cloud row refreshes (item 4 — cross-device shared toggle propagates)', async () => {
+  it('own char + NEWER cloud row refreshes (item 4 â€” cross-device shared toggle propagates)', async () => {
     await makeLocal(UUID_A);
     // owner === current session user (OWNER); cloud is strictly newer and has
-    // flipped shared → the user toggled public/private on another device.
+    // flipped shared â†’ the user toggled public/private on another device.
     getCharacterMock.mockResolvedValue(
       makeLocalChar({ owner: OWNER, shared: true, cloud_updated_at: '2026-03-01T00:00:00.000Z' }),
     );
@@ -412,7 +412,7 @@ describe('ensureLocallyCached — refresh-on-open', () => {
 
   it('own char + NOT-newer cloud row makes no write (local edits win)', async () => {
     await makeLocal(UUID_A);
-    // Local watermark is newer than cloud → a local edit hasn't been overtaken;
+    // Local watermark is newer than cloud â†’ a local edit hasn't been overtaken;
     // the watermark guard must skip the write so we never clobber it.
     getCharacterMock.mockResolvedValue(
       makeLocalChar({ owner: OWNER, cloud_updated_at: '2026-04-01T00:00:00.000Z' }),
@@ -442,11 +442,11 @@ describe('ensureLocallyCached — refresh-on-open', () => {
     expect(saveCharacterRawMock.mock.calls[0][0].name).toBe('Backfilled');
   });
 
-  it('bundled default is NOT refreshed from cloud — the app bundle is authoritative', async () => {
+  it('bundled default is NOT refreshed from cloud â€” the app bundle is authoritative', async () => {
     // refreshSeededDefaults re-asserts a default's authored fields (persona,
-    // metadata.proactiveness, skin, …) from the shipped bundle on every launch.
+    // metadata.proactiveness, skin, â€¦) from the shipped bundle on every launch.
     // Pulling the cloud row here would adopt a STALE copy and clobber the bundle
-    // value — e.g. Sui flips from the bundle's Agentic back to the cloud row's
+    // value â€” e.g. Sui flips from the bundle's Agentic back to the cloud row's
     // Reactive moments after launch. So a default cache-hit must short-circuit
     // before the network: no download, no re-save.
     await makeLocal(UUID_A);
@@ -510,3 +510,7 @@ describe('listMerged', () => {
     expect(listMyCharactersMock).not.toHaveBeenCalled();
   });
 });
+
+
+
+

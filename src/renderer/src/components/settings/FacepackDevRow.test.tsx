@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261028 facepack pilot: the About row renders nothing unless main reports
  * the dev flag on, and then carries each pack's attribution.
  */
@@ -36,3 +36,7 @@ describe('FacepackDevRowView', () => {
     expect(out).not.toContain('Sui face');
   });
 });
+
+
+
+

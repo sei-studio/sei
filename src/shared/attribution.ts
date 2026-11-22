@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Where did you hear about Sei?" (261001): the one-tap attribution question
  * in first-run onboarding. Downloads go to GitHub and the app mints a fresh
  * PostHog person, so there is no join from an ad click or a creator's link to
@@ -34,7 +34,7 @@ export function isAttributionSource(v: unknown): v is AttributionSource {
   return typeof v === 'string' && (ATTRIBUTION_SOURCES as readonly string[]).includes(v);
 }
 
-/* ── Follow-up detail (261012) ─────────────────────────────────────────────
+/* â”€â”€ Follow-up detail (261012) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    59 of 107 new installs in 261008-261011 answered "AI assistant", and we had
    no way to tell WHICH assistant, or whether a Google visit was someone
    searching the brand name after an AI answer. So those two answers get one
@@ -74,3 +74,7 @@ export function isAttributionDetail(source: unknown, detail: unknown): detail is
   if (!hasAttributionDetail(source) || typeof detail !== 'string') return false;
   return (ATTRIBUTION_DETAILS[source] as readonly string[]).includes(detail);
 }
+
+
+
+

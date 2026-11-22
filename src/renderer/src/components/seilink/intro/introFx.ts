@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first-link intro's light (261106): the space aurora, drawn per frame
  * from an IntroFrame (introFrame.ts). Pure drawing: the same frame always
  * draws the same picture.
@@ -161,7 +161,7 @@ export function drawBack(ctx: CanvasRenderingContext2D, f: IntroFrame): void {
   melt(ctx);
 }
 
-// ── Stars ───────────────────────────────────────────────────────────────────
+// â”€â”€ Stars â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Star {
   x: number;
@@ -288,3 +288,7 @@ export function grainUrl(): string | null {
   }
   return GRAIN || null;
 }
+
+
+
+

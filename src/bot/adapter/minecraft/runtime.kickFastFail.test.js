@@ -1,4 +1,4 @@
-// 261007: a kick that will repeat on every attempt ends the summon on the
+﻿// 261007: a kick that will repeat on every attempt ends the summon on the
 // FIRST kick, with its own class, instead of spending the reconnect budget and
 // landing on LAN_NOT_OPEN ("re-open the world to LAN") for a world that is
 // open. Online mode (multiplayer.disconnect.unverified_username) joins the
@@ -78,3 +78,7 @@ describe('runtime onEnd: permanent kicks fail fast (261007)', () => {
     expect(h.created.length).toBeGreaterThan(1)
   })
 })
+
+
+
+

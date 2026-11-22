@@ -1,5 +1,5 @@
-/**
- * scripts/next-step-examples.ts — ten end-to-end examples of the retention
+﻿/**
+ * scripts/next-step-examples.ts â€” ten end-to-end examples of the retention
  * "next time" feature (261014), for judging consistency across characters.
  *
  * For each session (two each for Sui, Lyra, Marv, red, Roger; game sessions,
@@ -91,7 +91,7 @@ if (!apiKey) {
 }
 const client = new Anthropic({ apiKey });
 
-// ── characters ──────────────────────────────────────────────────────────────
+// â”€â”€ characters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface Char {
   name: string;
   expanded: string;
@@ -109,7 +109,7 @@ function loadChar(file: string): Char {
   };
 }
 
-// ── sessions ────────────────────────────────────────────────────────────────
+// â”€â”€ sessions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const P = (text: string): DigestLine => ({ who: 'player', text });
 const Y = (text: string): DigestLine => ({ who: 'you', text });
 const H = 3_600_000;
@@ -363,7 +363,7 @@ const SESSIONS: Session[] = [
   },
 ];
 
-// ── usage + calls ───────────────────────────────────────────────────────────
+// â”€â”€ usage + calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const usage = { in: 0, cw: 0, cr: 0, out: 0, calls: 0, webSearches: 0 };
 function addUsage(u: Anthropic.Usage | undefined): void {
   if (!u) return;
@@ -397,7 +397,7 @@ async function create(body: Record<string, unknown>): Promise<any> {
   }
 }
 
-// ── 1. the plan check ───────────────────────────────────────────────────────
+// â”€â”€ 1. the plan check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /** The check main runs before storing a player line (tagLatestPlan): ' [REJECTED: why]' or ''. */
 function lineVerdict(line: string | null, character: string): string {
   if (!line) return '';
@@ -424,7 +424,7 @@ async function planCheck(s: Session, c: Char): Promise<{ plan: string | null; li
   return { plan: parsed?.step ?? null, line: parsed?.line ?? null, raw };
 }
 
-// ── 2. greetings ────────────────────────────────────────────────────────────
+// â”€â”€ 2. greetings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const NOW = Date.now();
 function memoryMd(s: Session, plan: string | null): string {
   const rows = s.memories.map(([age, t]) => `- [${new Date(NOW - age).toISOString()}] ${t}`);
@@ -476,7 +476,7 @@ const SNAP = `snapshot: pos: 112,71,-38
 biome: plains  surroundings: outside  time: day (1200)
 hp: 20/20  food: 20/20  xp: lvl 4
 holding: (empty)
-inventory (6/36 slots): oak_planks×12 cobblestone×40 stone_pickaxe×1 stone_axe×1 bread×5 torch×3
+inventory (6/36 slots): oak_planksÃ—12 cobblestoneÃ—40 stone_pickaxeÃ—1 stone_axeÃ—1 breadÃ—5 torchÃ—3
 terrain at feet: 18 grass_block, 4 dirt
 nearby entities:
   #1 AlexPlays @114,71,-36
@@ -575,7 +575,7 @@ async function callGreeting(s: Session, c: Char, plan: string | null) {
   for (const r of window) push(r.role as 'user' | 'assistant', r.role === 'user' ? `[${formatChatTimestamp(r.ts)}] ${r.text}` : r.text);
   push(
     'user',
-    `[${formatChatTimestamp(NOW - 20 * H)}] [Shared history: You and ${c.name} called for ${s.minutes} minutes. That was a real voice call you were both on — treat it as a conversation you actually had.]`,
+    `[${formatChatTimestamp(NOW - 20 * H)}] [Shared history: You and ${c.name} called for ${s.minutes} minutes. That was a real voice call you were both on â€” treat it as a conversation you actually had.]`,
   );
   if (msgs[0]?.role === 'assistant') msgs.unshift({ role: 'user', content: '[earlier conversation]' });
   // chatService.sendVoiceGreetingTurnImpl's note (promptLibrary callGreetingNote).
@@ -599,7 +599,7 @@ async function callGreeting(s: Session, c: Char, plan: string | null) {
   return { said: text ? [text] : [], other };
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
+// â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function greetOnly(file: string): Promise<void> {
   const prior = JSON.parse(readFileSync(file, 'utf8')) as { results: Array<{ id: string; plan: string | null }> };
   const out: unknown[] = [];
@@ -667,3 +667,7 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+
+

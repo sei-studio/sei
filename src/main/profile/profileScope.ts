@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Runtime profile-scope switching (260603 per-profile partitioning).
  *
  * The active profile scope (`paths.getActiveScope()`) decides which
- * `<userData>/profiles/<scope>/…` bucket every per-account store reads/writes.
+ * `<userData>/profiles/<scope>/â€¦` bucket every per-account store reads/writes.
  * At boot it is set from the persisted session (src/main/index.ts). This module
- * re-points it when auth state changes AT RUNTIME — sign-in, sign-out, or
- * swapping accounts — and drives the "start fresh like a new install" behavior:
+ * re-points it when auth state changes AT RUNTIME â€” sign-in, sign-out, or
+ * swapping accounts â€” and drives the "start fresh like a new install" behavior:
  *
  *   1. End every live session of the OLD account (accountSessions.ts: chess,
  *      Draw!, backseat, voice calls, chat sessions, every game bot), writing
@@ -58,7 +58,7 @@ export function initProfileScope(deps: {
 }
 
 /**
- * mkdir the active profile root. 260706: no longer seeds bundled defaults — a
+ * mkdir the active profile root. 260706: no longer seeds bundled defaults â€” a
  * freshly-scoped profile (e.g. first sign-in on this machine) starts with zero
  * local defaults, same as a fresh install. sui/lyra/clawd surface via the World
  * tab and cache on demand from their public cloud rows; the user's own cloud
@@ -72,7 +72,7 @@ async function ensureProfileInitialized(): Promise<void> {
 /**
  * Switch the active profile scope to match the signed-in user (or `'local'`
  * when signed out). No-op when the scope is unchanged (token refresh, the
- * INITIAL_SESSION replay at boot — boot already set + seeded the scope).
+ * INITIAL_SESSION replay at boot â€” boot already set + seeded the scope).
  */
 export function switchScopeForAuth(
   userId: string | null,
@@ -152,15 +152,15 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
   // 2. Re-point every profile-scoped path at the new account's bucket.
   setActiveScope(nextScope);
   noteScopeChanged();
-  console.log(`[sei] profileScope: ${prevScope} → ${nextScope} (${reason})`);
+  console.log(`[sei] profileScope: ${prevScope} â†’ ${nextScope} (${reason})`);
 
   // 3. Initialize a brand-new profile (returning accounts / 'local' no-op here).
   await ensureProfileInitialized();
 
   // 3.5 Cross-device hydration (item 4). On sign-in to an existing account from
   //     a fresh device, the local profile is empty even though the account has
-  //     state in the cloud. Pull it down HERE — before the scope-changed push
-  //     below — so the renderer's re-bootstrap (reload config + characters) sees
+  //     state in the cloud. Pull it down HERE â€” before the scope-changed push
+  //     below â€” so the renderer's re-bootstrap (reload config + characters) sees
   //     it and doesn't re-prompt onboarding or hide the user's own characters.
   //     Skipped for sign-out (nextScope === local). Best-effort: a network blip
   //     just defers hydration to the normal cache-on-demand path.
@@ -168,8 +168,8 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
     // (a0) Default the freshly-scoped account to cloud billing BEFORE the
     //      scope-changed push below. The push triggers the renderer's
     //      re-bootstrap (reload config + credits); the prior cloud-default
-    //      write lived in authState.ts AFTER switchScopeForAuth returned —
-    //      i.e. after this push had already fired — so a fresh sign-in
+    //      write lived in authState.ts AFTER switchScopeForAuth returned â€”
+    //      i.e. after this push had already fired â€” so a fresh sign-in
     //      re-bootstrapped while config.json still held the 'local' default
     //      and the user landed on API/BYOK mode. Writing it here, inside the
     //      switch and before the push, closes that race. Idempotent: a later
@@ -178,7 +178,7 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
     //      260703: routed through applyCloudDefaultForSignIn so a profile that
     //      EXPLICITLY chose BYOK (ai_backend_kind_source === 'user', or a
     //      legacy 'local' with a stored key) keeps its choice across
-    //      sign-out/sign-in — the raw setAiBackendKind('cloud-proxy') here
+    //      sign-out/sign-in â€” the raw setAiBackendKind('cloud-proxy') here
     //      used to stomp it on every re-login.
     try {
       const { applyCloudDefaultForSignIn } = await import('../apiKeyStore');
@@ -208,7 +208,7 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
       console.warn(`[sei] profileScope: cloud name backfill failed: ${(err as Error).message}`);
     }
     // (a2) Heal legacy pre-0.4 default seeds in THIS profile. The boot-time
-    //      defaults→World migration (src/main/index.ts step 1b-1) runs ONCE
+    //      defaultsâ†’World migration (src/main/index.ts step 1b-1) runs ONCE
     //      against the boot scope. On a session-restore launch getSession() is
     //      empty that early, so the boot scope resolves to 'local' and only the
     //      local profile is converted; the signed-in profile (scoped here, AFTER
@@ -247,7 +247,7 @@ async function runScopeSwitch(userId: string | null, restored: boolean): Promise
     // (c) Per-DEVICE skin-setup gating. Skin setup installs a Minecraft mod on
     //     THIS machine, so it must be prompted per device, not per account. An
     //     existing account signing in on a NEW device gets its name backfilled
-    //     above (so onboarding — which normally arms skin_setup_pending — is
+    //     above (so onboarding â€” which normally arms skin_setup_pending â€” is
     //     skipped) and would otherwise sail straight to home, leaving this
     //     device's Minecraft unconfigured. If the account is onboarded but this
     //     device has never COMPLETED the wizard, re-arm the pending flag here
@@ -324,3 +324,7 @@ export function _resetForTests(): void {
   stepTimeoutMs = PROFILE_MOVE_STEP_TIMEOUT_MS;
   onScopeSwitchedRef = undefined;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first-link intro's timeline (261105, T337; 261106 v6, the WorldLink
  * status lines). Pure, so the view, the harness and the tests agree on where
  * each beat starts.
@@ -176,3 +176,7 @@ export const ease = {
   inOut: (x: number): number => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2),
   in: (x: number): number => x * x * x,
 };
+
+
+
+

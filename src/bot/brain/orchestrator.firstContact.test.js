@@ -1,4 +1,4 @@
-// 261011: the first-spawn greeting no longer assumes a shared past.
+﻿// 261011: the first-spawn greeting no longer assumes a shared past.
 // Quality eval 2026-10-11: with empty memory she opened "yo alex, back in the
 // world" (first_meeting) and "you actually made it back" (building), because
 // the only FIRST CONTACT wording said to greet them "like you're glad to be
@@ -265,3 +265,7 @@ describe('261017 no second greeting turn', () => {
     expect(JSON.stringify(provider.calls[0])).toContain('FIRST CONTACT')
   })
 })
+
+
+
+

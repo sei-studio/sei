@@ -1,4 +1,4 @@
-import pkg from 'mineflayer-pathfinder'
+﻿import pkg from 'mineflayer-pathfinder'
 const { Movements, goals } = pkg
 
 /** @typedef {'reached' | 'cant_reach' | 'timeout' | 'no_bot' | 'aborted'} PathfindResult */
@@ -164,8 +164,8 @@ export function stopPathfinderDig(bot) {
 /**
  * Yield to a reflex-owned pathfinder goal (Plan 01 mutex). While
  * `bot._seiReflexActive` is true a creeper flee owns the goal; installing our
- * own goal would race it tick-for-tick. Park here — non-destructively, we never
- * stop()/abort the action — until the flee releases the goal, the abort signal
+ * own goal would race it tick-for-tick. Park here â€” non-destructively, we never
+ * stop()/abort the action â€” until the flee releases the goal, the abort signal
  * fires, or the wall-clock budget elapses. The flee restores `bot._seiSavedGoal`
  * (this action's goal) on exit, so the caller resumes its original destination.
  *
@@ -226,12 +226,12 @@ export async function waitForReflexClear(bot, signal, budgetMs = 12000) {
 }
 
 /**
- * D-09: append `unreachable — try build to Y=N` when pathfinder failure
+ * D-09: append `unreachable â€” try build to Y=N` when pathfinder failure
  * (cant_reach or timeout) is plausibly caused by elevation. Heuristic:
  * target.y > bot.y + 2 (vanilla jump tops at ~1.25 blocks, so >2 above bot
  * is definitively unreachable without scaffolding).
  *
- * 260513-wkd: `aborted` short-circuits too — the LLM gets a clean abort
+ * 260513-wkd: `aborted` short-circuits too â€” the LLM gets a clean abort
  * string; vertical hints would be noise on a deliberate interrupt.
  */
 export function composeVerticalHint(bot, x, y, z, result) {
@@ -239,14 +239,14 @@ export function composeVerticalHint(bot, x, y, z, result) {
   const bp = bot?.entity?.position
   if (!bp || typeof bp.y !== 'number') return result
   if (y > bp.y + 2) {
-    return `${result} — unreachable — try build to Y=${y}`
+    return `${result} â€” unreachable â€” try build to Y=${y}`
   }
   return result
 }
 
 /**
  * Navigate bot to (x, y, z) within `range` blocks.
- * Returns a PathfindResult — never throws or hangs.
+ * Returns a PathfindResult â€” never throws or hangs.
  * @param {object} bot - mineflayer bot instance
  * @param {number} x
  * @param {number} y
@@ -261,18 +261,18 @@ export function composeVerticalHint(bot, x, y, z, result) {
  */
 export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = undefined, opts = {}) {
   if (!bot) return 'no_bot'
-  // 260513-wkd: fast-path — if signal is already aborted at entry, do not
+  // 260513-wkd: fast-path â€” if signal is already aborted at entry, do not
   // even call into pathfinder. Avoids burning a setMovements + goal allocation
   // on a guaranteed-abort dispatch.
   if (signal && signal.aborted) return 'aborted'
 
   // 260617 anti-stuck navigation tuning. The bare defaults trap a pickaxe-less
   // bot: digCost=1 lets the planner route THROUGH stone, which the bot cannot
-  // mine bare-handed — every such dig times out and the bot reads as frozen (the
+  // mine bare-handed â€” every such dig times out and the bot reads as frozen (the
   // 260617 "stuck underground" log). Raise digCost so digging is a last resort
   // and an existing route (walk / parkour / drop) wins. maxDropDown already
   // defaults to 4 (a 4-block drop costs ~1 dmg; 1-3 are free), so a "drop down to
-  // get out" route was ALWAYS allowed — pathfinder was never the blocker. Set it
+  // get out" route was ALWAYS allowed â€” pathfinder was never the blocker. Set it
   // explicitly and keep it permissive so dropping to escape beats tunnelling.
   // 261011: no sprinting (see companionMovements).
   bot.pathfinder.setMovements(companionMovements(bot, opts))
@@ -347,7 +347,7 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   }
 
   // Finding 6: once the race below has settled (timeout or abort won), the
-  // navigate() loop must exit cleanly instead of continuing to run — a late
+  // navigate() loop must exit cleanly instead of continuing to run â€” a late
   // reflex-clear resume must never re-issue `bot.pathfinder.goto(goal)` after
   // goTo already returned to its caller (same yank hazard as the orphan-timer
   // fix below, just via the retry loop instead of the setTimeout). Set on the
@@ -358,14 +358,14 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
 
   // 17-02: yield to a reflex creeper-flee that owns the goal. We don't install
   // (or re-install, after the flee preempts our goto) our goal while
-  // `bot._seiReflexActive` is true — we park and resume rather than race or
+  // `bot._seiReflexActive` is true â€” we park and resume rather than race or
   // abort. A GoalChanged rejection while the reflex is active is the flee taking
   // over, NOT a cant_reach: loop and re-issue once it clears so an in-flight
   // goTo pauses and then continues to its original destination.
   let resumes = 0
   const navigate = async () => {
     while (true) {
-      if (settled) return 'aborted' // goTo already resolved — don't touch pathfinder again
+      if (settled) return 'aborted' // goTo already resolved â€” don't touch pathfinder again
       if (signal?.aborted) return 'aborted'
       if (bot._seiReflexActive) {
         const w = await waitForReflexClear(bot, signal, timeoutMs)
@@ -377,8 +377,8 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
         await bot.pathfinder.goto(goal)
         return 'reached'
       } catch (err) {
-        if (settled) return 'aborted' // race already settled — do not re-issue goto
-        if (bot._seiReflexActive) continue // flee took the goal — yield & resume
+        if (settled) return 'aborted' // race already settled â€” do not re-issue goto
+        if (bot._seiReflexActive) continue // flee took the goal â€” yield & resume
         // 261019 (quality pass 19): the walk was cut off but she already
         // stands in range ("goTo aborted even though Alex was 1.7 blocks
         // away" with range 2).
@@ -429,7 +429,7 @@ export async function goTo(bot, x, y, z, range = 1, timeoutMs = 12000, signal = 
   // `settled` flag also guards the navigate() retry loop above: without it, a
   // late reflex-clear resume after the timeout/abort already won the race
   // would re-issue the stale `pathfinder.goto(goal)` and yank the bot away
-  // from whatever goal a later consumer installed — the exact hazard this
+  // from whatever goal a later consumer installed â€” the exact hazard this
   // comment originally described, just reached via the retry path instead of
   // the timer.
   const racers = abortPromise
@@ -504,3 +504,7 @@ export const PathfindResult = /** @type {const} */ ({
   NO_BOT: 'no_bot',
   ABORTED: 'aborted',
 })
+
+
+
+

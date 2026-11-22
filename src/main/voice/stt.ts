@@ -1,10 +1,10 @@
-/**
- * Voice-call cloud STT (260724) — transcribe one call utterance (MAIN only).
+﻿/**
+ * Voice-call cloud STT (260724) â€” transcribe one call utterance (MAIN only).
  *
  * Why: the in-call dictation pipeline runs whisper-tiny.en locally (40MB,
  * chosen for first-run download size), and tiny's error rate on short
  * conversational utterances is the dominant quality problem on live calls
- * ("tell me a joke" → "I'm your joke"). This module sends the same VAD-cut
+ * ("tell me a joke" â†’ "I'm your joke"). This module sends the same VAD-cut
  * utterance to ElevenLabs Scribe instead; the renderer races it against the
  * local worker and keeps local as the always-on fallback (see
  * renderer lib/voice/sttArbiter.ts), so cloud STT can only ever improve a
@@ -13,14 +13,14 @@
  * Routing mirrors tts.ts exactly (resolveElevenLabsRoute in
  * voice/elevenLabsKeyStore.ts is the shared decision):
  *   - Direct path: a resolved ElevenLabs key (SEI_TTS_DEV_KEY env, or the
- *     BYOK user's stored key) → ElevenLabs `/v1/speech-to-text` directly
+ *     BYOK user's stored key) â†’ ElevenLabs `/v1/speech-to-text` directly
  *     (multipart, scribe_v1).
  *   - Normal path: POST `${proxy}/stt/transcribe` with the Supabase Bearer
- *     JWT and a raw audio/wav body — the ElevenLabs key lives on the proxy.
+ *     JWT and a raw audio/wav body â€” the ElevenLabs key lives on the proxy.
  *   - BYOK ('local' backend) with no key stored never falls through to the
  *     proxy: it is { unavailable } with reason 'no-credentials'.
  *
- * Language detection (260725): the request never pins a language_code —
+ * Language detection (260725): the request never pins a language_code â€”
  * Scribe auto-detects per utterance and the response's language_code +
  * language_probability come back on the success result. The voice:stt IPC
  * handler feeds them to voice/languageAutoSwitch.ts, which persists a
@@ -28,20 +28,20 @@
  * was removed; the conversation language follows the player's voice).
  *
  * Result contract (matches the RendererApi doc in shared/ipc.ts):
- *   - { text }              — success; may be '' for non-speech audio.
+ *   - { text }              â€” success; may be '' for non-speech audio.
  *     languageCode/languageProbability ride along when the upstream reports
  *     them (the proxy may not relay them; both are optional).
- *   - { unavailable: true } — cloud STT cannot run at all right now. `reason`
+ *   - { unavailable: true } â€” cloud STT cannot run at all right now. `reason`
  *     tells the renderer WHY (260725):
- *       'no-credentials' — nothing configured client-side (BYOK with no
+ *       'no-credentials' â€” nothing configured client-side (BYOK with no
  *         stored key, or cloud with a genuinely absent session). Turn Scribe
  *         off for the call; there is nothing to retry against.
- *       'upstream'       — credentials exist but the upstream refused
+ *       'upstream'       â€” credentials exist but the upstream refused
  *         terminally (401/403 auth, 402 balance, 503 unconfigured, and the
- *         daily-spend-cap flavour of 429 — see isDailyCap429). The caller
+ *         daily-spend-cap flavour of 429 â€” see isDailyCap429). The caller
  *         stops probing for the rest of the call and may surface the
  *         local-Whisper fallback prompt.
- *   - throws                — transient failure (network, 5xx, timeout, an
+ *   - throws                â€” transient failure (network, 5xx, timeout, an
  *     ambiguous 429, a failed session read); the caller falls back to local
  *     for THIS utterance and tries again next one.
  */
@@ -51,7 +51,7 @@ import { noteCreditWall } from '../creditWall';
 
 const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 const ELEVENLABS_STT_MODEL = 'scribe_v1';
-/** Resource bound only — NOT the latency budget. The renderer's arbiter
+/** Resource bound only â€” NOT the latency budget. The renderer's arbiter
  * delivers the local result after a short grace window regardless, so a slow
  * cloud pass wastes a request, never the player's time. Sized for the 15s
  * MAX_UTTERANCE_MS worst case. */
@@ -63,7 +63,7 @@ const SAMPLE_RATE = 16_000;
  * signed out.
  *
  * 260726: this used to swallow every getSession() failure into the same null,
- * and the caller reports null as { unavailable, reason:'no-credentials' } —
+ * and the caller reports null as { unavailable, reason:'no-credentials' } â€”
  * which the renderer latches as a SILENT whole-call disable. So one transient
  * session read (or a token refresh in flight) left a signed-in user's call
  * permanently deaf, with no error and no fallback prompt. A read FAILURE is
@@ -113,9 +113,9 @@ export function encodeWav(pcm: Float32Array, sampleRate = SAMPLE_RATE): ArrayBuf
 }
 
 /**
- * Laughter audio-event tags → text (260725 expressions). tag_audio_events is
+ * Laughter audio-event tags â†’ text (260725 expressions). tag_audio_events is
  * ON so Scribe reports non-word expressions; a player's laugh becomes "haha"
- * the companion can actually react to. Only laughter maps — other events
+ * the companion can actually react to. Only laughter maps â€” other events
  * (coughs, sighs, background noise) are stripped below, and vocalized
  * interjections ("awww", "ohhhh") plus punctuation ("?", "!") come through as
  * ordinary transcript text on their own.
@@ -133,7 +133,7 @@ export function normalizeSttText(raw: string): string {
   return raw
     .replace(LAUGH_EVENT, 'haha')
     .replace(/\[[^\]]*\]|\([^)]*\)/g, '')
-    .replace(/—/g, '-')
+    .replace(/â€”/g, '-')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -196,7 +196,7 @@ const DAILY_CAP_RETRY_AFTER_S = 300;
  * 10s, and ElevenLabs rate-limits overlapping utterances. One of those left
  * the companion deaf for the rest of the call whenever no local Whisper worker
  * exists ('none' is the default local model). An ambiguous 429 is therefore
- * treated as transient — worst case we pay one failed round-trip on the next
+ * treated as transient â€” worst case we pay one failed round-trip on the next
  * utterance.
  */
 function isDailyCap429(res: Response, body: string): boolean {
@@ -219,7 +219,7 @@ async function fetchTranscript(url: string, init: RequestInit, viaProxy = false)
   const ctrl = new AbortController();
   // The deadline covers the BODY too (260726). Clearing it once headers landed
   // left res.json() unguarded, and the arbiter's local-empty branch awaits this
-  // promise with no timeout of its own — so a half-dead socket stranded the
+  // promise with no timeout of its own â€” so a half-dead socket stranded the
   // utterance forever. The payload is one small JSON object; reading it inside
   // the same window costs nothing.
   const timeout = setTimeout(() => ctrl.abort(), STT_TIMEOUT_MS);
@@ -233,7 +233,7 @@ async function fetchTranscript(url: string, init: RequestInit, viaProxy = false)
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       // Terminal-for-this-call statuses: retrying next utterance cannot help
-      // (auth, balance, unconfigured service) — tell the renderer to stop
+      // (auth, balance, unconfigured service) â€” tell the renderer to stop
       // probing instead of paying a failed round-trip per utterance. 429 is
       // terminal ONLY when it is the daily cap (see isDailyCap429).
       // 261005: a proxy 402 is Sei's credit wall (credit_wall_hit).
@@ -267,11 +267,11 @@ async function fetchTranscript(url: string, init: RequestInit, viaProxy = false)
 
 /** One line per cloud pass in the main console: raw Scribe text (tags
  * visible), the normalized transcript, the detected language, and the
- * round-trip — the visibility needed to tune the expressions mapping, the
+ * round-trip â€” the visibility needed to tune the expressions mapping, the
  * arbiter race, and the language auto-switch. */
 function logSttResult(up: UpstreamTranscript, normalized: string, startedAt: number): void {
   const ms = Math.round(Date.now() - startedAt);
-  // lang=? means the upstream returned no detection fields — the proxy not
+  // lang=? means the upstream returned no detection fields â€” the proxy not
   // relaying language_code (auto-switch is blind on this route), as opposed
   // to a detected language at low confidence. No lang token at all in a log
   // line means a pre-260725 build is running.
@@ -284,11 +284,11 @@ function logSttResult(up: UpstreamTranscript, normalized: string, startedAt: num
   );
 }
 
-/** Why cloud STT is unavailable — see the module doc + shared/ipc.ts. */
+/** Why cloud STT is unavailable â€” see the module doc + shared/ipc.ts. */
 export type SttUnavailableReason = 'no-credentials' | 'upstream';
 
 /** Transcribe one utterance of raw Float32 16kHz mono PCM. No language is
- * pinned — Scribe detects it per utterance and the detection rides along on
+ * pinned â€” Scribe detects it per utterance and the detection rides along on
  * the result for the language auto-switch. */
 export async function voiceStt(args: {
   pcm: ArrayBuffer;
@@ -315,7 +315,7 @@ export async function voiceStt(args: {
       logSttResult(up, normalized, startedAt);
       return { ...up, text: normalized };
     }
-    // BYOK with no key stored: nothing configured to call — never fall
+    // BYOK with no key stored: nothing configured to call â€” never fall
     // through to the proxy (the user may have no session, and did not opt
     // into metered cloud voice).
     if (route.kind === 'unconfigured') return { unavailable: true, reason: 'no-credentials' };
@@ -336,3 +336,7 @@ export async function voiceStt(args: {
     throw err;
   }
 }
+
+
+
+

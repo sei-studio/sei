@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Small helpers for running Windows PowerShell and child processes from main
  * (shared by the Velopack migration and the Velopack updater). Windows only in
  * practice: powerShellExe() is null anywhere else.
@@ -90,3 +90,7 @@ export async function runPowerShell(
   const r = await waitForExit(child, timeoutMs);
   return r.code === 0 ? out.trim() : null;
 }
+
+
+
+

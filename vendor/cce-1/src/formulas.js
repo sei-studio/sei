@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Elo-conditioned skill formulas from the CCE-1 paper, adapted to Maia-3.
  *
  * The paper's temperature formula assumed Maia-2's 1100 calibration floor;
@@ -74,3 +74,7 @@ export function materialShiftWeight(elo, c = CONSTANTS) {
   const t = (c.materialShiftZeroElo - elo) / (c.materialShiftZeroElo - 400);
   return c.materialShiftAt400 * Math.min(1, Math.max(0, t));
 }
+
+
+
+

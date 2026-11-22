@@ -1,21 +1,21 @@
-/**
- * Long-lived LAN watcher (Electron main process) — loopback edition.
+﻿/**
+ * Long-lived LAN watcher (Electron main process) â€” loopback edition.
  *
  * Detects a Minecraft "open to LAN" world on THIS machine and exposes its port
  * + MOTD to the renderer (the connection pill) and to the bot supervisor (which
- * hands the port to a summoned bot). Sei is same-machine only — the bot always
- * connects to 127.0.0.1:<lanPort> — so loopback discovery is all we need.
+ * hands the port to a summoned bot). Sei is same-machine only â€” the bot always
+ * connects to 127.0.0.1:<lanPort> â€” so loopback discovery is all we need.
  *
  * History: this used to listen for Minecraft's multicast LAN beacon
  * (224.0.2.60:4445). macOS 26 tightened Local Network privacy to silently drop
  * custom multicast for SIGNED apps unless they carry the restricted
- * `com.apple.developer.networking.multicast` entitlement — and that entitlement
+ * `com.apple.developer.networking.multicast` entitlement â€” and that entitlement
  * bricks app launch without an embedded provisioning profile (AMFI -413). The
  * packaged app could therefore never receive the beacon, so the pill stuck on
  * "not connected" and summon had no port. We dropped multicast entirely:
  *
- *   1. Enumerate local listening TCP ports (`listeningPorts()` — lsof/netstat).
- *   2. Status-ping the candidates over loopback (`mcPing()` — raw SLP).
+ *   1. Enumerate local listening TCP ports (`listeningPorts()` â€” lsof/netstat).
+ *   2. Status-ping the candidates over loopback (`mcPing()` â€” raw SLP).
  *   3. The one that speaks Minecraft IS the open world; read its port + MOTD.
  *
  * Windows extra sources (issue #52, 261107): some Windows 11 builds report a
@@ -121,9 +121,9 @@ function defaultWinFallback(): WinLanFallback {
 /**
  * A previously-open world is only demoted to closed/unavailable after this
  * many CONSECUTIVE non-open polls (260703). A single slow lsof (4s timeout
- * under load) or one missed ping used to flip the state instantly — and the
+ * under load) or one missed ping used to flip the state instantly â€” and the
  * chat companion would then confidently tell the player their open world "is
- * not broadcasting". Two misses ≈ 4s of real absence before we believe it.
+ * not broadcasting". Two misses â‰ˆ 4s of real absence before we believe it.
  */
 const OPEN_MISS_TOLERANCE = 2;
 
@@ -139,7 +139,7 @@ export function watchLan({
   /**
    * Run one detection pass RIGHT NOW and return the raw fresh state (260703).
    * Used by the chat turn so the companion answers "is my world open?" from
-   * live truth instead of an up-to-2s-stale poll — the player often messages
+   * live truth instead of an up-to-2s-stale poll â€” the player often messages
    * seconds after clicking "Open to LAN". Also feeds the shared emit path, so
    * the cached state + renderer pill refresh as a side effect. ~60-100ms on a
    * healthy system (one lsof + loopback pings).
@@ -162,7 +162,7 @@ export function watchLan({
   // stale entry can't be re-keyed. Bounded as a leak guard. 260721: the cache
   // now carries the whole classification (client + Sei-skin-setup mods scan),
   // since a process's loaded mods are fixed at launch. forgeModCount is
-  // deliberately NOT cached — it rides each poll's ping.
+  // deliberately NOT cached â€” it rides each poll's ping.
   const hostCache = new Map<string, Omit<LanHost, 'forgeModCount'>>();
   const HOST_CACHE_MAX = 32;
 
@@ -172,7 +172,7 @@ export function watchLan({
     if (cached === undefined) {
       const cmdline = await cmdlineForPid(world.pid);
       const client = classifyCmdline(cmdline);
-      // Fabric is (usually) Sei's own skin setup — scan the host's mods dir
+      // Fabric is (usually) Sei's own skin setup â€” scan the host's mods dir
       // so lanHostWarning() can tell our setup apart from a genuinely modded
       // world. Other loaders warn regardless, so skip the scan there.
       const mods =
@@ -216,7 +216,7 @@ export function watchLan({
     }
   };
 
-  /** Emit with open→non-open hysteresis: transient misses don't demote. */
+  /** Emit with openâ†’non-open hysteresis: transient misses don't demote. */
   const emitDamped = (next: LanState): void => {
     if (next.kind === 'open') {
       missStreak = 0;
@@ -319,14 +319,14 @@ export function watchLan({
     },
     checkNow: async (): Promise<LanState> => {
       if (stopped) return lastEmitted ?? { kind: 'closed' };
-      // Deliberately ignores `inFlight` — a concurrent scheduled poll is
+      // Deliberately ignores `inFlight` â€” a concurrent scheduled poll is
       // harmless (both are read-only), and the caller needs an answer now.
       const next = await runCheck();
       // UNDAMPED on purpose (260703): checkNow is a deliberate user-action-time
       // ground-truth read (chat turn, summon click), so it must NOT be held back
-      // by the background poll's open→closed hysteresis (emitDamped). Broadcast
+      // by the background poll's openâ†’closed hysteresis (emitDamped). Broadcast
       // the fresh result straight through `emit` and reset `missStreak` so a
-      // just-observed 'closed' immediately refreshes latestLanState + the pill —
+      // just-observed 'closed' immediately refreshes latestLanState + the pill â€”
       // a stale 'open' would summon into a dead world (connection error) instead
       // of showing the "open your world" modal. A false 'closed' at click time is
       // self-healing: the next poll flips back to 'open' and the LanModal
@@ -341,3 +341,7 @@ export function watchLan({
     },
   };
 }
+
+
+
+

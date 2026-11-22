@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { SAFE_MODE_UPDATE_CHANNELS } from './safeMode';
@@ -19,3 +19,7 @@ describe('safe-mode preload', () => {
     );
   });
 });
+
+
+
+

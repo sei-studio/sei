@@ -1,5 +1,5 @@
-/**
- * SuiMeetScene — "meet my companion", run by Sui (260731).
+﻿/**
+ * SuiMeetScene â€” "meet my companion", run by Sui (260731).
  *
  * Replaces the two screens the flow used to be: UniqueGenderScreen (a form
  * asking which gender to cast) and UniqueCastingScreen (a bare progress bar).
@@ -18,21 +18,21 @@
  * screen did. Failures surface over the sky with the same copy (CAST_ERROR_COPY)
  * and the same two ways out.
  *
- * ── The preference questions live HERE now (260802) ──────────────────────
- * The cast needs the questionnaire answered — it is the generation seed — and
+ * â”€â”€ The preference questions live HERE now (260802) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * The cast needs the questionnaire answered â€” it is the generation seed â€” and
  * the app used to collect it by AMBUSH: a Home gate that opened
  * ProfileQuestionsScreen (a dark-chrome form) the moment a signed-in user with
  * gaps landed anywhere near Home, plus a matching gate on this flow's entry
  * that bounced the player out to that same form and back. Nobody asked for
  * either. That screen is gone, and so is every unprompted route to it: the
  * questionnaire is now asked in exactly two places, both of which the player
- * clicked on purpose — "Update my preferences" (SuiPrefsScene) and here.
+ * clicked on purpose â€” "Update my preferences" (SuiPrefsScene) and here.
  *
  * So when answers are missing, Sui asks for them BETWEEN the greeting and the
  * casting question, on the same stage, without leaving: she says she needs a
  * hand first, asks only the gaps (PREF_QUESTIONS order), saves once, and walks
  * straight on into "which one would you like to meet?". No walk-off, no route
- * change, no second scene — the whole point is that this reads as one
+ * change, no second scene â€” the whole point is that this reads as one
  * conversation rather than a detour.
  *
  * The question lines are the prefs-scene wording with the ordinals removed
@@ -79,7 +79,7 @@ type LineId = 'ready' | 'needQs' | QuestionLineId | 'which' | 'gotIt';
 
 /** Which line asks which stored answer. Keyed by PrefQuestion so the ask order
  * is PREF_QUESTIONS' order and a question added there cannot be silently
- * skipped here — the map stops compiling until it has a line. */
+ * skipped here â€” the map stops compiling until it has a line. */
 const QUESTION_LINE: Record<PrefQuestion, QuestionLineId> = {
   companion_age_range: 'qAge',
   companion_dynamics: 'qDyn',
@@ -94,7 +94,7 @@ const QUESTION_LINE: Record<PrefQuestion, QuestionLineId> = {
  * "third" is too generic a dictionary key to own safely, and languages that
  * need a measure word or a different word order cannot get there by
  * substitution. Each carries its OWN clip for the same reason it carries its
- * own sentence — one clip across all four would speak an ordinal that is not
+ * own sentence â€” one clip across all four would speak an ordinal that is not
  * the one on screen. */
 const READY_LINES: Array<{ text: string; clip: string }> = [
   { text: 'So! Are you ready to meet your first companion?', clip: 'meet-readyFirst' },
@@ -119,10 +119,10 @@ const SCRIPT: Record<Exclude<LineId, 'ready'>, string> = {
   gotIt: 'Got it. Let me go get them!',
 };
 
-/** Own clip namespace — none of these lines exist in the first-run script, so
+/** Own clip namespace â€” none of these lines exist in the first-run script, so
  * there is nothing to reuse. Cut 260731 (the four `meet-q*` / `meet-needQs`
  * ones 260802) through the same three steps as the rest
- * (public/voice/onboard/meet-<id>.en.mp3 — see useSuiVoice); a missing clip
+ * (public/voice/onboard/meet-<id>.en.mp3 â€” see useSuiVoice); a missing clip
  * stays a non-event, so a new line can ship ahead of its recording. */
 const CLIP: Record<Exclude<LineId, 'ready'>, string> = {
   needQs: 'meet-needQs',
@@ -148,7 +148,7 @@ export function SuiMeetScene(): React.ReactElement {
   const [sui, setSui] = useState<SuiPose>('hidden');
   const { prefs: voicePrefs, setPrefs: setVoicePrefs, volume } = useVoicePrefs();
 
-  // ── Which companion is this? ───────────────────────────────────────────
+  // â”€â”€ Which companion is this? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The same home-library rule the party wall and the rail count, so Sui's
   // number can never disagree with the slots the player can see. Computed
   // live rather than latched at mount: the library list can still be settling
@@ -168,7 +168,7 @@ export function SuiMeetScene(): React.ReactElement {
     return READY_LINES[Math.min(Math.max(filled, 0), MAX_COMPANION_SLOTS - 1)];
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
-  // ── The questionnaire gaps ─────────────────────────────────────────────
+  // â”€â”€ The questionnaire gaps â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Read once at mount, which is several seconds of walk-in and greeting
   // before the answer is needed. A failed read means NO questions: the cast
   // seeds from whatever is stored and Sui asks next time, which is the same
@@ -200,12 +200,12 @@ export function SuiMeetScene(): React.ReactElement {
     };
   }, []);
 
-  // ── The cast ───────────────────────────────────────────────────────────
+  // â”€â”€ The cast â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // null until the player picks; the hook holds off until then.
   const [gender, setGender] = useState<UniqueGender | null>(null);
   const cast = useUniqueCasting(gender);
 
-  // ── Scene choreography ─────────────────────────────────────────────────
+  // â”€â”€ Scene choreography â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const timer = setTimeout(() => setGroundIn(true), 350);
     return () => clearTimeout(timer);
@@ -233,7 +233,7 @@ export function SuiMeetScene(): React.ReactElement {
     setSui('leaving');
   }, []);
 
-  /** "I'm ready" → the questions if there are any, else straight to the cast
+  /** "I'm ready" â†’ the questions if there are any, else straight to the cast
    * question. Both destinations are on this stage; she never leaves. */
   const beginAsk = useCallback(() => {
     if (asked.length === 0) {
@@ -309,7 +309,7 @@ export function SuiMeetScene(): React.ReactElement {
     navigate({ kind: 'unique-reveal', characterId: id });
   }, [cast.characterId, phase.k, navigate]);
 
-  // ── Line rendering ─────────────────────────────────────────────────────
+  // â”€â”€ Line rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const line = phase.k === 'line' ? phase.id : null;
   const lineText = line ? tt(line === 'ready' ? readyLine.text : SCRIPT[line]) : '';
   const tw = useTypewriter(lineText);
@@ -329,7 +329,7 @@ export function SuiMeetScene(): React.ReactElement {
   }, [line, tw.done, walkOff]);
 
   // "Before that..." is a warning, not a question, and it is the one line here
-  // that carries no controls of its own — so it rolls into the first question
+  // that carries no controls of its own â€” so it rolls into the first question
   // by itself rather than sitting on screen waiting for a click nothing on it
   // suggests. (A click still skips the beat; see clickAdvances.)
   useEffect(() => {
@@ -352,7 +352,7 @@ export function SuiMeetScene(): React.ReactElement {
   useEnterAdvances(advance);
 
   // The greeting is a question with two buttons now, so a click anywhere may
-  // only finish the typewriter — answering it has to be deliberate. Enter
+  // only finish the typewriter â€” answering it has to be deliberate. Enter
   // still takes the affirmative, the way it did when that was the only way on.
   // "Before that..." carries no controls, so it advances on a click like any
   // other text-only line.
@@ -399,7 +399,7 @@ export function SuiMeetScene(): React.ReactElement {
       <CornerControls
         prefs={voicePrefs}
         onPrefs={setVoicePrefs}
-        // Backing out is only offered while nothing is being cast — once the
+        // Backing out is only offered while nothing is being cast â€” once the
         // pipeline is running, a half-finished companion is not something to
         // walk away from mid-stride. (The cast's own error panel still has a
         // Back, which is the one exit that stage needs.)
@@ -456,7 +456,7 @@ export function SuiMeetScene(): React.ReactElement {
               <p className={styles.panelNote}>{tt(CAST_ERROR_COPY[cast.errCode].body)}</p>
               {cast.errDetail ? (
                 <p className={styles.panelNote} title={cast.errDetail}>
-                  {cast.errDetail.length > 200 ? `${cast.errDetail.slice(0, 200)}…` : cast.errDetail}
+                  {cast.errDetail.length > 200 ? `${cast.errDetail.slice(0, 200)}â€¦` : cast.errDetail}
                 </p>
               ) : null}
               <button className={`${styles.pill} ${styles.pillWide}`} onClick={cast.retry}>
@@ -502,3 +502,7 @@ export function SuiMeetScene(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -315,7 +315,7 @@ describe('her turns while the editor is open', () => {
     expect(first).toMatch(/In your room now:/);
     const second = editorTurnNote(ID, { now: 3, onCall: false });
     expect(second).not.toMatch(/What they changed/);
-    expect(second).not.toMatch(/—|friend/);
+    expect(second).not.toMatch(/â€”|friend/);
   });
 
   it('changes from an earlier session she never heard about are carried in', () => {
@@ -411,3 +411,7 @@ describe('call pictures', () => {
     expect(callPictureDecision(ID, { now: 2, vision: 'no' })).toBe('none');
   });
 });
+
+
+
+

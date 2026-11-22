@@ -1,5 +1,5 @@
-/**
- * McInstallList — vertical list of detected Minecraft installs with selection.
+﻿/**
+ * McInstallList â€” vertical list of detected Minecraft installs with selection.
  *
  * Scrollable container with max-height 320px so a user with many CurseForge
  * instances doesn't overflow the 520px-min-height modal. Each row is a
@@ -48,3 +48,7 @@ export function McInstallList({
     </div>
   );
 }
+
+
+
+

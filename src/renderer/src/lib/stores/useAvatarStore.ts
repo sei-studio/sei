@@ -1,5 +1,5 @@
-/**
- * Avatar manifest cache (260804) — MAIN window only (the overlay window talks
+﻿/**
+ * Avatar manifest cache (260804) â€” MAIN window only (the overlay window talks
  * to main directly; a zustand store never crosses windows).
  *
  * Tracks which characters have an imported Live2D model so the overlay pusher
@@ -53,3 +53,7 @@ export const useAvatarStore = create<AvatarStoreState>((set, get) => ({
     set({ manifests: {} });
   },
 }));
+
+
+
+

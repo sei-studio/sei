@@ -1,9 +1,9 @@
-/**
- * macOS system-audio tap (260728) — main-process driver for the bundled
+﻿/**
+ * macOS system-audio tap (260728) â€” main-process driver for the bundled
  * ScreenCaptureKit helper (native/mac-audio-tap, shipped as
  * Resources/audio-tap/sei-audio-tap).
  *
- * Chromium's `audio: 'loopback'` is Windows-only (measured — see
+ * Chromium's `audio: 'loopback'` is Windows-only (measured â€” see
  * captureController.ts), so on macOS the overlay renderer asks main to start
  * this tap instead. Main spawns the helper, re-aligns its raw Float32 stream on
  * frame boundaries, and relays PCM chunks to the overlay renderer over
@@ -43,7 +43,7 @@ function helperPath(): string {
 
 /**
  * Start the tap and begin relaying PCM to the overlay. Resolves the stream
- * format once audio actually flows, or null when the tap cannot run here —
+ * format once audio actually flows, or null when the tap cannot run here â€”
  * the renderer treats null as "no system audio on this machine".
  */
 export async function startAudioTap(
@@ -161,3 +161,7 @@ export function stopAudioTap(): void {
     }
   }, 500);
 }
+
+
+
+

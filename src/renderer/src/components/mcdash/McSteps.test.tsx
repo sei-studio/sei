@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useMcSetupSteps + the Minecraft launch panel (260909). Rendered with
  * react-dom/server against seeded stores. Invariants:
  *   1. Nothing scanned yet: the looking line; the panel's button is a
@@ -168,7 +168,7 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
   it('Test 6: an open LAN world marks the last step done', async () => {
     const html = await renderSteps({ installs: [{ ...VANILLA, loader: 'fabric', fabric_mc_versions: ['1.21.4'], csl_installed: true }], lanOpen: true });
     expect(html).toContain('Your world is open to LAN.');
-    expect(html).toContain('✓ A world open to LAN');
+    expect(html).toContain('âœ“ A world open to LAN');
   });
 
   it('Test 7: the store reads the bridge\'s { installs } shape', async () => {
@@ -257,9 +257,13 @@ describe('useMcSetupSteps + McLaunchPanel', () => {
     expect(all.length).toBeGreaterThanOrEqual(16);
     const { ZH } = await import('../../lib/i18n/zh');
     for (const k of all) {
-      expect(k, `em dash in "${k}"`).not.toContain('—');
+      expect(k, `em dash in "${k}"`).not.toContain('â€”');
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(ZH[k]).not.toContain('—');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

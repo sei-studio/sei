@@ -1,18 +1,18 @@
-/**
- * CallOverlay (260706; 260804 avatar rework) — the always-on-top avatar
+﻿/**
+ * CallOverlay (260706; 260804 avatar rework) â€” the always-on-top avatar
  * overlay's ROOT component.
  *
  * Mounted (only) in the dedicated overlay BrowserWindow, which loads the
  * renderer bundle with `?overlay=1` (see main.tsx). It never mounts the full
  * App: it subscribes to the main-process `voice:overlay-state` push and
- * renders one tile per companion — static portrait (lit while speaking,
+ * renders one tile per companion â€” static portrait (lit while speaking,
  * darkened while idle, unless "always bright") or the Live2D model.
  *
  * 260804 interaction, split into VIEW and EDIT modes (260805; camera +
  * per-region interactivity 260806):
  *  - VIEW (default): the overlay cannot be resized, and the CHARACTER is
- *    click-through — clicks over her land on whatever is under the window,
- *    like the caption box. Hover shows the outline (static tiles only — a
+ *    click-through â€” clicks over her land on whatever is under the window,
+ *    like the caption box. Hover shows the outline (static tiles only â€” a
  *    Live2D companion keeps a clean silhouette until edit mode) and the
  *    chrome buttons: the pencil with the hold-to-drag move button above it,
  *    plus mute + captions while a call/backseat is live. The window is
@@ -34,7 +34,7 @@
  *    pans it, streamed to main as a per-character camera
  *    (avatar:overlay-camera) and persisted.
  * The hold-to-drag button (both modes) is ordinary chrome streaming
- * screen-space deltas to main (avatar:overlay-move) — NOT an app-region,
+ * screen-space deltas to main (avatar:overlay-move) â€” NOT an app-region,
  * which swallows pointer events and would blind the per-region tracking.
  * Tile size is pure CSS off the window height (main sizes the window;
  * height = tile + 2*16px chrome padding), so every resize path stays
@@ -55,7 +55,7 @@ import { AvatarView } from './lib/avatar/AvatarView';
 import { useLangStore, useT } from './lib/i18n';
 import styles from './CallOverlay.module.css';
 
-/** Chrome layout — MUST match callOverlay.ts PAD_TOP/PAD_X/GAP and the .stage
+/** Chrome layout â€” MUST match callOverlay.ts PAD_TOP/PAD_X/GAP and the .stage
  * padding + .row gap in CallOverlay.module.css. There is no bottom padding:
  * the tile's bottom edge is flush with the window's bottom edge (260806). */
 const PAD_TOP = 16;
@@ -114,13 +114,13 @@ export function CallOverlay(): React.ReactElement | null {
    * depend on OS mouse forwarding. Null until the first push. */
   const [polled, setPolled] = useState<OverlayPointerSample | null>(null);
   const polledRef = useRef<OverlayPointerSample | null>(null);
-  /** Live2D tiles that failed to load — they fall back to the static tile. */
+  /** Live2D tiles that failed to load â€” they fall back to the static tile. */
   const [live2dFailed, setLive2dFailed] = useState<Record<string, boolean>>({});
   const { w: winW, h: winH } = useWindowSize();
   const tilePx = Math.max(MIN_TILE, winH - PAD_TOP);
 
   // Per-character mouth-level refs, mutated by the level push at ~25 Hz and
-  // read per frame by Live2DView — never React state (that would re-render
+  // read per frame by Live2DView â€” never React state (that would re-render
   // the tree per sample). -1 = "no feed yet" (Live2DView pseudo-envelopes).
   const levelRefs = useRef<Record<string, { current: number }>>({});
   const levelRefFor = (id: string): { current: number } => {
@@ -142,7 +142,7 @@ export function CallOverlay(): React.ReactElement | null {
       setPolled(sample);
     });
     // Main seeds the state with a push at window-reveal, but that push can land
-    // BEFORE this subscription exists (React effects run after first paint) —
+    // BEFORE this subscription exists (React effects run after first paint) â€”
     // when it did, the overlay stayed blank until the next speaking change. Pull
     // the current state too; a push that already arrived wins (it is newer).
     void sei
@@ -206,7 +206,7 @@ export function CallOverlay(): React.ReactElement | null {
     void sei.avatarOverlayEditing?.(editing).catch(() => {});
   }, [editing]);
 
-  // ── Character camera (260806): zoom + pan WITHIN the tile ───────────────
+  // â”€â”€ Character camera (260806): zoom + pan WITHIN the tile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Local values win while a gesture streams; ids never touched locally fall
   // back to the config-hydrated cameras main enriched into the state.
   const [cams, setCams] = useState<Record<string, AvatarCamera>>({});
@@ -386,7 +386,7 @@ export function CallOverlay(): React.ReactElement | null {
       style={{ ['--tile' as string]: `${tilePx}px`, ['--tile-w' as string]: `${tileWPx}px` }}
     >
       {/* Thin glowing outline: solid for the whole edit mode. On hover only
-          for static tiles — a Live2D companion stays frameless in view mode
+          for static tiles â€” a Live2D companion stays frameless in view mode
           (the box around a transparent character reads as a bug, 260806). */}
       <div
         className={`${styles.outline} ${editing || (chromeShown && !hasLive2d) ? styles.outlineOn : ''}`}
@@ -466,7 +466,7 @@ export function CallOverlay(): React.ReactElement | null {
           button directly above it (the only way to MOVE the window, both
           modes since 260806), then mute + captions while a call/backseat is
           live. The column is the overlay's only interactive region in view
-          mode — its enter/leave (or the polled pointer inside its rect)
+          mode â€” its enter/leave (or the polled pointer inside its rect)
           drive the click-through flip. Shown by overlayChromeVisible: the
           same rule for a Live2D, rig or static tile. */}
       {chromeShown && (
@@ -600,3 +600,7 @@ export function CallOverlay(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Decorating her room together (261105, T336), the editor side. Drawn over
  * the room by RoomEditor's `together` render prop, only for the companion who
  * lives on the desktop.
@@ -98,13 +98,13 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     [],
   );
 
-  // ── open: the session counters know it is shared; her chat is loaded ──
+  // â”€â”€ open: the session counters know it is shared; her chat is loaded â”€â”€
   useEffect(() => {
     ctxRef.current.analytics.opened(useVoiceStore.getState().participants.includes(characterId));
     void useChatStore.getState().load(characterId);
   }, [characterId]);
 
-  // ── the editor's room, to main ──
+  // â”€â”€ the editor's room, to main â”€â”€
   const state = ctx.state;
   useEffect(() => {
     const id = setTimeout(() => {
@@ -117,7 +117,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     return () => clearTimeout(id);
   }, [token, characterId, state]);
 
-  // ── on a call, decorating is being there (the call's inactivity check) ──
+  // â”€â”€ on a call, decorating is being there (the call's inactivity check) â”€â”€
   const lastPresence = useRef(0);
   const firstState = useRef(state);
   useEffect(() => {
@@ -128,7 +128,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     useVoiceStore.getState().confirmPresence();
   }, [onCall, state]);
 
-  // ── her bubble: the newest companion line since the editor opened ──
+  // â”€â”€ her bubble: the newest companion line since the editor opened â”€â”€
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
     if (!messages) return;
@@ -145,7 +145,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     return () => clearTimeout(id);
   }, [bubble]);
 
-  // ── her edits ──
+  // â”€â”€ her edits â”€â”€
   const crossfade = useCallback(() => {
     const c = ctxRef.current;
     const scene = c.sceneEl();
@@ -215,7 +215,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     setIdea(null);
   };
 
-  // ── the talk box ──
+  // â”€â”€ the talk box â”€â”€
   const send = (): void => {
     const text = draft.trim().slice(0, TALK_MAX);
     if (!text || awaiting) return;
@@ -236,7 +236,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
       );
   };
 
-  // ── the Call button ──
+  // â”€â”€ the Call button â”€â”€
   const callTrack = (outcome: SetupCallOutcome, gate?: string): void =>
     track(SEILINK_SETUP_CALL_EVENT, { character_id: characterId, outcome, guided: ctx.guided === true, ...(gate ? { gate } : {}) });
   const dial = (gate: string): void => {
@@ -293,7 +293,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
     if (onCall) setVoiceCard(null);
   }, [onCall]);
 
-  // ── where things go ──
+  // â”€â”€ where things go â”€â”€
   const head = useMemo(() => {
     const a = ctx.manifest.avatar;
     const x = ctx.vp.left + a.x * ctx.vp.scale;
@@ -324,7 +324,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
             {bubbleText && !awaiting ? (
               <span className={styles.bubbleText}>{bubbleText}</span>
             ) : (
-              <span className={styles.dots} aria-label={t('{name} is typing…', { name })}>
+              <span className={styles.dots} aria-label={t('{name} is typingâ€¦', { name })}>
                 <i />
                 <i />
                 <i />
@@ -361,7 +361,7 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
               </>
             ) : voiceCard.kind === 'installing' ? (
               <>
-                <p className={styles.voiceBody}>{t('Downloading the voice module… {pct}%', { pct: voiceCard.pct })}</p>
+                <p className={styles.voiceBody}>{t('Downloading the voice moduleâ€¦ {pct}%', { pct: voiceCard.pct })}</p>
                 <div className={styles.voiceBar} role="progressbar" aria-valuenow={voiceCard.pct} aria-valuemin={0} aria-valuemax={100}>
                   <div className={styles.voiceBarFill} style={{ width: `${voiceCard.pct}%` }} />
                 </div>
@@ -429,8 +429,8 @@ export function RoomTogether({ ctx, token, characterId, name }: RoomTogetherProp
               className={styles.input}
               value={draft}
               maxLength={TALK_MAX}
-              placeholder={t('Say something to {name}…', { name })}
-              aria-label={t('Say something to {name}…', { name })}
+              placeholder={t('Say something to {name}â€¦', { name })}
+              aria-label={t('Say something to {name}â€¦', { name })}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 // Typing here is not an editor shortcut; Escape leaves the box first.
@@ -545,3 +545,7 @@ function snapshotScene(scene: HTMLElement | null, ctx: RoomTogetherCtx): HTMLCan
     return null;
   }
 }
+
+
+
+

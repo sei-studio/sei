@@ -1,5 +1,5 @@
-/**
- * LogsBar — collapsible bottom log strip for the app shell.
+﻿/**
+ * LogsBar â€” collapsible bottom log strip for the app shell.
  *
  * Collapsed (default): a thin (~30px) bar showing the LOGS label, a preview
  * of the latest log line (truncated to one line), and a chevron-up. Click
@@ -91,7 +91,7 @@ export function LogsBar(): React.ReactElement {
           <span className={styles.previewSpacer} />
         )}
         <span className={styles.chevron} aria-hidden="true">
-          {open ? '▾' : '▴'}
+          {open ? 'â–¾' : 'â–´'}
         </span>
       </button>
       {open ? (
@@ -102,3 +102,7 @@ export function LogsBar(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

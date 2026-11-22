@@ -1,9 +1,9 @@
-/**
- * Phase 11 Plan 11-06 Task 1 — Magic-byte + size + PNG-dim validation tests.
+﻿/**
+ * Phase 11 Plan 11-06 Task 1 â€” Magic-byte + size + PNG-dim validation tests.
  *
  * Source: 11-06-PLAN.md <behavior> block (7 named behaviors). The PNG fixture
  * builder mirrors scripts/build-default-skins.mjs.buildPng so the test
- * exercises the real parsePngIhdr import — no stubbing.
+ * exercises the real parsePngIhdr import â€” no stubbing.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -14,7 +14,7 @@ import {
   PORTRAIT_MAX_DIM,
 } from './portraitImageUtil';
 
-// ── PNG fixture helpers ────────────────────────────────────────────────────
+// â”€â”€ PNG fixture helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -85,9 +85,9 @@ function buildWebp(): Buffer {
   return b;
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────
+// â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-describe('validatePortrait — size gates', () => {
+describe('validatePortrait â€” size gates', () => {
   it('rejects bytes longer than 500 KB with PORTRAIT_TOO_LARGE', () => {
     const tooBig = Buffer.alloc(PORTRAIT_MAX_BYTES + 1);
     expect(() => validatePortrait(tooBig)).toThrow(/PORTRAIT_TOO_LARGE: \d+ > 512000/);
@@ -99,13 +99,13 @@ describe('validatePortrait — size gates', () => {
   });
 });
 
-describe('validatePortrait — accepts valid magic', () => {
-  it('accepts a valid 64×64 PNG and returns format png', () => {
+describe('validatePortrait â€” accepts valid magic', () => {
+  it('accepts a valid 64Ã—64 PNG and returns format png', () => {
     const png = buildPng(64, 64);
     expect(validatePortrait(png)).toEqual({ format: 'png' });
   });
 
-  it('accepts a valid PNG at exactly 1024×1024 (boundary)', () => {
+  it('accepts a valid PNG at exactly 1024Ã—1024 (boundary)', () => {
     const png = buildPng(PORTRAIT_MAX_DIM, PORTRAIT_MAX_DIM);
     // The buffer is mostly zeros so deflate compresses it well below 500 KB;
     // make sure the test's premise (size < cap) holds before asserting.
@@ -122,9 +122,9 @@ describe('validatePortrait — accepts valid magic', () => {
   });
 });
 
-describe('validatePortrait — rejects bad magic and oversized PNG dimensions', () => {
+describe('validatePortrait â€” rejects bad magic and oversized PNG dimensions', () => {
   it('rejects bytes with no matching magic with PORTRAIT_BAD_MAGIC', () => {
-    // Buffer.alloc zero-fills; first 4 bytes are 0x00 — match no known magic.
+    // Buffer.alloc zero-fills; first 4 bytes are 0x00 â€” match no known magic.
     const random = Buffer.alloc(64);
     // Make sure no accidental WEBP/RIFF/PNG/JPEG header appears.
     random[0] = 0x12;
@@ -147,3 +147,7 @@ describe('validatePortrait — rejects bad magic and oversized PNG dimensions', 
     expect(() => validatePortrait(png)).toThrow(/PORTRAIT_TOO_LARGE_DIM: 64x1025/);
   });
 });
+
+
+
+

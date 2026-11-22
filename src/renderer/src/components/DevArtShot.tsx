@@ -1,5 +1,5 @@
-/**
- * DevArtShot — dev-only screenshot harness for text drawn over character art
+﻿/**
+ * DevArtShot â€” dev-only screenshot harness for text drawn over character art
  * (261023), NOT part of the app UI. Mounted by DevDashShot for
  * `?dashshot=art`, with:
  *
@@ -111,3 +111,7 @@ export function DevArtShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

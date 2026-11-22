@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Startup popup rules (261027): the url allow-list, feed coercion, the
  * show-once filter and the frame load tracker.
  */
@@ -282,3 +282,7 @@ describe('PopupFrameTracker', () => {
     expect(t.loadedOk()).toBe(true);
   });
 });
+
+
+
+

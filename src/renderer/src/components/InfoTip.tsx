@@ -1,5 +1,5 @@
-/**
- * InfoTip — a small circular "(i)" affordance that reveals a short description
+﻿/**
+ * InfoTip â€” a small circular "(i)" affordance that reveals a short description
  * on hover / keyboard focus. Used to tuck helper copy out of the way (e.g. in
  * Settings) so rows stay compact, while the explanation is one hover away.
  *
@@ -32,3 +32,7 @@ export function InfoTip({ text, label = 'More info' }: InfoTipProps): React.Reac
     </span>
   );
 }
+
+
+
+

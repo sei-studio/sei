@@ -1,5 +1,5 @@
-/**
- * Tests for useBrowseStore — Phase 12 Plan 09 Browse tab state.
+﻿/**
+ * Tests for useBrowseStore â€” Phase 12 Plan 09 Browse tab state.
  *
  * RED phase: this file lands BEFORE useBrowseStore.ts exists. The implementation
  * lands in the GREEN-phase commit immediately after.
@@ -8,11 +8,11 @@
  *   1. setQuery debounces 250ms IN THE STORE (not in the screen) so multiple
  *      consumers observe consistent state.
  *   2. Rapid setQuery calls collapse to ONE refresh fetch with the final query.
- *   3. loadMore is a no-op when loading=true (in-flight guard) — Pitfall 8.
+ *   3. loadMore is a no-op when loading=true (in-flight guard) â€” Pitfall 8.
  *   4. loadMore is a no-op when exhausted=true (server says no more rows).
  *   5. loadMore APPENDS to entries; refresh REPLACES from offset=0.
- *   6. hasMore=false from main → store.exhausted becomes true.
- *   7. window.sei.browseList rejection → store.error set, loading=false.
+ *   6. hasMore=false from main â†’ store.exhausted becomes true.
+ *   7. window.sei.browseList rejection â†’ store.error set, loading=false.
  *   8. reset() clears every state field back to defaults (including any pending
  *      debounce handle so a queued refresh doesn't fire post-reset).
  *
@@ -69,7 +69,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// Helper — imports the store fresh after the window stub is in place + resets
+// Helper â€” imports the store fresh after the window stub is in place + resets
 // any leftover state so tests stay isolated.
 async function loadStore() {
   const mod = await import('./useBrowseStore');
@@ -109,7 +109,7 @@ describe('useBrowseStore', () => {
     store.getState().setQuery('ab');
     await vi.advanceTimersByTimeAsync(50);
     store.getState().setQuery('abc');
-    // None should have fired yet — each keystroke restarts the timer.
+    // None should have fired yet â€” each keystroke restarts the timer.
     expect(browseListMock).not.toHaveBeenCalled();
 
     await flush(250);
@@ -180,7 +180,7 @@ describe('useBrowseStore', () => {
     expect(browseListMock.mock.calls[1]?.[0]).toEqual({ query: '', limit: 24, offset: 0, sort: 'popular' });
   });
 
-  it('Test 7: hasMore=false → store.exhausted becomes true', async () => {
+  it('Test 7: hasMore=false â†’ store.exhausted becomes true', async () => {
     browseListMock.mockResolvedValueOnce({ entries: [entry('a')], hasMore: false, sorted: true });
     const store = await loadStore();
 
@@ -188,7 +188,7 @@ describe('useBrowseStore', () => {
     expect(store.getState().exhausted).toBe(true);
   });
 
-  it('Test 8: browseList rejection → store.error set, loading=false', async () => {
+  it('Test 8: browseList rejection â†’ store.error set, loading=false', async () => {
     browseListMock.mockRejectedValueOnce(new Error('boom'));
     const store = await loadStore();
 
@@ -214,13 +214,13 @@ describe('useBrowseStore', () => {
     expect(s.offset).toBe(0);
     expect(s.error).toBe(null);
 
-    // The pending debounce that was queued by setQuery must be cancelled —
+    // The pending debounce that was queued by setQuery must be cancelled â€”
     // advancing the clock 250ms should NOT trigger any refresh.
     browseListMock.mockClear();
     await flush(500);
     expect(browseListMock).not.toHaveBeenCalled();
   });
-  // ── 261110: Popular sort + auto-load ──────────────────────────────────────
+  // â”€â”€ 261110: Popular sort + auto-load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   it('Test 10: sort defaults to popular and is sent with every page', async () => {
     browseListMock.mockResolvedValueOnce({ entries: [entry('a')], hasMore: false, sorted: true });
@@ -375,3 +375,7 @@ describe('useBrowseStore', () => {
     expect(takeThumbStats()).toEqual({ loads: 0, fallbacks: 0 });
   });
 });
+
+
+
+

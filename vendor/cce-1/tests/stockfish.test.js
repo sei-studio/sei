@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The bundled emscripten glue, under Node, installs a fake XMLHttpRequest and
  * nulls the GLOBAL fetch so its own wasm loader takes the XHR/fs path. Both
  * leaks broke the host app once (every API client constructed after a chess
@@ -30,3 +30,7 @@ test('engine init does not clobber global fetch or leak XMLHttpRequest', async (
     sf.dispose();
   }
 });
+
+
+
+

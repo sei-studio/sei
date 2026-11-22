@@ -1,5 +1,5 @@
-/**
- * FirstMomentCard — the next-step tiles under the companion's first greeting
+﻿/**
+ * FirstMomentCard â€” the next-step tiles under the companion's first greeting
  * (260926). See lib/firstMoment.ts for when it exists at all and
  * lib/stores/useFirstMomentStore.ts for its lifecycle.
  *
@@ -121,3 +121,7 @@ export function FirstMomentCard({ characterId }: FirstMomentCardProps): React.Re
     </div>
   );
 }
+
+
+
+

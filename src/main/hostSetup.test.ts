@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Tests for the Sei skin-setup detector (260721):
  *   - extractGameDir: `--gameDir` parsing out of ps (unquoted) and PowerShell
  *     (quoted) command lines, including paths with spaces.
  *   - classifyModJars: CustomSkinLoader jar vs foreign mod jars vs non-jars.
  *   - inspectHostMods: end-to-end against real temp directories, including
- *     the ENOENT-mods-dir → "zero mods" evidence rule.
+ *     the ENOENT-mods-dir â†’ "zero mods" evidence rule.
  * The decision these feed (three-way vanilla / sei-fabric / modded) is tested
  * in hostClient.test.ts via lanHostWarning.
  */
@@ -113,3 +113,7 @@ describe('inspectHostMods', () => {
     });
   });
 });
+
+
+
+

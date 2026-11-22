@@ -1,4 +1,4 @@
-// 261011: an open furnace window made the next craft resolve without crafting
+﻿// 261011: an open furnace window made the next craft resolve without crafting
 // ("crafted 4 oak_planks", no log used). executeAction now closes an open
 // furnace/chest window before any action that is not a window verb.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -60,3 +60,7 @@ describe('open windows close before other actions', () => {
     expect(furnace.close).not.toHaveBeenCalled()
   })
 })
+
+
+
+

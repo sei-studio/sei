@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Game pack store tests (260908). A local node:http fixture serves a tiny
  * pack zip + manifest; no network. Invariants:
  *   1. Dev (unpackaged) short-circuits to the app root without touching disk
@@ -484,3 +484,7 @@ describe('game packs: unpack retry on a locked file (261104)', () => {
     expect(isFileLockError(new Error('sha256 mismatch'))).toBe(false);
   });
 });
+
+
+
+

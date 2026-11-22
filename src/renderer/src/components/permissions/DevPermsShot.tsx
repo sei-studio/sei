@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DevPermsShot: dev-only screenshot harness for the OS permission cards
  * (260929), NOT part of the app UI. Mounted by DevDashShot for
  * `?dashshot=perms`, with `&part=`:
@@ -63,3 +63,7 @@ export function DevPermsShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

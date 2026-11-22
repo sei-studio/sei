@@ -1,5 +1,5 @@
-/**
- * ownVoices (261019) — the user's own ElevenLabs voices, read in main.
+﻿/**
+ * ownVoices (261019) â€” the user's own ElevenLabs voices, read in main.
  *
  * Pins: the documented GET /v2/voices shape parses (cloned, generated and
  * saved-library voices, premade dropped, labels mapped), pagination follows
@@ -98,7 +98,7 @@ describe('parseOwnVoicesPage', () => {
       hasPreview: true,
       previewUrl: CLONED.preview_url,
     });
-    // description falls back to labels.description; no preview URL → none.
+    // description falls back to labels.description; no preview URL â†’ none.
     expect(out.voices[1]).toMatchObject({ description: 'raspy and old', gender: 'female', hasPreview: false });
     // an untrusted preview host is never kept (main would fetch it).
     expect(out.voices[2]).toMatchObject({ description: 'Warm audiobook voice', hasPreview: false, previewUrl: null });
@@ -181,7 +181,7 @@ describe('fetchOwnVoices', () => {
     expect(f).toHaveBeenCalledTimes(5);
   });
 
-  it('401 / 403 → bad_key', async () => {
+  it('401 / 403 â†’ bad_key', async () => {
     const body = JSON.stringify({ detail: { status: 'invalid_api_key', message: 'Invalid API key' } });
     expect(await fetchOwnVoices('k', async () => new Response(body, { status: 401 }))).toEqual({
       status: 'bad_key',
@@ -190,7 +190,7 @@ describe('fetchOwnVoices', () => {
     expect((await fetchOwnVoices('k', async () => new Response('{}', { status: 403 }))).status).toBe('bad_key');
   });
 
-  it('a network failure or 5xx → error, never a throw', async () => {
+  it('a network failure or 5xx â†’ error, never a throw', async () => {
     expect(
       await fetchOwnVoices('k', async () => {
         throw new TypeError('fetch failed');
@@ -338,3 +338,7 @@ describe('ownVoicePreviewBytes', () => {
     expect(mockWriteCached).not.toHaveBeenCalled();
   });
 });
+
+
+
+

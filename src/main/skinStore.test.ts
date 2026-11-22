@@ -1,12 +1,12 @@
-/**
- * skinStore.test.ts — skin serving contract after the 260707 bundle removal.
+﻿/**
+ * skinStore.test.ts â€” skin serving contract after the 260707 bundle removal.
  *
  * There are NO bundled skins anymore. The only bytes served are the per-user
  * cached override at <userData>/skins/<id>.png (pointed at by an
  * 'upload'/'username' descriptor). The three former defaults (sui/lyra/marv)
- * are ordinary public characters — they get NO offline baseline and behave
+ * are ordinary public characters â€” they get NO offline baseline and behave
  * exactly like any other public character whose cloud skin has not downloaded
- * yet (server 404 → Steve).
+ * yet (server 404 â†’ Steve).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -67,7 +67,7 @@ afterEach(async () => {
   if (h.userData) await rm(h.userData, { recursive: true, force: true }).catch(() => {});
 });
 
-describe('resolveSkinPng — cloud-cached override only, no bundle', () => {
+describe('resolveSkinPng â€” cloud-cached override only, no bundle', () => {
   it('serves the cached override bytes when source is upload and the file exists', async () => {
     const c = mkChar({ skin: { source: 'upload', mojang_username: null, png_sha256: 'x', applied_at: null } });
     await cacheSkin(c.id);
@@ -85,7 +85,7 @@ describe('resolveSkinPng — cloud-cached override only, no bundle', () => {
     expect(await resolveSkinPng(mkChar())).toBeNull();
   });
 
-  it('gives a FORMER DEFAULT no bundled fallback — behaves like any public char', async () => {
+  it('gives a FORMER DEFAULT no bundled fallback â€” behaves like any public char', async () => {
     // Sui's frozen UUID, source none (or a cloud override whose bytes have not
     // downloaded): pre-260707 this served a bundled PNG; now it must be null.
     const sui = mkChar({ id: DEFAULT_CHARACTER_UUIDS.sui, name: 'Sui', slug: 'sui', is_default: true });
@@ -93,7 +93,7 @@ describe('resolveSkinPng — cloud-cached override only, no bundle', () => {
   });
 });
 
-describe('readSkinPng — local match only, no bundled-default fallback', () => {
+describe('readSkinPng â€” local match only, no bundled-default fallback', () => {
   it('matches by username (case-insensitive) and serves the cached skin', async () => {
     const c = mkChar({
       username: 'Nova',
@@ -128,7 +128,7 @@ describe('readSkinPng — local match only, no bundled-default fallback', () => 
   });
 });
 
-describe('readSkinPng — accented names (261027)', () => {
+describe('readSkinPng â€” accented names (261027)', () => {
   const upload = { source: 'upload' as const, mojang_username: null, png_sha256: 'x', applied_at: null };
 
   async function cacheBytes(id: string, bytes: Buffer): Promise<void> {
@@ -136,22 +136,22 @@ describe('readSkinPng — accented names (261027)', () => {
     await writeFile(path.join(h.userData, 'skins', `${id}.png`), bytes);
   }
 
-  it('serves Sofía under the folded login name the bot now joins as', async () => {
-    const c = mkChar({ name: 'Sofía', skin: upload });
+  it('serves SofÃ­a under the folded login name the bot now joins as', async () => {
+    const c = mkChar({ name: 'SofÃ­a', skin: upload });
     await cacheSkin(c.id);
     expect(await readSkinPng({ username: 'Sofia', listCharacters: async () => [c] })).not.toBeNull();
     expect(await readSkinPng({ username: 'sofia', listCharacters: async () => [c] })).not.toBeNull();
   });
 
   it('still answers the pre-fold name ("Sofa") for the same character', async () => {
-    const c = mkChar({ name: 'Sofía', skin: upload });
+    const c = mkChar({ name: 'SofÃ­a', skin: upload });
     await cacheSkin(c.id);
     const bytes = await readSkinPng({ username: 'Sofa', listCharacters: async () => [c] });
     expect(bytes!.equals(SKIN_BYTES)).toBe(true);
   });
 
   it('a character really named Sofa wins over the legacy alias', async () => {
-    const sofia = mkChar({ id: '22222222-2222-2222-2222-222222222222', name: 'Sofía', skin: upload });
+    const sofia = mkChar({ id: '22222222-2222-2222-2222-222222222222', name: 'SofÃ­a', skin: upload });
     const sofa = mkChar({ id: '33333333-3333-3333-3333-333333333333', name: 'Sofa', skin: upload });
     await cacheBytes(sofia.id, Buffer.from('sofia-skin'));
     await cacheBytes(sofa.id, Buffer.from('sofa-skin'));
@@ -161,8 +161,12 @@ describe('readSkinPng — accented names (261027)', () => {
   });
 
   it('leaves a CJK name exactly as before (falls back to Sei)', async () => {
-    const c = mkChar({ name: '诗诗', skin: upload });
+    const c = mkChar({ name: 'è¯—è¯—', skin: upload });
     await cacheSkin(c.id);
     expect(await readSkinPng({ username: 'Sei', listCharacters: async () => [c] })).not.toBeNull();
   });
 });
+
+
+
+

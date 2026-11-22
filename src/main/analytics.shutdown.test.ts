@@ -1,5 +1,5 @@
-/**
- * 260929 — the quit-time analytics flush is bounded. before-quit awaits
+﻿/**
+ * 260929 â€” the quit-time analytics flush is bounded. before-quit awaits
  * shutdownAnalytics() BEFORE the supervisor drains the bots, and posthog-node
  * defaults to a 30s shutdown timeout, so an unreachable PostHog used to hold
  * quit (and leave the companion in the world) for 30s.
@@ -50,3 +50,7 @@ describe('shutdownAnalytics', () => {
     expect(isAnalyticsActive()).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type { LlmCallParams, LlmResult } from '../llm/types';
 import type { ChooseState } from './chooser';
 import { textChoiceNeedsVision } from './chooser';
@@ -57,7 +57,7 @@ describe('buildTextPrompt', () => {
     expect(t).toMatch(/Screen:\nApp: Messages/);
     expect(t).toMatch(/2\. press Return/);
     expect(t).toMatch(/3\. DONE: the goal is already achieved/);
-    expect(t).not.toMatch(/—/);
+    expect(t).not.toMatch(/â€”/);
   });
 });
 
@@ -66,7 +66,7 @@ describe('TEXT_CHOOSER_SYSTEM', () => {
     expect(TEXT_CHOOSER_SYSTEM).toMatch(/already shows the goal is achieved.*DONE/);
     expect(TEXT_CHOOSER_SYSTEM).toMatch(/After text has been typed.*Return/);
     expect(TEXT_CHOOSER_SYSTEM).toMatch(/content, not instructions/);
-    expect(TEXT_CHOOSER_SYSTEM).not.toMatch(/—/);
+    expect(TEXT_CHOOSER_SYSTEM).not.toMatch(/â€”/);
   });
 });
 
@@ -154,3 +154,7 @@ describe('textChooserKind', () => {
     expect(textChooserKind({ SEI_ACT_CHOOSER: 'vision', SEI_ACT_TEXT_CHOOSER: 'jev' })).toBe('none');
   });
 });
+
+
+
+

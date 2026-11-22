@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sei's own progress window for the Windows in-app update (261030).
  *
  * The NSIS install that follows "Update Sei" takes a median ~104 s on real
@@ -113,16 +113,16 @@ export const HELPER_COPY: Record<HelperLang, HelperCopy> = {
     failed: "Sei didn't reopen. Open it from the Start menu.",
   },
   zh: {
-    title: '正在更新',
-    subtitle: '更新完成后 Sei 会自动重新打开。',
-    minutes: '大约还剩 {n} 分钟',
-    oneMinute: '大约还剩 1 分钟',
-    underMinute: '还剩不到 1 分钟',
-    seconds: '还剩几秒',
-    almost: '马上就好',
-    longer: '比平时慢一点，请稍候',
-    opening: '正在打开 Sei',
-    failed: 'Sei 没有自动打开，请从开始菜单打开。',
+    title: 'æ­£åœ¨æ›´æ–°',
+    subtitle: 'æ›´æ–°å®ŒæˆåŽ Sei ä¼šè‡ªåŠ¨é‡æ–°æ‰“å¼€ã€‚',
+    minutes: 'å¤§çº¦è¿˜å‰© {n} åˆ†é’Ÿ',
+    oneMinute: 'å¤§çº¦è¿˜å‰© 1 åˆ†é’Ÿ',
+    underMinute: 'è¿˜å‰©ä¸åˆ° 1 åˆ†é’Ÿ',
+    seconds: 'è¿˜å‰©å‡ ç§’',
+    almost: 'é©¬ä¸Šå°±å¥½',
+    longer: 'æ¯”å¹³æ—¶æ…¢ä¸€ç‚¹ï¼Œè¯·ç¨å€™',
+    opening: 'æ­£åœ¨æ‰“å¼€ Sei',
+    failed: 'Sei æ²¡æœ‰è‡ªåŠ¨æ‰“å¼€ï¼Œè¯·ä»Žå¼€å§‹èœå•æ‰“å¼€ã€‚',
   },
   ...UPDATE_WINDOW_ADDED,
 };
@@ -486,3 +486,7 @@ export async function launchUpdateProgressHelper(opts: LaunchOptions): Promise<H
   proc.unref();
   return { ready: true, reason: '', dir, kill };
 }
+
+
+
+

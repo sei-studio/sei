@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Transition gates for the onboarding scene (261012). Pure: no React.
  *
  * The scene's choreography (ground slides in, Sui walks in, Sui walks off,
@@ -173,3 +173,7 @@ export function prefersReducedMotion(): boolean {
     return false;
   }
 }
+
+
+
+

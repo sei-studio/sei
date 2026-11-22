@@ -1,4 +1,4 @@
-// 261017: quality pass 14, player orders beat her own project.
+﻿// 261017: quality pass 14, player orders beat her own project.
 //  (261018, pass 15: the movement-order cut and the stop hold were phrase
 //  matchers; they are gone. qualityPass15.test.js covers what replaced them.)
 //  - every player line a reply deferred comes back in the completion turn
@@ -21,7 +21,7 @@ import { composeSnapshot } from '../adapter/minecraft/observers/snapshot.js'
 import { pickupAction } from '../adapter/minecraft/behaviors/pickup.js'
 import { readProgressionState, nextMilestone } from '../adapter/minecraft/observers/progression.js'
 
-// ─── orchestrator harness ───────────────────────────────────────────────
+// â”€â”€â”€ orchestrator harness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -146,7 +146,7 @@ describe('deferred player lines come back together', () => {
     const two = NUDGES.deferredReplies(['a', 'b'])
     expect(two).toContain('"a"')
     expect(two).toContain('"b"')
-    expect(two).not.toMatch(/—/)
+    expect(two).not.toMatch(/â€”/)
   })
 })
 
@@ -211,7 +211,7 @@ describe('next: hide follows the goal list, not a timer', () => {
   })
 })
 
-// ─── given drops ─────────────────────────────────────────────────────────
+// â”€â”€â”€ given drops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function vec(x, y, z) {
   return { x, y, z, distanceTo(o) { return Math.hypot(this.x - o.x, this.y - o.y, this.z - o.z) } }
@@ -306,7 +306,7 @@ describe('items she gave the player', () => {
   })
 })
 
-// ─── progression: a placed station counts ────────────────────────────────
+// â”€â”€â”€ progression: a placed station counts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('only her own furnace counts as had', () => {
   // A world with a crafting table and a furnace beside her (the player's,
@@ -340,3 +340,7 @@ describe('only her own furnace counts as had', () => {
     expect(nextMilestone(readProgressionState(c))?.node?.id).toBe('furnace')
   })
 })
+
+
+
+

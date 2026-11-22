@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { FOCUS_ASK_MS, onComposerFocusRequest, requestComposerFocus, takeComposerFocus } from './composerFocus';
 
 describe('composerFocus (product call (261116): a double click on her opens her chat ready to type)', () => {
@@ -23,3 +23,7 @@ describe('composerFocus (product call (261116): a double click on her opens her 
     takeComposerFocus('a');
   });
 });
+
+
+
+

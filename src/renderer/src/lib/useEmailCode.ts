@@ -1,5 +1,5 @@
-/**
- * useEmailCode — shared state machine for the "enter the code we emailed you"
+﻿/**
+ * useEmailCode â€” shared state machine for the "enter the code we emailed you"
  * panel (260804).
  *
  * Four surfaces show that panel (AuthChoiceScreen, SignInModal, the onboarding
@@ -34,7 +34,7 @@ export interface EmailCodeState {
 }
 
 /**
- * @param email address the code was sent to. Null disables submission — the
+ * @param email address the code was sent to. Null disables submission â€” the
  *              panel should not be mounted without one.
  * @param onVerified called after a successful redemption that is NOT a password
  *              recovery. Recovery redemptions are routed by App.tsx's
@@ -111,3 +111,7 @@ export function useEmailCode(email: string | null, onVerified?: () => void): Ema
 
   return { code, setCode, error, note, submitting, resending, submit, resend, reset };
 }
+
+
+
+

@@ -1,14 +1,14 @@
-/**
- * Phase 11 — ToS + Privacy acceptance gate.
+﻿/**
+ * Phase 11 â€” ToS + Privacy acceptance gate.
  *
- * Source: 11-RESEARCH §Code Example 5 + 11-PATTERNS §tosGate.ts.
+ * Source: 11-RESEARCH Â§Code Example 5 + 11-PATTERNS Â§tosGate.ts.
  *
  * Backed by the `tos_acceptance(user_id, tos_version, privacy_version, accepted_at)`
  * table from Plan 11-01. RLS: user can select/insert their own rows only
- * (insert+select-own; no update or delete — accepted rows are immutable,
+ * (insert+select-own; no update or delete â€” accepted rows are immutable,
  * see T-11-12-02).
  *
- * The check matches against the CURRENT versions in legalVersions.ts — when
+ * The check matches against the CURRENT versions in legalVersions.ts â€” when
  * versions bump, the user is re-prompted (Plan 11-13 mounts the AcceptToSModal
  * at next launch when isTosAccepted returns false).
  *
@@ -29,14 +29,14 @@ const TIMEOUT_MS = 15_000;
 /**
  * Tri-state acceptance status (260610 offline-misfire fix).
  *
- * 'accepted' / 'not_accepted' are DEFINITIVE — the query reached the database
+ * 'accepted' / 'not_accepted' are DEFINITIVE â€” the query reached the database
  * and we know whether a current-version row exists. 'unknown' means the query
  * never produced an answer (DNS failure, offline, timeout, RLS denial, any
  * supabase error): callers must not treat it as "user hasn't accepted".
  *
  * Why this exists: isTosAccepted's fail-closed boolean collapsed 'unknown'
  * into false, so a transient DNS failure at launch (getaddrinfo ENOTFOUND)
- * re-showed the BLOCKING legal modal to a user who had already accepted —
+ * re-showed the BLOCKING legal modal to a user who had already accepted â€”
  * and their re-accept then hit the composite-PK duplicate error. The modal
  * gate (tos:status IPC) now consumes the tri-state and shows an offline
  * notice for 'unknown' instead; the cloud-write gate still fails closed.
@@ -50,7 +50,7 @@ export type TosAcceptance = 'accepted' | 'not_accepted' | 'unknown';
  * privacy_version both equal the active constants. A bump to either constant
  * effectively invalidates every prior acceptance and re-prompts on next launch.
  *
- * Only a SUCCESSFUL query with zero rows yields 'not_accepted' — any error
+ * Only a SUCCESSFUL query with zero rows yields 'not_accepted' â€” any error
  * (RLS denial, network failure, timeout) yields 'unknown', which downstream
  * gates treat as fail-closed for cloud writes (T-11-12-03) but NOT as grounds
  * to re-show the blocking legal modal.
@@ -94,17 +94,17 @@ export async function isTosAccepted(userId: string): Promise<boolean> {
  * Inserts a row into `tos_acceptance` (user_id, tos_version, privacy_version);
  * `accepted_at` defaults to now() per the migration in Plan 11-01.
  *
- * Throws `Error('TOS_RECORD_FAILED: <supabase msg>')` on any insert failure —
+ * Throws `Error('TOS_RECORD_FAILED: <supabase msg>')` on any insert failure â€”
  * the caller decides whether to surface (blocking modal in Plan 11-13) or
  * swallow (signup success branch in authHandlers, where we fire-and-forget
  * because the next launch's blocking modal will re-prompt anyway).
  *
  * Reentrancy: the table's PRIMARY KEY is composite (user_id, tos_version,
- * privacy_version) — see migration 20260521000000_characters_tos.sql — so a
+ * privacy_version) â€” see migration 20260521000000_characters_tos.sql â€” so a
  * re-insert of the same triple raises Postgres 23505 (unique_violation).
  * That duplicate means the acceptance is ALREADY recorded, so it is treated
  * as success here, not surfaced as an error. (An earlier version of this
- * doc claimed there was no uniqueness constraint — that was wrong, and a
+ * doc claimed there was no uniqueness constraint â€” that was wrong, and a
  * 260610 incident showed the blocking modal trapping an already-accepted
  * user on the duplicate-key error after a transient offline launch.)
  */
@@ -125,10 +125,14 @@ export async function recordAcceptance(userId: string): Promise<void> {
       const code = (error as { code?: string }).code;
       const isDuplicate =
         code === '23505' || /duplicate key value/i.test(error.message ?? '');
-      if (isDuplicate) return; // already accepted — idempotent success
+      if (isDuplicate) return; // already accepted â€” idempotent success
       throw new Error(`TOS_RECORD_FAILED: ${error.message}`);
     }
   } finally {
     clearTimeout(handle);
   }
 }
+
+
+
+

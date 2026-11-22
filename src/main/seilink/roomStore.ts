@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room store (261104, host pass): one RoomState JSON per companion
  * at <profileRoot>/seilink/rooms/<characterId>.json, a few KB. A companion
  * with no file has the default room (defaultRoomState: cozy, clock time,
@@ -146,3 +146,7 @@ export const roomSource: RoomSource = {
   },
   onChange: onRoomChange,
 };
+
+
+
+

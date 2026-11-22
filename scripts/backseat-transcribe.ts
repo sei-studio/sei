@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Offline STT for the render script (260801).
  *
  * Runs the SAME model the app packages (onnx-community/whisper-tiny.en, see
@@ -79,3 +79,7 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+
+
+

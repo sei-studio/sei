@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The guided first moment (260926): pure decisions, no stores.
  *
  * When a NEW player finishes onboarding, their first stop after Sui's tour is
@@ -85,3 +85,7 @@ export function firstMomentButtons(plan: FirstMomentPlan): Array<Exclude<FirstMo
   const rest = offered.filter((g) => g !== plan.primary);
   return [plan.primary, ...rest, 'call'];
 }
+
+
+
+

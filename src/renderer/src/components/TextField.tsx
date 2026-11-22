@@ -1,12 +1,12 @@
-/**
- * TextField — borderless 1.5px underline input. Single + multiline,
+﻿/**
+ * TextField â€” borderless 1.5px underline input. Single + multiline,
  * monospace + password modes.
  *
- * Source: 04-UI-SPEC.md §Component Inventory → TextField + D-31.
+ * Source: 04-UI-SPEC.md Â§Component Inventory â†’ TextField + D-31.
  *
  * Keyboard:
  *  - Enter on single-line invokes onEnter (used to submit onboarding steps).
- *  - Esc never consumed — propagates so modal close works above the field.
+ *  - Esc never consumed â€” propagates so modal close works above the field.
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -101,3 +101,7 @@ export function TextField({
     />
   );
 }
+
+
+
+

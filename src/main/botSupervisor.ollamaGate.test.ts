@@ -1,5 +1,5 @@
-/**
- * 261010 — summon gate for a local Ollama backend. A model with no tool
+﻿/**
+ * 261010 â€” summon gate for a local Ollama backend. A model with no tool
  * support (gemma3, llava, qwen2.5vl ...), a model never pulled, or Ollama not
  * running used to join the world and then stay mute all session. The summon
  * is now refused before fork with an error class the launch panel explains.
@@ -96,3 +96,7 @@ describe('Ollama summon gate', () => {
     expect(checkSpy).not.toHaveBeenCalled();
   });
 });
+
+
+
+

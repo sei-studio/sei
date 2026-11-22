@@ -1,4 +1,4 @@
-// face.js (260708) — the avatar visibly turns to what it acts on. Pins:
+﻿// face.js (260708) â€” the avatar visibly turns to what it acts on. Pins:
 // faceBlock aims at the BLOCK CENTER, is bounded (a stalled look promise
 // cannot wedge the action), and never rejects; installFaceOnDig turns before
 // every dig (including the pathfinder's forceLook=true path-clearing digs,
@@ -78,7 +78,7 @@ describe('installFaceOnDig', () => {
     const [point, force] = bot.lookAt.mock.calls[0]
     expect({ x: point.x, y: point.y, z: point.z }).toEqual({ x: 4.5, y: 60.5, z: 4.5 })
     expect(force).toBe(false) // the visible smooth turn, not the old instant snap
-    // Inner dig gets force=true: already aimed → no-op; interrupted turn → snap
+    // Inner dig gets force=true: already aimed â†’ no-op; interrupted turn â†’ snap
     // the remainder rather than stall the swing on an unconverged look.
     expect(rawDig.mock.calls[0][1]).toBe(true)
   })
@@ -109,3 +109,7 @@ describe('installFaceOnDig', () => {
     expect(rawDig).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

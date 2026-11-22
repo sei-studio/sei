@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The word gate that decides a barge-in (260804).
  *
  * This is the whole difference between the old barge-in and the new one. The
@@ -59,7 +59,7 @@ describe('hasSpokenWord', () => {
 
   it('rejects the bare filler words a noise fragment decodes to', () => {
     // "you" is Whisper's single most common output for a fragment of noise, and
-    // it is a real word, so it cannot be caught by any general rule — it is
+    // it is a real word, so it cannot be caught by any general rule â€” it is
     // named. Alone it is almost never a real interruption; in a phrase it is.
     expect(hasSpokenWord('you')).toBe(false);
     expect(hasSpokenWord('the')).toBe(false);
@@ -69,8 +69,8 @@ describe('hasSpokenWord', () => {
   it('accepts non-Latin speech, which the whole feature depends on', () => {
     // The energy path never cared about language and neither can this: a
     // Chinese or Japanese interruption must cut her off exactly the same way.
-    expect(hasSpokenWord('等等')).toBe(true);
-    expect(hasSpokenWord('ちょっと')).toBe(true);
+    expect(hasSpokenWord('ç­‰ç­‰')).toBe(true);
+    expect(hasSpokenWord('ã¡ã‚‡ã£ã¨')).toBe(true);
   });
 
   it('ignores surrounding punctuation and case', () => {
@@ -78,3 +78,7 @@ describe('hasSpokenWord', () => {
     expect(hasSpokenWord('"no."')).toBe(true);
   });
 });
+
+
+
+

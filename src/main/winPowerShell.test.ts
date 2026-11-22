@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { powerShellEnv } from './winPowerShell';
 
 describe('powerShellEnv', () => {
@@ -21,3 +21,7 @@ describe('powerShellEnv', () => {
     expect(base).toEqual({ PSModulePath: 'p' });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261013: prompt-size guard for every Anthropic Messages request the app builds.
+﻿// 261013: prompt-size guard for every Anthropic Messages request the app builds.
 //
 // Two jobs, and only the second one ever changes a request:
 //
@@ -84,7 +84,7 @@ export function contextLimitFor(model) {
   return null
 }
 
-// ── Estimation ──────────────────────────────────────────────────────────────
+// â”€â”€ Estimation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const TOKEN_RE = /[A-Za-z]+|[0-9]+|\s+|[\x00-\x7f]|[^\x00-\x7f]/g
 
@@ -278,7 +278,7 @@ function safeJson(v) {
   try { return JSON.stringify(v) ?? '' } catch { return '' }
 }
 
-// ── Trimming ────────────────────────────────────────────────────────────────
+// â”€â”€ Trimming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function hasToolResult(msg) {
   return Array.isArray(msg?.content) && msg.content.some(b => b && b.type === 'tool_result')
@@ -520,3 +520,7 @@ export function describeBudgetReport(r, label = '') {
     `stubbed ${t.strippedImages} image(s), shortened ${t.shortenedResults} tool result(s) -> est ${k(t.estAfter)}` +
     (t.stillOver ? ' (STILL OVER: sent as is, the API may reject it)' : '')
 }
+
+
+
+

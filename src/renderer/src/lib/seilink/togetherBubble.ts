@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her bubble in the shared editor (261105, T336): which chat line it shows.
  * Everything she says while the editor is open lands in her normal chat (a
  * live line, a talk-box reply, a spoken call line), so the bubble is just the
@@ -25,3 +25,7 @@ export function freshCompanionLine(seen: Set<string>, messages: readonly ChatMes
   }
   return last ? { id: last.id, text: last.text.trim() } : null;
 }
+
+
+
+

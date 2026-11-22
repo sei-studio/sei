@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink dock geometry for the room host (261104, M4). Pure, so it is tested
  * without a desktop.
  *
@@ -118,7 +118,7 @@ export function hitAreas(
   };
 }
 
-// ── Her gaze on the desktop (product call (261116)) ─────────────────────────
+// â”€â”€ Her gaze on the desktop (product call (261116)) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Where her face is in her box (from the top): the cursor feed is measured from here. */
 export const GAZE_FACE_Y = 0.22;
@@ -148,3 +148,7 @@ export function gazeSample(
 export function gazeMoved(a: { x: number; y: number } | null, b: { x: number; y: number }, eps = 0.004): boolean {
   return !a || Math.abs(a.x - b.x) > eps || Math.abs(a.y - b.y) > eps;
 }
+
+
+
+

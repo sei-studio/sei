@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Call scene geometry + resolution.
  *
  * The staging numbers are what make the walk-in look right, and they are easy
@@ -25,7 +25,7 @@ import {
   restIsPastFront,
 } from './callScenes';
 
-/** Minimal character stand-in — resolution only ever looks at the id. */
+/** Minimal character stand-in â€” resolution only ever looks at the id. */
 function char(id: string): Character {
   return { id, name: 'x' } as unknown as Character;
 }
@@ -95,7 +95,7 @@ describe('actorMirrored', () => {
   });
 });
 
-// 260731 — she walks in from behind the grass and steps in front of it partway
+// 260731 â€” she walks in from behind the grass and steps in front of it partway
 // across. The switch is a timer, so what these pin is the arithmetic that
 // decides WHEN: a wrong answer here is a sprite that pops through the
 // foreground in the middle of the field, or never comes forward at all.
@@ -117,7 +117,7 @@ describe('stepping in front of the foreground', () => {
     expect(restIsPastFront(a)).toBe(true); // rests at centre, well past 2/3
   });
 
-  it('never comes forward without frontAfter — the original behaviour', () => {
+  it('never comes forward without frontAfter â€” the original behaviour', () => {
     expect(frontCrossX(actor())).toBeNull();
     expect(isPastFront(actor(), 0)).toBe(false);
     expect(frontSwitchDelayMs(actor())).toBeNull();
@@ -182,3 +182,7 @@ describe('actorBoxStyle', () => {
     expect(box.left.endsWith('%') && box.width.endsWith('%')).toBe(true);
   });
 });
+
+
+
+

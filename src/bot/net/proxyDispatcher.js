@@ -1,4 +1,4 @@
-// Route Node's built-in fetch through the OS proxy, the way Chromium does
+﻿// Route Node's built-in fetch through the OS proxy, the way Chromium does
 // (261103, T303).
 //
 // Node's fetch (undici) ignores the system proxy and PAC settings. A user who
@@ -428,3 +428,7 @@ function defaultMakeAgent(uri) {
   if (uri.startsWith('socks5://')) return new Socks5ProxyAgent(uri)
   return new ProxyAgent({ uri })
 }
+
+
+
+

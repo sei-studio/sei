@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pool voice ids (261024, shared/poolVoiceIds.ts): the one set main and the
  * renderer both use to tell Sei's voices apart from a user's own ElevenLabs
  * voices. Lives under main so it can compare against the soulcaster package.
@@ -52,3 +52,7 @@ describe('pool voice ids', () => {
     expect(isPoolVoiceId(42)).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// Pure halves of the system-proxy routing (261103, T303): PAC answers, the
+﻿// Pure halves of the system-proxy routing (261103, T303): PAC answers, the
 // local-host bypass and the bot's fork-time snapshot. No undici import, so
 // the bot can decide whether it needs a proxy at all without loading undici
 // or touching the global dispatcher (src/bot/index.js).
@@ -130,3 +130,7 @@ export function snapshotResolver(raw) {
     return typeof v === 'string' ? v : fallback
   }
 }
+
+
+
+

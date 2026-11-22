@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   budgetForModel,
   displayForRect,
@@ -108,3 +108,7 @@ describe('image <-> global mapping', () => {
     expect(frameScale(frames[0]!)).toBeCloseTo(1.28);
   });
 });
+
+
+
+

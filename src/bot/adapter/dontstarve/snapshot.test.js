@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { createObservationState, createHandleRegistry } from './protocol.js'
 import { createSnapshotComposer } from './observers/snapshot.js'
 import { createFakeMod } from '../../../../scripts/fake-dst-mod.mjs'
@@ -119,3 +119,7 @@ describe('DST snapshot composer', () => {
     expect(c3.next({})).not.toContain('out of sight')
   })
 })
+
+
+
+

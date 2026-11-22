@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Merge one companion's on-disk memory from the `local` (own key) profile into
  * the same companion's memory in a Sei account profile (261023).
  *
@@ -99,7 +99,7 @@ export const UNREGISTERED_WORLD_FP = 'unregistered-local-world:';
 
 /**
  * Merge the local world registry into the account's. Returns the merged
- * registry and the local→account number map. `reservedMax` is the highest
+ * registry and the localâ†’account number map. `reservedMax` is the highest
  * world number the account already uses anywhere (its MEMORY.md can name a
  * world its registry lost), so a new world never reuses one.
  *
@@ -420,3 +420,7 @@ export async function mergeKnowledgeDir(srcDir: string, destDir: string): Promis
   }
   await rm(srcDir, { recursive: true, force: true });
 }
+
+
+
+

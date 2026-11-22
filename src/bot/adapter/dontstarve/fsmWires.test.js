@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { wireLinkEvents } from './fsmWires.js'
 
@@ -109,3 +109,7 @@ describe('DST fsm wires: a hit by the darkness', () => {
     expect(b.darkness).toBeUndefined()
   })
 })
+
+
+
+

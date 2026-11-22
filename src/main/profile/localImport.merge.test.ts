@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Own-key (local) profile -> Sei account import, the cases the first version
  * missed (261023):
  *
@@ -292,15 +292,15 @@ describe('world numbering across the two copies', () => {
   it('renumbers local world sections so they do not collide with the account worlds', async () => {
     await seedChar(ACCOUNT, OWN, { owner: ACCOUNT });
     await seedMemory(ACCOUNT, OWN, {
-      'MEMORY.md': mem('## World 1 — Acct Base (Minecraft)', '- [2026-10-01T10:00:00.000Z] acct world fact'),
+      'MEMORY.md': mem('## World 1 â€” Acct Base (Minecraft)', '- [2026-10-01T10:00:00.000Z] acct world fact'),
       'worlds.json': JSON.stringify({ version: 1, worlds: [{ num: 1, fingerprint: 'fpA', label: 'Acct Base' }] }),
     });
     await seedChar('local', OWN);
     await seedMemory('local', OWN, {
       'MEMORY.md': mem(
-        '## World 1 — Local Farm (Minecraft)',
+        '## World 1 â€” Local Farm (Minecraft)',
         '- [2026-09-01T10:00:00.000Z] local world fact',
-        '## World 2 — Shared Base (Minecraft)',
+        '## World 2 â€” Shared Base (Minecraft)',
         '- [2026-09-01T11:00:00.000Z] shared world fact',
       ),
       'worlds.json': JSON.stringify({
@@ -320,8 +320,8 @@ describe('world numbering across the two copies', () => {
     expect(byFp).toEqual({ fpA: 1, fpLocal: 2 });
     const memory = await readMem(ACCOUNT, OWN);
     // Local World 1 is a new world here: World 2. Local World 2 is the account's World 1.
-    expect(memory).toMatch(/## World 2 — Local Farm \(Minecraft\)\n- \[2026-09-01T10:00:00.000Z\] local world fact/);
-    expect(memory).toMatch(/## World 1 — Shared Base \(Minecraft\)\n- \[2026-09-01T11:00:00.000Z\] shared world fact/);
+    expect(memory).toMatch(/## World 2 â€” Local Farm \(Minecraft\)\n- \[2026-09-01T10:00:00.000Z\] local world fact/);
+    expect(memory).toMatch(/## World 1 â€” Shared Base \(Minecraft\)\n- \[2026-09-01T11:00:00.000Z\] shared world fact/);
   });
 });
 
@@ -364,3 +364,7 @@ describe('idempotent', () => {
     expect((await readCfg(ACCOUNT)).added_world_ids).toEqual(afterFirst.cfg.added_world_ids);
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * The call's shared AudioContext (260731) — extracted from callTones.ts, which
+﻿/**
+ * The call's shared AudioContext (260731) â€” extracted from callTones.ts, which
  * owned it alone until the pitch shifter needed the same context and the same
  * "is the output actually rendering?" gate.
  *
@@ -12,7 +12,7 @@
  * alive, the device stays open and every later sound starts when it says it
  * does. Created lazily, so an app that never places a call never opens it.
  *
- * A SECOND context would undo that on its own — two device opens, two clocks,
+ * A SECOND context would undo that on its own â€” two device opens, two clocks,
  * and the newer one is the one a mic reroute lands on (see whenSteady). So the
  * pitch bus takes this one rather than making its own.
  */
@@ -36,7 +36,7 @@ export function sharedContext(): AudioContext | null {
 
 /**
  * How far ahead to schedule the FIRST sound through a context that has not
- * rendered yet — enough for the device to open (macOS CoreAudio is the slow
+ * rendered yet â€” enough for the device to open (macOS CoreAudio is the slow
  * one) so the attack is not swallowed. A warm context uses the short lead: its
  * clock is already running, so 20 ms is just anti-glitch headroom.
  */
@@ -49,7 +49,7 @@ const COLD_CLOCK_S = 0.25;
  * `currentTime` is the end of the last render quantum, and Chromium renders
  * AHEAD of it by roughly `baseLatency`. A note scheduled inside that window
  * lands in audio already committed, so its attack is silently clipped or lost
- * outright — the flat 20 ms lead was under the render-ahead on any device with
+ * outright â€” the flat 20 ms lead was under the render-ahead on any device with
  * a larger buffer. Ask the context how far ahead it is working instead of
  * guessing; baseLatency is absent on some builds, hence the fallback.
  */
@@ -86,7 +86,7 @@ export function startTime(ctx: AudioContext): number {
  * Capped, so on anything unexpected the sound plays late rather than never.
  *
  * 260731: the pitch bus builds its AudioWorklet behind this same gate, for the
- * same reason — a node created across the reroute comes up attached to an
+ * same reason â€” a node created across the reroute comes up attached to an
  * output that is being torn down.
  */
 const STEADY_POLL_MS = 25;
@@ -120,3 +120,7 @@ export function whenSteady(ctx: AudioContext, cb: () => void): void {
   };
   window.setTimeout(tick, STEADY_POLL_MS);
 }
+
+
+
+

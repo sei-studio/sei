@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Speech pack store (260816, china-compat W3+W4): download-on-demand of the
  * sherpa-onnx model packs into `<userData>/speech-models/<packId>/`.
  *
@@ -101,12 +101,12 @@ function markerPath(id: SpeechPackId): string {
 }
 
 /**
- * One-shot heal of pre-260908 pack layouts (dev machines only — the old ids
+ * One-shot heal of pre-260908 pack layouts (dev machines only â€” the old ids
  * never shipped in a release). 'tts-zh-f' was renamed to 'tts-zh' (same
  * archive, same extracted tree, same marker content), so an installed old dir
  * is renamed in place instead of forcing a ~30MB re-download. 'tts-zh-m'
  * (chaowen) was removed outright over its non-commercial weights lineage
- * (see packs.ts), so any leftover dir is deleted — the unlicensed model must
+ * (see packs.ts), so any leftover dir is deleted â€” the unlicensed model must
  * not linger on disk. Lazy single-flight; ran before any disk read.
  */
 let legacyHeal: Promise<void> | null = null;
@@ -150,7 +150,7 @@ export async function packReady(id: SpeechPackId): Promise<boolean> {
   }
 }
 
-// ── Live state + push fan-out ───────────────────────────────────────────────
+// â”€â”€ Live state + push fan-out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let states: PackStates | null = null;
 const listeners = new Set<(states: PackStates) => void>();
@@ -175,7 +175,7 @@ export async function packStatus(): Promise<PackStates> {
   return states as PackStates;
 }
 
-// ── Download + extract ──────────────────────────────────────────────────────
+// â”€â”€ Download + extract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Single-flight per pack: concurrent download requests share one job. */
 const inflight = new Map<SpeechPackId, Promise<void>>();
@@ -195,7 +195,7 @@ async function fetchArchive(id: SpeechPackId): Promise<Uint8Array> {
   let lastErr: Error | null = null;
   for (const src of speechSources(def.asset, def.originUrl)) {
     const ctrl = new AbortController();
-    // Connect/TTFB guard only — cleared once headers land. The body has its
+    // Connect/TTFB guard only â€” cleared once headers land. The body has its
     // own progress-driven liveness below.
     const connectTimer = src.connectTimeoutMs
       ? setTimeout(() => ctrl.abort(), src.connectTimeoutMs)
@@ -250,7 +250,7 @@ async function doDownload(id: SpeechPackId): Promise<void> {
   apply({ kind: 'download-start', packId: id });
   try {
     const archive = await fetchArchive(id);
-    // Extract into a temp sibling, then rename over — the marker write is the
+    // Extract into a temp sibling, then rename over â€” the marker write is the
     // commit point either way, but a clean tree beats a half tree on crash.
     const root = packRoot(id);
     const tmpRoot = `${root}.extracting`;
@@ -293,3 +293,7 @@ export async function removePack(id: SpeechPackId): Promise<void> {
   await rm(packRoot(id), { recursive: true, force: true });
   apply({ kind: 'removed', packId: id });
 }
+
+
+
+

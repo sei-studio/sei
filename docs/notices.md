@@ -1,4 +1,4 @@
-# Notices feed (`https://sei.gg/notices.json`)
+﻿# Notices feed (`https://sei.gg/notices.json`)
 
 Operator announcements delivered to the desktop app's Inbox. Hosted on the
 website next to `version.json`, but **not linked or rendered anywhere on the
@@ -86,3 +86,7 @@ Same as the rest of the app: no em dashes in anything a user reads.
 1. Add the entry to the website's `notices.json` with a fresh `id`.
 2. Deploy the site.
 3. Verify with `curl -s https://sei.gg/notices.json | jq .` before announcing.
+
+
+
+

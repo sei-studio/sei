@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FacepackView timing (261028), pure so it can be tested with a fake clock.
  * Numbers from the face-set REPORT.md / EXPRESSIONS_SPEC.md player contract:
  *
@@ -19,7 +19,7 @@ import {
 
 export type Rand = () => number;
 
-// ── Blink ────────────────────────────────────────────────────────────────
+// â”€â”€ Blink â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const BLINK_GAP_MIN_MS = 2_500;
 export const BLINK_GAP_MAX_MS = 6_000;
@@ -78,7 +78,7 @@ export class BlinkScheduler {
   }
 }
 
-// ── Viseme ───────────────────────────────────────────────────────────────
+// â”€â”€ Viseme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface LevelSample {
   /** 0..1 envelope, same scale as avatarLevelTap (sqrt(meanSquare * 20)). */
@@ -180,7 +180,7 @@ export class VisemeDriver {
   }
 }
 
-// ── Expression timeline ──────────────────────────────────────────────────
+// â”€â”€ Expression timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** A typed-chat line has no clip; treat it as "spoken" for this long. */
 export const TEXT_LINE_MS = 2_000;
@@ -236,12 +236,12 @@ export class ExpressionTimeline {
   }
 }
 
-// ── Idle pose ────────────────────────────────────────────────────────────
+// â”€â”€ Idle pose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const POSE_GAP_MIN_MS = 4_000;
 export const POSE_GAP_MAX_MS = 10_000;
 
-/** Head poses next to each other: a change moves one step, never c → l2. */
+/** Head poses next to each other: a change moves one step, never c â†’ l2. */
 const POSE_NEIGHBORS: Record<string, string[]> = {
   c: ['l1', 'r1', 'tl', 'tr'],
   l1: ['c', 'l2'],
@@ -287,3 +287,7 @@ export function nextPose(current: string, available: readonly string[], cursorX:
 export function nextPoseDelay(rand: Rand = Math.random): number {
   return POSE_GAP_MIN_MS + rand() * (POSE_GAP_MAX_MS - POSE_GAP_MIN_MS);
 }
+
+
+
+

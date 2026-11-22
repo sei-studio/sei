@@ -1,4 +1,4 @@
-// 261011 quality pass 2: dig reach from the eyes, and a dig the pathfinder
+﻿// 261011 quality pass 2: dig reach from the eyes, and a dig the pathfinder
 // left running is cancelled instead of answering "busy digging".
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -47,3 +47,7 @@ describe('digAction and a leftover pathfinder dig (261011)', () => {
     expect(r).toBe('busy digging stone @1,63,0')
   })
 })
+
+
+
+

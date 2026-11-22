@@ -1,4 +1,4 @@
-/**
+﻿/**
  * voice_tts_failed (261121, T507): error classes and the throttled capture.
  * Shape only: phase, provider, error_class; never text or a raw message.
  */
@@ -68,3 +68,7 @@ describe('reportTtsFailure', () => {
     expect(mockDiag).not.toHaveBeenCalled();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261019 (quality pass 19): goTo toward the player. The model copied player
+﻿// 261019 (quality pass 19): goTo toward the player. The model copied player
 // coords from an older snapshot ("walked to a spot about 28 blocks from
 // Alex"); goTo({player}) walks to where they are now, and again if they
 // moved on. Also: the walk opts in to resuming after an interruption, and a
@@ -200,3 +200,7 @@ describe('goTo walks on while a timed-out leg was closing in (261107)', () => {
     expect(goToMock).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): "Continue with ChatGPT", ChatGPT plan usage for the
  * companion through OpenAI's Sign in with ChatGPT open-source flow.
  *
@@ -179,7 +179,7 @@ export function chatgptModelVision(model: string, catalog?: readonly ChatgptMode
   return 'unknown';
 }
 
-// ─── Status contract (main -> renderer) ───────────────────────────────────
+// â”€â”€â”€ Status contract (main -> renderer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One saved registration, safe to show (no tokens). */
 export interface ChatgptAccountSummary {
@@ -252,3 +252,7 @@ export function chatgptAccountLabels(
   }
   return out;
 }
+
+
+
+

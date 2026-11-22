@@ -1,19 +1,19 @@
-/**
- * Tests for proxyJwtFetcher — getProxyJwt + setupJwtRotation.
+﻿/**
+ * Tests for proxyJwtFetcher â€” getProxyJwt + setupJwtRotation.
  *
  * Plan 13-14 (PROXY-08): every cloud-proxy bot call carries a fresh Bearer
  * JWT. Supabase JWTs expire in ~1h; the bot process can run for many hours,
  * so we must refresh before expiry AND push the new token to the running
  * bot via the existing utilityProcess MessagePortMain channel.
  *
- * Covers eight cases (plan §Task 1 <behavior>):
- *   1. no session (getSession returns null) → throws PROXY_NO_SESSION.
- *   2. session expires_at in the past → refreshSession called.
- *   3. session expires_at within 5 minutes → refreshSession called.
- *   4. session expires_at well in future (1h away) → no refresh; returns
+ * Covers eight cases (plan Â§Task 1 <behavior>):
+ *   1. no session (getSession returns null) â†’ throws PROXY_NO_SESSION.
+ *   2. session expires_at in the past â†’ refreshSession called.
+ *   3. session expires_at within 5 minutes â†’ refreshSession called.
+ *   4. session expires_at well in future (1h away) â†’ no refresh; returns
  *      current access_token.
- *   5. refreshSession rejects (returns error) → throws PROXY_REFRESH_FAILED.
- *   6. refreshSession returns session=null → throws PROXY_REFRESH_FAILED.
+ *   5. refreshSession rejects (returns error) â†’ throws PROXY_REFRESH_FAILED.
+ *   6. refreshSession returns session=null â†’ throws PROXY_REFRESH_FAILED.
  *   7. setupJwtRotation polls every 30 minutes (fake timers); each tick
  *      calls postMessage({kind:'cloud-jwt-update', jwt}).
  *   8. setupJwtRotation returns a teardown function that clearInterval-s.
@@ -24,7 +24,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Stable mock surface — each test installs behavior via the fns below.
+// Stable mock surface â€” each test installs behavior via the fns below.
 const getSessionMock = vi.fn();
 const refreshSessionMock = vi.fn();
 
@@ -63,7 +63,7 @@ describe('getProxyJwt', () => {
   });
 
   it('refreshes when expires_at is in the past', async () => {
-    // expires_at = 60s ago — well past
+    // expires_at = 60s ago â€” well past
     getSessionMock.mockResolvedValue({
       data: { session: { access_token: 'stale', expires_at: NOW_S - 60 } },
     });
@@ -77,7 +77,7 @@ describe('getProxyJwt', () => {
   });
 
   it('refreshes when expires_at is within 5 minutes', async () => {
-    // expires_at = 4 min away — inside the 5-min refresh threshold
+    // expires_at = 4 min away â€” inside the 5-min refresh threshold
     getSessionMock.mockResolvedValue({
       data: { session: { access_token: 'almost-stale', expires_at: NOW_S + 4 * 60 } },
     });
@@ -141,12 +141,12 @@ describe('setupJwtRotation', () => {
     const postMessage = vi.fn();
     const teardown = setupJwtRotation({ postMessage });
 
-    // Seed tick fires immediately (microtask) — drain microtasks.
+    // Seed tick fires immediately (microtask) â€” drain microtasks.
     await vi.advanceTimersByTimeAsync(0);
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenLastCalledWith({ kind: 'cloud-jwt-update', jwt: 'token-A' });
 
-    // Advance one 30-min interval — one more tick. Step a single interval
+    // Advance one 30-min interval â€” one more tick. Step a single interval
     // at a time so the async tick's microtasks drain between fires (fake
     // setInterval queues callbacks synchronously inside one advance call,
     // but our tick() is async; stepping interval-by-interval keeps the
@@ -182,8 +182,12 @@ describe('setupJwtRotation', () => {
     // Stop the interval.
     teardown();
 
-    // Advance well past several intervals — no further ticks should land.
+    // Advance well past several intervals â€” no further ticks should land.
     await vi.advanceTimersByTimeAsync(5 * 30 * 60 * 1000);
     expect(postMessage).toHaveBeenCalledTimes(1);
   });
 });
+
+
+
+

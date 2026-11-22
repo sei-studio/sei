@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ChatgptPlanSettings (261017, issue #46, review round 3): a latched plan
  * answer shows the action that lifts it, since the dialog that first showed
  * it may be closed. Seeded store stand-in, SSR render (as in
@@ -58,3 +58,7 @@ describe('ChatgptPlanSettings blocked notice', () => {
     expect(render(null)).not.toContain('Try again');
   });
 });
+
+
+
+

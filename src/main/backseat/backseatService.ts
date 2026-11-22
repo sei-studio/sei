@@ -1,5 +1,5 @@
-/**
- * Backseat service (260728) — session state, tick arbitration, and the
+﻿/**
+ * Backseat service (260728) â€” session state, tick arbitration, and the
  * companion turn runner.
  *
  * The renderer raises ticks; this module decides which of them become speech.
@@ -7,7 +7,7 @@
  * have no idea about each other, so all of the "should the companion actually
  * talk right now" judgement has to live in one place, and this is it.
  *
- * ── Tick arbitration ────────────────────────────────────────────────────
+ * â”€â”€ Tick arbitration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * One turn in flight per session, ever. Which tick wins is a strict priority
  * ladder (PRIORITY below), and the ordering is the whole point: the more
@@ -144,7 +144,7 @@ export function sessionTools(
 }
 
 export interface BackseatDeps {
-  /** `speech` (260806): set on a voice-mode reply's per-part pushes — prosody
+  /** `speech` (260806): set on a voice-mode reply's per-part pushes â€” prosody
    *  context (prev/more) plus the turn tag the audio queue uses to drop a
    *  superseded turn's unplayed lines (see SpokenLineContext.turn). */
   pushChatMessage: (
@@ -183,8 +183,8 @@ interface Session {
    *  produce two files. Cleared when the companion next stays quiet. */
   clipCooldownUntil: number;
   /** When the last SCREEN-driven remember() was honored (260808). Live, Haiku
-   *  filed a memory on nearly every jolt turn — 30 entries in 14 minutes, all
-   *  narrating what the screen made the player look like they were doing —
+   *  filed a memory on nearly every jolt turn â€” 30 entries in 14 minutes, all
+   *  narrating what the screen made the player look like they were doing â€”
    *  and each write also churned the cached prefix (memory rides the stable
    *  region), so cacheRead sat at 0 all session. The tool description already
    *  asks for person-facts only and is ignored, so the gate is mechanical:
@@ -204,7 +204,7 @@ interface Session {
    *
    * Prompt caching (260801): the obvious `history.slice(-RECENT_CAP)` slides
    * by one every time a line is appended, which changes the FIRST message in
-   * the request and therefore invalidates the whole message prefix — a
+   * the request and therefore invalidates the whole message prefix â€” a
    * guaranteed cache miss on every line the companion speaks. Holding the
    * start fixed and only re-anchoring once the window has grown to twice
    * RECENT_CAP makes the prefix byte-identical between ticks, which is the
@@ -296,7 +296,7 @@ export function resumedAfterMs(
 /**
  * Dev only: keep the most recent grid per kind on disk so a human can check
  * what the models are actually being shown (cell legibility, ordering, JPEG
- * artifacts). Overwrites in place — this is a peephole, not a recording.
+ * artifacts). Overwrites in place â€” this is a peephole, not a recording.
  */
 async function dumpGridForDev(kind: string, grid: string): Promise<void> {
   try {
@@ -322,7 +322,7 @@ function requireDeps(): BackseatDeps {
 
 /** One line to BOTH sinks: the terminal (prefixed) and the session's in-app
  *  console log. Every user-visible diagnostic in this module goes through
- *  here — a line that only reaches the terminal is invisible to anyone
+ *  here â€” a line that only reaches the terminal is invisible to anyone
  *  debugging from LogsBar (260728: the in-app console read empty for a whole
  *  session while the terminal had the full story). */
 function slog(s: Session, msg: string, warn = false): void {
@@ -338,7 +338,7 @@ function push(s: Session): void {
   requireDeps().pushState({ ...s.state, lines: [...s.state.lines] });
 }
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────
+// â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function startBackseat(
   characterId: string,
@@ -646,7 +646,7 @@ async function endBackseatSession(
  * Without this the barge-in only silences what has already been synthesised:
  * the turn behind it keeps running and its line arrives a second later, which
  * is the companion finishing the sentence the player interrupted. The abort is
- * enough on its own — runTurn checks `s.inflight !== ctrl` after the call and
+ * enough on its own â€” runTurn checks `s.inflight !== ctrl` after the call and
  * returns without speaking or persisting.
  *
  * Deliberately NOT a phase change. The session stays live and the next tick,
@@ -687,12 +687,12 @@ export async function endAllBackseat(reason: string): Promise<void> {
   await Promise.all([...sessions.keys()].map((id) => endBackseat(id, reason).catch(() => {})));
 }
 
-/** Drop every session (renderer death/reload — capture cannot outlive it). */
+/** Drop every session (renderer death/reload â€” capture cannot outlive it). */
 export function clearAllBackseat(reason = 'renderer_gone'): void {
   for (const id of [...sessions.keys()]) void endBackseat(id, reason).catch(() => {});
 }
 
-// ── Clips ─────────────────────────────────────────────────────────────────
+// â”€â”€ Clips â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Answer to a backseat:clip-request. `b64` is null when capture could not
  *  produce a segment. */
@@ -727,7 +727,7 @@ async function harvestClip(s: Session): Promise<string | null> {
   }
 }
 
-// ── Turn runner ───────────────────────────────────────────────────────────
+// â”€â”€ Turn runner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function readMemoryTail(characterId: string): Promise<string> {
   try {
@@ -740,7 +740,7 @@ async function readMemoryTail(characterId: string): Promise<string> {
   }
 }
 
-/** Screen-driven remember() throttle — see Session.lastRememberAt. */
+/** Screen-driven remember() throttle â€” see Session.lastRememberAt. */
 const REMEMBER_COOLDOWN_MS = 180_000;
 
 /**
@@ -751,10 +751,10 @@ const REMEMBER_COOLDOWN_MS = 180_000;
  *
  * Throttled (260808) unless `fromUserTick`: a screen tick may land at most
  * one memory per REMEMBER_COOLDOWN_MS. A memory prompted by something the
- * PLAYER said is always written — dropping those is how a correction gets
+ * PLAYER said is always written â€” dropping those is how a correction gets
  * forgotten. The live failure this gates: per-turn screen narration filed as
  * memory ("he's editing captions frame by frame"), which the next turn then
- * read back as established fact and re-confirmed — a feedback loop the
+ * read back as established fact and re-confirmed â€” a feedback loop the
  * player's corrections could not outweigh, at 30 entries in 14 minutes.
  */
 async function honorRemember(
@@ -1183,7 +1183,7 @@ async function runTurn(
     s.historyAnchor = Math.max(0, history.length - RECENT_CAP);
   }
   // On a user tick the player's line was just persisted (handleTick), so it is
-  // also the tail of `history`; drop that copy — the canonical one goes inline
+  // also the tail of `history`; drop that copy â€” the canonical one goes inline
   // below with the grid attached, and the model must not read it twice.
   let recent = history.slice(s.historyAnchor);
   if (tick.kind === 'user' && tick.text) {
@@ -1283,7 +1283,7 @@ async function runTurn(
     // hard to write a paragraph in 100 tokens (backseatMaxTokens; 160 until
     // 261008, when Haiku 5.5 ran 30-47 words a line). 260804: a tick the player
     // SPOKE gets room for a real answer, because this is now the only turn
-    // they get — the director routes their utterance here rather than running
+    // they get â€” the director routes their utterance here rather than running
     // a second, screenless one alongside it.
     maxTokens: backseatMaxTokens(tick.kind),
     system,
@@ -1390,7 +1390,7 @@ async function runTurn(
   // means the model ignored an explicit instruction (or returned nothing at
   // all). The parse STAYS, because without it a stray "(silence)" would be
   // spoken aloud in a voice call, but it is now an anomaly worth counting
-  // rather than the expected path — if this line shows up often in a session
+  // rather than the expected path â€” if this line shows up often in a session
   // log, the contract is not landing and the fix is the prompt, not the parse.
   if ((!replyText || isSilenceFiller(replyText)) && !offerLine) {
     if (leadSpoken) {
@@ -1538,7 +1538,7 @@ function emitCompanionLines(
     // playback of a multi-part reply can run longer, so a new turn's lines used
     // to queue behind the old turn's and the spoken commentary drifted further
     // behind the screen every turn. The tag lets the renderer's audio queue drop
-    // the OLD turn's unplayed parts the moment a NEW turn's first line arrives —
+    // the OLD turn's unplayed parts the moment a NEW turn's first line arrives â€”
     // the clip already playing finishes its sentence, then playback jumps to now.
     const turnTag = opts.turnTag ?? randomUUID();
     for (let i = 0; i < parts.length; i++) {
@@ -1705,3 +1705,7 @@ async function runControlEvent(s: Session, goal: string, outcome: ActOutcome): P
     }
   }
 }
+
+
+
+

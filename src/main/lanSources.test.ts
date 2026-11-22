@@ -1,4 +1,4 @@
-import net from 'node:net';
+﻿import net from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { mcPing } from './mcPing';
 import { diagnoseNoWorld, mergeCandidates, pingTiers, verifyCandidates, type LanCandidate } from './lanSources';
@@ -153,3 +153,7 @@ describe('diagnoseNoWorld', () => {
     expect(diagnoseNoWorld({ primaryFailed: false, candidates: [java(['lsof'])], win: null })).toBe('unverified');
   });
 });
+
+
+
+

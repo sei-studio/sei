@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Face cue emission (261028, facepack pilot). chatService and the bot
  * supervisor call these; index.ts installs the sink that pushes
  * `facepack:cue` to every window. Everything here is a no-op while the dev
@@ -33,3 +33,7 @@ export function emitReplyFaces(
   if (face.lead) emitFaceCue({ characterId, expression: face.lead, at: 'start', text: message.text, messageId: message.id });
   if (face.trail) emitFaceCue({ characterId, expression: face.trail, at: 'end', text: message.text, messageId: message.id });
 }
+
+
+
+

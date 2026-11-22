@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The WorldLink first-link status lines (261106 v6, product feedback (261106)).
  * Pure: the intro view, the dev preview, the review renders and the tests
  * agree on when each line shows.
@@ -18,15 +18,15 @@
  * minimum dwell, it never waits for nothing.
  *
  *   line                               shows when                          dwell
- *   1 Initializing WorldLink…          0.7 s after the start               2 s
- *   2 Sending signal to World N…       the request is sent                 3 s
- *   3 Awaiting response…               (the request is out)                6 s
+ *   1 Initializing WorldLinkâ€¦          0.7 s after the start               2 s
+ *   2 Sending signal to World Nâ€¦       the request is sent                 3 s
+ *   3 Awaiting responseâ€¦               (the request is out)                6 s
  *   4 Signal received.                 the proxy answered                  2 s
- *   5 Syncing world clocks…            answered, and 40% of the expected time
- *   6 Matching physics constants…      the bake runs, and 60%
- *   7 Correcting for time dilation…    the bake runs, and 80%
- *   8 Stabilizing the link…            the bake is done (the pack downloads)
- *   9 Inviting {name}…                 her face set is installed and the host started
+ *   5 Syncing world clocksâ€¦            answered, and 40% of the expected time
+ *   6 Matching physics constantsâ€¦      the bake runs, and 60%
+ *   7 Correcting for time dilationâ€¦    the bake runs, and 80%
+ *   8 Stabilizing the linkâ€¦            the bake is done (the pack downloads)
+ *   9 Inviting {name}â€¦                 her face set is installed and the host started
  *   WorldLink established between World 0 and World N.   LAST_LINE_MS after line 9
  *   (5 to 9 dwell LINE_DWELL_MS.)
  *
@@ -85,20 +85,20 @@ export interface StatusLine {
 }
 
 /**
- * The approved copy, word for word (product feedback (261106); line 3 is "Awaiting response…"
+ * The approved copy, word for word (product feedback (261106); line 3 is "Awaiting responseâ€¦"
  * since product call 261116). 261116: every dwell is about half what it was (the Skip button is
  * gone, the lines move faster instead).
  */
 export const STATUS_LINES: readonly StatusLine[] = [
-  { key: 'Initializing WorldLink…', need: [], dwell: 2000 },
-  { key: 'Sending signal to World {world}…', need: ['sent'], dwell: 3000 },
-  { key: 'Awaiting response…', need: ['sent'], dwell: 6000 },
+  { key: 'Initializing WorldLinkâ€¦', need: [], dwell: 2000 },
+  { key: 'Sending signal to World {world}â€¦', need: ['sent'], dwell: 3000 },
+  { key: 'Awaiting responseâ€¦', need: ['sent'], dwell: 6000 },
   { key: 'Signal received.', need: ['answered'], dwell: 2000 },
-  { key: 'Syncing world clocks…', need: ['answered'], curve: 0.4, cut: 'baked' },
-  { key: 'Matching physics constants…', need: ['running'], curve: 0.6, cut: 'baked' },
-  { key: 'Correcting for time dilation…', need: ['running'], curve: 0.8, cut: 'baked' },
-  { key: 'Stabilizing the link…', need: ['baked'] },
-  { key: 'Inviting {name}…', need: ['installed', 'host'] },
+  { key: 'Syncing world clocksâ€¦', need: ['answered'], curve: 0.4, cut: 'baked' },
+  { key: 'Matching physics constantsâ€¦', need: ['running'], curve: 0.6, cut: 'baked' },
+  { key: 'Correcting for time dilationâ€¦', need: ['running'], curve: 0.8, cut: 'baked' },
+  { key: 'Stabilizing the linkâ€¦', need: ['baked'] },
+  { key: 'Inviting {name}â€¦', need: ['installed', 'host'] },
 ];
 
 export const SUCCESS_LINE = 'WorldLink established between World 0 and World {world}.';
@@ -301,3 +301,7 @@ export function linkReport(
   }
   return out;
 }
+
+
+
+

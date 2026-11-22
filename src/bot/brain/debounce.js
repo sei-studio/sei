@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-key trailing-edge coalescer. Last payload wins; one fire per key per quiet window.
  * Use for chat / streamy ingress where it's fine to wait for the burst to settle.
  */
@@ -24,8 +24,8 @@ export function createDebouncer(windowMs) {
  * subsequent calls within `windowMs` are dropped. After the window expires,
  * the next call fires immediately again.
  *
- * Use for interruptive events (combat hits) where the bot must react NOW —
- * not after a quiet window — but rapid repeats should not retrigger the LLM.
+ * Use for interruptive events (combat hits) where the bot must react NOW â€”
+ * not after a quiet window â€” but rapid repeats should not retrigger the LLM.
  */
 export function createThrottle(windowMs) {
   /** @type {Map<string,any>} timer per key while in cooldown */
@@ -45,3 +45,7 @@ export function createThrottle(windowMs) {
     flushCancel() { for (const t of cooldowns.values()) clearTimeout(t); cooldowns.clear() },
   }
 }
+
+
+
+

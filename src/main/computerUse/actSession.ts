@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act (M0 spike): glue between backseat's control() tool and
  * the act loop.
  *
@@ -418,3 +418,7 @@ async function startControlInner(o: ControlStartOptions, token: StartToken): Pro
     return { ok: false, error: (e as Error).message };
   }
 }
+
+
+
+

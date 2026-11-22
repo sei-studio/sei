@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Model-rejection test for the CHAT_MODEL fallbacks (261024). PURE.
  */
 
@@ -23,3 +23,7 @@ export function isModelRequestRejection(msg: string): boolean {
   if (/\b400\b/.test(msg) && /\bthinking\b/i.test(msg)) return true;
   return false;
 }
+
+
+
+

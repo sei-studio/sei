@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261103 (T303): main's half of the provider region refusal. A BYOK
  * provider's region answer is rethrown tagged (chat, voice, games all call
  * through buildLocalProviderFor), and the Settings / onboarding key test
@@ -74,3 +74,7 @@ describe('typedError (llm:test / llm:list-models token)', () => {
     expect(typedError(new Error('list 403: Forbidden'))).toBe('unauthorized');
   });
 });
+
+
+
+

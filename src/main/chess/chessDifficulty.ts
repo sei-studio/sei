@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Adaptive chess strength (260929).
  *
  * The character's Elo comes from its persona (chessProfile.ts) and used to be
@@ -117,3 +117,7 @@ export async function recordChessOutcome(
     return null;
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Issue #52: Windows 11 26300.9818 (KB5127936) reports Minecraft's LAN
  * listener with state 0. netstat leaves the row out; Get-NetTCPConnection
  * shows it with an empty State. Fixtures use the reporter's values (ports
@@ -125,3 +125,7 @@ describe('Get-NetTCPConnection fallback', () => {
     expect(script.endsWith("'#sei-done'")).toBe(true);
   });
 });
+
+
+
+

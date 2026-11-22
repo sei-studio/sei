@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Usage-limit detection for the main-process game surfaces (260730).
  *
  * The Minecraft bot has had mid-session 402/429 handling since 260616 (the
@@ -10,9 +10,9 @@
  *
  * classifyUsageLimit reads the Anthropic SDK error shape (`.status` on
  * APIError): 402 is the proxy's depleted ledger, 429 its rate / abuse gate.
- * raiseUsageLimitPopup additionally gates on cloud mode — a BYOK user's 429
+ * raiseUsageLimitPopup additionally gates on cloud mode â€” a BYOK user's 429
  * is Anthropic's own transient rate limit, and showing them a billing popup
- * for it would be wrong — then fans out the same `credits:hard-stop` push the
+ * for it would be wrong â€” then fans out the same `credits:hard-stop` push the
  * bot path uses, so the one HardStopModal serves every surface.
  */
 import { getAiBackendKind } from '../apiKeyStore';
@@ -20,7 +20,7 @@ import type { CreditWallSurface } from '../creditWall';
 
 export type UsageLimitReason = 'depleted' | 'rate_limited';
 
-/** 402 → depleted, 429 → rate_limited, anything else → null. */
+/** 402 â†’ depleted, 429 â†’ rate_limited, anything else â†’ null. */
 export function classifyUsageLimit(err: unknown): UsageLimitReason | null {
   const status = (err as { status?: unknown } | null)?.status;
   if (status === 402) return 'depleted';
@@ -74,7 +74,7 @@ export async function raiseUsageLimitPopup(
     emitCreditsHardStop(
       // 260810: the no-Retry-After fallback is 60s, not 3600. A 429 with no
       // header is almost always Cloudflare's flood guard, whose window is 10
-      // SECONDS — the old 1-hour guess had HardStopModal presenting a precise
+      // SECONDS â€” the old 1-hour guess had HardStopModal presenting a precise
       // wall-clock time a full hour out for a limit that clears in moments.
       // The modal also treats short windows as "try again in a moment" rather
       // than formatting a clock time out of a guess.
@@ -88,3 +88,7 @@ export async function raiseUsageLimitPopup(
     return null;
   }
 }
+
+
+
+

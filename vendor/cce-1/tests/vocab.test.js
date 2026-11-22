@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { moveToIndex, indexToMove, MOVE_VOCAB_SIZE, squareName } from '../src/vocab.js';
 
@@ -32,3 +32,7 @@ test('roundtrip', () => {
     assert.equal(indexToMove(moveToIndex(uci)), uci);
   }
 });
+
+
+
+

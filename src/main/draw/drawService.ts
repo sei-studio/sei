@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! minigame service (main process): authoritative game state, the turn
  * clock, and the character's two turn runners.
  *
@@ -7,7 +7,7 @@
  * logic at all, every intent lands here, and a full DrawGameState snapshot is
  * pushed back on draw:state.
  *
- * ── The character's GUESSING turn ────────────────────────────────────────────
+ * â”€â”€ The character's GUESSING turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * While the player draws, the character is shown periodic snapshots of their
  * canvas. Dispatch is a 500ms poll rather than a web of one-shot timers,
  * because the triggers are all conditions on state and a poll makes them
@@ -41,7 +41,7 @@
  * A turn that ends (correct guess or clock) aborts any in-flight call and
  * bumps the turn key, so a late reply can never post into the next turn.
  *
- * ── The character's DRAWING turn ─────────────────────────────────────────────
+ * â”€â”€ The character's DRAWING turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * The character calls the `pen` tool, one call per stroke. Blocks are consumed
  * as they complete off the stream, humanized (src/main/draw/strokeHumanize.ts)
  * and pushed straight out on draw:ai-stroke with playback timing, so the first
@@ -119,7 +119,7 @@ import {
   type DrawRestart,
 } from './drawPrompts';
 
-// ── deps + module state ──────────────────────────────────────────────────────
+// â”€â”€ deps + module state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface DrawDeps {
   pushState: (state: DrawGameState) => void;
@@ -142,7 +142,7 @@ function requireDeps(): DrawDeps {
   return deps;
 }
 
-// ── tuning ───────────────────────────────────────────────────────────────────
+// â”€â”€ tuning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Scheduler poll. The policy itself lives in guessSchedule.ts. */
 const POLL_MS = 500;
@@ -171,7 +171,7 @@ const TURN_END_MIN_PAUSE_MS = 1_800;
 const GAME_END_MIN_PAUSE_MS = 3_400;
 
 /**
- * Tool arrays, one per turn kind — a DELIBERATE divergence from chess, which
+ * Tool arrays, one per turn kind â€” a DELIBERATE divergence from chess, which
  * hands every turn kind one array precisely to stop the cache prefix flipping
  * (`tools` sits ahead of `system`, so changing it re-bills persona + memory +
  * knowledge).
@@ -261,7 +261,7 @@ interface DrawRun {
   thread: Anthropic.MessageParam[];
   /**
    * tool_result text for tool_use ids from the LAST assistant turn that need
-   * something other than the default "drawn" — currently only remember(),
+   * something other than the default "drawn" â€” currently only remember(),
    * whose write happens after the stream closes and whose outcome the model
    * should see on the next hop.
    */
@@ -284,7 +284,7 @@ interface DrawRun {
   /**
    * The model's own `intent` strings for the strokes of the CURRENT attempt
    * (260729). Captured at wipe time so the restart block can say what the
-   * failed picture was, stroke by stroke — "draw it differently" needs
+   * failed picture was, stroke by stroke â€” "draw it differently" needs
    * something concrete to differ from.
    */
   strokeIntents: string[];
@@ -451,7 +451,7 @@ function log(s: Session, line: string): void {
   }
 }
 
-// ── state projection ─────────────────────────────────────────────────────────
+// â”€â”€ state projection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The answer is only ever sent to the renderer when the local player is
@@ -508,8 +508,8 @@ function say(s: Session, from: DrawRole, text: string, extra?: Partial<DrawChatM
 /**
  * Voice call during Draw! (260729): while a live call is running, every line
  * the character says in the game is ALSO spoken through the call. The line is
- * pushed as a voice-stamped chat message — the renderer speaks any
- * `voice: true` push and never renders it as a bubble — but deliberately NOT
+ * pushed as a voice-stamped chat message â€” the renderer speaks any
+ * `voice: true` push and never renders it as a bubble â€” but deliberately NOT
  * persisted: the per-line game chat stays out of the transcript (the Draw!
  * continuity contract), and voice rows are invisible in the UI anyway.
  */
@@ -570,10 +570,10 @@ function wordSlipLine(s: Session, who: DrawRole): void {
     s,
     who === 'ai'
       ? zh
-        ? `${s.aiName}不能打出这个词！他们在画它，不是在猜它。`
+        ? `${s.aiName}ä¸èƒ½æ‰“å‡ºè¿™ä¸ªè¯ï¼ä»–ä»¬åœ¨ç”»å®ƒï¼Œä¸æ˜¯åœ¨çŒœå®ƒã€‚`
         : `${s.aiName} can't type this word! They're drawing it, not guessing it.`
       : zh
-        ? '你不能打出这个词！你在画它，不是在猜它。'
+        ? 'ä½ ä¸èƒ½æ‰“å‡ºè¿™ä¸ªè¯ï¼ä½ åœ¨ç”»å®ƒï¼Œä¸æ˜¯åœ¨çŒœå®ƒã€‚'
         : "You can't type this word! You're drawing it, not guessing it.",
     who === 'ai'
       ? 'You cannot type this word! You are drawing it, not guessing it. Do not respond to this message.'
@@ -581,7 +581,7 @@ function wordSlipLine(s: Session, who: DrawRole): void {
   );
 }
 
-// ── lifecycle ────────────────────────────────────────────────────────────────
+// â”€â”€ lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function newSession(
   characterId: string,
@@ -820,7 +820,7 @@ export async function endDraw(characterId: string): Promise<void> {
  * time), stop the poll and turn timers, and mark the state paused. The
  * HardStopModal (raised by raiseUsageLimitPopup before this runs) explains;
  * the draw surface shows its own paused notice with a Resume control.
- * Only a live 'drawing' phase pauses — a turn-end reaction failure just
+ * Only a live 'drawing' phase pauses â€” a turn-end reaction failure just
  * costs the reaction line.
  */
 function pauseForUsageLimit(s: Session, reason: 'depleted' | 'rate_limited'): void {
@@ -1054,7 +1054,7 @@ async function recordFinishedGame(
   } catch { /* best-effort */ }
 }
 
-// ── turn sequencing ──────────────────────────────────────────────────────────
+// â”€â”€ turn sequencing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function beginTurn(s: Session, drawer: DrawRole): void {
   teardownTimers(s);
@@ -1101,10 +1101,10 @@ function startDrawingPhase(s: Session): void {
     s,
     drawer === 'player'
       ? s.language === 'zh'
-        ? `第${s.round}轮，共${s.rounds}轮。轮到你画了。`
+        ? `ç¬¬${s.round}è½®ï¼Œå…±${s.rounds}è½®ã€‚è½®åˆ°ä½ ç”»äº†ã€‚`
         : `Round ${s.round} of ${s.rounds}. Your turn to draw.`
       : s.language === 'zh'
-        ? `第${s.round}轮，共${s.rounds}轮。${s.aiName}正在画。`
+        ? `ç¬¬${s.round}è½®ï¼Œå…±${s.rounds}è½®ã€‚${s.aiName}æ­£åœ¨ç”»ã€‚`
         : `Round ${s.round} of ${s.rounds}. ${s.aiName} is drawing.`,
     drawer === 'player'
       ? `Round ${s.round} of ${s.rounds}. ${s.playerName} draws, you guess.`
@@ -1116,7 +1116,7 @@ function startDrawingPhase(s: Session): void {
     systemLine(
       s,
       s.language === 'zh'
-        ? `${s.aiName}先画，给你看看怎么玩。在聊天里打出你的猜测。`
+        ? `${s.aiName}å…ˆç”»ï¼Œç»™ä½ çœ‹çœ‹æ€Žä¹ˆçŽ©ã€‚åœ¨èŠå¤©é‡Œæ‰“å‡ºä½ çš„çŒœæµ‹ã€‚`
         : `${s.aiName} draws first so you can see how it works. Type your guesses in the chat.`,
       introModelText(s.introPlayer),
     );
@@ -1281,7 +1281,7 @@ function captureTurn(
   })();
 }
 
-// ── player intents ───────────────────────────────────────────────────────────
+// â”€â”€ player intents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function playerStroke(characterId: string, stroke: DrawStroke): void {
   const s = sessions.get(characterId);
@@ -1363,7 +1363,7 @@ export async function playerChat(characterId: string, text: string): Promise<voi
 
 /**
  * `chat:send` routing while a Draw! game is live (260729), mirroring chess:
- * a message typed in the chat screen — or DICTATED on a live voice call —
+ * a message typed in the chat screen â€” or DICTATED on a live voice call â€”
  * lands in the game as a guess or table talk instead of reaching a chat brain
  * that knows nothing about the round. Returns null when no game is taking
  * chat, falling through to the normal path. `replies` is empty + `streamed`:
@@ -1408,7 +1408,7 @@ function requestSnapshot(s: Session): Promise<string | null> {
   });
 }
 
-// ── memory ───────────────────────────────────────────────────────────────────
+// â”€â”€ memory â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Honor one remember() call, returning the tool_result note. The wording is
@@ -1446,7 +1446,7 @@ async function honorRememberCalls(s: Session, content: Anthropic.ContentBlock[])
   }
 }
 
-// ── the character's guessing turn ────────────────────────────────────────────
+// â”€â”€ the character's guessing turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One poll tick: ask the policy, dispatch if it says go. */
 async function tickGuessScheduler(s: Session): Promise<void> {
@@ -1608,7 +1608,7 @@ async function runGuessCall(
   }
 }
 
-// ── the turn-end reaction beat ───────────────────────────────────────────────
+// â”€â”€ the turn-end reaction beat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * One short line between turns, so the character knows how the turn actually
@@ -1697,9 +1697,9 @@ async function runTurnEndReaction(
  * allowed, so it is parsed out rather than fought.
  */
 function isSilence(line: string): boolean {
-  // 260730: CJK variants — a zh-pinned character writes （沉默） and the
+  // 260730: CJK variants â€” a zh-pinned character writes ï¼ˆæ²‰é»˜ï¼‰ and the
   // English-only pattern let it leak into the game chat as a spoken line.
-  return /^[([（]?\s*(silence|says nothing|stays? silent|no reply|沉默|无言|不说话|沈黙|無言|침묵)\s*[)\]）]?[.!。！]?$/i.test(
+  return /^[([ï¼ˆ]?\s*(silence|says nothing|stays? silent|no reply|æ²‰é»˜|æ— è¨€|ä¸è¯´è¯|æ²ˆé»™|ç„¡è¨€|ì¹¨ë¬µ)\s*[)\]ï¼‰]?[.!ã€‚ï¼]?$/i.test(
     line.trim(),
   );
 }
@@ -1712,8 +1712,8 @@ function isSilence(line: string): boolean {
  * through: the [game] prefix belongs to the engine alone.
  */
 function isFakeGameLine(line: string): boolean {
-  // 260730: CJK variants — a zh model copies the prefix as [游戏] or 【游戏】.
-  return /^\s*(\[\s*game\s*\]|[[【]\s*游戏\s*[\]】])/i.test(line);
+  // 260730: CJK variants â€” a zh model copies the prefix as [æ¸¸æˆ] or ã€æ¸¸æˆã€‘.
+  return /^\s*(\[\s*game\s*\]|[[ã€]\s*æ¸¸æˆ\s*[\]ã€‘])/i.test(line);
 }
 
 /**
@@ -1735,7 +1735,7 @@ function wipeAiCanvas(s: Session): string[] {
   return priorIntents;
 }
 
-// ── the character's drawing turn ─────────────────────────────────────────────
+// â”€â”€ the character's drawing turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The idle backup. A parked runner (done, or out of strokes) otherwise wakes
@@ -1812,14 +1812,14 @@ async function runDrawTurn(s: Session): Promise<void> {
  * Prompt-cache the drawing thread incrementally across hops (260728).
  *
  * The thread is append-only and re-sent verbatim every hop, so without a
- * breakpoint each hop re-bills every earlier hop at full input price — the one
+ * breakpoint each hop re-bills every earlier hop at full input price â€” the one
  * quadratic cost in the game. A marker on the last message caches the whole
  * prefix; the next hop then pays full price only for what it appended. The
  * marker MOVES: unlike chat, the same array persists across hops, so the old
  * stamp must be stripped or the request exceeds the API's four-breakpoint
  * budget (three are already spent inside `system`). Break-even is one re-read,
  * so only the final hop's increment ever loses (the 25% write premium on a few
- * hundred tokens); the thread dying with the turn costs nothing — expiry is
+ * hundred tokens); the thread dying with the turn costs nothing â€” expiry is
  * free and the next turn's calls still match the system prefix.
  */
 function markThreadCached(thread: Anthropic.MessageParam[]): void {
@@ -2189,7 +2189,7 @@ async function runDrawCall(s: Session, key: string): Promise<boolean> {
   return toolCalls > 0 || !s.draw.done;
 }
 
-// ── shared call prep ─────────────────────────────────────────────────────────
+// â”€â”€ shared call prep â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function chatSinceTurnStart(s: Session): DrawChatMessage[] {
   return s.chat.filter((m) => m.at >= s.turnStartedAt);
@@ -2265,3 +2265,7 @@ async function prepareCall(s: Session): Promise<{
 
 /** Test seam: drive a tick by hand, without the interval. */
 export const __test = { tickGuessScheduler, dispatchGuess, sessions };
+
+
+
+

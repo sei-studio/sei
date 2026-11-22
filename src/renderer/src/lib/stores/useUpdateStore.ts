@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useUpdateStore: the background half of the in-app updater (261023).
  *
  * App.tsx owns the updater subscriptions and feeds this store; the sidebar
@@ -130,3 +130,7 @@ if (import.meta.hot) {
     clearStuckTimer();
   });
 }
+
+
+
+

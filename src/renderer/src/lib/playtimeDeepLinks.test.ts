@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Every way into Playtime lands on the right tab (261110). Source contracts,
  * like the other screen tests (no testing-library here); the runtime paths
  * of the wall and the popup actions are covered in HardStopModal.free.test
@@ -47,3 +47,7 @@ describe('Playtime deep links', () => {
     expect(s).toContain('playtimeTabForSetup(');
   });
 });
+
+
+
+

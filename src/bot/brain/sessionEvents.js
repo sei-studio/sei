@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Session events: what actually happened in the game this session, written
  * as short factual lines for the conversation transcript (convoMemory).
  *
@@ -50,7 +50,7 @@ function clip(s, n = EVENT_TEXT_MAX) {
   // next step ("it is in your inventory, not placed yet (placeBlock ...)").
   const semi = t.indexOf(';')
   if (semi > 0) t = t.slice(0, semi).trim()
-  return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t
+  return t.length > n ? `${t.slice(0, n - 1).trimEnd()}â€¦` : t
 }
 
 function resultText(result) {
@@ -386,3 +386,7 @@ export function createHandOverLedger() {
 
   return { gave, received: receivedItems, describe }
 }
+
+
+
+

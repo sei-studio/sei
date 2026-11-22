@@ -1,4 +1,4 @@
-// 261008: request rules for the Haiku 5 family, applied at every place the
+﻿// 261008: request rules for the Haiku 5 family, applied at every place the
 // app builds an Anthropic Messages request (the bot's anthropicClient.call,
 // main's llm/anthropic.ts provider, the BYOK key test, the dev-only direct
 // clients). Main imports this file directly (plain ESM, no Electron), so the
@@ -58,3 +58,7 @@ export function applyAnthropicModelDefaults(req) {
   }
   return req
 }
+
+
+
+

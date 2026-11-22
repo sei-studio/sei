@@ -1,5 +1,5 @@
-/**
- * PortraitVersionsModal — card-image versions + Regenerate (260909).
+﻿/**
+ * PortraitVersionsModal â€” card-image versions + Regenerate (260909).
  *
  * Opened from the companion settings gear ("Card image") and from the Edit
  * modal's Appearance section, for characters the user OWNS (the CharacterPage
@@ -206,7 +206,7 @@ export function PortraitVersionsModal({
         ) : (
           <div className={styles.previewEmpty}>{t('No card image yet')}</div>
         )}
-        {regenerating ? <div className={styles.previewVeil}>{t('Regenerating…')}</div> : null}
+        {regenerating ? <div className={styles.previewVeil}>{t('Regeneratingâ€¦')}</div> : null}
       </div>
 
       {state && state.versions.length > 0 ? (
@@ -227,7 +227,7 @@ export function PortraitVersionsModal({
               >
                 {src ? <img src={src} alt="" className={styles.thumbImg} /> : null}
                 <span className={styles.thumbLabel}>
-                  {selecting === v.file ? t('Applying…') : label(v, i)}
+                  {selecting === v.file ? t('Applyingâ€¦') : label(v, i)}
                 </span>
               </button>
             );
@@ -238,7 +238,7 @@ export function PortraitVersionsModal({
       {customImage ? null : (
         <div className={styles.regenRow}>
           <Button kind="accent" size="md" onClick={() => void regenerate()} disabled={!canRegenerate}>
-            {regenerating ? t('Regenerating…') : t('Regenerate')}
+            {regenerating ? t('Regeneratingâ€¦') : t('Regenerate')}
           </Button>
           <span className={styles.hint}>{hint}</span>
         </div>
@@ -269,3 +269,7 @@ export function PortraitVersionsModal({
     </ModalShell>
   );
 }
+
+
+
+

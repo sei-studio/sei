@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/povRenderer.atlas.test.js
+﻿// src/bot/adapter/minecraft/render/povRenderer.atlas.test.js
 //
 // 260803 (pruned-texture crash). The packaged builds ship only a subset of
 // prismarine-viewer's block-texture atlases (electron-builder.yml `files:`),
@@ -28,11 +28,11 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import Module from 'node:module'
 
-// ── node:fs, the atlas presence check under test ───────────────────────────
+// â”€â”€ node:fs, the atlas presence check under test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const statSync = vi.fn()
 vi.mock('node:fs', () => ({ statSync: (...a) => statSync(...a) }))
 
-// ── prismarine-viewer / node-canvas-webgl stubs ─────────────────────────────
+// â”€â”€ prismarine-viewer / node-canvas-webgl stubs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const atlasFile = (size = 1234) => ({ isFile: () => true, size })
 const ENOENT = (p) => Object.assign(new Error(`ENOENT: no such file or directory, stat '${p}'`), { code: 'ENOENT' })
 
@@ -202,3 +202,7 @@ describe('povRenderer texture-atlas guard (260803 pruned-build crash)', () => {
     expect(lines[0]).toContain('1.15.2') // the resolved version, not 1.15.1
   })
 })
+
+
+
+

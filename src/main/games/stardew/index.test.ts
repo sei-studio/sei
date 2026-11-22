@@ -1,4 +1,4 @@
-/** Stardew GameModule (M1): naming, join target, watcher wiring. */
+﻿/** Stardew GameModule (M1): naming, join target, watcher wiring. */
 import { describe, it, expect } from 'vitest';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -12,9 +12,9 @@ describe('stardew game module', () => {
     expect(effectiveStardewName({ name: 'Sui', username: null })).toBe('Sui');
     expect(effectiveStardewName({ name: 'Marv!!', username: '' })).toBe('Marv');
     expect(effectiveStardewName({ name: '', username: '' })).toBe('Sei');
-    expect(effectiveStardewName({ name: 'Martín Salazar', username: null })).toBe('Martin Salazar');
-    expect(effectiveStardewName({ name: 'Lucía', username: '' })).toBe('Lucia');
-    expect(effectiveStardewName({ name: '晨辉 (Chénhuī)', username: null })).toBe('Chenhui');
+    expect(effectiveStardewName({ name: 'MartÃ­n Salazar', username: null })).toBe('Martin Salazar');
+    expect(effectiveStardewName({ name: 'LucÃ­a', username: '' })).toBe('Lucia');
+    expect(effectiveStardewName({ name: 'æ™¨è¾‰ (ChÃ©nhuÄ«)', username: null })).toBe('Chenhui');
     const mod = createStardewGameModule();
     expect(mod.id).toBe('stardew');
     expect(mod.displayName).toBe('Stardew Valley');
@@ -71,3 +71,7 @@ describe('stardew game module', () => {
     expect(await broken.prepareJoin?.(args)).toBeNull();
   });
 });
+
+
+
+

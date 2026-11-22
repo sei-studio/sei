@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Token bucket. capacity tokens, refill `refillPerMin` per minute.
  * @param {{capacity:number, refillPerMin:number}} opts
  */
@@ -31,3 +31,7 @@ export function createTokenBucket({ capacity, refillPerMin }) {
     },
   }
 }
+
+
+
+

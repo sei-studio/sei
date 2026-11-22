@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/digTool.js
+﻿// src/bot/adapter/minecraft/behaviors/digTool.js
 //
 // 261025 (quality pass 27): the `dig` TOOL the model calls. digAction (dig.js)
 // stays the raw single-block dig that gather and cuboid digs call after their
@@ -34,7 +34,7 @@ export const UNREACHABLE_NEAR_M = 8
 // stands under it: walking closer would not have helped.
 const DIG_UNDER_H = 2
 // pathfind's vertical hint, which the dig result can carry as well.
-const VERTICAL_HINT = / — unreachable — try build to Y=-?\d+(\.\d+)?/
+const VERTICAL_HINT = / â€” unreachable â€” try build to Y=-?\d+(\.\d+)?/
 // Name lookups look at this many hits, nearest first, so blocks she could not
 // reach a moment ago can be skipped.
 const NAME_CANDIDATES = 24
@@ -288,3 +288,7 @@ export async function digToolAction(args, bot, config, _deps) {
   }
   return base
 }
+
+
+
+

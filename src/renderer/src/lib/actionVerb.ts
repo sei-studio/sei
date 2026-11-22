@@ -1,13 +1,13 @@
-/**
- * actionVerb — maps a bot tool call ({ name, args }) to a short present
+﻿/**
+ * actionVerb â€” maps a bot tool call ({ name, args }) to a short present
  * progressive phrase for the roster/presence "now" line.
  *
  * Vocabulary mirrors the registered world actions in
  * src/bot/adapter/minecraft/registry.js; anything unrecognized falls back to
- * "adventuring…" so a new tool never breaks the UI. Returning null means
+ * "adventuringâ€¦" so a new tool never breaks the UI. Returning null means
  * "show nothing" (momentary or invisible actions).
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §2.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§2.
  */
 
 import { t } from './i18n';
@@ -47,77 +47,81 @@ export function actionVerb(action: BotAction | undefined | null, opts?: ActionVe
     if (!line || /^idl(e|ing)\b/i.test(line)) return null;
     // The bot's contract is a lowercase line ending in "..."; the presence
     // line uses the ellipsis glyph like every Minecraft verb.
-    return line.replace(/\.{3}$/, '…');
+    return line.replace(/\.{3}$/, 'â€¦');
   }
   const a = action.args;
   switch (action.name) {
     case 'follow':
-      return t('following you…');
+      return t('following youâ€¦');
     case 'goTo':
-      return t('heading somewhere…');
+      return t('heading somewhereâ€¦');
     case 'explore':
-      return t('exploring…');
+      return t('exploringâ€¦');
     case 'gather': {
       const item = argString(a, ['item', 'block', 'resource', 'name']);
-      return item ? t('gathering {item}…', { item }) : t('gathering…');
+      return item ? t('gathering {item}â€¦', { item }) : t('gatheringâ€¦');
     }
     case 'dig':
     case 'digIn':
-      return t('digging…');
+      return t('diggingâ€¦');
     case 'build':
-      return t('building…');
+      return t('buildingâ€¦');
     case 'shelter':
-      return t('building a shelter…');
+      return t('building a shelterâ€¦');
     case 'placeBlock':
-      return t('placing blocks…');
+      return t('placing blocksâ€¦');
     case 'find': {
       const thing = argString(a, ['target', 'block', 'item', 'name', 'entity']);
-      return thing ? t('looking for {thing}…', { thing }) : t('looking around…');
+      return thing ? t('looking for {thing}â€¦', { thing }) : t('looking aroundâ€¦');
     }
     case 'look':
-      return t('looking around…');
+      return t('looking aroundâ€¦');
     case 'equip':
-      return t('gearing up…');
+      return t('gearing upâ€¦');
     case 'consumeItem':
-      return t('having a snack…');
+      return t('having a snackâ€¦');
     case 'sleep':
-      return t('sleeping…');
+      return t('sleepingâ€¦');
     case 'attackEntity': {
       const target = argString(a, ['entity', 'target', 'name']);
-      return target ? t('fighting {target}…', { target }) : t('fighting…');
+      return target ? t('fighting {target}â€¦', { target }) : t('fightingâ€¦');
     }
     case 'craft': {
       const item = argString(a, ['item', 'recipe', 'name']);
-      return item ? t('crafting {item}…', { item }) : t('crafting…');
+      return item ? t('crafting {item}â€¦', { item }) : t('craftingâ€¦');
     }
     case 'openFurnace':
     case 'smeltInput':
     case 'addFuel':
     case 'takeSmelted':
-      return t('smelting…');
+      return t('smeltingâ€¦');
     case 'openContainer':
     case 'depositItem':
     case 'withdrawItem':
-      return t('rummaging through chests…');
+      return t('rummaging through chestsâ€¦');
     case 'dropItem':
-      return t('dropping items…');
+      return t('dropping itemsâ€¦');
     case 'pickup':
-      return t('picking up items…');
+      return t('picking up itemsâ€¦');
     case 'readSign':
-      return t('reading a sign…');
+      return t('reading a signâ€¦');
     case 'activateItem':
     case 'activateBlock':
-      return t('fiddling with something…');
+      return t('fiddling with somethingâ€¦');
     case 'unfollow':
     case 'setPvp':
       return null;
     // 260725: synthetic status-window verb (a player-message turn is being
     // processed). The MC dashboard's status window renders it; the roster
-    // presence line stays quiet — "thinking" next to a chat avatar reads as
+    // presence line stays quiet â€” "thinking" next to a chat avatar reads as
     // typing, which the typing indicator already covers.
     case 'thinking':
       return null;
     default:
-      return t('adventuring…');
+      return t('adventuringâ€¦');
   }
 }
+
+
+
+

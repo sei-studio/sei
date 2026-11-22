@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { bubbleMs, speakMs } from './HostDock';
 import { lineFaceHoldMs, mouthLevel, NEUTRAL_LOOK, toNeutral, VOICE_LEVEL_FRESH_MS } from './hostLook';
 
@@ -38,3 +38,7 @@ describe('mouthLevel (261110, call voice on the desktop)', () => {
     expect(mouthLevel({ level: 3, at: 10 }, 0, 20)).toBe(1);
   });
 });
+
+
+
+

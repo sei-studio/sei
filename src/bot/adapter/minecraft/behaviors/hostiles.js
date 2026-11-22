@@ -1,4 +1,4 @@
-// Shared hostile-mob name set. Hoisted out of combat.js so both the
+﻿// Shared hostile-mob name set. Hoisted out of combat.js so both the
 // reactive-after-damage loop (combat.js, entityHurt-driven) and the
 // before-damage reflex loop (reflex.js, physicsTick-driven) classify the same
 // mobs without duplicating the literal. The 26 names are the vanilla hostile
@@ -24,3 +24,7 @@ export const NO_MELEE_DEFEND = new Set(['creeper', 'ghast', 'blaze', 'elder_guar
 // automatic extra targets (the follow-on after a kill and the one-hit tag,
 // attack.js). An explicit attackEntity on one of these is still allowed.
 export const NO_AUTO_ENGAGE = new Set([...NO_MELEE_DEFEND, 'enderman'])
+
+
+
+

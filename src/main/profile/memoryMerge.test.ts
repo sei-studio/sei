@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+﻿import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -15,16 +15,16 @@ const HEADER = '# Memory\n\nAppend-only record. One line per entry. Written via 
 
 describe('mergeMemoryMarkdown', () => {
   it('keeps the account text byte for byte and appends only new local lines', () => {
-    const target = HEADER + '- [2026-10-01T00:00:00.000Z] a\n\n## World 1 — Base\n- [2026-10-01T01:00:00.000Z] b\n';
-    const local = HEADER + '- [2026-10-01T00:00:00.000Z] a\n\n## World 1 — Base\n- [2026-10-01T01:00:00.000Z] b\n- [2026-09-01T00:00:00.000Z] c\n';
+    const target = HEADER + '- [2026-10-01T00:00:00.000Z] a\n\n## World 1 â€” Base\n- [2026-10-01T01:00:00.000Z] b\n';
+    const local = HEADER + '- [2026-10-01T00:00:00.000Z] a\n\n## World 1 â€” Base\n- [2026-10-01T01:00:00.000Z] b\n- [2026-09-01T00:00:00.000Z] c\n';
     const out = mergeMemoryMarkdown(target, local);
     expect(out.startsWith(target.trimEnd())).toBe(true);
-    expect(out.endsWith('## World 1 — Base\n- [2026-09-01T00:00:00.000Z] c\n')).toBe(true);
+    expect(out.endsWith('## World 1 â€” Base\n- [2026-09-01T00:00:00.000Z] c\n')).toBe(true);
     expect(mergeMemoryMarkdown(out, local)).toBe(out);
   });
 
   it('puts local entries from before any section ahead of the account sections', () => {
-    const target = HEADER + '## World 1 — Base\n- [2026-10-01T01:00:00.000Z] b\n';
+    const target = HEADER + '## World 1 â€” Base\n- [2026-10-01T01:00:00.000Z] b\n';
     const local = HEADER + '- [2026-09-01T00:00:00.000Z] loose\n';
     const out = mergeMemoryMarkdown(target, local);
     expect(out.indexOf('loose')).toBeLessThan(out.indexOf('## World 1'));
@@ -72,9 +72,9 @@ describe('world numbering', () => {
   });
 
   it('renumbers headers in one pass (a swap does not chain)', () => {
-    const text = '## World 1 — X\n- e1\n## World 2 — Y\n- e2\n## World 12 — Z\n';
+    const text = '## World 1 â€” X\n- e1\n## World 2 â€” Y\n- e2\n## World 12 â€” Z\n';
     const out = renumberWorldHeaders(text, new Map([[1, 2], [2, 1]]));
-    expect(out).toBe('## World 2 — X\n- e1\n## World 1 — Y\n- e2\n## World 12 — Z\n');
+    expect(out).toBe('## World 2 â€” X\n- e1\n## World 1 â€” Y\n- e2\n## World 12 â€” Z\n');
   });
 });
 
@@ -106,21 +106,25 @@ describe('mergeMemoryDir: local World headers without a worlds.json entry', () =
     await mkdir(dest, { recursive: true });
     await writeFile(
       path.join(dest, 'MEMORY.md'),
-      HEADER + '## World 1 — Acct Base\n- [2026-10-01T00:00:00.000Z] account fact\n',
+      HEADER + '## World 1 â€” Acct Base\n- [2026-10-01T00:00:00.000Z] account fact\n',
     );
     await writeFile(path.join(dest, 'worlds.json'), JSON.stringify({ version: 1, worlds: [{ num: 1, fingerprint: 'acct' }] }));
     // The local registry is gone; its MEMORY.md still names World 1.
     await writeFile(
       path.join(src, 'MEMORY.md'),
-      HEADER + '## World 1 — Local Farm\n- [2026-09-01T00:00:00.000Z] local fact\n',
+      HEADER + '## World 1 â€” Local Farm\n- [2026-09-01T00:00:00.000Z] local fact\n',
     );
 
     await mergeMemoryDir(src, dest);
 
     const memory = await readFile(path.join(dest, 'MEMORY.md'), 'utf8');
-    expect(memory).toMatch(/## World 1 — Acct Base\n- \[2026-10-01T00:00:00.000Z\] account fact/);
-    expect(memory).toMatch(/## World 2 — Local Farm\n- \[2026-09-01T00:00:00.000Z\] local fact/);
+    expect(memory).toMatch(/## World 1 â€” Acct Base\n- \[2026-10-01T00:00:00.000Z\] account fact/);
+    expect(memory).toMatch(/## World 2 â€” Local Farm\n- \[2026-09-01T00:00:00.000Z\] local fact/);
     const reg = JSON.parse(await readFile(path.join(dest, 'worlds.json'), 'utf8'));
     expect(reg.worlds.map((w: { num: number }) => w.num)).toEqual([1, 2]);
   });
 });
+
+
+
+

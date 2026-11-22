@@ -1,5 +1,5 @@
-/**
- * ExperimentalUpdatesRow — Settings → About toggle that opts this install into
+﻿/**
+ * ExperimentalUpdatesRow â€” Settings â†’ About toggle that opts this install into
  * the beta update channel (config key `advanced_updates`, which keeps its old
  * name because shipped clients store it). Shown to users as "Experimental
  * updates" (261103): beta builds carry features early and not all of them
@@ -97,3 +97,7 @@ export function ExperimentalUpdatesRow({
   const handlers = experimentalUpdatesHandlers(setConfirming, onSave);
   return <ExperimentalUpdatesRowView on={on} confirming={confirming} {...handlers} />;
 }
+
+
+
+

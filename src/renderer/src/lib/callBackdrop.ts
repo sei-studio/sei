@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pure geometry for the call's character-art backdrop.
  *
  * The art is painted with `background-size: cover`, which is what makes the
@@ -20,7 +20,7 @@ export interface Size {
  * Vertical overflow, in pixels, of an image painted `cover` into a pane.
  *
  * 0 means the art exactly fits (or is width-cropped instead), so there is
- * nothing to drag. Degenerate sizes return 0 rather than NaN — natural
+ * nothing to drag. Degenerate sizes return 0 rather than NaN â€” natural
  * dimensions are 0 until the image decodes.
  */
 export function coverOverflowPx(natural: Size, pane: Size): number {
@@ -46,3 +46,7 @@ export function dragToPositionDelta(dyPx: number, overflowPx: number): number {
 export function clampPosition(pct: number): number {
   return Math.min(100, Math.max(0, pct));
 }
+
+
+
+

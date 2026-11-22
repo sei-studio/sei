@@ -1,4 +1,4 @@
-/**
+﻿/**
 /**
  * Chain tracker retired in favor of per-Loop iteration_cap
  * (config.memory.iteration_cap, default 20). The orchestrator now owns a
@@ -33,3 +33,7 @@ export function createChainTracker(_opts = {}) {
     _internal: { chains: new Map() },
   }
 }
+
+
+
+

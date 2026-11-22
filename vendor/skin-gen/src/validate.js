@@ -1,4 +1,4 @@
-// Validate a 64x64 skin against the layout: base layer fully opaque,
+﻿// Validate a 64x64 skin against the layout: base layer fully opaque,
 // never-rendered whitespace fully transparent. Also usable as a layout
 // self-check against known-good skins (Steve/Alex).
 import sharp from 'sharp';
@@ -45,3 +45,7 @@ if (import.meta.url === `file://${process.argv[1]}` && process.argv[2]) {
   if (tb) console.log('  sample transparent-base:', p.transparentBase.slice(0, 5));
   if (ow) console.log('  sample opaque-whitespace:', p.opaqueWhitespace.slice(0, 5));
 }
+
+
+
+

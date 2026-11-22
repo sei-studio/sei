@@ -1,9 +1,9 @@
-/**
+﻿/**
  * IPC handler bodies for the 9 auth:* channels.
  *
  * This file is the per-handler dispatch surface. Each handler function
  * is referenced by name from src/main/ipc.ts. Plan 03 ships SHELLS;
- * plans 04 (email/password — this file now), 05 (Google OAuth), 06 (sign-out
+ * plans 04 (email/password â€” this file now), 05 (Google OAuth), 06 (sign-out
  * + JWT + verify), 08 (delete via Edge Function), 09 (export) fill the bodies.
  *
  * Plan 04 replaces the signInWithPassword + signUpWithPassword shells with
@@ -12,10 +12,10 @@
  * Empty/Error/Loading copy strings.
  *
  * Sources:
- *   - 10-RESEARCH §Pattern 5 (IPC channel table)
+ *   - 10-RESEARCH Â§Pattern 5 (IPC channel table)
  *   - 10-CONTEXT integration_points (channel list)
- *   - 10-UI-SPEC §Empty/Error/Loading states (sign-in error copy verbatim)
- *   - CLAUDE.md §"Every external call has a timeout"
+ *   - 10-UI-SPEC Â§Empty/Error/Loading states (sign-in error copy verbatim)
+ *   - CLAUDE.md Â§"Every external call has a timeout"
  */
 import { writeFile } from 'node:fs/promises';
 import type {
@@ -41,7 +41,7 @@ import { getSupabaseUrl, getSupabaseAnonKey } from '../env';
 import { REGION_BLOCKED, REGION_BLOCKED_COPY } from '../../shared/regionGate';
 import type { BotSupervisor } from '../botSupervisor';
 
-// Inline logger (matches main/* convention — each module owns its own logger).
+// Inline logger (matches main/* convention â€” each module owns its own logger).
 // T-10-06-08: only error.message strings are logged here, never JWT or
 // session blobs. Audit gate: grep -E "access_token|refresh_token|session"
 // against this file should return 0 user-data references.
@@ -67,7 +67,7 @@ export function setSupervisor(s: BotSupervisor): void {
  * D-09 + T-10-06-09: stop the bot before clearing any auth state so its
  * final request flushes under the still-valid JWT. Used by signOut AND
  * deleteAccount (the latter is logically a superset of sign-out, so the
- * same ordering invariant applies — BL-06).
+ * same ordering invariant applies â€” BL-06).
  *
  * Failure is swallowed with a warn log. A failed bot-stop must NOT block
  * the surrounding auth action; the user has already confirmed via the
@@ -88,8 +88,8 @@ async function stopBotIfActive(label: string): Promise<void> {
  * caller-supplied fallback value (NOT a rejection) so the handler can map it
  * uniformly through the error-class classifier.
  *
- * CLAUDE.md invariant: every external call has a timeout — pathfinder,
- * Anthropic, Supabase — no exceptions.
+ * CLAUDE.md invariant: every external call has a timeout â€” pathfinder,
+ * Anthropic, Supabase â€” no exceptions.
  */
 async function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -114,11 +114,11 @@ async function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Pr
 }
 
 /**
- * 260605 no-silent-failure — look up which identity providers an email is
+ * 260605 no-silent-failure â€” look up which identity providers an email is
  * registered with, via the `account_identity_providers` SECURITY DEFINER RPC
  * (see migration 20260605120000). Returns:
  *   - string[]  the provider labels ([] when no account exists)
- *   - null      the lookup failed (network/timeout/RPC error) → caller FAILS
+ *   - null      the lookup failed (network/timeout/RPC error) â†’ caller FAILS
  *               OPEN to its prior behaviour so a transient DB hiccup never
  *               blocks a legitimate sign-up or password reset.
  *
@@ -128,7 +128,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Pr
 async function lookupIdentityProviders(email: string): Promise<string[] | null> {
   try {
     const supabase = getClient();
-    // .rpc() returns a thenable query builder, not a Promise — wrap it so the
+    // .rpc() returns a thenable query builder, not a Promise â€” wrap it so the
     // Promise-typed withTimeout accepts it.
     const result = await withTimeout(
       Promise.resolve(supabase.rpc('account_identity_providers', { p_email: email })),
@@ -175,7 +175,7 @@ function providerLabel(provider: string): string {
  *
  * OAuth-only accounts (Google, no password identity): sendPasswordReset
  * refuses those by design (a reset link would graft a password identity), so
- * no email goes out. Accepted cost of staying silent — that user can still
+ * no email goes out. Accepted cost of staying silent â€” that user can still
  * sign in with "Continue with Google", and an attacker learns nothing.
  */
 async function alreadyRegisteredResult(email: string): Promise<SignUpResult> {
@@ -190,11 +190,11 @@ async function alreadyRegisteredResult(email: string): Promise<SignUpResult> {
 }
 
 /**
- * 260603 anti-abuse — call the `signup-guard` Edge Function before signup.
+ * 260603 anti-abuse â€” call the `signup-guard` Edge Function before signup.
  *
  * Returns `{ rateLimited: true, retryAfterSeconds }` ONLY on an explicit 429
- * from the guard (per-IP signup flood). Every other outcome — 200, any non-429
- * status, network/timeout error, or a missing-Supabase-config throw — FAILS
+ * from the guard (per-IP signup flood). Every other outcome â€” 200, any non-429
+ * status, network/timeout error, or a missing-Supabase-config throw â€” FAILS
  * OPEN (`{ rateLimited: false }`) so the guard being unreachable never blocks a
  * legitimate human. The guard needs no JWT (verify_jwt=false); we still send
  * the anon `apikey` because the Supabase functions gateway requires it.
@@ -209,7 +209,7 @@ async function callSignupGuard(): Promise<{ rateLimited: boolean; retryAfterSeco
     url = `${getSupabaseUrl()}/functions/v1/signup-guard`;
     anon = getSupabaseAnonKey();
   } catch {
-    return { rateLimited: false }; // misconfigured env in dev/test → fail open
+    return { rateLimited: false }; // misconfigured env in dev/test â†’ fail open
   }
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 8_000);
@@ -230,15 +230,15 @@ async function callSignupGuard(): Promise<{ rateLimited: boolean; retryAfterSeco
             retryAfterSeconds = body.retry_after_seconds;
           }
         } catch {
-          // ignore — fall back to default below
+          // ignore â€” fall back to default below
         }
       }
       return { rateLimited: true, retryAfterSeconds: retryAfterSeconds ?? 60 };
     }
-    // 200 (allowed) or any non-429 status → fail open.
+    // 200 (allowed) or any non-429 status â†’ fail open.
     return { rateLimited: false };
   } catch (err) {
-    // Network / timeout / abort → fail open. Never block a real human on the
+    // Network / timeout / abort â†’ fail open. Never block a real human on the
     // guard being unreachable.
     logger.warn(`signup-guard unreachable, failing open: ${(err as Error).message}`);
     return { rateLimited: false };
@@ -249,23 +249,23 @@ async function callSignupGuard(): Promise<{ rateLimited: boolean; retryAfterSeco
 
 /**
  * Map a Supabase signInWithPassword error to a SignInResult union variant.
- * Copy strings come from UI-SPEC §Empty/Error/Loading states verbatim.
+ * Copy strings come from UI-SPEC Â§Empty/Error/Loading states verbatim.
  *
- * 260519 UAT fix #3 — `email_not_confirmed` short-circuit:
+ * 260519 UAT fix #3 â€” `email_not_confirmed` short-circuit:
  *   When the project has email-confirmation enabled and the user signs in
  *   before clicking the verification link, Supabase returns
  *   `{ message: "Email not confirmed", status: 400 }`. Per D-04, email
- *   verification does NOT block sign-in — the verify-email Banner (plan 06)
+ *   verification does NOT block sign-in â€” the verify-email Banner (plan 06)
  *   handles the persistent prompt. So we treat this case as
  *   `{ ok: true }` and let the auth-state subscriber drive the transition.
- *   This branch MUST run before the generic 400 → invalid_credentials catch
+ *   This branch MUST run before the generic 400 â†’ invalid_credentials catch
  *   below, otherwise the user sees a misleading "Email or password doesn't
  *   match" message.
  */
 function classifySignInError(message: string, status?: number): SignInResult {
   const m = message.toLowerCase();
   if (isEmailNotConfirmed(message)) {
-    // D-04 path: not an error — the account exists and the password matched.
+    // D-04 path: not an error â€” the account exists and the password matched.
     // 260804: signInWithPassword intercepts this case BEFORE reaching the
     // classifier so it can also mint a fresh code; this branch survives as a
     // backstop for any other caller and returns the same shape.
@@ -274,7 +274,7 @@ function classifySignInError(message: string, status?: number): SignInResult {
   if (status === 429 || m.includes('rate limit')) {
     return { ok: false, code: 'rate_limited', message: 'Hold on a moment, too many attempts.' };
   }
-  // Malformed email — distinct from a wrong-credentials 400 so the user knows
+  // Malformed email â€” distinct from a wrong-credentials 400 so the user knows
   // to fix the address, not the password. MUST precede the generic 400 catch.
   if (m.includes('unable to validate email') || m.includes('invalid format') ||
       (m.includes('email') && (m.includes('invalid') || m.includes('valid')))) {
@@ -296,18 +296,18 @@ function classifySignInError(message: string, status?: number): SignInResult {
 
 /**
  * Map a Supabase signUp error to a SignUpResult union variant.
- * Copy strings come from UI-SPEC §Empty/Error/Loading states verbatim.
+ * Copy strings come from UI-SPEC Â§Empty/Error/Loading states verbatim.
  *
  * SECURITY (260519 UAT fix #4): the "email already registered" branch is
  * intentionally omitted here. Supabase's default signup behaviour with email
  * confirmation enabled obfuscates already-registered emails by returning a
- * success shape with `user.identities = []` and no session — but some project
+ * success shape with `user.identities = []` and no session â€” but some project
  * settings (or older Supabase versions) still surface an explicit
  * "User already registered" error. Either way, we MUST NOT echo that signal
  * to the renderer because it leaks account-enumeration. Callers in
  * signUpWithPassword detect both shapes and return the same neutral
  * `{ ok: true, requiresVerification: true }` they would for a brand-new
- * account — the user can't tell from the UX whether the address was new
+ * account â€” the user can't tell from the UX whether the address was new
  * or already registered.
  */
 function classifySignUpError(message: string): SignUpResult {
@@ -324,7 +324,7 @@ function classifySignUpError(message: string): SignUpResult {
   // WR-03: collapse anything else (including genuine network failures) into
   // neutral success so a Supabase wire-format change can't reopen the
   // enumeration channel via a side-channel like "duplicate key value
-  // violates unique constraint" → network code (registered) vs. neutral
+  // violates unique constraint" â†’ network code (registered) vs. neutral
   // success (new). Trade-off: a real network failure during signup is now
   // indistinguishable from "check your email," which is UX-misleading on
   // offline retry. Accepted because (a) the SignInModal's verify-email
@@ -334,7 +334,7 @@ function classifySignUpError(message: string): SignUpResult {
 }
 
 /**
- * W7 region gate (260816) — true when cloud auth must be refused because the
+ * W7 region gate (260816) â€” true when cloud auth must be refused because the
  * detected IP region is unsupported by Anthropic or Polar (see
  * src/shared/regionGate.ts for the blocklist and its sources).
  *
@@ -378,7 +378,7 @@ function isEmailNotConfirmed(message: string): boolean {
 
 /** Email/password sign-in. Plan 04. */
 export async function signInWithPassword(args: { email: string; password: string }): Promise<SignInResult> {
-  // W7 region gate (260816) — refuse before any Supabase call. Fails open.
+  // W7 region gate (260816) â€” refuse before any Supabase call. Fails open.
   if (await isCloudAuthRegionBlocked()) {
     return { ok: false, code: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
   }
@@ -388,7 +388,7 @@ export async function signInWithPassword(args: { email: string; password: string
       supabase.auth.signInWithPassword({ email: args.email, password: args.password }),
       15_000,
       // Timeout fallback shape is intentionally narrower than Supabase's
-      // AuthResponse — we only read .error.{message,status} on the unhappy
+      // AuthResponse â€” we only read .error.{message,status} on the unhappy
       // path. Cast via `unknown` so TS doesn't demand AuthError shape.
       () =>
         ({
@@ -398,7 +398,7 @@ export async function signInWithPassword(args: { email: string; password: string
     );
     const error = (result as { error: AuthErrShape | null }).error;
     if (error) {
-      // 260804 PIN migration — an unverified account signing in used to be a
+      // 260804 PIN migration â€” an unverified account signing in used to be a
       // dead end. classifySignInError correctly refuses to call this an error
       // (D-04), but no session is issued either, so the renderer sat on the
       // form with nothing to wait for except a click on an emailed link. Now
@@ -418,7 +418,7 @@ export async function signInWithPassword(args: { email: string; password: string
 
 /**
  * NOTE: LOOPBACK_CALLBACK_URL is imported from loopbackCallback.ts (top of
- * file). Single source of truth — WR-04 changed `localhost` to `127.0.0.1`
+ * file). Single source of truth â€” WR-04 changed `localhost` to `127.0.0.1`
  * to avoid IPv4/IPv6 dual-stack ECONNREFUSED on Linux + some macOS configs.
  *
  * IMPORTANT: this URL must ALSO be registered as a valid Site URL (or
@@ -431,7 +431,7 @@ export async function signInWithPassword(args: { email: string; password: string
 /**
  * Email/password sign-up. Plan 04.
  *
- * 260519 UAT fix #4 — enumeration-resistant return shape:
+ * 260519 UAT fix #4 â€” enumeration-resistant return shape:
  *   When the email is already registered, Supabase exposes the signal in TWO
  *   ways depending on project settings:
  *
@@ -457,9 +457,9 @@ export async function signInWithPassword(args: { email: string; password: string
  *   reveal nothing about whether the email is registered.
  *
  * requiresVerification reflects whether Supabase returned a session:
- *   - session present  → email-confirmation disabled AND email is new → user signed in
- *   - session === null → email-confirmation enabled, OR email is already registered
- *                        → show "check your email" message in SignInModal
+ *   - session present  â†’ email-confirmation disabled AND email is new â†’ user signed in
+ *   - session === null â†’ email-confirmation enabled, OR email is already registered
+ *                        â†’ show "check your email" message in SignInModal
  *
  * Per D-04 the user proceeds either way (when a session is returned);
  * the verify-email Banner (plan 06) handles the persistent prompt when
@@ -472,20 +472,20 @@ export async function signUpWithPassword(args: {
   dobMonth: number;
   dobDay: number;
 }): Promise<SignUpResult> {
-  // W7 region gate (260816) — refuse before EVERYTHING: no Supabase call, no
+  // W7 region gate (260816) â€” refuse before EVERYTHING: no Supabase call, no
   // cooldown recording, no signup-guard hit for a region we cannot serve.
   // Fails open on any detection failure.
   if (await isCloudAuthRegionBlocked()) {
     return { ok: false, code: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
   }
 
-  // F-10 (quick/260525-usc) — COPPA age gate. Compute age from the
+  // F-10 (quick/260525-usc) â€” COPPA age gate. Compute age from the
   // self-attested DOB triple via wall-clock today. The DOB itself is NEVER
   // logged, NEVER passed to Supabase, NEVER persisted in any form. We store
-  // only the derived boolean fact `age >= 13` — the existence of a successful
+  // only the derived boolean fact `age >= 13` â€” the existence of a successful
   // auth.signUp call, combined with the signup timestamp Supabase records,
   // IS that boolean. This is privacy minimisation per the COPPA disclosure
-  // in privacy.html §7.
+  // in privacy.html Â§7.
   //
   // Reject BEFORE any Supabase call so an underage user's email is never
   // sent to Supabase at all (Supabase would otherwise enqueue a verification
@@ -508,11 +508,11 @@ export async function signUpWithPassword(args: {
     }
   }
 
-  // 260603 anti-abuse — escalating per-device signup cooldown (Layer 1).
+  // 260603 anti-abuse â€” escalating per-device signup cooldown (Layer 1).
   // Checked BEFORE any Supabase call so a rapid local automation loop is
   // throttled before it can hammer Supabase Auth. The attempt is RECORDED
   // below regardless of the server outcome, so triggering a server 4xx doesn't
-  // let an attacker dodge the ladder. Friction, not a hard lock — a human
+  // let an attacker dodge the ladder. Friction, not a hard lock â€” a human
   // spacing signups by >30s never hits it. See signupCooldown.ts.
   {
     const { checkSignupCooldown, recordSignupAttempt } = await import('./signupCooldown');
@@ -531,10 +531,10 @@ export async function signUpWithPassword(args: {
     await recordSignupAttempt();
   }
 
-  // 260603 anti-abuse — server-side per-IP signup guard (Layer 4). Call the
+  // 260603 anti-abuse â€” server-side per-IP signup guard (Layer 4). Call the
   // signup-guard Edge Function BEFORE auth.signUp. It applies a per-IP
   // fixed-window bucket and 429s a flood. We honor a 429 (return cooldown copy)
-  // but FAIL OPEN on any network/transport error or non-429 status — the guard
+  // but FAIL OPEN on any network/transport error or non-429 status â€” the guard
   // being unreachable must never block a legitimate human (the Supabase-native
   // per-IP limit + the trial-claim gates remain the backstops).
   {
@@ -550,12 +550,12 @@ export async function signUpWithPassword(args: {
     }
   }
 
-  // 260603 anti-abuse — Turnstile/hCaptcha bot-protection seam. When the
+  // 260603 anti-abuse â€” Turnstile/hCaptcha bot-protection seam. When the
   // operator has enabled bot-protection (CAPTCHA_ENABLED + Supabase Dashboard
   // setting), the renderer hands a solved token to main via the
   // `auth:set-captcha-token` IPC channel; we forward it as
-  // options.captchaToken. Inert (undefined) until keys are provisioned — see
-  // captcha.ts + ABUSE-GUARD-PLAN.md §4c.
+  // options.captchaToken. Inert (undefined) until keys are provisioned â€” see
+  // captcha.ts + ABUSE-GUARD-PLAN.md Â§4c.
   const captchaToken = (await import('./captcha')).consumeCaptchaToken();
 
   const supabase = getClient();
@@ -573,7 +573,7 @@ export async function signUpWithPassword(args: {
         },
       }),
       15_000,
-      // Timeout fallback shape cast via `unknown` — see signInWithPassword.
+      // Timeout fallback shape cast via `unknown` â€” see signInWithPassword.
       () =>
         ({
           data: { session: null, user: null },
@@ -584,7 +584,7 @@ export async function signUpWithPassword(args: {
     if (error) {
       const msg = error.message.toLowerCase();
       // Already-registered (260519 UAT fix #4 case b). 260605: no longer a
-      // silent neutral success — surface it honestly. See alreadyRegisteredResult.
+      // silent neutral success â€” surface it honestly. See alreadyRegisteredResult.
       if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
         return await alreadyRegisteredResult(args.email);
       }
@@ -596,22 +596,22 @@ export async function signUpWithPassword(args: {
         user: { id?: string; identities?: unknown[] } | null;
       };
     }).data;
-    // Already-registered → neutral success (260519 UAT fix #4 case a):
+    // Already-registered â†’ neutral success (260519 UAT fix #4 case a):
     //   Supabase signals "this email is already registered" by returning a
     //   user object with an empty identities array.
     if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
       // Do NOT record ToS for a re-signup attempt against an already-registered
-      // account — there's no new user to associate the acceptance with, and the
+      // account â€” there's no new user to associate the acceptance with, and the
       // signed-in user's prior tos_acceptance row (if any) is still authoritative.
       // 260605: surface it honestly instead of the old silent neutral success.
       return await alreadyRegisteredResult(args.email);
     }
-    // Phase 11 plan 12 (D-26 / LIB-06) — fire-and-forget tos_acceptance insert
+    // Phase 11 plan 12 (D-26 / LIB-06) â€” fire-and-forget tos_acceptance insert
     // for the brand-new user. Failure here does NOT block signup: the next
     // launch's blocking modal (Plan 11-13) re-prompts when isTosAccepted
     // returns false, and the cloud-write gate (Plan 11-14) blocks any cloud
     // write until accepted, so a transient INSERT failure here is recoverable.
-    // We don't await on the modal blocking path — the renderer's confirmation
+    // We don't await on the modal blocking path â€” the renderer's confirmation
     // already disabled the submit button until tosChecked, so this is a record
     // of an explicit consent already given.
     const newUserId = data?.user?.id;
@@ -636,7 +636,7 @@ export async function signUpWithPassword(args: {
  *   1. The cancel handler can fire .abort() on the in-flight loopback wait.
  *   2. A second OAuth attempt invoked while a previous one is still in flight
  *      (e.g. the user clicked twice) aborts the old attempt before starting a
- *      new one — otherwise we'd race two loopback servers on two ephemeral
+ *      new one â€” otherwise we'd race two loopback servers on two ephemeral
  *      ports.
  *
  * Cleared in the finally block so a stale controller from a completed flow
@@ -645,7 +645,7 @@ export async function signUpWithPassword(args: {
 let oauthController: AbortController | null = null;
 
 export async function signInWithGoogle(): Promise<OAuthResult> {
-  // W7 region gate (260816) — refuse before the browser ever opens. Fails open.
+  // W7 region gate (260816) â€” refuse before the browser ever opens. Fails open.
   if (await isCloudAuthRegionBlocked()) {
     return { ok: false, reason: REGION_BLOCKED, message: REGION_BLOCKED_COPY };
   }
@@ -661,7 +661,7 @@ export async function signInWithGoogle(): Promise<OAuthResult> {
   try {
     return await startGoogleOAuth({ timeoutMs: 60_000, abortSignal: controller.signal });
   } finally {
-    // Only clear if WE are still the owner — a concurrent re-entry could have
+    // Only clear if WE are still the owner â€” a concurrent re-entry could have
     // already replaced us.
     if (oauthController === controller) oauthController = null;
   }
@@ -676,7 +676,7 @@ export async function cancelGoogle(): Promise<void> {
 
 /**
  * Sign out. AUTH-05 invariant: local data (characters/, memory/, api_key.bin,
- * cached cloud character definitions) is NEVER touched here — Supabase only
+ * cached cloud character definitions) is NEVER touched here â€” Supabase only
  * owns session.bin via the safeStorage adapter, and supabase.auth.signOut()
  * delegates removal to that adapter alone.
  *
@@ -689,7 +689,7 @@ export async function cancelGoogle(): Promise<void> {
  * we still drop the renderer to local mode via transitionToLocal() so the user
  * isn't stranded in a half-signed state. The next launch's session.bin load
  * will either succeed (false alarm) or fail (real signed-out state). The
- * supervisor.stop() failure path is similarly swallowed — we always continue
+ * supervisor.stop() failure path is similarly swallowed â€” we always continue
  * to the auth.signOut() call.
  *
  * Plan 10-06.
@@ -727,16 +727,16 @@ export async function signOut(): Promise<void> {
  *
  * Flow:
  *   1. Pull access_token from the live session via getClient().auth.getSession().
- *      No session → {ok:false, code:'network', 'Not signed in'}.
+ *      No session â†’ {ok:false, code:'network', 'Not signed in'}.
  *   2. POST to /functions/v1/delete-me with Bearer JWT. The Edge Function
  *      inserts a deletion_queue row + calls auth.admin.deleteUser.
- *   3. On HTTP 204 / 2xx → call supabase.auth.signOut() locally so session.bin
+ *   3. On HTTP 204 / 2xx â†’ call supabase.auth.signOut() locally so session.bin
  *      is cleared and the SIGNED_OUT event drops the renderer to AuthChoice
  *      (D-12 success state).
- *   4. Map status=0 → 'network', other non-2xx → 'edge_function_error'.
+ *   4. Map status=0 â†’ 'network', other non-2xx â†’ 'edge_function_error'.
  *
  * Threat T-10-08-03 mitigation: the server side already runs a compensating
- * delete on the queue row if auth.admin.deleteUser fails — by the time we see
+ * delete on the queue row if auth.admin.deleteUser fails â€” by the time we see
  * !res.ok here, no queue row exists.
  *
  * Plan 10-08.
@@ -747,7 +747,7 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
   if (sessErr || !session) {
     return { ok: false, code: 'network', message: 'Not signed in' };
   }
-  // BL-06: deleteAccount is logically a superset of sign-out — D-09 +
+  // BL-06: deleteAccount is logically a superset of sign-out â€” D-09 +
   // T-10-06-09's "stop bot before clearing session" invariant applies here
   // too. Without this, the running bot continues with a soon-to-be-invalid
   // JWT until its next action (which will 401-cascade in Phase 13). User
@@ -772,7 +772,7 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
       // stored session; the account is gone, so drop it on this device.
       if (error) await dropSessionLocally({ client: supabase });
     } catch (err) {
-      // Best-effort — the account is gone; even if signOut fails locally,
+      // Best-effort â€” the account is gone; even if signOut fails locally,
       // the user's next API call will 401 and Supabase will SIGNED_OUT.
       logger.warn(`deleteAccount: post-delete signOut failed: ${(err as Error).message}`);
       await dropSessionLocally({ client: supabase });
@@ -793,7 +793,7 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
  * Export the signed-in user's cloud data as a JSON file (AUTH-07).
  *
  * Flow:
- *   1. Pull current session → fail closed if not signed in.
+ *   1. Pull current session â†’ fail closed if not signed in.
  *   2. Build the schemaVersion=1 envelope via buildExport (see
  *      exportBuilder.ts). Phase 10 fills `account`; Phase 11 fills
  *      `characters` from the cloud (async); sharing is empty-but-present
@@ -801,14 +801,14 @@ export async function deleteAccount(): Promise<DeleteAccountResult> {
  *      CLOUD_LIST_FAILED from buildExport is caught and routed to the
  *      same {write_failed} envelope as writeFile timeouts (T-11-11 plan).
  *   3. Prompt the native save dialog with a `sei-export-<YYYY-MM-DD>.json`
- *      default filename. The path comes from the user via the OS dialog —
+ *      default filename. The path comes from the user via the OS dialog â€”
  *      never from the renderer (T-10-09-02 mitigation).
  *   4. writeFile wrapped in a 15s withTimeout per CLAUDE.md "every external
  *      call has a timeout" invariant. A stuck network drive surfaces cleanly
  *      as {code:'write_failed', message:'Save timed out'} instead of freezing
  *      the IPC channel (T-10-09-03 mitigation).
  *
- * Cancellation is silent: dialog Cancel → {ok:false, code:'cancelled'}. The
+ * Cancellation is silent: dialog Cancel â†’ {ok:false, code:'cancelled'}. The
  * renderer's SettingsScreen treats `code:'cancelled'` as a no-op (no toast).
  *
  * Audit (T-10-09-04): buildExport reads ONLY session.user.{email,created_at}.
@@ -823,11 +823,11 @@ export async function exportData(): Promise<ExportDataResult> {
     return { ok: false, code: 'write_failed', message: 'Not signed in' };
   }
 
-  // Phase 11 — buildExport is async; it fetches characters[] from cloud.
+  // Phase 11 â€” buildExport is async; it fetches characters[] from cloud.
   // CLOUD_LIST_FAILED errors surface here as the rejected promise; the
   // catch block below maps them to {ok:false, code:'write_failed'} like
   // any other failure mode (envelope is symmetric with the writeFile
-  // timeout path — message is preserved verbatim).
+  // timeout path â€” message is preserved verbatim).
   let envelope;
   try {
     envelope = await buildExport(session);
@@ -884,9 +884,9 @@ export async function exportData(): Promise<ExportDataResult> {
  * Resend the email-verification code via supabase.auth.resend({type:'signup'}).
  *
  * Rate-limit policy (Supabase default: 60s between resends per email):
- *   - 429 / "rate limit" → {code:'rate_limited'} with the verbatim D-04 copy.
- *   - Any other error    → {code:'network'} fallback.
- *   - No email available → {code:'network', 'Not signed in'} — a freshly
+ *   - 429 / "rate limit" â†’ {code:'rate_limited'} with the verbatim D-04 copy.
+ *   - Any other error    â†’ {code:'network'} fallback.
+ *   - No email available â†’ {code:'network', 'Not signed in'} â€” a freshly
  *     signed-up-but-unverified user has NO session, so callers in that state
  *     (the onboarding verify panel, 260729) pass the address they just signed
  *     up with explicitly; the signed-in fallback serves the Settings Banner.
@@ -913,7 +913,7 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
     const result = await withTimeout(
       supabase.auth.resend({ type: 'signup', email: target }),
       15_000,
-      // Timeout fallback shape — only .error is read on the unhappy path.
+      // Timeout fallback shape â€” only .error is read on the unhappy path.
       () =>
         ({
           data: { user: null, session: null },
@@ -931,14 +931,14 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
           message: 'Hold on, wait a minute before requesting another code.',
         };
       }
-      // Already-confirmed address → this is the decoy path (or a user who
+      // Already-confirmed address â†’ this is the decoy path (or a user who
       // verified elsewhere). Send a recovery code so the panel's Resend button
       // behaves identically for both kinds of inbox.
       if (m.includes('already confirmed') || m.includes('already been confirmed') ||
           m.includes('already registered') || m.includes('email_already_confirmed')) {
         const reset = await sendPasswordReset({ email: target });
         // oauth_only means no password identity exists, so no code can be sent.
-        // Stay neutral rather than naming the provider here — the caller is a
+        // Stay neutral rather than naming the provider here â€” the caller is a
         // code panel, not the sign-in form that surfaces oauth_only honestly.
         return reset.ok || reset.code === 'oauth_only'
           ? { ok: true }
@@ -953,14 +953,14 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
 }
 
 /**
- * 260804 — redeem a 6-digit email code.
+ * 260804 â€” redeem a 6-digit email code.
  *
  * WHY IT TRIES TWO TOKEN TYPES. The panel that collects a code cannot know
  * which kind of email the user is holding, and it must not find out: a
  * brand-new address gets a `signup` confirmation code, while an address that
  * is ALREADY registered gets a `recovery` code (alreadyRegisteredResult's
  * silent forgot-password treatment), and the two paths are deliberately
- * indistinguishable in the UI — that indistinguishability IS the T-10-04
+ * indistinguishable in the UI â€” that indistinguishability IS the T-10-04
  * enumeration defence. So main tries `signup`, and on a token mismatch tries
  * `recovery`. Supabase keeps the two in separate columns on auth.users, so a
  * wrong-type attempt compares against the wrong column, fails cleanly, and
@@ -970,7 +970,7 @@ export async function resendVerification(email?: string): Promise<ResendVerifica
  * instead of one, which halves how many wrong guesses fit inside Supabase's
  * per-IP token-verification limit. A wrong code is the rare path and the limit
  * is generous, so this is not worth optimising with a client-side guess about
- * which email we last sent — that guess would be wrong exactly when the app
+ * which email we last sent â€” that guess would be wrong exactly when the app
  * restarts between the send and the entry.
  *
  * `signup` is the type GoTrue pairs with the Confirm-signup template's
@@ -1012,7 +1012,7 @@ export async function verifyEmailCode(args: {
     return error ? { err: error } : { ok: true };
   };
 
-  /** Wrong code, wrong type, or past its lifetime — all worth a second try. */
+  /** Wrong code, wrong type, or past its lifetime â€” all worth a second try. */
   const isTokenMismatch = (e: AuthErrShape): boolean => {
     const m = e.message.toLowerCase();
     return (
@@ -1108,7 +1108,7 @@ export async function verifyEmailCode(args: {
  */
 export async function sendPasswordReset(args: { email: string }): Promise<PasswordResetResult> {
   const supabase = getClient();
-  // 260605 — refuse a reset for an OAuth-only account. A Google-only account
+  // 260605 â€” refuse a reset for an OAuth-only account. A Google-only account
   // has no password identity; resetPasswordForEmail + updateUser would graft a
   // password onto it, silently turning a Google account into an email/password
   // one. Look up the providers first; only block when we KNOW the account is
@@ -1122,7 +1122,7 @@ export async function sendPasswordReset(args: { email: string }): Promise<Passwo
       ok: false,
       code: 'oauth_only',
       provider: friendly,
-      message: `This account uses ${friendly} sign-in, so it has no password to reset. Use “Continue with ${friendly}” instead.`,
+      message: `This account uses ${friendly} sign-in, so it has no password to reset. Use â€œContinue with ${friendly}â€ instead.`,
     };
   }
   // Mark BEFORE the network call so a user who clicks the emailed link very
@@ -1132,7 +1132,7 @@ export async function sendPasswordReset(args: { email: string }): Promise<Passwo
     const result = await withTimeout(
       supabase.auth.resetPasswordForEmail(args.email, { redirectTo: LOOPBACK_CALLBACK_URL }),
       15_000,
-      // Timeout fallback shape — only .error is read on the unhappy path.
+      // Timeout fallback shape â€” only .error is read on the unhappy path.
       () =>
         ({
           data: {},
@@ -1171,7 +1171,7 @@ export async function sendPasswordReset(args: { email: string }): Promise<Passwo
  * Set a new password for the currently signed-in user via
  * supabase.auth.updateUser({ password }).
  *
- * Reached from SetNewPasswordModal after a reset link lands a recovery session —
+ * Reached from SetNewPasswordModal after a reset link lands a recovery session â€”
  * the user IS signed in at that point (a recovery session satisfies signed_in).
  * If the session has since expired (`not_signed_in`) the renderer routes the
  * user back to request a fresh link.
@@ -1213,3 +1213,7 @@ export async function updatePassword(args: { password: string }): Promise<Update
     return { ok: false, code: 'network', message: (err as Error).message };
   }
 }
+
+
+
+

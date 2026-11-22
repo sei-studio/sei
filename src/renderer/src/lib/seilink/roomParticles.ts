@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Drawing weather and ambience particles (261105, room catalog). The
  * simulation is shared and pure (src/shared/seilinkParticles.ts); this file
  * draws fields onto the room's fx canvas, which sits between the back
@@ -365,3 +365,7 @@ function drawOutsideScratch(
   sc.restore();
   if (drew) ctx.drawImage(outsideScratch.c, 0, 0, pw, ph, Math.round(bx * res), Math.round(by * res), pw, ph);
 }
+
+
+
+

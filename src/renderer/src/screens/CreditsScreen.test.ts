@@ -1,5 +1,5 @@
-/**
- * Tests for CreditsScreen — the in-place tier-change path (260725 regression
+﻿/**
+ * Tests for CreditsScreen â€” the in-place tier-change path (260725 regression
  * fixes).
  *
  * Project convention (no @testing-library/react installed): exercise the
@@ -7,17 +7,17 @@
  * src/renderer/src/screens/SettingsScreen.test.tsx.
  *
  * Invariants:
- *   C.1 — an existing subscriber's plan click opens an in-app confirmation
+ *   C.1 â€” an existing subscriber's plan click opens an in-app confirmation
  *         instead of firing changePlan() straight away. The hosted Polar page
  *         carries the recurring terms only for a FIRST subscription; an
  *         in-place change never opens a browser page.
- *   C.2 — the confirmation discloses the recurring amount, the cadence, the
+ *   C.2 â€” the confirmation discloses the recurring amount, the cadence, the
  *         card on file / proration, and how to cancel.
- *   C.3 — beginPurchase() snapshots its baseline BEFORE changePlan() runs.
+ *   C.3 â€” beginPurchase() snapshots its baseline BEFORE changePlan() runs.
  *         changePlan() refreshes internally, so the old order made the
  *         baseline equal the post-change state and isPurchaseConfirmed could
  *         never fire: every successful change ended in the watcher's timeout.
- *   C.4 — a rejected change stops the watch and says so, instead of timing out.
+ *   C.4 â€” a rejected change stops the watch and says so, instead of timing out.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -82,7 +82,7 @@ describe('CreditsScreen (in-place plan change)', () => {
       SRC.indexOf('<ModalFooter>', SRC.indexOf('<div className={styles.confirmBody}>')),
     );
     expect(body.length).toBeGreaterThan(0);
-    expect(body.includes('—')).toBe(false);
+    expect(body.includes('â€”')).toBe(false);
   });
 
   it('C.5: the free-play reset callout shows only when over_limit (260926)', () => {
@@ -96,3 +96,7 @@ describe('CreditsScreen (in-place plan change)', () => {
     expect(SRC.includes('{showResetCallout ? (')).toBe(true);
   });
 });
+
+
+
+

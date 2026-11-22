@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   anyMcInstallReady,
   compareMcVersions,
@@ -120,8 +120,8 @@ describe('mcSetup', () => {
 
   it('formats runs compactly and keeps the gaps', () => {
     expect(formatMcVersionList(joinableMcVersions(SUP, ROWS), mcReleases(ROWS))).toBe('1.8 to 1.8.9, 1.9.4 to 1.10.2, 1.12.2, 26.1, 26.1.2');
-    expect(formatMcVersionList(['1.8', '1.8.9', '1.10'], ['1.8', '1.8.9', '1.9', '1.10'], (a, b) => `${a}至${b}`)).toBe('1.8, 1.8.9, 1.10');
-    expect(formatMcVersionList(['1', '2', '3'], ['1', '2', '3'], (a, b) => `${a}至${b}`)).toBe('1至3');
+    expect(formatMcVersionList(['1.8', '1.8.9', '1.10'], ['1.8', '1.8.9', '1.9', '1.10'], (a, b) => `${a}è‡³${b}`)).toBe('1.8, 1.8.9, 1.10');
+    expect(formatMcVersionList(['1', '2', '3'], ['1', '2', '3'], (a, b) => `${a}è‡³${b}`)).toBe('1è‡³3');
   });
 
   // 260929: the "Which versions?" list shows one span per row; the one-line
@@ -149,3 +149,7 @@ describe('mcSetup', () => {
     expect(text).not.toMatch(/\u2014/);
   });
 });
+
+
+
+

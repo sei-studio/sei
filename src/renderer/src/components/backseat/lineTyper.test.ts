@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LineTyper (261004): a companion line is never cut off. Driven with fake
  * timers (Date included), no DOM needed.
  */
@@ -26,7 +26,7 @@ afterEach(() => vi.useRealTimers());
 describe('LineTyper', () => {
   it('types a line out in typingMs, an emoji counting as one step', () => {
     const { ty, typed, shown } = rig();
-    const line = 'Ooh, 🏡! Go.';
+    const line = 'Ooh, ðŸ¡! Go.';
     ty.say(line);
     vi.advanceTimersByTime(typingMs(line) - TYPE_MS);
     expect(shown().n).toBeLessThan(Array.from(line).length);
@@ -83,3 +83,7 @@ describe('LineTyper', () => {
     expect(typed).toEqual([]);
   });
 });
+
+
+
+

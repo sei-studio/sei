@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Minecraft install scanner + bundled-Java locator.
  *
  * Two responsibilities:
  *
- *   1. `scanMcInstalls(opts?)` — walk known launcher / CurseForge directories
+ *   1. `scanMcInstalls(opts?)` â€” walk known launcher / CurseForge directories
  *      on the current platform and return a list of `McInstall` records.
  *      Detects:
  *        - vanilla `.minecraft` on darwin / win32 / linux
@@ -15,7 +15,7 @@
  *        - csl_installed + csl_version (from mods/CustomSkinLoader*.jar)
  *        - sei_enabled (cross-referenced against persisted WizardState)
  *
- *   2. `findBundledJava(mcInstall)` — locate Minecraft's bundled JRE under
+ *   2. `findBundledJava(mcInstall)` â€” locate Minecraft's bundled JRE under
  *      `<mcDir>/runtime/java-runtime-gamma/<platform-tag>/...`.
  *      The Mojang launcher installs its own JRE there when the user first
  *      launches a vanilla profile; the wizard probes this BEFORE falling
@@ -23,7 +23,7 @@
  *      themselves. Returns the absolute exe path or null.
  *
  * Cross-platform path safety:
- *   - Every filesystem path is built via `path.join` — never string concat.
+ *   - Every filesystem path is built via `path.join` â€” never string concat.
  *     The paths.ts audit established this as the cross-platform invariant;
  *     the regression-guard in the acceptance criteria counts `path.join`
  *     occurrences in this file.
@@ -31,9 +31,9 @@
  *     needed (the cli/index.js electronUserDataDir pattern is mirrored here).
  *
  * Sources:
- *   - CONTEXT §"Cross-platform paths"
+ *   - CONTEXT Â§"Cross-platform paths"
  *   - Hotspot audit: all paths via path.join
- *   - Mojang launcher docs §"Java runtime directory layout" (the
+ *   - Mojang launcher docs Â§"Java runtime directory layout" (the
  *     `runtime/java-runtime-gamma/<platform-tag>/...` structure probed)
  *   - the removed bot CLI (platform-branched home-dir pattern, 260722)
  */
@@ -107,7 +107,7 @@ export function vanillaPaths(opts?: ScanOpts): string[] {
  *                     `%LOCALAPPDATA%\Programs\lunarclient` (the installer
  *                     uses the LOCALAPPDATA path; the `.lunarclient`
  *                     userprofile path is the runtime data dir created on
- *                     first launch — either being present is sufficient
+ *                     first launch â€” either being present is sufficient
  *                     to say "Lunar is installed here").
  *
  * Returns absolute candidate paths; caller stats each and skips ENOENT.
@@ -131,7 +131,7 @@ function lunarPaths(opts?: ScanOpts): string[] {
 
 /**
  * Candidate CurseForge `Instances` roots. CurseForge ships two install
- * variants on Windows — Documents-rooted and home-rooted — so we probe
+ * variants on Windows â€” Documents-rooted and home-rooted â€” so we probe
  * both. macOS has only one canonical path. Linux: CurseForge isn't
  * officially supported, return empty.
  */
@@ -152,12 +152,12 @@ function curseforgePaths(opts?: ScanOpts): string[] {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  ID hashing — stable across re-scans                                        */
+/*  ID hashing â€” stable across re-scans                                        */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Stable 12-char hash of `${kind}:${absolutePath}`. Survives renames of the
- * Sei userData but breaks when the user actually moves the MC install — at
+ * Sei userData but breaks when the user actually moves the MC install â€” at
  * which point a fresh row is correct because the old path no longer exists.
  * 12 hex chars = 48 bits = collisions are infeasible for the handful of
  * installs a single user has.
@@ -246,7 +246,7 @@ async function detectSeiProfiles(
 /**
  * Detect CustomSkinLoader JAR in a `mods/` directory. Returns version (parsed
  * from filename) if a matching JAR is present, else null. ENOENT on the mods
- * dir means the loader hasn't created it yet — return null (not installed).
+ * dir means the loader hasn't created it yet â€” return null (not installed).
  */
 export async function detectCustomSkinLoader(
   modsDir: string,
@@ -359,9 +359,9 @@ async function readVanillaMcVersion(mcDir: string): Promise<string | null> {
  * writes it on every modpack install/update).
  *
  * `baseModLoader.name` is e.g.:
- *   - `forge-47.2.0` → loader=forge, loader_version=47.2.0
- *   - `fabric-loader-0.15.0-1.20.1` → loader=fabric, loader_version=0.15.0
- *   - empty / missing → null loader (rare; means the instance is vanilla
+ *   - `forge-47.2.0` â†’ loader=forge, loader_version=47.2.0
+ *   - `fabric-loader-0.15.0-1.20.1` â†’ loader=fabric, loader_version=0.15.0
+ *   - empty / missing â†’ null loader (rare; means the instance is vanilla
  *     under the CF launcher, possible but unusual)
  */
 async function readCurseforgeInstance(instanceDir: string): Promise<{
@@ -418,7 +418,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
   const state = await loadWizardState();
   const enabledSet = new Set(state.enabledInstallIds);
 
-  // ── Vanilla launcher candidates ────────────────────────────────────────
+  // â”€â”€ Vanilla launcher candidates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const vp of vanillaPaths(opts)) {
     try {
       const st = await fs.stat(vp);
@@ -435,7 +435,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
       const mc_version = await readVanillaMcVersion(vp);
       const fabric = await detectFabricLoader(vp);
       // Vanilla installs place CSL in the ISOLATED Sei gameDir
-      // (<.minecraft>/sei/mods), not the shared <.minecraft>/mods — the wizard
+      // (<.minecraft>/sei/mods), not the shared <.minecraft>/mods â€” the wizard
       // moved vanilla setups into <.minecraft>/sei/ (260518-o1k T4/T5) so the
       // user's normal profile stays untouched. Scanning only the shared mods
       // dir reported csl_installed=false for every freshly-set-up vanilla
@@ -473,7 +473,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
     }
   }
 
-  // ── CurseForge Instances candidates ────────────────────────────────────
+  // â”€â”€ CurseForge Instances candidates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   for (const cfRoot of curseforgePaths(opts)) {
     let entries: string[];
     try {
@@ -521,8 +521,8 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
     }
   }
 
-  // ── Lunar Client candidates (260518-o1k T3) ────────────────────────────
-  // Read-only detection — we never write into Lunar's data directories. The
+  // â”€â”€ Lunar Client candidates (260518-o1k T3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Read-only detection â€” we never write into Lunar's data directories. The
   // row is surfaced for UX transparency (D3 caption explains we can't drop
   // CSL into Lunar since it doesn't support custom skin mods). The wizard
   // orchestrator (T3 defensive early-return in processOneInstall + T7 UI
@@ -544,7 +544,7 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
         kind: 'lunar',
         label: 'Lunar Client',
         path: vp,
-        // We don't probe Lunar's mc_version — Lunar manages its own profiles
+        // We don't probe Lunar's mc_version â€” Lunar manages its own profiles
         // out-of-band and we wouldn't act on the value even if we read it.
         mc_version: null,
         loader: null,
@@ -571,12 +571,12 @@ export async function scanMcInstalls(opts?: ScanOpts): Promise<McInstall[]> {
  * Mojang's bundled-JRE component names, NEWEST FIRST. Each MC version pins
  * a specific component; the launcher installs one (or more) of these under
  * `<mcDir>/runtime/`:
- *   - `java-runtime-epsilon`  Java 21 (current — MC 1.21+)
+ *   - `java-runtime-epsilon`  Java 21 (current â€” MC 1.21+)
  *   - `java-runtime-delta`    Java 21 (MC 1.20.5+ replacement for gamma)
  *   - `java-runtime-gamma`    Java 17 (MC 1.20.5+ original)
- *   - `java-runtime-beta`     Java 17 (MC 1.18 – 1.20.4)
+ *   - `java-runtime-beta`     Java 17 (MC 1.18 â€“ 1.20.4)
  *   - `java-runtime-alpha`    Java 16 (MC 1.17)
- *   - `jre-legacy`            Java 8 (pre-1.17 — NOT sufficient for Fabric;
+ *   - `jre-legacy`            Java 8 (pre-1.17 â€” NOT sufficient for Fabric;
  *                              Fabric Loader requires Java 17. Listed last
  *                              for diagnostic completeness, but if a user's
  *                              MC is pre-1.17 we'll find nothing newer and
@@ -600,7 +600,7 @@ const BUNDLED_JRE_COMPONENTS = [
  * Returns the absolute path to a runnable `java` / `javaw` executable, or
  * null if not present.
  *
- * Probed BEFORE system PATH — Minecraft installs its own JRE
+ * Probed BEFORE system PATH â€” Minecraft installs its own JRE
  * under `<mcDir>/runtime/<component>/<platform-tag>/...`, and we should
  * use that to honor the "zero manual config" goal. If the user has
  * launched the vanilla profile even once, the bundled Java exists and the
@@ -620,7 +620,7 @@ const BUNDLED_JRE_COMPONENTS = [
  *
  * Returns null on unsupported OS (e.g. freebsd) or when no bundled JRE
  * component is present (user has the launcher installed but never launched
- * a vanilla profile — common for CurseForge-only users).
+ * a vanilla profile â€” common for CurseForge-only users).
  */
 export async function findBundledJava(mcInstall: McInstall): Promise<string | null> {
   const arch = process.arch; // 'x64' | 'arm64' on mac/win; 'x64' on Linux
@@ -630,9 +630,9 @@ export async function findBundledJava(mcInstall: McInstall): Promise<string | nu
   // documented layout, but on Windows two real launcher variants install the
   // JRE OUTSIDE the game dir (260709 report: "Minecraft clearly works" yet the
   // gameDir probe found nothing):
-  //   - Microsoft Store / Xbox-app launcher →
+  //   - Microsoft Store / Xbox-app launcher â†’
   //     %LOCALAPPDATA%\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Local\runtime
-  //   - Legacy Win32 launcher → %ProgramFiles(x86)%\Minecraft Launcher\runtime
+  //   - Legacy Win32 launcher â†’ %ProgramFiles(x86)%\Minecraft Launcher\runtime
   const runtimeBases: string[] = [path.join(mcDir, 'runtime')];
   if (process.platform === 'win32') {
     const localAppData =
@@ -652,7 +652,7 @@ export async function findBundledJava(mcInstall: McInstall): Promise<string | nu
         'runtime',
       ),
       // CurseForge app keeps a full Minecraft install (incl. runtime) under
-      // its own dir — present even when the vanilla launcher was never run.
+      // its own dir â€” present even when the vanilla launcher was never run.
       path.join(os.homedir(), 'curseforge', 'minecraft', 'Install', 'runtime'),
     );
   } else if (process.platform === 'darwin') {
@@ -688,7 +688,7 @@ async function findJavaUnderRuntimeBase(
     if (process.platform === 'darwin') {
       const archTag = arch === 'arm64' ? 'mac-os-arm64' : 'mac-os';
       // <runtime>/<component>/<archTag>/<component>/jre.bundle/Contents/Home/bin/java
-      // java-runtime-gamma path layout still applies — only the component name varies.
+      // java-runtime-gamma path layout still applies â€” only the component name varies.
       const abs = path.join(
         componentRoot,
         archTag,
@@ -733,10 +733,14 @@ async function findJavaUnderRuntimeBase(
         continue;
       }
     } else {
-      // Unsupported OS (e.g. freebsd) — bail immediately, don't loop further.
+      // Unsupported OS (e.g. freebsd) â€” bail immediately, don't loop further.
       return null;
     }
   }
 
   return null;
 }
+
+
+
+

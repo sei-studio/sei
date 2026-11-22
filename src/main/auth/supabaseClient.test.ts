@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Tests for the Supabase client singleton + storage-adapter wiring.
  *
  * Stubs env.ts so the test does not require real Supabase credentials.
  * Stubs @supabase/supabase-js's createClient so the test doesn't depend on
- * actually being able to reach a Supabase project — we only assert the
+ * actually being able to reach a Supabase project â€” we only assert the
  * call arguments + singleton behavior + ordering invariants.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,7 +56,7 @@ describe('supabaseClient', () => {
     const first = getClient();
     const second = getClient();
     expect(first).toBe(second);
-    // createClient called exactly once — singleton
+    // createClient called exactly once â€” singleton
     expect(createClientMock).toHaveBeenCalledTimes(1);
   });
 
@@ -144,3 +144,7 @@ describe('withAuthRequestTimeout (261029 review)', () => {
     await expect(p).rejects.toThrow(/caller gave up/);
   });
 });
+
+
+
+

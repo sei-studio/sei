@@ -1,5 +1,5 @@
-/**
- * 261001 — the onboarding attribution answer becomes a person property.
+﻿/**
+ * 261001 â€” the onboarding attribution answer becomes a person property.
  *
  * Renderer props cannot carry `$set` (sanitize drops objects), so capture()
  * maps a VALID `onboarding_attribution.source` to `$set_once` itself. A skip,
@@ -121,3 +121,7 @@ describe('capture() with the attribution event', () => {
     expect(captureSpy.mock.calls[0][0].properties).not.toHaveProperty('$set_once');
   });
 });
+
+
+
+

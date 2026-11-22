@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { bumpPortraitRef, portraitSrc } from './portraitSrc';
 
-describe('portraitSrc — resolves portrait_image refs to loadable URLs', () => {
-  it('returns null for nullish refs (→ procedural sprite fallback)', () => {
+describe('portraitSrc â€” resolves portrait_image refs to loadable URLs', () => {
+  it('returns null for nullish refs (â†’ procedural sprite fallback)', () => {
     expect(portraitSrc(null)).toBeNull();
     expect(portraitSrc(undefined)).toBeNull();
     expect(portraitSrc('')).toBeNull();
@@ -43,3 +43,7 @@ describe('portraitSrc — resolves portrait_image refs to loadable URLs', () => 
     bumpPortraitRef(null);
   });
 });
+
+
+
+

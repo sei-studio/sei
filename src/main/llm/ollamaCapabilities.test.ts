@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261010: Ollama vision is asked of Ollama (/api/show capabilities), with the
  * catalog's name heuristic only as the fallback. The heuristic alone used to
  * judge qwen2.5vl / gemma3 / llama4 blind and lock Draw! and backseat.
@@ -98,3 +98,7 @@ describe('checkOllamaForGame', () => {
     expect(await checkOllamaForGame('http://h', 'm', (async () => ok({}, 500)) as unknown as typeof fetch)).toBeNull();
   });
 });
+
+
+
+

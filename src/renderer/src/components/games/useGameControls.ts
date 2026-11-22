@@ -1,5 +1,5 @@
-/**
- * useGameControls — the runtime controls every bot-backed game dashboard
+﻿/**
+ * useGameControls â€” the runtime controls every bot-backed game dashboard
  * shares (pause / resume, reactive / proactive, Disconnect, and the hover
  * hint), as ONE hook with no markup (260909). Each game's dashboard paints
  * its own buttons in its own game's register (Minecraft's vanilla gray,
@@ -71,3 +71,7 @@ export function useGameControls(characterId: string, game: GameId): GameControls
     }),
   };
 }
+
+
+
+

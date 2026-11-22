@@ -1,5 +1,5 @@
-/**
- * Tests for src/main/cloud/proxyClient — the typed wrapper over the proxy's
+﻿/**
+ * Tests for src/main/cloud/proxyClient â€” the typed wrapper over the proxy's
  * my_plan / my_subscription views and the Polar checkout, plan-change and
  * customer-portal endpoints (all proxy-minted).
  *
@@ -54,12 +54,12 @@ type MockPlanRow = Record<string, unknown> | null;
 interface MockState {
   session: MockSession | null;
   plan: MockPlanRow;
-  /** Non-null → the my_plan read fails (e.g. view missing pre-migration). */
+  /** Non-null â†’ the my_plan read fails (e.g. view missing pre-migration). */
   planError: { message: string } | null;
   subscription: { status: string; renews_at: string | null; ends_at: string | null } | null;
   /** usage_periods row behind the feedback-reward gate. null = no row yet. */
   usagePeriod: { feedback_reset_at: string | null } | null;
-  /** Non-null → the usage_periods read fails (gate falls back to UNKNOWN). */
+  /** Non-null â†’ the usage_periods read fails (gate falls back to UNKNOWN). */
   usagePeriodError: { message: string } | null;
 }
 
@@ -99,7 +99,7 @@ function planRow(over: Record<string, unknown> = {}): Record<string, unknown> {
 
 /**
  * Build a hand-rolled mock SupabaseClient. The `.from(table)` builder returns
- * a chain that ultimately yields `{ data, error }` via `maybeSingle()` — we
+ * a chain that ultimately yields `{ data, error }` via `maybeSingle()` â€” we
  * dispatch on the `table` name to return the right slice of `state`.
  */
 function makeMockSupabase(): unknown {
@@ -124,7 +124,7 @@ function makeMockSupabase(): unknown {
             return { data: state.usagePeriod, error: state.usagePeriodError };
           return { data: null, error: null };
         }),
-        // PostgrestFilterBuilder is thenable — awaiting it resolves to
+        // PostgrestFilterBuilder is thenable â€” awaiting it resolves to
         // { data, error }. Nothing in the current client awaits a builder
         // directly, but keep the contract so a future query doesn't hang.
         then: (resolve: (v: { data: unknown; error: null }) => void) => {
@@ -710,3 +710,7 @@ describe('feedbackSubmit', () => {
     vi.unstubAllGlobals();
   });
 });
+
+
+
+

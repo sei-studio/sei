@@ -1,4 +1,4 @@
-/** macOS DST grant (260925): the pure parts of the Electron/osascript MacGrant. */
+﻿/** macOS DST grant (260925): the pure parts of the Electron/osascript MacGrant. */
 import { describe, it, expect } from 'vitest';
 import { GRANT_COPY, finderDuplicateArgs } from './macGrant';
 
@@ -15,10 +15,14 @@ describe('macGrant', () => {
   it('the panel copy is short, has no em dash, and names the button it shows', () => {
     for (const lang of ['en', 'zh'] as const) {
       const c = GRANT_COPY[lang];
-      for (const s of [c.message, c.hint, c.button]) expect(s).not.toContain('—');
+      for (const s of [c.message, c.hint, c.button]) expect(s).not.toContain('â€”');
       expect(c.message).toContain(c.button);
       expect(c.message.length).toBeLessThan(120);
     }
     expect(GRANT_COPY.en.message).toBe("macOS needs your OK once. Click Install helper to let Sei add its helper to Don't Starve Together.");
   });
 });
+
+
+
+

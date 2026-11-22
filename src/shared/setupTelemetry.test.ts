@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { McInstall } from './ipc';
 import { classifyFailReason, mcScanFound, setupErrorCode, setupStepProps } from './setupTelemetry';
 
@@ -106,3 +106,7 @@ describe('mcScanFound', () => {
     expect(mcScanFound([], null)).toBe('none');
   });
 });
+
+
+
+

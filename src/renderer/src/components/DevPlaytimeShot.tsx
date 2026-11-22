@@ -1,5 +1,5 @@
-/**
- * DevPlaytimeShot — dev-only screenshot harness for the Playtime page
+﻿/**
+ * DevPlaytimeShot â€” dev-only screenshot harness for the Playtime page
  * (261110), NOT part of the app UI. Mounted by DevDashShot for
  * `?dashshot=playtime`, with:
  *
@@ -84,3 +84,7 @@ export function DevPlaytimeShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew Valley GameModule (game-adapters M1, 260908): the main-process
  * plug-in the supervisor and the world:* channels dispatch on. Discovery is
  * the hello watcher; the join target is the mod's port + token from its
@@ -117,3 +117,7 @@ export function createStardewGameModule(opts: StardewModuleOpts = {}): GameModul
     },
   };
 }
+
+
+
+

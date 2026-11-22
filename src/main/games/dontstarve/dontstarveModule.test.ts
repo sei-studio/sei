@@ -1,4 +1,4 @@
-/** Game-adapters M2 (260908): the DST GameModule over a fake watcher + deps. */
+﻿/** Game-adapters M2 (260908): the DST GameModule over a fake watcher + deps. */
 import { describe, it, expect, vi } from 'vitest';
 import { createDontStarveGameModule, effectiveDstUsername, pickRespawnHost } from './index';
 import { createDstWatcher } from './watcher';
@@ -162,3 +162,7 @@ describe('dontstarve GameModule', () => {
     expect(await mod.getInstallState()).not.toHaveProperty('grantNeeded');
   });
 });
+
+
+
+

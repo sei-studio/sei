@@ -1,4 +1,4 @@
-// OpenAI-compatible adapter — covers OpenAI, Grok (x.ai), OpenRouter,
+﻿// OpenAI-compatible adapter â€” covers OpenAI, Grok (x.ai), OpenRouter,
 // DeepSeek, Qwen (DashScope compatible mode), plus the grandfathered set
 // (Mistral, Together, Groq, Fireworks, Cerebras, Perplexity). All speak
 // `/v1/chat/completions` with bearer-auth headers. Per-provider baseURL is
@@ -39,8 +39,8 @@ const CAPABILITIES_BY_KIND = {
 
 // 260828: last-resort fallback when config.llm.providers[kind].model is
 // absent (a parsed config always carries the Zod default, so this only fires
-// for hand-built configs). MIRRORS src/shared/llmCatalog.ts DEFAULT_MODELS —
-// the source of truth this process cannot import — and the ConfigSchema
+// for hand-built configs). MIRRORS src/shared/llmCatalog.ts DEFAULT_MODELS â€”
+// the source of truth this process cannot import â€” and the ConfigSchema
 // defaults in src/bot/config.js. Exported so llmCatalogSync.test.js pins all
 // three tables together (no more gpt-4o-mini/grok-2 drift).
 export const COMPAT_DEFAULT_MODELS = {
@@ -59,20 +59,20 @@ export const COMPAT_DEFAULT_MODELS = {
   perplexity: 'sonar',
 }
 
-// ── DeepSeek specifics (260816, china-compat; mirrors src/shared/llmCatalog.ts
-// DEEPSEEK_EXTRA_BODY / FIRST_TOKEN_TIMEOUT_FLOOR_MS — keep in sync) ────────
+// â”€â”€ DeepSeek specifics (260816, china-compat; mirrors src/shared/llmCatalog.ts
+// DEEPSEEK_EXTRA_BODY / FIRST_TOKEN_TIMEOUT_FLOOR_MS â€” keep in sync) â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // V4 ships thinking-mode ON by default, and in thinking mode the API requires
-// `reasoning_content` passed back on every tool round-trip — a generic
+// `reasoning_content` passed back on every tool round-trip â€” a generic
 // OpenAI-compat client strips it and 400s. Disabling thinking sidesteps the
 // round-trip entirely.
 const DEEPSEEK_EXTRA_BODY = { thinking: { type: 'disabled' } }
 // Under load DeepSeek QUEUES requests on an open connection instead of 429ing
 // (worst at Chinese peak hours), so the request timeout gets a 60s floor over
 // whatever the caller asked for. A stalled request must never be fast-retried
-// — it just re-enters the queue. This provider has no retry loop (one fetch
+// â€” it just re-enters the queue. This provider has no retry loop (one fetch
 // per call; the orchestrator treats a timeout as a failed turn), which is the
-// required behavior — do not add one for deepseek.
+// required behavior â€” do not add one for deepseek.
 const DEEPSEEK_TIMEOUT_FLOOR_MS = 60_000
 
 export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetchImpl = globalThis.fetch } = {}) {
@@ -99,7 +99,7 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
     if (t) body.tools = t
     // NOTE: tool_choice is deliberately never sent. The default ('auto') is
     // what every call site wants, and DeepSeek in particular misbehaves with
-    // 'required' — keep it that way.
+    // 'required' â€” keep it that way.
 
     const controller = new AbortController()
     const onParentAbort = () => controller.abort()
@@ -138,7 +138,7 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
   }
 
   // System-block builder (parity with anthropicClient.buildCachedSystem). No
-  // cache_control marker — these providers don't use it; the flatten step
+  // cache_control marker â€” these providers don't use it; the flatten step
   // would drop it anyway.
   function buildCachedSystem(staticBlocks, toolList) {
     const toolBlock = toolList?.length
@@ -159,3 +159,7 @@ export function createOpenAICompatProvider(config, { kind, defaultBaseURL, fetch
     kind,
   }
 }
+
+
+
+

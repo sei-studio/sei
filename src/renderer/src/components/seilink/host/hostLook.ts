@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her face on the desktop for one line (261105, T332). Main sets `emotion`
  * (Live2D) and `face` (her face set's word) on each desktop line from the
  * face tag it led with or its words (shared/seilinkExpression.ts); the page
@@ -34,7 +34,7 @@ export function toNeutral(l: HostAvatarLook): HostAvatarLook {
   return { emotion: null, face: l.face === null ? null : 'neutral', seq: l.seq + 1 };
 }
 
-// ── her voice from a call (261110) ──────────────────────────────────────────
+// â”€â”€ her voice from a call (261110) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** A call audio level relayed from the main window, and its performance.now() time. */
 export interface VoiceLevel {
@@ -50,3 +50,7 @@ export function mouthLevel(voice: VoiceLevel | undefined, syllable: number, now:
   if (voice && voice.at > 0 && now - voice.at < VOICE_LEVEL_FRESH_MS) return Math.max(0, Math.min(1, voice.level));
   return syllable;
 }
+
+
+
+

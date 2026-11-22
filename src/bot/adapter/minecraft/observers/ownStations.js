@@ -1,4 +1,4 @@
-// 261017 (pass 14b): the crafting tables and furnaces that are hers.
+﻿// 261017 (pass 14b): the crafting tables and furnaces that are hers.
 //
 // The progression spine counts a placed station as had (so a furnace she put
 // down does not leave "make a furnace" as her next milestone). Any furnace in
@@ -33,3 +33,7 @@ export function recordOwnStation(bot, name, pos) {
 export function ownStationPositions(bot, name) {
   return Array.isArray(bot?._seiOwnStations?.[name]) ? bot._seiOwnStations[name] : []
 }
+
+
+
+

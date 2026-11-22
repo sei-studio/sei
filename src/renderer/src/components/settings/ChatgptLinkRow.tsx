@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ChatgptLinkRow: Settings > Account "ChatGPT" row (261023).
  *
  * Lets a signed-in Sei user attach their ChatGPT identity so "Continue with
@@ -142,3 +142,7 @@ export function ChatgptLinkRow(props: ChatgptLinkRowProps): React.ReactElement {
     </>
   );
 }
+
+
+
+

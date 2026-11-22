@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023 boot offer, main side: which local leftovers earn a prompt, and the
  * device-global "already offered" record.
  *
@@ -85,7 +85,7 @@ describe('peekLocalProfile: the untouched seeded Sui', () => {
   it('flags Sui with no memory and only her own greeting as untouched', async () => {
     await seedLocal([[SUI, DEFAULT_CHARACTERS_OWNER]], [SUI]);
     await seedMemory(SUI, {
-      'MEMORY.md': HEADER + '## World 1 — Base (Minecraft)\n',
+      'MEMORY.md': HEADER + '## World 1 â€” Base (Minecraft)\n',
       'chat.jsonl': JSON.stringify({ id: 'g', role: 'assistant', text: 'hi!', ts: 1 }) + '\n',
       'PLAYER.md': '# Player\n\nname: Boss\n',
     });
@@ -133,3 +133,7 @@ describe('localImportOffered (device-global, per account)', () => {
     expect(await wasLocalImportOffered(ACCOUNT)).toBe(false);
   });
 });
+
+
+
+

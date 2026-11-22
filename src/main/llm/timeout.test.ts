@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: a local/BYOK provider's own request timeout must surface as a real
  * error (LlmTimeoutError, classified "timeout"), while a caller cancel keeps
  * throwing the AbortError every surface reads as a silent interrupt.
@@ -127,3 +127,7 @@ describe('ollama keeps the 120 s local floor', () => {
     expect(err.message).toContain(`${LOCAL_TIMEOUT_FLOOR_MS / 1000}s`);
   });
 });
+
+
+
+

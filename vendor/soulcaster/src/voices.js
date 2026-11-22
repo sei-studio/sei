@@ -1,9 +1,9 @@
-// Curated ElevenLabs voice pool for the Stage 1 voice roll.
+﻿// Curated ElevenLabs voice pool for the Stage 1 voice roll.
 //
 // Like every other option table, voice variety is forced table-side: rollVoice
 // (index.js) filters this pool by the character's gender and age band, weights
 // it by personality-seed affinity, excludes voices already taken by the
-// caller's other characters, and picks one. The LLM never chooses the voice —
+// caller's other characters, and picks one. The LLM never chooses the voice â€”
 // it only writes voice_style prose consistent with the rolled voice's vibe.
 //
 // Entry shape:
@@ -16,7 +16,7 @@
 //          brand or a known character (Grampa Werthers -> Walt).
 //   gender 'female' | 'male' | 'neutral'. Neutral voices are eligible for any
 //          character gender (see rollVoice weighting).
-//   age    'young' | 'adult' | 'elder' — coarse apparent-age band.
+//   age    'young' | 'adult' | 'elder' â€” coarse apparent-age band.
 //   tags   Closed vocabulary matched against SEED_VOICE_TAGS for personality
 //          affinity. 'robotic' is special: robotic voices are ONLY eligible
 //          for robot-background characters (and are strongly preferred there).
@@ -88,7 +88,7 @@ export const VOICES = [
 
   // -------------------------------------------------------------------- male
   // young
-  { id: 'SOYHLrjzK2X1ezoPC6cr', owner: null, label: 'Harry', gender: 'male', age: 'young', tags: ['rough', 'intense', 'energetic'], vibe: 'fierce and rough, a young warrior’s bark, American accent' },
+  { id: 'SOYHLrjzK2X1ezoPC6cr', owner: null, label: 'Harry', gender: 'male', age: 'young', tags: ['rough', 'intense', 'energetic'], vibe: 'fierce and rough, a young warriorâ€™s bark, American accent' },
   { id: 'wSqOdjeNqDrHcoK0zorF', owner: '59b69ab0c20dacf272109a7a9f65228f6767244c99a93f287eec05754f550f7a', label: 'Lukas', gender: 'male', age: 'young', tags: ['excited', 'upbeat', 'bright', 'energetic'], vibe: 'excited and youthful, bursting with enthusiasm, American accent' },
   { id: 'NXaTw4ifg0LAguvKuIwZ', owner: 'be7f2f07098dc23343bab4a9a1202b290c2456f82b01ebcecea0a8af8a146bd9', label: 'Josh', gender: 'male', age: 'young', tags: ['classy', 'sly', 'confident'], vibe: 'posh British, playfully smug' },
   { id: '5J8HNhWkTAhN2YWsd9Ta', owner: '533f956cf2444e80b69c8f48cd7ba487892379c6754f9019db544a3e1fffae74', label: 'Dev', gender: 'male', age: 'young', tags: ['cute', 'upbeat', 'casual'], vibe: 'lively Korean-accented streamer, boyish charm' },
@@ -102,7 +102,7 @@ export const VOICES = [
   // adult
   { id: 'N2lVS1w4EtoT3dr4eOWO', owner: null, label: 'Callum', gender: 'male', age: 'adult', tags: ['sly', 'raspy', 'dry'], vibe: 'husky trickster, mischief in the gravel, American accent' },
   { id: 'ktrGUw7rURIQyMrQZqCu', owner: 'bb2cf94b50b0c896a7379e353e0cbf14e27975948e820bb6e749f0013e238cc8', label: 'Cassius', gender: 'male', age: 'adult', tags: ['commanding', 'classy', 'wise', 'calm'], vibe: 'velvety, measured and commanding British' },
-  { id: 'Xq2dbIWNPChFB77imiDe', owner: 'f426b5e4e149cced75ac3745b8ef7071a45c5e94648bbb4eef3a45c303152e71', label: 'Gideon', gender: 'male', age: 'adult', tags: ['rough', 'sly', 'raspy'], vibe: 'a pirate’s brogue, rough Irish mischief' },
+  { id: 'Xq2dbIWNPChFB77imiDe', owner: 'f426b5e4e149cced75ac3745b8ef7071a45c5e94648bbb4eef3a45c303152e71', label: 'Gideon', gender: 'male', age: 'adult', tags: ['rough', 'sly', 'raspy'], vibe: 'a pirateâ€™s brogue, rough Irish mischief' },
   { id: 'cymHWdiF8WjUCg6vvFxx', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Vane', gender: 'male', age: 'adult', tags: ['rough', 'raspy', 'steady'], vibe: 'rugged and gravelly, weathered outdoorsman, American accent' },
   { id: 'jhBzyKbsdeM6F66SZCaK', owner: '64cbc624eb5aab4e95a968e1f41d75402277cca6e549036ed17e56ea33bbbc9e', label: 'Sterling', gender: 'male', age: 'adult', tags: ['steady', 'deep', 'classy', 'rough'], vibe: 'steady and resonant British' },
   { id: '2ajXGJNYBR0iNHpS4VZb', owner: '465295810ef94f8627fad34ba88551a02745957d1c3b09877a3fc3de528d6f2f', label: 'Rob', gender: 'male', age: 'adult', tags: ['rough', 'steady', 'deep'], vibe: 'tough, calloused British veteran' },
@@ -126,7 +126,7 @@ export const VOICES = [
 ];
 
 // Personality seed -> voice tags that suit it. Used as a soft multiplier in
-// rollVoice, never a hard filter — every seed still has the whole pool
+// rollVoice, never a hard filter â€” every seed still has the whole pool
 // available, matching voices are just likelier. Keys must cover
 // PERSONALITY_SEEDS (tables.js); a test enforces the mapping stays complete,
 // and that every tag a rollable voice carries is reachable from some seed
@@ -158,3 +158,7 @@ export const SEED_VOICE_TAGS = {
   proud: ['classy', 'commanding', 'confident'],
   curious: ['bright', 'upbeat', 'excited'],
 };
+
+
+
+

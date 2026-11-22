@@ -1,4 +1,4 @@
-// 261018: quality pass 16. Claims about her OWN state that contradicted her
+﻿// 261018: quality pass 16. Claims about her OWN state that contradicted her
 // sensors (the largest off category in the pass-15 scripted convos):
 //  - "i have zero items" kept after a sword and bread arrived: the arrival
 //    was shown on one snapshot only. Items that come in without an action of
@@ -190,7 +190,7 @@ describe('renderHeartbeat while she is stopped on the player\'s word', () => {
   })
 })
 
-// ─── orchestrator ───────────────────────────────────────────────────────
+// â”€â”€â”€ orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -366,3 +366,7 @@ describe('orchestrator: items that came in are on the record', () => {
     expect(gift).toBeGreaterThan(her)
   })
 })
+
+
+
+

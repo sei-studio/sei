@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chat-side MEMORY.md compaction (260810).
  *
  * The Minecraft bot has compacted MEMORY.md since 260703 (compactor.js, fired
@@ -6,24 +6,24 @@
  * 8192). The chat-family surfaces (chat, voice, chess, Draw!, backseat) never
  * did: they append via the same memoryLog.js but only ever READ a 12000-byte
  * tail (readMemoryTail). So a character that is never summoned grows MEMORY.md
- * forever — old real memories fall off the visible tail while the file bloats
+ * forever â€” old real memories fall off the visible tail while the file bloats
  * (measured: Sui at 43 KB after a week of backseat sessions, with everything
  * before Aug 7 invisible to every prompt).
  *
  * This module is the main-process trigger. It REUSES the bot's compactor
  * wholesale (createMemoryCompactor is plain ESM over node:fs + the pure
- * promptLibrary — main already imports memoryLog.js from the same directory),
+ * promptLibrary â€” main already imports memoryLog.js from the same directory),
  * adapting main's chat SDK (cloud-proxy vs BYOK aware, same plumbing as every
  * chat turn) to the compactor's `anthropic.call()` interface. One compactor,
  * one prompt, two surfaces.
  *
- * RACE GUARD — the bot process may be compacting the same file:
+ * RACE GUARD â€” the bot process may be compacting the same file:
  *   - The file lock serializing MEMORY.md writers (fileLock.js) is IN-PROCESS
  *     only, so main must not compact while a bot for this character is live.
  *     isCharacterSummoned (botSupervisor, includes pending summons) gates every
  *     pass; the summon side needs no gate because the bot only compacts after
  *     its own remember() calls, which cannot happen before main's pass ends...
- *     except across the summon boundary — for that window the compactor's own
+ *     except across the summon boundary â€” for that window the compactor's own
  *     lost-update guard (re-read + discard on drift before writing) bounds the
  *     damage to "this pass is discarded", never a lost entry.
  *   - Single-flight per character within main (this module's inFlight set, on
@@ -45,7 +45,7 @@ import { isModelRequestRejection } from './modelRejection';
  *
  * The bot compacts at 8 KB because it reads MEMORY.md nearly whole into every
  * loop seed, so an oversized file costs every single turn. The chat surfaces
- * read only a fixed 12000-byte TAIL, so there is no per-turn urgency at all —
+ * read only a fixed 12000-byte TAIL, so there is no per-turn urgency at all â€”
  * the only job here is to keep the file from growing without bound and to
  * fold weeks-old entries back into the visible tail before they are lost to
  * every prompt. Compacting late (32 KB) preserves full detail for longer,
@@ -179,7 +179,7 @@ export async function maybeCompactChatMemory(characterId: string): Promise<boole
   inFlight.add(characterId);
   try {
     const filePath = path.join(paths.memoryDir(characterId), 'MEMORY.md');
-    // Size gate FIRST — it is the hot path (fired after every chat reply via
+    // Size gate FIRST â€” it is the hot path (fired after every chat reply via
     // foldIfDue) and must stay a single stat() with no other module loads.
     let size = 0;
     try {
@@ -189,14 +189,14 @@ export async function maybeCompactChatMemory(characterId: string): Promise<boole
     }
     if (size < CHAT_COMPACTION_TRIGGER_BYTES) return false;
 
-    // Race guard: never compact while this character's bot process is live —
+    // Race guard: never compact while this character's bot process is live â€”
     // it runs its own compactor over the same file and the write lock is
     // in-process only. Dynamic import keeps the module graph acyclic
     // (botSupervisor statically imports continuity, which imports this file).
     const { isCharacterSummoned } = await import('../botSupervisor');
     if (isCharacterSummoned(characterId)) return false;
 
-    // Persona (for the compacted entries' voice) — best-effort; compaction
+    // Persona (for the compacted entries' voice) â€” best-effort; compaction
     // without a persona is still correct.
     let personaExpanded = '';
     try {
@@ -223,3 +223,7 @@ export async function maybeCompactChatMemory(characterId: string): Promise<boole
     inFlight.delete(characterId);
   }
 }
+
+
+
+

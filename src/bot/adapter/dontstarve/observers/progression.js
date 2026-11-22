@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/observers/progression.js: the Don't Starve
+﻿// src/bot/adapter/dontstarve/observers/progression.js: the Don't Starve
 // Together progression frontier (260926), the counterpart of the Minecraft
 // spine and the Stardew first fortnight for the brain's heartbeat.
 //
@@ -177,3 +177,7 @@ export function getProgression(state, latches) {
   latches?.observe?.(state)
   return computeProgression(readProgressionState(state, latches))
 }
+
+
+
+

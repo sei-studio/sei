@@ -1,5 +1,5 @@
-/**
- * DrawCanvas — the white page. The only component that owns a rendering
+﻿/**
+ * DrawCanvas â€” the white page. The only component that owns a rendering
  * context, which is why it also handles the two pixel-side pushes:
  * draw:snapshot-request (rasterize what is on screen right now) and
  * draw:ai-stroke (queue the character's strokes and play them at hand speed).
@@ -156,7 +156,7 @@ export function DrawCanvas({
     dirty.current = true;
   }, [strokes, mode]);
 
-  // ── the character's strokes ────────────────────────────────────────────────
+  // â”€â”€ the character's strokes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const off = drawApi().onDrawAiStroke?.((s: DrawAiStroke) => {
       if (s.characterId !== characterId) return;
@@ -167,7 +167,7 @@ export function DrawCanvas({
     return () => off?.();
   }, [characterId]);
 
-  // ── snapshots for the character to look at ────────────────────────────────
+  // â”€â”€ snapshots for the character to look at â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const off = drawApi().onDrawSnapshotRequest?.((r) => {
       if (r.characterId !== characterId) return;
@@ -188,7 +188,7 @@ export function DrawCanvas({
     return () => off?.();
   }, [characterId, displayed]);
 
-  // ── sizing ────────────────────────────────────────────────────────────────
+  // â”€â”€ sizing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
@@ -233,7 +233,7 @@ export function DrawCanvas({
     return () => ro.disconnect();
   }, []);
 
-  // ── render loop ───────────────────────────────────────────────────────────
+  // â”€â”€ render loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     let raf = 0;
     const frame = (): void => {
@@ -293,7 +293,7 @@ export function DrawCanvas({
     return () => cancelAnimationFrame(raf);
   }, [displayed]);
 
-  // ── pointer input ─────────────────────────────────────────────────────────
+  // â”€â”€ pointer input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const toLogical = (e: React.PointerEvent): DrawPoint => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     return {
@@ -384,3 +384,7 @@ export function DrawCanvas({
     </div>
   );
 }
+
+
+
+

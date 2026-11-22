@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the scope check that runs before EVERY input action.
  *
  * The act loop may only touch what the player shared. The check is done in
@@ -142,3 +142,7 @@ export function checkScope(ctx: ScopeContext, touch: ActionTouch): ScopeResult {
   }
   return { ok: true };
 }
+
+
+
+

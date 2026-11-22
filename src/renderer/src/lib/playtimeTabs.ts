@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime page tabs (261110, product call 261110): Sei (the Sei plan on
  * the cloud), ChatGPT (the user's ChatGPT plan as the brain) and My keys
  * (own API keys or a local model). Pure, so the selection rules are tested
@@ -31,3 +31,7 @@ export function isActiveSetupTab(
   if (backend !== 'cloud-proxy' && backend !== 'local') return false;
   return playtimeTabForSetup(backend, provider) === tab;
 }
+
+
+
+

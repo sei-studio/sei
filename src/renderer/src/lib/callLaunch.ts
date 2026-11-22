@@ -1,5 +1,5 @@
-/**
- * callLaunch (260722) — routing for the top-bar phone button and the presence
+﻿/**
+ * callLaunch (260722) â€” routing for the top-bar phone button and the presence
  * panel's Call button.
  *
  * Starting a call normally opens the fullscreen VoiceCallScreen. But while a
@@ -75,3 +75,7 @@ export function startOrOpenCall(characterId: string): void {
     })
     .catch(() => navigate({ kind: 'voice-call', characterId }));
 }
+
+
+
+

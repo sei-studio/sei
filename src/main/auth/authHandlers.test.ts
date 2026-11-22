@@ -1,5 +1,5 @@
-/**
- * Tests for plan 10-04 — signInWithPassword + signUpWithPassword handler bodies.
+﻿/**
+ * Tests for plan 10-04 â€” signInWithPassword + signUpWithPassword handler bodies.
  *
  * Stubs getClient() from ./supabaseClient so the handlers don't try to reach
  * a real Supabase project. Asserts the {ok:true} happy path and each of the
@@ -7,17 +7,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mocked auth methods — replaced per-test via mockResolvedValue / mockRejectedValue.
+// Mocked auth methods â€” replaced per-test via mockResolvedValue / mockRejectedValue.
 const signInWithPasswordMock = vi.fn();
 const signUpMock = vi.fn();
-// 260605 — account_identity_providers lookup. Default resolves data:null so the
+// 260605 â€” account_identity_providers lookup. Default resolves data:null so the
 // handler fails open to the generic (provider-less) already-registered message;
 // per-test overrides report a provider list (e.g. ['google']).
 const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
 // 260729 silent forgot-password: signUp on a registered email quietly sends a
 // reset link instead of surfacing already_registered. Default resolves ok.
 const resetPasswordForEmailMock = vi.fn().mockResolvedValue({ data: {}, error: null });
-// 260804 PIN migration — token redemption and code resend.
+// 260804 PIN migration â€” token redemption and code resend.
 const verifyOtpMock = vi.fn();
 const resendMock = vi.fn().mockResolvedValue({ data: {}, error: null });
 
@@ -50,7 +50,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-// 260603 anti-abuse — make the signup pre-checks deterministic. By default the
+// 260603 anti-abuse â€” make the signup pre-checks deterministic. By default the
 // cooldown ALLOWS (so the pre-existing happy-path tests are unaffected) and the
 // captcha seam is inert. Per-test overrides exercise the cooldown-block branch.
 const checkSignupCooldownMock = vi.fn().mockResolvedValue({ allowed: true, retryAfterMs: 0 });
@@ -139,7 +139,7 @@ describe('signInWithPassword', () => {
     }
   });
 
-  it('260519 UAT fix #3: treats "Email not confirmed" as {ok:true} (D-04 — verification does not block sign-in)', async () => {
+  it('260519 UAT fix #3: treats "Email not confirmed" as {ok:true} (D-04 â€” verification does not block sign-in)', async () => {
     // Supabase returns this error when email-confirm is enabled and the user
     // signs in before confirming. Per D-04 this is not a failure.
     //
@@ -243,7 +243,7 @@ describe('signUpWithPassword', () => {
     // call. The DOB is never logged or persisted; this is the only place we
     // touch it.
     const today = new Date();
-    // 12 years and 6 months ago — comfortably under 13.
+    // 12 years and 6 months ago â€” comfortably under 13.
     const dobYear = today.getFullYear() - 12;
     const dobMonth = today.getMonth() + 1;
     const dobDay = today.getDate();
@@ -264,7 +264,7 @@ describe('signUpWithPassword', () => {
   });
 
   it('F-10: allows exactly-13 DOB (boundary)', async () => {
-    // The user is exactly 13 today — must pass the gate.
+    // The user is exactly 13 today â€” must pass the gate.
     signUpMock.mockResolvedValue({ data: { session: null, user: { id: 'u1' } }, error: null });
     const today = new Date();
     const dobYear = today.getFullYear() - 13;
@@ -285,15 +285,15 @@ describe('signUpWithPassword', () => {
     // After WR-03 we deliberately collapse any unclassified signup error
     // (including thrown network errors) into { ok: true, requiresVerification: true }
     // so an attacker cannot distinguish a registered email (which might surface
-    // as a 500 / "duplicate key" → network) from a fresh signup (neutral success).
-    // Trade-off: a real offline retry now looks like "check your email" — accepted
+    // as a 500 / "duplicate key" â†’ network) from a fresh signup (neutral success).
+    // Trade-off: a real offline retry now looks like "check your email" â€” accepted
     // because T-10-04 is a security gate, not a UX preference.
     signUpMock.mockRejectedValue(new Error('fetch failed'));
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
     expect(r).toEqual({ ok: true, requiresVerification: true });
   });
 
-  // ── 260603 anti-abuse: signup cooldown + per-IP guard ───────────────────
+  // â”€â”€ 260603 anti-abuse: signup cooldown + per-IP guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('returns cooldown (no Supabase call) when the device cooldown is active', async () => {
     checkSignupCooldownMock.mockResolvedValue({ allowed: false, retryAfterMs: 30_000 });
     const r = await signUpWithPassword({ email: 'a@b.com', password: 'longenough', dobYear: 1990, dobMonth: 6, dobDay: 15 });
@@ -302,7 +302,7 @@ describe('signUpWithPassword', () => {
       expect(r.code).toBe('cooldown');
       expect((r as { retryAfterMs: number }).retryAfterMs).toBe(30_000);
     }
-    // Cooling down → no Supabase signup, and the attempt is NOT recorded
+    // Cooling down â†’ no Supabase signup, and the attempt is NOT recorded
     // (recordSignupAttempt runs only on the allowed path).
     expect(signUpMock).not.toHaveBeenCalled();
     expect(recordSignupAttemptMock).not.toHaveBeenCalled();
@@ -343,7 +343,7 @@ describe('signUpWithPassword', () => {
 /**
  * 260804 PIN migration. The behaviour under test is not "a code works" so much
  * as "the code panel cannot tell the caller which kind of email an address
- * received" — the enumeration property alreadyRegisteredResult buys and that a
+ * received" â€” the enumeration property alreadyRegisteredResult buys and that a
  * naive single-type implementation would give straight back.
  */
 describe('verifyEmailCode', () => {
@@ -452,3 +452,7 @@ describe('resendVerification', () => {
     expect(r).toEqual({ ok: true });
   });
 });
+
+
+
+

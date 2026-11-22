@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chat:clear vs the background summary fold (260705).
  *
  * Pins the two halves of the clear-race fix in continuity.ts:
@@ -7,9 +7,9 @@
  *     writeBridge afterwards would RESURRECT a summary of the wiped
  *     conversation (with a watermark above the now-empty transcript).
  *   - Stale-watermark degrade: a bridge whose summarizedCount outran the live
- *     transcript is treated as RESET (no summary, watermark 0) — a shrunken
+ *     transcript is treated as RESET (no summary, watermark 0) â€” a shrunken
  *     transcript must degrade to "no summary", never "no history" (the old
- *     min() clamp yielded ZERO history → every send 400s until the fresh
+ *     min() clamp yielded ZERO history â†’ every send 400s until the fresh
  *     conversation outgrew the stale count).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -61,7 +61,7 @@ async function seed(n: number, from = 0): Promise<void> {
 
 describe('chat:clear racing an in-flight fold (260705)', () => {
   it('a clear during the fold LLM call does not resurrect the deleted bridge', async () => {
-    await seed(100); // window(50) + batch(50) → a fold is due
+    await seed(100); // window(50) + batch(50) â†’ a fold is due
     // Block the summarizer on a deferred so the clear can land mid-fold.
     let release!: (v: { content: Array<{ type: string; text: string }> }) => void;
     createSpy.mockImplementationOnce(
@@ -87,11 +87,11 @@ describe('chat:clear racing an in-flight fold (260705)', () => {
 
   it('a bridge watermark above the transcript degrades to no-summary, never no-history', async () => {
     await seed(100);
-    await foldIfDue(CHAR); // real fold → bridge.json { summary, summarizedCount: 50 }
+    await foldIfDue(CHAR); // real fold â†’ bridge.json { summary, summarizedCount: 50 }
     expect(await readSummary(CHAR)).toBe('ROLLED SUMMARY');
     createSpy.mockClear();
 
-    // Wipe ONLY the transcript (not clearContinuity) — the bridge is now stale.
+    // Wipe ONLY the transcript (not clearContinuity) â€” the bridge is now stale.
     await chatStore.clear(CHAR);
     await seed(3);
 
@@ -101,3 +101,7 @@ describe('chat:clear racing an in-flight fold (260705)', () => {
     expect(createSpy).not.toHaveBeenCalled(); // reads stay pure
   });
 });
+
+
+
+

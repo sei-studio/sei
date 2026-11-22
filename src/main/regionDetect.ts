@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Region detection for the W7 region gate (260816).
  *
  * One GET to the Cloudflare-fronted proxy's trace endpoint, parsed for the
- * `loc=CC` line. Everything unhappy — network error, timeout, non-2xx, absent or
- * junk loc — resolves to `loc: null` (= 'unknown'), and unknown is ALLOWED:
+ * `loc=CC` line. Everything unhappy â€” network error, timeout, non-2xx, absent or
+ * junk loc â€” resolves to `loc: null` (= 'unknown'), and unknown is ALLOWED:
  * the gate FAILS OPEN so a detection hiccup never blocks a legitimate user.
  *
  * 261103 (T303): nothing is cached. Every auth attempt and every renderer
@@ -12,9 +12,9 @@
  * attempt, not after a restart). Only concurrent callers share one fetch.
  *
  * Consumers:
- *   - src/main/auth/authHandlers.ts — the AUTHORITATIVE gate, checked before
+ *   - src/main/auth/authHandlers.ts â€” the AUTHORITATIVE gate, checked before
  *     signInWithPassword / signUpWithPassword / signInWithGoogle run.
- *   - the `region:status` IPC handler — the renderer's pre-check so the
+ *   - the `region:status` IPC handler â€” the renderer's pre-check so the
  *     blocking popup can appear before a failed submit.
  */
 import { isRegionBlocked, parseTraceLoc, type RegionStatus } from '../shared/regionGate';
@@ -24,7 +24,7 @@ const TRACE_TIMEOUT_MS = 5_000;
 let inFlight: Promise<string | null> | null = null;
 
 /**
- * One uncached trace fetch. Never rejects — every failure mode is null.
+ * One uncached trace fetch. Never rejects â€” every failure mode is null.
  * `fetchImpl` is injectable for tests only.
  *
  * The default is Electron's `net.fetch` (Chromium network stack), NOT the
@@ -33,7 +33,7 @@ let inFlight: Promise<string | null> | null = null;
  * (seen live: proxy exit JP, direct HK) the probe saw a country the user's
  * browser never touches and produced a false "region blocked". It is resolved
  * LAZILY via dynamic import because this module's tests run under vitest
- * without Electron — a top-level `import { net } from 'electron'` would break
+ * without Electron â€” a top-level `import { net } from 'electron'` would break
  * them.
  */
 export async function detectRegionLoc(fetchImpl?: typeof fetch): Promise<string | null> {
@@ -70,3 +70,7 @@ export async function getRegionStatus(fetchImpl?: typeof fetch): Promise<RegionS
 export function resetRegionCacheForTest(): void {
   inFlight = null;
 }
+
+
+
+

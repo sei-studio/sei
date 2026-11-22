@@ -1,5 +1,5 @@
-/**
- * Startup popup (261027) — pure rules for the operator's one-page popup.
+﻿/**
+ * Startup popup (261027) â€” pure rules for the operator's one-page popup.
  *
  * Replaces the notices inbox in the UI. The same side-channel feed
  * (https://sei.gg/notices.json) gains an optional top-level `popup` object:
@@ -294,3 +294,7 @@ export class PopupFrameTracker {
     return this.state === 'ok';
   }
 }
+
+
+
+

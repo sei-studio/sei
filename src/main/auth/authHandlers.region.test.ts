@@ -1,5 +1,5 @@
-/**
- * W7 region gate (260816) — handler gate tests.
+﻿/**
+ * W7 region gate (260816) â€” handler gate tests.
  *
  * Mocks '../regionDetect' to steer the verdict and asserts:
  *   - blocked  -> signIn/signUp/Google return the region_blocked error shape
@@ -169,3 +169,7 @@ describe('region gate: detector failure -> allowed (fail open)', () => {
     expect(r).toEqual({ ok: true });
   });
 });
+
+
+
+

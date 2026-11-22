@@ -1,10 +1,10 @@
-// src/bot/adapter/minecraft/lanDiscovery.js
+﻿// src/bot/adapter/minecraft/lanDiscovery.js
 //
 // One-shot LAN discovery (260722: former CLI user removed) and
 // the CLI bot bootstrap path in src/bot/index.js (when process.parentPort is
 // undefined). The Electron main process uses src/main/lanWatcher.ts (a
 // long-lived watcher); the bot child does NOT call discoverLanPort during
-// summon — main hands the cached port over MessagePort (CONTEXT D-25,
+// summon â€” main hands the cached port over MessagePort (CONTEXT D-25,
 // Pitfall 6). A small dedicated implementation here keeps the bot adapter from
 // importing the main-process module tree (it mirrors src/main/mcPing.ts +
 // src/main/listeningPorts.ts).
@@ -12,7 +12,7 @@
 // Loopback edition: dropped Minecraft's multicast beacon (224.0.2.60:4445)
 // because macOS 26 silently drops custom multicast for signed apps without the
 // restricted multicast entitlement (which bricks launch). Instead we enumerate
-// local listening TCP ports and Minecraft-status-ping them over loopback — Sei
+// local listening TCP ports and Minecraft-status-ping them over loopback â€” Sei
 // is same-machine only, so 127.0.0.1 is all we ever need, and loopback is
 // exempt from Local Network privacy. The LAN port is random per session; the
 // live socket table gives us the current one directly.
@@ -161,7 +161,7 @@ async function firstMcWorld(ports) {
 
 /**
  * One-shot: resolve { port, motd } for the first locally-listening Minecraft
- * world, or reject within timeoutMs. Used by the CLI only — Electron uses
+ * world, or reject within timeoutMs. Used by the CLI only â€” Electron uses
  * watchLan() in src/main/lanWatcher.ts.
  */
 export async function discoverLanPort({ timeoutMs = 5000 } = {}) {
@@ -183,3 +183,7 @@ export async function discoverLanPort({ timeoutMs = 5000 } = {}) {
   })()
   return Promise.race([discover, deadline])
 }
+
+
+
+

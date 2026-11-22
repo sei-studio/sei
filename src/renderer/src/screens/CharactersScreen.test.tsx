@@ -1,5 +1,5 @@
-/**
- * Tests for CharactersScreen — B4 (Home / World tabs) + Party redesign
+﻿/**
+ * Tests for CharactersScreen â€” B4 (Home / World tabs) + Party redesign
  * (party wall home, awaken view, World scouting grid).
  *
  * Project convention (no @testing-library/react installed): exercise the
@@ -64,7 +64,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(source.includes('capabilities')).toBe(false);
   });
 
-  it('Test 3: tab labels removed — navigation lives in IconRail now', () => {
+  it('Test 3: tab labels removed â€” navigation lives in IconRail now', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // No "Browse" anywhere as a label.
     expect(/>\s*Browse\s*</.test(source)).toBe(false);
@@ -106,7 +106,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
   });
 
   it('Test 7: CharacterCard is fully retired (party wall replaced the card grid)', () => {
-    // The component was deleted outright in the Party redesign — the home
+    // The component was deleted outright in the Party redesign â€” the home
     // surface renders full-height panels, not cards, so no chip vocabulary
     // (MINE / WORLD / LOCAL ONLY / CLOUD) can ever return.
     expect(existsSync(CARD_PATH)).toBe(false);
@@ -132,7 +132,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(mainIpc.includes('IpcChannel.capabilities')).toBe(false);
   });
 
-  // ── Party redesign (UI-REDESIGN-PARTY.md §4.2–§4.4) ─────────────────────
+  // â”€â”€ Party redesign (UI-REDESIGN-PARTY.md Â§4.2â€“Â§4.4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const HOME_CSS = resolve(REPO_ROOT, 'src', 'renderer', 'src', 'screens', 'HomeScreen.module.css');
   const CHOOSER = resolve(
     REPO_ROOT, 'src', 'renderer', 'src', 'components', 'AddCompanionChooserModal.tsx',
@@ -288,7 +288,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
 
   it('Test 19: World invite moved to CharacterPage; the in-card hover CTA is gone', () => {
     // 260706: the hover Invite overlay was removed from World cards. Invite is
-    // still reachable — the card body opens CharacterPage, whose "Add to
+    // still reachable â€” the card body opens CharacterPage, whose "Add to
     // library" CTA runs the same charsAddToLibrary / charsRestoreDefault path
     // (with the identical sign-in gate). So the invite plumbing left WorldGrid.
     const source = readFileSync(TSX_PATH, 'utf-8');
@@ -313,7 +313,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
   it('Test 20: World first two rows gate reveal on portrait load (group reveal)', () => {
     // The above-the-fold rows hold a wireframe until every portrait in them
     // loads (or errors / times out), then reveal together via BrowseCard's
-    // `ready` override — no per-card pop-in.
+    // `ready` override â€” no per-card pop-in.
     const source = readFileSync(TSX_PATH, 'utf-8');
     expect(source.includes('firstRowsReady')).toBe(true);
     expect(source.includes('FIRST_ROWS_REVEAL_TIMEOUT_MS')).toBe(true);
@@ -340,3 +340,7 @@ describe('CharactersScreen (B4 Home / World refactor)', () => {
     expect(css.includes('.autoloadSentinel')).toBe(true);
   });
 });
+
+
+
+

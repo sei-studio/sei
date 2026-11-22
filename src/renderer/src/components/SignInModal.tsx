@@ -1,10 +1,10 @@
-/**
- * SignInModal — unified sign-in / sign-up modal (D-01).
+﻿/**
+ * SignInModal â€” unified sign-in / sign-up modal (D-01).
  *
  * Mode toggle inside the form. Email + Password. Primary accent CTA changes
  * label per mode. Google ghost button (plan 05 wires the actual OAuth dance).
  *
- * Dismissal label follows the UI-SPEC dismissal-label policy — a specific
+ * Dismissal label follows the UI-SPEC dismissal-label policy â€” a specific
  * verb+noun phrase, never the generic 'Cancel'.
  *
  * Email verification does NOT block sign-in (D-04). On signup success the
@@ -16,7 +16,7 @@
  * a recovery session and App.tsx raises SetNewPasswordModal. (Superseded the
  * Phase 10 non-functional placeholder, T-10-04-03.)
  *
- * Source: 10-UI-SPEC §SignInModal + Copywriting Contract.
+ * Source: 10-UI-SPEC Â§SignInModal + Copywriting Contract.
  */
 import React, { useEffect, useState } from 'react';
 import { sei } from '../lib/ipcClient';
@@ -45,7 +45,7 @@ export interface SignInModalProps {
 
 type Mode = 'signin' | 'signup';
 
-/** See AuthChoiceScreen — same client-side email-shape hint (item 8). */
+/** See AuthChoiceScreen â€” same client-side email-shape hint (item 8). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.ReactElement {
@@ -55,7 +55,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   /**
-   * 261023 — the failed-password message that earns the "Signed up with Google
+   * 261023 â€” the failed-password message that earns the "Signed up with Google
    * or ChatGPT?" hint. Keyed to the message so the hint goes away with it.
    * Shown for every invalid_credentials answer, which Supabase gives for a
    * wrong password and for an unknown address alike, so it reveals nothing
@@ -65,7 +65,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const [submitting, setSubmitting] = useState(false);
   /**
    * 260519 UAT fix #2: when signUp returns requiresVerification=true and no
-   * session, Supabase has email-confirm enabled — no session is issued until
+   * session, Supabase has email-confirm enabled â€” no session is issued until
    * the address is confirmed. The original executor blindly closed the modal
    * on every {ok:true}, bouncing the user back to AuthChoice with no feedback,
    * so the modal stays open on a sub-state instead.
@@ -80,14 +80,14 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   /**
    * Plan 10-05: when true, OAuthInterstitialModal mounts as a sibling above
    * this modal. SignInModal STAYS MOUNTED so the typed `email` value is
-   * preserved across an OAuth cancel — on cancel we just flip this back to
+   * preserved across an OAuth cancel â€” on cancel we just flip this back to
    * false and the SignInModal reappears with the email field still filled
-   * (UI-SPEC §Interaction Contracts → OAuth flow §5: cancel returns to
+   * (UI-SPEC Â§Interaction Contracts â†’ OAuth flow Â§5: cancel returns to
    * SignInModal NOT AuthChoice, preserving the typed email).
    */
   const [oauthInFlight, setOauthInFlight] = useState(false);
   /**
-   * Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture branch. The checkbox
+   * Plan 11-12 (D-26 / LIB-06) â€” at-sign-up ToS capture branch. The checkbox
    * is REQUIRED in signup mode: the submit button is disabled until it's
    * checked. After supabase.auth.signUp() succeeds the main process records
    * the tos_acceptance row (authHandlers.signUpWithPassword fire-and-forget);
@@ -96,20 +96,20 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
    */
   const [tosChecked, setTosChecked] = useState(false);
   /**
-   * F-10 (quick/260525-usc) — COPPA DOB age gate. Three dropdowns, defaults
+   * F-10 (quick/260525-usc) â€” COPPA DOB age gate. Three dropdowns, defaults
    * to empty placeholder options. Submit button additionally disabled until
    * all three are set. The DOB is sent to main on submit, where the age
    * is computed via wall-clock today; if age < 13 main returns
    * `{ ok:false, code:'under_13' }` and we render the message inline via
    * the existing error path. The DOB itself is NEVER persisted by main
-   * (privacy minimisation — see privacy.html §7).
+   * (privacy minimisation â€” see privacy.html Â§7).
    */
   const [dobYear, setDobYear] = useState<string>('');
   const [dobMonth, setDobMonth] = useState<string>('');
   const [dobDay, setDobDay] = useState<string>('');
 
   // A non-recovery redemption signs the user in; the modal's job is done.
-  // Recovery redemptions deliberately do NOT close it here — App.tsx mounts
+  // Recovery redemptions deliberately do NOT close it here â€” App.tsx mounts
   // SetNewPasswordModal above, and unmounting the host mid-flow is what the
   // recovery gate exists to prevent.
   const codeState = useEmailCode(codeSentTo, onClose);
@@ -164,7 +164,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     e.preventDefault();
     if (submitting) return;
     setError(null);
-    // Item 8 — specific message for a malformed email, pre-network.
+    // Item 8 â€” specific message for a malformed email, pre-network.
     if (!EMAIL_RE.test(email.trim())) {
       setError(t("That doesn't look like a valid email address."));
       return;
@@ -174,7 +174,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       if (mode === 'signin') {
         const res = await sei.signInPassword({ email, password });
         if (res.ok) {
-          // 260804 — right password, address never confirmed. Main has already
+          // 260804 â€” right password, address never confirmed. Main has already
           // sent a fresh code; stay open on the code panel instead of closing
           // onto a session that was never issued.
           if (res.needsVerification) setCodeSentTo(email);
@@ -188,7 +188,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           setHintFor(res.code === 'invalid_credentials' ? userFacingError(res.message) : null);
         }
       } else {
-        // F-10 — DOB triple is required in signup mode. The submit button
+        // F-10 â€” DOB triple is required in signup mode. The submit button
         // is disabled until all three dropdowns are set; this parseInt cannot
         // produce NaN here because the disabled-guard above blocks the
         // submission. The DOB is sent to main for the COPPA age check; main
@@ -215,11 +215,11 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
             onClose();
           }
         } else if (res.code === 'region_blocked') {
-          // W7 backstop — same treatment as the sign-in branch.
+          // W7 backstop â€” same treatment as the sign-in branch.
           setRegionBlocked(true);
         } else if (res.code === 'already_registered') {
           // 260605 no-silent-failure: the email is already in use. Flip to
-          // sign-in mode (email stays filled) and show the honest message —
+          // sign-in mode (email stays filled) and show the honest message â€”
           // when it's an OAuth account the copy names the provider (e.g.
           // "Use Continue with Google"), and the Google button is right below.
           setMode('signin');
@@ -246,7 +246,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const onForgot = async (): Promise<void> => {
     if (submitting) return;
     setError(null);
-    // Reuse the typed email — the field is right above the link. Require a
+    // Reuse the typed email â€” the field is right above the link. Require a
     // valid-looking address before firing so we don't send the user to a
     // "check your email" dead-end with nothing entered.
     if (!EMAIL_RE.test(email.trim())) {
@@ -261,7 +261,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
         // SetNewPasswordModal above this one.
         setCodeSentTo(email);
       } else {
-        // rate_limited / network — surface the copy inline; the email field
+        // rate_limited / network â€” surface the copy inline; the email field
         // stays filled so the user can retry.
         setError(userFacingError(res.message));
       }
@@ -273,15 +273,15 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   const titleText = mode === 'signin' ? t('Sign in to Sei') : t('Create your Sei account');
   const ctaLabel = submitting
     ? mode === 'signin'
-      ? t('Signing in…')
-      : t('Creating account…')
+      ? t('Signing inâ€¦')
+      : t('Creating accountâ€¦')
     : mode === 'signin'
       ? t('Sign In')
       : t('Create Account');
   const toggleLabel =
     mode === 'signin' ? t('New here? Create an account') : t('Already have an account? Sign in');
 
-  // W7 region gate (260816) — cloud accounts are unavailable from this
+  // W7 region gate (260816) â€” cloud accounts are unavailable from this
   // region, so the whole form is replaced by the blocking message and one
   // acknowledging button. The gate never touches an existing session; this
   // modal only ever fronts signup/sign-in, so blocking it whole is correct.
@@ -342,10 +342,10 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
             disabled={gpt.phase === 'verifying' || gpt.code.length === 0}
             onClick={() => void gpt.submit()}
           >
-            {gpt.phase === 'verifying' ? t('Checking…') : t('Verify')}
+            {gpt.phase === 'verifying' ? t('Checkingâ€¦') : t('Verify')}
           </Button>
           <Button kind="quiet" size="md" disabled={gpt.resending} onClick={() => void gpt.resend()}>
-            {gpt.resending ? t('Sending…') : t('Send a new code')}
+            {gpt.resending ? t('Sendingâ€¦') : t('Send a new code')}
           </Button>
           <Button kind="quiet" size="md" onClick={gpt.cancel}>
             {t('Back')}
@@ -358,7 +358,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
   // 260804 code sub-state. Renders inside the same scrim+modal frame so the
   // user isn't bounced anywhere; only the body changes. ONE panel serves
   // signup, unconfirmed sign-in and password reset, and its copy names none of
-  // them (anti-enumeration — see the codeSentTo comment above).
+  // them (anti-enumeration â€” see the codeSentTo comment above).
   if (codeSentTo !== null) {
     // Keep the <strong> around the email: translate with the {email}
     // placeholder intact, then split on it and re-insert the styled node.
@@ -399,7 +399,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
             disabled={codeState.submitting || codeState.code.length === 0}
             onClick={() => void codeState.submit()}
           >
-            {codeState.submitting ? t('Checking…') : t('Verify')}
+            {codeState.submitting ? t('Checkingâ€¦') : t('Verify')}
           </Button>
           <Button
             kind="quiet"
@@ -407,7 +407,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
             disabled={codeState.resending}
             onClick={() => void codeState.resend()}
           >
-            {codeState.resending ? t('Sending…') : t('Send a new code')}
+            {codeState.resending ? t('Sendingâ€¦') : t('Send a new code')}
           </Button>
           <Button kind="quiet" size="md" onClick={onClose}>
             {t('Back to Sei')}
@@ -469,11 +469,11 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           ) : null}
 
           {/*
-            F-10 (quick/260525-usc) — COPPA DOB age gate. Three dropdowns
+            F-10 (quick/260525-usc) â€” COPPA DOB age gate. Three dropdowns
             (month / day / year). The DOB is sent to main on submit; main
             computes age via wall-clock today and rejects with
             `code: 'under_13'` if the user is younger than 13. The DOB is
-            NEVER persisted (privacy minimisation — see privacy.html §7).
+            NEVER persisted (privacy minimisation â€” see privacy.html Â§7).
             Years: 100 back from current year (1926..2026 by default).
           */}
           {mode === 'signup' ? (
@@ -661,3 +661,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
     </>
   );
 }
+
+
+
+

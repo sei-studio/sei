@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { defaultRoomState, describeRoom, type RoomPresetManifest } from './seilinkRoom';
 import { glowAlpha, itemRect, planFiles, roomDrawPlan, roomOverlay, roomTimeMix, roomTimeMixAt, roomViewport, splitAtAvatar, stageViewport, viewportToCanvas } from './seilinkDraw';
 import { isSafeRoomPackPath, parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
@@ -221,3 +221,7 @@ describe('stageViewport (261116)', () => {
     expect(stageViewport(canvas, seat, 0, 0).scale).toBe(0);
   });
 });
+
+
+
+

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * API key persistence via Electron safeStorage.
  *
  * Sources:
- *   - PATTERNS §src/main/apiKeyStore.ts
- *   - RESEARCH §Pattern 4 + Pitfall 3 (Linux basic_text fallback)
+ *   - PATTERNS Â§src/main/apiKeyStore.ts
+ *   - RESEARCH Â§Pattern 4 + Pitfall 3 (Linux basic_text fallback)
  *   - CONTEXT D-13
  *
  * SECURITY: This module is main-process only. The renderer NEVER imports
@@ -18,7 +18,7 @@ import { loadConfig, updateConfig } from './configStore';
 /**
  * Persist plaintext API key encrypted by OS keychain.
  * Note: We use raw fs.writeFile (with a tmp+rename to keep it atomic) instead
- * of the brain's atomicWrite helper because that helper writes utf8 strings —
+ * of the brain's atomicWrite helper because that helper writes utf8 strings â€”
  * the encrypted blob is binary and must be written as Buffer.
  */
 export async function saveApiKey(plaintext: string): Promise<void> {
@@ -71,7 +71,7 @@ export async function loadApiKey(): Promise<string> {
 /**
  * Returns the safeStorage backend name. On Linux without a desktop secret
  * store this returns `'basic_text'`, signalling that encryption is using a
- * hardcoded key (effectively plaintext) — surfaced to the user as the
+ * hardcoded key (effectively plaintext) â€” surfaced to the user as the
  * KEYCHAIN_FALLBACK_PLAINTEXT warning per RESEARCH Pitfall 3.
  *
  * Possible values: 'kwallet' | 'kwallet5' | 'kwallet6' | 'gnome_libsecret' |
@@ -80,9 +80,9 @@ export async function loadApiKey(): Promise<string> {
  * Phase 13 13-02 (D-57 / PATTERNS Option A): renamed from `backendKind()` to
  * `safeStorageBackendKind()` to make room for the AI-backend concept exposed
  * via `getAiBackendKind()` below. The two values answer different questions:
- *   - `safeStorageBackendKind()` → which OS keychain implementation is
+ *   - `safeStorageBackendKind()` â†’ which OS keychain implementation is
  *     encrypting the on-disk secret blobs (api-key.bin / session.bin).
- *   - `getAiBackendKind()` → whether the bot routes Anthropic traffic through
+ *   - `getAiBackendKind()` â†’ whether the bot routes Anthropic traffic through
  *     the user's local API key (BYOK) or through Sei's cloud proxy.
  */
 export function safeStorageBackendKind(): string {
@@ -93,15 +93,15 @@ export function safeStorageBackendKind(): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  AI backend kind (Phase 13 — PROXY-11)                                     */
+/*  AI backend kind (Phase 13 â€” PROXY-11)                                     */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Which AI backend is active for the current user.
- *   - 'local'       → BYOK; bot uses the on-disk `api-key.bin` to talk to
+ *   - 'local'       â†’ BYOK; bot uses the on-disk `api-key.bin` to talk to
  *                      Anthropic directly. NO credits UI surfaces in the
  *                      renderer (D-57).
- *   - 'cloud-proxy' → Sei's Fly.io-hosted proxy gates Anthropic calls. The
+ *   - 'cloud-proxy' â†’ Sei's Fly.io-hosted proxy gates Anthropic calls. The
  *                      renderer shows the pricing icon, credits screen, and
  *                      hard-stop modal off this value.
  *
@@ -115,7 +115,7 @@ export type AiBackendKind = 'local' | 'cloud-proxy';
  * `ai_backend_kind` field is absent from config.json (existing users + first
  * launch).
  *
- * D-57: this is the SINGLE source of truth for credits-UI visibility — every
+ * D-57: this is the SINGLE source of truth for credits-UI visibility â€” every
  * gate (PricingIcon, CreditsScreen, HardStopModal) reads from a store that
  * shadows this value, never via duplicated logic.
  */
@@ -131,11 +131,11 @@ export async function getAiBackendKind(): Promise<AiBackendKind> {
  *
  * 260703: also stamps `ai_backend_kind_source` so the sign-in cloud default
  * can tell an EXPLICIT user choice apart from a prior default write:
- *   - 'user' (the default here) → the caller is a user action (the Settings
+ *   - 'user' (the default here) â†’ the caller is a user action (the Settings
  *     ACCOUNT MODE switch / API-key setup modal via ipc proxy:configure).
  *     applyCloudDefaultForSignIn / ensureCloudDefaultForSignedIn never
  *     override it.
- *   - 'default' → a programmatic default (sign-in transition, boot self-heal).
+ *   - 'default' â†’ a programmatic default (sign-in transition, boot self-heal).
  */
 export async function setAiBackendKind(
   kind: AiBackendKind,
@@ -174,15 +174,15 @@ function notifyAiBackendKindChanged(kind: AiBackendKind): void {
 }
 
 /**
- * Sign-in cloud default (260703 — single helper for BOTH sign-in writers:
+ * Sign-in cloud default (260703 â€” single helper for BOTH sign-in writers:
  * authState's sign-in reconcile and profileScope's pre-push default). A
  * signed-in profile defaults to cloud billing, but ONLY when the profile has
  * not made a deliberate BYOK choice:
- *   - `ai_backend_kind_source === 'user'` → the user explicitly picked this
+ *   - `ai_backend_kind_source === 'user'` â†’ the user explicitly picked this
  *     backend in Settings; never stomp it (previously every re-sign-in
  *     force-flipped an explicit 'local' back to cloud, silently moving the
  *     user's calls onto paid credits).
- *   - 'local' WITH a stored API key → a real BYOK setup from before the
+ *   - 'local' WITH a stored API key â†’ a real BYOK setup from before the
  *     source field existed; treat as deliberate.
  * Everything else (fresh profile, key-less default-'local') lands on
  * cloud-proxy, stamped source:'default'.
@@ -190,9 +190,9 @@ function notifyAiBackendKindChanged(kind: AiBackendKind): void {
 export async function applyCloudDefaultForSignIn(): Promise<void> {
   const scope = getActiveScope();
   const cfg = await loadConfig();
-  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — keep it
+  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice â€” keep it
   if ((cfg.ai_backend_kind ?? 'local') === 'local' && (await hasApiKey())) return; // legacy BYOK
-  if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there — no write
+  if (cfg.ai_backend_kind === 'cloud-proxy') return; // already there â€” no write
   await writeCloudDefault(scope);
 }
 
@@ -221,13 +221,13 @@ async function writeCloudDefault(scope: string): Promise<void> {
  * Boot-time self-heal: ensure a signed-in profile that never received the
  * cloud default lands on cloud-proxy.
  *
- * Signed-in users default to cloud. That default is written on the signed-out→
- * signed-in TRANSITION (profileScope.switchScopeForAuth → setAiBackendKind), but
+ * Signed-in users default to cloud. That default is written on the signed-outâ†’
+ * signed-in TRANSITION (profileScope.switchScopeForAuth â†’ setAiBackendKind), but
  * NOT on a session-restore launch: boot pre-points the scope from the persisted
  * session, so the INITIAL_SESSION auth event finds the scope already correct and
  * `switchScopeForAuth` early-returns. A profile whose last real transition
- * happened on a build that predates the cloud default — or whose one-time write
- * failed — therefore stays on the schema default `'local'` on every later
+ * happened on a build that predates the cloud default â€” or whose one-time write
+ * failed â€” therefore stays on the schema default `'local'` on every later
  * launch, showing the BYOK UI the user never asked for.
  *
  * Correct it here, at boot, after the scope + config are settled: when the
@@ -238,14 +238,18 @@ async function writeCloudDefault(scope: string): Promise<void> {
  *
  * No-op when signed out, already cloud-proxy, an API key is present, or the
  * user explicitly chose the backend (`ai_backend_kind_source === 'user'`,
- * 260703) — an explicit BYOK pick must survive every launch, key or no key.
+ * 260703) â€” an explicit BYOK pick must survive every launch, key or no key.
  */
 export async function ensureCloudDefaultForSignedIn(): Promise<void> {
   const scope = getActiveScope();
-  if (scope === SCOPE_LOCAL) return; // signed out → keep local
+  if (scope === SCOPE_LOCAL) return; // signed out â†’ keep local
   const cfg = await loadConfig();
   if ((cfg.ai_backend_kind ?? 'local') !== 'local') return; // already cloud-proxy
-  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice — never override it
-  if (await hasApiKey()) return; // a real BYOK choice — never override it
+  if (cfg.ai_backend_kind_source === 'user') return; // explicit choice â€” never override it
+  if (await hasApiKey()) return; // a real BYOK choice â€” never override it
   await writeCloudDefault(scope);
 }
+
+
+
+

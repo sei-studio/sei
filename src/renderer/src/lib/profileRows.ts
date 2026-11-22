@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Profile rows: which settings row a companion's profile shows, and whether
  * it is live, locked or hidden, and which tab of the page it sits on. Single
  * source of truth for the page (screens/CharacterPage.tsx) and its rows
@@ -332,7 +332,7 @@ export function lockTipKey(kind: ProfileKind): string {
   }
 }
 
-// ── Analytics (shape only: closed enums, no names or text) ────────────────
+// â”€â”€ Analytics (shape only: closed enums, no names or text) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** What a row's button did. */
 export type ProfileAction =
@@ -432,3 +432,7 @@ export function trackProfileVoiceSample(
 export function trackProfileCtaClicked(cta: ProfileCta, view: ProfileView, kind: ProfileKind, entry: ProfileEntry): void {
   track('profile_cta_clicked', { cta, view, character_kind: kind, entry });
 }
+
+
+
+

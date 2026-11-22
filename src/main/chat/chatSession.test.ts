@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chatSession tests (260801).
  *
  * The session model is the whole point of the module and it is all timing, so
@@ -81,7 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  // Leave no session open for the next test — the module is a singleton.
+  // Leave no session open for the next test â€” the module is a singleton.
   await endAllChatSessions();
   vi.useRealTimers();
 });
@@ -203,7 +203,7 @@ describe('session end', () => {
     // Asserted as "no session survived" rather than "two events fired": the
     // sweep's Promise.all starts both dynamic imports in one tick, so the
     // harness can drop one of the two events (see the file header). What
-    // matters is the state — a session still in the map would keep its idle
+    // matters is the state â€” a session still in the map would keep its idle
     // timer, and that timer firing here would emit an extra ended event.
     const afterSweep = events('chat_session_ended').length;
     expect(afterSweep).toBeGreaterThan(0);
@@ -271,3 +271,7 @@ describe('261107: chat start uses up a chat plan', () => {
     expect(events('chat_session_started')).toHaveLength(1);
   });
 });
+
+
+
+

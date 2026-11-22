@@ -1,4 +1,4 @@
-/** Game-adapters M2 (260908): DST install detection + mod install against fixtures. */
+﻿/** Game-adapters M2 (260908): DST install detection + mod install against fixtures. */
 import { describe, it, expect, vi } from 'vitest';
 import path from 'node:path';
 import {
@@ -225,3 +225,7 @@ describe('needsRestart (260909)', () => {
     expect(await detectInstall(deps)).toMatchObject({ gameRunning: false, needsRestart: false });
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * chatSession — analytics session boundaries for plain text chat (260801).
+﻿/**
+ * chatSession â€” analytics session boundaries for plain text chat (260801).
  *
  * Text chat was the one companion surface with NO instrumentation at all. Every
  * other surface emits `<surface>_started` / `<surface>_ended` with `duration_ms`
@@ -17,7 +17,7 @@
  * session is a run of actual messages, so `duration_ms` is time spent talking.
  *
  * The overlap is excluded structurally rather than by subtraction:
- * `noteChatMessage` is called from ONE place — the point in the `chat:send`
+ * `noteChatMessage` is called from ONE place â€” the point in the `chat:send`
  * handler past which chess and Draw! have both declined to handle the message
  * and no voice call is live. A line typed into a live game or spoken on a call
  * is already counted by that surface's own event and never reaches here.
@@ -27,7 +27,7 @@
  * timeout. A one-message session therefore reports 0 ms, which is honest:
  * `messages` carries what actually happened.
  *
- * Shape only, never content — no message text, no persona, no reply.
+ * Shape only, never content â€” no message text, no persona, no reply.
  */
 
 /** Quiet gap that ends a session. */
@@ -50,7 +50,7 @@ const sessions = new Map<string, LiveSession>();
  * session on the first message and refreshes the idle timer on every one.
  * Returns this message's 1-based number within its session (the turn index
  * `reply_latency` buckets on, see replyLatency.ts), 0 if recording failed.
- * Never throws — analytics must not be able to break a chat send.
+ * Never throws â€” analytics must not be able to break a chat send.
  */
 export function noteChatMessage(characterId: string): number {
   try {
@@ -110,7 +110,7 @@ async function consumeChatPlan(characterId: string): Promise<void> {
 }
 
 /**
- * Close one character's session and emit `chat_session_ended`. Idempotent — a
+ * Close one character's session and emit `chat_session_ended`. Idempotent â€” a
  * quit racing the idle timer emits exactly one event.
  */
 export type ChatSessionEndReason = 'idle' | 'quit' | 'account_switch';
@@ -139,7 +139,7 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
 
 /**
  * Close every open session. Called from the app's quit path so a conversation
- * still inside its idle window is not lost — without this, quitting mid-chat
+ * still inside its idle window is not lost â€” without this, quitting mid-chat
  * (the normal way a chat ends) would drop the session entirely. Also from the
  * account switch (260926, reason 'account_switch'): the next message after a
  * switch belongs to the other account's session, and the event must go out
@@ -148,3 +148,7 @@ export async function endChatSession(characterId: string, reason: ChatSessionEnd
 export async function endAllChatSessions(reason: ChatSessionEndReason = 'quit'): Promise<void> {
   await Promise.all([...sessions.keys()].map((id) => endChatSession(id, reason)));
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+﻿import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createStardewClient, commandTimeouts, COMMAND_TIMEOUT_MS, FARM_COMMAND_TIMEOUT_MS, FARM_COMMAND_IDLE_TIMEOUT_MS } from './client.js'
 
 class FakeWS {
@@ -69,3 +69,7 @@ describe('stardew client command timeouts', () => {
     expect(ws.sent.filter((f) => f.t === 'cancel')).toHaveLength(0)
   })
 })
+
+
+
+

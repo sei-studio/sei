@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/observers/snapshot.js — turns the mod's observation
+﻿// src/bot/adapter/stardew/observers/snapshot.js â€” turns the mod's observation
 // JSON (native/stardew-mod/PROTOCOL.md "Observation") into the line-oriented
 // text the brain seeds each turn with. Same shape as the Minecraft composer:
 // world tag, position, vitals, inventory, what is around, entities with #N
@@ -293,3 +293,7 @@ export function createSnapshotComposer({ getObs, getModVersion = () => null }) {
     },
   }
 }
+
+
+
+

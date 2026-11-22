@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261030: the forced (apply:'now') restart popup carries the Windows-only
  * "takes about a minute" line; main waits FORCED_RESTART_DELAY_MS before
  * quitAndInstall, so it paints first.
@@ -33,3 +33,7 @@ describe('UpdatePopup forced restart', () => {
     expect(html).not.toContain(WIN_NOTE);
   });
 });
+
+
+
+

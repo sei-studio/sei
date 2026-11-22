@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Tests for the LAN host-client detection stack (260709):
- *   - classifyCmdline: java command-line → client kind markers, including the
+ *   - classifyCmdline: java command-line â†’ client kind markers, including the
  *     two deliberate traps (CurseForge paths must NOT read as Forge; Lunar
  *     bundles Fabric internals so Lunar must win over the fabric marker).
  *   - forgeModCountFromStatus: Forge 1.13+ `forgeData` and 1.12- `modinfo`
@@ -143,9 +143,9 @@ describe('lanHostWarning (three-way classification, 260721)', () => {
   });
 
   it('Fabric with no other-mod evidence stays silent (benefit of the doubt)', () => {
-    // Mods dir unresolvable/unreadable → null evidence.
+    // Mods dir unresolvable/unreadable â†’ null evidence.
     expect(lanHostWarning(fabric(false, null))).toBe(null);
-    // Fabric with a readable but empty/absent mods dir → zero mods.
+    // Fabric with a readable but empty/absent mods dir â†’ zero mods.
     expect(lanHostWarning(fabric(false, 0))).toBe(null);
     // Pre-260721 cached states without the new fields.
     expect(lanHostWarning(host('fabric'))).toBe(null);
@@ -199,7 +199,7 @@ const CMD = {
     '--gameDir /home/x/.local/share/PrismLauncher/instances/neoforge-port-test/.minecraft',
 };
 
-/** Mirrors lanWatcher.hostFor: cmdline → cached host fields + the ping. */
+/** Mirrors lanWatcher.hostFor: cmdline â†’ cached host fields + the ping. */
 function hostFromCmdline(cmdline: string, forgeModCount: number | null = null, mods?: Partial<LanHost>): LanHost {
   return {
     client: classifyCmdline(cmdline),
@@ -307,7 +307,7 @@ describe('listeningPorts pid extraction', () => {
 
   // Issue #5: modern Java binds "Open to LAN" as a dual-stack socket that
   // netstat reports only in the IPv6 table, and localized Windows translates
-  // the state word — so the parser must read `[::]` rows and must not depend
+  // the state word â€” so the parser must read `[::]` rows and must not depend
   // on the literal LISTENING string.
   it('parseNetstat reads dual-stack (IPv6) listener rows', () => {
     const out = ['  TCP    [::]:52345    [::]:0    LISTENING    9876'].join('\n');
@@ -320,8 +320,8 @@ describe('listeningPorts pid extraction', () => {
       'Aktive Verbindungen',
       '',
       '  Proto  Lokale Adresse         Remoteadresse          Status           PID',
-      '  TCP    0.0.0.0:135            0.0.0.0:0              ABHÖREN          1044',
-      '  TCP    [::]:52345             [::]:0                 ABHÖREN          9876',
+      '  TCP    0.0.0.0:135            0.0.0.0:0              ABHÃ–REN          1044',
+      '  TCP    [::]:52345             [::]:0                 ABHÃ–REN          9876',
       '  TCP    192.168.1.5:52001      52.1.2.3:443           HERGESTELLT      4321',
       '  UDP    0.0.0.0:5353           *:*                                     2222',
     ].join('\n');
@@ -352,3 +352,7 @@ describe('listeningPorts pid extraction', () => {
     expect(names.has(0)).toBe(false);
   });
 });
+
+
+
+

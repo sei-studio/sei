@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StardewLaunchPanel (game adapters M1, 260908; reworked 260909): the
  * Stardew Valley launch surface in the chat game aside, mounted through
  * GAME_SURFACES while the bot is offline. Painted in the game's own
@@ -117,3 +117,7 @@ export function StardewLaunchPanel({ characterId }: StardewLaunchPanelProps): Re
     </div>
   );
 }
+
+
+
+

@@ -1,25 +1,25 @@
-/**
- * SetupWizardModal — first-launch / re-runnable Minecraft skin setup wizard.
+﻿/**
+ * SetupWizardModal â€” first-launch / re-runnable Minecraft skin setup wizard.
  *
  * Top-level shell + step machine for the wizard. Renders a scrim + centered
- * 680×520 modal over the existing desktop wallpaper (matches the shared scrim
+ * 680Ã—520 modal over the existing desktop wallpaper (matches the shared scrim
  * alpha), traps focus inside the modal, dismisses on ESC, and crossfades
  * between steps with a 200ms opacity tween (motion-safe).
  *
- * Step machine (UI-SPEC §"First-launch wizard step-by-step copy"):
- *   - welcome  → Welcome panel; primary "Begin" calls runDetection
- *   - detecting → "Looking for Minecraft installs" while sei.detectMcInstalls runs
- *   - none-found → 1b branch — installs.length === 0 after detection
- *   - pick     → "Pick which installs to enable" with McInstallList
- *   - installing → "Setting up your installs" with InstallProgressList
- *   - one-failed → 3b branch — at least one install result.ok === false
- *   - done     → "All set"
+ * Step machine (UI-SPEC Â§"First-launch wizard step-by-step copy"):
+ *   - welcome  â†’ Welcome panel; primary "Begin" calls runDetection
+ *   - detecting â†’ "Looking for Minecraft installs" while sei.detectMcInstalls runs
+ *   - none-found â†’ 1b branch â€” installs.length === 0 after detection
+ *   - pick     â†’ "Pick which installs to enable" with McInstallList
+ *   - installing â†’ "Setting up your installs" with InstallProgressList
+ *   - one-failed â†’ 3b branch â€” at least one install result.ok === false
+ *   - done     â†’ "All set"
  *
  * The wizard NEVER holds a renderer-side AbortController. The Cancel button on
- * the installing step calls `cancelInstall` — an async store action that fires
+ * the installing step calls `cancelInstall` â€” an async store action that fires
  * `sei.wizardCancel(sessionId)` across the IPC boundary. Main then aborts the
  * in-flight `java -jar fabric-installer` child process. ESC dismissal during
- * install also routes through the same IPC abort (via closeWizard →
+ * install also routes through the same IPC abort (via closeWizard â†’
  * wizardCancel if sessionId !== null).
  */
 
@@ -50,7 +50,7 @@ export function SetupWizardModal(): React.ReactElement | null {
   const closeWizard = useWizardStore((s) => s.closeWizard);
   const contentRef = useRef<HTMLDivElement | null>(null);
 
-  // ── Focus trap: focus the first interactive element when the wizard opens
+  // â”€â”€ Focus trap: focus the first interactive element when the wizard opens
   //    or whenever the step changes. Tab / Shift+Tab wrap inside the modal.
   //    (ESC dismissal + the scrim are owned by ModalShell now.)
   useEffect(() => {
@@ -97,7 +97,7 @@ export function SetupWizardModal(): React.ReactElement | null {
       onClose={closeWizard}
       aria-label={t('Set up Minecraft skins')}
     >
-      {/* key on step so React unmounts/remounts on transition → CSS crossfade applies */}
+      {/* key on step so React unmounts/remounts on transition â†’ CSS crossfade applies */}
       <div key={step} ref={contentRef} className={styles.stepContent}>
         {renderStep(step)}
       </div>
@@ -106,7 +106,7 @@ export function SetupWizardModal(): React.ReactElement | null {
 }
 
 /**
- * The wizard's step machine WITHOUT the modal scrim/card — rendered inline by
+ * The wizard's step machine WITHOUT the modal scrim/card â€” rendered inline by
  * the dedicated onboarding SkinSetupScreen so skin setup is a full page (matching
  * "What should they call you?") rather than a popup. Reads the same useWizardStore
  * step; the step components' terminal actions (closeWizard) are watched by the
@@ -141,7 +141,7 @@ function renderStep(step: WizardStep): React.ReactElement {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Step components — verbatim copy from 09-UI-SPEC §"First-launch wizard"     */
+/*  Step components â€” verbatim copy from 09-UI-SPEC Â§"First-launch wizard"     */
 /* -------------------------------------------------------------------------- */
 
 function WelcomeStep(): React.ReactElement {
@@ -164,7 +164,7 @@ function WelcomeStep(): React.ReactElement {
             // row, aligned with Begin. It previously lived in a separate row
             // BELOW the panel (SkinSetupScreen.skipRow), which made it sit lower
             // than the primary CTA. closeWizard routes the onboarding page to
-            // home (SkinSetupScreen finalizes on open→closed).
+            // home (SkinSetupScreen finalizes on openâ†’closed).
             <Button kind="quiet" size="md" onClick={closeWizard}>
               {t('Set up later')}
             </Button>
@@ -374,7 +374,7 @@ function OneFailedStep(): React.ReactElement {
       }
     >
       <p>
-        {/* Strip any trailing period from the message — the sentence adds its
+        {/* Strip any trailing period from the message â€” the sentence adds its
             own, and "wizard.. The other" read as a typo (260709 report). */}
         {t(
           '{name} hit an error: {message}. The other installs are ready. You can re-run setup for this one later from Settings.',
@@ -556,3 +556,7 @@ function DoneStep(): React.ReactElement {
     </WizardStepShell>
   );
 }
+
+
+
+

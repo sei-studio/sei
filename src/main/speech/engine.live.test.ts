@@ -1,6 +1,6 @@
-/**
- * OPT-IN live engine check (260816) — exercises the REAL sherpa runtime path
- * (packReady → config build → synthesis → SenseVoice transcription) against a
+﻿/**
+ * OPT-IN live engine check (260816) â€” exercises the REAL sherpa runtime path
+ * (packReady â†’ config build â†’ synthesis â†’ SenseVoice transcription) against a
  * staged `<userData>/speech-models` tree, outside Electron.
  *
  * Skipped unless SEI_SPEECH_LIVE_DIR points at a staged userData dir:
@@ -9,7 +9,7 @@
  *
  * where the dir contains speech-models/<packId>/<archive dirName>/ (symlinks
  * fine) + a pack.json marker per pack. Requires the sherpa-onnx platform
- * package for this machine. Deliberately NOT part of the normal suite — it
+ * package for this machine. Deliberately NOT part of the normal suite â€” it
  * needs ~300MB of downloaded models.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -29,7 +29,7 @@ describe.skipIf(!liveDir)('local speech engine (live)', () => {
     const status = await packStatus();
     expect(status['tts-zh'].state).toBe('ready');
 
-    const zh = await synthesizeLocal('你好，这就是我的本地声音。今天想一起玩点什么吗？', 'zh-f');
+    const zh = await synthesizeLocal('ä½ å¥½ï¼Œè¿™å°±æ˜¯æˆ‘çš„æœ¬åœ°å£°éŸ³ã€‚ä»Šå¤©æƒ³ä¸€èµ·çŽ©ç‚¹ä»€ä¹ˆå—ï¼Ÿ', 'zh-f');
     expect(zh.samples.length).toBeGreaterThan(zh.sampleRate); // > 1s of audio
     const en = await synthesizeLocal(
       'Hey, this is what my local voice sounds like. Want to play something?',
@@ -49,6 +49,10 @@ describe.skipIf(!liveDir)('local speech engine (live)', () => {
     const { rm } = await import('node:fs/promises');
     await rm(`${liveDir}/speech-models/tts-zh/pack.json`, { force: true });
     const { synthesizeLocal } = await import('./index');
-    await expect(synthesizeLocal('测试', 'zh-m')).rejects.toThrow('VOICE_PACK_MISSING:tts-zh');
+    await expect(synthesizeLocal('æµ‹è¯•', 'zh-m')).rejects.toThrow('VOICE_PACK_MISSING:tts-zh');
   }, 30_000);
 });
+
+
+
+

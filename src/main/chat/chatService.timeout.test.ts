@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: a model timeout is a real chat failure, a user cancel is not.
  *
  * Before this, a local/Ollama provider enforced its 120 s floor by aborting
@@ -110,3 +110,7 @@ describe('sendChatMessage: model timeout vs user cancel', () => {
     expect(captureSurfaceErrorSpy).not.toHaveBeenCalled();
   });
 });
+
+
+
+

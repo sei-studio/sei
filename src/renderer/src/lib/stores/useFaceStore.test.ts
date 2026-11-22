@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Face cues land when their line does (261028, facepack pilot).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -91,3 +91,7 @@ describe('handleFaceCue', () => {
     expect(useFaceStore.getState().faces.sui?.expression).toBe('happy');
   });
 });
+
+
+
+

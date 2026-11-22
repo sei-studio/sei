@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/air.js
+﻿// src/bot/adapter/minecraft/behaviors/air.js
 //
 // 261108 (quality pass 47): air for the actions that keep the body busy in
 // one spot (dig, gather). In gather_craft-02-B she gathered stone on a river
@@ -241,3 +241,7 @@ export function airLine(bot) {
   if (bot?._seiDrowning || bot?._seiAirBreak) parts.push('swimming up for air now')
   return parts.join(', ')
 }
+
+
+
+

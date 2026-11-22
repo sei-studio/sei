@@ -1,11 +1,11 @@
-// src/bot/adapter/minecraft/index.test.js
+﻿// src/bot/adapter/minecraft/index.test.js
 //
 // 260525-s09 H4 regression tests: adapter.chat() must DROP any message whose
 // first non-whitespace character is `/`. Rationale: the single-layer Haiku LLM
 // can be prompt-injected by a player into emitting text like `/op MyName`.
 // Forwarding that verbatim to bot.chat causes the Minecraft server to execute
 // it as an operator command (since `/` is the server command prefix). We DROP
-// (not strip-and-send, not escape) so the injection is fully neutralised — a
+// (not strip-and-send, not escape) so the injection is fully neutralised â€” a
 // stripped slash command would still leak the attacker's intended payload as
 // visible chat noise.
 
@@ -40,7 +40,7 @@ function makeAdapter() {
   return { adapter, bot }
 }
 
-describe('adapter.chat — H4 leading-slash guard (260525-s09)', () => {
+describe('adapter.chat â€” H4 leading-slash guard (260525-s09)', () => {
   it('forwards normal text to bot.chat unchanged', () => {
     const { adapter, bot } = makeAdapter()
     adapter.chat('hello world')
@@ -94,7 +94,7 @@ describe('adapter.chat — H4 leading-slash guard (260525-s09)', () => {
 })
 
 // VIS-02 regression (15-VERIFICATION gap): the production summon path
-// (src/bot/index.js) constructs the adapter with visionEnabled: true — the
+// (src/bot/index.js) constructs the adapter with visionEnabled: true â€” the
 // orchestrator's tool-list filter is the authoritative D-10 gate, so the
 // action must EXIST in the registry for the filter to ever offer it. The
 // earlier integration tests used a mock adapter with a hand-rolled
@@ -139,3 +139,7 @@ describe('adapter.eventAddendum reads the weapon state when the turn is written'
     expect(data.unarmed).toBeUndefined()
   })
 })
+
+
+
+

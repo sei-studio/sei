@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,3 +23,7 @@ describe('seilink addon availability', () => {
     expect(addonAvailability({ platform: 'darwin', packaged: true, resourcesPath: dir, appPath: dir })).toEqual({ ok: true, file: path.join(dir, 'seilink', 'seilink.node') });
   });
 });
+
+
+
+

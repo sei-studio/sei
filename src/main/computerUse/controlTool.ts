@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the control() tool backseat gains when the dev flag is
  * on. Kept free of Electron imports so backseatService can read it
  * synchronously.
@@ -88,3 +88,7 @@ export function controlEventNote(goal: string, e: ControlEvent): string {
   const sum = e.summary.trim() ? (/[.!?]$/.test(e.summary.trim()) ? e.summary.trim() : `${e.summary.trim()}.`) : '';
   return `Your control of the player's computer for "${goal}" ${how} after ${e.steps} step${e.steps === 1 ? '' : 's'}. Status: ${e.status}.${sum ? ` ${sum}` : ''} The screenshot shows the screen now. React to how it went.`;
 }
+
+
+
+

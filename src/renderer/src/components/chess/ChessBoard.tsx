@@ -1,5 +1,5 @@
-/**
- * ChessBoard — the interactive 2D board (lichess-basics quality).
+﻿/**
+ * ChessBoard â€” the interactive 2D board (lichess-basics quality).
  *
  * Pure view over useChessStore: renders the display position (committed FEN +
  * any revealed pending AI move + a short-lived optimistic player move), and
@@ -8,7 +8,7 @@
  *     captures as rings; illegal drops snap back);
  *   - promotion opens a picker column over the target square;
  *   - right-button drag draws planning arrows, right-click toggles a circle,
- *     any left-click clears them — arrows are allowed at ALL times, including
+ *     any left-click clears them â€” arrows are allowed at ALL times, including
  *     while the AI is thinking (the player can plan while waiting);
  *   - the last move, the checked king, and the selection are highlighted.
  *
@@ -295,7 +295,7 @@ export function ChessBoard({ characterId }: ChessBoardProps): React.ReactElement
     dragDetail.current = null;
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const squares: React.ReactElement[] = [];
   for (let row = 0; row < 8; row++) {
@@ -509,3 +509,7 @@ export function ChessBoard({ characterId }: ChessBoardProps): React.ReactElement
     </div>
   );
 }
+
+
+
+

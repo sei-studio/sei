@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929 (R1b / R1c / R7 / R10): the summon modals point at the Sei profile
  * with one button, Start Minecraft when a Sei profile exists and Set up Sei
  * profile when it does not; no copy tells the player to build a launcher
@@ -136,10 +136,10 @@ describe('startMinecraftNote', () => {
     expect(lines[3].text).toContain('pick "Sei 26.1" next to Play');
     for (const l of lines) {
       expect(l.text).not.toMatch(/\{\w+\}/);
-      expect(l.text).not.toContain('—');
+      expect(l.text).not.toContain('â€”');
     }
     useLangStore.getState().setLang('zh');
-    expect(startMinecraftNote(t, { ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' }).text).toContain('「Sei 26.1」');
+    expect(startMinecraftNote(t, { ok: false, reason: 'no_launcher', profileName: 'Sei 26.1' }).text).toContain('ã€ŒSei 26.1ã€');
   });
 });
 
@@ -153,10 +153,10 @@ describe('launcherGoneNote', () => {
     });
     useLangStore.getState().setLang('zh');
     const zh = launcherGoneNote(t, 'Sei 26.1').text;
-    expect(zh).toContain('「Sei 26.1」');
+    expect(zh).toContain('ã€ŒSei 26.1ã€');
     for (const text of [en.text, zh]) {
       expect(text).not.toMatch(/\{\w+\}/);
-      expect(text).not.toContain('—');
+      expect(text).not.toContain('â€”');
     }
     useLangStore.getState().setLang('en');
   });
@@ -249,9 +249,13 @@ describe('copy', () => {
     expect(keys.size).toBeGreaterThanOrEqual(8);
     const { ZH } = await import('../lib/i18n/zh');
     for (const k of keys) {
-      expect(k, `em dash in "${k}"`).not.toContain('—');
+      expect(k, `em dash in "${k}"`).not.toContain('â€”');
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(ZH[k]).not.toContain('—');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

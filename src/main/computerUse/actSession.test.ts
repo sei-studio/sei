@@ -1,4 +1,4 @@
-/**
+﻿/**
  * startControl's start window: a stop, the end of the share, or a newer
  * control() call that lands while the helper is still starting must cancel
  * that start, not let it begin driving afterwards.
@@ -137,3 +137,7 @@ describe('control availability (M0: window shares only)', () => {
     expect(helpers).toHaveLength(0);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room image loading (261104). One cache per renderer, keyed by URL
  * (pack URLs carry ?v=<rev>, so a pack update is a new key).
  *
@@ -197,3 +197,7 @@ export function loadPatternTileGrey(url: string): Promise<{ w: number; h: number
 export function clearRoomImageCache(): void {
   cache.clear();
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// 261014: quality pass 7a, wrong counts and announced-but-not-taken actions.
+﻿// 261014: quality pass 7a, wrong counts and announced-but-not-taken actions.
 //  - the gather in_flight line says what she holds now and how many are left,
 //    read from the same inventory as the inventory line
 //  - the gather tick carries its drop items and the starting count
@@ -31,7 +31,7 @@ describe('gather in_flight line from the live inventory', () => {
     // The tick still says 1 picked up; the inventory already has the second.
     const line = getInFlightLineForSnapshot(
       gather({ dug: 1, total: 6, items: ['oak_log'], before: 2 }), 3000, { inventory: { oak_log: 4, dirt: 3 } })
-    expect(line).toBe('in_flight: gather(oak_log) started=3.0s ago — picked up 2 of the 6 oak_log asked for so far, 4 to go; you hold 4 oak_log right now')
+    expect(line).toBe('in_flight: gather(oak_log) started=3.0s ago â€” picked up 2 of the 6 oak_log asked for so far, 4 to go; you hold 4 oak_log right now')
   })
 
   it('never goes below zero to go, or below zero picked up', () => {
@@ -400,3 +400,7 @@ describe('orchestrator: a player line while nothing runs', () => {
     expect(turn).toContain("You're currently: gather 3 oak_log")
   })
 })
+
+
+
+

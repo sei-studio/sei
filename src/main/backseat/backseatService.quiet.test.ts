@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261103: the backoff while nobody answers her. A free user (Valheim) quit
  * after 15 minutes of chatter: every look speaks, so the floor between her
  * own lines grows with the run of lines the player has not answered
@@ -192,3 +192,7 @@ describe('backseat backoff while nobody answers (261103)', () => {
     expect(h.lines[h.lines.length - 1].quietExtraMs).toBe(quietExtraMs(6));
   });
 });
+
+
+
+

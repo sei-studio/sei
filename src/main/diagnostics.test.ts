@@ -1,5 +1,5 @@
-/**
- * 260720 P0 failed-summon diagnostics — redaction, assembly, and log pruning.
+﻿/**
+ * 260720 P0 failed-summon diagnostics â€” redaction, assembly, and log pruning.
  *
  * redact() is the load-bearing privacy gate for everything that leaves a user
  * machine through captureDiagnostic, so it is tested against the real leak
@@ -37,7 +37,7 @@ function baseInfo(over: Partial<SummonFailureInfo> = {}): SummonFailureInfo {
   };
 }
 
-describe('redact — paths', () => {
+describe('redact â€” paths', () => {
   it('replaces the real home directory with ~ (including inside stack traces)', () => {
     const trace = [
       'Error: Cannot find module',
@@ -67,7 +67,7 @@ describe('redact — paths', () => {
   });
 });
 
-describe('redact — secrets', () => {
+describe('redact â€” secrets', () => {
   it('redacts sk-ant keys mid-line', () => {
     const out = redact('401 unauthorized: key sk-ant-api03-AbCdEf123456-XYZ was rejected upstream');
     expect(out).not.toContain('sk-ant');
@@ -89,7 +89,7 @@ describe('redact — secrets', () => {
   });
 });
 
-describe('redact — provider keys and tokens (261031)', () => {
+describe('redact â€” provider keys and tokens (261031)', () => {
   // Fake keys in each provider's real shape and length.
   const KEYS: Array<[string, string]> = [
     ['OpenAI legacy', 'sk-' + 'a1B2c3D4e5F6g7H8i9J0'.repeat(2) + 'kLmNoPqR'],
@@ -158,7 +158,7 @@ describe('redact — provider keys and tokens (261031)', () => {
   });
 });
 
-describe('redact — emails, IPs, usernames in paths (261031)', () => {
+describe('redact â€” emails, IPs, usernames in paths (261031)', () => {
   it('redacts emails', () => {
     const out = redact('[sei/auth] refresh failed for alex.test+sei@example.co.uk (session_rejected)');
     expect(out).toBe('[sei/auth] refresh failed for [email] (session_rejected)');
@@ -222,7 +222,7 @@ describe('redact — emails, IPs, usernames in paths (261031)', () => {
   });
 });
 
-describe('redact — Minecraft player names (261031)', () => {
+describe('redact â€” Minecraft player names (261031)', () => {
   it('redacts names in vanilla server and chat log lines', () => {
     const out = redact(
       [
@@ -268,7 +268,7 @@ describe('redact — Minecraft player names (261031)', () => {
   });
 });
 
-describe('redact — negative cases and idempotence (261031)', () => {
+describe('redact â€” negative cases and idempotence (261031)', () => {
   it('leaves versions, coordinates, timestamps and plumbing intact', () => {
     const text = [
       '[12:34:56.789] [act!] goto(x=-120, y=64, z=310.5) dist=12.25',
@@ -297,7 +297,7 @@ describe('redact — negative cases and idempotence (261031)', () => {
   });
 });
 
-describe('redact — chat/prompt content stripping', () => {
+describe('redact â€” chat/prompt content stripping', () => {
   const block = (tag: string, body: string[]): string =>
     [`[12:34:56.789] [${tag}] begin`, ...body, `[12:34:56.789] [${tag}] end`].join('\n');
 
@@ -360,7 +360,7 @@ describe('redact — chat/prompt content stripping', () => {
   });
 });
 
-describe('redact — the player\'s own names (261031, T278)', () => {
+describe('redact â€” the player\'s own names (261031, T278)', () => {
   it('scrubs mc_username / preferred_name anywhere, not only in known log formats', () => {
     const out = redact('spawn failed near Steve_X base; Sam said hi; Sui waved; Steve_Xavier ok', {
       botName: 'Sui',
@@ -497,7 +497,7 @@ describe('buildSummonDiagnostic', () => {
   });
 });
 
-describe('buildSummonDiagnostic — reclassified_from (260929)', () => {
+describe('buildSummonDiagnostic â€” reclassified_from (260929)', () => {
   it('ships reclassified_from only when the supervisor reclassified the failure', () => {
     const forgeLan: LanState = {
       kind: 'open',
@@ -522,7 +522,7 @@ describe('buildSummonDiagnostic — reclassified_from (260929)', () => {
   });
 });
 
-describe('buildSummonDiagnostic — phase-aware user-environment slimming', () => {
+describe('buildSummonDiagnostic â€” phase-aware user-environment slimming', () => {
   const openLan: LanState = {
     kind: 'open',
     port: 55555,
@@ -685,7 +685,7 @@ describe('pruneLogsDir', () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'sei-prune-'));
     await mkLogs(dir, 3);
     await writeFile(path.join(dir, 'notes.txt'), 'keep me');
-    await mkdir(path.join(dir, 'nested.log')); // dir with .log name — stat-guarded
+    await mkdir(path.join(dir, 'nested.log')); // dir with .log name â€” stat-guarded
     const { deleted } = await pruneLogsDir(dir, { maxFiles: 1 });
     expect(deleted).toBe(2);
     const left = (await readdir(dir)).sort();
@@ -782,3 +782,7 @@ describe('bootPhaseProps', () => {
     expect(Object.keys(diag).some((k) => k.startsWith('boot_'))).toBe(false);
   });
 });
+
+
+
+

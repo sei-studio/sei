@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/observers/progression.js
+﻿// src/bot/adapter/minecraft/observers/progression.js
 //
-// 17-04: the spine DAG is now EXTERNALIZED to progression.json (D-04/D-07) —
+// 17-04: the spine DAG is now EXTERNALIZED to progression.json (D-04/D-07) â€”
 // the static progression-graph layer of the hybrid hierarchy. The graph is
 // data, not a GOAP planner; this file loads it, derives its maps, and walks it
 // (computeProgression / matchGoalToNode / nextMilestone). The live bot reader
@@ -9,24 +9,24 @@
 // for the per-turn `next:` advisory line) and `procedure` (a terse known-good
 // procedure recorded to per-world memory when the milestone completes, D-08).
 //
-// The MINIMAL vanilla progression spine — the critical path from an empty
-// inventory to a dead Ender Dragon — plus the frontier computation that surfaces
+// The MINIMAL vanilla progression spine â€” the critical path from an empty
+// inventory to a dead Ender Dragon â€” plus the frontier computation that surfaces
 // "what's reachable next" to the brain.
 //
 // What this is (and isn't):
 //   - It is a hand-authored dependency DAG of the ~16 milestones on the win
-//     path (get wood → tools → iron → diamond → nether → eyes → end → dragon).
-//     Crafting micro-steps (planks, sticks) are NOT nodes — they are HOW the bot
+//     path (get wood â†’ tools â†’ iron â†’ diamond â†’ nether â†’ eyes â†’ end â†’ dragon).
+//     Crafting micro-steps (planks, sticks) are NOT nodes â€” they are HOW the bot
 //     reaches a milestone, handled by the live craftable: list + the craft tool.
 //   - It is NOT a goal generator and NOT a behaviour script. It only answers
 //     "which milestones are reachable RIGHT NOW", as a constraint on selection.
 //     Villages, taming, building, exploring for its own sake are deliberately
-//     OFF the graph — those are emergent, personality-driven, not progression.
+//     OFF the graph â€” those are emergent, personality-driven, not progression.
 //
 // Two ideas make it correct rather than naive:
 //   1. Live predicates, not latched gear. `have(item)` / pickaxe-tier / dimension
 //      are re-read from the live bot every call, so losing a tool re-opens the
-//      milestone that needs it (self-correcting) — see computeProgression.
+//      milestone that needs it (self-correcting) â€” see computeProgression.
 //   2. Monotonic-progress closure. A prerequisite counts as done if its own
 //      predicate holds OR any milestone that REQUIRED it is already done. This
 //      is what stops the "consumption gotcha": crafting your diamonds into a
@@ -42,31 +42,31 @@ import { Vec3 } from 'vec3'
 import { liveInventoryItems } from './liveInventory.js'
 import { OWN_STATIONS, ownStationPositions } from './ownStations.js'
 
-// Pickaxe material → tool tier. A milestone gated on `pickaxe: N` is satisfied
-// when the bot's BEST pickaxe is tier ≥ N. Gold mines like wood, so it is tier 1.
+// Pickaxe material â†’ tool tier. A milestone gated on `pickaxe: N` is satisfied
+// when the bot's BEST pickaxe is tier â‰¥ N. Gold mines like wood, so it is tier 1.
 // copper (1.21.9+) mines what stone mines.
 const PICKAXE_TIER = { wooden: 1, golden: 1, stone: 2, copper: 2, iron: 3, diamond: 4, netherite: 5 }
 
-// ── The spine ────────────────────────────────────────────────────────────────
+// â”€â”€ The spine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The spine literal lives in progression.json (D-04/D-07). Each node:
 //   { id, kind, label, key, needs[], goal, next_action?, procedure? }
-//   kind  — general action category: 'get' | 'enter' | 'defeat'. (discover() is
+//   kind  â€” general action category: 'get' | 'enter' | 'defeat'. (discover() is
 //           folded into get(): "blaze rods" implies finding a fortress, so the
-//           node is just get(blaze_rod), checkable from inventory — no separate
+//           node is just get(blaze_rod), checkable from inventory â€” no separate
 //           discover node to track.)
-//   label — short, plain LLM-facing phrasing of the milestone (no flourish).
-//   key   — the salient noun used to link a free-text setGoal back to this node.
-//   needs — prerequisite node ids (the DAG edges).
-//   goal  — the completion predicate, evaluated against live state:
-//             { have, count? }       inventory holds ≥count of an exact item
-//             { haveSuffix, count? }  inventory holds ≥count of any item whose
+//   label â€” short, plain LLM-facing phrasing of the milestone (no flourish).
+//   key   â€” the salient noun used to link a free-text setGoal back to this node.
+//   needs â€” prerequisite node ids (the DAG edges).
+//   goal  â€” the completion predicate, evaluated against live state:
+//             { have, count? }       inventory holds â‰¥count of an exact item
+//             { haveSuffix, count? }  inventory holds â‰¥count of any item whose
 //                                     name ends with the suffix (e.g. '_log')
-//             { pickaxe }            best pickaxe tier ≥ this
-//             { dim }                current dimension is this (or has been —
+//             { pickaxe }            best pickaxe tier â‰¥ this
+//             { dim }                current dimension is this (or has been â€”
 //                                     latched via flags.entered_*)
 //             { flag }               a latched one-way flag (e.g. killed_dragon)
-//   next_action — terse advancing-action phrase for the `next:` advisory line.
-//   procedure   — terse known-good procedure recorded to memory on completion.
+//   next_action â€” terse advancing-action phrase for the `next:` advisory line.
+//   procedure   â€” terse known-good procedure recorded to memory on completion.
 //
 // Defensive contract (mirrors readProgressionState): a missing/malformed
 // progression.json degrades to an EMPTY spine rather than throwing, so a module
@@ -83,7 +83,7 @@ export function loadSpine(url) {
 export const SPINE = loadSpine(new URL('./progression.json', import.meta.url))
 
 const SPINE_BY_ID = new Map(SPINE.map(n => [n.id, n]))
-// id → ids of nodes that list it in `needs` (its successors on the path forward).
+// id â†’ ids of nodes that list it in `needs` (its successors on the path forward).
 const SUCCESSORS = new Map(SPINE.map(n => [n.id, []]))
 for (const n of SPINE) for (const p of n.needs) SUCCESSORS.get(p)?.push(n.id)
 
@@ -178,7 +178,7 @@ export function matchGoalToNode(goalText, candidates = SPINE) {
  * The nearest milestone + the single action that advances it (D-07). This is
  * the static-graph walker that supersedes a GOAP planner: given the live state
  * (and an optional free-text goal), it returns the frontier node the goal names
- * — when the goal matches a reachable frontier node — otherwise the current
+ * â€” when the goal matches a reachable frontier node â€” otherwise the current
  * milestone (frontier[0]). `action` is the node's `next_action` advisory phrase
  * (falling back to its `label`, then null when the game is complete).
  *
@@ -352,7 +352,7 @@ export function furnaceLine(rec, now = Date.now()) {
   return `furnace @${rec.pos.join(',')}: ${held} when you checked ${ageS}s ago${cook}; takeSmelted at the furnace collects what is done`
 }
 
-// ── live bot reader (impure; the only part that touches mineflayer) ───────────
+// â”€â”€ live bot reader (impure; the only part that touches mineflayer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function bestPickaxeTier(bot) {
   let tier = 0
   const items = liveInventoryItems(bot)
@@ -435,3 +435,7 @@ export function readProgressionState(bot, flags = {}) {
 export function getProgression(bot, flags = {}) {
   return computeProgression(readProgressionState(bot, flags))
 }
+
+
+
+

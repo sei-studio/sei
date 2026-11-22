@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Avatar mouth-level tap (260804).
  *
  * While a companion's TTS clip plays in THIS (main) window, sample its output
@@ -8,13 +8,13 @@
  *
  * OFF unless armed: the tap is enabled by the overlay pusher only while a
  * shown participant actually has a Live2D model, because the no-pitch path
- * has a real cost — an element with no WebAudio routing must be given a
+ * has a real cost â€” an element with no WebAudio routing must be given a
  * MediaElementSourceNode (rerouting its output through the shared context)
  * just to be observable. The pitch-shifted path (pitchBus) already made that
  * source node; we reuse it there (an element can only ever have ONE).
  *
  * When the tap cannot run (context missing/suspended, source creation threw),
- * it returns null and the Live2D tile falls back to its pseudo-envelope — the
+ * it returns null and the Live2D tile falls back to its pseudo-envelope â€” the
  * mouth moves, just not to the real waveform.
  */
 import type { RendererApi } from '@shared/ipc';
@@ -24,7 +24,7 @@ import type { LevelSample } from '../facepack/animation';
 import { levelFromTimeDomain, sampleAnalyser } from '../facepack/levelBands';
 
 /** Lazy bridge access: audioQueue's tests import this module in a bare node
- * env where `window` (and window.sei) does not exist — ipcClient's module-
+ * env where `window` (and window.sei) does not exist â€” ipcClient's module-
  * scope `window.sei` read would crash the whole import chain there. */
 function seiApi(): RendererApi | undefined {
   return typeof window === 'undefined' ? undefined : (window as { sei?: RendererApi }).sei;
@@ -73,7 +73,7 @@ export function subscribeClipLevels(fn: LocalSink): () => void {
 /**
  * Start sampling `el`'s output as `characterId`'s mouth level. Returns a
  * teardown to run with the clip's other cleanup, or null when tapping is
- * disabled or impossible (callers need no fallback — the overlay tile
+ * disabled or impossible (callers need no fallback â€” the overlay tile
  * pseudo-envelopes on its own).
  */
 export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => void) | null {
@@ -140,3 +140,7 @@ export function tapClipLevel(el: HTMLAudioElement, characterId: string): (() => 
     for (const fn of localSinks) fn(characterId, null);
   };
 }
+
+
+
+

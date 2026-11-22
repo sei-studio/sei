@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ app: { getPreferredSystemLanguages: () => [], getLocale: () => 'en-US' } }));
 vi.mock('./configStore', () => ({ loadConfig: vi.fn(), updateConfig: vi.fn() }));
@@ -52,3 +52,7 @@ describe('detectUiLanguage', () => {
     expect(detectUiLanguage(undefined, [])).toBeNull();
   });
 });
+
+
+
+

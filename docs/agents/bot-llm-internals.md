@@ -1,6 +1,6 @@
-# Bot / LLM internals (`src/bot`)
+﻿# Bot / LLM internals (`src/bot`)
 
-**Single-layer brain.** One LLM call combines reasoning *and* action dispatch —
+**Single-layer brain.** One LLM call combines reasoning *and* action dispatch â€”
 there is no separate planner/dispatcher. Default model `claude-haiku-5-5`
 (`COMPANION_MODEL` in `src/shared/llmCatalog.ts`, mirrored in `src/bot/config.js`),
 **20s timeout** (`anthropic.timeout_ms`). Haiku 5 turns adaptive thinking ON
@@ -10,27 +10,27 @@ budgets and prefill, so every request builder runs
 which sends `thinking: {type: 'disabled'}` and strips those fields (261008).
 
 **Closed, Zod-typed action registry.** The LLM never writes code or raw
-coordinates — it calls registered tools only.
+coordinates â€” it calls registered tools only.
 
 - Generic registry core: `src/bot/registry.js`.
-- Minecraft action set: `src/bot/adapter/minecraft/registry.js` — **18 world
+- Minecraft action set: `src/bot/adapter/minecraft/registry.js` â€” **18 world
   actions** registered (follow/come/goto, dig, find, gather, build, place,
   equip, consume, sleep, container ops, etc.).
 - Plus the brain tools wired by the orchestrator: `remember`, `forget`,
   `setGoal` / `clearGoal`, `end_loop`, `say`, `quit_game`, `end_call`, and
   (260909) the web pair `search` / `visit` (below).
 
-**Speech (say() tool).** The LLM's **text output is a private scratchpad** — it
+**Speech (say() tool).** The LLM's **text output is a private scratchpad** â€” it
 is NOT sent to chat. The bot speaks only by calling the **`say` tool** (a
 brain-level inline tool, registered in `personalityTools`); `emitSayCalls()` in
 `src/bot/brain/orchestrator.js` emits each call up front (before any action
 dispatches, so a boast lands before the swing) and `postProcessSay()` normalizes
-it before it reaches in-game chat. No `say()` call → silence. **A say()-only
-turn is "silence" for loop purposes** — `say` is in `PERSONALITY_NAMES`, so it is
+it before it reaches in-game chat. No `say()` call â†’ silence. **A say()-only
+turn is "silence" for loop purposes** â€” `say` is in `PERSONALITY_NAMES`, so it is
 excluded from `movementCalls`; the turn speaks and the loop ends unless a
 world-acting tool was also called (it never keeps the bot busy on its own).
 260617: `say` was promoted from a parsed text convention (the old `extractSay`)
-to a real tool because Haiku honored the text-only contract 0× across two live
+to a real tool because Haiku honored the text-only contract 0Ã— across two live
 runs while calling real tools reliably. This still gives Haiku a place to reason
 before speaking (extended thinking makes it go mute), keeping chain-of-thought
 out of chat. `chat_mode: 'full'` additionally surfaces the whole scratchpad to
@@ -61,25 +61,25 @@ to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
 single-flight dispatcher and one `AbortController`:
 
 ```
-P0_SAFETY (0)  →  P1_CHAT (1)  →  P2_MOVEMENT (2 ...)  →  P3_IDLE (3, 60s fallback)
+P0_SAFETY (0)  â†’  P1_CHAT (1)  â†’  P2_MOVEMENT (2 ...)  â†’  P3_IDLE (3, 60s fallback)
 ```
 
 Player chat (P1) preempts any non-P0 work mid-action. Adapter wiring lives in
 `src/bot/adapter/minecraft/fsmWires.js`.
 
 **Runtime mode + play/pause (260725).** Proactiveness is NO LONGER a
-per-character trait — it was removed from creation/edit/profile and from
+per-character trait â€” it was removed from creation/edit/profile and from
 `character.metadata` (legacy keys are ignored everywhere; the persona expander
 no longer emits the `PROACTIVENESS:` line, though the parser still strips one
 if the cloud proxy sends it). Instead the in-app Minecraft dashboard has a
 controls window (`McDashboardPanel`) with:
-- **reactive / proactive mode** — runtime-only, NEVER persisted; every summon
+- **reactive / proactive mode** â€” runtime-only, NEVER persisted; every summon
   starts `proactive`. Maps onto the old tiers (proactive = 2 agentic, reactive
   = 1) via `orchestrator.setGameMode` (mutates `config.persona.proactiveness`
   live, rebuilds the cached system prefix; idle cadence re-samples because
   `idleFallbackMs` is passed as a function). Chat/voice/chess surfaces run at
   a fixed tier 1.
-- **play/pause** — `orchestrator.setGamePaused` + `queue.setHold(predicate)`
+- **play/pause** â€” `orchestrator.setGamePaused` + `queue.setHold(predicate)`
   (fsm.js). Pause aborts the live loop + long-runner and HOLDS the queue
   (events stay queued, settle ticks are purged, idle timer disarmed). While
   paused on a voice call, only call lines dispatch and every LLM call gets the
@@ -98,19 +98,19 @@ controls window (`McDashboardPanel`) with:
   hits like a player away from their keyboard. `applyWorldPause` re-arms it
   from connect.js on every spawn so a reconnect while paused comes back
   frozen. follow KEEPS its target, so play resumes trailing.
-- **status window** — full-width strip fed by the existing dashboard
-  telemetry (`activityLabel.js`: actions → "gathering oak logs...", null →
+- **status window** â€” full-width strip fed by the existing dashboard
+  telemetry (`activityLabel.js`: actions â†’ "gathering oak logs...", null â†’
   "idling", plus the synthetic `thinking` verb the orchestrator emits when a
   player-message turn starts). The panel sentence-cases the line for display
   ("Gathering oak logs..."); the bot-side contract stays lowercase.
-Plumbing: `mcdash:set-paused` / `mcdash:set-mode` IPC → supervisor
-`{type:'game-pause'|'game-mode'}` port messages → `bot/index.js` forwarders.
+Plumbing: `mcdash:set-paused` / `mcdash:set-mode` IPC â†’ supervisor
+`{type:'game-pause'|'game-mode'}` port messages â†’ `bot/index.js` forwarders.
 Renderer state lives in `useMcDashboardStore.controls` (cleared on session end
 AND at `launchSummon`, so stale pause/mode never survives into a new summon).
 
 **Iteration cap.** Tool-use chains are bounded by `memory.iteration_cap`
 (**default 30**, in `src/bot/config.js`) to stop single-layer runaway.
-> The old planning-era CLAUDE.md said 20 — that was wrong; the value is 30.
+> The old planning-era CLAUDE.md said 20 â€” that was wrong; the value is 30.
 
 **Auto-equip on dig (260731).** `behaviors/toolSelect.js` picks and equips the
 best tool the bot owns before EVERY swing in `digAction`, so `dig`, `gather`,
@@ -120,7 +120,7 @@ equipped anything: `bot.dig()` swung whatever was in hand, and mineflayer's
 item), so `dig.js`'s "unbreakable or **wrong tool**" branch could not fire.
 Live, that produced two compounding failures: bare-handed stone is 7500ms
 against the old flat 8000ms timeout, so it lost the race under any latency
-("timeout digging stone" ×3, then `dug stone` the moment the model happened to
+("timeout digging stone" Ã—3, then `dug stone` the moment the model happened to
 call equip); and stone mined without a pickaxe **drops nothing**, so a gather
 could never accumulate. Three details are load-bearing: bare hand is a real
 CANDIDATE (otherwise an ms-only comparison equips whatever junk item sits first
@@ -175,12 +175,12 @@ appended to all three gameplay `PROACTIVENESS_DIRECTIVES`. Before it, the only
 the gameplay tiers were ~500 words of setGoal / progression order / teammate
 coordination and nothing about the human. Live, asked point-blank to get to
 know the player, the character asked one question, got a real answer, wrote a
-`remember()`, and walked off to a crafting table — correct for a prompt where
+`remember()`, and walked off to a crafting table â€” correct for a prompt where
 advancing the goal is the standing order every tick and following up on a
 person is written down nowhere. `renderFrontierBlock` lost "on the way to
 **beating the game**" (the loudest objective in the prompt; the first act of a
 session was `setGoal("Reach iron tier")`) and gained shared-activity framing.
-**What none of this says is that the progression does not matter** — told that,
+**What none of this says is that the progression does not matter** â€” told that,
 the model stops working and the world goes still, which is worse company than a
 grinder. The project is the SETTING; both halves are the job.
 
@@ -325,17 +325,17 @@ stood still and said nothing on her own for two minutes. Now:
   `remember()`, if `MEMORY.md` exceeds `memory.compaction_trigger_bytes`
   (**default 8192** since 260725; `seed_memory_budget_bytes` doubled to 16384
   alongside so the trigger stays below the seed budget, and the chat/chess
-  `readMemoryTail` mirrors went 6000 → 12000), an async single-flight
+  `readMemoryTail` mirrors went 6000 â†’ 12000), an async single-flight
   compaction fires.
 - **Memory is segmented by world.** A character accumulates memories across many
   LAN worlds; to keep them from bleeding together, `src/bot/brain/memory/worlds.js`
   assigns each world a **stable number** (fingerprinted by world spawn point +
   dimension, persisted in `worlds.json`) on the bot's first spawn. It drops a
-  `## World N — <label>` header into `MEMORY.md` when the world changes, and the
+  `## World N â€” <label>` header into `MEMORY.md` when the world changes, and the
   per-turn snapshot leads with `world: #N <label>` so the bot knows which world
   it's in. These headers are deliberately NOT entry lines (`- [`), and both the
   seed-truncation (`readMemoryForSeed`) and the **segment-aware compactor** are
-  written to preserve them — touch those two if you change the header format.
+  written to preserve them â€” touch those two if you change the header format.
   261020: headers name their game, and app-side writers file under
   `APP_SECTION_HEADER` (see "Plans and goals belong to a game" below), so a
   player who alternates a game and texting gets a new header pair every
@@ -344,29 +344,29 @@ stood still and said nothing on her own for two minutes. Now:
   and the seed reader pays for headers from its budget and keeps only the
   headers of kept entries plus the last one.
 > The old CLAUDE.md framed this as "the LLM decides when to compact at semantic
-> boundaries" — misleading. The *write* is LLM-driven; the *compaction* is
+> boundaries" â€” misleading. The *write* is LLM-driven; the *compaction* is
 > mechanical (byte threshold).
 
 **Knowledge (260725).** Per-character, user-provided reference files (imported
 memories from other AI-companion platforms, facts about the player) injected
 into EVERY AI surface without the model asking: chat/voice/chess get it via a
 block in `buildSystemBlocks` (`src/main/chat/chatPrompts.ts`, right after the
-persona block, inside the cached stable region — no fifth `cache_control`);
+persona block, inside the cached stable region â€” no fifth `cache_control`);
 the Minecraft bot gets it in the summon init payload (`config._seiKnowledge`)
 appended to the cached system prefix in `rebuildPersonalitySystem`. Store:
 `src/main/knowledge/knowledgeStore.ts` under `paths.knowledgeDir(id)` =
 `<profileRoot>/knowledge/<characterId>/` (manifest `index.json` +
-`<entryUuid>.md` files) — deliberately OUTSIDE `memoryDir` so "Reset memory"
+`<entryUuid>.md` files) â€” deliberately OUTSIDE `memoryDir` so "Reset memory"
 never wipes it (character delete / remove-from-library / migration / profile
-import all handle it). Ingestion is main-only (`knowledge:extract` →
+import all handle it). Ingestion is main-only (`knowledge:extract` â†’
 `src/main/knowledge/extractText.ts`): .md/.txt/.text plus .docx via a minimal
 in-repo zip reader; legacy .doc rejected; binary-as-text rejected; control +
 zero-width/bidi chars stripped; 512 KB/upload, 64 KB/entry, 20 entries. Over
 32 KB total at create time the wizard offers an LLM compaction
-(`knowledge:compact`, target ≤ 8 KB, replaces all entries with one) — only
+(`knowledge:compact`, target â‰¤ 8 KB, replaces all entries with one) â€” only
 Sei's stored copies are compacted, never the user's original files. UI: the
 Awaken "Import from another platform" tile (upload phase before the wizard
-questions) and the CharacterPage gear menu → Knowledge popup
+questions) and the CharacterPage gear menu â†’ Knowledge popup
 (`KnowledgeModal`, available for ALL characters). Prompt framing treats
 knowledge strictly as reference DATA, never instructions.
 
@@ -505,9 +505,9 @@ built for the loop itself.
   150, ~250 tokens total); `visit(ref, page?)` takes a letter (or a raw URL)
   and returns ~2400 chars of de-boilerplated text per part with a `part n/m`
   header. Labels run a..z, aa.. and are session-wide, so a `visit("b")` on a
-  later turn still resolves. HTML→text is regex-only (`htmlToText`): drop
+  later turn still resolves. HTMLâ†’text is regex-only (`htmlToText`): drop
   script/style/nav/header/footer/aside, prefer `<main>`/`<article>` when
-  substantial, block tags → newlines. The tag regex tolerates `>` inside
+  substantial, block tags â†’ newlines. The tag regex tolerates `>` inside
   quoted attributes (Wikipedia's `data-mw` JSON leaked otherwise).
 - **Fetch through Chromium, not Node (260909, rebuilt on `net.request`
   260917).** `electronFetchProvider()` resolves Electron's `net` lazily
@@ -561,7 +561,7 @@ built for the loop itself.
   first only when its key is present (Brave `X-Subscription-Token` GET,
   Tavily `Bearer` POST, Serper `X-API-KEY` POST; request/response shapes
   verified against each vendor's docs 260909), then the keyless chain
-  DuckDuckGo HTML → Bing HTML → Wikipedia API. The first provider that yields
+  DuckDuckGo HTML â†’ Bing HTML â†’ Wikipedia API. The first provider that yields
   a result wins; a challenge page, an empty scrape, or (scraped engines only)
   a result set that shares fewer than two query words with any hit
   (`looksRelevant`: Bing from this egress returned dictionary entries for
@@ -609,7 +609,7 @@ built for the loop itself.
   voice list (greeting, companion and idle turns included, so the cached
   tools+system prefix stays identical across turn kinds), dispatches them
   from a per-character session (`getChatWebSession`, 1 h idle TTL, in
-  `src/main/llm/webSearchSettings.ts`), and `MAX_HOPS` went 3 → 6. Chess,
+  `src/main/llm/webSearchSettings.ts`), and `MAX_HOPS` went 3 â†’ 6. Chess,
   Draw! and backseat do NOT offer them (game turns, prompt-cache churn).
   260917: the list is built in ONE place (`chatTools(llm, voice)`) so the
   four voice turn kinds cannot drift, and the three SINGLE-SHOT voice turns
@@ -668,3 +668,7 @@ built for the loop itself.
   tool said "no open spot" for a table that was in fact down. craft() with a
   crafting_table in the bag puts it down instead of walking to a world table
   more than 8m off, or when that walk fails. Repro: `place-repro.mjs`.
+
+
+
+

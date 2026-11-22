@@ -1,5 +1,5 @@
-/**
- * ui-A9 — resetMemoryForCharacter side-effects + the patchCharacter contract.
+﻿/**
+ * ui-A9 â€” resetMemoryForCharacter side-effects + the patchCharacter contract.
  *
  * Verifies:
  *   - Memory dir contents are wiped and the dir is recreated empty.
@@ -8,12 +8,12 @@
  *   - Other character fields (persona, portrait, skin, name) are
  *     preserved verbatim.
  *
- * Source: ui-A9 spec — Reset memory (per-character + all).
+ * Source: ui-A9 spec â€” Reset memory (per-character + all).
  *
- * 260705 — patchCharacter: locked read-modify-write. Pins the merge
+ * 260705 â€” patchCharacter: locked read-modify-write. Pins the merge
  * round-trip, the missing-id null no-op, and that concurrent patches
  * serialize (the lock spans the whole read-modify-write, not just the
- * write — the reason the helper exists).
+ * write â€” the reason the helper exists).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -100,7 +100,7 @@ afterEach(async () => {
 });
 
 describe('resetMemoryForCharacter (ui-A9)', () => {
-  it('A9.1: wipes memory directory contents — MEMORY.md, PLAYER.md, and goals (HEARTBEAT.md)', async () => {
+  it('A9.1: wipes memory directory contents â€” MEMORY.md, PLAYER.md, and goals (HEARTBEAT.md)', async () => {
     // Seed the character JSON + the files the bot writes at runtime. HEARTBEAT.md
     // is the committed-goals / standing-orders store (setGoal/clearGoal write
     // here, path = `${memDir}/HEARTBEAT.md`); it lives INSIDE memoryDir so the
@@ -164,10 +164,10 @@ describe('resetMemoryForCharacter (ui-A9)', () => {
     expect(typeof ls).toBe('string');
   });
 
-  it('A9.5: deletes chat.jsonl and bridge.json — reset erases chat history too (260705)', async () => {
+  it('A9.5: deletes chat.jsonl and bridge.json â€” reset erases chat history too (260705)', async () => {
     // Reset is the ONE deliberate erase: memory, goals, the chat transcript
     // AND the continuity summary all go. (The hidden compaction mechanism, by
-    // contrast, never trims what the chat UI shows — chat:history reads the
+    // contrast, never trims what the chat UI shows â€” chat:history reads the
     // full transcript.)
     await saveCharacter(makeChar());
     const memDir = paths.memoryDir(UUID);
@@ -188,7 +188,7 @@ describe('resetMemoryForCharacter (ui-A9)', () => {
   });
 });
 
-// 260705 — daily creation cap (MAX_CREATIONS_PER_DAY, rolling 24h local log
+// 260705 â€” daily creation cap (MAX_CREATIONS_PER_DAY, rolling 24h local log
 // in UserConfig.creation_times).
 describe('checkCreateQuota / recordCreation', () => {
   beforeEach(async () => {
@@ -263,7 +263,7 @@ describe('checkCreateQuota / recordCreation', () => {
 });
 
 describe('patchCharacter (260705)', () => {
-  it('P.1: applies the updater and persists — round-trips via getCharacter', async () => {
+  it('P.1: applies the updater and persists â€” round-trips via getCharacter', async () => {
     await saveCharacter(makeChar());
 
     const out = await patchCharacter(UUID, (c) => ({ ...c, playtime_ms: (c.playtime_ms ?? 0) + 5_000 }));
@@ -283,12 +283,12 @@ describe('patchCharacter (260705)', () => {
 
     expect(out).toBeNull();
     expect(await getCharacter(missing)).toBeNull();
-    // No JSON materialized on disk either — null means NO write happened.
+    // No JSON materialized on disk either â€” null means NO write happened.
     const files = await readdir(path.join(tmp, 'characters'));
     expect(files.filter((f) => f.startsWith(missing))).toHaveLength(0);
   });
 
-  it('P.3: 20 concurrent increments all land — the lock spans the whole read-modify-write', async () => {
+  it('P.3: 20 concurrent increments all land â€” the lock spans the whole read-modify-write', async () => {
     // The proof the helper exists for: with the lock covering only the write
     // (the old re-read-then-saveCharacter idiom), concurrent increments read
     // the same base value and the total comes up short.
@@ -307,7 +307,7 @@ describe('patchCharacter (260705)', () => {
 
 describe('listCharacters index self-heal (260721)', () => {
   const UUID2 = '550e8400-e29b-41d4-a716-446655440100';
-  // NB: paths are profile-scoped — go through paths.*, not tmp/characters.
+  // NB: paths are profile-scoped â€” go through paths.*, not tmp/characters.
   const indexPath = () => paths.indexPath();
 
   it('H.1: re-indexes an on-disk character file whose index entry was lost', async () => {
@@ -324,7 +324,7 @@ describe('listCharacters index self-heal (260721)', () => {
     expect(idx.order).toContain(UUID2);
   });
 
-  it('H.2: a corrupt index.json no longer loses the library — membership rebuilt from disk', async () => {
+  it('H.2: a corrupt index.json no longer loses the library â€” membership rebuilt from disk', async () => {
     await saveCharacter(makeChar());
     await saveCharacter({ ...makeChar(), id: UUID2, name: 'Second' });
     await writeFile(indexPath(), 'not json{{{');
@@ -346,7 +346,7 @@ describe('listCharacters index self-heal (260721)', () => {
 
     const idx = JSON.parse(await readFile(indexPath(), 'utf8')) as { order: string[] };
     expect(idx.order).not.toContain(strayId);
-    // File untouched — quarantine, not deletion.
+    // File untouched â€” quarantine, not deletion.
     expect(await readFile(path.join(paths.charactersDir(), `${strayId}.json`), 'utf8')).toBe('{"broken":');
   });
 });
@@ -387,3 +387,7 @@ describe('legacy purge guard (261031)', () => {
     expect(await readFile(paths.characterPath(NEWER), 'utf8')).toContain('schema_version');
   });
 });
+
+
+
+

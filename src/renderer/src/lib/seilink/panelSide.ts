@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which side the editor's panel goes on (261110, product call 261110): the
  * items panel sits over the left of the room, where a room's wall shelves
  * often are, so the tops an extra goes on were hidden behind it. While items
@@ -62,3 +62,7 @@ export function placementPanelSide(regions: PlacementRegions, state: Pick<RoomSt
   }
   return right < left ? 'right' : 'left';
 }
+
+
+
+

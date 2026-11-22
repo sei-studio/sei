@@ -1,13 +1,13 @@
-/**
- * CreationLimitModal — informational notice shown when a user has hit the
- * daily character-creation cap (MAX_CREATIONS_PER_DAY, rolling 24h — 260705:
+﻿/**
+ * CreationLimitModal â€” informational notice shown when a user has hit the
+ * daily character-creation cap (MAX_CREATIONS_PER_DAY, rolling 24h â€” 260705:
  * enforced locally in main via characterStore.checkCreateQuota, all backends).
  *
- * Surfaced BEFORE the new-character flow (CharactersScreen → "New" / AddCard)
+ * Surfaced BEFORE the new-character flow (CharactersScreen â†’ "New" / AddCard)
  * so a maxed-out user never enters the steps only to fail mid-expansion. Also
  * reused as the graceful landing if the cap is hit mid-flow (a rare race).
  *
- * Dismissible (Esc / scrim click / button) — this is informational, NOT a
+ * Dismissible (Esc / scrim click / button) â€” this is informational, NOT a
  * blocking hard-stop like HardStopModal. Renders through ModalShell.
  */
 import React from 'react';
@@ -17,7 +17,7 @@ import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './CreationLimitModal.module.css';
 
 export interface CreationLimitModalProps {
-  /** ISO timestamp the daily window resets, if known — shown as a hint. */
+  /** ISO timestamp the daily window resets, if known â€” shown as a hint. */
   resetsAt?: string | null;
   onClose: () => void;
 }
@@ -41,7 +41,7 @@ export function CreationLimitModal({
   return (
     <ModalShell title={t('Daily limit reached')} onClose={onClose} scrimClose>
       <p className={styles.body}>
-        {t('You’ve reached your limit for companion creation today. Come back tomorrow.')}
+        {t('Youâ€™ve reached your limit for companion creation today. Come back tomorrow.')}
       </p>
       {resetHint ? <p className={styles.hint}>{t('Resets {when}', { when: resetHint })}</p> : null}
       <ModalFooter>
@@ -52,3 +52,7 @@ export function CreationLimitModal({
     </ModalShell>
   );
 }
+
+
+
+

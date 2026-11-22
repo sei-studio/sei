@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Goal progress: whether a goal set this session has had any work done
  * since it was set. Pure; no I/O.
  *
@@ -66,3 +66,7 @@ export function markGoalProgress(goalsText, opts = {}) {
   if (!Number.isFinite(opts.sessionStartMs)) return text
   return text.split('\n').map((l) => (/^- \[/.test(l.trim()) && goalNotStarted(l, opts) ? `${l.trimEnd()} ${GOAL_NOT_STARTED_NOTE}` : l)).join('\n')
 }
+
+
+
+

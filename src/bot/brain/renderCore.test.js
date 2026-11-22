@@ -1,4 +1,4 @@
-// renderCore: the tail restatement of who the character is (orchestrator seed
+﻿// renderCore: the tail restatement of who the character is (orchestrator seed
 // block `core`). 261012 persona eval: the persona's own initiative and reaction
 // sections ride it, and a `#HEADER` written without a space ends the CORE slice.
 import { describe, expect, it } from 'vitest'
@@ -49,3 +49,7 @@ describe('renderCore', () => {
     expect(renderCore(null)).toContain('# CORE')
   })
 })
+
+
+
+

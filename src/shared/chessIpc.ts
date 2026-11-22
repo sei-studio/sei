@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess minigame: shared renderer <-> main contract (260710).
  *
  * The authoritative game lives in main (src/main/chess/). The renderer is a
@@ -132,3 +132,7 @@ export const CHESS_ERR_DOWNLOAD_FAILED = 'CHESS_MODEL_DOWNLOAD_FAILED';
  *   onChessState(cb: (state: ChessGameState) => void): () => void
  *   onChessDownload(cb: (p: ChessDownloadProgress) => void): () => void
  */
+
+
+
+

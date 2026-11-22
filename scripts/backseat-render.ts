@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat review video (260801).
  *
  * Takes a finished `backseat-sim` run and renders the clip back out with
@@ -160,7 +160,7 @@ const kindColor = (t: Turn): string =>
 const kindLabel = (t: Turn): string => {
   if (t.kind === 'user') return 'PLAYER MESSAGE';
   if (t.kind === 'idle') return 'SCHEDULED LOOK';
-  return t.joltReason === 'gain' ? 'JOLT · AUDIO GAIN' : 'JOLT · COLOUR CHANGE';
+  return t.joltReason === 'gain' ? 'JOLT Â· AUDIO GAIN' : 'JOLT Â· COLOUR CHANGE';
 };
 
 const kindDetail = (t: Turn): string => {
@@ -739,3 +739,7 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+
+
+

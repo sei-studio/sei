@@ -1,4 +1,4 @@
-// 261011: Minecraft per-action outcome telemetry, main side.
+﻿// 261011: Minecraft per-action outcome telemetry, main side.
 import { describe, it, expect, vi } from 'vitest';
 import {
   actionNameKey,
@@ -162,8 +162,8 @@ describe('sessionEndActionSummary', () => {
 
 /**
  * End-path sequences, mirroring what index.ts does with the supervisor's
- * messages: action-stats → reporter.stats; first 'online' → reporter.online;
- * every terminal idle/error → closePlaySession (→ reporter.close, guarded by
+ * messages: action-stats â†’ reporter.stats; first 'online' â†’ reporter.online;
+ * every terminal idle/error â†’ closePlaySession (â†’ reporter.close, guarded by
  * playStartedAt) then reporter.settled. A tiny harness reproduces exactly that
  * wiring so each path can be replayed.
  */
@@ -204,8 +204,8 @@ describe('mc_session_actions flushes exactly once on every end path', () => {
     h.stats('a', snap({ counters: { llm_turns: 1 } }));
     h.tick(60_000);
     h.stats('a', snap()); // forced flush before summon-stopped
-    h.terminal('a', 'user_stop'); // summon-stopped → idle
-    h.terminal('a', 'user_stop'); // process exit → idle again
+    h.terminal('a', 'user_stop'); // summon-stopped â†’ idle
+    h.terminal('a', 'user_stop'); // process exit â†’ idle again
     expect(h.events()).toHaveLength(1);
     expect(h.events()[0]).toMatchObject({ reason: 'user_stop', llm_turns: 40, session_minutes: 1, stats_missing: false });
     expect(h.sessionEnded).toEqual([{ reason: 'user_stop', actions_total: 16, actions_failed: 7, llm_turns: 40, llm_errors: 3, unanswered: 3, deaths: 1 }]);
@@ -319,3 +319,7 @@ describe('ChatGPT plan sessions (261017, issue #46)', () => {
     expect(reportableModelId('chatgpt', 'chatgpt', 'someone/odd:tag')).toBe('custom');
   });
 });
+
+
+
+

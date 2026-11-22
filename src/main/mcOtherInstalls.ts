@@ -1,4 +1,4 @@
-/**
+﻿/**
  * What the Minecraft install scan cannot use but the player should hear
  * about (261104). 30% of new users had no Java install the scan found
  * (~54 a week), and the setup step only said "Install Minecraft Java
@@ -250,3 +250,7 @@ export async function scanMcExtras(e: OtherInstallsEnv = defaultOtherInstallsEnv
   ]);
   return { others, bedrock, launcherInstalled };
 }
+
+
+
+

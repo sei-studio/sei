@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Scope write barrier (260926): keeps an account's last writes in that
  * account's profile.
  *
@@ -194,3 +194,7 @@ export function _resetScopeBarrierForTests(): void {
   switchPending = 0;
   scopeGeneration = 0;
 }
+
+
+
+

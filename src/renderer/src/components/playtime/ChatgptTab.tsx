@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime > ChatGPT (261110, product call 261110; mocks 02 and 03).
  *
  * Not in use: one line and the official Continue with ChatGPT button
@@ -140,3 +140,7 @@ export function ChatgptTab({ active, cfg, persist, signedIn, onUsePlan }: Chatgp
     </>
   );
 }
+
+
+
+

@@ -1,10 +1,10 @@
-/**
- * 260816 (china-compat): the shared LLM provider catalog — single source of
+﻿/**
+ * 260816 (china-compat): the shared LLM provider catalog â€” single source of
  * truth for which providers the UI OFFERS, their display labels, default
  * base URLs / models, and per-model vision capability.
  *
  * Two lists, deliberately different:
- *   - The Zod enum in characterSchema.ts is the set of values that PARSE —
+ *   - The Zod enum in characterSchema.ts is the set of values that PARSE â€”
  *     it keeps every legacy provider so old configs round-trip.
  *   - SHOWN_PROVIDERS here is the set the picker OFFERS. A config already on
  *     a dropped provider keeps working (grandfathered) and the picker shows
@@ -13,7 +13,7 @@
  * Vision is a PER-MODEL property, not per-provider (gpt-5 sees, deepseek-v4
  * does not; qwen3-vl sees, qwen3-max does not). `modelVision()` returns a
  * three-state verdict; consumers gate the image surfaces (Draw!, backseat)
- * OFF only on a confident 'no' and treat 'unknown' as usable-with-caution —
+ * OFF only on a confident 'no' and treat 'unknown' as usable-with-caution â€”
  * a wrong 'no' silently hides features, a wrong 'yes' fails visibly at
  * launch with a recoverable error, so the asymmetry leans toward 'yes'.
  *
@@ -21,7 +21,7 @@
  *   - `deepseek-chat` / `deepseek-reasoner` aliases were DISCONTINUED
  *     2026-07-24. Current lineup: deepseek-v4-flash, deepseek-v4-pro.
  *   - V4 ships thinking-mode ON by default, and in thinking mode the API
- *     requires `reasoning_content` passed back on every tool round-trip —
+ *     requires `reasoning_content` passed back on every tool round-trip â€”
  *     generic OpenAI-compat clients strip it and 400. Both provider layers
  *     therefore send `thinking: {type:'disabled'}` (DEEPSEEK_EXTRA_BODY).
  *   - Under load DeepSeek QUEUES requests on an open connection instead of
@@ -79,7 +79,7 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
 
 /**
  * Default base URLs for the OpenAI-compatible set (mirrors
- * src/bot/brain/llm/index.js BASE_URLS; keep in sync — the bot cannot import
+ * src/bot/brain/llm/index.js BASE_URLS; keep in sync â€” the bot cannot import
  * this module). Anthropic/gemini use their SDK defaults and are absent here.
  *
  * qwen: DashScope "compatible mode". The CN endpoint is the default because
@@ -157,7 +157,7 @@ export type VisionVerdict = 'yes' | 'no' | 'unknown';
 
 /**
  * Per-model vision capability. Heuristics over model-id substrings, curated
- * from provider docs at 260816 — revise as lineups move. Consumers: gate
+ * from provider docs at 260816 â€” revise as lineups move. Consumers: gate
  * Draw!/backseat OFF only on 'no'.
  */
 export function modelVision(provider: ProviderKind, model: string): VisionVerdict {
@@ -231,9 +231,13 @@ export function ollamaVisionHeuristic(model: string): VisionVerdict {
 }
 
 /**
- * Every SHOWN provider supports live model listing with the user's key —
+ * Every SHOWN provider supports live model listing with the user's key â€”
  * Anthropic GET /v1/models, the OpenAI-compat set GET {base}/models, Gemini
  * ListModels, Ollama GET /api/tags. The llm:list-models probe (src/main/llm)
  * owns the per-shape handling; this catalog only records the intent that the
  * model picker is list-driven, with DEFAULT_MODELS as the offline fallback.
  */
+
+
+
+

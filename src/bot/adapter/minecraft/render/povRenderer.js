@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/render/povRenderer.js
+﻿// src/bot/adapter/minecraft/render/povRenderer.js
 //
-// VIS-01 — single-frame headless bot-POV render: world chunks -> downscaled JPEG buffer.
+// VIS-01 â€” single-frame headless bot-POV render: world chunks -> downscaled JPEG buffer.
 //
 // THREE-PROCESS INVARIANT (CLAUDE.md): this MUST run in the bot utilityProcess ONLY.
 // It needs live `bot.world` + `bot.entity` and dlopens native gl/canvas built for the
@@ -11,19 +11,19 @@
 //   WorldView(bot.world) -> waitForChunksToRender -> renderer.render -> canvas.toBuffer JPEG.
 //   We drive Viewer+WorldView DIRECTLY (NOT the `headless` MP4/ffmpeg export).
 //
-// ESM/CJS interop (CRITICAL — this repo is ESM, package.json "type":"module"):
+// ESM/CJS interop (CRITICAL â€” this repo is ESM, package.json "type":"module"):
 //   prismarine-viewer, node-canvas-webgl, three are CJS-only. `require` is undefined in an
 //   ESM module, so we build one via createRequire(import.meta.url). The packages also expect
 //   `global.THREE` + `global.Worker` (the viewer's worldrenderer spawns worker_threads and
-//   reads the THREE global) — set both before constructing anything, exactly as the package's
+//   reads the THREE global) â€” set both before constructing anything, exactly as the package's
 //   own lib/headless.js does.
 //
 // VIS-08 graceful degradation: on missing bot.version, unsupported version, a block-texture
 // atlas that this build does not ship (260803, see the atlasPresent guard), no loaded chunks
 // (unloaded world), a black/empty frame, OR the wall-clock timeout, return the sentinel
-// { ok: false, reason: 'cant_see' } — NEVER throw, NEVER hang the bot.
+// { ok: false, reason: 'cant_see' } â€” NEVER throw, NEVER hang the bot.
 //
-// Wall-clock timeout (CLAUDE.md invariant — every external call has a timeout, no exceptions):
+// Wall-clock timeout (CLAUDE.md invariant â€” every external call has a timeout, no exceptions):
 //   waitForChunksToRender can hang if chunks never arrive. We Promise.race it against a timer
 //   and, after the race, clearTimeout + tear down the renderer/WorldView listeners to avoid
 //   the GL-context / listener leak (15-RESEARCH.md Pitfall 5).
@@ -57,7 +57,7 @@ const THREE = globalThis.THREE
 // A missing texture used to be FATAL (260806): prismarine-viewer's loadTexture has
 // no .catch, so an absent PNG became an unhandled rejection and src/bot/index.js
 // turned that into BOT_CRASH + process.exit(1). See textureFallback.js for the full
-// mechanism. This MUST run before the `prismarine-viewer/viewer` require below —
+// mechanism. This MUST run before the `prismarine-viewer/viewer` require below â€”
 // worldrenderer.js and entity/Entity.js both destructure `loadTexture` at their own
 // module load, so a patch applied afterwards would be holding a reference nobody uses.
 installTextureFallback(pvRequire, { warn: (m) => console.log(m) })
@@ -70,7 +70,7 @@ const { createCanvas } = require('node-canvas-webgl/lib')
 loadMeshlineWithViewerThree(pvRequire)
 const { Viewer, WorldView } = require('prismarine-viewer/viewer')
 
-// ── Texture-atlas presence guard (260803) ───────────────────────────────────
+// â”€â”€ Texture-atlas presence guard (260803) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The packaged builds PRUNE the bundled prismarine-viewer texture tree down to
 // the Minecraft versions players actually run (see the `files:` blocks in
 // electron-builder.yml). Pruning a texture folder does NOT make the viewer
@@ -151,18 +151,18 @@ function atlasPresent (viewerVersion) {
   return present
 }
 
-// ── Entity-model guard ──────────────────────────────────────────────────────
+// â”€â”€ Entity-model guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // prismarine-viewer's entity models are frozen at ~1.16 (94 types in
 // viewer/lib/entity/entities.json). Every modern type the server spawns (item
 // drops, glow_squid, frog, axolotl, armadillo, ...) throws inside getEntityMesh,
-// which console.logs a FULL stack trace per spawn event — flooding the bot log
-// and the dev viewer — then falls back to a magenta debug box that pollutes the
+// which console.logs a FULL stack trace per spawn event â€” flooding the bot log
+// and the dev viewer â€” then falls back to a magenta debug box that pollutes the
 // LLM's view with "strange pink blocks". A SECOND failure mode does the same:
 // 7 stock 1.16 models (piglin, piglin_brute, pillager, vex, witch,
 // zombified_piglin) have a bone whose `parent` is missing, so getMesh throws at
-// `bones[parent].add` — caught by getEntityMesh but still logged + magenta-boxed.
+// `bones[parent].add` â€” caught by getEntityMesh but still logged + magenta-boxed.
 // Alias the 1:1 lookalike (glow_squid -> squid), and for anything that would
-// still throw — NO model OR a structurally broken one — swallow every event
+// still throw â€” NO model OR a structurally broken one â€” swallow every event
 // (one line per type). modelRenderable() below judges which.
 // pvRequire resolves inside prismarine-viewer's own tree, so these are the very
 // module instances Entity.js / viewer.js close over.
@@ -171,7 +171,7 @@ if (!entityModels.glow_squid && entityModels.squid) entityModels.glow_squid = en
 {
   const { Entities } = pvRequire('./viewer/lib/entities')
   const warnedTypes = new Set()
-  // entityMoved/entityGone events carry only the id (no name) — getEntityMesh
+  // entityMoved/entityGone events carry only the id (no name) â€” getEntityMesh
   // on a name-less, never-meshed entity builds a NaN-sized box, so every event
   // for a skipped id must be swallowed too, not just the spawn.
   const skippedIds = new Set()
@@ -179,7 +179,7 @@ if (!entityModels.glow_squid && entityModels.squid) entityModels.glow_squid = en
   // Would `new Entity('1.16.4', name)` throw inside getMesh? It does when a
   // textured geometry has a bone whose `parent` is not in the model (the
   // Entity.js:171 `bones[parent].add` crash). Judge it up front from the static
-  // model JSON and memoize — same outcome as the no-model case: skip + warn.
+  // model JSON and memoize â€” same outcome as the no-model case: skip + warn.
   const renderableByName = new Map()
   function modelRenderable (name) {
     if (renderableByName.has(name)) return renderableByName.get(name)
@@ -206,7 +206,7 @@ if (!entityModels.glow_squid && entityModels.squid) entityModels.glow_squid = en
       if (!warnedTypes.has(entity.name)) {
         warnedTypes.add(entity.name)
         const why = entityModels[entity.name] ? 'broken viewer model' : 'no viewer model'
-        console.log(`[sei/vision] ${why} for entity "${entity.name}" — not rendered`)
+        console.log(`[sei/vision] ${why} for entity "${entity.name}" â€” not rendered`)
       }
       skippedIds.add(entity.id)
       return
@@ -220,13 +220,13 @@ if (!entityModels.glow_squid && entityModels.squid) entityModels.glow_squid = en
 }
 
 /**
- * Spawn-race guard — the FSM's first idle tick can run visualize 1-2s after
+ * Spawn-race guard â€” the FSM's first idle tick can run visualize 1-2s after
  * join, while the server is STILL STREAMING chunks to mineflayer. worldView.init
  * then snapshots only the 1-2 columns loaded so far and waitForChunksToRender
  * happily resolves with almost nothing meshed: the "single dirt mound floating
  * in sky" frames. Wait (deadline-bounded) for the 5x5 columns around the bot
  * before snapshotting. On a settled world mineflayer resolves this immediately
- * from loaded-column lookups — effectively free on the idle hot path.
+ * from loaded-column lookups â€” effectively free on the idle hot path.
  */
 async function waitForNearbyColumns (bot, deadlineAt) {
   if (typeof bot.waitForChunksToLoad !== 'function') return
@@ -234,7 +234,7 @@ async function waitForNearbyColumns (bot, deadlineAt) {
   const timer = new Promise((resolve) => {
     handle = setTimeout(resolve, Math.max(0, deadlineAt - Date.now()))
   })
-  // mineflayer rejects after its own internal 10s — degrade to "render what we
+  // mineflayer rejects after its own internal 10s â€” degrade to "render what we
   // have" rather than failing the frame.
   await Promise.race([bot.waitForChunksToLoad().catch(() => {}), timer])
   if (handle != null) clearTimeout(handle)
@@ -253,14 +253,14 @@ async function waitForAtlas (viewer, deadlineAt) {
   }
 }
 
-/** Degrade sentinel — returned instead of throwing/hanging (VIS-08). */
+/** Degrade sentinel â€” returned instead of throwing/hanging (VIS-08). */
 const CANT_SEE = Object.freeze({ ok: false, reason: 'cant_see' })
 
 /**
  * Dev-only tap for scripts/dev-viewer.mjs (`npm run dev` browser viewer):
  * mirror each successful frame to $SEI_DEV_VIEWER_DIR/latest-render.jpg via
  * tmp+rename so the viewer's HTTP reads never see a half-written file.
- * Fire-and-forget and inert in production — only the dev-viewer wrapper sets
+ * Fire-and-forget and inert in production â€” only the dev-viewer wrapper sets
  * the env var, and a write failure can never affect the render result.
  */
 function devViewerTap (buffer) {
@@ -273,7 +273,7 @@ function devViewerTap (buffer) {
 }
 
 // A single long-lived WebGLRenderer is reused across renders to avoid headless-gl's live
-// GL-context limit (15-RESEARCH.md Pitfall 5 — "too many active WebGL contexts"). The Viewer
+// GL-context limit (15-RESEARCH.md Pitfall 5 â€” "too many active WebGL contexts"). The Viewer
 // + WorldView, by contrast, are per-render (they bind to a specific bot + position) and are
 // always torn down in the finally block.
 let sharedCanvas = null
@@ -282,7 +282,7 @@ let sharedSize = { width: 0, height: 0 }
 
 function acquireRenderer (width, height) {
   if (sharedRenderer && (sharedSize.width !== width || sharedSize.height !== height)) {
-    // Size changed (e.g. config.vision.resolution_px edited) — rebuild the context.
+    // Size changed (e.g. config.vision.resolution_px edited) â€” rebuild the context.
     disposeRenderer()
   }
   if (!sharedRenderer) {
@@ -310,11 +310,11 @@ export function disposeRenderer () {
 
 /**
  * Cheap black/empty-frame detector. Reads back the GL framebuffer and returns true if every
- * sampled pixel is the scene's background clear color — i.e. nothing rendered in
+ * sampled pixel is the scene's background clear color â€” i.e. nothing rendered in
  * front of the camera. Sampling a sparse grid keeps this O(1)-ish regardless of resolution.
  *
  * @param {number[]} bg  The [r,g,b] the scene background was set to for THIS
- *   render (time-of-day dependent — must match the color actually used, or
+ *   render (time-of-day dependent â€” must match the color actually used, or
  *   night frames would never read as blank / day frames always would).
  */
 function isBlankFrame (canvas, bg) {
@@ -338,7 +338,7 @@ function isBlankFrame (canvas, bg) {
     }
     return nonBg === 0
   } catch {
-    // If we can't read pixels, don't claim blank — let the chunk-count gate decide.
+    // If we can't read pixels, don't claim blank â€” let the chunk-count gate decide.
     return false
   }
 }
@@ -348,7 +348,7 @@ function isBlankFrame (canvas, bg) {
  *
  * @param {import('mineflayer').Bot} bot  Live mineflayer bot (utilityProcess only).
  * @param {object} [opts]
- * @param {number} [opts.width=256]       Render width in px (D-03 ~256; VIS-06 ≤512 ceiling).
+ * @param {number} [opts.width=256]       Render width in px (D-03 ~256; VIS-06 â‰¤512 ceiling).
  * @param {number} [opts.height=256]      Render height in px.
  * @param {number} [opts.viewDistance=4]  Chunk view distance for the WorldView.
  * @param {number} [opts.quality=0.4]     JPEG quality 0..1 (D-03 aggressive compression).
@@ -390,7 +390,7 @@ export async function renderPov (bot, {
     viewer = new Viewer(renderer)
     if (!viewer.setVersion(bot.version)) return CANT_SEE // unsupported version (VIS-08)
 
-    // RAW body position (NOT pre-offset by eyeHeight) — the camera set below adds
+    // RAW body position (NOT pre-offset by eyeHeight) â€” the camera set below adds
     // viewer.playerHeight itself, matching what setFirstPersonCamera would do.
     const center = bot.entity.position
     worldView = new WorldView(bot.world, viewDistance, center)
@@ -398,7 +398,7 @@ export async function renderPov (bot, {
     worldView.listenToBot(bot)
     await worldView.init(center)
 
-    // VIS-08: if no columns loaded (unloaded world), the scene is empty — degrade instead of
+    // VIS-08: if no columns loaded (unloaded world), the scene is empty â€” degrade instead of
     // returning a blue-sky frame. loadedChunks only gains keys for columns the world actually
     // had data for.
     if (Object.keys(worldView.loadedChunks).length === 0) return CANT_SEE
@@ -418,7 +418,7 @@ export async function renderPov (bot, {
     // the atlas image decodes; rendering then ships untextured blocks.
     await waitForAtlas(viewer, deadlineAt)
 
-    // Set the camera DIRECTLY — do not use viewer.setFirstPersonCamera. It
+    // Set the camera DIRECTLY â€” do not use viewer.setFirstPersonCamera. It
     // tweens position over 50ms (TWEEN.update() driven by a continuous render
     // loop), so a single-frame render ships with the camera still at the
     // origin, staring at the underside of the world from y=0. The +playerHeight
@@ -437,12 +437,12 @@ export async function renderPov (bot, {
     renderer.render(viewer.scene, viewer.camera)
 
     // VIS-08 secondary gate: even with chunks "loaded", if the camera faces an empty/unbuilt
-    // direction the frame can be pure sky — treat an all-background frame as can't-see.
+    // direction the frame can be pure sky â€” treat an all-background frame as can't-see.
     if (isBlankFrame(canvas, sky)) return CANT_SEE
 
     // Downscale + encode in one step: the canvas IS the target resolution (~256px), so
     // toBuffer('image/jpeg', {quality}) emits the aggressively-compressed frame directly
-    // (D-03 / VIS-06 — well under the 512px ceiling).
+    // (D-03 / VIS-06 â€” well under the 512px ceiling).
     const buffer = canvas.toBuffer('image/jpeg', { quality })
     if (!buffer || buffer.length === 0) return CANT_SEE
 
@@ -450,7 +450,7 @@ export async function renderPov (bot, {
 
     return { ok: true, buffer, mediaType: 'image/jpeg' }
   } catch (err) {
-    // Any unexpected failure degrades rather than crashing the bot (VIS-08) —
+    // Any unexpected failure degrades rather than crashing the bot (VIS-08) â€”
     // but log it: a silent catch here hid the three.js version-mismatch
     // regression behind an indistinguishable "can't see".
     //
@@ -475,7 +475,7 @@ export async function renderPov (bot, {
     if (timeoutHandle != null) clearTimeout(timeoutHandle)
     try { worldView?.removeListenersFromBot?.(bot) } catch { /* best-effort */ }
     // The per-render Viewer's WorldRenderer spawns 4 worker_threads (each with a
-    // 50ms setInterval) and prismarine-viewer never terminates them — without
+    // 50ms setInterval) and prismarine-viewer never terminates them â€” without
     // this, EVERY render leaks 4 live threads and the bot process degrades over
     // a session. The geometry they produced is already in the encoded JPEG.
     try { viewer?.world?.workers?.forEach((w) => w.terminate?.()) } catch { /* best-effort */ }
@@ -485,3 +485,7 @@ export async function renderPov (bot, {
 }
 
 export { CANT_SEE }
+
+
+
+

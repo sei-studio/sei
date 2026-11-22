@@ -1,5 +1,5 @@
-/**
- * Call scene registry — which character gets which scene, and the pure
+﻿/**
+ * Call scene registry â€” which character gets which scene, and the pure
  * geometry the renderer needs to stage one.
  *
  * Today this is one built-in scene (Sui's grass field, reusing the onboarding
@@ -8,7 +8,7 @@
  * nothing in `CallScene.tsx` or `VoiceCallScreen` changes.
  *
  * Scenes are SOLO ONLY. A group call has no single actor to stage, so the
- * backdrop mode falls back to split character art (see CallBackdrop) — the
+ * backdrop mode falls back to split character art (see CallBackdrop) â€” the
  * resolver is never consulted with more than one participant.
  */
 
@@ -21,7 +21,7 @@ import type { CallScene, SceneActor } from '@shared/callScene';
  *
  * The art, layer order and timings are the onboarding scene's
  * (`onboard/OnboardScene.tsx`), deliberately unchanged: same PNGs, same 3:2
- * stage, same 66% sprite width. That width is not a framing preference — it is
+ * stage, same 66% sprite width. That width is not a framing preference â€” it is
  * the size at which the sprite's hand-drawn line weight matches the layer
  * art's, so scaling it for the call would visibly mismatch the pen.
  *
@@ -30,7 +30,7 @@ import type { CallScene, SceneActor } from '@shared/callScene';
  * rather than a speaker beside a dialogue column.
  *
  * She sits between `back` (sky, ground) and `front` (grass tufts) so the tufts
- * overlap her feet — standing IN the field rather than on top of it.
+ * overlap her feet â€” standing IN the field rather than on top of it.
  */
 const SUI_GRASS: CallScene = {
   id: 'sui-grass',
@@ -42,7 +42,7 @@ const SUI_GRASS: CallScene = {
   ],
   front: [
     {
-      // Sway: the three tuft variations cycled. No crossfade — partial alpha
+      // Sway: the three tuft variations cycled. No crossfade â€” partial alpha
       // on two tufts mid-swap reads as flicker (260729).
       paint: {
         kind: 'images',
@@ -105,7 +105,7 @@ export function hasCallScene(character: Character | undefined): boolean {
  * How far to park the actor off-stage before the walk-in, as a percentage of
  * the ACTOR's own width (CSS `translateX` percentages are element-relative).
  *
- * Positive = right. The actor's box spans `centerX ± width/2` in stage
+ * Positive = right. The actor's box spans `centerX Â± width/2` in stage
  * fractions, so clearing the edge means moving its near edge past 0 or 1, plus
  * a little slack so an overhanging sleeve is never caught on screen.
  */
@@ -124,7 +124,7 @@ export function offstageTranslatePct(actor: SceneActor): number {
  *
  * Entering from the right means walking LEFT. A scene ships one set of frames
  * and this decides whether they need flipping, so art drawn facing either way
- * works without a second export. The flip is CONSTANT for the whole scene —
+ * works without a second export. The flip is CONSTANT for the whole scene â€”
  * applying it only while walking would pop the sprite around on arrival.
  */
 export function actorMirrored(actor: SceneActor): boolean {
@@ -236,3 +236,7 @@ export function actorBoxStyle(actor: SceneActor): {
     width: `${width * 100}%`,
   };
 }
+
+
+
+

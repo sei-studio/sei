@@ -1,22 +1,22 @@
-/**
- * SkinSetupScreen — dedicated full-page onboarding step for Minecraft skin setup.
+﻿/**
+ * SkinSetupScreen â€” dedicated full-page onboarding step for Minecraft skin setup.
  *
  * Renders AFTER the name/API onboarding step and BEFORE home, as a sibling page
  * to "What should they call you?" (no IconRail, centered column). It drives the
  * existing setup wizard's step machine inline (reusing WizardStepMachine), so the
- * install flow is identical to the Settings "Re-run setup" path — just presented
+ * install flow is identical to the Settings "Re-run setup" path â€” just presented
  * as a page instead of a modal popup.
  *
  * Lifecycle:
  *   - On mount: open the wizard (seeds the store to the welcome step).
  *   - "Skip for now" (welcome step only) closes the wizard without installing.
  *   - When the wizard CLOSES by any terminal path (Finish setup / Cancel / Skip /
- *     none-found → Open settings), finalize: clear UserConfig.skin_setup_pending
+ *     none-found â†’ Open settings), finalize: clear UserConfig.skin_setup_pending
  *     (so a relaunch no longer resumes here) and, unless a step already routed
  *     elsewhere, land on home with the World tab selected.
  *
  * Resumability lives in UserConfig.skin_setup_pending (set on onboarding submit,
- * cleared here) — App.tsx routes back to this page on launch while it's true.
+ * cleared here) â€” App.tsx routes back to this page on launch while it's true.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -40,7 +40,7 @@ export function SkinSetupScreen(): React.ReactElement {
   const finalizedRef = useRef(false);
 
   // Voice-calls opt-in (260705): checking the box starts the ~40 MB voice-
-  // recognition module download in the background — it keeps going after this
+  // recognition module download in the background â€” it keeps going after this
   // screen unmounts (module-scoped single-flight in modelPrefetch). Skipping
   // is fine: the first call offers the install instead (VoiceCallScreen).
   const [voiceState, setVoiceState] = useState<'idle' | 'installing' | 'ready' | 'failed'>('idle');
@@ -70,7 +70,7 @@ export function SkinSetupScreen(): React.ReactElement {
     openWizard(false);
   }, [openWizard]);
 
-  // Finalize when the wizard transitions open → closed. `wasOpenRef` ensures we
+  // Finalize when the wizard transitions open â†’ closed. `wasOpenRef` ensures we
   // only act AFTER having observed it open, so the initial pre-openWizard render
   // (open === false) can't trip the finalize.
   useEffect(() => {
@@ -85,7 +85,7 @@ export function SkinSetupScreen(): React.ReactElement {
         const cfg = await sei.getConfig();
         await sei.saveConfig({ ...cfg, skin_setup_pending: false });
       } catch {
-        /* best-effort — the gate is re-read on next launch */
+        /* best-effort â€” the gate is re-read on next launch */
       }
       // Only take over navigation if a wizard step didn't already route away
       // (none-found's "Open settings" navigates to settings deliberately). Land
@@ -122,7 +122,7 @@ export function SkinSetupScreen(): React.ReactElement {
               {voiceState === 'ready'
                 ? t('Voice module installed. You can call your companion anytime.')
                 : voiceState === 'installing'
-                  ? t('Downloading the voice module… {pct}%', { pct: voicePct })
+                  ? t('Downloading the voice moduleâ€¦ {pct}%', { pct: voicePct })
                   : voiceState === 'failed'
                     ? t('Download failed. You can retry from your first call.')
                     : t('Downloads the voice-recognition module (~40 MB) in the background.')}
@@ -133,3 +133,7 @@ export function SkinSetupScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

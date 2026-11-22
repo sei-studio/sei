@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/povStackLoader.js
+﻿// src/bot/adapter/minecraft/render/povStackLoader.js
 //
 // 260926: load the POV render stack (native canvas + gl and their shared
 // libraries, three, prismarine-viewer) without stalling the bot's event loop.
@@ -188,7 +188,7 @@ export function createPovStackLoader(deps = {}) {
   }
 }
 
-// ── Process-wide instance ───────────────────────────────────────────────────
+// â”€â”€ Process-wide instance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let _loader = null
 let _hooks = {}
 
@@ -216,3 +216,7 @@ export function __resetPovStackLoader() {
   _loader = null
   _hooks = {}
 }
+
+
+
+

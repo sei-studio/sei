@@ -1,5 +1,5 @@
-/**
- * Tests for the one-shot global→profile partition migration (260603).
+﻿/**
+ * Tests for the one-shot globalâ†’profile partition migration (260603).
  *
  * Surface:
  *   1. Moves global per-account data into profiles/local (default scope)
@@ -38,7 +38,7 @@ async function seedGlobalLayout(): Promise<void> {
   await mkdir(path.join(tmp, 'memory', 'x'), { recursive: true });
   await writeFile(path.join(tmp, 'memory', 'x', 'MEMORY.md'), '# Memory\n', 'utf8');
   await writeFile(path.join(tmp, 'defaults-seeded.json'), '{"version":1,"ids":["x"]}\n', 'utf8');
-  // Device-global — must NOT move:
+  // Device-global â€” must NOT move:
   await writeFile(path.join(tmp, 'session.bin'), Buffer.from([9, 9]));
   await writeFile(path.join(tmp, 'skin-setup-state.json'), '{"version":1}\n', 'utf8');
 }
@@ -105,7 +105,7 @@ describe('migrateGlobalToProfile', () => {
 
     await migrateGlobalToProfile();
 
-    // Nothing moved — global config still at the device root.
+    // Nothing moved â€” global config still at the device root.
     expect(await exists(path.join(tmp, 'config.json'))).toBe(true);
     expect(await exists(paths.configPath())).toBe(false);
   });
@@ -133,3 +133,7 @@ describe('migrateGlobalToProfile', () => {
     expect(marker.movedCount).toBe(0);
   });
 });
+
+
+
+

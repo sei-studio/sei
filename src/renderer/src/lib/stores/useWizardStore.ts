@@ -1,8 +1,8 @@
-/**
- * useWizardStore — Zustand store managing the first-launch / re-runnable setup wizard.
+﻿/**
+ * useWizardStore â€” Zustand store managing the first-launch / re-runnable setup wizard.
  *
  * The renderer NEVER holds an AbortController for the wizard. Cancellation
- * crosses the IPC boundary via `sei.wizardCancel(sessionId)` — main's
+ * crosses the IPC boundary via `sei.wizardCancel(sessionId)` â€” main's
  * `abortWizardSession` then fires `.abort()` on its Map<sessionId, AbortController>,
  * which propagates through signal-aware install modules to SIGTERM the in-flight
  * `java -jar fabric-installer` child process. The single source of truth for
@@ -38,7 +38,7 @@ export interface WizardStoreState {
   installs: McInstall[];
   selectedIds: Set<string>;
   /**
-   * installId → Minecraft version picked for that vanilla launcher (260916).
+   * installId â†’ Minecraft version picked for that vanilla launcher (260916).
    * Absent = the newest supported version (main's default too). Sent as
    * `mcVersions` on runWizardInstall; one "Sei <version>" profile per pick.
    */
@@ -54,7 +54,7 @@ export interface WizardStoreState {
   results: WizardInstallResult[];
   error: string | null;
 
-  // ── Imperative actions ─────────────────────────────────────────────────
+  // â”€â”€ Imperative actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   openWizard: (isReentry: boolean) => void;
   closeWizard: () => void;
   gotoStep: (step: WizardStep) => void;
@@ -110,7 +110,7 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       const sid = get().sessionId;
       if (sid) {
         void sei.wizardCancel(sid).catch(() => {
-          /* best-effort — main may already have cleaned up the session */
+          /* best-effort â€” main may already have cleaned up the session */
         });
       }
       set({ open: false, sessionId: null });
@@ -126,19 +126,19 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
           set({ installs, step: 'none-found' });
           return;
         }
-        // Pre-select: prefer the persisted sei_enabled set (CONTEXT idempotency —
+        // Pre-select: prefer the persisted sei_enabled set (CONTEXT idempotency â€”
         // re-runs preserve the user's prior choice). If nothing was previously
         // enabled (first-run path), select ALL so the user can just click Continue.
         // Limited installs (Lunar) are NEVER selectable: their row checkbox is
         // disabled, so a preselected Lunar could not be deselected, rode along
         // into runWizardInstall, and came back as a bogus "Setup complete"
-        // (260709 Windows report) — nothing is ever installed for Lunar.
+        // (260709 Windows report) â€” nothing is ever installed for Lunar.
         const selectable = installs.filter((i) => i.compatibility === 'full');
         const selected = new Set(selectable.filter((i) => i.sei_enabled).map((i) => i.id));
         if (selected.size === 0) selectable.forEach((i) => selected.add(i.id));
         set({ installs, selectedIds: selected, step: 'pick' });
       } catch (err) {
-        // A detection FAILURE must not land on 'pick' (STEP 2/4) — that screen
+        // A detection FAILURE must not land on 'pick' (STEP 2/4) â€” that screen
         // shows an empty install list with a disabled Continue and a bogus step
         // counter (the "jumps straight to 2/4 when setup fails" bug). Route to
         // the none-found branch instead: it carries Try-again / Open-settings
@@ -226,11 +226,15 @@ export const useWizardStore = create<WizardStoreState>((set, get) => {
       try {
         await sei.wizardCancel(sid);
       } catch {
-        /* best-effort — main may already have cleaned up the session */
+        /* best-effort â€” main may already have cleaned up the session */
       }
-      // Do NOT call closeWizard here — the user might want to retry. Stay on the
+      // Do NOT call closeWizard here â€” the user might want to retry. Stay on the
       // installing step; results will reflect partial progress when
       // runWizardInstall settles via its catch path.
     },
   };
 });
+
+
+
+

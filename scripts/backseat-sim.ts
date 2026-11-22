@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat offline simulator (260801).
  *
  *   npx tsx scripts/backseat-sim.ts <video.mp4> --dry
@@ -15,24 +15,24 @@
  * change" is a question about a moment that has already gone. Here the same
  * three minutes can be run fifty times with different constants.
  *
- * ── What is real and what is not ─────────────────────────────────────────
+ * â”€â”€ What is real and what is not â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * REAL, imported rather than reimplemented:
- *   • the signal detectors (src/renderer/.../signals.ts) and the RMS meter
+ *   â€¢ the signal detectors (src/renderer/.../signals.ts) and the RMS meter
  *     (pcm.ts), so a threshold tuned here is tuned against shipping code;
- *   • the frame offsets, the grid geometry, and the JPEG compositing;
- *   • the idle distribution (nextIdleDelayMs), the priority ladder, the
+ *   â€¢ the frame offsets, the grid geometry, and the JPEG compositing;
+ *   â€¢ the idle distribution (nextIdleDelayMs), the priority ladder, the
  *     speak-gap and refractory floors;
- *   • BACKSEAT_CONTRACT and tickNote(), verbatim;
- *   • the model, the token cap, and the tool list.
+ *   â€¢ BACKSEAT_CONTRACT and tickNote(), verbatim;
+ *   â€¢ the model, the token cap, and the tool list.
  *
  * NOT real, and deliberately so:
- *   • the persona. buildSystemBlocks needs a character, a config and Electron
+ *   â€¢ the persona. buildSystemBlocks needs a character, a config and Electron
  *     paths; a fixed stub replaces it. So this measures TIMING and what the
  *     grid supports, not how any particular companion sounds.
- *   • user ticks. There is no player to type anything, so the top of the
+ *   â€¢ user ticks. There is no player to type anything, so the top of the
  *     priority ladder is exercised by unit tests rather than here.
- *   • turn latency. A real turn takes a second or two of wall clock during
+ *   â€¢ turn latency. A real turn takes a second or two of wall clock during
  *     which a jolt can preempt it; here that window is TURN_MS of virtual
  *     time.
  */
@@ -90,7 +90,7 @@ import {
   tickNote,
 } from '../src/main/backseat/backseatPrompts';
 
-// ── Simulation constants ──────────────────────────────────────────────────
+// â”€â”€ Simulation constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Virtual duration of a companion turn: the window in which a higher-priority
  *  wake can preempt it. Measured live at roughly 1-2 s for Haiku on a
@@ -113,7 +113,7 @@ const STUB_PERSONA =
   'You are Sui, a friend of the player who is hanging out and watching them play over a screen share. ' +
   'You are warm, blunt, and genuinely interested in the game. You have no other context about them.';
 
-// ── CLI ───────────────────────────────────────────────────────────────────
+// â”€â”€ CLI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(`--${name}`);
@@ -186,7 +186,7 @@ const ff = (args: string[]): void => {
   });
 };
 
-// ── Stage A: pull the clip apart ──────────────────────────────────────────
+// â”€â”€ Stage A: pull the clip apart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Three extractions, all at the rates the app actually runs at:
@@ -239,7 +239,7 @@ function prepare(): { fps: number; durationMs: number } {
   return { fps, durationMs };
 }
 
-// ── Stage B: the signal timeline ──────────────────────────────────────────
+// â”€â”€ Stage B: the signal timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Step {
   t: number;
@@ -314,7 +314,7 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
     // Push every 32 ms audio window up to now, not one per video step. The app
     // meters audio on its own clock and the frame loop just reads the latest
     // value, so metering at the video rate here would drop two thirds of the
-    // windows — and a gunshot is exactly the kind of short transient that
+    // windows â€” and a gunshot is exactly the kind of short transient that
     // would fall in a gap.
     const upTo = Math.min(pcm.length, Math.floor((t / 1000) * STT_SAMPLE_RATE));
     while (gainCursor + GAIN_WINDOW_SAMPLES <= upTo) {
@@ -368,7 +368,7 @@ function signalTimeline(durationMs: number): { steps: Step[]; jolts: JoltEvent[]
   return { steps, jolts };
 }
 
-// ── Grid compositing ──────────────────────────────────────────────────────
+// â”€â”€ Grid compositing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let frameFiles: string[] = [];
 function frameIndexAt(t: number): number | null {
@@ -437,7 +437,7 @@ async function buildGrid(
   };
 }
 
-// ── Stage C: the wake schedule and the turns ──────────────────────────────
+// â”€â”€ Stage C: the wake schedule and the turns â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Turn {
   t: number;
@@ -494,7 +494,7 @@ async function run(): Promise<void> {
     return;
   }
 
-  // ── The wake schedule ───────────────────────────────────────────────────
+  // â”€â”€ The wake schedule â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   clearGrids();
   const rand = rng(SEED);
   const turns: Turn[] = [];
@@ -583,7 +583,7 @@ async function run(): Promise<void> {
       lastSpokeAt = at + TURN_MS;
       unanswered++;
       // The companion just spoke, so the scheduled look is pushed back a full
-      // fresh interval, plus main's backoff (261103) — CaptureHandle.noteSpoke().
+      // fresh interval, plus main's backoff (261103) â€” CaptureHandle.noteSpoke().
       nextIdleAt = lastSpokeAt + nextIdleDelayMs(rand) + quietExtraMs(unanswered);
     }
     t = at;
@@ -649,7 +649,7 @@ function requireKey(): string {
  * messages that only ever grow at the end, which is what makes the breakpoint
  * below worth having: the prefix is byte-identical between ticks.
  *
- * Crucially the history is TEXT ONLY. Past grids do not accumulate — the real
+ * Crucially the history is TEXT ONLY. Past grids do not accumulate â€” the real
  * service rebuilds from the chat store, which never held an image.
  */
 async function runTurn(
@@ -693,7 +693,7 @@ async function runTurn(
   });
   messages.push({
     role: 'user',
-    // Previous grid first, current second, note last — the same order and the
+    // Previous grid first, current second, note last â€” the same order and the
     // same side of the cache breakpoint as backseatService.runTurn.
     content: [...(prev ? [image(prev.small)] : []), image(grid.jpeg), { type: 'text', text: note }],
   });
@@ -755,7 +755,7 @@ async function runTurn(
   };
 }
 
-// ── Reporting ─────────────────────────────────────────────────────────────
+// â”€â”€ Reporting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function pct(xs: number[], p: number): number {
   if (!xs.length) return NaN;
@@ -902,8 +902,8 @@ function writeReports(turns: Turn[], durationMs: number): void {
     // Worth saying out loud rather than leaving as two zeros that read like a
     // regression. The cached prefix here is the stub persona plus the contract
     // plus the tools, around 1.1k tokens, and Haiku will not cache a prefix
-    // below 2048. The app's prefix is buildSystemBlocks output — persona,
-    // memory, knowledge, rolling summary — and clears that easily, so the
+    // below 2048. The app's prefix is buildSystemBlocks output â€” persona,
+    // memory, knowledge, rolling summary â€” and clears that easily, so the
     // breakpoint placement has to be checked on a real session's
     // cacheRead/cacheWrite log lines, not here.
     lines.push(
@@ -930,3 +930,7 @@ run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+
+

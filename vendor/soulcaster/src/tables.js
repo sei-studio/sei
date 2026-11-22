@@ -1,7 +1,7 @@
-// Option tables for the Stage 1 randomizer.
+﻿// Option tables for the Stage 1 randomizer.
 //
 // All randomness lives here, never in the LLM. LLM sampling is biased toward
-// clichés (always the same handful of "cool" hair colors, the same tropes), so
+// clichÃ©s (always the same handful of "cool" hair colors, the same tropes), so
 // we roll concrete fields first and hand them to the model as fixed constraints.
 //
 // Every exported table is a plain array (uniform roll) or an array of
@@ -156,9 +156,9 @@ export const QUIRK_SEEDS = [
 //
 // What the user is looking for in a companion, ranked once at onboarding
 // (the client stores the ranking; the Nth unique cast passes the Nth ranked
-// key here as `dynamic`). Each dynamic biases the Stage 1 personality roll —
+// key here as `dynamic`). Each dynamic biases the Stage 1 personality roll â€”
 // seed 1 is drawn from `seed_pool`, seed 2 stays a free roll from the full
-// PERSONALITY_SEEDS list so two casts with the same dynamic still differ —
+// PERSONALITY_SEEDS list so two casts with the same dynamic still differ â€”
 // and adds one Stage 2 prompt line so the sheet's tone, values, and
 // player_dynamic serve the relationship. `label` is user-visible phrasing
 // echoed into the prompt; `hint` is model-facing guidance only.
@@ -176,7 +176,7 @@ export const DYNAMICS = {
   },
   protege: {
     label: 'someone to look after',
-    hint: 'a little green or unsure of themselves, eager to learn, openly grateful; grows in confidence at their player’s side',
+    hint: 'a little green or unsure of themselves, eager to learn, openly grateful; grows in confidence at their playerâ€™s side',
     seed_pool: ['timid', 'curious', 'earnest', 'sunny', 'restless'],
   },
   'chill-friend': {
@@ -195,7 +195,7 @@ export const DYNAMICS = {
 // Combat archetypes
 // ---------------------------------------------------------------------------
 //
-// Four combat stats — melee, ranged, defense, intelligence — are each rolled
+// Four combat stats â€” melee, ranged, defense, intelligence â€” are each rolled
 // in [0,1] and quantized to 0.05 steps (see rollCombat in index.js). Gameplay
 // meaning (consumed by the Minecraft bot adapter, not by this package):
 //
@@ -218,7 +218,7 @@ export const DYNAMICS = {
 //
 // Independent uniform sampling of each stat would make every rolled character
 // mid-pack (everything clusters near 0.5). Instead we roll a weighted
-// archetype first — each archetype defines a [min,max] band per stat — so
+// archetype first â€” each archetype defines a [min,max] band per stat â€” so
 // real builds emerge (a brawler is reliably melee-heavy and ranged-light, a
 // tactician is reliably int-heavy, etc). Small per-species modifiers are
 // applied afterward; they are kept small on purpose so the archetype, not the
@@ -328,7 +328,7 @@ export const COMBAT_SPECIES_MODIFIERS = {
 //
 // Heritage drives the NAME's naming culture and, for humans, general feature
 // framing (e.g. skin tone / feature wording the LLM uses in appearance).
-// For non-humans (elf, beastkin, robot) it flavors the naming culture ONLY —
+// For non-humans (elf, beastkin, robot) it flavors the naming culture ONLY â€”
 // a japanese-heritage elf gets a Japanese-style name, never a real-world
 // ethnicity claim. A robot's "name" is really a designation; heritage flavors
 // that designation's naming convention (e.g. a nordic-heritage robot might
@@ -363,7 +363,7 @@ export const HERITAGES = [
 // We roll a coarse CATEGORY here, table-side, so distribution stays under our
 // control (10 weights, not hundreds of jobs). The LLM invents ONE concrete
 // occupation within the rolled category, consistent with age, heritage, and
-// personality — see buildSystemPrompt/buildUserPrompt in prompt.js. `hint` is
+// personality â€” see buildSystemPrompt/buildUserPrompt in prompt.js. `hint` is
 // a short list of EXAMPLE specializations fed to the model as inspiration,
 // not an exhaustive menu.
 export const LIFE_CONTEXTS = {
@@ -376,7 +376,7 @@ export const LIFE_CONTEXTS = {
   'rural-outdoor': { hint: 'farmer, orchard keeper, fishing-boat hand' },
   'spiritual-traditional': { hint: 'shrine keeper, monastery novice, tea-ceremony teacher' },
   'in-between': { hint: 'recently quit, job-hunting, just moved to town' },
-  wildcard: { hint: 'anything plausible — invent freely, no example list constrains this one' },
+  wildcard: { hint: 'anything plausible â€” invent freely, no example list constrains this one' },
 };
 
 // Age bands used to select the LIFE_CONTEXT_WEIGHTS column. For `timeless`
@@ -386,7 +386,7 @@ export const LIFE_CONTEXTS = {
 export const LIFE_CONTEXT_AGE_BANDS = ['18-22', '23-29', '30-45', '46+'];
 
 // Per-category weight across the four age bands above, in column order.
-// Tuned via scripts/identityStudy.js — see README.md "Life context" section
+// Tuned via scripts/identityStudy.js â€” see README.md "Life context" section
 // for the resulting distributions and the sanity targets these were tuned
 // against.
 export const LIFE_CONTEXT_WEIGHTS = {
@@ -421,3 +421,7 @@ export const PALETTE_ACCENTS = [
   'amber',
   'silver',
 ];
+
+
+
+

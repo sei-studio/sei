@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useFirstMomentStore (260926): the guided first moment's lifecycle.
  *
  * What is pinned:
@@ -318,3 +318,7 @@ describe('enterFirstMoment: the tour hands off to the companion chat', () => {
     expect(useUiStore.getState().view).toEqual({ kind: 'home' });
   });
 });
+
+
+
+

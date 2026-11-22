@@ -1,4 +1,4 @@
-// 260611: time-of-day sky approximation — pure-function coverage.
+﻿// 260611: time-of-day sky approximation â€” pure-function coverage.
 // (povRenderer.js itself dlopens GL natives at import; the wiring there is
 // covered by the electron-as-node smoke test, not vitest.)
 import { describe, expect, it } from 'vitest'
@@ -37,3 +37,7 @@ describe('skyColorForTime', () => {
     expect(skyColorForTime(NaN)).toEqual([173, 216, 230])
   })
 })
+
+
+
+

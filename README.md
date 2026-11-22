@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
 
 <img src="docs/readme/banner.jpg" alt="Sei: powerful and customizable AI companions for every game" width="960">
 
@@ -53,3 +53,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for ideas, bug reports, and pull requests
 [AGPL-3.0](LICENSE)
 
 Third-party credits: [CREDITS.md](CREDITS.md)
+
+
+
+

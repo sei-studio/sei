@@ -1,27 +1,27 @@
-/**
+﻿/**
  * Brain-side priority queue + idle timer (game-agnostic FSM core).
  *
  * Priority constants (D-08):
  *   P0   = safety (attacked, critical health)
  *   P1   = chat received
  *   P2   = movement/action completion
- *   P2.1 = action_complete (260513-wkd) — fired by the orchestrator when an
+ *   P2.1 = action_complete (260513-wkd) â€” fired by the orchestrator when an
  *          in_flight long-running action (gather/dig/build/attack/goTo)
  *          settles. Distinct numeric tier above P2_MOVEMENT so a same-batch
  *          P2_MOVEMENT enqueue runs FIRST (e.g. a P2 movement event arrives
  *          alongside an action_complete: movement gets dequeued first by
  *          priority asc). Below P2_5_LOOP_END so action_complete cannot
  *          preempt a loop-end tick that was already in flight. Same-tier
- *          FIFO is no longer required for action_complete ordering — the
+ *          FIFO is no longer required for action_complete ordering â€” the
  *          numeric separation makes it explicit.
- *   P2.5 = end-of-loop tick (260505-iqo) — fires after every real-activity
+ *   P2.5 = end-of-loop tick (260505-iqo) â€” fires after every real-activity
  *          loop terminal, prompting the model to decide a follow-up sub-goal
  *          rather than wait for the 60s idle fallback. Above P3 so it
  *          preempts a queued idle; below P2 so chat preempts it.
  *   P3   = idle fallback (60s)
  *
  * The priority queue is the brain's view of the FSM. Adapter-side wires
- * (see src/adapter/<game>/fsmWires.js — the minecraft impl is the
+ * (see src/adapter/<game>/fsmWires.js â€” the minecraft impl is the
  * reference) translate game-specific events into AdapterHandlers calls,
  * which brain.start() then routes through this queue's enqueue() with
  * the correct priority.
@@ -49,7 +49,7 @@ export const Priority = Object.freeze({
 })
 
 // 260730 idle backoff (see idleDelay). The cap is a full minute of quiet, which
-// is the reactive tier's base cadence — the slowest the FSM has ever polled a
+// is the reactive tier's base cadence â€” the slowest the FSM has ever polled a
 // live session, so nothing downstream is being asked to tolerate a new gap.
 export const IDLE_BACKOFF_CAP_MS = 60_000
 export const IDLE_BACKOFF_MAX_DOUBLINGS = 6
@@ -58,17 +58,17 @@ export const IDLE_BACKOFF_MAX_DOUBLINGS = 6
  * Priority tier for a 'sei:attacked' event, keyed on attackerKind.
  *
  * A reflex-tagged event (attackerKind === 'reflex') is a PROACTIVE threat
- * warning: the bot was NOT hit — reflex.js already ran the evasion in its tick,
+ * warning: the bot was NOT hit â€” reflex.js already ran the evasion in its tick,
  * and the wire re-frames it as an offer to attack()/explore(). It is therefore
  * conversation-tier (P1_CHAT), NOT safety-tier: enqueuing it at P0_SAFETY would
  * let a creeper wandering into flee range preempt (and abort) a player-chat
- * reply the player is waiting on — a heads-up outranking real conversation, the
+ * reply the player is waiting on â€” a heads-up outranking real conversation, the
  * opposite of the intent. A REAL attack (attackerKind player/mob) keeps
  * P0_SAFETY. The event NAME stays 'sei:attacked' either way so downstream
  * dispatch + attack/reflex prompt framing (which keys on attackerKind) is
  * unchanged.
  *
- * 260730: attackerKind 'defend' (the OWNER is being hit — combat.js) rides the
+ * 260730: attackerKind 'defend' (the OWNER is being hit â€” combat.js) rides the
  * same conversation tier for the same reason. The bot is not in danger, and
  * the physical response (auto-engage) already ran without asking the model, so
  * the turn is narration plus an optional escalation, never a panic.
@@ -97,7 +97,7 @@ export function attackedPriority(data) {
  *   (player chat / attack) so the dispatcher can abort an in-flight LLM call
  *   that is currently parking the single dispatch thread. Without this, a chat
  *   that arrives while a mid-loop LLM call (e.g. an action_tick) is awaiting
- *   sits in the queue until that call returns — a slow call (30s+) reads as the
+ *   sits in the queue until that call returns â€” a slow call (30s+) reads as the
  *   bot ignoring the player. Returns true if the orchestrator fully CLAIMED the
  *   event (folded it into the running loop); then enqueue() skips queuing to
  *   avoid double-handling.
@@ -121,7 +121,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   let idleTimer = null
   let disposed = false
   // 260725 (game pause): while non-null, only events the predicate approves may
-  // dispatch — everything else stays QUEUED (not dropped) so a player message
+  // dispatch â€” everything else stays QUEUED (not dropped) so a player message
   // sent during a pause is answered on resume. The idle timer is disarmed for
   // the duration (no fresh idle ticks pile up behind the hold). See setHold().
   let holdPredicate = null
@@ -129,7 +129,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   // action progress / loop end). Used to stamp idle ticks with the TRUE quiet
   // duration so the prompt can stop claiming "about a minute has passed" (it now
   // varies with the per-tier cadence) and so consecutive silent ticks accumulate
-  // real elapsed time. An idle tick does NOT count as activity — that's what
+  // real elapsed time. An idle tick does NOT count as activity â€” that's what
   // lets the quiet window grow across back-to-back idles.
   let lastActivityAt = Date.now()
   // 260730: how many idle ticks have fired since the last genuine event. The
@@ -147,8 +147,8 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
    * number for RESUMING WORK and the wrong one for an empty world: with
    * nothing to resume it re-asked Haiku every 5s for the whole session, and
    * since an idle turn is nudged to speak, the player heard a new line every
-   * ~10s (260730 voice-call log). Backing off restores the fast first tick —
-   * the one that matters for resuming — and lets the rest decay.
+   * ~10s (260730 voice-call log). Backing off restores the fast first tick â€”
+   * the one that matters for resuming â€” and lets the rest decay.
    *
    * The cap never SHORTENS a slower tier: reactive (60s) and passive (10min)
    * come back unchanged, because their base already clears the cap.
@@ -182,15 +182,15 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   function enqueue(priority, event, data) {
     if (disposed) return
     // Any genuine event (everything except a self-fired idle tick) marks "the
-    // world did something just now" and resets the quiet clock above — and the
+    // world did something just now" and resets the quiet clock above â€” and the
     // idle backoff with it, so the next lull starts fast again.
     if (event !== 'sei:idle') {
       lastActivityAt = Date.now()
       idleStreak = 0
     }
     // Dedupe idempotent ticks. sei:loop_end and sei:idle are "settle" prompts
-    // — only the next one matters. Without this guard, multiple back-to-back
-    // higher-priority loops (joined → chat → ...) each leave a loop_end in
+    // â€” only the next one matters. Without this guard, multiple back-to-back
+    // higher-priority loops (joined â†’ chat â†’ ...) each leave a loop_end in
     // the queue and the bot drains them sequentially, emitting a redundant
     // "settle" say() per drain. The cross-loop suppression at index.js:114
     // only blocks ADDING loop_ends from a loop_end-triggered loop's terminal,
@@ -201,7 +201,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
     }
     // Player chat preempts in-flight non-P0 work. Without this, a chat-driven
     // dispatch (already P1) cannot be aborted by a fresh player chat (also P1)
-    // — they queue equally and the in-flight movement keeps running until it
+    // â€” they queue equally and the in-flight movement keeps running until it
     // finishes, ignoring the new instruction. Promoting player chat to P0
     // *only when there is a non-P0 action in flight* makes processNext fire
     // the abort path so action handlers see signal.aborted and bail with
@@ -216,7 +216,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
     }
     // Unblock the dispatch thread synchronously. If a mid-loop LLM call is
     // parked inside onDispatch (e.g. an action_tick awaiting Haiku), promoting
-    // this chat to P0 above is not enough — processNext is suspended and won't
+    // this chat to P0 above is not enough â€” processNext is suspended and won't
     // run the abort path until that call returns. Give the orchestrator a
     // chance to abort the in-flight LLM call right now. If it CLAIMS the event
     // (folds the player message into the running loop), skip enqueuing so the
@@ -227,10 +227,10 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
         // A reflex-tagged 'sei:attacked' is a PROACTIVE warning routed at
         // conversation tier (see attackedPriority). It must NOT enter this
         // fast-path: the path exists to abort an in-flight LLM call that is
-        // parking the dispatch thread, which — for a player-chat turn that is
-        // being answered — is exactly the preemption we must not do for a mere
+        // parking the dispatch thread, which â€” for a player-chat turn that is
+        // being answered â€” is exactly the preemption we must not do for a mere
         // heads-up. Only a REAL attack keeps the immediate-abort fast-path.
-        // 'defend' (the owner is being hit) is a heads-up too — the auto-engage
+        // 'defend' (the owner is being hit) is a heads-up too â€” the auto-engage
         // already happened in combat.js, so nothing is waiting on this call.
         (event === 'sei:attacked' &&
           data?.attackerKind !== 'reflex' && data?.attackerKind !== 'defend'))
@@ -260,7 +260,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
 
   async function processNext() {
     // Hold gate (260725): dispatch only predicate-approved events while held.
-    // Scan past blocked items instead of head-only — a held P0 (e.g. an attack
+    // Scan past blocked items instead of head-only â€” a held P0 (e.g. an attack
     // that landed on the frozen bot) must not shadow an allowed P1 voice line
     // sitting behind it.
     let item
@@ -336,13 +336,13 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
   /**
    * 260725 (game pause): install or clear the dispatch hold.
    *
-   * `predicate` — `(event, data) => boolean`; true = that queued event may
+   * `predicate` â€” `(event, data) => boolean`; true = that queued event may
    * still dispatch while the hold is on (the pause path allows live voice-call
    * lines only). `null` clears the hold.
    *
    * Engaging: aborts the in-flight dispatch (a parked LLM call unwinds via
    * its abort signal), disarms the idle timer, and PURGES queued settle ticks
-   * (`sei:idle` / `sei:loop_end`) — they are stale by resume time, and the
+   * (`sei:idle` / `sei:loop_end`) â€” they are stale by resume time, and the
    * enqueue-time dedupe would otherwise swallow the explicit resume tick.
    * Real events (player chat, attacks) stay queued for after the release.
    * Releasing: re-arms the idle timer and kicks the dispatcher.
@@ -383,3 +383,7 @@ export function createPriorityQueue({ onDispatch, onPreempt = null, idleFallback
 
   return { enqueue, resetIdleTimer, setHold, dispose }
 }
+
+
+
+

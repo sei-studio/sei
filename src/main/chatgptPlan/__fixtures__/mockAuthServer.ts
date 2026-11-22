@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): a mock OpenAI auth server for the "Continue with
  * ChatGPT" tests. Test-only (imported from *.test.ts, never from app code).
  *
@@ -289,3 +289,7 @@ export function memoryVault(initial?: VaultData) {
     },
   };
 }
+
+
+
+

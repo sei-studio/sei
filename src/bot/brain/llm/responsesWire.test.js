@@ -1,4 +1,4 @@
-// 261017 (issue #46): the Responses wire contract for the ChatGPT-plan
+﻿// 261017 (issue #46): the Responses wire contract for the ChatGPT-plan
 // provider. Everything here runs against canned SSE text: no network.
 import { describe, it, expect, vi } from 'vitest'
 import {
@@ -334,3 +334,7 @@ describe('streamResponses', () => {
     await expect(streamResponses({ fetchImpl, url: 'u', token: 't', body: {} })).rejects.toMatchObject({ code: 'CHATGPT_USAGE_LIMIT', requestId: 'req_9' })
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   SAFE_MODE_CHECK_TIMEOUT_MS,
   SAFE_MODE_COPY,
@@ -26,7 +26,7 @@ describe('safe-mode page copy', () => {
   it('follows the copy rules: no em dash, no "friend", nothing empty', () => {
     for (const [lang, copy] of Object.entries(SAFE_MODE_COPY)) {
       for (const [key, text] of Object.entries(copy)) {
-        expect(text, `${lang}.${key}`).not.toContain('—');
+        expect(text, `${lang}.${key}`).not.toContain('â€”');
         expect(text.toLowerCase(), `${lang}.${key}`).not.toContain('friend');
         expect(text.trim().length, `${lang}.${key}`).toBeGreaterThan(0);
       }
@@ -220,3 +220,7 @@ describe('safe-mode page: a check that never hears back (T280)', () => {
     expect(page.status()).toBe(C.updatesDev);
   });
 });
+
+
+
+

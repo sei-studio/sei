@@ -1,24 +1,24 @@
-// src/bot/adapter/minecraft/behaviors/gaze.js
+﻿// src/bot/adapter/minecraft/behaviors/gaze.js
 //
-// Head-look ("gaze") behavior — cosmetic, LLM-uninvolved. Makes the companion
+// Head-look ("gaze") behavior â€” cosmetic, LLM-uninvolved. Makes the companion
 // visually track its owner: full yaw+pitch when idle (owner within
 // gaze_range_blocks) and pitch-tracking (so it looks up/down at a player above
 // or below it) while moving toward the owner during follow/goTo, without
 // fighting the pathfinder's ownership of yaw while it is actively steering.
 //
 // Why this can't just lookAt() every tick (the pathfinder-yaw tension):
-// mineflayer's walking is control-state-relative-to-yaw — the forward/back/
+// mineflayer's walking is control-state-relative-to-yaw â€” the forward/back/
 // left/right control states move the bot relative to whatever yaw it
 // currently faces. The installed mineflayer-pathfinder (^2.4.5) does not
-// expose bot.pathfinder.goal (confirmed by reading node_modules directly —
+// expose bot.pathfinder.goal (confirmed by reading node_modules directly â€”
 // only setGoal/isMoving/isMining/isBuilding are exposed), so this module has
 // no way to tell "is a goal set" beyond bot.pathfinder.isMoving() (path.length
 // > 0 internally). The resolution used here:
-//   - IDLE (isMoving() false — no goal, OR a GoalFollow that has already
+//   - IDLE (isMoving() false â€” no goal, OR a GoalFollow that has already
 //     closed to arrival range and stopped issuing path steps): full lookAt
 //     the owner's eyes whenever they're within range. There is no steering to
 //     fight, so this is always safe.
-//   - MOVING (isMoving() true — an active goTo or a follow still closing the
+//   - MOVING (isMoving() true â€” an active goTo or a follow still closing the
 //     gap): only lookAt the owner when the CURRENT TRAVEL DIRECTION is
 //     already roughly toward them (within MOVING_CONE_DEG). In that case
 //     aiming exactly at the owner is a small nudge away from the yaw the
@@ -29,13 +29,13 @@
 //     or the destination isn't the owner at all) yaw is left entirely alone.
 //
 // Suppressed whenever another system needs the head: reflex evasion/combat
-// (bot._seiReflexActive / _seiOffensiveTarget — reflex.js / attack.js;
-// _seiSurvivalActive / _seiCriticalRetreat — survival.js, landing in a
+// (bot._seiReflexActive / _seiOffensiveTarget â€” reflex.js / attack.js;
+// _seiSurvivalActive / _seiCriticalRetreat â€” survival.js, landing in a
 // parallel change), sleeping, or a render aiming the camera for a frame
 // (bot._seiGazeHold, a small shared counter incremented/decremented by
 // visualize.js and build.js around their own bot.look calls).
 //
-// Ticks on a plain ~4 Hz interval (not physicsTick) — this is cosmetic head
+// Ticks on a plain ~4 Hz interval (not physicsTick) â€” this is cosmetic head
 // movement, not a survival reflex, so a cheap timer is plenty and it keeps
 // the per-physicsTick cost budget (reflex.js's ~20 Hz loop) untouched.
 
@@ -45,7 +45,7 @@ const DEFAULT_RANGE_BLOCKS = 96 // 6 chunks
 const DEFAULT_TICK_MS = 250 // ~4 Hz re-aim cadence
 const MOVING_CONE_DEG = 35
 const EYE_HEIGHT_FALLBACK = 1.62
-// Minimum aim-delta (radians, ~1.5°) worth re-issuing bot.lookAt for — filters
+// Minimum aim-delta (radians, ~1.5Â°) worth re-issuing bot.lookAt for â€” filters
 // sub-degree jitter from an owner who is standing still relative to the bot.
 const MIN_AIM_DELTA_RAD = 0.026
 
@@ -53,7 +53,7 @@ function dist3(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
 }
 
-// Smallest absolute difference between two angles (radians), wrapped to [0, π].
+// Smallest absolute difference between two angles (radians), wrapped to [0, Ï€].
 function angleDiff(a, b) {
   let d = (a - b) % (Math.PI * 2)
   if (d > Math.PI) d -= Math.PI * 2
@@ -86,13 +86,13 @@ export function startGaze(bot, config) {
   if (mc.gaze_enabled === false) return () => {}
 
   // Idempotent re-arm: a dimension-change 'spawn' fires WITHOUT a 'death' and
-  // connect.js re-arms on every non-first spawn — tear down any previous install
+  // connect.js re-arms on every non-first spawn â€” tear down any previous install
   // first, or each portal trip stacks a duplicate 250ms interval.
   if (typeof bot._seiGazeDispose === 'function') { try { bot._seiGazeDispose() } catch (_) {} }
 
   const rangeBlocks = Number.isFinite(mc.gaze_range_blocks) ? mc.gaze_range_blocks : DEFAULT_RANGE_BLOCKS
   const tickMs = Number.isFinite(mc.gaze_tick_ms) && mc.gaze_tick_ms > 0 ? mc.gaze_tick_ms : DEFAULT_TICK_MS
-  // player_username lives at the config TOP LEVEL (not adapter.minecraft) —
+  // player_username lives at the config TOP LEVEL (not adapter.minecraft) â€”
   // see config.js ConfigSchema. Passed straight into resolveOwner, which
   // already handles the preferred_name vs LAN-login mismatch (260625).
   const pinUsername = config?.player_username ?? null
@@ -111,7 +111,7 @@ export function startGaze(bot, config) {
   }
 
   // Re-aims only when the delta from the bot's CURRENT actual yaw/pitch is
-  // meaningful — the interval cadence already throttles call frequency; this
+  // meaningful â€” the interval cadence already throttles call frequency; this
   // additionally throttles by content so a stationary owner doesn't cause a
   // twitchy re-lookAt every tick.
   function aimAt(targetPos) {
@@ -139,7 +139,7 @@ export function startGaze(bot, config) {
     if (bot._seiOffensiveTarget != null) return
     if (bot._seiSurvivalActive) return
     if (bot._seiCriticalRetreat) return
-    // 260709: a world action is executing (adapter executeAction counter) —
+    // 260709: a world action is executing (adapter executeAction counter) â€”
     // the action owns the head (faceBlock, dig's own look). Without this the
     // idle branch below re-aims at the owner every 250ms between swings, so a
     // gathering bot visibly punches blocks while staring at the player.
@@ -157,14 +157,14 @@ export function startGaze(bot, config) {
 
     const moving = Boolean(bot.pathfinder?.isMoving?.())
     if (!moving) {
-      // IDLE — including a follow that has already closed to arrival range
+      // IDLE â€” including a follow that has already closed to arrival range
       // and stopped issuing path steps (isMoving() goes false there too).
       const d = dist3(owner.position, me.position)
       if (d <= rangeBlocks) aimAt(eyePos)
       return
     }
 
-    // MOVING — only track when travel direction is already roughly toward
+    // MOVING â€” only track when travel direction is already roughly toward
     // the owner (the common follow/goTo-to-owner case); otherwise the
     // pathfinder keeps sole ownership of yaw.
     const vel = me.velocity
@@ -194,11 +194,15 @@ export function startGaze(bot, config) {
 
   // Dispose on BOTH death and end. Unlike reflex/survival (whose physicsTick
   // loops go inert on a dead bot), this setInterval keeps firing after a bot
-  // 'end' (kick/disconnect — no 'death' fires), leaking a live timer per
-  // reconnect — so wiring 'end' here is what actually stops the leak.
+  // 'end' (kick/disconnect â€” no 'death' fires), leaking a live timer per
+  // reconnect â€” so wiring 'end' here is what actually stops the leak.
   // dispose is _disposed-guarded, so firing on both is safe.
   bot.once('death', dispose)
   bot.once('end', dispose)
   bot._seiGazeDispose = dispose
   return dispose
 }
+
+
+
+

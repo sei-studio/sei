@@ -1,5 +1,5 @@
-/**
- * The games catalog — one list, read by both sides (260730).
+﻿/**
+ * The games catalog â€” one list, read by both sides (260730).
  *
  * It used to exist only in the renderer (lib/games.ts, the "Play together"
  * picker tiles), so the character had no idea any of it existed: the only game
@@ -57,10 +57,12 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     name: 'Minecraft',
     available: true,
     selfLaunch: true,
-    aliases: ['Minecraft Java', '我的世界', 'マインクラフト', 'マイクラ', 'Майнкрафт'],
+    aliases: ['Minecraft Java', 'æˆ‘çš„ä¸–ç•Œ', 'ãƒžã‚¤ãƒ³ã‚¯ãƒ©ãƒ•ãƒˆ', 'ãƒžã‚¤ã‚¯ãƒ©', 'ÐœÐ°Ð¹Ð½ÐºÑ€Ð°Ñ„Ñ‚'],
   },
-  { id: 'chess', name: 'Chess', available: true, aliases: ['国际象棋', 'チェス', 'Шахматы', 'Xadrez', 'Ajedrez'] },
+  { id: 'chess', name: 'Chess', available: true, aliases: ['å›½é™…è±¡æ£‹', 'ãƒã‚§ã‚¹', 'Ð¨Ð°Ñ…Ð¼Ð°Ñ‚Ñ‹', 'Xadrez', 'Ajedrez'] },
   { id: 'draw', name: 'Draw!', available: true },
+  { id: 'CONNECT4', name: 'Forza 4', available: true, aliases: ['Connect Four', 'Quattro in fila', 'å››ç›®ä¸¦ã¹', 'Ð’Ð¸ Ð²Ð¾ Ð² Ñ€ÑÐ´', 'Cuatro en lÃ­nea'] },
+  { id: 'BATTLESHIP', name: 'Battleship', available: true, aliases: ['Battleship', ' Battleship', 'æµ·æˆ˜', 'æµ·æˆ¦', 'Ð‘Ð¸Ñ‚Ð²Ð° ÐºÐ¾Ñ€Ð°Ð±Ð»ÐµÐ¹', 'Batalha Naval', 'Hundir la flota'] },
   // 260803: no "Backseat" entry. Sharing your screen is not a game and it does
   // not belong in a grid beside chess, so it lives on the call controls' share
   // button instead. The companion still knows it can be shown a screen: that is
@@ -72,13 +74,13 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     id: 'stardew',
     name: 'Stardew Valley',
     available: true,
-    aliases: ['Stardew', '星露谷物语', '星露谷', 'スターデューバレー'],
+    aliases: ['Stardew', 'æ˜Ÿéœ²è°·ç‰©è¯­', 'æ˜Ÿéœ²è°·', 'ã‚¹ã‚¿ãƒ¼ãƒ‡ãƒ¥ãƒ¼ãƒãƒ¬ãƒ¼'],
   },
   {
     id: 'dontstarve',
     name: "Don't Starve Together",
     available: true,
-    aliases: ["Don't Starve", 'DST', '饥荒联机版', '饥荒', 'ドントスターブ'],
+    aliases: ["Don't Starve", 'DST', 'é¥¥è’è”æœºç‰ˆ', 'é¥¥è’', 'ãƒ‰ãƒ³ãƒˆã‚¹ã‚¿ãƒ¼ãƒ–'],
   },
   // 260929: backseat games, derived from their registry so adding one there is
   // all it takes. The 260803 rule above still holds for the share button
@@ -127,3 +129,7 @@ export function renderGamesDirective(): string {
   lines.push('Never invent a game beyond these.');
   return lines.join('\n');
 }
+
+
+
+

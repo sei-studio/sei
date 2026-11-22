@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Launch Don't Starve Together through Steam (game-adapters M2, 260908).
  * `steam://rungameid/322330` hands everything to Steam (login, updates, the
  * launcher); the mod is force-enabled by install.ts so any world the player
@@ -15,3 +15,7 @@ export async function launchDst(open?: (url: string) => Promise<void>): Promise<
   const { shell } = await import('electron');
   await shell.openExternal(DST_STEAM_URL);
 }
+
+
+
+

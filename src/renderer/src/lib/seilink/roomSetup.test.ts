@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { defaultRoomState } from '@shared/seilinkRoom';
 import { SETUP_COPY, SETUP_PANEL, markDone, nextStep, opensGuided, prevStep, resumeStep, setupSteps, withoutSetup } from './roomSetup';
 
@@ -14,8 +14,8 @@ describe('guided room setup helpers', () => {
   it('maps every step to a panel and gives it copy without em dashes', () => {
     for (const s of all) {
       expect(SETUP_PANEL[s]).toBeTruthy();
-      expect(SETUP_COPY[s].title).not.toContain('—');
-      expect(SETUP_COPY[s].hint).not.toContain('—');
+      expect(SETUP_COPY[s].title).not.toContain('â€”');
+      expect(SETUP_COPY[s].hint).not.toContain('â€”');
     }
   });
 
@@ -54,3 +54,7 @@ describe('guided room setup helpers', () => {
     expect(withoutSetup(plain)).toBe(plain);
   });
 });
+
+
+
+

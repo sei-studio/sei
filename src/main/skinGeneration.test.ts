@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Lazy Minecraft skins (261027): when the Gemini skin call runs, what it is
  * charged for, and what a character is left wearing. Gemini, the proxy and
  * img2skin are all faked; the real skinStore writes the skin and the marker.
@@ -59,7 +59,7 @@ import {
   _resetSkinGenerationForTests,
 } from './skinGeneration';
 
-// ── 64x64 PNG with a marker byte, so painted (1) and generated (2) differ ──
+// â”€â”€ 64x64 PNG with a marker byte, so painted (1) and generated (2) differ â”€â”€
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -360,3 +360,7 @@ describe('helpers', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+
+
+

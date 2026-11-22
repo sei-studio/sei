@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BYOK ElevenLabs API key persistence via Electron safeStorage (260725).
  *
  * Mirrors src/main/apiKeyStore.ts: the plaintext key is encrypted by the OS
@@ -28,9 +28,9 @@ import { getAiBackendKind } from '../apiKeyStore';
 
 /**
  * Persist (or clear) the user's ElevenLabs API key.
- *   - `key: string` → trimmed and stored encrypted. An empty/whitespace-only
- *     string is rejected (throws `ELEVEN_KEY_EMPTY`) — pass null to clear.
- *   - `key: null`   → deletes the stored blob (ENOENT-tolerant).
+ *   - `key: string` â†’ trimmed and stored encrypted. An empty/whitespace-only
+ *     string is rejected (throws `ELEVEN_KEY_EMPTY`) â€” pass null to clear.
+ *   - `key: null`   â†’ deletes the stored blob (ENOENT-tolerant).
  *
  * Same raw tmp+rename atomic write as apiKeyStore.saveApiKey: the encrypted
  * blob is binary, so the utf8 atomicWrite helper does not apply.
@@ -70,7 +70,7 @@ export async function hasElevenLabsKey(): Promise<boolean> {
 
 /**
  * Decrypt and return the stored ElevenLabs key, or null when none is stored.
- * Throws on a decrypt failure (e.g. keychain locked) — callers that only
+ * Throws on a decrypt failure (e.g. keychain locked) â€” callers that only
  * need best-effort routing use resolveElevenLabsKey, which maps any failure
  * to null.
  */
@@ -88,12 +88,12 @@ export async function getElevenLabsKey(): Promise<string | null> {
 /**
  * The single ElevenLabs key resolution both tts.ts and stt.ts use.
  * Precedence:
- *   1. SEI_TTS_DEV_KEY env (dev shells) — always wins.
+ *   1. SEI_TTS_DEV_KEY env (dev shells) â€” always wins.
  *   2. The stored BYOK key, but ONLY when the AI backend is 'local'. A
  *      cloud-proxy user's voice traffic must keep flowing through the proxy
  *      (metered, key server-side), even if a key blob lingers from an
  *      earlier BYOK stint.
- *   3. null — route through the proxy (cloud) or fail as unconfigured (BYOK).
+ *   3. null â€” route through the proxy (cloud) or fail as unconfigured (BYOK).
  * Best-effort: any read/decrypt error resolves to null, never throws.
  */
 export async function resolveElevenLabsKey(): Promise<string | null> {
@@ -109,12 +109,12 @@ export async function resolveElevenLabsKey(): Promise<string | null> {
 
 /**
  * Routing decision derived from resolveElevenLabsKey + the backend kind:
- *   - direct       → talk to ElevenLabs with `key` (dev env or stored BYOK).
- *   - proxy        → cloud backend: route through the Sei proxy with the JWT.
- *   - unconfigured → BYOK ('local') with no key resolved: there is nothing
+ *   - direct       â†’ talk to ElevenLabs with `key` (dev env or stored BYOK).
+ *   - proxy        â†’ cloud backend: route through the Sei proxy with the JWT.
+ *   - unconfigured â†’ BYOK ('local') with no key resolved: there is nothing
  *                    to call. TTS throws VOICE_NOT_CONFIGURED; STT returns
  *                    { unavailable, reason: 'no-credentials' }. BYOK must
- *                    never fall through to the proxy — the user may have no
+ *                    never fall through to the proxy â€” the user may have no
  *                    session, and their choice was to not be metered.
  */
 export type ElevenLabsRoute =
@@ -162,7 +162,7 @@ export async function resolveElevenLabsRoute(): Promise<ElevenLabsRoute> {
   try {
     backend = await getAiBackendKind();
   } catch {
-    /* unreadable config → the safe default, matching getAiBackendKind's own */
+    /* unreadable config â†’ the safe default, matching getAiBackendKind's own */
   }
   return backend === 'local' ? { kind: 'unconfigured' } : { kind: 'proxy' };
 }
@@ -213,3 +213,7 @@ export async function resolveTtsRoute(opts: { own: boolean }): Promise<{
   const key = await resolveOwnVoiceKey();
   return key ? { route: { kind: 'direct', key }, ownKeyOnCloud: true } : { route: base, ownKeyOnCloud: false };
 }
+
+
+
+

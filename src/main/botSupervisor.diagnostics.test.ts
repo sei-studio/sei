@@ -1,5 +1,5 @@
-/**
- * 260720 — onSummonFailure diagnostics callback: pre-gate failure sites fire
+﻿/**
+ * 260720 â€” onSummonFailure diagnostics callback: pre-gate failure sites fire
  * exactly one structured report per attempt, with the right phase, error
  * class, and backend. The pre-gate scenarios fail BEFORE fork (mirrors the
  * mock set of botSupervisor.summon.test.ts); the mid-session scenarios drive
@@ -134,7 +134,7 @@ beforeEach(() => {
   channelSpy.mockReset();
 });
 
-describe('onSummonFailure — pre-gate sites', () => {
+describe('onSummonFailure â€” pre-gate sites', () => {
   it('LAN closed: fires once with phase pre_gate, class LAN_NOT_OPEN, backend local', async () => {
     const onSummonFailure = vi.fn();
     const sup = makeSupervisor({ onSummonFailure, getLanPort: () => null });
@@ -189,7 +189,7 @@ describe('onSummonFailure — pre-gate sites', () => {
   });
 
   it('bare sentinel-token refusals ship an explanatory error_message, not just the enum', async () => {
-    loadConfigSpy.mockResolvedValue({}); // no preferred_name → bare PREFERRED_NAME_MISSING throw
+    loadConfigSpy.mockResolvedValue({}); // no preferred_name â†’ bare PREFERRED_NAME_MISSING throw
     const onSummonFailure = vi.fn();
     const sup = makeSupervisor({ onSummonFailure });
 
@@ -201,7 +201,7 @@ describe('onSummonFailure — pre-gate sites', () => {
   });
 });
 
-describe('onSummonFailure — mid-session death (fake forked child)', () => {
+describe('onSummonFailure â€” mid-session death (fake forked child)', () => {
   /** Summon A through summon-ready against a fake child; returns the rig. */
   async function summonToReady(over: {
     onSummonFailure: (info: SummonFailureInfo) => void;
@@ -216,7 +216,7 @@ describe('onSummonFailure — mid-session death (fake forked child)', () => {
     return { sup, fake };
   }
 
-  it('message-less nonzero exit (SIGKILL) → BOT_CRASH with the synthesized message and full tails', async () => {
+  it('message-less nonzero exit (SIGKILL) â†’ BOT_CRASH with the synthesized message and full tails', async () => {
     const onSummonFailure = vi.fn();
     const sendStatus = vi.fn<(status: unknown) => void>();
     const { fake } = await summonToReady({ onSummonFailure, sendStatus });
@@ -259,7 +259,7 @@ describe('onSummonFailure — mid-session death (fake forked child)', () => {
   // 260806. The live regression this fixes: a missing texture produced an
   // unhandled rejection with a full stack trace on stderr, the classifier
   // matched nothing in it, and the user (and the dashboard) were told the cause
-  // was "antivirus, out of memory, or a manual kill" — sending everyone looking
+  // was "antivirus, out of memory, or a manual kill" â€” sending everyone looking
   // outside the app for a bug that was inside it. An unclassifiable tail is
   // still evidence; only a genuinely silent death supports that sentence.
   it('nonzero exit with an unclassifiable stack trace shows the trace, not the antivirus guess', async () => {
@@ -323,3 +323,7 @@ describe('onSummonFailure — mid-session death (fake forked child)', () => {
     expect(sendStatus).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'error' }));
   });
 });
+
+
+
+

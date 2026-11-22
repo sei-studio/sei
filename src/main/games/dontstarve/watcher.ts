@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together world watcher (game-adapters M2, 260908).
  *
  * Discovery is INBOUND: the mod inside the player's game can only make HTTP
@@ -335,3 +335,7 @@ export function createDstWatcher(opts: DstWatcherOptions = {}): DstWatcher {
     handleHello,
   };
 }
+
+
+
+

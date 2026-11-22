@@ -1,4 +1,4 @@
-/** 260929: Draw! turn order with either side opening each round. */
+﻿/** 260929: Draw! turn order with either side opening each round. */
 import { describe, it, expect } from 'vitest';
 import type { DrawRole } from '../../shared/drawIpc';
 import { isLastTurn, nextTurn } from './turnOrder';
@@ -31,3 +31,7 @@ describe('Draw! turn order', () => {
     expect(isLastTurn({ drawer: 'ai', firstDrawer: 'ai', round: 1, rounds: 1 })).toBe(false);
   });
 });
+
+
+
+

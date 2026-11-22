@@ -1,5 +1,5 @@
-/**
- * phantomDetect tests — pins the ported heal-phantom-call.mjs semantics.
+﻿/**
+ * phantomDetect tests â€” pins the ported heal-phantom-call.mjs semantics.
  *
  * The three fixture shapes mirror the incident data the thresholds were tuned
  * on: a typed chat must never flag (no voice rows at all), a real human call
@@ -59,7 +59,7 @@ describe('findVoiceSessions', () => {
   it('a long human call with sparse user rows does not flag (backseat shape)', () => {
     // 52 minutes, but the player speaks every ~4 minutes: span passes, cadence
     // and count both fail. This is the autonomous-session shape that MUST stay
-    // clean — the signature is user-row frequency, never session length.
+    // clean â€” the signature is user-row frequency, never session length.
     const sessions = findVoiceSessions(wrap(voiceCall(T0, 52 * 60_000, 4 * 60_000)));
     expect(sessions).toHaveLength(1);
     expect(sessions[0].flagged).toBe(false);
@@ -114,17 +114,17 @@ describe('splitMemory', () => {
     const win = { start: T0, end: T0 + 60 * 60_000 };
     const before = T0 - MEMORY_PAD_MS - 60_000;
     const inside = T0 + 10 * 60_000;
-    const padded = win.end + MEMORY_PAD_MS - 1_000; // inside the pad → removed
+    const padded = win.end + MEMORY_PAD_MS - 1_000; // inside the pad â†’ removed
     const after = win.end + MEMORY_PAD_MS + 60_000;
     const md = [
       '# Memory',
       '',
-      '## World 1 — plains cottage',
+      '## World 1 â€” plains cottage',
       `- [${iso(before)}] real memory before the call`,
       `- [${iso(inside)}] phantom junk from the call`,
       `- [${iso(padded)}] phantom junk written just after`,
       'free-form prose line with no stamp',
-      '## World 2 — cave base',
+      '## World 2 â€” cave base',
       `- [${iso(after)}] real memory after`,
       '',
     ].join('\n');
@@ -137,10 +137,10 @@ describe('splitMemory', () => {
       [
         '# Memory',
         '',
-        '## World 1 — plains cottage',
+        '## World 1 â€” plains cottage',
         `- [${iso(before)}] real memory before the call`,
         'free-form prose line with no stamp',
-        '## World 2 — cave base',
+        '## World 2 â€” cave base',
         `- [${iso(after)}] real memory after`,
         '',
       ].join('\n'),
@@ -148,7 +148,7 @@ describe('splitMemory', () => {
   });
 
   it('no windows means nothing is removed and the text is unchanged', () => {
-    const md = `- [${iso(T0)}] anything\n## World 3 — x\n`;
+    const md = `- [${iso(T0)}] anything\n## World 3 â€” x\n`;
     const { kept, removed } = splitMemory(md, []);
     expect(removed).toEqual([]);
     expect(kept).toBe(md);
@@ -166,3 +166,7 @@ describe('parseChatJsonl', () => {
     expect(rows[2].line).toBe('{"role":"companion","ts":2}');
   });
 });
+
+
+
+

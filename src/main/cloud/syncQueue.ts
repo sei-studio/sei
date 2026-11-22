@@ -1,8 +1,8 @@
-/**
- * Phase 11 — Persistent retry queue for cloud-mirror operations.
+﻿/**
+ * Phase 11 â€” Persistent retry queue for cloud-mirror operations.
  *
- * Source: 11-RESEARCH §Pattern 4 (queue shape + processing rules) +
- *         11-PATTERNS §syncQueue.ts (analog: sessionStore.ts without
+ * Source: 11-RESEARCH Â§Pattern 4 (queue shape + processing rules) +
+ *         11-PATTERNS Â§syncQueue.ts (analog: sessionStore.ts without
  *         safeStorage encryption).
  *
  * Local-first, mirror-cloud-immediately (D-18):
@@ -13,7 +13,7 @@
  *     fires, and after every successful drain.
  *
  * NOT an offline-first sync engine. RxDB-style replication was considered
- * and rejected (CONTEXT §Claude's Discretion + RESEARCH §Alternatives Considered).
+ * and rejected (CONTEXT Â§Claude's Discretion + RESEARCH Â§Alternatives Considered).
  *
  * Cross-plan contract notes:
  *   - Plan 11-07 (cloudCharacterClient) provides upsertCharacter / deleteCharacter /
@@ -54,14 +54,14 @@ export type SyncOp =
       lastError?: string;
     };
 
-// Backoff schedule in milliseconds (RESEARCH §Pattern 4):
-//   attempts=0 → 1s   (initial, basically immediate)
-//   attempts=1 → 5s
-//   attempts=2 → 30s
-//   attempts=3 → 5min
-//   attempts=4 → 30min
+// Backoff schedule in milliseconds (RESEARCH Â§Pattern 4):
+//   attempts=0 â†’ 1s   (initial, basically immediate)
+//   attempts=1 â†’ 5s
+//   attempts=2 â†’ 30s
+//   attempts=3 â†’ 5min
+//   attempts=4 â†’ 30min
 // At attempts=5, the op transitions to attempts=6 inside the failure handler
-// which clamps to MAX_ATTEMPTS and marks failedAt — no further scheduling.
+// which clamps to MAX_ATTEMPTS and marks failedAt â€” no further scheduling.
 const BACKOFF_MS = [1_000, 5_000, 30_000, 5 * 60_000, 30 * 60_000];
 const MAX_ATTEMPTS = 6;
 // Gate-blocked reschedule. NOT a "failed attempt"; the op stays at the same
@@ -80,13 +80,13 @@ async function readQueue(): Promise<SyncOp[]> {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      console.warn('[sei] sync-queue.json not an array — resetting');
+      console.warn('[sei] sync-queue.json not an array â€” resetting');
       return [];
     }
     return parsed as SyncOp[];
   } catch {
     // T-11-08-01: corrupt blob MUST NOT crash the app.
-    console.warn('[sei] sync-queue.json corrupt — resetting');
+    console.warn('[sei] sync-queue.json corrupt â€” resetting');
     return [];
   }
 }
@@ -111,7 +111,7 @@ function nextBackoffIso(attempts: number): string {
  * policy that only permits rows where `owner = auth.uid()`. A character the
  * signed-in user does NOT own (e.g. a World-tab character added to the library,
  * whose `owner` is another account) can therefore NEVER be upserted under this
- * account — every attempt 403s with "violates row-level security policy",
+ * account â€” every attempt 403s with "violates row-level security policy",
  * leaving the op stuck in the queue and the card pinned to "SYNCING" forever.
  *
  * Returns true when `uuid` must not be cloud-mirrored under the current account.
@@ -122,7 +122,7 @@ async function isForeignOwned(uuid: string): Promise<boolean> {
   const { getCharacter } = await import('../characterStore');
   const char = await getCharacter(uuid).catch(() => null);
   // No owner stamp (own char being created, or a legacy null-owner local char)
-  // → the cloud stamps owner on first upsert, so it's mirrorable. Bail before
+  // â†’ the cloud stamps owner on first upsert, so it's mirrorable. Bail before
   // touching authState.
   if (!char || char.owner == null) return false;
   const { getCurrentAuthState } = await import('../auth/authState');
@@ -145,7 +145,7 @@ export async function enqueueUpsert(uuid: string): Promise<void> {
     return;
   }
   const q = await readQueue();
-  // Collapse — replace existing upsert for the same uuid, leave deletes alone.
+  // Collapse â€” replace existing upsert for the same uuid, leave deletes alone.
   // Two fast successive edits to the same character collapse to ONE upload;
   // the drainer re-reads the local file at drain time so the latest content
   // is what lands in cloud.
@@ -167,7 +167,7 @@ export async function enqueueDelete(
 ): Promise<void> {
   const q = await readQueue();
   // For deletes, replace ANY pending op (upsert or delete) for same uuid.
-  // The delete supersedes a queued upsert — uploading then deleting would
+  // The delete supersedes a queued upsert â€” uploading then deleting would
   // waste bandwidth and racing the two could leave a tombstone-less row.
   const filtered = q.filter(op => op.uuid !== uuid);
   filtered.push({
@@ -211,7 +211,7 @@ export async function processNext(): Promise<void> {
   // imported before Plan 11-14 has landed isCloudWriteAllowed in authState.ts.
   const { isCloudWriteAllowed } = await import('../auth/authState');
   if (!(await isCloudWriteAllowed())) {
-    // Reschedule without counting as a failed attempt — gate-blocked is
+    // Reschedule without counting as a failed attempt â€” gate-blocked is
     // expected steady-state for users who run Sei without ever signing in.
     op.nextAttemptAt = new Date(now + GATE_BLOCKED_BACKOFF_MS).toISOString();
     q[idx] = op;
@@ -246,19 +246,19 @@ export async function processNext(): Promise<void> {
 
   try {
     if (op.kind === 'upsert') {
-      // Re-read local file at drain time — this is what makes the queue
+      // Re-read local file at drain time â€” this is what makes the queue
       // collapse-friendly: any number of saves between enqueue and drain
       // collapse to a single upload of the latest bytes.
       const char = await getCharacter(op.uuid);
       if (!char) {
         // Local char vanished (deleted between enqueue and drain). Drop the
-        // queue entry — the delete op will land separately if the user
+        // queue entry â€” the delete op will land separately if the user
         // actually wanted a cloud-delete.
         q.splice(idx, 1);
       } else if (char.owner != null && char.owner !== ownerUuid) {
         // Foreign-owned (added from the World tab; owner is another account).
         // The cloud RLS policy (owner = auth.uid()) would 403 this upsert on
-        // every attempt, so it must never be retried — drop it so the card
+        // every attempt, so it must never be retried â€” drop it so the card
         // stops showing "SYNCING". Self-heals ops queued before enqueueUpsert
         // grew its ownership guard.
         q.splice(idx, 1);
@@ -267,7 +267,7 @@ export async function processNext(): Promise<void> {
         await upsertCharacter(char, ownerUuid);
 
         // Skin upload: best-effort. A skin upload failure does NOT block the
-        // row upsert success — the row is already in cloud, just without an
+        // row upsert success â€” the row is already in cloud, just without an
         // up-to-date skin. The user will see "synced" in the pill; if they
         // re-save, a fresh upsert re-attempts the skin upload.
         try {
@@ -309,20 +309,20 @@ export async function processNext(): Promise<void> {
       // delete branch
       await deleteCharacter(op.uuid);
       // T-11-08-03: ownership of these object paths is enforced by Storage
-      // RLS (Plan 11-01) — wrong-owner deletes 403 server-side.
+      // RLS (Plan 11-01) â€” wrong-owner deletes 403 server-side.
       await deleteStorageObjects(op.storagePaths);
       q.splice(idx, 1);
     }
     await writeQueue(q);
     notifyStatusChange();
     // Drain another op immediately if any are due. Use setImmediate (not
-    // recursion) so the event loop can interleave other work — this matters
+    // recursion) so the event loop can interleave other work â€” this matters
     // when there's a long backlog after a reconnect.
     setImmediate(kickDrain);
   } catch (err) {
     // T-11-08-04: bounded retries. After MAX_ATTEMPTS the op is left in the
     // queue with failedAt set so getStatus() can surface it; the renderer
-    // shows "sync failed — retry" and the user has to opt-in to retry().
+    // shows "sync failed â€” retry" and the user has to opt-in to retry().
     op.attempts += 1;
     op.lastError = (err as Error).message;
     if (op.attempts >= MAX_ATTEMPTS) {
@@ -355,7 +355,7 @@ export async function getStatus(): Promise<{
 /**
  * Drop ALL pending ops for a uuid (both upserts and deletes). Used by the
  * sign-in owner-reconciliation sweep when it deletes a foreign-owned local
- * leak — leaving the upsert in the queue would keep the renderer's sync pill
+ * leak â€” leaving the upsert in the queue would keep the renderer's sync pill
  * stuck on SYNCING for a character that no longer exists locally.
  */
 export async function dropOpsForUuid(uuid: string): Promise<void> {
@@ -381,8 +381,8 @@ export async function retry(uuid: string): Promise<void> {
   await processNext();
 }
 
-// ── Status-change subscriber registry ──────────────────────────────────────
-// Plan 11-09 wires an IPC emitter onto this — every queue-state change pushes
+// â”€â”€ Status-change subscriber registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Plan 11-09 wires an IPC emitter onto this â€” every queue-state change pushes
 // sync:status to the renderer so the per-card pill updates without polling.
 type StatusListener = () => void;
 const listeners = new Set<StatusListener>();
@@ -404,5 +404,9 @@ function notifyStatusChange(): void {
 
 // Drainer wake-up hookup is owned by Plan 11-09 / main/index.ts bootstrap:
 //   authState.subscribe(state => state.kind === 'signed_in' && void processNext())
-//   net.online listener → void processNext()
+//   net.online listener â†’ void processNext()
 //   setInterval(processNext, 10_000) belt-and-suspenders sweep
+
+
+
+

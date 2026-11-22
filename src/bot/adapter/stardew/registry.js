@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/registry.js — the closed, Zod-typed verb set the
+﻿// src/bot/adapter/stardew/registry.js â€” the closed, Zod-typed verb set the
 // brain may call. Every handler sends ONE `cmd` frame to the mod and returns
 // the mod's `detail` string verbatim (types.js: executeAction always returns a
 // string; failures say why). Names mirror native/stardew-mod/SeiCompanion/
@@ -138,7 +138,7 @@ const WALK_FAIL = /^(stuck|no walkable|no path|gave up walking|ended at)/i
  * @param {{x:number,y:number,width?:number,height?:number}} args
  * @param {(name: string, args: any, opts: {signal?: AbortSignal}) => Promise<string>} send
  * @param {{ signal?: AbortSignal|null, onProgress?: (p: {dug: number, total: number}) => void }} [opts]
- *   `onProgress` feeds the snapshot's in_flight line ("— 6/15").
+ *   `onProgress` feeds the snapshot's in_flight line ("â€” 6/15").
  */
 export async function tillPatch(args, send, { signal = null, onProgress = null } = {}) {
   const width = args.width ?? 1
@@ -224,3 +224,7 @@ export function createStardewRegistry({ send, getModVersion = () => null }) {
   }
   return registry
 }
+
+
+
+

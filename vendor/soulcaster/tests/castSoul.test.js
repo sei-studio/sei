@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { castSoul, mulberry32, stripFences, CharacterSheetSchema, SoulcasterError } from '../src/index.js';
 
@@ -237,3 +237,7 @@ test('castSoul: the validation retry draws fresh name candidates', async () => {
   assert.notEqual(lineOf(users[0]), lineOf(users[1]));
   assert.ok(lineOf(users[1]).includes(nameCandidates[0]));
 });
+
+
+
+

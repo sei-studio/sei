@@ -1,7 +1,7 @@
-/**
- * BotCrashModal — a LIVE bot session (past summon-ready) died unexpectedly:
+﻿/**
+ * BotCrashModal â€” a LIVE bot session (past summon-ready) died unexpectedly:
  * the child process crashed or was killed with no stop requested. Before this
- * popup a mid-session death was completely silent — the widget just vanished.
+ * popup a mid-session death was completely silent â€” the widget just vanished.
  *
  * Opened centrally by the onStatus subscription in useDataStore.wireIpc
  * (mirrors LanNotOpenModal / UnsupportedVersionModal) on a BotStatus error
@@ -71,3 +71,7 @@ export function BotCrashModal({ characterId }: BotCrashModalProps): React.ReactE
     </ModalShell>
   );
 }
+
+
+
+

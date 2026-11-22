@@ -1,5 +1,5 @@
-/**
- * CallSceneHost — drives a CallScene from the live call's state.
+﻿/**
+ * CallSceneHost â€” drives a CallScene from the live call's state.
  *
  * The choreography, and why it is in this order:
  *
@@ -30,7 +30,7 @@ const FOOTSTEP_VOLUME = 0.22;
 
 export interface CallSceneHostProps {
   scene: CallSceneData;
-  /** The character on stage — her `speakingId` drives the mouth. */
+  /** The character on stage â€” her `speakingId` drives the mouth. */
   characterId: string;
 }
 
@@ -45,7 +45,7 @@ export function CallSceneHost({ scene, characterId }: CallSceneHostProps): React
    * the walk. `'idle'` is not that call: pressing call mounts this screen and
    * dials from an effect, and child effects run before the parent's, so the
    * store still says idle for one tick. Testing for "not connecting" here made
-   * every dial skip the entrance (260730) — she was simply drawn standing.
+   * every dial skip the entrance (260730) â€” she was simply drawn standing.
    */
   const [arrived, setArrived] = useState(() => useVoiceStore.getState().status === 'live');
   /** Whether THIS mount owns the hold, so releasing it twice is impossible. */
@@ -70,7 +70,7 @@ export function CallSceneHost({ scene, characterId }: CallSceneHostProps): React
   }, []);
 
   // A dial that fails never goes live, so the walk never starts and the hold
-  // would sit until its cap. Drop it as soon as we know — but only on a real
+  // would sit until its cap. Drop it as soon as we know â€” but only on a real
   // TRANSITION, since mounting at 'idle' is the normal start of a dial and must
   // not release the hold we just took.
   const prevStatus = useRef(status);
@@ -104,3 +104,7 @@ export function CallSceneHost({ scene, characterId }: CallSceneHostProps): React
     />
   );
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * useChatStore — per-character in-app chat transcripts (Phase 18/19).
+﻿/**
+ * useChatStore â€” per-character in-app chat transcripts (Phase 18/19).
  *
  * Holds the message arrays the ChatScreen renders, an `awaiting` flag per
  * character that drives the typing indicator while a reply is in flight, and a
@@ -31,28 +31,28 @@ import { CHAT_HISTORY_PAGE } from '@shared/ipc';
 import type { ChatMessage, ChatPreview, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
-  /** characterId → ordered message list (oldest first). */
+  /** characterId â†’ ordered message list (oldest first). */
   messages: Record<string, ChatMessage[]>;
-  /** characterId → true while a reply is in flight (drives the typing dots). */
+  /** characterId â†’ true while a reply is in flight (drives the typing dots). */
   awaiting: Record<string, boolean>;
-  /** characterId → history already fetched (idempotent load guard). */
+  /** characterId â†’ history already fetched (idempotent load guard). */
   loaded: Record<string, boolean>;
   /**
-   * characterId → true while the persisted transcript is being fetched (drives
+   * characterId â†’ true while the persisted transcript is being fetched (drives
    * the wireframe skeleton). Distinct from `awaiting`: this covers ONLY the
    * history pull, not the first-meeting greeting turn (that is `awaiting`).
    */
   loading: Record<string, boolean>;
   /**
-   * characterId → older transcript pages may exist on disk (infinite
+   * characterId â†’ older transcript pages may exist on disk (infinite
    * scrollback, 260721). Inferred from page fill: a full CHAT_HISTORY_PAGE read
    * means there may be more above it, a short page means the top was reached.
    */
   hasOlder: Record<string, boolean>;
-  /** characterId → an older-page fetch is in flight (re-entry guard). */
+  /** characterId â†’ an older-page fetch is in flight (re-entry guard). */
   loadingOlder: Record<string, boolean>;
   /**
-   * characterId → last persisted chat line (Party redesign §2), fetched in one
+   * characterId â†’ last persisted chat line (Party redesign Â§2), fetched in one
    * bulk chat:previews pull for the roster. Read through
    * {@link chatPreviewFor}, which prefers the live transcript when loaded.
    */
@@ -83,7 +83,7 @@ interface ChatState {
   ) => Promise<ChatSendResult | null>;
   /**
    * 260705: drop the local cache for a character so the next load() refetches.
-   * Renderer-side only (no IPC) — called after Reset memory, whose memory-dir
+   * Renderer-side only (no IPC) â€” called after Reset memory, whose memory-dir
    * wipe deletes the persisted transcript in main; without this eviction the
    * loaded-once guard would keep showing the wiped conversation from cache.
    */
@@ -103,14 +103,14 @@ interface ChatState {
  * counter and captures the value; only the latest send may mutate the store on
  * resolve/reject, so an interrupted (superseded) turn never appends a stale
  * reply or clears `awaiting` out from under the follow-up. Module-level (not
- * reactive) — it's a guard, not rendered state.
+ * reactive) â€” it's a guard, not rendered state.
  */
 const sendSeq: Record<string, number> = {};
 
 /** chat:message push unsubscribe, torn down on HMR dispose (module foot). A
  * stale hot-reloaded instance kept its listener AND its own (empty) dedup
  * state, so every in-game say() was re-announced to the voice bridge once per
- * reload — Marv spoke the same line five times (260706 field report). */
+ * reload â€” Marv spoke the same line five times (260706 field report). */
 let offChatMessage: (() => void) | null = null;
 
 /**
@@ -137,7 +137,7 @@ function isChatAbort(err: unknown): boolean {
 
 /**
  * 260703 hard guard surface: main's buildChatSdk throws a LOCAL_NO_API_KEY-
- * prefixed error when the profile is in local (BYOK) mode with no saved key —
+ * prefixed error when the profile is in local (BYOK) mode with no saved key â€”
  * local mode NEVER falls back to the cloud JWT, so the failure must be told to
  * the user plainly instead of hiding behind the generic "sorry" line.
  */
@@ -228,7 +228,7 @@ const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  *     the length of the USER's message at a fast-reader speed, and
  *   - task 1: the typing indicator then stays up before each reply bubble for a
  *     stretch proportional to that bubble's length at a fast-typist speed.
- * chars/sec ≈ wpm * 5 / 60 — ~200 wpm typing (a very fast typist), ~300 wpm
+ * chars/sec â‰ˆ wpm * 5 / 60 â€” ~200 wpm typing (a very fast typist), ~300 wpm
  * reading (faster than the ~240 wpm average, on purpose). Clamps keep the delays
  * snappy and bounded no matter how long the message is; the proportional range
  * covers ~5-83 chars (typing) / ~5-60 chars (reading) before hitting the cap,
@@ -251,7 +251,7 @@ function readingDelayMs(text: string): number {
 /**
  * Safety net for a message ROUTED into a live game session (task 4): the reply
  * arrives asynchronously over the chat:message push, so we keep the typing
- * indicator up — but clear it after this long if nothing lands, so the composer
+ * indicator up â€” but clear it after this long if nothing lands, so the composer
  * never gets stuck (e.g. the bot didn't produce a spoken reply that turn).
  */
 const ROUTED_AWAIT_TIMEOUT_MS = 45000;
@@ -272,11 +272,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     (partial: Partial<ChatState> | ((s: ChatState) => Partial<ChatState>)): void => {
       if (epoch === scopeEpoch) set(partial);
     };
-  // Subscribe once to main → renderer chat pushes: the live game bot replying to
+  // Subscribe once to main â†’ renderer chat pushes: the live game bot replying to
   // a routed message (task 4), chess/watch table talk, and "joined/left your
   // world" system lines (task 1). Append deduped by id.
   //
-  // 260724 — PACED. Every surface that speaks over this push (the chess service
+  // 260724 â€” PACED. Every surface that speaks over this push (the chess service
   // and the in-game bot) emits its bubbles in a tight loop with no delay, so a
   // five-line reply used to land in the store within one tick and render as a
   // wall of text: "Realistic typing" only ever applied to send()'s own reveal
@@ -322,7 +322,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       pushQueue[characterId] = (pushQueue[characterId] ?? Promise.resolve())
         .then(async () => {
           // On a live call the bubbles are hidden and TTS does the pacing, so
-          // any delay here would just stall the voice — mirrors send()'s inCall
+          // any delay here would just stall the voice â€” mirrors send()'s inCall
           // branch. Otherwise: realistic typing scales the wait to the line's
           // length, and the plain mode keeps a fixed inter-bubble gap.
           const inCall = isVoiceCallActive(characterId);
@@ -345,7 +345,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           // the call (the voice store's participants check).
           // `speech` (260729) places the line inside its own reply for TTS
           // conditioning. Main supplies it on a streamed voice reply's
-          // per-sentence pushes — the ONLY path a live call takes, so this is
+          // per-sentence pushes â€” the ONLY path a live call takes, so this is
           // where a call's prosody context comes from; the reveal loop in
           // send() below is the blocking path's equivalent. Absent (an in-world
           // say() routed up, a system row) means a standalone line, which is
@@ -361,7 +361,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         });
     }) ?? null;
   } catch {
-    /* preload without onChatMessage — routed replies just won't stream live */
+    /* preload without onChatMessage â€” routed replies just won't stream live */
   }
 
   return {
@@ -398,7 +398,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     }
     // Mark loaded up front so a re-entry while the fetch is in flight doesn't
     // double-fire; on failure we reset it so a later open can retry. `loading`
-    // flips on synchronously alongside it — it drives the wireframe skeleton and
+    // flips on synchronously alongside it â€” it drives the wireframe skeleton and
     // is cleared the moment the history lands (before the greeting turn, which
     // the typing indicator covers via `awaiting`).
     put((s) => ({
@@ -408,9 +408,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     try {
       const history = await sei.chatHistory(characterId);
       // Merge, don't replace: a chat:message push (e.g. the "You and X called
-      // for …" call-record row written on hang-up) can land in the store DURING
+      // for â€¦" call-record row written on hang-up) can land in the store DURING
       // this async read. Overwriting messages[id] with the disk snapshot used to
-      // clobber it — so a just-ended call left no visible trace in the GUI.
+      // clobber it â€” so a just-ended call left no visible trace in the GUI.
       // Keep any already-stored rows the disk history doesn't yet include.
       put((s) => {
         const existing = s.messages[characterId] ?? [];
@@ -425,7 +425,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
       // First-meeting greeting: on an empty transcript, tell main the chat was
       // opened. Main decides eligibility (unique companion, never chatted) and
-      // returns any greeting replies to append — the renderer never decides
+      // returns any greeting replies to append â€” the renderer never decides
       // policy, so calling on every empty open is fine (main no-ops otherwise).
       // Show the typing indicator while we wait, then append via the same deduped
       // path a live push uses.
@@ -453,9 +453,9 @@ export const useChatStore = create<ChatState>((set, get) => {
             ? await sei.chatOpened(characterId, fmOpts)
             : await sei.chatOpened(characterId);
           // Reveal a multi-message greeting one bubble at a time, each with its
-          // OWN typing delay — same theater send() uses — instead of dumping the
+          // OWN typing delay â€” same theater send() uses â€” instead of dumping the
           // whole greeting at once (a two-part hello must arrive as two texts,
-          // one after the other). Realistic-typing OFF → fixed inter-bubble gap.
+          // one after the other). Realistic-typing OFF â†’ fixed inter-bubble gap.
           const realism = useUiStore.getState().realisticTyping;
           const seen = new Set((get().messages[characterId] ?? []).map((m) => m.id));
           const fresh = greeting.filter((m) => !seen.has(m.id));
@@ -527,7 +527,7 @@ export const useChatStore = create<ChatState>((set, get) => {
   send: async (characterId, text, replyTo, voicePeers, opts) => {
     const epoch = scopeEpoch;
     const put = setIn(epoch);
-    // #9 — claim this character's latest-send slot. A follow-up send bumps this,
+    // #9 â€” claim this character's latest-send slot. A follow-up send bumps this,
     // interrupts the in-flight LLM call (main aborts it), and takes over state.
     const token = (sendSeq[characterId] ?? 0) + 1;
     sendSeq[characterId] = token;
@@ -547,12 +547,12 @@ export const useChatStore = create<ChatState>((set, get) => {
     // the voice director: it mirrors the text to the other companions and
     // captures the reply so their reactions chain, same as a mic utterance.
     // The director's own sends pass voicePeers, so this only fires for surfaces
-    // that bypass it. Must run BEFORE chatSend below — streamed reply lines
+    // that bypass it. Must run BEFORE chatSend below â€” streamed reply lines
     // start arriving while the send is still in flight.
     if (inCallEarly && !(voicePeers && voicePeers.length)) notifyPlayerText(characterId, text);
     // A typed mid-call send reaches here WITHOUT voicePeers (the composer knows
-    // nothing about the call); the reply must still be framed as a group turn —
-    // the other companions on the call — or the model answers with solo-call
+    // nothing about the call); the reply must still be framed as a group turn â€”
+    // the other companions on the call â€” or the model answers with solo-call
     // framing. Director sends pass their own voicePeers, which win.
     const effectivePeers =
       voicePeers && voicePeers.length ? voicePeers : inCallEarly ? voiceCallPeers(characterId) : [];
@@ -569,7 +569,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     // back until the companion has "read" your message (task 2), then keep it up
     // for a length-scaled stretch before each reply bubble (task 1). When OFF,
     // the indicator shows instantly and follow-up bubbles use the fixed gap.
-    // Voice calls (260705): during a call the reply is heard, not read — the
+    // Voice calls (260705): during a call the reply is heard, not read â€” the
     // typing theater (reading pause, per-bubble typing delay) would just delay
     // the audio, so pacing is disabled for the call's character.
     const inCall = inCallEarly;
@@ -577,7 +577,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     put((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
       // In-call exchanges are hidden in the chat UI (ChatMessage.voice), so a
-      // typing indicator would point at bubbles that never appear — keep it off.
+      // typing indicator would point at bubbles that never appear â€” keep it off.
       awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
     // Kick the reply off NOW so model generation overlaps the reading pause.
@@ -590,10 +590,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     });
     try {
       if (realism) {
-        // Task 2 — "reading" pause before the companion starts typing, scaled to
+        // Task 2 â€” "reading" pause before the companion starts typing, scaled to
         // how long YOUR message takes to read (fast-reader speed).
         await delay(readingDelayMs(text));
-        // Superseded during the pause — the follow-up owns state now. Swallow the
+        // Superseded during the pause â€” the follow-up owns state now. Swallow the
         // in-flight reply's (possibly aborted) rejection so it isn't unhandled.
         if (!isCurrent()) {
           void replyPromise.catch(() => {});
@@ -602,9 +602,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: true } }));
       }
       const result = await replyPromise;
-      // A newer send superseded us mid-flight — it owns the reply + awaiting now.
+      // A newer send superseded us mid-flight â€” it owns the reply + awaiting now.
       if (!isCurrent()) return result;
-      // Task 4 — routed into a live game session: the reply comes back async over
+      // Task 4 â€” routed into a live game session: the reply comes back async over
       // the chat:message push, so keep the typing indicator up and let the push
       // handler append + clear it. Safety-clear after a timeout if nothing lands.
       if (result.routed) {
@@ -621,12 +621,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Reveal a multi-message reply one bubble at a time (task 8): keep the
       // typing indicator up before each bubble, then append it, so a split reply
       // reads as sent-as-typed rather than a wall of text landing at once.
-      // Realism ON → the pre-bubble wait is proportional to that bubble's length
-      // (task 1, fast-typist speed); OFF → the first bubble is instant and
+      // Realism ON â†’ the pre-bubble wait is proportional to that bubble's length
+      // (task 1, fast-typist speed); OFF â†’ the first bubble is instant and
       // follow-ups use the fixed gap. `awaiting` stays true between chunks.
       // Voice streaming (260706): main already streamed each sentence live over
       // the chat:message push (appended + spoken by onChatMessage as it arrived),
-      // so DON'T reveal or speak result.replies again — that would double every
+      // so DON'T reveal or speak result.replies again â€” that would double every
       // line. The reveal loop below is only for the classic blocking path.
       const replies = result.streamed ? [] : result.replies;
       for (let i = 0; i < replies.length; i++) {
@@ -659,7 +659,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // goodbye replies are already queued for TTS above; the voice store ends
       // the call once they finish playing.
       if (result.endCall) requestRemoteEndCall(characterId);
-      // #6 — main stamped last_chatted on this successful reply; refresh the
+      // #6 â€” main stamped last_chatted on this successful reply; refresh the
       // character so the Home grid + IconRail re-sort by last interaction.
       void useDataStore.getState().refreshCharacter(characterId);
       return result;
@@ -672,8 +672,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }
-      // 260725: on a live voice call the director owns a failed turn — it
-      // retries the same utterance while the call shows "Reconnecting…", so
+      // 260725: on a live voice call the director owns a failed turn â€” it
+      // retries the same utterance while the call shows "Reconnectingâ€¦", so
       // the apology bubble below (which is never spoken) would only clutter
       // the transcript. Local no-key failures stay on the chat surface: a
       // retry cannot conjure a missing API key. Neither do model timeouts
@@ -683,9 +683,9 @@ export const useChatStore = create<ChatState>((set, get) => {
         put((s) => ({ awaiting: { ...s.awaiting, [characterId]: false } }));
         return null;
       }
-      // Real failure — never strand the typing indicator: surface an apologetic
+      // Real failure â€” never strand the typing indicator: surface an apologetic
       // companion line and clear `awaiting` so the composer stays usable.
-      // 260703: the local-mode/no-key failure gets specific, actionable copy —
+      // 260703: the local-mode/no-key failure gets specific, actionable copy â€”
       // this state is deliberate (local mode never silently uses the cloud) and
       // the fix is in Settings, so "try again in a moment" would be a lie.
       // A latched ChatGPT rejection: retyping cannot lift it, so bring back
@@ -749,7 +749,7 @@ if (import.meta.hot) {
  * (in-call caption lines hidden from the chat view) and legacy event-less
  * `system` rows, so the preview never surfaces a message the opened transcript
  * does not show. System rows WITH an event ("You and X called/played for Y")
- * DO surface (260709) — a finished call or play session is the latest
+ * DO surface (260709) â€” a finished call or play session is the latest
  * activity, and hiding it left the card stuck on an older chat line.
  */
 export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview | null {
@@ -767,3 +767,7 @@ export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview |
   // event-less system rows, so no further filter is needed here.
   return s.previews[characterId] ?? null;
 }
+
+
+
+

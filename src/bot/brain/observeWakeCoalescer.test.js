@@ -1,5 +1,5 @@
-// 260708: the in-game brain now wakes on EVERY observed call line (the
-// name-gate is gone — the user wants the bot responsive to the whole call,
+﻿// 260708: the in-game brain now wakes on EVERY observed call line (the
+// name-gate is gone â€” the user wants the bot responsive to the whole call,
 // choosing silence itself). A companion's spoken turn arrives as separate
 // mirrored sentences, so without coalescing one utterance would fire several
 // P1 wakes ("make sure it doesn't fire twice to each message"). These pin the
@@ -87,3 +87,7 @@ describe('createObserveWakeCoalescer', () => {
     expect(fire).not.toHaveBeenCalled()
   })
 })
+
+
+
+

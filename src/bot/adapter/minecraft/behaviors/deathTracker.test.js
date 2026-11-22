@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/deathTracker.test.js
+﻿// src/bot/adapter/minecraft/behaviors/deathTracker.test.js
 //
 // 261019 (quality pass 19): the death is reported in two steps. sei:dying at
 // once (so the brain drops the turn the dying body was writing), sei:death
@@ -157,3 +157,7 @@ describe('trackDeaths', () => {
     expect(death).not.toHaveBeenCalled()
   })
 })
+
+
+
+

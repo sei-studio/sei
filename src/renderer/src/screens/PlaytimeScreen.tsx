@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PlaytimeScreen: the Playtime page (261110, product call 261110): one page
  * for what runs the companions and what it costs, in three tabs.
  *
@@ -127,7 +127,7 @@ export function PlaytimeScreen(): React.ReactElement {
     sei.track('playtime_tab_viewed', { tab, is_active_setup: tab === setupTab });
   }, [tab, setupTab]);
 
-  // ── Switching ──
+  // â”€â”€ Switching â”€â”€
   const [pendingSwitch, setPendingSwitch] = useState<PlaytimeTab | null>(null);
   const [signInOpen, setSignInOpen] = useState(false);
   const [seiAfterSignIn, setSeiAfterSignIn] = useState(false);
@@ -318,3 +318,7 @@ export function PlaytimeScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

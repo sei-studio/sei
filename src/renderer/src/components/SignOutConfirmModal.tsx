@@ -1,10 +1,10 @@
-/**
- * SignOutConfirmModal — single-confirmation modal for sign-out (D-09).
+﻿/**
+ * SignOutConfirmModal â€” single-confirmation modal for sign-out (D-09).
  *
  * Two title branches based on bot-running state. Body copy is identical in
  * both branches and emphasises what's preserved (AUTH-05 framing).
  *
- * Confirm button is `kind='primary'` (NOT destructive) — D-09 says sign-out is
+ * Confirm button is `kind='primary'` (NOT destructive) â€” D-09 says sign-out is
  * reversible and preserves local data, so it does not warrant the red
  * treatment. The dismiss action ("Stay signed in") is a real alternative, so it
  * uses the bordered ghost kind.
@@ -44,7 +44,7 @@ export function SignOutConfirmModal({
   };
 
   const title = botRunning ? t('Sign out will stop your bot. Continue?') : t('Sign out?');
-  const ctaLabel = submitting ? t('Signing out…') : t('Sign out');
+  const ctaLabel = submitting ? t('Signing outâ€¦') : t('Sign out');
 
   return (
     <ModalShell
@@ -67,3 +67,7 @@ export function SignOutConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

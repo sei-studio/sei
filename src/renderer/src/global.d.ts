@@ -1,4 +1,4 @@
-import type { RendererApi } from '@shared/ipc';
+﻿import type { RendererApi } from '@shared/ipc';
 import type { SeilinkHostBridge } from '@shared/seilinkHost';
 
 declare global {
@@ -10,3 +10,7 @@ declare global {
 }
 
 export {};
+
+
+
+

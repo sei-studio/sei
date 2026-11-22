@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { modalForBotStatus } from './botErrorRouting';
 
 const err = (error: string, extra: Record<string, unknown> = {}) =>
@@ -46,3 +46,7 @@ describe('modalForBotStatus', () => {
     expect(modalForBotStatus({ kind: 'online', characterId: 'c1', uptimeMs: 0, startedAtMs: 0 })).toBeNull();
   });
 });
+
+
+
+

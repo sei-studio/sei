@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Startup popup actions, renderer side (261029).
  *
  * A popup page's button is a link to https://sei.gg/popup/_action/<name>.
@@ -160,3 +160,7 @@ export async function runPopupAction(name: unknown): Promise<boolean> {
       return false;
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Windows restart-to-update with Sei's own progress window (261030).
  *
  * updater.ts calls this instead of quitAndInstall on win32, for both the
@@ -128,3 +128,7 @@ export async function installWithProgressWindow(opts: WindowsInstallOptions): Pr
     setTimeout(() => app.removeListener('before-quit', onQuit), QUIT_GUARD_MS).unref();
   }
 }
+
+
+
+

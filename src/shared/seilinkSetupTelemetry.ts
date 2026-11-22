@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorldLink setup analytics (261110, product call 261110), shape only. The
  * renderer sends them through `sei.track`; main's analytics:track handler
  * rebuilds the props with `sanitizeSeilinkSetupTrack`, so only closed enums,
@@ -131,3 +131,7 @@ export function sanitizeSeilinkSetupTrack(event: string, raw: Record<string, unk
   }
   return {};
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/toolBatch.js — Minecraft's per-batch tool rules
+﻿// src/bot/adapter/minecraft/toolBatch.js â€” Minecraft's per-batch tool rules
 // (contract v2 prefilterToolBatch / postProcessToolBatch, M0 260908).
 //
 // These three rules used to live inline in the brain's runIterations, written
@@ -17,7 +17,7 @@
  *    turn.
  * 2. Same-turn follow + attackEntity collapse. combat.js startAttacking
  *    already auto-pursues moving mobs, so an explicit follow paired with
- *    attackEntity in the SAME tool batch is redundant — and historically
+ *    attackEntity in the SAME tool batch is redundant â€” and historically
  *    produced "target gone" because follow resolves the entity reference
  *    before attack lands the first swing.
  *
@@ -94,3 +94,7 @@ export function postProcessToolBatch(toolUses, results, loopState, cantReachNudg
   }
   return { nudge: null }
 }
+
+
+
+

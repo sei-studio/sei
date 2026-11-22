@@ -1,5 +1,5 @@
-/**
- * china-compat W9 — the Draw! session-start vision hard gate.
+﻿/**
+ * china-compat W9 â€” the Draw! session-start vision hard gate.
  *
  * Every Draw! turn shows the model a canvas snapshot, so a text-only local
  * model (deepseek, qwen-plus, ...) cannot run the surface at all. The renderer
@@ -8,10 +8,10 @@
  * uses.
  *
  * Invariants under test:
- *   1. activeLlmVision 'no' → startDraw rejects, and the DRAW_LLM_NO_VISION
+ *   1. activeLlmVision 'no' â†’ startDraw rejects, and the DRAW_LLM_NO_VISION
  *      token is in the MESSAGE (error `code` does not survive the IPC
  *      boundary, so the renderer matches the message).
- *   2. 'unknown' is allowed through — a wrong refusal silently hides the
+ *   2. 'unknown' is allowed through â€” a wrong refusal silently hides the
  *      game, a wrong allow fails visibly. BYOK Anthropic before any
  *      capability fetch must not lose Draw!.
  *   3. 'yes' starts normally.
@@ -19,7 +19,7 @@
  *      left behind for the renderer to resume).
  *
  * The heavy chat-side imports are mocked at the module seam; the game logic
- * under test (startDraw → beginTurn 'player' → 'pick' phase) is real, and the
+ * under test (startDraw â†’ beginTurn 'player' â†’ 'pick' phase) is real, and the
  * pick phase arms no timers, so teardown is just clearing the session map.
  */
 
@@ -115,3 +115,7 @@ describe('startDraw vision gate (W9)', () => {
     expect(__test.sessions.has('char-4')).toBe(false);
   });
 });
+
+
+
+

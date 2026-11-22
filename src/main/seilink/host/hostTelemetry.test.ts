@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   Counters,
   HealthSampler,
@@ -254,3 +254,7 @@ describe('Counters', () => {
     expect(c.diff(snap)).toEqual({ clicks: 1, pokes: 2 });
   });
 });
+
+
+
+

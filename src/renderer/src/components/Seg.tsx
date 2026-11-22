@@ -1,9 +1,9 @@
-/**
- * Seg — segmented control (mockup .seg). A bordered row of small options,
+﻿/**
+ * Seg â€” segmented control (mockup .seg). A bordered row of small options,
  * active option gets accent-soft fill + accent text. Replaces aria-pressed
  * ghost-button groups (theme, backend, vision mode).
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §1.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§1.
  */
 
 import React from 'react';
@@ -50,3 +50,7 @@ export function Seg<T extends string>({
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Issue #52 end to end through watchLan: netstat cannot see the world, a
  * fallback source can, and only a verified port is reported, with the source
  * recorded once per world.
@@ -125,3 +125,7 @@ describe('watchLan with the Windows fallback', () => {
     expect(getLanDiagnosis()?.discovery).toBe('enum_failed');
   });
 });
+
+
+
+

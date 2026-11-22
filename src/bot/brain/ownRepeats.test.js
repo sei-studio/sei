@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener } from './ownRepeats.js'
 
 // One say() line is recorded as several chat messages within a few ms; turns
@@ -68,7 +68,7 @@ describe('repeatedOwnTerms', () => {
     'world: #1 Meadow', 'pos: 112,71,-40', 'facing: north. forward -z, back +z, left -x, right +x',
     'biome: plains  surroundings: outside  light: sky 15 block 0  time: day (2400)',
     'hp: 20/20  food: 18/20  xp: lvl 2', 'holding: stone_pickaxe',
-    'inventory (6/36 slots): oak_log×7, cobblestone×23, stone_pickaxe×1, bread×3, torch×6, crafting_table×1',
+    'inventory (6/36 slots): oak_logÃ—7, cobblestoneÃ—23, stone_pickaxeÃ—1, breadÃ—3, torchÃ—6, crafting_tableÃ—1',
     'nearby blocks:', '#1 grass_block x412 @111,70,-40', '#2 oak_log x14 @118,72-47', '#3 water x30 @104,70,-52',
     'nearby entities:', '#4 Alex @109,71,-38', '#5 cow @121,71,-31', 'owner Alex: @109,71,-38 (3 blocks away)',
   ].join('\n')
@@ -102,7 +102,7 @@ describe('repeatedOwnTerms', () => {
     expect(repeatedOwnTerms(lines, [{ text: 'grab a log' }])).toEqual([])
     expect(repeatedOwnTerms(lines, [], { context: ['oak_log x3'] })).toEqual([])
     const torches = session(['torches up', 'two torches', 'torches everywhere'])
-    expect(repeatedOwnTerms(torches, [], { context: ['torch×6'] })).toEqual([])
+    expect(repeatedOwnTerms(torches, [], { context: ['torchÃ—6'] })).toEqual([])
   })
 
   it('needs at least three turns and ignores grammar words', () => {
@@ -121,7 +121,7 @@ describe('ownRepeatsNote', () => {
     const note = ownRepeatsNote(session(['the universe is cooling', 'lava. the universe again', 'the universe, of course']))
     expect(note).toContain('"the universe"')
     expect(note).toContain('3 of your last 3')
-    expect(note).not.toMatch(/[—–]/)
+    expect(note).not.toMatch(/[â€”â€“]/)
   })
 
   it('passes names through', () => {
@@ -164,7 +164,7 @@ describe('repeatedOwnPhrases', () => {
 
   it('leaves out the task she is on', () => {
     const lines = session(['need stone, pickaxe next', 'mining stone now, need stone', 'pickaxe next, then stone'])
-    expect(repeatedOwnPhrases(lines, [], opts(3, { context: ['stone_pickaxe×1, cobblestone×3'] }))).toEqual([])
+    expect(repeatedOwnPhrases(lines, [], opts(3, { context: ['stone_pickaxeÃ—1, cobblestoneÃ—3'] }))).toEqual([])
   })
 
   it('leaves out names and what the player also said', () => {
@@ -198,7 +198,7 @@ describe('ownRepeatsNote, line level', () => {
     const note = ownRepeatsNote(lines, [], { now: nowAfter(2) })
     expect(note).toContain(`"ok stopping, you're the boss of the wood pile now" and then "ok so trees are over there"`)
     expect(note).toContain('keep starting with "ok"')
-    expect(note).not.toMatch(/[—–]/)
+    expect(note).not.toMatch(/[â€”â€“]/)
     const again = session([...["ok stopping, you're the boss of the wood pile now", 'trees are over there'], "fine, you're the boss of the wood pile"])
     expect(ownRepeatsNote(again, [], { now: nowAfter(3) })).toContain('"boss of the wood pile" more than once')
   })
@@ -258,7 +258,7 @@ describe('ownRepeatsNote, by kind of turn', () => {
   })
 
   it('has no dashes in any form', () => {
-    for (const mode of ['reply', 'idle', 'checkin', 'greeted']) expect(ownRepeatsNote(lines, [], { now, mode }) ?? '').not.toMatch(/[—–]/)
+    for (const mode of ['reply', 'idle', 'checkin', 'greeted']) expect(ownRepeatsNote(lines, [], { now, mode }) ?? '').not.toMatch(/[â€”â€“]/)
   })
 
   // 261017 (pass 13): the reply ask no longer invites her to say the plan
@@ -307,12 +307,12 @@ describe('repeatedOwnPhrases, item vocabulary', () => {
 
   it('does not name a crafting table she does not have yet', () => {
     const lines = session(['need a crafting table first', 'still need a crafting table'])
-    expect(repeatedOwnPhrases(lines, [], opts(2, { context: ['inventory (1/36 slots): oak_log×3'] }))).toEqual([])
+    expect(repeatedOwnPhrases(lines, [], opts(2, { context: ['inventory (1/36 slots): oak_logÃ—3'] }))).toEqual([])
   })
 
   it('does not name iron ingots when the bag holds raw iron', () => {
     const lines = session(['need iron ingots for the pick', 'smelting, need iron ingots'])
-    const context = ['inventory (2/36 slots): raw_iron×3, cobblestone×12']
+    const context = ['inventory (2/36 slots): raw_ironÃ—3, cobblestoneÃ—12']
     expect(repeatedOwnPhrases(lines, [], opts(2, { context }))).toEqual([])
   })
 
@@ -412,7 +412,7 @@ describe('repeatedOpener, context and signatures', () => {
   it('never names an item word from the snapshot, possessive included', () => {
     const lines = session(["table's down, crafting now", "table's ready", "table's placed by the door"])
     expect(repeatedOpener(lines, { now: nowAfter(3) })).toBe("table's")
-    expect(repeatedOpener(lines, { now: nowAfter(3), context: ['inventory: crafting_table×1'] })).toBeNull()
+    expect(repeatedOpener(lines, { now: nowAfter(3), context: ['inventory: crafting_tableÃ—1'] })).toBeNull()
     expect(repeatedOpener(lines, { now: nowAfter(3), vocab: ['crafting_table'] })).toBeNull()
   })
 
@@ -438,6 +438,10 @@ describe('repeatedOpener, context and signatures', () => {
   it('reaches the note through ownRepeatsNote context', () => {
     const lines = session(["table's down", "table's ready"])
     expect(ownRepeatsNote(lines, [], { now: nowAfter(2) })).toContain('keep starting with')
-    expect(ownRepeatsNote(lines, [], { now: nowAfter(2), context: ['crafting_table×1'] })).not.toContain('keep starting with')
+    expect(ownRepeatsNote(lines, [], { now: nowAfter(2), context: ['crafting_tableÃ—1'] })).not.toContain('keep starting with')
   })
 })
+
+
+
+

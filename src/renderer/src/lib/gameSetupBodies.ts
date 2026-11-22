@@ -1,5 +1,5 @@
-/**
- * GAME_SETUP_BODIES — per-game bodies for the generic setup modal (game
+﻿/**
+ * GAME_SETUP_BODIES â€” per-game bodies for the generic setup modal (game
  * adapters M2, 260908). GameSetupModal keeps the contract (pending summon,
  * auto-resume when the world opens, Try again / Close) and renders a game's
  * registered body between the title and the footer in place of its generic
@@ -18,3 +18,7 @@ export function registerGameSetupBody(game: GameId, Body: React.ComponentType): 
 export function getGameSetupBody(game: GameId | string | null | undefined): React.ComponentType | null {
   return (game && bodies[game as GameId]) || null;
 }
+
+
+
+

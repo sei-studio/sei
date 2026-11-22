@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together adapter: shared contracts (game-adapters M2, 260908).
  *
  * Three parties talk here and this file names every shape that crosses a
@@ -36,7 +36,7 @@ export const DST_HEARTBEAT_STALE_MS = 6_000;
 /** Steam app id of Don't Starve Together. */
 export const DST_STEAM_APP_ID = 322330;
 
-/* ── Heartbeat (mod → main watcher, GET /hello?q=<json>) ────────────────── */
+/* â”€â”€ Heartbeat (mod â†’ main watcher, GET /hello?q=<json>) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const DstHeartbeatPlayerSchema = z.object({
   userid: z.string().max(64).default(''),
@@ -73,7 +73,7 @@ export const DstHeartbeatSchema = z.object({
 });
 export type DstHeartbeat = z.infer<typeof DstHeartbeatSchema>;
 
-/* ── Summon offer (main watcher → mod, the /hello response) ─────────────── */
+/* â”€â”€ Summon offer (main watcher â†’ mod, the /hello response) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * What the watcher hands the mod once the bot runtime is listening: where to
@@ -106,7 +106,7 @@ export interface DstHelloResponse {
   summon?: Omit<DstSummonOffer, 'expiresAt'>;
 }
 
-/* ── dst-listen (bot runtime → supervisor → watcher) ────────────────────── */
+/* â”€â”€ dst-listen (bot runtime â†’ supervisor â†’ watcher) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const DstListenMessageSchema = z.object({
   type: z.literal('dst-listen'),
@@ -149,7 +149,7 @@ export const DstLivesMessageSchema = z.object({
 });
 export type DstLivesMessage = z.infer<typeof DstLivesMessageSchema>;
 
-/* ── Join target (main → bot init payload) ──────────────────────────────── */
+/* â”€â”€ Join target (main â†’ bot init payload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface DstJoinTarget {
   /** The world's session identifier (fingerprint) and label. */
@@ -174,7 +174,7 @@ export interface DstJoinTarget {
   announce: boolean;
 }
 
-/* ── World state (main → renderer, world:state) ─────────────────────────── */
+/* â”€â”€ World state (main â†’ renderer, world:state) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type DstWorldState =
   | {
@@ -195,7 +195,7 @@ export type DstWorldState =
   /** None of DST_DISCOVERY_PORTS could be bound (DST_PORT_IN_USE). */
   | { game: 'dontstarve'; kind: 'unavailable'; reason?: string };
 
-/* ── Dashboard snapshot (bot → main → renderer, gamedash:snapshot) ──────── */
+/* â”€â”€ Dashboard snapshot (bot â†’ main â†’ renderer, gamedash:snapshot) â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface DstDashboardItem {
   prefab: string;
@@ -225,7 +225,7 @@ export interface DstDashboardSnapshot {
   prefab: string;
 }
 
-/* ── Install (main ↔ renderer, dst:* channels) ──────────────────────────── */
+/* â”€â”€ Install (main â†” renderer, dst:* channels) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export type DstInstallState =
   | { kind: 'not_found'; searched: string[] }
@@ -289,25 +289,29 @@ export const DstSurvivorSetSchema = z.object({
 });
 
 export const DstChannel = {
-  /** Invoke: () → DstInstallState (no writes). */
+  /** Invoke: () â†’ DstInstallState (no writes). */
   installState: 'dst:install-state',
   /**
-   * Invoke: () → DstInstallState after copying the mod + enabling it. A
+   * Invoke: () â†’ DstInstallState after copying the mod + enabling it. A
    * user click by contract: on macOS it may show the Open panel and fall
    * back to a Finder copy when the game bundle refuses the write (260925).
    */
   install: 'dst:install',
-  /** Invoke: () → void; opens steam://rungameid/322330. */
+  /** Invoke: () â†’ void; opens steam://rungameid/322330. */
   launch: 'dst:launch',
-  /** Invoke: (characterId) → DstSurvivorPick (derives + persists on first use). */
+  /** Invoke: (characterId) â†’ DstSurvivorPick (derives + persists on first use). */
   survivorGet: 'dst:survivor-get',
-  /** Invoke: ({characterId, prefab|null}) → DstSurvivorPick. */
+  /** Invoke: ({characterId, prefab|null}) â†’ DstSurvivorPick. */
   survivorSet: 'dst:survivor-set',
   /** Push: DstInstallState while an install runs. */
   installProgress: 'dst:install-progress',
   /**
-   * Invoke: () → void; macOS only, opens Privacy & Security > App Management.
+   * Invoke: () â†’ void; macOS only, opens Privacy & Security > App Management.
    * Unused since 260925 (the install asks through the Open panel instead).
    */
   openAppManagement: 'dst:open-app-management',
 } as const;
+
+
+
+

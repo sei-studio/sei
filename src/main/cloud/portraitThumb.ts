@@ -1,4 +1,4 @@
-/**
+﻿/**
  * World grid thumbnail refresh (261111). MAIN PROCESS ONLY.
  *
  * The World grid shows `portraits/<owner>/<id>.thumb.webp` instead of the full
@@ -94,3 +94,7 @@ export function requestPortraitThumb(characterId: string, deps: ThumbDeps = defa
   inFlight.set(characterId, entry);
   return entry.promise;
 }
+
+
+
+

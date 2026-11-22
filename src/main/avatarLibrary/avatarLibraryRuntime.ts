@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The app's one AvatarLibraryClient (261106), wired to the real proxy, the
  * local avatar store, the config (viewer picks), windows and analytics.
  * Logic and its tests live in avatarLibraryClient.ts.
@@ -165,3 +165,7 @@ export const avatarLibrary = new AvatarLibraryClient({
 onCharacterSaved((id) => {
   void avatarLibrary.characterSaved(id)?.catch(() => {});
 });
+
+
+
+

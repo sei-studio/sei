@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { ActRun, limitsFromEnv, statusFor, thumbDiff, type ActEnv, type ActEvent } from './actLoop';
 import type { HelperCommand } from './actions';
 import type { Choice, ChooseState, Chooser, HistoryEntry } from './chooser';
@@ -484,3 +484,7 @@ const richAx: AxNode[] = ['One', 'Two', 'Three', 'Four'].map((t, i) => ({
   enabled: true,
   frame: { x: 100, y: 100 + i * 50, w: 80, h: 30 },
 }));
+
+
+
+

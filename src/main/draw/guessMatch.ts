@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Guess matching (260727).
  *
  * The rule the game runs on: a guess is correct when the guesser sends the
@@ -21,14 +21,14 @@
  * why a near-miss counted.
  */
 
-/* ── CJK path (260730) ────────────────────────────────────────────────────
+/* â”€â”€ CJK path (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Chinese has no spaces and no plurals, so the token walk below cannot see it
    (normalize() deletes every Han character). A CJK answer instead matches by
    CONTIGUOUS CONTAINMENT over a normalized string that keeps Han characters
-   and alphanumerics only: "是不是灯塔？？" contains "灯塔". The same three
+   and alphanumerics only: "æ˜¯ä¸æ˜¯ç¯å¡”ï¼Ÿï¼Ÿ" contains "ç¯å¡”". The same three
    values hold: literal, case/punctuation-forgiving, nothing fuzzy. */
 
-const HAN_RE = /[㐀-䶿一-鿿]/;
+const HAN_RE = /[\u3400-\u4DBF\u4E00-\u9FFF]/;
 
 function hasCjk(s: string): boolean {
   return HAN_RE.test(s);
@@ -210,7 +210,7 @@ const REGEX_ESCAPE_RE = /[.*+?^${}()|[\]\\]/g;
  * Shared by redactWord and saysWord (260731) so the two can never disagree
  * about what counts as saying the word. saysWord used to derive its answer
  * from redactWord's RETURN VALUE instead, which conflated "said the word"
- * with "nothing salvageable left" — see hasContent below for what that cost.
+ * with "nothing salvageable left" â€” see hasContent below for what that cost.
  */
 function wordPattern(word: string): RegExp | null {
   if (hasCjk(word)) {
@@ -220,7 +220,7 @@ function wordPattern(word: string): RegExp | null {
     const chars = [...normalizeCjk(word)];
     if (chars.length === 0) return null;
     const esc = (c: string): string => c.replace(REGEX_ESCAPE_RE, '\\$&');
-    return new RegExp(chars.map(esc).join('[^㐀-䶿一-鿿a-z0-9]*'), 'gi');
+    return new RegExp(chars.map(esc).join('[^ã€-ä¶¿ä¸€-é¿¿a-z0-9]*'), 'gi');
   }
   const target = tokenize(word);
   if (target.length === 0) return null;
@@ -239,7 +239,7 @@ function wordPattern(word: string): RegExp | null {
  * on the CJK branch, the same with Han added). Both read every line written
  * outside their own alphabet as EMPTY, so a player typing Chinese, Korean,
  * Japanese, or nothing but emoji while DRAWING had their line dropped and was
- * told "You can't type this word! You're drawing it, not guessing it." — the
+ * told "You can't type this word! You're drawing it, not guessing it." â€” the
  * word never appeared and the pattern never matched; the line simply had no
  * ASCII letters in it. The same misfire hit the character's own lines mid
  * drawing turn (drawService's word-slip guard), so a character that drifted
@@ -284,3 +284,7 @@ export function saysWord(text: string, word: string): boolean {
   const re = wordPattern(word);
   return re ? re.test(text) : false;
 }
+
+
+
+

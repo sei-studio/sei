@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "lives on your desktop" card's memory (261110, product call 261110):
  * it shows when the room first goes live (over the first link's last frame,
  * or in the app after a move-in without the intro) until it is dismissed,
@@ -31,3 +31,7 @@ export function markLiveHintDismissed(): void {
 export function liveHintOs(platform: string | undefined): SetupOs {
   return platform === 'darwin' ? 'mac' : platform === 'win32' ? 'windows' : 'linux';
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite';
+﻿import { defineConfig, externalizeDepsPlugin, loadEnv } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   // Pull optional overrides from .env at config load. Empty prefix = read all
   // keys; we whitelist explicitly below so we never expose unrelated shell env
   // vars to the bundle. Since the 260704 anon-key migration ALL of these are
-  // optional — with no .env, Supabase access routes through the sei proxy
+  // optional â€” with no .env, Supabase access routes through the sei proxy
   // (api.sei.gg/supabase) which injects the anon key server-side (env.ts).
   const env = loadEnv(mode, process.cwd(), '');
   return {
@@ -38,7 +38,7 @@ export default defineConfig(({ mode }) => {
       // dist:*, the spike and dry-run workflows) bakes '' and reads as a
       // dev/test channel, which sends no analytics (analyticsContext.ts).
       'import.meta.env.SEI_RELEASE_CHANNEL': JSON.stringify(env.SEI_RELEASE_CHANNEL ?? ''),
-      // Phase 13 — proxy host. Read at main-process module load via
+      // Phase 13 â€” proxy host. Read at main-process module load via
       // process.env.* (proxyClient.ts, botSupervisor.ts). Checkout + portal
       // sessions are minted server-side by the proxy (Polar migration 2026-06),
       // so no product/variant ids are injected into the client bundle anymore.
@@ -47,18 +47,18 @@ export default defineConfig(({ mode }) => {
       // substituted the literal '' into every `process.env.SEI_PROXY_URL ??
       // 'https://api.sei.gg'` consumer, silently killing the default for
       // .env-less (GitHub from-source) builds. Leaving the key undefined keeps
-      // the expression as a real runtime env lookup → undefined → fallback.
+      // the expression as a real runtime env lookup â†’ undefined â†’ fallback.
       ...(env.SEI_PROXY_URL
         ? { 'process.env.SEI_PROXY_URL': JSON.stringify(env.SEI_PROXY_URL) }
         : {}),
       // KusArt portrait generation moved behind the proxy (260709,
-      // /generate/portrait passthrough) — no KUSART_* build-time defines
+      // /generate/portrait passthrough) â€” no KUSART_* build-time defines
       // anymore; the key lives ONLY in the proxy's Fly secrets.
       // PostHog product analytics (src/main/analytics.ts). The phc_ project key
       // is public/write-only (safe to embed); the real default is baked into
       // analytics.ts, so this override is only for pointing a build at a
       // different project/host. Same defined-only-when-set rule as above so an
-      // unset key leaves the runtime lookup live → baked default.
+      // unset key leaves the runtime lookup live â†’ baked default.
       ...(env.POSTHOG_KEY
         ? { 'process.env.POSTHOG_KEY': JSON.stringify(env.POSTHOG_KEY) }
         : {}),
@@ -67,7 +67,7 @@ export default defineConfig(({ mode }) => {
         : {}),
       // Backseat salience gate dev credentials (260728). salienceGate.ts reads
       // process.env.SEI_GATE_DEV_KEY at RUNTIME, and nothing exports .env into
-      // the dev process — so before this define existed, the key sat in .env
+      // the dev process â€” so before this define existed, the key sat in .env
       // while every dev run logged "no SEI_GATE_DEV_KEY" and gated closed.
       // Injected in DEV ONLY: this is a real DeepInfra secret, and a packaged
       // build must never bake it into the bundle (production is meant to route
@@ -104,7 +104,7 @@ export default defineConfig(({ mode }) => {
   renderer: {
     root: path.resolve('src/renderer'),
     // file:// in packaged builds needs relative asset URLs; without this,
-    // url('/img/...') in CSS resolves to filesystem root → ERR_FILE_NOT_FOUND.
+    // url('/img/...') in CSS resolves to filesystem root â†’ ERR_FILE_NOT_FOUND.
     base: './',
     build: {
       outDir: path.resolve('dist/renderer'),
@@ -118,7 +118,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     // Voice dictation (260705): the Whisper STT worker
     // (lib/voice/whisperWorker.ts) imports @huggingface/transformers, which
-    // code-splits — Vite's default iife worker format can't hold multiple
+    // code-splits â€” Vite's default iife worker format can't hold multiple
     // chunks, so production builds need ES-module workers (dev always uses
     // ESM workers regardless).
     worker: {
@@ -126,12 +126,12 @@ export default defineConfig(({ mode }) => {
     },
     // Pre-bundle the Whisper dep at dev-server startup. @huggingface/transformers
     // is imported ONLY inside the whisperWorker Web Worker, and Vite's startup
-    // dependency scanner does not crawl `new Worker(new URL(...))` graphs — so on
+    // dependency scanner does not crawl `new Worker(new URL(...))` graphs â€” so on
     // a cold cache the dep is absent from the initial optimize pass. The FIRST
     // voice call then loads the worker, Vite discovers the heavy new dep, re-runs
     // optimization, and issues a full-page reload ("optimized dependencies
     // changed. reloading"). That reload remounts the app and the bootstrap effect
-    // routes to Home — i.e. clicking "call" bounced the user to the home screen
+    // routes to Home â€” i.e. clicking "call" bounced the user to the home screen
     // (dev only; packaged builds are pre-bundled so never hit this). Forcing the
     // dep into `include` makes it part of the startup optimize pass, so the
     // worker's first load finds it already optimized and no reload fires.
@@ -147,3 +147,7 @@ export default defineConfig(({ mode }) => {
   },
   };
 });
+
+
+
+

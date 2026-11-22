@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AVATAR_Z, defaultRoomState, ITEM_Z, type RoomComponent, type RoomPresetManifest, type RoomState } from './seilinkRoom';
@@ -463,3 +463,7 @@ describe('the bundled cozy pack', () => {
     expect(spotValid(after, 'floor', s.items[0].x, contactY(after, byId('books'), s.items[0]))).toBe(true);
   });
 });
+
+
+
+

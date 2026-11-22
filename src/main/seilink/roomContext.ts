@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink, the AI side (261104): the companion knows the room she lives in.
  *
  * Product feedback: "in all future prompts they should be aware of their environment.
@@ -34,7 +34,7 @@ import { liveRoomFor } from './editorTogether';
 
 export type { RoomContext, RoomSource } from './types';
 
-// ── source + game probe (injected) ──────────────────────────────────────
+// â”€â”€ source + game probe (injected) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let source: RoomSource | null = null;
 let gameProbe: (characterId: string) => boolean = () => false;
@@ -98,12 +98,12 @@ export async function roomForSurface(characterId: string, opts: { inGame: boolea
   }
 }
 
-// ── the prompt line ─────────────────────────────────────────────────────
+// â”€â”€ the prompt line â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Pack text reaches the prompt: one line, no control characters, bounded. */
 export function plainRoomText(raw: string, max = 60): string {
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').trim();
+  const s = raw.replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
   return s.length <= max ? s : s.slice(0, max).trimEnd();
 }
 
@@ -152,7 +152,7 @@ export function roomPromptLine(ctx: RoomContext, opts: { now?: Date; includeTime
   return `${place} ${timeSentence(now)}`;
 }
 
-// ── look() ──────────────────────────────────────────────────────────────
+// â”€â”€ look() â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Offered on the same surfaces as the room line, only when she has a room.
@@ -252,7 +252,7 @@ export function lookResultContent(
   return [...toolResults, ...images.map(roomImageBlock)];
 }
 
-// ── dev stub source ─────────────────────────────────────────────────────
+// â”€â”€ dev stub source â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface DevRoomFile {
   /** Pack root (absolute, or relative to the JSON file). Holds manifest.json. */
@@ -290,3 +290,7 @@ export function devRoomSource(jsonPath: string): RoomSource | null {
     onChange: () => () => {},
   };
 }
+
+
+
+

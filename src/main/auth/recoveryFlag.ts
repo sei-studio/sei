@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Recovery-flow flag shared between authHandlers (which initiates a password
  * reset) and loopbackCallback (which detects the recovery code landing).
  *
@@ -16,7 +16,7 @@
 /**
  * Window in which a marked reset request is still considered "fresh". Supabase
  * recovery links default to a 1-hour lifetime; we use a tighter 15-minute
- * window — comfortably longer than the click-the-email round-trip, short enough
+ * window â€” comfortably longer than the click-the-email round-trip, short enough
  * that a forgotten reset request doesn't shadow a later verification landing.
  */
 const RECOVERY_TTL_MS = 15 * 60 * 1000;
@@ -30,7 +30,7 @@ export function markRecoveryRequested(): void {
 
 /**
  * Returns true (and clears the flag) iff a reset was requested within the TTL
- * window. Returns false — and still clears — for a stale or absent request, so
+ * window. Returns false â€” and still clears â€” for a stale or absent request, so
  * a single call fully resolves the flag either way.
  */
 export function consumeRecoveryRequested(): boolean {
@@ -39,3 +39,7 @@ export function consumeRecoveryRequested(): boolean {
   requestedAt = null;
   return fresh;
 }
+
+
+
+

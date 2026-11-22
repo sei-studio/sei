@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Fold safety fixes (260810), motivated by the 260808 incident where ~20
  * consecutive folds over phantom voice rows (a mic hearing reels audio)
  * progressively destroyed a good summary with no recovery path:
  *
  *   1. An empty/unusable fold output must NOT advance the watermark. The old
  *      `summary: text || bridge.summary` kept the old text while the watermark
- *      still advanced — the evicted messages were silently skipped forever.
+ *      still advanced â€” the evicted messages were silently skipped forever.
  *   2. writeBridge is atomic (tmp + rename) and keeps a one-generation
  *      bridge.prev.json backup before every overwrite.
  *   3. One foldIfDue call drains at most FOLD_MAX_MESSAGES (300), so a huge
@@ -64,7 +64,7 @@ async function readBridgeRaw(): Promise<{ summary: string; summarizedCount: numb
 
 describe('fold safety (260810)', () => {
   it('an empty fold output keeps the watermark so the batch is retried, not skipped', async () => {
-    await seed(100); // window(50) + batch(50) → a fold is due
+    await seed(100); // window(50) + batch(50) â†’ a fold is due
     createSpy.mockImplementationOnce(async () => ({ content: [{ type: 'text', text: '   ' }] }));
     await foldIfDue(CHAR);
     expect(createSpy).toHaveBeenCalledTimes(1);
@@ -118,7 +118,7 @@ describe('fold safety (260810)', () => {
     expect(userText).toContain('msg 299');
     expect(userText).not.toContain('msg 300');
 
-    // Remaining tail is 100 = window + batch → the next call drains 50 more.
+    // Remaining tail is 100 = window + batch â†’ the next call drains 50 more.
     await foldIfDue(CHAR);
     expect(createSpy).toHaveBeenCalledTimes(2);
     bridge = await readBridgeRaw();
@@ -131,3 +131,7 @@ describe('fold safety (260810)', () => {
     expect(ctx.history).toHaveLength(50);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the model catalog parser and default pick, against the
  * plan route shape and the platform list shape the same URL returns for an
  * API key (seen live on 261017).
@@ -61,3 +61,7 @@ describe('CHATGPT_HELP_URL', () => {
     expect(url.pathname).toMatch(/^\/en\/articles\/20001542-using-your-chatgpt-plan-in-other-apps-and-sites$/);
   });
 });
+
+
+
+

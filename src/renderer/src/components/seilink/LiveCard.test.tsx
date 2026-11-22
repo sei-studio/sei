@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveCardView } from './LiveCard';
@@ -38,3 +38,7 @@ describe('LiveCardView (261110)', () => {
     expect(html).toContain('Got it');
   });
 });
+
+
+
+

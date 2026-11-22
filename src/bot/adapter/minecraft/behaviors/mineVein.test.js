@@ -1,4 +1,4 @@
-// gatherAction (260708) — multi-component gather. Pins the Lyra post-mortem
+﻿// gatherAction (260708) â€” multi-component gather. Pins the Lyra post-mortem
 // fix: name-mode keeps re-anchoring on fresh trees until the REQUESTED count
 // is attempted (old behavior stopped after ONE connected component and
 // reported `gathered 1/1`, which read as full success). Also pins: honest
@@ -56,7 +56,7 @@ const TWO_TREES = [
   [10, 64, 0, 'oak_log'], [10, 65, 0, 'oak_log'], [10, 66, 0, 'oak_log'],
 ]
 
-describe('gatherAction — multi-component (260708)', () => {
+describe('gatherAction â€” multi-component (260708)', () => {
   it('continues across trees until the requested count', async () => {
     const { bot, blocks } = makeWorld(TWO_TREES)
     const deps = makeDeps(blocks)
@@ -74,7 +74,7 @@ describe('gatherAction — multi-component (260708)', () => {
   })
 
   it('denominator is the REQUESTED count, not the component size', async () => {
-    // One lonely log — the exact `gathered 1/1` false-success shape from the
+    // One lonely log â€” the exact `gathered 1/1` false-success shape from the
     // Lyra session must now read as 1/16 + exhaustion.
     const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
     const deps = makeDeps(blocks)
@@ -136,7 +136,7 @@ describe('gatherAction — multi-component (260708)', () => {
     ])
     const goTo = vi.fn(async () => 'reached')
     const digAction = vi.fn(async ({ x, y, z }) => {
-      if (x === 2 && y >= 66) return `out of range (5.1m, need ≤4.5) for oak_log @${x},${y},${z}`
+      if (x === 2 && y >= 66) return `out of range (5.1m, need â‰¤4.5) for oak_log @${x},${y},${z}`
       blocks.delete(`${x},${y},${z}`)
       return 'dug oak_log'
     })
@@ -155,7 +155,7 @@ describe('gatherAction — multi-component (260708)', () => {
     ])
     let flaked = false
     const digAction = vi.fn(async ({ x, y, z }) => {
-      if (y === 65 && !flaked) { flaked = true; return 'out of range (4.6m, need ≤4.5) for oak_log' }
+      if (y === 65 && !flaked) { flaked = true; return 'out of range (4.6m, need â‰¤4.5) for oak_log' }
       blocks.delete(`${x},${y},${z}`)
       return 'dug oak_log'
     })
@@ -175,7 +175,7 @@ describe('gatherAction — multi-component (260708)', () => {
       [20, 64, 0, 'oak_log'], [20, 65, 0, 'oak_log'], [20, 66, 0, 'oak_log'],
     ])
     const digAction = vi.fn(async ({ x, y, z }) => {
-      if (y === 66) return `out of range (5.0m, need ≤4.5) for oak_log @${x},${y},${z}`
+      if (y === 66) return `out of range (5.0m, need â‰¤4.5) for oak_log @${x},${y},${z}`
       blocks.delete(`${x},${y},${z}`)
       return 'dug oak_log'
     })
@@ -229,7 +229,7 @@ describe('gatherAction — multi-component (260708)', () => {
   })
 })
 
-describe('gatherAction — end-of-gather drop sweep (260709)', () => {
+describe('gatherAction â€” end-of-gather drop sweep (260709)', () => {
   const noSleep = async () => {}
 
   function withDrops(bot, drops) {
@@ -304,7 +304,7 @@ describe('gatherAction — end-of-gather drop sweep (260709)', () => {
   })
 })
 
-describe('gatherAction — says when the drops never reached the inventory (261011)', () => {
+describe('gatherAction â€” says when the drops never reached the inventory (261011)', () => {
   const noSleep = async () => {}
   it('never counts a block whose drop did not reach the inventory (261012)', async () => {
     const { bot, blocks } = makeWorld([[2, 64, 0, 'oak_log']])
@@ -324,7 +324,7 @@ describe('gatherAction — says when the drops never reached the inventory (2610
   })
 })
 
-describe('gatherAction — loose term that is also a block ID (261011)', () => {
+describe('gatherAction â€” loose term that is also a block ID (261011)', () => {
   const mcData = createRequire(import.meta.url)('minecraft-data')('1.21.1')
   function makeMatchingWorld(blockList) {
     const blocks = new Map()
@@ -378,7 +378,7 @@ describe('gatherAction — loose term that is also a block ID (261011)', () => {
   })
 })
 
-describe('gatherAction — cobblestone comes from stone (261011)', () => {
+describe('gatherAction â€” cobblestone comes from stone (261011)', () => {
   it('mines stone, not placed cobblestone, and says so', async () => {
     const mcData = createRequire(import.meta.url)('minecraft-data')('1.21.1')
     const blocks = new Map([['1,64,0', 'cobblestone'], ['5,64,0', 'stone']])
@@ -407,10 +407,10 @@ describe('gatherAction — cobblestone comes from stone (261011)', () => {
   })
 })
 
-// 261012 — quality eval mine_stone: "gathered 10/10 stone" with 7 to 9
+// 261012 â€” quality eval mine_stone: "gathered 10/10 stone" with 7 to 9
 // cobblestone delivered. The count now comes from the inventory, the batch
 // mines on to make up lost drops, and the sweep tries a drop's own cell.
-describe('gatherAction — counts what reaches the inventory (261012)', () => {
+describe('gatherAction â€” counts what reaches the inventory (261012)', () => {
   const mcData = createRequire(import.meta.url)('minecraft-data')('1.21.1')
   // A row of stone along +x; the bot carries an inventory the dig stub feeds.
   function stoneWorld(n, { far = false } = {}) {
@@ -510,7 +510,7 @@ describe('gatherAction — counts what reaches the inventory (261012)', () => {
     const { bot, blocks } = stoneWorld(6)
     const digAction = vi.fn(async ({ x, y, z }) => {
       blocks.delete(`${x},${y},${z}`)
-      return 'dug stone (no drop — you have no tool that can harvest stone; craft the right pickaxe first)'
+      return 'dug stone (no drop â€” you have no tool that can harvest stone; craft the right pickaxe first)'
     })
     const goTo = vi.fn(async () => 'reached')
     const r = await gatherAction({ name: 'stone', count: 5 }, bot, {}, { goTo, digAction, sleep: noSleep })
@@ -556,3 +556,7 @@ describe('gatherAction — counts what reaches the inventory (261012)', () => {
     expect(r).toBe('gathered 1/1 cobblestone (mined from stone)')
   })
 })
+
+
+
+

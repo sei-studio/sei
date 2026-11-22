@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Own-key (local) import vs the party limit (product call 261116): an import
  * that would put the account's party past MAX_COMPANION_SLOTS imports
  * nothing and leaves the local profile untouched, for a later import from
@@ -217,3 +217,7 @@ describe('importing past the party limit (261116)', () => {
     expect(await exists(path.join(rootOf('local'), 'characters', `${OWN2}.json`))).toBe(true);
   });
 });
+
+
+
+

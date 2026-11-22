@@ -1,4 +1,4 @@
-/**
+﻿/**
  * What changed in her room (261105, T335): a plain list from the room before
  * an editor session to the room after it, for her reaction line and for the
  * next chat or call turn (main/seilink/roomReaction.ts).
@@ -82,7 +82,7 @@ const TIME_WORDS: Readonly<Record<string, string>> = { day: 'daytime', dusk: 'du
 /** Pack text into a clause: one line, no control characters, bounded. */
 function plain(raw: string, max = 40): string {
   // eslint-disable-next-line no-control-regex
-  const s = raw.replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩]/g, ' ').replace(/\s+/g, ' ').trim();
+  const s = raw.replace(/[\u0000-\u001F\u007F\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim();
   return s.length <= max ? s : s.slice(0, max).trimEnd();
 }
 
@@ -273,3 +273,7 @@ export function roomChangeBucket(n: number): '0' | '1' | '2' | '3-5' | '6-10' | 
   if (n <= 10) return '6-10';
   return '11+';
 }
+
+
+
+

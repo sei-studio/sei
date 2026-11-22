@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the ChatGPT-plan session state machine, end to end
  * against the mock auth server: sign-in (new + reauth), account switch,
  * single-flight refresh with rotation, terminal vs transient refresh
@@ -630,3 +630,7 @@ describe('signInFailureDetail (T363 failure log + event)', () => {
     expect(signInFailureDetail("EPERM: operation not permitted, rename 'C:\\Users\\x\\a.tmp'")).toBe('other');
   });
 });
+
+
+
+

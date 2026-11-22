@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat game lookups (260929): the main-side half of the registry in
  * src/shared/backseatGames.ts. A game with `lookup` set gets a "pick your
  * game" step; this maps that kind to its provider. A new provider implements
@@ -59,3 +59,7 @@ export async function resolveGameContext(
     clearTimeout(timer);
   }
 }
+
+
+
+

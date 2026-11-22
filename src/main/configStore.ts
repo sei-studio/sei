@@ -1,18 +1,18 @@
-/**
+﻿/**
  * UserConfig persistence: <userData>/config.json.
  * Reads/writes are Zod-validated and atomic.
  *
  * Sources:
- *   - PATTERNS §src/main/configStore.ts
- *   - CONTEXT D-09 (path), D-12 (schema — no api_key)
+ *   - PATTERNS Â§src/main/configStore.ts
+ *   - CONTEXT D-09 (path), D-12 (schema â€” no api_key)
  *   - fileLock.js for the per-path lock; durableWrite.ts (temp + fsync +
  *     rename) for every write (261031)
  *
  * Phase 13 13-02 (D-57): UserConfigSchema (in src/shared/characterSchema.ts)
- * now carries `ai_backend_kind: 'local' | 'cloud-proxy'` — the single source
+ * now carries `ai_backend_kind: 'local' | 'cloud-proxy'` â€” the single source
  * of truth for whether the bot routes through BYOK (api-key.bin) or Sei's
  * cloud proxy. Read/write via `apiKeyStore.{getAiBackendKind,setAiBackendKind}`
- * — never read the raw field on UserConfig directly so the default
+ * â€” never read the raw field on UserConfig directly so the default
  * fall-through stays inside one helper.
  */
 import { readFile, mkdir, readdir, rename, unlink, open } from 'node:fs/promises';
@@ -609,10 +609,10 @@ async function writeConfigLocked(target: string, next: UserConfig, read: ConfigR
 }
 
 /**
- * Load config. Missing file → DEFAULT_CONFIG. A damaged file is recovered
+ * Load config. Missing file â†’ DEFAULT_CONFIG. A damaged file is recovered
  * (see the resilience notes above) and never throws; only a file that cannot
  * be read at all (permissions) still does.
- * Legacy `persona` field (from CLI users) is silently stripped — migration
+ * Legacy `persona` field (from CLI users) is silently stripped â€” migration
  * runFirstLaunchMigration handles transferring it to characters/sui.json.
  */
 export async function loadConfig(): Promise<UserConfig> {
@@ -713,7 +713,7 @@ export async function configShowsPriorSetup(opts?: { scope?: string }): Promise<
 /**
  * Write a whole config. Seeding and tests only: a main-process writer uses
  * updateConfig (and sets only the keys it owns), a renderer save goes through
- * saveConfigFromRenderer. A load → await → saveConfig round trip reverts
+ * saveConfigFromRenderer. A load â†’ await â†’ saveConfig round trip reverts
  * whatever another writer changed in between (260929).
  */
 export async function saveConfig(config: UserConfig): Promise<void> {
@@ -728,8 +728,8 @@ export async function saveConfig(config: UserConfig): Promise<void> {
 
 /**
  * Atomic read-modify-write of the config under the file lock: `mutate`
- * receives the freshly-read config and returns the next one. Use this — not
- * loadConfig() → saveConfig() — for any update that must not clobber or be
+ * receives the freshly-read config and returns the next one. Use this â€” not
+ * loadConfig() â†’ saveConfig() â€” for any update that must not clobber or be
  * clobbered by a concurrent writer (TOCTOU): a read taken before an await
  * elsewhere can be stale by the time it is written back. Missing config
  * seeds from DEFAULT_CONFIG; a damaged one is recovered first.
@@ -827,7 +827,7 @@ export async function resetConfigKeepingIdentity(opts?: { scope?: string }): Pro
  *
  * 260725: the renderer's settings surfaces hold a whole-config copy taken at
  * mount and save it back wholesale on every toggle, so anything main wrote in
- * between was silently reverted — the recurring "switched back to local" bug
+ * between was silently reverted â€” the recurring "switched back to local" bug
  * (ai_backend_kind), a mid-call language auto-switch (chat_language), and,
  * with a longer fuse, every other main-owned field: a 2h Minecraft session
  * folds into total_playtime_ms under the lock and the next toggle from a
@@ -943,7 +943,7 @@ export async function saveConfigFromRenderer(config: UserConfig): Promise<void> 
   await updateConfig((current) => {
     const next = { ...current } as Record<string, unknown>;
     for (const key of RENDERER_SETTABLE_KEYS) {
-      // Absent (an optional field the renderer's copy never carried) → keep disk.
+      // Absent (an optional field the renderer's copy never carried) â†’ keep disk.
       if (key in incoming) next[key] = incoming[key];
     }
     if ('avatar_prefs' in incoming) {
@@ -981,7 +981,7 @@ export function keepMainAvatarPicks(
  * `total_playtime_ms`. Atomic read-modify-write (updateConfig) so a
  * concurrent settings write can't clobber the increment. Called at session-end so the running total is independent of any single
  * character (it survives a character being deleted). No-op for non-positive
- * deltas. Missing config → seeds from DEFAULT_CONFIG.
+ * deltas. Missing config â†’ seeds from DEFAULT_CONFIG.
  */
 export async function addPlaytimeMs(deltaMs: number): Promise<void> {
   if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
@@ -1017,9 +1017,13 @@ export async function backfillTotalPlaytimeOnce(): Promise<void> {
       : {
           ...cur,
           // max() guards the unlikely case where a session already advanced the total
-          // before the first backfill ran — never shrink an existing total.
+          // before the first backfill ran â€” never shrink an existing total.
           total_playtime_ms: Math.max(cur.total_playtime_ms ?? 0, sum),
           total_playtime_backfilled: true,
         },
   );
 }
+
+
+
+

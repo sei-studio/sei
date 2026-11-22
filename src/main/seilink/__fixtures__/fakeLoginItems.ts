@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fakes of Electron's login item API for the 261107 open-at-login tests
  * (openAtLogin.test.ts, legacyTrayCleanup.openAtLogin.test.ts):
  * macOS SMAppService status, Windows HKCU Run values + StartupApproved.
@@ -83,3 +83,7 @@ export function fakeDeps(
     ...over,
   };
 }
+
+
+
+

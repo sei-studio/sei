@@ -1,4 +1,4 @@
-# Sei companion helper for Don't Starve Together
+﻿# Sei companion helper for Don't Starve Together
 
 A server-only mod that lets a [Sei](https://sei.gg) companion join the
 world you host as a real survivor: it walks beside you, gathers, builds,
@@ -135,3 +135,7 @@ affiliated with Klei.
 ## License
 
 MIT, see `LICENSE`.
+
+
+
+

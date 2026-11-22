@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/pickup.test.js
+﻿// src/bot/adapter/minecraft/behaviors/pickup.test.js
 //
 // 261011: pickup walks onto dropped items, closest first, and reports only
 // what reached the inventory.
@@ -150,3 +150,7 @@ describe('pickup when the item is already in the inventory (261019)', () => {
     expect(times[1]).toBeGreaterThanOrEqual(1500 + 27 * 280)
   })
 })
+
+
+
+

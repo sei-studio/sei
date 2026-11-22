@@ -1,15 +1,15 @@
-/**
- * CallControls — the mute / deafen / hang-up buttons, extracted from
+﻿/**
+ * CallControls â€” the mute / deafen / hang-up buttons, extracted from
  * VoiceCallScreen (260721) so the fullscreen call and GameSurface's in-game
  * call cluster share the EXACT same controls, just at two sizes.
  *
- * 260721 redesign: Discord-ish rounded-rectangle pills in a tight row — filled
+ * 260721 redesign: Discord-ish rounded-rectangle pills in a tight row â€” filled
  * shapes with large hit areas (mic toggle, deafen toggle, red hang-up pill)
  * instead of the old thin outline circles.
  *
  * 260730: an optional fourth pill, the backdrop toggle (mountain), sits between
  * deafen and hang-up. It is opt-in via props because only the fullscreen call
- * view has a backdrop to switch to — GameSurface's cluster passes neither prop
+ * view has a backdrop to switch to â€” GameSurface's cluster passes neither prop
  * and renders the original three.
  *
  * Mute + deafen live in useUiStore (shared across call surfaces); hang-up is
@@ -68,7 +68,7 @@ export interface CallControlsProps {
   /** Runs after endCall() so the host surface can route away. */
   onHangUp?: () => void;
   /**
-   * Backdrop toggle (260730). Omit both and the button is not rendered — only
+   * Backdrop toggle (260730). Omit both and the button is not rendered â€” only
    * the fullscreen call view has a backdrop to switch to, so the in-game
    * cluster keeps the three controls it always had.
    */
@@ -252,3 +252,7 @@ export function CallControls({
     </div>
   );
 }
+
+
+
+

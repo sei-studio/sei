@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RoomSlotId } from '@shared/seilinkRoom';
@@ -52,3 +52,7 @@ describe('room editor slot groups', () => {
     expect(slotGroup('bed', m)).toBe('furniture');
   });
 });
+
+
+
+

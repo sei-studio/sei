@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Launching Stardew Valley with SMAPI (game-adapters M1).
  *
  * Windows: StardewModdingAPI.exe from the game folder. Started this way the
@@ -55,7 +55,7 @@ export async function launchStardew(deps: LaunchDeps = {}): Promise<StardewLaunc
   }
 }
 
-/* ── Is the game running? (261104) ───────────────────────────────────── */
+/* â”€â”€ Is the game running? (261104) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * The game's processes in a process listing (`tasklist /FO CSV /NH` on
@@ -88,3 +88,7 @@ export async function stardewGameRunning(platform: StardewInstallEnv['platform']
     return { running: null, smapi: null };
   }
 }
+
+
+
+

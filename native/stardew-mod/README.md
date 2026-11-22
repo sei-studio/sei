@@ -1,4 +1,4 @@
-# Sei companion mod for Stardew Valley
+﻿# Sei companion mod for Stardew Valley
 
 `SeiCompanion/` is a SMAPI mod (C#, net6.0, SMAPI 4.5+, Stardew Valley 1.6.14+)
 that lets the Sei desktop app put an AI companion into the player's own farm.
@@ -95,3 +95,7 @@ assemblies on the runners) and the release workflow packs it into
 `native/stardew-mod/`, rebuild on a machine with the game
 (`npm run build:stardew-mod`) and commit the refreshed files with the source
 change. A source change without a refreshed build ships the old mod.
+
+
+
+

@@ -1,4 +1,4 @@
-// src/behaviors/face.js — face what you act on (260708).
+﻿// src/behaviors/face.js â€” face what you act on (260708).
 //
 // The avatar should visibly TURN (yaw + pitch) toward a block before breaking
 // or using it, the way a player does. Most mineflayer primitives already
@@ -7,29 +7,29 @@
 // bot.lookAt(..., false)), so this module fills the two real gaps:
 //
 //   1. mineflayer-pathfinder's path-clearing digs call `bot.dig(block, true)`
-//      — forceLook=true snaps the head instantly, so on other players'
+//      â€” forceLook=true snaps the head instantly, so on other players'
 //      screens the bot appears to mine walls it never turned toward. Most of
 //      the visible mining in a cave trip is exactly these digs.
 //   2. mineflayer's smooth look resolves only when the sent yaw converges on
-//      the target ('move'-event check) — knockback or a physics hiccup can
+//      the target ('move'-event check) â€” knockback or a physics hiccup can
 //      stall that promise. Anything that awaits a turn needs a bound.
 //
 // faceBlock() is the bounded smooth turn; installFaceOnDig() wraps bot.dig so
 // EVERY dig path (our digAction, gather/mineVein via digAction, and the
 // pathfinder's own digs) turns before swinging. After the bounded turn the
 // wrapped dig passes forceLook=true, making mineflayer's internal lookAt an
-// instant no-op — already aimed, or snapping the tail of an interrupted turn —
+// instant no-op â€” already aimed, or snapping the tail of an interrupted turn â€”
 // so a dig can never wedge behind an unconverged look.
 import { Vec3 } from 'vec3'
 
-/** Upper bound on the visible turn. Default physics yaw speed is ~172°/s, so
+/** Upper bound on the visible turn. Default physics yaw speed is ~172Â°/s, so
  * a worst-case half-turn converges in ~1s; past this we snap the remainder
  * (see installFaceOnDig) rather than stall the action. */
 export const FACE_TIMEOUT_MS = 1100
 
 /**
  * Smoothly face the center of the block at `position` (yaw AND pitch),
- * bounded by `timeoutMs`. Resolves when aimed or when the bound expires —
+ * bounded by `timeoutMs`. Resolves when aimed or when the bound expires â€”
  * never rejects, never hangs. Accepts a Vec3 or a plain {x,y,z}.
  */
 export async function faceBlock(bot, position, timeoutMs = FACE_TIMEOUT_MS) {
@@ -44,15 +44,15 @@ export async function faceBlock(bot, position, timeoutMs = FACE_TIMEOUT_MS) {
       new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs) }),
     ])
   } catch {
-    /* best-effort — facing must never fail the action that asked for it */
+    /* best-effort â€” facing must never fail the action that asked for it */
   } finally {
     if (timer) clearTimeout(timer)
   }
 }
 
 /**
- * Wrap bot.dig so every dig — including the pathfinder's instant-snap
- * path-clearing digs — visibly turns to the block first. Idempotent (respawn
+ * Wrap bot.dig so every dig â€” including the pathfinder's instant-snap
+ * path-clearing digs â€” visibly turns to the block first. Idempotent (respawn
  * re-runs the spawn behaviors; wrapping twice would double the turn wait).
  * forceLook === 'ignore' is passed through untouched: a caller that opted out
  * of looking entirely keeps that contract.
@@ -68,3 +68,7 @@ export function installFaceOnDig(bot) {
   }
   bot._seiFaceOnDig = true
 }
+
+
+
+

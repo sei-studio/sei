@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rollFields,
@@ -155,3 +155,7 @@ test('academic-professional is near-zero at the youngest band (18-22)', () => {
   const band0Total = Object.values(LIFE_CONTEXT_WEIGHTS).reduce((sum, w) => sum + w[0], 0);
   assert.ok(band0Weight / band0Total < 0.02, 'academic-professional should be near-zero at 18-22');
 });
+
+
+
+

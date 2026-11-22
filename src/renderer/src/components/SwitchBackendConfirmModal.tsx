@@ -1,8 +1,8 @@
-/**
- * SwitchBackendConfirmModal — confirm a cloud ↔ local AI-backend switch.
+﻿/**
+ * SwitchBackendConfirmModal â€” confirm a cloud â†” local AI-backend switch.
  *
  * Switching between managed cloud billing and a local (BYOK) API key is an
- * uncommon, consequential action — it changes how (and whether) the user is
+ * uncommon, consequential action â€” it changes how (and whether) the user is
  * billed and applies to the running bot immediately (see
  * botSupervisor.switchBackend). So it gets an explicit confirmation step rather
  * than a one-click toggle.
@@ -10,7 +10,7 @@
  * 261110: the Playtime tabs open it. One heads-up line per direction (plus
  * the renewal note for a paying subscriber leaving the cloud).
  *
- * Renders through ModalShell; reversible action → primary CTA (not destructive).
+ * Renders through ModalShell; reversible action â†’ primary CTA (not destructive).
  * Esc / scrim-click cancel are suppressed while the switch is in flight.
  */
 import React, { useState } from 'react';
@@ -68,7 +68,7 @@ export function SwitchBackendConfirmModal({
       : t('Your companions will think with your own key or model.');
   const renewNote = !toCloud && plan !== 'free' ? t('Your Sei plan keeps renewing until you cancel it.') : null;
   const ctaLabel = submitting
-    ? t('Switching…')
+    ? t('Switchingâ€¦')
     : toCloud
       ? t('Switch to Sei')
       : toChatgpt
@@ -95,3 +95,7 @@ export function SwitchBackendConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

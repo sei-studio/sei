@@ -1,9 +1,9 @@
-/**
- * CharactersScreen — Home / World tabbed view (Party redesign).
+﻿/**
+ * CharactersScreen â€” Home / World tabbed view (Party redesign).
  *
  * Renders two co-located tab bodies:
  *
- *   - <HomeGrid />   : the party wall (§4.2). Full-height flex panels, one per
+ *   - <HomeGrid />   : the party wall (Â§4.2). Full-height flex panels, one per
  *                      companion slot (MAX_COMPANION_SLOTS = 4, always all
  *                      rendered). Filled slots show full-bleed portrait art,
  *                      the presence line, and a hover-revealed lastline +
@@ -72,7 +72,7 @@ type Tab = 'home' | 'world';
 /**
  * World grid batch size in ROWS (260704). Rows, not cards: cards-per-row is
  * responsive, so WorldGrid measures the live column count off the grid and
- * shows `columns × visibleRows` cards. Each scroll-triggered reveal (261110,
+ * shows `columns Ã— visibleRows` cards. Each scroll-triggered reveal (261110,
  * was a "Load more" click) adds this many rows. Keeps the first paint (and
  * its portrait-download burst) bounded.
  */
@@ -88,13 +88,13 @@ const AUTOLOAD_MARGIN_PX = 400;
 
 /**
  * Dormant-slot gathering figures by wall position (sigil-lab "four
- * variations" set) — slot 1 plays cycle a, slot 2 b, etc., so no two empty
+ * variations" set) â€” slot 1 plays cycle a, slot 2 b, etc., so no two empty
  * slots gather into the same figure.
  */
 const GATHER_CYCLES: readonly GatherCycle[] = ['a', 'b', 'c', 'd'];
 
 /**
- * World grid wireframe rows shown while the first page is in flight — a
+ * World grid wireframe rows shown while the first page is in flight â€” a
  * fixed two-row block (never a partial third row).
  */
 const SKELETON_ROWS = 2;
@@ -102,13 +102,13 @@ const SKELETON_ROWS = 2;
 /**
  * Above-the-fold group reveal: the first two visible World rows stay wireframed
  * until every portrait in them has loaded, then reveal together (no per-card
- * pop-in). This is the safety net — reveal anyway after it elapses so a slow or
+ * pop-in). This is the safety net â€” reveal anyway after it elapses so a slow or
  * broken portrait can never pin the wireframe forever.
  */
 const FIRST_ROWS_REVEAL_TIMEOUT_MS = 4000;
 
 /**
- * Phase 11 plan 19 (D-19, LIB-04) — cloud-only entry shape.
+ * Phase 11 plan 19 (D-19, LIB-04) â€” cloud-only entry shape.
  *
  * The merged listing from chars:list-merged may contain rows that exist in
  * cloud but NOT yet on local disk. Carried over verbatim from HomeScreen.tsx.
@@ -148,7 +148,7 @@ export function CharactersScreen(): React.ReactElement {
 }
 
 /**
- * HomeGrid — the party wall (Party redesign §4.2).
+ * HomeGrid â€” the party wall (Party redesign Â§4.2).
  *
  * All MAX_COMPANION_SLOTS panels always render: filled slots (library
  * characters by last interaction, then cloud-only placeholders), then dormant
@@ -174,7 +174,7 @@ function HomeGrid(): React.ReactElement {
   // of failing mid-expansion. null = hidden.
   const [createLimit, setCreateLimit] = useState<{ resetsAt: string | null } | null>(null);
 
-  // Presence decays online → idle on the shared minute ticker.
+  // Presence decays online â†’ idle on the shared minute ticker.
   useMinuteTick();
 
   // Roster lastlines: live transcript tail when loaded, else the bulk
@@ -185,7 +185,7 @@ function HomeGrid(): React.ReactElement {
     void loadPreviews();
   }, [loadPreviews]);
 
-  // Dormant panel → awaken view, gated on the daily creation quota.
+  // Dormant panel â†’ awaken view, gated on the daily creation quota.
   // checkCreateQuota applies to every backend (local rolling-24h creation log,
   // BYOK included) and fails open on any error, so a transient hiccup never
   // wrongly blocks the path.
@@ -201,7 +201,7 @@ function HomeGrid(): React.ReactElement {
   useEffect(() => {
     // has_been_welcomed is the persisted first-open marker. The greeting
     // header is gone (party wall), but the one-shot flip stays so any future
-    // first-open surface keeps working — do not delete the config plumbing.
+    // first-open surface keeps working â€” do not delete the config plumbing.
     let cancelled = false;
     void (async () => {
       try {
@@ -250,18 +250,18 @@ function HomeGrid(): React.ReactElement {
 
   const handleSummon = (id: string): void => {
     // The panel's "Play" CTA opens the game picker; each tile launches through
-    // the shared summonFlow (skin-setup nudge → LAN gate). Mirrors CharacterPage.
+    // the shared summonFlow (skin-setup nudge â†’ LAN gate). Mirrors CharacterPage.
     openModal({ kind: 'games-picker', characterId: id });
   };
 
   const handleOpen = (id: string): void => {
     // Phase 18/19: a panel click opens the in-app chat (the primary surface);
     // CharacterPage stays reachable via the chat header. Navigate FIRST so the
-    // chat opens instantly — a home card is by definition already in the local
+    // chat opens instantly â€” a home card is by definition already in the local
     // library, so charsOpenPrepare here is only a background freshness check.
     // Firing it AFTER navigation (fire-and-forget) keeps the click from stalling
     // on a Supabase round-trip; the chat works off the cached copy and refreshes
-    // in place. A failure is non-fatal — ChatScreen refetches via its own effect.
+    // in place. A failure is non-fatal â€” ChatScreen refetches via its own effect.
     navigate({ kind: 'chat', characterId: id });
     void sei
       .charsOpenPrepare(id)
@@ -280,7 +280,7 @@ function HomeGrid(): React.ReactElement {
     isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
   );
 
-  // #7 — order the wall by last interaction (summon OR chat), matching the
+  // #7 â€” order the wall by last interaction (summon OR chat), matching the
   // IconRail: most-recently-active first, then created desc. A failed summon
   // never stamps last_launched (backstopped in botSupervisor) and a chat only
   // stamps last_chatted on a successful reply, so failures don't reorder slots.
@@ -295,7 +295,7 @@ function HomeGrid(): React.ReactElement {
     return (b.created ?? '').localeCompare(a.created ?? '');
   });
 
-  // 260703 procgen — exactly MAX_COMPANION_SLOTS (4) slots. Fill order:
+  // 260703 procgen â€” exactly MAX_COMPANION_SLOTS (4) slots. Fill order:
   // library characters by last interaction, then cloud-only placeholder rows
   // (which count toward the 4), capped at 4. Remaining slots render dormant.
   const cloudPlaceholders = cloudOnly
@@ -354,7 +354,7 @@ function HomeGrid(): React.ReactElement {
           // An existing transcript is proof of interaction even when the
           // last_chatted stamp was missed (routed in-game replies, failed
           // turns, old records): never show "New"/"Say hello" over a real
-          // conversation — fold the preview timestamp into presence instead.
+          // conversation â€” fold the preview timestamp into presence instead.
           let pres = presenceOf(c, summons[c.id]);
           if (pres.category === 'new' && preview) {
             pres = presenceOf(
@@ -469,7 +469,7 @@ function HomeGrid(): React.ReactElement {
         })}
         {Array.from({ length: emptyCount }).map((_, i) => {
           // Each wall position keeps its own gathering figure (sigil-lab
-          // cycles a–d), offset 700ms per slot so they don't pulse together.
+          // cycles aâ€“d), offset 700ms per slot so they don't pulse together.
           const slotIdx = slotCharacters.length + i;
           return (
           <div
@@ -521,7 +521,7 @@ function HomeGrid(): React.ReactElement {
 }
 
 /**
- * WorldGrid — public character listing backed by useBrowseStore (§4.4).
+ * WorldGrid â€” public character listing backed by useBrowseStore (Â§4.4).
  *
  * Top bar: search + sort on the left, party-slots indicator on the right.
  * Cards: 3:4 scouting cards whose body opens the character profile; adding to
@@ -556,7 +556,7 @@ function WorldGrid(): React.ReactElement {
     if (!el) return;
     const measure = (): void => {
       // Computed grid-template-columns resolves auto-fill to the actual
-      // track list ("190px 190px …") — its length IS the live column count.
+      // track list ("190px 190px â€¦") â€” its length IS the live column count.
       const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length;
       setColumns((prev) => (prev === cols ? prev : Math.max(1, cols)));
     };
@@ -572,7 +572,7 @@ function WorldGrid(): React.ReactElement {
   const authState = useAuthStore((s) => s.state);
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
 
-  // Party-slots indicator — counts the SAME set the party wall shows (minus
+  // Party-slots indicator â€” counts the SAME set the party wall shows (minus
   // cloud-only placeholders, which have no local row to count here).
   const homeCount = localCharacters.filter((c) =>
     isHomeCharacter(c, currentUserId, addedDefaultIds, addedWorldIds),
@@ -592,17 +592,17 @@ function WorldGrid(): React.ReactElement {
       name: c.name,
       personaSnippet:
         (c.persona.source ?? '').length > 120
-          ? (c.persona.source ?? '').slice(0, 120).trimEnd() + '…'
+          ? (c.persona.source ?? '').slice(0, 120).trimEnd() + 'â€¦'
           : (c.persona.source ?? ''),
       creatorLabel: t('by Sei'),
       // Builtins carry their vanity code in the bundled JSON (#0001-#0003),
-      // matching the cloud rows — surface it like any other World card.
+      // matching the cloud rows â€” surface it like any other World card.
       publicId: c.public_id ?? null,
       portraitUrl: c.portrait_image,
       thumbUrl: null,
       skinUrl: null,
       updatedAt: c.created,
-      // 260703 procgen: defaults are opt-in on Home — "in library" means the
+      // 260703 procgen: defaults are opt-in on Home â€” "in library" means the
       // user invited this default (matches the HomeGrid/IconRail filter).
       inMyLibrary: addedDefaultIds.has(c.id),
       // The add count comes from the defaults' cloud rows (mergeWorldEntries).
@@ -631,7 +631,7 @@ function WorldGrid(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A new search or sort shows a fresh result set — restart at the first
+  // A new search or sort shows a fresh result set â€” restart at the first
   // batch, back at the top.
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -639,7 +639,7 @@ function WorldGrid(): React.ReactElement {
     scrollRef.current?.scrollTo?.({ top: 0 });
   }, [query, worldSort]);
 
-  // Prefetch dedup — one warm-up per id per mount. main's in-flight guard +
+  // Prefetch dedup â€” one warm-up per id per mount. main's in-flight guard +
   // existsSync already make repeats cheap, but this avoids redundant IPC churn
   // when the pointer re-enters the same card.
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -648,7 +648,7 @@ function WorldGrid(): React.ReactElement {
     if (entry.inMyLibrary) return;
     if (prefetchedRef.current.has(entry.id)) return;
     prefetchedRef.current.add(entry.id);
-    // Fire-and-forget: warm the cache-on-demand path. Errors are non-fatal —
+    // Fire-and-forget: warm the cache-on-demand path. Errors are non-fatal â€”
     // handleOpen re-runs the same call and surfaces any real failure there.
     void sei.charsOpenPrepare(entry.id).catch(() => {
       // Allow a later retry on the actual open.
@@ -657,7 +657,7 @@ function WorldGrid(): React.ReactElement {
   };
 
   const handleOpen = (entry: BrowseEntry): void => {
-    // Navigate immediately — CharacterPage self-handles a cache miss on mount
+    // Navigate immediately â€” CharacterPage self-handles a cache miss on mount
     // (its rehydrate effect runs charsOpenPrepare + refresh when the character
     // isn't in the local store yet), showing a wireframe skeleton while the
     // download lands. The hover prefetch above has usually already warmed the
@@ -678,7 +678,7 @@ function WorldGrid(): React.ReactElement {
   });
 
   // Cap the DISPLAY to whole rows; the store keeps its own page size. Cards
-  // render → portraits download, so this cap is what bounds the network burst.
+  // render â†’ portraits download, so this cap is what bounds the network burst.
   const visibleCount = columns * visibleRows;
 
   // Cold open / new search with nothing fetched yet: hold back the bundled
@@ -689,14 +689,14 @@ function WorldGrid(): React.ReactElement {
 
   // Group-reveal gate for the first two visible rows (above the fold): hold
   // their wireframes until every portrait in those rows has actually loaded
-  // (or failed / timed out), then reveal them together — instead of letting
+  // (or failed / timed out), then reveal them together â€” instead of letting
   // each card pop in as its own image streams (260706). Rows past the first
   // two keep the per-card lazy reveal. "Two rows" tracks the live measured
   // column count, so it follows the responsive grid.
   const firstRowsCount = columns * SKELETON_ROWS;
   const firstRowsEntries = shownEntries.slice(0, firstRowsCount);
   // A stable key over the first-rows set: re-gate only when the actual cards
-  // (or their portrait refs) change — not on every render.
+  // (or their portrait refs) change â€” not on every render.
   // 261111: a card loads the small World thumbnail first and the full
   // portrait only when the thumbnail fails (browseArtSources), so the group
   // gate waits on the same sources in the same order.
@@ -711,13 +711,13 @@ function WorldGrid(): React.ReactElement {
     .filter((s): s is { primary: string; fallback: string | null } => !!s.primary);
   const [firstRowsReady, setFirstRowsReady] = useState(false);
   useEffect(() => {
-    // Nothing on screen yet (still fetching page 0) → stay gated so the
+    // Nothing on screen yet (still fetching page 0) â†’ stay gated so the
     // initial-loading skeletons keep holding.
     if (firstRowsEntries.length === 0) {
       setFirstRowsReady(false);
       return;
     }
-    // No portraits to wait on (all procedural) → reveal at once.
+    // No portraits to wait on (all procedural) â†’ reveal at once.
     if (firstRowsSrcs.length === 0) {
       setFirstRowsReady(true);
       return;
@@ -741,7 +741,7 @@ function WorldGrid(): React.ReactElement {
         counted = true;
         finish();
       };
-      // A broken image resolves via onerror — treated as "done" so it never
+      // A broken image resolves via onerror â€” treated as "done" so it never
       // holds the group. A missing thumbnail retries with the full portrait
       // first, as the card itself does.
       let triedFallback = false;
@@ -820,7 +820,7 @@ function WorldGrid(): React.ReactElement {
   }, [nearEnd, loading, pageFailed, initialLoading, windowFilled, hasMoreToShow, visibleCount]);
 
   // Wireframe placeholders while a fetch is in flight: a fixed SKELETON_ROWS
-  // block on a cold open / new search (whole rows only — never a partial
+  // block on a cold open / new search (whole rows only â€” never a partial
   // trailing row), just the unfilled tail slots on a Load-more backfill
   // (row-aligned by construction: visibleCount is a whole-row count). Zero
   // when a background fetch isn't going to change what's on screen.
@@ -849,7 +849,7 @@ function WorldGrid(): React.ReactElement {
           <input
             className={styles.searchField}
             type="search"
-            placeholder={t('Search companions…')}
+            placeholder={t('Search companionsâ€¦')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label={t('Search world companions')}
@@ -866,7 +866,7 @@ function WorldGrid(): React.ReactElement {
         >
           <option value="popular">{t('Popular')}</option>
           <option value="recent">{t('Newest')}</option>
-          <option value="alpha">{t('A–Z')}</option>
+          <option value="alpha">{t('Aâ€“Z')}</option>
         </select>
         <span className={styles.slots}>
           {partyFull
@@ -922,3 +922,7 @@ function WorldGrid(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

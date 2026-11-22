@@ -1,4 +1,4 @@
-/**
+﻿/**
  * surveyBlocks (the snapshot's `nearby blocks:` list), pass 35 (261101).
  *
  * The old path used bot.findBlocks with "anything not air" and a 4096 cap.
@@ -186,3 +186,7 @@ describe('surveyBlocks', () => {
     expect(surveyBlocks(bot)).toEqual({ groups: [], more: 0 })
   })
 })
+
+
+
+

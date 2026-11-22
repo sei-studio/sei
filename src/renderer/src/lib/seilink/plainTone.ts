@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The plain background's colour (261106, first-link v3, product feedback: "start with
  * plain black or white background when the AI spawns in"): black while the
  * computer is in dark mode, white in light mode. Read from the OS through
@@ -59,3 +59,7 @@ export function introEndFor(state: RoomState | null | undefined, tone: PlainTone
   if (state && state.plain !== true) return 'room';
   return tone === 'light' ? 'plain_light' : 'plain_dark';
 }
+
+
+
+

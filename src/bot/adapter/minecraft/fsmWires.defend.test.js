@@ -1,4 +1,4 @@
-// 260730 — the owner-under-attack wire.
+﻿// 260730 â€” the owner-under-attack wire.
 //
 // combat.js emits sei:owner_attacked; this pins the three things the rest of
 // the brain keys off it: the translated shape, the priority tier, and the
@@ -69,7 +69,7 @@ describe('defend prompt framing', () => {
     // 261110 (pass 50): no claim that the mob is now on her; she said it as
     // fact while it was still on the player.
     expect(t).not.toMatch(/turn on YOU/)
-    expect(t).not.toContain('—')
+    expect(t).not.toContain('â€”')
     // It must not tell the model to re-issue the swing the body is running.
     expect(t).toMatch(/do not need to call attackEntity/i)
   })
@@ -87,3 +87,7 @@ describe('defend prompt framing', () => {
     expect(t).toContain('zombie')
   })
 })
+
+
+
+

@@ -1,20 +1,20 @@
-/**
- * Echo gate (260807) — is this mic "utterance" actually the SPEAKERS?
+﻿/**
+ * Echo gate (260807) â€” is this mic "utterance" actually the SPEAKERS?
  *
  * On a call played out loud the microphone hears three voices: the player, the
  * companion's own TTS, and whatever the shared screen is playing. Chromium's
- * echo canceller subtracts only the second — it references Electron's own
+ * echo canceller subtracts only the second â€” it references Electron's own
  * output (the same self-referenced AEC Discord and Zoom run), and it degrades
  * exactly when it matters most: max speaker volume clips the echo, and AEC
- * models a linear path. Nothing anywhere subtracts the third — another app's
+ * models a linear path. Nothing anywhere subtracts the third â€” another app's
  * audio has no reference signal in Chromium, and the big call apps' answer to
  * it is "wear headphones".
  *
  * Measured 260807, two Instagram sessions on speakers at max volume: reel
  * dialogue was transcribed and dispatched as the player's own words (the
  * companion was told `the player said: "Get ready with us, but Stas is picking
- * my outfit..."` and every wrong conclusion she drew — "is that you on
- * camera?" — was correct reasoning over counterfeit input), and her own leaked
+ * my outfit..."` and every wrong conclusion she drew â€” "is that you on
+ * camera?" â€” was correct reasoning over counterfeit input), and her own leaked
  * TTS kept confirming the word-gated barge-in, cutting her off mid-line.
  *
  * Backseat can go beyond the call apps because it already CAPTURES the system
@@ -23,7 +23,7 @@
  * fix; the wiring lives in useVoiceStore (mic side) and captureController
  * (reference side). Two independent tests, combined by the caller:
  *
- *   TEXT      the utterance's words against what the reference was saying —
+ *   TEXT      the utterance's words against what the reference was saying â€”
  *             the companion's audible line (known exactly, zero lag) and the
  *             screen transcript ring (high precision, but Whisper chews 3 s
  *             chunks, so at utterance end the overlapping screen text often
@@ -31,7 +31,7 @@
  *   ENVELOPE  the utterance's loudness contour against the screen audio's,
  *             cross-correlated over the speaker-path lag. Real-time (no STT
  *             lag), and the only witness when the reel is music Whisper
- *             won't transcribe — but it cannot separate double-talk, which
+ *             won't transcribe â€” but it cannot separate double-talk, which
  *             is why it never condemns an utterance whose WORDS differ from
  *             the reference's.
  *
@@ -44,7 +44,7 @@
  */
 
 export interface EnvSample {
-  /** Wall-clock ms (Date.now basis on both sides — same renderer, same clock). */
+  /** Wall-clock ms (Date.now basis on both sides â€” same renderer, same clock). */
   t: number;
   /** dBFS of one short RMS window, floored at ENV_FLOOR_DB. */
   db: number;
@@ -69,7 +69,7 @@ export const ENV_FLOOR_DB = -70;
 
 /** Reference "was actually making sound" bar, and how much of the utterance
  *  window must be over it before an echo verdict is even possible. Quiet
- *  reference → nothing to echo → clean, no correlation needed. */
+ *  reference â†’ nothing to echo â†’ clean, no correlation needed. */
 export const REF_ACTIVE_DB = -50;
 const REF_ACTIVE_MIN = 0.3;
 
@@ -82,7 +82,7 @@ const LAG_MAX_MS = 640;
  * Below this window a correlation is noise, not evidence. Calibrated on
  * synthetic burst envelopes (scratch run, 260807): max-over-lags Pearson on
  * two INDEPENDENT talk-cadence contours reads spurious p90/p99 of 0.84/0.93
- * at 1 s, 0.64/0.82 at 2 s, 0.53/0.66 at 3 s — while a true lagged copy with
+ * at 1 s, 0.64/0.82 at 2 s, 0.53/0.66 at 3 s â€” while a true lagged copy with
  * mic jitter+noise sits at 0.86+ regardless of length. The distributions only
  * separate from ~2.5 s up, so shorter utterances get `valid: false` and their
  * verdict comes from the transcript instead.
@@ -103,7 +103,7 @@ const CORR_SUSPECT = 0.5;
 export const OVERLAP_ECHO = 0.7;
 const OVERLAP_CONFIRM = 0.4;
 export const OVERLAP_FINAL = 0.55;
-/** Companion self-voice bar — her line is known verbatim, so a fragment of it
+/** Companion self-voice bar â€” her line is known verbatim, so a fragment of it
  *  coming back through the mic overlaps almost completely. */
 export const SELF_ECHO_OVERLAP = 0.65;
 
@@ -122,12 +122,12 @@ export function pushEnv(ring: EnvSample[], t: number, db: number, keepMs: number
   while (ring.length && t - ring[0].t > keepMs) ring.shift();
 }
 
-// CJK ideographs + kana (U+2E80–U+9FFF) and hangul syllables (U+AC00–U+D7AF).
-const CJK_RE = /[⺀-鿿가-힯]/;
+// CJK ideographs + kana (U+2E80â€“U+9FFF) and hangul syllables (U+AC00â€“U+D7AF).
+const CJK_RE = /[\u2E80-\u9FFF\uAC00-\uD7AF]/;
 
 /**
- * Tokens for overlap matching: lowercase Latin/digit runs, and — because CJK
- * has no spaces to split on — every CJK character on its own, so a fragment
+ * Tokens for overlap matching: lowercase Latin/digit runs, and â€” because CJK
+ * has no spaces to split on â€” every CJK character on its own, so a fragment
  * of a sentence still overlaps its source. Bracketed/parenthesized engine
  * annotations ("[BLANK_AUDIO]", "(music)") are stripped like hasSpokenWord
  * does.
@@ -250,7 +250,7 @@ export interface EnvCorrelation {
 /**
  * Cross-correlate the mic's loudness contour against the reference's over the
  * speaker-path lag range. dB domain with mean removal, so it compares SHAPE
- * (speech cadence, cuts, beats) rather than absolute level — the speakers are
+ * (speech cadence, cuts, beats) rather than absolute level â€” the speakers are
  * loud at the mic and quiet in the tap numbers, and that must not matter.
  */
 export function envelopeCorrelation(
@@ -286,7 +286,7 @@ export type EchoVerdict = 'echo' | 'clean' | 'ambiguous';
  * First-pass verdict on a mic utterance against the screen reference, with
  * whatever transcript has been chewed so far. 'ambiguous' means: the envelope
  * (or the reference's activity, when the window is too short to correlate)
- * points at the speakers but the words cannot confirm it yet — wait one
+ * points at the speakers but the words cannot confirm it yet â€” wait one
  * bounded screen-STT flush and ask finalScreenEcho.
  */
 export function classifyScreenEcho(args: {
@@ -380,8 +380,12 @@ export function shareVoiceDuring(
   const audible = inWindow.some((s) => s.db >= SHARE_VOICE_DB);
   if (audible && probe.judgedThrough < uttT1) return true;
   const words = probe.transcript
-    .replace(/\[[^\]]*\]|\([^)]*\)|[♪♫]/g, ' ')
+    .replace(/\[[^\]]*\]|\([^)]*\)|[â™ªâ™«]/g, ' ')
     .trim();
   return audible && /\p{L}/u.test(words);
 }
+
+
+
+
 

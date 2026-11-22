@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Tests for src/main/cloud/syncQueue.ts.
  *
  * Sources:
  *   - 11-08-PLAN <behavior> bullets (9 covered behaviors)
- *   - 11-RESEARCH §Pattern 4 (queue shape + backoff schedule)
+ *   - 11-RESEARCH Â§Pattern 4 (queue shape + backoff schedule)
  *   - sessionStore.test.ts (tmpdir + _setUserDataOverride pattern)
  *
  * Mocking strategy: every cross-module dependency the drainer touches is
@@ -182,10 +182,10 @@ describe('syncQueue', () => {
   });
 
   it('enqueueUpsert purges a previously-queued upsert for a now-foreign-owned char', async () => {
-    // First enqueue while owned → lands in the queue.
+    // First enqueue while owned â†’ lands in the queue.
     await enqueueUpsert('abc');
     expect(await readQueueFile()).toHaveLength(1);
-    // Now the same uuid resolves as foreign-owned → re-enqueue purges it.
+    // Now the same uuid resolves as foreign-owned â†’ re-enqueue purges it.
     getCharacterMock.mockResolvedValue({
       id: 'abc',
       name: 'Beep',
@@ -256,7 +256,7 @@ describe('syncQueue', () => {
   it('processNext drains a pending upsert via cloudCharacterClient and removes from queue', async () => {
     await enqueueUpsert('abc');
     await processNext();
-    // Drainer fans out into setImmediate to drain next op — wait one tick so the
+    // Drainer fans out into setImmediate to drain next op â€” wait one tick so the
     // recursive call completes before we read the queue.
     await new Promise(r => setImmediate(r));
     expect(upsertCharacterMock).toHaveBeenCalledTimes(1);
@@ -415,7 +415,7 @@ describe('syncQueue', () => {
     // Ensure dir exists, then write garbage
     await import('node:fs/promises').then(m => m.mkdir(path.dirname(target), { recursive: true }));
     await writeFile(target, 'this is not json {{{');
-    // enqueueUpsert reads then writes — if readQueue threw, this would throw
+    // enqueueUpsert reads then writes â€” if readQueue threw, this would throw
     await expect(enqueueUpsert('abc')).resolves.toBeUndefined();
     const q = await readQueueFile();
     expect(q).toHaveLength(1);
@@ -493,3 +493,7 @@ describe('syncQueue', () => {
     });
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * GameSurface — shared chrome for game panels mounted in the ChatScreen game
+﻿/**
+ * GameSurface â€” shared chrome for game panels mounted in the ChatScreen game
  * area (chess, screen share, the Minecraft launch panel + dashboard).
  *
  * The game area sits on TOP of the chat (260721 top/bottom split); this
@@ -211,7 +211,7 @@ export function GameChromeRow({
           aria-label={t('End game')}
           title={t('End game')}
         >
-          ×
+          Ã—
         </button>
       </div>
 
@@ -305,3 +305,7 @@ export function GameSurface({
     </div>
   );
 }
+
+
+
+

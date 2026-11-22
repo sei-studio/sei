@@ -1,21 +1,21 @@
-/**
- * VoiceCallScreen — the live Discord-style call view (260705, real audio;
+﻿/**
+ * VoiceCallScreen â€” the live Discord-style call view (260705, real audio;
  * multi-companion 260706).
  *
  * 260721: the standard ChatTopBar stays on top (back chevron, avatar, name,
- * tag, controller + phone buttons — identical to the chat header); only the
+ * tag, controller + phone buttons â€” identical to the chat header); only the
  * CONTENT area is the call surface. A cluster of avatars: every companion on
  * the call (lit while speaking, dimmed while idle from the per-companion
- * speaking state) plus the user's own avatar beside them, and a "＋" tile to
+ * speaking state) plus the user's own avatar beside them, and a "ï¼‹" tile to
  * add another companion. A title (the companion's name solo, "Group call"
  * with 2+), a status subtitle (connecting / duration / error), optional
- * caption lines, and the shared CallControls (mute / deafen / hang up — the
+ * caption lines, and the shared CallControls (mute / deafen / hang up â€” the
  * same pills GameSurface's in-game call cluster uses). Reached via
  * view.kind === 'voice-call'.
  *
- * The call session itself lives in useVoiceStore (mic → local Whisper →
- * chat pipeline → TTS queue); this screen renders it and ensures a call is
- * started for the viewed character (idempotent — returning from the mini bar
+ * The call session itself lives in useVoiceStore (mic â†’ local Whisper â†’
+ * chat pipeline â†’ TTS queue); this screen renders it and ensures a call is
+ * started for the viewed character (idempotent â€” returning from the mini bar
  * re-enters without restarting the pipeline). Mute stays in useUiStore,
  * shared with the mini bar.
  */
@@ -127,7 +127,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const liveAt = useVoiceStore((s) => s.liveAt);
   const startCall = useVoiceStore((s) => s.startCall);
   const addParticipant = useVoiceStore((s) => s.addParticipant);
-  // 260725: cloud STT failed on a model-less call — offer the local backup.
+  // 260725: cloud STT failed on a model-less call â€” offer the local backup.
   const sttFallbackPrompt = useVoiceStore((s) => s.sttFallbackPrompt);
   const acceptSttFallback = useVoiceStore((s) => s.acceptSttFallback);
   const dismissSttFallback = useVoiceStore((s) => s.dismissSttFallback);
@@ -176,19 +176,19 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   // Voice-module gate (260705). A call physically needs the ~40 MB Whisper
   // model; if the user skipped the onboarding opt-in, ask before downloading
-  // (popup → yes/no → progress). An already-running background download skips
+  // (popup â†’ yes/no â†’ progress). An already-running background download skips
   // the question and just shows its progress.
   const [gate, setGate] = useState<InstallGate>('checking');
   const [installPct, setInstallPct] = useState(0);
   useEffect(() => {
     let alive = true;
-    // A call already includes this character → the pipeline is already up.
+    // A call already includes this character â†’ the pipeline is already up.
     if (useVoiceStore.getState().participants.includes(characterId)) {
       setGate('ready');
       return;
     }
     // 260725: cloud users without the local-fallback opt-in run calls in the
-    // 'none' local-model mode (Scribe only) — no Whisper model is needed, so
+    // 'none' local-model mode (Scribe only) â€” no Whisper model is needed, so
     // the install gate opens immediately and the call connects without the
     // ~40MB download. A failed config read falls back to the eager gate.
     void sei
@@ -197,7 +197,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       .then((cfg) => {
         if (!alive) return;
         // 260725: kind from the fresh config read (main truth), not the
-        // display store — the store can be UNKNOWN (null) at call time.
+        // display store â€” the store can be UNKNOWN (null) at call time.
         if (sttPolicy(cfg, cfg?.ai_backend_kind ?? 'cloud-proxy').localModel === 'none') {
           setGate('ready');
           return;
@@ -230,16 +230,16 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   };
 
   // Entering this view IS the intent to be on a call (idempotent when the
-  // pipeline is already up for this character, e.g. restore-from-minimize) —
+  // pipeline is already up for this character, e.g. restore-from-minimize) â€”
   // once the voice module is in place. We dial this character AT MOST ONCE per
   // mount: if they later drop from the call (their own end_call, or the call
-  // collapses), we must NOT auto re-dial them back in — that re-entered the
-  // 'connecting' state and snapped the screen back to "Calling…", and made
+  // collapses), we must NOT auto re-dial them back in â€” that re-entered the
+  // 'connecting' state and snapped the screen back to "Callingâ€¦", and made
   // hang-up impossible ("no way to stop, had to quit the app").
   const dialedRef = useRef<string | null>(null);
   useEffect(() => {
     if (gate !== 'ready') return;
-    // Already a member (incl. restore-from-minimize) → nothing to dial.
+    // Already a member (incl. restore-from-minimize) â†’ nothing to dial.
     if (useVoiceStore.getState().participants.includes(characterId)) {
       dialedRef.current = characterId;
       return;
@@ -280,9 +280,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   const companionName = character?.name ?? t('Companion');
   const isGroup = participants.length > 1;
 
-  // ── Backdrop mode (260730) ───────────────────────────────────────────────
+  // â”€â”€ Backdrop mode (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Two views of the same call: the avatar tiles, or the character filling the
-  // window — their custom scene if they have one, otherwise their art.
+  // window â€” their custom scene if they have one, otherwise their art.
   //
   // The preference is keyed on the DIALED character (participants[0], or this
   // screen's character before the call exists) so inviting someone along does
@@ -313,7 +313,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   };
 
   // In backdrop mode the chrome gets out of the art's way and comes back when
-  // the pointer nears the bottom edge — the same reveal GameSurface uses for
+  // the pointer nears the bottom edge â€” the same reveal GameSurface uses for
   // its in-game row. Always revealed while not live, so a call that is ringing
   // or has failed can always be hung up.
   const [nearBottom, setNearBottom] = useState(false);
@@ -343,7 +343,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
   // Header title: the companion's name on a solo call, "Group call" with 2+.
   const title = isGroup ? t('Group call') : companionName;
   // Avatar size shrinks as the roster grows so every companion + the user + the
-  // "＋" tile stay on ONE row (the "＋ pushed to its own ugly second row" fix).
+  // "ï¼‹" tile stay on ONE row (the "ï¼‹ pushed to its own ugly second row" fix).
   const companionCount = participants.length;
   const avatarPx =
     companionCount <= 1 ? 176 : companionCount === 2 ? 140 : companionCount === 3 ? 118 : companionCount === 4 ? 104 : 92;
@@ -352,17 +352,17 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   // Live: the call duration (00:00, ticking). Everything else keeps words.
   // 260725: while a failed turn is being retried (LLM/proxy hiccup) the
-  // duration gives way to "Reconnecting…" so the quiet reads as a connection
+  // duration gives way to "Reconnectingâ€¦" so the quiet reads as a connection
   // blip instead of a frozen companion; the timer returns on success.
   const subtitle =
     status === 'error'
       ? error ?? t('Call failed')
       : status === 'connecting'
-        ? // Outgoing state: always just "Calling…" (no "setting up 99%" — the
+        ? // Outgoing state: always just "Callingâ€¦" (no "setting up 99%" â€” the
           // model-load percentage flashed on every call even from cache, task 3).
-          t('Calling…')
+          t('Callingâ€¦')
         : reconnecting
-          ? t('Reconnecting…')
+          ? t('Reconnectingâ€¦')
           : liveAt !== null
             ? formatDuration(nowTick - liveAt)
             : '00:00';
@@ -406,7 +406,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           ) : gate === 'installing' ? (
             <>
               <p className={styles.installBody}>
-                {t('Downloading the voice module… {pct}%', { pct: installPct })}
+                {t('Downloading the voice moduleâ€¦ {pct}%', { pct: installPct })}
               </p>
               <div
                 className={styles.installBar}
@@ -496,9 +496,9 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
   return (
     <div className={styles.root}>
-      {/* ── Top bar: the standard chat header stays during calls (260721);
+      {/* â”€â”€ Top bar: the standard chat header stays during calls (260721);
           back / phone return to the chat, the controller opens the games
-          picker mid-call. ── */}
+          picker mid-call. â”€â”€ */}
       <ChatTopBar characterId={characterId} />
 
       {/* Three stage layouts, and a share outranks a backdrop: the picture is
@@ -568,7 +568,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
                 {lastHeard ? <p className={styles.captionUser}>{t('You: {text}', { text: lastHeard })}</p> : null}
               </div>
             ) : null}
-            {/* Voice notice (260908): shown regardless of captions — it is a
+            {/* Voice notice (260908): shown regardless of captions â€” it is a
                 status line about the call's voice, not a caption of speech. */}
             {callNotice ? (
               <p className={styles.captionNotice} role="status">
@@ -635,7 +635,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           <>
         {/* Participant cluster (260706): every companion on the call, lit while
           speaking and dimmed while idle (per-companion speaking state), plus the
-          user's own avatar beside them, and a "＋" tile to add another. */}
+          user's own avatar beside them, and a "ï¼‹" tile to add another. */}
       {backdropShown ? null : (
       <div className={styles.cluster}>
         {participants.map((id) => {
@@ -670,7 +670,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
           );
         })}
 
-        {/* The user's own tile — lit with the speaking ring while they talk
+        {/* The user's own tile â€” lit with the speaking ring while they talk
             (same ring the companions get), dimmed when their mic is muted, and
             dimmed while idle in a group call exactly like the companions (so the
             speaker always stands out, whoever it is). */}
@@ -729,7 +729,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
         </>
       )}
 
-      {/* Captions — opt-in (Appearance & feel → Call captions, default off).
+      {/* Captions â€” opt-in (Appearance & feel â†’ Call captions, default off).
           Not rendered at all when off so the reserved min-height collapses and
           the controls sit closer to the name. Deliberately NOT hidden with the
           rest of the chrome in backdrop mode: captions are an accessibility
@@ -750,7 +750,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
 
       {/* Voice notice (260908): a status line about the call's voice (pack
           missing / substitute voice / paused). Deliberately OUTSIDE the
-          captions gate — like the STT fallback prompt below, it is a system
+          captions gate â€” like the STT fallback prompt below, it is a system
           notice, not a caption of anything the companion said. */}
       {callNotice ? (
         <p
@@ -800,7 +800,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
       {/* Backdrop mode: name, status and controls collapse into one bar that
           stays out of the art's way and returns when the pointer nears the
           bottom edge (or anything in it takes focus, so the keyboard can still
-          reach it). Always shown while not live — a ringing or failed call
+          reach it). Always shown while not live â€” a ringing or failed call
           must never be un-hangupable. */}
       {backdropShown ? (
         <div
@@ -833,3 +833,7 @@ export function VoiceCallScreen({ characterId }: VoiceCallScreenProps): React.Re
     </div>
   );
 }
+
+
+
+

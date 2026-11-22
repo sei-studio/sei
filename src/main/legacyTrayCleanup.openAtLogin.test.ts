@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: the retired tray mode's leftover cleanup (legacyTrayCleanup.ts)
  * must never remove the "Open on login" item (seilink/openAtLogin.ts).
  * Runs both the way index.ts does at launch, cleanup first and then the sync,
@@ -126,3 +126,7 @@ describe('legacy tray cleanup vs open at login', () => {
     expect(sync).toBeGreaterThan(cleanup);
   });
 });
+
+
+
+

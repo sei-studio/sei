@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Search QA, desktop text chat (261020).
  *
  *   SEI_QA_CHAR=/path/sui.json npx vitest run --config scripts/search-qa/vitest.config.ts chat
@@ -130,3 +130,7 @@ describe('search QA: desktop chat', () => {
     }
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * uniqueGeneration.test.ts (260703 procgen)
  *
  * Locks in the pure helpers of the unique-companion pipeline:
@@ -6,11 +6,11 @@
  *     + bundled defaults whose id is in config.added_default_ids.
  *   - resolvePrefs: local vs cloud questionnaire reconciliation (cloud wins when
  *     newer; `hasCompleted` drives the first-sign-in gate).
- *   - buildPersonaBlurb / buildDescription: sheet → prompt/text.
+ *   - buildPersonaBlurb / buildDescription: sheet â†’ prompt/text.
  *
  * These are the two logic seams called out for unit coverage (slot count +
  * prefs merge) plus the deterministic sheet-derivation helpers. No electron,
- * network, or LLM is exercised — the module's top-level imports are all pure.
+ * network, or LLM is exercised â€” the module's top-level imports are all pure.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -62,7 +62,7 @@ describe('libraryCharacterCount', () => {
       { id: 'lyra', is_default: true },
       { id: 'marv', is_default: true },
     ];
-    // Only sui is on Home → 1, even though all three exist on disk.
+    // Only sui is on Home â†’ 1, even though all three exist on disk.
     expect(libraryCharacterCount(chars, { added_default_ids: ['sui'] })).toBe(1);
   });
 
@@ -89,7 +89,7 @@ describe('libraryCharacterCount', () => {
 
   it('excludes foreign-owned chars when signed out (mirrors Home; owner-stamped rows are hidden)', () => {
     // Signed out you cannot invite from World, so a cached copy of someone
-    // else's public character can never be a party member — countsAsHomeSlot
+    // else's public character can never be a party member â€” countsAsHomeSlot
     // hides it (returns owner == null), and the count must agree with the grid
     // or chars:save rejects on a visibly non-full Home. Only legacy null-owner
     // rows count.
@@ -184,7 +184,7 @@ describe('resolveDynamic', () => {
   });
 
   it('never re-grants a ranked dynamic (deleting a companion frees no preference)', () => {
-    // Both ranked prefs consumed → random, even though rng would land on rank 1.
+    // Both ranked prefs consumed â†’ random, even though rng would land on rank 1.
     const rngZero = (): number => 0;
     expect(resolveDynamic(ranking, ['caretaker', 'partner-in-crime'], rngZero)).toBe(
       COMPANION_DYNAMICS[0],
@@ -192,20 +192,20 @@ describe('resolveDynamic', () => {
   });
 
   it('rolls a random dynamic once the ranking is exhausted or absent', () => {
-    // rng → 0 picks the first table entry; rng → just-under-1 picks the last.
+    // rng â†’ 0 picks the first table entry; rng â†’ just-under-1 picks the last.
     const rngZero = (): number => 0;
     const rngMax = (): number => 0.999999;
     expect(resolveDynamic([], [], rngZero)).toBe(COMPANION_DYNAMICS[0]);
     expect(resolveDynamic(null, null, rngMax)).toBe(COMPANION_DYNAMICS[COMPANION_DYNAMICS.length - 1]);
     expect(resolveDynamic(undefined, undefined, rngZero)).toBe(COMPANION_DYNAMICS[0]);
-    // Every cast has a dynamic — random rolls stay within the closed set.
+    // Every cast has a dynamic â€” random rolls stay within the closed set.
     for (let i = 0; i < 50; i += 1) {
       expect(COMPANION_DYNAMICS).toContain(resolveDynamic([], [], Math.random));
     }
   });
 });
 
-describe('COMPANION_DYNAMICS ↔ soulcaster DYNAMICS key sync', () => {
+describe('COMPANION_DYNAMICS â†” soulcaster DYNAMICS key sync', () => {
   it('every client dynamic key exists in soulcaster (a drift fails casts at runtime)', async () => {
     const { DYNAMICS } = await import('soulcaster');
     // Exact two-way match: a key soulcaster grew that the client can't offer
@@ -318,7 +318,7 @@ describe('buildPersonaBlurb / buildDescription', () => {
   });
 
   it('omits the Appearance line when the sheet carries no appearance data', () => {
-    // SAMPLE_SHEET.appearance is {} — defensive fixture for older/incomplete sheets.
+    // SAMPLE_SHEET.appearance is {} â€” defensive fixture for older/incomplete sheets.
     const blurb = buildPersonaBlurb(SAMPLE_SHEET);
     expect(blurb).not.toContain('Appearance:');
   });
@@ -355,7 +355,7 @@ describe('buildPersonaBlurb / buildDescription', () => {
   it('is a one-sentence identity summary that never leaks the backstory', () => {
     const desc = buildDescription(SAMPLE_SHEET);
     // species_detail is trimmed to its leading noun phrase ("wood elf", not
-    // "…with tapered ears" — appearance stays off the card).
+    // "â€¦with tapered ears" â€” appearance stays off the card).
     expect(desc).toBe('Mirelle, a wry and warm wood elf.');
     expect(desc).not.toContain('canopy village');
     expect(desc).not.toContain('rivers');
@@ -373,7 +373,7 @@ describe('buildPersonaBlurb / buildDescription', () => {
         tone: 'sardonic and calculating; quick to joke about circumstances but always thinking three moves ahead',
       },
     };
-    // Long compound tone → first clause only; appearance never surfaces.
+    // Long compound tone â†’ first clause only; appearance never surfaces.
     expect(buildDescription(sheet)).toBe('Layla, a sardonic and calculating human.');
   });
 
@@ -385,7 +385,7 @@ describe('buildPersonaBlurb / buildDescription', () => {
   it('recovers from sentence-style tone and species_detail (Anaya regression)', () => {
     // Real 260705 sheet output: tone and species_detail came back as full
     // sentences, producing "Anaya, a Anaya speaks with unhurried calm Anaya is
-    // a wolf-person." — the sentence tone is dropped, the species lead-in is
+    // a wolf-person." â€” the sentence tone is dropped, the species lead-in is
     // stripped.
     const sheet = {
       ...SAMPLE_SHEET,
@@ -400,12 +400,12 @@ describe('buildPersonaBlurb / buildDescription', () => {
   it('lowercases capitalized tone and species tags mid-sentence', () => {
     const sheet = {
       ...SAMPLE_SHEET,
-      name: 'Sölvi',
+      name: 'SÃ¶lvi',
       background: 'robot',
       species_detail: 'Android chassis',
       personality: { ...SAMPLE_SHEET.personality, tone: 'Direct and candid' },
     };
-    expect(buildDescription(sheet)).toBe('Sölvi, a direct and candid android chassis.');
+    expect(buildDescription(sheet)).toBe('SÃ¶lvi, a direct and candid android chassis.');
   });
 
   it('prefers a soulcaster-authored card_line over the derived tone/species line', () => {
@@ -447,7 +447,7 @@ describe('computeCropWindow (zoom-to-character geometry)', () => {
     // winH = round(672 / 0.75) = 896; winW = round(896 * 4/7) = 512.
     expect(win!.height).toBe(896);
     expect(win!.width).toBe(512);
-    // Subject height / crop height ≈ 0.75.
+    // Subject height / crop height â‰ˆ 0.75.
     expect(672 / win!.height).toBeCloseTo(0.75, 2);
     // 4:7 aspect preserved.
     expect(win!.width / win!.height).toBeCloseTo(4 / 7, 3);
@@ -481,7 +481,7 @@ describe('computeCropWindow (zoom-to-character geometry)', () => {
 
   it('rescues a full standing figure (tall narrow bbox) by cropping to the upper body', () => {
     // Anaya regression (260705): a full-body render fills ~99% of the frame
-    // height (bbox h/w 2.75), so the whole-subject window cannot fit — but a
+    // height (bbox h/w 2.75), so the whole-subject window cannot fit â€” but a
     // no-op leaves the face a tiny sliver at the top. Expect an upper-body
     // window anchored at the figure's top, 4:7, torso-fraction sized.
     const win = computeCropWindow({ left: 180, top: 0, width: 605, height: 1663 }, W, H);
@@ -497,7 +497,7 @@ describe('computeCropWindow (zoom-to-character geometry)', () => {
 
   it('still no-ops for a frame-filling WAIST-UP subject (wide bbox, h/w < 2.4)', () => {
     // The existing no-op case: subject fills the frame but is not a standing
-    // figure — cropping would just cut into a compliant composition.
+    // figure â€” cropping would just cut into a compliant composition.
     expect(computeCropWindow({ left: 20, top: 40, width: 900, height: 1600 }, W, H)).toBeNull();
   });
 });
@@ -507,7 +507,7 @@ describe('estimateCharacterBBox (focus-energy detector)', () => {
   const h = 420;
 
   // Grayscale raster (1 channel) with a high-frequency checkerboard block over
-  // a flat background — mimics a sharp subject on a blurred (flat) background.
+  // a flat background â€” mimics a sharp subject on a blurred (flat) background.
   function raster(fill: (x: number, y: number) => number): Uint8Array {
     const g = new Uint8Array(w * h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) g[y * w + x] = fill(x, y);
@@ -515,12 +515,12 @@ describe('estimateCharacterBBox (focus-energy detector)', () => {
   }
 
   it('locates a centered sharp block against a flat background', () => {
-    // Subject occupies x∈[0.3,0.7)·w, y∈[0.3,0.7)·h → ~40% of each dimension.
+    // Subject occupies xâˆˆ[0.3,0.7)Â·w, yâˆˆ[0.3,0.7)Â·h â†’ ~40% of each dimension.
     const x0 = Math.round(0.3 * w), x1 = Math.round(0.7 * w);
     const y0 = Math.round(0.3 * h), y1 = Math.round(0.7 * h);
     const g = raster((x, y) => {
       if (x >= x0 && x < x1 && y >= y0 && y < y1) return (x + y) % 2 === 0 ? 40 : 210;
-      return 128; // flat background → zero Laplacian energy
+      return 128; // flat background â†’ zero Laplacian energy
     });
     const bbox = estimateCharacterBBox(g, w, h, 1);
     expect(bbox).not.toBeNull();
@@ -537,8 +537,12 @@ describe('estimateCharacterBBox (focus-energy detector)', () => {
   });
 
   it('returns null when the whole frame is textured (weak separation, blur failed)', () => {
-    // Checkerboard everywhere → peak energy ≈ median energy → separation gate.
+    // Checkerboard everywhere â†’ peak energy â‰ˆ median energy â†’ separation gate.
     const g = raster((x, y) => ((x + y) % 2 === 0 ? 40 : 210));
     expect(estimateCharacterBBox(g, w, h, 1)).toBeNull();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { ChatMessage } from '@shared/ipc';
 import { bubbleMs, freshCompanionLine } from './togetherBubble';
 
@@ -26,3 +26,7 @@ describe('her bubble in the shared editor', () => {
     expect(bubbleMs('x'.repeat(500))).toBe(12_000);
   });
 });
+
+
+
+

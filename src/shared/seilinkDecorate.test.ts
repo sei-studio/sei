@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultRoomState, plainRoomState, type RoomPresetManifest, type RoomState } from './seilinkRoom';
@@ -209,14 +209,14 @@ describe('tool text', () => {
     for (const m of [cozy, gamer, forest]) {
       const t = decorateCatalog(m);
       expect(t.length).toBeLessThan(1600);
-      expect(t).not.toMatch(/—|friend/);
+      expect(t).not.toMatch(/â€”|friend/);
     }
   });
   it('the schema caps the change list', () => {
     const t = decorateTool(cozy);
     expect(t.name).toBe('decorate');
     expect((t.input_schema.properties as { changes: { maxItems: number } }).changes.maxItems).toBe(DECORATE_MAX_CHANGES);
-    expect(t.description).not.toMatch(/—|friend/);
+    expect(t.description).not.toMatch(/â€”|friend/);
   });
 });
 
@@ -247,3 +247,7 @@ describe('the plain first state (261106, first-link v3)', () => {
     expect(roomNowLine(cozy, room())).not.toMatch(/no room yet/);
   });
 });
+
+
+
+

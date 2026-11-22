@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for src/main/cloud/deletionQueueWriter.
  *
  * Source: 11-10-PLAN <behavior> bullets:
@@ -8,7 +8,7 @@
  *   - RLS denial throws CLOUD_DELETION_QUEUE_INSERT_FAILED
  *   - Empty paths array is a no-op (does not call supabase)
  *
- * Mock strategy: mirror cloudCharacterClient.test.ts — vi.mock the
+ * Mock strategy: mirror cloudCharacterClient.test.ts â€” vi.mock the
  * supabaseClient singleton with a hand-rolled mock chain we can inspect.
  */
 
@@ -23,7 +23,7 @@ interface MockState {
   insert: CapturedInsert;
   insertError: { message: string } | null;
   fromCalls: string[];
-  /** When true the insert hangs and honors the AbortSignal — used to test timeout */
+  /** When true the insert hangs and honors the AbortSignal â€” used to test timeout */
   hangInsert: boolean;
 }
 
@@ -135,3 +135,7 @@ describe('deletionQueueWriter.enqueueStorageOrphans', () => {
     vi.useRealTimers();
   });
 });
+
+
+
+

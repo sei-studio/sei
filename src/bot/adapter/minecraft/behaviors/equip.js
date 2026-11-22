@@ -1,4 +1,4 @@
-// src/behaviors/equip.js — equip an item to a slot (D-22)
+﻿// src/behaviors/equip.js â€” equip an item to a slot (D-22)
 import { reason } from '../../../brain/errStrings.js'
 import { armorSlotFor, wornArmor } from './armor.js'
 
@@ -42,3 +42,7 @@ export async function equipAction(args, bot, config) {
 
   return Promise.race([op, tmo, abrt])
 }
+
+
+
+

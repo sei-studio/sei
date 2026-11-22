@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MIN_UNISEX_FOR_OTHER,
@@ -26,7 +26,7 @@ test('no name twice within a heritage; single given names only', () => {
   for (const [h, e] of Object.entries(NAME_POOL)) {
     const all = [...e.female, ...e.male, ...e.unisex];
     assert.equal(new Set(all.map(normalizeName)).size, all.length, h);
-    for (const n of all) assert.doesNotMatch(n, /\s|—/);
+    for (const n of all) assert.doesNotMatch(n, /\s|â€”/);
   }
 });
 
@@ -133,3 +133,7 @@ test('data matches the proxy copy shape (spot check)', () => {
   assert.ok(NAME_POOL.korean.female.includes('Seo-yeon'));
   assert.ok(NAME_POOL['fantasy-invented'].unisex.includes('Ember'));
 });
+
+
+
+

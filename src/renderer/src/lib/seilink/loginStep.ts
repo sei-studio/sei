@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "Open on login" step (product call 261107): asked once, right after
  * the guided room setup's Done, when the room is hers. Pure helpers for
  * RoomEditor; main owns the setting (main/seilink/openAtLogin.ts).
@@ -42,3 +42,7 @@ export function ipcOpenAtLoginSource(): OpenAtLoginSource | null {
   if (!get || !set) return null;
   return { get: () => get(), set: (enabled) => set(enabled, 'setup') };
 }
+
+
+
+

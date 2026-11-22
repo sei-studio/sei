@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Open on login" for WorldLink (261107, product call 261107).
  *
  * Shared by main (src/main/seilink/openAtLogin.ts, the OS login item) and the
@@ -54,3 +54,7 @@ export const OPEN_AT_LOGIN_CHANGED_EVENT = 'seilink_login_item_changed';
 export const OPEN_AT_LOGIN_FAILED_EVENT = 'seilink_login_item_failed';
 export const LOGIN_LAUNCH_EVENT = 'seilink_login_launch';
 export const LOGIN_LAUNCH_OPENED_EVENT = 'seilink_login_launch_opened';
+
+
+
+

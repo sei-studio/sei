@@ -1,5 +1,5 @@
-/**
- * PlanButton — the big buy / upgrade button on every place a Sei plan or a
+﻿/**
+ * PlanButton â€” the big buy / upgrade button on every place a Sei plan or a
  * credit pack is picked (261023): the plan cards on the Credits screen, the
  * extra-credit packages (TopUpModal) and the usage-limit popup's Upgrade.
  *
@@ -108,3 +108,7 @@ export function PlanCheckIcon(): React.ReactElement {
     </svg>
   );
 }
+
+
+
+

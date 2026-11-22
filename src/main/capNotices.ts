@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cap notices outside the app window (261120, v0.7.0 release gate).
  *
  * Two notices tell the player about money:
@@ -59,38 +59,38 @@ export const CAP_NOTICE_COPY: Record<
     spendBody: 'Your own key spend passed {amount} this month.',
   },
   zh: {
-    wallTitle: '已达使用上限',
-    wallBody: '你已用完本周额度。',
-    spendTitle: '花费提醒',
-    spendBody: '本月你自己密钥的花费已超过 {amount}。',
+    wallTitle: 'å·²è¾¾ä½¿ç”¨ä¸Šé™',
+    wallBody: 'ä½ å·²ç”¨å®Œæœ¬å‘¨é¢åº¦ã€‚',
+    spendTitle: 'èŠ±è´¹æé†’',
+    spendBody: 'æœ¬æœˆä½ è‡ªå·±å¯†é’¥çš„èŠ±è´¹å·²è¶…è¿‡ {amount}ã€‚',
   },
   ja: {
-    wallTitle: '使用上限に到達',
-    wallBody: '今週の付与分を使い切りました。',
-    spendTitle: '費用アラート',
-    spendBody: '今月の自分のキーでの費用が{amount}を超えました。',
+    wallTitle: 'ä½¿ç”¨ä¸Šé™ã«åˆ°é”',
+    wallBody: 'ä»Šé€±ã®ä»˜ä¸Žåˆ†ã‚’ä½¿ã„åˆ‡ã‚Šã¾ã—ãŸã€‚',
+    spendTitle: 'è²»ç”¨ã‚¢ãƒ©ãƒ¼ãƒˆ',
+    spendBody: 'ä»Šæœˆã®è‡ªåˆ†ã®ã‚­ãƒ¼ã§ã®è²»ç”¨ãŒ{amount}ã‚’è¶…ãˆã¾ã—ãŸã€‚',
   },
   ru: {
-    wallTitle: 'Лимит использования исчерпан',
-    wallBody: 'Кредиты за эту неделю закончились.',
-    spendTitle: 'Оповещение о расходах',
-    spendBody: 'Расходы по твоему ключу в этом месяце превысили {amount}.',
+    wallTitle: 'Ð›Ð¸Ð¼Ð¸Ñ‚ Ð¸ÑÐ¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ð½Ð¸Ñ Ð¸ÑÑ‡ÐµÑ€Ð¿Ð°Ð½',
+    wallBody: 'ÐšÑ€ÐµÐ´Ð¸Ñ‚Ñ‹ Ð·Ð° ÑÑ‚Ñƒ Ð½ÐµÐ´ÐµÐ»ÑŽ Ð·Ð°ÐºÐ¾Ð½Ñ‡Ð¸Ð»Ð¸ÑÑŒ.',
+    spendTitle: 'ÐžÐ¿Ð¾Ð²ÐµÑ‰ÐµÐ½Ð¸Ðµ Ð¾ Ñ€Ð°ÑÑ…Ð¾Ð´Ð°Ñ…',
+    spendBody: 'Ð Ð°ÑÑ…Ð¾Ð´Ñ‹ Ð¿Ð¾ Ñ‚Ð²Ð¾ÐµÐ¼Ñƒ ÐºÐ»ÑŽÑ‡Ñƒ Ð² ÑÑ‚Ð¾Ð¼ Ð¼ÐµÑÑÑ†Ðµ Ð¿Ñ€ÐµÐ²Ñ‹ÑÐ¸Ð»Ð¸ {amount}.',
   },
   'pt-BR': {
     wallTitle: 'Limite de uso atingido',
-    wallBody: 'Você usou os créditos desta semana.',
+    wallBody: 'VocÃª usou os crÃ©ditos desta semana.',
     spendTitle: 'Alerta de gastos',
-    spendBody: 'O gasto com sua própria chave passou de {amount} este mês.',
+    spendBody: 'O gasto com sua prÃ³pria chave passou de {amount} este mÃªs.',
   },
   es: {
-    wallTitle: 'Límite de uso alcanzado',
-    wallBody: 'Ya usaste los créditos de esta semana.',
+    wallTitle: 'LÃ­mite de uso alcanzado',
+    wallBody: 'Ya usaste los crÃ©ditos de esta semana.',
     spendTitle: 'Alerta de gasto',
-    spendBody: 'El gasto con tu propia clave superó {amount} este mes.',
+    spendBody: 'El gasto con tu propia clave superÃ³ {amount} este mes.',
   },
   it: {
     wallTitle: 'Limite di utilizzo raggiunto',
-    wallBody: 'Hai esaurito la disponibilità di questa settimana.',
+    wallBody: 'Hai esaurito la disponibilitÃ  di questa settimana.',
     spendTitle: 'Avviso di spesa',
     spendBody: 'La spesa con la tua chiave ha superato {amount} questo mese.',
   },
@@ -219,7 +219,7 @@ export function createCapNotices(deps: CapNoticeDeps) {
 
 export type CapNotices = ReturnType<typeof createCapNotices>;
 
-// ── Process-level instance ──────────────────────────────────────────────────
+// â”€â”€ Process-level instance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // index.ts installs the real one once the app is ready; before that (and in
 // tests that never install one) every call is a no-op.
 
@@ -258,3 +258,7 @@ export function ackPendingSpendAlert(): void {
 export function _resetCapNoticesForTests(): void {
   instance = null;
 }
+
+
+
+

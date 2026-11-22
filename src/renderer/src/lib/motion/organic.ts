@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Organic motion (261116, product call 261116: "movement is jittery, idle
  * feels like a still picture"). Pure building blocks every avatar view uses
  * for its idle life, so a face set, a Live2D model, a layered rig and a
@@ -95,7 +95,7 @@ export class Wander {
   }
 }
 
-// ── Blink ───────────────────────────────────────────────────────────────────
+// â”€â”€ Blink â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const BLINK_CLOSE_MS = 65;
 export const BLINK_HOLD_MS = 45;
@@ -178,7 +178,7 @@ export class Blinker {
   }
 }
 
-// ── Gaze ────────────────────────────────────────────────────────────────────
+// â”€â”€ Gaze â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface GazePoint {
   x: number;
@@ -484,3 +484,7 @@ export class GazeDriver {
     return o;
   }
 }
+
+
+
+

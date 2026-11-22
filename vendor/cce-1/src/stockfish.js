@@ -1,4 +1,4 @@
-/**
+﻿/**
  * In-process Stockfish (WASM, lite single-threaded) with a small typed API.
  *
  * The engine build under ../engines/ is stockfish.js 18 lite-single
@@ -6,7 +6,7 @@
  * MIT-licensed loader that ships with the stockfish npm package.
  * Analyses run sequentially: individual UCI commands ride an internal queue,
  * and each analysis additionally holds a transaction lock over its whole
- * setoption/position/go sequence (see _transaction) — one engine, one search
+ * setoption/position/go sequence (see _transaction) â€” one engine, one search
  * at a time, which is all CCE needs.
  */
 
@@ -198,3 +198,7 @@ export class StockfishEngine {
     }
   }
 }
+
+
+
+

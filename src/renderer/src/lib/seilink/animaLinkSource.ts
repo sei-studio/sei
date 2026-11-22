@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The app's WorldLink progress source (261106 v6): the status lines follow
  * her Anima face set (main/anima/animaClient.ts, its `stage` on every
  * AnimaStatus) and the desktop host's start.
@@ -127,3 +127,7 @@ export function animaLinkSource(characterId: string, hostOutcome: Promise<boolea
     },
   };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime > My keys (261110, product call 261110; mocks 04 and 05; the
  * mocks call it "Local").
  *
@@ -169,7 +169,7 @@ function BrainSection({
                 value={draft}
                 onChange={setDraft}
                 type="password"
-                placeholder="sk-…"
+                placeholder="sk-â€¦"
                 autoFocus
                 onEnter={() => void onSaveKey()}
                 aria-label={t('API key')}
@@ -203,7 +203,7 @@ function BrainSection({
               ) : (
                 <>
                   <span className={hasKey ? styles.mono : `${styles.mono} ${styles.warn}`}>
-                    {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
+                    {hasKey ? 'â€¢'.repeat(KEY_BULLETS) : t('Not set')}
                   </span>
                   <Button kind="ghost" size="sm" onClick={() => setEditing(true)}>
                     {hasKey ? t('Change key') : t('Add key')}
@@ -310,3 +310,7 @@ function SpendSection({
     </>
   );
 }
+
+
+
+

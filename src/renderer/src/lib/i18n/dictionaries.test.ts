@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { formatMessage, type UiLanguage } from '@shared/uiLanguage';
 import { DICTIONARIES } from './index';
 
@@ -18,9 +18,9 @@ const OPTIONAL: Record<string, readonly string[]> = {
 
 /** Words for "friend" a companion must never be called (house rule). */
 const FRIEND: Record<(typeof ADDED)[number], RegExp> = {
-  ja: /友達|友だち|ともだち|フレンド|友人|親友/,
-  ru: /(?<![а-яё])(друг|друга|другу|другом|друге|друзья|друзей|друзьям|друзьями|друзьях|дружище|подруг[а-яё]*)(?![а-яё])/iu,
-  'pt-BR': /\b(amig[oa]s?|amiguinh[oa]s?|parceir[oa]s?|parças?)\b/iu,
+  ja: /å‹é”|å‹ã ã¡|ã¨ã‚‚ã ã¡|ãƒ•ãƒ¬ãƒ³ãƒ‰|å‹äºº|è¦ªå‹/,
+  ru: /(?<![Ð°-ÑÑ‘])(Ð´Ñ€ÑƒÐ³|Ð´Ñ€ÑƒÐ³Ð°|Ð´Ñ€ÑƒÐ³Ñƒ|Ð´Ñ€ÑƒÐ³Ð¾Ð¼|Ð´Ñ€ÑƒÐ³Ðµ|Ð´Ñ€ÑƒÐ·ÑŒÑ|Ð´Ñ€ÑƒÐ·ÐµÐ¹|Ð´Ñ€ÑƒÐ·ÑŒÑÐ¼|Ð´Ñ€ÑƒÐ·ÑŒÑÐ¼Ð¸|Ð´Ñ€ÑƒÐ·ÑŒÑÑ…|Ð´Ñ€ÑƒÐ¶Ð¸Ñ‰Ðµ|Ð¿Ð¾Ð´Ñ€ÑƒÐ³[Ð°-ÑÑ‘]*)(?![Ð°-ÑÑ‘])/iu,
+  'pt-BR': /\b(amig[oa]s?|amiguinh[oa]s?|parceir[oa]s?|parÃ§as?)\b/iu,
   es: /\b(amig[oa]s?|amiguit[oa]s?|parcer[oa]s?|cuates?|colegas?)\b/iu,
   it: /\b(amic[oaie]|amichet[taoie]+)\b/iu,
 };
@@ -55,7 +55,7 @@ describe.each(ADDED)('%s dictionary', (lang) => {
     const bad: string[] = [];
     for (const [k, v] of Object.entries(dict)) {
       if (!v.trim()) bad.push(`empty: ${k}`);
-      if (v.includes('—')) bad.push(`em dash: ${k}`);
+      if (v.includes('â€”')) bad.push(`em dash: ${k}`);
       if (FRIEND[lang].test(v) && !/friend/i.test(k)) bad.push(`friend: ${k} -> ${v}`);
     }
     expect(bad).toEqual([]);
@@ -96,3 +96,7 @@ describe.each(ADDED)('%s dictionary', (lang) => {
     expect(bad).toEqual([]);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 260926: the UNSUPPORTED_MC_VERSION text names the versions Sei can join.
+﻿// 260926: the UNSUPPORTED_MC_VERSION text names the versions Sei can join.
 // 19 people in 30 days hit this class on Minecraft 26.2 / 26.3, and the copy
 // they saw named no version at all. A plain "oldest to newest" range hid the
 // gaps (1.9 to 1.9.2, 1.11, 1.12.1, ... are not joinable), so the text lists
@@ -38,7 +38,7 @@ describe('supportedRangeText', () => {
     expect(text).not.toMatch(/\b1\.9(,| to)/) // 1.9 itself is not joinable
     const newest = minecraftProtocol.supportedVersions.at(-1)
     expect(text).toContain(newest)
-    expect(text).not.toMatch(/—/)
+    expect(text).not.toMatch(/â€”/)
   })
 
   it('matches the renderer copy (src/shared/mcSetup.ts) exactly', () => {
@@ -49,3 +49,7 @@ describe('supportedRangeText', () => {
     expect(supportedRangeText()).toBe(shared)
   })
 })
+
+
+
+

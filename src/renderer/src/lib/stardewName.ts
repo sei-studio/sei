@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The companion's in-game name in Stardew Valley. MIRROR of
  * src/main/games/stardew/index.ts effectiveStardewName and
  * src/bot/adapter/stardew/runtime.js botUsernameFor: readable display name,
@@ -12,3 +12,7 @@ export function effectiveStardewName(c: Pick<Character, 'username' | 'name'>): s
   const raw = (c.username ?? '').trim() || String(c.name || '');
   return stardewNameFromRaw(raw);
 }
+
+
+
+

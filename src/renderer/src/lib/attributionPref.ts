@@ -1,4 +1,4 @@
-/**
+﻿/**
  * attributionPref (261001): "Where did you hear about Sei?" is asked ONCE per
  * machine, during first-run onboarding.
  *
@@ -105,3 +105,7 @@ function safeStorage(): Storage | null {
     return null;
   }
 }
+
+
+
+

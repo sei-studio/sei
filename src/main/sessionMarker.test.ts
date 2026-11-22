@@ -1,4 +1,4 @@
-/** 261031 (T278): the session marker survives a refused rename (Windows AV / indexer). */
+﻿/** 261031 (T278): the session marker survives a refused rename (Windows AV / indexer). */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -127,3 +127,7 @@ describe('recordFailedStart (T280: starts that died before crash reporting)', ()
     expect(readPreviousSession(file).prevExit).toBe('start_failed');
   });
 });
+
+
+
+

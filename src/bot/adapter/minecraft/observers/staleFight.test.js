@@ -1,4 +1,4 @@
-// 261111 (quality pass 51): stale kill / threat state in free play.
+﻿// 261111 (quality pass 51): stale kill / threat state in free play.
 //
 // combat_night evals (11-06 to 11-10, 18 runs): she told the player
 // "zombie's dead" / "drowned's down" about a second mob of the same kind while
@@ -71,7 +71,7 @@ describe('a second mob with the name of one that just died', () => {
     expect(sameNameDeathAge(bot, second)).toBe(12_000)
     const snap = composeSnapshot(bot, { pinUsername: 'Alex' })
     expect(snap).toMatch(/ zombie @1,64,0 \(1 from you, 4 from Alex; not the zombie that died 12s ago\)/)
-    expect(snap.split('\n').find((l) => l.includes('not the zombie'))).not.toMatch(/—/)
+    expect(snap.split('\n').find((l) => l.includes('not the zombie'))).not.toMatch(/â€”/)
   })
 
   it('is not tagged without a recent death of that kind, or after 60s', () => {
@@ -227,3 +227,7 @@ describe('creeper results agree with the event text', () => {
     expect(staleAttackerText(bot, 'sei:attacked', { attacker: c, attackerLabel: 'creeper', attackerKind: 'mob' })).toMatch(/most likely exploded/)
   })
 })
+
+
+
+

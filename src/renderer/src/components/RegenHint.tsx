@@ -1,4 +1,4 @@
-/**
+﻿/**
  * RegenHint (261107): the one-time "Not happy with the look? Regenerate"
  * coachmark on a companion's profile. The rules (once per player, who is
  * eligible, what suppresses it, analytics) live in lib/regenHintPref.ts.
@@ -243,3 +243,7 @@ export function RegenHint({
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/weaponSelect.js — hold the best melee
+﻿// src/bot/adapter/minecraft/behaviors/weaponSelect.js â€” hold the best melee
 // weapon before a fight.
 //
 // 261011: nothing on the fight path equipped anything. Quality eval
@@ -194,3 +194,7 @@ export function lostWeaponUnarmed(bot, now = Date.now()) {
   }
   return true
 }
+
+
+
+

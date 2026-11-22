@@ -1,4 +1,4 @@
-// src/bot/brain/actionStats.js — per-session action outcome counters (261011).
+﻿// src/bot/brain/actionStats.js â€” per-session action outcome counters (261011).
 //
 // Why: two paying users cancelled calling the Minecraft companion "too stupid",
 // and nothing told us WHICH actions failed: bot logs stay on the user's PC and
@@ -364,3 +364,7 @@ export function llmMetaFromConfig(config) {
     model_id: typeof model === 'string' ? model : null,
   }
 }
+
+
+
+

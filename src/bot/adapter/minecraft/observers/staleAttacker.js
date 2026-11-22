@@ -1,4 +1,4 @@
-// 261019 (quality pass 18): attack events whose mob is gone by the time the
+﻿// 261019 (quality pass 18): attack events whose mob is gone by the time the
 // turn reads them.
 //
 // A hit, defend or heads-up event carries the live mob entity, but it is
@@ -137,3 +137,7 @@ export function staleFightTurn(bot, toolUses, sinceMs) {
   }
   return null
 }
+
+
+
+

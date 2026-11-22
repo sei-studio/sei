@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Minimize other windows" (261110, product call 261110): when the room goes
  * live it is the wallpaper, so it shows only where no window covers it. The
  * live card offers to clear the desktop in one go before Sei steps aside.
@@ -100,3 +100,7 @@ export async function minimizeOtherWindows(): Promise<MinimizeResult> {
   const n = Number(out.split(/\s+/).pop());
   return { ok: true, minimized: Number.isFinite(n) ? n : undefined };
 }
+
+
+
+

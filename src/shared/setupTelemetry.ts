@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Setup telemetry (261104): one shape-only event, `game_setup_step`, for the
  * Minecraft and Stardew Valley setup flows.
  *
@@ -233,3 +233,7 @@ export function mcScanFound(installs: readonly McInstall[], extras: McScanExtras
   if (extras?.launcherInstalled) return 'launcher_only';
   return 'none';
 }
+
+
+
+

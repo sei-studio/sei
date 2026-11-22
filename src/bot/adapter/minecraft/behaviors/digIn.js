@@ -1,4 +1,4 @@
-// src/adapter/minecraft/behaviors/digIn.js — fast PANIC shelter (survival).
+﻿// src/adapter/minecraft/behaviors/digIn.js â€” fast PANIC shelter (survival).
 //
 // A much cheaper alternative to shelterAction (which builds a whole 3x3+ hut):
 // digIn holes the bot in RIGHT NOW so it survives the next few seconds of a bad
@@ -7,8 +7,8 @@
 //   A. HOLE (default): dig 2 blocks straight down, then cap the opening above
 //      with a solid block so nothing can reach the bot. Only when the ground
 //      below is safe (solid floor under the hole, no liquid in the dig path).
-//   B. HUT: a 1x1 cell — place the 4 walls around the bot (feet + head level)
-//      and a roof — when the ground is NOT safe to dig into but the bot has
+//   B. HUT: a 1x1 cell â€” place the 4 walls around the bot (feet + head level)
+//      and a roof â€” when the ground is NOT safe to dig into but the bot has
 //      solid blocks to place.
 //
 // Bounded by a wall-clock deadline and honors config.signal, like attack.js /
@@ -23,7 +23,7 @@ export const DEFAULT_TIMEOUT_MS = 15000
 const AIR = new Set(['air', 'cave_air', 'void_air'])
 const LIQUID = new Set(['water', 'lava', 'flowing_water', 'flowing_lava', 'bubble_column'])
 
-// Gravity-affected blocks make a BAD ceiling cap (they fall on your head) — so we
+// Gravity-affected blocks make a BAD ceiling cap (they fall on your head) â€” so we
 // prefer any other solid for capping and only use these as a last resort.
 const GRAVITY = new Set(['sand', 'red_sand', 'gravel', 'anvil', 'suspicious_sand', 'suspicious_gravel'])
 
@@ -35,7 +35,7 @@ const NOT_A_WALL = new Set([
   'sign', 'water_bucket', 'lava_bucket', 'flower_pot', 'carpet',
 ])
 
-// 6 neighbour offsets in placement priority (floor, horizontals, ceiling) — the
+// 6 neighbour offsets in placement priority (floor, horizontals, ceiling) â€” the
 // same order build.js/place.js use to pick a reference face for an empty cell.
 const FACE_PRIORITY = [
   { off: [0, -1, 0], face: [0, 1, 0] },
@@ -96,20 +96,20 @@ async function placeAtCell(bot, config, itemName, cell) {
 const placedOk = (r) => typeof r === 'string' && r.startsWith('placed ')
 
 /**
- * digIn — dig a quick hole (or wall up a 1x1 hut) and seal it.
+ * digIn â€” dig a quick hole (or wall up a 1x1 hut) and seal it.
  * @param {{variant?:'auto'|'hole'|'hut'}} args
  */
 export async function digInAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
-  // Don't fight a reflex creeper-flee or a survival takeover for the pathfinder —
+  // Don't fight a reflex creeper-flee or a survival takeover for the pathfinder â€”
   // they own movement and would drag the bot out of the half-dug hole. Defer.
   if (bot._seiReflexActive || bot._seiSurvivalActive || bot._seiCriticalRetreat) {
-    return 'busy surviving — try again in a moment'
+    return 'busy surviving â€” try again in a moment'
   }
 
-  // digIn has no config knob — it is bounded by the args.timeout_ms override if
+  // digIn has no config knob â€” it is bounded by the args.timeout_ms override if
   // the caller passes one, else the hardcoded DEFAULT_TIMEOUT_MS.
   const deadline = Date.now() + (args?.timeout_ms ?? DEFAULT_TIMEOUT_MS)
   const overBudget = () => Date.now() > deadline
@@ -120,7 +120,7 @@ export async function digInAction(args, bot, config) {
 
   // Hold position against follow.js's independent 1s tick, which would otherwise
   // re-install GoalFollow(owner) between our dig primitives and walk the bot out
-  // of the half-dug hole (the second dig would then target the moved position — a
+  // of the half-dug hole (the second dig would then target the moved position â€” a
   // trench, not a shelter). follow's tick skips while this counter is > 0. Clear
   // any active goal now so the pathfinder isn't already steering us away.
   bot._seiHoldPosition = (bot._seiHoldPosition ?? 0) + 1
@@ -152,13 +152,13 @@ async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
     return buildHut(bot, config, { fx, fy, fz }, overBudget, signal)
   }
 
-  // ── Variant A: dig straight down 2, then cap ─────────────────────────────
+  // â”€â”€ Variant A: dig straight down 2, then cap â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!groundSafe) {
-    // Explicit 'hole' request but unsafe ground — refuse rather than dig into a
+    // Explicit 'hole' request but unsafe ground â€” refuse rather than dig into a
     // cave/liquid. Fall back to a hut if we have blocks.
     const solids = inventorySolids(bot)
     if (solids.length) return buildHut(bot, config, { fx, fy, fz }, overBudget, signal)
-    return `couldn't dig in — ground below is unsafe (${below1 ?? '?'} / ${below2 ?? '?'} / ${below3 ?? '?'}) and no blocks to wall up with`
+    return `couldn't dig in â€” ground below is unsafe (${below1 ?? '?'} / ${below2 ?? '?'} / ${below3 ?? '?'}) and no blocks to wall up with`
   }
 
   let dug = 0
@@ -168,7 +168,7 @@ async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
     if (signal?.aborted) return `aborted after digging ${dug}`
     if (overBudget()) break
     const cur = bot.entity?.position
-    // Entity can vanish mid-dig (death / disconnect while under attack — digIn
+    // Entity can vanish mid-dig (death / disconnect while under attack â€” digIn
     // is the low-HP panic shelter). Bail gracefully instead of throwing on cur.y.
     if (!cur) return `aborted after digging ${dug}`
     const cy = Math.floor(cur.y)
@@ -178,26 +178,26 @@ async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
     const r = await digAction({ x: fx, y: cy - 1, z: fz }, bot, config)
     if (r === 'aborted') return `aborted after digging ${dug}`
     if (typeof r === 'string' && r.startsWith('dug ')) dug++
-    else break // couldn't break it — stop before we get stuck half-dug
+    else break // couldn't break it â€” stop before we get stuck half-dug
   }
 
   if (dug === 0) {
-    return 'couldn\'t dig in — the floor under me wouldn\'t break'
+    return 'couldn\'t dig in â€” the floor under me wouldn\'t break'
   }
 
   // Cap the opening. After digging `dug` blocks the bot is `dug` blocks lower;
   // the opening to the surface sits at the ORIGINAL feet level, fy.
   const capCell = { x: fx, y: fy, z: fz }
-  // Prefer inventory solids; if none, re-scan (the dug blocks — dirt/cobble —
+  // Prefer inventory solids; if none, re-scan (the dug blocks â€” dirt/cobble â€”
   // were just picked up and are now placeable).
   const solids = inventorySolids(bot)
   const holeDepthNote = dug === 1 ? 'holed up 1 deep' : 'holed up 2 deep'
 
   if (!solids.length) {
-    return `${holeDepthNote} — no blocks to cap, still exposed above`
+    return `${holeDepthNote} â€” no blocks to cap, still exposed above`
   }
   if (signal?.aborted) return `${holeDepthNote} (aborted before capping)`
-  if (overBudget()) return `${holeDepthNote} — ran out of time before capping`
+  if (overBudget()) return `${holeDepthNote} â€” ran out of time before capping`
 
   // Look up so the placement raycast favors the ceiling opening.
   try { await bot.look(bot.entity.yaw, -Math.PI / 2, false) } catch (_) {}
@@ -206,14 +206,14 @@ async function digInRun(args, bot, config, { fx, fy, fz }, overBudget, signal) {
   if (placedOk(capRes)) {
     return `${holeDepthNote}, capped with ${cap}`
   }
-  return `${holeDepthNote} — tried to cap with ${cap} but ${capRes}; may still be exposed`
+  return `${holeDepthNote} â€” tried to cap with ${cap} but ${capRes}; may still be exposed`
 }
 
-// Variant B: 1x1 hut — walls at feet + head level on all 4 sides, plus a roof.
+// Variant B: 1x1 hut â€” walls at feet + head level on all 4 sides, plus a roof.
 async function buildHut(bot, config, { fx, fy, fz }, overBudget, signal) {
   const solids = inventorySolids(bot)
   if (!solids.length) {
-    return 'couldn\'t dig in — no solid blocks in inventory to wall up with'
+    return 'couldn\'t dig in â€” no solid blocks in inventory to wall up with'
   }
   const mat = solids[0]
   const ring = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1]]
@@ -245,3 +245,7 @@ async function buildHut(bot, config, { fx, fy, fz }, overBudget, signal) {
     ? `walled myself in with ${mat} (${placed} blocks, ${gaps} gaps left)`
     : `walled myself in with ${mat} (${placed} blocks)`
 }
+
+
+
+

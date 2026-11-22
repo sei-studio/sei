@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/placeSpots.js
+﻿// src/bot/adapter/minecraft/behaviors/placeSpots.js
 //
 // 261108 (quality pass 46). Where "put the table down" can go. The old search
 // in place.js looked at the four cells touching her feet (then her head), took
@@ -193,3 +193,7 @@ export function findOpenStandSpot(bot, { radius = 8, minSpots = 2 } = {}) {
   }
   return null
 }
+
+
+
+

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Factory reset (260728): wipe ALL local state back to a fresh install, then
  * relaunch the app.
  *
  * Strategy: enumerate the userData root and delete every entry EXCEPT the
- * anti-abuse trackers (`device-id.json`, `signup-attempts.json` — paths.ts
+ * anti-abuse trackers (`device-id.json`, `signup-attempts.json` â€” paths.ts
  * documents that these MUST survive resets, otherwise wiping the app would be
  * a free-trial reset button). Enumerating instead of listing known paths means
  * new caches are covered automatically: profiles/ (configs, characters,
@@ -13,7 +13,7 @@
  * IndexedDB, caches) so the renderer starts clean too.
  *
  * Every deletion is best-effort: on Windows, files the live renderer holds
- * open (Chromium LevelDB) can refuse deletion — those are generic browser
+ * open (Chromium LevelDB) can refuse deletion â€” those are generic browser
  * caches, and losing the race on them does not compromise the reset. The
  * relaunch happens regardless.
  *
@@ -45,7 +45,7 @@ export async function runFactoryReset(opts: {
     try {
       await rm(path.join(root, entry), { recursive: true, force: true });
     } catch (err) {
-      // Best-effort (see header) — log and keep going.
+      // Best-effort (see header) â€” log and keep going.
       console.warn(`[sei] factory reset: could not remove ${entry}: ${(err as Error).message}`);
     }
   }
@@ -56,3 +56,7 @@ export async function runFactoryReset(opts: {
   app.relaunch();
   app.quit();
 }
+
+
+
+

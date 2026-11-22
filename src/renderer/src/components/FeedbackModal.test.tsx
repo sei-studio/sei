@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: a failed feedback send must not cost the player their text. The
  * draft outlives the modal (closing after an error used to drop it) and is
  * cleared only by a successful send.
@@ -39,8 +39,8 @@ describe('feedback drafts', () => {
   it('the failure copy says the text is kept, in both languages', () => {
     const msg = 'Feedback could not be sent. Your message is still here. Check your connection and press Submit to try again.';
     expect(ZH[msg]).toBeTruthy();
-    expect(msg).not.toContain('—');
-    expect(ZH[msg]).not.toContain('—');
+    expect(msg).not.toContain('â€”');
+    expect(ZH[msg]).not.toContain('â€”');
   });
 });
 
@@ -60,8 +60,8 @@ describe('feedback sent confirmation', () => {
 
   it('the Backseat line has Chinese copy and no dashes', () => {
     expect(ZH[NOTE]).toBeTruthy();
-    expect(NOTE).not.toMatch(/[—–]/);
-    expect(ZH[NOTE]).not.toMatch(/[—–]/);
+    expect(NOTE).not.toMatch(/[â€”â€“]/);
+    expect(ZH[NOTE]).not.toMatch(/[â€”â€“]/);
   });
 });
 
@@ -98,7 +98,11 @@ describe('suggest-a-game "already works" hint', () => {
   it('is translated, with no em dash', () => {
     const k = '{game} already works in Sei';
     expect(ZH[k]).toContain('{game}');
-    expect(ZH[k]).not.toContain('—');
+    expect(ZH[k]).not.toContain('â€”');
   });
 });
+
+
+
+
 

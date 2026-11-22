@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The onboarding scene's stage gates (261012). A stage must complete exactly
  * once whether its CSS transition fires, never fires, or both the event and
  * the watchdog land; a hidden window holds the watchdog, but never forever.
@@ -232,3 +232,7 @@ describe('watchdog sizing tracks the CSS', () => {
     expect(durationOf('sui')).toBe(SUI_WALK_TRANSITION_MS);
   });
 });
+
+
+
+

@@ -1,19 +1,19 @@
-/**
- * Voice-picker pure logic (260720) — grouping + selection, no React.
+﻿/**
+ * Voice-picker pure logic (260720) â€” grouping + selection, no React.
  *
  * Selection model (what AddCharacterScreen / the profile's VoiceEditor persist to
- * character.metadata.voiceId — the same shape unique-cast writes):
- *   - null          → Auto: metadata.voiceId stays unset; the runtime assigns
+ * character.metadata.voiceId â€” the same shape unique-cast writes):
+ *   - null          â†’ Auto: metadata.voiceId stays unset; the runtime assigns
  *                     a deterministic, roster-deduped pool voice on first use.
- *   - NO_VOICE_ID   → silent companion: metadata.voiceId = 'none'; TTS never
+ *   - NO_VOICE_ID   â†’ silent companion: metadata.voiceId = 'none'; TTS never
  *                     synthesizes for them.
- *   - any other id  → pinned pool voice: metadata.voiceId = that id.
- *   - an own voice  → (261019) a voice from the user's own ElevenLabs
+ *   - any other id  â†’ pinned pool voice: metadata.voiceId = that id.
+ *   - an own voice  â†’ (261019) a voice from the user's own ElevenLabs
  *                     account: metadata.voiceId = its id PLUS the
  *                     metadata.voiceOwn marker (shared/voiceIds.ts
  *                     applyVoicePick), which keeps the runtime from treating
  *                     it as unknown and re-rolling it.
- *   - a library voice → (261119) a Voice Library voice pasted on Sei cloud:
+ *   - a library voice â†’ (261119) a Voice Library voice pasted on Sei cloud:
  *                     metadata.voiceId = its id PLUS metadata.voiceLibrary
  *                     (an OwnVoicePick with source 'library' at the picker).
  */
@@ -68,7 +68,7 @@ export function reduceSelection(current: VoiceSelection, clickedId: string): Voi
 }
 
 /**
- * True when `selection` names a voice the picker does not list — a legacy id
+ * True when `selection` names a voice the picker does not list â€” a legacy id
  * assigned before the 260707 pool curation, or (261019) an own ElevenLabs
  * voice whose list cannot be read right now (key removed, cloud backend,
  * voice deleted in ElevenLabs). The picker renders a dedicated "Current
@@ -126,7 +126,7 @@ export function normalizeVoiceParams(p: VoiceParams): VoiceParams {
   return out;
 }
 
-// ── Own ElevenLabs voices (261019) ─────────────────────────────────────────
+// â”€â”€ Own ElevenLabs voices (261019) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Tab key for the "Your ElevenLabs voices" tab (beside the gender groups). */
 export const OWN_TAB_KEY = 'own';
@@ -135,7 +135,7 @@ export type VoiceTabKey = VoiceGroup['key'] | typeof OWN_TAB_KEY;
 /** The marker to persist when `id` is picked from the own-voice list, or null
  * for any other selection (pool voice, Auto, No voice). A Sei pool id is
  * never an own voice even when the user's ElevenLabs library lists it (Sei's
- * pool voices can sit in an ElevenLabs library as copies, "Sei — Josh"), so
+ * pool voices can sit in an ElevenLabs library as copies, "Sei â€” Josh"), so
  * re-picking a pool voice never tags it (261024). */
 export function ownVoicePickFor(id: VoiceSelection, own: OwnVoiceInfo[]): OwnVoicePick | null {
   if (id === null || isPoolVoiceId(id)) return null;
@@ -172,10 +172,10 @@ export function ownVoiceDetail(v: OwnVoiceInfo): string {
 
 /**
  * What the picker shows for the own-voice list state:
- *   - 'tab'    → render the "Your ElevenLabs voices" tab (it may be empty,
+ *   - 'tab'    â†’ render the "Your ElevenLabs voices" tab (it may be empty,
  *                then it carries the "nothing here yet" hint).
- *   - 'hint'   → no tab, one quiet line (key refused / list unreadable).
- *   - 'none'   → nothing at all (no direct key route, or still loading).
+ *   - 'hint'   â†’ no tab, one quiet line (key refused / list unreadable).
+ *   - 'none'   â†’ nothing at all (no direct key route, or still loading).
  * The built-in list renders in every case.
  */
 export function ownVoicesView(list: OwnVoiceList | null): 'tab' | 'hint' | 'none' {
@@ -214,10 +214,10 @@ export const ELEVEN_VOICE_LIBRARY_URL = 'https://elevenlabs.io/app/voice-library
  * it to their ElevenLabs account, Sei lists that account with their key, and
  * the voice shows up under "Your ElevenLabs voices". So the tile shows only
  * where that path can work:
- *   - 'with_key'  → a key is saved and the own list was read ('ok').
- *   - 'needs_key' → no key yet (the add-your-key pointer case): the tile's
+ *   - 'with_key'  â†’ a key is saved and the own list was read ('ok').
+ *   - 'needs_key' â†’ no key yet (the add-your-key pointer case): the tile's
  *                   hint says to add the key, and replaces that pointer.
- *   - null        → still probing, local voice packs (no ElevenLabs list),
+ *   - null        â†’ still probing, local voice packs (no ElevenLabs list),
  *                   or a key ElevenLabs refused / a list that failed (the
  *                   own-voice error line already says what to fix).
  */
@@ -251,13 +251,13 @@ export function defaultVoiceTab(
 
 /**
  * Where Settings shows the ElevenLabs key field (261020, T158):
- *   - 'byok'           → local (My key) backend with the ElevenLabs engine:
+ *   - 'byok'           â†’ local (My key) backend with the ElevenLabs engine:
  *                        the key powers every voice and Scribe, so a missing
  *                        key is a warning (unchanged since 260725).
- *   - 'cloud-optional' → Sei Cloud: an OPTIONAL key, only for voices from the
+ *   - 'cloud-optional' â†’ Sei Cloud: an OPTIONAL key, only for voices from the
  *                        user's own ElevenLabs account. Sei's pool and speech
  *                        recognition stay on the proxy.
- *   - 'hidden'         → local voice packs, or the backend not reported yet.
+ *   - 'hidden'         â†’ local voice packs, or the backend not reported yet.
  */
 export function elevenKeySettingMode(
   backend: 'local' | 'cloud-proxy' | null | undefined,
@@ -268,7 +268,7 @@ export function elevenKeySettingMode(
   return 'hidden';
 }
 
-// ── Voice Library voices on Sei cloud (261119) ─────────────────────────────
+// â”€â”€ Voice Library voices on Sei cloud (261119) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The paste-a-library-voice card shows for Sei cloud users (the proxy adds
  * the voice to Sei's account). BYOK users keep the own-voice path. */
@@ -330,3 +330,7 @@ export function libraryVoiceDetail(v: Pick<LibraryVoiceInfo, 'gender' | 'age' | 
   const d = (v.description ?? '').trim();
   return d.length > 120 ? `${d.slice(0, 117).trimEnd()}...` : d;
 }
+
+
+
+

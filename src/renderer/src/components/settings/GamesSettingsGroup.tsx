@@ -1,5 +1,5 @@
-/**
- * GamesSettingsGroup — the Settings "Games & search" group (260908; it was
+﻿/**
+ * GamesSettingsGroup â€” the Settings "Games & search" group (260908; it was
  * "Games" until 261023, when the web search rows moved in as a tab).
  *
  * One group for every game instead of a stack of per-game groups: the left
@@ -108,3 +108,7 @@ export function GamesSettingsGroup({ extraTabs = [], ...props }: Props): React.R
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop-host addon loader (261104). The addon (native/seilink,
  * built by scripts/build-seilink-addon.mjs) ships OUTSIDE app.asar, at
  * `<resources>/seilink/seilink.node` (electron-builder extraResources, mac
@@ -120,3 +120,7 @@ export function loadSeilinkAddon(file: string): SeilinkAddon {
   loaded = { file, addon };
   return addon;
 }
+
+
+
+

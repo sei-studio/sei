@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Anima client (261105): her face set, baked in the cloud the first time
  * SeiLink opens for her, then kept on disk.
  *
@@ -623,3 +623,7 @@ export class AnimaClient {
     }
   }
 }
+
+
+
+

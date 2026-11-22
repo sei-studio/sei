@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { McInstall, WizardProgressEvent } from '../shared/ipc';
 import type { SetupStepInput } from '../shared/setupTelemetry';
 import {
@@ -147,3 +147,7 @@ describe('trackOpenLauncher', () => {
     ]);
   });
 });
+
+
+
+

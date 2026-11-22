@@ -1,4 +1,4 @@
-// Craftable enumeration + count + table-gating + cache.
+﻿// Craftable enumeration + count + table-gating + cache.
 //
 // Uses REAL minecraft-data / prismarine-recipe via a mineflayer-shaped bot stub
 // (recipesFor delegates to prismarine-recipe, the same way mineflayer does), so
@@ -74,19 +74,19 @@ describe('detectCraftingTable', () => {
 })
 
 describe('getCraftableEntries', () => {
-  it('lists 2×2 recipes craftable from inventory with correct counts', () => {
+  it('lists 2Ã—2 recipes craftable from inventory with correct counts', () => {
     const bot = makeBot({ items: [{ name: 'oak_log', count: 2 }] })
     const { entries, nearTable } = getCraftableEntries(bot)
     expect(nearTable).toBe(false)
     const planks = entries.find((e) => e.name === 'oak_planks')
     expect(planks).toBeTruthy()
-    expect(planks.count).toBe(8) // 2 logs × 4 planks
-    // crafting_table is a 2×2 recipe (4 planks) — but we only hold logs, not
+    expect(planks.count).toBe(8) // 2 logs Ã— 4 planks
+    // crafting_table is a 2Ã—2 recipe (4 planks) â€” but we only hold logs, not
     // planks yet, so it should NOT appear from a bare-log inventory.
     expect(entries.some((e) => e.name === 'crafting_table')).toBe(false)
   })
 
-  it('unlocks 3×3 recipes only when a table is in reach', () => {
+  it('unlocks 3Ã—3 recipes only when a table is in reach', () => {
     const items = [{ name: 'oak_planks', count: 8 }]
     const without = getCraftableEntries(makeBot({ items }))
     expect(without.entries.some((e) => e.name === 'chest')).toBe(false)
@@ -96,7 +96,7 @@ describe('getCraftableEntries', () => {
       makeBot({ items, table: { block: tableBlock, dist: CRAFT_TABLE_REACH } }),
     )
     expect(withTable.nearTable).toBe(true)
-    expect(withTable.entries.some((e) => e.name === 'chest')).toBe(true) // 8 planks, 3×3
+    expect(withTable.entries.some((e) => e.name === 'chest')).toBe(true) // 8 planks, 3Ã—3
   })
 
   it('returns empty (never throws) for a bot lacking recipesFor', () => {
@@ -109,7 +109,11 @@ describe('getCraftableEntries', () => {
     const bot = { ...base, recipesFor: (...a) => { calls++; return base.recipesFor(...a) } }
     getCraftableEntries(bot)
     const after = calls
-    getCraftableEntries(bot) // identical inventory + table state → served from cache
+    getCraftableEntries(bot) // identical inventory + table state â†’ served from cache
     expect(calls).toBe(after)
   })
 })
+
+
+
+

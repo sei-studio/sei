@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room format v1 (261104, the "SeiLink visuals" doc, msg 1531).
  *
  * A room is a fixed webcam-POV scene: she sits at her desk facing the player,
@@ -525,7 +525,7 @@ export function resolveSlots(manifest: RoomPresetManifest, state: RoomState): Re
   return out.sort((a, b) => manifest.slots[a.slot]!.z - manifest.slots[b.slot]!.z);
 }
 
-// ── Patterns (261105) ───────────────────────────────────────────────────────
+// â”€â”€ Patterns (261105) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const PLAIN_PATTERN = 'plain';
 
@@ -581,7 +581,7 @@ export function resolvePattern(
   return { def, accent: accent ?? component.defaultAccent ?? toneOnTone(base), period: [def.period[0] * k, def.period[1] * k] };
 }
 
-// ── Editor labels (261105) ──────────────────────────────────────────────────
+// â”€â”€ Editor labels (261105) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The editor's default name per slot id (English keys of the i18n dictionaries). */
 export const DEFAULT_SLOT_LABEL: Readonly<Record<RoomSlotId, string>> = {
@@ -671,3 +671,7 @@ export function describeRoom(manifest: RoomPresetManifest, state: RoomState, now
   things.push(...weather);
   return { place: manifest.place, time, things };
 }
+
+
+
+

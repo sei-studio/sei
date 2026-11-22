@@ -1,22 +1,22 @@
-/**
- * Speech pack registry (260816, china-compat W3+W4) — the closed set of local
+﻿/**
+ * Speech pack registry (260816, china-compat W3+W4) â€” the closed set of local
  * speech models Sei can download, as pure data.
  *
- * Three packs: two TTS voice packs (each covers both genders via speaker ids —
+ * Three packs: two TTS voice packs (each covers both genders via speaker ids â€”
  * en through libritts_r's 904 speakers, zh through aishell3's 174) and the
  * SenseVoice STT model. Archives are the k2-fsa sherpa-onnx GitHub release
- * assets (.tar.bz2), mirrored on dl.sei.gg (mirror-first download — see
+ * assets (.tar.bz2), mirrored on dl.sei.gg (mirror-first download â€” see
  * mirrors.ts). Sizes are the exact byte counts of the published assets (read
  * off the GitHub release API 260816); a mismatched download is discarded
  * rather than extracted.
  *
- * Licenses (legal review 260828 — supersedes the 260816 notes):
+ * Licenses (legal review 260828 â€” supersedes the 260816 notes):
  *   - libritts_r: CLEAR, CC BY 4.0 (LibriTTS-R dataset,
  *     https://www.openslr.org/141/). Attribution must name the dataset, link
  *     the license, and note modification (Piper training + ONNX conversion).
  *     Credited in Settings > About.
  *   - aishell3: CLEAR, plain Apache License 2.0 (https://www.openslr.org/93/).
- *     An earlier note here said "for academic use" — that is NOT a term of the
+ *     An earlier note here said "for academic use" â€” that is NOT a term of the
  *     actual license; only the usual Apache-2.0 notice/license retention
  *     applies. Credited in Settings > About.
  *   - SenseVoice: CLEAR under the FunASR Model Open Source License v1.1
@@ -28,11 +28,11 @@
  * There USED to be a fourth pack, 'tts-zh-m' (vits-piper-zh_CN-chaowen int8,
  * the dedicated zh male voice). REMOVED 260908 over its non-commercial weights
  * lineage (DataBaker BZNSYP "Non-commercial use" -> xiao_ya -> chaowen; the
- * "CC0" note applied only to the fine-tuning dataset) — never shipped in a
+ * "CC0" note applied only to the fine-tuning dataset) â€” never shipped in a
  * release. zh male now speaks from the aishell3 pack's male-register speaker
  * (localVoice.ts AISHELL3_MALE_REGISTER_SID); packStore heals any dev-machine
  * leftover 'tts-zh-m' dir by deleting it.
- * We ship NONE of these — download on demand.
+ * We ship NONE of these â€” download on demand.
  */
 
 export type SpeechPackId = 'tts-en' | 'tts-zh' | 'tts-kokoro' | 'stt-sensevoice';
@@ -112,3 +112,7 @@ export const SPEECH_PACKS: Record<SpeechPackId, SpeechPackDef> = {
 export function isSpeechPackId(id: string): id is SpeechPackId {
   return (SPEECH_PACK_IDS as readonly string[]).includes(id);
 }
+
+
+
+

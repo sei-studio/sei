@@ -1,4 +1,4 @@
-# DST survivor roster brief (260908, sourced from dontstarve.wiki.gg, one page per survivor)
+﻿# DST survivor roster brief (260908, sourced from dontstarve.wiki.gg, one page per survivor)
 
 Purpose: the roster brief handed to the one-off "pick your survivor" LLM call
 (plan section 8, decision 3) and, for the chosen survivor, appended to the DST
@@ -44,3 +44,7 @@ ageless watch, no natural healing; wonkey.
 
 Sources: https://dontstarve.wiki.gg/wiki/Characters/DST and each survivor's page
 under https://dontstarve.wiki.gg/wiki/<Name>.
+
+
+
+

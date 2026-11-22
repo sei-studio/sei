@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Renderer side of the OS permission flows (260929). The cards
  * (components/permissions/*) and the voice store call these; main owns the
  * actual OS calls (src/main/permissions/*).
@@ -95,3 +95,7 @@ export function isPermissionRefusal(err: unknown): boolean {
   const msg = String((err as Error)?.message ?? err ?? '');
   return name === 'NotAllowedError' || name === 'SecurityError' || /permission/i.test(msg);
 }
+
+
+
+

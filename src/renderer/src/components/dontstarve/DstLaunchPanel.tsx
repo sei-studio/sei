@@ -1,5 +1,5 @@
-/**
- * DstLaunchPanel — the Don't Starve Together launch surface (game adapters
+﻿/**
+ * DstLaunchPanel â€” the Don't Starve Together launch surface (game adapters
  * M2, 260908; reworked 260909), hosted in the chat game aside like
  * McLaunchPanel. Painted in the game's own register (ink ground over the
  * dimmed art, parchment sheets, hand-inked type), centered, the same shape
@@ -161,7 +161,7 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
           </button>
         ) : null}
 
-        {/* ── Survivor sheet (any state once the pick has loaded) ── */}
+        {/* â”€â”€ Survivor sheet (any state once the pick has loaded) â”€â”€ */}
         <section className={styles.sheet} aria-label={t('Survivor')}>
           {pick ? (
             <>
@@ -202,3 +202,7 @@ export function DstLaunchPanel({ characterId }: DstLaunchPanelProps): React.Reac
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * What is under the pointer in a room (261104, editor pass): the editor
  * selects an item, or opens a part's options, by clicking it in the room.
  *
@@ -189,3 +189,7 @@ async function buildMap(url: string): Promise<AlphaMap> {
   for (let i = 0; i < data.length; i++) data[i] = rgba[i * 4 + 3];
   return { nw: img.width, nh: img.height, w, h, data };
 }
+
+
+
+

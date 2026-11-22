@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/client.js — the WebSocket client for the Sei
+﻿// src/bot/adapter/stardew/client.js â€” the WebSocket client for the Sei
 // companion mod (native/stardew-mod/PROTOCOL.md). Node 22's built-in
 // WebSocket global; no `ws` package, so the Stardew pack carries no
 // node_modules at all.
@@ -144,7 +144,7 @@ export function createStardewClient({ port, token, host = 'localhost', logger = 
 
   /**
    * Send a frame that expects a `result`. Resolves with the raw result frame
-   * (never rejects on ok:false — the caller reads `detail`).
+   * (never rejects on ok:false â€” the caller reads `detail`).
    *
    * `timeoutMs` is a hard cap; `idleTimeoutMs` (optional) is the longest gap
    * between the command's `progress` frames. A `cmd` that times out either
@@ -242,3 +242,7 @@ export async function fetchHello({ port, host = 'localhost', timeoutMs = 1500, f
     clearTimeout(timer)
   }
 }
+
+
+
+

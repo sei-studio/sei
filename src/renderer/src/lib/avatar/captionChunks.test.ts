@@ -1,4 +1,4 @@
-/** Caption chunking (260806) — fixed font size, box-fit paging. */
+﻿/** Caption chunking (260806) â€” fixed font size, box-fit paging. */
 import { describe, it, expect } from 'vitest';
 import {
   captionCapacity,
@@ -10,8 +10,8 @@ import {
 describe('visualUnits', () => {
   it('counts latin as 1 and CJK as 2', () => {
     expect(visualUnits('abc')).toBe(3);
-    expect(visualUnits('你好')).toBe(4);
-    expect(visualUnits('a你b')).toBe(4);
+    expect(visualUnits('ä½ å¥½')).toBe(4);
+    expect(visualUnits('aä½ b')).toBe(4);
   });
 });
 
@@ -32,7 +32,7 @@ describe('captionCapacity', () => {
 describe('splitSentences', () => {
   it('splits on latin and CJK terminators', () => {
     expect(splitSentences('One. Two! Three?')).toEqual(['One.', 'Two!', 'Three?']);
-    expect(splitSentences('你好。真的吗？好。')).toEqual(['你好。', '真的吗？', '好。']);
+    expect(splitSentences('ä½ å¥½ã€‚çœŸçš„å—ï¼Ÿå¥½ã€‚')).toEqual(['ä½ å¥½ã€‚', 'çœŸçš„å—ï¼Ÿ', 'å¥½ã€‚']);
   });
 
   it('keeps a trailing unterminated sentence', () => {
@@ -70,9 +70,13 @@ describe('chunkCaption', () => {
   });
 
   it('hard-slices an unspaced run longer than the whole box', () => {
-    const chunks = chunkCaption('这是一句完全没有空格的很长很长的中文句子啊', 12);
+    const chunks = chunkCaption('è¿™æ˜¯ä¸€å¥å®Œå…¨æ²¡æœ‰ç©ºæ ¼çš„å¾ˆé•¿å¾ˆé•¿çš„ä¸­æ–‡å¥å­å•Š', 12);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) expect(visualUnits(c)).toBeLessThanOrEqual(12);
-    expect(chunks.join('')).toBe('这是一句完全没有空格的很长很长的中文句子啊');
+    expect(chunks.join('')).toBe('è¿™æ˜¯ä¸€å¥å®Œå…¨æ²¡æœ‰ç©ºæ ¼çš„å¾ˆé•¿å¾ˆé•¿çš„ä¸­æ–‡å¥å­å•Š');
   });
 });
+
+
+
+

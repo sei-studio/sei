@@ -1,4 +1,4 @@
-// 261120: quality pass 59. While a give() walked over to the player the
+﻿// 261120: quality pass 59. While a give() walked over to the player the
 // in_flight line read "handing 1 coal to Alex", and asked "hows it going"
 // from 22 blocks out she answered "coal's tossing your way now, check your feet"
 // (pass 55 errands-01-A). pass59-probe at n=30: delivered claims 9/30 with
@@ -70,7 +70,11 @@ describe('giveStillWalking', () => {
 
 describe('SPEAK_REMINDER', () => {
   it('has no em dash', () => {
-    expect(SPEAK_REMINDER).not.toContain('—')
+    expect(SPEAK_REMINDER).not.toContain('â€”')
     expect(SPEAK_REMINDER).toContain('words in your text output never reach the player')
   })
 })
+
+
+
+

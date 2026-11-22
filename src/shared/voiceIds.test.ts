@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Own-voice marker (261019): how a pick from the user's own ElevenLabs
  * account is persisted beside metadata.voiceId, and how any other pick
  * clears it.
@@ -125,25 +125,25 @@ describe('voice for others (voiceShared)', () => {
 });
 
 // 261024: v0.6.9 tagged a pool voice as an own voice when the user's
-// ElevenLabs library held a copy of it ("Sei — Josh").
+// ElevenLabs library held a copy of it ("Sei â€” Josh").
 describe('a pool voice is never an own voice', () => {
   it('ownVoiceOf ignores a stale marker beside a pool or legacy id', () => {
-    expect(ownVoiceOf({ voiceId: POOL_JOSH, voiceOwn: { name: 'Sei — Josh', gender: 'male' } })).toBeNull();
+    expect(ownVoiceOf({ voiceId: POOL_JOSH, voiceOwn: { name: 'Sei â€” Josh', gender: 'male' } })).toBeNull();
     expect(ownVoiceOf({ voiceId: LEGACY_SARAH, voiceOwn: { name: 'Sarah' } })).toBeNull();
     expect(ownVoiceOf({ voiceId: OWN_ID, voiceOwn: { name: 'Mine' } })).toEqual({ name: 'Mine' });
   });
 
   it('applyVoicePick never stamps the marker on a pool id', () => {
-    expect(applyVoicePick({}, POOL_JOSH, { name: 'Sei — Josh', gender: 'male' })).toEqual({ voiceId: POOL_JOSH });
+    expect(applyVoicePick({}, POOL_JOSH, { name: 'Sei â€” Josh', gender: 'male' })).toEqual({ voiceId: POOL_JOSH });
   });
 
   it('re-saving a stale-tagged pool voice clears the marker and the voice for others', () => {
-    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei — Josh' }, [SHARED_VOICE_KEY]: 'SOYHLrjzK2X1ezoPC6cr' };
+    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei â€” Josh' }, [SHARED_VOICE_KEY]: 'SOYHLrjzK2X1ezoPC6cr' };
     expect(applyVoicePick(stale, POOL_JOSH, ownVoiceOf(stale))).toEqual({ voiceId: POOL_JOSH });
   });
 
   it('applySharedVoicePick ignores a stale-tagged pool voice', () => {
-    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei — Josh' } };
+    const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei â€” Josh' } };
     expect(applySharedVoicePick(stale, 'SOYHLrjzK2X1ezoPC6cr')[SHARED_VOICE_KEY]).toBeUndefined();
   });
 });
@@ -194,3 +194,7 @@ describe('Voice Library marker (261119)', () => {
     expect(storedVoicePickOf({ voiceId: POOL_JOSH })).toBeNull();
   });
 });
+
+
+
+

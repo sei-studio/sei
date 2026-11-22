@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261010 backseat staleness gate, renderer side. A line the companion said on
  * her own carries the capture time of the frame it was written from
  * (SpokenLineContext.ambientCapturedAt). Asked when the line arrives and again
@@ -31,3 +31,7 @@ export function createStaleGate(
     return true;
   };
 }
+
+
+
+

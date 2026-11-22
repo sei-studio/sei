@@ -1,4 +1,4 @@
-// Game-adapters M2 (260908): the composer boots the REAL Don't Starve
+﻿// Game-adapters M2 (260908): the composer boots the REAL Don't Starve
 // runtime (no mineflayer anywhere) against the fake mod, end to end:
 // init-shaped config -> ConfigSchema -> runtime -> dst-listen -> spawned ->
 // brain (stubbed) -> summon-ready.
@@ -78,3 +78,7 @@ describe("composer with the real 'dontstarve' runtime", () => {
     expect(() => ConfigSchema.parse({ persona: { name: 'S', expanded: 'x' }, anthropic: { api_key: 'k' }, adapter: { kind: 'dontstarve' } })).toThrow(/adapter\.dontstarve is required/)
   })
 })
+
+
+
+

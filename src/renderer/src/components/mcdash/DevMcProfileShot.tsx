@@ -1,5 +1,5 @@
-/**
- * DevMcProfileShot — dev-only screenshot harness for the Sei profile /
+﻿/**
+ * DevMcProfileShot â€” dev-only screenshot harness for the Sei profile /
  * Start Minecraft surfaces (260929), NOT part of the app UI. Mounted by
  * DevDashShot for `?dashshot=mcprofile`, with `&part=`:
  *
@@ -75,3 +75,7 @@ export function DevMcProfileShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

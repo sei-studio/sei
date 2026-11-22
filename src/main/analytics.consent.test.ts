@@ -1,11 +1,11 @@
-/**
- * 260720 — privacy re-consent: reenableAnalyticsOnConsent() (called from the
+﻿/**
+ * 260720 â€” privacy re-consent: reenableAnalyticsOnConsent() (called from the
  * tos:accept IPC handler after recordAcceptance succeeds) must clear
  * analytics_opt_out in the SAME config store capture() reads, and re-enable
  * capture() immediately (no restart).
  *
  * The analytics module is a singleton, so this file uses its own mock set and
- * runs init → opt-out → consent in order.
+ * runs init â†’ opt-out â†’ consent in order.
  */
 import { describe, it, expect, vi } from 'vitest';
 // 261031: tests run unpackaged (channel 'dev'), which sends nothing unless
@@ -16,7 +16,7 @@ vi.hoisted(() => {
 
 const { captureSpy, configState } = vi.hoisted(() => ({
   captureSpy: vi.fn(),
-  // Simulated profile-scoped config.json. Starts OPTED OUT — the interesting
+  // Simulated profile-scoped config.json. Starts OPTED OUT â€” the interesting
   // case: a user who previously flipped the toggle off, then accepts the new
   // privacy version.
   configState: {
@@ -78,9 +78,13 @@ describe('reenableAnalyticsOnConsent (privacy acceptance re-baseline)', () => {
     expect(captureSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('is idempotent — a second acceptance write keeps opt_out false', async () => {
+  it('is idempotent â€” a second acceptance write keeps opt_out false', async () => {
     await reenableAnalyticsOnConsent();
     expect(configState.cfg.analytics_opt_out).toBe(false);
     expect(await getAnalyticsOptOut()).toBe(false);
   });
 });
+
+
+
+

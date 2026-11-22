@@ -1,9 +1,9 @@
-/**
+﻿/**
  * The share label (260804), against a stubbed desktopCapturer.
  *
  * Worth testing rather than eyeballing because the two cases resolve
- * differently — a window share matches by id, a screen share takes the front of
- * the list — and because the "skip our own windows" rule is the one that goes
+ * differently â€” a window share matches by id, a screen share takes the front of
+ * the list â€” and because the "skip our own windows" rule is the one that goes
  * wrong silently: on a whole-screen share Sei is usually frontmost at the exact
  * moment sharing starts, and naming ourselves would tell the companion it is
  * watching itself.
@@ -46,7 +46,7 @@ describe('readShareLabel', () => {
   it('never names one of our own windows as the frontmost', async () => {
     getSources.mockResolvedValue([
       win('window:0', 'Sei'),
-      win('window:8', 'Sei — Settings'),
+      win('window:8', 'Sei â€” Settings'),
       win('window:1', 'Valorant'),
     ]);
     expect(await readShareLabel('screen:0:0')).toBe('Valorant');
@@ -62,7 +62,7 @@ describe('readShareLabel', () => {
     getSources.mockResolvedValue([win('window:1', 'x'.repeat(200))]);
     const label = (await readShareLabel('screen:0:0'))!;
     expect(label.length).toBeLessThanOrEqual(70);
-    expect(label.endsWith('…')).toBe(true);
+    expect(label.endsWith('â€¦')).toBe(true);
   });
 
   it('collapses the whitespace a window title can carry', () => {
@@ -85,3 +85,7 @@ describe('readShareLabel', () => {
     return expect(readShareLabel('screen:0:0')).resolves.toBeNull();
   });
 });
+
+
+
+

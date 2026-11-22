@@ -1,4 +1,4 @@
-/**
+﻿/**
  * She decorates too (261105, T336). The room edit tool she gets while the
  * player has her room editor open, and the edit ops it turns into.
  *
@@ -122,7 +122,7 @@ export function applyRoomOps(manifest: RoomPresetManifest, state: RoomState, ops
   return { state: s, applied };
 }
 
-// ── Colour words ────────────────────────────────────────────────────────────
+// â”€â”€ Colour words â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Names she can use for a swatch: plain interior colour words. */
 const NAMED: ReadonlyArray<[string, string]> = [
@@ -214,12 +214,12 @@ export function paletteWords(hexes: readonly string[]): Array<{ hex: string; wor
   return out;
 }
 
-// ── Names ───────────────────────────────────────────────────────────────────
+// â”€â”€ Names â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function norm(s: string): string {
   return s
     .toLowerCase()
-    .replace(/['’]/g, '')
+    .replace(/['â€™]/g, '')
     .replace(/[^a-z0-9 ]+/g, ' ')
     .replace(/\b(the|a|an|some|my|your|her|his)\b/g, ' ')
     .replace(/\s+/g, ' ')
@@ -315,7 +315,7 @@ function parseSide(value: string | undefined): DecorateSide | null {
 
 const TIMES: Readonly<Record<string, RoomState['time']>> = { auto: 'auto', clock: 'auto', real: 'auto', day: 'day', daytime: 'day', dusk: 'dusk', evening: 'dusk', sunset: 'dusk', night: 'night' };
 
-// ── The tool ────────────────────────────────────────────────────────────────
+// â”€â”€ The tool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface DecorateChange {
   do?: unknown;
@@ -625,3 +625,7 @@ export function isRoomEditOp(v: unknown): v is RoomEditOp {
       return false;
   }
 }
+
+
+
+

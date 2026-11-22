@@ -1,4 +1,4 @@
-// src/bot/brain/index.sessionEvents.test.js
+﻿// src/bot/brain/index.sessionEvents.test.js
 //
 // 261014 (quality pass 7b): brain/index.js is where adapter events turn into
 // the session's event record (sessionEvents.js, the "game:" lines of the
@@ -132,3 +132,7 @@ describe('brain/index.js records game events', () => {
     }
   })
 })
+
+
+
+

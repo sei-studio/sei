@@ -1,4 +1,4 @@
-// src/observers/vitals.js — pure function of bot state
+﻿// src/observers/vitals.js â€” pure function of bot state
 /**
  * @param {import('mineflayer').Bot} bot
  * @returns {{ hp:number, food:number, xp:{level:number}, sleeping:boolean }}
@@ -11,3 +11,7 @@ export function vitals(bot) {
     sleeping: Boolean(bot.isSleeping),
   }
 }
+
+
+
+

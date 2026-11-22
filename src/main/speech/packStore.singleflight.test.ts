@@ -1,5 +1,5 @@
-/**
- * 260817 (china-compat W10) — the pack download seam BETWEEN surfaces.
+﻿/**
+ * 260817 (china-compat W10) â€” the pack download seam BETWEEN surfaces.
  *
  * Settings (W5 DownloadConfirmModal) and onboarding (W6 PackDownloadPanel)
  * both drive speech:pack-download for the same pack ids. The store's
@@ -43,7 +43,7 @@ describe('downloadPack single-flight (W10)', () => {
     });
     globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
-    // Start BOTH before awaiting either — the Settings + onboarding shape.
+    // Start BOTH before awaiting either â€” the Settings + onboarding shape.
     const a = downloadPack('tts-en');
     const b = downloadPack('tts-en');
     const [ra, rb] = await Promise.allSettled([a, b]);
@@ -72,3 +72,7 @@ describe('downloadPack single-flight (W10)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(4);
   });
 });
+
+
+
+

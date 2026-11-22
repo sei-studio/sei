@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenAtLoginRow (261107): Settings > Appearance "Open on login".
  *
  * The same setting the step after the WorldLink guided room setup offers once
@@ -123,3 +123,7 @@ export function OpenAtLoginRow(): React.ReactElement | null {
     </>
   );
 }
+
+
+
+

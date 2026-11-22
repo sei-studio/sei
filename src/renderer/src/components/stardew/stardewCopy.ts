@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared copy helpers for the Stardew surfaces: the install progress line
  * and the ErrorClass lookup for a failed install. Pure; tested.
  */
@@ -58,3 +58,7 @@ export function markAchievementsNoteSeen(): void {
     /* storage unavailable: show it again next time, which is harmless */
   }
 }
+
+
+
+

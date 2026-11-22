@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft "Sei-ready" readiness + the wizard's target version (260916).
  * Pure, shared by main (the skin wizard) and the renderer (setup UI), so
  * the two can never disagree about what "set up" means.
@@ -264,3 +264,7 @@ export function isMcVersionNewerThanSupported(
   if (!newest) return false;
   return compareMcVersions(m[0], newest) > 0;
 }
+
+
+
+

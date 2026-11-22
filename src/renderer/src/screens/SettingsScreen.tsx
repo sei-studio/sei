@@ -1,11 +1,11 @@
-/**
- * SettingsScreen — centered "Party" settings column (§4.7).
+﻿/**
+ * SettingsScreen â€” centered "Party" settings column (Â§4.7).
  *
  * Recomposed to the mockup rhythm: a 560px column of Oswald-headed groups,
  * each row a [label | optional value | control] line with hairline borders,
  * using the shared Seg / Toggle primitives. Every prior row + behavior is
  * preserved:
- *  - preferred_name ("Name") → on-blur saveConfig (commit on focus-leave).
+ *  - preferred_name ("Name") â†’ on-blur saveConfig (commit on focus-leave).
  *  - 261110: the AI group is one row, "Brain, voice and plan", that opens
  *    the Playtime page. The backend switch, ChatGPT plan, provider / key /
  *    model rows, Voice and the Account ChatGPT link row moved there
@@ -16,7 +16,7 @@
  *  - Reset-all iterates the character list; resend-verification / export /
  *    update-check state machines unchanged; all modal opens unchanged.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §1 + §4.7.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§1 + Â§4.7.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -57,7 +57,7 @@ import { userFacingError } from '../lib/errors';
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
  * between its two main colors; the name rides the shared data-tip tooltip.
- * Literal hex is deliberate here — a swatch previews ANOTHER theme's palette,
+ * Literal hex is deliberate here â€” a swatch previews ANOTHER theme's palette,
  * which the current theme's tokens cannot express. Keep in sync with the
  * per-theme blocks in tokens.css (bg + accent of each).
  */
@@ -72,7 +72,7 @@ export function SettingsScreen(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const themeMode = useUiStore((s) => s.themeMode);
   const setThemeMode = useUiStore((s) => s.setThemeMode);
-  // 260724 — Theme section: custom background + its two sliders. App.tsx
+  // 260724 â€” Theme section: custom background + its two sliders. App.tsx
   // hydrates these from persisted config; changes here write straight through
   // (image via the user:apply/remove-background IPC, sliders via saveConfig on
   // release so a drag doesn't spam disk writes).
@@ -108,7 +108,7 @@ export function SettingsScreen(): React.ReactElement {
   const setConvoStartersEnabled = useUiStore((s) => s.setConvoStartersEnabled);
   const setCallCaptions = useUiStore((s) => s.setCallCaptions);
   const authState = useAuthStore((s) => s.state);
-  // "Is ANY bot running" — gates the live backend switch. Multi-summon: true
+  // "Is ANY bot running" â€” gates the live backend switch. Multi-summon: true
   // when one or more characters are connecting/online.
   const botRunning = useDataStore((s) =>
     Object.values(s.summons).some((st) => st.kind === 'connecting' || st.kind === 'online'),
@@ -121,17 +121,17 @@ export function SettingsScreen(): React.ReactElement {
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
 
   const [cfg, setCfg] = useState<UserConfig | null>(null);
-  // Phase 18/19 — the user's chat avatar (path ref '_user.png' or null), seeded
+  // Phase 18/19 â€” the user's chat avatar (path ref '_user.png' or null), seeded
   // from sei.userGetProfile() on mount. PortraitImagePicker owns apply/remove
   // via the user-profile IPC overrides below.
   const [userPic, setUserPic] = useState<string | null>(null);
-  // The user's 4-char public handle (profiles.handle) — shown as the Account ID
+  // The user's 4-char public handle (profiles.handle) â€” shown as the Account ID
   // instead of the long Supabase UUID. Null until the profile loads / when offline.
   const [userHandle, setUserHandle] = useState<string | null>(null);
   // Updates section. appVersion is read once via getVersion(); updateStatus
   // reflects live updater events while the user is on this screen. The actual
   // update FLOW (changelog popup, download, restart) is owned by App.tsx's
-  // UpdatePopup — this section only triggers a check + surfaces inline status.
+  // UpdatePopup â€” this section only triggers a check + surfaces inline status.
   const [appVersion, setAppVersion] = useState<string>('');
   const [updateStatus, setUpdateStatus] = useState<
     'idle' | 'checking' | 'up-to-date' | 'available' | 'error'
@@ -142,22 +142,22 @@ export function SettingsScreen(): React.ReactElement {
   // the live updater on toggle. Local state, since only this screen reads it.
   const [advancedUpdates, setAdvancedUpdates] = useState<boolean>(false);
 
-  // Inline edit buffers — typing only updates these; commit happens on blur.
+  // Inline edit buffers â€” typing only updates these; commit happens on blur.
   const [preferredDraft, setPreferredDraft] = useState<string>('');
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Phase 10 (D-11) — Account panel state. Modals + transient action statuses.
+  // Phase 10 (D-11) â€” Account panel state. Modals + transient action statuses.
   const [signOutModalOpen, setSignOutModalOpen] = useState<boolean>(false);
   // WR-10: capture the account email at modal-open time so the modal can
   // remain mounted across the SIGNED_OUT transition that fires mid-flow.
   const [deleteAccountState, setDeleteAccountState] = useState<{ email: string } | null>(null);
   // 260728: factory reset (danger zone) confirm popup.
   const [factoryResetOpen, setFactoryResetOpen] = useState(false);
-  // Plan 11-18 — re-open entry for the one-shot migration modal.
+  // Plan 11-18 â€” re-open entry for the one-shot migration modal.
   const [migrateModalOpen, setMigrateModalOpen] = useState<boolean>(false);
-  // Plan 12-14 — DMCA Designated Agent info modal. Visible to BOTH signed-in
+  // Plan 12-14 â€” DMCA Designated Agent info modal. Visible to BOTH signed-in
   // and signed-out users since DMCA is a public-law surface (CONTEXT D-35a).
   const [dmcaModalOpen, setDmcaModalOpen] = useState<boolean>(false);
-  // 260804 — email-code entry for the signed-in-but-unverified state. Replaced
+  // 260804 â€” email-code entry for the signed-in-but-unverified state. Replaced
   // the resend-status line: sending is now the modal's job, so this screen no
   // longer tracks it.
   const [verifyModalOpen, setVerifyModalOpen] = useState<boolean>(false);
@@ -203,14 +203,14 @@ export function SettingsScreen(): React.ReactElement {
         setUserHandle(p.handle);
       })
       .catch(() => {
-        /* non-fatal — section just shows the empty/NONE state */
+        /* non-fatal â€” section just shows the empty/NONE state */
       });
   }, [setDevConsoleVisible]);
 
   // Updates section: load the current version once, and subscribe to updater
   // events while this screen is mounted so the inline status line reflects an
   // in-flight manual check. onUpdateAvailable here just flips the status to
-  // "available" — the changelog popup is App.tsx's job.
+  // "available" â€” the changelog popup is App.tsx's job.
   useEffect(() => {
     void sei.getVersion().then(setAppVersion);
     const unsubs = [
@@ -259,7 +259,7 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Theme Seg: dark / light / system. Every move writes straight through —
+  // Theme Seg: dark / light / system. Every move writes straight through â€”
   // setThemeMode (App re-applies + wires the system listener), applyTheme for
   // an immediate paint, and saveConfig persists the mode.
   const onSelectTheme = async (mode: ThemeMode): Promise<void> => {
@@ -353,7 +353,7 @@ export function SettingsScreen(): React.ReactElement {
   };
 
   // 260707: persist the analytics opt-out via its dedicated IPC (which also
-  // applies it to the live analytics client), NOT saveConfig — so it never
+  // applies it to the live analytics client), NOT saveConfig â€” so it never
   // clobbers a concurrent config write. `enabled` is the toggle state
   // (analytics ON); opt-out is the inverse.
   const onToggleAnalytics = async (enabled: boolean): Promise<void> => {
@@ -423,7 +423,7 @@ export function SettingsScreen(): React.ReactElement {
 
   // Write through vision_mode to UserConfig (the config is the source of truth;
   // botSupervisor bridges it into config.vision at fork). Mirrors the toggle
-  // optimistic-then-rollback discipline. Always editable — not gated on a live
+  // optimistic-then-rollback discipline. Always editable â€” not gated on a live
   // bot session (changes apply at the next summon).
   const writeVisionConfig = async (patch: Partial<UserConfig>): Promise<void> => {
     if (!cfg) return;
@@ -441,7 +441,7 @@ export function SettingsScreen(): React.ReactElement {
   };
 
 
-  // ui-A9: "Reset all character memories" — open the confirm popup. The actual
+  // ui-A9: "Reset all character memories" â€” open the confirm popup. The actual
   // wipe runs in runResetAllMemories once the user confirms.
   const onResetAllMemoriesClick = (): void => {
     setResetAllError(null);
@@ -460,7 +460,7 @@ export function SettingsScreen(): React.ReactElement {
       const c = snapshot[i];
       try {
         await sei.resetMemory(c.id);
-        // Chat transcript lives in the wiped memory dir — evict the cache.
+        // Chat transcript lives in the wiped memory dir â€” evict the cache.
         useChatStore.getState().evictLocal(c.id);
         await refreshCharacter(c.id);
       } catch (err) {
@@ -478,11 +478,11 @@ export function SettingsScreen(): React.ReactElement {
     }
   };
 
-  // Version value: "v{x}" alone, or "v{x} · <status>" after a check. The
+  // Version value: "v{x}" alone, or "v{x} Â· <status>" after a check. The
   // status word is color-coded (green ok / orange in progress / red failed).
   const versionStatus: { text: string; cls: string } | null =
     updateStatus === 'checking'
-      ? { text: t('checking…'), cls: styles.statusWarn }
+      ? { text: t('checkingâ€¦'), cls: styles.statusWarn }
       : updateStatus === 'up-to-date'
         ? { text: t('up to date'), cls: styles.statusOk }
         : updateStatus === 'available'
@@ -490,24 +490,24 @@ export function SettingsScreen(): React.ReactElement {
           : updateStatus === 'error'
             ? { text: t('check failed'), cls: styles.statusErr }
             : null;
-  const versionValue = appVersion ? `v${appVersion}` : '–';
+  const versionValue = appVersion ? `v${appVersion}` : 'â€“';
 
-  // (The literal 'Reset all memories…' key below is what D-FIX.3 greps for.)
+  // (The literal 'Reset all memoriesâ€¦' key below is what D-FIX.3 greps for.)
   const resetAllLabel = resetAllDone
     ? t('All memories reset')
     : resetAllProgress
-      ? t('Resetting {done} of {total}…', {
+      ? t('Resetting {done} of {total}â€¦', {
           done: resetAllProgress.done,
           total: resetAllProgress.total,
         })
-      : t('Reset all memories…');
+      : t('Reset all memoriesâ€¦');
 
   return (
     <div className={styles.root}>
       <div className={styles.col}>
         {saveError ? <div className={styles.errorRow}>{saveError}</div> : null}
 
-        {/* ── Profile ─────────────────────────────────────────── */}
+        {/* â”€â”€ Profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Profile') /* >Profile< */}</h3>
           <div className={styles.profileRow} onBlur={onPreferredBlur}>
@@ -529,7 +529,7 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
-        {/* ── Account (signed-in only) ────────────────────────── */}
+        {/* â”€â”€ Account (signed-in only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {authState.kind === 'signed_in' ? (
           <div className={styles.group}>
             <h3 className={styles.groupTitle}>{t('Account') /* >Account< */}</h3>
@@ -544,7 +544,7 @@ export function SettingsScreen(): React.ReactElement {
             {!authState.user.emailVerified ? (
               <div className={styles.row}>
                 <span className={styles.label}>{t('Verify email')}</span>
-                {/* 260804 — opens the code modal, which sends a fresh code on
+                {/* 260804 â€” opens the code modal, which sends a fresh code on
                     mount. The old button only resent the link and left the
                     user to go find it; there is now something to type. */}
                 <Button kind="quiet" size="sm" onClick={() => setVerifyModalOpen(true)}>
@@ -567,7 +567,7 @@ export function SettingsScreen(): React.ReactElement {
                 screen (the rail's Plan icon), and there is no time estimate to
                 show. */}
 
-            {/* Account ID — the short 4-char public handle (profiles.handle) for
+            {/* Account ID â€” the short 4-char public handle (profiles.handle) for
                 support workflows, not the long Supabase UUID. Falls back to the
                 UUID only until the profile loads (or if no handle is assigned). */}
             <div className={styles.row}>
@@ -640,9 +640,9 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         ) : null}
 
-        {/* ── AI (261110): every AI, model and voice setting moved to the
+        {/* â”€â”€ AI (261110): every AI, model and voice setting moved to the
             Playtime page (tabs Sei / ChatGPT / My keys); this row opens it.
-            Web search stays under Games & search. ── */}
+            Web search stays under Games & search. â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
           <div className={styles.row} data-testid="settings-open-playtime">
@@ -653,12 +653,12 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
-        {/* ── Games & search (game adapters, 260908): ONE group for every
+        {/* â”€â”€ Games & search (game adapters, 260908): ONE group for every
             registered game. The left column picks the game, the right column
             shows its rows (GamesSettingsGroup); Minecraft's rows are
             unchanged. 261023: web search (provider + optional key) moved in
             as the last tab; it was its own "Search" group above About. Shown
-            in both cloud and local mode: none of it depends on the backend. ── */}
+            in both cloud and local mode: none of it depends on the backend. â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Games & search') /* >Games & search< */}</h3>
           <GamesSettingsGroup
@@ -674,7 +674,7 @@ export function SettingsScreen(): React.ReactElement {
           />
         </div>
 
-        {/* ── Language (260730) — app UI language, its own section ── */}
+        {/* â”€â”€ Language (260730) â€” app UI language, its own section â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Language')}</h3>
           <div className={styles.row}>
@@ -713,7 +713,7 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
-        {/* ── Theme (260724) — named themes + custom background ── */}
+        {/* â”€â”€ Theme (260724) â€” named themes + custom background â”€â”€ */}
         <div className={styles.group} data-tutorial="theme-group">
           <h3 className={styles.groupTitle}>{t('Theme')}</h3>
           <div className={styles.row}>
@@ -814,7 +814,7 @@ export function SettingsScreen(): React.ReactElement {
           ) : null}
         </div>
 
-        {/* ── Appearance ──────────────────────────────────────── */}
+        {/* â”€â”€ Appearance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Appearance') /* >Appearance< */}</h3>
           {/* Appearance & feel: "Realistic typing" pacing. On by default. */}
@@ -834,7 +834,7 @@ export function SettingsScreen(): React.ReactElement {
               onChange={(v) => void onToggleRealisticTyping(v)}
             />
           </div>
-          {/* ui-A7: developer console toggle. Off by default — App.tsx gates
+          {/* ui-A7: developer console toggle. Off by default â€” App.tsx gates
               <LogsBar /> on this flag. */}
           <div className={styles.row}>
             <span className={styles.label}>
@@ -934,7 +934,7 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
-        {/* ── About ───────────────────────────────────────────── */}
+        {/* â”€â”€ About â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('About') /* >About< */}</h3>
           <div className={styles.row}>
@@ -943,7 +943,7 @@ export function SettingsScreen(): React.ReactElement {
               {versionValue}
               {appVersion && versionStatus ? (
                 <>
-                  {' · '}
+                  {' Â· '}
                   <span className={versionStatus.cls}>{versionStatus.text}</span>
                 </>
               ) : null}
@@ -1081,7 +1081,7 @@ export function SettingsScreen(): React.ReactElement {
           <FacepackDevRow />
         </div>
 
-        {/* ── Danger ──────────────────────────────────────────── */}
+        {/* â”€â”€ Danger â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className={styles.group}>
           <h3 className={styles.groupTitle}>{t('Danger') /* >Danger< */}</h3>
           <div className={styles.row}>
@@ -1118,7 +1118,7 @@ export function SettingsScreen(): React.ReactElement {
                     }
                   }}
                 >
-                  {t('Delete account…')}
+                  {t('Delete accountâ€¦')}
                 </Button>
               </div>
               <p className={styles.helper}>
@@ -1129,7 +1129,7 @@ export function SettingsScreen(): React.ReactElement {
           <div className={styles.row}>
             <span className={styles.label}>{t('Factory reset')}</span>
             <Button kind="danger" size="sm" onClick={() => setFactoryResetOpen(true)}>
-              {t('Factory reset…')}
+              {t('Factory resetâ€¦')}
             </Button>
           </div>
           <p className={styles.helper}>
@@ -1159,7 +1159,7 @@ export function SettingsScreen(): React.ReactElement {
       {/*
         WR-10: gated only on the captured deleteAccountState, NOT authState.kind.
         Once the modal opens we hold the email locally so the modal can render
-        its 1200ms "Account scheduled for deletion. Signing you out…" state even
+        its 1200ms "Account scheduled for deletion. Signing you outâ€¦" state even
         after supabase.auth.signOut() flips authState.kind to 'local'.
       */}
       {deleteAccountState ? (
@@ -1186,4 +1186,8 @@ export function SettingsScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+
 

@@ -1,4 +1,4 @@
-// 261031: quality pass 32. Errands got dropped: she said she would fetch
+﻿// 261031: quality pass 32. Errands got dropped: she said she would fetch
 // coal and bring it back, walked back to the player, and never handed it
 // over (9 of the 24 errands sessions where the coal never arrived), mostly
 // when no player task was in her heartbeat (92 of 140 sessions).
@@ -21,7 +21,7 @@ describe('NUDGES.arrivedAsks', () => {
     expect(NUDGES.arrivedAsks({ who: 'Alex' })).toBe('You are next to Alex now. Look back at what they asked you for: anything they still want that you are carrying reaches them only through give, and anything they called off stays with you.')
     const t = NUDGES.arrivedAsks({ who: null })
     expect(t).toContain('You are next to the player now.')
-    expect(t).not.toMatch(/—|"/)
+    expect(t).not.toMatch(/â€”|"/)
   })
 })
 
@@ -267,3 +267,7 @@ describe('orchestrator: open asks, review cases', () => {
     expect(allText(arrivals.at(-1))).toContain(ARRIVED)
   })
 })
+
+
+
+

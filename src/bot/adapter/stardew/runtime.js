@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/runtime.js — the Stardew Valley game runtime (M1,
+﻿// src/bot/adapter/stardew/runtime.js â€” the Stardew Valley game runtime (M1,
 // 260908). The composer (src/bot/index.js) dynamic-imports this by
 // config.adapter.kind === 'stardew'. It owns the body's link to the SMAPI
 // mod: connect + spawn inside the supervisor's deadline, a bounded reconnect
@@ -300,7 +300,7 @@ export async function createRuntime(config, hooks) {
     }
   }
 
-  // ── Initial connect: bounded attempts, then a terminal error ────────
+  // â”€â”€ Initial connect: bounded attempts, then a terminal error â”€â”€â”€â”€â”€â”€â”€â”€
   for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS && !_stopped; attempt++) {
     try {
       await bringUp()
@@ -327,3 +327,7 @@ export async function createRuntime(config, hooks) {
   }
   return makeHandle()
 }
+
+
+
+

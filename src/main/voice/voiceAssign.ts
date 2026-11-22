@@ -1,9 +1,9 @@
-/**
- * Character → ElevenLabs voice resolution (260705).
+﻿/**
+ * Character â†’ ElevenLabs voice resolution (260705).
  *
  * Procgen ('unique') characters get metadata.voiceId stamped at generation
- * time (uniqueGeneration → soulcaster castSoul → sheet.voice_id). Everything
- * else — custom characters, and uniques generated before voices existed —
+ * time (uniqueGeneration â†’ soulcaster castSoul â†’ sheet.voice_id). Everything
+ * else â€” custom characters, and uniques generated before voices existed â€”
  * gets a deterministic fallback here on first use: the same soulcaster
  * rollVoice tables, seeded from the character id, filtered by whatever the
  * character sheet knows (gender/age/background when a soulcaster sheet is in
@@ -28,7 +28,7 @@ import { POOL_VOICE_IDS, isPoolVoiceId } from '../../shared/poolVoiceIds';
 import { listCharacters, saveCharacter } from '../characterStore';
 import { getCurrentAuthState } from '../auth/authState';
 
-/** FNV-1a over the character id — a stable 32-bit seed for the fallback roll. */
+/** FNV-1a over the character id â€” a stable 32-bit seed for the fallback roll. */
 function seedFrom(id: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < id.length; i += 1) {
@@ -46,9 +46,9 @@ type SheetHints = {
 };
 
 /**
- * Persona prose → soulcaster personality seeds (260705). Custom / world
+ * Persona prose â†’ soulcaster personality seeds (260705). Custom / world
  * characters have no rolled `personality_seeds`, so before this the fallback
- * roll was personality-BLIND — a "clinically depressed monotone robot" was as
+ * roll was personality-BLIND â€” a "clinically depressed monotone robot" was as
  * likely to land a chirpy girl-next-door as a deep flat voice (the Marv bug).
  * A cheap keyword scan over the persona maps the loudest personality signals
  * onto the same seed vocabulary rollVoice already weights by (SEED_VOICE_TAGS
@@ -183,7 +183,7 @@ export function ownVoicePickOf(character: Character): OwnVoicePick | null {
 
 /**
  * True when `id` is a curated-pool or legacy voice (defense at the IPC
- * boundary — still a closed allowlist, never an arbitrary id). Legacy ids
+ * boundary â€” still a closed allowlist, never an arbitrary id). Legacy ids
  * must pass so previewing an existing companion's voice keeps working. The
  * set itself lives in shared/poolVoiceIds.ts so the renderer reads the same
  * one (261024).
@@ -223,7 +223,7 @@ function rollFallbackVoice(character: Character, ownGender: string | undefined, 
         : 'other';
   const age = typeof sheet.age === 'number' && Number.isFinite(sheet.age) ? sheet.age : 30;
 
-  // Personality inference from the persona prose (260705, the Marv fix) —
+  // Personality inference from the persona prose (260705, the Marv fix) â€”
   // sheet-less characters still get a voice that fits who they are, and a
   // robot persona unlocks rollVoice's robot rule.
   const personaText = `${character.persona?.source ?? ''}\n${character.name ?? ''}`;
@@ -290,13 +290,13 @@ export function previewVoiceIdFor(character: Character): string {
 
 /**
  * Resolve (and persist, when newly assigned) the character's TTS voice id.
- * Never throws for assignment reasons — the fallback roll always lands on a
+ * Never throws for assignment reasons â€” the fallback roll always lands on a
  * valid pool voice; only storage errors propagate from saveCharacter, and
  * those are swallowed too (an unsaved assignment just re-rolls to the same
  * deterministic pick next time).
  */
 export async function resolveVoiceId(character: Character): Promise<string> {
-  // Explicit "no voice" pick (260720): never roll a fallback over it — doing
+  // Explicit "no voice" pick (260720): never roll a fallback over it â€” doing
   // so would persist a voice onto a companion the user made silent. Callers
   // gate on the sentinel before resolving; this throw is the backstop.
   if (character.metadata?.voiceId === NO_VOICE_ID) {
@@ -311,7 +311,7 @@ export async function resolveVoiceId(character: Character): Promise<string> {
   // would only overwrite it again.
   if (isBorrowedOwnVoice(character)) return ownVoiceStandInId(character);
 
-  // Exclude voices the rest of the library already uses (assigned ones only —
+  // Exclude voices the rest of the library already uses (assigned ones only â€”
   // resolving them recursively would just be this same roll).
   let taken: string[] = [];
   try {
@@ -320,7 +320,7 @@ export async function resolveVoiceId(character: Character): Promise<string> {
       .map((c) => assignedVoiceId(c))
       .filter((v): v is string => v !== null);
   } catch {
-    // Library unreadable → roll without exclusions; still deterministic.
+    // Library unreadable â†’ roll without exclusions; still deterministic.
   }
 
   const voice = { id: rollFallbackVoice(character, undefined, taken) };
@@ -344,3 +344,7 @@ export async function resolveVoiceId(character: Character): Promise<string> {
   }
   return voice.id;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Authenticode checks for Windows updates on Velopack (261031). Pure, with no
  * imports, so it unit-tests anywhere and CI can load it with plain node
  * (velopack-update.yml, the authenticode job).
@@ -228,3 +228,7 @@ export function signatureVerdict(
   }
   return { ok: true };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261027 lazy skins: the skin_pending marker follows the skin. Only the
  * creation placeholder keeps it; any skin the player picks (upload, search,
  * remove) or a generated one clears it, so a later launch never replaces it.
@@ -114,3 +114,7 @@ describe('skin_pending follows the skin', () => {
     expect(h.saved!.skin.source).toBe('none');
   });
 });
+
+
+
+

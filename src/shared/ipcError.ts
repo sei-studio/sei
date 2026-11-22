@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Electron IPC error unwrapping (261119).
  *
  * A main-side throw reaches the renderer through `ipcRenderer.invoke` as
@@ -85,3 +85,7 @@ export function unwrapIpcRejection(err: unknown): Error {
   }
   return new Error(clean);
 }
+
+
+
+

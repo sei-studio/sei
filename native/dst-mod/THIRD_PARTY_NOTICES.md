@@ -1,4 +1,4 @@
-# Third-party notices for the Sei DST helper mod
+﻿# Third-party notices for the Sei DST helper mod
 
 `native/dst-mod/sei` is MIT (see `sei/LICENSE`). It adapts code and design
 from the projects below; nothing from Klei's own scripts is copied (they are
@@ -7,7 +7,7 @@ API reference only, per the modding guidelines).
 ## FAtiMA-DST (MIT)
 
 - https://github.com/hineios/FAtiMA-DST
-- Copyright (c) 2018 Fábio Almeida
+- Copyright (c) 2018 FÃ¡bio Almeida
 - Adapted: the brain skeleton (`scripts/brains/seibrain.lua`): a
   PriorityNode whose command slot runs `DoAction` over a `BufferedAction`
   built from an external decision, with `AddSuccessAction` /
@@ -23,7 +23,7 @@ API reference only, per the modding guidelines).
 ```
 MIT License
 
-Copyright (c) 2018 Fábio Almeida
+Copyright (c) 2018 FÃ¡bio Almeida
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -92,3 +92,7 @@ SOFTWARE.
   `Networking_Say`, `modsettings.lua` hooks).
 - Artificial Wilson / DS-AI (unlicensed) and DST_Bridge (GPL-3.0): design
   reference for gather/light/cook loops and the chat hook; no code.
+
+
+
+

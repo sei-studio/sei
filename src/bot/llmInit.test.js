@@ -1,4 +1,4 @@
-// 260816 (china-compat W2): pins the init-payload → config.llm mapping. The
+﻿// 260816 (china-compat W2): pins the init-payload â†’ config.llm mapping. The
 // latent bug this guards against: UserConfig.provider was written by Settings
 // and read by nothing, so every bot session ran Anthropic. applyLlmInit is the
 // seam where the supervisor's `llm` init section becomes the bot's
@@ -52,7 +52,7 @@ describe('applyLlmInit', () => {
 
   it('anthropic provider keeps the anthropic path and honors a model override', () => {
     const out = applyLlmInit(rawFor(), { provider: 'anthropic', model: 'claude-sonnet-4-5', api_key: 'sk-byok' }, 'sk-byok')
-    expect(out.llm).toBeUndefined() // Zod default fills → provider 'anthropic'
+    expect(out.llm).toBeUndefined() // Zod default fills â†’ provider 'anthropic'
     expect(out.anthropic.model).toBe('claude-sonnet-4-5')
     const cfg = ConfigSchema.parse(out)
     expect(cfg.llm.provider).toBe('anthropic')
@@ -120,7 +120,7 @@ describe('applyLlmInit', () => {
   })
 })
 
-// ─── applyLlmSwitch (260828: mid-session backend-switch fold-in) ───────────
+// â”€â”€â”€ applyLlmSwitch (260828: mid-session backend-switch fold-in) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // A PARSED cloud-proxy session config (what a live cloud bot holds).
 const cloudCfg = () =>
@@ -133,7 +133,7 @@ const localCfg = (llm) =>
   ConfigSchema.parse(applyLlmInit(rawFor(), llm, llm?.api_key ?? 'sk-byok'))
 
 describe('applyLlmSwitch', () => {
-  it('cloud→local reroutes to the configured provider (the BYOK-switch fix)', () => {
+  it('cloudâ†’local reroutes to the configured provider (the BYOK-switch fix)', () => {
     const cfg = cloudCfg()
     const kind = applyLlmSwitch(cfg, {
       api_key: 'sk-local',
@@ -149,7 +149,7 @@ describe('applyLlmSwitch', () => {
     expect(cfg.llm.providers.deepseek).toBeDefined()
   })
 
-  it('cloud→local with no llm section (older main) falls to the anthropic BYOK path', () => {
+  it('cloudâ†’local with no llm section (older main) falls to the anthropic BYOK path', () => {
     const cfg = cloudCfg()
     const kind = applyLlmSwitch(cfg, { api_key: 'sk-local' })
     expect(kind).toBe('anthropic')
@@ -158,7 +158,7 @@ describe('applyLlmSwitch', () => {
     expect(cfg.llm.provider).toBe('anthropic')
   })
 
-  it('local(non-anthropic)→cloud forces the anthropic+cloudMode path', () => {
+  it('local(non-anthropic)â†’cloud forces the anthropic+cloudMode path', () => {
     const cfg = localCfg({ provider: 'openai', model: 'gpt-5-mini', api_key: 'ok' })
     expect(cfg.llm.provider).toBe('openai')
     const kind = applyLlmSwitch(cfg, {
@@ -168,7 +168,7 @@ describe('applyLlmSwitch', () => {
     expect(cfg.llm.provider).toBe('anthropic')
     expect(cfg.anthropic.cloudMode).toEqual({ baseURL: 'https://api.sei.gg', authToken: 'jwt2' })
     expect(cfg.anthropic.api_key).toBe('')
-    // The openai block is untouched — a later switch back to local reuses it.
+    // The openai block is untouched â€” a later switch back to local reuses it.
     expect(cfg.llm.providers.openai.model).toBe('gpt-5-mini')
   })
 
@@ -210,7 +210,7 @@ describe('applyLlmSwitch', () => {
   })
 })
 
-// ─── 261017 (issue #46): the ChatGPT-plan section ─────────────────────────
+// â”€â”€â”€ 261017 (issue #46): the ChatGPT-plan section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('applyLlmInit / applyLlmSwitch: chatgpt', () => {
   const section = {
@@ -261,3 +261,7 @@ describe('applyLlmInit / applyLlmSwitch: chatgpt', () => {
     expect(cfg.llm.providers.chatgpt.base_url).toBeUndefined()
   })
 })
+
+
+
+

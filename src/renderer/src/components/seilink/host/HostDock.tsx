@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The SeiLink dock and her speech bubble, drawn by the room host page
  * (261104, M4).
  *
@@ -216,7 +216,7 @@ export function HostDock(props: HostDockProps): React.ReactElement {
   );
 }
 
-// ── Her speech bubble ───────────────────────────────────────────────────────
+// â”€â”€ Her speech bubble â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** How long a line stays up: long enough to read it. */
 export function bubbleMs(text: string): number {
@@ -248,3 +248,7 @@ export function HostBubble({ text, her, workArea }: { text: string; her: Seilink
     </div>
   );
 }
+
+
+
+

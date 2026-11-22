@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LlmCallParams, LlmProvider } from './llm/types';
 import {
   DEDUPE_WINDOW_MS,
@@ -491,7 +491,7 @@ describe('reply parsing', () => {
     expect(parseNextStepReply('  None.  ')).toBeNull();
     expect(parseNextStepReply('nothing')).toBeNull();
     expect(parseNextStepReply('')).toBeNull();
-    expect(parseNextStepReply('没有')).toBeNull();
+    expect(parseNextStepReply('æ²¡æœ‰')).toBeNull();
     expect(parseNextStepReply('no more iron, mine some next time')).toBe('no more iron, mine some next time');
   });
 });
@@ -631,24 +631,24 @@ describe('261020: memories keep the section they are from', () => {
     '',
     '- [2026-10-18] ouen likes cats',
     '',
-    "## World 1 — ouen's world (Minecraft)",
+    "## World 1 â€” ouen's world (Minecraft)",
     "- [2026-10-19 21:00] ouen's favorite block is copper bulb, building a lighthouse",
     '',
     '## In the app (texting, calls and minigames, outside any game world)',
     '- [2026-10-20 10:00] ouen still needs 40 copper bulbs',
     '- [2026-10-20 10:05] ouen quit chess fast again',
     '',
-    '## World 2 — Sui Farm (Stardew Valley)',
+    '## World 2 â€” Sui Farm (Stardew Valley)',
     '- [2026-10-20 11:00] ouen named the farm Sui Farm',
   ].join('\n');
 
   it('memoryEntries pairs each entry with its section header', () => {
     expect(memoryEntries(body)).toEqual([
       { text: 'ouen likes cats', place: null },
-      { text: "ouen's favorite block is copper bulb, building a lighthouse", place: "World 1 — ouen's world (Minecraft)" },
+      { text: "ouen's favorite block is copper bulb, building a lighthouse", place: "World 1 â€” ouen's world (Minecraft)" },
       { text: 'ouen still needs 40 copper bulbs', place: 'In the app (texting, calls and minigames, outside any game world)' },
       { text: 'ouen quit chess fast again', place: 'In the app (texting, calls and minigames, outside any game world)' },
-      { text: 'ouen named the farm Sui Farm', place: 'World 2 — Sui Farm (Stardew Valley)' },
+      { text: 'ouen named the farm Sui Farm', place: 'World 2 â€” Sui Farm (Stardew Valley)' },
     ]);
   });
 
@@ -666,12 +666,12 @@ describe('261020: memories keep the section they are from', () => {
         'Some of your recent memories, under the heading of where each is from:',
         'Earlier:',
         '- ouen likes cats',
-        "World 1 — ouen's world (Minecraft):",
+        "World 1 â€” ouen's world (Minecraft):",
         "- ouen's favorite block is copper bulb, building a lighthouse",
         'In the app (texting, calls and minigames, outside any game world):',
         '- ouen still needs 40 copper bulbs',
         '- ouen quit chess fast again',
-        'World 2 — Sui Farm (Stardew Valley):',
+        'World 2 â€” Sui Farm (Stardew Valley):',
         '- ouen named the farm Sui Farm',
       ].join('\n'),
     );
@@ -778,3 +778,7 @@ describe('session ends that run no check (261107)', () => {
     expect(() => reportGoodbyePlanSaved({ characterId: 'c', surface: 'call' }, boom)).not.toThrow();
   });
 });
+
+
+
+

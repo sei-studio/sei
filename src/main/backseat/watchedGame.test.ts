@@ -1,4 +1,4 @@
-/** 261031 (T278): Watch-together `game` from the shared window title, closed list only. */
+﻿/** 261031 (T278): Watch-together `game` from the shared window title, closed list only. */
 import { describe, expect, it } from 'vitest';
 import { WATCHED_GAME_IDS, WatchedTally, classifyWatched, watchedProps } from './watchedGame';
 
@@ -9,7 +9,7 @@ describe('classifyWatched', () => {
     expect(classifyWatched('Minecraft Dungeons')).toEqual({ kind: 'game', game: 'minecraft_dungeons' });
     expect(classifyWatched('League of Legends (TM) Client')).toEqual({ kind: 'game', game: 'league_of_legends' });
     expect(classifyWatched('Counter-Strike 2')).toEqual({ kind: 'game', game: 'counter_strike' });
-    expect(classifyWatched('ELDEN RING™')).toEqual({ kind: 'game', game: 'elden_ring' });
+    expect(classifyWatched('ELDEN RINGâ„¢')).toEqual({ kind: 'game', game: 'elden_ring' });
     expect(classifyWatched('Roblox')).toEqual({ kind: 'game', game: 'roblox' });
     expect(classifyWatched('Stardew Valley')).toEqual({ kind: 'game', game: 'stardew_valley' });
     expect(classifyWatched('Rust')).toEqual({ kind: 'game', game: 'rust' });
@@ -60,3 +60,7 @@ describe('watchedProps', () => {
     expect(watchedProps(null, { kind: 'video' })).toEqual({ watched_kind: 'video' });
   });
 });
+
+
+
+

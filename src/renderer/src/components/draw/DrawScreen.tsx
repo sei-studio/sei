@@ -1,5 +1,5 @@
-/**
- * DrawScreen — the whole Draw! surface.
+﻿/**
+ * DrawScreen â€” the whole Draw! surface.
  *
  * Deliberately outside the app's Summoning Terminal theme: a white page in a
  * handdrawn register, with as few elements as the game needs. It is a route of
@@ -457,3 +457,7 @@ function DrawScreenBody({ characterId }: { characterId: string }): React.ReactEl
     </div>
   );
 }
+
+
+
+

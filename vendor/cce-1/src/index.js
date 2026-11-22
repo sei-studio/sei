@@ -1,4 +1,4 @@
-/**
+﻿/**
  * cce-1: Character Chess Engine.
  * Skill-conditioned move generation with LLM personality selection,
  * Elo 400 to 2000. See README.md for the architecture.
@@ -22,3 +22,7 @@ export { describeCandidate } from './translate.js';
 export { materialCount, winBand, macroText, cpToWin, naiveMaterialWin } from './macro.js';
 export { moveToIndex, indexToMove, MOVE_VOCAB_SIZE, squareName } from './vocab.js';
 export { mirrorFen, mirrorMove, mirrorSquare, boardTokens } from './encode.js';
+
+
+
+

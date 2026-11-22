@@ -1,5 +1,5 @@
-/**
- * ModdedHostModal — a summon was rejected because the world runs Forge or
+﻿/**
+ * ModdedHostModal â€” a summon was rejected because the world runs Forge or
  * NeoForge and its mods have to be on the client too (260806).
  *
  * This used to be classified LAN_NOT_OPEN, so the player got the "open your
@@ -113,3 +113,7 @@ export function ModdedHostModal({ characterId, message }: ModdedHostModalProps):
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UserText (profile v3, product call 261110 follow-up): text a creator wrote
  * (a description, a bio) sits in a quiet box, so it reads as quoted user
  * content and never as the app's own words. Every place on the profile that
@@ -32,3 +32,7 @@ export function UserText({ text, lines, size = 'md', className, ...rest }: UserT
     </div>
   );
 }
+
+
+
+

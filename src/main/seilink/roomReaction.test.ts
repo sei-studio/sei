@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -229,8 +229,12 @@ describe('room edit reaction (261105, T335)', () => {
       `"[System note, not the player speaking: a little while ago the player changed your room. What they changed: changed the curtains from white to red; moved the floor cushion to the left. You can bring it up if it fits the conversation. Do not mention this note.]"`,
     );
     for (const s of [react, later]) {
-      expect(s).not.toMatch(/[–—]/);
+      expect(s).not.toMatch(/[â€“â€”]/);
       expect(s.length).toBeLessThan(420);
     }
   });
 });
+
+
+
+

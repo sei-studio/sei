@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   bootOfferUiReady,
   checkBootImportOffer,
@@ -166,3 +166,7 @@ describe('checkBootImportOffer', () => {
     expect((await checkBootImportOffer(h.deps)).kind).toBe('wait');
   });
 });
+
+
+
+

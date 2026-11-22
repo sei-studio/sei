@@ -1,4 +1,4 @@
-// 261020: quality pass 20.
+﻿// 261020: quality pass 20.
 //  - Recycled lines on turns that carried none of hers: the turn after one of
 //    her actions finished, and an idle tick seconds after she spoke. Those
 //    turns now quote a fresh line of hers in the short form ('result'), once
@@ -44,7 +44,7 @@ describe('NUDGES.heartbeatNow', () => {
     expect(t).toContain('- b\n')
     expect(t).toContain(`- (player task) ${'x'.repeat(143)}...`)
     expect(t).toContain('call clearGoal on it in this same turn')
-    expect(t).not.toMatch(/—|NEVER|ALWAYS|ONLY/)
+    expect(t).not.toMatch(/â€”|NEVER|ALWAYS|ONLY/)
   })
 })
 
@@ -239,3 +239,7 @@ describe('review: clearGoal with a clipped heartbeatNow line', () => {
     } finally { await fs.rm(file, { force: true }) }
   })
 })
+
+
+
+

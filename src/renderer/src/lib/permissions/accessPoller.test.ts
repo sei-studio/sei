@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929: the permission cards' poll. Checks about once a second, never
  * overlaps itself, stops on the first grant and continues exactly once.
  */
@@ -120,3 +120,7 @@ describe('restartOfferDue', () => {
     expect(restartOfferDue(1_000, 1_000 + 20_000)).toBe(true);
   });
 });
+
+
+
+

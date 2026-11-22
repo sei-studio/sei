@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 // Search QA harnesses: live model + live web, so they are kept out of the
@@ -20,3 +20,7 @@ export default defineConfig({
     reporters: ['verbose'],
   },
 });
+
+
+
+

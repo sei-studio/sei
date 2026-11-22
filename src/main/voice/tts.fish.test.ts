@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fish Audio as the local voice (261103): routing, the automatic voice and a
  * character's own pick, and the Fast fallback with its one notice (sent only
  * once the Fast clip exists). Same
@@ -85,7 +85,7 @@ describe('Fish Audio TTS routing', () => {
     expect(m.fishSynth).toHaveBeenLastCalledWith('fish-key', expect.any(String),
       expect.objectContaining({ id: FISH_VOICES.en.female.id, source: 'auto', speed: FISH_VOICES.en.female.speed }), 'en');
     m.gender = 'male';
-    await voiceTts({ characterId: 'c1', text: '你好，今天想做什么？' });
+    await voiceTts({ characterId: 'c1', text: 'ä½ å¥½ï¼Œä»Šå¤©æƒ³åšä»€ä¹ˆï¼Ÿ' });
     expect(m.fishSynth).toHaveBeenLastCalledWith('fish-key', expect.any(String),
       expect.objectContaining({ id: FISH_VOICES.zh.male.id }), 'zh');
     expect(m.local).not.toHaveBeenCalled();
@@ -275,3 +275,7 @@ describe('Fish Audio TTS routing', () => {
     await expect(fishSampleTts()).rejects.toThrow(/^FISH_NO_CREDIT/);
   });
 });
+
+
+
+

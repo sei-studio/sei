@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 // Distribution study for the combat stat roller (rollFields's combat block).
 //
 // Runs a large number of seeded rolls and prints summary statistics so the
@@ -150,3 +150,7 @@ for (let i = 0; i < 10; i += 1) {
       `melee=${c.melee.toFixed(2)} ranged=${c.ranged.toFixed(2)} defense=${c.defense.toFixed(2)} intelligence=${c.intelligence.toFixed(2)}`,
   );
 }
+
+
+
+

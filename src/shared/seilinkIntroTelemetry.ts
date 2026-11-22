@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink first-link analytics (261105, T337), shape only: the cinematic,
  * the guide's SeiLink tour and the SeiLink entry points. The renderer sends
  * them through `sei.track`; main's analytics:track handler rebuilds the props
@@ -113,7 +113,7 @@ export type TipAction = (typeof TIP_ACTIONS)[number];
 
 type Scalar = string | number | boolean | null;
 
-// ── The WorldLink status lines (261106 v6) ────────────────────────────────
+// â”€â”€ The WorldLink status lines (261106 v6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One per intro: how the status lines went (lib/seilink/worldLink.ts linkReport). */
 export const SEILINK_INTRO_LINK_EVENT = 'seilink_intro_link';
@@ -159,7 +159,7 @@ function small(v: unknown, max: number): number | undefined {
   return Number.isFinite(n) && n >= 0 ? Math.min(Math.round(n), max) : undefined;
 }
 
-// ── The guided setup (261106, first-link v3) ──────────────────────────────
+// â”€â”€ The guided setup (261106, first-link v3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One per setup run: started, resumed (a run left unfinished before), finished (Done), abandoned (closed before Done). */
 export const SEILINK_SETUP_EVENT = 'seilink_setup';
@@ -314,3 +314,7 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
   }
   return {};
 }
+
+
+
+

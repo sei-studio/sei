@@ -1,5 +1,5 @@
-/**
- * DrawChat — the column beside the canvas. Guesses and table talk share one
+﻿/**
+ * DrawChat â€” the column beside the canvas. Guesses and table talk share one
  * log; there is no separate guess box, because the rule is that saying the
  * word in any sentence counts.
  *
@@ -132,3 +132,7 @@ export function DrawChat({
     </div>
   );
 }
+
+
+
+

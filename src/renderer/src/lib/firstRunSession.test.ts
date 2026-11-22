@@ -1,4 +1,4 @@
-/**
+﻿/**
  * First-run session (261029): the startup popup is held for the whole
  * session once onboarding, the tour or the first moment has been seen.
  */
@@ -63,3 +63,7 @@ describe('isFirstRunSession', () => {
     expect(fr.isFirstRunSession()).toBe(true);
   });
 });
+
+
+
+

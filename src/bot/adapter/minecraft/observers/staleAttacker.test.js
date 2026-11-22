@@ -1,4 +1,4 @@
-// 261019 (pass 18): an attack event whose mob died or left view before the
+﻿// 261019 (pass 18): an attack event whose mob died or left view before the
 // turn is written gets plain "it is gone" text, not "attack it now".
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -72,7 +72,7 @@ describe('staleAttackerText', () => {
     bot.emit('entityDead', z)
     const t = staleAttackerText(bot, 'sei:attacked', data)
     expect(t).toBe('A zombie went for Alex a moment ago, and it has died since then, so there is nothing to attack for it. Check nearby entities in your snapshot for anything still there before you act, and if you speak, talk about how things are now.')
-    expect(t).not.toMatch(/—/)
+    expect(t).not.toMatch(/â€”/)
   })
 
   it('says "you" for a hit on her, and "out of sight" when the mob left without dying', () => {
@@ -164,8 +164,12 @@ describe('snapshot low-health line (261019)', () => {
   it('appears at 6 hp or less and not above', () => {
     const low = composeSnapshot(snapBot(5), {})
     expect(low).toContain('low health: attackEntity will not start a mob fight at 6 hp or less.')
-    expect(low.split('\n').find((l) => l.startsWith('low health:'))).not.toMatch(/—/)
+    expect(low.split('\n').find((l) => l.startsWith('low health:'))).not.toMatch(/â€”/)
     expect(composeSnapshot(snapBot(7), {})).not.toContain('low health:')
     expect(composeSnapshot(snapBot(0), {})).not.toContain('low health:')
   })
 })
+
+
+
+

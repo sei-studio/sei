@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Velopack self-repair on Windows (product call 261120): pure rules, no
  * electron import, so they unit-test on any host. velopackRepair.ts runs them.
  *
@@ -568,3 +568,7 @@ export function recordDecision(s: RepairState, d: RepairDecision, mode: string):
     d.reason === 'cap' ? { phase: 'gave_up', attempts: next.attempts } : { phase: 'held', reason: d.reason },
   );
 }
+
+
+
+

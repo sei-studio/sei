@@ -1,7 +1,7 @@
-// Proves `craft` is registered in the closed action set with a schema that
+﻿// Proves `craft` is registered in the closed action set with a schema that
 // requires `item` and defaults `count`.
 //
-// registry.js statically imports the visualize behavior → povRenderer → native
+// registry.js statically imports the visualize behavior â†’ povRenderer â†’ native
 // gl/canvas (Electron-ABI, unloadable under system-Node vitest), so we mock that
 // module the same way registry.vision.test.js does. craft.js itself pulls only
 // pure-JS deps (minecraft-data, prismarine-recipe), so it loads fine.
@@ -20,7 +20,7 @@ vi.mock('./behaviors/visualize.js', () => ({
 
 const { createDefaultRegistry } = await import('./registry.js')
 
-describe('createDefaultRegistry — craft action', () => {
+describe('createDefaultRegistry â€” craft action', () => {
   it('registers craft in the base action set (no vision needed)', () => {
     expect(createDefaultRegistry().list()).toContain('craft')
     expect(createDefaultRegistry({ visionEnabled: true }).list()).toContain('craft')
@@ -33,3 +33,7 @@ describe('createDefaultRegistry — craft action', () => {
     expect(() => schema.parse({ item: 'oak_planks', count: 0 })).toThrow() // min 1
   })
 })
+
+
+
+

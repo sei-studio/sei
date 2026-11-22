@@ -1,5 +1,5 @@
-/**
- * formatRenewal — shared ISO-timestamp → "May 22, 2026" formatter.
+﻿/**
+ * formatRenewal â€” shared ISO-timestamp â†’ "May 22, 2026" formatter.
  *
  * Extracted from CreditsScreen.tsx so ReceiptScreen.tsx (quick/260525-sbo
  * Task 6) can reuse the exact same en-US locale formatting without
@@ -23,3 +23,7 @@ export function formatRenewal(iso: string | null): string | null {
     return null;
   }
 }
+
+
+
+

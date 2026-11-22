@@ -1,5 +1,5 @@
-/**
- * DevChessShot — dev-only screenshot harness, NOT part of the app UI.
+﻿/**
+ * DevChessShot â€” dev-only screenshot harness, NOT part of the app UI.
  *
  * main.tsx lazy-loads this behind `import.meta.env.DEV` when the renderer URL
  * carries `?chessshot=1`, e.g.
@@ -35,3 +35,7 @@ export function DevChessShot(): React.ReactElement {
   // resize flashes stay dark.
   return <div ref={ref} style={{ position: 'fixed', inset: 0, background: '#1a120c' }} />;
 }
+
+
+
+

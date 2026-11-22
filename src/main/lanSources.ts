@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Discovery sources for the LAN watcher and how their candidates are merged,
  * ordered and verified (issue #52). Pure apart from the injected ping, so it
  * is unit-tested without sockets.
@@ -146,3 +146,7 @@ export function setLanDiagnosis(d: LanDiagnosis | null): void {
 export function getLanDiagnosis(): LanDiagnosis | null {
   return latestDiagnosis;
 }
+
+
+
+

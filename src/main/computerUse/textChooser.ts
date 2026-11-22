@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the default TEXT chooser. Claude Haiku (COMPANION_MODEL; 4.5 until 261008, now 5.5) in text
  * mode over perception's state and numbered options, with the same contract
  * as JevChooser: state text + options -> index (+ probs).
@@ -135,3 +135,7 @@ export function textChooserKind(env: NodeJS.ProcessEnv = process.env): 'haiku' |
   const k = (env.SEI_ACT_TEXT_CHOOSER ?? 'haiku').trim().toLowerCase();
   return k === 'jev' || k === 'local' || k === 'none' ? k : 'haiku';
 }
+
+
+
+

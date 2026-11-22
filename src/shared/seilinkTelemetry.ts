@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink renderer analytics (261105), shape only. The room editor funnel and
  * the move-in sheet are measured in the renderer; their props are built here
  * from closed enums and counts, and main's analytics:track handler rebuilds
@@ -184,7 +184,7 @@ export interface RoomShapeAtClose {
 }
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// ── Classifying an edit ─────────────────────────────────────────────────────
+// â”€â”€ Classifying an edit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -250,7 +250,7 @@ export function classifyEdit(prev: RoomState, next: RoomState, lightSlots?: Read
   return [...out];
 }
 
-// ── The editor session ──────────────────────────────────────────────────────
+// â”€â”€ The editor session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The parts of the editor's history the tracker reads (seilinkEdit EditHistory). */
 export interface HistoryView {
@@ -437,7 +437,7 @@ export class EditorSessionTracker {
   }
 }
 
-// ── Sanitizers (renderer builds, main rebuilds) ─────────────────────────────
+// â”€â”€ Sanitizers (renderer builds, main rebuilds) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type Scalar = string | number | boolean | null;
 
@@ -587,7 +587,7 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
   return {};
 }
 
-// ── 261119: wallpaper widgets and lighting, per save ────────────────────────
+// â”€â”€ 261119: wallpaper widgets and lighting, per save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const WIDGET_ACTIONS = ['added', 'removed', 'edited'] as const;
 
@@ -662,3 +662,7 @@ export function desktopSaveEvents(
   }
   return out;
 }
+
+
+
+

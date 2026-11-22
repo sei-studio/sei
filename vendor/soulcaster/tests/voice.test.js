@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rollFields,
@@ -235,3 +235,7 @@ test('castSoul stamps voice_id from the roll and tells the model the voice', asy
   assert.match(seenUser, /voice: /);
   assert.ok(seenUser.includes(rolled.voice.vibe));
 });
+
+
+
+

@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Round-trip + corrupt-blob recovery + ENOENT-as-null.
- * Source: 10-RESEARCH §Pitfall A3 + 10-02-PLAN Task 2 behavior.
+ * Source: 10-RESEARCH Â§Pitfall A3 + 10-02-PLAN Task 2 behavior.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
@@ -45,7 +45,7 @@ afterEach(async () => {
 });
 
 describe('sessionStore', () => {
-  it('round-trips a JSON string via save → load', async () => {
+  it('round-trips a JSON string via save â†’ load', async () => {
     const payload = JSON.stringify({ access_token: 'abc', refresh_token: 'xyz' });
     await saveJson('sb-session', payload);
     const got = await loadJson('sb-session');
@@ -93,13 +93,13 @@ describe('sessionStore', () => {
     expect(sessionBackendKind()).toBe('gnome_libsecret');
   });
 
-  // ── Single-active-session invariant (anti-abuse Outcome 1) ──────────────
+  // â”€â”€ Single-active-session invariant (anti-abuse Outcome 1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   describe('assertSingleSession', () => {
     it('counts 0 sessions for an empty / missing blob', async () => {
       expect(await assertSingleSession()).toBe(0);
     });
 
-    it('counts 1 session (auth-token only) — the normal case', async () => {
+    it('counts 1 session (auth-token only) â€” the normal case', async () => {
       await saveJson('sb-projref-auth-token', JSON.stringify({ access_token: 'a' }));
       expect(await assertSingleSession()).toBe(1);
     });
@@ -127,9 +127,13 @@ describe('sessionStore', () => {
 
     it('a fresh sign-in (overwriting the same auth-token key) stays at 1', async () => {
       await saveJson('sb-projref-auth-token', JSON.stringify({ access_token: 'A' }));
-      // Sign into B overwrites the SAME key (last-write-wins) — never a 2nd key.
+      // Sign into B overwrites the SAME key (last-write-wins) â€” never a 2nd key.
       await saveJson('sb-projref-auth-token', JSON.stringify({ access_token: 'B' }));
       expect(await assertSingleSession(true)).toBe(1);
     });
   });
 });
+
+
+
+

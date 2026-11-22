@@ -1,9 +1,9 @@
-/**
- * RigView (260817) — renders a 'rig'-kind avatar: a rig.json + aligned PNG
+﻿/**
+ * RigView (260817) â€” renders a 'rig'-kind avatar: a rig.json + aligned PNG
  * layers (the chibi-rig pipeline's output), the lightweight alternative to a
  * real Live2D model. Shares Live2DView's surface contract (speaking +
  * levelRef mouth drive, camera framing, onStatus) so AvatarView can swap the
- * two by manifest kind and every host — profile preview, overlay tile —
+ * two by manifest kind and every host â€” profile preview, overlay tile â€”
  * works unchanged.
  *
  * Liveliness model, ported from the pipeline's viewer:
@@ -18,7 +18,7 @@
  *    translation of the 'head' group. The overlay's cursor feed, when fresh,
  *    is one of the things she looks at.
  *  - Hair physics: per-layer damped spring followers chasing the head target
- *    (rig.json `physics: {k, c}`) — hair lags, overshoots, and re-converges
+ *    (rig.json `physics: {k, c}`) â€” hair lags, overshoots, and re-converges
  *    exactly at rest, the way Live2D physics chains behave. A plain `sway`
  *    fraction is available for layers that should track shallowly (body).
  */
@@ -56,7 +56,7 @@ const CURSOR_GAIN_Y = 0.6;
 /** The head carries about half of a look (GazeDriver head share); this restores the old full-deflection range. */
 const HEAD_RANGE = 1.8;
 
-/** Head translation per gaze unit, as fractions of the rig canvas (≈ the
+/** Head translation per gaze unit, as fractions of the rig canvas (â‰ˆ the
  * viewer's 22 px / 12 px on a 2048 canvas at full deflection). */
 const HEAD_GAIN_X = 0.02;
 const HEAD_GAIN_Y = 0.011;
@@ -179,7 +179,7 @@ export function RigView({
         resizeObserver = new ResizeObserver(fit);
         resizeObserver.observe(host);
 
-        // ── Gaze (261116) ──────────────────────────────────────────────────
+        // â”€â”€ Gaze (261116) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const cursor = { x: 0, y: 0, at: 0 };
         const cursorPt = { x: 0, y: 0 };
         const gazeIn: GazeInput = { cursor: null, engaged: false };
@@ -191,7 +191,7 @@ export function RigView({
           cursor.at = Date.now();
         });
 
-        // ── Per-frame state ────────────────────────────────────────────────
+        // â”€â”€ Per-frame state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let mouth = 0;
         let pseudoPhase = 0;
         let lastT = performance.now();
@@ -240,7 +240,7 @@ export function RigView({
           }
           mouth += (target - mouth) * (target > mouth ? MOUTH_ATTACK : MOUTH_RELEASE);
 
-          // Gaze → head pixel target (the head part of her look; y down).
+          // Gaze â†’ head pixel target (the head part of her look; y down).
           const cursorFresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
           if (cursorFresh) {
             cursorPt.x = cursor.x * CURSOR_GAIN_X;
@@ -316,3 +316,7 @@ export function RigView({
 
   return <div ref={hostRef} className={className} />;
 }
+
+
+
+

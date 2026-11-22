@@ -1,16 +1,16 @@
-/**
- * Tests for usageLimit.ts (260810) — the rate-limit classification and the
+﻿/**
+ * Tests for usageLimit.ts (260810) â€” the rate-limit classification and the
  * retry-window extraction whose 1-hour fallback used to lie.
  *
- *   U.1 — classifyUsageLimit: 402 depleted, 429 rate_limited, else null.
- *   U.2 — retryAfterSeconds prefers the JSON body's retry_after_seconds (the
+ *   U.1 â€” classifyUsageLimit: 402 depleted, 429 rate_limited, else null.
+ *   U.2 â€” retryAfterSeconds prefers the JSON body's retry_after_seconds (the
  *         proxy's honest window) over the Retry-After header (deliberately
  *         capped at 10s server-side).
- *   U.3 — header is the fallback when the body has none; both header shapes
+ *   U.3 â€” header is the fallback when the body has none; both header shapes
  *         (Headers-like and plain object) are read.
- *   U.4 — no usable value anywhere → undefined (the call site then uses the
+ *   U.4 â€” no usable value anywhere â†’ undefined (the call site then uses the
  *         60s guess and the modal says "in a moment" instead of a clock time).
- *   U.5 — the call site's fallback is 60, not the old 3600 (source pin).
+ *   U.5 â€” the call site's fallback is 60, not the old 3600 (source pin).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -73,3 +73,7 @@ describe('retryAfterSeconds', () => {
     expect(src.includes('?? 3600')).toBe(false);
   });
 });
+
+
+
+

@@ -1,11 +1,11 @@
-/**
- * Backseat salience gate (260728) — PARKED 260801, nothing calls this.
+﻿/**
+ * Backseat salience gate (260728) â€” PARKED 260801, nothing calls this.
  *
  * It was retired rather than retuned, and the reason is measurement, not taste.
  * Run over 61 real grids from Valorant footage, the small VLM's yes-bias turned
  * out to be intrinsic rather than a prompt problem: the structured variant
- * returned "static" on 0 of 61 grids. The successor idea — have it narrate
- * instead of judge, and wake on narration novelty — was measured against its own
+ * returned "static" on 0 of 61 grids. The successor idea â€” have it narrate
+ * instead of judge, and wake on narration novelty â€” was measured against its own
  * resampling ceiling (0.749) and an unrelated-grid floor (0.623) and scored
  * 0.660 for narrations three seconds apart. That is 0.037 of real temporal
  * signal against 0.25 of pure resampling noise. Prose, prose with cell labels,
@@ -20,17 +20,17 @@
  * salienceGate.test.ts still pins it. Nothing imports it; deleting it is safe
  * the day that stops being useful.
  *
- * ── What it did ─────────────────────────────────────────────────────────
+ * â”€â”€ What it did â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * Every 6 s the renderer handed over a fresh image grid and this
  * module asks a small VLM one question: did something significant happen across
  * these six frames? A yes becomes a tick; the expensive companion turn only
  * runs behind it.
  *
- * ── Why the threshold is learned, not written down ───────────────────────
+ * â”€â”€ Why the threshold is learned, not written down â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * The target is "roughly one grid in four is interesting", and the obvious
- * implementation — prompt for yes/no and count the yeses — does not reach it.
+ * implementation â€” prompt for yes/no and count the yeses â€” does not reach it.
  * Small VLMs are badly calibrated in exactly the way that breaks this: asked
  * "is this interesting?" they answer yes to almost anything, and their own
  * reported confidence sits in a narrow band near the top regardless of whether
@@ -38,8 +38,8 @@
  * different for every game, every model revision, and every player.
  *
  * So the cutoff is not a constant. The gate reads the LOGPROB of the yes token
- * — a real number the model cannot flatten the way it flattens verbalized
- * confidence — and keeps a rolling window of recent scores per session. The
+ * â€” a real number the model cannot flatten the way it flattens verbalized
+ * confidence â€” and keeps a rolling window of recent scores per session. The
  * threshold is the window's own upper quartile, which by construction lets
  * about a quarter through whatever absolute range this particular game happens
  * to occupy. A frantic shooter and a slow strategy game both end up with the
@@ -80,7 +80,7 @@ const TARGET_POSITIVE_RATE = 0.25;
 const WINDOW = 40;
 /** Scores needed before the learned threshold is trusted. */
 const WARMUP_N = 8;
-/** Cutoff used during warmup. Deliberately middling — the point of warmup is
+/** Cutoff used during warmup. Deliberately middling â€” the point of warmup is
  *  to not be silent, not to be accurate. */
 const WARMUP_P = 0.55;
 /** Guard rails, so a pathological window cannot wedge the gate fully open or
@@ -94,13 +94,13 @@ const GATE_TIMEOUT_MS = 5_000;
  * The question. Named events rather than the bare word "interesting": asked
  * the open question a small model says yes to nearly everything, and there is
  * no threshold that rescues a signal that never varies. The listed categories
- * are examples, not an enumeration — a game-agnostic watcher cannot have a
- * closed list — but they anchor what "significant" means well enough that the
+ * are examples, not an enumeration â€” a game-agnostic watcher cannot have a
+ * closed list â€” but they anchor what "significant" means well enough that the
  * score separates.
  *
  * The transcript (260728) is the local Whisper ring's text for the same
- * window. It is quoted DATA from the game's audio — dialogue, a caster, lyrics
- * — never instructions; a video that says "answer yes" costs at worst one
+ * window. It is quoted DATA from the game's audio â€” dialogue, a caster, lyrics
+ * â€” never instructions; a video that says "answer yes" costs at worst one
  * spurious companion turn, which the adaptive threshold then absorbs into the
  * window like any other score.
  */
@@ -224,7 +224,7 @@ export async function gateGrid(
   if (!key) {
     if (!warnedMissingKey) {
       warnedMissingKey = true;
-      emit('no SEI_GATE_DEV_KEY — the salience gate is disabled.', true);
+      emit('no SEI_GATE_DEV_KEY â€” the salience gate is disabled.', true);
     }
     return false;
   }
@@ -269,14 +269,14 @@ export async function gateGrid(
 
     const scores = windows.get(characterId) ?? [];
     const threshold = thresholdFor(scores);
-    // The score joins the window whether or not it passed — the window has to
+    // The score joins the window whether or not it passed â€” the window has to
     // describe the whole distribution of this session, not just its top.
     scores.push(score);
     while (scores.length > WINDOW) scores.shift();
     windows.set(characterId, scores);
     const pass = score >= threshold;
-    // One line per call (6 s cadence): the whole health of the gate — score
-    // separation, learned cutoff, window fill, latency — reads off this.
+    // One line per call (6 s cadence): the whole health of the gate â€” score
+    // separation, learned cutoff, window fill, latency â€” reads off this.
     emit(
       `gate p=${score.toFixed(3)} cut=${threshold.toFixed(3)} ` +
         `n=${scores.length} ${Date.now() - t0}ms -> ${pass ? 'TICK' : 'quiet'}`,
@@ -293,3 +293,7 @@ export async function gateGrid(
     clearTimeout(timer);
   }
 }
+
+
+
+

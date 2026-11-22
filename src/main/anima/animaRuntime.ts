@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The app's one AnimaClient (261105), wired to the real proxy, disk, windows
  * and analytics. Logic and its tests live in animaClient.ts / animaPacks.ts.
  */
@@ -131,3 +131,7 @@ export async function readAnimaCutout(characterId: string): Promise<AnimaCutout 
 onCharacterSaved((id) => {
   void anima.portraitMaybeChanged(id).catch(() => {});
 });
+
+
+
+

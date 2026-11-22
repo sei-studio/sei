@@ -1,4 +1,4 @@
-# Sei companion mod: wire protocol (v1)
+﻿# Sei companion mod: wire protocol (v1)
 
 The mod (`SeiCompanion`, C#, in the Stardew Valley process) is the SERVER.
 The Sei bot (`src/bot/adapter/stardew/`, Node) is the CLIENT. Everything is
@@ -40,7 +40,7 @@ that cannot be read off-thread.
 `save.loaded: false` means the game is on the title screen (the app shows
 "game running, no save loaded").
 
-### `GET /ws?token=<token>` → WebSocket
+### `GET /ws?token=<token>` â†’ WebSocket
 
 Also accepts `Authorization: Bearer <token>`. A missing or wrong token is an
 HTTP `401` before the upgrade. One socket = one bot = at most one companion
@@ -52,7 +52,7 @@ Text frames, one JSON object per line (NDJSON; several lines per frame are
 allowed). Every client frame carries `t` (type) and, for anything that
 expects an answer, `id` (any string; the answer echoes it).
 
-### Server → client, unsolicited
+### Server â†’ client, unsolicited
 
 | `t` | fields | when |
 |---|---|---|
@@ -71,7 +71,7 @@ expects an answer, `id` (any string; the answer echoes it).
 | `warped` | `location`, optional `reason`, `mineLevel` | the body changed map |
 | `error` | `message` | a frame could not be parsed |
 
-### Client → server (each answered by a `result`)
+### Client â†’ server (each answered by a `result`)
 
 | `t` | fields | notes |
 |---|---|---|
@@ -211,3 +211,7 @@ within 8 tiles", not "none on the map".
 - The mod refuses to spawn while any connected farmhand lacks the mod
   (`FARMHAND_NO_MOD`): a plain NPC with a custom sprite errors on a client
   that cannot load the sprite asset.
+
+
+
+

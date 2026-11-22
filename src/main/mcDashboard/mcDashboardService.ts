@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft dashboard service (main process). Follows the watch/chess service
  * shape: module state initialized once with push deps, thin functions wired to
  * IPC handlers.
@@ -75,3 +75,7 @@ export function getMcDashboardSnapshot(characterId: string): McDashboardSnapshot
 export function clearMcDashboard(characterId: string): void {
   latest.delete(characterId);
 }
+
+
+
+

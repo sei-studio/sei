@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The safe-mode window (261031, T277): the small "Sei had trouble starting"
  * screen with Check for updates, Open logs folder, Reset settings and Try
  * normal start.
@@ -150,3 +150,7 @@ export async function openSafeModeWindow(reason: SafeModeReason): Promise<Browse
   }
   return w;
 }
+
+
+
+

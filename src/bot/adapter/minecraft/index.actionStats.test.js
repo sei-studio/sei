@@ -1,4 +1,4 @@
-// 261011: every world action that goes through adapter.executeAction is
+﻿// 261011: every world action that goes through adapter.executeAction is
 // recorded in the session's action-outcome stats (brain/actionStats.js).
 import { describe, it, expect, vi } from 'vitest'
 
@@ -58,3 +58,7 @@ describe('adapter.executeAction records action outcomes', () => {
     expect(actionStats.snapshot().counters).toMatchObject({ player_msgs: 1, replied: 1, unanswered: 0 })
   })
 })
+
+
+
+

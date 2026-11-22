@@ -1,5 +1,5 @@
-/**
- * VoicePicker (260705, reworked 260720, tabs + playground 260725) — choose the
+﻿/**
+ * VoicePicker (260705, reworked 260720, tabs + playground 260725) â€” choose the
  * companion's speaking voice during creation and in Edit companion.
  *
  * Three selection states (see lib/voicePicker.ts):
@@ -31,7 +31,7 @@
  * (ElevenLabs stability) sliders.
  *
  * 260731: pitch is applied locally at playback (lib/voice/pitchBus.ts) and no
- * longer reaches synthesis, so it no longer forces a live TTS fetch — a
+ * longer reaches synthesis, so it no longer forces a live TTS fetch â€” a
  * pitch-only tune previews from the BUNDLED clip through the shifter: instant,
  * offline, no sign-in, no spend. Only calmness still changes the bytes.
  *
@@ -139,7 +139,7 @@ export interface VoicePickerProps {
   /**
    * W5 (260817, china-compat): the user runs local TTS (BYOK backend with
    * tts_engine 'local'). The ElevenLabs voice list, previews and the Calmness
-   * slider (an ElevenLabs synthesis param) are HIDDEN — only Pitch renders,
+   * slider (an ElevenLabs synthesis param) are HIDDEN â€” only Pitch renders,
    * since it applies locally through the pitch bus. The character's stored
    * ElevenLabs voiceId is left untouched underneath: `value` is never changed
    * from this mode, so cloud characters and a later engine switch keep it.
@@ -213,7 +213,7 @@ export function VoicePicker({
         if (alive) setHasElevenKey(present);
       })
       .catch(() => {
-        /* leave null — never warn on an unknown state */
+        /* leave null â€” never warn on an unknown state */
       });
     return () => {
       alive = false;
@@ -222,7 +222,7 @@ export function VoicePicker({
   const cloudVoicesUnavailable =
     !localTtsMode && aiBackendKind === 'local' && hasElevenKey === false;
 
-  // ── Voice Library paste card (261119, Sei cloud) ─────────────────────────
+  // â”€â”€ Voice Library paste card (261119, Sei cloud) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const libraryPaste = libraryPasteShown(aiBackendKind, localTtsMode);
   const [libInput, setLibInput] = useState('');
   const [libState, setLibState] = useState<LibraryPasteState>({ kind: 'idle' });
@@ -313,15 +313,15 @@ export function VoicePicker({
   }
 
   useEffect(() => {
-    // Re-arm on every (re)mount — StrictMode dev runs mount → cleanup → mount
+    // Re-arm on every (re)mount â€” StrictMode dev runs mount â†’ cleanup â†’ mount
     // on the SAME instance, and the ref keeps its false from the first cleanup.
     aliveRef.current = true;
     // Build the pitch shifter while the player is still reading the voice list,
     // so the first sample they play is already shifted (see toggleSample).
-    // 260915: warmed in local-TTS mode as well — its pitch sample (the only
+    // 260915: warmed in local-TTS mode as well â€” its pitch sample (the only
     // way to hear the slider without a call) plays through the same bus.
     warmPitchBus();
-    // Local-TTS mode renders only the pitch slider plus its sample — no voice
+    // Local-TTS mode renders only the pitch slider plus its sample â€” no voice
     // list to load, no ElevenLabs samples to probe.
     if (localTtsMode) return;
     void sei
@@ -358,7 +358,7 @@ export function VoicePicker({
           if (aliveRef.current) setSamplesAvailable(true);
         });
     } catch {
-      setSamplesAvailable(true); // stale preload without the probe — stay permissive
+      setSamplesAvailable(true); // stale preload without the probe â€” stay permissive
     }
     return () => {
       aliveRef.current = false;
@@ -403,14 +403,14 @@ export function VoicePicker({
     setPlayingId(null);
   }
 
-  // ── Playground params (effective values; absent key = engine default) ────
+  // â”€â”€ Playground params (effective values; absent key = engine default) â”€â”€â”€â”€
   const pitch = params.pitch ?? PITCH_DEFAULT;
   const calmness = params.calmness ?? CALMNESS_DEFAULT;
   /** Whether the SYNTHESIS differs from the bundled clips. Pitch is not part of
    * this any more (260731): it is a playback effect, so a pitch-only tune can
    * still preview from the bundled asset. */
   const tuned = calmness !== CALMNESS_DEFAULT;
-  /** The playground needs a concrete voice — Auto / No voice can't preview.
+  /** The playground needs a concrete voice â€” Auto / No voice can't preview.
    * Local-TTS mode is always tunable: pitch applies to whatever local voice
    * the runtime maps, independent of the (hidden) ElevenLabs selection. */
   const tunable = localTtsMode || (value !== null && value !== NO_VOICE_ID);
@@ -516,7 +516,7 @@ export function VoicePicker({
       if (pitch !== PITCH_DEFAULT) await pitchReady();
       if (!aliveRef.current) return;
       if (!tuned && voices.some((v) => v.id === voiceId)) {
-        // Pool voice at default calmness: bundled sample asset — instant,
+        // Pool voice at default calmness: bundled sample asset â€” instant,
         // offline, no sign-in, shifted locally to the chosen pitch. A load/play
         // failure falls through to live TTS.
         const ok = await startAudio(assetPathFor(voiceId, langRef.current), voiceId, pitch);
@@ -663,9 +663,9 @@ export function VoicePicker({
     );
   }
 
-  // ── Filter: only the active gender group's voices render. Default: the group
+  // â”€â”€ Filter: only the active gender group's voices render. Default: the group
   //    containing the current selection, else the first group (Feminine when
-  //    populated — GROUP_ORDER puts it first). Empty groups have no filter. ──
+  //    populated â€” GROUP_ORDER puts it first). Empty groups have no filter. â”€â”€
   const groups = groupVoices(voices);
   const ownView = ownVoicesView(ownList);
   const ownTabShown = ownView === 'tab';
@@ -683,7 +683,7 @@ export function VoicePicker({
   const unlistedOwn = unlisted && valueOwn ? valueOwn : null;
   const libraryTile = voiceLibraryTile(hasElevenKey, localTtsMode, ownList);
 
-  // ── The current voice (261120): the one row at the top, whatever the filter.
+  // â”€â”€ The current voice (261120): the one row at the top, whatever the filter.
   const pinned = value !== null && value !== NO_VOICE_ID ? value : null;
   const poolCurrent = pinned ? voices.find((v) => v.id === pinned) : undefined;
   const currentName =
@@ -708,7 +708,7 @@ export function VoicePicker({
           ? t('Sign in to play the current voice sample. Picking a voice still works.')
           : null;
 
-  // ── Auto / No voice overflow menu (261120) ────────────────────────────────
+  // â”€â”€ Auto / No voice overflow menu (261120) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -985,7 +985,7 @@ export function VoicePicker({
       </>
       )}
 
-      {/* ── Pitch and calmness (260725) ── */}
+      {/* â”€â”€ Pitch and calmness (260725) â”€â”€ */}
       <section className={styles.tuner} aria-label={t('Tune the voice')}>
         {!tunable ? <div className={styles.note}>{t('Pick a voice to tune it.')}</div> : null}
         {localTtsMode && pitchBypassed ? (
@@ -1046,7 +1046,7 @@ export function VoicePicker({
           </Button>
         </div>
 
-        {/* Calmness is ElevenLabs `stability` — a synthesis param the local
+        {/* Calmness is ElevenLabs `stability` â€” a synthesis param the local
             engine has no equivalent for, so local-TTS mode hides it. */}
         {localTtsMode ? null : (
         <div className={styles.tunerRow}>
@@ -1086,3 +1086,7 @@ export function VoicePicker({
     </div>
   );
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Chess service state machine — the parts most likely to corrupt a game:
+﻿/**
+ * Chess service state machine â€” the parts most likely to corrupt a game:
  *   - the AI move enters the presentation hold, presents as pendingAiMove
  *     when the turn ends, and only commits on ackReveal (the renderer quiet gate)
  *   - an illegal play() gets a retry tool_result, not a broken board
@@ -50,7 +50,7 @@ vi.mock('./modelStore', () => ({
 vi.mock('./chessProfile', () => ({
   getOrCreateChessProfile: vi.fn(async () => ({ elo: 900, styleNote: 'testy', source: 'auto' })),
 }));
-// The engine returns the first 4 legal moves as "candidates" — deterministic
+// The engine returns the first 4 legal moves as "candidates" â€” deterministic
 // and always legal, like the real CCE output.
 vi.mock('cce-1', () => ({
   CharacterChessEngine: {
@@ -110,7 +110,7 @@ interface PromptParams {
 /**
  * The whole prompt as one string: cached system blocks PLUS the messages tail.
  *
- * 260724 the chess prompt is deliberately split across both — the static
+ * 260724 the chess prompt is deliberately split across both â€” the static
  * table-talk contract rides in the cached system blocks, the volatile per-turn
  * board view rides as the last user message (anything volatile in `system`
  * sits above every message in the cache prefix and makes the transcript
@@ -135,7 +135,7 @@ function promptText(params: PromptParams): string {
 /**
  * The per-game session log (chessLog) closes asynchronously and endChess only
  * fires it off, so a write can still be in flight when the temp dir is removed
- * — an ENOTEMPTY that has nothing to do with the code under test. Retry briefly.
+ * â€” an ENOTEMPTY that has nothing to do with the code under test. Retry briefly.
  */
 async function rmTemp(target: string): Promise<void> {
   for (let i = 0; ; i++) {
@@ -183,7 +183,7 @@ beforeEach(async () => {
   createSpy.mockResolvedValue({ content: [{ type: 'text', text: 'gg' }], usage: {} });
   // Presentation timing: keep idle ticks and the conversation cap out of the
   // way unless a test tightens them. (Decisions present instantly since
-  // 260729 — the prethink delay is gone from the service itself.)
+  // 260729 â€” the prethink delay is gone from the service itself.)
   CHESS_TIMING.idleMinMs = 120_000;
   CHESS_TIMING.idleMaxMs = 120_000;
   CHESS_TIMING.capMs = 45_000;
@@ -705,9 +705,9 @@ describe('prompt truth and pacing (260722 commentary fixes)', () => {
 
   it('every chess LLM request pins transcript stop sequences and the own-lines-only rule (260722 TTS prompt leak)', async () => {
     // Live capture (260722, voice call): a chat-reply turn kept generating past
-    // Lyra's own lines — a fabricated player turn ("Human: [22 Jul 11:32]
+    // Lyra's own lines â€” a fabricated player turn ("Human: [22 Jul 11:32]
     // *plays Nc6*") followed by an invented game direction "(Lyra, it is now
-    // your turn to move...)" — and speak() persisted and TTS'd the whole
+    // your turn to move...)" â€” and speak() persisted and TTS'd the whole
     // continuation as her voice. The fix is structural, not an output scrub:
     // stop_sequences end generation the instant the model starts writing the
     // other side of the transcript, and the table-talk contract forbids
@@ -830,7 +830,7 @@ describe('continuity, caching and the coordinate ban (260724)', () => {
     });
     const start = await startChess(CHAR, { playerColor: 'w' });
     let fen = start.fen;
-    // Three full moves, each picked from what is actually legal now — the mock
+    // Three full moves, each picked from what is actually legal now â€” the mock
     // engine answers with the first legal move, which can block a fixed script.
     for (let i = 0; i < 3; i++) {
       const legal = new Chess(fen).moves({ verbose: true })[0];
@@ -851,7 +851,7 @@ describe('continuity, caching and the coordinate ban (260724)', () => {
     // a chat-reply turn carrying the full record.
     await handlePlayerChat({ characterId: CHAR, text: 'how are we doing' });
     const last = promptText(reqs[reqs.length - 1]);
-    // Move 1 is still visible at move 4 — the old prompt kept a 2-ply keyhole.
+    // Move 1 is still visible at move 4 â€” the old prompt kept a 2-ply keyhole.
     expect(last).toContain('(game) Move 1: they played');
     expect(last).toContain('(game) Move 2: they played');
     expect(last).toContain('(game) Move 3: they played');
@@ -1110,3 +1110,7 @@ describe('one player line gets one reply round (261020)', () => {
     expect(pending.pendingAiMove!.san).toBe('e5');
   });
 });
+
+
+
+

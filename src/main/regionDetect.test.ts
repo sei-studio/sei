@@ -1,12 +1,12 @@
-/**
- * W7 region gate (260816) — detection tests: trace fetch happy path, garbage,
+﻿/**
+ * W7 region gate (260816) â€” detection tests: trace fetch happy path, garbage,
  * network failure, timeout (all -> unknown -> allowed), and the cache.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { detectRegionLoc, getRegionStatus, resetRegionCacheForTest } from './regionDetect';
 
 // The default (no injected impl) path lazily imports electron and uses
-// net.fetch — Chromium's stack, which honors the OS proxy that undici
+// net.fetch â€” Chromium's stack, which honors the OS proxy that undici
 // ignores. Electron is not present under vitest, so mock the module the
 // dynamic import resolves.
 const { electronNetFetch } = vi.hoisted(() => ({ electronNetFetch: vi.fn() }));
@@ -53,7 +53,7 @@ describe('detectRegionLoc', () => {
 
   it('returns null (unknown) on timeout: the 5s abort fires and is swallowed', async () => {
     vi.useFakeTimers();
-    // A fetch that never resolves on its own — only the abort signal ends it,
+    // A fetch that never resolves on its own â€” only the abort signal ends it,
     // which is exactly what a stalled connection looks like.
     const fetchMock = vi.fn(
       (_url: string, init?: RequestInit) =>
@@ -141,3 +141,7 @@ describe('getRegionStatus', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+
+
+

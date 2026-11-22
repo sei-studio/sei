@@ -1,5 +1,5 @@
-/**
- * FactoryResetConfirmModal — confirm wiping the whole device back to a fresh
+﻿/**
+ * FactoryResetConfirmModal â€” confirm wiping the whole device back to a fresh
  * install (260728). The most destructive action in the app, so the danger CTA
  * carries an explicit re-statement of scope. On confirm the app relaunches
  * itself (main's app:factory-reset handler); the awaiting promise never
@@ -63,9 +63,13 @@ export function FactoryResetConfirmModal({
           {t('Cancel')}
         </Button>
         <Button kind="danger" size="md" onClick={() => void handleConfirm()} disabled={submitting}>
-          {submitting ? t('Erasing…') : t('Erase everything')}
+          {submitting ? t('Erasingâ€¦') : t('Erase everything')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the ChatGPT-plan adapter for the main-process LLM layer
  * (chat, voice one-shots, folds, compactions, chess, Draw!, backseat,
  * persona expansion). Speaks the Responses API through the wire module the
@@ -258,3 +258,7 @@ export function createChatgptProvider(opts: {
     streaming: true,
   };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: the "Open on login" step after the guided room setup's Done
  * (loginStep.ts; RoomEditor renders it). Preselected on, asked once, only
  * where the login item works.
@@ -51,8 +51,12 @@ describe('the Open on login setup step', () => {
 
   it('its copy is translated in every UI language, without em dashes', () => {
     for (const k of ['Open on login', '{name} comes back after a restart.', 'Turn on', 'Not now', 'Done']) {
-      expect(k).not.toContain('—');
+      expect(k).not.toContain('â€”');
       for (const [lang, dict] of Object.entries(DICTIONARIES)) expect(dict[k], `${lang}: ${k}`).toBeTruthy();
     }
   });
 });
+
+
+
+

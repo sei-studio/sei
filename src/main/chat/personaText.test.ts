@@ -1,4 +1,4 @@
-// 261013 (T111): the fold / chat-compaction persona fill.
+﻿// 261013 (T111): the fold / chat-compaction persona fill.
 import { describe, expect, it, vi } from 'vitest';
 
 const getCharacter = vi.fn(async () => ({ name: 'Roger' }));
@@ -22,3 +22,7 @@ describe('resolvePersonaText', () => {
     expect(loadConfig).not.toHaveBeenCalled();
   });
 });
+
+
+
+

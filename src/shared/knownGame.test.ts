@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { matchKnownGame } from './knownGame';
 import { GAME_CATALOG } from './games';
 
@@ -32,7 +32,7 @@ describe('matchKnownGame', () => {
     expect(id('stardew')).toBe('stardew');
     expect(id('Mine craft')).toBe('minecraft');
     expect(id('dont starve together')).toBe('dontstarve');
-    expect(id("Don’t Starve")).toBe('dontstarve');
+    expect(id("Donâ€™t Starve")).toBe('dontstarve');
     expect(id('DST')).toBe('dontstarve');
     expect(id('chess')).toBe('chess');
     expect(id('Draw!')).toBe('draw');
@@ -43,13 +43,13 @@ describe('matchKnownGame', () => {
   });
 
   it('matches the UI-language names', () => {
-    expect(id('我的世界')).toBe('minecraft');
-    expect(id('罗布乐思')).toBe('roblox');
-    expect(id('星露谷物语')).toBe('stardew');
-    expect(id('ロブロックス')).toBe('roblox');
-    expect(id('майнкрафт')).toBe('minecraft');
+    expect(id('æˆ‘çš„ä¸–ç•Œ')).toBe('minecraft');
+    expect(id('ç½—å¸ƒä¹æ€')).toBe('roblox');
+    expect(id('æ˜Ÿéœ²è°·ç‰©è¯­')).toBe('stardew');
+    expect(id('ãƒ­ãƒ–ãƒ­ãƒƒã‚¯ã‚¹')).toBe('roblox');
+    expect(id('Ð¼Ð°Ð¹Ð½ÐºÑ€Ð°Ñ„Ñ‚')).toBe('minecraft');
     // No word span inside hanzi, so no query.
-    expect(matchKnownGame('罗布乐思')?.query).toBeUndefined();
+    expect(matchKnownGame('ç½—å¸ƒä¹æ€')?.query).toBeUndefined();
   });
 
   it('does not offer a different game that starts with one of ours', () => {
@@ -80,3 +80,7 @@ describe('matchKnownGame', () => {
     }
   });
 });
+
+
+
+

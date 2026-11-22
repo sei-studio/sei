@@ -1,5 +1,5 @@
-/**
- * McInstallRow — single Minecraft install row in the wizard's "Pick installs" step.
+﻿/**
+ * McInstallRow â€” single Minecraft install row in the wizard's "Pick installs" step.
  *
  * Renders (left to right):
  *   - Native checkbox (controlled by `selected`)
@@ -12,7 +12,7 @@
  */
 
 import React from 'react';
-// Dependency-free CJS data module — the same table the bot's networking stack
+// Dependency-free CJS data module â€” the same table the bot's networking stack
 // (minecraft-protocol) enforces, so the version named in the pre-1.14 warning
 // can never drift from what Sei actually joins. Deep import on purpose
 // (mirrors UnsupportedVersionModal): the package root pulls the full protocol
@@ -53,17 +53,17 @@ interface PillSpec {
 }
 
 /**
- * Map a McInstall to its StatusPill descriptor per UI-SPEC §"Status indicators — copy".
+ * Map a McInstall to its StatusPill descriptor per UI-SPEC Â§"Status indicators â€” copy".
  * The pill carries the meaningful status; never rely on color alone (a11y).
  */
 function pillFor(install: McInstall): PillSpec {
-  // Lunar Client — read-only "Limited" badge (260518-o1k T7).
+  // Lunar Client â€” read-only "Limited" badge (260518-o1k T7).
   // Branched FIRST so it overrides any other state combo.
   if (install.kind === 'lunar') {
     // No secondary: the path already renders on its own wrapping line in the
     // row. Duplicating a long path into the flex-shrink:0 pill slot squeezed
     // `.text` to near-zero width, so the path wrapped character-by-character
-    // straight down the page (the reported "narrow filepath box → scrollable"
+    // straight down the page (the reported "narrow filepath box â†’ scrollable"
     // bug). The lunarCaption below already explains the Limited state.
     return {
       tone: 'warn',
@@ -74,12 +74,12 @@ function pillFor(install: McInstall): PillSpec {
   // Sei-enabled paths first (more specific).
   if (install.sei_enabled) {
     if (install.csl_installed && install.loader && install.loader_version && install.csl_version) {
-      // "Sei enabled" — green, full version line.
+      // "Sei enabled" â€” green, full version line.
       const loaderName = install.loader === 'fabric' ? 'Fabric' : 'Forge';
       return {
         tone: 'green',
         label: t('Sei enabled'),
-        secondary: `${loaderName} ${install.loader_version} · CSL ${install.csl_version}`,
+        secondary: `${loaderName} ${install.loader_version} Â· CSL ${install.csl_version}`,
       };
     }
     if (!install.csl_installed) {
@@ -89,7 +89,7 @@ function pillFor(install: McInstall): PillSpec {
         secondary: t('Re-run setup to reinstall.'),
       };
     }
-    // Edge case: enabled + csl_installed but missing loader info — flag as drift.
+    // Edge case: enabled + csl_installed but missing loader info â€” flag as drift.
     return {
       tone: 'warn',
       label: t('Version drift'),
@@ -97,9 +97,9 @@ function pillFor(install: McInstall): PillSpec {
     };
   }
 
-  // Not Sei-enabled — muted pill keyed off install kind.
+  // Not Sei-enabled â€” muted pill keyed off install kind.
   if (install.kind === 'vanilla') {
-    // No secondary — the path is on its own line (see the lunar note above).
+    // No secondary â€” the path is on its own line (see the lunar note above).
     return {
       tone: 'muted',
       label: t('Vanilla launcher'),
@@ -108,7 +108,7 @@ function pillFor(install: McInstall): PillSpec {
   return {
     tone: 'muted',
     label: install.label,
-    secondary: `CurseForge · ${install.mc_version ?? '?'}`,
+    secondary: `CurseForge Â· ${install.mc_version ?? '?'}`,
   };
 }
 
@@ -125,7 +125,7 @@ export function McInstallRow({
   const pill = pillFor(install);
   const readyVersions = install.sei_ready_versions ?? [];
   const checkboxId = `mc-install-${install.id}`;
-  // 260518-o1k T7: Lunar rows are read-only — surfaced for transparency
+  // 260518-o1k T7: Lunar rows are read-only â€” surfaced for transparency
   // only, with the checkbox disabled and the row's onClick a no-op.
   const isReadOnly = install.kind === 'lunar';
 
@@ -222,3 +222,7 @@ export function McInstallRow({
     </div>
   );
 }
+
+
+
+

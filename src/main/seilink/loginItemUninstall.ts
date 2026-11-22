@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Velopack uninstall (261107): remove the "Open Sei when I log in" Run value
  * (openAtLogin.ts) when it starts THIS install, so an uninstalled Sei does not
  * leave a dead startup entry behind. Windows keeps Run values after a program
@@ -59,3 +59,7 @@ export function removeLoginValueForUninstall(root: string, log: (m: string) => v
     log(`uninstall: open-at-login cleanup failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

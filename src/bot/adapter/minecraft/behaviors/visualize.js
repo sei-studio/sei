@@ -1,18 +1,18 @@
-// src/bot/adapter/minecraft/behaviors/visualize.js
+﻿// src/bot/adapter/minecraft/behaviors/visualize.js
 //
-// VIS-02 / VIS-08 — the `look` action handler (LLM-callable explicit render),
+// VIS-02 / VIS-08 â€” the `look` action handler (LLM-callable explicit render),
 // plus the shared low-level capture/face helpers that `explore` reuses for its
 // auto-look on arrival. It drives renderPov (proven in 15-01) behind a
 // wall-clock timeout (CLAUDE.md "every external call has a timeout"), honors
 // config.signal abort (lookAt convention), and degrades to a short STRING when
-// chunks aren't loaded (VIS-08) — it never throws and never hangs.
+// chunks aren't loaded (VIS-08) â€” it never throws and never hangs.
 //
 // 260617: `look` is now DIRECTIONAL and RELATIVE to the bot's current facing:
-//   look()                       — current view
-//   look({orientation})          — forward | backwards | left | right (turn, then render)
-//   look({angle})                — 0..360° clockwise from current facing
-//   look({around:true})          — four frames (forward, right, behind, left), each labelled
-// The old coordinate/entity aiming (x,y,z / entity / target) is GONE — the new
+//   look()                       â€” current view
+//   look({orientation})          â€” forward | backwards | left | right (turn, then render)
+//   look({angle})                â€” 0..360Â° clockwise from current facing
+//   look({around:true})          â€” four frames (forward, right, behind, left), each labelled
+// The old coordinate/entity aiming (x,y,z / entity / target) is GONE â€” the new
 // model is "turn relative to where I'm facing", which is what a player does.
 //
 // ESM-only on the module graph here: the only heavy thing this uses is
@@ -20,12 +20,12 @@
 // imported lazily (loadPovRenderer). Tests vi.mock '../render/povRenderer.js'
 // so the natives never load under system-Node vitest.
 //
-// RETURN SHAPE — the load-bearing contract the orchestrator reads to attach the image:
+// RETURN SHAPE â€” the load-bearing contract the orchestrator reads to attach the image:
 //   single success: { text: string, image: { mediaType, dataBase64 } }
 //   around success: { text: string, images: [{ mediaType, dataBase64, label }, ...] }
-//   degrade:        "I can't see clearly right now"   (VIS-08 — a string)
+//   degrade:        "I can't see clearly right now"   (VIS-08 â€” a string)
 //   aborted:        'aborted'                           (lookAt convention)
-//   idle duplicate: { skip: true }                      (D-02 — drop the send)
+//   idle duplicate: { skip: true }                      (D-02 â€” drop the send)
 // The single-image keys are asserted in visualize.test.js; do NOT add keys or
 // re-nest without updating the orchestrator's destructure
 // (image.mediaType / image.dataBase64 / images[].*).
@@ -76,17 +76,17 @@ export const CANT_SEE_COPY = "I can't see clearly right now"
  * Anti-hallucination grounding that rides with every rendered view (the result
  * `text`, which sits right next to the image and the fresh snapshot in the same
  * turn). The render is a low-resolution JPEG of a world drawn with frozen,
- * approximate models, so it is easy to over-read — the model was confidently
+ * approximate models, so it is easy to over-read â€” the model was confidently
  * reporting "pink sheep" / specific species and counts that the snapshot's
  * ground-truth entity list contradicted. Tell it to read the picture loosely and
  * defer to the snapshot for what is actually there.
  */
 export const VISION_GROUNDING = 'The picture is low resolution and rough, so read it loosely: name only the broad things you can clearly make out (terrain shape, water, trees, structures, your own builds) and do not invent specific mob types, animal colors, counts, or fine detail from it. For which mobs or animals are actually nearby, trust the nearby-entities list in your snapshot, which is accurate, over the picture. If the player asked you to read or identify something specific and you cannot clearly make it out, do not guess: tell them you cannot see it well because your vision is blurry and low resolution.'
 
-/** Cap on the pre-render head turn — facing is best-effort, never a stall. */
+/** Cap on the pre-render head turn â€” facing is best-effort, never a stall. */
 export const FACE_TIMEOUT_MS = 800
 
-/** Handler-level wall-clock cap. renderPov is already timeout-wrapped (7s —
+/** Handler-level wall-clock cap. renderPov is already timeout-wrapped (7s â€”
  * the budget now also covers waiting out the post-join chunk stream), but we
  * ALSO race a timer here so a hung/never-settling renderPov (or a mock that
  * never resolves) can never wedge the bot loop. Slightly longer than
@@ -98,7 +98,7 @@ export const DEFAULT_VISION_TIMEOUT_MS = 9000
 // against a misconfigured huge resolution_px, not the primary size control.
 const MAX_BASE64_BYTES = 256 * 1024 // 256 KB of base64 chars
 
-// ── Relative-direction grammar ───────────────────────────────────────────────
+// â”€â”€ Relative-direction grammar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Orientation names and angles are CLOCKWISE / right-positive, relative to the
 // bot's current facing: forward = 0, right = 90, backwards = 180, left = 270.
 // In mineflayer the look vector for a yaw is (-sin yaw, -cos yaw) (matches the
@@ -111,9 +111,9 @@ export const ORIENTATION_DEG = Object.freeze({
   left: 270,
 })
 
-// Vertical orientations tilt the head instead of turning it (260709 — the
+// Vertical orientations tilt the head instead of turning it (260709 â€” the
 // model asked for look({orientation:"down"}) when told to check the bottom of
-// a build, and the old yaw-only grammar rejected it). 60° keeps the near
+// a build, and the old yaw-only grammar rejected it). 60Â° keeps the near
 // ground / sky in frame without rendering mostly feet. mineflayer pitch is
 // positive-down.
 export const ORIENTATION_PITCH = Object.freeze({
@@ -122,7 +122,7 @@ export const ORIENTATION_PITCH = Object.freeze({
 })
 
 /** Parse {orientation}|{angle} into a yaw offset in radians, or null if neither
- * was supplied (caller treats null as "don't turn — current facing"). */
+ * was supplied (caller treats null as "don't turn â€” current facing"). */
 export function orientationToYawOffset(args) {
   let deg = null
   if (typeof args?.angle === 'number' && Number.isFinite(args.angle)) {
@@ -132,7 +132,7 @@ export function orientationToYawOffset(args) {
     if (key in ORIENTATION_DEG) deg = ORIENTATION_DEG[key]
   }
   if (deg == null) return null
-  // Clockwise/right-positive angle → negative yaw offset (see note above).
+  // Clockwise/right-positive angle â†’ negative yaw offset (see note above).
   return -(((deg % 360) + 360) % 360) * Math.PI / 180
 }
 
@@ -147,7 +147,7 @@ export async function faceYaw(bot, yaw, pitch = 0) {
   if (typeof bot?.look !== 'function' || !Number.isFinite(yaw)) return
   let timer = null
   // Hold the gaze controller (behaviors/gaze.js) off the head while we aim
-  // this render's turn — it would otherwise fight this lookAt on its own
+  // this render's turn â€” it would otherwise fight this lookAt on its own
   // ~4Hz tick and jitter the shot.
   if (bot) bot._seiGazeHold = (bot._seiGazeHold ?? 0) + 1
   try {
@@ -161,7 +161,7 @@ export async function faceYaw(bot, yaw, pitch = 0) {
   if (timer != null) clearTimeout(timer)
 }
 
-// ── Idle frame dedupe (D-02) ────────────────────────────────────────────────
+// â”€â”€ Idle frame dedupe (D-02) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Cheap pose-quantization hash: a parked bot re-renders the same view every
 // idle tick, so quantizing position (whole blocks) + yaw/pitch (coarse buckets)
 // detects "effectively unchanged" without hashing the JPEG buffer. Only the
@@ -175,7 +175,7 @@ function poseHash(bot) {
   const qx = Math.round(p.x)
   const qy = Math.round(p.y)
   const qz = Math.round(p.z)
-  // ~8 yaw buckets and ~4 pitch buckets — enough to notice the bot turned to
+  // ~8 yaw buckets and ~4 pitch buckets â€” enough to notice the bot turned to
   // look somewhere genuinely different without firing on sub-degree jitter.
   const yaw = bot?.entity?.yaw ?? 0
   const pitch = bot?.entity?.pitch ?? 0
@@ -184,7 +184,7 @@ function poseHash(bot) {
   return `${qx},${qy},${qz}|${qyaw},${qpitch}`
 }
 
-/** Test seam — reset the idle dedupe cache between cases. */
+/** Test seam â€” reset the idle dedupe cache between cases. */
 export function __resetVisualizeDedupeCache() {
   _lastIdleHash = null
 }
@@ -209,7 +209,7 @@ export async function captureFrame(bot, config, { idle = false, loadWaitMs } = {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
-  // ── Render stack (260926) ────────────────────────────────────────────────
+  // â”€â”€ Render stack (260926) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // A failed load is final for the session (see povStackLoader.js). Idle
   // frames skip quietly; an explicit look says so, once in full.
   if (povStackUnavailable()) return idle ? { skip: true } : unavailableCopy()
@@ -238,7 +238,7 @@ export async function captureFrame(bot, config, { idle = false, loadWaitMs } = {
   const quality = vision.image_quality ?? 0.4
   const timeoutMs = config?.vision_timeout_ms ?? DEFAULT_VISION_TIMEOUT_MS
 
-  // ── Wall-clock + abort race around renderPov (CLAUDE.md invariant) ──────────
+  // â”€â”€ Wall-clock + abort race around renderPov (CLAUDE.md invariant) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // renderPov is itself timeout-wrapped + never throws by contract, but we
   // defend in depth: a Promise.race against our own timer + the abort signal so
   // nothing here can ever wedge the loop. Cleanup runs after the race regardless.
@@ -279,7 +279,7 @@ export async function captureFrame(bot, config, { idle = false, loadWaitMs } = {
   // VIS-08: renderPov reported it can't see (unloaded chunks, blank frame, etc.)
   if (!result || result.ok !== true) return CANT_SEE_COPY
 
-  // ── Idle dedupe (D-02) — only on the idle path, AFTER a successful render ───
+  // â”€â”€ Idle dedupe (D-02) â€” only on the idle path, AFTER a successful render â”€â”€â”€
   if (idle === true) {
     const hash = poseHash(bot)
     if (hash != null && hash === _lastIdleHash) return { skip: true }
@@ -290,7 +290,7 @@ export async function captureFrame(bot, config, { idle = false, loadWaitMs } = {
   const dataBase64 = result.buffer.toString('base64')
 
   // Request-size safety (ASVS V5): a misconfigured huge resolution could blow
-  // up the payload — degrade rather than ship an oversized image.
+  // up the payload â€” degrade rather than ship an oversized image.
   if (dataBase64.length > MAX_BASE64_BYTES) return CANT_SEE_COPY
 
   return { ok: true, mediaType: result.mediaType, dataBase64 }
@@ -310,7 +310,7 @@ function degToYawOffset(deg) {
 }
 
 /**
- * `look` action handler. Renders the bot's POV — current, turned to a relative
+ * `look` action handler. Renders the bot's POV â€” current, turned to a relative
  * orientation/angle, or all four directions ({around:true}). Mirrors the
  * abort-first / timeout discipline of lookAt.
  *
@@ -322,7 +322,7 @@ export async function visualizeAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
-  // ── look({around:true}) — four labelled frames, restoring facing after ──────
+  // â”€â”€ look({around:true}) â€” four labelled frames, restoring facing after â”€â”€â”€â”€â”€â”€
   if (args?.around === true) {
     const startYaw = bot?.entity?.yaw ?? 0
     const images = []
@@ -335,7 +335,7 @@ export async function visualizeAction(args, bot, config) {
         // 260803: every frame carries the world AXIS it looks down, read off
         // the live yaw AFTER the turn. A sweep whose frames are only labelled
         // "forward / right / behind / left" cannot answer "which way is the
-        // other side" — the model picks a picture and then has to guess the
+        // other side" â€” the model picks a picture and then has to guess the
         // axis, which is exactly the guess that killed the 260731 session.
         const card = cardinalFromYaw(bot?.entity?.yaw)
         images.push({
@@ -355,7 +355,7 @@ export async function visualizeAction(args, bot, config) {
     }
   }
 
-  // ── look({orientation}|{angle}) — turn relative, then render one frame ───────
+  // â”€â”€ look({orientation}|{angle}) â€” turn relative, then render one frame â”€â”€â”€â”€â”€â”€â”€
   // Idle/passive cadence renders never pass a direction (they document the
   // bot's own current view) and never turn the head.
   if (args?.idle !== true) {
@@ -372,7 +372,7 @@ export async function visualizeAction(args, bot, config) {
   if (typeof f === 'string') return f               // 'aborted', CANT_SEE_COPY or unavailable
   if (f.skip === true) return { skip: true }        // idle near-duplicate (D-02)
   // 260803: name the axis. look({orientation:"backward"}) TURNS THE BOT, and
-  // before this the result said nothing about it — the model got a picture it
+  // before this the result said nothing about it â€” the model got a picture it
   // could not place on any axis and the body was now pointing somewhere the
   // snapshot never mentioned either. Read off the live yaw after the turn so
   // this is the truth on every path (turned, tilted, or idle).
@@ -382,3 +382,7 @@ export async function visualizeAction(args, bot, config) {
     image: { mediaType: f.mediaType, dataBase64: f.dataBase64 },
   }
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * FacepackView (261028, desktop companion pilot) — renders a sei-facepack v1
+﻿/**
+ * FacepackView (261028, desktop companion pilot) â€” renders a sei-facepack v1
  * pack: pre-baked full-canvas bases per expression and head pose, with eye
  * and mouth patches pasted at fixed boxes, plus overlays (blush, sweat...).
  *
@@ -226,7 +226,7 @@ export function FacepackView({
         canvas.style.display = 'block';
         host.replaceChildren(canvas);
 
-        // ── WebGL path (idle life) ───────────────────────────────────────
+        // â”€â”€ WebGL path (idle life) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const rig = useGl.current ? faceRigFor(m) : null;
         glr = rig
           ? FaceGl.create(canvas, rig, () => {
@@ -289,7 +289,7 @@ export function FacepackView({
           host.replaceChildren(canvas);
         }
 
-        // ── 2D path ──────────────────────────────────────────────────────
+        // â”€â”€ 2D path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         canvas.dataset.renderer = '2d';
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('2d context unavailable');
@@ -308,7 +308,7 @@ export function FacepackView({
         resizeObserver = new ResizeObserver(fit);
         resizeObserver.observe(host);
 
-        // ── Render caches ────────────────────────────────────────────────
+        // â”€â”€ Render caches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Scaling a full-canvas base is the one expensive draw, so each base
         // is scaled ONCE per view scale into its own canvas, and a frame is
         // composed (base + patches) only when its eye / mouth / expression /
@@ -386,7 +386,7 @@ export function FacepackView({
         };
         let lastDraw = '';
 
-        // ── Feeds ────────────────────────────────────────────────────────
+        // â”€â”€ Feeds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const cursor = { x: 0, at: 0 };
         offCursor = sei.onAvatarOverlayCursor?.((pt) => {
           cursor.x = pt.x;
@@ -399,7 +399,7 @@ export function FacepackView({
           clip.at = sample ? performance.now() : 0;
         });
 
-        // ── State ────────────────────────────────────────────────────────
+        // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const t0 = performance.now();
         const blink = new BlinkScheduler(t0);
         const visemes = new VisemeDriver(subs);
@@ -599,3 +599,7 @@ export function FacepackView({
 
   return <div ref={hostRef} className={className} style={style} />;
 }
+
+
+
+

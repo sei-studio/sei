@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together install detection + mod install (game-adapters M2,
  * 260908). No download: the mod ships inside the DST game pack
  * (`<packRoot>/assets/dst-mod/sei/`, or `native/dst-mod/sei/` in dev, see
@@ -127,7 +127,7 @@ export function defaultDeps(): InstallDeps {
   };
 }
 
-/* ── libraryfolders.vdf ─────────────────────────────────────────────────── */
+/* â”€â”€ libraryfolders.vdf â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface SteamLibrary {
   path: string;
@@ -181,7 +181,7 @@ export function parseLibraryFolders(vdf: string): SteamLibrary[] {
   return out;
 }
 
-/* ── detection ──────────────────────────────────────────────────────────── */
+/* â”€â”€ detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export function steamRootCandidates(deps: Pick<InstallDeps, 'platform' | 'home' | 'env'>): string[] {
   const { platform, home, env } = deps;
@@ -239,7 +239,7 @@ export async function findDstInstall(deps: InstallDeps = defaultDeps()): Promise
   return { found: null, searched };
 }
 
-/* ── modsettings.lua ────────────────────────────────────────────────────── */
+/* â”€â”€ modsettings.lua â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const FORCE_LINE = `ForceEnableMod("${MOD_ID}")`;
 const WARN_LINE = 'DisableLocalModWarning()';
@@ -272,7 +272,7 @@ export function rewriteModSettings(existing: string | null): string {
   return out.join('\n') + '\n';
 }
 
-/* ── the mod source (game pack) ─────────────────────────────────────────── */
+/* â”€â”€ the mod source (game pack) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Where the mod lives relative to a pack root. The pack builder copies
@@ -295,7 +295,7 @@ export function modVersionFrom(modinfo: string | null): string | null {
   return m ? m[1] : null;
 }
 
-/* ── the three operations the GameModule exposes ────────────────────────── */
+/* â”€â”€ the three operations the GameModule exposes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Did the running game start before the helper landed? Mods are indexed once
@@ -582,3 +582,7 @@ export async function enableMod(modsDir: string, deps: InstallDeps = defaultDeps
   const next = rewriteModSettings(existing);
   if (next !== existing) await deps.writeText(p, next);
 }
+
+
+
+

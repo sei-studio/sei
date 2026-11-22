@@ -1,4 +1,4 @@
-// World thumbnail refresh (261111): one proxy call per request, a burst for
+﻿// World thumbnail refresh (261111): one proxy call per request, a burst for
 // the same id coalesced into at most one follow-up, never throws.
 import { describe, it, expect, vi } from 'vitest';
 import { callThumbRoute, requestPortraitThumb, type ThumbDeps } from './portraitThumb';
@@ -52,3 +52,7 @@ describe('requestPortraitThumb', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 });
+
+
+
+

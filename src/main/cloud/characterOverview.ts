@@ -1,5 +1,5 @@
-/**
- * characterOverview — the cloud facts behind a profile's Overview (product
+﻿/**
+ * characterOverview â€” the cloud facts behind a profile's Overview (product
  * call 261110: someone else's companion opens on an Overview, not on
  * settings rows).
  *
@@ -65,3 +65,7 @@ function sampleOf(deps: OverviewDeps, character: Character): string | null {
     return null;
   }
 }
+
+
+
+

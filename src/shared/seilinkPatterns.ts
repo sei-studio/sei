@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink patterns (261105, room catalog; msgs 1590 + 1627). Pure: no
  * DOM, no Node, so the renderer, main's look() picture and the tests share
  * one implementation.
@@ -28,7 +28,7 @@
  * RoomPresetManifest.patternTiles, files under the shared pack folder.
  */
 
-// ── Surfaces and the registry ───────────────────────────────────────────────
+// â”€â”€ Surfaces and the registry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Kinds of patternable surface (the catalog's W C B R K T). */
 export type PatternSurface = 'walls' | 'curtains' | 'bedding' | 'rugs' | 'cushions' | 'tents';
@@ -77,7 +77,7 @@ export function codePattern(id: string): PatternDef | undefined {
 
 export const PATTERN_ID_RE = /^[a-z][a-z0-9_]{0,31}$/;
 
-// ── Code tiles ──────────────────────────────────────────────────────────────
+// â”€â”€ Code tiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const frac = (x: number): number => x - Math.floor(x);
 /** 1 inside a band [a, b) of a periodic coordinate, else 0. */
@@ -289,7 +289,7 @@ export function greyTileFromRgba(rgba: ArrayLike<number>, w: number, h: number):
   return { w, h, data };
 }
 
-// ── Colour ──────────────────────────────────────────────────────────────────
+// â”€â”€ Colour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type Rgb = [number, number, number];
 
@@ -368,7 +368,7 @@ export function patternPixel(frame: Rgb, m: number, base: Rgb, accent: Rgb, g: n
   return [frame[0] * (1 - w + (w * c[0]) / 255), frame[1] * (1 - w + (w * c[1]) / 255), frame[2] * (1 - w + (w * c[2]) / 255)];
 }
 
-// ── Perspective (UV quads) ──────────────────────────────────────────────────
+// â”€â”€ Perspective (UV quads) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type QuadPoints = [[number, number], [number, number], [number, number], [number, number]];
 
@@ -479,7 +479,7 @@ export function inQuad(q: QuadPoints, x: number, y: number): boolean {
   return inside;
 }
 
-// ── The warp ────────────────────────────────────────────────────────────────
+// â”€â”€ The warp â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * A tile with its mip levels (each half the size of the one before, box
@@ -686,3 +686,7 @@ export function warpPatternGrey(input: WarpInput): WarpOutput {
   }
   return { w, h, data };
 }
+
+
+
+

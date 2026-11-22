@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reply tidy (260915): the deterministic guard against a small local model
  * that does not stop talking (live capture: qwen3-vl:2b behind Ollama on a
  * call cycled the same four sentences until num_predict cut it mid-word).
@@ -96,10 +96,10 @@ describe('tidyReply', () => {
   });
 
   it('handles CJK sentence terminators and re-joins without spaces', () => {
-    const r = tidyReply('你好呀，今天想干嘛？你好呀，今天想干嘛？我们去挖矿吧！');
-    expect(r.text).toBe('你好呀，今天想干嘛？我们去挖矿吧！');
+    const r = tidyReply('ä½ å¥½å‘€ï¼Œä»Šå¤©æƒ³å¹²å˜›ï¼Ÿä½ å¥½å‘€ï¼Œä»Šå¤©æƒ³å¹²å˜›ï¼Ÿæˆ‘ä»¬åŽ»æŒ–çŸ¿å§ï¼');
+    expect(r.text).toBe('ä½ å¥½å‘€ï¼Œä»Šå¤©æƒ³å¹²å˜›ï¼Ÿæˆ‘ä»¬åŽ»æŒ–çŸ¿å§ï¼');
     expect(r.droppedRepeats).toBe(1);
-    const clean = '你好呀。今天想干嘛？我们去挖矿吧！';
+    const clean = 'ä½ å¥½å‘€ã€‚ä»Šå¤©æƒ³å¹²å˜›ï¼Ÿæˆ‘ä»¬åŽ»æŒ–çŸ¿å§ï¼';
     expect(tidyReply(clean).text).toBe(clean);
   });
 
@@ -125,3 +125,7 @@ describe('createReplyGate', () => {
     expect(g.stats.capped).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261113: quality pass 54.
+﻿// 261113: quality pass 54.
 // - A mob's drops she picked up are told apart from a gift (combat_night,
 //   11-12 scorecard: "thanks for the rotten flesh lol" after her own zombie
 //   kill). itemSources.js tags item spawns by where the game put them.
@@ -19,7 +19,7 @@ import { attributePickups, createSnapshotComposer } from '../adapter/minecraft/o
 import { describeInventoryGain, createInventoryGainRecorder, createHandOverLedger } from './sessionEvents.js'
 import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 
-// ─── item sources ───────────────────────────────────────────────────────
+// â”€â”€â”€ item sources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function itemBot(inv = []) {
   const bot = new EventEmitter()
@@ -184,7 +184,7 @@ describe('the session record of a sourced gain', () => {
   })
 })
 
-// ─── orchestrator harness ───────────────────────────────────────────────
+// â”€â”€â”€ orchestrator harness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -360,3 +360,7 @@ describe('the player\'s death notice after she already reacted', () => {
     expect(h.provider.calls.length).toBeGreaterThan(m)
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "It's your move" nudge gating (260929).
  *
  * 10 of 35 chess games ended before the first move, several after the player
@@ -59,3 +59,7 @@ export function nudgeDueInMs(i: NudgeInput, t: NudgeTiming): number | null {
   if (i.busy) return Math.min(5_000, threshold);
   return 0;
 }
+
+
+
+

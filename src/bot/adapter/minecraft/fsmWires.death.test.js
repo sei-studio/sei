@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/fsmWires.death.test.js
+﻿// src/bot/adapter/minecraft/fsmWires.death.test.js
 //
-// 260703 (death→brain): the bot used to only log + respawn on death — no event
+// 260703 (deathâ†’brain): the bot used to only log + respawn on death â€” no event
 // ever reached the brain, so the next turn showed full hp / empty inventory with
 // no explanation and the model confabulated ("dropped the sword, not my fault").
 // These tests lock the new wire: connect.js emits `sei:death` (position snapped
@@ -12,7 +12,7 @@ import { EventEmitter } from 'node:events'
 import { wireBotEvents } from './fsmWires.js'
 import { eventAddendum } from './prompts.js'
 
-describe('sei:death wiring (fsmWires → handlers.onDeath)', () => {
+describe('sei:death wiring (fsmWires â†’ handlers.onDeath)', () => {
   it('translates a bot sei:death emit into handlers.onDeath with the pos payload', () => {
     const bot = new EventEmitter()
     const onDeath = vi.fn()
@@ -94,7 +94,7 @@ describe('sei:death prompt framing (eventAddendum)', () => {
 
   // 260708: sei:death now carries the last real hit (src/bot/brain/index.js
   // attaches `lastAttack` when one landed within 30s) so the model knows WHAT
-  // killed it — live failure: Sui died mid-PvP-spar with Marv and said "i have
+  // killed it â€” live failure: Sui died mid-PvP-spar with Marv and said "i have
   // literally no idea what just happened".
   it('names the killer on a PvP death', () => {
     const t = eventAddendum('sei:death', {
@@ -185,3 +185,7 @@ describe('sei:death framing with the lost items (pass 19)', () => {
     }
   })
 })
+
+
+
+

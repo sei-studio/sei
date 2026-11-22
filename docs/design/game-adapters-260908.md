@@ -1,4 +1,4 @@
-# Game adapters: Stardew Valley + Don't Starve Together (260908)
+﻿# Game adapters: Stardew Valley + Don't Starve Together (260908)
 
 Status: IMPLEMENTED 260908 through M2 on `feat/game-adapters` (worktree
 `../sei-games`): M0a seams, M0b game packs, M1 Stardew, M2 DST merged; every
@@ -91,13 +91,13 @@ when needed.
 ```
 Electron main                          Node bot (utilityProcess, per character)         Game process
 src/main/games/<game>/                 src/bot/index.js  (composer, game-agnostic)
-  watcher.ts   "world open?"  ─────▶   adapter/<game>/runtime.js (dynamic import)
-  install.ts   detect/install/enable        ├─ connect.js   (transport client/server)  ◀──▶  mod (Sei-owned)
-  launch.ts    start the game               ├─ registry.js  (Zod verbs → commands)           body entity
-botSupervisor.ts summon(id, game)           ├─ observers/   (obs JSON → snapshot text)        reflex loops
-  init {game, joinTarget, ...}              ├─ fsmWires.js  (events → P0/P1/P3)               chat hook
-  port: dashboard/chat/pause/mode           ├─ telemetry.js (dashboard snapshots)
-                                            └─ prompts.js   (baseline, primer, rules, events)
+  watcher.ts   "world open?"  â”€â”€â”€â”€â”€â–¶   adapter/<game>/runtime.js (dynamic import)
+  install.ts   detect/install/enable        â”œâ”€ connect.js   (transport client/server)  â—€â”€â”€â–¶  mod (Sei-owned)
+  launch.ts    start the game               â”œâ”€ registry.js  (Zod verbs â†’ commands)           body entity
+botSupervisor.ts summon(id, game)           â”œâ”€ observers/   (obs JSON â†’ snapshot text)        reflex loops
+  init {game, joinTarget, ...}              â”œâ”€ fsmWires.js  (events â†’ P0/P1/P3)               chat hook
+  port: dashboard/chat/pause/mode           â”œâ”€ telemetry.js (dashboard snapshots)
+                                            â””â”€ prompts.js   (baseline, primer, rules, events)
                                        brain/*  UNCHANGED core
 ```
 
@@ -673,3 +673,7 @@ The user's answers to section 7, verbatim in intent:
 7. Every open-source library or mod code reused is credited in the README
    Acknowledgements list, in the mineflayer entry's format, with its
    license.
+
+
+
+

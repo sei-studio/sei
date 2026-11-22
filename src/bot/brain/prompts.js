@@ -1,4 +1,4 @@
-// Game-agnostic LLM-facing text used to live here; it now lives in the single
+﻿// Game-agnostic LLM-facing text used to live here; it now lives in the single
 // editable prompt document, src/bot/brain/promptLibrary.js. This module is a
 // thin barrel that re-exports the brain-level names from there (so every
 // existing `import ... from './prompts.js'` keeps working) plus the small
@@ -59,7 +59,7 @@ export {
   STALE_TURN_TOOL_RESULT,
 } from './promptLibrary.js'
 
-// 260615: per-tier idle-tick cadence (ms). NOT prompt text — these are the FSM
+// 260615: per-tier idle-tick cadence (ms). NOT prompt text â€” these are the FSM
 // idle-timer durations consumed in src/bot/brain/index.js, so they stay here
 // rather than in the prompt document. Passive ticks rarely (it only comments),
 // Reactive every minute, Agentic fast (5s) so a self-directed character resumes
@@ -75,3 +75,7 @@ export function idleCadenceMs(proactiveness) {
   const lvl = Number.isInteger(proactiveness) ? proactiveness : 1
   return IDLE_CADENCE_MS[lvl] ?? IDLE_CADENCE_MS[1]
 }
+
+
+
+

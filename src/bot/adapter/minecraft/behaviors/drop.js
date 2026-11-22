@@ -1,4 +1,4 @@
-// src/adapter/minecraft/behaviors/drop.js — toss N of an item from inventory
+﻿// src/adapter/minecraft/behaviors/drop.js â€” toss N of an item from inventory
 // across all matching slots.
 //
 // A naive `bot.inventory.items().find(...)` returns the FIRST matching slot
@@ -29,7 +29,7 @@ export async function dropItemAction(args, bot, config) {
   const toDrop = Math.min(requested, totalAvailable)
   const timeoutMs = args.timeout_ms ?? config?.drop_timeout_ms ?? DEFAULT_TIMEOUT_MS
 
-  // Walk slots oldest→newest (mineflayer's items() order); per-slot toss until
+  // Walk slots oldestâ†’newest (mineflayer's items() order); per-slot toss until
   // the running total hits `toDrop`. Each toss is wrapped with the same race
   // against timeout/abort the previous single-call path used; the timeout
   // budget shrinks with each toss so the overall wall-clock cap is preserved.
@@ -66,10 +66,14 @@ export async function dropItemAction(args, bot, config) {
   }
 
   if (dropped < requested) {
-    // User asked for N, only had M — surface explicitly so the LLM can react
+    // User asked for N, only had M â€” surface explicitly so the LLM can react
     // ("only M available") rather than silently leave the residual
     // unaccounted.
     return `dropped ${dropped} ${item} (only ${dropped} available)`
   }
   return `dropped ${dropped} ${item}`
 }
+
+
+
+

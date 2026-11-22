@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/observers/entities.multipin.test.js
+﻿// src/bot/adapter/minecraft/observers/entities.multipin.test.js
 //
-// 260618 (M2) — sibling companions must stay visible in the snapshot even when
+// 260618 (M2) â€” sibling companions must stay visible in the snapshot even when
 // closer items/mobs would fill all the entity slots. nearbyEntities pins the
 // human (pin) AND every sibling (pins), force-including them past the count cap.
 
@@ -74,3 +74,7 @@ describe('nearbyEntities multi-pin', () => {
     expect(more).toBe(2)
   })
 })
+
+
+
+

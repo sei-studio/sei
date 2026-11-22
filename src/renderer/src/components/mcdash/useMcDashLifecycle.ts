@@ -1,5 +1,5 @@
-/**
- * useMcDashLifecycle — mount effect for the Minecraft dashboard surface.
+﻿/**
+ * useMcDashLifecycle â€” mount effect for the Minecraft dashboard surface.
  * Hydrates the latest snapshot once and reports renderer visibility to main
  * so the bot only samples the minimap while someone is looking
  * (mcdash:set-watching).
@@ -17,3 +17,7 @@ export function useMcDashLifecycle(characterId: string): void {
     return () => setWatching(characterId, false);
   }, [characterId, hydrate, setWatching]);
 }
+
+
+
+

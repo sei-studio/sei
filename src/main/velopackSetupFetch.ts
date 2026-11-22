@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Downloading a Velopack Setup.exe named by setup.<channel>.json, shared by
  * the NSIS migration (velopackMigration.ts) and the self-repair
  * (velopackRepair.ts): size and sha256 checked while it streams, and a
@@ -129,3 +129,7 @@ export async function setupUnchanged(file: string, m: SetupManifest): Promise<st
     named.mtimeNs === after.mtimeNs;
   return same ? null : 'setup changed after its check';
 }
+
+
+
+

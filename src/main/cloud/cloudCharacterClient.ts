@@ -1,20 +1,20 @@
-/**
- * Phase 11 — Cloud character client (main-only).
+﻿/**
+ * Phase 11 â€” Cloud character client (main-only).
  *
- * MAIN PROCESS ONLY — do not import from renderer (Phase 10 invariant
+ * MAIN PROCESS ONLY â€” do not import from renderer (Phase 10 invariant
  * mirrors src/main/auth/supabaseClient.ts:1-11). Renderer goes through
  * IPC handlers in src/main/ipc.ts which call this module.
  *
- * Source: 11-RESEARCH §Code Examples 1, 2, 3 + §Pattern 1, §Pattern 3 +
- *         11-PATTERNS §cloudCharacterClient.ts (analog: edgeFunctionClient + skinStore).
+ * Source: 11-RESEARCH Â§Code Examples 1, 2, 3 + Â§Pattern 1, Â§Pattern 3 +
+ *         11-PATTERNS Â§cloudCharacterClient.ts (analog: edgeFunctionClient + skinStore).
  *
  * Invariants:
- *   - is_default: true rows NEVER upload (D-22) — checked BEFORE network call.
- *   - portrait_image starting with 'data:' NEVER uploads (Pitfall 2) — checked BEFORE.
+ *   - is_default: true rows NEVER upload (D-22) â€” checked BEFORE network call.
+ *   - portrait_image starting with 'data:' NEVER uploads (Pitfall 2) â€” checked BEFORE.
  *   - Every call wrapped in 15s AbortController timeout.
  *   - Storage paths use NESTED layout `<ownerUuid>/<characterUuid>.png`
  *     matching Plan 11-01 storage.objects RLS (storage.foldername[1] = auth.uid()).
- *   - Singleton supabaseClient.getClient() by default — never instantiate a
+ *   - Singleton supabaseClient.getClient() by default â€” never instantiate a
  *     second client here. RLS-scoped writes that must resolve auth.uid()
  *     deterministically (the moderation pre-upload path) may pass an explicitly
  *     JWT-authed client built by the caller via supabaseClient.getAuthedClient;
@@ -47,7 +47,7 @@ import {
 
 const TIMEOUT_MS = 15_000;
 
-/** Storage path layout — matches Plan 11-01 RLS `storage.foldername(name)[1] = auth.uid()`. */
+/** Storage path layout â€” matches Plan 11-01 RLS `storage.foldername(name)[1] = auth.uid()`. */
 function skinStoragePath(ownerUuid: string, characterUuid: string): string {
   return `${ownerUuid}/${characterUuid}.png`;
 }
@@ -80,11 +80,11 @@ async function withTimeout<T>(label: string, fn: (signal: AbortSignal) => Promis
 }
 
 /**
- * Map a Supabase row → Character. Defensive defaults so a row missing newly
+ * Map a Supabase row â†’ Character. Defensive defaults so a row missing newly
  * added columns (mid-deploy schema drift) still parses into a usable object.
  *
  * Note: is_default is HARD-CODED false here. The cloud never carries defaults
- * (D-22) — even if a row somehow had is_default=true (manual SQL, future
+ * (D-22) â€” even if a row somehow had is_default=true (manual SQL, future
  * regression) we strip it on download. The local store re-derives is_default
  * from the bundled persona id list, not from the row.
  */
@@ -112,7 +112,7 @@ function rowToCharacter(row: Record<string, unknown>): Character {
   return {
     id: row.id as string,
     // 260703 procgen: kind + server-assigned 4-char public tag ride the cloud
-    // row; rows written before the migration lack both → default custom/null.
+    // row; rows written before the migration lack both â†’ default custom/null.
     kind: ((row.kind as string | null) ?? 'custom') as Character['kind'],
     public_id: (row.public_id as string | null) ?? null,
     name: row.name as string,
@@ -128,7 +128,7 @@ function rowToCharacter(row: Record<string, unknown>): Character {
     // last_launched / playtime_ms, so a cloud-sourced copy always starts at
     // zero. Adopting the row's values would leak one install's stats onto
     // another (e.g. the packaged app showing a date stamped by `npm run dev`).
-    // Legacy rows may still carry values upserted by older clients — ignored.
+    // Legacy rows may still carry values upserted by older clients â€” ignored.
     last_launched: null,
     playtime_ms: 0,
     portrait_image: localPortrait,
@@ -156,11 +156,11 @@ function rowToCharacter(row: Record<string, unknown>): Character {
 
 /**
  * Upsert a single character row. Two BEFORE-NETWORK guards:
- *   1. is_default=true → CLOUD_SYNC_REFUSED_DEFAULT (D-22)
- *   2. portrait_image starts with `data:` → CLOUD_SYNC_REFUSED_DATA_URL
+ *   1. is_default=true â†’ CLOUD_SYNC_REFUSED_DEFAULT (D-22)
+ *   2. portrait_image starts with `data:` â†’ CLOUD_SYNC_REFUSED_DATA_URL
  *      (defense-in-depth; characterSchema.ts refinement is the primary gate)
  *
- * Payload force-sets is_default=false even after the guard — belt + suspenders.
+ * Payload force-sets is_default=false even after the guard â€” belt + suspenders.
  */
 export async function upsertCharacter(
   c: Character,
@@ -196,7 +196,7 @@ export async function upsertCharacter(
         id: c.id,
         owner: ownerUuid,
         // 260703 procgen: origin discriminator rides the cloud row. public_id is
-        // NEVER sent — the server assigns it. Rows written before the column
+        // NEVER sent â€” the server assigns it. Rows written before the column
         // existed default to 'custom' on read (rowToCharacter).
         kind: c.kind ?? 'custom',
         slug: c.slug ?? null,
@@ -208,9 +208,9 @@ export async function upsertCharacter(
         skin_png_sha256: c.skin.png_sha256,
         skin_applied_at: c.skin.applied_at,
         username: c.username,
-        is_default: false, // defense-in-depth — guard above is the primary gate (D-22)
+        is_default: false, // defense-in-depth â€” guard above is the primary gate (D-22)
         shared: c.shared,
-        // last_launched / playtime_ms deliberately absent — usage stats are
+        // last_launched / playtime_ms deliberately absent â€” usage stats are
         // device-local (see rowToCharacter). Omitted keys are left untouched
         // on conflict-update, so legacy rows keep their stale values; new rows
         // get the column defaults (null / 0).
@@ -222,7 +222,7 @@ export async function upsertCharacter(
   });
 }
 
-/** Delete a character row by UUID. RLS scopes to owner — anon callers get 0 rows affected. */
+/** Delete a character row by UUID. RLS scopes to owner â€” anon callers get 0 rows affected. */
 export async function deleteCharacter(uuid: string): Promise<void> {
   const supabase = getClient();
   await withTimeout(`delete ${uuid}`, async (signal) => {
@@ -253,10 +253,10 @@ export async function listMyCharacters(ownerUuid: string): Promise<Character[]> 
 }
 
 /**
- * Item 7 — upsert the signed-in user's public display name into public.profiles
+ * Item 7 â€” upsert the signed-in user's public display name into public.profiles
  * so Browse can render "by <preferred name>" on their published characters. RLS
  * requires auth.uid() = user_id, so we use a JWT-authed client (the ambient
- * singleton session isn't reliably applied to main-process requests — see
+ * singleton session isn't reliably applied to main-process requests â€” see
  * supabaseClient.getAuthedClient). No-op when signed out or the name is blank.
  */
 export async function upsertMyProfile(preferredName: string): Promise<void> {
@@ -278,11 +278,11 @@ export async function upsertMyProfile(preferredName: string): Promise<void> {
 }
 
 /**
- * Item 4 (cross-device) — fetch the SIGNED-IN user's own display name from
+ * Item 4 (cross-device) â€” fetch the SIGNED-IN user's own display name from
  * public.profiles. Used on sign-in to backfill a fresh device's empty local
  * config so onboarding doesn't re-prompt "what should they call you?" for an
  * account that already set a name on another device. Returns the trimmed name
- * or null (no row / blank / signed out / any error — all non-fatal).
+ * or null (no row / blank / signed out / any error â€” all non-fatal).
  *
  * T283 review: the name belongs to whichever user the CURRENT auth session
  * is, which is not always the profile the caller is about to write into (the
@@ -336,8 +336,8 @@ export async function fetchMyProfile(expectedUserId?: string): Promise<MyProfile
 }
 
 /**
- * Item 7 — fetch public author display names for a set of owner UUIDs. Returns
- * a map of user_id → preferred_name (only ids with a non-empty name included).
+ * Item 7 â€” fetch public author display names for a set of owner UUIDs. Returns
+ * a map of user_id â†’ preferred_name (only ids with a non-empty name included).
  * The profiles_select_public RLS policy allows anon + authenticated reads, so
  * this works on the signed-out Browse path too. Best-effort: any error yields
  * an empty map and Browse falls back to the anonymized "user-xxxx" handle.
@@ -386,7 +386,7 @@ export async function downloadCharacter(uuid: string): Promise<Character | null>
  * re-uploads overwrite. Nested path matches Plan 11-01 RLS.
  *
  * Note: storage SDK does not accept an AbortSignal directly (supabase-js bug
- * #1185 — open as of the supabase-js 2.106 release we ship); we accept that
+ * #1185 â€” open as of the supabase-js 2.106 release we ship); we accept that
  * a hung storage upload blocks longer than the table queries. Plan 11-19
  * pipes the renderer "cancel" button through a separate watchdog.
  */
@@ -399,7 +399,7 @@ export async function downloadCharacter(uuid: string): Promise<Character | null>
  * so a direct upload authenticated with the user's ES256 token is treated as
  * anonymous and rejected by storage RLS. Instead the Edge Function (which DOES
  * verify ES256 via gotrue/JWKS) mints a signed upload URL with the service_role
- * key, and we PUT the bytes to it — that endpoint is authorized by the signed
+ * key, and we PUT the bytes to it â€” that endpoint is authorized by the signed
  * token, not the user JWT, so it is immune to the storage-api gap. The owner +
  * path are derived server-side from the verified user id; `ownerUuid` is no
  * longer a client input. Revert to a direct `.storage.upload()` once storage-api
@@ -409,21 +409,21 @@ export async function downloadCharacter(uuid: string): Promise<Character | null>
  * Skip a no-op re-upload. The renderer re-uploads the portrait/skin on EVERY
  * character save (even a name/persona-only edit), which overwrites the Storage
  * object with byte-identical content. That produces a `storage.objects` UPDATE
- * with an unchanged eTag — pure churn, and historically it re-fired the
+ * with an unchanged eTag â€” pure churn, and historically it re-fired the
  * `reset_moderation_on_portrait_change` trigger and nulled the character out of
  * World (260707: Marv). We remember the (owner, md5) of the last successful
  * upload in a sidecar next to the local asset and skip when both still match.
  *
  * Owner is part of the key on purpose: a change of owner moves the Storage path
  * (`<owner>/<uuid>.png`), so the bytes MUST be re-uploaded to the new path even
- * though they're unchanged — keying on owner forces that.
+ * though they're unchanged â€” keying on owner forces that.
  */
 function assetMarkerPath(kind: 'portrait' | 'skin', characterId: string): string {
   const base = kind === 'portrait' ? paths.portraitPath(characterId) : paths.skinPngPath(characterId);
   return `${base}.uploaded.json`;
 }
 
-/** Extract the owner uuid (`sub` claim) from a JWT without verifying it — the
+/** Extract the owner uuid (`sub` claim) from a JWT without verifying it â€” the
  *  server derives the real path from the verified token; this is only a cache
  *  key. Returns null on any parse failure so the caller falls back to uploading. */
 function ownerFromJwt(jwt: string): string | null {
@@ -446,7 +446,7 @@ async function readUploadMarker(
     const m = JSON.parse(raw);
     if (typeof m?.owner === 'string' && typeof m?.md5 === 'string') return m;
   } catch {
-    /* missing/corrupt marker → treat as "never uploaded" and re-upload */
+    /* missing/corrupt marker â†’ treat as "never uploaded" and re-upload */
   }
   return null;
 }
@@ -460,7 +460,7 @@ async function writeUploadMarker(
   try {
     await fsWriteFile(assetMarkerPath(kind, characterId), JSON.stringify({ owner, md5 }));
   } catch (err) {
-    // The marker is a pure optimization — if we can't persist it, the next save
+    // The marker is a pure optimization â€” if we can't persist it, the next save
     // just re-uploads. Never fail the upload over a marker write.
     console.warn(`[sei] uploadCharacterAsset: could not write upload marker: ${(err as Error).message}`);
   }
@@ -484,7 +484,7 @@ async function uploadCharacterAsset(
   if (owner) {
     const marker = await readUploadMarker(kind, characterId);
     if (marker && marker.owner === owner && marker.md5 === md5) {
-      // Byte-identical to the last successful upload for this owner — the object
+      // Byte-identical to the last successful upload for this owner â€” the object
       // is already in Storage; skip the sign + PUT entirely.
       return false;
     }
@@ -526,7 +526,7 @@ export async function uploadSkin(characterId: string, bytes: Buffer, jwt: string
 
 /**
  * Upload portrait bytes to `portraits/<owner>/<uuid>.png`. The format arg
- * controls the wire content-type — the renderer encodes to whichever the
+ * controls the wire content-type â€” the renderer encodes to whichever the
  * source PortraitImagePicker produced (png/jpeg/webp). The bytes are stored
  * as given (never re-encoded).
  *
@@ -575,7 +575,7 @@ export async function downloadPortrait(ownerUuid: string, characterUuid: string)
 
 /**
  * Delete storage objects across both buckets in one call. Groups inputs by
- * bucket and issues one .remove() per bucket — supabase-js storage doesn't
+ * bucket and issues one .remove() per bucket â€” supabase-js storage doesn't
  * support cross-bucket batch removes natively.
  *
  * Used by Plan 11-13 (delete-account flow) and Plan 11-11 (delete-character).
@@ -611,3 +611,7 @@ export function getStorageObjectPublicUrl(bucket: 'skins' | 'portraits', objectP
   const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
   return data.publicUrl;
 }
+
+
+
+

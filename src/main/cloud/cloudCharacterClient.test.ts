@@ -1,12 +1,12 @@
-/**
- * Tests for src/main/cloud/cloudCharacterClient — Phase 11 typed wrapper over
+﻿/**
+ * Tests for src/main/cloud/cloudCharacterClient â€” Phase 11 typed wrapper over
  * Supabase characters table + skins/portraits storage buckets.
  *
  * Covers the four invariants the client is the sole gate for:
  *   1. is_default rows NEVER upload (D-22)
  *   2. data: portrait_image rows NEVER upload (Pitfall 2 defense-in-depth)
  *   3. Storage uploads use the NESTED `<owner>/<uuid>.png` layout (Plan 11-01 RLS)
- *   4. Every call wrapped in 15s AbortController timeout → CLOUD_SYNC_TIMEOUT
+ *   4. Every call wrapped in 15s AbortController timeout â†’ CLOUD_SYNC_TIMEOUT
  *
  * Mock strategy: vi.mock the supabaseClient singleton with a hand-rolled mock
  * whose `.from()` / `.storage.from()` returns method-chain stubs we can inspect
@@ -246,7 +246,7 @@ describe('cloudCharacterClient.upsertCharacter', () => {
     const { upsertCharacter } = await import('./cloudCharacterClient');
     const defaultChar = makeCharacter({ is_default: true });
     await expect(upsertCharacter(defaultChar, OWNER)).rejects.toThrow(/CLOUD_SYNC_REFUSED_DEFAULT/);
-    // Guard happens before the .from() call — no payload captured.
+    // Guard happens before the .from() call â€” no payload captured.
     expect(state.upsert.payload).toBeNull();
   });
 
@@ -259,7 +259,7 @@ describe('cloudCharacterClient.upsertCharacter', () => {
 
   it('sends a payload with is_default forced to false even if input slipped through', async () => {
     // Note: we can't actually pass is_default:true (the guard catches it). But we
-    // CAN assert the literal `false` lives in the upsert payload — defense-in-depth.
+    // CAN assert the literal `false` lives in the upsert payload â€” defense-in-depth.
     const { upsertCharacter } = await import('./cloudCharacterClient');
     await upsertCharacter(makeCharacter(), OWNER);
     expect(state.upsert.payload).not.toBeNull();
@@ -281,7 +281,7 @@ describe('cloudCharacterClient.upsertCharacter', () => {
     expect(state.upsert.payload).not.toHaveProperty('playtime_ms');
   });
 
-  it('wraps the call in an AbortController — payload signal is the same instance', async () => {
+  it('wraps the call in an AbortController â€” payload signal is the same instance', async () => {
     const { upsertCharacter } = await import('./cloudCharacterClient');
     await upsertCharacter(makeCharacter(), OWNER);
     expect(state.upsert.signal).toBeInstanceOf(AbortSignal);
@@ -294,7 +294,7 @@ describe('cloudCharacterClient.upsertCharacter', () => {
     const promise = upsertCharacter(makeCharacter(), OWNER);
     // Attach a no-op catch so Node doesn't briefly observe the inner rejection
     // as "unhandled" before withTimeout's try/catch grabs it. The expect.rejects
-    // below is the real assertion — this is purely a Node bookkeeping hint.
+    // below is the real assertion â€” this is purely a Node bookkeeping hint.
     promise.catch(() => {});
     // Advance past TIMEOUT_MS (15_000) so the setTimeout fires.
     await vi.advanceTimersByTimeAsync(15_001);
@@ -307,7 +307,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
   it('uploadSkin requests a skin signed URL then PUTs the bytes to it', async () => {
     const { uploadSkin } = await import('./cloudCharacterClient');
     await uploadSkin(CHAR_ID, Buffer.from([0x89, 0x50, 0x4e, 0x47]), 'jwt-token');
-    // Owner/path are server-derived now — the client only sends id + kind.
+    // Owner/path are server-derived now â€” the client only sends id + kind.
     expect(state.edgeCalls).toEqual([
       { name: 'sign-character-asset-upload', body: { characterId: CHAR_ID, kind: 'skin' } },
     ]);
@@ -317,7 +317,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     expect(state.storageUploads[0].contentType).toBe('image/png');
   });
 
-  it('uploadPortrait jpeg → kind=portrait, image/jpeg content-type', async () => {
+  it('uploadPortrait jpeg â†’ kind=portrait, image/jpeg content-type', async () => {
     const { uploadPortrait } = await import('./cloudCharacterClient');
     await uploadPortrait(CHAR_ID, Buffer.from([0xff, 0xd8]), 'jpeg', 'jwt-token');
     expect(state.edgeCalls[0]).toEqual({
@@ -336,7 +336,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     expect(state.storageUploads[1].cacheControl).toBeUndefined();
   });
 
-  it('uploadPortrait webp → image/webp content-type', async () => {
+  it('uploadPortrait webp â†’ image/webp content-type', async () => {
     const { uploadPortrait } = await import('./cloudCharacterClient');
     await uploadPortrait(CHAR_ID, Buffer.from([0]), 'webp', 'jwt-token');
     expect(state.storageUploads[0].contentType).toBe('image/webp');
@@ -344,7 +344,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
 
   it('re-uploads on every call when the JWT has no parseable owner (dedup off)', async () => {
     // The other tests in this block pass the fake 'jwt-token' (no `sub`), so the
-    // dedup is bypassed and behavior matches the pre-dedup client — asserted here.
+    // dedup is bypassed and behavior matches the pre-dedup client â€” asserted here.
     const { uploadPortrait } = await import('./cloudCharacterClient');
     await uploadPortrait(CHAR_ID, Buffer.from([7]), 'png', 'jwt-token');
     await uploadPortrait(CHAR_ID, Buffer.from([7]), 'png', 'jwt-token');
@@ -354,7 +354,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
   describe('skips no-op re-uploads of byte-identical assets', () => {
     const OWNER_A = '22222222-2222-4222-8222-222222222222';
     const OWNER_B = '33333333-3333-4333-8333-333333333333';
-    // A real-shaped JWT (header.payload.sig) whose payload carries `sub` — this
+    // A real-shaped JWT (header.payload.sig) whose payload carries `sub` â€” this
     // is what lets the client key the dedup by owner. Not verified, just decoded.
     const jwtWithSub = (sub: string): string => {
       const seg = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -365,7 +365,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
     beforeEach(async () => {
       tmp = await mkdtemp(path.join(tmpdir(), 'sei-upload-'));
       _setUserDataOverride(tmp);
-      // The marker sidecar lives next to the local asset — ensure the dir exists.
+      // The marker sidecar lives next to the local asset â€” ensure the dir exists.
       await mkdir(path.dirname(paths.portraitPath(CHAR_ID)), { recursive: true });
     });
     afterEach(async () => {
@@ -379,7 +379,7 @@ describe('cloudCharacterClient.uploadSkin / uploadPortrait (signed-URL via Edge 
       await uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt);
       expect(state.storageUploads).toHaveLength(1);
       expect(state.edgeCalls).toHaveLength(1);
-      // Same bytes → no sign, no PUT (and false: nothing to re-thumbnail).
+      // Same bytes â†’ no sign, no PUT (and false: nothing to re-thumbnail).
       await expect(uploadPortrait(CHAR_ID, Buffer.from([1, 2, 3, 4]), 'png', jwt)).resolves.toBe(false);
       expect(state.storageUploads).toHaveLength(1);
       expect(state.edgeCalls).toHaveLength(1);
@@ -438,8 +438,8 @@ describe('cloudCharacterClient.listMyCharacters', () => {
         skin_png_sha256: 'sha',
         skin_applied_at: '2026-01-02T00:00:00.000Z',
         username: 'lyrabot',
-        last_launched: '2099-01-01T00:00:00.000Z', // stale device stat — must NOT be adopted
-        playtime_ms: 1234,                          // stale device stat — must NOT be adopted
+        last_launched: '2099-01-01T00:00:00.000Z', // stale device stat â€” must NOT be adopted
+        playtime_ms: 1234,                          // stale device stat â€” must NOT be adopted
         portrait_image: 'lyra.png',
         metadata: { foo: 'bar' },
         created_at: '2026-01-01T00:00:00.000Z',
@@ -457,7 +457,7 @@ describe('cloudCharacterClient.listMyCharacters', () => {
     expect(chars[0].shared).toBe(true);
     expect(chars[0].skin.source).toBe('username');
     expect(chars[0].skin.mojang_username).toBe('lyrabot');
-    // Usage stats are device-local — cloud row values are never adopted.
+    // Usage stats are device-local â€” cloud row values are never adopted.
     expect(chars[0].last_launched).toBeNull();
     expect(chars[0].playtime_ms).toBe(0);
     expect(chars[0].portrait_image).toBe('lyra.png');
@@ -500,3 +500,7 @@ describe('cloudCharacterClient.getStoragePublicUrl', () => {
     expect(url).toBe(`https://stub.example/portraits/${OWNER}/${CHAR_ID}.png`);
   });
 });
+
+
+
+

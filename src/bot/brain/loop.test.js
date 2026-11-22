@@ -1,11 +1,11 @@
-// src/bot/brain/loop.test.js
+﻿// src/bot/brain/loop.test.js
 //
 // 15-06 Task 4: VERIFY (do not edit) that buildAnthropicPayload passes a
 // provider-neutral image block through unchanged. The 15-06 image-attach
 // (orchestrator handleVisualizeResult) appends an { type:'image', source:{...} }
 // block on a fresh user turn; loop.buildAnthropicPayload must not strip or
 // mutate it (the snapshot-strip rule only targets text/snapshot blocks; unknown
-// block types are deep-cloned through — loop.js:135-136). If this test ever
+// block types are deep-cloned through â€” loop.js:135-136). If this test ever
 // fails, loop.js needs a minimal passthrough fix (and the SUMMARY must note it);
 // the expectation is it passes with NO loop.js edit.
 
@@ -14,7 +14,7 @@ import { createLoop } from './loop.js'
 
 const IMG = { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } }
 
-describe('createLoop — iterationCap guard (0 = unlimited)', () => {
+describe('createLoop â€” iterationCap guard (0 = unlimited)', () => {
   it('accepts 0 (unlimited cap) without throwing', () => {
     expect(() => createLoop({ iterationCap: 0 })).not.toThrow()
   })
@@ -28,7 +28,7 @@ describe('createLoop — iterationCap guard (0 = unlimited)', () => {
   })
 })
 
-describe('loop.buildAnthropicPayload — image block passthrough (VIS-02, no-edit verification)', () => {
+describe('loop.buildAnthropicPayload â€” image block passthrough (VIS-02, no-edit verification)', () => {
   it('preserves an image block on a user turn unchanged', () => {
     const loop = createLoop({ iterationCap: 30 })
     // Seed an assistant turn first so the image user turn is a normal turn.
@@ -51,7 +51,7 @@ describe('loop.buildAnthropicPayload — image block passthrough (VIS-02, no-edi
     expect(imageBlock.source).toEqual({ type: 'base64', media_type: 'image/jpeg', data: 'AAAA' })
 
     // The accompanying event text keeps its text but the `name` field is
-    // stripped (Anthropic SDK has no `name` on text blocks — existing rule).
+    // stripped (Anthropic SDK has no `name` on text blocks â€” existing rule).
     const textBlock = imageTurn.content.find(b => b.type === 'text')
     expect(textBlock).toEqual({ type: 'text', text: 'rendered view attached' })
     expect(textBlock.name).toBeUndefined()
@@ -89,7 +89,7 @@ describe('loop.buildAnthropicPayload — image block passthrough (VIS-02, no-edi
   })
 })
 
-describe('loop.demoteOlderImages — image retention cap', () => {
+describe('loop.demoteOlderImages â€” image retention cap', () => {
   it('replaces every image block in history with a text placeholder, leaving other blocks intact', () => {
     const loop = createLoop({ iterationCap: 30 })
     loop.appendUserTurn([
@@ -131,16 +131,16 @@ describe('loop.demoteOlderImages — image retention cap', () => {
       loop.demoteOlderImages()
       loop.appendUserTurn(bigFrame(data))
     }
-    // Three attaches, but only ONE frame of base64 remains live — canonical
+    // Three attaches, but only ONE frame of base64 remains live â€” canonical
     // growth is the two small placeholders, not 16KB of dead base64.
     expect(loop.byteSize()).toBeLessThan(oneFrameSize + 1_000)
   })
 })
 
-describe('loop.appendToolResults — say() reminder on every continuation turn (260619)', () => {
+describe('loop.appendToolResults â€” say() reminder on every continuation turn (260619)', () => {
   // Regression: the say() reminder used to ride only on the seed turn, so a long
   // action chain (gather/dig/craft) ran many continuation turns with NO say()
-  // contract — the model kept acting and leaked any speech to its private text.
+  // contract â€” the model kept acting and leaked any speech to its private text.
   // appendToolResults now restates the reminder as the LAST block when the loop
   // was created with one.
   const toolUseAssistant = (loop) => {
@@ -174,3 +174,7 @@ describe('loop.appendToolResults — say() reminder on every continuation turn (
     expect(lastUser.content[lastUser.content.length - 1]).toEqual({ type: 'text', text: 'SNAP' })
   })
 })
+
+
+
+

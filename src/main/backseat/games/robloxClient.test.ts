@@ -1,4 +1,4 @@
-/**
+﻿/**
  * robloxClient (260929): the backseat "which Roblox game" lookup.
  *
  * Fixtures under ./fixtures are REAL responses captured from the public
@@ -80,7 +80,7 @@ describe('parsers (real response shapes)', () => {
     const g = parseGameRow(row)!;
     expect(g.universeId).toBe(1686885941);
     expect(g.placeId).toBe(4924922222);
-    expect(g.name).toBe('Brookhaven 🏡RP');
+    expect(g.name).toBe('Brookhaven ðŸ¡RP');
     expect(g.genre).toBe('Roleplay & Avatar Sim, Life');
     expect(g.creator).toBe('Brookhaven by Voldex');
     expect(g.creatorType).toBe('Group');
@@ -116,7 +116,7 @@ describe('parsers (real response shapes)', () => {
 
   it('takes the top-playing-now sort as popular and every sort as the pool', () => {
     const { popular, pool } = parseSorts(SORTS);
-    expect(popular.map((g) => g.name)).toContain('Brookhaven 🏡RP');
+    expect(popular.map((g) => g.name)).toContain('Brookhaven ðŸ¡RP');
     expect(popular[0].playing).toBeGreaterThan(0);
     // The pool is the union, deduplicated (Slayers 2 is in two sorts).
     expect(pool.length).toBeGreaterThan(popular.length);
@@ -152,7 +152,7 @@ describe('parsers (real response shapes)', () => {
 
   it('matches the pool on every query word, ignoring case and emoji', () => {
     const { pool } = parseSorts(SORTS);
-    expect(matchPool(pool, 'brookhaven').map((g) => g.name)).toEqual(['Brookhaven 🏡RP']);
+    expect(matchPool(pool, 'brookhaven').map((g) => g.name)).toEqual(['Brookhaven ðŸ¡RP']);
     expect(matchPool(pool, 'MURDER mystery').map((g) => g.universeId)).toEqual([66654135]);
     expect(matchPool(pool, 'zzzz not a game')).toEqual([]);
     expect(matchPool(pool, '   ')).toEqual([]);
@@ -166,7 +166,7 @@ describe('createRobloxClient', () => {
     const res = await c.resolve('https://www.roblox.com/games/4924922222/Brookhaven-RP');
     expect(res.kind).toBe('game');
     if (res.kind !== 'game') return;
-    expect(res.game.name).toBe('Brookhaven 🏡RP');
+    expect(res.game.name).toBe('Brookhaven ðŸ¡RP');
     expect(res.game.genre).toBe('Roleplay & Avatar Sim, Life');
     expect(res.game.iconUrl).toMatch(/rbxcdn/);
     expect(net.count('omni-search')).toBe(0);
@@ -230,7 +230,7 @@ describe('createRobloxClient', () => {
     const res = await c.resolve('brookhaven');
     expect(res).toMatchObject({ kind: 'results', fallback: 'rate_limited' });
     if (res.kind !== 'results') return;
-    expect(res.results.map((g) => g.name)).toEqual(['Brookhaven 🏡RP']);
+    expect(res.results.map((g) => g.name)).toEqual(['Brookhaven ðŸ¡RP']);
     expect(net.count('omni-search')).toBe(1);
 
     // Inside the window (retry-after says 5 s; the real window is 55 s):
@@ -258,7 +258,7 @@ describe('createRobloxClient', () => {
     const live = createRobloxClient({ fetch: roblox().f });
     const list = await live.popular();
     expect(list.length).toBeGreaterThan(0);
-    expect(list.map((g) => g.name)).toContain('Brookhaven 🏡RP');
+    expect(list.map((g) => g.name)).toContain('Brookhaven ðŸ¡RP');
     expect(list.find((g) => g.universeId === 1686885941)?.iconUrl).toMatch(/rbxcdn/);
     expect(list.find((g) => g.universeId === 1686885941)?.thumbnailUrl).toMatch(/rbxcdn.*480\/270/);
 
@@ -270,7 +270,7 @@ describe('createRobloxClient', () => {
   it('caches details and answers null when they cannot be read', async () => {
     const net = roblox();
     const c = createRobloxClient({ fetch: net.f });
-    expect((await c.details(1686885941))?.name).toBe('Brookhaven 🏡RP');
+    expect((await c.details(1686885941))?.name).toBe('Brookhaven ðŸ¡RP');
     const n = net.count('games.roblox.com');
     await c.details(1686885941);
     expect(net.count('games.roblox.com')).toBe(n);
@@ -282,3 +282,7 @@ describe('createRobloxClient', () => {
     expect(await c.details(123)).toBeNull();
   });
 });
+
+
+
+

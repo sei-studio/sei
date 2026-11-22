@@ -1,5 +1,5 @@
-/**
- * ChessScene — the 3D "wooden table" chess viewport (three.js, no React).
+﻿/**
+ * ChessScene â€” the 3D "wooden table" chess viewport (three.js, no React).
  *
  * Clubhouse-Games-style presentation: a fixed perspective camera looks down
  * at ~52 degrees onto a wooden table; the board (cream vs dark green squares,
@@ -42,7 +42,7 @@ export interface SceneArrow {
 
 const EMPTY_MARKS: SceneMarks = { selected: null, lastMove: null, check: null, hover: null, targets: [] };
 
-// ── Layout constants (1 unit = 1 square) ────────────────────────────────────
+// â”€â”€ Layout constants (1 unit = 1 square) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const BOARD_TOP = 0.53; // y of the square surfaces
 const FRAME_TOP = 0.56; // y of the frame lip
 const SLAB_HALF = 4.6; // board slab half-extent incl. frame
@@ -139,7 +139,7 @@ export class ChessScene {
    *
    * A dragged piece is drawn at y = BOARD_TOP + LIFT but used to be positioned
    * by raycasting the BOARD plane, so its rendered position was the projection
-   * of a point 0.55 units above where the cursor actually pointed. At the 52°
+   * of a point 0.55 units above where the cursor actually pointed. At the 52Â°
    * camera that is a permanent upward screen offset, and because the piece also
    * had to RISE by LIFT as the drag began, the first ~150ms of every drag read
    * as the piece shooting up past the cursor and staying above it.
@@ -173,7 +173,7 @@ export class ChessScene {
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 120);
     this.library = createPieceLibrary();
 
-    // ── Lights ──
+    // â”€â”€ Lights â”€â”€
     // Contrast over brightness (260729): the strong key light does the
     // lifting; ambient + fill stay low so shadowed faces and cast shadows
     // actually go dark instead of washing toward the midtones.
@@ -197,7 +197,7 @@ export class ChessScene {
     fill.position.set(-6, 7, -4);
     this.scene.add(fill);
 
-    // ── Table ──
+    // â”€â”€ Table â”€â”€
     // 200 units square (repeat scaled to keep the grain size) so the wood
     // still fills the whole frame at the pulled-back camera framing; the fog
     // fades the far reach into the background color long before the edge.
@@ -221,7 +221,7 @@ export class ChessScene {
     table.receiveShadow = true;
     this.scene.add(table);
 
-    // ── Board slab + frame ──
+    // â”€â”€ Board slab + frame â”€â”€
     const frameTex = makeWoodTexture({
       base: [82, 50, 27],
       stripe: [58, 33, 17],
@@ -259,7 +259,7 @@ export class ChessScene {
       this.scene.add(lip);
     }
 
-    // ── Squares: cream vs deep green felt-ish ──
+    // â”€â”€ Squares: cream vs deep green felt-ish â”€â”€
     const sqGeo = new THREE.BoxGeometry(1, 0.06, 1);
     this.ownedGeos.push(sqGeo);
     const lightMat = new THREE.MeshStandardMaterial({ color: 0xe7d9b4, roughness: 0.55, metalness: 0.02 });
@@ -275,7 +275,7 @@ export class ChessScene {
       }
     }
 
-    // ── Coordinate labels on the frame lip ──
+    // â”€â”€ Coordinate labels on the frame lip â”€â”€
     this.coordCanvas = document.createElement('canvas');
     this.coordCanvas.width = 512;
     this.coordCanvas.height = 512;
@@ -297,7 +297,7 @@ export class ChessScene {
     this.scene.add(coordPlane);
     this.drawCoords();
 
-    // ── Mark + overlay resources ──
+    // â”€â”€ Mark + overlay resources â”€â”€
     this.tileGeo = new THREE.PlaneGeometry(1, 1);
     this.dotGeo = new THREE.CircleGeometry(0.14, 24);
     this.ringGeo = new THREE.RingGeometry(0.34, 0.44, 32);
@@ -324,7 +324,7 @@ export class ChessScene {
     this.resize();
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   setOrientation(o: ChessColor): void {
     if (o === this.orientation) return;
@@ -405,8 +405,8 @@ export class ChessScene {
    *
    * Pieces are hit-tested FIRST. Projecting the pointer straight onto the board
    * plane answers with the square the ray passes through, which for a click on
-   * a tall piece's body is the square BEHIND it: at the 52° camera a point h
-   * units up the piece lands h/tan(52°) ≈ 0.78h squares further away, close to
+   * a tall piece's body is the square BEHIND it: at the 52Â° camera a point h
+   * units up the piece lands h/tan(52Â°) â‰ˆ 0.78h squares further away, close to
    * a full square for a king. Grabbing a piece by its head used to select the
    * empty square behind it.
    */
@@ -461,7 +461,7 @@ export class ChessScene {
    * Float the dragged piece under the cursor (clamped to the board).
    *
    * Raycasts the LIFTED plane, not the board, so the piece tracks the pointer
-   * 1:1 on screen — see dragPlane. The grab offset from liftPiece is added back
+   * 1:1 on screen â€” see dragPlane. The grab offset from liftPiece is added back
    * so the piece keeps the grip it was picked up with.
    */
   dragPiece(clientX: number, clientY: number): void {
@@ -527,7 +527,7 @@ export class ChessScene {
     this.renderer.domElement.remove();
   }
 
-  // ── Internals ──────────────────────────────────────────────────────────────
+  // â”€â”€ Internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private squareCenter(sq: string): THREE.Vector3 {
     const x = colOf(sq, this.orientation) - 3.5;
@@ -697,7 +697,7 @@ export class ChessScene {
     // view axis, hence the offset). Margins are deliberately generous (260721):
     // the board reads smaller so the floating HUD (identity, move list,
     // bottom controls) never collides with it at typical panel sizes; the
-    // vertical minimum rose 11 → 14 and the horizontal constant 13.1 → 16.6
+    // vertical minimum rose 11 â†’ 14 and the horizontal constant 13.1 â†’ 16.6
     // for roughly a 25% wider framing.
     const d = Math.max(14, 2.6 + 16.6 / aspect);
     const fog = this.scene.fog as THREE.Fog | null;
@@ -750,3 +750,7 @@ export class ChessScene {
     if (animating) this.invalidate();
   };
 }
+
+
+
+

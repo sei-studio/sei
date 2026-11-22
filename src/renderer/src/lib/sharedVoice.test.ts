@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Voice for others (261019): what the share step, the profile's Voice tab and
  * the character page read and store for metadata.voiceShared.
  */
@@ -68,7 +68,7 @@ describe('sharedVoiceMetadataToSave (publish step)', () => {
   });
 
   it('a pool voice with a stale own-voice tag needs no "Others will hear" write (261024)', () => {
-    const stale = { voiceId: 'NXaTw4ifg0LAguvKuIwZ', voiceOwn: { name: 'Sei — Josh', gender: 'male' } };
+    const stale = { voiceId: 'NXaTw4ifg0LAguvKuIwZ', voiceOwn: { name: 'Sei â€” Josh', gender: 'male' } };
     expect(sharedVoiceMetadataToSave(stale, 'mal1x0000000000000000')).toBeNull();
   });
 });
@@ -105,8 +105,12 @@ describe('copy', () => {
     ];
     for (const k of keys) {
       expect(ZH[k], k).toBeTruthy();
-      expect(k.includes('—') || ZH[k].includes('—'), k).toBe(false);
+      expect(k.includes('â€”') || ZH[k].includes('â€”'), k).toBe(false);
       if (k.includes('{name}')) expect(ZH[k]).toContain('{name}');
     }
   });
 });
+
+
+
+

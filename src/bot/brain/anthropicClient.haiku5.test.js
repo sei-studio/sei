@@ -1,4 +1,4 @@
-// 261008: every bot-process Anthropic request (game brains, in-game voice,
+﻿// 261008: every bot-process Anthropic request (game brains, in-game voice,
 // the compactor's Sonnet override) goes through anthropicClient.call, which
 // applies the Haiku 5 rules: thinking disabled unless adaptive was asked for,
 // and never a fixed budget. Covers the plain create and the voice streaming
@@ -105,3 +105,7 @@ describe('anthropicClient.call prompt-size guard', () => {
     warn.mockRestore()
   })
 })
+
+
+
+

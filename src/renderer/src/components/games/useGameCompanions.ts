@@ -1,5 +1,5 @@
-/**
- * useGameCompanions — the OTHER companions currently in the same game as
+﻿/**
+ * useGameCompanions â€” the OTHER companions currently in the same game as
  * the dashboard's own (260909). A dashboard is mounted for one character,
  * but Minecraft (and Stardew) run several bodies at once, one per
  * character, and each used to be visible only from its own chat. The
@@ -79,3 +79,7 @@ export function companionActivityText(c: GameCompanion, pausedLabel: string): st
   const a = c.activity || 'idling';
   return a.charAt(0).toUpperCase() + a.slice(1);
 }
+
+
+
+

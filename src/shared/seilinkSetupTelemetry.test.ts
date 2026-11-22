@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { isSeilinkSetupEvent, sanitizeSeilinkSetupTrack } from './seilinkSetupTelemetry';
 
 const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -32,3 +32,7 @@ describe('seilinkSetupTelemetry (261110)', () => {
     expect(sanitizeSeilinkSetupTrack('other', { a: 1 })).toEqual({});
   });
 });
+
+
+
+

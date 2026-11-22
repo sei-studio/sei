@@ -1,5 +1,5 @@
-/**
- * DevScreenShot — dev-only screenshot harness (261103, the spacing pass).
+﻿/**
+ * DevScreenShot â€” dev-only screenshot harness (261103, the spacing pass).
  *
  * The real screens in the real shell (MacosWindow + IconRail + <main>) over
  * fixture data, in a plain browser tab with no IPC, so layout and spacing can
@@ -519,3 +519,7 @@ export function DevScreenShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

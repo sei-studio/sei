@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The guided first moment's pure trigger rules (260926): who gets it, which
  * game leads, and which buttons the card shows.
  */
@@ -118,3 +118,7 @@ describe('firstMomentButtons', () => {
         }
   });
 });
+
+
+
+

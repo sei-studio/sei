@@ -1,5 +1,5 @@
-/**
- * OnboardingScreen — setup flow.
+﻿/**
+ * OnboardingScreen â€” setup flow.
  *
  * Steps:
  *  0. Name.
@@ -7,13 +7,13 @@
  *  2. API key.
  *
  * Fresh-onboard completion (260728): Sui is seeded into a party slot
- * (fire-and-forget chars:add-to-library — removable any time), and a
+ * (fire-and-forget chars:add-to-library â€” removable any time), and a
  * brand-new signed-in profile continues from the questionnaire into the
- * unique-companion flow ('first-fill' → gender question → casting) so the
+ * unique-companion flow ('first-fill' â†’ gender question â†’ casting) so the
  * ritual ends on a first companion, not an empty Home.
  *
  * The conversation-language step was removed (260725): the language is now
- * auto-detected from the player's voice (ElevenLabs Scribe STT → main's
+ * auto-detected from the player's voice (ElevenLabs Scribe STT â†’ main's
  * voice/languageAutoSwitch.ts persists UserConfig.chat_language). Onboarding
  * no longer writes chat_language at all; saveConfigFromRenderer preserves
  * whatever is on disk.
@@ -29,12 +29,12 @@
  *    `sei.hasApiKey()`.
  *
  * isReonboard:
- *  - true → step 0 Back navigates to settings; existing UserConfig fields
+ *  - true â†’ step 0 Back navigates to settings; existing UserConfig fields
  *    are pre-populated; api key field starts empty (force re-entry per
  *    UI-SPEC re-onboarding rule).
- *  - false → step 0 Back is disabled (it's the first run).
+ *  - false â†’ step 0 Back is disabled (it's the first run).
  *
- * Source: UI-SPEC §Onboarding.
+ * Source: UI-SPEC Â§Onboarding.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -63,7 +63,7 @@ export interface OnboardingScreenProps {
 
 export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingScreenProps): React.ReactElement {
   // D-03: signed-in users skip Provider tiles + API-key entry, leaving just
-  // the Name step. Local users get Name → Provider → API key.
+  // the Name step. Local users get Name â†’ Provider â†’ API key.
   const STEPS = signedIn ? 1 : 3;
   const t = useT();
   const navigate = useUiStore((s) => s.navigate);
@@ -77,7 +77,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 260817 (china-compat W10): re-onboarding must not wipe the per-provider
-  // model/base_url overrides Settings or the W6 wizard wrote — this screen has
+  // model/base_url overrides Settings or the W6 wizard wrote â€” this screen has
   // no model step of its own, so submitting provider_config: {} was silent
   // data loss. Carried by ref: render never reads it.
   const providerConfigRef = useRef<UserConfig['provider_config']>({});
@@ -93,7 +93,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         setPref(cfg.preferred_name ?? '');
         setProvider((cfg.provider ?? 'anthropic') as Provider);
         providerConfigRef.current = cfg.provider_config ?? {};
-        // apiKey deliberately NOT pre-filled — UI-SPEC re-onboarding rule.
+        // apiKey deliberately NOT pre-filled â€” UI-SPEC re-onboarding rule.
       })
       .catch(() => {
         /* defaults already set */
@@ -105,8 +105,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
 
   const back = () => {
     if (step === 0) {
-      // Re-onboarding (from Settings) → back to Settings. The local-only
-      // first-run path (reached via AuthChoice → "Continue locally") → back
+      // Re-onboarding (from Settings) â†’ back to Settings. The local-only
+      // first-run path (reached via AuthChoice â†’ "Continue locally") â†’ back
       // to the sign-in chooser so the user can pick email / Google instead.
       // Signed-in fresh onboarding keeps step 0 Back disabled (handled below).
       if (isReonboard) navigate({ kind: 'settings' });
@@ -136,7 +136,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // chat_language is deliberately absent (260725): it is auto-detected
         // from voice in main, and saveConfigFromRenderer keeps the on-disk
         // value regardless of what a renderer save carries.
-        // Phase 18/19 — UserConfig now carries the user's chat profile picture;
+        // Phase 18/19 â€” UserConfig now carries the user's chat profile picture;
         // a fresh onboard has none yet (set later in Settings).
         profile_picture: null,
         // 260724: no custom app background on a fresh onboard (set in Settings).
@@ -150,7 +150,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         // default to BYOK ('local'). Signed-in users with no balance yet are
         // start on the free tier and can subscribe later from the plan screen.
         ai_backend_kind: signedIn ? 'cloud-proxy' : 'local',
-        // 260703: this is a DEFAULT, not an explicit user pick — a later
+        // 260703: this is a DEFAULT, not an explicit user pick â€” a later
         // sign-in may re-assert the cloud default over it. Only the Settings
         // ACCOUNT MODE switch (proxy:configure) stamps 'user'.
         ai_backend_kind_source: 'default',
@@ -205,7 +205,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       // step, so saveApiKey MUST be gated behind !signedIn. Otherwise a future
       // bug could land a stale apiKey state into the secret store.
       if (!signedIn && apiKey.trim()) {
-        // Empty is only reachable for ollama (see validate) — keyless, so
+        // Empty is only reachable for ollama (see validate) â€” keyless, so
         // there is nothing to store, and '' would CLEAR a stored key.
         await sei.saveApiKey(apiKey.trim());
       }
@@ -214,11 +214,11 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
       // straight on instead of detouring through a claim step.
       if (!isReonboard) {
         // 260728: every fresh profile starts with Sui in one of the four party
-        // slots (removable any time — she is an ordinary World invite, so the
+        // slots (removable any time â€” she is an ordinary World invite, so the
         // character page offers Release). Fire-and-forget: chars:add-to-library
         // pulls her cloud row + art and writes added_world_ids, then the data +
         // library stores refresh so Home/IconRail show her the moment the user
-        // lands there. Offline or fetch failure just means no Sui — never a
+        // lands there. Offline or fetch failure just means no Sui â€” never a
         // blocked onboarding.
         void sei
           .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
@@ -231,7 +231,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
           });
         // 260802: the companion questionnaire used to be tacked on HERE, at
         // the end of this flow, routing to ProfileQuestionsScreen before Home.
-        // That screen and every unprompted route to it are gone — finishing a
+        // That screen and every unprompted route to it are gone â€” finishing a
         // setup flow is not the same as asking for a companion, and the answers
         // only ever fed companion generation. Sui asks for whatever is missing
         // inside her meet scene, at the moment it is actually needed.
@@ -243,7 +243,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         setHomeTab('home');
         navigate({ kind: 'home' });
       } else {
-        // Re-onboarding from Settings → straight back to home (no skin step),
+        // Re-onboarding from Settings â†’ straight back to home (no skin step),
         // on the Home tab (which shows the welcome message).
         if (signedIn) setHomeTab('home');
         navigate({ kind: 'home' });
@@ -260,18 +260,18 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
   };
 
   const validate = (): boolean => {
-    // Name step: for signedIn it is also the final submit — block re-submits
+    // Name step: for signedIn it is also the final submit â€” block re-submits
     // while it is in flight.
     if (step === 0) return pref.trim() !== '' && !(signedIn && submitting);
     if (step === 1) return true;
-    // 260817 W10: ollama is keyless — the key field may stay empty for it
+    // 260817 W10: ollama is keyless â€” the key field may stay empty for it
     // (matches Settings and the W6 wizard).
     if (step === 2) return (apiKey.trim() !== '' || provider === 'ollama') && !submitting;
     return false;
   };
 
-  // ── Step 0 — Name ───────────────────────────────────────────────────────
-  // For signedIn this is the ONLY step — show Finish + accent CTA and the
+  // â”€â”€ Step 0 â€” Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // For signedIn this is the ONLY step â€” show Finish + accent CTA and the
   // inline submit error here.
   if (step === 0) {
     return (
@@ -304,7 +304,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     );
   }
 
-  // ── Step 1 — Provider tiles ─────────────────────────────────────────────
+  // â”€â”€ Step 1 â€” Provider tiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 1) {
     return (
       <QuestionShell
@@ -319,8 +319,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     );
   }
 
-  // ── Step 2 — API key ────────────────────────────────────────────────────
-  // ui-A1: dynamic provider label — title shifts with the selected provider so
+  // â”€â”€ Step 2 â€” API key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ui-A1: dynamic provider label â€” title shifts with the selected provider so
   // a user who picked DeepSeek on step 1 reads "Paste your DeepSeek API key."
   // not the legacy "Local" fallback. 260816: labels come from the shared
   // catalog (src/shared/llmCatalog.ts) instead of a duplicated map.
@@ -360,3 +360,7 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
     </QuestionShell>
   );
 }
+
+
+
+

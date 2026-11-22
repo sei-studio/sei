@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileOverview (profile v3, product call 261110 follow-up),
  * server-rendered: the creator's description sits in the user-text box, and
  * the Overview no longer lists games or avatars (every companion plays every
@@ -78,3 +78,7 @@ describe('ProfileOverview (profile v3)', () => {
     expect(html).toBe('');
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { progressLine, installErrorCopy } from './stardewCopy';
 import { ERROR_COPY } from '../../lib/errors';
 
@@ -18,3 +18,7 @@ describe('stardew copy helpers', () => {
     expect(installErrorCopy('something odd')?.copy).toBe(ERROR_COPY.GAME_INSTALL_FAILED);
   });
 });
+
+
+
+

@@ -1,8 +1,8 @@
-// src/bot/adapter/minecraft/facing.test.js
+﻿// src/bot/adapter/minecraft/facing.test.js
 //
 // Pins the yaw convention. This is the module every "behind you" / "over
 // there" now resolves through, so a sign flip here silently sends the bot the
-// wrong way with full confidence — which is the exact failure it was written
+// wrong way with full confidence â€” which is the exact failure it was written
 // to remove. The convention itself is asserted against the four places that
 // already encoded it independently (gaze.js aimAt, survival.js, reflex.js and
 // the povRenderer camera): yaw = atan2(-dx, -dz).
@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import { CARDINALS, cardinalFromYaw, cardinalIndexFromYaw, facingFrame, facingLine, yawToUnit } from './facing.js'
 
-/** The inverse used throughout the adapter — the ground truth for these tests. */
+/** The inverse used throughout the adapter â€” the ground truth for these tests. */
 const yawFor = (dx, dz) => Math.atan2(-dx, -dz)
 
 describe('cardinalFromYaw', () => {
@@ -35,12 +35,12 @@ describe('cardinalFromYaw', () => {
   })
 
   it('snaps a diagonal to the nearer cardinal', () => {
-    // Just east of northeast → east; just north of it → north.
+    // Just east of northeast â†’ east; just north of it â†’ north.
     expect(cardinalFromYaw(yawFor(0.9, -0.4)).axis).toBe('+x')
     expect(cardinalFromYaw(yawFor(0.4, -0.9)).axis).toBe('-z')
   })
 
-  it('breaks an exact 45° tie clockwise', () => {
+  it('breaks an exact 45Â° tie clockwise', () => {
     // Dead northeast sits equidistant from north and east; documented to round
     // clockwise, i.e. to east.
     expect(cardinalFromYaw(yawFor(Math.SQRT1_2, -Math.SQRT1_2)).axis).toBe('+x')
@@ -99,3 +99,7 @@ describe('facingLine', () => {
     expect(facingLine({})).toBe('unknown')
   })
 })
+
+
+
+

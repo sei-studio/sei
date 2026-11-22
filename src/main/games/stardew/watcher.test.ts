@@ -1,4 +1,4 @@
-/** Stardew hello watcher (M1) against a local http fixture. */
+﻿/** Stardew hello watcher (M1) against a local http fixture. */
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { createStardewWatcher, stateFromHello } from './watcher';
@@ -70,3 +70,7 @@ describe('createStardewWatcher', () => {
     w.stop();
   });
 });
+
+
+
+

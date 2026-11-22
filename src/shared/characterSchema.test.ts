@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { CharacterSchema, UserConfigSchema, cardImageOrigin, cloudAvatarOf, effectiveMcUsername } from './characterSchema';
 
 /**
- * Plan 11-03 Task 1 — Schema contract tests for the UUID identity model,
+ * Plan 11-03 Task 1 â€” Schema contract tests for the UUID identity model,
  * the public/private flag (D-16), the slug carry-over field (D-23), and
  * the metadata escape hatch (D-24). See 11-03-PLAN.md `behavior` block.
  */
@@ -17,7 +17,7 @@ function baseRow(overrides: Record<string, unknown> = {}): Record<string, unknow
   };
 }
 
-describe('CharacterSchema — UUID identity (D-23)', () => {
+describe('CharacterSchema â€” UUID identity (D-23)', () => {
   it('accepts a valid UUID v4 id', () => {
     const parsed = CharacterSchema.parse(baseRow());
     expect(parsed.id).toBe('550e8400-e29b-41d4-a716-446655440000');
@@ -34,7 +34,7 @@ describe('CharacterSchema — UUID identity (D-23)', () => {
   });
 });
 
-describe('CharacterSchema — shared flag default (D-16)', () => {
+describe('CharacterSchema â€” shared flag default (D-16)', () => {
   it('defaults `shared` to true when omitted', () => {
     const parsed = CharacterSchema.parse(baseRow());
     expect(parsed.shared).toBe(true);
@@ -46,7 +46,7 @@ describe('CharacterSchema — shared flag default (D-16)', () => {
   });
 });
 
-describe('CharacterSchema — slug carry-over (D-23)', () => {
+describe('CharacterSchema â€” slug carry-over (D-23)', () => {
   it('defaults `slug` to null when omitted', () => {
     const parsed = CharacterSchema.parse(baseRow());
     expect(parsed.slug).toBeNull();
@@ -58,7 +58,7 @@ describe('CharacterSchema — slug carry-over (D-23)', () => {
   });
 });
 
-describe('CharacterSchema — metadata escape hatch (D-24)', () => {
+describe('CharacterSchema â€” metadata escape hatch (D-24)', () => {
   it('defaults `metadata` to an empty object when omitted', () => {
     const parsed = CharacterSchema.parse(baseRow());
     expect(parsed.metadata).toEqual({});
@@ -72,7 +72,7 @@ describe('CharacterSchema — metadata escape hatch (D-24)', () => {
   });
 });
 
-describe('CharacterSchema — portrait_image is a permissive path-or-null (D-28)', () => {
+describe('CharacterSchema â€” portrait_image is a permissive path-or-null (D-28)', () => {
   it('accepts a path-reference string', () => {
     const parsed = CharacterSchema.parse(
       baseRow({ portrait_image: 'portraits/abc/def.png' }),
@@ -93,9 +93,9 @@ describe('CharacterSchema — portrait_image is a permissive path-or-null (D-28)
  * the rejection behavior the Settings write-through and the botSupervisor
  * bridge depend on.
  */
-describe('UserConfigSchema — vision_mode', () => {
+describe('UserConfigSchema â€” vision_mode', () => {
   it('defaults to on-demand when omitted', () => {
-    // A minimal valid UserConfig — every other field has its own .default(),
+    // A minimal valid UserConfig â€” every other field has its own .default(),
     // so an empty object round-trips. The default matches the bot
     // config.vision default (mode 'on-demand') and the fresh-install onboarding.
     const parsed = UserConfigSchema.parse({});
@@ -134,7 +134,7 @@ describe('UserConfigSchema — vision_mode', () => {
     expect(parsed.vision_mode).toBe('on-demand');
   });
 
-  it('defaults advanced_updates to false — a normal user is never on the beta channel', () => {
+  it('defaults advanced_updates to false â€” a normal user is never on the beta channel', () => {
     // Safety-critical: an absent field (fresh install or any pre-existing
     // config.json) must resolve to the STABLE channel, never beta.
     expect(UserConfigSchema.parse({}).advanced_updates).toBe(false);
@@ -147,7 +147,7 @@ describe('UserConfigSchema — vision_mode', () => {
 });
 
 describe('cloudAvatarOf', () => {
-  // metadata is z.record(z.unknown()) — this reader is the single validation
+  // metadata is z.record(z.unknown()) â€” this reader is the single validation
   // point for the cloud-hosted avatar descriptor, so every malformed shape
   // must come back null (no cloud avatar) rather than throwing or leaking.
   it('reads a well-formed metadata.avatar descriptor', () => {
@@ -163,7 +163,7 @@ describe('cloudAvatarOf', () => {
     expect(cloudAvatarOf({ metadata: { avatar: { url: 'https://x/a.zip' } } })).toBeNull();
     expect(cloudAvatarOf({ metadata: { avatar: { url: 'https://x/a.zip', size_bytes: 0 } } })).toBeNull();
     expect(cloudAvatarOf({ metadata: { avatar: { size_bytes: 100 } } })).toBeNull();
-    // Only https survives — the descriptor names what main will fetch.
+    // Only https survives â€” the descriptor names what main will fetch.
     expect(
       cloudAvatarOf({ metadata: { avatar: { url: 'http://x/a.zip', size_bytes: 100 } } }),
     ).toBeNull();
@@ -173,23 +173,23 @@ describe('cloudAvatarOf', () => {
   });
 });
 
-describe('effectiveMcUsername — accented names fold, never drop (261027)', () => {
+describe('effectiveMcUsername â€” accented names fold, never drop (261027)', () => {
   it('replaces accented letters with plain ones', () => {
-    expect(effectiveMcUsername({ username: null, name: 'Sofía' })).toBe('Sofia');
-    expect(effectiveMcUsername({ username: null, name: 'Lucía' })).toBe('Lucia');
-    expect(effectiveMcUsername({ username: null, name: 'Élodie' })).toBe('Elodie');
-    expect(effectiveMcUsername({ username: null, name: 'Søren Straße' })).toBe('SorenStrasse');
+    expect(effectiveMcUsername({ username: null, name: 'SofÃ­a' })).toBe('Sofia');
+    expect(effectiveMcUsername({ username: null, name: 'LucÃ­a' })).toBe('Lucia');
+    expect(effectiveMcUsername({ username: null, name: 'Ã‰lodie' })).toBe('Elodie');
+    expect(effectiveMcUsername({ username: null, name: 'SÃ¸ren StraÃŸe' })).toBe('SorenStrasse');
   });
 
   it('an explicit username still wins, untouched', () => {
-    expect(effectiveMcUsername({ username: 'Sofa_1', name: 'Sofía' })).toBe('Sofa_1');
-    expect(effectiveMcUsername({ username: '  Nova  ', name: 'Élodie' })).toBe('Nova');
+    expect(effectiveMcUsername({ username: 'Sofa_1', name: 'SofÃ­a' })).toBe('Sofa_1');
+    expect(effectiveMcUsername({ username: '  Nova  ', name: 'Ã‰lodie' })).toBe('Nova');
   });
 
   it('non-Latin names behave as before', () => {
-    expect(effectiveMcUsername({ username: null, name: '诗诗' })).toBe('Sei');
-    expect(effectiveMcUsername({ username: null, name: 'Йордан' })).toBe('Sei');
-    expect(effectiveMcUsername({ username: null, name: '민지 (Min-ji)' })).toBe('Minji');
+    expect(effectiveMcUsername({ username: null, name: 'è¯—è¯—' })).toBe('Sei');
+    expect(effectiveMcUsername({ username: null, name: 'Ð™Ð¾Ñ€Ð´Ð°Ð½' })).toBe('Sei');
+    expect(effectiveMcUsername({ username: null, name: 'ë¯¼ì§€ (Min-ji)' })).toBe('Minji');
   });
 });
 
@@ -224,3 +224,7 @@ describe('cardImageOrigin (product call 261110: no Regenerate for an uploaded im
     expect(cardImageOrigin(base, { versions: [], active: null })).toBe('none');
   });
 });
+
+
+
+

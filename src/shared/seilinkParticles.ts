@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink weather and ambience particles (261105, room catalog; msg
  * 1627). Pure simulation: no DOM, so the tests can drive it and the renderer
  * only draws what it says.
@@ -357,3 +357,7 @@ export function settle(field: ParticleField, ms = 3000): ParticleField {
   for (let t = 0; t < ms; t += MAX_STEP_MS) stepField(field, MAX_STEP_MS);
   return field;
 }
+
+
+
+

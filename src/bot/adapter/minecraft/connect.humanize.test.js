@@ -1,5 +1,5 @@
-// humanizeReason regression guards (260710). Every vanilla kick key starts
-// with "multiplayer.disconnect.", which CONTAINS "connect" — the bare
+﻿// humanizeReason regression guards (260710). Every vanilla kick key starts
+// with "multiplayer.disconnect.", which CONTAINS "connect" â€” the bare
 // substring check used to mislabel every server kick as "Could not reach
 // server. Make sure a LAN world is open" (seen live with
 // chat_validation_failed, which also gets its own specific copy now).
@@ -202,3 +202,7 @@ describe('isOnlineModeRejection (261007)', () => {
     expect(kickReasonCode({ translate: KEY })).toBe('unverified_username')
   })
 })
+
+
+
+

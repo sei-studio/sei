@@ -1,4 +1,4 @@
-/**
+﻿/**
  * A companion's own Fish Audio voice (261103), in the profile's Voice tab
  * while Fish Audio is the chosen local voice. The user pastes a fish.audio
  * voice link or id; main checks it with their key and stores it (main-owned
@@ -107,7 +107,7 @@ export function FishVoiceOverride({
         {value ? (
           <>
             <Button kind="ghost" size="sm" disabled={busy !== null} onClick={() => void onPreview()}>
-              {busy === 'preview' ? t('Loading…') : t('Preview')}
+              {busy === 'preview' ? t('Loadingâ€¦') : t('Preview')}
             </Button>
             <Button kind="quiet" size="sm" disabled={busy !== null} onClick={() => void onReset()}>
               {t('Use automatic')}
@@ -125,7 +125,7 @@ export function FishVoiceOverride({
           aria-label={t('Fish Audio voice link')}
         />
         <Button kind="primary" size="sm" disabled={busy !== null || !draft.trim()} onClick={() => void onUse()}>
-          {busy === 'checking' ? t('Checking…') : t('Use voice')}
+          {busy === 'checking' ? t('Checkingâ€¦') : t('Use voice')}
         </Button>
       </div>
       {error ? (
@@ -141,3 +141,7 @@ export function FishVoiceOverride({
     </section>
   );
 }
+
+
+
+

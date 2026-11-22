@@ -1,6 +1,6 @@
-/**
+﻿/**
  * 261027: SkinEditor's same-in-game-name warning uses the accent-folded name,
- * so "Sofía" (now joins as Sofia) is flagged against a character named Sofia,
+ * so "SofÃ­a" (now joins as Sofia) is flagged against a character named Sofia,
  * and no longer against one named Sofa.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -45,7 +45,7 @@ function mkChar(id: string, name: string, username: string | null = null): Chara
   } as Character;
 }
 
-const SOFIA_ACCENT = mkChar('11111111-1111-1111-1111-111111111111', 'Sofía');
+const SOFIA_ACCENT = mkChar('11111111-1111-1111-1111-111111111111', 'SofÃ­a');
 
 function render(others: Character[]): string {
   store.state = { characters: [SOFIA_ACCENT, ...others], summons: {} };
@@ -65,3 +65,7 @@ describe('SkinEditor in-game name collision (accent fold)', () => {
     expect(html).not.toContain('also joins as');
   });
 });
+
+
+
+

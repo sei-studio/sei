@@ -1,5 +1,5 @@
-/**
- * 260929 — the Forge/NeoForge host gate blocks: it always opens the modal
+﻿/**
+ * 260929 â€” the Forge/NeoForge host gate blocks: it always opens the modal
  * (never summons), even after the modded warning was acknowledged or hidden.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -69,3 +69,7 @@ describe('summonWithHostGate: Forge block', () => {
     expect(summonSpy).toHaveBeenCalledWith('c2', 'minecraft');
   });
 });
+
+
+
+

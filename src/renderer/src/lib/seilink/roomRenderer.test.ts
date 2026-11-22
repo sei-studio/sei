@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bareRoomState, defaultRoomState, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
@@ -124,3 +124,7 @@ describe('RoomRenderer: switching packs (beta.4: the cozy room kept the gamer ch
     r.renderer.dispose();
   });
 });
+
+
+
+

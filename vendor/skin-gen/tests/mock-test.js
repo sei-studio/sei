@@ -1,4 +1,4 @@
-// Deterministic-chain end-to-end test, no API required.
+﻿// Deterministic-chain end-to-end test, no API required.
 // Simulates a Nano Banana atlas output by degrading a real skin (8x upscale,
 // black background, blur, noise), then checks the pipeline reconstructs the
 // original skin.
@@ -65,3 +65,7 @@ console.log(
 const pass = colorDiff / checked < 0.02 && alphaDiff / checked < 0.03;
 console.log(pass ? 'MOCK E2E: PASS' : 'MOCK E2E: FAIL');
 process.exit(pass ? 0 : 1);
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { createObservationState, createHandleRegistry, normalizeName, CMD_HOLD_MS } from './protocol.js'
 
 const selfRaw = { x: 10, z: -20, hp: 100, hpmax: 150, hunger: 50, hungermax: 150, sanity: 120, sanitymax: 200, temp: 20, moist: 0, inlight: true, inv: [{ g: 1, p: 'axe', q: 1, f: ['equip'] }], equip: { hands: { g: 1, p: 'axe', q: 1, f: ['equip'] } } }
@@ -40,3 +40,7 @@ describe('observation state', () => {
     expect(CMD_HOLD_MS).toBe(400)
   })
 })
+
+
+
+

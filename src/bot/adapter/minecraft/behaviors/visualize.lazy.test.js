@@ -1,4 +1,4 @@
-// 260926: the POV render stack (native gl + canvas, three, prismarine-viewer)
+﻿// 260926: the POV render stack (native gl + canvas, three, prismarine-viewer)
 // must not load when the Minecraft runtime is imported. It used to, through a
 // static import in visualize.js, and on Windows that made every cold boot read
 // ~20MB of extra files under Defender before createBot (BOT_START_TIMEOUT).
@@ -36,3 +36,7 @@ describe('visualize.js loads the POV renderer lazily', () => {
     expect(loads.stack).toBe(1)
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { supportedVersions } from 'minecraft-protocol/src/version.js';
 
 // The modal's store imports read window.sei at module load.
@@ -63,3 +63,7 @@ describe('UnsupportedVersionModal copy (260926)', () => {
     useLangStore.getState().setLang('en');
   });
 });
+
+
+
+

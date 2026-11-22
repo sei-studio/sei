@@ -1,4 +1,4 @@
-// Chest/container session: open + deposit + withdraw.
+﻿// Chest/container session: open + deposit + withdraw.
 //
 // SESSION is module-scoped so the orchestrator can call closeContainerSession()
 // on chain end / abort to enforce the "never overlap" invariant globally.
@@ -90,7 +90,7 @@ export async function openContainerAction(args, bot, config) {
 
   const dist = bot.entity?.position?.distanceTo?.(target.position)
   if (typeof dist === 'number' && dist > REACH) {
-    return `target out of reach (${dist.toFixed(1)}m, need ≤${REACH})`
+    return `target out of reach (${dist.toFixed(1)}m, need â‰¤${REACH})`
   }
 
   const timeoutMs = args.timeout_ms ?? config?.openContainer_timeout_ms ?? OPEN_TIMEOUT_MS
@@ -137,7 +137,7 @@ export async function depositItemAction(args, bot, config) {
       return r ? `deposit ${item} failed: ${r}` : `deposit ${item} failed`
     })
 
-  // Per plan: do NOT close session on transfer timeout — let chain-end cleanup handle it.
+  // Per plan: do NOT close session on transfer timeout â€” let chain-end cleanup handle it.
   const tmo = new Promise((r) => setTimeout(() => r('timeout'), timeoutMs))
 
   const abrt = attachAbort(signal, closeContainerSession)
@@ -179,3 +179,7 @@ export async function withdrawItemAction(args, bot, config) {
 
   return Promise.race([op, tmo, abrt])
 }
+
+
+
+

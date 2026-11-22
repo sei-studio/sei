@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/protocol.js — the mod <-> runtime wire shapes
+﻿// src/bot/adapter/dontstarve/protocol.js â€” the mod <-> runtime wire shapes
 // on the bot side (game-adapters M2, 260908). The contract is written in
 // native/dst-mod/PROTOCOL.md; src/shared/dstIpc.ts carries the main-process
 // half (heartbeat, summon offer, dst-listen). Pure: no Node, no I/O.
@@ -235,3 +235,7 @@ export function createHandleRegistry() {
     isHandle(v) { return /^#\d+$/.test(String(v ?? '').trim()) },
   }
 }
+
+
+
+

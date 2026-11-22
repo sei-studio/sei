@@ -1,4 +1,4 @@
-// src/bot/brain/goalLink.test.js: linking goals to the progression spine, and
+﻿// src/bot/brain/goalLink.test.js: linking goals to the progression spine, and
 // the orchestrator's JS auto-clear built on it (261012).
 import fs from 'node:fs'
 import os from 'node:os'
@@ -92,7 +92,7 @@ describe('linkGoalToSpine', () => {
   })
 })
 
-// ─── orchestrator: the auto-clear only fires on the goal's finish condition ──
+// â”€â”€â”€ orchestrator: the auto-clear only fires on the goal's finish condition â”€â”€
 
 // Goal lines in a HEARTBEAT file (`- [ISO] text`).
 async function readGoals(file) {
@@ -283,3 +283,7 @@ describe('orchestrator goal auto-clear (261012)', () => {
     })
   })
 })
+
+
+
+

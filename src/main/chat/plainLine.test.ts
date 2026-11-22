@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { plainLine } from './plainLine';
 
 describe('plainLine', () => {
@@ -30,3 +30,7 @@ describe('plainLine', () => {
     expect(plainLine('my file is draw_service')).toBe('my file is draw_service');
   });
 });
+
+
+
+

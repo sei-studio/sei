@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sei skin-setup detector for a Fabric LAN host (260721).
  *
  * Sei's skin-setup wizard installs Fabric Loader itself (fabricInstaller.ts)
@@ -16,7 +16,7 @@
  *
  * Chosen heuristic, strongest signals implementable from existing code:
  *
- *   1. The host java process command line carries `--gameDir <path>` — a
+ *   1. The host java process command line carries `--gameDir <path>` â€” a
  *      standard vanilla-launcher game argument present on every Mojang
  *      launcher launch (and on third-party launchers that follow the version
  *      JSON contract). Fabric Loader loads every jar in `<gameDir>/mods/`,
@@ -60,7 +60,7 @@ export interface HostModsInfo {
 const CSL_JAR_RE = /^CustomSkinLoader[_-].*\.jar$/i;
 
 /**
- * Extract the `--gameDir <path>` argument from a java command line. Pure —
+ * Extract the `--gameDir <path>` argument from a java command line. Pure â€”
  * exported for tests.
  *
  * `ps -o command=` joins arguments with spaces and strips quoting, so a path
@@ -83,7 +83,7 @@ export function extractGameDir(cmdline: string): string | null {
 }
 
 /**
- * Classify a mods directory listing. Pure — exported for tests.
+ * Classify a mods directory listing. Pure â€” exported for tests.
  * Non-jar entries (configs, subdirs, .DS_Store) are ignored: Fabric Loader
  * only loads `.jar` files.
  */
@@ -111,9 +111,13 @@ export async function inspectHostMods(cmdline: string): Promise<HostModsInfo> {
     return classifyModJars(entries);
   } catch (err) {
     if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-      // gameDir resolved but has no mods/ at all — a modless Fabric profile.
+      // gameDir resolved but has no mods/ at all â€” a modless Fabric profile.
       return { seiSkinMod: false, otherModCount: 0 };
     }
     return { seiSkinMod: false, otherModCount: null };
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the app's ChatGPT-plan session singleton, wired to
  * Electron (safeStorage vault, system browser, loopback listener) and to the
  * renderer status push. Everything outside src/main/chatgptPlan imports from
@@ -40,3 +40,7 @@ export function chatgptSession(): ChatgptSession {
 export function _setChatgptSessionForTests(s: ChatgptSession | null): void {
   session = s;
 }
+
+
+
+

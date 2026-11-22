@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 // Distribution study for heritage + life_context (the age x category weight
 // matrix in src/tables.js: LIFE_CONTEXT_WEIGHTS / HERITAGES).
 //
@@ -103,3 +103,7 @@ outer: for (const { profileKey, rolls } of allSamples) {
   }
 }
 console.log('');
+
+
+
+

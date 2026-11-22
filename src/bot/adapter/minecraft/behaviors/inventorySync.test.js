@@ -1,4 +1,4 @@
-// 261012 (quality pass 5): action results wait for the server's answer.
+﻿// 261012 (quality pass 5): action results wait for the server's answer.
 //  - the snapshot inventory reads the open window's slots (furnace session)
 //  - craft counts what actually arrived, retries once when the server undid
 //    it, and says so when it never went through
@@ -210,3 +210,7 @@ describe('furnace slot ops check the item moved', () => {
     expect(await takeSmeltedAction({}, bot, {})).toMatch(/^taking the iron_ingot did not go through; it is still in the furnace/)
   })
 })
+
+
+
+

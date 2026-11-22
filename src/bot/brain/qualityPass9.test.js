@@ -1,4 +1,4 @@
-// 261015: quality pass 9, "still doing it" after it stopped, and errands
+﻿// 261015: quality pass 9, "still doing it" after it stopped, and errands
 // dropped for her own project.
 //  - the snapshot's idle line names the last action and how it ended
 //  - an action that finishes during a mid-action turn keeps the loop up until
@@ -76,11 +76,11 @@ describe('prompt text', () => {
     expect(text).toContain('if the player asked you for something that is not finished yet')
     expect(text).toContain('setGoal (for_player true)')
     expect(text.indexOf('not finished yet')).toBeLessThan(text.indexOf('PROACTIVENESS'))
-    expect(text).not.toContain('—`')
+    expect(text).not.toContain('â€”`')
   })
 })
 
-// ─── the mid-action race ────────────────────────────────────────────────
+// â”€â”€â”€ the mid-action race â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -267,7 +267,7 @@ describe('orchestrator: an action that finishes during a mid-action turn', () =>
   })
 })
 
-// ─── pass 9c: the player's stop wins, a new order outranks the owed turn ──
+// â”€â”€â”€ pass 9c: the player's stop wins, a new order outranks the owed turn â”€â”€
 
 // Starts a gather for "get wood", then the player's `midLine` arrives while it
 // runs. `reply` answers that line; `settleDuringCall` finishes the gather
@@ -438,3 +438,7 @@ describe('orchestrator: the deferred order is kept until a player turn settles i
     for (const c of provider.calls.slice(2)) expect(lastUserText(c)).not.toContain('you answered without starting anything')
   })
 })
+
+
+
+

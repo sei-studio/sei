@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat on an account switch (260926). endAllBackseat ends every share
  * through endBackseat, the one end choke point: backseat_ended carries
  * duration_ms and reason 'account_switch', the play row is written, and the
@@ -233,3 +233,7 @@ describe('backseat starts across an account switch', () => {
     expect(ended()).toHaveLength(0);
   });
 });
+
+
+
+

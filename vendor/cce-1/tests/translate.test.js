@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 import { describeCandidate } from '../src/translate.js';
@@ -40,7 +40,7 @@ test('rollout line renders sentences and asserts NO material verdict', () => {
   assert.match(d.line.sentence, /take the pawn on d5/);
   // 260724: the line must NOT end with a material claim. It comes from ONE
   // Elo-conditioned rollout, so any score attached to it is a confident guess
-  // the consuming LLM will then maximize — which is how style selection turned
+  // the consuming LLM will then maximize â€” which is how style selection turned
   // into (bad) strength selection. See the note in describeCandidate.
   assert.doesNotMatch(d.line.sentence, /material/);
   assert.doesNotMatch(d.line.sentence, /point of material|points of material/);
@@ -56,10 +56,10 @@ test('a rollout ending in mate still says so', () => {
 
 test('hanging piece is called out', () => {
   // Queen moves to h5 where it can be taken... use a simple hang:
-  // 1.e4 e5 2.Qh5 g6 — now if white plays Qxe5?? no; instead test a move
+  // 1.e4 e5 2.Qh5 g6 â€” now if white plays Qxe5?? no; instead test a move
   // onto an attacked, undefended square: 1.e4 e5 2.Nf3 Nc6 3.Bb5 a6 4.Ba4 b5
   // then Bb3 is safe; simpler: from start after 1.e4 e5, White Qg4 hangs to nothing.
-  // Use: white queen to g4 after 1.e4 d5 — Bc8 attacks g4, queen undefended there.
+  // Use: white queen to g4 after 1.e4 d5 â€” Bc8 attacks g4, queen undefended there.
   const c = new Chess();
   c.move('e4');
   c.move('d5');
@@ -78,3 +78,7 @@ test('en passant capture is described', () => {
   assert.ok(d.tags.includes('en-passant'));
   assert.match(d.sentence, /en passant/);
 });
+
+
+
+

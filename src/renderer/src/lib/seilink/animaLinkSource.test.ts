@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The app's WorldLink progress source (261106 v6): Anima stages to link
  * milestones, failures, the host start, and the start stage for analytics.
  */
@@ -134,3 +134,7 @@ describe('animaLinkSource', () => {
     expect(events).toContainEqual({ kind: 'failed', failure: 'offline' });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Board encoding for Maia-3 ONNX inference.
  *
  * The model only understands positions from white's perspective: when it is
@@ -83,3 +83,7 @@ export function boardTokens(fen) {
   }
   return tokens;
 }
+
+
+
+

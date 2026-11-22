@@ -1,9 +1,9 @@
-// src/bot/adapter/minecraft/behaviors/visualize.test.js
+﻿// src/bot/adapter/minecraft/behaviors/visualize.test.js
 //
-// VIS-02 / VIS-08 — the `visualize` action handler. This test MOCKS the
+// VIS-02 / VIS-08 â€” the `visualize` action handler. This test MOCKS the
 // renderPov module (./render/povRenderer.js) so the native gl/canvas chain is
 // NEVER imported under system-Node vitest (the natives are built for the
-// Electron 42 ABI and fail to dlopen here — see 15-01-SUMMARY).
+// Electron 42 ABI and fail to dlopen here â€” see 15-01-SUMMARY).
 //
 // The load-bearing assertion is the EXACT success-result shape
 //   { text: string, image: { mediaType: string, dataBase64: string } }
@@ -59,12 +59,12 @@ beforeEach(() => {
   __resetVisualizeDedupeCache()
 })
 
-describe('visualizeAction — success result shape (15-06 contract)', () => {
+describe('visualizeAction â€” success result shape (15-06 contract)', () => {
   it('returns EXACTLY { text, image:{ mediaType, dataBase64 } } on a successful render', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const res = await visualizeAction({}, makeBot(), config)
 
-    // Exact top-level keys — no extras, no nesting changes.
+    // Exact top-level keys â€” no extras, no nesting changes.
     expect(Object.keys(res)).toEqual(['text', 'image'])
     expect(Object.keys(res.image)).toEqual(['mediaType', 'dataBase64'])
 
@@ -90,7 +90,7 @@ describe('visualizeAction — success result shape (15-06 contract)', () => {
   })
 })
 
-describe('visualizeAction — VIS-08 graceful degrade', () => {
+describe('visualizeAction â€” VIS-08 graceful degrade', () => {
   it('returns the degrade STRING when renderPov reports { ok:false }', async () => {
     renderPovMock.mockResolvedValue({ ok: false, reason: 'cant_see' })
     const res = await visualizeAction({}, makeBot(), config)
@@ -104,14 +104,14 @@ describe('visualizeAction — VIS-08 graceful degrade', () => {
   })
 
   it('returns the degrade STRING when renderPov exceeds the wall-clock timeout', async () => {
-    // Never resolves — the handler's own timeout must fire.
+    // Never resolves â€” the handler's own timeout must fire.
     renderPovMock.mockImplementation(() => new Promise(() => {}))
     const res = await visualizeAction({}, makeBot(), { vision: { resolution_px: 256, image_quality: 0.4 }, vision_timeout_ms: 20 })
     expect(res).toBe("I can't see clearly right now")
   })
 })
 
-describe('visualizeAction — abort (lookAt convention)', () => {
+describe('visualizeAction â€” abort (lookAt convention)', () => {
   it("returns 'aborted' immediately when config.signal is already aborted", async () => {
     const controller = new AbortController()
     controller.abort()
@@ -122,7 +122,7 @@ describe('visualizeAction — abort (lookAt convention)', () => {
   })
 })
 
-describe('visualizeAction — idle dedupe (D-02)', () => {
+describe('visualizeAction â€” idle dedupe (D-02)', () => {
   it('returns { skip:true } for an idle near-duplicate frame (same pose)', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const bot = makeBot()
@@ -136,7 +136,7 @@ describe('visualizeAction — idle dedupe (D-02)', () => {
     expect(second).toEqual({ skip: true })
   })
 
-  it('does NOT dedupe the EXPLICIT path — a fresh look always renders', async () => {
+  it('does NOT dedupe the EXPLICIT path â€” a fresh look always renders', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const bot = makeBot()
 
@@ -161,7 +161,7 @@ describe('visualizeAction — idle dedupe (D-02)', () => {
   })
 })
 
-describe('visualizeAction — directional / relative facing (260617)', () => {
+describe('visualizeAction â€” directional / relative facing (260617)', () => {
   it('look({orientation}) turns the head before rendering', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const look = vi.fn(async () => {})
@@ -169,7 +169,7 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
 
     const res = await visualizeAction({ orientation: 'right' }, bot, config)
     expect(Object.keys(res)).toEqual(['text', 'image'])
-    // right = +90° clockwise = -PI/2 yaw offset from a base yaw of 0.
+    // right = +90Â° clockwise = -PI/2 yaw offset from a base yaw of 0.
     expect(look).toHaveBeenCalledWith(-Math.PI / 2, 0, true)
   })
 
@@ -184,7 +184,7 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
 
   it('look({around:true}) returns four frames labelled with their WORLD AXIS, and restores facing', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
-    // Write the yaw back the way real mineflayer does — the axis labels are
+    // Write the yaw back the way real mineflayer does â€” the axis labels are
     // read off the LIVE yaw after each turn, so a mock that swallows the turn
     // would let a sign flip through untested.
     const entity = { position: { x: 0, y: 64, z: 0 }, yaw: 0, pitch: 0 }
@@ -195,7 +195,7 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
     expect(Object.keys(res)).toEqual(['text', 'images'])
     expect(res.images).toHaveLength(4)
     // Starting at yaw 0 (north), a clockwise sweep is north, east, south, west.
-    // 260803: the axis is the whole point — "which way is the other side" has
+    // 260803: the axis is the whole point â€” "which way is the other side" has
     // to be answerable from the labels alone.
     expect(res.images.map((f) => f.label)).toEqual([
       'forward (-z, north)',
@@ -214,7 +214,7 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
   })
 
   it('a single directional look names the axis it ended up pointing down', async () => {
-    // The 260731 failure: look({orientation:"backward"}) turned the bot 180°
+    // The 260731 failure: look({orientation:"backward"}) turned the bot 180Â°
     // and the result said nothing about it, so the model had a picture it
     // could not place on any axis and guessed a span.
     renderPovMock.mockResolvedValue(okJpeg())
@@ -235,7 +235,7 @@ describe('visualizeAction — directional / relative facing (260617)', () => {
   })
 })
 
-describe('visualizeAction — vertical orientations (260709)', () => {
+describe('visualizeAction â€” vertical orientations (260709)', () => {
   it('look({orientation:"down"}) tilts the head down without turning', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const look = vi.fn(async () => {})
@@ -257,7 +257,7 @@ describe('visualizeAction — vertical orientations (260709)', () => {
   })
 })
 
-describe('vision grounding — blurry-vision honesty (260709)', () => {
+describe('vision grounding â€” blurry-vision honesty (260709)', () => {
   it('the result text licenses admitting it cannot make something out', async () => {
     renderPovMock.mockResolvedValue(okJpeg())
     const res = await visualizeAction({}, makeBot(), config)
@@ -315,3 +315,7 @@ describe('visualizeAction: render stack not ready or unavailable (260926)', () =
     expect(await captureFrame(bot(), { vision: {} }, { loadWaitMs: 5 })).toBe(CANT_SEE_COPY)
   })
 })
+
+
+
+

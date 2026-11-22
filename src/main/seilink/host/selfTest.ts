@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host CI self-test (261104). Runs inside the real app (main
  * process) when it is started UNPACKAGED with SEI_SEILINK_SELFTEST=<outdir>
  * and the dev flag (SEI_SEILINK_PACKS). Driven by
@@ -199,7 +199,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     await stopSeilinkHost('user_stop');
     await sleep(1500);
 
-    // ── attach ──
+    // â”€â”€ attach â”€â”€
     let t = Date.now();
     // Sui when the profile has her (her bundled portrait, cut out), so the screenshots show a real figure.
     const testCharacter = (await getCharacter(SUI_CHARACTER_ID).catch(() => null)) ? SUI_CHARACTER_ID : SYNTHETIC_CHARACTER;
@@ -222,7 +222,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     await shot('01-attached');
     if (!checks.attach.ok) throw new Error(`never attached (${seilinkHostStatus().state} ${seilinkHostStatus().failure ?? ''})`);
 
-    // ── seilink_shown (261105): the first frame verified the attach, and main reported it shown ──
+    // â”€â”€ seilink_shown (261105): the first frame verified the attach, and main reported it shown â”€â”€
     const shown = await waitFor(() => analytics.find((a) => a.t >= t && a.event === 'seilink_shown'), 10_000);
     const notShown = analytics.find((a) => a.t >= t && a.event === 'seilink_not_shown');
     const firstMsg = first?.m as Record<string, unknown> | undefined;
@@ -235,7 +235,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     };
 
     if (!FAKE) {
-      // ── cover / uncover ──
+      // â”€â”€ cover / uncover â”€â”€
       const box = [...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen: unknown }).screen)?.m as
         | { screen: { x: number; y: number; w: number; h: number } }
         | undefined;
@@ -273,7 +273,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       timings.uncoverMs = uncoveredMsg ? uncoveredMsg.t - t : -1;
       checks.uncover = { ok: !!uncoveredMsg && back !== null, ms: timings.uncoverMs, detail: `fps ${back}` };
 
-      // ── click ──
+      // â”€â”€ click â”€â”€
       if (testAddon && box?.screen) {
         const b = box.screen;
         const s = IS_WIN ? d.scaleFactor : 1;
@@ -334,7 +334,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         checks.click = { ok: false, detail: testAddon ? 'no box reported' : 'no test addon' };
       }
 
-      // ── dock (M4): a press on its deafen button reaches main as a dock action, twice (on, then back off) ──
+      // â”€â”€ dock (M4): a press on its deafen button reaches main as a dock action, twice (on, then back off) â”€â”€
       const withDock = [...events].reverse().find((e) => e.m.type === 'box' && Array.isArray((e.m as { dock?: unknown }).dock))?.m as
         | { dock: Array<{ id: string; x: number; y: number; w: number; h: number }> }
         | undefined;
@@ -363,9 +363,9 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
         checks.dock = { ok: false, detail: testAddon ? 'no dock reported' : 'no test addon' };
       }
 
-      // ── hover (261116): the dock wakes near the cursor and goes quiet when it leaves, also after a
+      // â”€â”€ hover (261116): the dock wakes near the cursor and goes quiet when it leaves, also after a
       //    press on it and after a click or double click on her (with Sei's window up, then hidden);
-      //    her cursor feed keeps coming. Product call (261116): it stayed lit after a click. ──
+      //    her cursor feed keeps coming. Product call (261116): it stayed lit after a click. â”€â”€
       const herNow = ([...events].reverse().find((e) => e.m.type === 'box' && (e.m as { screen?: unknown }).screen)?.m as { screen: { x: number; y: number; w: number; h: number } } | undefined)?.screen;
       if (testAddon?.testMove && deafenBtn && herNow) {
         const s = IS_WIN ? d.scaleFactor : 1;
@@ -444,7 +444,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       for (const k of ['cover', 'uncover', 'click', 'dock', 'hover']) checks[k] = { ok: true, detail: 'skipped: fake desktop (no coverage or input here)' };
     }
 
-    // ── kill ──
+    // â”€â”€ kill â”€â”€
     await sleep(1000);
     const pid = seilinkHostPidForTest();
     t = Date.now();
@@ -461,7 +461,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     await sleep(1000);
     await shot('03-after-kill');
 
-    // ── hang ──
+    // â”€â”€ hang â”€â”€
     await sleep(2000);
     t = Date.now();
     sendToSeilinkHostForTest({ type: 'test-hang', ms: 15_000 });
@@ -471,7 +471,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
     timings.hangToAttachMs = afterHang ? afterHang.t - t : -1;
     checks.hang = { ok: !!hung && !!afterHang && timings.hangDetectMs < 4500, ms: timings.hangDetectMs };
 
-    // ── explorer (Windows) ──
+    // â”€â”€ explorer (Windows) â”€â”€
     if (IS_WIN) {
       await fpsAfter(Date.now(), 'positive', 15_000);
       await sleep(2000);
@@ -515,7 +515,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
       await shot('04-after-explorer');
     }
 
-    // ── stop ──
+    // â”€â”€ stop â”€â”€
     const lastPid = seilinkHostPidForTest();
     t = Date.now();
     await stopSeilinkHost('user_stop');
@@ -560,3 +560,7 @@ export async function runSeilinkSelfTest(opts: { getMainWindow: () => BrowserWin
   log(`done: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(checks)}`);
   app.exit(ok ? 0 : 1);
 }
+
+
+
+

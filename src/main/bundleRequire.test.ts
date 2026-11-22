@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, describe, expect, it } from 'vitest';
 import { bundleRequire } from './bundleRequire';
 
 const origCwd = process.cwd();
@@ -16,3 +16,7 @@ describe('bundleRequire', () => {
     expect(() => req.resolve('img2skin/package.json')).not.toThrow();
   });
 });
+
+
+
+

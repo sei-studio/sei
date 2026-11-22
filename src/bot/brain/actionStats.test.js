@@ -1,4 +1,4 @@
-// Tests for the per-session action outcome aggregator (261011).
+﻿// Tests for the per-session action outcome aggregator (261011).
 import { describe, it, expect } from 'vitest'
 import {
   createActionStats,
@@ -32,17 +32,17 @@ describe('classifyResultText (real behavior result strings)', () => {
     ['timeout', 'timeout'],
     ['timeout placing dirt', 'timeout'],
     ['cant_reach (closest=4.2m to target 1,2,3)', 'no_path'],
-    ['timeout — unreachable — try build to Y=70', 'timeout'],
-    ['out of range (5.1m, need ≤4.5) for oak_log @1,2,3', 'no_path'],
+    ['timeout â€” unreachable â€” try build to Y=70', 'timeout'],
+    ['out of range (5.1m, need â‰¤4.5) for oak_log @1,2,3', 'no_path'],
     ['stuck at 3,67,2, 4.1m from 196,68,-1: the path kept failing at the same spot. Try a different spot nearby, or dig or build through', 'no_path'],
     ['shelter UNFINISHED, it has gaps and is not safe yet (walls: built 10 of ~24 needed)', 'partial'],
-    ["couldn't place dirt — no open spot in reach. Step somewhere more open", 'no_path'],
+    ["couldn't place dirt â€” no open spot in reach. Step somewhere more open", 'no_path'],
     ['no cobblestone in inventory', 'missing_materials'],
     ['no coal in your inventory, nothing was given', 'missing_materials'],
     ['you only have 3 dirt, and that span needs 9', 'missing_materials'],
     ['built 4 of ~9 needed, then ran out of dirt. Gather more', 'missing_materials'],
-    ["can't craft furnace here — it needs a crafting table. Go to a crafting table", 'missing_materials'],
-    ['dug stone (no drop — you have no tool that can harvest stone; craft a pickaxe)', 'missing_materials'],
+    ["can't craft furnace here â€” it needs a crafting table. Go to a crafting table", 'missing_materials'],
+    ['dug stone (no drop â€” you have no tool that can harvest stone; craft a pickaxe)', 'missing_materials'],
     ['no oak_log in loaded chunks within 64m', 'target_not_found'],
     ['no such player: Alex', 'target_not_found'],
     ['target gone', 'target_not_found'],
@@ -55,7 +55,7 @@ describe('classifyResultText (real behavior result strings)', () => {
     ['built 5 placed, 4 cells FAILED (could not reach o', 'partial'],
     ['built NOTHING: all 9 cells were already occupied', 'partial'],
     ['cannot sleep during day', 'refused'],
-    ['busy surviving — try again in a moment', 'refused'],
+    ['busy surviving â€” try again in a moment', 'refused'],
     ['food bar full', 'refused'],
   ]
   for (const [text, want] of cases) {
@@ -321,3 +321,7 @@ describe('reply_latency samples (261106)', () => {
     expect(s.snapshot().counters.replied).toBe(1)
   })
 })
+
+
+
+

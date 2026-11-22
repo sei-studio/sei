@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat games (260929): games Sei supports by WATCHING, not by joining.
  *
  * Some games are asked for far more often than we can build a real adapter
@@ -172,7 +172,7 @@ export const BACKSEAT_GAMES: readonly BackseatGameDef[] = [
     id: 'roblox',
     name: 'Roblox',
     tileName: 'Roblox (Backseat)',
-    aliases: ['罗布乐思', 'ロブロックス', 'Роблокс'],
+    aliases: ['ç½—å¸ƒä¹æ€', 'ãƒ­ãƒ–ãƒ­ãƒƒã‚¯ã‚¹', 'Ð Ð¾Ð±Ð»Ð¾ÐºÑ'],
     promptName: 'Roblox (by screen share)',
     // Original Sei art (261003): Sui watching a generic obby on a monitor,
     // generated from her own sprites. It replaced the Roblox press-kit render,
@@ -224,7 +224,7 @@ export function pickHintedSource<T extends { id: string; name: string; kind: 'sc
   return windows.find((s) => word.test(s.name) && !BROWSER_TITLE.test(s.name)) ?? null;
 }
 
-// ── Roblox links ─────────────────────────────────────────────────────────
+// â”€â”€ Roblox links â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ROBLOX_HOST = /^(?:www\.|web\.|m\.)?roblox\.com$/i;
 
@@ -267,3 +267,7 @@ export function parseRobloxLink(input: string): { placeId: number } | null {
 export function looksLikeLink(input: string): boolean {
   return /^(https?:\/\/|www\.)|\.(com|gg|net|org)(\/|$)/i.test(input.trim());
 }
+
+
+
+

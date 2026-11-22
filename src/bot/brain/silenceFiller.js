@@ -1,4 +1,4 @@
-// src/bot/brain/silenceFiller.js
+﻿// src/bot/brain/silenceFiller.js
 //
 // THE single "(silence)" sentinel detector, shared by every consumer:
 //   - src/bot/brain/orchestrator.js   postProcessSay() say()-side backstop
@@ -10,12 +10,12 @@
 // import main-process TypeScript, while main happily bundles bot .js modules
 // (fsm.js, memoryLog.js precedent). Before 260721 the pattern was duplicated
 // in orchestrator.js and chatService.ts with a "keep in sync" comment, and
-// the game services had no filter at all — a chess idle tick persisted a
+// the game services had no filter at all â€” a chess idle tick persisted a
 // literal "(silence)" chat row.
 //
 // Silence-by-convention (260707): models cannot produce an empty reply, but
-// they reliably WRITE a placeholder — "(silence)", "(staying silent)",
-// "[says nothing]" — when told quiet is fine. The voice-call and game prompts
+// they reliably WRITE a placeholder â€” "(silence)", "(staying silent)",
+// "[says nothing]" â€” when told quiet is fine. The voice-call and game prompts
 // sanction staying quiet (voice: "reply with exactly (silence)"; chess/watch:
 // "silence at a chess board is normal"), so a line that is nothing but a
 // bracketed/asterisked silence marker is the model acting out the instruction
@@ -26,14 +26,14 @@
 // Shape rules:
 //   - Only bracketed/asterisked forms match: a bare in-character "silence!"
 //     is a real line and passes through.
-//   - Models embellish the marker with a trailing clause — real captured
+//   - Models embellish the marker with a trailing clause â€” real captured
 //     examples: "(staying silent, letting it rest)", "(saying nothing, the
-//     thread has landed)", "(nothing)" — so after a silence keyword the rest
+//     thread has landed)", "(nothing)" â€” so after a silence keyword the rest
 //     of the aside is allowed (anything up to the closing bracket), and bare
 //     "(nothing)" matches too. A line with content AFTER the closing bracket
 //     is real and passes.
 //   - Trailing punctuation after the bracket is tolerated ("(silence).",
-//     "(Silence)!") — captured leaking from a live chess transcript 260721.
+//     "(Silence)!") â€” captured leaking from a live chess transcript 260721.
 //   - "(no comment)" joined 260721: the chess move prompt says "many moves
 //     deserve no comment at all" and the model can echo that phrasing.
 //
@@ -42,18 +42,22 @@
 // Japanese" instruction it sometimes localizes it anyway, so the pattern also
 // accepts the common localized forms: silen[a-z]* covers silence / silent /
 // silencio / silencieux..., nada / rien are the "(nothing)" equivalents, and
-// the silen-stem and CJK keywords (沉默 / 无言 zh, 沈黙 / 無言 ja, 침묵 / 조용 ko)
-// allow a short lead-in ("reste silencieux", 保持沉默, 계속 침묵) — CJK also
+// the silen-stem and CJK keywords (æ²‰é»˜ / æ— è¨€ zh, æ²ˆé»™ / ç„¡è¨€ ja, ì¹¨ë¬µ / ì¡°ìš© ko)
+// allow a short lead-in ("reste silencieux", ä¿æŒæ²‰é»˜, ê³„ì† ì¹¨ë¬µ) â€” CJK also
 // needs this shape because \b never matches between two non-word chars.
-// 261116: ru/pt/it joined the language list. sil[eê]n- covers silêncio and
+// 261116: ru/pt/it joined the language list. sil[eÃª]n- covers silÃªncio and
 // silenzio; niente is the Italian "(nothing)", and the Russian stems
-// (тишин- / молч- / ничего) sit in the lead-in group because \b is ASCII-only.
+// (Ñ‚Ð¸ÑˆÐ¸Ð½- / Ð¼Ð¾Ð»Ñ‡- / Ð½Ð¸Ñ‡ÐµÐ³Ð¾) sit in the lead-in group because \b is ASCII-only.
 
 export const SILENCE_FILLER_RE =
-  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+(?:reply|response|comment)|nada|rien|niente)\b|[^)\]]{0,12}(?:sil[eê]n[a-z]*|沉默|无言|沈黙|無言|침묵|조용|тишин|молч|ничего))[^)\]]*)\s*[)\]*.!]*\s*$/i
+  /^\s*[([*]+\s*(?:nothing|(?:(?:stay(?:s|ing)?\s+(?:silent|quiet)|remain(?:s|ing)?\s+(?:silent|quiet)|say(?:s|ing)?\s+nothing|no\s+(?:reply|response|comment)|nada|rien|niente)\b|[^)\]]{0,12}(?:sil[eÃª]n[a-z]*|æ²‰é»˜|æ— è¨€|æ²ˆé»™|ç„¡è¨€|ì¹¨ë¬µ|ì¡°ìš©|Ñ‚Ð¸ÑˆÐ¸Ð½|Ð¼Ð¾Ð»Ñ‡|Ð½Ð¸Ñ‡ÐµÐ³Ð¾))[^)\]]*)\s*[)\]*.!]*\s*$/i
 
 /** True when the reply is the silence sentinel (any tolerated variant): the
- * caller must treat it as no message at all — no persist, no push, no TTS. */
+ * caller must treat it as no message at all â€” no persist, no push, no TTS. */
 export function isSilenceFiller(text) {
   return SILENCE_FILLER_RE.test(String(text ?? ''))
 }
+
+
+
+

@@ -1,7 +1,7 @@
-// 261107 (quality pass 45): a walk aimed at dig reach can stop up to ~0.7m
+﻿// 261107 (quality pass 45): a walk aimed at dig reach can stop up to ~0.7m
 // farther than its goal (the goal is checked on the feet's cell center, and
 // the pathfinder stops within 0.35 of the last node on each axis). Free play:
-// "out of range (4.5m, need ≤4.5) ... (the walk toward it ended: reached)" on
+// "out of range (4.5m, need â‰¤4.5) ... (the walk toward it ended: reached)" on
 // every gather_craft run. The dig now swings to DIG_MAX_REACH (mineflayer
 // allows 5.1), and a dig a step short gets one short close-in walk.
 import { describe, it, expect, vi } from 'vitest'
@@ -50,7 +50,7 @@ describe('dig reach at the edge of a walk (261107)', () => {
   it('still refuses past DIG_MAX_REACH, naming the limit', async () => {
     const bot = makeBot({ x: 0.5, y: 66, z: 0.5 })
     const r = await digAction({ x: 4, y: 62, z: 0 }, bot, {})
-    expect(r).toMatch(/^out of range \(6\.\dm, need ≤5\.0\) for stone @4,62,0/)
+    expect(r).toMatch(/^out of range \(6\.\dm, need â‰¤5\.0\) for stone @4,62,0/)
     expect(bot.dig).not.toHaveBeenCalled()
   })
 
@@ -84,7 +84,7 @@ describe('dig reach at the edge of a walk (261107)', () => {
       bot.entity.position = opts.reach < 4 ? new Vec3(3.5, 63, 1.5) : new Vec3(6, 66, 1.5)
       return 'reached'
     })
-    const dig = vi.fn(async (a, b) => (digReachDistance(b, a) > DIG_MAX_REACH ? 'out of range (5.3m, need ≤5.0) for stone @3,62,0' : 'dug stone'))
+    const dig = vi.fn(async (a, b) => (digReachDistance(b, a) > DIG_MAX_REACH ? 'out of range (5.3m, need â‰¤5.0) for stone @3,62,0' : 'dug stone'))
     const r = await digToolAction(pos, bot, {}, { goTo, digAction: dig, sleep: async () => {} })
     expect(goTo).toHaveBeenCalledTimes(2)
     expect(goTo.mock.calls[1][7]).toMatchObject({ reach: 3.5 })
@@ -99,7 +99,7 @@ describe('dig reach at the edge of a walk (261107)', () => {
         bot.entity.position = new Vec3(6, 66, 1.5)
         return result
       })
-      const dig = vi.fn(async () => 'out of range (5.8m, need ≤5.0) for stone @3,62,0')
+      const dig = vi.fn(async () => 'out of range (5.8m, need â‰¤5.0) for stone @3,62,0')
       const r = await digToolAction({ x: 3, y: 62, z: 0 }, bot, {}, { goTo, digAction: dig, sleep: async () => {} })
       expect(goTo).toHaveBeenCalledTimes(1)
       expect(dig).toHaveBeenCalledTimes(1)
@@ -107,3 +107,7 @@ describe('dig reach at the edge of a walk (261107)', () => {
     }
   })
 })
+
+
+
+

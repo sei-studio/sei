@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: a launch by "Open Sei when I log in" (loginLaunch.ts): telling it
  * apart, the hidden state, the quiet quit, deferred start work, and Windows
  * staying resident for her room.
@@ -148,3 +148,7 @@ describe('keepRunningWithoutWindows', () => {
     expect(keepRunningWithoutWindows({ platform: 'linux', roomUp: true, wanted: true, loginLaunch: true })).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+﻿import { EventEmitter } from 'node:events';
 import type dgram from 'node:dgram';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MC_LAN_GROUP, MC_LAN_PORT, parseLanAnnouncement, startLanBeacon } from './lanBeacon';
@@ -16,7 +16,7 @@ describe('parseLanAnnouncement', () => {
   });
 
   it('keeps non-ASCII and section-sign MOTDs', () => {
-    expect(parseLanAnnouncement('[MOTD]§aトリ - 新しい世界[/MOTD][AD]50000[/AD]')?.motd).toBe('§aトリ - 新しい世界');
+    expect(parseLanAnnouncement('[MOTD]Â§aãƒˆãƒª - æ–°ã—ã„ä¸–ç•Œ[/MOTD][AD]50000[/AD]')?.motd).toBe('Â§aãƒˆãƒª - æ–°ã—ã„ä¸–ç•Œ');
   });
 
   it('rejects junk and out-of-range ports', () => {
@@ -95,3 +95,7 @@ describe('startLanBeacon', () => {
     b.stop();
   });
 });
+
+
+
+

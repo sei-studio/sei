@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: Settings > Appearance "Open on login" (OpenAtLoginRow.tsx). The
  * other place it is offered is the step after the guided room setup
  * (lib/seilink/loginStep.test.ts); the move-in sheet no longer has it.
@@ -104,3 +104,7 @@ describe('OpenAtLoginRowView (Settings)', () => {
     }
   });
 });
+
+
+
+

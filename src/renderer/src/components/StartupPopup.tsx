@@ -1,5 +1,5 @@
-/**
- * StartupPopup — the operator's one-page popup (261027, replaced the notices
+﻿/**
+ * StartupPopup â€” the operator's one-page popup (261027, replaced the notices
  * inbox).
  *
  * Main tells us which popup this install still owes (push + race-proof pull).
@@ -238,3 +238,7 @@ export function StartupPopup({ isCalm }: StartupPopupProps): React.ReactElement 
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/brain/orchestrator.webSearch.test.js
+﻿// src/bot/brain/orchestrator.webSearch.test.js
 //
 // 260909: search() / visit() in the game brain. Pins the ONE property the
 // feature rests on: a web tool is inline (its tool_result fills synchronously)
@@ -296,3 +296,7 @@ describe('search() / visit() loop in the game brain (260909)', () => {
     expect(second).toContain('web access is off')
   })
 })
+
+
+
+

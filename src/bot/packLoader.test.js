@@ -1,4 +1,4 @@
-// Game pack loader (260908). The pure plan + specifier helpers run in-process;
+﻿// Game pack loader (260908). The pure plan + specifier helpers run in-process;
 // the resolution itself is exercised in a REAL `node` child, because vitest
 // runs test-file imports through its own module runner (vite-node), which
 // never consults Node's `module.register()` hooks or NODE_PATH. Invariants:
@@ -141,3 +141,7 @@ describe('preparePackLoader in a real node process', () => {
     expect(out.shared).toBe('shared-from-app')
   })
 })
+
+
+
+

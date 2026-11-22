@@ -1,5 +1,5 @@
-/**
- * scripts/call-clock-eval.ts — does the per-turn call clock read as text the
+﻿/**
+ * scripts/call-clock-eval.ts â€” does the per-turn call clock read as text the
  * player typed? (261024)
  *
  * Voice calls keep the minute clock out of the cached prefix and send it after
@@ -367,3 +367,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

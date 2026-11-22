@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { RoomPresetManifest } from '@shared/seilinkRoom';
@@ -44,7 +44,7 @@ describe('MoveInSheetView (261110: one short beta notice)', () => {
     expect(html).toContain('data-movein-notice="beta_v1"');
     expect(html).toContain('WorldLink is a beta feature that puts Sui in a virtual space on your desktop.');
     expect(html).not.toMatch(/<ul|<li/);
-    expect(html).not.toContain('—');
+    expect(html).not.toContain('â€”');
   });
   it('still says who moves out on a swap', () => {
     const html = renderToStaticMarkup(
@@ -63,7 +63,7 @@ describe('MoveInSheetView (261118: custom-image line)', () => {
     expect(html).toContain('data-custom-image-notice="v1"');
     expect(html).toContain('Aria uses a custom image, which may not look as good here. Characters made in Sei work best.');
     expect(html).not.toMatch(/<button[^>]*disabled[^>]*>Move in</);
-    expect(html).not.toMatch(/<ul|<li|—/);
+    expect(html).not.toMatch(/<ul|<li|â€”/);
     expect(html).not.toMatch(/friend/i);
   });
 
@@ -78,3 +78,7 @@ describe('MoveInSheetView (261118: custom-image line)', () => {
     expect(html).not.toContain('data-custom-image-notice');
   });
 });
+
+
+
+

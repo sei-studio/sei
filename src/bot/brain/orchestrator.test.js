@@ -1,9 +1,9 @@
-// src/bot/brain/orchestrator.test.js
+﻿// src/bot/brain/orchestrator.test.js
 //
 // 260608-tik coverage:
-//   1. NUDGES.actionTurn — the unified "you are mid-action" template (Change 2),
+//   1. NUDGES.actionTurn â€” the unified "you are mid-action" template (Change 2),
 //      exercised in both the silent-monitor and player-message variants.
-//   2. Change 1 — a player chat that lands while an action is in flight (loop
+//   2. Change 1 â€” a player chat that lands while an action is in flight (loop
 //      suspended on a long-runner, no Haiku call parked) must NOT abort the
 //      action. It drives a tick-style turn instead; the model is free to reply,
 //      switch, or stop. This is the behavioral heart of the change, so it runs
@@ -22,7 +22,7 @@ import {
   appendProcedureOnce,
 } from './orchestrator.js'
 
-// ───────────────────────── Change 2: template ─────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Change 2: template â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('NUDGES.actionTurn (260608-tik)', () => {
   it('player-message variant quotes the speaker + words and names the stop tool', () => {
@@ -66,7 +66,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
 
   it('not-mid-action player variant requires a spoken reply even when also acting', () => {
     // 260619 say()-leak fix: action null + playerLine = a fresh/idle loop that a
-    // chat woke (the "where are you come to me" → silent follow case). The reply
+    // chat woke (the "where are you come to me" â†’ silent follow case). The reply
     // say() is mandatory and an action never substitutes for it.
     const t = NUDGES.actionTurn({ action: null, stopTool: 'end_loop', playerLine: 'where are you come to me', who: 'Ouen' })
     expect(t).toContain('REPLY with one short say()')
@@ -119,7 +119,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
   it('agentic + long-running follow flips the silent default to break-off-and-act (260625)', () => {
     // Yancy bug: an agentic character (proactiveness >= 2) trapped in a follow
     // that keeps pace with a standing player never trips the STUCK exception, so
-    // the silence-biased default kept it trailing forever — no initiative, no
+    // the silence-biased default kept it trailing forever â€” no initiative, no
     // in-character lines. For that one case the check-in must encourage unfollow
     // + advancing its own agenda, and allow one short in-character say().
     const t = NUDGES.actionTurn({
@@ -138,16 +138,16 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
   })
 
   it('the agentic-follow flip is gated: non-agentic, short follows, and non-follow keep the silence default', () => {
-    // Non-agentic (default proactiveness) following → unchanged silence default.
+    // Non-agentic (default proactiveness) following â†’ unchanged silence default.
     const passive = NUDGES.actionTurn({ action: 'follow Ouen', stopTool: 'unfollow', elapsedSec: 95 })
     expect(passive).toContain('call NO say()')
     expect(passive).not.toContain('consider doing something else you find interesting')
-    // Agentic but still in the warm-up window (< 30s) → not yet flipped.
+    // Agentic but still in the warm-up window (< 30s) â†’ not yet flipped.
     const warmup = NUDGES.actionTurn({ action: 'follow Ouen', stopTool: 'unfollow', elapsedSec: 10, proactiveness: 2 })
     expect(warmup).toContain('call NO say()')
     expect(warmup).not.toContain('consider doing something else you find interesting')
     // Agentic + long-running but a genuinely-completing action (gather, not
-    // follow) → keep the silence default; only follow is the passive trap.
+    // follow) â†’ keep the silence default; only follow is the passive trap.
     const gather = NUDGES.actionTurn({ action: 'gather oak_log', stopTool: 'end_loop', elapsedSec: 95, proactiveness: 2 })
     expect(gather).toContain('call NO say()')
     expect(gather).not.toContain('consider doing something else you find interesting')
@@ -163,7 +163,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
     expect(noAction).not.toContain('(null')
   })
 
-  // 260703: session-end vs task-stop disambiguation (live-session bug — the bot
+  // 260703: session-end vs task-stop disambiguation (live-session bug â€” the bot
   // said goodbye three times in a row and never left, because every per-turn
   // addendum only ever named end_loop/stopTool and never mentioned quit). Every
   // player-message variant of actionTurn must name quit for session-end phrasing,
@@ -197,7 +197,7 @@ describe('NUDGES.actionTurn (260608-tik)', () => {
   })
 })
 
-describe('NUDGES.playerInterruptHint — session-end disambiguation (260703)', () => {
+describe('NUDGES.playerInterruptHint â€” session-end disambiguation (260703)', () => {
   it('names quit as distinct from stopping a task, with concrete trigger phrases', () => {
     const t = NUDGES.playerInterruptHint
     expect(t).toContain('call stop')
@@ -214,7 +214,7 @@ describe('NUDGES.playerInterruptHint — session-end disambiguation (260703)', (
 // rule + the say()/silence contract now carry that weight). The old
 // BASELINE_INSTRUCTIONS anti-filler test was removed with it.
 
-// ──────────────────── Change 1: no-abort routing ────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Change 1: no-abort routing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // A scripted LLM provider standing in for the Anthropic client. `call` returns
 // the next scripted response and records its arguments so the test can inspect
@@ -258,7 +258,7 @@ function makeAdapter() {
       captured.executed.push(name)
       if (name === 'follow') {
         captured.signal = opts?.signal ?? null
-        return new Promise(() => {}) // pending forever → suspends the loop
+        return new Promise(() => {}) // pending forever â†’ suspends the loop
       }
       return Promise.resolve('done')
     },
@@ -282,14 +282,14 @@ function makeConfig() {
 
 const chat = (text) => ({ text, username: 'Steve', playerSpoke: true, ts: Date.now() })
 
-describe('Change 1 — P1 chat during action-in-flight does not abort the action (260608-tik)', () => {
+describe('Change 1 â€” P1 chat during action-in-flight does not abort the action (260608-tik)', () => {
   it('keeps the running action alive and delivers the message as a tick-style turn', async () => {
     _setTickIntervalForTests(10_000_000) // park the 10s auto-tick so it never fires
     const { adapter, captured } = makeAdapter()
     const provider = makeProvider([
-      // Call 1 (fresh loop): start following → suspends on the long-runner.
+      // Call 1 (fresh loop): start following â†’ suspends on the long-runner.
       { text: '', toolUses: [{ id: 'tu1', name: 'follow', input: { player: 'Steve' } }] },
-      // Call 2 (the interrupting chat): reply text-only → R1 keep-alive.
+      // Call 2 (the interrupting chat): reply text-only â†’ R1 keep-alive.
       { text: 'staying right here', toolUses: [] },
     ])
     const orch = createOrchestrator({
@@ -328,7 +328,7 @@ describe('Change 1 — P1 chat during action-in-flight does not abort the action
   })
 })
 
-// ──────────── daily play limit (daily_dollar 429) — 260617 ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ daily play limit (daily_dollar 429) â€” 260617 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('daily play limit (daily_dollar 429)', () => {
   function throwing(status, body) {
@@ -355,7 +355,7 @@ describe('daily play limit (daily_dollar 429)', () => {
       error: 'DAILY_LIMIT_REACHED',
       retryAfterSeconds: 3600,
     })
-    // Leaves the world QUIETLY — no in-game chat line on the way out.
+    // Leaves the world QUIETLY â€” no in-game chat line on the way out.
     expect(adapter.chat).not.toHaveBeenCalled()
   })
 
@@ -393,7 +393,7 @@ describe('daily play limit (daily_dollar 429)', () => {
   })
 })
 
-// ──────────── unusable local Ollama model — 261010 ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ unusable local Ollama model â€” 261010 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('unusable Ollama model (no tools / not pulled)', () => {
   function coded(code) {
@@ -433,9 +433,9 @@ describe('unusable Ollama model (no tools / not pulled)', () => {
   })
 })
 
-// ──────────── #2: player message surfaced LAST (highest salience) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ #2: player message surfaced LAST (highest salience) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-describe('composeSeedBlocks — player_message block (260616 #2)', () => {
+describe('composeSeedBlocks â€” player_message block (260616 #2)', () => {
   const baseArgs = {
     sessionState: { playerData: () => ({}) },
     playerStore: { formatPlayerSeedBlock: () => 'PLAYER' },
@@ -452,7 +452,7 @@ describe('composeSeedBlocks — player_message block (260616 #2)', () => {
     const last = blocks[blocks.length - 1]
     expect(last.name).toBe('player_message')
     expect(last.text).toContain('shut up :(')
-    // It must come AFTER the snapshot — recency is the whole point of #2.
+    // It must come AFTER the snapshot â€” recency is the whole point of #2.
     const names = blocks.map((b) => b.name)
     expect(names.indexOf('player_message')).toBeGreaterThan(names.indexOf('snapshot'))
   })
@@ -473,17 +473,17 @@ describe('composeSeedBlocks — player_message block (260616 #2)', () => {
   })
 })
 
-// ─────────── 261020: game-scoped goals, memories and app chat ───────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ 261020: game-scoped goals, memories and app chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A Stardew session read a Minecraft build from the shared memory and the app
 // chat as Stardew work. The person is shared across games; a game's plans are
 // not, and the seed now says which game the session is in.
 
-describe('composeSeedBlocks — game scope (261020)', () => {
+describe('composeSeedBlocks â€” game scope (261020)', () => {
   let tmp
   beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'sei-gamescope-'))
     await fs.writeFile(path.join(tmp, 'MEMORY.md'),
-      '# Memory\n\n## World 2 — Sei Farm (Stardew Valley)\n- [2026-10-20T06:00:00.000Z] ouen likes the farm\n' +
+      '# Memory\n\n## World 2 â€” Sei Farm (Stardew Valley)\n- [2026-10-20T06:00:00.000Z] ouen likes the farm\n' +
       '\n## In the app (texting, calls and minigames, outside any game world)\n- [2026-10-19T22:57:00.000Z] ouen is building a copper bulb lighthouse\n' +
       '- [2026-10-19T23:00:00.000Z] Plan for next time in Minecraft: get copper for the lighthouse\n')
     await fs.writeFile(path.join(tmp, 'HEARTBEAT.stardew.md'), '# HEARTBEAT\n- [2026-10-20T06:00:00.000Z] Plant parsnips\n')
@@ -525,7 +525,7 @@ describe('composeSeedBlocks — game scope (261020)', () => {
 
   it('the scope lines are plain prose', () => {
     for (const t of [memoryGameScope('Minecraft'), chatContinuityGameScope('Minecraft')]) {
-      expect(t).not.toMatch(/[—–]/)
+      expect(t).not.toMatch(/[â€”â€“]/)
       expect(t).toContain('Minecraft')
     }
     expect(memoryGameScope('')).toBe('')
@@ -538,9 +538,9 @@ describe('composeSeedBlocks — game scope (261020)', () => {
   })
 })
 
-// ─────────── empty cuboid grammar (260909, first DST summon) ───────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ empty cuboid grammar (260909, first DST summon) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-describe('composeSeedBlocks — adapters without a cuboid grammar', () => {
+describe('composeSeedBlocks â€” adapters without a cuboid grammar', () => {
   const baseArgs = {
     sessionState: { playerData: () => ({}) },
     playerStore: { formatPlayerSeedBlock: () => 'PLAYER' },
@@ -566,12 +566,12 @@ describe('composeSeedBlocks — adapters without a cuboid grammar', () => {
   })
 })
 
-// ──────────────── say() as a real tool (260617) ────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ say() as a real tool (260617) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // say() was promoted from a parsed text convention (extractSay) to a registered
 // inline tool: across two live runs Haiku honored the text-only say() contract
-// 0× while calling real tools reliably. These pin the contract the orchestrator
-// now enforces — say is offered every turn, emits to chat up front, and a
+// 0Ã— while calling real tools reliably. These pin the contract the orchestrator
+// now enforces â€” say is offered every turn, emits to chat up front, and a
 // say()-only turn is "silence" for loop purposes (it speaks, then the loop ends
 // unless a world-acting tool was also called).
 
@@ -591,7 +591,7 @@ describe('say() tool (260617)', () => {
   it('a say()-only turn speaks, runs NO action, and ENDS the loop (say = silence for loop purposes)', async () => {
     const { adapter, captured } = makeAdapter()
     const provider = makeProvider([
-      { text: 'they greeted me — reply', toolUses: [{ id: 'tu_say', name: 'say', input: { text: 'yo whats up' } }] },
+      { text: 'they greeted me â€” reply', toolUses: [{ id: 'tu_say', name: 'say', input: { text: 'yo whats up' } }] },
     ])
     const orch = createOrchestrator({
       adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider,
@@ -658,7 +658,7 @@ describe('say() tool (260617)', () => {
     await orch.handleDispatch('sei:chat_received', chat('follow me'))
     expect(adapter.chat).toHaveBeenCalledWith('watch this')
     expect(captured.executed).toContain('follow')
-    // follow suspends the loop — it stays alive, with say already spoken.
+    // follow suspends the loop â€” it stays alive, with say already spoken.
     expect(orch.currentLoop).not.toBeNull()
     expect(orch.currentLoop.inFlight?.name).toBe('follow')
   })
@@ -667,7 +667,7 @@ describe('say() tool (260617)', () => {
     _setTickIntervalForTests(10_000_000)
     const { adapter, captured } = makeAdapter()
     const provider = makeProvider([
-      // Call 1: start follow → suspends on the long-runner.
+      // Call 1: start follow â†’ suspends on the long-runner.
       { text: '', toolUses: [{ id: 'tu1', name: 'follow', input: { player: 'Steve' } }] },
       // Call 2 (a chat lands mid-follow): reply with say() only.
       { text: 'reply, keep following', toolUses: [{ id: 'tu_say', name: 'say', input: { text: 'yeah yeah coming' } }] },
@@ -678,14 +678,14 @@ describe('say() tool (260617)', () => {
     await orch.handleDispatch('sei:chat_received', chat('follow me'))
     expect(orch.currentLoop?.inFlight?.name).toBe('follow')
     expect(captured.signal.aborted).toBe(false)
-    // Chat lands while follow is in flight → say() reply, action survives.
+    // Chat lands while follow is in flight â†’ say() reply, action survives.
     await orch.handleDispatch('sei:chat_received', chat('you coming?'))
     expect(adapter.chat).toHaveBeenCalledWith('yeah yeah coming')
     expect(captured.signal.aborted).toBe(false)                 // follow NOT aborted
     expect(orch.currentLoop?.inFlight?.name).toBe('follow')
   })
 
-  it('caps speech at ONE say() per turn — extra say() calls are ignored, not spammed', async () => {
+  it('caps speech at ONE say() per turn â€” extra say() calls are ignored, not spammed', async () => {
     const { adapter } = makeAdapter()
     const provider = makeProvider([
       { text: 'two lines', toolUses: [
@@ -703,7 +703,7 @@ describe('say() tool (260617)', () => {
   })
 })
 
-// ──────────── procedural memory write-back on milestone completion (17-04, D-08) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ procedural memory write-back on milestone completion (17-04, D-08) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The direct unit proof of D-08: when a milestone newly completes, its terse
 // known-good `procedure` is recorded ONCE into per-world memory (append +
@@ -760,10 +760,10 @@ describe('appendProcedureOnce (procedural memory write-back, D-08)', () => {
   })
 })
 
-// ──────────── remember() nudges + same-batch remember/say/quit (260703b) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ remember() nudges + same-batch remember/say/quit (260703b) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Live-session evidence (character "Marv"): across 8 sessions MEMORY.md gained 3
-// entries, 2 near-duplicates — nothing ever nudged the model toward remember().
+// entries, 2 near-duplicates â€” nothing ever nudged the model toward remember().
 // Two nudges now do (SESSION_END_CLAUSE + the preference-capture sentence in
 // playerInterruptHint), and the orchestrator guarantees a remember() in the same
 // batch as quit() still lands (inline metadata executes in batch order; quit's
@@ -802,7 +802,7 @@ describe('remember() nudges (260703b)', () => {
     vi.useFakeTimers()
     _setTickIntervalForTests(10_000_000)
     const config = makeConfig()
-    // remember is deliberately placed AFTER quit — quit's terminate=true only
+    // remember is deliberately placed AFTER quit â€” quit's terminate=true only
     // gates non-inline tools, so a later inline remember() must still execute.
     const provider = makeProvider([
       { text: '', toolUses: [
@@ -818,15 +818,15 @@ describe('remember() nudges (260703b)', () => {
     })
     await orch.handleDispatch('sei:chat_received', chat('bye!'))
 
-    // The memory write actually happened — the entry is on disk.
+    // The memory write actually happened â€” the entry is on disk.
     const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
     expect(md).toContain('player wants a hello whenever I join')
     // The say() line reached chat; the quit() farewell is SUPPRESSED because a
-    // say() already spoke this turn (260706 double-goodbye guard — otherwise the
+    // say() already spoke this turn (260706 double-goodbye guard â€” otherwise the
     // two goodbyes would land back-to-back).
     expect(adapter.chat).toHaveBeenCalledWith('later, keep the base safe')
     expect(adapter.chat).not.toHaveBeenCalledWith('cya nerd')
-    // Quit still proceeds — teardown fires once the goodbye defer elapses.
+    // Quit still proceeds â€” teardown fires once the goodbye defer elapses.
     expect(onQuitRequested).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(11_000)
     expect(onQuitRequested).toHaveBeenCalledTimes(1)
@@ -835,7 +835,7 @@ describe('remember() nudges (260703b)', () => {
   })
 })
 
-// ──────────── sticky greeting hint (260703b) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ sticky greeting hint (260703b) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Live-session evidence: loop-1 (the first idle tick carrying FIRST CONTACT) was
 // preempted 6s in by sei:attacked (a phantom), the greeting instruction existed
@@ -856,15 +856,15 @@ describe('sticky greeting hint (260703b)', () => {
     const { adapter } = makeAdapter()
     let releaseFirstCall
     const provider = makeProvider([
-      // Call 1 — the FIRST CONTACT idle tick. Hangs so the attack preempts it
+      // Call 1 â€” the FIRST CONTACT idle tick. Hangs so the attack preempts it
       // BEFORE the LLM returns (the exact live failure shape).
       () => new Promise((res) => { releaseFirstCall = res }),
-      // Call 2 — the attack loop: the model greets (and ends the loop).
+      // Call 2 â€” the attack loop: the model greets (and ends the loop).
       { text: '', toolUses: [
         { id: 's1', name: 'say', input: { text: 'yo, rough landing' } },
         { id: 'el1', name: 'end_loop', input: {} },
       ] },
-      // Call 3 — a later idle tick, after the greeting was spoken.
+      // Call 3 â€” a later idle tick, after the greeting was spoken.
       { text: '', toolUses: [] },
     ])
     const reenqueued = []
@@ -881,7 +881,7 @@ describe('sticky greeting hint (260703b)', () => {
     for (let i = 0; i < 20 && provider.calls.length === 0; i++) await flush()
     expect(provider.calls.length).toBe(1)
 
-    // The attack lands before the LLM returns — the FIRST CONTACT loop dies and
+    // The attack lands before the LLM returns â€” the FIRST CONTACT loop dies and
     // the attack is re-enqueued for a fresh loop.
     await orch.handleDispatch('sei:attacked', { attackerLabel: 'phantom', attackerKind: 'mob' })
     releaseFirstCall({ text: '', toolUses: [] })
@@ -895,7 +895,7 @@ describe('sticky greeting hint (260703b)', () => {
     expect(turn1).not.toContain(GREETING_HINT)
 
     // Dispatch the re-fired attack like the FSM would: its prompt must carry
-    // the sticky hint — the greeting instruction survived the preempt.
+    // the sticky hint â€” the greeting instruction survived the preempt.
     const atk = reenqueued.find(([ev]) => ev === 'sei:attacked')
     expect(atk).toBeTruthy()
     await orch.handleDispatch('sei:attacked', atk[1])
@@ -917,7 +917,7 @@ describe('sticky greeting hint (260703b)', () => {
     _setTickIntervalForTests(10_000_000)
     const { adapter } = makeAdapter()
     const provider = makeProvider([
-      // Call 1 — a chat turn before anything was ever said: hint must ride.
+      // Call 1 â€” a chat turn before anything was ever said: hint must ride.
       { text: '', toolUses: [{ id: 'q1', name: 'quit_game', input: { farewell: 'fine cya then' } }] },
     ])
     const orch = createOrchestrator({
@@ -926,18 +926,18 @@ describe('sticky greeting hint (260703b)', () => {
     await orch.handleDispatch('sei:chat_received', chat('actually gtg, bye'))
     const turn1 = JSON.stringify(provider.calls[0].messages ?? provider.calls[0])
     expect(turn1).toContain(GREETING_HINT.slice(0, 40))
-    // The farewell rode the shared say pipeline — it flips the greeted flag.
+    // The farewell rode the shared say pipeline â€” it flips the greeted flag.
     expect(adapter.chat).toHaveBeenCalledWith('fine cya then')
   })
 })
 
-// ──────────── player_message scratchpad contract (260703b) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ player_message scratchpad contract (260703b) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Live-session evidence: on "yo" the model wrote "yo." into its private text and
-// called placeBlock with NO say() — the player got silence. The player_message
+// called placeBlock with NO say() â€” the player got silence. The player_message
 // block now spells out that the text output is a scratchpad the player never sees.
 
-describe('player_message block — scratchpad contract (260703b)', () => {
+describe('player_message block â€” scratchpad contract (260703b)', () => {
   it('tells the model its text output is a private scratchpad the player can never see', async () => {
     const { adapter } = makeAdapter()
     const provider = makeProvider([{ text: 'yo.', toolUses: [] }])
@@ -957,11 +957,11 @@ describe('player_message block — scratchpad contract (260703b)', () => {
   })
 })
 
-// ──────────── memory-tool hoist at batch split (260708) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ memory-tool hoist at batch split (260708) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Live-session bug (Lyra post-mortem): the model called follow(...) +
 // remember(...) in ONE turn. follow suspended the loop via startLongRunner and
-// the remember was stashed on loop._pendingToolUses — where an action_tick
+// the remember was stashed on loop._pendingToolUses â€” where an action_tick
 // reclaim, a P0/P1 preempt, or drainPendingToolsOnTeardown (world-tools-only
 // filter) silently discarded it. The memory sha never changed all session.
 // The fix hoists MEMORY_METADATA (remember/forget/setGoal/clearGoal) at
@@ -974,7 +974,7 @@ describe('memory-tool hoist at batch split (260708)', () => {
     const config = makeConfig()
     const { adapter, captured } = makeAdapter()
     const provider = makeProvider([
-      // remember deliberately AFTER follow — the failing order from the live
+      // remember deliberately AFTER follow â€” the failing order from the live
       // session. follow's promise never resolves, so if the remember were
       // queued behind it, it would never run in this test at all.
       { text: '', toolUses: [
@@ -988,14 +988,14 @@ describe('memory-tool hoist at batch split (260708)', () => {
     await orch.handleDispatch('sei:chat_received', chat('remember: house for us'))
 
     // The loop is suspended on the never-settling follow, yet the memory write
-    // has ALREADY happened — it did not wait for action_complete.
+    // has ALREADY happened â€” it did not wait for action_complete.
     expect(captured.executed).toContain('follow')
     const md = await fs.readFile(config.memory.memory_md_path, 'utf8')
     expect(md).toContain('sei wants a house for the two of us')
   })
 })
 
-// ──────────── next-time hook on goodbyes (261008) ────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ next-time hook on goodbyes (261008) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Retention fix 2(c): quit_game / end_call take an optional next_time field.
 // When the model fills it, the step is saved to MEMORY.md (where the next
@@ -1195,3 +1195,7 @@ describe('next_time hook on goodbye tools (261008)', () => {
     expect(turn).not.toContain('to pick up next time')
   })
 })
+
+
+
+

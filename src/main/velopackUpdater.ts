@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Windows updates on Velopack (261030).
  *
  * updater.ts drives a small `AutoUpdater` surface (checkForUpdates,
@@ -18,11 +18,11 @@
  *     restart only swaps folders. A failed, skipped (low disk) or slow stage
  *     still offers the update; the apply then extracts as stock Velopack does.
  *   - restart (quitAndInstall): the update screen. Sei shows its update splash
- *     (splashPage.ts) with "Updating…", hides its other windows, renders the same splash as
+ *     (splashPage.ts) with "Updatingâ€¦", hides its other windows, renders the same splash as
  *     frames for Update.exe's native overlay, starts `Update.exe apply
  *     --noHooks --seiOverlay`, waits until the overlay is on screen and quits.
  *     The overlay covers the gap and closes when the new Sei's splash (also
- *     "Updating…") is up. On failure it says so and opens the old version.
+ *     "Updatingâ€¦") is up. On failure it says so and opens the old version.
  *   - update on quit: the same apply without restart and without overlay.
  *   - launch with a staged update still pending (Sei was killed before it
  *     could apply): applyPendingAtLaunch() puts the update splash up and
@@ -142,7 +142,7 @@ function splashNoteFile(): string {
 }
 
 /**
- * The status line for this launch's splash: "Updating…" when Update.exe just
+ * The status line for this launch's splash: "Updatingâ€¦" when Update.exe just
  * restarted us into the new version, the error line when it restarted the old
  * one after a failed update, nothing on a normal launch. One-shot.
  */
@@ -810,3 +810,7 @@ export async function applyPendingAtLaunch(splash: BrowserWindow | null): Promis
     return false;
   }
 }
+
+
+
+

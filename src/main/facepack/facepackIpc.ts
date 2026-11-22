@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Facepack IPC (261028 pilot). The dev handlers answer "disabled" (null / [] /
  * enabled:false) unless the dev flag is on. Since 261105 manifest/file/
  * forCharacter also serve the face sets the anima client downloaded (`an-`
@@ -64,3 +64,7 @@ export function registerFacepackIpc(opts: { preloadPath: string; rendererTarget:
     return true;
   });
 }
+
+
+
+

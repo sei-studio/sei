@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: stop and quit during a slow boot. A stop used to wait out the
  * pending summon (up to 60s boot + 30s ready) before it could stop anything,
  * and app quit waited the same plus a 10s drain. Now a stop during a pending
@@ -250,3 +250,7 @@ describe('shutdown is hard-capped (260926)', () => {
     expect(isSummonCancelled(await p.catch((e: unknown) => e))).toBe(true);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// Minecraft-specific LLM-facing text used to live here; it now lives in the
+﻿// Minecraft-specific LLM-facing text used to live here; it now lives in the
 // single editable prompt document, src/bot/brain/promptLibrary.js. This module
 // is a thin barrel that re-exports the minecraft-level names from there, so
 // every existing `import ... from './prompts.js'` in the adapter keeps working.
@@ -33,10 +33,10 @@ export {
 import { eventAddendum as baseEventAddendum } from '../../brain/promptLibrary.js'
 import { weaponScore, dimLabel } from './behaviors/weaponSelect.js'
 
-// ── Death event framing (sei:death) ──────────────────────────────────────
+// â”€â”€ Death event framing (sei:death) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // This prose lives HERE rather than in promptLibrary.js's EVENT_GUIDANCE (where
-// its peers — sei:idle / sei:loop_end / sei:attacked — live) purely for merge
-// hygiene: the death→brain event was added while promptLibrary.js was owned by a
+// its peers â€” sei:idle / sei:loop_end / sei:attacked â€” live) purely for merge
+// hygiene: the deathâ†’brain event was added while promptLibrary.js was owned by a
 // concurrent change, so the small, adapter-specific death text rides in the
 // barrel wrapper below instead. If/when things settle, this can move into
 // EVENT_GUIDANCE with the other events.
@@ -183,3 +183,7 @@ export function eventAddendum(event, data, visionMode = 'on-demand') {
   if (event === 'sei:death') return deathAddendum(data)
   return baseEventAddendum(event, data, visionMode)
 }
+
+
+
+

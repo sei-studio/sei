@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room probe (261104): does the companion know where she is, does she
  * call look() when asked about her room, and does she leave the room alone
  * when nobody asks?
@@ -141,3 +141,7 @@ main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });
+
+
+
+

@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Minimal in-repo bzip2 decompressor (260816, china-compat W3+W4).
  *
  * Node has zlib but no bzip2, and the canonical k2-fsa speech model archives
- * are .tar.bz2 — origin-only downloads must work, so the decoder lives here
+ * are .tar.bz2 â€” origin-only downloads must work, so the decoder lives here
  * rather than behind a dependency. It is a straight implementation of the
  * classic bzip2 block format (Huffman groups + MTF/RLE2 + inverse BWT + RLE1),
  * decoding only what our known archives use:
@@ -101,7 +101,7 @@ function decodeBlock(br: BitReader, blockSizeBytes: number): Uint8Array {
     }
   }
 
-  // Per-group delta-encoded Huffman code lengths → decode tables.
+  // Per-group delta-encoded Huffman code lengths â†’ decode tables.
   type Table = { limit: Int32Array; base: Int32Array; permute: Int32Array; minLen: number; maxLen: number };
   const tables: Table[] = [];
   for (let g = 0; g < nGroups; g += 1) {
@@ -307,3 +307,7 @@ export function bunzip2(input: Uint8Array): Uint8Array {
   }
   return out;
 }
+
+
+
+

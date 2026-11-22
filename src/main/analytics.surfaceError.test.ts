@@ -1,5 +1,5 @@
-/**
- * 260828 — surface_error events + the summon_failed dedupe throttle.
+﻿/**
+ * 260828 â€” surface_error events + the summon_failed dedupe throttle.
  *
  * The analytics module is a singleton, so like analytics.diagnostics.test.ts
  * these run in file order: init with a mocked PostHog client first.
@@ -122,7 +122,7 @@ describe('captureDiagnosticThrottled', () => {
       vi.advanceTimersByTime(14_000);
       captureDiagnosticThrottled('summon_failed', key, { error_class: 'PREFERRED_NAME_MISSING' });
     }
-    // 20 * 14s = 280s < 5min window → everything after the first is suppressed.
+    // 20 * 14s = 280s < 5min window â†’ everything after the first is suppressed.
     expect(captureSpy).toHaveBeenCalledTimes(1);
     // Past the window the next event ships, carrying the suppressed count.
     vi.advanceTimersByTime(DIAG_THROTTLE_WINDOW_MS);
@@ -138,3 +138,7 @@ describe('captureDiagnosticThrottled', () => {
     expect(captureSpy).toHaveBeenCalledTimes(3);
   });
 });
+
+
+
+

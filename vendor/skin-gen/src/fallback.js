@@ -1,4 +1,4 @@
-// Deterministic no-LLM fallback: a fixed template skin (default hair style,
+﻿// Deterministic no-LLM fallback: a fixed template skin (default hair style,
 // textured shirt and pants, Steve/Alex-like skin tone, fixed eyes and mouth)
 // recolored with the character's top colors. Primary color becomes the shirt,
 // secondary the pants, tertiary the hair. No API calls, no randomness: the
@@ -210,3 +210,7 @@ export async function fallbackAtlas(characterImage, { variant = 'classic' } = {}
 
   return atlas;
 }
+
+
+
+

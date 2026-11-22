@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { pickChooser, ProbabilityChooser, textChoiceNeedsVision, type Choice, type ChooseState, type Chooser } from './chooser';
 import { buildJevChooser, buildJevRequest, JEV_DEFAULT_MODEL, JEV_URL, makeJevScore, parseJevResponse } from './jevChooser';
 import type { ActOption, Perception } from './perception';
@@ -120,3 +120,7 @@ describe('Jev', () => {
     expect(c?.textOnly).toBe(true);
   });
 });
+
+
+
+

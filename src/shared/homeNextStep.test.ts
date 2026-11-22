@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { gameDisplayName, gameIdFromName, nameInSentence } from './homeNextStep';
 
 describe('nameInSentence (261014)', () => {
@@ -12,7 +12,7 @@ describe('nameInSentence (261014)', () => {
     expect(nameInSentence('Sui')).toBe('Sui');
     expect(nameInSentence('xXSuiXx')).toBe('xXSuiXx');
     expect(nameInSentence('DeepSeek')).toBe('DeepSeek');
-    expect(nameInSentence('水星')).toBe('水星');
+    expect(nameInSentence('æ°´æ˜Ÿ')).toBe('æ°´æ˜Ÿ');
     expect(nameInSentence('42')).toBe('42');
     expect(nameInSentence('')).toBe('');
   });
@@ -24,7 +24,7 @@ describe('gameIdFromName (261020)', () => {
     expect(gameIdFromName('Stardew Valley')).toBe('stardew');
     expect(gameIdFromName('stardew')).toBe('stardew');
     expect(gameIdFromName("Don't Starve Together")).toBe('dontstarve');
-    expect(gameIdFromName('Don’t Starve Together.')).toBe('dontstarve');
+    expect(gameIdFromName('Donâ€™t Starve Together.')).toBe('dontstarve');
     expect(gameIdFromName('the Minecraft world')).toBe('minecraft');
   });
 
@@ -42,3 +42,7 @@ describe('gameIdFromName (261020)', () => {
     expect(gameIdFromName(gameDisplayName('minecraft'))).toBe('minecraft');
   });
 });
+
+
+
+

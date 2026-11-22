@@ -1,4 +1,4 @@
-/**
+﻿/**
  * regenHintPref (261107, product call): the one-time "Not happy with the
  * look? Regenerate" hint on a companion's profile.
  *
@@ -151,3 +151,7 @@ export function trackRegenHintDismissed(how: RegenHintDismissHow, visibleMs: num
 export function trackRegenHintRegenerateClicked(characterKind: string, regensLeft: number): void {
   track('regen_hint_regenerate_clicked', { character_kind: characterKind, regens_left: regensLeft });
 }
+
+
+
+

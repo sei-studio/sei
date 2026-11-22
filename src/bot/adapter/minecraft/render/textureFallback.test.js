@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/textureFallback.test.js
+﻿// src/bot/adapter/minecraft/render/textureFallback.test.js
 //
 // 260806: a missing entity texture killed the bot mid-session. prismarine-viewer's
 // loadTexture has no .catch, so an absent PNG became an unhandled rejection, which
@@ -31,7 +31,7 @@ const PLACEHOLDER = { kind: 'placeholder' }
 
 function harness (overrides = {}) {
   const warn = vi.fn()
-  // `in`, not `??` — one test deliberately passes loadImage: null.
+  // `in`, not `??` â€” one test deliberately passes loadImage: null.
   const loadImage = 'loadImage' in overrides ? overrides.loadImage : vi.fn(async () => ({ img: true }))
   const makeTexture = overrides.makeTexture ?? vi.fn(() => REAL)
   const makePlaceholder = overrides.makePlaceholder ?? vi.fn(() => PLACEHOLDER)
@@ -63,7 +63,7 @@ describe('createSafeLoadTexture', () => {
     expect(h.warn).not.toHaveBeenCalled()
   })
 
-  // THE regression. `textures/entity/steve` is the player texture — the one that
+  // THE regression. `textures/entity/steve` is the player texture â€” the one that
   // is missing from every texture tree a packaged build ships, and therefore the
   // one that actually fired. Before the fix this call never invoked its callback
   // at all; it left a rejected promise that killed the process.
@@ -125,7 +125,7 @@ describe('createSafeLoadTexture', () => {
   })
 
   // Degraded natives: node-canvas-webgl dlopens `gl`, built for the Electron ABI.
-  // viewer/lib/utils.js tolerates that require failing, so this must too — every
+  // viewer/lib/utils.js tolerates that require failing, so this must too â€” every
   // texture becomes a placeholder rather than the render stack failing to import.
   it('serves placeholders for everything when there is no image decoder', async () => {
     const h = harness({ loadImage: null, present: vi.fn(() => true) })
@@ -184,3 +184,7 @@ describe('texturePresent', () => {
     expect(texturePresent(d)).toBe(false)
   })
 })
+
+
+
+

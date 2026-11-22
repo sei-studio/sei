@@ -1,5 +1,5 @@
-/**
- * ModalShell — the single modal primitive (Party redesign).
+﻿/**
+ * ModalShell â€” the single modal primitive (Party redesign).
  *
  * Every modal in the app renders through this shell so scrim color, panel
  * surface, padding, title type, mount animation, Esc and click-outside rules
@@ -7,9 +7,9 @@
  * Buttons; the shell owns everything around them.
  *
  * z-index tiers (keep to these three):
- *   1000 base (default) · 1100 stacked-above · 1200 recovery.
+ *   1000 base (default) Â· 1100 stacked-above Â· 1200 recovery.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §1 (ModalShell).
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§1 (ModalShell).
  */
 
 import React, { useEffect } from 'react';
@@ -18,13 +18,13 @@ import styles from './ModalShell.module.css';
 interface ModalShellProps {
   /** Accessible + visible title (Oswald 18px). Pass null to omit the header. */
   title: string | null;
-  /** Panel width in px (default 380 — the mockup's play-modal width). */
+  /** Panel width in px (default 380 â€” the mockup's play-modal width). */
   width?: number;
   /** Esc closes (default true). Set false while submitting / for blocking gates. */
   escClose?: boolean;
-  /** Clicking the scrim closes (default false — opt in for casual dialogs). */
+  /** Clicking the scrim closes (default false â€” opt in for casual dialogs). */
   scrimClose?: boolean;
-  /** z-index tier: 'base' 1000 · 'stacked' 1100 · 'recovery' 1200. */
+  /** z-index tier: 'base' 1000 Â· 'stacked' 1100 Â· 'recovery' 1200. */
   tier?: 'base' | 'stacked' | 'recovery';
   onClose?: () => void;
   children: React.ReactNode;
@@ -98,3 +98,7 @@ export function ModalShell({
 export function ModalFooter({ children }: { children: React.ReactNode }): React.ReactElement {
   return <div className={styles.footer}>{children}</div>;
 }
+
+
+
+

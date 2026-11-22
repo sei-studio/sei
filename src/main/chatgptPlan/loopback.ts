@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): loopback callback listener for "Continue with ChatGPT".
  *
  * SIWC rules: the redirect is http://127.0.0.1:<port>/auth/callback, the
@@ -134,3 +134,7 @@ export async function startCallbackListener(
     },
   };
 }
+
+
+
+

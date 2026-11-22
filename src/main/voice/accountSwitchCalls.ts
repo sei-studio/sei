@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Close every voice call from MAIN on an account switch (260926).
  *
  * A call is renderer-driven: the renderer times it and reports the hang-up,
@@ -67,3 +67,7 @@ export async function endCallsForAccountSwitch(reason: string, deps: AccountSwit
   }
   await Promise.all(writes);
 }
+
+
+
+

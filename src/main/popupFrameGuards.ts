@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Main-window guards for the startup popup frame (261027).
  *
  * The popup page (an operator page on https://sei.gg/popup/) is shown in a
@@ -199,3 +199,7 @@ export async function popupFrameLoadedOk(waitMs = 1500): Promise<boolean> {
   }
   return tracker.loadedOk();
 }
+
+
+
+

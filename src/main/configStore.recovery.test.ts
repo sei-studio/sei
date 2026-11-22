@@ -1,4 +1,4 @@
-/**
+﻿/**
  * configStore resilience (261031, T277): durable writes with a last-known-good
  * backup, quarantine + restore of a damaged file, field-by-field salvage,
  * unknown-key and newer-schema preservation, migrations, and the
@@ -321,9 +321,9 @@ describe('migrations', () => {
 describe('extractIdentityKeys', () => {
   it('reads string, bool, number and array keys and skips the rest', () => {
     const got = extractIdentityKeys(
-      '{"preferred_name":"Zoë","has_been_welcomed":false,"total_playtime_ms":9,"added_default_ids":["' + W1 + '"],"theme_mode":"dark"',
+      '{"preferred_name":"ZoÃ«","has_been_welcomed":false,"total_playtime_ms":9,"added_default_ids":["' + W1 + '"],"theme_mode":"dark"',
     );
-    expect(got).toEqual({ preferred_name: 'Zoë', has_been_welcomed: false, total_playtime_ms: 9, added_default_ids: [W1] });
+    expect(got).toEqual({ preferred_name: 'ZoÃ«', has_been_welcomed: false, total_playtime_ms: 9, added_default_ids: [W1] });
   });
 
   it('skips an array truncated mid-way', () => {
@@ -451,3 +451,7 @@ describe('local TTS model setting (261102)', () => {
     expect(raw.tts_engine).toBe('local');
   });
 });
+
+
+
+

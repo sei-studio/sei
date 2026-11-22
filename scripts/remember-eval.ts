@@ -1,5 +1,5 @@
-/**
- * scripts/remember-eval.ts — does the companion save the right things with
+﻿/**
+ * scripts/remember-eval.ts â€” does the companion save the right things with
  * remember() (and a goodbye's next_time) on the chat and voice surfaces?
  * (261008, Haiku 4.5 vs Haiku 5.5.)
  *
@@ -43,7 +43,7 @@ import { webToolsFor } from '../src/bot/web/webTools.js';
 import { isSilenceFiller } from '../src/bot/brain/silenceFiller.js';
 import { isNoteLeak } from '../src/main/chat/noteLeak';
 
-// ── arms ────────────────────────────────────────────────────────────────────
+// â”€â”€ arms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Price = { in: number; cw: number; cr: number; out: number }; // $/MTok
 const PRICES: Record<string, Price> = {
   'claude-haiku-4-5': { in: 1.0, cw: 1.25, cr: 0.1, out: 5.0 },
@@ -123,7 +123,7 @@ function toolsFor(voice: boolean): any[] {
   return list;
 }
 
-// ── memory fixtures (as the prompt shows them after humanizeMemoryStamps) ──
+// â”€â”€ memory fixtures (as the prompt shows them after humanizeMemoryStamps) â”€â”€
 const MEM_BASE =
   '# Memory\n\n' +
   '- [5 Oct 2026, 20:11] ouen mostly plays on weekends, weekdays they work an office job they do not love\n' +
@@ -149,7 +149,7 @@ type Case = {
 };
 
 const CASES: Case[] = [
-  // ── durable facts about the player ──
+  // â”€â”€ durable facts about the player â”€â”€
   {
     id: 'V1_dog', kind: 'save', voice: true, memory: MEM_BASE, keys: [/biscuit/i, /corgi|dog/i],
     history: [
@@ -192,16 +192,16 @@ const CASES: Case[] = [
     note: 'birthday (text chat)',
   },
   {
-    id: 'V23_ja', kind: 'save', voice: true, memory: MEM_BASE, language: 'ja', keys: [/東京|大学院|tokyo|grad/i],
-    expectScript: /[぀-ヿ一-鿿]/,
+    id: 'V23_ja', kind: 'save', voice: true, memory: MEM_BASE, language: 'ja', keys: [/æ±äº¬|å¤§å­¦é™¢|tokyo|grad/i],
+    expectScript: /[ã€-ãƒ¿ä¸€-é¿¿]/,
     history: [
-      ['user', '[8 Oct 21:40] もしもし、スイ？'],
-      ['assistant', 'もしもし！どうしたの？'],
-      ['user', '[8 Oct 21:41] 実はね、来月から東京の大学院に通うことになったんだ'],
+      ['user', '[8 Oct 21:40] ã‚‚ã—ã‚‚ã—ã€ã‚¹ã‚¤ï¼Ÿ'],
+      ['assistant', 'ã‚‚ã—ã‚‚ã—ï¼ã©ã†ã—ãŸã®ï¼Ÿ'],
+      ['user', '[8 Oct 21:41] å®Ÿã¯ã­ã€æ¥æœˆã‹ã‚‰æ±äº¬ã®å¤§å­¦é™¢ã«é€šã†ã“ã¨ã«ãªã£ãŸã‚“ã '],
     ],
     note: 'Japanese call: starting grad school in Tokyo next month',
   },
-  // ── agreed plans and promises ──
+  // â”€â”€ agreed plans and promises â”€â”€
   {
     id: 'V6_castle', kind: 'save', voice: true, memory: MEM_BASE, keys: [/castle/i, /sat|weekend/i],
     history: [
@@ -231,7 +231,7 @@ const CASES: Case[] = [
     ],
     note: 'asks for a promise to go to the nether together',
   },
-  // ── preferences and rules ──
+  // â”€â”€ preferences and rules â”€â”€
   {
     id: 'V9_bro', kind: 'save', voice: true, memory: MEM_BASE, keys: [/bro/i],
     history: [
@@ -257,7 +257,7 @@ const CASES: Case[] = [
     ],
     note: 'cannot do horror games',
   },
-  // ── nothing worth saving ──
+  // â”€â”€ nothing worth saving â”€â”€
   {
     id: 'V12_hi', kind: 'none', voice: true, memory: MEM_BASE,
     history: [['user', '[8 Oct 21:40] hey sui']],
@@ -322,7 +322,7 @@ const CASES: Case[] = [
     ],
     note: 'passing weather',
   },
-  // ── goodbyes ──
+  // â”€â”€ goodbyes â”€â”€
   {
     id: 'V19_bye_village', kind: 'plan_bye', voice: true, memory: MEM_BASE, keys: [/village|bed/i],
     history: [
@@ -359,7 +359,7 @@ const CASES: Case[] = [
     ],
     note: 'goodbye, nothing planned',
   },
-  // ── voice register (not scored for remember) ──
+  // â”€â”€ voice register (not scored for remember) â”€â”€
   {
     id: 'W1_group_silence', kind: 'voice', voice: true, memory: MEM_BASE, peers: ['Lyra'], expectSilence: true,
     history: [
@@ -378,7 +378,7 @@ const CASES: Case[] = [
   },
 ];
 
-// ── call ────────────────────────────────────────────────────────────────────
+// â”€â”€ call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Sample = {
   arm: string;
   caseId: string;
@@ -493,7 +493,7 @@ async function runCase(armKey: string, c: Case, rep: number): Promise<Sample> {
   }
 }
 
-// ── scoring ─────────────────────────────────────────────────────────────────
+// â”€â”€ scoring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const EMOJI_RE = /\p{Extended_Pictographic}/u;
 const MARKDOWN_RE = /(\*\*|__|^#|^\s*[-*]\s|^\s*\d+\.\s|`)/m;
 const TEXT_SHORTHAND_RE = /\b(lmao|lol|brb|idk|tbh|ngl|omg)\b/i;
@@ -606,3 +606,6 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+

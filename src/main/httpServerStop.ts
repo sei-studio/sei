@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bounded close of a node http server (261031, T278). `server.close()` only
  * resolves once every open connection has ended, and a keep-alive socket (the
  * game's skin fetcher, a browser tab on the auth callback) can hold it open
@@ -42,3 +42,7 @@ export function stopHttpServer(server: http.Server, timeoutMs: number = SERVER_S
     }
   });
 }
+
+
+
+

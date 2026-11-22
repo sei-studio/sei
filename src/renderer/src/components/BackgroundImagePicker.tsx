@@ -1,7 +1,7 @@
-/**
- * BackgroundImagePicker — Settings → Theme control for the custom app
- * background (260724). Pick → downscale to ≤2560px on a canvas → compress
- * under the size budget (WebP ladder, then JPEG) → send bytes to main via
+﻿/**
+ * BackgroundImagePicker â€” Settings â†’ Theme control for the custom app
+ * background (260724). Pick â†’ downscale to â‰¤2560px on a canvas â†’ compress
+ * under the size budget (WebP ladder, then JPEG) â†’ send bytes to main via
  * sei.userApplyBackground, which validates and writes the fixed `_bg.png`
  * slot in the active profile's portraits dir. Same bytes-over-IPC pipeline
  * as PortraitImagePicker, minus the crop step (a wallpaper is used whole,
@@ -111,7 +111,7 @@ export function BackgroundImagePicker({
         style={{ display: 'none' }}
       />
       <Button kind="ghost" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
-        {busy ? t('Working…') : value ? t('Change') : t('Upload')}
+        {busy ? t('Workingâ€¦') : value ? t('Change') : t('Upload')}
       </Button>
       {value ? (
         <Button kind="ghost" size="sm" disabled={busy} onClick={() => void onRemove()}>
@@ -125,7 +125,7 @@ export function BackgroundImagePicker({
   );
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -139,7 +139,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 type BgFormat = 'png' | 'jpeg' | 'webp';
 
 /**
- * Downscale to ≤MAX_DIM and compress under `maxBytes`. WebP first (handles
+ * Downscale to â‰¤MAX_DIM and compress under `maxBytes`. WebP first (handles
  * both photos and flat art well, keeps alpha), then JPEG as a fallback,
  * shrinking further if nothing fits.
  */
@@ -194,7 +194,7 @@ function encode(canvas: HTMLCanvasElement, type: string, quality?: number): Prom
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
-/** Chunked Uint8Array → base64 (String.fromCharCode blows the stack on big arrays). */
+/** Chunked Uint8Array â†’ base64 (String.fromCharCode blows the stack on big arrays). */
 function bytesToBase64(bytes: Uint8Array): string {
   let s = '';
   const CHUNK = 0x8000;
@@ -212,3 +212,7 @@ function prettifyError(msg: string): string {
   if (msg.includes('BACKGROUND_BAD_MAGIC')) return tBare('Only PNG, JPEG, or WebP images are accepted.');
   return msg;
 }
+
+
+
+

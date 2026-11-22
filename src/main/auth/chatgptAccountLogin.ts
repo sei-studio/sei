@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023 "Continue with ChatGPT" as a Sei ACCOUNT login (main side).
  *
  * Flow:
@@ -555,7 +555,7 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
 
 export type ChatgptAccountLogin = ReturnType<typeof createChatgptAccountLogin>;
 
-// ─── Electron wiring ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Electron wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function atomicWrite(target: string, data: Buffer): Promise<void> {
   await mkdir(path.dirname(target), { recursive: true });
@@ -652,3 +652,7 @@ export function chatgptAccountLogin(): ChatgptAccountLogin {
 export function _resetChatgptAccountLoginForTests(): void {
   singleton = null;
 }
+
+
+
+

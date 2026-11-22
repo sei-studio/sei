@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Minecraft Java range Sei can join, for renderer copy (260926).
  *
  * Derived from minecraft-protocol's `supportedVersions`, the same table the
@@ -85,3 +85,7 @@ export function mcVersionSpanList(
 export function worldTooNewForSei(versionName: string | null | undefined): boolean {
   return isMcVersionNewerThanSupported(versionName, supportedVersions, ROWS);
 }
+
+
+
+

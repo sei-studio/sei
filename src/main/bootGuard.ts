@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Boot guard: counts failed starts and decides when to start in safe mode
  * (261031, T277).
  *
@@ -299,3 +299,7 @@ export function writeBootStateSync(file: string, s: BootState): boolean {
     return false;
   }
 }
+
+
+
+

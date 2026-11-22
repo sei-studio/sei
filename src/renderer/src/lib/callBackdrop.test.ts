@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vertical pan maths for the character-art call backdrop.
  *
  * The two cases that matter are the two pane shapes the feature actually
@@ -52,3 +52,7 @@ describe('clampPosition', () => {
     expect(clampPosition(50)).toBe(50);
   });
 });
+
+
+
+

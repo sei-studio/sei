@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The SeiLink first-link intro's play-once memory and the guide's SeiLink
  * tour (261105, T337).
  *
@@ -94,7 +94,7 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis as unknown as Record<string, unknown>, 'localStorage');
 });
 
-// ── 1. play once ────────────────────────────────────────────────────────────
+// â”€â”€ 1. play once â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('first-link intro, play once', () => {
   it('plays until seen, then never on the same account', () => {
@@ -175,7 +175,7 @@ describe('startSeilinkHost and the intro', () => {
   });
 });
 
-// ── 1b. the "lives on your desktop" card (261110) ──────────────────────────
+// â”€â”€ 1b. the "lives on your desktop" card (261110) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('the live card after a move-in without the intro', () => {
   const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -245,7 +245,7 @@ describe('the live card after a move-in without the intro', () => {
   });
 });
 
-// ── 2. when the tour is offered ─────────────────────────────────────────────
+// â”€â”€ 2. when the tour is offered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const NOW = Date.UTC(2026, 10, 5, 12);
 const H = 3_600_000;
@@ -319,7 +319,7 @@ describe('tourDecision', () => {
   });
 });
 
-// ── 3. the tour's answers ───────────────────────────────────────────────────
+// â”€â”€ 3. the tour's answers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 describe('tour answers', () => {
   it('offered: counts the offer, starts the unpersisted seilink mode', () => {
@@ -365,3 +365,7 @@ describe('tour answers', () => {
     expect(getConfig).toHaveBeenCalled();
   });
 });
+
+
+
+

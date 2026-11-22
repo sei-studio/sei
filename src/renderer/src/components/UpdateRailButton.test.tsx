@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023: the sidebar "Update Sei" button. SSR renders read a zustand store's
  * INITIAL state, so the update store is a plain selector over a mutable
  * object here; the session stores are the real ones (nothing live).
@@ -74,12 +74,12 @@ describe('UpdateRailButton', () => {
     // SSR reads the language store's initial (en) snapshot, so check the
     // dictionary the zh UI looks the key up in.
     expect(WINDOWS_UPDATE_NOTE).toBe(WIN_NOTE);
-    expect(ZH[WIN_NOTE]).toContain('大约需要一分钟');
+    expect(ZH[WIN_NOTE]).toContain('å¤§çº¦éœ€è¦ä¸€åˆ†é’Ÿ');
   });
 });
 
 describe('liveSessionForRestart', () => {
-  const idle = { callStatus: 'idle', summons: {}, chessGames: {}, backseat: {}, drawGames: {} };
+  const idle = { callStatus: 'idle', summons: {}, chessGames: {}, backseat: {}, drawGames: {}, CONNECT4Games: {}, BATTLESHIPGames: {} };
 
   it('is null when nothing is running', () => {
     expect(liveSessionForRestart(idle)).toBeNull();
@@ -98,3 +98,7 @@ describe('liveSessionForRestart', () => {
     expect(liveSessionForRestart({ ...idle, drawGames: { a: { phase: 'drawing' } } })).toBe('session');
   });
 });
+
+
+
+

@@ -1,11 +1,11 @@
-/**
- * Tests for useChatStore.load() — the per-character `loading` flag lifecycle
+﻿/**
+ * Tests for useChatStore.load() â€” the per-character `loading` flag lifecycle
  * that drives the ChatScreen wireframe skeleton.
  *
  * Invariants under test:
  *   1. load() flips `loading` true SYNCHRONOUSLY (before the history fetch
  *      resolves) so the skeleton shows on the first paint.
- *   2. `loading` clears the moment history lands — BEFORE the first-meeting
+ *   2. `loading` clears the moment history lands â€” BEFORE the first-meeting
  *      greeting turn (that phase is covered by `awaiting`, not the skeleton).
  *   3. A greeting turn on an empty transcript flips `awaiting` (not `loading`).
  *   4. A failed fetch clears `loading` AND resets `loaded` so a later open retries.
@@ -65,13 +65,13 @@ async function loadStore() {
 /** Flush pending microtasks (promise callbacks). */
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-describe('useChatStore.load — loading flag lifecycle', () => {
+describe('useChatStore.load â€” loading flag lifecycle', () => {
   it('flips loading true synchronously, then false once history lands', async () => {
     const d = deferred<ChatMessage[]>();
     chatHistoryMock.mockReturnValue(d.promise);
     const store = await loadStore();
 
-    // Kick load WITHOUT awaiting — the synchronous prologue must set loading.
+    // Kick load WITHOUT awaiting â€” the synchronous prologue must set loading.
     void store.getState().load('c1');
     expect(store.getState().loading['c1']).toBe(true);
     expect(store.getState().loaded['c1']).toBe(true);
@@ -83,8 +83,8 @@ describe('useChatStore.load — loading flag lifecycle', () => {
     expect(store.getState().messages['c1']).toHaveLength(2);
   });
 
-  it('clears loading before the greeting turn — greeting drives awaiting', async () => {
-    chatHistoryMock.mockResolvedValue([]); // empty transcript → greeting path
+  it('clears loading before the greeting turn â€” greeting drives awaiting', async () => {
+    chatHistoryMock.mockResolvedValue([]); // empty transcript â†’ greeting path
     const g = deferred<ChatMessage[]>();
     chatOpenedMock.mockReturnValue(g.promise);
     const store = await loadStore();
@@ -133,14 +133,14 @@ describe('useChatStore.load — loading flag lifecycle', () => {
 /**
  * Paced arrival for chat:message pushes (260724).
  *
- * Every surface that speaks over this push — the chess service, the in-game bot
- * — emits its bubbles in a tight loop with no delay. Before this, the push
+ * Every surface that speaks over this push â€” the chess service, the in-game bot
+ * â€” emits its bubbles in a tight loop with no delay. Before this, the push
  * handler appended each one the instant it arrived, so a multi-line reply
  * rendered as a single wall of text no matter what "Realistic typing" said:
  * the typing theater only ever ran inside send()'s own reveal loop, which this
  * path never touches.
  */
-describe('useChatStore — paced arrival for pushed bubbles', () => {
+describe('useChatStore â€” paced arrival for pushed bubbles', () => {
   function companion(id: string, text: string): ChatMessage {
     return { id, role: 'companion', text, ts: 0 };
   }
@@ -181,7 +181,7 @@ describe('useChatStore — paced arrival for pushed bubbles', () => {
     vi.useFakeTimers();
     try {
       const store = await loadStore();
-      // ~120 chars at TYPING_CPS 16.67 ≈ 7.2s, clamped to the 5s ceiling.
+      // ~120 chars at TYPING_CPS 16.67 â‰ˆ 7.2s, clamped to the 5s ceiling.
       pushHandler({ characterId: 'c1', message: companion('long', 'x'.repeat(120)) });
       await vi.advanceTimersByTimeAsync(1000);
       expect(store.getState().messages['c1'] ?? []).toHaveLength(0); // still typing
@@ -534,3 +534,7 @@ describe('useChatStore.load: guided first moment', () => {
     expect(fm.getState().status).toBe('failed');
   });
 });
+
+
+
+

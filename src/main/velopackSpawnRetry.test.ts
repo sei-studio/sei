@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import { isBusySpawnError, SPAWN_BUSY_DELAYS_MS, spawnWhenFree } from './velopackSpawnRetry';
 
 /** What Node throws from spawn() for a Windows sharing violation. */
@@ -89,3 +89,7 @@ describe('spawnWhenFree', () => {
     expect(isBusySpawnError(null)).toBe(false);
   });
 });
+
+
+
+

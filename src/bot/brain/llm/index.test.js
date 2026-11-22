@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { createLlmProvider, SUPPORTED_PROVIDERS } from './index.js'
 import { clearOllamaContextState, neededNumCtx } from './ollamaContext.js'
 import { LOCAL_TIMEOUT_FLOOR_MS } from './ollamaProvider.js'
@@ -399,3 +399,7 @@ describe('gemini provider call', () => {
     expect(out.toolUses[0]).toEqual({ id: expect.stringMatching(/^toolu_/), name: 'go', input: { x: 1 } })
   })
 })
+
+
+
+

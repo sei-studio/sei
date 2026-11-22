@@ -1,5 +1,5 @@
-/**
- * DashPortrait — a companion's art for the game dashboards' portrait card
+﻿/**
+ * DashPortrait â€” a companion's art for the game dashboards' portrait card
  * (260909): the uploaded portrait when there is one, the procedural pixel
  * portrait otherwise, exactly as the Home wall paints it (same seed, same
  * palette pick), so the face on the dashboard is the face on the card.
@@ -25,3 +25,7 @@ export function DashPortrait({ character, className }: { character: Pick<Charact
     />
   );
 }
+
+
+
+

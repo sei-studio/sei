@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Search QA conversations (261003). The player just talks; nobody says
  * "search". Each player line carries the expected behaviour:
  *   must   - outside what the model can know (recent, post-cutoff, niche
@@ -100,3 +100,7 @@ export const CONVERSATIONS: Convo[] = [
     ],
   },
 ];
+
+
+
+

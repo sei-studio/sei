@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/runtime.js — the Don't Starve Together game
+﻿// src/bot/adapter/dontstarve/runtime.js â€” the Don't Starve Together game
 // runtime (game-adapters M2, 260908).
 //
 // Unlike Minecraft, the BODY lives inside the player's game and the mod
@@ -449,7 +449,7 @@ export async function createRuntime(config, hooks) {
     }
   }
 
-  // ── mod events that drive the lifecycle ──────────────────────────────────
+  // â”€â”€ mod events that drive the lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   link.events.on('spawned', (info) => {
     if (_stopped) return
     if (_deathState === 'respawning' && _awaitingSpawn) {
@@ -473,7 +473,7 @@ export async function createRuntime(config, hooks) {
       const gap = Date.now() - link.lastSeenAt
       const limit = Number.isFinite(dst.heartbeat_loss_ms) ? dst.heartbeat_loss_ms : HEARTBEAT_LOSS_MS
       if (gap > limit) {
-        logger.info(`[sei] DST world stopped answering (${Math.round(gap / 1000)}s) — stopping.`)
+        logger.info(`[sei] DST world stopped answering (${Math.round(gap / 1000)}s) â€” stopping.`)
         void dropBrain().then(() => {
           try { onDisconnected({ reason: 'heartbeat lost', willRetry: false }) } catch {}
           fail(
@@ -661,7 +661,7 @@ export async function createRuntime(config, hooks) {
     }
   }
 
-  // ── listen + report + spawn deadline ─────────────────────────────────────
+  // â”€â”€ listen + report + spawn deadline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try {
     await link.listen()
   } catch (err) {
@@ -726,3 +726,7 @@ export async function createRuntime(config, hooks) {
 
   return makeHandle()
 }
+
+
+
+

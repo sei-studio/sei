@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -607,3 +607,7 @@ describe('chatgptAccountLogin.unlink', () => {
     expect(down.regCleared + expired.regCleared).toBe(0);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/armor.js — wear the best armor she owns.
+﻿// src/bot/adapter/minecraft/behaviors/armor.js â€” wear the best armor she owns.
 //
 // 261111 (user feedback ae9a758e, "Sui won't put on or use what I give her"):
 // nothing ever put armor on. A helmet the player tossed her sat in the bag
@@ -231,3 +231,7 @@ export async function takeOffWorn(bot, item, count = 1) {
   }
   return off
 }
+
+
+
+

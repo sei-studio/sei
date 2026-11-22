@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/registry.js — the closed, Zod-typed DST verb set
+﻿// src/bot/adapter/dontstarve/registry.js â€” the closed, Zod-typed DST verb set
 // (game-adapters M2, 260908). Every verb becomes ONE command on the link
 // (PROTOCOL.md) and resolves to the mod's result string ("gathered 4 twigs",
 // "cant_reach: ..."), so the model always reads why something failed. The
@@ -282,3 +282,7 @@ export function createDefaultRegistry({ link }) {
 
   return registry
 }
+
+
+
+

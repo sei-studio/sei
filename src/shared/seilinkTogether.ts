@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Decorating her room together (261105, T336): what crosses IPC between the
  * companion room editor and main. See src/main/seilink/editorTogether.ts.
  */
@@ -46,3 +46,7 @@ export interface SeilinkEditorSync {
   characterId: string;
   state: RoomState;
 }
+
+
+
+

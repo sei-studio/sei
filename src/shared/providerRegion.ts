@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Renderer side of the provider region refusal (261103, T303). Main and the
  * bot classify the refusal (src/bot/brain/llm/regionRefusal.js) and rethrow
  * it tagged `PROVIDER_REGION_UNSUPPORTED[<name>]: <name> does not support
@@ -39,3 +39,7 @@ export function regionProviderLabel(kind: string | null | undefined): string {
   if (kind === 'ollama') return 'Ollama';
   return (kind && PROVIDER_LABELS[kind as ProviderKind]) || PROVIDER_REGION_FALLBACK_NAME;
 }
+
+
+
+

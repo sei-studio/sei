@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   GUESS_COOLDOWN_MS,
   STROKE_TRIGGER,
@@ -130,7 +130,7 @@ describe('guessGate', () => {
     expect(guessGate(first)).toEqual({ go: true, reason: 'strokes' });
   });
 
-  // 260728 — a player who stopped drawing to talk got total silence: chat woke
+  // 260728 â€” a player who stopped drawing to talk got total silence: chat woke
   // nothing, and the next scheduled look aborted on the unchanged canvas.
   it('answers the player even with nothing drawn yet', () => {
     const spokenTo = base({ pendingChat: true, strokeCount: 0, now: T0 + 1_000 });
@@ -180,3 +180,7 @@ describe('guessGate', () => {
     }
   });
 });
+
+
+
+

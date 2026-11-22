@@ -1,8 +1,8 @@
-/**
- * pricingCatalog — server-driven plan + top up pricing copy (260725).
+﻿/**
+ * pricingCatalog â€” server-driven plan + top up pricing copy (260725).
  *
- * Reads the proxy's `plan_config` / `topup_config` tables — the SAME rows
- * /billing/checkout mints Polar sessions against — and maps them to the
+ * Reads the proxy's `plan_config` / `topup_config` tables â€” the SAME rows
+ * /billing/checkout mints Polar sessions against â€” and maps them to the
  * renderer-facing PricingCatalog. Both tables are world-readable by design
  * (pricing is public marketing copy; writes are service_role only), so this
  * uses the plain anon client and works signed-out.
@@ -17,13 +17,13 @@
  * Caching: one in-memory copy per app run, refreshed after CATALOG_TTL_MS.
  * A failed refresh serves the last good copy (pricing changes are rare and
  * never need to win over "the plan screen paints"); null only when no read
- * has ever succeeded — the renderer then keeps its bundled copy.
+ * has ever succeeded â€” the renderer then keeps its bundled copy.
  */
 
 import type { CatalogPlan, CatalogTopUp, PlanTier, PricingCatalog } from '../../shared/ipc';
 import { getClient } from '../auth/supabaseClient';
 
-/** µ$ per display credit — mirrors the server's micro_per_credit() (5,000). */
+/** Âµ$ per display credit â€” mirrors the server's micro_per_credit() (5,000). */
 const MICRO_PER_CREDIT = 5000;
 
 const CATALOG_TTL_MS = 5 * 60_000;
@@ -42,7 +42,7 @@ function isPlanTier(id: string): id is PlanTier {
 /**
  * Defensive row mappers. `select('*')` + per-field checks (rather than a
  * column list) so the read keeps working across schema drift in either
- * direction — most importantly a client running BEFORE the `blurb` column
+ * direction â€” most importantly a client running BEFORE the `blurb` column
  * migration has been applied. A row that fails the required-field checks is
  * dropped, never thrown on.
  */
@@ -93,7 +93,7 @@ async function fetchCatalog(): Promise<PricingCatalog | null> {
       .map((r) => mapTopUpRow(r as Record<string, unknown>))
       .filter((t): t is CatalogTopUp => t !== null);
     // A catalog missing any of the three plan tiers is a broken read (the
-    // renderer would drop plan cards) — treat it like a failure and let the
+    // renderer would drop plan cards) â€” treat it like a failure and let the
     // cache / bundled fallback stand.
     if (plans.length < PLAN_TIERS.length || topups.length === 0) return null;
     return { plans, topups };
@@ -129,3 +129,7 @@ export function _resetPricingCatalogForTests(): void {
   cachedAt = 0;
   inFlight = null;
 }
+
+
+
+

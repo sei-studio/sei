@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat store (260728, rebuilt 260803).
  *
  * It used to be deliberately thin, because backseat's real UI was a separate
@@ -414,7 +414,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
     // player's own line carries none, which resets it here as it does in main.
     offLine = sei.onBackseatLine?.((l) => capture?.noteSpoke(l.quietExtraMs ?? 0)) ?? null;
   } catch {
-    /* preload without the backseat bridge — refresh() still reconciles */
+    /* preload without the backseat bridge â€” refresh() still reconciles */
   }
 
   return {
@@ -647,3 +647,7 @@ if (import.meta.hot) {
     clearWatchTimer();
   });
 }
+
+
+
+

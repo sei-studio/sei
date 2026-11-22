@@ -1,4 +1,4 @@
-# WorldLink analytics (261105)
+﻿# WorldLink analytics (261105)
 
 WorldLink was called SeiLink until 261106; the event names keep `seilink_*`.
 
@@ -269,3 +269,7 @@ the move-in sheet shows the custom-image line (her look is an uploaded
 picture with no avatar and no face set, `worldlinkCustomImage`), and every
 `seilink_movein_sheet` action of that sheet carries `custom_image_notice:
 true`. Proceed rate = `confirmed` / `shown` with that prop.
+
+
+
+

@@ -1,13 +1,13 @@
-/**
- * Backseat capture worker — the ring buffer, the local signals, and the
+﻿/**
+ * Backseat capture worker â€” the ring buffer, the local signals, and the
  * image-grid compositor. Runs off the main thread because the capture loop must
  * survive the player being in a fullscreen game with Sei behind it: a worker is
  * never rAF-throttled, and MediaStreamTrackProcessor's readable is
  * transferable, so the frames come straight here.
  *
- * ── Why this does not hold 900 frames ────────────────────────────────────
+ * â”€â”€ Why this does not hold 900 frames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
- * At 60 fps, BUFFER_MS of retained 720p video is several hundred raw frames —
+ * At 60 fps, BUFFER_MS of retained 720p video is several hundred raw frames â€”
  * several GB, or 60 JPEG encodes a second, and neither is survivable on a
  * machine that is also running a game.
  *
@@ -24,8 +24,8 @@
  *
  * 260801: this used to keep ONE frame per one-second bucket, chosen by running
  * argmax over audio gain. That made the cell spacing depend on where the loud
- * moments fell — consecutive cells 40 ms to 1.9 s apart, under a prompt that
- * claimed "about a second apart" — which is why the companion could never read
+ * moments fell â€” consecutive cells 40 ms to 1.9 s apart, under a prompt that
+ * claimed "about a second apart" â€” which is why the companion could never read
  * a sequence off the grid. Uniform sampling plus a fixed offset table replaces
  * it, and the selection rule no longer depends on audio at all (which also
  * retires the video-only special case it used to need).
@@ -89,7 +89,7 @@ interface Sample {
   thumb: Uint8ClampedArray;
 }
 
-// ── Worker state ──────────────────────────────────────────────────────────
+// â”€â”€ Worker state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let cellCanvas: OffscreenCanvas | null = null;
 let cellCtx: OffscreenCanvasRenderingContext2D | null = null;
@@ -134,7 +134,7 @@ let encodes = 0;
 /**
  * Periodic signal report (260728), so "is the jolt arm alive" is answerable
  * from the dev console instead of by faith: the controller logs each one, and
- * the overlay's console is forwarded to the terminal in dev. Numbers only —
+ * the overlay's console is forwarded to the terminal in dev. Numbers only â€”
  * the controller owns the wording.
  */
 const STATS_INTERVAL_MS = 10_000;
@@ -144,7 +144,7 @@ let lastSceneThumbAt = 0;
 let statsFramesSeen = 0;
 let statsEncodes = 0;
 
-// ── Setup ─────────────────────────────────────────────────────────────────
+// â”€â”€ Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ensureCanvases(): void {
   if (cellCanvas) return;
@@ -166,7 +166,7 @@ function ensureCanvases(): void {
 /**
  * Draw a source into a cell, preserving aspect ratio with letterbox/pillarbox
  * bars rather than stretching. The cell is 602x336 (1.79:1) and a 16:9 source
- * is 1.78:1, so on a normal game window the bars are about two pixels — but
+ * is 1.78:1, so on a normal game window the bars are about two pixels â€” but
  * the player can share ANY window, including a portrait one, and a stretched
  * frame is a frame the model reads wrong.
  */
@@ -198,7 +198,7 @@ const JOLT_THRESHOLDS = {
   refractoryMs: JOLT_REFRACTORY_MS,
 };
 
-// ── Sampling ──────────────────────────────────────────────────────────────
+// â”€â”€ Sampling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Freeze the current frame into the ring. The copy onto the encode surface is
@@ -313,7 +313,7 @@ function round3n(n: number | null): number | null {
   return n === null ? null : Math.round(n * 1000) / 1000;
 }
 
-// ── Grid compositing ──────────────────────────────────────────────────────
+// â”€â”€ Grid compositing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The sample closest in time to `target`, or null if the ring is empty. */
 function nearest(target: number): Sample | null {
@@ -332,7 +332,7 @@ function nearest(target: number): Sample | null {
 
 /**
  * Build the grid: one cell per entry in GRID_OFFSETS_S, oldest in the top-left,
- * filled row-first — the arrangement IG-VLM (arXiv 2403.18406) found best, and
+ * filled row-first â€” the arrangement IG-VLM (arXiv 2403.18406) found best, and
  * the one the prompt describes to the model.
  *
  * Every cell is resolved independently against wall-clock time rather than by
@@ -429,7 +429,7 @@ async function b64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
-// ── Message plumbing ──────────────────────────────────────────────────────
+// â”€â”€ Message plumbing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function consume(readable: ReadableStream<VideoFrame>): Promise<void> {
   const reader = readable.getReader();
@@ -495,3 +495,7 @@ self.onmessage = async (e: MessageEvent): Promise<void> => {
 };
 
 export {};
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * profileRows (261107, reworked by product call 261110): who may use which
  * profile row, the owner page's sections, a foreign companion's tabs, and
  * the analytics shape.
@@ -268,7 +268,7 @@ describe('lock tooltip', () => {
     expect(lockTipKey('builtin')).toMatch(/^\{name\} is a built-in companion/);
     expect(lockTipKey('world')).toMatch(/another player/);
     expect(lockTipKey('awakened')).toMatch(/awakened by Sei/);
-    for (const k of ['builtin', 'world', 'awakened'] as const) expect(lockTipKey(k)).not.toContain('—');
+    for (const k of ['builtin', 'world', 'awakened'] as const) expect(lockTipKey(k)).not.toContain('â€”');
   });
 });
 
@@ -302,3 +302,7 @@ describe('analytics (shape only)', () => {
     expect(() => trackProfileViewed('owner', 'custom', 'library', true)).not.toThrow();
   });
 });
+
+
+
+

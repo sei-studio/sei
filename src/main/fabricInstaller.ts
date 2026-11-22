@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fabric Loader setup for a vanilla `.minecraft`, without Java.
  *
  * Normal path (R6, 260929): no installer jar, no Java.
@@ -62,7 +62,7 @@ const USER_AGENT = 'sei-electron/0.1.0';
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 /** 90s for the fallback `java -jar fabric-installer ...` exec. */
 const INSTALLER_EXEC_TIMEOUT_MS = 90_000;
-/** ZIP magic — first 4 bytes of every JAR file. */
+/** ZIP magic â€” first 4 bytes of every JAR file. */
 const ZIP_MAGIC = [0x50, 0x4B, 0x03, 0x04] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -129,7 +129,7 @@ async function fetchBytesWithTimeout(
  * PATH only if the bundle is absent. Returns null when neither is available.
  *
  * The bundled-first probe is what makes the wizard work without the user
- * installing or configuring Java themselves — Minecraft's launcher already
+ * installing or configuring Java themselves â€” Minecraft's launcher already
  * installed a JRE for them when they first ran the vanilla profile.
  */
 export async function findJavaExecutable(mcInstall: McInstall): Promise<string | null> {
@@ -141,7 +141,7 @@ export async function findJavaExecutable(mcInstall: McInstall): Promise<string |
     return bundled;
   }
   // 2) System PATH fallback. `java -version` writes its banner to STDERR
-  //    but exits 0 on success. Failing spawn (ENOENT) → catch → keep probing.
+  //    but exits 0 on success. Failing spawn (ENOENT) â†’ catch â†’ keep probing.
   try {
     await execFile('java', ['-version'], { timeout: 5_000 });
     logger.info('fabricInstaller: found `java` on system PATH');
@@ -212,7 +212,7 @@ async function searchForJavaBin(
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch {
-    return null; // dir absent/unreadable — normal for non-Lunar machines
+    return null; // dir absent/unreadable â€” normal for non-Lunar machines
   }
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -264,7 +264,7 @@ async function findWindowsVendorJava(): Promise<string | null> {
     try {
       entries = await fs.readdir(root);
     } catch {
-      continue; // vendor root absent — normal
+      continue; // vendor root absent â€” normal
     }
     const jdks = entries
       .filter((e) => /^(jdk|jre)/i.test(e))
@@ -862,3 +862,7 @@ async function isDir(p: string): Promise<boolean> {
     return false;
   }
 }
+
+
+
+

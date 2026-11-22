@@ -1,5 +1,5 @@
-/**
- * FreePlayBackBanner — "Your free play is back." (260926).
+﻿/**
+ * FreePlayBackBanner â€” "Your free play is back." (260926).
  *
  * The credit wall used to read as an exit: of 16 users who hit it in the
  * analytics sample, 1 came back. Free play resets every week on its own, so
@@ -94,3 +94,7 @@ export function FreePlayBackBanner(): React.ReactElement | null {
     />
   );
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * ChatgptPlanSettings — the ChatGPT plan rows in Settings → AI (261017,
+﻿/**
+ * ChatgptPlanSettings â€” the ChatGPT plan rows in Settings â†’ AI (261017,
  * issue #46). Two shapes:
  *
  * - `active` (the picked provider is the ChatGPT plan): the account picker
@@ -218,7 +218,7 @@ function ChatgptPlanRows({ active, onUsePlan, compact = false }: ChatgptPlanSett
     );
   }
 
-  // ── active: the ChatGPT plan is the picked provider ──
+  // â”€â”€ active: the ChatGPT plan is the picked provider â”€â”€
   if (!activeAcc || !activeAcc.signedIn) {
     return (
       <>
@@ -367,3 +367,7 @@ function ChatgptPlanRows({ active, onUsePlan, compact = false }: ChatgptPlanSett
     );
   }
 }
+
+
+
+

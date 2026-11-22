@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the Chooser seam.
  *
  *   choose(state, options, history) -> { index, probs? } | { action }
@@ -159,3 +159,7 @@ export class ProbabilityChooser implements Chooser {
     return { index: best, probs, usage, latencyMs: Date.now() - t0, scratch: `${this.name} picked ${best} p=${probs[best]!.toFixed(2)}` };
   }
 }
+
+
+
+

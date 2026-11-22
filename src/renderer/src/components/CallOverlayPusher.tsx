@@ -1,5 +1,5 @@
-/**
- * AvatarOverlayPusher (260706 as CallOverlayPusher; 260804 avatar rework) —
+﻿/**
+ * AvatarOverlayPusher (260706 as CallOverlayPusher; 260804 avatar rework) â€”
  * bridges app state to the always-on-top avatar overlay window. Renders
  * nothing; it watches the avatar mode + activity surfaces + call state and
  * pushes the overlay's desired state to main (voice:overlay-set), which
@@ -10,7 +10,7 @@
  * the roster via getState() inside the effect keeps it OFF the dependency
  * list, so a routine character-status update does not re-push.
  *
- * 260804: the player's own tile is GONE — the overlay is the companion's
+ * 260804: the player's own tile is GONE â€” the overlay is the companion's
  * presence on the desktop, not a mirror. Which companions show is
  * computeAvatarIds (pure, tested): 'activity' = call members + live game/
  * share/summon characters; 'always' falls back to the most recently
@@ -63,7 +63,7 @@ export function CallOverlayPusher(): null {
   const manifests = useAvatarStore((s) => s.manifests);
   const ensureManifest = useAvatarStore((s) => s.ensure);
 
-  // Activity surfaces beyond the call itself — same definitions as
+  // Activity surfaces beyond the call itself â€” same definitions as
   // activeGameFor/avatarActivityBadge, inlined over subscribed slices so a
   // game starting/ending re-pushes.
   const activityIds = [
@@ -99,7 +99,7 @@ export function CallOverlayPusher(): null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, ensureManifest]);
 
-  // Arm the TTS level tap only while a shown participant is Live2D — the tap
+  // Arm the TTS level tap only while a shown participant is Live2D â€” the tap
   // has a real cost on the no-pitch audio path (see avatarLevelTap).
   useEffect(() => {
     setAvatarLevelTapEnabled(mode !== 'off' && ids.some((id) => !!manifests[id]));
@@ -163,3 +163,7 @@ export function CallOverlayPusher(): null {
 
   return null;
 }
+
+
+
+

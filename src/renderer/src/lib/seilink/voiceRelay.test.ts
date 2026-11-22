@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { SeilinkHostStatus } from '@shared/seilinkHost';
 import { desktopResident, residentSpeaking } from './voiceRelay';
 import { relaysLevelFor, setAvatarLevelTapEnabled, setDesktopLevelResident } from '../voice/avatarLevelTap';
@@ -50,3 +50,7 @@ describe('relaysLevelFor (261110)', () => {
     setAvatarLevelTapEnabled(false);
   });
 });
+
+
+
+

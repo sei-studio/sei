@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Local speech (260816, china-compat W3+W4): sherpa-onnx TTS (en+zh, f+m) and
  * SenseVoice STT for LOCAL-mode users. ElevenLabs paths are untouched.
  *
- * ── Contract for the Settings/onboarding UI (W5/W6 — not built here) ────────
+ * â”€â”€ Contract for the Settings/onboarding UI (W5/W6 â€” not built here) â”€â”€â”€â”€â”€â”€â”€â”€
  *
  * Config (UserConfig, renderer-settable through saveConfig):
  *   tts_engine: 'elevenlabs' | 'local'      absent = 'elevenlabs'. Read only
@@ -17,14 +17,14 @@
  *     SenseVoice when ui_language === 'zh' AND the pack is downloaded.
  *
  * IPC (see shared/ipc.ts `speech` namespace, zod-validated in main/ipc.ts):
- *   speech:pack-status    {} → { packs: Record<packId, {state, pct?, bytes}> }
+ *   speech:pack-status    {} â†’ { packs: Record<packId, {state, pct?, bytes}> }
  *     state: 'absent' | 'downloading' | 'ready'; bytes = archive size (what a
- *     download costs — show it in the "Download? (XX MB)" prompt).
- *   speech:pack-download  { packId } → resolves when ready; progress rides the
+ *     download costs â€” show it in the "Download? (XX MB)" prompt).
+ *   speech:pack-download  { packId } â†’ resolves when ready; progress rides the
  *     speech:pack-state push (full PackStates snapshot per change).
- *   speech:pack-remove    { packId } → removes the pack from disk.
- *   speech:stt-transcribe { pcm: ArrayBuffer (Float32), sampleRate } →
- *     { text, language? } — SenseVoice, called by the dictation path.
+ *   speech:pack-remove    { packId } â†’ removes the pack from disk.
+ *   speech:stt-transcribe { pcm: ArrayBuffer (Float32), sampleRate } â†’
+ *     { text, language? } â€” SenseVoice, called by the dictation path.
  *
  * Typed errors the UI must map:
  *   VOICE_PACK_MISSING:<packId>   thrown by TTS synthesis and STT transcribe
@@ -35,7 +35,7 @@
  *
  * Pack ids: 'tts-en' (~78 MB, both en voices), 'tts-zh' (~30 MB, both zh
  * voices), 'stt-sensevoice' (~155 MB). Which packs a given character needs:
- * resolveLocalVoice(voiceId, language) → LOCAL_VOICE_SPEC.
+ * resolveLocalVoice(voiceId, language) â†’ LOCAL_VOICE_SPEC.
  * Models live in <userData>/speech-models/<packId>/ (device-global).
  */
 export { SPEECH_PACKS, SPEECH_PACK_IDS, isSpeechPackId, type SpeechPackId } from './packs';
@@ -66,3 +66,7 @@ export {
 } from './engine';
 export { detectSpokenLanguage } from './spokenLanguage';
 export { pickKokoroVoice } from './kokoro';
+
+
+
+

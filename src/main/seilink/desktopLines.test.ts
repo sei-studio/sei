@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ powerMonitor: { getSystemIdleTime: () => 0 } }));
 
@@ -181,3 +181,7 @@ describe('seilink desktop line analytics (261105)', () => {
     expect(pokeEventAllowed(last, 'free_cap', 5)).toBe(true);
   });
 });
+
+
+
+

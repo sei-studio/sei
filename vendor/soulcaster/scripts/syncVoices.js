@@ -1,4 +1,4 @@
-// Ensure every voice in src/voices.js exists in an ElevenLabs account.
+﻿// Ensure every voice in src/voices.js exists in an ElevenLabs account.
 //
 //   ELEVENLABS_API_KEY=... node scripts/syncVoices.js [--dry-run]
 //
@@ -45,8 +45,8 @@ for (const v of VOICES) {
   }
   if (v.owner === null) {
     // Premade voices should always be present; missing means the account is
-    // unusual (or ElevenLabs retired the voice) — flag loudly.
-    console.error(`MISSING PREMADE: ${v.label} (${v.id}) — not in account and cannot be added by owner id`);
+    // unusual (or ElevenLabs retired the voice) â€” flag loudly.
+    console.error(`MISSING PREMADE: ${v.label} (${v.id}) â€” not in account and cannot be added by owner id`);
     failed += 1;
     continue;
   }
@@ -58,7 +58,7 @@ for (const v of VOICES) {
   try {
     const res = await api(`/v1/voices/add/${v.owner}/${v.id}`, {
       method: 'POST',
-      body: JSON.stringify({ new_name: `Sei — ${v.label}` }),
+      body: JSON.stringify({ new_name: `Sei â€” ${v.label}` }),
     });
     if (res.voice_id !== v.id) {
       // Contract check: the add must preserve the public id or the table is broken.
@@ -69,10 +69,14 @@ for (const v of VOICES) {
       added += 1;
     }
   } catch (err) {
-    console.error(`FAILED: ${v.label} (${v.id}) — ${err.message}`);
+    console.error(`FAILED: ${v.label} (${v.id}) â€” ${err.message}`);
     failed += 1;
   }
 }
 
 console.log(`\n${added} added, ${skipped} already present, ${failed} failed (pool: ${VOICES.length})`);
 process.exit(failed ? 1 : 0);
+
+
+
+

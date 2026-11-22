@@ -1,21 +1,21 @@
-/**
- * IconRail / Sidebar — Discord-style vertical sidebar.
+﻿/**
+ * IconRail / Sidebar â€” Discord-style vertical sidebar.
  *
- * B3 refactor of the prior fixed-icon rail. New layout top→bottom:
- *   1. Home pill (RosterIcon — 2×2 grid) — active when view ∈ {home, character, add-character}
- *   2. Compass / World icon — sits directly under Home (mockup Sidebar parity).
+ * B3 refactor of the prior fixed-icon rail. New layout topâ†’bottom:
+ *   1. Home pill (RosterIcon â€” 2Ã—2 grid) â€” active when view âˆˆ {home, character, add-character}
+ *   2. Compass / World icon â€” sits directly under Home (mockup Sidebar parity).
  *      Opens the World tab (sets homeTab='world' then navigate home); active
  *      while the World tab is selected.
  *   3. Thin divider
  *   4. Scrollable 40px character sockets (--radius squares) sorted by last_launched desc,
  *      then created desc. Active when view.kind==='character' && id matches.
  *      Each socket carries a top-right activity badge when the character is
- *      on a voice call (phone) or in a live game session (controller) — see
+ *      on a voice call (phone) or in a live game session (controller) â€” see
  *      avatarActivityBadge below.
- *   5. Round + button — opens the awaken flow; hidden once every companion
+ *   5. Round + button â€” opens the awaken flow; hidden once every companion
  *      slot is taken (260731b)
  *   6. Flex spacer
- *   7. Playtime icon — StarIcon (4-point). 261110: opens the Playtime page on
+ *   7. Playtime icon â€” StarIcon (4-point). 261110: opens the Playtime page on
  *      every backend (it has the Sei / ChatGPT / My keys tabs and every
  *      switch, with the sign-in a signed-out "Switch to Sei" needs). Before,
  *      the local backend's star opened its own cloud-switch prompt.
@@ -23,11 +23,11 @@
  *   9. "Update Sei" (UpdateRailButton, 261023): only while an update is
  *      downloading or ready; full rail width, flush with the bottom edge
  *
- * Removed: Minecraft button, Add-game (Plus → coming-soon) button.
+ * Removed: Minecraft button, Add-game (Plus â†’ coming-soon) button.
  * Scrollbar hidden on the avatar cluster; only the avatar cluster scrolls.
  *
- * Source: B3 spec; D-34 (no Minecraft branding in rail); UI-SPEC §Component
- * Inventory → IconRail/Sidebar (updated by B3 sub-task).
+ * Source: B3 spec; D-34 (no Minecraft branding in rail); UI-SPEC Â§Component
+ * Inventory â†’ IconRail/Sidebar (updated by B3 sub-task).
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -64,7 +64,7 @@ import { useT } from '../lib/i18n';
  * SINGLE position:fixed tooltip outside any overflow:hidden / scroll
  * container. Discord-style tooltips inside .avatarCluster (overflow-y: auto)
  * were getting clipped on the x-axis because CSS forces the perpendicular
- * overflow when one axis is auto/scroll — position:absolute children can't
+ * overflow when one axis is auto/scroll â€” position:absolute children can't
  * escape that without JS-driven positioning.
  *
  * Each rail button calls setHover with the label + the y-anchor of its
@@ -98,7 +98,7 @@ interface RailButtonProps {
   onHoverStart?: () => void;
   setHover: SetHover;
   children: React.ReactNode;
-  /** Tutorial spotlight anchor (260728) — see components/tutorial. */
+  /** Tutorial spotlight anchor (260728) â€” see components/tutorial. */
   dataTutorial?: string;
 }
 
@@ -150,15 +150,15 @@ function RailButton({
  * Presence-style activity badge on a rail avatar: which live activity (if
  * any) the character is engaged in right now.
  *
- *   'call' — the character is a participant on the open voice call
+ *   'call' â€” the character is a participant on the open voice call
  *            (status 'live', or 'connecting' while the first dial is in
  *            flight).
- *   'game' — the character has an active game session: a chess game that
+ *   'game' â€” the character has an active game session: a chess game that
  *            has not ended (both 'preparing' engine warm-up and 'active'
  *            count; the session exists from the player's point of view),
  *            an active screen-share watch session, or an online Minecraft
  *            bot session.
- *   null   — no live activity, no badge.
+ *   null   â€” no live activity, no badge.
  *
  * A call wins over a game when both are somehow live for the same
  * character. Pure function of the store slices so it can be unit tested
@@ -169,15 +169,15 @@ export type AvatarActivityBadge = 'call' | 'game' | null;
 export interface ActivityBadgeStores {
   /** useVoiceStore.status ('idle' | 'connecting' | 'live' | 'error'). */
   callStatus: string;
-  /** useVoiceStore.participants — companions on the open call. */
+  /** useVoiceStore.participants â€” companions on the open call. */
   callParticipants: readonly string[];
-  /** useChessStore.games — characterId → last game snapshot (or null). */
+  /** useChessStore.games â€” characterId â†’ last game snapshot (or null). */
   chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
-  /** useDataStore.summons — characterId → bot status (absent = not summoned).
+  /** useDataStore.summons â€” characterId â†’ bot status (absent = not summoned).
    * The authoritative "online MC bot session" signal; the mc dashboard
    * store's snapshots are telemetry keyed off this same session. */
   summons: Readonly<Record<string, { kind: string } | undefined>>;
-  /** useBackseatStore.active — characterId → true while watching a screen
+  /** useBackseatStore.active â€” characterId â†’ true while watching a screen
    * share (260728). The share mounts no panel in the chat game area: it is
    * drawn inside the call view (260803; before that, its own always-on-top
    * window), so this flag is the ONLY signal the rail has that the character
@@ -210,7 +210,7 @@ interface AvatarButtonProps {
   characterName: string;
   portraitImage: string | null;
   active: boolean;
-  /** This character has a live (or connecting) bot session — frame + glint. */
+  /** This character has a live (or connecting) bot session â€” frame + glint. */
   summoned: boolean;
   /** Live activity badge on the avatar's top-right corner (null = none). */
   activity: AvatarActivityBadge;
@@ -294,7 +294,7 @@ function AvatarButton({
           />
         )}
       </span>
-      {/* Activity badge — sits OUTSIDE .avatarClip so the avatar crop
+      {/* Activity badge â€” sits OUTSIDE .avatarClip so the avatar crop
           doesn't shave it; the panel-colored ring separates it from the
           avatar art. aria-hidden: the activity is already in the button's
           aria-label suffix. */}
@@ -313,7 +313,7 @@ export function IconRail(): React.ReactElement {
   const navigate = useUiStore((s) => s.navigate);
   const setHomeTab = useUiStore((s) => s.setHomeTab);
   const characters = useDataStore((s) => s.characters);
-  // Per-character summoned state (multi-summon) — drives the avatar frame+glint.
+  // Per-character summoned state (multi-summon) â€” drives the avatar frame+glint.
   const summons = useDataStore((s) => s.summons);
   // Live-activity badge inputs (read-only slices; see avatarActivityBadge).
   const callStatus = useVoiceStore((s) => s.status);
@@ -335,7 +335,7 @@ export function IconRail(): React.ReactElement {
   // The Home and World tabs are sibling surfaces; a character profile (and the
   // add-character flow) is opened ON TOP of whichever tab the user was on.
   // ITEM 7: opening a character from the World page must KEEP the rail on World
-  // — previously `view.kind === 'character'` unconditionally lit the Home pill,
+  // â€” previously `view.kind === 'character'` unconditionally lit the Home pill,
   // so the rail snapped to Home on every profile open. Gate both pills on the
   // preserved `homeTab` instead (it isn't mutated when navigating to a profile),
   // so the rail reflects the originating tab.
@@ -345,7 +345,7 @@ export function IconRail(): React.ReactElement {
   const homeActive = onHomeSurface && homeTab === 'home';
   const worldActive = onHomeSurface && homeTab === 'world';
 
-  // Filter to the user's home library — the SHARED isHomeCharacter rule, so
+  // Filter to the user's home library â€” the SHARED isHomeCharacter rule, so
   // the rail, the Home grid, and the slots indicator never diverge. (260706:
   // an inline copy here skipped the owner check when signed out, so cached
   // copies of other users' World characters showed on the rail while the
@@ -385,7 +385,7 @@ export function IconRail(): React.ReactElement {
           >
             <RosterIcon size={22} />
           </RailButton>
-          {/* World nav — directly under Home (mockup Sidebar parity). */}
+          {/* World nav â€” directly under Home (mockup Sidebar parity). */}
           <RailButton
             active={worldActive}
             onClick={handleCompassClick}
@@ -404,8 +404,8 @@ export function IconRail(): React.ReactElement {
 
         {/*
           Avatar cluster: scrollable column of character circles followed by
-          the round + (new) button. Keeping plus inside this cluster — and
-          shrinking the cluster to content height — means it sits RIGHT under
+          the round + (new) button. Keeping plus inside this cluster â€” and
+          shrinking the cluster to content height â€” means it sits RIGHT under
           the last character instead of being pushed to the bottom of the rail
           by a flex spacer. (The World/compass nav moved up under Home.)
         */}
@@ -437,9 +437,9 @@ export function IconRail(): React.ReactElement {
             />
           ))}
           {/* Hidden once the party is full (260731b), which reverts the 260728
-              "always rendered" rule. That rule was written for a real bug — the
+              "always rendered" rule. That rule was written for a real bug â€” the
               button vanished in states where the COUNTED set and the VISIBLE
-              roster disagreed, so it read as broken rather than as full — and it
+              roster disagreed, so it read as broken rather than as full â€” and it
               paid for discoverability with a dead-end click and a dialog.
 
               The two sets cannot disagree here: sortedCharacters IS
@@ -468,7 +468,7 @@ export function IconRail(): React.ReactElement {
         <div className={styles.spacer} />
 
         <div className={styles.cluster}>
-          {/* 260725: three-state. UNKNOWN (null) renders NEITHER button — the
+          {/* 260725: three-state. UNKNOWN (null) renders NEITHER button â€” the
               rail must never claim a mode main hasn't reported (a guessed
               cloud switch here painted BYOK over live cloud billing). */}
           {aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local' ? (
@@ -522,3 +522,7 @@ export function IconRail(): React.ReactElement {
     </>
   );
 }
+
+
+
+

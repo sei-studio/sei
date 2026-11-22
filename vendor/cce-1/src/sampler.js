@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Gumbel-top-k sampling over the tempered Maia distribution.
  *
  * s(m) = log p(m) / T + g_m, g_m ~ Gumbel(0, 1); keeping the top k equals
@@ -73,3 +73,7 @@ export function sampleBottomTail(dist, { exclude = new Set(), rng = Math.random 
   const tail = sorted.slice(0, Math.max(1, Math.floor(sorted.length / 4)));
   return tail[Math.floor(rng() * tail.length)];
 }
+
+
+
+

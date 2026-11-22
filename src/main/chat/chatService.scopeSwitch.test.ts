@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chat turns across an account switch (260926).
  *
  * A turn is tagged with the scope it began in (withScopedTurn). If the
@@ -187,4 +187,8 @@ describe('chat turns across an account switch', () => {
     expect((await chatStoreRead(CHAR)).filter((r) => r.role === 'companion')).toHaveLength(0);
   });
 });
+
+
+
+
 

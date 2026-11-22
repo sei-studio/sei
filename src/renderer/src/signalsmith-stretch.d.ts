@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Types for `signalsmith-stretch` (MIT), the WASM/AudioWorklet build of the
  * Signalsmith Stretch pitch/time library. The package ships plain .js/.mjs with
  * no declarations, so the surface we use is declared here.
@@ -59,3 +59,7 @@ declare module 'signalsmith-stretch' {
     },
   ): Promise<StretchNode>;
 }
+
+
+
+

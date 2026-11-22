@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ChatgptPlanHost (261017, issue #46, review round 2): the welcome waits for
  * ChatGPT to be the backend actually in use, and the latched AUTH_REJECTED /
  * REQUEST_REJECTED answers open their own dialogs. Rendered with
@@ -74,3 +74,7 @@ describe('ChatgptPlanHost', () => {
     expect(html).toContain('Try again');
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// Furnace session: open + load input/fuel + take smelted output (MCRAFT-01, D-09).
+﻿// Furnace session: open + load input/fuel + take smelted output (MCRAFT-01, D-09).
 //
 // Near-exact mirror of container.js: FURNACE_SESSION is module-scoped so the
 // orchestrator can call closeFurnaceSession() on chain end / abort to enforce
@@ -163,7 +163,7 @@ export async function openFurnaceAction(args, bot, config) {
   const signal = config?.signal
   if (signal?.aborted) return 'aborted'
 
-  // Never overlap sessions — a leaked window desyncs the next open.
+  // Never overlap sessions â€” a leaked window desyncs the next open.
   await closeFurnaceSession()
 
   const target = await resolveBlock(args, bot)
@@ -171,7 +171,7 @@ export async function openFurnaceAction(args, bot, config) {
 
   const dist = bot.entity?.position?.distanceTo?.(target.position)
   if (typeof dist === 'number' && dist > REACH) {
-    return `target out of reach (${dist.toFixed(1)}m, need ≤${REACH})`
+    return `target out of reach (${dist.toFixed(1)}m, need â‰¤${REACH})`
   }
 
   const timeoutMs = args.timeout_ms ?? config?.openFurnace_timeout_ms ?? OPEN_TIMEOUT_MS
@@ -268,7 +268,7 @@ export async function smeltInputAction(args, bot, config) {
       return r ? `smelt ${item} failed: ${r}` : `smelt ${item} failed`
     })
 
-  // Per container discipline: do NOT close session on transfer timeout —
+  // Per container discipline: do NOT close session on transfer timeout â€”
   // chain-end cleanup handles it.
   const tmo = new Promise((r) => setTimeout(() => r('timeout'), timeoutMs))
   const abrt = attachAbort(signal, closeFurnaceSession)
@@ -471,3 +471,7 @@ export async function takeSmeltedAction(args, bot, config) {
     try { furnace.removeListener?.('close', onClose) } catch {}
   }
 }
+
+
+
+

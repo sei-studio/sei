@@ -1,22 +1,22 @@
-/**
+﻿/**
  * Wizard install orchestrator.
  *
- * Composes four modules — mcInstallScan, fabricInstaller, customSkinLoader,
- * wizardStateStore — into a single `runWizardInstall(args)` flow that the
+ * Composes four modules â€” mcInstallScan, fabricInstaller, customSkinLoader,
+ * wizardStateStore â€” into a single `runWizardInstall(args)` flow that the
  * renderer drives via the `wizard:install` IPC handler.
  *
  * Three exports:
- *   - `runWizardInstall(args)` — the orchestrator. For each selected install
- *     id, in series: scan-match → (vanilla only) installFabricLoader →
- *     downloadCustomSkinLoader → writeCustomSkinLoaderConfig → persist state.
+ *   - `runWizardInstall(args)` â€” the orchestrator. For each selected install
+ *     id, in series: scan-match â†’ (vanilla only) installFabricLoader â†’
+ *     downloadCustomSkinLoader â†’ writeCustomSkinLoaderConfig â†’ persist state.
  *     Emits per-step `WizardProgressEvent`s via `args.onProgress` (which
  *     the IPC handler forwards via `webContents.send` on the
  *     `wizard:progress` push channel).
- *   - `registerWizardSession(sessionId)` — allocates a new AbortController
+ *   - `registerWizardSession(sessionId)` â€” allocates a new AbortController
  *     and stores it in a module-private `Map<sessionId, AbortController>`.
  *     `runWizardInstall` calls this on entry; explicit export lets tests
  *     introspect.
- *   - `abortWizardSession(sessionId)` — looks up the session's
+ *   - `abortWizardSession(sessionId)` â€” looks up the session's
  *     AbortController and fires `.abort()` so the in-flight fetch /
  *     execFile / writeFile in the install modules unwinds through the
  *     AbortSignal chain. Returns true if a session was aborted.
@@ -24,14 +24,14 @@
  * Cross-cutting:
  *   - SERIES not parallel. Multiple concurrent `java -jar fabric-installer`
  *     processes would thrash CPU + the UI shows one progress row at a
- *     time per UI-SPEC §InstallProgressList.
+ *     time per UI-SPEC Â§InstallProgressList.
  *   - On abort mid-run, we emit `cancelled` for the current install and
- *     BREAK the loop — the user cancelled the whole run, not just this row.
+ *     BREAK the loop â€” the user cancelled the whole run, not just this row.
  *   - The session entry is `finally`-deleted at the end of `runWizardInstall`
  *     so cancellation after completion is a silent no-op (the map lookup
- *     returns undefined → abortWizardSession returns false).
- *   - Loader-kind decision: vanilla → fabric (installer runs Fabric step
- *     first if no loader present yet); curseforge → uses the scan's
+ *     returns undefined â†’ abortWizardSession returns false).
+ *   - Loader-kind decision: vanilla â†’ fabric (installer runs Fabric step
+ *     first if no loader present yet); curseforge â†’ uses the scan's
  *     detected loader (forge/fabric), defaulting to forge for null because
  *     the vast majority of CF modpacks ship Forge.
  *
@@ -40,7 +40,7 @@
  *   - src/main/fabricInstaller.ts (installFabricLoader)
  *   - src/main/customSkinLoader.ts (downloadCustomSkinLoader + writeCustomSkinLoaderConfig)
  *   - src/main/wizardStateStore.ts (loadWizardState + saveWizardState)
- *   - CONTEXT.md §"First-launch wizard scope" (5 steps the orchestrator implements)
+ *   - CONTEXT.md Â§"First-launch wizard scope" (5 steps the orchestrator implements)
  *   - IPC-crossing abort via Map<sessionId, AbortController>
  */
 import { promises as fs } from 'node:fs';
@@ -76,7 +76,7 @@ const logger = {
  * Why this exists (260605 follow-up): the 260518-o1k T4 isolation change points
  * the Sei launcher profile at a fresh `<.minecraft>/sei/` gameDir. A fresh
  * gameDir means Minecraft writes a DEFAULT options.txt and re-shows the new-game
- * tutorial — users perceive this as "all my settings got reset." We carry the
+ * tutorial â€” users perceive this as "all my settings got reset." We carry the
  * user's existing settings forward by copying a small allowlist of state files
  * from the root `.minecraft` on FIRST creation only.
  *
@@ -85,7 +85,7 @@ const logger = {
  *     one-time bootstrap: once the user has launched (and possibly tweaked
  *     settings inside the isolated dir), we never clobber their edits on re-run.
  *   - Skip silently if the source is missing (fresh .minecraft with no options
- *     yet) — there's simply nothing to carry forward.
+ *     yet) â€” there's simply nothing to carry forward.
  *   - Best-effort: a copy failure logs a warn and continues; seeding must never
  *     block the install. options.txt is the important one (settings + the
  *     `tutorialStep:none` flag that suppresses the tutorial); servers.dat and
@@ -95,7 +95,7 @@ const logger = {
  * `<rootDir>/sei`.
  */
 async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void> {
-  // Files copied verbatim. options.txt also carries `tutorialStep` — copying it
+  // Files copied verbatim. options.txt also carries `tutorialStep` â€” copying it
   // forward both restores settings AND skips the tutorial in one shot.
   const fileAllowlist = ['options.txt', 'servers.dat', 'optionsof.txt', 'optionsshaders.txt'];
   for (const name of fileAllowlist) {
@@ -106,7 +106,7 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
       await fs.access(dest);
       continue;
     } catch {
-      /* dest missing → proceed to copy */
+      /* dest missing â†’ proceed to copy */
     }
     try {
       await fs.copyFile(src, dest);
@@ -119,7 +119,7 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
       }
     }
   }
-  // resourcepacks/ — copy the directory tree once, only if the user has packs
+  // resourcepacks/ â€” copy the directory tree once, only if the user has packs
   // and the isolated dir doesn't already have a populated folder.
   const rpSrc = path.join(rootDir, 'resourcepacks');
   const rpDest = path.join(seiGameDir, 'resourcepacks');
@@ -129,7 +129,7 @@ async function seedSeiGameDir(rootDir: string, seiGameDir: string): Promise<void
     try {
       destEntries = await fs.readdir(rpDest);
     } catch {
-      /* dest missing → treat as empty */
+      /* dest missing â†’ treat as empty */
     }
     if (srcEntries.length > 0 && destEntries.length === 0) {
       await fs.cp(rpSrc, rpDest, { recursive: true });
@@ -174,7 +174,7 @@ const sessions = new Map<string, AbortController>();
 /**
  * Allocate a fresh AbortController for the given sessionId and store it in
  * the module's session map. If a session with the same id already exists,
- * we abort the previous one first (defensive — shouldn't happen with
+ * we abort the previous one first (defensive â€” shouldn't happen with
  * `crypto.randomUUID()` but cheap to guard against).
  *
  * Returns the new controller so the caller (typically `runWizardInstall`)
@@ -197,7 +197,7 @@ export function registerWizardSession(sessionId: string): AbortController {
  * Abort the AbortController for the given session, if one exists. Returns
  * true if a session was found and aborted; false if no such session
  * (already cleaned up / never existed). This is the IPC-crossing abort
- * entry point — `wizard:cancel` IPC handler calls into here.
+ * entry point â€” `wizard:cancel` IPC handler calls into here.
  *
  * We do NOT delete the map entry here. `runWizardInstall`'s finally block
  * is the single owner of cleanup; deleting here too could race with
@@ -219,9 +219,9 @@ export interface RunWizardInstallArgs {
   sessionId: string;
   /** Subset of `scanMcInstalls()` ids the user selected in the wizard UI. */
   installIds: string[];
-  /** e.g. `http://127.0.0.1:54321` — captured from `skin:get-server-url`. */
+  /** e.g. `http://127.0.0.1:54321` â€” captured from `skin:get-server-url`. */
   skinServerBaseUrl: string;
-  /** installId → requested Minecraft version (vanilla only; see selectTargetMcVersion). */
+  /** installId â†’ requested Minecraft version (vanilla only; see selectTargetMcVersion). */
   mcVersions?: Record<string, string>;
   /**
    * Per-step progress callback. The IPC handler forwards each event to
@@ -241,8 +241,8 @@ function linkManifestKey(installId: string, mcVersion: string): string {
 
 /**
  * Determine which loader kind to use for the CSL download step, based on
- * the McInstall record. Vanilla → fabric (installer puts Fabric Loader in
- * place first; CSL Fabric build follows). CurseForge → use whatever the
+ * the McInstall record. Vanilla â†’ fabric (installer puts Fabric Loader in
+ * place first; CSL Fabric build follows). CurseForge â†’ use whatever the
  * scanner detected; default to forge for null because the vast majority of
  * CF modpacks ship Forge.
  */
@@ -273,7 +273,7 @@ function isCancellationError(err: unknown, signal: AbortSignal): boolean {
  * `WizardInstallResult` per install id (in the order supplied), including
  * `ok: false` rows for ids that no longer exist or were cancelled.
  *
- * NEVER throws — every install's failure is captured into the results
+ * NEVER throws â€” every install's failure is captured into the results
  * array so the renderer can render a per-row error state. The only
  * rejection path is invalid sessionId, which is a programmer error
  * surfaced before any state mutation.
@@ -283,7 +283,7 @@ export async function runWizardInstall(
 ): Promise<{ results: WizardInstallResult[] }> {
   const { sessionId, installIds, skinServerBaseUrl, mcVersions } = args;
 
-  // ── Pre-flight: validate sessionId ────────────────────────────────────
+  // â”€â”€ Pre-flight: validate sessionId â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (!sessionId || typeof sessionId !== 'string') {
     // Empty / non-string sessionId is a programmer error from the IPC
     // boundary (zod should have rejected). Surface as a hard error so a
@@ -295,7 +295,7 @@ export async function runWizardInstall(
   const results: WizardInstallResult[] = [];
 
   try {
-    // ── Re-scan: trust only paths the scanner currently reports ─────────
+    // â”€â”€ Re-scan: trust only paths the scanner currently reports â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Even though the wizard UI calls detectInstalls then install with the
     // returned ids, racing the user editing their filesystem between the
     // two calls means we MUST re-scan to confirm. Also gives us the
@@ -316,13 +316,13 @@ export async function runWizardInstall(
           error: 'FABRIC_INSTALL_FAILED',
           message: 'Cancelled.',
         });
-        // Don't try to process remaining ids — the user cancelled the run.
+        // Don't try to process remaining ids â€” the user cancelled the run.
         break;
       }
 
       const install = byId.get(installId);
       if (!install) {
-        // Install was selected in the UI but isn't in the current scan —
+        // Install was selected in the UI but isn't in the current scan â€”
         // user moved/deleted the MC dir between detect and install. Emit
         // a failed event so the row shows the error inline.
         onProgress({
@@ -343,7 +343,7 @@ export async function runWizardInstall(
       try {
         await processOneInstall(install, skinServerBaseUrl, ctl.signal, onProgress, results, mcVersions?.[installId] ?? null);
       } catch (err) {
-        // Defensive — processOneInstall is supposed to catch and push to
+        // Defensive â€” processOneInstall is supposed to catch and push to
         // results itself. This catch is a last-resort net for an
         // unexpected throw so the loop doesn't unwind for the remaining
         // installs.
@@ -373,7 +373,7 @@ export async function runWizardInstall(
         });
       }
 
-      // After processOneInstall, re-check the abort signal — if the user
+      // After processOneInstall, re-check the abort signal â€” if the user
       // hit Cancel during a step that completed before the signal fired
       // (e.g. between the last `await` and the loop continuation), break.
       if (ctl.signal.aborted) {
@@ -381,7 +381,7 @@ export async function runWizardInstall(
       }
     }
 
-    // ── Persist updated state ───────────────────────────────────────────
+    // â”€â”€ Persist updated state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Even on partial-failure runs, persist what succeeded. Only successful
     // installs are added to enabledInstallIds (the port-drift detector
     // only rewrites configs for installs that DID get setup successfully).
@@ -407,7 +407,7 @@ export async function runWizardInstall(
         lastSkinServerPort: port,
       });
     } catch (err) {
-      // State persistence failure is non-fatal — the actual install on
+      // State persistence failure is non-fatal â€” the actual install on
       // disk succeeded. Log it; user will re-detect on next launch.
       logger.warn(`wizard: persist state failed: ${(err as Error).message}`);
     }
@@ -425,8 +425,8 @@ export async function runWizardInstall(
  * cancellation so the caller can break the install loop.
  *
  * Stages (matching `WizardProgressEvent` variants):
- *   queued → (vanilla only: fabric-downloading + fabric-installing) →
- *   mod-downloading → mod-placing → config-writing → done
+ *   queued â†’ (vanilla only: fabric-downloading + fabric-installing) â†’
+ *   mod-downloading â†’ mod-placing â†’ config-writing â†’ done
  *
  * On `signal.aborted` partway through: emit `cancelled`, push the result,
  * re-throw so the orchestrator's outer loop can break.
@@ -443,11 +443,11 @@ async function processOneInstall(
 ): Promise<void> {
   const installId = install.id;
 
-  // ── Lunar early return (260518-o1k T3) ────────────────────────────────
+  // â”€â”€ Lunar early return (260518-o1k T3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Lunar Client doesn't support custom skin mods and has no
   // user-accessible mods/ directory. We never install here. The wizard UI
   // disables the row's checkbox (T7), so this branch is purely defensive
-  // — a UI bug that lets a Lunar id through the selection set won't
+  // â€” a UI bug that lets a Lunar id through the selection set won't
   // wedge the orchestrator.
   if (install.kind === 'lunar') {
     onProgress({ installId, stage: 'queued' });
@@ -461,7 +461,7 @@ async function processOneInstall(
     return;
   }
 
-  // ── Determine MC version (with fallback) ──────────────────────────────
+  // â”€â”€ Determine MC version (with fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Vanilla: the Fabric profile decides the version, so steer an unjoinable
   // or unreadable one to a verified, supported version (the launcher then
   // downloads that Minecraft on the profile's first play). CurseForge
@@ -485,13 +485,13 @@ async function processOneInstall(
     return;
   }
 
-  // ── Decide loader kind ────────────────────────────────────────────────
+  // â”€â”€ Decide loader kind â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const loaderKind = decideLoaderKind(install);
 
-  // ── Emit queued ────────────────────────────────────────────────────────
+  // â”€â”€ Emit queued â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   onProgress({ installId, stage: 'queued' });
 
-  // ── Fabric step (always on vanilla — installer is idempotent and
+  // â”€â”€ Fabric step (always on vanilla â€” installer is idempotent and
   // re-running ensures the launcher profile entry exists). CurseForge
   // instances already ship their own loader, so skip the step there.
   let installedFabricVersion: string | undefined;
@@ -540,12 +540,12 @@ async function processOneInstall(
     }
   }
 
-  // ── Compute target placement directory (260518-o1k T5) ────────────────
+  // â”€â”€ Compute target placement directory (260518-o1k T5) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // Vanilla installs get isolated under <.minecraft>/sei/ so the Fabric
   // gameDir on the Sei profile (set in T4) and the CSL JAR + config all
   // live together inside the isolated directory. CurseForge instances
-  // pass their own instance dir (unchanged behavior — instances are
+  // pass their own instance dir (unchanged behavior â€” instances are
   // already isolated per-instance and version-coherent by design).
   //
   // For vanilla we expect seiGameDir to be defined (T4's
@@ -558,17 +558,17 @@ async function processOneInstall(
     logger.warn(`wizard: seiGameDir missing for vanilla install ${installId}; falling back to ${install.path}`);
   }
 
-  // ── Seed the isolated gameDir from the user's existing .minecraft ──────
+  // â”€â”€ Seed the isolated gameDir from the user's existing .minecraft â”€â”€â”€â”€â”€â”€
   // First-launch-only carry-forward of settings + tutorial flag so the
   // isolated Sei profile doesn't present as a wiped, tutorial-laden install.
-  // Vanilla only — CurseForge instances are already their own gameDir.
+  // Vanilla only â€” CurseForge instances are already their own gameDir.
   if (install.kind === 'vanilla' && seiGameDir) {
     await seedSeiGameDir(install.path, seiGameDir);
   }
 
   const modsDir = path.join(targetDir, 'mods');
 
-  // ── Mod-link stage (vanilla only, 260518-o1k T6) ──────────────────────
+  // â”€â”€ Mod-link stage (vanilla only, 260518-o1k T6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Scan <.minecraft>/mods/, parse each non-CSL JAR's metadata via T1,
   // and hardlink (with symlink/copy fallback) the compatible ones into
   // <sei gameDir>/mods/. Reconciles against the persisted manifest so
@@ -601,7 +601,7 @@ async function processOneInstall(
         throw err;
       }
       // Non-cancellation failure during mod-linking is NOT fatal to the
-      // install — we'd rather get CSL placed (skin loading still works)
+      // install â€” we'd rather get CSL placed (skin loading still works)
       // than fail the whole row over a permission glitch on a single
       // user mod. Log + continue; the manifest stays unchanged.
       const msg = err instanceof Error ? err.message : String(err);
@@ -609,7 +609,7 @@ async function processOneInstall(
     }
   }
 
-  // ── CSL download step ─────────────────────────────────────────────────
+  // â”€â”€ CSL download step â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let installedCslVersion: string;
   onProgress({ installId, stage: 'mod-downloading', pct: 0 });
   try {
@@ -648,7 +648,7 @@ async function processOneInstall(
     return;
   }
 
-  // ── Config write step ─────────────────────────────────────────────────
+  // â”€â”€ Config write step â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   onProgress({ installId, stage: 'config-writing' });
   try {
     await writeCustomSkinLoaderConfig({
@@ -667,7 +667,7 @@ async function processOneInstall(
       });
       throw err;
     }
-    // Most likely EACCES on the config dir — surface as a permission error
+    // Most likely EACCES on the config dir â€” surface as a permission error
     // with the underlying message preserved so the UI can show the path.
     const msg = err instanceof Error ? err.message : String(err);
     onProgress({ installId, stage: 'failed', error: 'WIZARD_PERMISSION_DENIED', message: msg });
@@ -680,7 +680,7 @@ async function processOneInstall(
     return;
   }
 
-  // ── Persist link manifest (260518-o1k T6) ─────────────────────────────
+  // â”€â”€ Persist link manifest (260518-o1k T6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // After CSL placement succeeded for a vanilla install, persist the new
   // manifest so the next wizard run can reconcile. Manifest is part of
   // the extended wizard state; we merge into linkManifests keyed by
@@ -702,7 +702,7 @@ async function processOneInstall(
     }
   }
 
-  // ── Done ───────────────────────────────────────────────────────────────
+  // â”€â”€ Done â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   onProgress({ installId, stage: 'done' });
   results.push({
     installId,
@@ -718,7 +718,7 @@ async function processOneInstall(
 /*  Public: runModLinkStage (260518-o1k T6)                                    */
 /* -------------------------------------------------------------------------- */
 
-/** CSL filename regex — borrowed from customSkinLoader.ts / mcInstallScan.ts.
+/** CSL filename regex â€” borrowed from customSkinLoader.ts / mcInstallScan.ts.
  *  JARs matching this regex are NEVER linked into the Sei gameDir; Sei always
  *  ships its own CSL build. Centralized here so future scan paths share it. */
 const CSL_JAR_REGEX = /^CustomSkinLoader[_-].*\.jar$/i;
@@ -731,7 +731,7 @@ export interface RunModLinkStageArgs {
   targetMc: string;
   /** Threaded from the wizard session's AbortController. */
   signal: AbortSignal;
-  /** Progress callback — same surface as processOneInstall. */
+  /** Progress callback â€” same surface as processOneInstall. */
   onProgress: (ev: WizardProgressEvent) => void;
   /** Previous run's manifest (loaded from wizardStateStore), if any. */
   priorManifest: LinkManifest | null;
@@ -779,7 +779,7 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
 
   await fs.mkdir(targetModsDir, { recursive: true });
 
-  // List the source mods/ dir. ENOENT (user has no mods/) → treat as empty
+  // List the source mods/ dir. ENOENT (user has no mods/) â†’ treat as empty
   // and run the reconciliation pass against whatever the prior manifest had.
   let allEntries: string[];
   try {
@@ -828,7 +828,7 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
     scanned++;
 
     if (result.compatible) {
-      // ── If target already points at the right source, skip linking ──
+      // â”€â”€ If target already points at the right source, skip linking â”€â”€
       // Re-runs without changes should be cheap. fs.lstat tells us whether
       // a link exists; fs.realpath resolves any symlink. If both resolve
       // to the same source, we treat the link as already-present and
@@ -841,16 +841,16 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
           if (rp === sourcePath) alreadyLinked = 'symlink';
         } else if (lst.isFile()) {
           // Could be a hardlink (same inode) or a copy. Compare inode
-          // against the source — same inode means we hardlinked it.
+          // against the source â€” same inode means we hardlinked it.
           try {
             const srcSt = await fs.stat(sourcePath);
             if (srcSt.ino === lst.ino && srcSt.ino !== 0) alreadyLinked = 'link';
           } catch {
-            // ignore — we'll just re-link below.
+            // ignore â€” we'll just re-link below.
           }
         }
       } catch {
-        // ENOENT → no existing target; fall through to fresh link.
+        // ENOENT â†’ no existing target; fall through to fresh link.
       }
 
       if (alreadyLinked) {
@@ -865,7 +865,7 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
         linkedJars.push({ sourceName, strategy: alreadyLinked });
         linked++;
       } else {
-        // No usable existing target. Try fs.link → fs.symlink → fs.copyFile.
+        // No usable existing target. Try fs.link â†’ fs.symlink â†’ fs.copyFile.
         // Each step has its own try/catch and logs the errno on failure.
         // If a stale file is in the way we unlink it first.
         try {
@@ -940,9 +940,9 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
     });
   }
 
-  // ── Reconciliation pass ────────────────────────────────────────────────
+  // â”€â”€ Reconciliation pass â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // For each entry the prior manifest had that DOES NOT appear in the new
-  // entries (by sourceName), unlink the target. ENOENT is fine — means
+  // entries (by sourceName), unlink the target. ENOENT is fine â€” means
   // someone (or the link's source file going away) already cleaned up.
   // Never touches the CSL JAR (the candidates filter excluded it, and the
   // CSL_JAR_REGEX check below is belt-and-braces).
@@ -952,7 +952,7 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
       if (newNames.has(oldEntry.sourceName)) continue;
       if (CSL_JAR_REGEX.test(oldEntry.sourceName)) continue;
       // Only unlink if the target still resides under our target mods/
-      // dir — defensive against a manifest that somehow points elsewhere.
+      // dir â€” defensive against a manifest that somehow points elsewhere.
       if (!oldEntry.targetPath.startsWith(targetModsDir + path.sep) &&
           oldEntry.targetPath !== targetModsDir) {
         continue;
@@ -983,3 +983,7 @@ export async function runModLinkStage(args: RunModLinkStageArgs): Promise<{
 
   return { manifest, summary };
 }
+
+
+
+

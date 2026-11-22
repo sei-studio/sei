@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { deflateRawSync } from 'node:zlib';
 import {
   extractKnowledgeText,
@@ -48,7 +48,7 @@ describe('sanitizeKnowledgeText', () => {
   });
 
   it('strips zero-width and bidi controls (hidden-text tricks)', () => {
-    expect(sanitizeKnowledgeText('a​b‮c⁦d﻿e')).toBe('abcde');
+    expect(sanitizeKnowledgeText('aâ€‹bâ€®câ¦dï»¿e')).toBe('abcde');
   });
 
   it('normalizes CRLF and collapses blank runs', () => {
@@ -62,11 +62,11 @@ describe('capKnowledgeText', () => {
   });
 
   it('truncates over-limit text with a visible marker, never mid-codepoint', () => {
-    const big = '汉'.repeat(40_000); // 3 bytes each, ~120 KB
+    const big = 'æ±‰'.repeat(40_000); // 3 bytes each, ~120 KB
     const capped = capKnowledgeText(big);
     expect(Buffer.byteLength(capped, 'utf8')).toBeLessThanOrEqual(KNOWLEDGE_ENTRY_MAX_BYTES);
     expect(capped).toMatch(/\[truncated: file exceeded the knowledge size limit\]$/);
-    expect(capped).not.toContain('�');
+    expect(capped).not.toContain('ï¿½');
   });
 });
 
@@ -145,3 +145,7 @@ describe('extractKnowledgeText', () => {
     );
   });
 });
+
+
+
+

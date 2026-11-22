@@ -1,6 +1,6 @@
-/**
+﻿/**
  * User profile picture persistence. Reuses the character portrait pipeline
- * verbatim (validate → atomic write → file lock) but keys a fixed `_user` slot
+ * verbatim (validate â†’ atomic write â†’ file lock) but keys a fixed `_user` slot
  * under the same per-profile portraits dir, so it is served by the existing
  * `sei-portrait://local/_user.png` protocol with no new plumbing. The path ref
  * is stored in UserConfig.profile_picture. Used as the player's avatar in chat.
@@ -17,7 +17,7 @@ import type { UserProfile } from '../shared/ipc';
 const USER_SLOT = '_user';
 
 /**
- * The signed-in user's 4-char public handle (profiles.handle — same generator
+ * The signed-in user's 4-char public handle (profiles.handle â€” same generator
  * as characters.public_id). Permanent once assigned, so cache the first
  * successful fetch per user for the app's lifetime; best-effort null when
  * signed out, offline, or on a pre-handle profile row.
@@ -75,7 +75,11 @@ export async function removeUserProfilePicture(): Promise<void> {
   try {
     await unlink(paths.portraitPath(USER_SLOT));
   } catch {
-    /* swallow ENOENT — best-effort */
+    /* swallow ENOENT â€” best-effort */
   }
   await updateConfig((cfg) => ({ ...cfg, profile_picture: null }));
 }
+
+
+
+

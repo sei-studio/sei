@@ -1,4 +1,4 @@
-// Character image -> valid Minecraft skin.
+﻿// Character image -> valid Minecraft skin.
 // Usage:
 //   node src/pipeline.js <characterImage> <outSkin.png> [--variant wide|slim]
 //                        [--mock <atlasImage>] [--keep-raw]
@@ -103,3 +103,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   });
   console.log(JSON.stringify(res, null, 2));
 }
+
+
+
+

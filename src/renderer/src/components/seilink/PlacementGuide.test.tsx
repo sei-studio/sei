@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { PlacementRegions } from '@shared/seilinkPlace';
@@ -63,3 +63,7 @@ describe('PlacementGuide (261110: outlines, no blur over the room)', () => {
     expect(html).not.toContain('data-guide-outline="area"');
   });
 });
+
+
+
+

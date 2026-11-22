@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Leftover cleanup for the retired menu bar / tray mode (261010).
  *
  * v0.6.8-beta.1 and beta.2 shipped an opt-in "keep Sei in the menu bar /
@@ -119,3 +119,7 @@ export function cleanupLegacyTraySettings(
     return 'none';
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * T283: the settings-recovery gap left by T277. A damaged config whose
  * restore cannot be written, a config lost between quarantine and restore,
  * main + backup both unreadable, and "recovered to defaults" never reading
@@ -392,3 +392,7 @@ describe('safe-mode reset never leaves the config missing', () => {
     expect((await loadConfig()).preferred_name).toBe('Ana');
   });
 });
+
+
+
+

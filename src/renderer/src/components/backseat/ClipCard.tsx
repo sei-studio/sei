@@ -1,5 +1,5 @@
-/**
- * Backseat clip card (260728) — the "it can also save a clip for you" half.
+﻿/**
+ * Backseat clip card (260728) â€” the "it can also save a clip for you" half.
  *
  * When the companion calls save_clip while watching, the last fifteen seconds
  * are written to disk and the resulting file rides on the chat message it sent
@@ -46,3 +46,7 @@ export function ClipCard({ clip }: ClipCardProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

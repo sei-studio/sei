@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Game dashboard service (main process, M0 260908): the per-game dispatch in
  * front of the dashboard telemetry a bot session posts as {type:'dashboard'}.
  *
- * A Minecraft snapshot (game absent — older bots — or 'minecraft') goes to
+ * A Minecraft snapshot (game absent â€” older bots â€” or 'minecraft') goes to
  * mcDashboardService exactly as before (its own schema, cache and the
  * mcdash:snapshot push). Any other game's snapshot is validated against the
  * generic shape (src/shared/gameIpc.ts GenericGameDashboardSnapshot), cached
@@ -80,3 +80,7 @@ export function clearGameDashboard(characterId: string): void {
   latest.delete(characterId);
   clearMcDashboard(characterId);
 }
+
+
+
+

@@ -1,40 +1,44 @@
-/**
- * Phase 11 — Versioned legal documents.
+﻿/**
+ * Phase 11 â€” Versioned legal documents.
  *
- * Source: 11-CONTEXT D-27 (version bump → re-prompt via blocking modal) +
- *         11-RESEARCH §Pattern 7 (versioning strategy) +
+ * Source: 11-CONTEXT D-27 (version bump â†’ re-prompt via blocking modal) +
+ *         11-RESEARCH Â§Pattern 7 (versioning strategy) +
  *         11-02-PLAN (terms.html + privacy.html date-stamped to this value).
  *
  * Bump these constants when the published legal text materially changes.
  * The next time a user signs in, tosGate.isTosAccepted() returns false
  * because the tos_acceptance row's tos_version/privacy_version no longer
- * match these constants → AcceptToSModal mounts.
+ * match these constants â†’ AcceptToSModal mounts.
  *
  * MUST stay in sync with the "Effective Date" lines in
  * ../sei-website/terms.html and ../sei-website/privacy.html.
  */
-// 260602-uv9: TOS bumped to re-prompt users after the no-refund §8 rewrite in
-// ../sei-website/terms.html (all sales final). PRIVACY_VERSION unchanged —
+// 260602-uv9: TOS bumped to re-prompt users after the no-refund Â§8 rewrite in
+// ../sei-website/terms.html (all sales final). PRIVACY_VERSION unchanged â€”
 // privacy.html was not touched.
 // 260707: PRIVACY bumped to re-prompt users after adding PostHog product
-// analytics — privacy.html §1 ("Product analytics"), §3 (PostHog subprocessor
-// row), §4, and §10 updated + Effective Date moved to 2026-07-07. TOS_VERSION
-// unchanged — terms.html was not touched.
+// analytics â€” privacy.html Â§1 ("Product analytics"), Â§3 (PostHog subprocessor
+// row), Â§4, and Â§10 updated + Effective Date moved to 2026-07-07. TOS_VERSION
+// unchanged â€” terms.html was not touched.
 // 260720: PRIVACY bumped after adding crash-diagnostics collection (redacted
 // failed-summon stderr/stdout tails via captureDiagnostic) to privacy.html +
 // Effective Date moved to 2026-07-20. Accepting this version also re-baselines
 // analytics consent: the tos:accept handler clears analytics_opt_out in the
 // active profile's config (reenableAnalyticsOnConsent in src/main/analytics.ts);
 // the Settings "Usage analytics" toggle remains the ongoing opt-out.
-// TOS_VERSION unchanged — terms.html was not touched.
-// 260801: PRIVACY bumped for three additions, all in privacy.html §1 + §3 +
-// §10 with the Effective Date moved to 2026-08-01. (1) A new "Companion
-// library (cloud)" bullet — the signed-in client now mirrors which
+// TOS_VERSION unchanged â€” terms.html was not touched.
+// 260801: PRIVACY bumped for three additions, all in privacy.html Â§1 + Â§3 +
+// Â§10 with the Effective Date moved to 2026-08-01. (1) A new "Companion
+// library (cloud)" bullet â€” the signed-in client now mirrors which
 // someone-else-made companions are in your library to the character_library
 // table, so a library follows the account instead of one machine. (2) Product
 // analytics now carry the app display language (ui_language) and the companion
 // identifier an event refers to. (3) Text chat is instrumented like every other
-// surface, so events carry message counts. TOS_VERSION unchanged — terms.html
+// surface, so events carry message counts. TOS_VERSION unchanged â€” terms.html
 // was not touched.
 export const TOS_VERSION = '2026-06-03';
 export const PRIVACY_VERSION = '2026-08-01';
+
+
+
+

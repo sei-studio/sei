@@ -1,4 +1,4 @@
-// Provider region refusals (261103, T303). The shapes below are the
+﻿// Provider region refusals (261103, T303). The shapes below are the
 // providers' own error bodies; the negative cases are the auth and network
 // failures that must keep their existing copy.
 import { describe, it, expect } from 'vitest'
@@ -93,7 +93,7 @@ describe('providerRegionError', () => {
     expect(err.providerName).toBe('OpenAI')
     expect(err.cause).toBe(cause)
     expect(err.message).toBe('PROVIDER_REGION_UNSUPPORTED[OpenAI]: OpenAI does not support your region.')
-    expect(err.message).not.toMatch(/—|VPN/i)
+    expect(err.message).not.toMatch(/â€”|VPN/i)
   })
 
   it('the renderer reads the name back, through the IPC wrapper too', () => {
@@ -119,3 +119,7 @@ describe('provider names', () => {
     expect(regionProviderName(undefined)).toBe(regionProviderLabel(undefined))
   })
 })
+
+
+
+

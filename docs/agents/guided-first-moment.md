@@ -1,4 +1,4 @@
-# Guided first moment (260926)
+﻿# Guided first moment (260926)
 
 A new player's first session ends in their companion's chat, with the
 companion greeting first and one concrete next step under the greeting. Before
@@ -71,3 +71,7 @@ session that ran onboarding (`noteOnboardingThisSession` in
 `handleOnboardComplete`), waits for a calm Home, is not persisted in
 `tutorial_state`, and does not hand off to the first moment. Details in
 `docs/agents/seilink-host.md`, "Entry points and the first link".
+
+
+
+

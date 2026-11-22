@@ -1,4 +1,4 @@
-// Round-trip test for Branch B, no API needed:
+﻿// Round-trip test for Branch B, no API needed:
 // real skin -> renderPreview panel -> panelToAtlas -> front/back faces must
 // match the original skin exactly.
 import { renderPreview } from '../src/render.js';
@@ -47,3 +47,7 @@ console.log(`front/back pixels checked=${checked} mismatched=${diff} (${((100 * 
 const pass = diff / checked < 0.03;
 console.log(pass ? 'PANEL ROUNDTRIP: PASS' : 'PANEL ROUNDTRIP: FAIL');
 process.exit(pass ? 0 : 1);
+
+
+
+

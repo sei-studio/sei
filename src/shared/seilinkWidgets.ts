@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorldLink desktop widgets and room lighting (261119, product call 261119). Pure.
  *
  * Widgets are small overlay modules drawn on the wallpaper with her room
@@ -19,7 +19,7 @@
  * her (default no: the scene recedes, she stays bright).
  */
 
-// ── Widgets ─────────────────────────────────────────────────────────────────
+// â”€â”€ Widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const WIDGET_KINDS = ['clock', 'date', 'text', 'progress'] as const;
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
@@ -157,7 +157,7 @@ export function freeSpot(widgets: readonly Pick<RoomWidget, 'x' | 'y'>[], x: num
   return [x, Math.min(0.95, yy)];
 }
 
-// ── Formatting ──────────────────────────────────────────────────────────────
+// â”€â”€ Formatting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
@@ -239,7 +239,7 @@ export function formatPercent(f: number, locale: string): string {
   }
 }
 
-// ── Ticking ─────────────────────────────────────────────────────────────────
+// â”€â”€ Ticking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type WidgetTick = 'second' | 'minute' | null;
 
@@ -266,7 +266,7 @@ export function nextTickDelay(nowMs: number, tick: Exclude<WidgetTick, null>, tz
   return rest + TICK_SLACK_MS;
 }
 
-// ── Edits ───────────────────────────────────────────────────────────────────
+// â”€â”€ Edits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Widget ops on anything that carries `widgets` (RoomState). Return a new object; never mutate. */
 export function addWidget<S extends { widgets?: RoomWidget[] }>(state: S, kind: WidgetKind, id?: string): { state: S; id: string } {
@@ -325,7 +325,7 @@ export function snapWidget(
   return { x: clamp(gx ?? x), y: clamp(gy ?? y), guideX: gx, guideY: gy };
 }
 
-// ── Sanitizing ──────────────────────────────────────────────────────────────
+// â”€â”€ Sanitizing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 const ID_RE = /^[a-z0-9]{1,16}$/i;
@@ -390,7 +390,7 @@ export function sanitizeWidgets(raw: unknown): RoomWidget[] | undefined {
   return out.length ? out : undefined;
 }
 
-// ── Lighting ────────────────────────────────────────────────────────────────
+// â”€â”€ Lighting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface RoomLighting {
   /** -50 (darker) .. 50 (brighter), percent. */
@@ -459,7 +459,7 @@ export function lightingFilter(l: RoomLighting | undefined | null, warmUrl: stri
   return parts.length ? parts.join(' ') : null;
 }
 
-// ── Analytics (shape only) ──────────────────────────────────────────────────
+// â”€â”€ Analytics (shape only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface WidgetChange {
   action: 'added' | 'removed' | 'edited';
@@ -495,3 +495,7 @@ export function widgetChanges(before: readonly RoomWidget[] | undefined, after: 
 export function lightingBucket(v: number): number {
   return Math.round(v / 10) * 10;
 }
+
+
+
+

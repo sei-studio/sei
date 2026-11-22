@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop lines (261104, M4): the short things she says on the
  * wallpaper, shown as a speech bubble next to her.
  *
@@ -58,7 +58,7 @@ export const TICK_MS = 60_000;
 const BUDGET_TTL_MS = 10 * 60_000;
 const HOUR_MS = 60 * 60_000;
 
-// ── Pacing (pure) ───────────────────────────────────────────────────────────
+// â”€â”€ Pacing (pure) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * When the next idle line may come, and how many lines came in the last hour.
@@ -130,7 +130,7 @@ export class LinePacer {
   }
 }
 
-// ── Gates (pure) ────────────────────────────────────────────────────────────
+// â”€â”€ Gates (pure) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Who pays for her desktop lines. */
 export type LineBudget = 'own' | 'paid' | 'free' | 'none';
@@ -247,7 +247,7 @@ export function idleBlock(s: {
   return null;
 }
 
-// ── Wiring ──────────────────────────────────────────────────────────────────
+// â”€â”€ Wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface DesktopLinesDeps {
   /** She is in a game (bot online) or on a call: the desktop stays quiet. */
@@ -474,3 +474,7 @@ async function say(characterId: string, kind: 'idle' | 'poke' | 'react', note?: 
     running = false;
   }
 }
+
+
+
+

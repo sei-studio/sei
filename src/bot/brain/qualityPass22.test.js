@@ -1,4 +1,4 @@
-// 261022: quality pass 22.
+﻿// 261022: quality pass 22.
 //  - Called-off items were handed over later. "actually forget the logs,
 //    just meet me over here" while the give ran got stop + goTo and no
 //    clearGoal ("logs ride with me"), and the turn she arrived read the task
@@ -17,7 +17,7 @@ import { createOrchestrator, composeSeedBlocks, _setTickIntervalForTests } from 
 
 afterEach(() => { vi.restoreAllMocks() })
 
-// ─── orchestrator harness (as qualityPass15.test.js) ────────────────────
+// â”€â”€â”€ orchestrator harness (as qualityPass15.test.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -412,7 +412,7 @@ describe('renderHeartbeat with held tasks', () => {
     })
     expect(out).toContain(`${PLAYER_TASKS_HEAD}\n- [2026-10-22T10:02:00.000Z] (player task) Bring Steve a stack of torches.`)
     expect(out).toContain(`${PLAYER_TASKS_HELD_HEAD}\n- [2026-10-22T10:01:00.000Z] (player task) ${DOCK} (you stopped it when Steve said "${CALL_OFF}")`)
-    expect(out).not.toMatch(/[—–]/)
+    expect(out).not.toMatch(/[â€”â€“]/)
   })
   it('with every task held, offers no new project', () => {
     const out = renderHeartbeat(2, goals.split('\n')[0], 'make a furnace', { sessionStartMs: now, heldTask: () => ({ who: 'Steve', line: CALL_OFF }) })
@@ -441,3 +441,7 @@ describe('renderHeartbeat with held tasks', () => {
     expect(renderHeartbeat(2, goals, '', { sessionStartMs: now })).toBe(renderHeartbeat(2, goals, '', { sessionStartMs: now, heldTask: () => null }))
   })
 })
+
+
+
+

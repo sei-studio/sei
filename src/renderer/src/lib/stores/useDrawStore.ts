@@ -1,10 +1,10 @@
-/**
- * useDrawStore — the Draw! game (renderer mirror).
+﻿/**
+ * useDrawStore â€” the Draw! game (renderer mirror).
  *
  * Thin by design: the authoritative game lives in main (src/main/draw/), so
  * this caches the last pushed DrawGameState per character and forwards player
  * intents. It deliberately does NOT handle the two pixel-side channels
- * (draw:ai-stroke and draw:snapshot-request) — those are consumed by the
+ * (draw:ai-stroke and draw:snapshot-request) â€” those are consumed by the
  * canvas component, which is the only thing that owns a rendering context.
  *
  * Contract: src/shared/drawIpc.ts. The preload members may not exist yet in an
@@ -94,7 +94,7 @@ export const useDrawStore = create<DrawStoreState>((set, get) => {
   try {
     offState = drawApi().onDrawState?.(applyState) ?? null;
   } catch {
-    /* preload without the draw bridge — pushes just won't stream */
+    /* preload without the draw bridge â€” pushes just won't stream */
   }
 
   return {
@@ -226,3 +226,7 @@ if (import.meta.hot) {
     offState = null;
   });
 }
+
+
+
+

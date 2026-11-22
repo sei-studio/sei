@@ -1,5 +1,5 @@
-/**
- * DeleteAccountModal — type-email-to-confirm destructive modal (D-12).
+﻿/**
+ * DeleteAccountModal â€” type-email-to-confirm destructive modal (D-12).
  *
  * Renders through ModalShell at 460px. Esc closes but is SUPPRESSED while
  * submitting or during the success transition (a stray keypress must not abort
@@ -119,13 +119,17 @@ export function DeleteAccountModal({
               disabled={!canConfirm}
               aria-label={t('Delete account')}
             >
-              {submitting ? t('Deleting…') : t('Delete account')}
+              {submitting ? t('Deletingâ€¦') : t('Delete account')}
             </Button>
           </ModalFooter>
         </>
       ) : (
-        <p className={styles.success}>{t('Account scheduled for deletion. Signing you out…')}</p>
+        <p className={styles.success}>{t('Account scheduled for deletion. Signing you outâ€¦')}</p>
       )}
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Real-zip smoke (260908): runs the store against an actual pack zip built by
  * scripts/build-game-pack.mjs, served from a local node:http server. Gated on
  * SEI_PACK_ZIP so the normal suite never needs a 50MB fixture:
@@ -70,3 +70,7 @@ describe.skipIf(!ZIP)('game packs: real zip', () => {
     await rm(store, { recursive: true, force: true });
   }, 120_000);
 });
+
+
+
+

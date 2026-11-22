@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reads the bot's humanized MODDED_HOST_REJECTED message for ModdedHostModal
  * (261007). Pure, so it is tested without React.
  */
@@ -23,3 +23,7 @@ export function messageSaysFabric(message: string | undefined): boolean {
   const m = message ?? '';
   return /\b(fabric|quilt)\b/i.test(m) && !/\b(forge|neoforge|fml)\b/i.test(m);
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * W7 region gate (260816) — pure vocabulary tests: the trace parser, the
+﻿/**
+ * W7 region gate (260816) â€” pure vocabulary tests: the trace parser, the
  * blocklist classifier matrix, and the blocklist's own shape.
  */
 import { describe, expect, it } from 'vitest';
@@ -119,6 +119,10 @@ describe('constants', () => {
       'Our servers do not currently support your region. Please continue with local mode.',
     );
     // No em dash in user-facing copy (CLAUDE.md rule).
-    expect(REGION_BLOCKED_COPY.includes('—')).toBe(false);
+    expect(REGION_BLOCKED_COPY.includes('â€”')).toBe(false);
   });
 });
+
+
+
+

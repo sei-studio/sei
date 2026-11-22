@@ -1,18 +1,18 @@
-/**
+﻿/**
  * Typed wrapper for Supabase Edge Function fetches.
  *
  * Phase 10 uses this for delete-me; Phase 11/12 reuse for additional admin
- * operations (per CONTEXT D-13 — Phase 10 sets the supabase/ convention).
+ * operations (per CONTEXT D-13 â€” Phase 10 sets the supabase/ convention).
  *
  * Contract:
  *   - Adds Authorization: Bearer <jwt> + content-type: application/json.
  *   - Wraps every call in a 15s default timeout via an abort signal.
  *   - Body is JSON-stringified when present.
- *   - Returns a discriminated union — never throws. Timeout → status:0,
- *     message:'timeout'. Network → status:0, message:<error.message>.
+ *   - Returns a discriminated union â€” never throws. Timeout â†’ status:0,
+ *     message:'timeout'. Network â†’ status:0, message:<error.message>.
  *
- * Source: 10-RESEARCH §Pitfall A5 (CORS — not needed for main-process fetch
- * but template is future-proof), §Edge Function example (URL shape).
+ * Source: 10-RESEARCH Â§Pitfall A5 (CORS â€” not needed for main-process fetch
+ * but template is future-proof), Â§Edge Function example (URL shape).
  */
 import { getSupabaseUrl } from '../env';
 
@@ -50,7 +50,7 @@ export async function callEdgeFunction(
     });
 
     // 204 No Content carries no body. Other responses may also be empty if the
-    // Edge Function returns plain text — guard the .json() call defensively.
+    // Edge Function returns plain text â€” guard the .json() call defensively.
     let json: unknown = undefined;
     if (res.status !== 204) {
       try {
@@ -79,3 +79,7 @@ export async function callEdgeFunction(
     clearTimeout(timeoutHandle);
   }
 }
+
+
+
+

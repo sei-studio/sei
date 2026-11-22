@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929: the Call-press microphone preflight and the card's access check.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -124,3 +124,7 @@ describe('trackPermission', () => {
     expect(trackSpy).toHaveBeenCalledWith('permission_prompt_shown', { kind: 'screen', platform: 'darwin' });
   });
 });
+
+
+
+

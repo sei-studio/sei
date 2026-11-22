@@ -1,7 +1,7 @@
-// src/bot/brain/anthropicClient.threadCache.test.js
+﻿// src/bot/brain/anthropicClient.threadCache.test.js
 //
 // Moving thread cache breakpoint (260730). The loop conversation was never
-// message-cached — every iteration re-billed the whole accumulated thread at
+// message-cached â€” every iteration re-billed the whole accumulated thread at
 // full input price. stampThreadCacheControl puts the 4th breakpoint on the
 // last non-thinking block of the last ASSISTANT turn (the last user turn is
 // byte-volatile: D-43 strips its snapshot block on the next call). On a
@@ -9,9 +9,9 @@
 // before, so the 4-breakpoint budget is never exceeded. These tests pin:
 //   1. Stamp lands on the last non-thinking block of the last assistant turn.
 //   2. Input arrays/objects are never mutated.
-//   3. No assistant turn → same array reference back (caller's fallback cue).
-//   4. call(): continuation → marker in messages, tools UNstamped.
-//   5. call(): seed-only → tools stamped, messages untouched (old behavior).
+//   3. No assistant turn â†’ same array reference back (caller's fallback cue).
+//   4. call(): continuation â†’ marker in messages, tools UNstamped.
+//   5. call(): seed-only â†’ tools stamped, messages untouched (old behavior).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -147,3 +147,7 @@ describe('call() breakpoint wiring', () => {
     expect(req.messages[0].content[0].cache_control).toBeUndefined()
   })
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Game modules (main process) — the per-game plug-in seam (M0, 260908).
+﻿/**
+ * Game modules (main process) â€” the per-game plug-in seam (M0, 260908).
  *
  * Mirrors the bot side's adapter/<kind>/runtime.js: main knows how to tell
  * whether a world is open (the watcher), what the bot needs to join it (the
@@ -101,3 +101,7 @@ export function listGameModules(): GameModule[] {
 export function clearGameModulesForTests(): void {
   registry.clear();
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/brain/memory/memoryLog.stamps.test.js
+﻿// src/bot/brain/memory/memoryLog.stamps.test.js
 //
 // Model-facing stamp humanization (260725). MEMORY.md stores UTC ISO stamps;
 // the model reads local-time stamps in the same format as the prompt clock so
@@ -37,7 +37,7 @@ describe('humanizeMemoryStamps', () => {
     const doc =
       '# Memory\n' +
       '- [...older memory truncated]\n' +
-      '## World 2 — plains village\n' +
+      '## World 2 â€” plains village\n' +
       '- [not-a-date] odd line survives verbatim\n'
     expect(humanizeMemoryStamps(doc)).toBe(doc)
   })
@@ -82,7 +82,7 @@ describe('readMemoryForSeed humanization', () => {
 })
 
 // The model only ever sees the humanized rendering, so forget() has to match
-// the entry AS SHOWN — quoting the line back, bracketed stamp and all, used to
+// the entry AS SHOWN â€” quoting the line back, bracketed stamp and all, used to
 // match nothing at all (the stamp on disk is UTC ISO).
 describe('forgetMemory matches the shown (humanized) entry', () => {
   let dir, file
@@ -116,3 +116,7 @@ describe('forgetMemory matches the shown (humanized) entry', () => {
     expect(await forgetMemory(file, `- [${localStamp(iso)}] they moved to berlin`)).toBe(0)
   })
 })
+
+
+
+

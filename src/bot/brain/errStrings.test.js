@@ -1,4 +1,4 @@
-// errLine (260709): ZodErrors from tool-arg validation used to reach the
+﻿// errLine (260709): ZodErrors from tool-arg validation used to reach the
 // model as the raw multi-line JSON issue dump (craft count:92 produced a
 // 12-line blob). Pins the one-line `field: message` rendering and the plain
 // fallback for ordinary errors.
@@ -37,3 +37,7 @@ describe('errLine', () => {
     expect(errLine(undefined)).toBe('unknown')
   })
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Tests for AuthChoiceScreen — B2 (embedded sign-in surface).
+﻿/**
+ * Tests for AuthChoiceScreen â€” B2 (embedded sign-in surface).
  *
  * Project convention (no @testing-library/react installed): exercise the
  * source contract via grep-style file presence checks plus module-import
@@ -15,7 +15,7 @@
  *   6. Source mounts OAuthInterstitialModal on the Google flow.
  *   7. Source preserves the F-10 DOB triple + ToS checkbox in signup mode.
  *   8. Source preserves the verification-pending "Check your email" branch.
- *   9. CSS module does NOT define a `.scrim` class — the form is embedded,
+ *   9. CSS module does NOT define a `.scrim` class â€” the form is embedded,
  *      not a modal.
  */
 
@@ -55,7 +55,7 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     // TextField imports come from the local components dir, not via SignInModal.
     expect(source.includes("import { TextField } from '../components/TextField'")).toBe(true);
-    // Inline form, not the modal — must NOT mount SignInModal.
+    // Inline form, not the modal â€” must NOT mount SignInModal.
     expect(source.includes('<SignInModal')).toBe(false);
   });
 
@@ -103,7 +103,7 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
   });
 
   /**
-   * 260804 — ONE panel for signup, unconfirmed sign-in and forgot-password.
+   * 260804 â€” ONE panel for signup, unconfirmed sign-in and forgot-password.
    * Two panels with different copy would tell an attacker which kind of email
    * an address received, which is exactly the account-existence signal
    * alreadyRegisteredResult exists to hide (see authHandlers.verifyEmailCode).
@@ -118,7 +118,7 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
     expect(source.includes('verification link')).toBe(false);
   });
 
-  it('Test 9: CSS module ships no .scrim class — the form is embedded, not modal', () => {
+  it('Test 9: CSS module ships no .scrim class â€” the form is embedded, not modal', () => {
     const css = readFileSync(CSS_PATH, 'utf-8');
     expect(css.includes('.scrim')).toBe(false);
     expect(css.includes('.formPanel')).toBe(true);
@@ -129,8 +129,8 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
     const source = readFileSync(TSX_PATH, 'utf-8');
     const css = readFileSync(CSS_PATH, 'utf-8');
     // The forgot-password affordance is back now that email-based recovery
-    // exists (sei.sendPasswordReset → loopback recovery session →
-    // SetNewPasswordModal). It must be WIRED (onForgot → sendPasswordReset),
+    // exists (sei.sendPasswordReset â†’ loopback recovery session â†’
+    // SetNewPasswordModal). It must be WIRED (onForgot â†’ sendPasswordReset),
     // not the Phase 10 dead placeholder.
     expect(source.includes('Forgot your password?')).toBe(true);
     expect(source.includes('sendPasswordReset')).toBe(true);
@@ -157,3 +157,7 @@ describe('AuthChoiceScreen (B2 embedded sign-in)', () => {
     }
   });
 });
+
+
+
+

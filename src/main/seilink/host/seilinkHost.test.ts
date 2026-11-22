@@ -1,4 +1,4 @@
-/**
+﻿/**
  * seilinkHost.ts start / stop / restore ordering, with the real pipe server
  * and a fake host process that connects to it, says hello and quits when
  * told to. Everything else (config, rooms, characters, the addon) is stubbed.
@@ -329,3 +329,7 @@ describe('seilink host start / stop / restore', () => {
     expect(state.received.find((m) => m.type === 'arrival')).toEqual({ type: 'arrival', arrival: { mode: 'show', trigger: 'restore' } });
   });
 });
+
+
+
+

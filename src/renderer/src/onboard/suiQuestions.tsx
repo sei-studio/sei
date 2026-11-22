@@ -1,5 +1,5 @@
-/**
- * suiQuestions — the companion-preference questions as Sui asks them (260731).
+﻿/**
+ * suiQuestions â€” the companion-preference questions as Sui asks them (260731).
  *
  * The three companion-preference questions (age feel / what you're looking for
  * / art style) plus the per-cast gender question, in the scene's register:
@@ -69,7 +69,7 @@ export const GENDER_OPTIONS: Array<{ value: UniqueGender; label: string }> = [
 
 /** Rank-by-click multi-select for the dynamics question. "Surprise me" is a
  * selectable state (mutually exclusive with the ranked picks), and BOTH paths
- * confirm through the same Done button — a single-click Surprise-me that
+ * confirm through the same Done button â€” a single-click Surprise-me that
  * advanced instantly read as a misclick trap (260729).
  *
  * `initial`: the stored ranking. `[]` is the explicit "Surprise me" (that is
@@ -195,3 +195,7 @@ export function ArtPicker(props: {
     </div>
   );
 }
+
+
+
+

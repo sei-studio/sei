@@ -1,4 +1,4 @@
-// 260926: the render-stack loader must keep the bot's event loop free. The
+﻿// 260926: the render-stack loader must keep the bot's event loop free. The
 // natives are prefetched asynchronously BEFORE any synchronous require, the
 // heavy requires run one per event-loop turn, and a failed load is final for
 // the session (and says so in the log with its timings).
@@ -115,3 +115,7 @@ describe('createPovStackLoader', () => {
     expect(h.onLoaded.mock.calls[0][0]).toMatchObject({ ok: true, files: 6 })
   })
 })
+
+
+
+

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Relocation leftover cleanup (macOS only).
  *
  * History: while the macOS build shipped as a .zip (no .dmg), people often
  * unzipped into ~/Downloads and ran the app right there. Gatekeeper then
- * "translocates" it — runs it from a read-only randomized mount — and
+ * "translocates" it â€” runs it from a read-only randomized mount â€” and
  * electron-updater cannot replace the bundle in place, so first launch showed
  * a "Move to Applications?" prompt (`maybeOfferMoveToApplications`). The dmg
  * download made drag-to-Applications the install itself, so the prompt was
@@ -14,7 +14,7 @@
  * from (under App Translocation it never even saw the real ~/Downloads copy).
  * The prompt dropped a one-shot sentinel before the move; on the relaunched
  * /Applications instance, `cleanupRelocationLeftover()` trashes the stray copy
- * (Trash, not unlink — reversible). It stays wired for one more release cycle
+ * (Trash, not unlink â€” reversible). It stays wired for one more release cycle
  * so a user whose LAST pre-dmg launch accepted the move still gets the
  * leftover cleaned after updating. With no prompt writing sentinels, it is a
  * no-op for everyone else and can be deleted once pre-dmg installs are gone.
@@ -32,7 +32,7 @@ function cleanupSentinelPath(): string {
 
 /** The running app's `.app` bundle root, e.g. `/Applications/Sei.app`. */
 function currentAppBundle(): string {
-  // exe = <bundle>/Contents/MacOS/<name>  →  up three levels is the .app root.
+  // exe = <bundle>/Contents/MacOS/<name>  â†’  up three levels is the .app root.
   return path.resolve(app.getPath('exe'), '../../..');
 }
 
@@ -40,11 +40,11 @@ function currentAppBundle(): string {
  * Trash the leftover copy the app was moved FROM, once it is safely running
  * from /Applications. Runs only when the one-shot sentinel from a prior
  * `maybeOfferMoveToApplications()` move is present, so an ordinary launch never
- * touches anything. Best-effort and fully guarded — it must never block or
+ * touches anything. Best-effort and fully guarded â€” it must never block or
  * crash startup.
  *
  * Safety rules for what may be trashed:
- *   - basename must equal OUR bundle name (`Sei.app`) — never `Sei Launcher.app`
+ *   - basename must equal OUR bundle name (`Sei.app`) â€” never `Sei Launcher.app`
  *     or any other bundle that happens to share the `com.sei.app` id.
  *   - never the running /Applications copy, and never anything under
  *     /Applications at all (those are real installs, not leftovers).
@@ -82,7 +82,7 @@ export function cleanupRelocationLeftover(): void {
     if (resolved === appBundle) return false;                    // our canonical copy
     if (path.basename(resolved) !== bundleName) return false;    // a different bundle (e.g. Sei Launcher.app)
     if (resolved.includes('/AppTranslocation/')) return false;   // read-only, auto-reaped
-    if (resolved.startsWith('/Applications/')) return false;     // a real install — leave it
+    if (resolved.startsWith('/Applications/')) return false;     // a real install â€” leave it
     if (!resolved.startsWith(home + path.sep)) return false;     // only clean leftovers under the user's home
     return existsSync(resolved);
   };
@@ -112,3 +112,7 @@ export function cleanupRelocationLeftover(): void {
     }
   });
 }
+
+
+
+

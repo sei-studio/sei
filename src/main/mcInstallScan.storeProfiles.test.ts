@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929: the Microsoft Store / Xbox app launcher keeps its installations in
  * launcher_profiles_microsoft_store.json (same .minecraft). A Sei profile
  * that lives only there must still count as Sei-ready.
@@ -49,3 +49,7 @@ describe('scanMcInstalls reads both launcher profile files', () => {
     expect(vanilla?.sei_ready_versions).toEqual(['26.1']);
   });
 });
+
+
+
+

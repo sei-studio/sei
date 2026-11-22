@@ -1,4 +1,4 @@
-// Forge/NeoForge login handshake spike (260806).
+﻿// Forge/NeoForge login handshake spike (260806).
 //
 // The codec is pinned against NeoForge 1.20.1 source rather than against a
 // capture, so these tests are round-trip + shape tests: they encode what
@@ -57,7 +57,7 @@ describe('primitive codecs', () => {
   })
 
   it('round-trips strings including non-ASCII', () => {
-    for (const s of ['', 'minecraft:block', 'fml:handshake', '模组']) {
+    for (const s of ['', 'minecraft:block', 'fml:handshake', 'æ¨¡ç»„']) {
       const buf = writeString(s)
       expect(readString(buf, 0).value).toBe(s)
     }
@@ -275,7 +275,7 @@ describe('installForgeHandshake', () => {
 
   // nmp's own listener replies "not understood" to everything. Leaving it
   // attached would send two responses for every request we answer.
-  it('replaces nmp’s listener rather than stacking on it', () => {
+  it('replaces nmpâ€™s listener rather than stacking on it', () => {
     const client = fakeClient()
     client.on('login_plugin_request', () => {})
     client.on('login_plugin_request', () => {})
@@ -311,3 +311,7 @@ describe('installForgeHandshake', () => {
     expect(() => installForgeHandshake({})).toThrow(/_client/)
   })
 })
+
+
+
+

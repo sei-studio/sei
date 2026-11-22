@@ -1,4 +1,4 @@
-# Sei — Contributor Guide
+﻿# Sei â€” Contributor Guide
 
 Sei is a Minecraft AI companion. This repository is the **client**: an Electron
 desktop app ("Sei", productName in electron-builder.yml) for non-technical users that spawns an AI-driven
@@ -6,34 +6,34 @@ desktop app ("Sei", productName in electron-builder.yml) for non-technical users
 (offline-mode) Minecraft Java world**. You pick a character, the bot joins your
 world, and it talks and plays alongside you.
 
-v1.0 is LAN-worlds only — offline mode, no Mojang/Microsoft auth, no Mojang
+v1.0 is LAN-worlds only â€” offline mode, no Mojang/Microsoft auth, no Mojang
 UUIDs. Identity is the in-game username plus (for cloud users) a Supabase
 account.
 
 > **Scope note.** This repo is the client only. The cloud backend it talks to
 > (the LLM proxy, Supabase database, billing webhooks) is a **separate private
 > service**. Everything here that mentions "the proxy" or "the server" refers to
-> that external component — there is no server code in this tree.
+> that external component â€” there is no server code in this tree.
 
 ---
 
 ## Architecture: three-process Electron
 
 Electron is split into three trust zones plus a forked bot subprocess. The
-boundaries are load-bearing — respect them.
+boundaries are load-bearing â€” respect them.
 
 ```
-┌───────────────┐  IPC (contextIsolation)   ┌────────────────┐
-│   renderer    │ ───── window.sei ───────▶ │      main      │
-│  React 19 +   │ ◀──── (preload bridge) ─── │  Electron host │
-│   Zustand     │                            └───────┬────────┘
-└───────────────┘                                    │ utilityProcess.fork
-   src/renderer            src/preload                │ + MessageChannelMain
-                                                      ▼
-                                            ┌────────────────┐
-                                            │   bot (LLM +   │
-                                            │   mineflayer)  │
-                                            └────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  IPC (contextIsolation)   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚   renderer    â”‚ â”€â”€â”€â”€â”€ window.sei â”€â”€â”€â”€â”€â”€â”€â–¶ â”‚      main      â”‚
+â”‚  React 19 +   â”‚ â—€â”€â”€â”€â”€ (preload bridge) â”€â”€â”€ â”‚  Electron host â”‚
+â”‚   Zustand     â”‚                            â””â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                                    â”‚ utilityProcess.fork
+   src/renderer            src/preload                â”‚ + MessageChannelMain
+                                                      â–¼
+                                            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                                            â”‚   bot (LLM +   â”‚
+                                            â”‚   mineflayer)  â”‚
+                                            â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
                                                   src/bot
 ```
 
@@ -48,13 +48,13 @@ boundaries are load-bearing — respect them.
 
 - **mineflayer is imported only in `src/bot`.** It must run in the
   utilityProcess, never in main or renderer.
-- **The renderer never imports from `src/main`.** All renderer→main traffic goes
-  through `window.sei` (preload) → IPC channels declared in `src/shared/ipc.ts`.
+- **The renderer never imports from `src/main`.** All rendererâ†’main traffic goes
+  through `window.sei` (preload) â†’ IPC channels declared in `src/shared/ipc.ts`.
 - **Plaintext secrets cross to the bot only over `MessagePortMain`**, never
   through the renderer. `src/main/apiKeyStore.ts` decrypts the API key in main
   and hands it to the forked bot in the init message.
 - **Multiple bots, one per character.** `botSupervisor.ts` owns a
-  `Map<characterId, ActiveSession>` — `summon(id)` forks an *additional* bot
+  `Map<characterId, ActiveSession>` â€” `summon(id)` forks an *additional* bot
   without disturbing the others; `stop(id)` drains one, `stop()`/`shutdown()`
   drain all. Each character is its own `utilityProcess` + brain + memory dir, so
   sessions are fully independent. **Two bots may never share an in-game
@@ -86,16 +86,16 @@ The bot reaches an LLM through one of two backends, selected by
 | Endpoint | Anthropic direct | `https://api.sei.gg` (the private proxy) |
 | Credits UI | Hidden | Pricing / credits / hard-stop surfaces shown |
 
-**Runtime wiring** lives in `src/bot/brain/anthropicClient.js` →
+**Runtime wiring** lives in `src/bot/brain/anthropicClient.js` â†’
 `buildSdkOptions()`:
 
 - **local:** `{ apiKey: <decrypted key> }`.
 - **cloud:** `{ baseURL, authToken, apiKey: null }`. Passing `apiKey: null` is
-  deliberate — it suppresses the `x-api-key` header so only the
+  deliberate â€” it suppresses the `x-api-key` header so only the
   `Authorization: Bearer <jwt>` is sent. JWTs rotate **live** via
   `setAuthToken()` (mutates the SDK instance in place; no re-summon needed).
 
-A cloud↔local switch can rebuild the SDK instance without re-summoning the bot.
+A cloudâ†”local switch can rebuild the SDK instance without re-summoning the bot.
 
 ### Multi-provider LLM factory
 
@@ -112,23 +112,23 @@ by `llm.provider` in `src/bot/config.js`:
 
 ### Cloud plumbing (client side)
 
-- **Auth** — `src/main/auth/`: Supabase client (`supabaseClient.ts`), PKCE
+- **Auth** â€” `src/main/auth/`: Supabase client (`supabaseClient.ts`), PKCE
   loopback OAuth (`loopbackPkce.ts` uses an ephemeral port; `loopbackCallback.ts`
   uses the fixed callback port **54321**), session persisted via `safeStorage`
   (`sessionStore.ts`), and `jwtBridge.ts` which pushes fresh JWTs down to the
   running bot.
-- **Billing / cloud characters** — `src/main/cloud/`: `proxyClient.ts` is the
-  client to the proxy — `creditsGet()`, `subscriptionStatus()`, and
+- **Billing / cloud characters** â€” `src/main/cloud/`: `proxyClient.ts` is the
+  client to the proxy â€” `creditsGet()`, `subscriptionStatus()`, and
   **server-minted** Polar checkout/portal URLs (the write-scoped billing token
   never reaches the client). Also `cloudCharacterClient.ts`, `syncQueue.ts`
   (offline-first character sync), `moderationGate.ts`, `cacheOnDemand.ts`.
-- **Roster mirror (260801)** — `src/main/cloud/librarySync.ts` mirrors which
+- **Roster mirror (260801)** â€” `src/main/cloud/librarySync.ts` mirrors which
   FOREIGN characters are in the user's Home roster
   (`UserConfig.added_default_ids` + `added_world_ids`) into the cloud
   `character_library` table. `characters.owner` records who AUTHORED a row,
   which is a different question from who HAS it, so before this nothing
   server-side knew an account had adopted Sui or a shared character, and
-  analytics could only infer it from `character_id` event properties — blind to
+  analytics could only infer it from `character_id` event properties â€” blind to
   a character that is only ever texted, and to anyone opted out. It reconciles
   the WHOLE SET rather than hooking each write: membership is written from at
   least six places (four library IPC handlers, the unpublish reconcile sweep,
@@ -139,7 +139,7 @@ by `llm.provider` in `src/bot/config.js`:
   for every writer that never learned the mirror exists. Own characters are
   deliberately NOT recorded (already covered by `characters.owner`). Never
   throws; single-flight; signed-out/offline/RLS-rejected all mean "next time".
-- **Pre-flight credit gate** — before forking a *cloud* bot, `botSupervisor.ts`
+- **Pre-flight credit gate** â€” before forking a *cloud* bot, `botSupervisor.ts`
   consults the credit ledger and refuses the summon when depleted (showing the
   "add playtime" surface). It **fails open** on any error and is skipped
   entirely for BYOK, so a transient hiccup never blocks a paying or local user.
@@ -168,7 +168,7 @@ Fish Audio is the third Local voice next to Fast and Kokoro
   spoken by Sei's voices with the `fish-cloud-fallback` notice.
 - Three table voices are pvc voices with retire dates. Replace them in
   `src/shared/fishVoices.ts` before these dates: ivish (en male) 2029-10-25,
-  桃桃 (zh female) 2028-10-26, 温柔沉稳男声 (zh male) 2028-10-15.
+  æ¡ƒæ¡ƒ (zh female) 2028-10-26, æ¸©æŸ”æ²‰ç¨³ç”·å£° (zh male) 2028-10-15.
 
 ---
 
@@ -182,6 +182,8 @@ The detailed notes for each area live in `docs/agents/`. This file stays short s
 | [`docs/agents/bot-llm-internals.md`](docs/agents/bot-llm-internals.md) | Bot and LLM internals in src/bot: brain, FSM, prompts, tools, speech, memory |
 | [`docs/agents/guided-first-moment.md`](docs/agents/guided-first-moment.md) | Guided first moment after onboarding |
 | [`docs/agents/chess.md`](docs/agents/chess.md) | Chess minigame: engine, reveal protocol, model download |
+| [`docs/agents/CONNECT4.md`](docs/agents/CONNECT4.md) | Forza 4 minigame: LLM play(column), no engine/model download |
+| [`docs/agents/battleship.md`](docs/agents/battleship.md) | Battleship minigame: LLM fire(row,col), 10x10 grids, no engine/model download |
 | [`docs/agents/draw.md`](docs/agents/draw.md) | Draw! minigame |
 | [`docs/agents/call-scenes.md`](docs/agents/call-scenes.md) | Call scenes and the backdrop toggle |
 | [`docs/agents/avatar-overlay.md`](docs/agents/avatar-overlay.md) | Avatar overlay (always-on-top call overlay, desktop avatar) |
@@ -256,7 +258,7 @@ languages from `src/shared/addedLanguageCopy.ts`.
   es-* to the neutral `es`, everything else English (`uiLanguageForLocale`).
 - Fonts: under a ja or zh UI, `--sans` puts the OS CJK face FIRST
   (`--sans-ja` / `--sans-zh` in tokens.css, `html:lang()` rules), so Latin
-  inside a label ("ChatGPTログイン") uses the CJK face's own Latin instead of
+  inside a label ("ChatGPTãƒ­ã‚°ã‚¤ãƒ³") uses the CJK face's own Latin instead of
   Rajdhani, which runs much smaller than kana and hanzi at the same size.
   `--display` (Oswald) and `--mono` are unchanged; en is untouched.
   Cyrillic subsets of the UI faces are self-hosted in `fonts.css` (by
@@ -283,32 +285,32 @@ languages from `src/shared/addedLanguageCopy.ts`.
 The renderer follows the **"Summoning Terminal"** look: dark, sharp-ish 2px
 corners (`--radius` / `--radius-sm`, never a literal radius), periwinkle
 `#7FB0FF` accent. Always use tokens from
-`src/renderer/src/styles/tokens.css` — never literal hex/px — and reuse existing
+`src/renderer/src/styles/tokens.css` â€” never literal hex/px â€” and reuse existing
 primitives (`Button`, `CharacterCard`, modal patterns) before writing new CSS.
 
-**No em dashes in user-facing text.** Any copy a user can read — UI labels,
+**No em dashes in user-facing text.** Any copy a user can read â€” UI labels,
 hints, error messages, modal bodies, tooltips, in-game bot messages, page
-titles — must not contain an em dash (`—`). Rewrite with a period, comma,
+titles â€” must not contain an em dash (`â€”`). Rewrite with a period, comma,
 colon, or restructure the sentence. This applies everywhere user copy lives
 (renderer, main-process error strings, `src/bot` canned messages), and to
 LLM-generated user-visible output via prompt rules + normalization
 (in the bot a dash is a message BREAK in `splitChatMessages`, and the unsplit
-voice-call line normalizes it to a hyphen — both in `orchestrator.js`; plus
+voice-call line normalizes it to a hyphen â€” both in `orchestrator.js`; plus
 the dash strip in `personaExpansion.ts` / `uniqueGeneration.ts`, soulcaster's
 "No em-dashes in your prose"). Exceptions:
 code comments, developer logs, test names, and model-facing prompt text are
-fine; an en dash is allowed as an empty-value placeholder glyph (`$–`) or a
-range (`A–Z`), never as prose punctuation.
+fine; an en dash is allowed as an empty-value placeholder glyph (`$â€“`) or a
+range (`Aâ€“Z`), never as prose punctuation.
 
 ---
 
 ## Critical pitfalls
 
-- **Pathfinder silent hangs** → every pathfinder call is wrapped with a
+- **Pathfinder silent hangs** â†’ every pathfinder call is wrapped with a
   wall-clock timeout (`adapter.minecraft.pathfinder_timeout_ms`, default 12s).
   No exceptions.
-- **Single-layer iteration runaway** → bounded by `iteration_cap` (default 30).
-- **A nested timeout only wins if it is sized against the outer one** →
+- **Single-layer iteration runaway** â†’ bounded by `iteration_cap` (default 30).
+- **A nested timeout only wins if it is sized against the outer one** â†’
   connect.js armed a flat 20s guard at `createBot` while `botSupervisor.ts`
   arms `SUMMON_TIMEOUT_MS` (30s) at `fork`, and the comment claimed ~10s of
   margin. The real margin is 10s minus process boot minus the status ping (up
@@ -316,7 +318,7 @@ range (`A–Z`), never as prose punctuation.
   SPECIFIC error never reached main and every stalled join surfaced as a bare
   `ready_timeout`. Measured 260801: a user whose world was open and answering
   pings was told to go check that their LAN world was open. Fixed by shipping
-  the supervisor's deadline itself (`summonDeadlineAt`, absolute epoch ms —
+  the supervisor's deadline itself (`summonDeadlineAt`, absolute epoch ms â€”
   same machine, same clock, and it cannot drift out of step with the constant
   the way a duplicated budget would) in the init payload; `connectTimeoutFor`
   sizes the guard to land inside it with `REPORT_MARGIN_MS` (3s) to spare, and
@@ -327,7 +329,7 @@ range (`A–Z`), never as prose punctuation.
   instead of sending the player to verify the one thing already known to be
   fine. Anything else nested inside a supervisor deadline owes the same
   treatment.
-- **The summon deadline used to include the bot's cold boot** → until 260926
+- **The summon deadline used to include the bot's cold boot** â†’ until 260926
   the 30s watchdog started at `fork`, and a packaged Windows boot (module graph
   plus Defender scanning every file it opens) measured 21-24s before
   `createBot`, so the connect guard sat on its 5s floor and BOT_START_TIMEOUT
@@ -351,7 +353,7 @@ range (`A–Z`), never as prose punctuation.
   A failed load is final for the session (a failed ESM import stays cached);
   `look()` says so once in full. Keep heavy or native modules out of the
   runtime's static import graph.
-- **The data scope follows the auth STATE, not the auth event (261029)** →
+- **The data scope follows the auth STATE, not the auth event (261029)** â†’
   "restarting locks me on the login page". After a restart the stored access
   token has usually expired, and `auth.getSession()` is NOT a storage-only
   read: it refreshes over the network. Step 0a of `main/index.ts` used it to
@@ -393,7 +395,7 @@ range (`A–Z`), never as prose punctuation.
   as `signed_out` with `reason: 'session_rejected'` (`noteUserSignOut`
   marks the user's own). Auth requests have a 15 s fetch timeout
   (`withAuthRequestTimeout`), the profile move's network steps 15 s each.
-- **Renderer caches outlive an account switch** → main re-points every
+- **Renderer caches outlive an account switch** â†’ main re-points every
   per-profile store on `app:scope-changed`, but a Zustand store keeps what it
   already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
   across profiles. Until 260926 the next account opened the previous
@@ -402,7 +404,7 @@ range (`A–Z`), never as prose punctuation.
   handler; the chat store also drops the results of any load / send / push
   begun before the reset (`scopeEpoch`). Any NEW renderer cache keyed by
   character id or holding account data must be cleared there.
-- **An account switch ends every live session first (260926)** →
+- **An account switch ends every live session first (260926)** â†’
   `switchScopeForAuth` used to stop only the game bots, so a chess game, a
   Draw! round, a backseat share and a voice call kept running under the
   previous account (and authState has already applied the NEW JWT by then).
@@ -446,9 +448,9 @@ range (`A–Z`), never as prose punctuation.
     is kept in `callState` (`endCallFromCompanion`) so the switch closes it
     and writes its row in the old account; `applyCallReport` is the pure
     composition the `voice:call-state` handler runs.
-- **Own-key companions stranded or mis-owned on sign-in (261023)** → the
-  `local` profile → account import (`src/main/profile/localImport.ts`) is
-  offered on EVERY local→account sign-in that finds companions or memories,
+- **Own-key companions stranded or mis-owned on sign-in (261023)** â†’ the
+  `local` profile â†’ account import (`src/main/profile/localImport.ts`) is
+  offered on EVERY localâ†’account sign-in that finds companions or memories,
   new account or existing (App.tsx; a sign-in inside the first-run scene is
   offered when the scene hands off). It merges, never replaces
   (`profile/memoryMerge.ts`): an account copy of the same id keeps its JSON
@@ -461,7 +463,7 @@ range (`A–Z`), never as prose punctuation.
   Accounts that signed in on an older build never saw the offer, so it is
   also shown ONCE at boot per account per device (`checkBootImportOffer` in
   `lib/localImportOffer.ts`; only on a calm Home: no modal, tour, first
-  moment, call, game or share), and Settings → Account has a "Bring
+  moment, call, game or share), and Settings â†’ Account has a "Bring
   companions from this computer" row (`settings/LocalImportRow.tsx`). Any
   answer from any entry point is recorded in the device-global
   `<userData>/local-import-offered.json` (`profile/localImportOffered.ts`,
@@ -473,7 +475,7 @@ range (`A–Z`), never as prose punctuation.
   `## World N` header with no `worlds.json` entry gets a fresh number above
   every number in use, reserved in the account's registry under
   `UNREGISTERED_WORLD_FP` so the bot never reuses it.
-- **A whole-config write reverts other writers (260929)** → every main-process
+- **A whole-config write reverts other writers (260929)** â†’ every main-process
   write of the profile `config.json` goes through `configStore.updateConfig`
   (locked read-modify-write, path fixed when the call starts) and sets only
   the keys that writer owns. `loadConfig()` then `saveConfig()` is for seeding
@@ -486,7 +488,7 @@ range (`A–Z`), never as prose punctuation.
   or re-checks the scope and gives up; otherwise an account switch in the
   gap lands its write in the next account (cloud default, library add, local
   import, the sign-in reconcile sweep, which also stops when the scope moves).
-- **Node fetch ignores the OS proxy (261103, T303)** → a VPN in "system
+- **Node fetch ignores the OS proxy (261103, T303)** â†’ a VPN in "system
   proxy" mode carried Chromium's requests but not main's or the bot's, so
   sign-in code exchanges and BYOK calls went out direct and were refused.
   `src/bot/net/` routes undici's global dispatcher per origin:
@@ -504,18 +506,18 @@ range (`A–Z`), never as prose punctuation.
   into a region 403); a failed or slow
   (3 s) lookup is DIRECT for 30 s. `undici` is pinned exactly and must share
   its major with Electron's `process.versions.undici` (a test checks).
-- **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in
+- **Native ABI mismatch** â†’ `@electron/rebuild` / `install-app-deps` runs in
   `postinstall`. Test packaged builds on a clean machine.
-- **Bot ESM module type in packaged builds** → `src/bot/package.json` exists
+- **Bot ESM module type in packaged builds** â†’ `src/bot/package.json` exists
   ONLY to declare `{"type":"module"}`. The bot ships as raw ESM source (not
   bundled) and is asar-**unpacked** to `app.asar.unpacked/src/bot/`. The root
   `package.json` (with its own `"type":"module"`) is sealed inside `app.asar`,
   so when Node resolves the unpacked bot it walks the real filesystem, finds no
   `"type"`, defaults `.js` to CommonJS, and fails to parse the `import`
-  statements — the bot crashes before connecting (symptom: "module type … is
+  statements â€” the bot crashes before connecting (symptom: "module type â€¦ is
   not specified and it doesn't parse as CommonJS", then summon fails on packaged
-  installs only — `npm run dev` is unaffected). Do not delete `src/bot/package.json`.
-- **Stale `.js` shadows `.tsx` in Vite** → `tsc --build` emits sibling `.js`
+  installs only â€” `npm run dev` is unaffected). Do not delete `src/bot/package.json`.
+- **Stale `.js` shadows `.tsx` in Vite** â†’ `tsc --build` emits sibling `.js`
   files next to `.tsx`; Vite then serves the stale `.js` and silently ignores
   your renderer edits. These artifacts are gitignored (`src/**/*.js`, except
   `src/bot`). If renderer edits aren't taking effect: delete the stray `.js`
@@ -532,3 +534,7 @@ plans, roadmaps, one-off experiment output) was removed on 261030; it is in
 git history if you need it. The repo is public: keep pricing, cost and margin
 numbers, security write-ups, personal paths and other internal notes out of
 it.
+
+
+
+

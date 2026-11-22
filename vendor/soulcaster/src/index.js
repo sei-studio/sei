@@ -1,8 +1,8 @@
-// soulcaster — procedural character-sheet generator for Sei.
+﻿// soulcaster â€” procedural character-sheet generator for Sei.
 //
 // Two stages, deliberately split:
-//   Stage 1  rollFields()  — pure, non-LLM randomizer. All variety lives here.
-//   Stage 2  castSoul()    — an injected LLM consolidates the rolled fields into
+//   Stage 1  rollFields()  â€” pure, non-LLM randomizer. All variety lives here.
+//   Stage 2  castSoul()    â€” an injected LLM consolidates the rolled fields into
 //                            a rich, internally consistent, image-reproducible
 //                            character sheet.
 //
@@ -76,7 +76,7 @@ export class SoulcasterError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Deterministic RNG (mulberry32) — for seeded/CLI use and tests.
+// Deterministic RNG (mulberry32) â€” for seeded/CLI use and tests.
 // ---------------------------------------------------------------------------
 
 export function mulberry32(seed) {
@@ -206,7 +206,7 @@ export function resolveLifeContextBand(age) {
 
 // For `timeless` characters `age` is already the APPARENT age (18-35, see
 // resolveAge/AGE_RANGES), so banding on it naturally uses the apparent-age
-// band — no special-casing needed here. The prompt separately tells the
+// band â€” no special-casing needed here. The prompt separately tells the
 // model it may reinterpret the category for a centuries-old character.
 function rollLifeContext(age, rng) {
   const band = resolveLifeContextBand(age);
@@ -231,7 +231,7 @@ const ROBOT_VOICE_SHARE = 0.7;
 // hard-filter by character gender (plus the special robotic rule), then weight
 // by age-band proximity and personality-seed tag affinity. `takenVoiceIds`
 // lets the caller exclude voices its OTHER characters already use, which is
-// what keeps voice overlap across a user's roster rare — the exclusion is
+// what keeps voice overlap across a user's roster rare â€” the exclusion is
 // dropped only if it would empty the pool. See scripts/voiceStudy.js for the
 // measured distribution and collision rates.
 export function rollVoice({ gender, age, background, personality_seeds }, { takenVoiceIds = [], rng = Math.random } = {}) {
@@ -260,8 +260,8 @@ export function rollVoice({ gender, age, background, personality_seeds }, { take
       // Age proximity: exact band strongly preferred, adjacent allowed,
       // young<->elder excluded outright. (This was a 0.01 epsilon to keep the
       // pool non-empty in degenerate cases; with the 260707 characters-only
-      // trim the pool is small enough that the epsilon actually rolled — a
-      // 70-year-old could land a young voice — so the degenerate case is now
+      // trim the pool is small enough that the epsilon actually rolled â€” a
+      // 70-year-old could land a young voice â€” so the degenerate case is now
       // handled by the explicit uniform fallback below instead.)
       let weight;
       if (v.age === band) weight = 6;
@@ -384,7 +384,7 @@ export const CharacterSheetSchema = z.object({
   age: z.number(),
   age_note: z.string().nullable(),
   background: z.enum(['human', 'elf', 'robot', 'beastkin']),
-  // NOT rolled — the LLM's own choice of world register, reconciling
+  // NOT rolled â€” the LLM's own choice of world register, reconciling
   // background (species) with occupation before it writes anything else. See
   // buildSystemPrompt for the reconciliation rules. Unlike combat/heritage
   // below, castSoul never re-stamps this: it is pure LLM judgment, only
@@ -394,10 +394,10 @@ export const CharacterSheetSchema = z.object({
   // Rolled deterministically in Stage 1 (rollHeritage). The LLM is asked to
   // echo this verbatim and let it drive the name's naming culture; castSoul
   // re-stamps it after validation (same drift-proofing rationale as combat
-  // below — it's a closed vocabulary, so there's nothing lost by making the
+  // below â€” it's a closed vocabulary, so there's nothing lost by making the
   // match structural instead of merely requested).
   heritage: z.string().min(1),
-  // NOT rolled — the LLM's concrete specialization of the rolled
+  // NOT rolled â€” the LLM's concrete specialization of the rolled
   // life_context category (see buildUserPrompt), so it is validated but
   // never overwritten.
   occupation: z.string().min(1),
@@ -408,7 +408,7 @@ export const CharacterSheetSchema = z.object({
     fears: z.array(z.string().min(1)).min(1).max(2),
   }),
   backstory: z.string().min(1),
-  // NOT rolled — one or two LLM-written sentences describing who this
+  // NOT rolled â€” one or two LLM-written sentences describing who this
   // character is TO THE PLAYER they accompany (the relationship role they
   // naturally fall into). When a dynamic was requested (rolled.dynamic), the
   // prompt requires this field to express it; with no dynamic the model
@@ -419,18 +419,18 @@ export const CharacterSheetSchema = z.object({
   // validation (same drift-proofing pattern as combat/heritage). It is the
   // ElevenLabs voice id from the curated pool in voices.js.
   voice_id: z.string().min(1).optional(),
-  // NOT rolled — the LLM's judgment call on how this character punctuates
+  // NOT rolled â€” the LLM's judgment call on how this character punctuates
   // short text-chat messages (see buildSystemPrompt). This is a texting
   // register, not persona formality: 'casual' = normal modern texting with
   // no sentence-ending periods (most characters, even serious ones);
   // 'deliberate' = ends sentences with full stops on purpose (flat, measured,
-  // can read passive-aggressive — deadpan robots, stern or weary types).
+  // can read passive-aggressive â€” deadpan robots, stern or weary types).
   // The sei client enforces it mechanically in chat post-processing.
   // Defaulted so pre-existing sheets without the field still validate.
   punctuation: z.enum(['casual', 'deliberate']).default('casual'),
   // Rolled deterministically in Stage 1 (rollCombat). The LLM is asked to
   // echo this verbatim, but castSoul overwrites it with the rolled value
-  // after validation regardless — see the comment at that call site.
+  // after validation regardless â€” see the comment at that call site.
   combat: z.object({
     archetype: z.string().min(1),
     melee: z.number().min(0).max(1),
@@ -499,8 +499,8 @@ function parseAndValidate(rawText) {
 
 // llm signature: async ({ system, user, maxTokens }) => string
 // takenVoiceIds: ElevenLabs voice ids already used by the caller's other
-// characters — excluded from the voice roll so roster voices rarely collide.
-// `dynamic` (optional): a DYNAMICS key — the relationship the user ranked for
+// characters â€” excluded from the voice roll so roster voices rarely collide.
+// `dynamic` (optional): a DYNAMICS key â€” the relationship the user ranked for
 // this cast ("a partner in crime", "someone who looks after you", ...).
 // excludeNames: names never to offer as candidates (public characters).
 // avoidNames: names to avoid unless the pool runs dry (the caller's library).
@@ -554,13 +554,13 @@ export async function castSoul({
       // Authoritative overwrite: combat is a gameplay-facing numeric contract
       // (hit chances, dodge chance, reaction timing) consumed by the bot
       // adapter. Even though the prompt asks the model to echo it verbatim,
-      // an LLM can still drift a digit on retries or paraphrase a number —
+      // an LLM can still drift a digit on retries or paraphrase a number â€”
       // that would silently desync bot behavior from what the sheet says.
       // Re-stamping the rolled values here makes numeric drift structurally
       // impossible instead of merely unlikely.
       res.sheet.combat = structuredClone(rolled.combat);
       // Same rationale as combat: heritage is a closed vocabulary rolled in
-      // Stage 1 (see HERITAGES in tables.js) — re-stamp it so an LLM
+      // Stage 1 (see HERITAGES in tables.js) â€” re-stamp it so an LLM
       // paraphrase ("Japanese" vs "japanese") can never desync the sheet
       // from the rolled value the naming instructions were built around.
       res.sheet.heritage = rolled.heritage;
@@ -575,3 +575,7 @@ export async function castSoul({
 
   throw new SoulcasterError(`character sheet invalid after retry: ${lastError}`, { raw: lastRaw });
 }
+
+
+
+

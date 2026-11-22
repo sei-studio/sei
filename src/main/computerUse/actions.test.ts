@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { ACT_TOOLS, ActionSchemas, blockedCombo, describeAction, parseAction, toHelperCommand, type ParsedAction } from './actions';
 import { parseCombo } from './keys';
 
@@ -145,3 +145,7 @@ describe('toHelperCommand', () => {
     }
   });
 });
+
+
+
+

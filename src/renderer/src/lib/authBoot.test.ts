@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 (login lock on restart): the renderer's on-demand read of main's auth
  * state. The boot routing and the onboarding sign-in panel use it instead of
  * waiting on pushes that may have landed before they listened.
@@ -138,3 +138,7 @@ describe('waitForAuthScope', () => {
     expect(await waitForAuthScope({ sleep })).toEqual({ snapshot: null, waited: false });
   });
 });
+
+
+
+

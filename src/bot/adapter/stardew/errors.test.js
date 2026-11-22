@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { classifyConnectError, stripClassPrefix } from './errors.js'
 
 describe('stardew classifyConnectError', () => {
@@ -12,3 +12,7 @@ describe('stardew classifyConnectError', () => {
     expect(stripClassPrefix('GAME_NOT_ANSWERING: port dead')).toBe('port dead')
   })
 })
+
+
+
+

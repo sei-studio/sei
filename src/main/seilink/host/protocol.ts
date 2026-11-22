@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink main <-> room host wire protocol (261104): newline-delimited JSON
  * over a named pipe (Windows) or a unix socket (macOS). Same shape as the
  * spike's (exp/seilink-spike spikes/seilink/app/supervisor.js).
@@ -211,3 +211,7 @@ export function hostPipePath(
   const name = `sei-seilink-${pid}-${session}`;
   return platform === 'win32' ? `\\\\.\\pipe\\${name}` : joinPath(tmpdir, `${name}.sock`);
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * McLaunchPanel — the Minecraft game-launch surface (260721, reworked
+﻿/**
+ * McLaunchPanel â€” the Minecraft game-launch surface (260721, reworked
  * 260909).
  *
  * Mounted in the ChatScreen game aside (the chess slot, inside the shared
@@ -126,7 +126,7 @@ function McVersionsWindow({ onClose }: { onClose: () => void }): React.ReactElem
         <div className={styles.head}>
           <span className={styles.stepTitle}>{t('Versions Sei can join')}</span>
           <button type="button" className={styles.close} onClick={onClose} aria-label={t('Close')} autoFocus>
-            ×
+            Ã—
           </button>
         </div>
         <ul className={styles.spans}>
@@ -200,7 +200,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
   ) : null;
 
   const launch = (): void =>
-    // 260721: shared cross-launch gate — a live chess game or screen share
+    // 260721: shared cross-launch gate â€” a live chess game or screen share
     // confirms (and ends) before the summon runs.
     requestGameLaunch(characterId, { id: 'minecraft', name: 'Minecraft' }, () => void attemptSummon(characterId));
 
@@ -285,3 +285,7 @@ export function McLaunchPanel({ characterId }: McLaunchPanelProps): React.ReactE
     </div>
   );
 }
+
+
+
+

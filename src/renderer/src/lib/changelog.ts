@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Changelog display helpers (261020, T158).
  *
  * The update feed's changelog markdown (sei-website version-beta.json /
@@ -12,7 +12,7 @@
  * spaces, no trailing punctuation. */
 function normalizeTitle(s: string): string {
   return s
-    .replace(/[‘’ʼ`]/g, "'")
+    .replace(/[â€˜â€™Ê¼`]/g, "'")
     .replace(/\bv(?=\d)/gi, '')
     .replace(/\s+/g, ' ')
     .replace(/[\s:.!-]+$/, '')
@@ -54,11 +54,15 @@ export function topChangelogLine(text: string): string {
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l !== '');
-  const bullet = lines.find((l) => /^[-*•]\s+/.test(l));
+  const bullet = lines.find((l) => /^[-*â€¢]\s+/.test(l));
   const plain = lines.find((l) => !/^#{1,6}\s/.test(l));
-  let line = (bullet ?? plain ?? '').replace(/^[-*•]\s+/, '');
+  let line = (bullet ?? plain ?? '').replace(/^[-*â€¢]\s+/, '');
   line = line.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/`([^`]+)`/g, '$1');
   const sentence = /^(.{20,}?[.!?])\s+\S/.exec(line);
   if (sentence && line.length > 80) line = sentence[1];
   return line.trim();
 }
+
+
+
+

@@ -1,16 +1,16 @@
-/**
- * MiniTile — the bottom-right return tile (260730).
+﻿/**
+ * MiniTile â€” the bottom-right return tile (260730).
  *
  * When a game surface (chess or Draw!) or a voice call is live but its screen
  * is not the one on view, a small fixed-size tile floats in the bottom-right
  * corner so the session stays one click away. Discord-activity style: it is a
  * static card, not a live preview.
  *
- *   game — the game's own picker art (lib/games.ts tile image).
- *   call — the AI participants' portraits (never the player's own).
+ *   game â€” the game's own picker art (lib/games.ts tile image).
+ *   call â€” the AI participants' portraits (never the player's own).
  *
  * The ONLY interactive element is the labeled back button in the top-left
- * ("‹ Chess", "‹ Call"); the rest of the tile is inert. A live game tile
+ * ("â€¹ Chess", "â€¹ Call"); the rest of the tile is inert. A live game tile
  * replaces the call tile when both are away: the call already shows its
  * cluster inside the game surface's own chrome row.
  *
@@ -256,3 +256,7 @@ function CallTile({ right, bottom }: { right: number; bottom: number }): React.R
     </div>
   );
 }
+
+
+
+

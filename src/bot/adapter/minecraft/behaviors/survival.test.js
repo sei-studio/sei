@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/survival.test.js
+﻿// src/bot/adapter/minecraft/behaviors/survival.test.js
 //
 // 261011: the drowning swim-up flaps at the surface (head bobs out, dips back
 // in with oxygen still low) and used to emit sei:survival on every re-engage,
@@ -64,3 +64,7 @@ describe('survival drowning narration rate limit', () => {
     dispose()
   })
 })
+
+
+
+

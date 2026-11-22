@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "next time" check for sessions the APP QUIT ended (261013, T120).
  *
  * playerEndNextStep.ts runs one small LLM check after a session the player
@@ -86,7 +86,7 @@ export interface PendingQuitNextStep {
   attempts?: number;
 }
 
-// ── pure ──────────────────────────────────────────────────────────────────
+// â”€â”€ pure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** A pending file body as a record, or null when unusable. */
 export function parsePending(raw: string | null): PendingQuitNextStep | null {
@@ -162,7 +162,7 @@ export function afterOutcome(outcome: PlayerEndOutcome, attempts: number): 'dele
   return 'delete';
 }
 
-// ── quit side (synchronous) ───────────────────────────────────────────────
+// â”€â”€ quit side (synchronous) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Records written during this quit, by character, for refreshQuitDigest. */
 const written = new Map<string, { dir: string; record: PendingQuitNextStep }>();
@@ -218,7 +218,7 @@ export function refreshQuitDigest(characterId: string, raw: unknown): void {
   }
 }
 
-// ── launch side ───────────────────────────────────────────────────────────
+// â”€â”€ launch side â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PendingResult =
   | PlayerEndOutcome
@@ -412,7 +412,7 @@ export function _resetQuitNextStep(): void {
   running = null;
 }
 
-// ── production wiring ─────────────────────────────────────────────────────
+// â”€â”€ production wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let boundMemoryDir: ((characterId: string) => string) | null = null;
 let boundMemoryRoot: (() => string) | null = null;
@@ -452,3 +452,7 @@ function defaultDeps(): QuitRunDeps {
     log: (msg) => console.log(msg),
   };
 }
+
+
+
+

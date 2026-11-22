@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "Use ChatGPT plan" switch intent (view.useChatgptPlan, 261023): Credits,
  * the plan offer and the startup popup's chatgpt-plan action sign in, then
  * land on Settings with it so the switch runs through Settings' own path.
@@ -31,3 +31,7 @@ export function chatgptPlanIntentStep(
   if (!chatgptReady(status)) return 'drop';
   return backend === 'cloud-proxy' ? 'confirm-cloud' : 'pick-local';
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * previewCacheKey (260720) — the voice-sample disk-cache key.
+﻿/**
+ * previewCacheKey (260720) â€” the voice-sample disk-cache key.
  *
  * Pins: deterministic per (voiceId, text) pair, changes with either input,
  * filename-safe, and sanitized ids cannot collide (the hash covers the raw id).
@@ -18,7 +18,7 @@ describe('previewCacheKey', () => {
 
   it('changes when the sample text changes (language switch, copy change)', () => {
     expect(previewCacheKey('EXAVITQu4vr4xnSDxMaL', LINE)).not.toBe(
-      previewCacheKey('EXAVITQu4vr4xnSDxMaL', '嗨，这就是我的声音。'),
+      previewCacheKey('EXAVITQu4vr4xnSDxMaL', 'å—¨ï¼Œè¿™å°±æ˜¯æˆ‘çš„å£°éŸ³ã€‚'),
     );
   });
 
@@ -42,3 +42,7 @@ describe('previewCacheKey', () => {
     expect(a).not.toBe(b);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IPC contract between main, preload, and renderer.
  *
  * Single source of truth: every ipcMain.handle (in src/main/ipc.ts) and every
@@ -9,9 +9,9 @@
  *   - CONTEXT D-17 (RendererApi shape)
  *   - CONTEXT D-19 (BotLifecycle vocabulary)
  *   - CONTEXT D-22 (LanState variants)
- *   - PATTERNS §src/shared/ipc.ts
- *   - RESEARCH §Pattern 2 (contextBridge contract)
- *   - UI-SPEC §Defaults (channel naming)
+ *   - PATTERNS Â§src/shared/ipc.ts
+ *   - RESEARCH Â§Pattern 2 (contextBridge contract)
+ *   - UI-SPEC Â§Defaults (channel naming)
  */
 
 import type { FaceCue, FacepackDevInfo, FacepackManifest } from './facepack';
@@ -47,6 +47,10 @@ import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './f
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type { CONNECT4GameState } from './connect4Ipc';
+export type { CONNECT4GameState } from './connect4Ipc';
+import type { BATTLESHIPGameState } from './battleshipIpc';
+export type { BATTLESHIPGameState } from './battleshipIpc';
 import type {
   DrawAiStroke,
   DrawGameState,
@@ -105,7 +109,7 @@ export type {
 
 /**
  * 260725: runtime Minecraft play mode. Never persisted per character or in
- * config — every summon starts 'proactive'; the in-game control window flips
+ * config â€” every summon starts 'proactive'; the in-game control window flips
  * it live. 'reactive' follows instructions only (cheaper: 60s idle cadence +
  * the reactive directive); 'proactive' plays alongside the player (5s idle
  * cadence + the agentic directive).
@@ -123,7 +127,7 @@ export type Unsubscribe = () => void;
  *
  * EVERY variant carries `characterId`. Multiple bots can now be summoned into
  * the same world concurrently, and they all share the single `bot:status` push
- * channel — so a status update must say WHICH character it is about, otherwise
+ * channel â€” so a status update must say WHICH character it is about, otherwise
  * the renderer can't route an `idle`/`connecting` transition to the right entry
  * in its per-character `summons` map. (Before multi-summon, `idle`/`connecting`
  * omitted the id because there was only ever one session; that ambiguity is no
@@ -193,7 +197,7 @@ type BotStatusBase =
       message: string;
       characterId: string;
       /**
-       * When set, the session is still LIVE — this error is advisory, not a
+       * When set, the session is still LIVE â€” this error is advisory, not a
        * session end (e.g. a mid-session backend switch to local with no saved
        * key: the bot stays connected in-world and just 401s on LLM calls).
        * Receivers must NOT treat a transient error as a terminal status: do not
@@ -204,7 +208,7 @@ type BotStatusBase =
       transient?: true;
       /**
        * 260720 crash popup: set ONLY by the supervisor's exit handler when a
-       * LIVE session (past summon-ready) died spontaneously — nonzero exit
+       * LIVE session (past summon-ready) died spontaneously â€” nonzero exit
        * code with no stop requested. Pre-summon failures, structured
        * lifecycle errors, and user-initiated stops never carry it. The
        * renderer uses it to open the "Connection lost" crash popup for error
@@ -225,13 +229,13 @@ type BotStatusBase =
     };
 
 /**
- * Phase 15 (D-10 / VIS-03) — the active LLM provider's vision capability,
- * pushed bot→main→renderer over the dedicated `vision:capability` channel.
+ * Phase 15 (D-10 / VIS-03) â€” the active LLM provider's vision capability,
+ * pushed botâ†’mainâ†’renderer over the dedicated `vision:capability` channel.
  *
  * The bot reads `provider.capabilities.vision` (Phase 14 descriptor) on
  * summon-ready and re-emits it on a live backend switch. The renderer holds
  * `visionCapable` in useUiStore so the Settings auto-render toggle (15-05) can
- * disable itself for a non-VLM provider with a REAL signal — not an
+ * disable itself for a non-VLM provider with a REAL signal â€” not an
  * ai_backend_kind inference and not a deferral. Fail-closed: the store defaults
  * to false until a VLM-backed bot reports true.
  *
@@ -244,13 +248,13 @@ export interface VisionCapability {
 }
 
 /**
- * china-compat W1 — vision capability of the ACTIVE chat backend, derived
+ * china-compat W1 â€” vision capability of the ACTIVE chat backend, derived
  * from CONFIG (backend kind + provider + model through the shared
- * llmCatalog), not from a live bot session. Pushed main→renderer over
+ * llmCatalog), not from a live bot session. Pushed mainâ†’renderer over
  * `llm:capability` on config changes and backend switches, seeded by the
  * `llm:capability-get` pull. Renderer holds it as useUiStore.llmVision
  * ('yes' | 'no' | 'unknown'); gating of the image surfaces (Draw! tile,
- * backseat entry points) is W9 — this is only the signal. Distinct from
+ * backseat entry points) is W9 â€” this is only the signal. Distinct from
  * VisionCapability above, which is the BOT-session-scoped push.
  */
 export interface LlmCapability {
@@ -269,7 +273,7 @@ export interface LlmCapability {
   provider?: string | null;
 }
 
-/** llm:list-models — live model listing with the user's own key. `error` is a
+/** llm:list-models â€” live model listing with the user's own key. `error` is a
  * typed token ('no_api_key' | 'unauthorized' | 'timeout' | 'network' |
  * 'http_<status>' | 'unknown'), never a raw message. */
 export interface LlmListModelsResult {
@@ -278,19 +282,19 @@ export interface LlmListModelsResult {
   error?: string;
 }
 
-/** llm:test — a 1-token probe through the main-process provider layer. */
+/** llm:test â€” a 1-token probe through the main-process provider layer. */
 export type LlmTestResult = { ok: true; latencyMs: number } | { ok: false; error: string };
 
 /**
  * LAN world-detection status from the loopback watcher.
  *
  * This describes ONLY whether an open-to-LAN Minecraft world is detected on the
- * machine — NOT whether a companion has joined it. "Connected / not connected"
+ * machine â€” NOT whether a companion has joined it. "Connected / not connected"
  * is reserved for the user-facing *companion-in-game* state (BotStatus). Keep
  * this vocabulary about world detection:
- *   - 'open'        → an open-to-LAN world is detected (port + motd known).
- *   - 'closed'      → no open world detected right now.
- *   - 'unavailable' → the OS port-listing tool itself failed (can't tell).
+ *   - 'open'        â†’ an open-to-LAN world is detected (port + motd known).
+ *   - 'closed'      â†’ no open world detected right now.
+ *   - 'unavailable' â†’ the OS port-listing tool itself failed (can't tell).
  */
 export type LanState =
   | {
@@ -302,7 +306,7 @@ export type LanState =
       /**
        * 260720 diagnostics: MC version name from the status ping (e.g.
        * "1.21.4"; modded servers report loader-flavored strings). Optional and
-       * additive — older cached states and test fixtures omit it. Stamped
+       * additive â€” older cached states and test fixtures omit it. Stamped
        * onto the failed-summon diagnostic as mc_version.
        */
       versionName?: string;
@@ -324,7 +328,7 @@ export type LanState =
  *     CustomSkinLoader pipeline can't show the companion's skin there.
  * Sources: the status-ping JSON (`forgeData` 1.13+ / `modinfo` 1.12-) and the
  * host java process command line (loader main-class / install-path markers).
- * 'unknown' means detection failed, NOT vanilla — no disclaimer is shown.
+ * 'unknown' means detection failed, NOT vanilla â€” no disclaimer is shown.
  */
 export type LanHostClient =
   | 'vanilla'
@@ -344,14 +348,14 @@ export interface LanHost {
    */
   forgeModCount: number | null;
   /**
-   * 260721 — Sei ships its OWN Fabric setup (the skin-setup wizard installs
+   * 260721 â€” Sei ships its OWN Fabric setup (the skin-setup wizard installs
    * Fabric Loader + the CustomSkinLoader jar into an isolated gameDir), so a
    * Fabric host is usually OUR OWN doing and must not trigger the modded
    * disclaimer. Main resolves the host java process's `--gameDir` from its
    * command line and scans `<gameDir>/mods/`:
-   *   - seiSkinMod    → a CustomSkinLoader jar (the one mod Sei installs) is
+   *   - seiSkinMod    â†’ a CustomSkinLoader jar (the one mod Sei installs) is
    *                     present in the host's mods dir.
-   *   - otherModCount → number of OTHER mod jars in that dir; null = the
+   *   - otherModCount â†’ number of OTHER mod jars in that dir; null = the
    *                     mods dir could not be resolved/read (no evidence
    *                     either way). See src/main/hostSetup.ts.
    * Both optional so older cached states / fixtures stay valid.
@@ -359,7 +363,7 @@ export interface LanHost {
   seiSkinMod?: boolean;
   otherModCount?: number | null;
   /**
-   * 260929 — the host command line names an explicit Forge/NeoForge launch
+   * 260929 â€” the host command line names an explicit Forge/NeoForge launch
    * target (`--launchTarget forgeclient`, `--fml.forgeVersion`, the FML
    * tweaker, NeoForge's startup main class). Strong evidence, unlike the
    * substring markers classifyCmdline uses, which can come from an instance
@@ -379,10 +383,10 @@ export type LanHostWarning = 'vanilla' | 'modded' | 'lunar' | 'forge';
  * disclaimer? Shared so the renderer gate and tests agree on the mapping.
  *
  * Three-way classification (260721):
- *   - 'vanilla' → host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
+ *   - 'vanilla' â†’ host runs plain vanilla Minecraft, i.e. WITHOUT Sei's
  *     Fabric skin setup: the companion joins fine but renders with a default
  *     Minecraft skin (CustomSkinLoader never runs).
- *   - 'forge'   → Forge/NeoForge on STRONG evidence only: the ping's
+ *   - 'forge'   â†’ Forge/NeoForge on STRONG evidence only: the ping's
  *     forgeData / modinfo, or an explicit launch target on the host command
  *     line (forgeLaunchTarget). A Forge/NeoForge classification from weaker
  *     cmdline markers falls to 'modded' so a misread never locks anyone out.
@@ -391,11 +395,11 @@ export type LanHostWarning = 'vanilla' | 'modded' | 'lunar' | 'forge';
  *     1.12.2 to 1.21.11 with 0 to 4 mods, every summon kicked or timed out),
  *     so "Summon anyway" only ever bought a failure of up to 30s. The Forge handshake in
  *     src/bot/adapter/minecraft/forgeHandshake.js is an off-by-default spike.
- *   - 'modded'  → Quilt, Forge/NeoForge on weak evidence only, or Fabric
+ *   - 'modded'  â†’ Quilt, Forge/NeoForge on weak evidence only, or Fabric
  *     with mod jars BESIDES Sei's skin mod:
  *     server-side-only mods let a vanilla client in, content mods can make
  *     the world refuse it, so this one keeps its "Summon anyway".
- *   - null      → silence. Notably: Fabric with only Sei's skin mod installed
+ *   - null      â†’ silence. Notably: Fabric with only Sei's skin mod installed
  *     is OUR OWN skin setup, not "modded Minecraft" (the pre-260721 bug
  *     warned users about the very setup our wizard told them to install).
  *     Fabric with NO other-mod evidence (mods dir unreadable/absent) is also
@@ -505,12 +509,12 @@ export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
   return lanHostWarning(host) === 'forge';
 }
 
-// ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
+// â”€â”€ In-app chat (Phase 18/19) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
- * 260705: max characters per outgoing chat message — single source of truth for
+ * 260705: max characters per outgoing chat message â€” single source of truth for
  * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
  * MUST agree: an over-limit paste passes the composer, renders an optimistic
- * bubble, then dies at the IPC gate pre-persist — the user sees the retryable
+ * bubble, then dies at the IPC gate pre-persist â€” the user sees the retryable
  * "try again" failure copy for a rejection that no retry can fix, and the
  * bubble vanishes on reload.
  */
@@ -544,8 +548,8 @@ export interface ChatMessage {
   replyTo?: ChatReplyRef;
   /**
    * Voice calls (260705): true when this message was part of a live voice call
-   * (a transcribed utterance or a spoken companion line). Persisted — the
-   * model still reads it as conversation history — but HIDDEN in the chat UI:
+   * (a transcribed utterance or a spoken companion line). Persisted â€” the
+   * model still reads it as conversation history â€” but HIDDEN in the chat UI:
    * the transcript shows only the "You and X called for Y" row, not a wall of
    * caption spam.
    */
@@ -607,11 +611,11 @@ export interface ChatSendResult {
   routed?: boolean;
   launch?: {
     game: string;
-    /** 'summoning' → the bot is joining a LAN world; 'lan-not-open' → could not join. */
+    /** 'summoning' â†’ the bot is joining a LAN world; 'lan-not-open' â†’ could not join. */
     status: 'summoning' | 'lan-not-open';
   };
   /**
-   * Voice calls (260705): true when the companion called end_call() this turn —
+   * Voice calls (260705): true when the companion called end_call() this turn â€”
    * it wants to hang up. The renderer speaks the replies (the goodbye) first,
    * then ends the call once the TTS queue drains.
    */
@@ -620,8 +624,8 @@ export interface ChatSendResult {
    * Voice calls (260706): the reply was STREAMED live over the `chat:message`
    * push, one sentence at a time, so TTS could start on the first sentence while
    * the rest generated. The renderer must NOT re-append or re-speak `replies`
-   * (the push already did, deduped by id) — it uses them only for turn-taking
-   * bookkeeping. Absent/false → the classic blocking path (renderer speaks them).
+   * (the push already did, deduped by id) â€” it uses them only for turn-taking
+   * bookkeeping. Absent/false â†’ the classic blocking path (renderer speaks them).
    */
   streamed?: boolean;
 }
@@ -803,7 +807,7 @@ export type VoiceTtsNoticePush =
 
 /**
  * One speech pack's state in speech:pack-status / speech:pack-state pushes
- * (260816 local speech — sherpa-onnx model packs, src/main/speech/).
+ * (260816 local speech â€” sherpa-onnx model packs, src/main/speech/).
  */
 export interface SpeechPackStatePush {
   state: 'absent' | 'downloading' | 'ready';
@@ -817,7 +821,7 @@ export interface SpeechPackStatePush {
  * The closed emotion vocabulary the avatar system speaks (260804). Import maps
  * a model's expression files onto these by filename keywords; at speech time
  * the spoken line is classified into one (or null) and the overlay applies the
- * mapped expression. Closed on purpose — a model with different expressions
+ * mapped expression. Closed on purpose â€” a model with different expressions
  * still maps INTO this set, so the classifier never has to know the model.
  */
 export type AvatarEmotion = 'happy' | 'sad' | 'shy' | 'angry' | 'love' | 'excited' | 'surprised';
@@ -853,11 +857,11 @@ export interface AvatarManifest {
   /** Total extracted bytes. */
   bytes: number;
   expressions: AvatarExpressionInfo[];
-  /** emotion → expression name, auto-mapped at import by filename keywords.
+  /** emotion â†’ expression name, auto-mapped at import by filename keywords.
    * Sparse: an unmapped emotion leaves the model on its neutral face. */
   emotions: Partial<Record<AvatarEmotion, string>>;
   /**
-   * Persistent accessory toggles (260806): expression name → on. The
+   * Persistent accessory toggles (260806): expression name â†’ on. The
    * emotion-UNMAPPED expressions are item toggles (hat, phone, coat...);
    * a true entry keeps that expression's parameter deltas applied every
    * frame, layered under the emotion expressions. Sparse; absent = off.
@@ -915,11 +919,11 @@ export interface AvatarRigLayer {
   /** Fraction of head motion applied to a non-head layer (default 0). */
   sway?: number;
   /** Damped spring follower toward the head target (hair): stiffness k,
-   * damping c — the layer lags, overshoots, and re-converges at rest. */
+   * damping c â€” the layer lags, overshoots, and re-converges at rest. */
   physics?: { k: number; c: number };
 }
 
-/** rig.json — the entry file of a 'rig'-kind avatar zip (260817). */
+/** rig.json â€” the entry file of a 'rig'-kind avatar zip (260817). */
 export interface AvatarRigSpec {
   version?: number;
   /** Display name for the manifest; falls back to the entry directory. */
@@ -930,7 +934,7 @@ export interface AvatarRigSpec {
 }
 
 /** One tile on the always-on-top avatar overlay (260706 as the call overlay;
- * 260804 companions only — the player's own tile is gone, the avatar is the
+ * 260804 companions only â€” the player's own tile is gone, the avatar is the
  * AI's presence, not a mirror). */
 export interface CallOverlayParticipant {
   id: string;
@@ -966,15 +970,15 @@ export interface AvatarCamera {
   y: number;
 }
 
-/** State of the always-on-top avatar overlay window (main window → main →
+/** State of the always-on-top avatar overlay window (main window â†’ main â†’
  * overlay + caption windows). `enabled` folds together the avatar mode AND
  * the mode's activity condition: the overlay shows iff enabled and there is
  * at least one participant. `cameras` and `captionsOn` are enriched by MAIN
- * from config before forwarding — the main-window pusher never sends them. */
+ * from config before forwarding â€” the main-window pusher never sends them. */
 export interface CallOverlayState {
   enabled: boolean;
   participants: CallOverlayParticipant[];
-  /** A voice call is live/connecting or a backseat share is running — the
+  /** A voice call is live/connecting or a backseat share is running â€” the
    * overlay shows its mute + captions buttons only then. */
   onCall?: boolean;
   /** Mic mute (useUiStore.callMuted), mirrored so the overlay button lights. */
@@ -1008,7 +1012,7 @@ export interface SpokenLineContext {
    * Which turn this line belongs to (260806). When a line with a NEW tag
    * reaches the audio queue while lines with an OLD tag from the same speaker
    * are still queued, the old ones are dropped: the clip already playing
-   * finishes (that is the "let the current sentence end" boundary — parts are
+   * finishes (that is the "let the current sentence end" boundary â€” parts are
    * sentence-sized), then playback jumps to the new turn. Backseat sets it,
    * because its turns outpace TTS playback and the spoken commentary used to
    * drift a full turn behind the screen. Never sent to TTS (renderer strips
@@ -1047,7 +1051,7 @@ export interface ChatOpenedOptions {
   firstMoment?: { primary: FirstMomentGame };
 }
 
-/** A main → renderer chat push (bot reply while in-game, or a system line). */
+/** A main â†’ renderer chat push (bot reply while in-game, or a system line). */
 export interface ChatMessagePush {
   characterId: string;
   message: ChatMessage;
@@ -1076,8 +1080,8 @@ export interface UserProfile {
 /**
  * Startup warnings reported by main on first boot (one-shot query).
  * `keychainFallbackPlaintext` is true when running on Linux with the
- * `basic_text` safeStorage backend (no kwallet/libsecret available) —
- * surfaces as a top-of-window Banner per RESEARCH §Pitfall 3.
+ * `basic_text` safeStorage backend (no kwallet/libsecret available) â€”
+ * surfaces as a top-of-window Banner per RESEARCH Â§Pitfall 3.
  */
 export interface StartupWarnings {
   keychainFallbackPlaintext: boolean;
@@ -1085,7 +1089,7 @@ export interface StartupWarnings {
   sessionFallbackPlaintext: boolean;
 }
 
-/** Single log line forwarded from utilityProcess stdout/stderr → main → renderer. */
+/** Single log line forwarded from utilityProcess stdout/stderr â†’ main â†’ renderer. */
 export interface LogEntry {
   timestamp: string;             // ISO; main attaches this when it tees the line
   tag: string | null;            // e.g. "[chat<-]", "[haiku!]"; null when no prefix matches
@@ -1093,15 +1097,15 @@ export interface LogEntry {
   level: 'info' | 'warn' | 'error';
 }
 
-/** Batched log delivery (Pitfall 7 — main coalesces ~50ms / 100 lines per batch). */
+/** Batched log delivery (Pitfall 7 â€” main coalesces ~50ms / 100 lines per batch). */
 export interface LogBatch {
   entries: LogEntry[];
   dropped?: number;              // sentinel when backpressure clipped lines
 }
 
 /**
- * Internal main↔utilityProcess MessagePort message vocabulary.
- * Renderer never sees these directly — main translates to BotStatus.
+ * Internal mainâ†”utilityProcess MessagePort message vocabulary.
+ * Renderer never sees these directly â€” main translates to BotStatus.
  */
 export type BotLifecycle =
   | { type: 'init-ack' }
@@ -1118,9 +1122,9 @@ export type BotLifecycle =
     }
   | { type: 'chat'; from: string; text: string }
   /**
-   * Current world action (Party redesign §2/§5): emitted when the brain
+   * Current world action (Party redesign Â§2/Â§5): emitted when the brain
    * dispatches a world-acting tool; `name: null` clears it (loop ended). The
-   * renderer maps name+args to a verb line ("gathering wood…").
+   * renderer maps name+args to a verb line ("gathering woodâ€¦").
    */
   | { type: 'action'; name: string | null; args?: Record<string, unknown> }
   | { type: 'summon-ready' }
@@ -1131,7 +1135,7 @@ export type BotLifecycle =
   | { type: 'summon-stopped'; reason?: 'quit' | 'stop' | 'error'; nextStepHook?: boolean; nextStepLine?: string; nextStepGame?: string }
   | { type: 'exit'; code: number | null };
 
-/** A main → renderer current-action push (bot:action). */
+/** A main â†’ renderer current-action push (bot:action). */
 export interface BotActionPush {
   characterId: string;
   /** Tool name, or null when the action finished/cleared. */
@@ -1181,24 +1185,24 @@ export interface SkinGenResult {
 
 /**
  * A detected Minecraft installation surfaced to the wizard.
- * Source: CONTEXT.md §decisions "Cross-platform paths" + "First-launch wizard scope".
+ * Source: CONTEXT.md Â§decisions "Cross-platform paths" + "First-launch wizard scope".
  *
  * Zod-schema asymmetry (260518-o1k T2): the `kind` and `compatibility`
- * fields below ride the main→renderer push channel as plain TS objects;
+ * fields below ride the mainâ†’renderer push channel as plain TS objects;
  * inbound IPC zod-validation in `src/main/ipc.ts` only gates
  * `runWizardInstall` args (sessionId/installIds/skinServerBaseUrl) and
  * `wizardCancel` args (sessionId). The widened McInstall / Wizard*Event
- * unions therefore require NO zod schema changes — they are pure TS
+ * unions therefore require NO zod schema changes â€” they are pure TS
  * contracts. Documented here so a future security pass doesn't conclude
  * the validation step was skipped.
  */
 export interface McInstall {
-  /** Stable hash of `${kind}:${absolutePath}` — durable across re-detects on the same machine. */
+  /** Stable hash of `${kind}:${absolutePath}` â€” durable across re-detects on the same machine. */
   id: string;
   kind: 'vanilla' | 'curseforge' | 'lunar';
-  /** e.g. "Vanilla Launcher" or "Pixelmon · 1.20.1" or "Lunar Client" */
+  /** e.g. "Vanilla Launcher" or "Pixelmon Â· 1.20.1" or "Lunar Client" */
   label: string;
-  /** Absolute on-disk path — game dir for vanilla, instance dir for CurseForge. */
+  /** Absolute on-disk path â€” game dir for vanilla, instance dir for CurseForge. */
   path: string;
   mc_version: string | null;
   loader: 'fabric' | 'forge' | null;
@@ -1224,9 +1228,9 @@ export interface McInstall {
   sei_enabled: boolean;
   /**
    * Functional compatibility marker (260518-o1k D3).
-   *   - `full`    — wizard can install Fabric + CSL here (vanilla, curseforge).
-   *   - `limited` — read-only listing; wizard does NOT install (Lunar Client
-   *                 has no user-accessible mods/ — surfaced for UX
+   *   - `full`    â€” wizard can install Fabric + CSL here (vanilla, curseforge).
+   *   - `limited` â€” read-only listing; wizard does NOT install (Lunar Client
+   *                 has no user-accessible mods/ â€” surfaced for UX
    *                 transparency only).
    * Required field; scanners set it on every emission.
    */
@@ -1351,7 +1355,7 @@ export type WizardProgressEvent =
  * `chars:save` (new-character creation or Edit-modal regeneration).
  *
  * `requestId` correlates the stream to the renderer-side saveCharacter call
- * that started it — mirrors the wizard's `sessionId` routing so two flows (or
+ * that started it â€” mirrors the wizard's `sessionId` routing so two flows (or
  * a stale unmounted screen) can't cross their progress bars. `fraction` is a
  * 0..1 estimate the renderer scales to a 0..100 PercentBar; `section` is a
  * short human label of what the model is currently writing.
@@ -1369,7 +1373,7 @@ export interface ExpansionProgressEvent {
 /**
  * Per-character Knowledge: user-provided reference files (imported memories
  * from other platforms, facts about the player) injected into every AI
- * surface — chat, voice, chess, Minecraft bot. Stored under
+ * surface â€” chat, voice, chess, Minecraft bot. Stored under
  * <profileRoot>/knowledge/<characterId>/ (outside the memory dir, so "Reset
  * memory" never wipes it). Content is sanitized plain text only; the manifest
  * meta below is what list/read/add/update return.
@@ -1407,8 +1411,8 @@ export interface GenerateUniqueInput {
 }
 
 /**
- * Result of the full generation pipeline (soulcaster-1 sheet → parallel
- * portrait/skin + persona expansion → save). Resolves only when the character
+ * Result of the full generation pipeline (soulcaster-1 sheet â†’ parallel
+ * portrait/skin + persona expansion â†’ save). Resolves only when the character
  * is saved locally (cloud mirror is the standard async syncQueue path).
  */
 export type GenerateUniqueResult =
@@ -1419,7 +1423,7 @@ export type GenerateUniqueResult =
       message: string;
     };
 
-/* ── Portrait versions + regeneration (260909) ──────────────────────────── */
+/* â”€â”€ Portrait versions + regeneration (260909) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Snapshot of a character's stored card-image versions. `versions` are the
@@ -1469,7 +1473,7 @@ export interface GenProgressEvent {
   message?: string;
 }
 
-/** Result of prefs:get — the questionnaire gates read `needed` / `missing`. */
+/** Result of prefs:get â€” the questionnaire gates read `needed` / `missing`. */
 export interface PrefsGetResult {
   profile: UserPreferences | null;
   /**
@@ -1482,7 +1486,7 @@ export interface PrefsGetResult {
   needed: boolean;
   /**
    * 260706: questions the effective profile has no answer for, in ask order.
-   * Non-empty even when `needed` is false — a questionnaire completed before
+   * Non-empty even when `needed` is false â€” a questionnaire completed before
    * a new question shipped (or abandoned partway) reports its gaps here. The
    * "Meet my companion" gate asks these before casting; the App-level Home
    * gate keys on `needed` alone so completed users are never nagged at Home.
@@ -1504,7 +1508,7 @@ export interface AuthUser {
 
 /**
  * Top-level auth state. Two-state model per CONTEXT D-06:
- * there is no separate 'signed_out' — AuthChoice gates the app
+ * there is no separate 'signed_out' â€” AuthChoice gates the app
  * so 'local' is the resting-state when no session is loaded.
  */
 export type AuthState =
@@ -1539,8 +1543,8 @@ export interface AuthSnapshot {
 
 /**
  * `needsVerification` (260804, PIN migration): Supabase refused the sign-in with
- * `email_not_confirmed`. Per D-04 this is NOT an error — the account exists and
- * the password was right — so it stays on the `ok: true` side. But under the
+ * `email_not_confirmed`. Per D-04 this is NOT an error â€” the account exists and
+ * the password was right â€” so it stays on the `ok: true` side. But under the
  * old link flow it was a silent dead end: main returned a bare `{ ok: true }`,
  * no session was issued, and the renderer sat on the form waiting for an
  * auth-state push that could only ever come from clicking the emailed link.
@@ -1549,32 +1553,32 @@ export interface AuthSnapshot {
  */
 export type SignInResult =
   | { ok: true; needsVerification?: boolean }
-  // 260816 W7 region gate — `region_blocked` is returned BEFORE any Supabase
+  // 260816 W7 region gate â€” `region_blocked` is returned BEFORE any Supabase
   // call when the detected IP region is unsupported by Anthropic or Polar
   // (see src/shared/regionGate.ts). Detection fails open: unknown = allowed.
   | { ok: false; code: 'invalid_credentials' | 'invalid_email' | 'network' | 'rate_limited' | 'region_blocked'; message: string };
 
 export type SignUpResult =
   | { ok: true; requiresVerification: boolean }
-  // SECURITY (T-10-04 — enumeration resistance): no `email_in_use` variant.
+  // SECURITY (T-10-04 â€” enumeration resistance): no `email_in_use` variant.
   // Already-registered emails return { ok: true, requiresVerification: true }
   // so an attacker probing signup cannot tell registered from new addresses.
   // See authHandlers.signUpWithPassword for the two detection branches.
   //
-  // F-10 (quick/260525-usc) — COPPA DOB age gate. `under_13` is returned
+  // F-10 (quick/260525-usc) â€” COPPA DOB age gate. `under_13` is returned
   // BEFORE any Supabase call when the user's self-attested date of birth
-  // implies they're younger than 13. The DOB itself is NEVER persisted —
+  // implies they're younger than 13. The DOB itself is NEVER persisted â€”
   // we only retain the derived boolean fact `age >= 13`. The renderer's
   // SignInModal shows the message inline via the existing error path.
   //
-  // 260603 anti-abuse — `cooldown` is returned BEFORE any Supabase call when
+  // 260603 anti-abuse â€” `cooldown` is returned BEFORE any Supabase call when
   // the escalating per-device signup cooldown is still in effect (too many
   // signups from this machine recently). `retryAfterMs` lets the renderer show
-  // a live countdown. This is friction, not a hard lock — a human spacing
+  // a live countdown. This is friction, not a hard lock â€” a human spacing
   // signups never hits it.
   | { ok: false; code: 'weak_password' | 'invalid_email' | 'network' | 'under_13'; message: string }
   | { ok: false; code: 'cooldown'; message: string; retryAfterMs: number }
-  // 260816 W7 region gate — returned BEFORE any Supabase call (before even the
+  // 260816 W7 region gate â€” returned BEFORE any Supabase call (before even the
   // COPPA/cooldown pre-checks) when the detected IP region is unsupported.
   | { ok: false; code: 'region_blocked'; message: string }
   // 260729: NO LONGER PRODUCED. The 260605 honest already-registered surface
@@ -1587,7 +1591,7 @@ export type SignUpResult =
 
 export type OAuthResult =
   | { ok: true }
-  // 260816 W7 region gate — `region_blocked` is returned BEFORE the browser
+  // 260816 W7 region gate â€” `region_blocked` is returned BEFORE the browser
   // opens when the detected IP region is unsupported (fail open on unknown).
   | { ok: false; reason: 'user_cancelled' | 'timeout' | 'browser_closed' | 'google_rejected' | 'exchange_failed' | 'port_collision' | 'network' | 'region_blocked'; message: string };
 
@@ -1665,7 +1669,7 @@ export type ResendVerificationResult =
  * one cannot know which kind is in the user's inbox. A brand-new signup gets a
  * `signup` code; an address that is ALREADY registered gets a `recovery` code
  * (the silent forgot-password treatment in authHandlers.alreadyRegisteredResult),
- * and the panel shown for the two is deliberately identical — telling them apart
+ * and the panel shown for the two is deliberately identical â€” telling them apart
  * in the UI is exactly the account-enumeration leak T-10-04 closed. Main tries
  * both token types and reports which one landed.
  *
@@ -1691,7 +1695,7 @@ export type VerifyEmailCodeResult =
  *
  * `oauth_only` (260605): the address belongs to an OAuth-only account (e.g.
  * Google) with no password identity. Sending a reset link would let the user
- * graft a password onto an account that never had one — so we refuse and point
+ * graft a password onto an account that never had one â€” so we refuse and point
  * them at their provider instead. `provider` names it (e.g. 'Google').
  */
 export type PasswordResetResult =
@@ -1709,19 +1713,19 @@ export type UpdatePasswordResult =
   | { ok: false; code: 'weak_password' | 'not_signed_in' | 'network'; message: string };
 
 /**
- * Phase 11 plan 12 — ToS status returned by IpcChannel.tos.status.
+ * Phase 11 plan 12 â€” ToS status returned by IpcChannel.tos.status.
  *
  * `accepted` is tri-state (260610 offline-misfire fix):
- *   - true  → a row matches the active TOS_VERSION + PRIVACY_VERSION
- *   - false → DEFINITIVELY no matching row (query succeeded; user must
- *             accept — App.tsx mounts the blocking AcceptToSModal), or the
+ *   - true  â†’ a row matches the active TOS_VERSION + PRIVACY_VERSION
+ *   - false â†’ DEFINITIVELY no matching row (query succeeded; user must
+ *             accept â€” App.tsx mounts the blocking AcceptToSModal), or the
  *             user is not signed in
- *   - null  → the check could not reach the database (offline / DNS / timeout);
+ *   - null  â†’ the check could not reach the database (offline / DNS / timeout);
  *             App.tsx shows the dismissible offline-retry notice instead of
  *             the legal modal
  *
  * `tosVersion` / `privacyVersion` are the ACTIVE constants (not whatever the
- * user accepted) — the blocking modal shows these in its footer.
+ * user accepted) â€” the blocking modal shows these in its footer.
  */
 export interface TosStatus {
   accepted: boolean | null;
@@ -1743,9 +1747,9 @@ export type TosAcceptResult =
  *
  * `pending` is the count of ops in the queue that have not exceeded
  * MAX_ATTEMPTS yet (still being retried with backoff).
- * `failed` lists ops that have run out of retries — the renderer surfaces a
+ * `failed` lists ops that have run out of retries â€” the renderer surfaces a
  * "retry" affordance keyed off `uuid`.
- * `pendingByUuid` maps character.id → 'syncing' | 'failed' so a card can do
+ * `pendingByUuid` maps character.id â†’ 'syncing' | 'failed' so a card can do
  * an O(1) lookup; 'failed' wins over 'syncing' when both somehow exist.
  */
 export interface SyncStatus {
@@ -1761,11 +1765,11 @@ export interface SyncStatusPushEvent {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Phase 12 — Browse + moderation + reports domain types                     */
+/*  Phase 12 â€” Browse + moderation + reports domain types                     */
 /* -------------------------------------------------------------------------- */
 
 /**
- * A single Browse-tab card payload — main pre-joins everything the renderer
+ * A single Browse-tab card payload â€” main pre-joins everything the renderer
  * needs so the grid renders in one pass without crossing two stores. The
  * `inMyLibrary` predicate is precomputed in the main handler (Researcher
  * correction #4: predicate is "is this in useDataStore.characters", i.e. on
@@ -1777,7 +1781,7 @@ export interface BrowseEntry {
   name: string;
   /** First ~120 chars of persona_source with ellipsis (D-31d). */
   personaSnippet: string;
-  /** "by anonymous" or "by user-<short uuid frag>" per CONTEXT §specifics. */
+  /** "by anonymous" or "by user-<short uuid frag>" per CONTEXT Â§specifics. */
   creatorLabel: string;
   /** 4-char share code shown beside the name (null for pre-260703 rows). */
   publicId: string | null;
@@ -1795,7 +1799,7 @@ export interface BrowseEntry {
   skinUrl: string | null;
   /** ISO timestamp. */
   updatedAt: string;
-  /** Precomputed by main handler — true when the character JSON exists on local disk. */
+  /** Precomputed by main handler â€” true when the character JSON exists on local disk. */
   inMyLibrary: boolean;
   /**
    * How many accounts have this character in their library (cloud
@@ -1849,7 +1853,7 @@ export interface BrowsePage {
 /**
  * Sentinel error codes mirrored from src/main/cloud/cloudErrors.ts. The
  * publish-with-moderation IPC surface exposes only these three to the
- * renderer (raw provider categories never cross the boundary —
+ * renderer (raw provider categories never cross the boundary â€”
  * T-12-07-03). The renderer ERROR_COPY map in Plan 12-10/11 routes by
  * exact match.
  */
@@ -1861,7 +1865,7 @@ export const PUBLISH_MODERATION_CODES = [
 export type PublishModerationCode = (typeof PUBLISH_MODERATION_CODES)[number];
 
 /* -------------------------------------------------------------------------- */
-/*  Phase 13 — Proxy + billing + credits domain types                          */
+/*  Phase 13 â€” Proxy + billing + credits domain types                          */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -1878,19 +1882,19 @@ export type PlanTier = 'free' | 'quest' | 'party';
  * (which reads the `my_plan` view) and pushed via `credits:status:update`
  * after every proxied Anthropic response.
  *
- * A "credit" is a display unit only: 1 credit = 5,000 µ$ = $0.005. The backend
+ * A "credit" is a display unit only: 1 credit = 5,000 Âµ$ = $0.005. The backend
  * meters micro-dollars throughout; credits exist so the UI never shows money.
  *
- *   - `usage_pct`           — weekly ALLOWANCE consumption, 0..100, clamped.
+ *   - `usage_pct`           â€” weekly ALLOWANCE consumption, 0..100, clamped.
  *                              100 renders red.
- *   - `over_limit`          — allowance exhausted AND no extra credits left.
+ *   - `over_limit`          â€” allowance exhausted AND no extra credits left.
  *                              Drives the hard stop and the summon gate.
- *   - `resets_at`           — ISO timestamp the weekly allowance rolls over.
+ *   - `resets_at`           â€” ISO timestamp the weekly allowance rolls over.
  *                              Derived from the account's signup day; a usage
  *                              reset never moves it.
- *   - `extra_credits_*`     — the non-expiring top up bucket, in credits.
+ *   - `extra_credits_*`     â€” the non-expiring top up bucket, in credits.
  *                              Both 0 when the account never topped up.
- *   - `ai_backend_kind`     — mirrors `apiKeyStore.getAiBackendKind()`; the
+ *   - `ai_backend_kind`     â€” mirrors `apiKeyStore.getAiBackendKind()`; the
  *                              plan UI hides itself when this is 'local'.
  */
 export interface CreditsStatus {
@@ -1901,14 +1905,14 @@ export interface CreditsStatus {
   over_limit: boolean;
   /** ISO timestamp the weekly allowance rolls over. */
   resets_at: string;
-  /** Top up bucket, in credits (not µ$). Both 0 when never topped up. */
+  /** Top up bucket, in credits (not Âµ$). Both 0 when never topped up. */
   extra_credits_used: number;
   extra_credits_total: number;
   /** Billing, subscribers only. */
   renews_at: string | null;
   /**
    * ISO date a subscription will END. Set only when the subscription has been
-   * cancelled but is still inside its paid period ("to be cancelled") — the
+   * cancelled but is still inside its paid period ("to be cancelled") â€” the
    * user keeps the tier until this date. null for auto-renewing subscribers
    * and non-subscribers.
    */
@@ -1917,7 +1921,7 @@ export interface CreditsStatus {
   ai_backend_kind: 'local' | 'cloud-proxy';
   /**
    * 261028: this period's weekly allowance and the usage counted against it,
-   * in µ$ (my_plan.allowance_micro / allowance_used_micro, the exact figures
+   * in Âµ$ (my_plan.allowance_micro / allowance_used_micro, the exact figures
    * behind usage_pct). The allowance is the account's EFFECTIVE one: a change
    * to plan_config applies from each account's next weekly period, so on the
    * 261027 free cut ($0.50 -> $0.15) an account mid-week keeps 500000 until
@@ -1965,7 +1969,7 @@ export interface SubscriptionStatusInfo {
  * renderer surfaces the HardStopModal off this event.
  *
  * `reason` is retained for logging fidelity; the modal renders a single state
- * either way (260724 — the daily-dollar rate bucket that produced
+ * either way (260724 â€” the daily-dollar rate bucket that produced
  * 'rate_limited' is gone; a 429 can still arrive from the IP gates).
  */
 export interface CreditsHardStopEvent {
@@ -1974,7 +1978,7 @@ export interface CreditsHardStopEvent {
 }
 
 /**
- * 260725 — server-driven pricing catalog.
+ * 260725 â€” server-driven pricing catalog.
  *
  * Read from the proxy's world-readable `plan_config` / `topup_config` tables
  * (the same rows /billing/checkout mints sessions against), so a price,
@@ -1984,7 +1988,7 @@ export interface CreditsHardStopEvent {
  * failure fallback.
  *
  * All prices are integer cents; `*_credits` are display credits
- * (µ$ / 5,000, converted in main). `blurb` null = the renderer derives its
+ * (Âµ$ / 5,000, converted in main). `blurb` null = the renderer derives its
  * default line from the numbers.
  */
 export interface CatalogPlan {
@@ -1995,7 +1999,7 @@ export interface CatalogPlan {
   blurb: string | null;
 }
 export interface CatalogTopUp {
-  /** topup_config row id — passed back verbatim as the checkout `kind`. */
+  /** topup_config row id â€” passed back verbatim as the checkout `kind`. */
   kind: string;
   name: string;
   price_cents: number;
@@ -2010,7 +2014,7 @@ export interface PricingCatalog {
 /**
  * Zod-validated argument shapes for the billing IPC channels. Validation
  * lives at the main-process trust boundary (every ipcMain.handle runs
- * `.parse(args)` before dispatch) — see PATTERNS §"Zod validation at every
+ * `.parse(args)` before dispatch) â€” see PATTERNS Â§"Zod validation at every
  * external boundary".
  */
 export const ProxyConfigureArgsSchema = z.object({
@@ -2022,7 +2026,7 @@ export const ProxyConfigureArgsSchema = z.object({
  * proxy's `topup_config` table, never in client code.
  *
  * 260725: an open string (bounded like the proxy's own shape guard) rather
- * than a closed enum — the sellable SKUs are DB rows now, and the top up
+ * than a closed enum â€” the sellable SKUs are DB rows now, and the top up
  * surface paints packages from the server catalog, so a package added after
  * this client shipped must still pass the boundary. The proxy remains the
  * authority on what is actually purchasable (unknown kinds get 400).
@@ -2053,7 +2057,7 @@ export const CreditsChangePlanArgsSchema = z.object({
   tier: z.enum(['free', 'quest', 'party']),
 });
 /**
- * quick/260525-sbo Task 3 — auto-renewal consent gate.
+ * quick/260525-sbo Task 3 â€” auto-renewal consent gate.
  *
  * The renderer hands main a consent_version (= TOS_VERSION at click-time) so
  * the Edge Function can stamp it on the immutable subscription_consents row.
@@ -2064,10 +2068,10 @@ export const RecordConsentArgsSchema = z.object({
 });
 
 /**
- * 260706 — in-app feedback submission. `email` is optional; blank/omitted
+ * 260706 â€” in-app feedback submission. `email` is optional; blank/omitted
  * means the user chose to stay anonymous (the proxy then stores user_id NULL).
  * `claimReward` marks the one-time reward submission; the proxy resets the
- * account's weekly usage at most once per account (260724 — it used to be a
+ * account's weekly usage at most once per account (260724 â€” it used to be a
  * credit grant).
  */
 export const FeedbackSubmitArgsSchema = z.object({
@@ -2081,7 +2085,7 @@ export const FeedbackSubmitArgsSchema = z.object({
 });
 
 /**
- * 260706 — in-app companion report. `reasons` carries keys from the proxy's
+ * 260706 â€” in-app companion report. `reasons` carries keys from the proxy's
  * REPORT_REASONS allowlist (the proxy re-validates; unknown keys are a 400).
  */
 export const ReportSubmitArgsSchema = z.object({
@@ -2101,13 +2105,13 @@ export const ReportSubmitArgsSchema = z.object({
  * with `api: RendererApi`. Main registers ipcMain.handle for every request/response method.
  */
 export interface RendererApi {
-  // Bot supervision (request/response with timeouts — main enforces).
+  // Bot supervision (request/response with timeouts â€” main enforces).
   // `stop(id)` stops one summoned character; `stop()` (no id) stops every
   // active session (used by sign-out / account-swap teardown).
   summon(characterId: string, game?: GameId): Promise<void>;
   stop(characterId?: string): Promise<void>;
 
-  // Game adapters (M0, 260908) — the game-neutral world + dashboard surface.
+  // Game adapters (M0, 260908) â€” the game-neutral world + dashboard surface.
   // See src/shared/gameIpc.ts. Minecraft keeps onLan/getLanState/lanCheckNow
   // and the mcDashboard* members; these carry the per-game unions.
   onWorldState(cb: (state: WorldState) => void): Unsubscribe;
@@ -2119,7 +2123,7 @@ export interface RendererApi {
   gameSetPaused(characterId: string, paused: boolean): Promise<boolean>;
   gameSetMode(characterId: string, mode: McGameMode): Promise<boolean>;
 
-  // Don't Starve Together (game-adapters M2, 260908) — see src/shared/dstIpc.ts.
+  // Don't Starve Together (game-adapters M2, 260908) â€” see src/shared/dstIpc.ts.
   /** Detect the game + helper mod (re-applies modsettings.lua when found). */
   dstInstallState(): Promise<DstInstallState>;
   /** Copy the helper mod from the game pack into the game and force-enable it. */
@@ -2157,7 +2161,7 @@ export interface RendererApi {
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
 
-  // 260725 Knowledge — user-provided reference files injected into every AI
+  // 260725 Knowledge â€” user-provided reference files injected into every AI
   // surface (chat / voice / chess / Minecraft bot). All parsing + sanitizing
   // happens in main (knowledgeExtract); the renderer only ships raw bytes and
   // renders plain text. Errors carry user-facing messages.
@@ -2178,13 +2182,13 @@ export interface RendererApi {
   /** LLM-compact ALL entries into one (replaces the stored set; copies only, originals untouched). */
   knowledgeCompact(characterId: string): Promise<KnowledgeEntryMeta>;
 
-  // Phase 11 D-28 — portrait pipeline (file-on-disk, not inline data URL).
+  // Phase 11 D-28 â€” portrait pipeline (file-on-disk, not inline data URL).
   /** Write portrait bytes for a character and return the path reference ('<uuid>.png'). */
   charsApplyPortrait(args: { characterId: string; bytesBase64: string; format: 'png' | 'jpeg' | 'webp' }): Promise<string>;
   /** Clear portrait_image and delete the on-disk file (ENOENT-tolerant). */
   charsRemovePortrait(characterId: string): Promise<void>;
 
-  // 260909 — card-image versions + regeneration (owned characters only).
+  // 260909 â€” card-image versions + regeneration (owned characters only).
   /** List the stored portrait versions + which one is active. */
   charsPortraitVersions(characterId: string): Promise<PortraitVersionsState>;
   /**
@@ -2199,13 +2203,13 @@ export interface RendererApi {
   /** 261110: creator name, library add count and game looks for the profile Overview. Never throws. */
   charsOverviewInfo(characterId: string): Promise<CharacterOverviewInfo>;
 
-  // Phase 11 D-16 — toggle public/private visibility of a character. Refuses
+  // Phase 11 D-16 â€” toggle public/private visibility of a character. Refuses
   // when the character is a bundled default. Triggers the standard cloud-mirror
   // upsert via saveCharacter under the hood.
   charsSetShared(args: { id: string; shared: boolean }): Promise<void>;
 
   /**
-   * 260729 — save the character's full portrait art to disk. Opens a native
+   * 260729 â€” save the character's full portrait art to disk. Opens a native
    * save dialog; resolves the written path, or null when the user cancels or
    * the character has no portrait art.
    */
@@ -2213,14 +2217,14 @@ export interface RendererApi {
 
   /**
    * Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY,
-   * local rolling-24h log — all backends, BYOK included). Called before
+   * local rolling-24h log â€” all backends, BYOK included). Called before
    * entering the new-character flow so a maxed-out user sees a "come back
-   * tomorrow" modal instead of failing mid-flow. Best-effort — returns
+   * tomorrow" modal instead of failing mid-flow. Best-effort â€” returns
    * { blocked:false } on any error; the chars:save create path enforces.
    */
   checkCreateQuota(): Promise<{ blocked: boolean; resetsAt: string | null }>;
 
-  // Phase 11 plan 17 — fetch the UUID set of the signed-in user's cloud
+  // Phase 11 plan 17 â€” fetch the UUID set of the signed-in user's cloud
   // characters. Used by useCloudCharactersStore to drive the "LOCAL ONLY"
   // chip on CharacterCard. Returns { ids: [], ok: true } when signed-out;
   // { ids: [], ok: false } on a listMyCharacters failure so the renderer
@@ -2228,7 +2232,7 @@ export interface RendererApi {
   // LOCAL ONLY during a transient outage (HR-01).
   charsListCloud(): Promise<{ ids: string[]; ok: boolean }>;
 
-  // Phase 11 plan 19 (D-19) — cache-on-demand sync surface. openPrepare
+  // Phase 11 plan 19 (D-19) â€” cache-on-demand sync surface. openPrepare
   // ensures a character is hydrated to local disk BEFORE the renderer
   // navigates into it; listMerged returns the local + cloud union with a
   // per-row source annotation so HomeScreen can render cloud-only entries.
@@ -2248,17 +2252,17 @@ export interface RendererApi {
   /**
    * Remove a foreign-owned World character from the user's library: drop the
    * id from UserConfig.added_world_ids AND wipe the local cache (JSON +
-   * portrait + skin + memory dir). Does NOT touch the cloud row — the user
+   * portrait + skin + memory dir). Does NOT touch the cloud row â€” the user
    * doesn't own it. Use chars:delete for self-owned characters.
    */
   charsRemoveFromLibrary(id: string): Promise<void>;
 
-  // Phase 11 — cloud-sync queue surface for the per-card pill driver.
+  // Phase 11 â€” cloud-sync queue surface for the per-card pill driver.
   /** Snapshot of pending + failed cloud ops. */
   syncStatus(): Promise<SyncStatus>;
   /** Force a retry of a single op (resets attempts, schedules nextAttemptAt=now). */
   syncRetry(uuid: string): Promise<void>;
-  /** Subscribe to sync:status:update pushes — returns the unsubscribe fn. */
+  /** Subscribe to sync:status:update pushes â€” returns the unsubscribe fn. */
   onSyncStatusUpdate(cb: (status: SyncStatusPushEvent) => void): Unsubscribe;
 
   // User config + secret
@@ -2279,7 +2283,7 @@ export interface RendererApi {
   /**
    * Fire-and-forget product-analytics event. No-op in main when the user has
    * opted out or no ingestion key is baked in. Props must be scalar
-   * (string/number/boolean/null) — main sanitizes and drops anything else, so
+   * (string/number/boolean/null) â€” main sanitizes and drops anything else, so
    * NEVER pass chat/persona text or other free-form content.
    */
   track(event: string, props?: Record<string, string | number | boolean | null>): void;
@@ -2340,7 +2344,7 @@ export interface RendererApi {
   avatarImport(characterId: string, zipBytes: ArrayBuffer): Promise<AvatarManifest>;
   /**
    * Download the character's CLOUD-hosted avatar zip (metadata.avatar, see
-   * cloudAvatarOf in characterSchema) and import it into the local store —
+   * cloudAvatarOf in characterSchema) and import it into the local store â€”
    * same pipeline as avatarImport, but main resolves the URL itself from the
    * character row (the renderer never picks what main fetches). Throws when
    * the character has no cloud avatar or the download/import fails.
@@ -2389,19 +2393,19 @@ export interface RendererApi {
   onAvatarManifest(
     cb: (update: { characterId: string; manifest: AvatarManifest | null }) => void,
   ): Unsubscribe;
-  /** Mouth-level sample for the audible companion (main window → overlay). */
+  /** Mouth-level sample for the audible companion (main window â†’ overlay). */
   avatarOverlayLevel(characterId: string, level: number): Promise<void>;
   /** Subscribe (overlay window only) to relayed mouth-level samples. */
   onAvatarOverlayLevel(cb: (sample: { id: string; level: number }) => void): Unsubscribe;
-  /** Overlay window only: pointer entered/left overlay chrome — make the
+  /** Overlay window only: pointer entered/left overlay chrome â€” make the
    * window clickable / restore click-through. */
   avatarOverlayInteractive(interactive: boolean): Promise<void>;
   /**
    * Overlay window only: WINDOW resize. Streams the desired tile HEIGHT
-   * (`size`) and WIDTH (`width` — free-form since 260807, absent keeps the
+   * (`size`) and WIDTH (`width` â€” free-form since 260807, absent keeps the
    * current width) while dragging a corner handle (anchor = the corner that
    * stays fixed; 'center' kept for programmatic use); `commit` persists the
-   * final geometry. The wheel does NOT come here anymore — it zooms the
+   * final geometry. The wheel does NOT come here anymore â€” it zooms the
    * character within the tile (avatarOverlayCamera, 260806).
    */
   avatarOverlayResize(args: {
@@ -2412,7 +2416,7 @@ export interface RendererApi {
   }): Promise<void>;
   /** Overlay window only: hold-to-drag WINDOW move stream (screen-space
    * deltas from the pointer-down; mirrors avatarCaptionMove). Available in
-   * view mode too since 260806 — the drag button is ordinary chrome, not an
+   * view mode too since 260806 â€” the drag button is ordinary chrome, not an
    * app-region (an app-region swallows pointer events, which broke the
    * per-region interactivity tracking). */
   avatarOverlayMove(args: {
@@ -2421,7 +2425,7 @@ export interface RendererApi {
     dy?: number;
   }): Promise<void>;
   /** Overlay window only: subscribe to the polled cursor position, normalized
-   * to [-1, 1] around the overlay window's center (x right, y UP — the
+   * to [-1, 1] around the overlay window's center (x right, y UP â€” the
    * focusController's frame). Main polls only while a Live2D tile shows; the
    * gaze cursor-follow mode treats a stale feed as "wander instead". */
   onAvatarOverlayCursor(cb: (pt: { x: number; y: number }) => void): Unsubscribe;
@@ -2432,14 +2436,14 @@ export interface RendererApi {
    * into the click-through window. Pushed every tick while inside, once on
    * leaving. */
   onAvatarOverlayPointer?(cb: (sample: OverlayPointerSample) => void): Unsubscribe;
-  // ── Facepack pilot (261028, dev flag only; see src/main/facepack/) ──
+  // â”€â”€ Facepack pilot (261028, dev flag only; see src/main/facepack/) â”€â”€
   facepackInfo?(): Promise<FacepackDevInfo>;
   facepackManifest?(id: string): Promise<FacepackManifest | null>;
   facepackFile?(id: string, path: string): Promise<Uint8Array | null>;
   facepackForCharacter?(characterId: string): Promise<string | null>;
   facepackOpenPreview?(): Promise<boolean>;
   onFaceCue?(cb: (cue: FaceCue) => void): Unsubscribe;
-  // ── SeiLink room (261104; see src/main/seilink/) ──
+  // â”€â”€ SeiLink room (261104; see src/main/seilink/) â”€â”€
   seilinkDevInfo?(): Promise<SeilinkDevInfo>;
   seilinkPacks?(): Promise<SeilinkPack[]>;
   seilinkRoomGet?(characterId: string): Promise<SeilinkRoomPayload>;
@@ -2499,17 +2503,17 @@ export interface RendererApi {
   /** Overlay window only: edit mode entered/left (forwarded to the caption
    * window so its edit chrome follows the avatar's pencil). */
   avatarOverlayEditing(editing: boolean): Promise<void>;
-  /** Overlay window only: the mute button — main relays to the main window,
+  /** Overlay window only: the mute button â€” main relays to the main window,
    * which flips useUiStore.callMuted (the mic's single source of truth). */
   avatarOverlayMuteToggle(): Promise<void>;
   /** Main window: subscribe to overlay mute presses relayed by main. */
   onAvatarMuteRequest(cb: () => void): Unsubscribe;
-  /** Overlay window only (261030): the interrupt button — main relays to the
+  /** Overlay window only (261030): the interrupt button â€” main relays to the
    * main window, which runs useVoiceStore.interrupt (the barge-in cut). */
   avatarOverlayInterrupt(): Promise<void>;
   /** Main window: subscribe to overlay interrupt presses relayed by main. */
   onAvatarInterruptRequest(cb: () => void): Unsubscribe;
-  /** Overlay window only: toggle the caption overlay window → new enabled. */
+  /** Overlay window only: toggle the caption overlay window â†’ new enabled. */
   avatarOverlayCaptionsToggle(): Promise<boolean>;
   /** Caption window only: corner-resize stream/commit (anchor = the corner
    * that stays fixed, mirroring avatarOverlayResize). */
@@ -2525,7 +2529,7 @@ export interface RendererApi {
     dx?: number;
     dy?: number;
   }): Promise<void>;
-  /** Caption window only: bump the fixed caption font size → the new px. */
+  /** Caption window only: bump the fixed caption font size â†’ the new px. */
   avatarCaptionFont(delta: 1 | -1): Promise<number>;
   /** Caption window only: subscribe to the avatar overlay's edit-mode flag. */
   onAvatarCaptionEditState(cb: (editing: boolean) => void): Unsubscribe;
@@ -2535,7 +2539,7 @@ export interface RendererApi {
    * Signal that the chat surface was opened for a character. Main decides whether
    * a first-meeting greeting fires (any companion kind, empty transcript, never
    * chatted) and returns any greeting replies to append; returns [] otherwise.
-   * Safe to call on every empty-history open — main no-ops when ineligible.
+   * Safe to call on every empty-history open â€” main no-ops when ineligible.
    *
    * `opts.firstMoment` (260926): this open is the guided first moment right
    * after onboarding, so the greeting also ends by inviting the player to the
@@ -2544,7 +2548,7 @@ export interface RendererApi {
    */
   chatOpened(characterId: string, opts?: ChatOpenedOptions): Promise<ChatMessage[]>;
   /**
-   * Last chat line per character (Party redesign §2) — the roster "lastline"
+   * Last chat line per character (Party redesign Â§2) â€” the roster "lastline"
    * preview without loading full transcripts. Keys are character ids; missing
    * key = no messages yet.
    */
@@ -2618,6 +2622,24 @@ export interface RendererApi {
   onDrawState(cb: (state: DrawGameState) => void): Unsubscribe;
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
+
+  // --- Forza 4 minigame --- see src/shared/connect4Ipc.ts.
+  CONNECT4Start(characterId: string, opts?: { playerColor?: 'r' | 'y' | 'random' }): Promise<CONNECT4GameState>;
+  CONNECT4GetState(characterId: string): Promise<CONNECT4GameState | null>;
+  CONNECT4Move(characterId: string, column: number): Promise<{ ok: boolean; error?: string; state: CONNECT4GameState }>;
+  CONNECT4Resign(characterId: string): Promise<CONNECT4GameState>;
+  CONNECT4Rematch(characterId: string): Promise<CONNECT4GameState>;
+  CONNECT4End(characterId: string): Promise<void>;
+  onCONNECT4State(cb: (state: CONNECT4GameState) => void): Unsubscribe;
+
+  // --- Battleship minigame --- see src/shared/BATTLESHIPIpc.ts.
+  BATTLESHIPStart(characterId: string, opts?: { playerStarts?: boolean }): Promise<BATTLESHIPGameState>;
+  BATTLESHIPGetState(characterId: string): Promise<BATTLESHIPGameState | null>;
+  BATTLESHIPMove(characterId: string, row: number, col: number): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }>;
+  BATTLESHIPResign(characterId: string): Promise<BATTLESHIPGameState>;
+  BATTLESHIPRematch(characterId: string): Promise<BATTLESHIPGameState>;
+  BATTLESHIPEnd(characterId: string): Promise<void>;
+  onBATTLESHIPState(cb: (state: BATTLESHIPGameState) => void): Unsubscribe;
 
   // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
   /** Current OS access status for the microphone or (macOS) Screen Recording. */
@@ -2766,7 +2788,7 @@ export interface RendererApi {
    * Resolves to encoded audio bytes (audio/mpeg) for renderer playback. Main
    * resolves the character's voice (metadata.voiceId, with a deterministic
    * fallback assignment for pre-voice characters) and routes through the Sei
-   * proxy with the Supabase JWT — the ElevenLabs key never reaches the client.
+   * proxy with the Supabase JWT â€” the ElevenLabs key never reaches the client.
    * Rejects with sentinel-prefixed messages: VOICE_NO_SESSION (signed out),
    * VOICE_RATE_LIMITED (daily voice allowance), VOICE_NOT_CONFIGURED,
    * VOICE_TTS_FAILED.
@@ -2784,28 +2806,28 @@ export interface RendererApi {
   voiceTtsStream(args: { characterId: string; text: string; more?: boolean; prev?: string }): Promise<{ streamId: string }>;
   /** Chunks/completions for voiceTtsStream (one subscription, ids multiplex). */
   onVoiceTtsChunk(cb: (push: VoiceTtsChunkPush) => void): Unsubscribe;
-  /** Local TTS spoke with a substitute voice pack (260908) — see VoiceTtsNoticePush. */
+  /** Local TTS spoke with a substitute voice pack (260908) â€” see VoiceTtsNoticePush. */
   onVoiceTtsNotice(cb: (push: VoiceTtsNoticePush) => void): Unsubscribe;
   /**
    * Cloud speech-to-text (260724): transcribe one call utterance via
-   * ElevenLabs Scribe (a resolved ElevenLabs key direct — dev env key or the
-   * BYOK user's stored key — or the Sei proxy with the Supabase JWT; same
+   * ElevenLabs Scribe (a resolved ElevenLabs key direct â€” dev env key or the
+   * BYOK user's stored key â€” or the Sei proxy with the Supabase JWT; same
    * routing as voiceTts). `pcm` is raw Float32 mono audio at 16kHz, exactly
    * what the dictation VAD captures. Resolves { text } on success (may be
    * empty for non-speech), or { unavailable: true } when cloud STT cannot run
-   * at all right now — the caller should stop probing for the rest of the
+   * at all right now â€” the caller should stop probing for the rest of the
    * call. `reason` (260725, optional for back-compat) says why:
-   *   'no-credentials' — nothing configured client-side (BYOK with no stored
+   *   'no-credentials' â€” nothing configured client-side (BYOK with no stored
    *     ElevenLabs key, or cloud with no session); turn Scribe off for the
    *     call rather than prompting a Whisper install.
-   *   'upstream' — credentials exist but the upstream refused terminally
+   *   'upstream' â€” credentials exist but the upstream refused terminally
    *     (auth, balance, cap, unconfigured service); surface the local
    *     Whisper fallback prompt.
    * Rejects on transient failures (network, upstream 5xx); the renderer
    * falls back to the local Whisper result either way, so this surface never
    * blocks an utterance.
    *
-   * 260725: no language argument — Scribe auto-detects the language per
+   * 260725: no language argument â€” Scribe auto-detects the language per
    * utterance, and main persists a confident repeated detection into
    * UserConfig.chat_language (voice/languageAutoSwitch.ts). The renderer
    * only ever receives the transcript text.
@@ -2819,7 +2841,7 @@ export interface RendererApi {
     | { unavailable: true; reason?: 'no-credentials' | 'upstream' }
   >;
   /**
-   * Local speech packs (260816, china-compat W3+W4) — sherpa-onnx models for
+   * Local speech packs (260816, china-compat W3+W4) â€” sherpa-onnx models for
    * local TTS (en+zh voice packs) and SenseVoice STT, downloaded on demand
    * into <userData>/speech-models/. Contract doc: src/main/speech/index.ts.
    * States: 'absent' | 'downloading' (pct present) | 'ready'; `bytes` is the
@@ -2838,7 +2860,7 @@ export interface RendererApi {
    * Local SenseVoice STT (260816): transcribe one dictation utterance in main.
    * `pcm` is raw Float32 mono audio at `sampleRate` (the dictation pipeline
    * produces 16kHz). Rejects with VOICE_PACK_MISSING:stt-sensevoice when the
-   * model is not downloaded — the caller falls back to Whisper behavior.
+   * model is not downloaded â€” the caller falls back to Whisper behavior.
    */
   speechSttTranscribe(args: {
     pcm: ArrayBuffer;
@@ -2881,7 +2903,7 @@ export interface RendererApi {
     interrupts?: CallInterruptCounts;
   }): Promise<void>;
   /**
-   * The call pipeline just went LIVE — ask the companion to speak first (like
+   * The call pipeline just went LIVE â€” ask the companion to speak first (like
    * greeting on spawn). In-game sessions get a {type:'voice-call-greet'} port
    * event; idle characters run a standalone chat-brain greeting turn whose
    * replies arrive over the chat:message push (and are spoken via TTS).
@@ -2911,7 +2933,7 @@ export interface RendererApi {
   }): Promise<ChatMessage[]>;
   /**
    * Idle conversation starter (260707): the live call has been quiet for about
-   * `quietSeconds` — give `characterId` a chance to start a topic. Returns the
+   * `quietSeconds` â€” give `characterId` a chance to start a topic. Returns the
    * spoken lines in `messages`; empty when it chose silence, when the call had
    * already ended, or when a real turn was in flight (the nudge never preempts
    * one). `endCall: true` means the model hung up on this nudge: speak
@@ -2999,12 +3021,12 @@ export interface RendererApi {
    * trimmed and encrypted at rest via safeStorage in main (same handling as
    * the Anthropic BYOK key); pass null to clear. The plaintext key is
    * write-only from the renderer's perspective: it is NEVER returned to the
-   * renderer — use voiceElevenKeyStatus for presence.
+   * renderer â€” use voiceElevenKeyStatus for presence.
    */
   voiceElevenKeySet(args: { key: string | null }): Promise<void>;
   /**
    * BYOK voice (260725): whether an ElevenLabs key is stored for the active
-   * profile. Presence only — the full key is NEVER returned to the renderer.
+   * profile. Presence only â€” the full key is NEVER returned to the renderer.
    */
   voiceElevenKeyStatus(): Promise<{ present: boolean }>;
   /**
@@ -3049,9 +3071,9 @@ export interface RendererApi {
   applySkin(args: { characterId: string; pngBase64: string; source: SkinSource; mojangUsername?: string | null; username?: string | null }): Promise<{ skin: Skin; username: string | null }>;
   /** Reset the persona to its bundled default skin (or 'none' for user-created personas). */
   removeSkin(characterId: string): Promise<{ skin: Skin }>;
-  /** Open native file dialog, validate dimensions (64×64), and return base64 + sha256 for renderer-side preview + applySkin. */
+  /** Open native file dialog, validate dimensions (64Ã—64), and return base64 + sha256 for renderer-side preview + applySkin. */
   uploadSkinPng(): Promise<{ pngBase64: string; sha256: string } | null>;
-  /** Resolve Mojang username -> UUID -> texture URL -> PNG bytes. 15s timeout. Normalizes legacy 64×32 skins to 64×64 before returning. */
+  /** Resolve Mojang username -> UUID -> texture URL -> PNG bytes. 15s timeout. Normalizes legacy 64Ã—32 skins to 64Ã—64 before returning. */
   searchMojangSkin(username: string): Promise<{ pngBase64: string; sha256: string; resolvedUsername: string }>;
   /** Returns the loopback URL prefix that CustomSkinLoader is configured against (e.g. 'http://127.0.0.1:54321'). */
   getSkinServerUrl(): Promise<{ baseUrl: string }>;
@@ -3080,15 +3102,15 @@ export interface RendererApi {
     installIds: string[];
     skinServerBaseUrl: string;
     /**
-     * installId → Minecraft version the player picked for that vanilla
-     * launcher (260916). Absent or unjoinable → the newest supported version
+     * installId â†’ Minecraft version the player picked for that vanilla
+     * launcher (260916). Absent or unjoinable â†’ the newest supported version
      * (shared/mcSetup.ts selectTargetMcVersion). Ignored for CurseForge.
      */
     mcVersions?: Record<string, string>;
   }): Promise<{ results: WizardInstallResult[] }>;
   /**
    * Abort an in-flight runWizardInstall by sessionId. Main holds a Map<sessionId, AbortController>;
-   * this resolves immediately after firing .abort() — the in-flight runWizardInstall promise then rejects.
+   * this resolves immediately after firing .abort() â€” the in-flight runWizardInstall promise then rejects.
    */
   wizardCancel(sessionId: string): Promise<void>;
   /**
@@ -3116,19 +3138,19 @@ export interface RendererApi {
    * Fired when a user first tries to summon a character: if they have never
    * completed skin setup (WizardState.hasRunOnce === false) AND this flag is
    * unset, the renderer shows a one-time prompt and then sets the flag.
-   * Profile-scoped — mirrors migrationShown.
+   * Profile-scoped â€” mirrors migrationShown.
    */
   wizardPromptShown(action: 'get' | 'set'): Promise<{ shown: boolean }>;
 
   // --- Auth (Phase 10) ---
   signInPassword(args: { email: string; password: string }): Promise<SignInResult>;
   /**
-   * F-10 (quick/260525-usc) — COPPA age gate at signup. The renderer collects
+   * F-10 (quick/260525-usc) â€” COPPA age gate at signup. The renderer collects
    * a date of birth via three dropdowns (month / day / year); main computes
    * age from {dobYear, dobMonth, dobDay} via wall-clock today. If age < 13
    * we return `{ ok:false, code:'under_13' }` BEFORE any Supabase call.
    *
-   * The DOB itself is never persisted to Supabase — we only retain the
+   * The DOB itself is never persisted to Supabase â€” we only retain the
    * derived boolean fact `age >= 13` (the signup timestamp itself, combined
    * with a successful signUp, is the boolean record).
    */
@@ -3158,11 +3180,11 @@ export interface RendererApi {
   /** True once after a ChatGPT login/link that enabled plan usage. */
   takeChatgptPlanOffer(): Promise<boolean>;
   /**
-   * 260816 W7 region gate — cached region verdict for the renderer's
+   * 260816 W7 region gate â€” cached region verdict for the renderer's
    * pre-check, so the AuthPanel / SignInModal blocking popup can appear
    * immediately instead of after a failed submit. Purely advisory: the
    * MAIN-side check inside the auth handlers remains the authoritative gate.
-   * Fails open — a detection failure reports { loc: null, blocked: false }.
+   * Fails open â€” a detection failure reports { loc: null, blocked: false }.
    */
   regionStatus(): Promise<RegionStatus>;
   signOut(): Promise<void>;
@@ -3185,7 +3207,7 @@ export interface RendererApi {
   /**
    * Send a password-reset email. Neutral success (anti-enumeration): returns
    * { ok:true } whether or not the address is registered. The email carries a
-   * 6-digit recovery code, redeemed in-app via verifyEmailCode — no link, so the
+   * 6-digit recovery code, redeemed in-app via verifyEmailCode â€” no link, so the
    * inbox can be opened on any device.
    */
   sendPasswordReset(args: { email: string }): Promise<PasswordResetResult>;
@@ -3201,10 +3223,10 @@ export interface RendererApi {
    */
   onPasswordRecovery(cb: () => void): Unsubscribe;
   /**
-   * 260603 anti-abuse — hand a solved Cloudflare Turnstile / hCaptcha token to
+   * 260603 anti-abuse â€” hand a solved Cloudflare Turnstile / hCaptcha token to
    * main, to be forwarded as `options.captchaToken` on the NEXT signup. Tokens
    * are single-use; main read-and-clears. Inert until bot-protection is enabled
-   * (operator USER-ACTION). See captcha.ts + ABUSE-GUARD-PLAN.md §4c.
+   * (operator USER-ACTION). See captcha.ts + ABUSE-GUARD-PLAN.md Â§4c.
    */
   setCaptchaToken(token: string | null): Promise<void>;
   onAuthState(cb: (state: AuthState) => void): Unsubscribe;
@@ -3225,7 +3247,7 @@ export interface RendererApi {
   /**
    * List local-only characters eligible for one-shot migration to the user's
    * cloud library. `cloudListOk` is false when the underlying Supabase listing
-   * call failed (MR-01) — in that case `characters` falls back to every
+   * call failed (MR-01) â€” in that case `characters` falls back to every
    * non-default local character (we can't filter by cloud presence), and the
    * modal should surface a "Couldn't verify which of these are already in
    * cloud" banner so the user understands why already-uploaded chars might
@@ -3264,21 +3286,21 @@ export interface RendererApi {
   // --- Browse + moderation (Phase 12) ---
   /**
    * Paged listing of public, moderation-clean characters. NOT gated on
-   * cloud writes — Browse is read-public per LIB-04. Empty array when
+   * cloud writes â€” Browse is read-public per LIB-04. Empty array when
    * the RPC fails or there are no rows; `hasMore` is true when the
    * returned page is full (renderer can request the next offset).
    */
   browseList(args: { query: string; limit: number; offset: number; sort?: BrowseSort }): Promise<BrowsePage>;
   // The legacy publish-with-moderation IPC method was removed in 260525-qy0
-  // — moderation now runs inline inside chars.save / chars.setShared so the
+  // â€” moderation now runs inline inside chars.save / chars.setShared so the
   // renderer's existing calls to charsSave + charsSetShared trigger the gate.
   // Renderer error surfaces use the catch-and-toast pattern; the gate's
   // friendlyMessage is thrown as an Error and surfaced via err.message.
   //
-  // B4: getCapabilities + the BROWSE_ENABLED capability gate were removed —
+  // B4: getCapabilities + the BROWSE_ENABLED capability gate were removed â€”
   // the World (formerly Browse) tab is always available.
 
-  // --- Phase 13 — Proxy + billing + credits (stub contract) ---
+  // --- Phase 13 â€” Proxy + billing + credits (stub contract) ---
   /**
    * Persist the AI backend kind (D-57). On 'cloud-proxy', the renderer
    * surfaces the pricing icon + credits UI. The main-process setter writes
@@ -3311,7 +3333,7 @@ export interface RendererApi {
   /** 261120: the banner was dismissed or clicked; main stops replaying it. */
   usageSpendAlertAck?: () => Promise<void>;
   /**
-   * 260725 — read the server-driven pricing catalog (plan cards + top up
+   * 260725 â€” read the server-driven pricing catalog (plan cards + top up
    * packages) from the proxy's world-readable config tables. Cached in main;
    * null when the read fails and no cached copy exists (the renderer then
    * keeps its bundled fallback copy).
@@ -3346,13 +3368,13 @@ export interface RendererApi {
    */
   subscriptionCancel: () => Promise<{ ok: true; portalUrl: string } | { ok: false; code: string }>;
   /**
-   * quick/260525-sbo Task 3 — record an immutable affirmative consent before
+   * quick/260525-sbo Task 3 â€” record an immutable affirmative consent before
    * opening the LS subscription checkout. Required by CA Bus & Prof Code
-   * §17602(b) recordkeeping. The renderer passes the active TOS_VERSION as
+   * Â§17602(b) recordkeeping. The renderer passes the active TOS_VERSION as
    * consent_version; main forwards to the record-consent Edge Function.
    *
    * Non-blocking: callers proceed with the checkout or the tier change
-   * even if this returns `ok: false` — the legal anchor is the user's
+   * even if this returns `ok: false` â€” the legal anchor is the user's
    * affirmative checkbox click which the renderer cannot lose. A failed
    * INSERT is logged in main; the operator can backfill from console logs
    * if a dispute requires the audit trail.
@@ -3361,7 +3383,7 @@ export interface RendererApi {
     { ok: true } | { ok: false; code: string }
   >;
   /**
-   * 260706 — submit in-app feedback to the proxy (POST /feedback, 20/day per
+   * 260706 â€” submit in-app feedback to the proxy (POST /feedback, 20/day per
    * user). With claimReward, the proxy also attempts the once-per-account
    * weekly-usage reset: usage_reset=true on first claim, already_claimed=true
    * when this account claimed before (the renderer retires the banner either
@@ -3378,7 +3400,7 @@ export interface RendererApi {
     | { ok: false; code: string; status?: number; reason?: string }
   >;
   /**
-   * 260706 — report a companion (POST /report, 20/day per user). Reasons are
+   * 260706 â€” report a companion (POST /report, 20/day per user). Reasons are
    * keys from the report-reason allowlist; a comment is required with 'other'.
    */
   reportSubmit: (args: {
@@ -3407,7 +3429,7 @@ export interface RendererApi {
   /** 261120: the wall modal was closed (or lifted); main stops replaying it. */
   creditsHardStopAck?: () => Promise<void>;
   /**
-   * Subscribe to `proxy:kind-changed` pushes — the effective ai_backend_kind,
+   * Subscribe to `proxy:kind-changed` pushes â€” the effective ai_backend_kind,
    * emitted by main on every persisted change and at the end of every
    * profile-scope switch. The single live feed for the mode the UI displays;
    * see IpcChannel.proxy.kindChanged.
@@ -3416,18 +3438,18 @@ export interface RendererApi {
     cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void,
   ) => Unsubscribe;
 
-  // Push subscriptions — return Unsubscribe (renderer cleans up on unmount)
+  // Push subscriptions â€” return Unsubscribe (renderer cleans up on unmount)
   onStatus(cb: (status: BotStatus) => void): Unsubscribe;
   /** Pull the current per-character bot statuses (snapshot). Used to seed a
    * freshly-(re)subscribed renderer, since onStatus pushes only fire on
-   * TRANSITIONS — a subscriber that attaches after 'online' would otherwise
+   * TRANSITIONS â€” a subscriber that attaches after 'online' would otherwise
    * never learn a session is live (260703: chat-launched Sui session invisible
    * to the GUI after a dev HMR re-created the store). Mirrors getLanState. */
   getBotStatuses(): Promise<BotStatus[]>;
   /**
-   * Subscribe to `bot:action` pushes (Party redesign §2) — the companion's
+   * Subscribe to `bot:action` pushes (Party redesign Â§2) â€” the companion's
    * current world action (tool name + args; name null = cleared). Drives the
-   * "gathering wood…" presence lines.
+   * "gathering woodâ€¦" presence lines.
    */
   onBotAction(cb: (push: BotActionPush) => void): Unsubscribe;
   /**
@@ -3438,7 +3460,7 @@ export interface RendererApi {
    */
   onVisionCapability(cb: (cap: VisionCapability) => void): Unsubscribe;
   /**
-   * china-compat W1 — list the selected provider's models with the user's own
+   * china-compat W1 â€” list the selected provider's models with the user's own
    * key (typed error token on failure, never a throw) and probe a
    * provider+model with a 1-token completion through the main LLM layer.
    */
@@ -3473,7 +3495,7 @@ export interface RendererApi {
   /**
    * Force ONE fresh LAN detection pass right now and return its result (260703).
    * Unlike {@link getLanState} (a cached snapshot that can lag up to ~4s behind
-   * reality because the background poll damps open→closed transitions), this
+   * reality because the background poll damps openâ†’closed transitions), this
    * reads live ground truth. The summon click awaits it so a world that JUST
    * closed shows the "open your world" modal instead of summoning into a dead
    * port. As a side effect it also refreshes main's cached LAN state (so the
@@ -3486,7 +3508,7 @@ export interface RendererApi {
    *  (chars:save). Filter events by the `expansionRequestId` you passed. */
   onExpansionProgress(cb: (ev: ExpansionProgressEvent) => void): Unsubscribe;
   /**
-   * Fires when an OPTIONAL update (minor/major bump) is detected — at startup
+   * Fires when an OPTIONAL update (minor/major bump) is detected â€” at startup
    * (delayed) or after a manual "Check for updates". The renderer shows the
    * up-front changelog popup; download happens only on consent. Mandatory
    * (patch-only) updates download silently and never push this.
@@ -3498,7 +3520,7 @@ export interface RendererApi {
    * Optional so stubs and older bridges need not provide it.
    */
   rendererReady?(): void;
-  /** Fires when a manual update check starts (Settings → Checking…). */
+  /** Fires when a manual update check starts (Settings â†’ Checkingâ€¦). */
   onUpdateChecking(cb: () => void): Unsubscribe;
   /** Fires when an update check completes with no newer version (Up to date). */
   onUpdateNotAvailable(cb: () => void): Unsubscribe;
@@ -3529,12 +3551,12 @@ export interface RendererApi {
   setUpdateChannel(advanced: boolean): Promise<void>;
   /** Consent to download an available optional update (popup "Update now"). */
   downloadUpdate(): Promise<void>;
-  /** Quit and install a downloaded update (optional flow, after "restarting…"). */
+  /** Quit and install a downloaded update (optional flow, after "restartingâ€¦"). */
   installUpdate(): Promise<void>;
-  /** Current app version string (Settings → current version display). */
+  /** Current app version string (Settings â†’ current version display). */
   getVersion(): Promise<string>;
 
-  // ── Startup popup (261027, replaced the notices inbox) ────────────────────
+  // â”€â”€ Startup popup (261027, replaced the notices inbox) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /**
    * Fires when a feed refresh changes the popup this install still owes:
    * a new one (show it once the screen is calm) or null (taken down, or
@@ -3589,7 +3611,7 @@ export interface RendererApi {
    * the dock, which reads as a broken exit during first-run.
    */
   appQuit(): Promise<void>;
-  /** Current maximized state — seeds the restore/maximize icon on mount. */
+  /** Current maximized state â€” seeds the restore/maximize icon on mount. */
   windowIsMaximized(): Promise<boolean>;
   /** Fires on every maximize/unmaximize so the icon can swap live. */
   onWindowMaximizedChanged(cb: (isMaximized: boolean) => void): Unsubscribe;
@@ -3599,12 +3621,12 @@ export interface RendererApi {
    * swap its enter/exit icon without a second round-trip.
    */
   windowFullscreenToggle(): Promise<boolean>;
-  /** Current fullscreen state — seeds the fullscreen button icon on mount. */
+  /** Current fullscreen state â€” seeds the fullscreen button icon on mount. */
   windowIsFullscreen(): Promise<boolean>;
   /**
    * Show/hide the native macOS traffic lights (260728). The first-run Sui
    * onboarding scene hides them (it renders no window chrome at all) and
-   * restores them when the ritual completes. No-op on Windows/Linux — the
+   * restores them when the ritual completes. No-op on Windows/Linux â€” the
    * renderer simply doesn't mount its custom controls on that surface.
    */
   windowSetButtonsVisible(visible: boolean): Promise<void>;
@@ -3612,7 +3634,7 @@ export interface RendererApi {
    * Factory reset (260728): stops every bot/session, deletes ALL local state
    * (profiles incl. configs/characters/memories/keys, session, caches) except
    * the anti-abuse device-id/signup trackers, then relaunches the app fresh.
-   * The renderer never sees this resolve on success — the app restarts.
+   * The renderer never sees this resolve on success â€” the app restarts.
    */
   factoryReset(): Promise<void>;
   /**
@@ -3631,13 +3653,13 @@ export interface RendererApi {
    * live until app:scope-changed, which can be seconds later.
    */
   onScopeEnding(cb: () => void): Unsubscribe;
-  /* ── Unique-companion generation (260703 procgen) ─────────────────────── */
+  /* â”€â”€ Unique-companion generation (260703 procgen) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   /**
    * Run the full unique-companion pipeline (cloud mode + signed-in only):
-   * soulcaster-1 character sheet → parallel { portrait via proxy image gen →
-   * img2skin skin } + persona expansion → save (kind 'unique', shared false).
-   * Long-running (~30–90s); subscribe to onGenProgress with the same
-   * requestId for stage ticks. Never throws for expected failures — returns
+   * soulcaster-1 character sheet â†’ parallel { portrait via proxy image gen â†’
+   * img2skin skin } + persona expansion â†’ save (kind 'unique', shared false).
+   * Long-running (~30â€“90s); subscribe to onGenProgress with the same
+   * requestId for stage ticks. Never throws for expected failures â€” returns
    * the discriminated GenerateUniqueResult instead.
    */
   generateUnique(input: GenerateUniqueInput): Promise<GenerateUniqueResult>;
@@ -3651,13 +3673,13 @@ export interface RendererApi {
   prefsGet(): Promise<PrefsGetResult>;
   /**
    * Persist questionnaire answers locally + upsert to cloud user_preferences.
-   * 260706: takes a PARTIAL patch — omitted answers keep their stored value
+   * 260706: takes a PARTIAL patch â€” omitted answers keep their stored value
    * (main merges under the config file lock and stamps completed_at), so
    * "ask only the missing questions" and full retakes share one channel.
    */
   prefsSave(patch: UserPreferencesPatch): Promise<void>;
 
-  /* ── Phantom-call recovery (260810) ──────────────────────────────────── */
+  /* â”€â”€ Phantom-call recovery (260810) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   /**
    * Scan the active profile's transcripts for phantom-call sessions (a voice
    * call left running while other audio fed the mic). Read-only, local, and
@@ -3680,7 +3702,7 @@ export interface RendererApi {
 export interface ScopeChangedEvent {
   /** The new active scope: `'local'` (signed out) or a Supabase user UUID. */
   scope: string;
-  /** Why the scope changed — drives renderer copy/telemetry only. */
+  /** Why the scope changed â€” drives renderer copy/telemetry only. */
   reason: 'sign-in' | 'sign-out' | 'switch';
   /**
    * 261029: the session was already signed in (restored at launch, or brought
@@ -3757,7 +3779,7 @@ export interface UpdateAvailableEvent {
   latestVersion: string;
   currentVersion: string;
   downloadUrl: string;
-  /** Legacy field — kept for backward-compat; superseded by `changelog`. */
+  /** Legacy field â€” kept for backward-compat; superseded by `changelog`. */
   notes?: string;
   /**
    * Policy level derived from semver (see main/updatePolicy.deriveLevel).
@@ -3780,15 +3802,15 @@ export interface UpdateProgressEvent {
 /** Pushed when an update finished downloading and is ready to install. */
 export interface UpdateDownloadedEvent {
   /**
-   * True for a `apply: 'now'` mandatory update — the renderer shows a
-   * non-dismissable "Critical update — restarting…" overlay and main restarts
-   * automatically. False for the optional flow — the renderer shows a brief
-   * "restarting…" then invokes `app:update-install`.
+   * True for a `apply: 'now'` mandatory update â€” the renderer shows a
+   * non-dismissable "Critical update â€” restartingâ€¦" overlay and main restarts
+   * automatically. False for the optional flow â€” the renderer shows a brief
+   * "restartingâ€¦" then invokes `app:update-install`.
    */
   forced: boolean;
   /**
    * True for a mandatory `apply: 'on-restart'` (patch-only) update. The renderer
-   * shows a DISMISSABLE "Update ready — restart to apply" popup (with a
+   * shows a DISMISSABLE "Update ready â€” restart to apply" popup (with a
    * "Restart now" button) instead of leaving the download bar stuck at 100%.
    * The update still installs on the next quit via `autoInstallOnAppQuit`; the
    * button just lets the user restart immediately. Mutually exclusive with
@@ -3818,7 +3840,7 @@ export interface WhatsNewEvent {
  * never injects HTML.
  */
 export interface Notice {
-  /** Stable unique id, never reused — identity for announced/read tracking. */
+  /** Stable unique id, never reused â€” identity for announced/read tracking. */
   id: string;
   title: string;
   /** ISO date string (`2026-07-25`); may be empty when the feed omits it. */
@@ -3841,7 +3863,7 @@ export interface StartupPopupInfo {
   height?: number;
 }
 
-/* ── Phantom-call recovery (260810) ─────────────────────────────────────── */
+/* â”€â”€ Phantom-call recovery (260810) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** One transcript time window selected for repair (a flagged session's span). */
 export interface RecoveryWindow {
@@ -3876,7 +3898,7 @@ export interface RecoveryRepairResult {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  IPC channel string constants — single source of truth for both sides       */
+/*  IPC channel string constants â€” single source of truth for both sides       */
 /* -------------------------------------------------------------------------- */
 
 export const IpcChannel = {
@@ -3889,15 +3911,15 @@ export const IpcChannel = {
     stop: 'bot:stop',
     status: 'bot:status',
     // Snapshot pull of the current per-character statuses (see
-    // RendererApi.getBotStatuses) — pushes only fire on transitions.
+    // RendererApi.getBotStatuses) â€” pushes only fire on transitions.
     getStatuses: 'bot:get-statuses',
     logBatch: 'bot:log:batch',
-    /** Push (main → renderer): current world action for presence verb lines
-     * (BotActionPush; name null clears). Party redesign §2/§5. */
+    /** Push (main â†’ renderer): current world action for presence verb lines
+     * (BotActionPush; name null clears). Party redesign Â§2/Â§5. */
     action: 'bot:action',
   },
   /**
-   * Phase 15 (D-10/VIS-03): dedicated bot→main→renderer push for the active
+   * Phase 15 (D-10/VIS-03): dedicated botâ†’mainâ†’renderer push for the active
    * provider's vision capability. A separate top-level namespace (NOT folded
    * into bot.status) so the BotStatus discriminated union the CharacterPage row
    * consumes stays unchanged. Payload: VisionCapability { visionCapable }.
@@ -3906,7 +3928,7 @@ export const IpcChannel = {
     capability: 'vision:capability',
   },
   /**
-   * china-compat W1 — the main-process multi-provider LLM layer's renderer
+   * china-compat W1 â€” the main-process multi-provider LLM layer's renderer
    * surface: live model listing + 1-token test for the Settings picker, and
    * the config-derived vision capability of the active chat backend
    * (push on change + pull to seed, the lan.state/lan.get pattern).
@@ -3932,12 +3954,12 @@ export const IpcChannel = {
   lan: {
     state: 'lan:state',
     // Pull the current LAN state on demand. The `state` push only fires on
-    // CHANGE, so a freshly-(re)loaded renderer must request the snapshot —
+    // CHANGE, so a freshly-(re)loaded renderer must request the snapshot â€”
     // relying on a replay-push races the renderer attaching its listener.
     get: 'lan:get',
     // Force ONE fresh detection pass right now and return its result (260703).
     // Unlike `get` (a cached snapshot that can be up to ~4s stale under the
-    // poll's open→closed hysteresis), this reads live ground truth — the summon
+    // poll's openâ†’closed hysteresis), this reads live ground truth â€” the summon
     // click uses it so a world that just closed doesn't summon into a dead port.
     checkNow: 'lan:check-now',
   },
@@ -3945,48 +3967,48 @@ export const IpcChannel = {
     list: 'chars:list',
     get: 'chars:get',
     save: 'chars:save',
-    // Push channel (main → renderer): streaming persona-expansion progress
+    // Push channel (main â†’ renderer): streaming persona-expansion progress
     // emitted while chars:save runs the LLM call. Tagged with the caller's
     // expansionRequestId so the renderer can filter to its own save.
     expansionProgress: 'chars:expansion-progress',
     delete: 'chars:delete',
     resetMemory: 'chars:reset-memory',
-    // Phase 11 D-28 — portrait pipeline moves from inline base64 to a file
-    // keyed by UUID. The renderer canvas-resizes + re-encodes to PNG (≤1024²,
-    // ≤500KB) and hands the bytes here; main validatePortrait re-checks +
+    // Phase 11 D-28 â€” portrait pipeline moves from inline base64 to a file
+    // keyed by UUID. The renderer canvas-resizes + re-encodes to PNG (â‰¤1024Â²,
+    // â‰¤500KB) and hands the bytes here; main validatePortrait re-checks +
     // atomic-writes to <userData>/portraits/<uuid>.png.
     applyPortrait: 'chars:apply-portrait',
     removePortrait: 'chars:remove-portrait',
-    // 260909 — card-image versions: sidecars <uuid>-v<n>.png next to the
+    // 260909 â€” card-image versions: sidecars <uuid>-v<n>.png next to the
     // canonical <uuid>.png; select copies a sidecar onto the canonical file.
     portraitVersions: 'chars:portrait-versions',
     portraitRegenerate: 'chars:portrait-regenerate',
     portraitSelect: 'chars:portrait-select',
-    // 261110 — the profile Overview's cloud facts (creator, add count, game looks).
+    // 261110 â€” the profile Overview's cloud facts (creator, add count, game looks).
     overviewInfo: 'chars:overview-info',
-    // Phase 11 D-16 — toggle a character's `shared` flag (public listing
+    // Phase 11 D-16 â€” toggle a character's `shared` flag (public listing
     // visibility). Defaults are rejected by the handler. Triggers the
     // standard cloud-mirror upsert via saveCharacter.
     setShared: 'chars:set-shared',
-    // 260729 — save a copy of the character's full portrait art to disk via a
+    // 260729 â€” save a copy of the character's full portrait art to disk via a
     // native save dialog (the profile page's expand-art popup).
     exportPortrait: 'chars:export-portrait',
     // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
     // Renderer calls this before entering the new-character flow.
     checkCreateQuota: 'chars:check-create-quota',
-    // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud
+    // Phase 11 plan 17 â€” list the UUIDs of the signed-in user's cloud
     // characters. Drives the renderer's "LOCAL ONLY" chip on legacy local
     // chars (chars present locally but absent from the cloud row set).
-    // Signed-out → returns { ids: [] }; failure → returns { ids: [] } so
+    // Signed-out â†’ returns { ids: [] }; failure â†’ returns { ids: [] } so
     // the chip never flickers on transient network issues.
     listCloud: 'chars:list-cloud',
-    // Phase 11 plan 19 (D-19, LIB-04) — cache-on-demand sync.
-    //   openPrepare — invoked by HomeScreen / CharacterPage just before
+    // Phase 11 plan 19 (D-19, LIB-04) â€” cache-on-demand sync.
+    //   openPrepare â€” invoked by HomeScreen / CharacterPage just before
     //                 navigating into a character. If the character is not
     //                 yet on local disk, downloads the row + skin + portrait
     //                 and writes them via saveCharacterRaw + atomic-write.
     //                 No-op when the local JSON already exists.
-    //   listMerged  — returns local + cloud rows deduped by id with a
+    //   listMerged  â€” returns local + cloud rows deduped by id with a
     //                 `source: 'local' | 'cloud' | 'both'` annotation so
     //                 HomeScreen can render cloud-only entries with a
     //                 CLOUD chip alongside fully-cached characters.
@@ -4005,7 +4027,7 @@ export const IpcChannel = {
     // cloud row (the user doesn't own it).
     removeFromLibrary: 'chars:remove-from-library',
   },
-  // 260725 Knowledge — per-character user-provided reference files. See the
+  // 260725 Knowledge â€” per-character user-provided reference files. See the
   // KnowledgeEntryMeta docblock and src/main/knowledge/knowledgeStore.ts.
   knowledge: {
     extract: 'knowledge:extract',
@@ -4024,19 +4046,19 @@ export const IpcChannel = {
     // T283: whether a profile with no name was set up before (not a new user).
     profileState: 'config:profile-state',
   },
-  // 260707 — PostHog product analytics. `track` is fire-and-forget one-way
-  // (renderer → main via ipcRenderer.send); getOptOut/setOptOut are the
+  // 260707 â€” PostHog product analytics. `track` is fire-and-forget one-way
+  // (renderer â†’ main via ipcRenderer.send); getOptOut/setOptOut are the
   // request/response pair backing the Settings "Usage analytics" toggle.
   analytics: {
     track: 'analytics:track',
     getOptOut: 'analytics:get-opt-out',
     setOptOut: 'analytics:set-opt-out',
   },
-  // 260703 procgen — unique-companion generation pipeline + user-profile
+  // 260703 procgen â€” unique-companion generation pipeline + user-profile
   // questionnaire (see GenerateUniqueInput / GenProgressEvent / PrefsGetResult).
   gen: {
     start: 'gen:start',
-    // Push channel (main → renderer): pipeline stage ticks, tagged with the
+    // Push channel (main â†’ renderer): pipeline stage ticks, tagged with the
     // caller's requestId (same filtering pattern as chars:expansion-progress).
     progress: 'gen:progress',
   },
@@ -4053,8 +4075,8 @@ export const IpcChannel = {
      * transcript, never chatted) whether the companion speaks first and returns
      * any greeting replies; a no-op returns []. */
     opened: 'chat:opened',
-    /** Push (main → renderer): a companion/system message authored outside a
-     * send() round-trip — the live game bot replying to a routed message, or a
+    /** Push (main â†’ renderer): a companion/system message authored outside a
+     * send() round-trip â€” the live game bot replying to a routed message, or a
      * deterministic "joined/left your world" system line. */
     message: 'chat:message',
     /** Pull: last chat line per character for roster previews (ChatPreview). */
@@ -4067,8 +4089,8 @@ export const IpcChannel = {
     /** Push (main -> renderer): {characterId}, the card may have changed. */
     nextStepChanged: 'home:next-step-changed',
   },
-  // Chess minigame (260710) — request/response pairs are character-scoped;
-  // `state` and `download` are pushes (main → renderer). Protocol details in
+  // Chess minigame (260710) â€” request/response pairs are character-scoped;
+  // `state` and `download` are pushes (main â†’ renderer). Protocol details in
   // src/shared/chessIpc.ts.
   chess: {
     start: 'chess:start',
@@ -4085,7 +4107,7 @@ export const IpcChannel = {
     /** Push: ChessDownloadProgress during the one-time model download. */
     download: 'chess:download',
   },
-  // Draw! minigame (260727) — sketch guessing. Protocol details in
+  // Draw! minigame (260727) â€” sketch guessing. Protocol details in
   // src/shared/drawIpc.ts. `snapshot` is the renderer ANSWERING the
   // snapshotRequest push, which is why it is an invoke and not a push.
   draw: {
@@ -4108,10 +4130,32 @@ export const IpcChannel = {
     state: 'draw:state',
     /** Push: DrawAiStroke, one per stroke the character draws. */
     aiStroke: 'draw:ai-stroke',
-    /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
+    /** Push: DrawSnapshotRequest â€” rasterize the canvas and answer. */
     snapshotRequest: 'draw:snapshot-request',
   },
-  // Backseat (260728) — the companion watches a shared window and comments.
+  // Forza 4 (Connect Four) minigame â€” protocol details in src/shared/connect4Ipc.ts.
+  CONNECT4: {
+    start: 'CONNECT4:start',
+    getState: 'CONNECT4:get-state',
+    move: 'CONNECT4:move',
+    resign: 'CONNECT4:resign',
+    rematch: 'CONNECT4:rematch',
+    end: 'CONNECT4:end',
+    /** Push: full CONNECT4GameState on every change. */
+    state: 'CONNECT4:state',
+  },
+  // Battleship (Battleship) minigame â€” protocol details in src/shared/BATTLESHIPIpc.ts.
+  BATTLESHIP: {
+    start: 'battleship:start',
+    getState: 'battleship:get-state',
+    move: 'battleship:move',
+    resign: 'battleship:resign',
+    rematch: 'battleship:rematch',
+    end: 'battleship:end',
+    /** Push: full BATTLESHIPGameState on every change. */
+    state: 'battleship:state',
+  },
+  // Backseat (260728) â€” the companion watches a shared window and comments.
   // Protocol details in src/shared/backseatIpc.ts. `tick`, `gate` and
   // `saveClip` all flow renderer -> main because the renderer owns capture and
   // main owns every model call.
@@ -4146,7 +4190,7 @@ export const IpcChannel = {
     gamePopular: 'backseat:game-popular',
     gameDetails: 'backseat:game-details',
   },
-  // OS permission flows (260929) — microphone for calls, Screen Recording for
+  // OS permission flows (260929) â€” microphone for calls, Screen Recording for
   // screen share on macOS. See src/shared/permissionsIpc.ts.
   permissions: {
     status: 'permissions:status',
@@ -4159,193 +4203,193 @@ export const IpcChannel = {
     takeResume: 'permissions:take-resume',
     relaunch: 'permissions:relaunch',
   },
-  // Minecraft dashboard (260721) — bot telemetry surfaced while summoned.
+  // Minecraft dashboard (260721) â€” bot telemetry surfaced while summoned.
   // Protocol details in src/shared/mcDashboardIpc.ts.
   mcdash: {
     get: 'mcdash:get',
     setWatching: 'mcdash:set-watching',
     /** Push: McDashboardSnapshotPush (~every 2s while watching). */
     snapshot: 'mcdash:snapshot',
-    /** Invoke: 260725 play/pause ({characterId, paused} → boolean). */
+    /** Invoke: 260725 play/pause ({characterId, paused} â†’ boolean). */
     setPaused: 'mcdash:set-paused',
-    /** Invoke: 260725 runtime game mode ({characterId, mode} → boolean). */
+    /** Invoke: 260725 runtime game mode ({characterId, mode} â†’ boolean). */
     setMode: 'mcdash:set-mode',
   },
   /** Stardew Valley install / launch (game-adapters M1, src/main/games/stardew). */
   stardew: StardewIpcChannel,
   /** Game packs (260908, src/main/games/packs.ts). */
   game: {
-    /** Invoke: {game} → GamePackState (disk + live state only, no network). */
+    /** Invoke: {game} â†’ GamePackState (disk + live state only, no network). */
     packState: 'game:pack-state',
-    /** Invoke: {game} → GamePackState once the download/install job settles. */
+    /** Invoke: {game} â†’ GamePackState once the download/install job settles. */
     packEnsure: 'game:pack-ensure',
-    /** Push (main → renderer): GamePackProgressPush on every state change. */
+    /** Push (main â†’ renderer): GamePackProgressPush on every state change. */
     packProgress: 'game:pack-progress',
   },
   /** Don't Starve Together (game-adapters M2, 260908; src/shared/dstIpc.ts). */
   dst: DstChannel,
   voice: {
-    /** Invoke: synthesize a spoken line ({characterId, text} → ArrayBuffer of audio/mpeg). */
+    /** Invoke: synthesize a spoken line ({characterId, text} â†’ ArrayBuffer of audio/mpeg). */
     tts: 'voice:tts',
-    /** Invoke: streaming synthesis ({characterId, text} → {streamId}); audio follows on ttsChunk. */
+    /** Invoke: streaming synthesis ({characterId, text} â†’ {streamId}); audio follows on ttsChunk. */
     ttsStream: 'voice:tts-stream',
-    /** Push (main → renderer): VoiceTtsChunkPush — ordered audio chunks for a ttsStream. */
+    /** Push (main â†’ renderer): VoiceTtsChunkPush â€” ordered audio chunks for a ttsStream. */
     ttsChunk: 'voice:tts-chunk',
-    /** Push (main → renderer): VoiceTtsNoticePush — local TTS substitute-pack notice (260908). */
+    /** Push (main â†’ renderer): VoiceTtsNoticePush â€” local TTS substitute-pack notice (260908). */
     ttsNotice: 'voice:tts-notice',
-    /** Invoke: cloud STT for one call utterance ({pcm, language?} → {text} | {unavailable}). */
+    /** Invoke: cloud STT for one call utterance ({pcm, language?} â†’ {text} | {unavailable}). */
     stt: 'voice:stt',
     /** Invoke: prewarm the voice upstream connection (fired at mic speech open). */
     sttPrewarm: 'voice:stt-prewarm',
     /** Invoke: open/hang-up a voice call ({characterId, active, connectedMs?}). */
     callState: 'voice:call-state',
-    /** Invoke: the call went live — companion should greet first (characterId). */
+    /** Invoke: the call went live â€” companion should greet first (characterId). */
     greet: 'voice:greet',
     /** Invoke: on a group call, one companion reacts to another's spoken line. */
     companionTurn: 'voice:companion-turn',
-    /** Invoke: the call has been quiet a while — one companion may start a topic. */
+    /** Invoke: the call has been quiet a while â€” one companion may start a topic. */
     idleNudge: 'voice:idle-nudge',
     /** Invoke: record a call line into a companion's transcript without a reply. */
     observe: 'voice:observe',
-    /** Invoke (main window → main): push the always-on-top overlay's state. */
+    /** Invoke (main window â†’ main): push the always-on-top overlay's state. */
     overlaySet: 'voice:overlay-set',
-    /** Push (main → overlay window): the overlay's participants + speaking state. */
+    /** Push (main â†’ overlay window): the overlay's participants + speaking state. */
     overlayState: 'voice:overlay-state',
-    /** Invoke (overlay window → main): pull the current overlay state on mount. */
+    /** Invoke (overlay window â†’ main): pull the current overlay state on mount. */
     overlayGet: 'voice:overlay-get',
-    /** Push (main → renderer): companion hung up via end_call() ({characterId}). */
+    /** Push (main â†’ renderer): companion hung up via end_call() ({characterId}). */
     callEnded: 'voice:call-ended',
-    /** Invoke: curated voice pool for the creation picker → VoiceInfo[]. */
+    /** Invoke: curated voice pool for the creation picker â†’ VoiceInfo[]. */
     list: 'voice:list',
-    /** Invoke: the user's own ElevenLabs voices → OwnVoiceList (261019). */
+    /** Invoke: the user's own ElevenLabs voices â†’ OwnVoiceList (261019). */
     ownList: 'voice:own-list',
-    /** Invoke: sample bytes for one own voice ({voiceId}) → ArrayBuffer (261019). */
+    /** Invoke: sample bytes for one own voice ({voiceId}) â†’ ArrayBuffer (261019). */
     ownPreview: 'voice:own-preview',
-    /** Invoke: Voice Library voice lookup ({input}) → LibraryVoiceLookupResult (261119). */
+    /** Invoke: Voice Library voice lookup ({input}) â†’ LibraryVoiceLookupResult (261119). */
     libraryLookup: 'voice:library-lookup',
-    /** Invoke: add a Voice Library voice ({input}) → LibraryVoiceAddResult (261119). */
+    /** Invoke: add a Voice Library voice ({input}) â†’ LibraryVoiceAddResult (261119). */
     libraryAdd: 'voice:library-add',
-    /** Invoke: does a stored library voice still play ({voiceId}) → LibraryVoiceStatusResult (261119). */
+    /** Invoke: does a stored library voice still play ({voiceId}) â†’ LibraryVoiceStatusResult (261119). */
     libraryStatus: 'voice:library-status',
-    /** Invoke: preview clip of a looked-up library voice ({voiceId}) → ArrayBuffer (261119). */
+    /** Invoke: preview clip of a looked-up library voice ({voiceId}) â†’ ArrayBuffer (261119). */
     libraryPreview: 'voice:library-preview',
-    /** Invoke: default voice for others on an own-voice character ({characterId, ownGender?}) → {voiceId} (261019). */
+    /** Invoke: default voice for others on an own-voice character ({characterId, ownGender?}) â†’ {voiceId} (261019). */
     sharedDefault: 'voice:shared-default',
-    /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
+    /** Invoke: preview an arbitrary pool voice ({voiceId}) â†’ ArrayBuffer. */
     preview: 'voice:preview',
-    /** Invoke: can voice samples synthesize right now? → boolean (260720). */
+    /** Invoke: can voice samples synthesize right now? â†’ boolean (260720). */
     previewAvailable: 'voice:preview-available',
     /** Invoke: store/clear the BYOK ElevenLabs key ({key: string | null}) (260725). */
     elevenKeySet: 'voice:eleven-key-set',
-    /** Invoke: is a BYOK ElevenLabs key stored? → {present} (260725). */
+    /** Invoke: is a BYOK ElevenLabs key stored? â†’ {present} (260725). */
     elevenKeyStatus: 'voice:eleven-key-status',
     /** Invoke: store/clear the user's Fish Audio key ({key: string | null}) (261103). */
     fishKeySet: 'voice:fish-key-set',
-    /** Invoke: is a Fish Audio key stored? → {present} (261103). */
+    /** Invoke: is a Fish Audio key stored? â†’ {present} (261103). */
     fishKeyStatus: 'voice:fish-key-status',
-    /** Invoke: Fish Audio test line → FishAudioResult (261103). */
+    /** Invoke: Fish Audio test line â†’ FishAudioResult (261103). */
     fishTest: 'voice:fish-test',
-    /** Invoke: set/clear a character's own Fish voice ({characterId, input}) → FishOverrideResult (261103). */
+    /** Invoke: set/clear a character's own Fish voice ({characterId, input}) â†’ FishOverrideResult (261103). */
     fishOverrideSet: 'voice:fish-override-set',
-    /** Invoke: sample line in one Fish voice ({voiceId}) → FishAudioResult (261103). */
+    /** Invoke: sample line in one Fish voice ({voiceId}) â†’ FishAudioResult (261103). */
     fishVoicePreview: 'voice:fish-voice-preview',
   },
   /** Local speech packs + SenseVoice STT (260816, src/main/speech/). */
   speech: {
-    /** Invoke: current pack states → { packs: Record<packId, SpeechPackStatePush> }. */
+    /** Invoke: current pack states â†’ { packs: Record<packId, SpeechPackStatePush> }. */
     packStatus: 'speech:pack-status',
     /** Invoke: download one pack ({packId}); resolves when ready. */
     packDownload: 'speech:pack-download',
     /** Invoke: remove one downloaded pack ({packId}). */
     packRemove: 'speech:pack-remove',
-    /** Push (main → renderer): full pack-state snapshot on every change. */
+    /** Push (main â†’ renderer): full pack-state snapshot on every change. */
     packState: 'speech:pack-state',
-    /** Invoke: SenseVoice transcription ({pcm, sampleRate} → {text, language?}). */
+    /** Invoke: SenseVoice transcription ({pcm, sampleRate} â†’ {text, language?}). */
     sttTranscribe: 'speech:stt-transcribe',
   },
   /** Avatar library (261106): server-stored avatars, public locks, default. */
   avatarLibrary: {
-    /** Invoke: ({characterId, sync?, fresh?}) → AvatarLibraryView. */
+    /** Invoke: ({characterId, sync?, fresh?}) â†’ AvatarLibraryView. */
     list: 'avatar-library:list',
-    /** Invoke: ({characterId, bytes, name}) → AvatarLibraryResult. */
+    /** Invoke: ({characterId, bytes, name}) â†’ AvatarLibraryResult. */
     addImage: 'avatar-library:add-image',
-    /** Invoke: ({characterId, zip}) → AvatarLibraryResult. */
+    /** Invoke: ({characterId, zip}) â†’ AvatarLibraryResult. */
     addModel: 'avatar-library:add-model',
-    /** Invoke: ({characterId, avatarId, is_public?, is_default?}) → AvatarLibraryResult. */
+    /** Invoke: ({characterId, avatarId, is_public?, is_default?}) â†’ AvatarLibraryResult. */
     setFlags: 'avatar-library:set-flags',
-    /** Invoke: ({characterId, avatarId}) → AvatarLibraryResult. */
+    /** Invoke: ({characterId, avatarId}) â†’ AvatarLibraryResult. */
     remove: 'avatar-library:remove',
-    /** Invoke: ({characterId, avatarId | null}) → AvatarLibraryResult. */
+    /** Invoke: ({characterId, avatarId | null}) â†’ AvatarLibraryResult. */
     pick: 'avatar-library:pick',
-    /** Push (main → every window): {characterId, view}. */
+    /** Push (main â†’ every window): {characterId, view}. */
     changed: 'avatar-library:changed',
   },
   avatar: {
-    /** Invoke: import a Live2D model zip for a character → AvatarManifest. */
+    /** Invoke: import a Live2D model zip for a character â†’ AvatarManifest. */
     import: 'avatar:import',
     /** Invoke: fetch + import the character's cloud-hosted avatar zip
-     * (metadata.avatar) → AvatarManifest. */
+     * (metadata.avatar) â†’ AvatarManifest. */
     download: 'avatar:download',
-    /** Invoke: the character's avatar manifest → AvatarManifest | null. */
+    /** Invoke: the character's avatar manifest â†’ AvatarManifest | null. */
     get: 'avatar:get',
     /** Invoke: delete the character's imported Live2D model. */
     remove: 'avatar:remove',
-    /** Invoke: the model bundle files for in-memory loading → AvatarModelFile[]. */
+    /** Invoke: the model bundle files for in-memory loading â†’ AvatarModelFile[]. */
     modelFiles: 'avatar:model-files',
     /** Invoke: flip an accessory expression toggle ({characterId, name, on})
-     * → the updated AvatarManifest (260806). */
+     * â†’ the updated AvatarManifest (260806). */
     setAccessory: 'avatar:set-accessory',
-    /** Push (main → every window): a character's avatar manifest changed
-     * ({characterId, manifest}) — live Live2D views re-apply accessories. */
+    /** Push (main â†’ every window): a character's avatar manifest changed
+     * ({characterId, manifest}) â€” live Live2D views re-apply accessories. */
     manifestState: 'avatar:manifest-state',
-    /** Invoke (main window → main): mouth-level sample for the speaking
+    /** Invoke (main window â†’ main): mouth-level sample for the speaking
      * companion ({id, level 0..1}), relayed to the overlay window. */
     overlayLevel: 'avatar:overlay-level',
-    /** Push (main → overlay window): the relayed {id, level} samples. */
+    /** Push (main â†’ overlay window): the relayed {id, level} samples. */
     overlayLevelState: 'avatar:overlay-level-state',
-    /** Invoke (overlay window → main): pointer is over overlay chrome — stop
+    /** Invoke (overlay window â†’ main): pointer is over overlay chrome â€” stop
      * ignoring mouse events (and back). */
     overlayInteractive: 'avatar:overlay-interactive',
-    /** Invoke (overlay window → main): corner-resize stream/commit
+    /** Invoke (overlay window â†’ main): corner-resize stream/commit
      * ({size, anchor, commit?}). */
     overlayResize: 'avatar:overlay-resize',
-    /** Invoke (overlay window → main): hold-to-drag window move stream
+    /** Invoke (overlay window â†’ main): hold-to-drag window move stream
      * ({phase, dx?, dy?}). */
     overlayMove: 'avatar:overlay-move',
-    /** Push (main → overlay window): polled cursor position normalized to
+    /** Push (main â†’ overlay window): polled cursor position normalized to
      * [-1, 1] around the window center, for gaze cursor-follow. */
     overlayCursorState: 'avatar:overlay-cursor-state',
-    /** Push (main → overlay window): polled pointer in window-local DIPs
+    /** Push (main â†’ overlay window): polled pointer in window-local DIPs
      * ({inside, x, y}), the OS-independent hover source for the chrome. */
     overlayPointerState: 'avatar:overlay-pointer-state',
-    /** Invoke (overlay window → main): per-character camera (character zoom +
+    /** Invoke (overlay window â†’ main): per-character camera (character zoom +
      * pan WITHIN the tile) stream/commit ({id, zoom, x, y, commit?}). */
     overlayCamera: 'avatar:overlay-camera',
-    /** Invoke (overlay window → main): edit mode entered/left — forwarded to
+    /** Invoke (overlay window â†’ main): edit mode entered/left â€” forwarded to
      * the caption window so its edit chrome tracks the avatar's pencil. */
     overlayEditing: 'avatar:overlay-editing',
-    /** Invoke (overlay window → main): the overlay mute button was pressed. */
+    /** Invoke (overlay window â†’ main): the overlay mute button was pressed. */
     overlayMute: 'avatar:overlay-mute',
-    /** Push (main → main window): relay of the overlay mute press; the main
+    /** Push (main â†’ main window): relay of the overlay mute press; the main
      * window flips useUiStore.callMuted (the mic's single source of truth). */
     muteRequest: 'avatar:mute-request',
-    /** Invoke (overlay window → main, 261030): the interrupt button. */
+    /** Invoke (overlay window â†’ main, 261030): the interrupt button. */
     overlayInterrupt: 'avatar:overlay-interrupt',
-    /** Push (main → main window): relay of the overlay interrupt press; the
+    /** Push (main â†’ main window): relay of the overlay interrupt press; the
      * main window runs useVoiceStore.interrupt. */
     interruptRequest: 'avatar:interrupt-request',
-    /** Invoke (overlay window → main): toggle the caption overlay → enabled. */
+    /** Invoke (overlay window â†’ main): toggle the caption overlay â†’ enabled. */
     overlayCaptions: 'avatar:overlay-captions',
-    /** Invoke (caption window → main): corner-resize stream/commit
+    /** Invoke (caption window â†’ main): corner-resize stream/commit
      * ({width, height, anchor, commit?}). */
     captionResize: 'avatar:caption-resize',
-    /** Invoke (caption window → main): drag-anywhere move stream. */
+    /** Invoke (caption window â†’ main): drag-anywhere move stream. */
     captionMove: 'avatar:caption-move',
-    /** Invoke (caption window → main): bump the caption font size → new px. */
+    /** Invoke (caption window â†’ main): bump the caption font size â†’ new px. */
     captionFont: 'avatar:caption-font',
-    /** Push (main → caption window): the avatar overlay's edit-mode flag. */
+    /** Push (main â†’ caption window): the avatar overlay's edit-mode flag. */
     captionEditState: 'avatar:caption-edit-state',
-    /** Invoke (caption window → main): initial {editing, fontSize} pull. */
+    /** Invoke (caption window â†’ main): initial {editing, fontSize} pull. */
     captionGet: 'avatar:caption-get',
   },
   user: {
@@ -4359,11 +4403,11 @@ export const IpcChannel = {
   app: {
     ready: 'app:ready',
     warnings: 'app:warnings',
-    // 261031 (T277): the main window's React tree mounted (send, renderer →
+    // 261031 (T277): the main window's React tree mounted (send, renderer â†’
     // main). The boot guard counts a start as good a few seconds after it.
     rendererReady: 'app:renderer-ready',
-    // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
-    // Push (main → renderer):
+    // â”€â”€ In-app updater (quick/260604-uoy) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Push (main â†’ renderer):
     updateAvailable: 'app:update-available',       // optional update detected
     updateChecking: 'app:update-checking',         // a check started (Settings)
     updateNotAvailable: 'app:update-not-available', // check completed, up to date
@@ -4371,14 +4415,14 @@ export const IpcChannel = {
     updateDownloaded: 'app:update-downloaded',      // ready to install {forced}
     updateError: 'app:update-error',               // check/download failed
     whatsNew: 'app:whats-new',                     // post-update changelog
-    // Invoke (renderer → main):
+    // Invoke (renderer â†’ main):
     updateCheck: 'app:update-check',               // manual "Check for updates"
     updateSetChannel: 'app:update-set-channel',    // advanced-updates toggle (stable vs beta)
     updateDownload: 'app:update-download',         // optional-accept download
     updateInstall: 'app:update-install',           // quitAndInstall
     whatsNewGet: 'app:whats-new-get',               // pull pending post-update changelog (race-proof)
     version: 'app:version',                         // app.getVersion()
-    // ── Startup popup (261027) — refreshed on the update check's cadence ─────
+    // â”€â”€ Startup popup (261027) â€” refreshed on the update check's cadence â”€â”€â”€â”€â”€
     startupPopup: 'app:startup-popup',              // push: owed popup changed (or null)
     startupPopupGet: 'app:startup-popup-get',       // pull owed popup (race-proof)
     startupPopupLoaded: 'app:startup-popup-loaded', // frame loaded: verify + record shown
@@ -4393,10 +4437,10 @@ export const IpcChannel = {
     // ended the outgoing account's live sessions, so the renderer tears down
     // its call / capture / game UI at once instead of at scope-changed.
     scopeEnding: 'app:scope-ending',
-    // Phase 11 plan 12 — main-side validated launcher of OS browser for
+    // Phase 11 plan 12 â€” main-side validated launcher of OS browser for
     // ToS / Privacy links from the renderer. The renderer can't call
     // shell.openExternal directly (contextIsolation), and we don't want to
-    // let it pass arbitrary URIs through — the handler gates the protocol to
+    // let it pass arbitrary URIs through â€” the handler gates the protocol to
     // https/mailto before dispatching to shell.openExternal (T-11-12-01). The
     // host allowlist was removed 260725; see externalUrlValidator.ts.
     openExternal: 'app:open-external',
@@ -4414,7 +4458,7 @@ export const IpcChannel = {
     maximizeToggle: 'window:maximize-toggle',
     close: 'window:close',
     isMaximized: 'window:is-maximized',
-    maximizedChanged: 'window:maximized-changed', // push: main → renderer
+    maximizedChanged: 'window:maximized-changed', // push: main â†’ renderer
     fullscreenToggle: 'window:fullscreen-toggle', // game-surface fullscreen button
     isFullscreen: 'window:is-fullscreen',
     // 260728 onboarding: hide/show the mac traffic lights around the Sui scene.
@@ -4431,9 +4475,9 @@ export const IpcChannel = {
     ensure: 'skin:ensure',
   },
   // Setup wizard. `cancel` crosses the IPC boundary to abort an in-flight
-  // install — a renderer-local AbortController cannot reach the main-process
+  // install â€” a renderer-local AbortController cannot reach the main-process
   // child running `java -jar fabric-installer`.
-  // `progress` is a push channel (main → renderer) for per-install progress events.
+  // `progress` is a push channel (main â†’ renderer) for per-install progress events.
   wizard: {
     detectInstalls: 'wizard:detect-installs',
     install: 'wizard:install',
@@ -4472,31 +4516,31 @@ export const IpcChannel = {
     deleteAccount: 'auth:delete-account',
     exportData: 'auth:export-data',
     resendVerification: 'auth:resend-verification',
-    // 260804 — redeem a 6-digit email code (signup confirmation OR password
+    // 260804 â€” redeem a 6-digit email code (signup confirmation OR password
     // recovery; main tries both). Replaced the emailed-link round trip so the
     // inbox can be opened on a different device from the app.
     verifyEmailCode: 'auth:verify-email-code',
     sendPasswordReset: 'auth:send-password-reset',
     updatePassword: 'auth:update-password',
     passwordRecovery: 'auth:password-recovery',
-    // 260603 anti-abuse — renderer hands a solved Turnstile/hCaptcha token to
+    // 260603 anti-abuse â€” renderer hands a solved Turnstile/hCaptcha token to
     // main before signup (inert until bot-protection is enabled). See captcha.ts.
     setCaptchaToken: 'auth:set-captcha-token',
   },
-  // 260816 W7 region gate — renderer pre-check of the cached region verdict.
+  // 260816 W7 region gate â€” renderer pre-check of the cached region verdict.
   // {} -> { loc: string|null, blocked: boolean } (see shared/regionGate.ts).
   region: {
     status: 'region:status',
   },
-  // Phase 11 — cloud-sync queue surface. status is request/response; retry is
+  // Phase 11 â€” cloud-sync queue surface. status is request/response; retry is
   // request/response (force-retry a failed op); statusUpdate is a one-way
-  // push channel (main → renderer) fired whenever the queue mutates.
+  // push channel (main â†’ renderer) fired whenever the queue mutates.
   sync: {
     status: 'sync:status',
     retry: 'sync:retry',
     statusUpdate: 'sync:status:update',
   },
-  // Phase 11 plan 12 — ToS / Privacy acceptance gate.
+  // Phase 11 plan 12 â€” ToS / Privacy acceptance gate.
   // `status` returns whether the current signed-in user has an accepted row
   // matching the active TOS_VERSION + PRIVACY_VERSION (used by Plan 11-13's
   // launch-time blocking modal); `accept` records acceptance for the current
@@ -4505,17 +4549,17 @@ export const IpcChannel = {
     status: 'tos:status',
     accept: 'tos:accept',
   },
-  // Phase 11 plan 18 (D-20) — one-shot local→cloud migration modal IPC.
-  //   listLocal — returns the signed-in user's "LOCAL ONLY" character set
+  // Phase 11 plan 18 (D-20) â€” one-shot localâ†’cloud migration modal IPC.
+  //   listLocal â€” returns the signed-in user's "LOCAL ONLY" character set
   //               (chars present on this machine but not in the cloud row
   //               set). Excludes is_default characters. Returns [] for
   //               signed-out users and on listMyCharacters failure.
-  //   upload    — sequentially uploads the selected uuids via
+  //   upload    â€” sequentially uploads the selected uuids via
   //               cloudCharacterClient.upsertCharacter + uploadSkin +
   //               uploadPortrait. Gated on isCloudWriteAllowed; partial
   //               failures returned per-uuid so the modal can show row
   //               results.
-  //   shown     — read or set the "already-prompted" flag persisted at
+  //   shown     â€” read or set the "already-prompted" flag persisted at
   //               <userData>/migration-modal-shown.json. The auto-mount
   //               on sign-in consults this; Settings re-open bypasses it.
   migration: {
@@ -4523,54 +4567,54 @@ export const IpcChannel = {
     upload: 'migration:upload',
     shown: 'migration:shown',
   },
-  // 260603 per-profile partitioning — on-device anonymous(local)→account import.
+  // 260603 per-profile partitioning â€” on-device anonymous(local)â†’account import.
   profile: {
     peekLocal: 'profile:peek-local',
     importFromLocal: 'profile:import-from-local',
     importOffered: 'profile:import-offered',
   },
-  // Phase 12 — Browse + moderation + reports.
-  //   list                  — paged listing of public moderation-clean
-  //                           characters. NOT gated on cloud writes — Browse
+  // Phase 12 â€” Browse + moderation + reports.
+  //   list                  â€” paged listing of public moderation-clean
+  //                           characters. NOT gated on cloud writes â€” Browse
   //                           is read-public per LIB-04 (signed-out users see
   //                           the same listing as signed-in users).
   browse: {
     list: 'browse:list',
   },
-  // B4: the capabilities channel + BROWSE_ENABLED flag were removed — the
+  // B4: the capabilities channel + BROWSE_ENABLED flag were removed â€” the
   // World (formerly Browse) tab is always available. If future feature flags
   // are needed, a new channel can be re-introduced here.
-  // Phase 13 — proxy + billing + credits (PROXY-11 + D-57).
+  // Phase 13 â€” proxy + billing + credits (PROXY-11 + D-57).
   //
   // Stub-handler surface registered today; Wave 2/3 swap the placeholder
   // returns for real proxy-client / Edge Function calls without changing
   // the channel names or argument shapes. Renderer plans 13-16+ build
   // against this contract.
   //
-  //   proxy:configure        — persist aiBackendKind ('local' | 'cloud-proxy').
+  //   proxy:configure        â€” persist aiBackendKind ('local' | 'cloud-proxy').
   //                             Wave 3: refuses 'cloud-proxy' for signed-out
   //                             users.
-  //   credits:get            — snapshot of CreditsStatus (the `my_plan` view).
+  //   credits:get            â€” snapshot of CreditsStatus (the `my_plan` view).
   //                             Refreshed by the credits:status:update push
   //                             channel below.
-  //   credits:openCheckout   — open the Polar checkout (proxy-minted session)
+  //   credits:openCheckout   â€” open the Polar checkout (proxy-minted session)
   //                             for the requested product.
-  //   credits:change-plan    — 260724: change the tier of an EXISTING
+  //   credits:change-plan    â€” 260724: change the tier of an EXISTING
   //                             subscription (Polar subscription update).
-  //   subscription:status    — read SubscriptionStatusInfo from
+  //   subscription:status    â€” read SubscriptionStatusInfo from
   //                             `subscription_status` table (D-46/47).
-  //   subscription:cancel    — open the Polar customer portal
+  //   subscription:cancel    â€” open the Polar customer portal
   //                             so the user can cancel.
-  //   credits:status:update  — PUSH (main → renderer). Fires after every
+  //   credits:status:update  â€” PUSH (main â†’ renderer). Fires after every
   //                             proxied Anthropic response.
-  //   credits:hard-stop      — PUSH (main → renderer). Fires on 402, i.e. the
+  //   credits:hard-stop      â€” PUSH (main â†’ renderer). Fires on 402, i.e. the
   //                             weekly allowance is spent and no extras remain.
   proxy: {
     configure: 'proxy:configure',
-    // 260725 main→renderer push: the EFFECTIVE ai_backend_kind, emitted on
+    // 260725 mainâ†’renderer push: the EFFECTIVE ai_backend_kind, emitted on
     // every persisted change (apiKeyStore.onAiBackendKindChanged) and at the
     // end of every profile-scope switch. The renderer's mode display MUST
-    // track this (and start as unknown) rather than assume a default — a
+    // track this (and start as unknown) rather than assume a default â€” a
     // renderer that guessed 'local' while main ran cloud-proxy billed the
     // user under a BYOK-looking UI (recurring incident, last on 260725).
     kindChanged: 'proxy:kind-changed',
@@ -4596,36 +4640,36 @@ export const IpcChannel = {
   subscription: {
     status: 'subscription:status',
     cancel: 'subscription:cancel',
-    // quick/260525-sbo Task 3 — auto-renewal consent record.
+    // quick/260525-sbo Task 3 â€” auto-renewal consent record.
     recordConsent: 'subscription:record-consent',
   },
-  // 260706 — in-app feedback + companion reports (proxy POST /feedback and
+  // 260706 â€” in-app feedback + companion reports (proxy POST /feedback and
   // POST /report; 20/user/day server-side, rows reviewed via the dashboard).
   feedback: {
     submit: 'feedback:submit',
     report: 'feedback:report',
   },
-  // 260810 — in-app phantom-call recovery (see RecoveryCandidate above and
+  // 260810 â€” in-app phantom-call recovery (see RecoveryCandidate above and
   // src/main/recovery/). scan is read-only; repair quarantines, never deletes.
   recovery: {
     scan: 'recovery:scan',
     repair: 'recovery:repair',
     dismiss: 'recovery:dismiss',
   },
-  // 261028 — desktop companion facepack pilot (src/main/facepack/). Every
+  // 261028 â€” desktop companion facepack pilot (src/main/facepack/). Every
   // handler answers "disabled" unless unpackaged + SEI_FACEPACK_DIR.
   facepack: {
     /** Invoke: FacepackDevInfo (dev flag + the packs in the dev dir). */
     info: 'facepack:info',
-    /** Invoke: a pack's facepack.json (id) → FacepackManifest | null. */
+    /** Invoke: a pack's facepack.json (id) â†’ FacepackManifest | null. */
     manifest: 'facepack:manifest',
-    /** Invoke: one pack file ({id, path}) → Uint8Array | null. */
+    /** Invoke: one pack file ({id, path}) â†’ Uint8Array | null. */
     file: 'facepack:file',
-    /** Invoke: the pack id for a character (by name) → string | null. */
+    /** Invoke: the pack id for a character (by name) â†’ string | null. */
     forCharacter: 'facepack:for-character',
-    /** Invoke: open the dev preview window → boolean. */
+    /** Invoke: open the dev preview window â†’ boolean. */
     openPreview: 'facepack:open-preview',
-    /** Push (main → every window): a FaceCue. */
+    /** Push (main â†’ every window): a FaceCue. */
     cue: 'facepack:cue',
   },
   // 261104 SeiLink room (src/main/seilink/): packs served over sei-room://,
@@ -4633,47 +4677,47 @@ export const IpcChannel = {
   seilink: {
     /** Invoke: SeilinkDevInfo (dev flag: unpackaged + SEI_SEILINK_PACKS). */
     devInfo: 'seilink:dev-info',
-    /** Invoke: every usable pack → SeilinkPack[]. */
+    /** Invoke: every usable pack â†’ SeilinkPack[]. */
     packs: 'seilink:packs',
-    /** Invoke: a companion's room (characterId) → SeilinkRoomPayload. */
+    /** Invoke: a companion's room (characterId) â†’ SeilinkRoomPayload. */
     roomGet: 'seilink:room-get',
-    /** Invoke: save a companion's room ({characterId, state}) → SeilinkRoomPayload (sanitized). */
+    /** Invoke: save a companion's room ({characterId, state}) â†’ SeilinkRoomPayload (sanitized). */
     roomSet: 'seilink:room-set',
-    /** Push (main → every window): characterId whose room was saved. */
+    /** Push (main â†’ every window): characterId whose room was saved. */
     roomChanged: 'seilink:room-changed',
-    /** Invoke: open the dev preview window (dev flag only) → boolean. */
+    /** Invoke: open the dev preview window (dev flag only) â†’ boolean. */
     openPreview: 'seilink:open-preview',
-    /** Invoke: she moves in (characterId) → SeilinkHostStatus. SEILINK_DISABLED while SeiLink is off. */
+    /** Invoke: she moves in (characterId) â†’ SeilinkHostStatus. SEILINK_DISABLED while SeiLink is off. */
     hostStart: 'seilink:host-start',
-    /** Invoke: she moves out → SeilinkHostStatus. */
+    /** Invoke: she moves out â†’ SeilinkHostStatus. */
     hostStop: 'seilink:host-stop',
-    /** Invoke: → SeilinkHostStatus. */
+    /** Invoke: â†’ SeilinkHostStatus. */
     hostStatus: 'seilink:host-status',
-    /** Invoke (261107): (on: boolean) → boolean. The profile's Idle lines toggle (config seilink_deafened, inverted). */
+    /** Invoke (261107): (on: boolean) â†’ boolean. The profile's Idle lines toggle (config seilink_deafened, inverted). */
     setIdleLines: 'seilink:set-idle-lines',
-    /** Push (main → main window): SeilinkHostStatus on every change. */
+    /** Push (main â†’ main window): SeilinkHostStatus on every change. */
     hostStatusChanged: 'seilink:host-status-changed',
-    /** Push (main → main window): characterId she was clicked on the desktop; open her chat. */
+    /** Push (main â†’ main window): characterId she was clicked on the desktop; open her chat. */
     openChat: 'seilink:open-chat',
-    /** Invoke: → SeilinkAvailability (M4: whether this install can run the host). */
+    /** Invoke: â†’ SeilinkAvailability (M4: whether this install can run the host). */
     availability: 'seilink:availability',
-    /** Push (main → main window): SeilinkAvailability after the setting changes or the profile switches. */
+    /** Push (main â†’ main window): SeilinkAvailability after the setting changes or the profile switches. */
     availabilityChanged: 'seilink:availability-changed',
-    /** Push (main → main window): SeilinkOpenEditor; the dock's edit button or the offer, open her room editor (261106: on the desktop when `desktop`). */
+    /** Push (main â†’ main window): SeilinkOpenEditor; the dock's edit button or the offer, open her room editor (261106: on the desktop when `desktop`). */
     openRoomEditor: 'seilink:open-room-editor',
-    /** Invoke (261106): SeilinkStageRequest → SeilinkStageResult. The main window steps out over the desktop and back (desktopStage.ts). */
+    /** Invoke (261106): SeilinkStageRequest â†’ SeilinkStageResult. The main window steps out over the desktop and back (desktopStage.ts). */
     stage: 'seilink:stage',
-    /** Invoke (261106): ({characterId, via}) → whether the decorate-together offer showed (decorateOffer.ts). */
+    /** Invoke (261106): ({characterId, via}) â†’ whether the decorate-together offer showed (decorateOffer.ts). */
     offer: 'seilink:offer',
-    /** Invoke: SeiLink opened for her ({characterId, trigger}) → AnimaStatus. Starts her face-set bake/download in the background. */
+    /** Invoke: SeiLink opened for her ({characterId, trigger}) â†’ AnimaStatus. Starts her face-set bake/download in the background. */
     animaPrepare: 'seilink:anima-prepare',
-    /** Invoke: characterId → AnimaStatus. */
+    /** Invoke: characterId â†’ AnimaStatus. */
     animaStatus: 'seilink:anima-status',
-    /** Push (main → every window): AnimaStatus when it changes. */
+    /** Push (main â†’ every window): AnimaStatus when it changes. */
     animaChanged: 'seilink:anima-changed',
     /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
     animaShown: 'seilink:anima-shown',
-    /** Invoke (261118): characterId → AnimaCutout | null, her cloud cut-out PNG while it matches her picture. */
+    /** Invoke (261118): characterId â†’ AnimaCutout | null, her cloud cut-out PNG while it matches her picture. */
     animaCutout: 'seilink:anima-cutout',
     /** Send (261110): a companion's voice started or stopped in this window ({characterId, speaking}); her mouth moves on the desktop. */
     voice: 'seilink:voice',
@@ -4707,3 +4751,7 @@ export type IpcChannelName =
   | typeof IpcChannel.credits[keyof typeof IpcChannel.credits]
   | typeof IpcChannel.subscription[keyof typeof IpcChannel.subscription]
   | typeof IpcChannel.feedback[keyof typeof IpcChannel.feedback];
+
+
+
+

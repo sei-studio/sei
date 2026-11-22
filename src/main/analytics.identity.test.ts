@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261031 (T278 review): the PostHog identity call sequence, end to end with
  * posthog-node mocked. Every capture / alias / identify the app makes is
  * replayed through `PostHogPersons`, a small model of PostHog's person-merge
@@ -348,3 +348,7 @@ describe('invariants', () => {
     expect(ph.same('dev-1', 'user-old')).toBe(false);
   });
 });
+
+
+
+

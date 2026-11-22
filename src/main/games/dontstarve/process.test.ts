@@ -1,4 +1,4 @@
-/** 260909: the DST process listing parsers (macOS ps, Windows CIM). */
+﻿/** 260909: the DST process listing parsers (macOS ps, Windows CIM). */
 import { describe, it, expect } from 'vitest';
 import { parseCimList, parsePsList } from './process';
 
@@ -27,3 +27,7 @@ describe('parseCimList', () => {
     expect(parseCimList('explorer.exe|2026-09-08T23:41:15+08:00')).toEqual({ running: false, startedAt: null });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Settings > Voice > Local voice (261102): the pure decisions behind the
  * Fast / Kokoro choice, kept out of SettingsScreen so they can be tested.
  */
@@ -34,3 +34,7 @@ export function showTtsPackRow(
   if (packId !== KOKORO_PACK_ID) return true;
   return localModel === 'kokoro' || (kokoroPackState ?? 'absent') !== 'absent';
 }
+
+
+
+

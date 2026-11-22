@@ -1,5 +1,5 @@
-/**
- * phantomDetect — pure detection core for the in-app "phantom call" recovery
+﻿/**
+ * phantomDetect â€” pure detection core for the in-app "phantom call" recovery
  * (260810). Port of scripts/heal-phantom-call.mjs's two exported functions;
  * the script remains the out-of-app fallback and this module must keep its
  * semantics byte-for-byte (the script's thresholds were tuned on the real
@@ -9,7 +9,7 @@
  * (videos, music) played into the microphone. STT manufactures a "user
  * utterance" every few seconds, so the transcript fills with machine-cadence
  * user rows for as long as the call runs. The cadence signature is deliberate:
- * it measures the frequency of USER rows, never LLM request rate — an
+ * it measures the frequency of USER rows, never LLM request rate â€” an
  * attentive human never produces 7s-median utterances for 15+ minutes, while
  * an autonomous backseat session with a silent player produces FEW user rows
  * and must NOT flag.
@@ -18,7 +18,7 @@
  * and reusable by offline validation scripts.
  */
 
-// ── knobs (mirrors scripts/heal-phantom-call.mjs) ──────────────────────────
+// â”€â”€ knobs (mirrors scripts/heal-phantom-call.mjs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /** A gap longer than this between adjacent voice rows splits two sessions. */
 export const SESSION_GAP_MS = 5 * 60_000;
 /** Auto-flag thresholds: sustained machine-cadence "user" speech. */
@@ -81,7 +81,7 @@ export function parseChatJsonl(
  * A session is a maximal run of voice rows whose adjacent gaps stay under
  * SESSION_GAP_MS. Non-voice rows end the run (system/play rows are rare
  * enough mid-call that splitting on them only makes quarantine narrower,
- * never wider — the conservative direction).
+ * never wider â€” the conservative direction).
  */
 export function findVoiceSessions(
   rows: Array<{ msg: ChatRowLike | null }>,
@@ -133,8 +133,8 @@ export function findVoiceSessions(
 /**
  * Split MEMORY.md into kept text + removed entry lines: entry lines
  * (`- [ISO] text`) whose timestamp falls inside any selected window
- * (± MEMORY_PAD_MS) are removed; EVERY other line — including `## World N`
- * headers, blank lines, and non-entry prose — is preserved byte-identically.
+ * (Â± MEMORY_PAD_MS) are removed; EVERY other line â€” including `## World N`
+ * headers, blank lines, and non-entry prose â€” is preserved byte-identically.
  */
 export function splitMemory(
   md: string,
@@ -158,3 +158,7 @@ export function splitMemory(
   }
   return { kept: kept.join('\n'), removed };
 }
+
+
+
+

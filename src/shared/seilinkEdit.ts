@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room editor logic (261104, editor pass). Pure: no DOM, no Node, so
  * the rules are unit-tested and the editor screen (renderer
  * components/seilink/RoomEditor.tsx) stays a thin view over them.
@@ -39,7 +39,7 @@ import {
   type Snap,
 } from './seilinkPlace';
 
-// ── Placement ───────────────────────────────────────────────────────────────
+// â”€â”€ Placement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The rules live in seilinkPlace.ts (floor areas, surface lines, wall areas,
 // blocks, depth); these wrap them for the edit ops.
 
@@ -132,7 +132,7 @@ export function defaultSpot(manifest: RoomPresetManifest, state: RoomState, comp
   return [s.x, s.y];
 }
 
-// ── Edit ops (each returns a new state) ─────────────────────────────────────
+// â”€â”€ Edit ops (each returns a new state) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function withSlot(state: RoomState, slot: RoomSlotId, entry: RoomSlotChoice): RoomState {
   return { ...state, slots: { ...state.slots, [slot]: entry } };
@@ -388,7 +388,7 @@ export function isPresetColour(swatches: readonly string[], hex: string | null |
   return !!hex && swatches.includes(hex.toLowerCase());
 }
 
-// ── History ─────────────────────────────────────────────────────────────────
+// â”€â”€ History â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const HISTORY_LIMIT = 60;
 
@@ -468,3 +468,7 @@ export function markSaved(h: EditHistory, saved: RoomState, sent: RoomState = h.
 export function isDirty(h: EditHistory): boolean {
   return !sameState(h.present, h.saved);
 }
+
+
+
+

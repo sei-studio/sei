@@ -1,20 +1,20 @@
-/**
- * Call audio dressing (260705) — the two synthetic sounds around a voice call.
+﻿/**
+ * Call audio dressing (260705) â€” the two synthetic sounds around a voice call.
  *
- * Ringtone: a 4/4 bar of quarter-note sine dings — D, F#, D, rest — looping
+ * Ringtone: a 4/4 bar of quarter-note sine dings â€” D, F#, D, rest â€” looping
  * while the call is dialing (D major, 120 BPM). Pickup answers with a quick
- * rising D→A eighth-note figure; hang-up mirrors it falling A→D. Distinctive
- * but tiny — WebAudio oscillators, no asset, no loop file.
+ * rising Dâ†’A eighth-note figure; hang-up mirrors it falling Aâ†’D. Distinctive
+ * but tiny â€” WebAudio oscillators, no asset, no loop file.
  *
  * Ambience: the companion's TTS carries a faint encoder noise floor, so the
  * call alternated "static while talking / dead digital silence while not".
  * A constant, just-audible comfort-noise bed (looped brown-ish noise at
- * ~-45 dBFS) makes the line sound continuously "open" instead — the
+ * ~-45 dBFS) makes the line sound continuously "open" instead â€” the
  * transition disappears rather than the noise becoming noticeable.
  *
  * Both return a stop() that drops their own nodes; callers own lifecycle
  * (useVoiceStore: ring while 'connecting', ambience while 'live'). Neither
- * closes the AudioContext, which is shared and long-lived — see voiceAudio.ts.
+ * closes the AudioContext, which is shared and long-lived â€” see voiceAudio.ts.
  *
  * 260731: the context, its scheduling leads and the whenSteady gate moved to
  * voiceAudio.ts when the TTS pitch shifter needed all three. Nothing about them
@@ -25,16 +25,16 @@ import { sharedContext as audio, startTime, whenSteady } from './voiceAudio';
 export type StopFn = () => void;
 
 const RING_GAIN = 0.055;
-// The call's sounds live in D major (260705 spec): the ring walks D–F#–D,
-// pickup answers with D→A rising, hang-up closes with A→D falling.
+// The call's sounds live in D major (260705 spec): the ring walks Dâ€“F#â€“D,
+// pickup answers with Dâ†’A rising, hang-up closes with Aâ†’D falling.
 const D5 = 587.33;
 const FSHARP5 = 739.99;
 const A5 = 880;
-// 4/4 at 120 BPM: quarter = 500ms → one bar (D, F#, D, rest) = 2s loop.
+// 4/4 at 120 BPM: quarter = 500ms â†’ one bar (D, F#, D, rest) = 2s loop.
 const QUARTER_MS = 500;
 const RING_PERIOD_MS = QUARTER_MS * 4;
 
-/** Schedule one soft sine "ding" — THE call instrument (ring + hang-up share
+/** Schedule one soft sine "ding" â€” THE call instrument (ring + hang-up share
  * it so the call's sounds feel like one device). */
 function ding(
   ctx: AudioContext,
@@ -58,7 +58,7 @@ function ding(
 }
 
 /**
- * Play a one-shot on the shared context (which stays open — see audio()),
+ * Play a one-shot on the shared context (which stays open â€” see audio()),
  * once the output is genuinely rendering. The connected chime fires moments
  * after the ring stops, still inside the window where a device switch can be
  * settling, so it gets the same gate; on a healthy context whenSteady costs
@@ -70,7 +70,7 @@ function oneShot(build: (ctx: AudioContext, t: number) => void): void {
   whenSteady(ctx, () => build(ctx, startTime(ctx)));
 }
 
-/** Connected: one quick rising eighth-note pair, D → A — the line opening. */
+/** Connected: one quick rising eighth-note pair, D â†’ A â€” the line opening. */
 export function playConnectedChime(): void {
   oneShot((ctx, t) => {
     ding(ctx, D5, t, 0.16);
@@ -78,7 +78,7 @@ export function playConnectedChime(): void {
   });
 }
 
-/** Hang-up chime: the pickup figure mirrored — A → D falling. Plays for BOTH
+/** Hang-up chime: the pickup figure mirrored â€” A â†’ D falling. Plays for BOTH
  * hang-up paths (player button and the companion's end_call); it outlives call
  * teardown because the shared context is never closed with the call. */
 export function playHangupChime(): void {
@@ -88,7 +88,7 @@ export function playHangupChime(): void {
   });
 }
 
-/** Mute/unmute: kept simple — one short noise tick (a mechanical click),
+/** Mute/unmute: kept simple â€” one short noise tick (a mechanical click),
  * filtered darker for mute and brighter for unmute so the direction is felt
  * without any melodic content competing with the call chimes. */
 export function playMuteClick(muted: boolean): void {
@@ -124,7 +124,7 @@ export function startRingtone(): StopFn {
   const bus = ctx.createGain();
   bus.connect(ctx.destination);
 
-  // One 4/4 bar per loop: D, F#, D, rest — quarter notes.
+  // One 4/4 bar per loop: D, F#, D, rest â€” quarter notes.
   const ring = (): void => {
     if (stopped) return;
     const t = startTime(ctx);
@@ -133,7 +133,7 @@ export function startRingtone(): StopFn {
     ding(ctx, D5, t + (2 * QUARTER_MS) / 1000, 0.45, RING_GAIN, bus);
     timer = window.setTimeout(ring, RING_PERIOD_MS);
   };
-  // The FIRST bar waits for the output to be real (see whenSteady) — it is the
+  // The FIRST bar waits for the output to be real (see whenSteady) â€” it is the
   // one that lands in the mic's echo-cancellation reroute and gets eaten.
   // Later bars are already past it and schedule straight off the loop timer.
   whenSteady(ctx, () => {
@@ -196,7 +196,7 @@ export function startAmbience(): StopFn {
     }
     // The context is shared and outlives the call: stop the source and drop the
     // nodes instead of closing it (closing would take the next call's chime
-    // back to a cold device — the bug voiceAudio.ts's shared context avoids).
+    // back to a cold device â€” the bug voiceAudio.ts's shared context avoids).
     window.setTimeout(() => {
       try {
         src.stop();
@@ -209,3 +209,7 @@ export function startAmbience(): StopFn {
     }, 200);
   };
 }
+
+
+
+

@@ -1,16 +1,16 @@
-/**
- * Anonymous(local / own key) → signed-in-account on-device profile import
+﻿/**
+ * Anonymous(local / own key) â†’ signed-in-account on-device profile import
  * (260603 per-profile partitioning; 261023 existing accounts + merge).
  *
  * With per-profile partitioning, everything a player builds while signed out
  * (own API key, no Sei account) lives in the `local` profile, and signing in
- * re-points the app at the account's profile. On a local→account sign-in we
+ * re-points the app at the account's profile. On a localâ†’account sign-in we
  * offer to bring that across: their companions, the companions' memories,
  * skins and portraits, plus the mc_username / preferred_name answers.
  *
- * Offered on every local→account sign-in that finds something to bring, for a
+ * Offered on every localâ†’account sign-in that finds something to bring, for a
  * new account AND an existing one (261023: an existing account used to get no
- * offer, which stranded the local companions). Never offered account→account:
+ * offer, which stranded the local companions). Never offered accountâ†’account:
  * switching between accounts always starts fresh (the trial-abuse deterrent:
  * a companion does not follow you to a freshly farmed account).
  *
@@ -65,7 +65,7 @@ async function exists(p: string): Promise<boolean> {
   try { await access(p); return true; } catch { return false; }
 }
 
-// ── local (source) profile readers — scope-independent, never the active scope.
+// â”€â”€ local (source) profile readers â€” scope-independent, never the active scope.
 function localRoot(): string { return profileRootFor(SCOPE_LOCAL); }
 function localCharsDir(): string { return path.join(localRoot(), 'characters'); }
 function localCharPath(id: string): string { return path.join(localCharsDir(), `${id}.json`); }
@@ -242,7 +242,7 @@ export async function peekLocalProfile(): Promise<PeekLocalResult> {
 }
 
 /**
- * Move a single file or dir local→target when the target has none. When the
+ * Move a single file or dir localâ†’target when the target has none. When the
  * target already has one, the target's is kept and the local copy dropped.
  */
 async function moveUnlessPresent(src: string, dest: string): Promise<void> {
@@ -490,3 +490,7 @@ export async function importLocalProfileInto(
   );
   return { imported, failed, copiedOnboarding };
 }
+
+
+
+

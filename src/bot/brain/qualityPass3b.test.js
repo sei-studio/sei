@@ -1,4 +1,4 @@
-// 261012: quality pass 3b. Pins the protect_player and scripted-conversation
+﻿// 261012: quality pass 3b. Pins the protect_player and scripted-conversation
 // fixes that live outside the combat watch (combat.threat.test.js):
 //  - defend-turn wording per event variant (threat, engaged with others, hp)
 //  - "no zombie within 16 blocks" now says where the nearest one is
@@ -67,7 +67,7 @@ describe('DEFEND_ADDENDUM variants', () => {
 
   it('has no em-dashes in the new text', () => {
     const t = DEFEND_ADDENDUM('zombie', { threat: true, ownerLabel: 'Alex', distance: 22, ownerDistance: 9, ownerHp: 4, count: 2 })
-    expect(t).not.toContain('—')
+    expect(t).not.toContain('â€”')
   })
 })
 
@@ -166,3 +166,7 @@ describe('DEFEND_ADDENDUM when the running attackEntity is on that mob', () => {
     expect(t).toContain('They are at 7 hp.')
   })
 })
+
+
+
+

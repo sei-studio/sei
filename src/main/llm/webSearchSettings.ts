@@ -1,4 +1,4 @@
-// src/main/llm/webSearchSettings.ts
+﻿// src/main/llm/webSearchSettings.ts
 //
 // 260909: the ONE place main resolves "how should this account search the
 // web" for both consumers of src/bot/web/webTools.js:
@@ -63,3 +63,7 @@ export function getChatWebSession(characterId: string, settings: WebSearchSettin
 export function _resetChatWebSessions(): void {
   sessions.clear();
 }
+
+
+
+

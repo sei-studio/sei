@@ -1,9 +1,9 @@
-/**
- * 260703 procgen — Unique-companion generation pipeline (MAIN process only).
+﻿/**
+ * 260703 procgen â€” Unique-companion generation pipeline (MAIN process only).
  *
  * Orchestrates the full "Meet your unique companion" flow:
- *   soulcaster-1 character sheet  →  in PARALLEL { portrait (KusArt image gen) →
- *   img2skin skin } + persona expansion  →  save (kind 'unique', shared false).
+ *   soulcaster-1 character sheet  â†’  in PARALLEL { portrait (KusArt image gen) â†’
+ *   img2skin skin } + persona expansion  â†’  save (kind 'unique', shared false).
  *
  * Two generation modes (260817, china-compat W6):
  *   - cloud-proxy + signed-in: the character sheet + persona both stream
@@ -11,7 +11,7 @@
  *     KusArt B2B API via the proxy's `/generate/portrait` passthrough (260709,
  *     JWT-authed; the KusArt key lives server-side only) with a style_id
  *     chosen from the user's art_style preference (KUSART_STYLE_BY_ART_STYLE;
- *     default "Glossy Skin Render Anime"). Signed-out cloud → `not_signed_in`.
+ *     default "Glossy Skin Render Anime"). Signed-out cloud â†’ `not_signed_in`.
  *   - local (BYOK): the sheet runs through the vendored soulcaster castSoul
  *     with the user's own provider via the src/main/llm layer (castSoulLocal
  *     below), and the persona expands through expandPersona's BYOK path (the
@@ -24,14 +24,14 @@
  * The pipeline NEVER throws for expected failures; it resolves the discriminated
  * `GenerateUniqueResult`. Stage progress is pushed via the injected `emit` sink
  * (the IPC handler tags each tick with the caller's requestId and forwards it on
- * IpcChannel.gen.progress — same shape as chars:expansion-progress).
+ * IpcChannel.gen.progress â€” same shape as chars:expansion-progress).
  *
  * Ordering note (deviation from the literal spec, functionally identical): the
  * expensive parallel work (image gen + img2skin + persona expansion) runs
- * concurrently and only PRODUCES bytes/text; the store writes (saveCharacter →
- * applyPortrait → applyPng) are serialized AFTER the character JSON exists on
+ * concurrently and only PRODUCES bytes/text; the store writes (saveCharacter â†’
+ * applyPortrait â†’ applyPng) are serialized AFTER the character JSON exists on
  * disk. applyPortrait / applyPng both `getCharacter` + `saveCharacter`, so they
- * require the row to exist — saving first and applying after avoids a
+ * require the row to exist â€” saving first and applying after avoids a
  * skeleton-write race between the two branches.
  */
 
@@ -72,7 +72,7 @@ const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 /**
  * KusArt B2B image generation (https://kusart.com/api-for-business), reached
  * through the proxy's /generate/portrait/create + /result passthrough
- * (260709) — the key lives server-side only. The old build-time
+ * (260709) â€” the key lives server-side only. The old build-time
  * KUSART_API_KEY bake both shipped a billing-scoped key inside every
  * installer and was silently absent from CI builds (portraits fell back to
  * the pixel sprite). The proxy re-emits KusArt's code/message/data envelope
@@ -82,7 +82,7 @@ const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
 /**
  * KusArt B2B `style_id` per user art_style preference, split by companion
  * gender. The ids are the "Style N" labels in the generator's style picker
- * (kusart.com/image-generator > Choose Style) — verified there on 260707. Note
+ * (kusart.com/image-generator > Choose Style) â€” verified there on 260707. Note
  * the picker label is the ONLY reliable id source: the library page order
  * matches it merely by coincidence for the low ids (Soft-Realistic Male
  * Portrait is 25th in the library but Style 30 in the picker).
@@ -98,7 +98,7 @@ const PROXY_BASE_URL = process.env.SEI_PROXY_URL ?? 'https://api.sei.gg';
  *   3d         |   18     | VRChat Style               | 3D-meets-anime render (closest to a 3D figure)
  *   (null)     |   15     | -> anime                   | no preference falls back to the anime default
  *
- * Male map (from the picker's "Male Only" category — 8 styles total, picked
+ * Male map (from the picker's "Male Only" category â€” 8 styles total, picked
  * 260707; the female-trained styles above render male prompts poorly):
  *
  *   art_style  | style_id | KusArt style name          | look
@@ -217,13 +217,13 @@ function notePortraitGenerated(props: PortraitGeneratedProps): void {
   })();
 }
 
-// Native request dimensions (tall 4:7 portrait, 960×1680, matching the zoom
-// aspect) are FORCED server-side by the proxy's /generate/portrait/create —
+// Native request dimensions (tall 4:7 portrait, 960Ã—1680, matching the zoom
+// aspect) are FORCED server-side by the proxy's /generate/portrait/create â€”
 // the client sends only prompt + style_id (sei-proxy generatePortrait.ts).
 const KUSART_POLL_INTERVAL_MS = 2_000;
 
 // The soulcaster sheet model + max_tokens are now chosen SERVER-SIDE by the
-// proxy's /free/soulcast route (see sei-proxy freeStructured.ts) — the client no
+// proxy's /free/soulcast route (see sei-proxy freeStructured.ts) â€” the client no
 // longer sends them. This wall-clock cap still bounds the per-call fetch.
 const SHEET_TIMEOUT_MS = 60_000;
 const IMAGE_TIMEOUT_MS = 60_000;
@@ -247,7 +247,7 @@ export type GenEmit = (stage: GenStage, status: 'start' | 'done' | 'error', mess
  *   - FOREIGN-owned characters (owner set, !== current user) occupy a slot
  *     only when explicitly added from the World tab (config.added_world_ids).
  *     This matters because merely hovering/opening a World card caches the
- *     foreign row locally (charsOpenPrepare → ensureLocallyCached), so a bare
+ *     foreign row locally (charsOpenPrepare â†’ ensureLocallyCached), so a bare
  *     `!is_default` count would inflate with every browse;
  *   - everything else (own + legacy null-owner local chars) always counts.
  */
@@ -257,7 +257,7 @@ export function libraryCharacterCount(
   currentUserId: string | null = null,
 ): number {
   // ONE rule, shared with the renderer's isHomeCharacter via countsAsHomeSlot
-  // (src/shared/characterSchema.ts) — the count and the visible Home grid must
+  // (src/shared/characterSchema.ts) â€” the count and the visible Home grid must
   // agree. In particular, when signed out (currentUserId null) an owner-stamped
   // cached World row does NOT count (isHomeCharacter hides it), so browsing the
   // World tab can never inflate the slot count against an empty-looking grid.
@@ -281,8 +281,8 @@ const EMPTY_PREFS: UserPreferences = {
  * Which relationship dynamic the NEXT unique cast gets. Each RANKED
  * preference is granted exactly once, top pick first: the first ranking
  * entry not yet in `granted` (the device-local UserConfig.dynamics_granted
- * list, appended after a cast saves) wins. Once the ranking is exhausted —
- * or the user never ranked (`[]` Surprise me / null never-asked) — the cast
+ * list, appended after a cast saves) wins. Once the ranking is exhausted â€”
+ * or the user never ranked (`[]` Surprise me / null never-asked) â€” the cast
  * rolls a uniformly random dynamic. Every cast therefore has a dynamic;
  * deleting a companion never re-grants its preference (grants are per
  * relationship, not per slot).
@@ -303,7 +303,7 @@ export function resolveDynamic(
  * Merge a questionnaire patch over the CURRENT stored answers, stamping
  * completed_at with `now`. Keys absent from the patch keep their stored
  * value (that's what makes "ask only the missing questions" safe); keys
- * present — including explicit nulls and the `[]` Surprise-me ranking — win.
+ * present â€” including explicit nulls and the `[]` Surprise-me ranking â€” win.
  * Pure; the prefs:save handler runs it inside configStore.updateConfig so
  * the merge base is the freshly-locked config, not a renderer snapshot
  * (TOCTOU).
@@ -326,12 +326,12 @@ export function mergePrefsPatch(
 
 /**
  * Reconcile the local (config.user_profile) and cloud (user_preferences row)
- * questionnaire copies. Cloud wins when it is NEWER — it carries a completed_at
+ * questionnaire copies. Cloud wins when it is NEWER â€” it carries a completed_at
  * that the local copy lacks, or a later completed_at.
  *
- *   - profile      — the effective profile to return to the renderer.
- *   - cloudIsNewer — true when the cloud copy should be written back into config.
- *   - hasCompleted — true when EITHER copy has a completed_at (drives `needed`:
+ *   - profile      â€” the effective profile to return to the renderer.
+ *   - cloudIsNewer â€” true when the cloud copy should be written back into config.
+ *   - hasCompleted â€” true when EITHER copy has a completed_at (drives `needed`:
  *                    the caller sets needed = signedIn && !hasCompleted).
  */
 export function resolvePrefs(
@@ -365,7 +365,7 @@ function condense(text: string, maxSentences: number, maxChars: number): string 
   if (!clean) return '';
   const sentences = clean.match(/[^.!?]+[.!?]+/g) ?? [clean];
   let out = sentences.slice(0, maxSentences).join(' ').trim();
-  if (out.length > maxChars) out = out.slice(0, maxChars).trimEnd() + '…';
+  if (out.length > maxChars) out = out.slice(0, maxChars).trimEnd() + 'â€¦';
   return out;
 }
 
@@ -381,7 +381,7 @@ type Sheet = {
   /** 260705: who the character is to the player (soulcaster player_dynamic). */
   player_dynamic?: string | null;
   voice_style: string;
-  /** ElevenLabs voice id from soulcaster's curated pool — stamped by castSoul
+  /** ElevenLabs voice id from soulcaster's curated pool â€” stamped by castSoul
    * (never LLM-authored). Optional: sheets generated before voices existed
    * lack it; resolveVoiceId (voice/voiceAssign.ts) backfills those. */
   voice_id?: string;
@@ -396,7 +396,7 @@ type Sheet = {
   appearance: Record<string, unknown>;
   image_prompt: string;
   /**
-   * 260705: soulcaster-authored card caption ("a wry wood elf cartographer") —
+   * 260705: soulcaster-authored card caption ("a wry wood elf cartographer") â€”
    * lowercase, name-free, 3-8 words. Preferred by buildDescription over the
    * client-side tone/species derivation. Optional: older sheets lack it.
    */
@@ -410,7 +410,7 @@ type Sheet = {
  *
  * 260704: the sheet's appearance (incl. `outfit`, a specific, prompt-enforced
  * garment description) was being generated but never reaching the character's
- * persona/description — the LLM playing the companion had no idea what it
+ * persona/description â€” the LLM playing the companion had no idea what it
  * wore. This folds outfit + hair/eyes/height/build + accessories/distinguishing
  * features into one terse line so both `expandPersona` and the bot's runtime
  * persona know what the character looks like and is wearing.
@@ -420,7 +420,7 @@ function buildAppearanceSummary(appearance: Record<string, unknown> | null | und
   const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
   const list = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0) : [];
-  const sentence = (s: string): string => (s === '' || /[.…]$/.test(s) ? s : `${s}.`);
+  const sentence = (s: string): string => (s === '' || /[.â€¦]$/.test(s) ? s : `${s}.`);
 
   const overall = condense(str(a.overall), 1, 160);
   const outfit = condense(str(a.outfit), 2, 280);
@@ -443,7 +443,7 @@ function buildAppearanceSummary(appearance: Record<string, unknown> | null | und
 }
 
 /**
- * Compose the persona `source` blurb the expander consumes — a compact readable
+ * Compose the persona `source` blurb the expander consumes â€” a compact readable
  * paragraph (NOT raw JSON) covering identity, personality, voice, appearance
  * (incl. outfit), and a condensed backstory.
  */
@@ -494,10 +494,10 @@ function speciesTag(sheet: Sheet): string {
   if (name) head = head.replace(new RegExp(`^${escapeRegExp(name)}\\s+(?:is|was)\\s+`, 'i'), '');
   head = head.replace(/^(?:a|an|the)\s+/i, '').trim();
   // A tag still carrying the character's name is a sentence fragment, not a
-  // species — fall back to the background word.
+  // species â€” fall back to the background word.
   const nameLeak = !!name && head.toLowerCase().includes(name.toLowerCase());
   const tag = head && head.length <= 32 && !nameLeak ? head : sheet.background;
-  // Sheets sometimes capitalize ("Android chassis") — lowercase mid-sentence.
+  // Sheets sometimes capitalize ("Android chassis") â€” lowercase mid-sentence.
   return tag.charAt(0).toLowerCase() + tag.slice(1);
 }
 
@@ -507,7 +507,7 @@ function escapeRegExp(s: string): string {
 }
 
 /**
- * User-facing `description`: a single-sentence identity summary — name,
+ * User-facing `description`: a single-sentence identity summary â€” name,
  * surface tone, species tag. Deliberately EXCLUDES the backstory and all
  * appearance detail (260705 user direction): the description shows on
  * Home/World cards, and who the character is beyond a one-line identity is
@@ -516,19 +516,19 @@ function escapeRegExp(s: string): string {
  */
 export function buildDescription(sheet: Sheet): string {
   // Preferred path (260705): soulcaster now authors the caption directly as
-  // `card_line` ("a wry wood elf cartographer") — one writer, no parsing.
+  // `card_line` ("a wry wood elf cartographer") â€” one writer, no parsing.
   // Light sanitation only: collapse whitespace, strip a leading name the
   // model was told not to include, strip dashes and a trailing period.
   const name = String(sheet.name ?? '').trim();
   let card = String(sheet.card_line ?? '')
-    .replace(/\s*[—–]\s*/g, ', ')
+    .replace(/\s*[â€”â€“]\s*/g, ', ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[.\s]+$/, '');
   if (name) card = card.replace(new RegExp(`^${escapeRegExp(name)},?\\s+`, 'i'), '');
   if (card) {
     const desc = `${name}, ${card.charAt(0).toLowerCase()}${card.slice(1)}.`;
-    return desc.length > 120 ? desc.slice(0, 120).trimEnd() + '…' : desc;
+    return desc.length > 120 ? desc.slice(0, 120).trimEnd() + 'â€¦' : desc;
   }
   // Fallback for sheets without card_line: derive from tone + species_detail.
   return derivedDescription(sheet);
@@ -537,11 +537,11 @@ export function buildDescription(sheet: Sheet): string {
 /** Pre-card_line derivation, kept as the fallback for older sheets. */
 function derivedDescription(sheet: Sheet): string {
   // Tones can be long compounds ("sardonic and calculating; quick to joke
-  // about circumstances but…") — keep only the first clause, and only when
+  // about circumstances butâ€¦") â€” keep only the first clause, and only when
   // it stays short. Some sheets also return sentence-style tones ("Anaya
   // speaks with unhurried calm"): strip a leading name, and drop the clause
   // entirely when it reads as a sentence (starts with a verb or still names
-  // the character) — "a speaks with unhurried calm wolf-person" is garbage.
+  // the character) â€” "a speaks with unhurried calm wolf-person" is garbage.
   const name = String(sheet.name ?? '').trim();
   let toneClause = String(sheet.personality?.tone ?? '')
     .split(/[,;.]/)[0]
@@ -557,10 +557,10 @@ function derivedDescription(sheet: Sheet): string {
   // reads better lowercased.
   toneClause = toneClause.charAt(0).toLowerCase() + toneClause.slice(1);
   const tone = toneClause && toneClause.length <= 40 ? `${toneClause} ` : '';
-  // Strip em/en dashes the same way the card_line path does — an LLM-authored
+  // Strip em/en dashes the same way the card_line path does â€” an LLM-authored
   // tone ("warm - but guarded") must not ship a dash into user-facing copy.
-  const desc = `${sheet.name}, a ${tone}${speciesTag(sheet)}.`.replace(/\s*[—–]\s*/g, ', ');
-  return desc.length > 120 ? desc.slice(0, 120).trimEnd() + '…' : desc;
+  const desc = `${sheet.name}, a ${tone}${speciesTag(sheet)}.`.replace(/\s*[â€”â€“]\s*/g, ', ');
+  return desc.length > 120 ? desc.slice(0, 120).trimEnd() + 'â€¦' : desc;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -594,7 +594,7 @@ let _sharp: SharpLike | null | undefined;
  * Load sharp WITHOUT taking a direct dependency on it: sharp ships as a
  * transitive dep of img2skin (which the skin pipeline resolves the same way).
  * Resolved from the img2skin package directory so it works in dev and in
- * asar-unpacked packaged builds. Returns null when sharp is unavailable — the
+ * asar-unpacked packaged builds. Returns null when sharp is unavailable â€” the
  * caller then only applies an already-compliant portrait.
  */
 export function loadSharp(): SharpLike | null {
@@ -618,7 +618,7 @@ export function loadSharp(): SharpLike | null {
 
 /**
  * Coerce arbitrary generated PNG bytes into the portrait pipeline's constraints
- * (≤PORTRAIT_MAX_DIM² and ≤PORTRAIT_MAX_BYTES) so applyPortrait's validation
+ * (â‰¤PORTRAIT_MAX_DIMÂ² and â‰¤PORTRAIT_MAX_BYTES) so applyPortrait's validation
  * accepts them. Uses sharp (via img2skin) to progressively downscale + palette-
  * compress; falls back to the raw bytes only when they are already compliant.
  */
@@ -647,7 +647,7 @@ async function toCompliantPortraitPng(bytes: Buffer): Promise<Buffer> {
       .toBuffer();
     if (out.length <= PORTRAIT_MAX_BYTES) return out;
   }
-  // Last resort — aggressive palette reduction at the smallest size.
+  // Last resort â€” aggressive palette reduction at the smallest size.
   return await sharp(bytes)
     .resize({ width: 512, height: 512, fit: 'inside', withoutEnlargement: true })
     .png({ compressionLevel: 9, palette: true, colors: 128, quality: 70 })
@@ -727,7 +727,7 @@ export function estimateCharacterBBox(
 
   // Energy separation gate: the focused subject must stand clear of the
   // background. If the peak barely beats the median, the whole frame is
-  // textured (blur did not take) — don't trust the bbox.
+  // textured (blur did not take) â€” don't trust the bbox.
   const sorted = Float64Array.from(energy).sort();
   const median = sorted[Math.floor(sorted.length / 2)] || 0;
   if (median > 0 && maxE < 1.6 * median) return null;
@@ -758,7 +758,7 @@ export function estimateCharacterBBox(
       }
     }
   }
-  // Too little structure survived — no confident subject.
+  // Too little structure survived â€” no confident subject.
   if (keptCount < Math.max(3, Math.round(0.02 * gw * gh))) return null;
 
   let gx0 = gw;
@@ -799,7 +799,7 @@ export function estimateCharacterBBox(
  * frames the subject at ZOOM_TARGET_FILL of the crop height, aspect-locked to
  * ZOOM_ASPECT_W:ZOOM_ASPECT_H and centered on the bbox (clamped to bounds).
  * Returns null when the crop would need to upscale (the subject already fills
- * the frame) — the caller then no-ops. Pure + unit-tested.
+ * the frame) â€” the caller then no-ops. Pure + unit-tested.
  */
 export function computeCropWindow(
   bbox: { left: number; top: number; width: number; height: number },
@@ -901,7 +901,7 @@ interface KusartTaskData {
 
 /**
  * `get_result` responds with this business code while the task is still
- * processing ("Task is not yet completed") — it is a normal polling state,
+ * processing ("Task is not yet completed") â€” it is a normal polling state,
  * NOT a failure. Discovered live 260705: treating it as fatal made every
  * cast's first poll (2s in, render takes ~10-25s) kill the portrait branch.
  */
@@ -963,8 +963,8 @@ function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
  * TEXT_TO_IMAGE task with the caller-selected `styleId` (mapped from the
  * user's art_style preference via resolveKusartStyleId), poll /result until
  * COMPLETED, then download the CDN image (the display_url is a public KusArt
- * CDN link — no auth needed). Returns the raw PNG bytes. IMAGE_TIMEOUT_MS
- * wall-clock cap over the whole create → poll → download sequence via one
+ * CDN link â€” no auth needed). Returns the raw PNG bytes. IMAGE_TIMEOUT_MS
+ * wall-clock cap over the whole create â†’ poll â†’ download sequence via one
  * AbortController.
  *
  * `gender` (261107) lets the proxy add its curated male negative_prompt
@@ -1030,12 +1030,12 @@ type Rolled = {
 };
 
 /**
- * Cloud soulcaster sheet call — the PROMPT lives on the proxy now.
+ * Cloud soulcaster sheet call â€” the PROMPT lives on the proxy now.
  *
  * The proxy's POST /free/soulcast owns the character-sheet system + user prompt:
  * we send the pre-rolled fields and it assembles + calls the model, so the
  * prompt can be improved with a `fly deploy` instead of a client reship. What
- * stays here is only what is coupled to the OUTPUT shape — the deterministic
+ * stays here is only what is coupled to the OUTPUT shape â€” the deterministic
  * Stage-1 field roll, the Zod validation, the single retry, and the
  * authoritative re-stamp of the rolled values the model must not drift (combat
  * is a gameplay numeric contract, heritage a closed vocabulary, voice_id pure
@@ -1097,8 +1097,8 @@ async function castSoulViaProxy(args: {
 
 /**
  * Local (BYOK) soulcaster sheet call (260817, china-compat W6): the vendored
- * soulcaster's own castSoul — its bundled system/user prompts, single retry,
- * Zod validation, and authoritative re-stamp of the rolled fields — driven by
+ * soulcaster's own castSoul â€” its bundled system/user prompts, single retry,
+ * Zod validation, and authoritative re-stamp of the rolled fields â€” driven by
  * the user's provider through the src/main/llm layer. The prompt here is the
  * VENDORED copy (a local user may be signed out, so the server-owned
  * /free/soulcast prompt is not reachable); prompt improvements reach local
@@ -1202,7 +1202,7 @@ async function fetchPublicCharacterNames(signal?: AbortSignal): Promise<string[]
 
 /**
  * POST the pre-rolled fields to the proxy's server-owned soulcaster route and
- * return the model's raw text. Non-streaming. apiKey lives on the proxy — we
+ * return the model's raw text. Non-streaming. apiKey lives on the proxy â€” we
  * only send the Supabase JWT (Authorization: Bearer). Wired to the pipeline's
  * abort signal AND a per-call wall-clock timeout.
  */
@@ -1239,7 +1239,7 @@ async function postSoulcast(args: {
     // fetch resolves once HEADERS arrive; the body read below is still network
     // I/O governed by controller.signal (undici aborts the stream mid-read), so
     // the timer and pipeline abort listener must stay attached until json()
-    // settles — a proxy that sends headers then stalls would otherwise hang
+    // settles â€” a proxy that sends headers then stalls would otherwise hang
     // generation forever with no way to cancel.
     // Duck-type the first text block out of the raw Anthropic message JSON the
     // proxy relays (avoids coupling to a specific SDK content-block union).
@@ -1314,7 +1314,7 @@ export const MALE_PORTRAIT_PREFIX = 'solo, 1boy, male focus, masculine, fully cl
  * Assemble the KusArt prompt: subject + framing suffix + optional tone clause
  * (expression/pose) + beastkin humanization clause, led by
  * MALE_PORTRAIT_PREFIX for male companions. Em/en dashes are stripped
- * (the subject and tone are LLM-written and may contain them) — user copy
+ * (the subject and tone are LLM-written and may contain them) â€” user copy
  * standard, and the image model reads a comma identically. Pure; exported for
  * unit tests.
  */
@@ -1332,7 +1332,7 @@ export function assemblePortraitPrompt(args: {
   const subject = args.subject.trim().replace(/[.\s]+$/, '');
   const lead = args.gender === 'male' ? MALE_PORTRAIT_PREFIX : '';
   return (`${lead}${subject}. ${PORTRAIT_FRAMING_SUFFIX}` + toneClause + beastkinClause).replace(
-    /\s*[—–]\s*/g,
+    /\s*[â€”â€“]\s*/g,
     ', ',
   );
 }
@@ -1504,7 +1504,7 @@ export async function generateUnique(
   const { emit } = deps;
   const gender: UniqueGender = input.gender;
 
-  // ── Guard 1: backend mode ──────────────────────────────────────────────
+  // â”€â”€ Guard 1: backend mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // cloud-proxy REQUIRES a signed-in session (the /free routes are JWT-authed).
   // local (BYOK) runs signed-out or signed-in (260817, china-compat W6): the
   // sheet + persona ride the user's own provider; a missing/invalid key
@@ -1520,7 +1520,7 @@ export async function generateUnique(
     return { ok: false, code: 'not_signed_in', message: 'Sign in to generate a unique companion.' };
   }
 
-  // ── Guard 2: slot limit ────────────────────────────────────────────────
+  // â”€â”€ Guard 2: slot limit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { loadConfig } = await import('./configStore');
   const { listCharacters } = await import('./characterStore');
   const config = await loadConfig();
@@ -1533,7 +1533,7 @@ export async function generateUnique(
     };
   }
 
-  // ── Guard 3: daily creation quota ──────────────────────────────────────
+  // â”€â”€ Guard 3: daily creation quota â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { checkCreateQuota } = await import('./characterStore');
   const quota = await checkCreateQuota();
   if (quota.blocked) {
@@ -1546,12 +1546,12 @@ export async function generateUnique(
 
   // Relationship dynamic for THIS cast: first not-yet-granted ranked
   // preference, else random (see resolveDynamic). The grant is recorded in
-  // config.dynamics_granted after the cast SAVES — a failed generation must
+  // config.dynamics_granted after the cast SAVES â€” a failed generation must
   // not consume the preference.
   const dynamic = resolveDynamic(config.user_profile?.companion_dynamics, config.dynamics_granted);
 
   // Everything past the guards is bounded by the wall-clock cap. The cap ABORTS
-  // the pipeline (checked before the save step) — a timed-out run must never
+  // the pipeline (checked before the save step) â€” a timed-out run must never
   // save an orphan companion the user was told failed, or a "Try again" would
   // mint a duplicate into a slot the orphan already consumed.
   const cap = new AbortController();
@@ -1572,10 +1572,10 @@ export async function generateUnique(
 
 async function runPipeline(args: {
   gender: UniqueGender;
-  /** Relationship dynamic for this cast (resolveDynamic) — always set. */
+  /** Relationship dynamic for this cast (resolveDynamic) â€” always set. */
   dynamic: CompanionDynamic;
-  /** 'cloud-proxy' → proxy /free routes (jwt/userId non-null, guard 1);
-   *  'local' → BYOK provider via src/main/llm (jwt/userId may be null). */
+  /** 'cloud-proxy' â†’ proxy /free routes (jwt/userId non-null, guard 1);
+   *  'local' â†’ BYOK provider via src/main/llm (jwt/userId may be null). */
   backendKind: 'cloud-proxy' | 'local';
   jwt: string | null;
   userId: string | null;
@@ -1586,12 +1586,12 @@ async function runPipeline(args: {
 }): Promise<GenerateUniqueResult> {
   const { gender, dynamic, backendKind, jwt, userId, config, emit, signal } = args;
 
-  // ── Stage 'sheet' — soulcaster consolidation ───────────────────────────
+  // â”€â”€ Stage 'sheet' â€” soulcaster consolidation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let sheet: Sheet;
   emit('sheet', 'start');
   try {
     // Voice roll (260705): exclude voices the library already uses so a
-    // roster's companions rarely share a voice. Best-effort — an unreadable
+    // roster's companions rarely share a voice. Best-effort â€” an unreadable
     // library just means no exclusions.
     // Library names feed the local (BYOK) name draw the same way: avoid
     // handing one user two companions with the same name. The cloud proxy
@@ -1644,7 +1644,7 @@ async function runPipeline(args: {
   // used (it triggers multi-view turnaround grids). Framing wording is aimed
   // deliberately WIDE (260705 iteration): the earlier "close waist-up portrait,
   // fills most of the frame" OVERSHOT into extreme face close-ups with the top
-  // of the head cropped off — unrecoverable, since zoomToCharacter can tighten a
+  // of the head cropped off â€” unrecoverable, since zoomToCharacter can tighten a
   // too-small subject but nothing can restore a head cut by the frame edge. The
   // current wording ("medium shot from the waist up", "the entire head is fully
   // visible with empty space above the head", "not a close up of the face")
@@ -1663,7 +1663,7 @@ async function runPipeline(args: {
   // Beastkin get an explicit humanization clause: without it, style renders drew
   // a literal animal (full cat head, fur-covered body) instead of a person with
   // animal ears. "Front view, never seen from behind" exists because a beastkin
-  // render (Anaya, wolf-person) came back as a full-body BACK view — the clause's
+  // render (Anaya, wolf-person) came back as a full-body BACK view â€” the clause's
   // tail emphasis invites the model to turn the character around to show it.
   const imagePrompt = assemblePortraitPrompt({
     subject: sheet.image_prompt,
@@ -1672,7 +1672,7 @@ async function runPipeline(args: {
     gender,
   });
 
-  // ── Parallel: (portrait → skin) + persona expansion ────────────────────
+  // â”€â”€ Parallel: (portrait â†’ skin) + persona expansion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let portraitBytes: Buffer | null = null;
   let skinBytes: Buffer | null = null;
   let expanded: string | null = null;
@@ -1680,12 +1680,12 @@ async function runPipeline(args: {
   // saved character carries the matching metadata.language pin.
   let generatedLanguage: 'zh' | undefined;
 
-  // The portrait/skin branch swallows its own failures — an image failure must
+  // The portrait/skin branch swallows its own failures â€” an image failure must
   // NEVER fail the whole generation (character saves with no portrait/skin).
   //
   // 260817 (china-compat W6): both routes are proxy-side and JWT-authed
   // (KusArt portrait passthrough + panel-atlas), so a signed-out LOCAL cast
-  // skips the branch entirely — no stage ticks emitted (an "Image generation
+  // skips the branch entirely â€” no stage ticks emitted (an "Image generation
   // failed" line would misdescribe the expected procedural-portrait path).
   const portraitSkinBranch = jwt === null ? Promise.resolve() : (async (): Promise<void> => {
     // Rebind for the closure: TS narrowing does not flow into the async body,
@@ -1707,9 +1707,9 @@ async function runPipeline(args: {
       return; // no portrait, no skin
     }
     notePortraitGenerated(portraitGeneratedProps(portraitAnalytics));
-    // Deterministic zoom-crop (character ≈ 75% of frame height). Best-effort:
+    // Deterministic zoom-crop (character â‰ˆ 75% of frame height). Best-effort:
     // returns rawPng unchanged when the focus detector isn't confident. BOTH
-    // branches consume the crop — the tight framing also keeps the skin
+    // branches consume the crop â€” the tight framing also keeps the skin
     // painter's dominant-color sample off the blurred background.
     const cropped = await zoomToCharacter(rawPng);
     try {
@@ -1734,7 +1734,7 @@ async function runPipeline(args: {
     }
   })();
 
-  // The persona branch is load-bearing — its failure fails the generation.
+  // The persona branch is load-bearing â€” its failure fails the generation.
   const personaBranch = (async (): Promise<void> => {
     emit('persona', 'start');
     const { expandPersona, fetchServerExpansionSystem } = await import('./personaExpansion');
@@ -1752,11 +1752,11 @@ async function runPipeline(args: {
       ...(castLanguage ? { language: castLanguage } : {}),
     };
     if (backendKind === 'cloud-proxy') {
-      // /free/expand — the proxy injects the server-owned EXPANSION_SYSTEM here
+      // /free/expand â€” the proxy injects the server-owned EXPANSION_SYSTEM here
       // (the SDK POSTs to <baseURL>/v1/messages = /free/expand/v1/messages).
       expansionInput.cloudMode = { baseURL: `${PROXY_BASE_URL}/free/expand`, authToken: jwt! };
     } else {
-      // Local BYOK (260817, china-compat W6) — mirrors characterStore's
+      // Local BYOK (260817, china-compat W6) â€” mirrors characterStore's
       // expandAndSaveCharacter: the Anthropic provider needs the on-disk key
       // passed explicitly; every other provider loads its own key inside the
       // llm layer (and ollama needs none). Best-effort fetch of the
@@ -1796,9 +1796,9 @@ async function runPipeline(args: {
     };
   }
 
-  // ── Stage 'saving' — persist + apply portrait/skin + public_id fetch-back ─
+  // â”€â”€ Stage 'saving' â€” persist + apply portrait/skin + public_id fetch-back â”€
   // The wall-clock cap already resolved the race with a failure once `signal`
-  // is aborted — saving now would create an invisible orphan that eats a slot.
+  // is aborted â€” saving now would create an invisible orphan that eats a slot.
   if (signal.aborted) {
     return { ok: false, code: 'generation_failed', message: 'Generation timed out. Please try again.' };
   }
@@ -1851,13 +1851,13 @@ async function runPipeline(args: {
     return { ok: false, code: 'generation_failed', message: `Couldn't save the companion: ${msg}` };
   }
   // Count the creation against the daily cap (MAX_CREATIONS_PER_DAY) now that
-  // the character exists on disk — the guard-3 pre-check reads this log.
+  // the character exists on disk â€” the guard-3 pre-check reads this log.
   await recordCreation();
 
   // Record the grant now that the cast is durably saved, so the next cast
   // moves down the ranking. Only RANKED preferences are recorded (random
   // rolls stay repeatable). updateConfig re-reads under the file lock and
-  // re-checks membership against the CURRENT ranking — the `config` snapshot
+  // re-checks membership against the CURRENT ranking â€” the `config` snapshot
   // this pipeline started from is minutes old by now (TOCTOU: the user may
   // have re-ranked mid-generation). Best-effort: a failed write means the
   // next cast repeats this dynamic, which beats failing a finished cast.
@@ -1874,7 +1874,7 @@ async function runPipeline(args: {
   }
 
   // Apply portrait + skin now that the character JSON exists on disk. Both are
-  // best-effort — a failure here leaves the companion without art, never blocks.
+  // best-effort â€” a failure here leaves the companion without art, never blocks.
   if (portraitBytes) {
     try {
       const { applyPortrait } = await import('./portraitStore');
@@ -1893,7 +1893,7 @@ async function runPipeline(args: {
     }
   }
 
-  // public_id fetch-back — best-effort, signed-in only (a signed-out local
+  // public_id fetch-back â€” best-effort, signed-in only (a signed-out local
   // cast has no cloud row to read back; the sync queue mirrors later if the
   // user ever signs in). Drain one sync op (the upsert enqueued by
   // saveCharacter) so the server assigns public_id, then read it back and
@@ -1919,3 +1919,7 @@ async function runPipeline(args: {
   emit('saving', 'done');
   return { ok: true, characterId: id };
 }
+
+
+
+

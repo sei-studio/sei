@@ -1,5 +1,5 @@
-/**
- * ContinueWithChatGPTButton — OpenAI's approved "Continue with ChatGPT"
+﻿/**
+ * ContinueWithChatGPTButton â€” OpenAI's approved "Continue with ChatGPT"
  * button (261017, issue #46).
  *
  * Like GoogleSignInButton, deliberately NOT built on <Button> and NOT on the
@@ -44,3 +44,7 @@ export function ContinueWithChatGPTButton({ onClick, disabled, format, busy, ful
     </button>
   );
 }
+
+
+
+

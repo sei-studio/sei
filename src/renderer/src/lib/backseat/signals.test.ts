@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   baselineGain,
   blockMaxDelta,
@@ -349,3 +349,7 @@ describe('decideJolt', () => {
     expect(decideJolt(st, 3100, WHITE, TH)).toBe('color');
   });
 });
+
+
+
+

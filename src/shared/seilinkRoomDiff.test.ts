@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultRoomState, plainRoomState, withoutPlain, type RoomPresetManifest, type RoomState } from './seilinkRoom';
@@ -134,3 +134,7 @@ describe('roomChanges and the plain first state (261106)', () => {
     expect(roomChanges(cozy, room(), cozy, plain)[0].text).toMatch(/plain background/);
   });
 });
+
+
+
+

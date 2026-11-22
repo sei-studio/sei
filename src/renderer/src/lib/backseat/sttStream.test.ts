@@ -1,4 +1,4 @@
-/**
+﻿/**
  * sttStream job pacing (261121). A Whisper slower than real time must never
  * have more than one backseat job in flight: v0.7.0 re-dispatched every 15 s
  * regardless, the worker ran them all concurrently, and the backlog grew
@@ -183,3 +183,7 @@ describe('createSttStream job pacing', () => {
     stt.stop();
   });
 });
+
+
+
+

@@ -1,10 +1,10 @@
-// src/bot/adapter/minecraft/observers/resolveOwner.test.js
+﻿// src/bot/adapter/minecraft/observers/resolveOwner.test.js
 //
-// 260625 — owner-whereabouts bug. The snapshot pins the owner by
+// 260625 â€” owner-whereabouts bug. The snapshot pins the owner by
 // config.player_username, which is often a preferred_name ("Ouen") while the
 // LAN tab list is keyed by the actual login ("SSk1tz"). A hard
 // bot.players[pinUsername] lookup then ALWAYS missed and the snapshot reported
-// the owner "out of view — position unknown" on every tick even when adjacent,
+// the owner "out of view â€” position unknown" on every tick even when adjacent,
 // so the bot could never do anything but follow(). resolveOwner falls back to a
 // case-insensitive match, then to the lone human in the tab list.
 
@@ -58,3 +58,7 @@ describe('resolveOwner (260625)', () => {
     expect(resolveOwner(b, null, [])).toBeNull()
   })
 })
+
+
+
+

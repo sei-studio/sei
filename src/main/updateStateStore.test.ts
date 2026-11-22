@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -108,3 +108,7 @@ describe('updateStateStore install timing (Windows progress window)', () => {
     expect(measuredInstallSeconds(null, '0.7.1', 20_000)).toBeNull();
   });
 });
+
+
+
+

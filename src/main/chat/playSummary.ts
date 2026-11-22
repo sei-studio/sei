@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The one sentence every game surface writes into the transcript (260728).
  *
  * Each game used to compose its own: chess reported the result and the move
@@ -19,9 +19,9 @@
 /** "a few seconds" / "7 minutes" / "2 hours". */
 export function formatPlayDuration(ms: number, language?: 'en' | 'zh'): string {
   if (language === 'zh') {
-    if (ms < 60_000) return '几秒钟';
-    if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))}分钟`;
-    return `${Math.max(1, Math.round(ms / 3_600_000))}小时`;
+    if (ms < 60_000) return 'å‡ ç§’é’Ÿ';
+    if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))}åˆ†é’Ÿ`;
+    return `${Math.max(1, Math.round(ms / 3_600_000))}å°æ—¶`;
   }
   if (ms < 60_000) return 'a few seconds';
   if (ms < 3_600_000) {
@@ -49,7 +49,11 @@ export function playSummaryText(
   language?: 'en' | 'zh',
 ): string {
   if (language === 'zh') {
-    return `你和${name}玩了${formatPlayDuration(durationMs, 'zh')}${game}。`;
+    return `ä½ å’Œ${name}çŽ©äº†${formatPlayDuration(durationMs, 'zh')}${game}ã€‚`;
   }
   return `You and ${name} played ${game} for ${formatPlayDuration(durationMs)}.`;
 }
+
+
+
+

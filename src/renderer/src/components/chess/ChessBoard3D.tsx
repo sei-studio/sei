@@ -1,5 +1,5 @@
-/**
- * ChessBoard3D — the interactive chess viewport, rendered as a 3D scene
+﻿/**
+ * ChessBoard3D â€” the interactive chess viewport, rendered as a 3D scene
  * (Clubhouse-Games-style wooden table, see three/ChessScene.ts).
  *
  * Pure view over useChessStore, same contract as the old 2D board: it renders
@@ -13,7 +13,7 @@
  *   - the last move, the checked king, the selection, and the hovered square
  *     are highlighted on the board surface;
  *   - a subtle turn label sits over the scene, top-center: "Your move" /
- *     "{Name}'s move", or a shimmering "{Name} is thinking…" while the AI
+ *     "{Name}'s move", or a shimmering "{Name} is thinkingâ€¦" while the AI
  *     decides, with a dim Elo tag beneath it.
  *
  * All game state stays in main behind IPC; this file only decides what to
@@ -146,7 +146,7 @@ export function ChessBoard3D({
     return () => window.removeEventListener('keydown', onKey);
   }, [pendingPromotion, characterId, setUi]);
 
-  // ── Scene lifecycle + pushes ─────────────────────────────────────────────
+  // â”€â”€ Scene lifecycle + pushes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const hasGame = !!game;
   useEffect(() => {
     const el = containerRef.current;
@@ -192,7 +192,7 @@ export function ChessBoard3D({
 
   if (!game) return null;
 
-  // ── Intents ──────────────────────────────────────────────────────────────
+  // â”€â”€ Intents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function submitMove(from: Square, to: Square): void {
     if (isPromotion(displayFen, from, to)) {
@@ -284,7 +284,7 @@ export function ChessBoard3D({
     }
     scene?.dragPiece(e.clientX, e.clientY);
     // The drop target is the square under the PIECE, not under the raw pointer
-    // ray — otherwise the ring highlights a square the piece does not cover.
+    // ray â€” otherwise the ring highlights a square the piece does not cover.
     const sq = scene?.draggedSquare() ?? null;
     if (sq !== dragOver) setDragOver(sq);
   }
@@ -344,11 +344,11 @@ export function ChessBoard3D({
     dragDetail.current = null;
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const sideToMove = displayFen.split(' ')[1] === 'b' ? 'b' : 'w';
   const turnLabel = game.aiThinking
-    ? t('{name} is thinking…', { name: companionName })
+    ? t('{name} is thinkingâ€¦', { name: companionName })
     : sideToMove === game.playerColor
       ? t('Your move')
       : t("{name}'s move", { name: companionName });
@@ -411,3 +411,7 @@ export function ChessBoard3D({
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/fsmWires.js — mod events -> AdapterHandlers
+﻿// src/bot/adapter/dontstarve/fsmWires.js â€” mod events -> AdapterHandlers
 // (game-adapters M2, 260908). Thin translation, no business logic: the
 // runtime's link emits the /event kinds the mod POSTs and this maps them onto
 // the five brain handlers (src/bot/brain/types.js).
@@ -194,3 +194,7 @@ export function wireLinkEvents(link, handlers, opts) {
     link.off('playerleft', onPlayerLeft)
   }
 }
+
+
+
+

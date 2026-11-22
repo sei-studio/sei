@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type { LlmCallParams, LlmResult } from '../llm/types';
 import type { ChooseState } from './chooser';
 import type { ActOption } from './perception';
@@ -38,7 +38,7 @@ describe('buildStepContent', () => {
     expect(t).toMatch(/The player just said: "the gear icon"/);
     expect(t).toMatch(/0\. click button "Settings"/);
     expect(t).toMatch(/Step 3 of 40/);
-    expect(t).not.toMatch(/—/);
+    expect(t).not.toMatch(/â€”/);
   });
   it('says when there are no options', () => {
     expect(String(buildStepContent(state, [], [])[0]!.text)).toMatch(/no numbered options/);
@@ -95,3 +95,7 @@ describe('completion check', () => {
     expect((p.messages[0]!.content as Array<{ type: string }>).map((b) => b.type)).toEqual(['text', 'image']);
   });
 });
+
+
+
+

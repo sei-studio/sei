@@ -1,4 +1,4 @@
-/**
+﻿/**
  * McDashStatusStrip (260909): the status row grows one vanilla window per
  * OTHER companion in the world, each a button that opens that companion's
  * chat; alone, it is the single "Status" strip it always was.
@@ -46,3 +46,7 @@ describe('McDashStatusStrip', () => {
     expect(html).toContain('>...<');
   });
 });
+
+
+
+

@@ -1,18 +1,18 @@
-// src/bot/adapter/minecraft/behaviors/combat.test.js
+﻿// src/bot/adapter/minecraft/behaviors/combat.test.js
 //
 // 2026-06-19 combat-livelock regression. The entityHurt handler has always
 // referenced bot._seiAttackThrottle to coalesce a burst of hits into ONE
-// sei:attacked emission, but nothing ever assigned the throttle — so it was
+// sei:attacked emission, but nothing ever assigned the throttle â€” so it was
 // dead code and every hit emitted (the `else` fallback). Under sustained
 // attack that fired sei:attacked every ~250-500ms; each one preempt-aborted
 // the in-flight LLM reaction and reseeded the loop faster than Haiku could
 // answer, so the bot completed zero reactions and stood frozen + silent while
-// taking damage (playlogs bbf5b66f …2026-06-19T01-56 / …T02-19: loops 18-25 /
-// 4-12 were nearly all sei:attacked → iterations=0).
+// taking damage (playlogs bbf5b66f â€¦2026-06-19T01-56 / â€¦T02-19: loops 18-25 /
+// 4-12 were nearly all sei:attacked â†’ iterations=0).
 //
 // startCombat now instantiates the throttle. We drive a player attacker
 // because combat.js skips the auto-attack/pathfinder machinery for players
-// (REQUIREMENTS: no auto-PvP) — it ONLY emits the throttled sei:attacked, so
+// (REQUIREMENTS: no auto-PvP) â€” it ONLY emits the throttled sei:attacked, so
 // the throttle is exercised in isolation with no mineflayer-pathfinder deps.
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -49,12 +49,12 @@ describe('combat.js sei:attacked throttle (livelock fix)', () => {
     startCombat(bot, cfg(3500))
     expect(bot._seiAttackThrottle).toBeTruthy() // the throttle is actually wired now
 
-    // A real beating: 8 hits over ~2s — comfortably inside the 3.5s window.
+    // A real beating: 8 hits over ~2s â€” comfortably inside the 3.5s window.
     for (let i = 0; i < 8; i++) {
       bot.emit('entityHurt', bot.entity, bot._attacker)
       vi.advanceTimersByTime(250)
     }
-    expect(events).toHaveLength(1) // pre-fix this was 8 — the preempt storm
+    expect(events).toHaveLength(1) // pre-fix this was 8 â€” the preempt storm
     expect(events[0].attackerKind).toBe('player')
   })
 
@@ -80,3 +80,7 @@ describe('combat.js sei:attacked throttle (livelock fix)', () => {
     expect(events).toHaveLength(4)
   })
 })
+
+
+
+

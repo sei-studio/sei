@@ -1,5 +1,5 @@
-/**
- * TutorialOverlay — Sui's guided tour of the real app (260728).
+﻿/**
+ * TutorialOverlay â€” Sui's guided tour of the real app (260728).
  *
  * Mounted by App.tsx whenever useTutorialStore.active. Renders a dark scrim
  * over the LIVE UI with a spotlight hole cut around the current step's target
@@ -8,16 +8,16 @@
  * types), and a "> Skip tutorial" escape in the bottom-right.
  *
  * Two kinds of step:
- *   interactive — the hole is genuinely open (the scrim is four panels around
+ *   interactive â€” the hole is genuinely open (the scrim is four panels around
  *                 the target), so the player really clicks the real button;
  *                 the step advances by WATCHING the result (route change,
  *                 modal open), not the click itself.
- *   blocked     — a fifth transparent panel covers the hole, so the target is
+ *   blocked     â€” a fifth transparent panel covers the hole, so the target is
  *                 highlighted but inert; clicking anywhere advances.
  *
  * Targets are re-measured on a 250ms tick while active (layout shifts,
  * navigation, panel animation). A step whose target never appears renders a
- * full scrim — the text still reads fine, and the click still advances.
+ * full scrim â€” the text still reads fine, and the click still advances.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../../lib/i18n';
@@ -30,7 +30,7 @@ import { seilinkTourCompleted, seilinkTourDropped, seilinkTourNotNow, seilinkTou
 import styles from './TutorialOverlay.module.css';
 
 /** The base sprites face LEFT, so the left corner uses the -flipped variants
- * (facing right) and the right corner uses the base art (facing left) — Sui
+ * (facing right) and the right corner uses the base art (facing left) â€” Sui
  * always looks toward the content. */
 const SUI_SPRITES = {
   left: {
@@ -186,7 +186,7 @@ export function TutorialOverlay(): React.ReactElement | null {
   const def = STEPS[step];
   const tw = useTypewriter(active ? lines[step] : '');
 
-  // ── Target measurement loop ────────────────────────────────────────────
+  // â”€â”€ Target measurement loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [boxes, setBoxes] = useState<Box[]>([]);
   useEffect(() => {
     if (!active) return;
@@ -217,7 +217,7 @@ export function TutorialOverlay(): React.ReactElement | null {
     return () => window.clearTimeout(timer);
   }, [active, def]);
 
-  // ── Watchers: interactive steps advance on the RESULT of the action ────
+  // â”€â”€ Watchers: interactive steps advance on the RESULT of the action â”€â”€â”€â”€
   // say-hi spotlights the reveal page's "Say hello" button and advances when
   // the chat route actually opens.
   useEffect(() => {
@@ -229,7 +229,7 @@ export function TutorialOverlay(): React.ReactElement | null {
   }, [active, step, modal, setStep]);
 
   // The theme group may sit below the fold of the Settings scroll; bring it
-  // into view once it mounts (poll briefly — the route just changed).
+  // into view once it mounts (poll briefly â€” the route just changed).
   useEffect(() => {
     if (!active || step !== 'settings') return;
     let tries = 0;
@@ -344,7 +344,7 @@ export function TutorialOverlay(): React.ReactElement | null {
     return () => window.removeEventListener('keydown', onKey);
   }, [active, def, advance]);
 
-  // ── Which corner Sui stands in ─────────────────────────────────────────
+  // â”€â”€ Which corner Sui stands in â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // She defaults to bottom-left; when her corner (sprite + bubble) would sit
   // over a spotlighted target she walks to the bottom-right (and faces back
   // toward the content). Both candidate footprints are tested with the SAME
@@ -528,3 +528,7 @@ export function TutorialOverlay(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

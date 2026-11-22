@@ -1,4 +1,4 @@
-import pkg from 'mineflayer-pathfinder'
+﻿import pkg from 'mineflayer-pathfinder'
 import { pauseFollow, startFollow } from './follow.js'
 import { pursuitMovements } from './attack.js'
 import { createThrottle } from '../../../brain/debounce.js'
@@ -37,7 +37,7 @@ const OTHERS_ON_OWNER_RADIUS = 5
 const NO_THREAT_WATCH = NO_AUTO_ENGAGE
 
 function resolveAttacker(bot, source) {
-  // Trust an identified source first — including players. The previous
+  // Trust an identified source first â€” including players. The previous
   // fallback scanned for "any nearby hostile mob" when the source wasn't
   // hostile, which made a player punch get blamed on a creeper 24 blocks
   // away. If the source is identifiable, return it as-is and let downstream
@@ -71,17 +71,17 @@ export function startCombat(bot, config) {
   // Whether this engagement swapped in the sprinting pursuit movements.
   let _pursueMovesSet = false
 
-  // ── Per-bot runtime flags (NOT persisted; reset each session) ──────────────
+  // â”€â”€ Per-bot runtime flags (NOT persisted; reset each session) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Goal / control ownership rules these flags participate in:
-  //  • bot._seiPvp (default false): PvP spar mode, toggled ONLY by the setPvp
+  //  â€¢ bot._seiPvp (default false): PvP spar mode, toggled ONLY by the setPvp
   //    tool. Read by attack.js (allow player targets), reflex.js (kite players),
-  //    and the retaliation branch below. It owns NO goal — it just gates policy.
-  //  • bot._seiStaggerUntil (timestamp): a short window opened here on a PLAYER
+  //    and the retaliation branch below. It owns NO goal â€” it just gates policy.
+  //  â€¢ bot._seiStaggerUntil (timestamp): a short window opened here on a PLAYER
   //    hit. During it, reflex.js and follow.js SKIP asserting movement controls
   //    and attack.js pursuit yields, so the server knockback plays out. It is a
-  //    plain timestamp — it does NOT touch bot._seiSavedGoal, so it never
+  //    plain timestamp â€” it does NOT touch bot._seiSavedGoal, so it never
   //    collides with the creeper-flee goal mutex (bot._seiReflexActive).
-  //  • The goal-owning reflexes (creeper-flee via _seiReflexActive/_seiSavedGoal)
+  //  â€¢ The goal-owning reflexes (creeper-flee via _seiReflexActive/_seiSavedGoal)
   //    and attack.js pursuit remain the authoritative goal owners; stagger only
   //    pauses re-assertion, it never snapshots or restores a goal.
   if (bot._seiPvp == null) bot._seiPvp = false
@@ -90,22 +90,22 @@ export function startCombat(bot, config) {
 
   // Leading-edge throttle for sei:attacked emission. The entityHurt handler
   // below has ALWAYS referenced bot._seiAttackThrottle, but nothing ever
-  // assigned it — so the throttle was dead and EVERY hit emitted a sei:attacked
+  // assigned it â€” so the throttle was dead and EVERY hit emitted a sei:attacked
   // (the throttle's `else` fallback). Under sustained attack that produced a
   // preempt storm: each hit aborted the in-flight LLM reaction and reseeded the
   // loop ~every 300-500ms, faster than Haiku could answer, so the bot never
-  // completed a single reaction (zero say / zero combat action — the "Sui is
+  // completed a single reaction (zero say / zero combat action â€” the "Sui is
   // frozen and silent in fights" bug). Actually instantiating it here collapses
   // a burst of hits into one reaction per window. windowMs=0 disables (tests).
   const mc = config?.adapter?.minecraft ?? config ?? {}
   const throttleMs = Number.isFinite(mc.attack_react_throttle_ms) ? mc.attack_react_throttle_ms : 3500
   if (throttleMs > 0) bot._seiAttackThrottle = createThrottle(throttleMs)
 
-  // ── Defending the owner (260730) ──────────────────────────────────────────
+  // â”€â”€ Defending the owner (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Until now this listener returned immediately unless the bot ITSELF was
   // hurt, so the owner being swarmed produced no event, no reaction, and no
   // help: the companion found out only if the player said something out loud.
-  // That is the whole of the "why do the mobs never go for Sui" report — in a
+  // That is the whole of the "why do the mobs never go for Sui" report â€” in a
   // live session the mobs were as often nearer to her as to the player, and
   // she had no idea any of it was happening.
   //
@@ -138,7 +138,7 @@ export function startCombat(bot, config) {
   function handleOwnerHurt(owner, source) {
     const target = resolveAttacker(bot, source)
     // No identifiable attacker, or another player hitting them (their fight,
-    // and hitting a player needs the PvP opt-in anyway) — stay out of it.
+    // and hitting a player needs the PvP opt-in anyway) â€” stay out of it.
     if (!target) return
     if (target === bot.entity || target.id === bot.entity?.id) return // our own spar
     if (!HOSTILE_MOBS.has(target.name)) return
@@ -235,7 +235,7 @@ export function startCombat(bot, config) {
     return out
   }
 
-  // ── Owner threat watch (261012) ───────────────────────────────────────────
+  // â”€â”€ Owner threat watch (261012) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The defend engagement above fires only once a mob has HIT the owner. At
   // low health that is one or two hits from their death, and a model round
   // trip on top of it is too slow (quality eval protect_player, a 10 hp player
@@ -316,7 +316,7 @@ export function startCombat(bot, config) {
 
   /**
    * @param {object} target
-   * @param {{ pursue?: boolean }} [opts] — `pursue` walks the bot into swing
+   * @param {{ pursue?: boolean }} [opts] â€” `pursue` walks the bot into swing
    *   range instead of only facing + swinging from where it stands. OFF for
    *   retaliation (the bot was hit, so the attacker is already in reach, and
    *   moving would walk off the knockback stagger); ON for defending the owner,
@@ -344,7 +344,7 @@ export function startCombat(bot, config) {
       if (!live) return
 
       // Knockback packets occasionally produce transient non-finite velocity/position.
-      // Do NOT rewrite bot.entity.* — that's anti-cheat-detectable client-side teleport
+      // Do NOT rewrite bot.entity.* â€” that's anti-cheat-detectable client-side teleport
       // and was causing repeated server kicks. Skip this tick; mineflayer's normal
       // physics will restore valid state on the next packet.
       const vel = bot.entity?.velocity
@@ -358,7 +358,7 @@ export function startCombat(bot, config) {
       // this a "defend the player" engagement is the bot standing still
       // waving at a zombie 6 blocks away. Never touches the goal while a
       // safety reflex owns it (creeper flee / survival takeover) or during a
-      // player-knockback stagger — the same ownership rules as attack.js.
+      // player-knockback stagger â€” the same ownership rules as attack.js.
       if (_pursue && !bot._seiReflexActive && !bot._seiSurvivalActive &&
           !bot._seiCriticalRetreat && !inStagger()) {
         try {
@@ -385,7 +385,7 @@ export function startCombat(bot, config) {
       if (!playerTarget && !(bot._seiActionActive > 0)) keepWeaponInHand(bot)
 
       try {
-        // Zombies face their target — inverting their yaw is cheaper and more reliable
+        // Zombies face their target â€” inverting their yaw is cheaper and more reliable
         // than computing ours from bot position (which may still be stale).
         // 261019 (pass 19): not while an action's walk is moving the body
         // (a goTo the player asked for, resumed through the fight). The
@@ -437,7 +437,7 @@ export function startCombat(bot, config) {
       return
     }
     // 260725 play/pause: while the player has the game paused the bot takes
-    // hits like an AFK player. No retaliation, and no sei:attacked either —
+    // hits like an AFK player. No retaliation, and no sei:attacked either â€”
     // the FSM hold would only bank it and fire a stale panic on resume.
     if (bot._seiPaused) return
 
@@ -449,7 +449,7 @@ export function startCombat(bot, config) {
 
     const isPlayer = Boolean(target.username) || target.type === 'player'
 
-    // ── PvP opponent lock (Task 2) ────────────────────────────────────────────
+    // â”€â”€ PvP opponent lock (Task 2) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // When a player lands a hit and PvP spar mode is on, lock them as THE
     // opponent so reflex.js circle-strafes only this player (not the owner or a
     // bystander). The `at` timestamp refreshes on every hit and decays ~10s after
@@ -458,14 +458,14 @@ export function startCombat(bot, config) {
       bot._seiPvpOpponent = { id: target.id, at: Date.now() }
     }
 
-    // ── Player-knockback stagger (Task 3) ─────────────────────────────────────
+    // â”€â”€ Player-knockback stagger (Task 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // A player landing a hit opens a short window during which the movement
     // controllers (reflex strafe, follow re-path, attack pursuit) stop asserting
     // controls so the server's knockback impulse is visible instead of being
     // walked off. We clear controls now and briefly stop the pathfinder; follow's
     // 1s tick re-installs its goal after the window (its target is persistent),
     // and a creeper-flee goal is left untouched. We NEVER rewrite
-    // bot.entity.velocity/position (anti-cheat kicks — see the NaN-skip comment
+    // bot.entity.velocity/position (anti-cheat kicks â€” see the NaN-skip comment
     // below). Trade-off: an in-flight goTo gets interrupted (returns cant_reach)
     // when punched mid-navigation; acceptable for a deliberate melee hit.
     if (isPlayer && staggerMs > 0) {
@@ -473,8 +473,8 @@ export function startCombat(bot, config) {
       try { bot.clearControlStates?.() } catch (_) {}
       // Do NOT stop the pathfinder while a P0 safety escape/takeover owns the
       // goal: a creeper-flee (bot._seiReflexActive) or a survival takeover
-      // (drowning swim-up / critical-HP retreat — bot._seiSurvivalActive /
-      // _seiCriticalRetreat). Clearing the goal here would strand the escape —
+      // (drowning swim-up / critical-HP retreat â€” bot._seiSurvivalActive /
+      // _seiCriticalRetreat). Clearing the goal here would strand the escape â€”
       // reflex's active-flee tick only re-checks distance/panic, it never
       // re-issues its setGoal, so the flee goal would stay cleared and the bot
       // would stand next to a fusing creeper and die (an owner punch with PvP
@@ -504,7 +504,7 @@ export function startCombat(bot, config) {
     }
 
     // Auto-retaliate against mobs always, and against players ONLY when PvP mode
-    // is on (bot._seiPvp) — a spar the player opted into. With PvP off we keep
+    // is on (bot._seiPvp) â€” a spar the player opted into. With PvP off we keep
     // the original "never hit back at a player" behavior (the sei:attacked event
     // still fires so the LLM can react verbally). The 250ms attack loop only
     // faces + swings (no movement controls), so it does not walk off the stagger
@@ -528,3 +528,7 @@ export function startCombat(bot, config) {
     if (_target && entity.id === _target.id) stopAttacking()
   })
 }
+
+
+
+

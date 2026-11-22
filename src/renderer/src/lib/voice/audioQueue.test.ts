@@ -1,16 +1,16 @@
-/**
- * Barge-in fade (260708). clear() used to hard-pause the playing clip — an
+﻿/**
+ * Barge-in fade (260708). clear() used to hard-pause the playing clip â€” an
  * abrupt mid-word glitch. Now the interrupted element fades to silence over a
  * short window and THEN tears down, while the queue itself flips to idle
  * immediately (state, captions, half-duplex hold, and any reply enqueued
- * during the fade behave exactly as with the old instant cut — that is the
+ * during the fade behave exactly as with the old instant cut â€” that is the
  * "must not affect existing voice features" contract). stop() keeps the hard
  * cut: end-of-call teardown must leave nothing playing.
  *
  * Node environment: Audio/URL are stubbed; MediaSource stays undefined so the
  * queue takes the buffer path (the fade code is shared by both paths).
  *
- * 260731 also covers the pitch bus lifecycle — see the second describe.
+ * 260731 also covers the pitch bus lifecycle â€” see the second describe.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createAudioQueue } from './audioQueue';
@@ -36,7 +36,7 @@ class FakeAudio {
   }
   removeEventListener(): void {}
   /** Fire a registered event by name (the queue registers with {once:true},
-   *  which this fake ignores — tests fire each event at most once). */
+   *  which this fake ignores â€” tests fire each event at most once). */
   dispatch(type: string): void {
     for (const fn of this.listeners.get(type) ?? []) fn();
   }
@@ -108,7 +108,7 @@ describe('audioQueue barge-in fade', () => {
 
     q.clear();
 
-    // Queue state is instant — same as the old hard cut.
+    // Queue state is instant â€” same as the old hard cut.
     expect(q.speaking()).toBe(false);
     expect(onSpeak).toHaveBeenLastCalledWith(false, null);
     // ...but the audio is still playing, mid-fade.
@@ -120,7 +120,7 @@ describe('audioQueue barge-in fade', () => {
     expect(el.volume).toBeGreaterThan(0);
 
     await vi.advanceTimersByTimeAsync(120);
-    expect(el.paused).toBe(true); // fade complete → torn down
+    expect(el.paused).toBe(true); // fade complete â†’ torn down
   });
 
   it('a reply enqueued during the fade starts immediately (queue stays usable)', async () => {
@@ -246,7 +246,7 @@ describe('audioQueue duck (261031: pause, not mute)', () => {
  * queue behind the old turn's and the spoken commentary drifted a turn behind
  * the screen. A clip tagged with a NEW turn drops the same speaker's QUEUED
  * clips from an older turn; the clip at the playhead always finishes (the
- * "current sentence ends" boundary — parts are sentence-sized).
+ * "current sentence ends" boundary â€” parts are sentence-sized).
  */
 describe('audioQueue turn supersession', () => {
   /** Enqueue a blob-reserved clip whose bytes have already landed. */
@@ -259,7 +259,7 @@ describe('audioQueue turn supersession', () => {
   /**
    * The texts onSpeakingChange reported, consecutive repeats collapsed. The
    * FIRST clip of each queue run reports twice by design: once when its
-   * reserved slot takes the playhead (bytes not yet landed — the waiting
+   * reserved slot takes the playhead (bytes not yet landed â€” the waiting
    * placeholder), once when real playback starts. Only the ORDER is under test
    * here.
    */
@@ -286,7 +286,7 @@ describe('audioQueue turn supersession', () => {
     a2.push(new ArrayBuffer(8));
     a2.end();
 
-    // The current sentence ends → playback jumps straight to turn B,
+    // The current sentence ends â†’ playback jumps straight to turn B,
     // 'second sentence.' is never spoken.
     playing.dispatch('ended');
     expect(spokenTexts(onSpeak)).toEqual(['first sentence.', 'newer thought.']);
@@ -357,7 +357,7 @@ describe('audioQueue pitch shifting', () => {
     expect(detaches[0]).not.toHaveBeenCalled();
 
     q.clear();
-    // Detach rides the element's cleanup, which runs AFTER the barge-in fade —
+    // Detach rides the element's cleanup, which runs AFTER the barge-in fade â€”
     // a clip yanked out of the graph mid-fade would cut instead of trailing off.
     expect(detaches[0]).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(200);
@@ -556,3 +556,7 @@ describe('audioQueue container sniff (261103 Fish Audio fallback)', () => {
     expect(q.speaking()).toBe(false);
   });
 });
+
+
+
+

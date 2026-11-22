@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { blankRoomState, defaultRoomState, plainRoomState, withoutPlain, type RoomState } from '../../shared/seilinkRoom';
 
 const m = vi.hoisted(() => ({
@@ -167,7 +167,7 @@ describe('decorate-together offer', () => {
     m.rooms.set('sui', plainRoomState({ id: 'cozy', slots: {} }));
     expect(await offerDecorateTogether('sui', 'move_in')).toEqual({ shown: true, line: 'her' });
     expect(speak).toHaveBeenCalledWith('sui', DECORATE_OFFER_NOTE_PLAIN);
-    expect(DECORATE_OFFER_NOTE_PLAIN).not.toContain('—');
+    expect(DECORATE_OFFER_NOTE_PLAIN).not.toContain('â€”');
   });
 
   it('closes once the plain room is set up some other way', async () => {
@@ -180,3 +180,7 @@ describe('decorate-together offer', () => {
     expect(m.offer.get('sui')).toBe('none');
   });
 });
+
+
+
+

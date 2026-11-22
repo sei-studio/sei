@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OS permission helpers (260929). Pure logic only, no electron import, so the
  * allowlist, the URL choice, the resume flag and the screen-probe verdict are
  * unit tested directly. The electron glue is permissionsService.ts.
@@ -90,14 +90,14 @@ export function normalizeStatus(raw: unknown): OsPermissionStatus {
  * the life of the process once it has said so, even after the user turns the
  * switch on. A 'granted' from it is trustworthy, a 'denied' is not.
  */
-export const SEI_WINDOW_NAME = /^Sei($| [-—|])/;
+export const SEI_WINDOW_NAME = /^Sei($| [-â€”|])/;
 export function screenProbeSeesOtherApps(sources: ReadonlyArray<{ id: string; name: string }>): boolean {
   return sources.some(
     (s) => s.id.startsWith('window:') && s.name.trim() !== '' && !SEI_WINDOW_NAME.test(s.name),
   );
 }
 
-// ── Resume flag ─────────────────────────────────────────────────────────────
+// â”€â”€ Resume flag â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const RESUME_FILE = 'permission-resume.json';
 
@@ -180,3 +180,7 @@ export function takeResume(dir: string, now: number = Date.now()): PermissionRes
   if (typeof at !== 'number' || now - at > PERMISSION_RESUME_TTL_MS || now < at - 60_000) return null;
   return parseResume(resume);
 }
+
+
+
+

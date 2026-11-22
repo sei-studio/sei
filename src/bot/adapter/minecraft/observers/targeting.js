@@ -1,4 +1,4 @@
-// src/observers/targeting.js — handle table + targeting resolvers (D-25/D-35)
+﻿// src/observers/targeting.js â€” handle table + targeting resolvers (D-25/D-35)
 import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { isDeadEntity } from './entities.js'
@@ -121,7 +121,7 @@ export function resolveEntity(args, bot) {
     return bot.entities?.[entity_id] ?? null
   }
 
-  // "#N" handle, OR a non-# string passed via `target` — LLMs use `target`
+  // "#N" handle, OR a non-# string passed via `target` â€” LLMs use `target`
   // and `entity` interchangeably; accept either rather than returning
   // "target gone" for what is clearly a name lookup.
   if (typeof target === 'string' && target.length > 0) {
@@ -141,7 +141,7 @@ export function resolveEntity(args, bot) {
 }
 
 // Bound name-based entity lookup so a fresh `attackEntity({target:"zombie"})`
-// can't latch onto a zombie 40 blocks away after the original target dies —
+// can't latch onto a zombie 40 blocks away after the original target dies â€”
 // observed bug where killing the immediate threat made the next swing call
 // chase the next-nearest hostile across the map. Players are excluded from
 // the bound (player follow shouldn't break if they walk away).
@@ -197,7 +197,7 @@ export function nearestNamedEntityBeyondBound(name, bot, maxDist = 48) {
   return best
 }
 
-// ── Owner-aware hostile targeting (261012, quality pass 4a) ─────────────────
+// â”€â”€ Owner-aware hostile targeting (261012, quality pass 4a) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Quality eval protect_player: two zombies 21 blocks from a 10 hp player.
 // The name lookup picked the zombie nearest to HER (or refused both past 16
 // blocks), and the "nearest one is at ..." hint pointed at the same one. In
@@ -268,3 +268,7 @@ export function pickHostileForOwner(bot, match = () => true, opts = {}) {
   if (nearMe && nearOwner.dOwner > OWNER_ON_RADIUS) return nearMe.entity
   return nearOwner.entity
 }
+
+
+
+

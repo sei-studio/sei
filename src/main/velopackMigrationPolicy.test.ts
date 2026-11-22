@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -372,3 +372,7 @@ describe('parseMigrationState', () => {
     expect(parseMigrationState({ phase: 'weird' })).toBeNull();
   });
 });
+
+
+
+

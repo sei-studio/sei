@@ -1,4 +1,4 @@
-# UI Redesign: "Party" concept merge
+﻿# UI Redesign: "Party" concept merge
 
 Source mockup: sei-roster-concept.html ("Party concept v3"). This document is the
 authoritative spec for the redesign. Rule: this is a merge, not a migration.
@@ -60,7 +60,7 @@ for info-only), CTA sentence case. z-index tiers: 1000 base, 1100 stacked-above
 Computed per character in `renderer/src/lib/presence.ts`:
 
 - `in-game`: `summons[id].kind === 'online'`. Label "In your world". Green dot with glow.
-- `connecting`: `summons[id].kind === 'connecting'`. Label "Connecting…". Accent dot, pulse.
+- `connecting`: `summons[id].kind === 'connecting'`. Label "Connectingâ€¦". Accent dot, pulse.
 - `new`: no `last_chatted` and no `last_launched` (never interacted). Label "New". Accent dot with glow.
 - `online`: last interaction (max of last_chatted, last_launched + live message timestamps) within 10 minutes. Label "Online". Green dot, no glow.
 - `idle`: otherwise. Label "Idle". Hollow dot (transparent, 1px muted border).
@@ -78,19 +78,19 @@ tool dispatch; supervisor forwards; renderer stores
 
 `renderer/src/lib/actionVerb.ts` maps tool name + args to a short present
 progressive phrase:
-- follow/come: "following you…"
-- goto: "heading somewhere…"
-- gather: "gathering {item}…" (fallback "gathering…")
-- dig: "digging…"
-- build: "building…"
-- place: "placing blocks…"
-- find: "looking for {thing}…"
-- equip: "gearing up…"
-- consume: "having a snack…"
-- sleep: "sleeping…"
-- attack: "fighting…"
-- container ops: "rummaging through chests…"
-- unknown/none: "exploring…"
+- follow/come: "following youâ€¦"
+- goto: "heading somewhereâ€¦"
+- gather: "gathering {item}â€¦" (fallback "gatheringâ€¦")
+- dig: "diggingâ€¦"
+- build: "buildingâ€¦"
+- place: "placing blocksâ€¦"
+- find: "looking for {thing}â€¦"
+- equip: "gearing upâ€¦"
+- consume: "having a snackâ€¦"
+- sleep: "sleepingâ€¦"
+- attack: "fightingâ€¦"
+- container ops: "rummaging through chestsâ€¦"
+- unknown/none: "exploringâ€¦"
 
 ### Last-line preview
 Home panels show the last chat line ("Name: text" / "You: text") without
@@ -129,7 +129,7 @@ one per slot.
 
 ### 4.3 Awaken view (new screen, replaces AddCompanionChooserModal)
 New `view.kind: 'awaken'`, rail visible. Mockup view-awaken:
-- Header row: quiet "← Back" to home.
+- Header row: quiet "â† Back" to home.
 - Body split: left hero button "Be matched" (GatherPixels lg, Oswald 34px h2, "Meet a companion made for you.", primary Begin) which runs the existing unique gates (signed-in + cloud backend, else SignInModal; prefs gate to profile-questions or unique-gender).
 - Right column: "Create your own" ("Design every detail yourself.") to add-character screen; "Invite from World" ("Companions made by others.") to world tab.
 - AddCompanionChooserModal is retired; all its openers route to awaken. CreationLimit check runs before entering (same as today's handleAddClick).
@@ -165,7 +165,7 @@ toggle (restyled to mockup Toggle + "Public"/"Private" label), view-only
 gating, cache-on-demand, publish flow and share confirm modal (onto
 ModalShell), not-found stub.
 Change:
-- Back label: "← Back".
+- Back label: "â† Back".
 - Origin chip under the name (mockup .chip): unique = "Matched", custom = "Created by you", world = "Invited", default = "Sei".
 - Tabs renamed and recomposed:
   - "Description": persona/description card (mockup .persona; quote style for non-editable, bordered card + Edit button for editable, Edit opens EditCharacterModal). Below, kv rows (mockup .kv-row): Bonded = created date, Played = playtime, Last launch = last_launched, Memory = current world label if cheap, else omit, with a Reset button (opens ResetMemoryConfirmModal). No proactiveness here.
@@ -184,7 +184,7 @@ Groups and rows:
 - AI: Backend seg [Cloud | My key] (drives SwitchBackendConfirmModal); when local: Provider row, API key row.
 - Minecraft: Custom skins + Run setup; Visual gameplay seg [Off | On-demand | Continuous].
 - Appearance: Theme seg [Dark | Light | System]; Realistic typing Toggle; Developer console Toggle.
-- About: Version row ("{v} · up to date" after check, else Check now button); Terms of Service; Privacy Policy; DMCA.
+- About: Version row ("{v} Â· up to date" after check, else Check now button); Terms of Service; Privacy Policy; DMCA.
 - Danger: Reset all memories; Delete account. Red bordered danger buttons.
 Theme gains the System option (theme.ts already supports 'system').
 
@@ -270,3 +270,7 @@ UI-DESIGN-SYSTEM.md update, typecheck, tests, visual verification.
 - Every modal uses ModalShell; one scrim color; three z tiers; footer convention holds.
 - No text-transform uppercase in new CSS; no literal colors; light theme readable.
 - typecheck + existing tests pass.
+
+
+
+

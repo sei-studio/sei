@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Facepack pilot dev flag (261028).
  *
  * The whole desktop-companion face pipeline (FACE prompt block, say()
@@ -58,3 +58,7 @@ export function facesEnabled(): boolean {
 export function __setFacesEnabledForTest(on: boolean | null): void {
   testOverride = on;
 }
+
+
+
+

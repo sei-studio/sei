@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room host supervisor (261104), main side. Spawns the host process,
  * reads its pipe, restarts it when it dies or hangs. Ported from the spike's
  * supervisor.js (exp/seilink-spike), whose numbers it keeps:
@@ -329,3 +329,7 @@ export class HostSupervisor extends EventEmitter {
     }
   }
 }
+
+
+
+

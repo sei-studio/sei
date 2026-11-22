@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 
 /**
@@ -68,7 +68,7 @@ describe('isNoteLeak', () => {
  * Pinned against the 260807 live leak (Sui, backseat/voice): five whole
  * companion lines that were exactly "</final_thought>", each spoken by TTS and
  * displayed in the caption window. The tag is the model's own emergent
- * scratchpad markup — no prompt of ours names it — so the strip is mechanical.
+ * scratchpad markup â€” no prompt of ours names it â€” so the strip is mechanical.
  */
 describe('stripThoughtTags', () => {
   it('strips the live leak to nothing so the part drops', () => {
@@ -99,3 +99,7 @@ describe('stripThoughtTags', () => {
     }
   });
 });
+
+
+
+

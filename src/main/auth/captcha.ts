@@ -1,11 +1,11 @@
-/**
+﻿/**
  * CAPTCHA / Turnstile bot-protection seam (anti-abuse, Layer 2).
  *
  * MAIN PROCESS ONLY.
  *
  * Supabase Auth supports Cloudflare Turnstile / hCaptcha bot-protection on the
  * Auth surface. When the operator enables it (USER-ACTION: provision keys +
- * flip the Supabase Dashboard → Auth → Bot Protection setting + set
+ * flip the Supabase Dashboard â†’ Auth â†’ Bot Protection setting + set
  * CAPTCHA_ENABLED=true), `auth.signUp` / `auth.signInWithPassword` REQUIRE an
  * `options.captchaToken`.
  *
@@ -18,12 +18,12 @@
  *
  * Tokens are SINGLE-USE and short-lived (Turnstile tokens expire ~5 min and
  * are invalidated server-side on first verify), so we CONSUME (read-and-clear)
- * rather than read — a stale token must never be reused.
+ * rather than read â€” a stale token must never be reused.
  *
  * INERT BY DEFAULT: when bot-protection is not enabled the renderer never sets
  * a token, `consumeCaptchaToken()` returns undefined, and the signUp call omits
- * `captchaToken` — so the build keeps working before keys are provisioned. See
- * ABUSE-GUARD-PLAN.md §4c + the §8 USER-ACTIONS runbook.
+ * `captchaToken` â€” so the build keeps working before keys are provisioned. See
+ * ABUSE-GUARD-PLAN.md Â§4c + the Â§8 USER-ACTIONS runbook.
  */
 
 let pendingToken: string | null = null;
@@ -60,3 +60,7 @@ export function isCaptchaEnabled(): boolean {
 export function _resetCaptchaForTests(): void {
   pendingToken = null;
 }
+
+
+
+

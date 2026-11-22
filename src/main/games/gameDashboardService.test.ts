@@ -1,4 +1,4 @@
-/** Game adapters (M0, 260908): dashboard snapshots dispatch on snapshot.game. */
+﻿/** Game adapters (M0, 260908): dashboard snapshots dispatch on snapshot.game. */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   initGameDashboardService,
@@ -61,3 +61,7 @@ describe('publishGameDashboardSnapshot', () => {
     expect(mcPush).not.toHaveBeenCalled();
   });
 });
+
+
+
+

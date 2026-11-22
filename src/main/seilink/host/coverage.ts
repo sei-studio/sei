@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room activity (261104): should the room draw, and at what rate?
  *
  * The room is wallpaper, so it is only worth drawing while someone can see
@@ -120,3 +120,7 @@ export function clipRect(r: Rect, area: Rect): Rect | null {
   const bottom = Math.min(r.y + r.h, area.y + area.h);
   return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : null;
 }
+
+
+
+

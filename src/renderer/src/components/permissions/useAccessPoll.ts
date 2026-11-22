@@ -1,4 +1,4 @@
-/**
+﻿/**
  * React glue for lib/permissions/accessPoller (260929): poll while `active`,
  * re-check at once when the window regains focus (the player coming back from
  * System Settings), stop on unmount.
@@ -33,3 +33,7 @@ export function useAccessPoll(
     };
   }, [active, immediate]);
 }
+
+
+
+

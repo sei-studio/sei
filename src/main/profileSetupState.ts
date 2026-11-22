@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Has the active profile been set up before? (T283)
  *
  * Onboarding is keyed on `preferred_name`. A config recovered to defaults
@@ -83,3 +83,7 @@ export async function readProfileSetupState(deps: ProfileSetupDeps = {}): Promis
     return { returning: false, preferredName: '' };
   }
 }
+
+
+
+

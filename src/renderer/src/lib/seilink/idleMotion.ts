@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink idle motion (261104): what her body does in the room while nobody
  * is talking to her. Pure: no DOM, no timers. A driver (RoomAvatar's
  * useIdleMotion) calls `update(now)` once per frame with a clock that only
@@ -167,7 +167,7 @@ export function walkProgress(u: number, easeIn: boolean, easeOut: boolean, accel
 /** Slow seated sway at time t: breathing and lean. Pure of (t, phases). */
 export function swayAt(t: number, phases: readonly number[], cfg: IdleMotionConfig): { lean: number; drift: number; breath: number } {
   const TAU = Math.PI * 2;
-  // Breath period wanders by about ±10% so it never ticks like a metronome.
+  // Breath period wanders by about Â±10% so it never ticks like a metronome.
   const bPhase = (TAU * t) / cfg.breathPeriodMs + 0.55 * Math.sin((TAU * t) / 29_300 + phases[0]);
   const breath = 1 + cfg.breathAmp * (0.5 - 0.5 * Math.cos(bPhase + phases[1]));
   const lean =
@@ -267,7 +267,7 @@ export class IdleScheduler {
     return pose;
   }
 
-  // ── segments ────────────────────────────────────────────────────────────
+  // â”€â”€ segments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private set(phase: IdlePhase, start: number, dur: number, fromX: number, toX: number, dir: -1 | 1, blend = true): void {
     this.seg = { phase, start, end: start + dur, fromX, toX, from: blend ? this.lastPose : null, dir };
@@ -360,7 +360,7 @@ export class IdleScheduler {
     }
   }
 
-  // ── pose ────────────────────────────────────────────────────────────────
+  // â”€â”€ pose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private poseAt(now: number): IdlePose {
     const c = this.cfg;
@@ -425,7 +425,7 @@ export function poseTransform(p: IdlePose, height: number): string {
   return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${sx.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
 }
 
-// ── frame pacing (261110) ───────────────────────────────────────────────────
+// â”€â”€ frame pacing (261110) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Phases where her whole body travels across the room: drawn smoother when the cap allows. */
 export function isTravelPhase(phase: IdlePhase | null): boolean {
@@ -446,3 +446,7 @@ export function motionFps(roomFps: number, restFps: number, travelling: boolean)
   if (travelling && roomFps >= 30) return Math.max(Math.min(roomFps, restFps), TRAVEL_FPS);
   return Math.min(roomFps, restFps);
 }
+
+
+
+

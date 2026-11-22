@@ -1,4 +1,4 @@
-/** 260929: one in-character "your move" nudge per idle player turn. */
+﻿/** 260929: one in-character "your move" nudge per idle player turn. */
 import { describe, it, expect } from 'vitest';
 import { nudgeDueInMs, type NudgeInput } from './turnNudge';
 
@@ -50,3 +50,7 @@ describe('nudgeDueInMs', () => {
     expect(d).toBeLessThanOrEqual(5_000);
   });
 });
+
+
+
+

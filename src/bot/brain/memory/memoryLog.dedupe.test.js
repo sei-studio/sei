@@ -1,9 +1,9 @@
-// src/bot/brain/memory/memoryLog.dedupe.test.js
+﻿// src/bot/brain/memory/memoryLog.dedupe.test.js
 //
 // Loose duplicate guard on appendMemory (260725). Live capture: voice turns
 // wrote "ouen wants me to hang up when they say bye" twice 9 seconds apart,
 // and three "marv goes by mars" variants landed within 42 seconds. The guard
-// only skips EXACT matches after normalization (case, punctuation, spacing) —
+// only skips EXACT matches after normalization (case, punctuation, spacing) â€”
 // wording variants still append, and cleaning those up stays the compactor's
 // job.
 //
@@ -39,7 +39,7 @@ describe('appendMemory duplicate guard', () => {
 
   it('skips a repeat that differs only in case/punctuation/spacing', async () => {
     await appendMemory(file, 'marv goes by mars now. same deadpan nihilist energy')
-    expect(await appendMemory(file, 'Marv goes by Mars now — same  deadpan nihilist energy!')).toBe(0)
+    expect(await appendMemory(file, 'Marv goes by Mars now â€” same  deadpan nihilist energy!')).toBe(0)
   })
 
   it('still appends genuinely different wording', async () => {
@@ -73,3 +73,7 @@ describe('appendMemory duplicate guard', () => {
     expect(await appendMemory(file, 'a legit note')).toBe(1)
   })
 })
+
+
+
+

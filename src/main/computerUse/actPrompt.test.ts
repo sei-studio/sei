@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { buildActSystem } from './actPrompt';
 
 const base = {
@@ -37,3 +37,7 @@ describe('buildActSystem persona placeholders (T111)', () => {
     expect(anon).toContain('Who you are:\nThe player is family to Sui.');
   });
 });
+
+
+
+

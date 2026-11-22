@@ -1,5 +1,5 @@
-/**
- * ChessReplayPanel — a finished game replayed from its transcript row
+﻿/**
+ * ChessReplayPanel â€” a finished game replayed from its transcript row
  * (260724). Clicking the "You and X played chess" row in chat opens this
  * surface in the same game slot as a live game.
  *
@@ -16,7 +16,7 @@
  * rewinds them too.
  *
  * The board is a synthetic 'ended' ChessGameState seeded by
- * useChessStore.openReplay under replayKeyFor(characterId) — ChessBoard3D
+ * useChessStore.openReplay under replayKeyFor(characterId) â€” ChessBoard3D
  * renders it view-only exactly like a live board after game over, and any
  * live game under the real characterId is untouched. Closing goes through the
  * unified GameSurface "x" (ChatScreen calls closeReplay).
@@ -195,3 +195,7 @@ export function ChessReplayPanel({ characterId }: ChessReplayPanelProps): React.
     </div>
   );
 }
+
+
+
+

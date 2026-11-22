@@ -1,4 +1,4 @@
-/**
+﻿/**
  * env.ts fallback wiring (260704 anon-key migration).
  *
  * In vitest import.meta.env has no SUPABASE_URL / SUPABASE_ANON_KEY, so these
@@ -34,3 +34,7 @@ describe('env fallbacks (no build-time Supabase vars)', () => {
     expect(PROXY_ROUTED_ANON_KEY.length).toBeGreaterThan(0);
   });
 });
+
+
+
+

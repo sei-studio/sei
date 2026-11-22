@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Face expressions for the desktop companion (261028, facepack pilot).
  *
  * ONE closed vocabulary shared by every process: main reads a leading
@@ -233,3 +233,7 @@ export const FACE_EXPRESSION_ENUM = FACE_OFFERED_NAMES;
 
 /** say() `expression` parameter description (game surface). */
 export const SAY_EXPRESSION_DESCRIPTION = 'Your face while you say this. Omit to keep the current one.';
+
+
+
+

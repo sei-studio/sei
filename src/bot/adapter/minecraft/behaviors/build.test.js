@@ -1,5 +1,5 @@
-// buildAction far-wall fix (260709). Live bug: a 7×5×7 hollow house build
-// placed the two walls near the bot's corner and skipped the other 71 cells —
+﻿// buildAction far-wall fix (260709). Live bug: a 7Ã—5Ã—7 hollow house build
+// placed the two walls near the bot's corner and skipped the other 71 cells â€”
 // out-of-reach cells only ever tried scaffoldUp (which pillars straight up,
 // never closing horizontal distance), then burned placeBlock's 4s timeout and
 // counted as a bare "skipped". Pins: perimeter-ordered hollow layers, the
@@ -54,10 +54,10 @@ function wirePlaceMock(bot, blocks) {
   })
 }
 
-describe('enumerateBuildCells — hollow perimeter order (260709)', () => {
+describe('enumerateBuildCells â€” hollow perimeter order (260709)', () => {
   it('emits the same wall-cell set as before, ordered as a ring walk per layer', () => {
     const cells = enumerateBuildCells({ x: 0, y: 10, z: 0 }, { x: 3, y: 11, z: 3 }, true)
-    // 4×4 hollow = 12 perimeter cells per layer × 2 layers.
+    // 4Ã—4 hollow = 12 perimeter cells per layer Ã— 2 layers.
     expect(cells).toHaveLength(24)
     const layer = cells.filter(c => c.y === 10)
     expect(layer).toHaveLength(12)
@@ -84,7 +84,7 @@ describe('enumerateBuildCells — hollow perimeter order (260709)', () => {
   })
 })
 
-describe('enumerateBuildCells — nearest-to-builder ordering (260803)', () => {
+describe('enumerateBuildCells â€” nearest-to-builder ordering (260803)', () => {
   // The 260731 Nether log, exactly: bot at 40,94,42 asked to bridge "behind
   // you", model wrote from z:30 to z:20. Min-corner order started at z=20, 22
   // blocks away across a lava field, and the walk step went and got it.
@@ -107,7 +107,7 @@ describe('enumerateBuildCells — nearest-to-builder ordering (260803)', () => {
     expect(cells.at(-1)).toEqual({ x: 40, y: 94, z: 30 })
   })
 
-  it('keeps Y ascending — the layer below is finished before the one above it', () => {
+  it('keeps Y ascending â€” the layer below is finished before the one above it', () => {
     const cells = enumerateBuildCells({ x: 0, y: 10, z: 0 }, { x: 3, y: 12, z: 3 }, false, { x: 3.5, y: 10, z: 3.5 })
     const ys = cells.map(c => c.y)
     expect(ys).toEqual([...ys].sort((a, b) => a - b))
@@ -147,7 +147,7 @@ describe('enumerateBuildCells — nearest-to-builder ordering (260803)', () => {
   })
 })
 
-describe('buildAction — walks to out-of-reach cells (260709)', () => {
+describe('buildAction â€” walks to out-of-reach cells (260709)', () => {
   it('builds all four walls when the walk step can move the bot', async () => {
     const { bot, blocks } = makeWorld()
     wirePlaceMock(bot, blocks)
@@ -163,7 +163,7 @@ describe('buildAction — walks to out-of-reach cells (260709)', () => {
       { from: { x: -38, y: 68, z: -32 }, to: { x: -32, y: 70, z: -26 }, block: 'oak_planks', hollow: true },
       bot, {}, { goTo: walkMock },
     )
-    // 7×3×7 hollow = 24 perimeter cells × 3 layers = 72, all placed.
+    // 7Ã—3Ã—7 hollow = 24 perimeter cells Ã— 3 layers = 72, all placed.
     expect(r).toBe('built 72 placed, 0 skipped (already solid), of 72 cells')
     expect(walkMock).toHaveBeenCalled()
   })
@@ -198,7 +198,7 @@ describe('buildAction — walks to out-of-reach cells (260709)', () => {
       { from: { x: -38, y: 68, z: -32 }, to: { x: -36, y: 68, z: -30 }, block: 'oak_planks', hollow: true },
       bot, {}, { goTo: vi.fn(async () => 'reached') },
     )
-    // All occupied and none failed → the explicit built-NOTHING contract.
+    // All occupied and none failed â†’ the explicit built-NOTHING contract.
     expect(r).toMatch(/built NOTHING/)
   })
 
@@ -236,11 +236,11 @@ describe('buildAction — walks to out-of-reach cells (260709)', () => {
   })
 })
 
-// 260730 — scaffolding is build's `below` direction: the one build whose cells
+// 260730 â€” scaffolding is build's `below` direction: the one build whose cells
 // are not knowable in advance, because each block lands wherever the bot is
 // standing when the jump clears. Pins the rise, the up-front material check,
 // and the partial-progress result.
-describe('buildAction — direction:"below" pillars up under the bot', () => {
+describe('buildAction â€” direction:"below" pillars up under the bot', () => {
   // Fake jump: setControlState('jump') leaves the ground, and the place that
   // lands mid-air fills the vacated cell and stands the bot on top of it. The
   // real timing (lead height, refire) is exercised against the live server;
@@ -427,7 +427,7 @@ describe('buildAction — direction:"below" pillars up under the bot', () => {
   })
 })
 
-describe('buildAction — the builder FOLLOWS its own work (260803)', () => {
+describe('buildAction â€” the builder FOLLOWS its own work (260803)', () => {
   // Live symptom: bridging out over a drop, the character stayed on the spot
   // it started from while blocks appeared several cells away. A player cannot
   // do that. The old walk step only fired once a cell fell out of TOTAL reach
@@ -553,13 +553,13 @@ describe('buildAction — the builder FOLLOWS its own work (260803)', () => {
   })
 })
 
-// 261012 — quality eval build_shelter. Walls one layer above the ground
+// 261012 â€” quality eval build_shelter. Walls one layer above the ground
 // float: no cell has a block under or beside it. The old result said "could
 // not reach or place them, walk near and call build again", which sent the
 // model back to the same floating span. A solid roof built from the middle
 // out also failed its inner cells, which have no neighbor until the edge
 // cells are down.
-describe('buildAction — cells with nothing to place against (261012)', () => {
+describe('buildAction â€” cells with nothing to place against (261012)', () => {
   it('says the span is floating and names the layer to start on, without walking or placing', async () => {
     const { bot, blocks } = makeWorld()
     wirePlaceMock(bot, blocks)
@@ -606,7 +606,7 @@ describe('buildAction — cells with nothing to place against (261012)', () => {
   })
 })
 
-describe('buildAction — grass and snow are built over, not counted as solid (261012)', () => {
+describe('buildAction â€” grass and snow are built over, not counted as solid (261012)', () => {
   it('places into grass tufts and never uses one as the face to place against', async () => {
     const { bot, blocks } = makeWorld()
     wirePlaceMock(bot, blocks)
@@ -930,3 +930,7 @@ describe('buildAction: pass 36 review (261102)', () => {
     expect(placeBlockAction).not.toHaveBeenCalled()
   })
 })
+
+
+
+

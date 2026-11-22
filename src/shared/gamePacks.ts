@@ -1,5 +1,5 @@
-/**
- * Game packs (260908, game-adapters M0b) — the cross-process contract for a
+﻿/**
+ * Game packs (260908, game-adapters M0b) â€” the cross-process contract for a
  * game adapter's downloadable runtime.
  *
  * A game pack is a zip of `node_modules/` (a production install of the
@@ -88,9 +88,25 @@ export const GAME_PACKS: Record<GameId, GamePackDescriptor> = {
     sizeHintBytes: 32 * 1024,
     requiredPaths: ['assets/dst-mod/sei/modinfo.lua', 'assets/dst-mod/sei/modmain.lua'],
   },
+  // Forza 4 is a main-side minigame with no downloadable pack.
+  CONNECT4: {
+    id: 'CONNECT4',
+    name: 'Forza 4',
+    platformSpecific: false,
+    sizeHintBytes: 0,
+    requiredPaths: [],
+  },
+  // Battleship is a main-side minigame with no downloadable pack.
+  BATTLESHIP: {
+    id: 'BATTLESHIP',
+    name: 'Battleship',
+    platformSpecific: false,
+    sizeHintBytes: 0,
+    requiredPaths: [],
+  },
 };
 
-// ── Asset naming ────────────────────────────────────────────────────────────
+// â”€â”€ Asset naming â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PackPlatform = 'darwin' | 'win32' | 'linux' | 'any';
 export type PackArch = 'arm64' | 'x64' | 'any';
@@ -119,7 +135,7 @@ export function parsePackAssetName(
   return { game: m[1], version: m[2], platform: m[3], arch: m[4] };
 }
 
-// ── Download sources ────────────────────────────────────────────────────────
+// â”€â”€ Download sources â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Mirror of every published release asset (R2 behind Cloudflare, reachable
@@ -176,7 +192,7 @@ export function manifestSources(version: string): GamePackSource[] {
   return gamePackSources(version, manifestAssetName(version));
 }
 
-// ── Manifest ────────────────────────────────────────────────────────────────
+// â”€â”€ Manifest â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const GamePackManifestEntrySchema = z.object({
   game: z.string().min(1),
@@ -219,7 +235,7 @@ export function pickPackEntry(
   );
 }
 
-// ── State pushed to the renderer ────────────────────────────────────────────
+// â”€â”€ State pushed to the renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * One game pack's state, returned by game:pack-state and pushed on
@@ -264,3 +280,7 @@ export function packProgressPct(received: number, total: number): number {
   if (!(total > 0)) return 0;
   return Math.max(0, Math.min(100, Math.floor((received / total) * 100)));
 }
+
+
+
+

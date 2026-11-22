@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sequential companion-speech playback (260705).
  *
  * TTS clips arrive per say()-line / chat bubble; this queue plays them in
@@ -6,11 +6,11 @@
  * talk over each other. `onSpeakingChange` reports the PLAYHEAD (which slot is
  * occupied) and drives the dictation half-duplex hold; `onAudible` reports the
  * first real sample and is what every visible sign of speech follows. The two
- * are a whole TTS round trip apart on a streamed clip — see onAudible.
+ * are a whole TTS round trip apart on a streamed clip â€” see onAudible.
  *
  * 260705 streaming: enqueueStream() reserves a queue slot BEFORE the audio
  * exists and plays it through MediaSource as chunks arrive from the proxy's
- * ElevenLabs stream — first audio lands as soon as the first mp3 chunk does,
+ * ElevenLabs stream â€” first audio lands as soon as the first mp3 chunk does,
  * instead of after the whole clip downloads. Slots are reserved at request
  * time, so reply order is preserved even when fetches resolve out of order.
  * When MSE can't take audio/mpeg (never on Chromium in practice) the handle
@@ -23,7 +23,7 @@
  * preservesPitch off, paid for by a matching slowdown asked of ElevenLabs at
  * synthesis. It is now a true pitch shift applied locally (see pitchBus.ts) and
  * the clip arrives at its natural pace. The parameter name and meaning are
- * unchanged — 1 is as recorded, >1 is higher.
+ * unchanged â€” 1 is as recorded, >1 is higher.
  */
 import * as defaultPitchBus from './pitchBus';
 import { tapClipLevel } from './avatarLevelTap';
@@ -31,7 +31,7 @@ import { tapClipLevel } from './avatarLevelTap';
 export interface TtsStreamHandle {
   /** Append encoded audio/mpeg bytes as they arrive. */
   push(chunk: ArrayBuffer): void;
-  /** All chunks delivered — the clip may finish playing out. */
+  /** All chunks delivered â€” the clip may finish playing out. */
   end(): void;
   /** Upstream failed. Whatever already arrived plays out; nothing more comes. */
   fail(): void;
@@ -43,10 +43,10 @@ export interface AudioQueue {
    * clip reaches the playhead so captions track the audio (not the enqueue order).
    * `rate` (default 1) is the per-character voice-pitch knob: >1 speaks higher,
    * at the SAME pace (ElevenLabs has no pitch parameter, so the shift happens
-   * here at playback — see pitchBus.ts).
+   * here at playback â€” see pitchBus.ts).
    *
    * This takes its slot at CALL time, which for a clip fetched whole is AFTER
-   * its synthesis finished — so it lands behind any line enqueued in the
+   * its synthesis finished â€” so it lands behind any line enqueued in the
    * meantime. That REORDERED live replies (260729): every line under
    * STREAM_MIN_CHARS takes the fetch-whole path, so "oh." was emitted first and
    * heard last, behind the long sentence that reserved its slot instantly. A
@@ -57,7 +57,7 @@ export interface AudioQueue {
    * `text` is the line being spoken, `rate` the pitch/pace shift (see enqueue).
    *
    * `opts.blob` reserves the slot but plays the finished clip from ONE Blob
-   * instead of through MediaSource (260729) — for a clip fetched whole, which
+   * instead of through MediaSource (260729) â€” for a clip fetched whole, which
    * must still hold its place in the reply. See the reordering note on
    * `enqueue`.
    *
@@ -66,7 +66,7 @@ export interface AudioQueue {
    * drops the queued one: the reply it belonged to has been superseded by a
    * newer turn, and playing it out would put the voice a whole turn behind
    * whatever the two of you are looking at (the backseat drift). The clip at
-   * the playhead is never touched — the current sentence finishes, then
+   * the playhead is never touched â€” the current sentence finishes, then
    * playback jumps to the new turn. Untagged clips are never dropped.
    *
    * `opts.onDone` (260925) is called exactly once for this clip: `true` when
@@ -108,7 +108,7 @@ export interface AudioQueue {
    * that reaches the playhead while ducked waits, unstarted, the same way.
    */
   duck(ducked: boolean): void;
-  /** Deafen (260705): silence the output without pausing it — clips keep
+  /** Deafen (260705): silence the output without pausing it â€” clips keep
    * "playing" (order/timing preserved) so undeafening rejoins live. */
   setOutputMuted(muted: boolean): void;
   /** Permanent teardown: stop playback, drop everything, refuse new work. */
@@ -120,7 +120,7 @@ type StreamItem = {
   kind: 'stream';
   /** Which companion is speaking this clip (drives per-companion speaking state). */
   characterId: string;
-  /** The line being spoken — surfaced to captions when this clip starts playing. */
+  /** The line being spoken â€” surfaced to captions when this clip starts playing. */
   text?: string;
   /** Pitch shift applied at playback (pace unchanged; 1 = as recorded). */
   rate: number;
@@ -135,7 +135,7 @@ type StreamItem = {
   ended: boolean;
   failed: boolean;
   dropped: boolean;
-  /** Set while this item is the one playing — new chunks flow straight in. */
+  /** Set while this item is the one playing â€” new chunks flow straight in. */
   onChunk: ((c: ArrayBuffer) => void) | null;
   onEnd: (() => void) | null;
   /** Once-only completion report (see enqueueStream's opts.onDone). */
@@ -167,7 +167,7 @@ const canStreamMpeg = (): boolean =>
  * A short run of silent MPEG-1 Layer III frames (128kbps, 44.1kHz), appended to
  * the END of every TTS clip. Chromium's MP3 decoder needs the NEXT frame header
  * to finalize the previous frame, so the true last frame of a clip gets dropped
- * at end-of-stream — heard as the last word cut off abruptly. A few trailing
+ * at end-of-stream â€” heard as the last word cut off abruptly. A few trailing
  * silent frames (~100ms) give the real final frame something to lean on so it
  * plays out in full. Each frame: sync header FF FB 90 C4 then zeroed side-info +
  * main-data (silence); length 417 bytes for these params. Built at runtime (no
@@ -180,7 +180,7 @@ const canStreamMpeg = (): boolean =>
  * padding forced a channel-mode change at the exact frame boundary the padding
  * exists to protect. 0xC4 matches the stream: mode 11 (single channel),
  * original bit set, no emphasis. Keep this header in sync if the output format
- * constant in src/main/voice/tts.ts ever changes — bitrate and sample rate are
+ * constant in src/main/voice/tts.ts ever changes â€” bitrate and sample rate are
  * baked into both this header and FRAME.
  */
 function buildSilenceMp3(frames = 4): ArrayBuffer {
@@ -192,7 +192,7 @@ function buildSilenceMp3(frames = 4): ArrayBuffer {
     out[off + 1] = 0xfb;
     out[off + 2] = 0x90;
     out[off + 3] = 0xc4;
-    // remaining bytes stay 0 → decoded silence
+    // remaining bytes stay 0 â†’ decoded silence
   }
   return out.buffer;
 }
@@ -211,7 +211,7 @@ export function createAudioQueue(
   onSpeakingChange: (speaking: boolean, characterId: string | null, text?: string) => void,
   /**
    * 260726: a clip just produced its FIRST audible sample. Distinct from
-   * onSpeakingChange(true), which fires when the slot reaches the playhead —
+   * onSpeakingChange(true), which fires when the slot reaches the playhead â€”
    * for a streamed clip that is before the TTS request has even been sent, so
    * the whole synthesis round trip sits between the two. The barge-in grace
    * window (AEC convergence) must be armed from THIS event, not from the slot:
@@ -220,8 +220,8 @@ export function createAudioQueue(
    * interruptible from its first spoken word. Fires once per clip.
    *
    * It carries the speaker and the line because it is also the only honest
-   * "sound is coming out NOW" signal, and every visible sign of speech — the
-   * avatar ring, the caption, a call scene's talking animation — has to agree
+   * "sound is coming out NOW" signal, and every visible sign of speech â€” the
+   * avatar ring, the caption, a call scene's talking animation â€” has to agree
    * with it rather than with the slot (260730).
    */
   onAudible?: (characterId: string, text?: string) => void,
@@ -246,7 +246,7 @@ export function createAudioQueue(
   let stopped = false;
   let outputMuted = false;
   /** Provisional barge-in: the current clip is playing at DUCK_VOLUME pending a
-   *  transcript that says a word was actually spoken. Sticky across clips —
+   *  transcript that says a word was actually spoken. Sticky across clips â€”
    *  while the player might be talking, the next clip must not start at full
    *  volume either. */
   let ducked = false;
@@ -281,7 +281,7 @@ export function createAudioQueue(
   }
 
   /**
-   * Route the clip through the pitch shifter — rate 1.224 (Sui) speaks +3.5
+   * Route the clip through the pitch shifter â€” rate 1.224 (Sui) speaks +3.5
    * semitones higher at the pace it was synthesized. Returns the detach to run
    * with the element's other teardown, or null when the shift did not apply
    * (rate 1, or the worklet is not up), in which case the element plays
@@ -323,7 +323,7 @@ export function createAudioQueue(
     el.volume = ducked ? DUCK_VOLUME : 1;
     const detachPitch = applyPitch(el, rate);
     // Avatar lip sync (260804): sample this clip's level for the overlay.
-    // After applyPitch on purpose — the tap reuses the shifter's source node.
+    // After applyPitch on purpose â€” the tap reuses the shifter's source node.
     const detachTap = tapClipLevel(el, characterId);
     current = el;
     currentDone = onDone;
@@ -395,7 +395,7 @@ export function createAudioQueue(
     }
     if (item.chunks.length > 0 && isRiff(item.chunks[0])) item.blob = true;
     // Collect-then-play: the degraded path (no MSE for mpeg), and also every
-    // `blob` reservation — a clip fetched whole holds its slot here and plays
+    // `blob` reservation â€” a clip fetched whole holds its slot here and plays
     // from one Blob when it lands, which is what MSE-free playback already did.
     if (!canStreamMpeg() || item.blob) {
       const playCollected = (): void => {
@@ -443,7 +443,7 @@ export function createAudioQueue(
     el.volume = ducked ? DUCK_VOLUME : 1;
     const detachPitch = applyPitch(el, item.rate);
     // Avatar lip sync (260804): sample this clip's level for the overlay.
-    // After applyPitch on purpose — the tap reuses the shifter's source node.
+    // After applyPitch on purpose â€” the tap reuses the shifter's source node.
     const detachTap = tapClipLevel(el, item.characterId);
     current = el;
     let sb: SourceBuffer | null = null;
@@ -481,7 +481,7 @@ export function createAudioQueue(
           done();
           return;
         }
-        // Zero bytes ever appended → no 'ended' event will come; move on.
+        // Zero bytes ever appended â†’ no 'ended' event will come; move on.
         if (el.readyState === 0) done();
       }
     };
@@ -567,7 +567,7 @@ export function createAudioQueue(
   /**
    * Barge-in fade (260708): a hard el.pause() cut mid-word sounds like a glitch,
    * not like someone stopping talking. On clear() the interrupted clip instead
-   * ramps volume to 0 over this window, then tears down — long enough to read
+   * ramps volume to 0 over this window, then tears down â€” long enough to read
    * as a natural trail-off, short enough that the companion is effectively
    * silent the moment the player speaks. Queue state flips IMMEDIATELY (the
    * fading element is already detached), so a reply enqueued during the fade
@@ -629,7 +629,7 @@ export function createAudioQueue(
       }
       cleanup?.();
     };
-    // Deafened or already silent → nothing audible to fade.
+    // Deafened or already silent â†’ nothing audible to fade.
     if (ms <= 0 || el.muted || el.volume <= 0 || el.paused) {
       teardown();
       return;
@@ -670,7 +670,7 @@ export function createAudioQueue(
       currentCleanup = null;
       currentPlay = null;
       playHeld = false;
-      // cleanup (stream handler detach / URL revoke) runs AFTER the fade — a
+      // cleanup (stream handler detach / URL revoke) runs AFTER the fade â€” a
       // MediaSource clip revoked mid-fade would cut instead of trailing off.
       fadeThenTeardown(el, cleanup, fadeMs);
     }
@@ -686,7 +686,7 @@ export function createAudioQueue(
     },
     enqueueStream(characterId, text, rate = 1, opts) {
       // Supersession (260806): a tagged clip from a NEWER turn retires the
-      // same speaker's queued clips from an older one. Queued only — the clip
+      // same speaker's queued clips from an older one. Queued only â€” the clip
       // at the playhead finishes its sentence, which is the whole point of
       // cutting at the queue rather than at the audio. Their TTS fetches may
       // still be in flight; the dropped flag makes those land as no-ops.
@@ -795,3 +795,7 @@ export function createAudioQueue(
     },
   };
 }
+
+
+
+

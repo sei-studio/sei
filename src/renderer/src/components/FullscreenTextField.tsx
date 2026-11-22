@@ -1,5 +1,5 @@
-/**
- * FullscreenTextField — a normal inline textarea with an expand affordance.
+﻿/**
+ * FullscreenTextField â€” a normal inline textarea with an expand affordance.
  *
  * 260725 redesign: the old version was a click-target button (rounded, with an
  * uppercase EXPAND hint) whose ONLY way to type was the fullscreen popup. Now
@@ -82,3 +82,7 @@ export function FullscreenTextField({
     </>
   );
 }
+
+
+
+

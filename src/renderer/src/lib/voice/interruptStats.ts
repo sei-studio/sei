@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-call interrupt counters (261030), reported on each companion's
  * `voice_call_ended` (see shared/callInterrupts.ts for what each count means).
  *
@@ -48,3 +48,7 @@ export function createInterruptStats(): InterruptStats {
     },
   };
 }
+
+
+
+

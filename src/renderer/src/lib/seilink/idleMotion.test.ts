@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_IDLE_CONFIG,
   IdleScheduler,
@@ -278,3 +278,7 @@ describe('motionFps (261110)', () => {
     expect(isTravelPhase(null)).toBe(false);
   });
 });
+
+
+
+

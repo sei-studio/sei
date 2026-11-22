@@ -1,8 +1,8 @@
-/**
- * PLAYER.md store — YAML frontmatter only.
+﻿/**
+ * PLAYER.md store â€” YAML frontmatter only.
  *
  * PLAYER.md is the canonical record of the human player you share the world
- * with — identity (uuid + username), session counters, cosmetic preferences.
+ * with â€” identity (uuid + username), session counters, cosmetic preferences.
  * The bot is a fellow player, not a servant; this file is just "who is the
  * other person in here with me."
  *
@@ -20,7 +20,7 @@
  * ignored on read and dropped on the next save.
  *
  * Lazy-create: `loadPlayer` on a missing file returns `{ exists: false, ... }`
- * — it does NOT create the file. Files are only created via `savePlayer`
+ * â€” it does NOT create the file. Files are only created via `savePlayer`
  * (which goes through atomicWrite).
  *
  * Frontmatter parser is a flat regex (`^([a-z_]+):\s*(.*)$`); no `js-yaml`
@@ -89,7 +89,7 @@ function parsePlayer(raw) {
   data.exists = true
 
   // Parse the frontmatter only. Anything after the closing `---` (e.g. a
-  // legacy `# Notes` section) is ignored — see the module header.
+  // legacy `# Notes` section) is ignored â€” see the module header.
   const lines = raw.split(/\r?\n/)
   if (lines[0] === FRONT_DELIM) {
     let i = 1
@@ -140,10 +140,10 @@ export async function savePlayer(path, data) {
 
 /**
  * Format PLAYER.md as the seed_player markdown block injected into every
- * Loop's first user turn — the player's identity frontmatter, nothing more.
+ * Loop's first user turn â€” the player's identity frontmatter, nothing more.
  * The `budgetBytes` argument is retained for call-site compatibility but is
  * now unused: the block is a small, fixed set of recognition fields with no
- * freeform body to truncate (the `# Notes` body was removed — see header).
+ * freeform body to truncate (the `# Notes` body was removed â€” see header).
  * @param {PlayerData} player
  * @param {number} [budgetBytes] vestigial; ignored
  * @returns {string}
@@ -160,3 +160,7 @@ export function formatPlayerSeedBlock(player, budgetBytes) { // eslint-disable-l
   }
   return headerLines.join('\n') + '\n'
 }
+
+
+
+

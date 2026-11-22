@@ -1,5 +1,5 @@
-/**
- * llm:capability push (china-compat W1) — the config-derived vision verdict of
+﻿/**
+ * llm:capability push (china-compat W1) â€” the config-derived vision verdict of
  * the ACTIVE chat backend, mirrored to the renderer the way vision:capability
  * is for bot sessions. Pushed on config saves that touch provider/model/
  * backend and on ai_backend_kind changes; seeded by the llm:capability-get
@@ -40,3 +40,7 @@ export async function pushLlmCapability(): Promise<void> {
     /* next config change retries */
   }
 }
+
+
+
+

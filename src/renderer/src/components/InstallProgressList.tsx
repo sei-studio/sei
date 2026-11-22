@@ -1,5 +1,5 @@
-/**
- * InstallProgressList — per-install progress rows during the wizard's Installing step.
+﻿/**
+ * InstallProgressList â€” per-install progress rows during the wizard's Installing step.
  *
  * For each ordered install, renders a row containing:
  *   - Left: install label (sans 14px) + path (mono 12px, --text-2)
@@ -9,7 +9,7 @@
  * Progress events are keyed by installId in the Map<installId, WizardProgressEvent>
  * passed in via props. If no event has arrived yet, the row reads "Queued".
  *
- * The `cancelled` event variant is rendered as a muted StatusPill — distinct
+ * The `cancelled` event variant is rendered as a muted StatusPill â€” distinct
  * from `failed` because cancellation is a user action, not an error condition.
  */
 
@@ -45,19 +45,19 @@ function describeStage(ev: WizardProgressEvent | undefined): StageRender {
       return { label: t('Queued'), pct: null, terminal: null };
     case 'fabric-downloading':
       return {
-        label: t('Downloading Fabric Loader… {pct}%', { pct: ev.pct }),
+        label: t('Downloading Fabric Loaderâ€¦ {pct}%', { pct: ev.pct }),
         pct: ev.pct,
         terminal: null,
       };
     case 'fabric-installing':
-      return { label: t('Installing Fabric Loader…'), pct: null, terminal: null };
+      return { label: t('Installing Fabric Loaderâ€¦'), pct: null, terminal: null };
     case 'mods-linking': {
       // 260518-o1k T7: scan/link counters. Before totalEstimate is known
       // (the first event the orchestrator fires) we show "Scanning your
-      // mods…" with no numerics. After readdir lands we show
+      // modsâ€¦" with no numerics. After readdir lands we show
       // "Scanning your mods (linked X of Y so far, Z excluded)."
       if (ev.totalEstimate == null) {
-        return { label: t('Scanning your mods…'), pct: null, terminal: null };
+        return { label: t('Scanning your modsâ€¦'), pct: null, terminal: null };
       }
       return {
         label: t('Scanning your mods (linked {linked} of {total} so far, {excluded} excluded).', {
@@ -71,14 +71,14 @@ function describeStage(ev: WizardProgressEvent | undefined): StageRender {
     }
     case 'mod-downloading':
       return {
-        label: t('Downloading CustomSkinLoader… {pct}%', { pct: ev.pct }),
+        label: t('Downloading CustomSkinLoaderâ€¦ {pct}%', { pct: ev.pct }),
         pct: ev.pct,
         terminal: null,
       };
     case 'mod-placing':
-      return { label: t('Placing mod…'), pct: null, terminal: null };
+      return { label: t('Placing modâ€¦'), pct: null, terminal: null };
     case 'config-writing':
-      return { label: t('Writing config…'), pct: null, terminal: null };
+      return { label: t('Writing configâ€¦'), pct: null, terminal: null };
     case 'done':
       return { label: t('Setup complete'), pct: null, terminal: 'done' };
     case 'failed':
@@ -105,11 +105,11 @@ export function InstallProgressList({
       {installs.map((install) => {
         const ev = progress.get(install.id);
         // Prefer result-derived terminal state once results have settled (e.g. after
-        // runWizardInstall resolves) — covers the edge case where a `failed` push
+        // runWizardInstall resolves) â€” covers the edge case where a `failed` push
         // event was racing the final resolve.
         const result = results.find((r) => r.installId === install.id);
         let render = describeStage(ev);
-        // 260709 — Lunar rows can only reach this list through a stale
+        // 260709 â€” Lunar rows can only reach this list through a stale
         // selection (the picker no longer selects limited installs). Nothing
         // is ever installed for Lunar, so never let main's defensive ok:true
         // read as "Setup complete": report it as skipped, honestly.
@@ -181,3 +181,7 @@ export function InstallProgressList({
     </div>
   );
 }
+
+
+
+

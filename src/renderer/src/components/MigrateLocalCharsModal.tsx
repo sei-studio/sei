@@ -1,10 +1,10 @@
-/**
- * MigrateLocalCharsModal — one-shot local→cloud migration prompt (Plan 11-18, D-20).
+﻿/**
+ * MigrateLocalCharsModal â€” one-shot localâ†’cloud migration prompt (Plan 11-18, D-20).
  *
  * Lists user-created characters that exist on this machine but are NOT in the
  * signed-in user's cloud row set (the LOCAL ONLY set from Plan 11-17). Per-char
  * checkbox (default: all checked). "Upload selected" calls migration:upload
- * which sequentially mirrors each uuid via cloudCharacterClient — partial
+ * which sequentially mirrors each uuid via cloudCharacterClient â€” partial
  * failures display per-row and the user can retry.
  *
  * Mount points (two):
@@ -65,7 +65,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
   // user why some of these may already be in cloud.
   const [cloudListOk, setCloudListOk] = useState<boolean>(true);
 
-  // NR-03 — honor the docblock claim that this modal is non-dismissible during
+  // NR-03 â€” honor the docblock claim that this modal is non-dismissible during
   // submitting. ModalShell installs no Esc listener (escClose is off), but an
   // ancestor might; swallow Esc via a capture-phase keydown listener while the
   // upload is in flight so a partial wipe can't be aborted.
@@ -100,7 +100,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
         if (cancelled) return;
         setChars([]);
         setSelected(new Set());
-        // Treat an IPC-level failure the same as a cloud-list failure — we
+        // Treat an IPC-level failure the same as a cloud-list failure â€” we
         // know nothing about cloud membership, so show the banner.
         setCloudListOk(false);
         setPhase('idle');
@@ -123,14 +123,14 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
 
   const handleDismiss = (): void => {
     // Persist the "shown" flag so the auto-mount on App.tsx doesn't re-fire
-    // on the next sign-in. Best-effort — the IPC handler swallows its own
+    // on the next sign-in. Best-effort â€” the IPC handler swallows its own
     // errors. The Settings re-open entry remains available either way.
     void sei.migrationShown('set');
     onClose();
   };
 
   const handleResultsDone = (): void => {
-    // Same as handleDismiss — flag set + close. Distinct handler so the future
+    // Same as handleDismiss â€” flag set + close. Distinct handler so the future
     // we could insert "scroll to results / focus an item / refresh again" hooks
     // without untangling the dismiss path.
     void sei.migrationShown('set');
@@ -147,7 +147,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
   };
 
   return (
-    // Dismissal is button-only — Esc/scrim never close (escClose + scrimClose
+    // Dismissal is button-only â€” Esc/scrim never close (escClose + scrimClose
     // omitted). The user must hit "Maybe later" or "Done" to dismiss.
     <ModalShell title={t('Upload local companions?')} width={460} escClose={false}>
       <p className={styles.body}>
@@ -157,7 +157,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
       </p>
       <p className={styles.body}>{t('Memory currently cannot be transferred to other devices.')}</p>
 
-      {phase === 'loading' && <p className={styles.status}>{t('Loading…')}</p>}
+      {phase === 'loading' && <p className={styles.status}>{t('Loadingâ€¦')}</p>}
 
       {phase === 'idle' && !cloudListOk && (
         <p className={styles.warnBanner}>
@@ -200,7 +200,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
         </>
       )}
 
-      {phase === 'submitting' && <p className={styles.status}>{t('Uploading…')}</p>}
+      {phase === 'submitting' && <p className={styles.status}>{t('Uploadingâ€¦')}</p>}
 
       {phase === 'results' && (
         <>
@@ -209,7 +209,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
               const name = chars.find((c) => c.id === r.id)?.name ?? r.id;
               return (
                 <li key={r.id} className={r.ok ? styles.resultOk : styles.resultFail}>
-                  {r.ok ? '✓' : '✗'} {name}
+                  {r.ok ? 'âœ“' : 'âœ—'} {name}
                   {!r.ok && r.message ? (
                     <span className={styles.resultMessage}>: {userFacingError(r.message)}</span>
                   ) : null}
@@ -227,3 +227,7 @@ export function MigrateLocalCharsModal({ onClose }: MigrateLocalCharsModalProps)
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew appearance probe (260925): runs the appearance derivation for the
  * bundled defaults the way the app does, BEFORE (v1: text only, the 260921
  * prompt) and AFTER (v2: the portrait via vision + the grouped menu), and
@@ -102,3 +102,7 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+
+
+

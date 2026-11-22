@@ -1,4 +1,4 @@
-# Sei game-adapter seams (branch `feat/game-adapters`)
+﻿# Sei game-adapter seams (branch `feat/game-adapters`)
 
 Every path below is relative to the worktree root. Line numbers are from the
 current tree. The CLAUDE.md in this worktree is byte-identical to the primary
@@ -17,7 +17,7 @@ Minecraft; and a handful of Minecraft action names leak into the brain.
 
 ## 1. Bot process entry and the adapter interface
 
-### 1.1 `src/bot/index.js` — the boot composer
+### 1.1 `src/bot/index.js` â€” the boot composer
 
 The bot is forked by main and receives ONE `parentPort` message carrying both
 the init payload and the transferred `MessagePort` (lines 1030-1046, 1164-1166).
@@ -72,7 +72,7 @@ parse stashes on the config object (ConfigSchema strips unknown keys): `_seiComp
   onTerminalError, onAuthExpired, onSeiChatReply, onAction, onQuitRequested,
   onCallEndRequested })`. `onAction` fans out to `_dash.setAction(name,args)`
   AND `emitLifecycle({type:'action', name, args})` (354-361).
-- `_bot._sei_startChat?.(null)` (393) — a mineflayer-side chat behavior hookup.
+- `_bot._sei_startChat?.(null)` (393) â€” a mineflayer-side chat behavior hookup.
 - Returned handle (400-538): `stop, setAuthToken, deliverSeiChat, observeSeiChat,
   setVoiceCall, setGamePaused, setGameMode, deliverVoiceCallGreeting,
   setCompanions, setBackend, visionCapable, setDashboardWatch`. Only
@@ -98,7 +98,7 @@ Error routing (890-917) maps message prefixes to Minecraft error classes:
 `UNSUPPORTED_MC_VERSION`, `MODDED_HOST_REJECTED`, `LAN_NOT_OPEN`, else
 `BOT_START_TIMEOUT`.
 
-### 1.2 The adapter contract — `src/bot/brain/types.js` (JSDoc, `ADAPTER_INTERFACE_VERSION = 1`)
+### 1.2 The adapter contract â€” `src/bot/brain/types.js` (JSDoc, `ADAPTER_INTERFACE_VERSION = 1`)
 
 ```
 Action surface:   listActions(), getActionSchema(name), getActionDescription(name),
@@ -119,7 +119,7 @@ Identity:         botUsername, getKnownPlayers() -> Record<string, {username, uu
 (brain/index.js:290) and the extra `onAttacked` kinds `'reflex'|'defend'` plus
 `suppressInterrupt` on chat (fsmWires.js:42, 87, 118).
 
-Enforced subset — `src/bot/brain/index.js:21-30`:
+Enforced subset â€” `src/bot/brain/index.js:21-30`:
 
 ```js
 const REQUIRED_ADAPTER_MEMBERS = [
@@ -142,7 +142,7 @@ const REQUIRED_ADAPTER_MEMBERS = [
 `getProgression`, `renderIdleFrame`, `cantReachNudge`, `cuboidGrammar` and
 nothing breaks.
 
-### 1.3 The Minecraft implementation — `src/bot/adapter/minecraft/index.js` (200 lines)
+### 1.3 The Minecraft implementation â€” `src/bot/adapter/minecraft/index.js` (200 lines)
 
 `createMinecraftAdapter({ bot, config, visionEnabled })` returns the object.
 Notable: `executeAction` (58-85) merges `ctx` (the AbortSignal) into a
@@ -162,7 +162,7 @@ onAuthExpired, onSeiChatReply, onQuitRequested, onCallEndRequested, onAction })`
 - `createOrchestrator({ adapter, config, ... reenqueue })` (192);
 - `createPriorityQueue({ onDispatch: orchestrator.handleDispatch, onPreempt,
   idleFallbackMs: () => ... idleCadenceMs(config.persona.proactiveness) })` (210-226);
-- `adapter.attach({...})` (229-351) translates handlers into queue events (see §3);
+- `adapter.attach({...})` (229-351) translates handlers into queue events (see Â§3);
 - `orchestrator.start()` (353).
 
 The orchestrator wraps the adapter as a registry (`orchestrator.js:727-732`):
@@ -181,7 +181,7 @@ and composes the cached system prefix from adapter prompt blocks
 
 ```js
 cachedSystemBlocks = anthropic.buildCachedSystem([
-  BASELINE_INSTRUCTIONS,                 // brain: UNIVERSAL + MINECRAFT baseline (see §4)
+  BASELINE_INSTRUCTIONS,                 // brain: UNIVERSAL + MINECRAFT baseline (see Â§4)
   renderPersona(config.persona),         // [1] index is load-bearing for log.js
   adapter.capabilityParagraph(),         // [2]
   adapter.worldPrimer(),
@@ -197,7 +197,7 @@ cachedSystemBlocks = anthropic.buildCachedSystem([
 
 ## 2. Action registry
 
-### 2.1 Generic — `src/bot/registry.js` (60 lines, game-agnostic, keep as-is)
+### 2.1 Generic â€” `src/bot/registry.js` (60 lines, game-agnostic, keep as-is)
 
 ```js
 register(name, zodSchema, handler(args, bot, config), description = '')
@@ -206,7 +206,7 @@ list(), schema(name), description(name)
 ```
 No priority field; priority is an FSM concept, not a registry one.
 
-### 2.2 Minecraft — `src/bot/adapter/minecraft/registry.js` (584 lines)
+### 2.2 Minecraft â€” `src/bot/adapter/minecraft/registry.js` (584 lines)
 
 `createDefaultRegistry({ visionEnabled })` registers ~30 actions (grep
 `registry.register(` at 179, 209, 218, 254, 297, 313, 323, 334, 340, 354, 377,
@@ -249,7 +249,7 @@ on `goTo` results (orchestrator.js:4096-4110).
 
 ## 3. FSM wiring
 
-### 3.1 Queue — `src/bot/brain/fsm.js` (game-agnostic)
+### 3.1 Queue â€” `src/bot/brain/fsm.js` (game-agnostic)
 
 ```js
 export const Priority = Object.freeze({
@@ -278,7 +278,7 @@ Internal re-enqueue defaults (`reenqueue`, 145-189): `sei:loop_terminal` resets
 idle timer; `sei:action_complete` 2.1, `sei:action_tick` 2.3, `sei:loop_end`
 2.5, `sei:idle` 3, unknown -> P2_MOVEMENT.
 
-### 3.3 Minecraft wires — `src/bot/adapter/minecraft/fsmWires.js` (206 lines)
+### 3.3 Minecraft wires â€” `src/bot/adapter/minecraft/fsmWires.js` (206 lines)
 
 `wireBotEvents(bot, handlers)` subscribes to mineflayer/behavior bus events and
 translates: `sei:chat_received` -> `onChat` (30-49; produced by
@@ -321,11 +321,11 @@ re-export barrels (the latter adds the death addendum, 42-83).
   explore() stuck nudges (`IDLE_STUCK_NUDGE_*`, 381-382).
 - `EVENT_GUIDANCE` (385-407): `sei:loop_end`, `sei:idle`, `sei:attacked` ->
   `ATTACKED_ADDENDUM` (319-333), `REFLEX_ADDENDUM` (337-350),
-  `SURVIVAL_ADDENDUM` (352-364), `DEFEND_ADDENDUM` (366-379) — all Minecraft
+  `SURVIVAL_ADDENDUM` (352-364), `DEFEND_ADDENDUM` (366-379) â€” all Minecraft
   combat prose. `eventAddendum()` (964-984) dispatches on `attackerKind`.
 - `SESSION_END_CLAUSE` (593): "their LAN world goes down when they leave".
 - `renderHeartbeat`/`renderFrontierBlock` (868-892, ~840): frontier text comes
-  from `adapter.getProgression()` (optional) — with no progression the block is empty.
+  from `adapter.getProgression()` (optional) â€” with no progression the block is empty.
 - `NUDGES.actionTurn` (611+), `SEED_HEADERS` (577): mostly generic.
 - Chat-surface: `CHAT_BASELINE` (48-71) says "launch('minecraft')" and
   "minecraft: Vanilla Minecraft. open-world survival game..." (53-56).
@@ -356,7 +356,7 @@ the brain treats it as opaque. `inFlight` comes from `src/bot/brain/inflight.js`
 - Constants: `SUMMON_TIMEOUT_MS = 30_000`, `STOP_TIMEOUT_MS = 10_000` (44-45);
   `summonDeadlineFrom(startedAtMs)` (86) ships the absolute deadline to the bot.
 - `botEntryPath()` (192-208): `app.asar.unpacked/src/bot/index.js` packaged,
-  `../../src/bot/index.js` in dev — one entry for all games.
+  `../../src/bot/index.js` in dev â€” one entry for all games.
 - `BotSupervisorOptions` (210-290): `getLanPort`, `getLanMotd?`, `sendStatus`,
   `sendVisionCapability?`, `onBotChat?`, `onBotAction?`, `onDashboard?`,
   `sendLog`, `getSkinServerBaseUrl`, `cloudOverLimit`, `emitHardStop`,
@@ -399,7 +399,7 @@ the brain treats it as opaque. `inFlight` comes from `src/bot/brain/inflight.js`
 - Stop: `_stop(id, STOP_TIMEOUT_MS)` posts `stop`, waits, escalates to
   `child.kill()`; `_stopAll` on `shutdown` (1788).
 
-### 5.2 `src/main/index.ts` — wiring + play row + analytics
+### 5.2 `src/main/index.ts` â€” wiring + play row + analytics
 
 - `watchLan({ onUpdate: broadcastLan, staleMs: 3000 })` (701-704);
   `getLanPort()`/`getLanMotd()` read `latestLanState` (398-404).
@@ -414,7 +414,7 @@ the brain treats it as opaque. `inFlight` comes from `src/bot/brain/inflight.js`
 - `emitPlaySession` (215-234) writes the play row:
   `playSummaryText(name, 'Minecraft', durationMs, lang)` with
   `event: { kind: 'play', game: 'minecraft', durationMs }`. **No `foldIfDue`
-  here** — unlike chess/draw/backseat, the Minecraft play row relies on the
+  here** â€” unlike chess/draw/backseat, the Minecraft play row relies on the
   chat surface's next fold.
 
 ### 5.3 `src/main/ipc.ts` handlers
@@ -422,7 +422,7 @@ the brain treats it as opaque. `inFlight` comes from `src/bot/brain/inflight.js`
 - `bot:summon` (676-684): `clearSummonBlock(id)` then `supervisor.summon(id)`.
 - `bot:stop` (685-689), `bot:get-statuses` (692), `lan:get` (698), `lan:check-now` (705).
 - `chat:send` (1268-1296) passes `summon`, `isInGame`, `routeToBot`, `leaveGame`,
-  `getLanState`, `blockedAutoLaunch` into `sendChatMessage` — this is how the
+  `getLanState`, `blockedAutoLaunch` into `sendChatMessage` â€” this is how the
   chat-surface `launch` tool (`src/main/chat/chatPrompts.ts:419` `LAUNCH_TOOL`,
   honored at `chatService.ts:915`) summons a bot.
 - `mcdash:get/set-watching/set-paused/set-mode` (1584-1608) -> `mcDashboardService`
@@ -588,7 +588,7 @@ await worldRegistry.resolveOnSpawn({ fingerprint, label })
 ```
 It is triggered from `onSpawn` (brain/index.js:323). `snapshotText` reads
 `worldRegistry.current()` into `worldTag` (`#N label`). `memoryLog.noteWorld`
-writes the `## World N — label` header; `readMemoryForSeed` and the compactor
+writes the `## World N â€” label` header; `readMemoryForSeed` and the compactor
 preserve those headers. A Stardew adapter would supply a farm-name/save-id
 based identity; DST a cluster/session id. The brain should call a generic
 `adapter.getWorldIdentity() -> {fingerprint, label}` instead of assembling one
@@ -599,9 +599,9 @@ from spawn coords.
 ## 10. Existing abstraction hints
 
 - `src/bot/brain/types.js:8`: "A future adapter (Stardew, Roblox, ...) implements this same shape."
-- `src/bot/config.js:5`: "game-specific fields nest under `adapter.<kind>.*`" — but `kind` is a literal.
+- `src/bot/config.js:5`: "game-specific fields nest under `adapter.<kind>.*`" â€” but `kind` is a literal.
 - `src/shared/games.ts:45-46`: `stardew`, `dontstarve` catalog rows (coming soon) + renderer tile art/copy already in place (`lib/games.ts:69-84`, `public/img/game-stardew.jpg`, `game-dontstarve.jpg`).
-- `src/main/chat/chatPrompts.ts:59` `surface?: 'chat' | 'game'` and `promptLibrary.js:73` `GAME_SURFACE_BASELINE` — a per-surface baseline pattern to copy for per-game bot baselines.
+- `src/main/chat/chatPrompts.ts:59` `surface?: 'chat' | 'game'` and `promptLibrary.js:73` `GAME_SURFACE_BASELINE` â€” a per-surface baseline pattern to copy for per-game bot baselines.
 - `BotSupervisorOptions.onDashboard` forwards the payload RAW; only `mcDashboardService` knows the shape, so per-game dashboards can plug in behind the same port message.
 - `GameSurface.tsx` is already the shared chrome for any game panel in the chat aside.
 - `LaunchGameId`/`activeGameFor` in `gameLaunch.ts` is the one place the renderer enumerates games.
@@ -634,7 +634,7 @@ Concrete refactors, roughly in dependency order.
    `{type:'dashboard', snapshot}` port message; tag the snapshot with `game`.
 4. **Move Minecraft names out of the brain.** In `orchestrator.js`:
    `PERSONALITY_NAMES` includes `follow/unfollow` (326) and
-   `stopToolForAction` (1733) — replace with an adapter-declared
+   `stopToolForAction` (1733) â€” replace with an adapter-declared
    `backgroundActions: { follow: 'unfollow' }` map; `_buildExecOpts`
    progress-flavored set (1818-1820) -> `adapter.progressActions`; dig cap
    (3902), attackEntity/follow coupling (3914-3920), `goTo` cant_reach
@@ -727,15 +727,15 @@ Concrete refactors, roughly in dependency order.
 
 ## Reusable as-is (no change needed for a second adapter)
 
-- `src/bot/registry.js` — closed Zod registry, game-agnostic.
-- `src/bot/brain/fsm.js` — priority queue, preemption, idle timer, `setHold`.
-- `src/bot/brain/index.js` — adapter assertion, handler -> queue translation,
+- `src/bot/registry.js` â€” closed Zod registry, game-agnostic.
+- `src/bot/brain/fsm.js` â€” priority queue, preemption, idle timer, `setHold`.
+- `src/bot/brain/index.js` â€” adapter assertion, handler -> queue translation,
   pause/mode/backend/voice passthroughs (only needs the `types.js` doc update).
 - `src/bot/brain/orchestrator.js` core loop: cached-prefix assembly from
   adapter blocks, `combinedToolsFor`, `emitSayCalls`/`postProcessSay`,
   say-dedupe, iteration cap, long-runner/`inflight`, `remember/forget/setGoal`,
   continuity + knowledge injection, voice-call routing, backend switch, JWT
-  refresh — all consume the adapter through the contract (modulo the leaks in
+  refresh â€” all consume the adapter through the contract (modulo the leaks in
   item 4 above).
 - `src/bot/brain/memory/*` (`MEMORY.md`, `PLAYER.md`, `HEARTBEAT.md`,
   compaction, `worlds.js` registry, seed truncation).
@@ -757,3 +757,7 @@ Concrete refactors, roughly in dependency order.
   `useMcDashboardStore.controls` pause/mode plumbing (rename only), i18n
   mechanism (add keys, no structural change).
 - `src/shared/games.ts` catalog + `renderGamesDirective()`.
+
+
+
+

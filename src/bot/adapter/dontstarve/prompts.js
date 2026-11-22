@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/prompts.js — every model-facing string of the
+﻿// src/bot/adapter/dontstarve/prompts.js â€” every model-facing string of the
 // Don't Starve Together adapter (game-adapters M2, 260908). The brain
 // composes `${UNIVERSAL_BASELINE}\n\n${surfaceBaseline()}` for system block
 // [0] and asks the adapter for the primer / capability / rules blocks and
@@ -271,3 +271,7 @@ export const STUCK_NUDGES = Object.freeze({
   vision: 'goTo a point a few meters to the side, then try the target again',
   noVision: 'goTo a point a few meters to the side, then try the target again',
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * useGamePackStore (260908, game-adapters M0b) — the renderer's mirror of
+﻿/**
+ * useGamePackStore (260908, game-adapters M0b) â€” the renderer's mirror of
  * main's game pack store (src/main/games/packs.ts): one GamePackState per
  * game, fed by the game:pack-progress push, with `ensure(game)` to start or
  * join the download from a card.
@@ -59,3 +59,7 @@ export const useGamePackStore = create<GamePackStore>((set, get) => ({
     return state;
   },
 }));
+
+
+
+

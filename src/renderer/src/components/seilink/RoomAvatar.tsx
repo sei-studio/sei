@@ -1,4 +1,4 @@
-/**
+﻿/**
  * RoomAvatar (261104, SeiLink): her body in her room. Fills RoomCanvas's
  * avatar slot and keeps her alive with idle motion.
  *
@@ -139,7 +139,7 @@ const TIME_GRADE: Record<RoomTime, string> = {
   night: 'brightness(0.84) saturate(0.9)',
 };
 
-// ── kind resolution ─────────────────────────────────────────────────────────
+// â”€â”€ kind resolution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type Resolved = { kind: RoomAvatarKind; packId?: string; cut?: { sha256: string; png: Uint8Array } };
 
@@ -181,7 +181,7 @@ async function resolveKind(
   return { kind: 'placeholder' };
 }
 
-// ── motion ──────────────────────────────────────────────────────────────────
+// â”€â”€ motion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function useReducedMotion(): boolean {
   const query = typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
@@ -352,7 +352,7 @@ function useIdleMotion(
   return { forceWalk };
 }
 
-// ── figures ─────────────────────────────────────────────────────────────────
+// â”€â”€ figures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PortraitFigure({ url, height, name, onError }: { url: string; height: number; name?: string; onError(): void }): React.ReactElement | null {
   const [cut, setCut] = useState<CutoutImage | null>(() => peekCutout(url));
@@ -437,7 +437,7 @@ function Silhouette({ height, time }: { height: number; time: RoomTime }): React
   );
 }
 
-// ── the component ───────────────────────────────────────────────────────────
+// â”€â”€ the component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
   const { slot, characterId, name, use = 'auto', portrait = null, facepack, speaking = false, levelRef, emotion = null, face, faceSeq = 0, busy = false, motion = {}, camera, walkOffSignal, walkOffAwayMs } = props;
@@ -668,3 +668,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

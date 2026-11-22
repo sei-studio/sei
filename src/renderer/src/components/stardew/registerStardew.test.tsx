@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew renderer surfaces (M1): the registration module wires every
  * registry, and the launch panel renders its three states (set up / waiting /
  * launch) from seeded stores. Static server renders, no jsdom (the
@@ -157,8 +157,12 @@ describe('StardewLaunchPanel states (260909: one-step window, Set up / Launch)',
     const open: WorldState = { game: 'stardew', kind: 'open', farmName: 'Sunny', uniqueId: '1', day: 3, season: 'spring', year: 1, port: 27431, lastSeenAt: 1, label: 'Sunny Farm, spring 3' };
     const steps = await renderSteps({ install: installState(), world: open });
     expect(steps).toContain('Your farm is open: Sunny Farm, spring 3.');
-    expect(steps).toContain('✓ Your farm');
+    expect(steps).toContain('âœ“ Your farm');
     const connecting = await renderLaunch({ install: installState(), world: open, summon: { kind: 'connecting', characterId: 'c1' } });
     expect(connecting).toContain('Connecting...');
   });
 });
+
+
+
+

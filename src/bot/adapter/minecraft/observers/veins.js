@@ -1,16 +1,16 @@
-// src/bot/adapter/minecraft/observers/veins.js — pure observer.
+﻿// src/bot/adapter/minecraft/observers/veins.js â€” pure observer.
 //
 // surveyBlocks: aggregate every non-air, exposed block within `radius` by block
 // NAME. Returns one entry per unique block name with the total count seen and
 // the position of the nearest member (used as the #N handle anchor in
-// snapshot.js). Replaces the prior connected-component "vein" model — the
+// snapshot.js). Replaces the prior connected-component "vein" model â€” the
 // observer no longer needs a hardcoded interesting-block allowlist, and the
 // LLM no longer has to call `find` to learn the position of a nearby resource
 // (e.g. cactus) that didn't happen to be on the list.
 //
 // Design rules:
 // - All non-air block names are surfaced (cave_air / void_air also excluded).
-// - Exposure-gated (no xray) — same predicate as blocks.js isExposed.
+// - Exposure-gated (no xray) â€” same predicate as blocks.js isExposed.
 // - Cross-chunk neighbors read as null and count as non-exposed (conservative).
 // - Pure data; snapshot.js owns string formatting and #N handle minting.
 // - NaN-poisoning-safe origin via getHealedPos.
@@ -201,3 +201,7 @@ function scanFindBlocks(bot, origin, radius, scanCap) {
   }
   return byName
 }
+
+
+
+

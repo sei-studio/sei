@@ -1,4 +1,4 @@
-/**
+﻿/**
  * R6 (260929): Fabric setup without Java. The launcher version JSON comes
  * straight from Fabric meta and the launcher profile is written by Sei; the
  * Java installer is only a fallback for "every meta mirror unreachable".
@@ -306,3 +306,7 @@ describe('library prefetch (best effort)', () => {
     expect(again.calls).toEqual([]);
   });
 });
+
+
+
+

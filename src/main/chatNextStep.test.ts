@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: the text-chat "next time" check (chatNextStep.ts). The check itself
  * (gates, prompt, save, events) is playerEndNextStep's and tested there; this
  * pins how a chat end routes, which rows are its lines, and that the end
@@ -166,3 +166,7 @@ describe('chatSessionNextStep', () => {
     await expect(chatSessionNextStep(session({ messages: 1 }), 'idle', capture, d)).resolves.toBeUndefined();
   });
 });
+
+
+
+

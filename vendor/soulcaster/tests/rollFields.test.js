@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rollFields,
@@ -174,3 +174,7 @@ test('dynamic rolls stay deterministic under the same seed', () => {
   const b = rollFields({ gender: 'other', dynamic: 'challenger', rng: mulberry32(99) });
   assert.deepEqual(a, b);
 });
+
+
+
+

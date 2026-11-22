@@ -1,4 +1,4 @@
-// The survivor roster lives in three places by necessity (main/renderer TS,
+﻿// The survivor roster lives in three places by necessity (main/renderer TS,
 // bot JS, mod Lua). This pins the prefab lists and the mechanics flags
 // together so an edit to one cannot drift silently.
 import { describe, it, expect } from 'vitest'
@@ -61,3 +61,7 @@ describe('survivor roster sync', () => {
     }
   })
 })
+
+
+
+

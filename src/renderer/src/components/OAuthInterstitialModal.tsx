@@ -1,31 +1,31 @@
-/**
- * OAuthInterstitialModal — centered modal shown while Google OAuth runs in
+﻿/**
+ * OAuthInterstitialModal â€” centered modal shown while Google OAuth runs in
  * the system browser (D-05).
  *
  * Owns the OAuth IPC invocation lifecycle (via sei from ipcClient):
  *   - On mount: invoke once; show countdown body ("This will close on its
  *     own in Ns.") while waiting for the loopback callback.
- *   - On result.ok: brief 'Signed in. One moment…' (~200ms) then onResult.
+ *   - On result.ok: brief 'Signed in. One momentâ€¦' (~200ms) then onResult.
  *   - On result.ok=false: swap to one of 6 UI-SPEC error variants with
  *     'Try again' (ghost) + 'Cancel sign-in' (quiet) buttons.
  *   - On 'Cancel sign-in' click: cancel IPC then onCancel().
  *
  * Dismissal label is exactly 'Cancel sign-in' (UI-SPEC dismissal-label policy).
  * ESC is SUPPRESSED while the loopback exchange is in flight (UI-SPEC
- * §Layout rule 4b) — implemented by simply not registering a keydown listener.
- * Click-outside is SUPPRESSED (UI-SPEC §Layout rule 5) — no outside-click
+ * Â§Layout rule 4b) â€” implemented by simply not registering a keydown listener.
+ * Click-outside is SUPPRESSED (UI-SPEC Â§Layout rule 5) â€” no outside-click
  * handler on the scrim.
  *
- * Failure-mode → variant mapping (UI-SPEC §OAuth error copy — verbatim):
- *   browser_closed → "Sign-in didn't finish"
- *   network        → "Couldn't reach Google"
- *   timeout        → "That took a little too long"
- *   google_rejected→ "Google declined the sign-in"
- *   port_collision → "Couldn't open the sign-in helper"
- *   exchange_failed→ "Sign-in hit a snag"
- *   user_cancelled → handled via onCancel; not surfaced as an error variant
+ * Failure-mode â†’ variant mapping (UI-SPEC Â§OAuth error copy â€” verbatim):
+ *   browser_closed â†’ "Sign-in didn't finish"
+ *   network        â†’ "Couldn't reach Google"
+ *   timeout        â†’ "That took a little too long"
+ *   google_rejectedâ†’ "Google declined the sign-in"
+ *   port_collision â†’ "Couldn't open the sign-in helper"
+ *   exchange_failedâ†’ "Sign-in hit a snag"
+ *   user_cancelled â†’ handled via onCancel; not surfaced as an error variant
  *
- * Source: 10-UI-SPEC §Google OAuth interstitial modal + §OAuth error copy.
+ * Source: 10-UI-SPEC Â§Google OAuth interstitial modal + Â§OAuth error copy.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
@@ -44,7 +44,7 @@ type ErrorReason = Extract<OAuthResult, { ok: false }>['reason'];
 
 type Phase =
   | { kind: 'waiting'; secondsLeft: number }
-  | { kind: 'success' } // 'Signed in. One moment…' — ~200ms before onResult fires
+  | { kind: 'success' } // 'Signed in. One momentâ€¦' â€” ~200ms before onResult fires
   | { kind: 'error'; reason: ErrorReason; message: string };
 
 const ERROR_COPY: Record<ErrorReason, { heading: string; body: string }> = {
@@ -81,7 +81,7 @@ const ERROR_COPY: Record<ErrorReason, { heading: string; body: string }> = {
   },
   region_blocked: {
     // W7 region gate (260816): main refused before the browser opened. Rarely
-    // seen — SignInModal's region:status pre-check normally replaces the form
+    // seen â€” SignInModal's region:status pre-check normally replaces the form
     // before Google is reachable; this is the backstop copy.
     heading: 'Region not supported',
     body: 'Our servers do not currently support your region. Please continue with local mode.',
@@ -106,8 +106,8 @@ export function OAuthInterstitialModal({
         setPhase({ kind: 'success' });
         setTimeout(() => onResult(res), 200);
       } else if (res.reason === 'user_cancelled') {
-        // Either we cancelled explicitly (cancel button → cancelGoogle()
-        // → loopbackPkce aborts → result is user_cancelled) or it bubbled up
+        // Either we cancelled explicitly (cancel button â†’ cancelGoogle()
+        // â†’ loopbackPkce aborts â†’ result is user_cancelled) or it bubbled up
         // for some other reason; either way return to parent SignInModal.
         onCancel();
       } else {
@@ -117,14 +117,14 @@ export function OAuthInterstitialModal({
   };
 
   // Kick off the OAuth flow once on mount; re-runnable via Try again.
-  // ESC suppression: no keydown listener — UI-SPEC §Layout rule 4b.
-  // Click-outside suppression: no listener on the scrim — UI-SPEC §Layout rule 5.
+  // ESC suppression: no keydown listener â€” UI-SPEC Â§Layout rule 4b.
+  // Click-outside suppression: no listener on the scrim â€” UI-SPEC Â§Layout rule 5.
   useEffect(() => {
     start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Countdown tick — only ticks while waiting.
+  // Countdown tick â€” only ticks while waiting.
   useEffect(() => {
     if (phase.kind !== 'waiting') return;
     if (phase.secondsLeft <= 0) return;
@@ -148,14 +148,14 @@ export function OAuthInterstitialModal({
     start();
   };
 
-  // Single title across all phases — waiting + success show the "in-browser"
+  // Single title across all phases â€” waiting + success show the "in-browser"
   // heading; error phases swap to the failure-mode heading.
   const titleText =
     phase.kind === 'error' ? t(ERROR_COPY[phase.reason].heading) : t('Continue in your browser');
 
   // Tier 'stacked' (z 1100) sits above SignInModal. ESC + click-outside are
   // SUPPRESSED (escClose false, scrimClose default false, no onClose) while the
-  // loopback exchange runs — dismissal is only via the buttons.
+  // loopback exchange runs â€” dismissal is only via the buttons.
   return (
     <ModalShell title={titleText} width={460} tier="stacked" escClose={false}>
       {phase.kind === 'waiting' ? (
@@ -177,7 +177,7 @@ export function OAuthInterstitialModal({
       ) : null}
 
       {phase.kind === 'success' ? (
-        <p className={styles.success}>{t('Signed in. One moment…')}</p>
+        <p className={styles.success}>{t('Signed in. One momentâ€¦')}</p>
       ) : null}
 
       {phase.kind === 'error' ? (
@@ -196,3 +196,7 @@ export function OAuthInterstitialModal({
     </ModalShell>
   );
 }
+
+
+
+

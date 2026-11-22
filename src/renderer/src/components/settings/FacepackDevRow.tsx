@@ -1,5 +1,5 @@
-/**
- * FacepackDevRow — Settings → About entry for the desktop companion facepack
+﻿/**
+ * FacepackDevRow â€” Settings â†’ About entry for the desktop companion facepack
  * pilot (261028). Renders NOTHING unless main reports the dev flag on
  * (unpackaged + SEI_FACEPACK_DIR), so a packaged build's About is unchanged.
  *
@@ -61,3 +61,7 @@ export function FacepackDevRow(): React.ReactElement | null {
   }, []);
   return <FacepackDevRowView info={info} onOpen={() => void sei.facepackOpenPreview?.()} />;
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * useChessStore — per-character chess games (renderer mirror).
+﻿/**
+ * useChessStore â€” per-character chess games (renderer mirror).
  *
  * The authoritative game lives in main (src/main/chess/); this store caches
  * the last pushed ChessGameState per character, tracks the one-time engine
@@ -25,7 +25,7 @@ import { replayHistory, START_FEN } from '../../components/chess/chessUtil';
 import { t } from '../i18n';
 
 /**
- * Narrow local view of the chess members on window.sei — matches the doc
+ * Narrow local view of the chess members on window.sei â€” matches the doc
  * comment in src/shared/chessIpc.ts exactly. Single cast point by design.
  */
 interface ChessApi {
@@ -84,19 +84,19 @@ const DEFAULT_UI: ChessBoardUi = {
 };
 
 interface ChessStoreState {
-  /** characterId → last authoritative snapshot from main. */
+  /** characterId â†’ last authoritative snapshot from main. */
   games: Record<string, ChessGameState | null>;
-  /** characterId → engine warm-up download progress. */
+  /** characterId â†’ engine warm-up download progress. */
   downloads: Record<string, ChessDownloadProgress>;
   /** Panel open intent BEFORE a game exists (pre-game setup card). */
   panelIntent: Record<string, boolean>;
   /** Pending AI move applied locally after commentary finished (UCI). */
   revealed: Record<string, string | null>;
-  /** characterId → chessStart in flight. */
+  /** characterId â†’ chessStart in flight. */
   starting: Record<string, boolean>;
-  /** characterId → hydrate (chessGetState) already attempted. */
+  /** characterId â†’ hydrate (chessGetState) already attempted. */
   hydrated: Record<string, boolean>;
-  /** characterId → board-local UI state. */
+  /** characterId â†’ board-local UI state. */
   ui: Record<string, ChessBoardUi>;
 
   /** Open the chess panel for a character (pre-game card if no game yet). */
@@ -112,7 +112,7 @@ interface ChessStoreState {
   offerDraw: (characterId: string) => Promise<void>;
   respondDraw: (characterId: string, accept: boolean) => Promise<void>;
   rematch: (characterId: string) => Promise<void>;
-  /** Close the panel. Ends any game in main (unfinished → 'abandoned'). */
+  /** Close the panel. Ends any game in main (unfinished â†’ 'abandoned'). */
   end: (characterId: string) => Promise<void>;
   /**
    * Open a replay of a finished game (the clickable "You and X played chess"
@@ -205,7 +205,7 @@ export const useChessStore = create<ChessStoreState>((set, get) => {
         set((s) => ({ downloads: { ...s.downloads, [p.characterId]: p } }));
       }) ?? null;
   } catch {
-    /* preload without the chess bridge — pushes just won't stream */
+    /* preload without the chess bridge â€” pushes just won't stream */
   }
 
   return {
@@ -402,3 +402,7 @@ if (import.meta.hot) {
     offDownload = null;
   });
 }
+
+
+
+

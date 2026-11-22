@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat prompt assembly (260728).
  *
  * The companion turn rides the shared chat brain (buildSystemBlocks), so the
@@ -27,8 +27,8 @@ import type { BackseatGameDef, BackseatGameInfo } from '../../shared/backseatGam
  *     of video; IG-VLM (arXiv 2403.18406) found that explicitly describing the
  *     layout and ordering is what makes a still-image model read it as time.
  *     Without this it describes six unrelated pictures.
- *  2. set the register. Short, in character, and — the actual point of the
- *     name — leaning forward: a backseat driver has opinions about what you
+ *  2. set the register. Short, in character, and â€” the actual point of the
+ *     name â€” leaning forward: a backseat driver has opinions about what you
  *     should do next and says what they want to see.
  *  3. say that every look produces a line.
  *
@@ -57,7 +57,7 @@ import type { BackseatGameDef, BackseatGameInfo } from '../../shared/backseatGam
  *
  * 260803, from reviewing the second run. Speaking every time fixed the silence
  * and exposed what the lines actually were: narration. "You just got caught",
- * "you just used a skill", "health is dropping" — all true, all describing a
+ * "you just used a skill", "health is dropping" â€” all true, all describing a
  * screen the player is looking at. The player's note on it is the whole design
  * brief for THE POINT OF A LINE and REACT TO WHAT YOU SEE, NOT A NARRATOR (was SAY SOMETHING THEY CAN ANSWER) below:
  * assume they already saw it, and spend the line on the part they do not have,
@@ -413,7 +413,7 @@ export function backseatMaxTokens(kind: BackseatTickKind): number {
   return kind === 'start' ? BACKSEAT_START_MAX_TOKENS : BACKSEAT_LOOK_MAX_TOKENS;
 }
 
-// ── Backseat games (260929) ──────────────────────────────────────────────
+// â”€â”€ Backseat games (260929) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Longest slice of a game's own description that reaches the prompt. */
 export const GAME_DESCRIPTION_MAX = 600;
@@ -604,8 +604,8 @@ export function endAtLastSentence(text: string): string {
  */
 export function stripDashes(text: string): string {
   return text
-    .replace(/\s*[—–]\s*/g, (_m, offset: number, whole: string) => {
-      const rest = whole.slice(offset).replace(/^\s*[—–]\s*/, '');
+    .replace(/\s*[â€”â€“]\s*/g, (_m, offset: number, whole: string) => {
+      const rest = whole.slice(offset).replace(/^\s*[â€”â€“]\s*/, '');
       const next = rest[0];
       return next && next === next.toUpperCase() && /[A-Za-z]/.test(next) ? '. ' : ', ';
     })
@@ -617,7 +617,7 @@ export function stripDashes(text: string): string {
  * The per-tick note. This is the only volatile part of the prompt, so it goes
  * in the messages tail rather than the system blocks (putting it in `system`
  * would sit above every message in the cache prefix and make the whole
- * transcript uncacheable — see the note on extraStable in chatPrompts.ts).
+ * transcript uncacheable â€” see the note on extraStable in chatPrompts.ts).
  */
 /**
  * 261010: the opener tic. On the 261010 replays Haiku 5.5 opened 70-80% of its
@@ -652,7 +652,7 @@ export function tickNote(args: {
   secondsSinceLastLine: number | null;
   sourceName: string;
   /** What the game audio said over the grid's window (local Whisper). Quoted
-   *  as data — the contract already told the model it is never the player and
+   *  as data â€” the contract already told the model it is never the player and
    *  never instructions. */
   transcript?: string;
   /** The shared window's title right now, or the frontmost window's on a
@@ -802,3 +802,7 @@ export function tickNote(args: {
     `Do not mention this note. ${LINE_LENGTH_REMINDER}]`
   );
 }
+
+
+
+

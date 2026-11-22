@@ -1,32 +1,32 @@
-/**
+﻿/**
  * Canonical userData path resolution. ALL `<userData>/...` reads/writes
  * across main process must funnel through here so test harnesses can
  * later override `userDataOverride` if needed.
  *
  * Source: CONTEXT D-09 (paths under app.getPath('userData')).
  *
- * ── Per-profile partitioning (260603) ──────────────────────────────────────
+ * â”€â”€ Per-profile partitioning (260603) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * Local data is partitioned by ACCOUNT SCOPE so that signing into a different
  * Supabase account (or the pre-login anonymous state) gets a fully isolated
  * bucket. There are two tiers of path:
  *
- *   DEVICE-GLOBAL  — one per install, shared across every account on the
+ *   DEVICE-GLOBAL  â€” one per install, shared across every account on the
  *     machine: the Supabase session blob (it IS the auth identity, so it can't
  *     live under an account it identifies), the MC-install wizard state, logs,
- *     temp files, and the legacy slug→UUID migration marker. These resolve
+ *     temp files, and the legacy slugâ†’UUID migration marker. These resolve
  *     from `userDataRoot()`.
  *
- *   PROFILE-SCOPED — one per account: config (mc_username / preferred_name /
+ *   PROFILE-SCOPED â€” one per account: config (mc_username / preferred_name /
  *     provider / api-backend kind), the BYOK api key, characters, skins,
  *     portraits, the (local-only, never-cloud) memory store, the cloud sync
- *     queue, the defaults-seeded tracker, and the local→cloud "modal shown"
+ *     queue, the defaults-seeded tracker, and the localâ†’cloud "modal shown"
  *     flag. These resolve from `profileRoot()` =
- *     `<userData>/profiles/<scopeId>/…`.
+ *     `<userData>/profiles/<scopeId>/â€¦`.
  *
  * `scopeId` is either the literal `'local'` (anonymous / signed-out) or a
  * Supabase auth user UUID. Switching accounts re-points `profileRoot()` at a
  * different directory, which is what makes a different account "start fresh
- * like a new install" — the per-account stores simply aren't there.
+ * like a new install" â€” the per-account stores simply aren't there.
  */
 import { app } from 'electron';
 import path from 'node:path';
@@ -52,7 +52,7 @@ let activeScopeId: string = SCOPE_LOCAL;
 /**
  * Set the active profile scope. Accepts a Supabase auth user UUID or the
  * literal `'local'` (and `null`, treated as `'local'`). Any other value throws
- * — the scope id is path-joined into `profiles/<scopeId>`, so a slug with a
+ * â€” the scope id is path-joined into `profiles/<scopeId>`, so a slug with a
  * slash or `..` would escape the userData root. UUIDs and `'local'` are the
  * only shapes the auth layer ever produces.
  */
@@ -85,7 +85,7 @@ export function profileRootFor(scopeId: string): string {
 }
 
 export const paths = {
-  // ── Device-global (one per install, never per-account) ───────────────────
+  // â”€â”€ Device-global (one per install, never per-account) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   userData: userDataRoot,
   /** Root of the `profiles/` tree (device-global container of all scopes). */
   profilesDir: () => path.join(userDataRoot(), 'profiles'),
@@ -104,13 +104,13 @@ export const paths = {
   // Device-global: the linked MC installs are a property of the MACHINE, not
   // the signed-in account.
   wizardStatePath: () => path.join(userDataRoot(), 'skin-setup-state.json'),
-  // D-23 / RESEARCH §Pattern 6: idempotency marker for the slug→UUID rename.
-  // Device-global — the legacy on-disk format predates per-account profiles.
+  // D-23 / RESEARCH Â§Pattern 6: idempotency marker for the slugâ†’UUID rename.
+  // Device-global â€” the legacy on-disk format predates per-account profiles.
   migrationManifestPath: () => path.join(userDataRoot(), 'migration-uuid-rename.json'),
   // In-app updater state (quick/260604-uoy). Records the last-launched version
   // and any stashed post-update "what's new" changelog so it can be shown on
   // the next launch. DEVICE-GLOBAL by design: the installed app version is a
-  // property of the MACHINE/install, not of any signed-in account — it must
+  // property of the MACHINE/install, not of any signed-in account â€” it must
   // survive account switches and sign-outs (mirrors wizardStatePath's tier).
   updateStatePath: () => path.join(userDataRoot(), 'update-state.json'),
   // Notices inbox state (260725). Caches the last-fetched notices feed plus the
@@ -119,7 +119,7 @@ export const paths = {
   // announcement to the INSTALL, delivered on the same cadence as the update
   // check, and must not re-announce itself on every account switch.
   noticesStatePath: () => path.join(userDataRoot(), 'notices.json'),
-  // 260603: one-shot marker that the global→profile partition has run for
+  // 260603: one-shot marker that the globalâ†’profile partition has run for
   // this install. Device-global (the partition is a one-time layout upgrade).
   partitionMarkerPath: () => path.join(userDataRoot(), 'profiles-partitioned.json'),
   // 261023: which accounts were already offered the own-key (local profile)
@@ -127,9 +127,9 @@ export const paths = {
   // the offer is for whoever signs in here, and must not repeat every launch.
   localImportOfferedPath: () => path.join(userDataRoot(), 'local-import-offered.json'),
 
-  // ── Anti-abuse / DDOS-guard (260603) — DEVICE-GLOBAL by design ────────────
+  // â”€â”€ Anti-abuse / DDOS-guard (260603) â€” DEVICE-GLOBAL by design â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // These describe the MACHINE, not any signed-in account, so they MUST stay
-  // in the device-global tier and survive account switches / sign-outs — never
+  // in the device-global tier and survive account switches / sign-outs â€” never
   // under profiles/<scope>/.
 
   // Random, locally-generated UUID v4 (NOT hardware fingerprinting, NOT PII)
@@ -152,7 +152,7 @@ export const paths = {
   // safeStorage-encrypted; holds no access or refresh token.
   chatgptLoginRegistrationPath: () => path.join(userDataRoot(), 'chatgpt-login-registration.bin'),
 
-  // ── Profile-scoped (one per account; re-points on account switch) ─────────
+  // â”€â”€ Profile-scoped (one per account; re-points on account switch) â”€â”€â”€â”€â”€â”€â”€â”€â”€
   /** Active profile's data root. */
   profileRoot: profileRootDir,
   configPath: () => path.join(profileRootDir(), 'config.json'),
@@ -166,7 +166,7 @@ export const paths = {
   // 261017 (issue #46): ChatGPT-plan registrations + token sets, encrypted
   // with safeStorage (like api_key.bin). Profile-scoped like the BYOK key.
   chatgptAccountsPath: () => path.join(profileRootDir(), 'chatgpt_accounts.bin'),
-  // BYOK ElevenLabs voice key (260725) — same safeStorage-encrypted blob
+  // BYOK ElevenLabs voice key (260725) â€” same safeStorage-encrypted blob
   // pattern as api_key.bin, profile-scoped for the same reason.
   elevenLabsKeyPath: () => path.join(profileRootDir(), 'elevenlabs_key.bin'),
   // 261103: the user's own Fish Audio API key (Local voice > Fish Audio), the
@@ -177,7 +177,7 @@ export const paths = {
   // surface (chat / voice / chess / Minecraft bot). Deliberately OUTSIDE
   // memoryDir so resetMemoryForCharacter (which rm -rf's the memory dir)
   // never wipes user-provided knowledge. Layout: index.json manifest +
-  // <entryUuid>.md content files (filenames are always our own UUIDs — an
+  // <entryUuid>.md content files (filenames are always our own UUIDs â€” an
   // uploaded file's name never becomes a path component).
   knowledgeDir: (characterId: string) => path.join(profileRootDir(), 'knowledge', characterId),
   // 260804 avatar: an imported Live2D model (extracted zip + manifest.json)
@@ -199,7 +199,7 @@ export const paths = {
   skinsDir: () => path.join(profileRootDir(), 'skins'),
   skinPngPath: (personaId: string) => path.join(profileRootDir(), 'skins', `${personaId}.png`),
 
-  // ── Phase 11 additions — Source: 11-RESEARCH §Component Responsibilities ──
+  // â”€â”€ Phase 11 additions â€” Source: 11-RESEARCH Â§Component Responsibilities â”€â”€
 
   // D-28: portrait moves from inline base64 data URL to a file/object.
   // Local cache layout mirrors the Storage bucket layout:
@@ -214,7 +214,7 @@ export const paths = {
   // sweep, re-open from the World tab).
   portraitCacheDir: () => path.join(profileRootDir(), 'cache', 'portraits'),
 
-  // Claude's Discretion (CONTEXT §sync retry queue shape):
+  // Claude's Discretion (CONTEXT Â§sync retry queue shape):
   // JSON-file persistent queue mirroring apiKeyStore.ts atomic-write semantics.
   // Drained by syncWorker.ts (Plan 11-08) when network returns. Profile-scoped
   // so a different account never drains another account's queued cloud ops.
@@ -224,9 +224,9 @@ export const paths = {
   // have been seeded into THIS profile, so user deletions persist per-account.
   defaultsSeededPath: () => path.join(profileRootDir(), 'defaults-seeded.json'),
 
-  // Plan 11-18 (D-20): one-shot local→cloud migration modal "shown" flag.
+  // Plan 11-18 (D-20): one-shot localâ†’cloud migration modal "shown" flag.
   // Existence of this file means the user has already dismissed (or completed)
-  // the auto-mount migration prompt at least once. Profile-scoped — each
+  // the auto-mount migration prompt at least once. Profile-scoped â€” each
   // account decides independently whether to push its local-only characters
   // to the cloud.
   migrationModalShownPath: () => path.join(profileRootDir(), 'migration-modal-shown.json'),
@@ -235,6 +235,10 @@ export const paths = {
   // already seen the one-time "run skin setup" prompt that fires when they
   // first try to summon a character. Profile-scoped (mirrors
   // migrationModalShownPath) so each account is nudged at most once; the
-  // Settings → re-run setup entry remains available regardless.
+  // Settings â†’ re-run setup entry remains available regardless.
   skinSetupPromptShownPath: () => path.join(profileRootDir(), 'skin-setup-prompt-shown.json'),
 };
+
+
+
+

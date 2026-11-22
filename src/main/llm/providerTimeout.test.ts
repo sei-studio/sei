@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261011: Draw! aborted its own calls at a fixed 30s/60s, which bypassed the
  * provider timeout floors; on local Ollama every guess and drawing was cut off
  * before the model answered (verified live on qwen2.5vl:3b). providerTimeoutMs
@@ -37,3 +37,7 @@ describe('providerTimeoutMs', () => {
     expect(providerTimeoutMs({ kind: 'openai' }, 20_000)).toBe(20_000);
   });
 });
+
+
+
+

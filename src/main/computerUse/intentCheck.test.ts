@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { createIntentCheck, INTENT_SYSTEM, intentPrompt, isCleanYes } from './intentCheck';
 import type { LlmCallParams } from '../llm/types';
 
@@ -67,4 +67,8 @@ describe('intentPrompt', () => {
     expect(INTENT_SYSTEM).toMatch(/data/);
   });
 });
+
+
+
+
 

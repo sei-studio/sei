@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Auth state machine + Supabase auth-event subscription.
  *
  * Two-state model per CONTEXT D-06: `local` and `signed_in`. No third state
- * — AuthChoice gates the app before MainApp renders, so the resting state when
+ * â€” AuthChoice gates the app before MainApp renders, so the resting state when
  * no session is loaded is `local`.
  *
  * Source of truth: Supabase's auth-event stream. We never set state by hand
@@ -20,8 +20,8 @@
  *
  * Sources:
  *   - 10-CONTEXT D-06 (two-state model)
- *   - 10-RESEARCH §Pitfall A6 (USER_UPDATED for email-verified flip)
- *   - src/main/index.ts line 214–219 (renderer-reload replay pattern)
+ *   - 10-RESEARCH Â§Pitfall A6 (USER_UPDATED for email-verified flip)
+ *   - src/main/index.ts line 214â€“219 (renderer-reload replay pattern)
  */
 import type { BrowserWindow } from 'electron';
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
@@ -104,7 +104,7 @@ export function getCurrentAuthState(): AuthState {
 
 /**
  * Item 3 (cross-device email verification). Supabase confirms an email
- * SERVER-SIDE the moment the verification link is clicked on ANY device — but
+ * SERVER-SIDE the moment the verification link is clicked on ANY device â€” but
  * the loopback redirect only delivers the resulting session to the Sei device
  * itself, and `USER_UPDATED` only fires for a change made through THIS client.
  * So a user who signs up on the desktop and clicks the link on their phone gets
@@ -135,7 +135,7 @@ async function recheckEmailVerification(): Promise<void> {
   try {
     const supabase = getClient();
     const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user) return; // transient — keep polling
+    if (error || !data?.user) return; // transient â€” keep polling
     if (data.user.email_confirmed_at != null) {
       // Confirmed (here or on another device). Refresh the local session so the
       // JWT + stored user reflect it (TOKEN_REFRESHED re-applies + re-broadcasts),
@@ -143,14 +143,14 @@ async function recheckEmailVerification(): Promise<void> {
       try {
         await supabase.auth.refreshSession();
       } catch {
-        /* best-effort — the explicit state update below still clears the banner */
+        /* best-effort â€” the explicit state update below still clears the banner */
       }
       currentState = { kind: 'signed_in', user: toAuthUser(data.user) };
       broadcastAuthState(mainWindowRef);
       stopEmailVerificationPoll();
     }
   } catch {
-    /* network blip — keep polling */
+    /* network blip â€” keep polling */
   }
 }
 
@@ -171,7 +171,7 @@ function syncEmailVerificationPolling(): void {
 }
 
 /**
- * 260606 — cold-start session validation (auto sign-out of a dead session).
+ * 260606 â€” cold-start session validation (auto sign-out of a dead session).
  *
  * `initAuthState`'s first state is read from the local storage adapter alone
  * (session.bin), so a session whose user was deleted or revoked server-side
@@ -180,20 +180,20 @@ function syncEmailVerificationPolling(): void {
  * the access token happens to refresh and Supabase fires SIGNED_OUT on its own.
  *
  * `getUser()` round-trips to the auth server to validate the JWT:
- *   - auth-layer rejection (401/403 — user_not_found / bad_jwt / session gone)
- *     → the account is gone or revoked → force sign-out (clears session.bin via
+ *   - auth-layer rejection (401/403 â€” user_not_found / bad_jwt / session gone)
+ *     â†’ the account is gone or revoked â†’ force sign-out (clears session.bin via
  *       the storage adapter) and drop to `local`.
- *   - network / transport error, timeout, or any non-auth status → leave the
+ *   - network / transport error, timeout, or any non-auth status â†’ leave the
  *     session intact. Offline users MUST keep working; a genuine revocation
  *     resurfaces on the next online token refresh.
  *
- * Best-effort and fire-and-forget from initAuthState — never blocks launch.
+ * Best-effort and fire-and-forget from initAuthState â€” never blocks launch.
  * Exported for unit testing.
  */
 export async function validateSessionOrSignOut(): Promise<void> {
   const supabase = getClient();
   // getUser() has no built-in timeout; cap it so a hung network never strands
-  // the check. On timeout we KEEP the session (inconclusive → offline-tolerant).
+  // the check. On timeout we KEEP the session (inconclusive â†’ offline-tolerant).
   const TIMEOUT = Symbol('timeout');
   let res: Awaited<ReturnType<typeof supabase.auth.getUser>> | typeof TIMEOUT;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -205,7 +205,7 @@ export async function validateSessionOrSignOut(): Promise<void> {
       }),
     ]);
   } catch (err) {
-    // Thrown transport failure — stay signed in (offline-tolerant).
+    // Thrown transport failure â€” stay signed in (offline-tolerant).
     console.warn(`[sei] session validation skipped (network): ${(err as Error).message}`);
     return;
   } finally {
@@ -218,13 +218,13 @@ export async function validateSessionOrSignOut(): Promise<void> {
   const error = (res as { error: { status?: number } | null }).error;
   if (!error) return; // valid session
   // Only an auth-layer rejection means "account gone/revoked". A status of 0 or
-  // undefined is a transport hiccup → keep the session.
+  // undefined is a transport hiccup â†’ keep the session.
   const status = error.status;
   if (status !== 400 && status !== 401 && status !== 403) {
     console.warn(`[sei] session validation inconclusive (status ${status ?? 'none'}); keeping session`);
     return;
   }
-  console.warn('[sei] persisted session invalid (user deleted/revoked) — signing out');
+  console.warn('[sei] persisted session invalid (user deleted/revoked) â€” signing out');
   try {
     const { error: signOutError } = await supabase.auth.signOut();
     // 261029: signOut() reports a failed logout request in its result, it
@@ -473,7 +473,7 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
 }
 
 async function initAuthStateInner(window: BrowserWindow): Promise<void> {
-  // BL-02: bootstrap() can run more than once on macOS — app.on('activate')
+  // BL-02: bootstrap() can run more than once on macOS â€” app.on('activate')
   // calls it again when all windows have been closed and the dock icon is
   // clicked. Drop any prior subscription + did-finish-load listener before
   // rebinding so we don't accumulate auth-event subscribers on each reopen.
@@ -525,7 +525,7 @@ async function initAuthStateInner(window: BrowserWindow): Promise<void> {
     // Analytics (260707): attribute this restored session to the account so
     // events (incl. app_opened, fired just after init) carry the user id.
     void import('../analytics').then((a) => a.identifyUser(userId)).catch(() => {});
-    // 260606 — proactively validate the persisted session against the server.
+    // 260606 â€” proactively validate the persisted session against the server.
     // If the account was deleted/revoked, this auto-signs-out so the user can't
     // get trapped on a blocking gate (e.g. the ToS modal). Fire-and-forget so
     // launch isn't blocked; the renderer briefly shows signed_in then drops to
@@ -566,12 +566,12 @@ async function initAuthStateInner(window: BrowserWindow): Promise<void> {
 function onAuthEvent(event: AuthChangeEvent, session: Session | null): void {
   // Events we care about: SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION.
   // PASSWORD_RECOVERY: a reset link landed a recovery session. The normal path
-  // is the loopback callback's recovery-flag detection (→ auth:password-recovery
+  // is the loopback callback's recovery-flag detection (â†’ auth:password-recovery
   // push); this event is a belt-and-suspenders fallback for the case where the
   // app restarted between requesting the reset and clicking the link, dropping
   // the in-memory flag. Idempotent with the loopback push (renderer just sets a
-  // boolean). It does NOT fire on ordinary launches — only when supabase-js
-  // detects a fresh recovery — so there are no false positives.
+  // boolean). It does NOT fire on ordinary launches â€” only when supabase-js
+  // detects a fresh recovery â€” so there are no false positives.
   if (event === 'PASSWORD_RECOVERY' && mainWindowRef && !mainWindowRef.isDestroyed()) {
     mainWindowRef.webContents.send(IpcChannel.auth.passwordRecovery);
   }
@@ -625,7 +625,7 @@ function applyAuthEvent(event: AuthChangeEvent, session: Session | null): void {
   }
   broadcastAuthState(mainWindowRef);
   // Item 3: (re)evaluate the cross-device verification poll on every auth
-  // event — start it on a fresh unverified sign-in, stop it once verified or
+  // event â€” start it on a fresh unverified sign-in, stop it once verified or
   // signed out.
   syncEmailVerificationPolling();
   // 261029: the data scope follows the auth state itself, not the change
@@ -673,11 +673,11 @@ export function transitionToSignedIn(user: AuthUser): void {
 }
 
 /**
- * Phase 11 (Plan 11-14) — defense-in-depth UX gate for cloud writes.
+ * Phase 11 (Plan 11-14) â€” defense-in-depth UX gate for cloud writes.
  *
  * Returns `true` ONLY when ALL of:
  *   - auth state is `signed_in`
- *   - user.emailVerified === true (Phase 10 D-04 + 11-RESEARCH §Pitfall 8 —
+ *   - user.emailVerified === true (Phase 10 D-04 + 11-RESEARCH Â§Pitfall 8 â€”
  *     verification doesn't block sign-in but DOES block cloud-write)
  *   - tos_acceptance row exists at the current TOS_VERSION + PRIVACY_VERSION
  *     (D-26 / D-27; queried via tosGate.isTosAccepted, Plan 11-12)
@@ -686,7 +686,7 @@ export function transitionToSignedIn(user: AuthUser): void {
  *
  * Note on layered defenses:
  *   - RLS on `characters` / `tos_acceptance` is the SECURITY gate at the DB.
- *   - This function is the UX gate that prevents misleading "syncing…" pills
+ *   - This function is the UX gate that prevents misleading "syncingâ€¦" pills
  *     when the user can't actually sync.
  *
  * Plan 11-08 (syncQueue.processNext) lazy-imports this as its drain-eligibility
@@ -713,7 +713,7 @@ export function invalidateTosCache(): void {
 function logCloudWriteDenied(
   reason: 'not_signed_in' | 'email_unverified' | 'tos_not_accepted',
 ): void {
-  // Trace-level logging — keep low-noise. Console is fine for v1.0.
+  // Trace-level logging â€” keep low-noise. Console is fine for v1.0.
   // T-11-14-04 mitigation: reason carries NO userId / no PII.
   console.log(`[sei] isCloudWriteAllowed: false (reason: ${reason})`);
 }
@@ -723,7 +723,7 @@ export async function isCloudWriteAllowed(): Promise<boolean> {
     logCloudWriteDenied('not_signed_in');
     return false;
   }
-  // Email verification check — Pitfall 8.
+  // Email verification check â€” Pitfall 8.
   // AuthUser.emailVerified is derived from user.email_confirmed_at != null
   // (see toAuthUser above; Supabase normalizes verified=true on USER_UPDATED).
   if (!currentState.user.emailVerified) {
@@ -749,11 +749,11 @@ export async function isCloudWriteAllowed(): Promise<boolean> {
   try {
     status = await getTosAcceptance(userId);
   } catch {
-    // Fail closed — mirror tosGate's own contract.
+    // Fail closed â€” mirror tosGate's own contract.
     status = 'unknown';
   }
   const accepted = status === 'accepted';
-  // 260610 — only cache DEFINITIVE answers. Caching an 'unknown' (offline /
+  // 260610 â€” only cache DEFINITIVE answers. Caching an 'unknown' (offline /
   // DNS hiccup) as false would keep blocking cloud writes for up to 60s after
   // connectivity returns; leaving the cache empty re-queries on the next call.
   if (status !== 'unknown') {
@@ -797,3 +797,7 @@ export async function _scopeSwitchSettledForTests(): Promise<void> {
     await Promise.all([...followUps]);
   }
 }
+
+
+
+

@@ -1,25 +1,25 @@
-/**
- * recoveryService — main-process side of the in-app phantom-call recovery
+﻿/**
+ * recoveryService â€” main-process side of the in-app phantom-call recovery
  * (260810; incident: a voice call left running while videos played into the
  * mic manufactured ~440 phantom "user" rows over 52 minutes, junk remember()
  * entries, and ~20 summary folds that destroyed bridge.json).
  *
  * Three operations, all local, nothing ever leaves the machine:
  *
- *   scan()    — run the pure detector over every character in the ACTIVE
+ *   scan()    â€” run the pure detector over every character in the ACTIVE
  *               profile and return flagged sessions as SHAPE ONLY (character,
  *               window, counts, cadence). Never message text.
- *   repair()  — quarantine a character's flagged windows, FAILSAFE BY DESIGN:
+ *   repair()  â€” quarantine a character's flagged windows, FAILSAFE BY DESIGN:
  *               full dir backup first, quarantine sidecars written BEFORE any
  *               original is touched, atomic rewrites, and bridge.json only
  *               removed after its quarantine copy exists. If any step throws,
  *               every original is still valid.
- *   dismiss() — persist "don't ask about this window again" keys in
+ *   dismiss() â€” persist "don't ask about this window again" keys in
  *               <profileRoot>/recovery-state.json. Deliberately NOT in
  *               UserConfig: the dismissal describes local transcript state and
  *               must never cloud-sync.
  *
- * MEMORY.archive.md is NEVER touched under any circumstance — it is the
+ * MEMORY.archive.md is NEVER touched under any circumstance â€” it is the
  * permanent raw record and the fallback if this recovery itself has a bug.
  * (The backup step copies it, which is read-only with respect to the
  * original; no write path in this module names it.)
@@ -31,7 +31,7 @@ import { paths } from '../paths';
 import type { RecoveryCandidate, RecoveryRepairResult, RecoveryWindow } from '../../shared/ipc';
 import { findVoiceSessions, parseChatJsonl, splitMemory } from './phantomDetect';
 
-/** Backup dirs live at <profileRoot>/recovery-backup-<stamp>/<characterId>/ —
+/** Backup dirs live at <profileRoot>/recovery-backup-<stamp>/<characterId>/ â€”
  * deliberately OUTSIDE <profileRoot>/memory/ so a later scan never mistakes a
  * backup for a character's live memory dir. */
 const BACKUP_PREFIX = 'recovery-backup-';
@@ -77,7 +77,7 @@ async function characterName(characterId: string): Promise<string | null> {
   }
 }
 
-// ── dismissed-window persistence ───────────────────────────────────────────
+// â”€â”€ dismissed-window persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface RecoveryState {
   /** `${characterId}:${startTs}` keys the user chose to ignore. */
@@ -108,7 +108,7 @@ export async function dismissRecovery(keys: string[]): Promise<void> {
   await writeFile(stateFilePath(), JSON.stringify({ dismissed: merged }, null, 2) + '\n', 'utf8');
 }
 
-// ── scan ───────────────────────────────────────────────────────────────────
+// â”€â”€ scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Detect phantom-call sessions across every character in the active profile.
@@ -120,7 +120,7 @@ export async function scanRecovery(): Promise<RecoveryCandidate[]> {
   try {
     entries = await readdir(memoryRoot(), { withFileTypes: true });
   } catch {
-    return []; // no memory dir yet — nothing to scan
+    return []; // no memory dir yet â€” nothing to scan
   }
   const { dismissed } = await readState();
   const dismissedSet = new Set(dismissed);
@@ -151,7 +151,7 @@ export async function scanRecovery(): Promise<RecoveryCandidate[]> {
   return out;
 }
 
-// ── repair ─────────────────────────────────────────────────────────────────
+// â”€â”€ repair â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function atomicWrite(p: string, content: string, stamp: string): Promise<void> {
   const tmp = `${p}.tmp-${stamp}`;
@@ -169,7 +169,7 @@ async function backupDir(src: string, dest: string): Promise<void> {
 
 /**
  * Quarantine the given windows for one character. Order of operations is the
- * failsafe (see module docblock): backup → sidecars → atomic rewrites →
+ * failsafe (see module docblock): backup â†’ sidecars â†’ atomic rewrites â†’
  * bridge removal. Throws on failure with originals intact.
  */
 export async function repairRecovery(
@@ -186,7 +186,7 @@ export async function repairRecovery(
   if (!rows) throw new Error('No transcript found for this character.');
 
   // A row is quarantined when it is a VOICE row whose ts falls inside any of
-  // the selected windows — exactly the rows findVoiceSessions grouped, since a
+  // the selected windows â€” exactly the rows findVoiceSessions grouped, since a
   // window IS a session's [start, end] span and sessions are voice-row runs.
   const inWindow = (ts: number): boolean => windows.some((w) => ts >= w.start && ts <= w.end);
   const keptLines: string[] = [];
@@ -234,7 +234,7 @@ export async function repairRecovery(
     await atomicWrite(memPath, memPlan.kept, stamp);
   }
 
-  // (e) Drop bridge.json LAST — a missing bridge means "fresh" to continuity.ts
+  // (e) Drop bridge.json LAST â€” a missing bridge means "fresh" to continuity.ts
   // (readBridge catches and returns {summary:'', summarizedCount:0}), so the
   // rolling summary rebuilds from the CLEANED transcript on the next fold.
   if (hasBridge) {
@@ -262,3 +262,7 @@ export async function repairRecovery(
 
   return result;
 }
+
+
+
+

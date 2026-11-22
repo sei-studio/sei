@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink opened for her (261105): ask main to get her face set ready (a
  * cloud bake the first time, then a download), and follow its status for the
  * small "Preparing {name}'s look..." line. Main answers at once and works in
@@ -37,3 +37,7 @@ export function useAnimaLook(characterId: string | null | undefined, trigger: An
   }, [characterId, trigger]);
   return state;
 }
+
+
+
+

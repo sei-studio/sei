@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft 26.2 / 26.3 support (patches/*.patch, applied by postinstall).
  *
  * UNSUPPORTED_MC_VERSION was the top summon blocker once 26.2 shipped: the
@@ -81,3 +81,7 @@ describe('Minecraft 26.x data and world libraries', () => {
     }
   });
 });
+
+
+
+

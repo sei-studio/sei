@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 review: when the onboarding sign-in panel may move on. Behavior
  * tests over the gate OnboardApp wires its pushes and snapshot reads into.
  */
@@ -132,3 +132,7 @@ describe('createSignInScopeGate', () => {
     expect(h.ready.current).toBe(false);
   });
 });
+
+
+
+

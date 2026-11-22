@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/respawn.js — when a dead DST companion comes
+﻿// src/bot/adapter/dontstarve/respawn.js â€” when a dead DST companion comes
 // back (261104).
 //
 // An ownerless survivor has no client to haunt or be revived, so a death used
@@ -97,3 +97,7 @@ export function describeDeathCause(ev) {
   if (cause !== 'unknown') return cause.replace(/_/g, ' ')
   return null
 }
+
+
+
+

@@ -1,15 +1,15 @@
-/**
- * Data store — characters, LAN state, summon (bot status), logs ring buffer.
+﻿/**
+ * Data store â€” characters, LAN state, summon (bot status), logs ring buffer.
  *
- * Per 04-RESEARCH.md §Resolved Q5: subscriptions to onLog/onStatus/onLan are
+ * Per 04-RESEARCH.md Â§Resolved Q5: subscriptions to onLog/onStatus/onLan are
  * mounted at the STORE level (App.tsx calls subscribeIpc() once); navigation
  * MUST NOT drop log lines (D-53 buffer cap = 5000).
  *
- * Per Pitfall 7 — main coalesces log batches; renderer just appends and
+ * Per Pitfall 7 â€” main coalesces log batches; renderer just appends and
  * trims the ring buffer with `slice(-MAX_LOG_LINES)`.
  *
  * Source: 04-CONTEXT.md D-22 (LanState), D-53 (5000-line cap),
- *         04-PATTERNS.md §useDataStore, 04-RESEARCH.md §Code Examples 6.
+ *         04-PATTERNS.md Â§useDataStore, 04-RESEARCH.md Â§Code Examples 6.
  */
 
 import { create } from 'zustand';
@@ -37,7 +37,7 @@ interface DataState {
    */
   summons: Record<string, BotStatus>;
   /**
-   * Current world action per summoned character (Party redesign §2): the last
+   * Current world action per summoned character (Party redesign Â§2): the last
    * `bot:action` push, mapped to a verb line by lib/actionVerb. Cleared when
    * the push carries name:null or the session leaves 'online'/'connecting'.
    */
@@ -129,7 +129,7 @@ export const useDataStore = create<DataState>((set) => ({
       // ghost character everywhere `summons[id]` is read). Ignore it.
       if (!status.characterId) return {};
       const next = { ...s.summons };
-      // 'idle' means this character's session ended → drop the key so
+      // 'idle' means this character's session ended â†’ drop the key so
       // `summons[id]` reads undefined (not summoned). Everything else upserts.
       if (status.kind === 'idle') delete next[status.characterId];
       else next[status.characterId] = status;
@@ -168,7 +168,7 @@ export const useDataStore = create<DataState>((set) => ({
  * Wire push subscriptions from preload into the data store.
  * Returns a teardown function.
  *
- * Per RESEARCH §Resolved Q5: subscriptions live at the STORE level, not inside
+ * Per RESEARCH Â§Resolved Q5: subscriptions live at the STORE level, not inside
  * individual screen components. Navigation cannot drop log lines.
  */
 function wireIpc(): () => void {
@@ -189,7 +189,7 @@ function wireIpc(): () => void {
   // fires on CHANGE, so on a (re)load while a world is already open the store
   // would otherwise sit at its initial 'closed' until the next change.
   // Pulling the snapshot here (not relying on a replay-push that races this
-  // subscription) fixes "open world → detected → reload → shows closed".
+  // subscription) fixes "open world â†’ detected â†’ reload â†’ shows closed".
   void sei
     .getLanState()
     .then((state) => useDataStore.getState().setLan(state))
@@ -198,8 +198,8 @@ function wireIpc(): () => void {
     });
   const offStatus = sei.onStatus((status) => {
     // Clear the console when the FIRST bot starts connecting (no other session
-    // already live). This preserves single-summon behavior — a fresh session
-    // gets a clean console — while a SECOND concurrent summon must not wipe the
+    // already live). This preserves single-summon behavior â€” a fresh session
+    // gets a clean console â€” while a SECOND concurrent summon must not wipe the
     // logs of a bot that's already running.
     if (status.kind === 'connecting') {
       const others = useDataStore.getState().summons;
@@ -215,12 +215,12 @@ function wireIpc(): () => void {
     }
     // When a session ends (idle), pull the character's freshly-written
     // last_launched / playtime_ms. Main defers emitting 'idle' until the
-    // exit-time playtime write lands, so this reads the updated totals — and
+    // exit-time playtime write lands, so this reads the updated totals â€” and
     // every status now carries characterId, so no separate tracking is needed.
     if (status.kind === 'idle' && status.characterId) {
       void useDataStore.getState().refreshCharacter(status.characterId);
     }
-    // Error → modal routing, keyed by (game, errorClass): the Minecraft table
+    // Error â†’ modal routing, keyed by (game, errorClass): the Minecraft table
     // (unsupported version 260709, LAN not open 260720, modded host 260806)
     // is unchanged; the game-neutral GAME_* classes open the generic popup;
     // a mid-session death with no dedicated surface opens the crash popup
@@ -233,10 +233,10 @@ function wireIpc(): () => void {
   });
   // Seed the summons map once the listener is attached (260703). Status pushes
   // fire only on TRANSITIONS, so a subscriber attaching after a session went
-  // 'online' — full reload, dev HMR re-wire, late mount — would otherwise never
+  // 'online' â€” full reload, dev HMR re-wire, late mount â€” would otherwise never
   // learn it is live (no floating widget, profile stuck on "Play together").
   // Replace the map wholesale: the snapshot is authoritative, so this also
-  // clears stale entries whose terminal 'idle' push was missed. Optional-call —
+  // clears stale entries whose terminal 'idle' push was missed. Optional-call â€”
   // a not-yet-reloaded preload without getBotStatuses just skips the seed.
   void sei
     .getBotStatuses?.()
@@ -255,7 +255,7 @@ function wireIpc(): () => void {
   // useUiStore so the Settings auto-render toggle (15-05) gates its disabled
   // state on a real signal. The bot emits this on summon-ready and on each
   // backend switch; subscribed here alongside the other store-level bot pushes
-  // (one subscription for the lifetime of the renderer — App.tsx calls
+  // (one subscription for the lifetime of the renderer â€” App.tsx calls
   // subscribeIpc once). Fail-closed default (false) lives in useUiStore.
   const offVisionCapability = sei.onVisionCapability((cap) => {
     useUiStore.getState().setVisionCapable(cap.visionCapable === true);
@@ -281,7 +281,7 @@ function wireIpc(): () => void {
     .catch(() => {
       /* stays 'unknown'; the next push corrects it */
     });
-  // Current-action pushes (Party redesign §2). Optional-call: a not-yet-
+  // Current-action pushes (Party redesign Â§2). Optional-call: a not-yet-
   // reloaded preload without onBotAction just skips the feature.
   const offAction =
     sei.onBotAction?.((push) => useDataStore.getState().setAction(push)) ?? (() => {});
@@ -318,20 +318,24 @@ export function subscribeIpc(): () => void {
 }
 
 // Self-subscribe at module scope (260703). App.tsx's mount effect used to be
-// the only subscriber — but when Vite HMR re-executes THIS module (editing this
+// the only subscriber â€” but when Vite HMR re-executes THIS module (editing this
 // file, or a store it imports, while the app runs), `create()` builds a fresh
 // store that every re-imported component reads, while App's old effect keeps
 // feeding the ORPHANED previous instance. Result: bot:status/lan pushes landed
-// in a dead store — a chat-launched session showed no popup and the profile
+// in a dead store â€” a chat-launched session showed no popup and the profile
 // stayed on "Play together". Wiring here runs on every (re)execution, so the
 // instance components read is always the instance the pushes feed (and the
 // snapshot seeds above backfill anything missed in between). App.tsx's
 // subscribeIpc() call remains as the production-path subscription; it swaps
 // this wiring rather than duplicating it. Guarded: under vitest/jsdom the
 // preload bridge is absent or a partial stub, and importing this module must
-// not throw — App.tsx wires it on mount in that world.
+// not throw â€” App.tsx wires it on mount in that world.
 try {
   if (typeof window !== 'undefined' && window.sei) subscribeIpc();
 } catch {
-  /* partial bridge (tests) — App.tsx's mount call owns the wiring there */
+  /* partial bridge (tests) â€” App.tsx's mount call owns the wiring there */
 }
+
+
+
+

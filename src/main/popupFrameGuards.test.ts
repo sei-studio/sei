@@ -1,4 +1,4 @@
-/**
+﻿/**
  * popupFrameGuards (261027): the main-window rules that keep the startup
  * popup frame on sei.gg/popup/ and send every other link to the default
  * browser. Electron is mocked; the handlers are driven the way Chromium
@@ -347,3 +347,7 @@ describe('load check', () => {
     expect(await guards.popupFrameLoadedOk(0)).toBe(true);
   });
 });
+
+
+
+

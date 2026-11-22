@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The safe-mode buttons (runSafeModeAction) and the actions behind them:
  * Reset settings covers every profile on the device and keeps identity,
  * Open logs creates the folder first, Try normal start relaunches with the
@@ -166,3 +166,7 @@ describe('Open logs folder', () => {
     expect(await openLogsFolder(async () => { throw new Error('x'); })).toBe(false);
   });
 });
+
+
+
+

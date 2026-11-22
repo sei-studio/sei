@@ -1,7 +1,7 @@
-// src/behaviors/activateBlock.js — activate a world block: door / gate /
+﻿// src/behaviors/activateBlock.js â€” activate a world block: door / gate /
 // trapdoor / button / lever (MCRAFT-05, D-09).
 //
-// Clones activate.js's handler shell (signal guard → timeout race → reason()
+// Clones activate.js's handler shell (signal guard â†’ timeout race â†’ reason()
 // formatting) but swaps the core call to bot.activateBlock(target). This uses
 // the block-interact packet, NOT use_item, so it is unaffected by mineflayer
 // #3742 (the broken bot.activateItem on MC 1.21+). The target is resolved via
@@ -21,7 +21,7 @@ export async function activateBlockAction(args, bot, config) {
 
   const dist = bot.entity?.position?.distanceTo?.(target.position)
   if (typeof dist === 'number' && dist > REACH) {
-    return `target out of reach (${dist.toFixed(1)}m, need ≤${REACH})`
+    return `target out of reach (${dist.toFixed(1)}m, need â‰¤${REACH})`
   }
 
   const targetName = target.name ?? 'block'
@@ -44,3 +44,7 @@ export async function activateBlockAction(args, bot, config) {
 
   return Promise.race([op, tmo, abrt])
 }
+
+
+
+

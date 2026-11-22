@@ -1,5 +1,5 @@
-/**
- * Tests for plan 10-06 — jwtBridge: pushes Supabase access_token to bot
+﻿/**
+ * Tests for plan 10-06 â€” jwtBridge: pushes Supabase access_token to bot
  * supervisor on every relevant auth event; null on SIGNED_OUT.
  *
  * The bridge subscribes to onAuthStateChange and forwards session.access_token
@@ -142,3 +142,7 @@ describe('jwtBridge', () => {
     expect(sup.updateJwt).toHaveBeenLastCalledWith(null);
   });
 });
+
+
+
+

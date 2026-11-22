@@ -1,5 +1,5 @@
-/**
- * 260806 — modded-host classification.
+﻿/**
+ * 260806 â€” modded-host classification.
  *
  * A NeoForge 1.20.1 world kicked one user's summon five times in four minutes.
  * Every attempt was classified LAN_NOT_OPEN and opened the "press Esc, choose
@@ -30,7 +30,7 @@ import { WIZARD_MAX_MC } from '@shared/mcSetup';
 
 const NEOFORGE_KICK = 'This server has mods that require NeoForge to be installed on the client.';
 
-describe('classifyRendererError — modded hosts', () => {
+describe('classifyRendererError â€” modded hosts', () => {
   it('classifies the NeoForge kick, not LAN_NOT_OPEN', () => {
     expect(classifyRendererError(new Error(NEOFORGE_KICK)).class).toBe('MODDED_HOST_REJECTED');
   });
@@ -237,7 +237,7 @@ describe('ERROR_COPY', () => {
   // CLAUDE.md: no em dashes in any copy a user can read.
   it('contains no em dashes', () => {
     for (const [cls, copy] of Object.entries(ERROR_COPY)) {
-      expect(copy, `em dash in ${cls}`).not.toContain('—');
+      expect(copy, `em dash in ${cls}`).not.toContain('â€”');
     }
   });
 
@@ -282,7 +282,7 @@ describe('ERROR_COPY', () => {
     expect(copy).toContain(`to ${supportedVersions[supportedVersions.length - 1]}`);
     expect(copy).toContain('Open the Sei profile');
     expect(copy).not.toContain('New installation');
-    expect(copy).not.toContain('—');
+    expect(copy).not.toContain('â€”');
     for (const cls of ALL_ERROR_CLASSES) {
       expect(errorCopyText(cls), `unfilled placeholder in ${cls}`).not.toMatch(/\{(oldest|newest|recommended|versions)\}/);
     }
@@ -309,3 +309,7 @@ describe('ERROR_COPY', () => {
     expect(copy).not.toContain(`runs ${newest}`);
   });
 });
+
+
+
+

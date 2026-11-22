@@ -1,10 +1,10 @@
-/**
- * PFC steer decision tests (260706) — the "who speaks when" core of the multi-
+﻿/**
+ * PFC steer decision tests (260706) â€” the "who speaks when" core of the multi-
  * companion voice director. Locks in: the companion chain always hands the
  * floor to a peer under the runaway cap (banter ends on a natural lull, not a
  * dice roll), name-addressed lines force that peer, and Whisper junk never
  * becomes a turn. Randomness is injected so the varied picks are deterministic
- * here. (pickResponder was retired 260708 — player utterances broadcast to
+ * here. (pickResponder was retired 260708 â€” player utterances broadcast to
  * every participant now, see useVoiceStore.dispatchUserTurn.)
  */
 import { describe, it, expect } from 'vitest';
@@ -55,7 +55,7 @@ describe('decideReaction', () => {
   });
 
   it('forces a name-addressed peer to react', () => {
-    // Sui just said "yo marv, explain that" — even a roll that would normally
+    // Sui just said "yo marv, explain that" â€” even a roll that would normally
     // stop the chain (0.99 >= 0.6) must still hand the floor to Marv.
     const d = decideReaction({
       speakerId: 'sui',
@@ -83,7 +83,7 @@ describe('decideReaction', () => {
   });
 
   it('never forces the speaker to answer themselves via their own name', () => {
-    // Sui says her own name — she is filtered out of `others`, so no self-turn;
+    // Sui says her own name â€” she is filtered out of `others`, so no self-turn;
     // the floor still passes to the other companion (Marv), never back to Sui.
     const d = decideReaction({
       speakerId: 'sui',
@@ -120,10 +120,10 @@ describe('decideReaction', () => {
 
 describe('isJunkTranscript', () => {
   it('keeps spoken numbers, years, times and dates formatted as digits', () => {
-    for (const text of ['2026', '2026.', '18:33', '03/11/2026', '0', '1,5', '２０２６']) {
+    for (const text of ['2026', '2026.', '18:33', '03/11/2026', '0', '1,5', 'ï¼’ï¼ï¼’ï¼–']) {
       expect(isJunkTranscript(text), text).toBe(false);
     }
-    for (const text of ['€', '!?', '---']) expect(isJunkTranscript(text), text).toBe(true);
+    for (const text of ['â‚¬', '!?', '---']) expect(isJunkTranscript(text), text).toBe(true);
   });
   it('drops repeated-letter hallucinations', () => {
     expect(isJunkTranscript('hhhhh')).toBe(true);
@@ -151,13 +151,17 @@ describe('isJunkTranscript', () => {
   });
 
   it('keeps non-Latin speech (260725: language auto-switch means CJK utterances are real turns)', () => {
-    for (const t of ['我今天想讲中文。', '日本語いいですか？', '한국어로 말해도 돼요?', 'Ça va?']) {
+    for (const t of ['æˆ‘ä»Šå¤©æƒ³è®²ä¸­æ–‡ã€‚', 'æ—¥æœ¬èªžã„ã„ã§ã™ã‹ï¼Ÿ', 'í•œêµ­ì–´ë¡œ ë§í•´ë„ ë¼ìš”?', 'Ã‡a va?']) {
       expect(isJunkTranscript(t)).toBe(false);
     }
   });
 
   it('drops the Japanese Whisper silence hallucination', () => {
-    expect(isJunkTranscript('ご視聴ありがとうございました')).toBe(true);
-    expect(isJunkTranscript('ご視聴ありがとうございました。')).toBe(true);
+    expect(isJunkTranscript('ã”è¦–è´ã‚ã‚ŠãŒã¨ã†ã”ã–ã„ã¾ã—ãŸ')).toBe(true);
+    expect(isJunkTranscript('ã”è¦–è´ã‚ã‚ŠãŒã¨ã†ã”ã–ã„ã¾ã—ãŸã€‚')).toBe(true);
   });
 });
+
+
+
+

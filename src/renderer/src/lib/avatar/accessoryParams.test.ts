@@ -1,10 +1,10 @@
-/** accessoryParams (260806) — exp3 parsing + absolute target math. */
+﻿/** accessoryParams (260806) â€” exp3 parsing + absolute target math. */
 import { describe, it, expect } from 'vitest';
 import { parseExpressionParams, computeAccessoryTargets } from './accessoryParams';
 
 describe('parseExpressionParams', () => {
   it('parses the real hat-toggle shape (Blend Add)', () => {
-    // The Snow Bear Girl "1 帽" expression: hat off, crown on.
+    // The Snow Bear Girl "1 å¸½" expression: hat off, crown on.
     const exp = {
       Type: 'Live2D Expression',
       Parameters: [
@@ -57,8 +57,8 @@ describe('computeAccessoryTargets', () => {
       ],
       defaults,
     );
-    expect(targets.get('Key1')).toBe(0); // hat: default 1, -1 → hidden
-    expect(targets.get('Key22')).toBe(1); // crown: default 0, +1 → shown
+    expect(targets.get('Key1')).toBe(0); // hat: default 1, -1 â†’ hidden
+    expect(targets.get('Key22')).toBe(1); // crown: default 0, +1 â†’ shown
   });
 
   it('composes multiple accessory sets over the same parameter in order', () => {
@@ -78,3 +78,7 @@ describe('computeAccessoryTargets', () => {
     expect(computeAccessoryTargets([], defaults).size).toBe(0);
   });
 });
+
+
+
+

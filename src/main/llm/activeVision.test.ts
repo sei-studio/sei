@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261010: activeLlmVision (the llm:capability push + the Draw!/backseat start
  * gates) asks a local Ollama for its model's real capabilities instead of
  * trusting the name, which locked qwen2.5vl/gemma3 users out of every image
@@ -48,3 +48,7 @@ describe('activeLlmVision on Ollama', () => {
     expect(await activeLlmVision()).toBe('unknown');
   });
 });
+
+
+
+

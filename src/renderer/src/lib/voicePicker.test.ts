@@ -1,5 +1,5 @@
-/**
- * Voice-picker pure logic (260720) — grouping, selection, legacy detection.
+﻿/**
+ * Voice-picker pure logic (260720) â€” grouping, selection, legacy detection.
  */
 import { describe, it, expect } from 'vitest';
 import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
@@ -149,10 +149,10 @@ describe('own ElevenLabs voices', () => {
 
   it('ownVoicePickFor never marks a Sei pool voice, even when the own list holds a copy (261024)', () => {
     const josh = 'NXaTw4ifg0LAguvKuIwZ'; // pool Josh
-    const list = [own(josh, { name: 'Sei — Josh', gender: 'male', category: 'professional' }), own('Own1')];
+    const list = [own(josh, { name: 'Sei â€” Josh', gender: 'male', category: 'professional' }), own('Own1')];
     expect(ownVoicePickFor(josh, list)).toBeNull();
     expect(ownVoicePickFor('EXAVITQu4vr4xnSDxMaL', [own('EXAVITQu4vr4xnSDxMaL')])).toBeNull(); // legacy Sarah
-    expect(applyVoicePick({ voiceId: josh, voiceOwn: { name: 'Sei — Josh' } }, josh, ownVoicePickFor(josh, list))).toEqual({
+    expect(applyVoicePick({ voiceId: josh, voiceOwn: { name: 'Sei â€” Josh' } }, josh, ownVoicePickFor(josh, list))).toEqual({
       voiceId: josh,
     });
   });
@@ -169,7 +169,7 @@ describe('own ElevenLabs voices', () => {
     });
   });
 
-  it('category labels are fixed English strings, unknown → generic', () => {
+  it('category labels are fixed English strings, unknown â†’ generic', () => {
     expect(ownVoiceCategoryLabel('cloned')).toBe('Cloned voice');
     expect(ownVoiceCategoryLabel('professional')).toBe('Professional clone');
     expect(ownVoiceCategoryLabel('generated')).toBe('Designed voice');
@@ -280,3 +280,7 @@ describe('Voice Library paste card (261119)', () => {
     expect(libraryVoiceDetail({ gender: null, age: null, accent: null, description: null })).toBe('');
   });
 });
+
+
+
+

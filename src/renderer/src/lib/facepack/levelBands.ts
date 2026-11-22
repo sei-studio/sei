@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Level + two-band analysis of a playing clip (261028, facepack mouth
  * picker). Pure over the analyser's arrays so it is testable and shared by
  * the TTS level tap (avatarLevelTap) and the dev preview's talk test.
@@ -42,3 +42,7 @@ export function sampleAnalyser(
   const { low, high } = bandsFromSpectrum(buf.freq, analyser.context.sampleRate, analyser.fftSize);
   return { level, low, high };
 }
+
+
+
+

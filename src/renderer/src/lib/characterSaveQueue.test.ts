@@ -1,4 +1,4 @@
-/**
+﻿/**
  * characterSaveQueue (261120): the profile editors' writes for one companion
  * run one at a time and each applies only its own fields onto the row as
  * stored at that moment. Driven against an in-memory chars store whose IPC
@@ -151,3 +151,7 @@ describe('forgetEditDrafts', () => {
     expect(editReleaseCount('c2')).toBe(0);
   });
 });
+
+
+
+

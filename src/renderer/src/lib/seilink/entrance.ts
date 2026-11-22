@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her entrance on the desktop (261119, product call (261119)): the first-link
  * intro's arrival, played by the wallpaper page on every move-in
  * (components/seilink/host/HostArrival.tsx; when it plays:
@@ -50,3 +50,7 @@ export function entranceKeyframes(height: number, reduced: boolean, steps = 28):
 export function entranceMs(reduced: boolean): number {
   return reduced ? ENTRANCE_REDUCED_MS : ENTRANCE_MS;
 }
+
+
+
+

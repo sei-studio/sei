@@ -1,4 +1,4 @@
-// src/main/lib/externalUrlValidator.test.ts
+﻿// src/main/lib/externalUrlValidator.test.ts
 //
 // Unit tests for the shared shell.openExternal gate.
 //
@@ -11,8 +11,8 @@
 import { describe, it, expect } from 'vitest';
 import { assertSafeExternalUrl } from './externalUrlValidator';
 
-describe('assertSafeExternalUrl — shell.openExternal protocol gate', () => {
-  // ─── Allow-path: any https host ───────────────────────────────────────
+describe('assertSafeExternalUrl â€” shell.openExternal protocol gate', () => {
+  // â”€â”€â”€ Allow-path: any https host â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('allows the hosts the app itself links to', () => {
     expect(() => assertSafeExternalUrl('https://sei.gg/legal')).not.toThrow();
     expect(() => assertSafeExternalUrl('https://www.sei.gg/')).not.toThrow();
@@ -28,13 +28,13 @@ describe('assertSafeExternalUrl — shell.openExternal protocol gate', () => {
     expect(() => assertSafeExternalUrl('https://www.sei.gg.attacker.tld/')).not.toThrow();
   });
 
-  // ─── Allow-path: mailto ───────────────────────────────────────────────
+  // â”€â”€â”€ Allow-path: mailto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('allows any mailto address', () => {
     expect(() => assertSafeExternalUrl('mailto:dmca@sei.gg')).not.toThrow();
     expect(() => assertSafeExternalUrl('mailto:someone@example.com')).not.toThrow();
   });
 
-  // ─── Reject-path: protocol gate (the load-bearing half) ───────────────
+  // â”€â”€â”€ Reject-path: protocol gate (the load-bearing half) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('rejects http (not https)', () => {
     expect(() => assertSafeExternalUrl('http://sei.gg/')).toThrow(/rejected/);
   });
@@ -58,8 +58,12 @@ describe('assertSafeExternalUrl — shell.openExternal protocol gate', () => {
     expect(() => assertSafeExternalUrl('search-ms:query=x')).toThrow(/rejected/);
   });
 
-  // ─── Reject-path: malformed URL ───────────────────────────────────────
+  // â”€â”€â”€ Reject-path: malformed URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   it('rejects a malformed URL string', () => {
     expect(() => assertSafeExternalUrl('not a url')).toThrow(/malformed|rejected/);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 const m = vi.hoisted(() => ({
   config: { tts_engine: 'local', local_tts_model: 'kokoro', chat_language: 'en' } as Record<string, unknown>,
   backend: 'local', gender: 'female', own: false,
@@ -70,7 +70,7 @@ describe('Kokoro TTS routing', () => {
     await voiceTts({ characterId: 'c1', text: 'Bonjour Marco.' });
     expect(m.local).toHaveBeenLastCalledWith(expect.any(String), 'en-m');
     m.config.chat_language = 'zh';
-    await voiceTts({ characterId: 'c1', text: '你好，朋友。' });
+    await voiceTts({ characterId: 'c1', text: 'ä½ å¥½ï¼Œæœ‹å‹ã€‚' });
     expect(m.local).toHaveBeenLastCalledWith(expect.any(String), 'zh-m');
     expect(m.synthesize).not.toHaveBeenCalled();
     expect(m.release).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe('local voice preview (Fast and Kokoro)', () => {
     expect(m.local).toHaveBeenLastCalledWith('Hi, this is what I sound like.', 'en-f');
     m.config.chat_language = 'zh';
     await voicePreviewTts({ characterId: 'c1' });
-    expect(m.local).toHaveBeenLastCalledWith(expect.stringContaining('这就是我的声音'), 'zh-f');
+    expect(m.local).toHaveBeenLastCalledWith(expect.stringContaining('è¿™å°±æ˜¯æˆ‘çš„å£°éŸ³'), 'zh-f');
     expect(m.synthesize).not.toHaveBeenCalled();
   });
 
@@ -178,3 +178,7 @@ describe('local voice preview (Fast and Kokoro)', () => {
     expect(m.local).toHaveBeenLastCalledWith('Hi, this is what I sound like.', 'en-f');
   });
 });
+
+
+
+

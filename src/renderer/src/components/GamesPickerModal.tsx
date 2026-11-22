@@ -1,5 +1,5 @@
-/**
- * GamesPickerModal — "Play together" tiled game grid (Phase 18/19).
+﻿/**
+ * GamesPickerModal â€” "Play together" tiled game grid (Phase 18/19).
  *
  * Opened from the chat header's Games button, the CharacterCard "Play" CTA, and
  * the CharacterPage "Play together" deploy button. Clicking an available game
@@ -11,7 +11,7 @@
  * the feedback form (same submit path as the Playtime screen's form).
  * Scrim-click / ESC closes (ESC hides the popup first when one is showing).
  *
- * Source: docs/design/app-chat-and-memory.md §5 (GamesPickerModal) + R7.
+ * Source: docs/design/app-chat-and-memory.md Â§5 (GamesPickerModal) + R7.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -31,7 +31,7 @@ export interface GamesPickerModalProps {
   characterId: string;
 }
 
-/** Hover popup metrics — width fixed for placement math; height is estimated
+/** Hover popup metrics â€” width fixed for placement math; height is estimated
  * generously for the vertical clamp (the card is shorter in practice). */
 const POPUP_W = 250;
 const POPUP_EST_H = 260;
@@ -65,7 +65,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
   const lockReason = (g: GameDef): string =>
     visionGateReason(t, isBackseatGameId(g.id) ? 'backseat' : 'draw', llmModel);
 
-  // ── Hover-only info popup ─────────────────────────────────────────────
+  // â”€â”€ Hover-only info popup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [popup, setPopup] = useState<InfoPopup | null>(null);
   const popupRef = useRef<InfoPopup | null>(null);
   popupRef.current = popup;
@@ -282,3 +282,7 @@ export function GamesPickerModal({ characterId }: GamesPickerModalProps): React.
     </div>
   );
 }
+
+
+
+

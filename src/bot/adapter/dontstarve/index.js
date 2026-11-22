@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/index.js — the Don't Starve Together Adapter
+﻿// src/bot/adapter/dontstarve/index.js â€” the Don't Starve Together Adapter
 // (game-adapters M2, 260908). Satisfies REQUIRED_ADAPTER_MEMBERS
 // (src/bot/brain/index.js) and declares the contract v2 members
 // (src/bot/brain/types.js) so the brain stays game-agnostic: the body is a
@@ -58,7 +58,7 @@ export function createDontStarveAdapter({ link, config, respawning }) {
   return {
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
-    // ─── Action surface ───────────────────────────────────────────────
+    // â”€â”€â”€ Action surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
     getActionDescription: (name) => describeAction(name, hasCaps()) || registry.description(name),
@@ -69,7 +69,7 @@ export function createDontStarveAdapter({ link, config, respawning }) {
       return result
     },
 
-    // ─── Perception + prompt blocks ───────────────────────────────────
+    // â”€â”€â”€ Perception + prompt blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     createSnapshotComposer: () => createSnapshotComposer({
       state: link.state,
       handles: link.handles,
@@ -85,7 +85,7 @@ export function createDontStarveAdapter({ link, config, respawning }) {
     /** The DST spine (observers/progression.js) for the heartbeat frontier. */
     getProgression: () => getProgression(link.state, latches),
 
-    // ─── Session lifecycle ────────────────────────────────────────────
+    // â”€â”€â”€ Session lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     attach(handlers) {
       if (_dispose) { try { _dispose() } catch {} }
       const unwire = wireLinkEvents(link.events, handlers, {
@@ -140,19 +140,19 @@ export function createDontStarveAdapter({ link, config, respawning }) {
     /** 260725 play/pause: freeze the body (the mod holds its BT). */
     setWorldPaused: (paused) => { link.setPaused(paused === true) },
 
-    // ─── Effects ──────────────────────────────────────────────────────
+    // â”€â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     chat: (text) => { link.say(text) },
     closeAnySessions: async () => {},
 
-    // ─── Capabilities ─────────────────────────────────────────────────
+    // â”€â”€â”€ Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     supportsAutoEat: true,
     supportsFollow: true,
 
-    // ─── Identity ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     get botUsername() { return link.botName },
     getKnownPlayers: players,
 
-    // ─── Contract v2 ──────────────────────────────────────────────────
+    // â”€â”€â”€ Contract v2 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     gameName: "Don't Starve Together",
     wikiHosts: ['dontstarve.wiki.gg'],
     chatMaxChars: DST_CHAT_MAX_CHARS,
@@ -173,3 +173,7 @@ export function createDontStarveAdapter({ link, config, respawning }) {
     classifyConnectError,
   }
 }
+
+
+
+

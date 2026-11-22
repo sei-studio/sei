@@ -1,4 +1,4 @@
-// 261030 (quality pass 31): fight events say so when she owns no weapon.
+﻿// 261030 (quality pass 31): fight events say so when she owns no weapon.
 //
 // combat_night eval: a first death dropped her sword, and every hit, defend
 // and threat turn after it still told her to attackEntity the mob. She fought
@@ -89,7 +89,7 @@ describe('unarmed event text', () => {
     expect(bare).toBe(attackedMobUnarmed().replace('{label}', 'drowned'))
     expect(bare).toMatch(/no weapon/)
     expect(bare).not.toMatch(/swing back on their own/)
-    expect(attackedMobUnarmed().slice(attackedMobUnarmed().indexOf(' Then:'))).not.toMatch(/—/)
+    expect(attackedMobUnarmed().slice(attackedMobUnarmed().indexOf(' Then:'))).not.toMatch(/â€”/)
   })
 
   it('a threat on the player: unarmed says do not attackEntity it', () => {
@@ -104,7 +104,7 @@ describe('unarmed event text', () => {
     expect(bare).not.toMatch(/place a block/)
     expect(bare).toMatch(/stay with Alex and lead them away/)
     expect(bare).not.toMatch(/\{owner\}/)
-    expect(bare).not.toMatch(/—/)
+    expect(bare).not.toMatch(/â€”/)
   })
 
   it('a held defend turn: unarmed swaps the attack advice; her own running attack keeps its wording', () => {
@@ -208,3 +208,7 @@ describe('staleAttackerText covers her own hits (hostile_mob)', () => {
     expect(staleAttackerText(bot, 'sei:attacked', data)).toMatch(/^A zombie went for you a moment ago, and it has died since then/)
   })
 })
+
+
+
+

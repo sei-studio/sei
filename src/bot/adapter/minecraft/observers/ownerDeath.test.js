@@ -1,4 +1,4 @@
-// 261110 (quality pass 50): the owner's death on the snapshot owner line.
+﻿// 261110 (quality pass 50): the owner's death on the snapshot owner line.
 import { describe, it, expect } from 'vitest'
 import { ownerStateClause, ownerHealthClause, deathSpotFromYou, OWNER_DEATH_NOTE_MS } from './snapshot.js'
 import { recordOwnerDeath } from '../behaviors/chat.js'
@@ -84,3 +84,7 @@ describe('recordOwnerDeath', () => {
     expect(ownerStateClause(20, death, { id: 7, equipment: [null, null, null, null, null, null] }, null, T0 + 10_000)).toContain('empty inventory')
   })
 })
+
+
+
+

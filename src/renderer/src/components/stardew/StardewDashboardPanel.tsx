@@ -1,5 +1,5 @@
-/**
- * StardewDashboardPanel — the live Stardew Valley view, in the game's own
+﻿/**
+ * StardewDashboardPanel â€” the live Stardew Valley view, in the game's own
  * register (redesigned 260909; the first cut borrowed the Minecraft panel's
  * vanilla-gray windows). A DELIBERATE, CONTAINED EXCEPTION to the design
  * tokens, the same contract as the Minecraft panel: the game's wooden menu
@@ -63,7 +63,7 @@ function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/* ── A wooden menu frame around a cream face. ── */
+/* â”€â”€ A wooden menu frame around a cream face. â”€â”€ */
 function Frame({ className, label, children }: { className?: string; label?: string; children: React.ReactNode }): React.ReactElement {
   return (
     <section className={className ? `${styles.frame} ${className}` : styles.frame} aria-label={label}>
@@ -72,7 +72,7 @@ function Frame({ className, label, children }: { className?: string; label?: str
   );
 }
 
-/* ── Icons, drawn as small crisp SVGs (no game textures in the repo). ── */
+/* â”€â”€ Icons, drawn as small crisp SVGs (no game textures in the repo). â”€â”€ */
 
 function WeatherIcon({ weather }: { weather: StardewWeather }): React.ReactElement {
   if (weather === 'rain' || weather === 'storm') {
@@ -164,7 +164,7 @@ function CoinIcon(): React.ReactElement {
   );
 }
 
-/* ── The day dial: a semicircle the sun (then the moon) crosses. ── */
+/* â”€â”€ The day dial: a semicircle the sun (then the moon) crosses. â”€â”€ */
 function DayDial({ time }: { time: number }): React.ReactElement {
   const p = dayProgress(time);
   const a = Math.PI * (1 - p);
@@ -182,7 +182,7 @@ function DayDial({ time }: { time: number }): React.ReactElement {
   );
 }
 
-/* ── A vertical bar in a wooden frame. ── */
+/* â”€â”€ A vertical bar in a wooden frame. â”€â”€ */
 function VBar({ kind, label, value, max, caption }: { kind: 'energy' | 'health'; label: string; value: number; max: number; caption: string }): React.ReactElement {
   const p = pct(value, max);
   const tone = barTone(p);
@@ -380,3 +380,7 @@ export function StardewDashboardPanel({ characterId }: StardewDashboardPanelProp
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Transcript to model messages (261024), PURE: moved out of chatService.ts so
  * the offline call-cache probe (scripts/call-cache-probe.ts) builds the exact
  * messages array a call turn sends. Nothing here may import electron-bound
@@ -48,7 +48,7 @@ export function voiceWindowStart(history: readonly ChatMessage[], base: number, 
 
 /**
  * Map the persisted transcript into an alternating Anthropic messages array.
- * Exported for testing. Every emitted row — play rows included — flows through
+ * Exported for testing. Every emitted row â€” play rows included â€” flows through
  * the ONE shared same-role merge at the bottom: a play row is just a `user` row
  * with bracketed content, so two adjacent play rows (or a user message followed
  * by a play row) fold into a single user turn instead of two adjacent `user`
@@ -99,17 +99,17 @@ export function toMessages(
     if (m.role === 'system' && m.event?.kind === 'play') {
       // A finished play session is shared history, not chatter: surface it as a
       // bracketed system fact so the companion knows you actually played together
-      // (the game→chat memory gap — otherwise chat only sees MEMORY.md, which may
+      // (the gameâ†’chat memory gap â€” otherwise chat only sees MEMORY.md, which may
       // never have captured the session). Framed so the model doesn't read it as
       // the player speaking or as a still-hypothetical plan.
       role = 'user';
-      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world — treat it as something you actually did, not a plan.]`;
+      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} You were there together in the world â€” treat it as something you actually did, not a plan.]`;
     } else if (m.role === 'system' && m.event?.kind === 'call') {
       // A finished voice call is shared history the same way a play session is
       // (260705): without it, a later turn only sees the transcript lines and
       // may not realize they were spoken on a real call.
       role = 'user';
-      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} That was a real voice call you were both on — treat it as a conversation you actually had.]`;
+      content = `[${formatChatTimestamp(m.ts)}] [Shared history: ${m.text} That was a real voice call you were both on â€” treat it as a conversation you actually had.]`;
     } else if (m.role === 'system') {
       // Other system rows (e.g. "joined your world") are UI-only; skip them so
       // they don't pollute the model's turn-taking.
@@ -135,7 +135,7 @@ export function toMessages(
         if (!(prev && prev.role === 'user' && appendRow(prev, note))) out.push({ role: 'user', content: note });
       }
       // 260703: stamp USER messages with their send time so the model can feel
-      // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped —
+      // gaps (overnight silence vs rapid-fire). Assistant turns stay unstamped â€”
       // stamping the model's own prior output teaches it to emit timestamps.
       if (role === 'user') content = `[${formatChatTimestamp(m.ts)}] ${content}`;
     }
@@ -149,7 +149,7 @@ export function toMessages(
   // Anthropic requires the first message to be from the user. Never satisfy
   // that by DROPPING a leading assistant turn: after a first-meeting greeting
   // the transcript is [companion..., user reply], so the shifted-off assistant
-  // turn was the ENTIRE conversation — the model got the player's "the latter
+  // turn was the ENTIRE conversation â€” the model got the player's "the latter
   // :)" with no antecedent and asked what it was replying to (260721 live
   // capture). Seat a neutral marker user turn instead; it makes no claim about
   // who spoke first or whether this is the conversation's absolute start, so
@@ -160,3 +160,7 @@ export function toMessages(
   }
   return out;
 }
+
+
+
+

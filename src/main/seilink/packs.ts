@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room art packs (261104, host pass). See src/shared/seilinkPack.ts
  * for the layout and the `sei-room://` URL shape.
  *
@@ -54,7 +54,7 @@ export interface LoadedPack extends SeilinkPack {
   sharedRoots?: Map<string, string>;
 }
 
-// ── Roots ───────────────────────────────────────────────────────────────────
+// â”€â”€ Roots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let rootsOverride: Array<{ dir: string; source: SeilinkPackSource }> | null = null;
 
@@ -121,7 +121,7 @@ export function __setPackRootsForTest(roots: Array<{ dir: string; source: Seilin
   cache.clear();
 }
 
-// ── Containment ─────────────────────────────────────────────────────────────
+// â”€â”€ Containment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Realpath of `rel` under `realRoot` (itself a realpath), or null when it
@@ -178,7 +178,7 @@ async function sharedFile(packRoot: string, rest: string): Promise<{ file: strin
   return null;
 }
 
-// ── Loading ─────────────────────────────────────────────────────────────────
+// â”€â”€ Loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const cache = new Map<string, { mtimeMs: number; manifestPath: string; pack: LoadedPack }>();
 
@@ -284,7 +284,7 @@ export async function downloadPack(id: RoomPresetId): Promise<never> {
   throw new Error(`SEILINK_DOWNLOAD_UNAVAILABLE: pack downloads are not built yet (${id})`);
 }
 
-// ── Protocol ────────────────────────────────────────────────────────────────
+// â”€â”€ Protocol â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Privileges for registerSchemesAsPrivileged (index.ts registers every scheme in ONE call). */
 export const SEILINK_SCHEME_PRIVILEGES = {
@@ -341,3 +341,7 @@ export function registerSeilinkProtocol(): void {
     }
   });
 }
+
+
+
+

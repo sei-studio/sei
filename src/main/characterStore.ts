@@ -1,13 +1,13 @@
-/**
+﻿/**
  * Per-character JSON CRUD: `<userData>/characters/<id>.json` + index.json manifest.
  *
  * Sources:
- *   - PATTERNS §src/main/characterStore.ts
+ *   - PATTERNS Â§src/main/characterStore.ts
  *   - CONTEXT D-09 (file layout), D-11 (timestamps)
  *   - Reuse: existing brain atomicWrite + withFileLock helpers
  *
  * 260516-0yw:
- *  - `saveCharacter` is now the "post-expansion" save — it persists the
+ *  - `saveCharacter` is now the "post-expansion" save â€” it persists the
  *    Character as-is (including persona.expanded as provided).
  *  - `expandAndSaveCharacter` is the IPC entry point: it loads the prior
  *    character (if any) for voice-continuity reference, calls
@@ -49,7 +49,7 @@ async function readJson<T>(p: string): Promise<T | null> {
 
 async function loadIndex(): Promise<CharacterIndex> {
   // Any unreadable index (bad JSON as well as bad shape) degrades to empty
-  // rather than throwing — listCharacters' disk-reconcile pass then rebuilds
+  // rather than throwing â€” listCharacters' disk-reconcile pass then rebuilds
   // membership from the surviving <id>.json files, so a corrupt index is a
   // recoverable blip instead of a silently emptied library.
   let data: unknown;
@@ -112,8 +112,8 @@ export async function listCharacters(): Promise<Character[]> {
   // 260721 self-heal: an index entry can be lost while the character file
   // survives (loadIndex treats a corrupt index.json as empty, and the next
   // save rewrites it with only the saved id). Nothing else repairs
-  // membership — ensureLocallyCached's cache-hit path only re-appends via a
-  // save, which never fires while the cloud row is unchanged — so a dropped
+  // membership â€” ensureLocallyCached's cache-hit path only re-appends via a
+  // save, which never fires while the cloud row is unchanged â€” so a dropped
   // entry made the character permanently invisible to chars.list AND the
   // skin server (previews + in-game skin render as Steve). Rebuild
   // membership from disk: any parseable <id>.json in charactersDir that is
@@ -136,7 +136,7 @@ export async function listCharacters(): Promise<Character[]> {
           healed.push(id);
         }
       } catch {
-        // Unparseable stray (legacy shape, torn write) — leave it on disk,
+        // Unparseable stray (legacy shape, torn write) â€” leave it on disk,
         // don't index it.
       }
     }
@@ -151,7 +151,7 @@ export async function listCharacters(): Promise<Character[]> {
       logger.warn(`characters/index.json was missing ${healed.length} on-disk character(s); re-indexed: ${healed.join(', ')}`);
     }
   } catch {
-    // charactersDir missing (first run) — nothing to heal.
+    // charactersDir missing (first run) â€” nothing to heal.
   }
   return out;
 }
@@ -196,9 +196,9 @@ export async function saveCharacter(character: Character): Promise<void> {
   enqueueCloudMirror(character);
 }
 
-// Phase 11 D-18 — Local write completed; mirror to cloud via the sync queue.
+// Phase 11 D-18 â€” Local write completed; mirror to cloud via the sync queue.
 // Fire-and-forget: cloud failure does NOT block GUI. Defaults (D-22) never
-// upload — cloudCharacterClient throws CLOUD_SYNC_REFUSED_DEFAULT as a
+// upload â€” cloudCharacterClient throws CLOUD_SYNC_REFUSED_DEFAULT as a
 // belt-and-suspenders guard, but skipping the enqueue here avoids needless
 // queue churn for the sui/lyra/clawd bundle. (260705: extracted from
 // saveCharacter so patchCharacter mirrors identically.)
@@ -220,11 +220,11 @@ function enqueueCloudMirror(character: Character): void {
 }
 
 /**
- * Phase 11 plan 11-19 — internal non-mirroring local write.
+ * Phase 11 plan 11-19 â€” internal non-mirroring local write.
  *
  * Identical to saveCharacter EXCEPT it does NOT enqueue a cloud-mirror upsert.
  * Used by `src/main/cloud/cacheOnDemand.ts` when a cloud row is downloaded
- * onto the local cache for the first time — we do NOT want that cache hydration
+ * onto the local cache for the first time â€” we do NOT want that cache hydration
  * to re-upload the same data we just pulled, which would create needless queue
  * churn and (worse) could race a more-recent edit if the cloud row gets stale
  * between download and re-upload.
@@ -236,7 +236,7 @@ function enqueueCloudMirror(character: Character): void {
 export async function saveCharacterRaw(character: Character): Promise<void> {
   // owner field (ITEM 13, quick/260523-t8d) carried in if present; null for
   // local-only characters. Zod parse round-trips it through to disk via the
-  // CharacterSchema gate — no explicit copy needed here.
+  // CharacterSchema gate â€” no explicit copy needed here.
   const validated = CharacterSchema.parse(character);
   const target = paths.characterPath(validated.id);
   await mkdir(paths.charactersDir(), { recursive: true });
@@ -251,7 +251,7 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
   // explicit memory paths under this dir.
   await mkdir(paths.memoryDir(validated.id), { recursive: true });
 
-  // Maintain index ordering — append new ids; leave existing order alone.
+  // Maintain index ordering â€” append new ids; leave existing order alone.
   const idx = await loadIndex();
   if (!idx.order.includes(validated.id)) {
     idx.order.push(validated.id);
@@ -260,7 +260,7 @@ export async function saveCharacterRaw(character: Character): Promise<void> {
   noteCharacterSaved(validated.id);
 }
 
-// 260705: unlocked write core shared by saveCharacterRaw and patchCharacter —
+// 260705: unlocked write core shared by saveCharacterRaw and patchCharacter â€”
 // one serialization site (2-space indent + trailing newline) so the two paths
 // can never drift in on-disk format. Callers MUST already hold
 // withFileLock(characterPath(id)); withFileLock does not re-enter, so nesting
@@ -271,9 +271,9 @@ async function writeCharacterFileUnlocked(validated: Character): Promise<void> {
 
 /**
  * 260705: the standard way to update a subset of an existing character's
- * fields — prefer it over hand-rolled get→spread→save at any new call site.
+ * fields â€” prefer it over hand-rolled getâ†’spreadâ†’save at any new call site.
  * Invariant it encodes: NEVER spread a stale snapshot into
- * saveCharacter — a snapshot taken before an await (LLM round-trip, bot
+ * saveCharacter â€” a snapshot taken before an await (LLM round-trip, bot
  * session) silently reverts any edit the user saved in between, and the
  * revert then rides the cloud mirror. Here the file lock spans the WHOLE
  * read-modify-write (saveCharacter's lock covers only the write), so
@@ -283,7 +283,7 @@ async function writeCharacterFileUnlocked(validated: Character): Promise<void> {
  * (playtime accumulation) compose the same way as timestamp stamps.
  *
  * Returns the persisted Character, or null (no write) when the character is
- * missing — e.g. the patch raced a delete.
+ * missing â€” e.g. the patch raced a delete.
  */
 export async function patchCharacter(
   id: string,
@@ -292,7 +292,7 @@ export async function patchCharacter(
   const patched = await withFileLock(paths.characterPath(id), async () => {
     const current = await getCharacter(id);
     if (!current) return null;
-    // Same Zod gate as saveCharacterRaw — an updater cannot smuggle an
+    // Same Zod gate as saveCharacterRaw â€” an updater cannot smuggle an
     // invalid shape onto disk.
     const validated = CharacterSchema.parse(updater(current));
     await writeCharacterFileUnlocked(validated);
@@ -330,7 +330,7 @@ export async function expandAndSaveCharacter(
   const validated = CharacterSchema.parse(character);
 
   // Pull prior expanded for voice continuity, if any. `getCharacter` may
-  // throw on legacy-shape detection (which is fine — the calling renderer
+  // throw on legacy-shape detection (which is fine â€” the calling renderer
   // will surface the message). When the legacy throw happens, treat it as
   // "no prior" and let the new save overwrite the file.
   let priorExpanded: string | undefined;
@@ -353,7 +353,7 @@ export async function expandAndSaveCharacter(
     name: validated.name,
     source: validated.persona.source,
     priorExpanded,
-    // Streaming progress sink — forwarded by the IPC handler to the renderer's
+    // Streaming progress sink â€” forwarded by the IPC handler to the renderer's
     // progress bar. Undefined for callers that don't pass one (the call still
     // streams internally; it just emits no ticks).
     onProgress,
@@ -368,7 +368,7 @@ export async function expandAndSaveCharacter(
     if (!jwt) {
       throw new Error('persona expansion failed: signed-out user on cloud-proxy backend');
     }
-    // The proxy's /free/expand route is auth'd but does NOT consume credits —
+    // The proxy's /free/expand route is auth'd but does NOT consume credits â€”
     // character creation works for every signed-in user. Daily cap (20/user)
     // is enforced by the persona_daily bucket on the proxy side. The proxy
     // injects the server-owned EXPANSION_SYSTEM, so cloud users always get the
@@ -382,7 +382,7 @@ export async function expandAndSaveCharacter(
     const { localProviderKind } = await import('./llm');
     const localKind = await localProviderKind();
     if (localKind === 'anthropic') {
-      // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key —
+      // 260703 hard guard: local (BYOK) expansion uses ONLY the on-disk key â€”
       // never the Supabase JWT. A missing key fails with an actionable message
       // (the IPC handler surfaces it verbatim) instead of a raw ENOENT.
       try {
@@ -403,8 +403,8 @@ export async function expandAndSaveCharacter(
 
   // 260725: proactiveness is a runtime-only Minecraft mode now, never saved
   // per character. expandPersona still tolerates (and strips) a leading
-  // "PROACTIVENESS: <word>" line — the cloud proxy or a server prompt
-  // override may still emit one — but the parsed level is discarded here.
+  // "PROACTIVENESS: <word>" line â€” the cloud proxy or a server prompt
+  // override may still emit one â€” but the parsed level is discarded here.
   const { expanded } = await expandPersona(expansionInput);
 
   const merged: Character = {
@@ -423,7 +423,7 @@ export async function expandAndSaveCharacter(
 // persona_daily mirror counted /free CALLS (a unique-companion creation burns
 // up to 3: sheet + validation retry + expansion) and skipped BYOK entirely.
 // The product rule is "4 CHARACTERS a day, any backend" (MAX_CREATIONS_PER_DAY
-// — we only have 4 Home slots; more is create-delete churn). The proxy's
+// â€” we only have 4 Home slots; more is create-delete churn). The proxy's
 // persona_daily / image_daily / skin_daily buckets remain the server-side
 // abuse backstops for a tampered client.
 const CREATION_WINDOW_MS = 86_400_000; // rolling 24h
@@ -464,7 +464,7 @@ export async function checkCreateQuota(): Promise<{
       resetsAt: new Date(inWindow[0] + CREATION_WINDOW_MS).toISOString(),
     };
   } catch {
-    // Fail open — never block creation on a transient error.
+    // Fail open â€” never block creation on a transient error.
     return { blocked: false, resetsAt: null };
   }
 }
@@ -494,7 +494,7 @@ export async function recordCreation(): Promise<void> {
 /**
  * Reset a character's memory directory: wipe its contents and recreate it
  * empty. The character JSON's persona / portrait / skin / index entry are
- * untouched — only PLAYER.md / MEMORY.md (and any other files under the
+ * untouched â€” only PLAYER.md / MEMORY.md (and any other files under the
  * memory dir) are erased.
  *
  * ui-A9: ALSO resets `last_launched = null` and `playtime_ms = 0` on the
@@ -509,11 +509,11 @@ export async function resetMemoryForCharacter(id: string): Promise<void> {
   // 260705: a blank slate must stay blank. The memory dir also holds the
   // in-app chat transcript (chat.jsonl) and rolling summary (bridge.json), and
   // two in-flight LLM calls could repopulate it AFTER the rm:
-  //   - an in-flight chat turn would append its reply to chat.jsonl — abort it
+  //   - an in-flight chat turn would append its reply to chat.jsonl â€” abort it
   //     (the turn throws the CHAT_ABORTED interrupt sentinel, never persists);
   //   - an in-flight summary fold (up to 20s in the summarizer, fired by the
-  //     chat surface regardless of whether a bot is summoned — the caller's
-  //     isActive gate does NOT cover it) would rewrite bridge.json —
+  //     chat surface regardless of whether a bot is summoned â€” the caller's
+  //     isActive gate does NOT cover it) would rewrite bridge.json â€”
   //     clearContinuity bumps the clear epoch so the fold drops its write.
   // Dynamic imports: chatService statically imports this module
   // (patchCharacter), so a static import back would be a cycle.
@@ -526,7 +526,7 @@ export async function resetMemoryForCharacter(id: string): Promise<void> {
   await rm(paths.memoryDir(id), { recursive: true, force: true });
   await mkdir(paths.memoryDir(id), { recursive: true });
   // ui-A9: reset launch + playtime stats. If the character JSON is missing
-  // (race with a delete), patchCharacter returns null without writing —
+  // (race with a delete), patchCharacter returns null without writing â€”
   // there's nothing left to mutate.
   try {
     await patchCharacter(id, (c) => ({ ...c, last_launched: null, playtime_ms: 0 }));
@@ -544,7 +544,7 @@ export async function deleteCharacter(id: string): Promise<void> {
     const prior = await getCharacter(id);
     wasDefault = prior?.is_default ?? false;
   } catch {
-    // Legacy-shape throw — treat as "no info" and proceed with delete; the
+    // Legacy-shape throw â€” treat as "no info" and proceed with delete; the
     // cloud-mirror skip below will treat as wasDefault=false (best-effort).
     wasDefault = false;
   }
@@ -581,7 +581,7 @@ export async function deleteCharacter(id: string): Promise<void> {
     await writeIndex(idx);
   }
 
-  // Phase 11 — Mirror delete to cloud (chars row + Storage objects). Defaults
+  // Phase 11 â€” Mirror delete to cloud (chars row + Storage objects). Defaults
   // are local-only (D-22), so skip the enqueue for them.
   if (!wasDefault) {
     void (async () => {
@@ -590,7 +590,7 @@ export async function deleteCharacter(id: string): Promise<void> {
         const session = (await getClient().auth.getSession()).data.session;
         const owner = session?.user.id;
         if (!owner) {
-          // Signed-out delete — there is no cloud row to delete and no
+          // Signed-out delete â€” there is no cloud row to delete and no
           // Storage objects to clean up (nothing was uploaded). Skip both
           // the deletion_queue insert (would fail RLS anyway) and the
           // sync-queue enqueue (its drainer gate would just hold the op).
@@ -602,12 +602,12 @@ export async function deleteCharacter(id: string): Promise<void> {
         // signed-in user to insert rows naming their own user_id. The
         // path-ownership filter in storage_purge_extend (T-11-10-01)
         // guards against cross-user deletes from the cron side.
-        // Failure does NOT block — the sync queue's direct delete is
+        // Failure does NOT block â€” the sync queue's direct delete is
         // the primary path; this row is the 30-day insurance.
         try {
           const { enqueueStorageOrphans } = await import('./cloud/deletionQueueWriter');
           await enqueueStorageOrphans(owner, [
-            // Same path used in both buckets — the cron iterates both per
+            // Same path used in both buckets â€” the cron iterates both per
             // storage_purge_extend's `bucket_id in ('skins','portraits')`.
             `${owner}/${id}.png`,
             // 261111: the World grid thumbnail the proxy made at publish.
@@ -634,3 +634,7 @@ export async function deleteCharacter(id: string): Promise<void> {
     })();
   }
 }
+
+
+
+

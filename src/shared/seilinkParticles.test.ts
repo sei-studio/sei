@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   MAX_PARTICLES,
   MAX_STEP_MS,
@@ -130,3 +130,7 @@ describe('particle pause and reduced motion', () => {
     expect(f.t).toBe(1000);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Onboarding step analytics (261005). Pure: no React, no bridge. OnboardApp
  * derives a step key from its phase and feeds it to an OnboardStepTracker,
  * which emits `onboarding_step {step, index, action, ms_in_step, path,
@@ -61,7 +61,7 @@ export type OnboardStep = (typeof ONBOARD_STEPS)[number];
 
 export type OnboardStepAction = 'view' | 'complete' | 'skip' | 'back';
 
-/** Script line id (OnboardApp's LineId) → step name. */
+/** Script line id (OnboardApp's LineId) â†’ step name. */
 export const LINE_STEPS: Record<string, OnboardStep> = {
   hey: 'hey',
   runPlace: 'run_place',
@@ -278,3 +278,7 @@ export class OnboardStepTracker {
     }
   }
 }
+
+
+
+

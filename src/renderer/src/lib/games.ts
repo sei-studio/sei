@@ -1,5 +1,5 @@
-/**
- * Games catalog (Phase 18/19) — the tiles shown in the chat "Play together"
+﻿/**
+ * Games catalog (Phase 18/19) â€” the tiles shown in the chat "Play together"
  * picker. Minecraft, chess and Draw! are live; the coming-soon tiles preview
  * what is next, and the "Suggest a game" tile opens the feedback form (same
  * submit path as the Playtime screen's form).
@@ -125,3 +125,7 @@ export const GAMES: GameDef[] = [
       t('Tell us what you want to play together. Suggestions go straight to the team.'),
   },
 ];
+
+
+
+

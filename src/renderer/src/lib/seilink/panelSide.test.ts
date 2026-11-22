@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { PlacementRegions } from '@shared/seilinkPlace';
 import { placementPanelSide } from './panelSide';
 
@@ -32,3 +32,7 @@ describe('placementPanelSide (261110: shelves hidden behind the panel)', () => {
     expect(placementPanelSide(regions([top(0, 260)]), none, vp, 700, 420)).toBe('left');
   });
 });
+
+
+
+

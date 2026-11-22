@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unvoiced lines (261121, T507): a companion line whose TTS failed is still
  * shown, so a call with a broken voice reads as text instead of silence.
  *
@@ -26,7 +26,7 @@ export interface UnvoicedRun {
 }
 
 /** Scripts written without spaces between sentences. */
-const NO_SPACE_SCRIPT = /[぀-ヿ㐀-鿿豈-﫿＀-￯]/;
+const NO_SPACE_SCRIPT = /[\u3040-\u30FF\u3400-\u9FFF\uFF00-\uFFEF]/;
 
 function joinLines(lines: string[]): string {
   let out = '';
@@ -107,3 +107,7 @@ export function genericTtsFailureKind(msg: string, onDeviceVoice: boolean): 'con
   if (/VOICE_NOT_CONFIGURED: add your ElevenLabs key/.test(msg)) return null;
   return onDeviceVoice ? 'local' : 'connection';
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The update splash page (261030, split out of windowChrome.ts 261108): pure,
  * no electron import, so it renders headless and unit-tests on any host.
  *
@@ -110,7 +110,7 @@ function statusHtml(status: string, style: SplashStatusStyle): string {
 
 /**
  * The splash page. No card: the white logo floats on the desktop (the window
- * is transparent), with the small status line under it ("Updating…", a time
+ * is transparent), with the small status line under it ("Updatingâ€¦", a time
  * estimate, the error line). Shown without a fade: it must look identical to
  * the overlay frame Update.exe showed a moment before.
  *
@@ -134,7 +134,7 @@ export function splashHtml(logoB64: string, opts: { status?: string; style?: Spl
 /**
  * The status line for this launch's splash, or undefined for no splash at all.
  * product call (261108): a normal launch no longer shows the floating Sei
- * logo; only a launch right after Update.exe restarted Sei does ("Updating…"
+ * logo; only a launch right after Update.exe restarted Sei does ("Updatingâ€¦"
  * or the error line, read once by `readUpdateStatus`). A login launch shows
  * nothing until Sei is opened, and does not consume the update note.
  */
@@ -152,3 +152,7 @@ export function msSinceProcessStart(nowMs: number, creationTimeMs: number | unde
   const fromCreation = creationTimeMs && creationTimeMs > 0 && creationTimeMs <= nowMs ? nowMs - creationTimeMs : null;
   return Math.max(0, Math.round(fromCreation ?? uptimeSec * 1000));
 }
+
+
+
+

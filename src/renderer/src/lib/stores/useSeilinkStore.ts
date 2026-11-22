@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink in the main window (261104, M4): is it on, who moved in, and the
  * dock's "edit room" request. Main owns all of it; this mirrors the pushes
  * (seilink:availability-changed, seilink:host-status-changed) so the
@@ -151,3 +151,7 @@ export const useSeilinkStore = create<SeilinkStoreState>((set) => ({
 export function movedInId(status: SeilinkHostStatus): string | null {
   return status.state === 'starting' || status.state === 'running' || status.state === 'restarting' ? status.characterId : null;
 }
+
+
+
+

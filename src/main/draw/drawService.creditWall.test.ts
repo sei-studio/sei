@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! on the credit wall (260926). A depleted allowance pauses the game
  * with pausedReason 'depleted' (the renderer's card then shows the free-play
  * reset date and an "End game" button), fires `credit_wall_degraded` once,
@@ -184,3 +184,7 @@ describe('Draw! on the credit wall', () => {
     expect(events('draw_game_ended')).toHaveLength(1);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! minigame: shared renderer <-> main contract (260727).
  *
  * A turn-based sketch-guessing game. One game per character, ROUNDS rounds
@@ -274,3 +274,7 @@ export const DRAW_ERR_NO_VISION = 'DRAW_LLM_NO_VISION';
  *   onDrawAiStroke(cb: (s: DrawAiStroke) => void): () => void
  *   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): () => void
  */
+
+
+
+

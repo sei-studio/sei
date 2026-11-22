@@ -1,4 +1,4 @@
-// src/adapter/minecraft/fsmWires.js
+﻿// src/adapter/minecraft/fsmWires.js
 //
 // Mineflayer event wires: subscribe to bot events and translate them into
 // AdapterHandlers shape (see src/brain/types.js). Brain-side createPriorityQueue
@@ -7,7 +7,7 @@
 // The synthesized events (sei:chat_received, sei:attacked, sei:joined,
 // sei:loop_terminal) are produced by src/adapter/minecraft/behaviors/{chat,
 // combat}.js and src/bot.js / src/brain/orchestrator.js respectively. This
-// module is a thin translation layer — no business logic.
+// module is a thin translation layer â€” no business logic.
 
 /**
  * Wire a mineflayer bot's event surface to a brain-shaped AdapterHandlers
@@ -23,7 +23,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   if (!bot) throw new Error('wireBotEvents: bot required')
   if (!handlers) throw new Error('wireBotEvents: handlers required')
 
-  // ── Chat ────────────────────────────────────────────────────────────
+  // â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // chat.js (behaviors/chat.js) does the player/addressed/nearby filtering
   // and emits sei:chat_received. We translate that synthesized event to
   // handlers.onChat with brain-shaped keys.
@@ -53,7 +53,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:chat_received', onSeiChat)
 
-  // ── Attacked ────────────────────────────────────────────────────────
+  // â”€â”€ Attacked â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // combat.js emits sei:attacked with the attacker payload pre-classified.
   const onSeiAttacked = (payload) => {
     if (!payload) return
@@ -79,10 +79,10 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:attacked', onSeiAttacked)
 
-  // ── Owner under attack (260730) ─────────────────────────────────────────
+  // â”€â”€ Owner under attack (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // combat.js emits sei:owner_attacked when a hostile mob hits the PLAYER
   // within range of the bot. It rides the onAttacked route tagged
-  // attackerKind:'defend', which lands it at P1_CHAT (attackedPriority) — the
+  // attackerKind:'defend', which lands it at P1_CHAT (attackedPriority) â€” the
   // bot is not the one in danger, and the swing that pulls the mob's aggro
   // already happened in combat.js, so this turn is narration plus an optional
   // escalation, never a panic that preempts the player's own reply.
@@ -111,17 +111,17 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:owner_attacked', onSeiOwnerAttacked)
 
-  // ── Reflex (proactive threat warning) ───────────────────────────────
+  // â”€â”€ Reflex (proactive threat warning) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // reflex.js (behaviors/reflex.js) emits sei:reflex once per engagement when
   // the survival loop evades a creeper/arrow/melee threat. We translate it onto
   // the onAttacked route but tag attackerKind:'reflex' (plus the threat label,
   // the `noticed` telegraph flag and nearby `count`). The 'reflex' tag makes the
-  // brain route it at CONVERSATION tier (P1_CHAT), not safety tier — onAttacked
+  // brain route it at CONVERSATION tier (P1_CHAT), not safety tier â€” onAttacked
   // in src/bot/brain/index.js uses attackedPriority(evt) so a proactive warning
   // never preempts or aborts a pending/in-flight player chat (a real attack
   // stays P0_SAFETY). It also drives Plan 05's prompt framing to phrase it as a
   // proactive warning offering attack()/explore() rather than "you were hit".
-  // Thin translation only — this does NOT enqueue evasion work; the flee already
+  // Thin translation only â€” this does NOT enqueue evasion work; the flee already
   // ran in reflex.js's tick.
   const onSeiReflex = (payload) => {
     if (!payload) return
@@ -141,13 +141,13 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:reflex', onSeiReflex)
 
-  // ── Survival takeover (drowning / critical-HP retreat) ──────────────
+  // â”€â”€ Survival takeover (drowning / critical-HP retreat) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // survival.js emits sei:survival once per automatic engagement (swimming up
   // for air, or fleeing a hostile at low HP). We route it onto the SAME onAttacked
   // path as reflex, tagged attackerKind:'reflex' so it lands at P1_CHAT (never
   // preempts a player chat), plus a `survivalKind` so the prompt framing
   // (SURVIVAL_ADDENDUM) describes drowning/retreat instead of a threat dodge. The
-  // physical response already ran in survival.js's tick — this is narration only.
+  // physical response already ran in survival.js's tick â€” this is narration only.
   const onSeiSurvival = (payload) => {
     if (!payload) return
     try {
@@ -165,7 +165,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:survival', onSeiSurvival)
 
-  // ── Death ───────────────────────────────────────────────────────────
+  // â”€â”€ Death â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // connect.js emits sei:death once per death, snapshotting the death position
   // BEFORE bot.respawn() teleports back to world spawn (that's where the bot's
   // items dropped). Thin translation to handlers.onDeath; the brain enqueues it
@@ -186,7 +186,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('sei:dying', onSeiDying)
 
-  // ── Player join / leave ─────────────────────────────────────────────
+  // â”€â”€ Player join / leave â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const onPlayerJoined = (player) => {
     if (!player) return
     try { handlers.onPlayerJoined?.({ username: player.username, uuid: player.uuid }) }
@@ -200,7 +200,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   bot.on('playerJoined', onPlayerJoined)
   bot.on('playerLeft', onPlayerLeft)
 
-  // ── Spawn ───────────────────────────────────────────────────────────
+  // â”€â”€ Spawn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Forward every spawn (initial + respawn). Brain.start uses the first one
   // for session settle; subsequent spawns are no-ops on the brain side
   // unless wired.
@@ -210,7 +210,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
   }
   bot.on('spawn', onSpawn)
 
-  // ── Synthetic events forwarded from orchestrator / bot connect ──────
+  // â”€â”€ Synthetic events forwarded from orchestrator / bot connect â”€â”€â”€â”€â”€â”€
   // sei:joined fires once on connect (initial greeting nudge).
   // sei:loop_terminal fires when the orchestrator finishes a Loop.
   // sei:loop_end is the follow-up tick the brain enqueues at P2.5.
@@ -231,3 +231,7 @@ export function wireBotEvents(bot, handlers, _opts = {}) {
     try { bot.off?.('spawn', onSpawn) } catch {}
   }
 }
+
+
+
+

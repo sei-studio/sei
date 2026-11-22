@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Decorating her room together (261105, T336): the live side. The state lives
  * in editorTogether.ts (no electron there, chatService reads it); this file
  * opens and closes sessions from the editor's IPC, takes the editor's unsaved
@@ -238,3 +238,7 @@ export async function onTogetherSync(token: string, characterId: string, raw: un
   const next = syncTogether(token, room, Date.now());
   if (next) live().edited(next);
 }
+
+
+
+

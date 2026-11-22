@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Placeholder chat-aside panels for a bot-backed game that has not registered
  * its own surfaces yet (game adapters M0, 260908). The game agents replace
  * these through registerGameSurface; until then the launch panel offers the
@@ -57,3 +57,7 @@ export function GenericGameDashboardPanel({ game, characterId }: GenericGamePane
 function sentenceCase(line: string): string {
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// Branch A probe: ask Nano Banana Pro for the flat UV atlas directly,
+﻿// Branch A probe: ask Nano Banana Pro for the flat UV atlas directly,
 // with a real skin atlas as layout reference.
 // Usage: node probe/probe-atlas.js <characterImage> <outPrefix> [runs]
 import { generateImageToFile } from '../src/gemini.js';
@@ -19,3 +19,7 @@ for (let i = 0; i < Number(runs); i++) {
   );
   console.log(`${out} written in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
+
+
+
+

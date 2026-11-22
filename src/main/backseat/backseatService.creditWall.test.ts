@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat on the credit wall (260926). Before this a spent allowance made
  * every screen tick 402 silently: the companion just stopped talking mid-share
  * and nothing said why. Now the first 402 raises the usage-limit popup and
@@ -183,3 +183,7 @@ describe('backseat on the credit wall', () => {
     expect(degraded()).toHaveLength(1);
   });
 });
+
+
+
+

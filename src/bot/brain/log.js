@@ -1,11 +1,11 @@
-// src/bot/brain/log.js — transparent live logging for debugging.
+﻿// src/bot/brain/log.js â€” transparent live logging for debugging.
 //
 // Event-per-line multi-line emission.
 //   - Each event opens with `[ts] [tag] begin` and closes with `[ts] [tag] end`,
 //     sharing ONE timestamp captured at the start of the call.
 //   - Continuation lines are indented exactly 2 spaces; multi-line section
 //     bodies get 4 spaces total (2 for the section + 2 for nesting).
-//   - Inline truncation is gone — long payloads print in full. Size control
+//   - Inline truncation is gone â€” long payloads print in full. Size control
 //     is delegated to a session-scoped hash dictionary that elides three
 //     cached prompt blocks (persona, capability, diary) to short hash refs
 //     on second+ appearances within the same process lifetime (D-4..D-7).
@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto'
 
 /**
- * ITEM 1 (quick/260523-t8d) — log-volume gate.
+ * ITEM 1 (quick/260523-t8d) â€” log-volume gate.
  *
  * Suppress the game-state-rich `[haiku?]` request log AND its companion
  * `[haiku!]` response log when:
@@ -27,11 +27,11 @@ import { createHash } from 'node:crypto'
  * In that state every haiku call 401s before reaching the model, so the
  * snapshot dump is pure cognitive noise for the user staring at the LogsBar
  * with no key yet. The moment EITHER condition flips (key added OR
- * backend → cloud-proxy), the next bot fork picks up new env values and the
- * logs reappear unmodified — no in-process re-evaluation needed because the
+ * backend â†’ cloud-proxy), the next bot fork picks up new env values and the
+ * logs reappear unmodified â€” no in-process re-evaluation needed because the
  * bot is re-spawned by the supervisor on summon.
  *
- * Other tags (chat in/out, [act!], [heal], [log]) are NOT gated — those carry
+ * Other tags (chat in/out, [act!], [heal], [log]) are NOT gated â€” those carry
  * actionable information for the user even in the no-key state (e.g. shows
  * which player chatted at the bot before it tried to call Haiku and failed).
  */
@@ -47,8 +47,8 @@ function ts() {
   return new Date().toISOString().slice(11, 23)  // HH:MM:SS.mmm
 }
 
-// ─── Session-scoped hash dictionary (D-4..D-7) ───────────────────────────
-// Module-scope state: resets only when the Node process restarts (D-6 — no
+// â”€â”€â”€ Session-scoped hash dictionary (D-4..D-7) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Module-scope state: resets only when the Node process restarts (D-6 â€” no
 // cross-restart persistence; the rolling log file is per-session).
 const _seenHashes = new Set()
 let _headerWritten = false
@@ -59,7 +59,7 @@ function shortHash(s) {
 }
 
 // Emit a one-line dictionary header on the FIRST event of the process
-// lifetime. Single physical line — no begin/end sentinels. logRouter's TAG_RE
+// lifetime. Single physical line â€” no begin/end sentinels. logRouter's TAG_RE
 // matches any bracketed tag, so `[log]` classifies cleanly.
 function maybeWriteDictHeader() {
   if (_headerWritten) return
@@ -81,7 +81,7 @@ function elideOrFull(name, body) {
   return `${body}\n<${name} @sha=${h}>`
 }
 
-// ─── Multi-line emit primitive (D-1, D-3) ────────────────────────────────
+// â”€â”€â”€ Multi-line emit primitive (D-1, D-3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // `sections` is `Array<{label: string, body: string}>`.
 // Output:
 //   [ts] [tag] begin
@@ -110,7 +110,7 @@ function emitBlock(tag, sections) {
   } catch {}
 }
 
-// ─── Chat ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function logChatIn(username, message) {
   emitBlock('[chat<-]', [
     { label: 'from', body: String(username ?? '') },
@@ -124,7 +124,7 @@ export function logChatOut(text) {
   ])
 }
 
-// ─── Personality LLM (Anthropic / Haiku) ─────────────────────────────────
+// â”€â”€â”€ Personality LLM (Anthropic / Haiku) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * @param {object} req
  * @param {Array<any>} req.messages
@@ -139,18 +139,18 @@ export function logChatOut(text) {
  *   `name` field as the section label (D-4, D-8).
  */
 // Named user-content blocks whose content is static (or near-static) within a
-// session — elided to a `@sha` ref after first appearance. seed_cuboid_grammar
+// session â€” elided to a `@sha` ref after first appearance. seed_cuboid_grammar
 // is fully static; seed_player shifts only when the player profile changes;
 // memory shifts every remember()/forget(). Hashing collapses repetition;
 // when the body changes the hash changes and the new body is emitted in full.
 const STATIC_NAMED_BLOCKS = new Set(['seed_player', 'seed_cuboid_grammar', 'memory'])
 
 export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }) {
-  // ITEM 1 — gate the game-state-rich snapshot dump when the bot is in BYOK
+  // ITEM 1 â€” gate the game-state-rich snapshot dump when the bot is in BYOK
   // mode without a key. See shouldLogPrompts() docblock for rationale.
   if (!shouldLogPrompts()) return
   const toolNames = (tools ?? []).map(t => t.name).join(', ')
-  // The tool list rarely changes within a session — hash it after first sight.
+  // The tool list rarely changes within a session â€” hash it after first sight.
   const toolsBody = toolNames.length > 0 ? elideOrFull('tools', toolNames) : ''
 
   // Find last user-role entry in namedUserBlocks.
@@ -163,19 +163,19 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
 
   const userBodyLines = []
 
-  // 5a. persona — systemBlocks[1]
+  // 5a. persona â€” systemBlocks[1]
   const personaText = systemBlocks?.[1]?.text
   if (typeof personaText === 'string' && personaText.length > 0) {
     userBodyLines.push(elideOrFull('persona', personaText))
   }
 
-  // 5b. capability — systemBlocks[2]
+  // 5b. capability â€” systemBlocks[2]
   const capabilityText = systemBlocks?.[2]?.text
   if (typeof capabilityText === 'string' && capabilityText.length > 0) {
     userBodyLines.push(elideOrFull('capability', capabilityText))
   }
 
-  // 5c. Every named text block — inline in full, preserving order.
+  // 5c. Every named text block â€” inline in full, preserving order.
   //   Observed names from orchestrator.js: seed_player, seed_cuboid_grammar,
   //   memory, recent_player_chat, your_recent_messages, event, snapshot.
   //   STATIC_NAMED_BLOCKS entries are hashed after first sight; the rest
@@ -195,7 +195,7 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
     }
   }
 
-  // 5e. Fallback — no namedUserBlocks yet.
+  // 5e. Fallback â€” no namedUserBlocks yet.
   if (userBodyLines.length === 0) {
     userBodyLines.push(`raw: ${safeStringify(messages?.[messages.length - 1]?.content)}`)
   }
@@ -207,14 +207,14 @@ export function logHaikuQuery({ messages, tools, systemBlocks, namedUserBlocks }
 }
 
 export function logHaikuResponse({ text, toolUses, usage, stopReason, elapsedMs }) {
-  // ITEM 1 — paired suppression with logHaikuQuery; never log a response when
+  // ITEM 1 â€” paired suppression with logHaikuQuery; never log a response when
   // we suppressed the request.
   if (!shouldLogPrompts()) return
   const calls = (toolUses ?? []).map(u => `${u.name}(${safeStringify(u.input)})`)
   const callsBody = calls.length === 0 ? '(none)' : calls.join('\n')
   emitBlock('[haiku!]', [
     { label: 'stop', body: String(stopReason ?? '') },
-    // 260607: per-call wall-clock so latency spikes (and silent SDK retries —
+    // 260607: per-call wall-clock so latency spikes (and silent SDK retries â€”
     // elapsed >> one attempt) are visible. Previously a slow/failed call showed
     // only as a [haiku?] with no [haiku!], invisible to anyone reading logs.
     ...(Number.isFinite(elapsedMs) ? [{ label: 'elapsed', body: `${elapsedMs}ms` }] : []),
@@ -224,7 +224,7 @@ export function logHaikuResponse({ text, toolUses, usage, stopReason, elapsedMs 
   ])
 }
 
-// 260607: companion to [haiku!] — fires when a personality call ABORTS, TIMES
+// 260607: companion to [haiku!] â€” fires when a personality call ABORTS, TIMES
 // OUT, or ERRORS, instead of silently leaving a [haiku?] with no response.
 // `elapsed` here is the key diagnostic: an elapsed near the per-call budget
 // with a TimeoutError is a stalled upstream; a small elapsed with a 5xx/429 is
@@ -232,13 +232,13 @@ export function logHaikuResponse({ text, toolUses, usage, stopReason, elapsedMs 
 export function logHaikuError({ elapsedMs, name, message, status }) {
   if (!shouldLogPrompts()) return
   const statusPart = (status !== undefined && status !== null) ? ` (${status})` : ''
-  emitBlock('[haiku✗]', [
+  emitBlock('[haikuâœ—]', [
     ...(Number.isFinite(elapsedMs) ? [{ label: 'elapsed', body: `${elapsedMs}ms` }] : []),
     { label: 'error', body: `${name ?? 'Error'}${statusPart}: ${message ?? ''}` },
   ])
 }
 
-// ─── Position healer ─────────────────────────────────────────────────────
+// â”€â”€â”€ Position healer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function logHeal({ pos, vel, yaw, pitch }) {
   emitBlock('[heal]', [
     { label: 'pos', body: String(pos) },
@@ -248,7 +248,7 @@ export function logHeal({ pos, vel, yaw, pitch }) {
   ])
 }
 
-// ─── Action results (echo for visibility) ────────────────────────────────
+// â”€â”€â”€ Action results (echo for visibility) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function logActionResult(name, result) {
   const resultStr = typeof result === 'string' ? result : safeStringify(result)
   emitBlock('[act!]', [
@@ -256,3 +256,7 @@ export function logActionResult(name, result) {
     { label: 'result', body: resultStr },
   ])
 }
+
+
+
+

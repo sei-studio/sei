@@ -1,5 +1,5 @@
-/**
- * mcAssetSource — renderer-side URL helpers for the Minecraft dashboard's
+﻿/**
+ * mcAssetSource â€” renderer-side URL helpers for the Minecraft dashboard's
  * real-texture rendering (260721). The main process serves read-only item
  * textures from prismarine-viewer's bundled folders on the local skin
  * server (GET /mcassets/<version>/item/<name>.png, see src/main/skinServer.ts
@@ -72,3 +72,7 @@ export function mcItemIconUrl(base: string, version: string, itemName: string): 
 export function mcSkinUrl(base: string, username: string): string {
   return `${base}/skins/${encodeURIComponent(username)}.png`;
 }
+
+
+
+

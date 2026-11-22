@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft Launcher profile files: read, write, and pick the Sei profile.
  *
  * The official launcher keeps its installations in `<.minecraft>/launcher_profiles.json`.
@@ -207,7 +207,7 @@ export async function readProfilesFile(file: string): Promise<LauncherProfilesDo
     throw err;
   }
   // Tolerate a UTF-8 BOM (hand-edited files); JSON.parse rejects it.
-  const parsed = JSON.parse(raw.replace(/^﻿/, '')) as unknown;
+  const parsed = JSON.parse(raw.replace(/^ï»¿/, '')) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new Error(`${path.basename(file)} is not a JSON object`);
   }
@@ -260,3 +260,7 @@ export async function existingProfileFiles(mcDir: string): Promise<string[]> {
   }
   return out;
 }
+
+
+
+

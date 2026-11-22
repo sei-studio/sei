@@ -1,11 +1,11 @@
-// src/bot/adapter/minecraft/dashboard/mapSample.js — top-down minimap sample
+﻿// src/bot/adapter/minecraft/dashboard/mapSample.js â€” top-down minimap sample
 // for the Minecraft dashboard (260721).
 //
 // A size*size grid centered on the bot: for each column the top non-air block
 // inside a bounded vertical window is classified into a small palette index,
 // and its height relative to the bot's feet (clamped -8..+7) becomes a
-// shading hint. One byte per cell — low nibble palette, high nibble height+8
-// — base64-encoded so the whole 33x33 payload is ~1.5 KB of JSON.
+// shading hint. One byte per cell â€” low nibble palette, high nibble height+8
+// â€” base64-encoded so the whole 33x33 payload is ~1.5 KB of JSON.
 //
 // PALETTE MUST STAY IN SYNC with MC_DASH_PALETTE / MC_DASH_PALETTE_COLORS in
 // src/shared/mcDashboardIpc.ts (the bot ships as raw ESM and cannot import
@@ -33,7 +33,7 @@ export const PALETTE = {
 const AIR = new Set(['air', 'cave_air', 'void_air'])
 
 /**
- * Block name → palette index. Order matters: specific families are matched
+ * Block name â†’ palette index. Order matters: specific families are matched
  * before the generic "contains stone" bucket ("sandstone" is SAND, not STONE).
  * @param {string|null|undefined} name mineflayer block name (no namespace)
  * @returns {number}
@@ -141,7 +141,7 @@ const SCAN_DOWN = 27
  * first row, west (-x) first column, bot at the center cell. Unloaded chunks
  * and all-air columns read as VOID.
  *
- * Cost bound: size^2 columns x ≤(SCAN_UP+SCAN_DOWN+1) blockAt lookups, only
+ * Cost bound: size^2 columns x â‰¤(SCAN_UP+SCAN_DOWN+1) blockAt lookups, only
  * while the renderer is watching and at most every ~2s.
  *
  * @param {import('mineflayer').Bot} bot
@@ -174,7 +174,7 @@ export function sampleMap(bot, size = 33) {
         } catch {
           block = null
         }
-        if (!block) break // unloaded column → VOID
+        if (!block) break // unloaded column â†’ VOID
         if (AIR.has(block.name)) continue
         byte = packCell(classifyBlockName(block.name), y - cy)
         break
@@ -184,3 +184,7 @@ export function sampleMap(bot, size = 33) {
   }
   return { size, cells: encodeCells(bytes) }
 }
+
+
+
+

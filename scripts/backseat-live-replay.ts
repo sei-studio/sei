@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * scripts/backseat-live-replay.ts — replay real gameplay footage through the
+ * scripts/backseat-live-replay.ts â€” replay real gameplay footage through the
  * REAL Backseat service in real time (261009).
  *
  * Unlike backseat-sim.ts (stub persona, virtual time, own turn runner) this
@@ -66,7 +66,7 @@ function flag(name: string, dflt?: string): string | undefined {
 const FPS = 30;
 const SR = 16_000;
 
-// ── Whisper (same model + noise filter as voice/whisperWorker.ts) ──────────
+// â”€â”€ Whisper (same model + noise filter as voice/whisperWorker.ts) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const NOISE_TRANSCRIPTS = new Set([
   '', 'you', 'thank you.', 'thanks for watching!', 'thank you for watching!', '.', 'bye.', 'so', 'the',
@@ -74,7 +74,7 @@ const NOISE_TRANSCRIPTS = new Set([
 function cleanTranscript(raw: string): string {
   const text = raw.replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
   const norm = text.toLowerCase();
-  const bare = norm.replace(/[.。．!！?？、,，\s]+$/u, '');
+  const bare = norm.replace(/[.ã€‚ï¼Ž!ï¼?ï¼Ÿã€,ï¼Œ\s]+$/u, '');
   return NOISE_TRANSCRIPTS.has(norm) || NOISE_TRANSCRIPTS.has(bare) ? '' : text;
 }
 async function loadAsr(): Promise<(pcm: Float32Array) => Promise<string>> {
@@ -83,7 +83,7 @@ async function loadAsr(): Promise<(pcm: Float32Array) => Promise<string>> {
   return async (pcm) => cleanTranscript(String((await asr(pcm))?.text ?? ''));
 }
 
-// ── prep ──────────────────────────────────────────────────────────────────
+// â”€â”€ prep â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function prep(video: string, dir: string): Promise<void> {
   const { CELL_W, CELL_H, STT_CHUNK_MS } = await import('../src/shared/backseatIpc');
@@ -148,7 +148,7 @@ async function prep(video: string, dir: string): Promise<void> {
   console.log(`prep: ${nCells} cells, ${segments.length} stt segments, ${duration.toFixed(1)}s`);
 }
 
-// ── run ───────────────────────────────────────────────────────────────────
+// â”€â”€ run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PRICES: Record<string, { in: number; cw: number; cr: number; out: number }> = {
   'claude-haiku-4-5-20251001': { in: 1.0, cw: 1.25, cr: 0.1, out: 5.0 },
@@ -189,7 +189,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   const vt = (wall = Date.now()): number => Math.round(wall - t0) / 1000;
   const ev = (o: Record<string, unknown>): void => appendFileSync(eventsPath, JSON.stringify({ vt: vt(), ...o }) + '\n');
 
-  // ── wire: key injection, model arm, latency + usage ──
+  // â”€â”€ wire: key injection, model arm, latency + usage â”€â”€
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: any, init: any = {}) => {
     const url = typeof input === 'string' ? input : input?.url ?? String(input);
@@ -250,7 +250,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
     return res;
   }) as typeof fetch;
 
-  // ── main-process modules (after the stub + fetch are in place) ──
+  // â”€â”€ main-process modules (after the stub + fetch are in place) â”€â”€
   const { paths } = await import('../src/main/paths');
   const { saveConfig, loadConfig } = await import('../src/main/configStore');
   const { CharacterSchema } = await import('../src/shared/characterSchema');
@@ -263,7 +263,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   const { rmsDb } = await import('../src/renderer/src/lib/backseat/pcm');
   const sharp = (await import('sharp')).default;
 
-  // ── profile: config, Sui from her cloud row, a small memory, dummy key ──
+  // â”€â”€ profile: config, Sui from her cloud row, a small memory, dummy key â”€â”€
   const cfg = await loadConfig();
   await saveConfig({ ...cfg, preferred_name: player, ai_backend_kind: 'local', provider: 'anthropic', chat_language: 'en' } as any);
   mkdirSync(path.dirname(paths.apiKeyPath()), { recursive: true });
@@ -297,7 +297,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
     }
   }
 
-  // ── footage ──
+  // â”€â”€ footage â”€â”€
   const meta = JSON.parse(readFileSync(path.join(prepDir, 'meta.json'), 'utf8'));
   const thumbsBuf = readFileSync(path.join(prepDir, 'thumbs.rgba'));
   const TB = sig.THUMB_W * sig.THUMB_H * 4;
@@ -315,7 +315,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   const asr = await loadAsr();
   const cellJpeg = (i: number): Buffer => readFileSync(path.join(prepDir, 'cells', `${Math.min(i, meta.nCells - 1)}.jpg`));
 
-  // ── capture-worker reproduction ──
+  // â”€â”€ capture-worker reproduction â”€â”€
   interface Sample { at: number; cell: number; thumb: Uint8ClampedArray }
   const ring: Sample[] = [];
   const jolt = sig.createJoltState();
@@ -469,7 +469,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   /** Assumed TTS time to first audio for the simulated staleness gate. */
   const TTS_FIRST_AUDIO_MS = 800;
 
-  // ── service deps (the IPC bridge in the app) ──
+  // â”€â”€ service deps (the IPC bridge in the app) â”€â”€
   const lines: Array<Record<string, unknown>> = [];
   let lastTurn: { kind: string; at: number } | null = null;
   // Start time of the latest turn per tick kind. Two turns can overlap (a
@@ -535,7 +535,7 @@ async function run(prepDir: string, outDir: string): Promise<void> {
   await svc.startBackseat(characterId, 'window:1:0', label, 'voice', game ? ({ gameId: game } as any) : undefined);
   ev({ type: 'meta', model, label, game: game ?? null, seed, questions, player });
 
-  // ── go: real time ──
+  // â”€â”€ go: real time â”€â”€
   t0 = Date.now();
   const frameLoop = setInterval(() => {
     const nowV = Date.now() - t0;
@@ -618,3 +618,7 @@ if (cmd === 'prep') {
 } else {
   console.log('usage: prep <video> <dir> | run <prepDir> <outDir> --model ... --persona sui.json');
 }
+
+
+
+

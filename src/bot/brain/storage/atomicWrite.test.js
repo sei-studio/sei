@@ -1,4 +1,4 @@
-/**
+﻿/**
  * atomicWrite rename retry (261121): a Windows rename that fails with a
  * transient sharing error is retried; anything else, or any other platform,
  * fails straight through as before.
@@ -79,3 +79,7 @@ describe('atomicWrite rename retry', () => {
     expect(fsp.rename).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

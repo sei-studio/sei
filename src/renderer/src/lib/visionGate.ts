@@ -1,5 +1,5 @@
-/**
- * visionGate (china-compat W9) — the one place the "your model cannot see
+﻿/**
+ * visionGate (china-compat W9) â€” the one place the "your model cannot see
  * images" copy is composed, so the Draw! tile, the ChatTopBar backseat button,
  * the CallControls share pill and the two stores' error mapping all say the
  * same sentence.
@@ -46,3 +46,7 @@ export function visionGateReason(
         'Screen sharing needs a model that can see images. Your current model does not support vision.',
       );
 }
+
+
+
+

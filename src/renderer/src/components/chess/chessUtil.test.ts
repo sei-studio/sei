@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   fenAfterUci,
   legalTargets,
@@ -156,3 +156,7 @@ describe('capturedMaterial', () => {
     expect(diff).toBe(10 - 3);
   });
 });
+
+
+
+

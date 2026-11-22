@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Device-global device-id (anti-abuse / trial-claim hardening) tests.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -69,3 +69,7 @@ describe('deviceId', () => {
     expect(raw.deviceId).toBe(id);
   });
 });
+
+
+
+

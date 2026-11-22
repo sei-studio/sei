@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261110: her voice on the desktop. A call's TTS plays in the main window;
  * the companion on the desktop (WorldLink) must move her mouth while it
  * does. Pure parts of SeilinkVoiceRelay (components/seilink/SeilinkVoiceRelay.tsx).
@@ -18,3 +18,7 @@ export function desktopResident(status: SeilinkHostStatus | null | undefined): s
 export function residentSpeaking(resident: string | null, speakingId: string | null): boolean {
   return resident !== null && speakingId === resident;
 }
+
+
+
+

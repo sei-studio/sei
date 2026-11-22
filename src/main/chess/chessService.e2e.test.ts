@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess service end-to-end: the REAL cce-1 engine (Maia-3 ONNX +
  * Stockfish WASM) under the real service, with only the Anthropic SDK,
  * character/config stores, and profile derivation mocked. Skipped when the
@@ -62,7 +62,7 @@ let pushed: ChessGameState[];
 /**
  * The per-game session log (chessLog) closes asynchronously and endChess only
  * fires it off, so a write can still be in flight when the temp dir is removed
- * — an ENOTEMPTY that has nothing to do with the code under test. Retry briefly.
+ * â€” an ENOTEMPTY that has nothing to do with the code under test. Retry briefly.
  */
 async function rmTemp(target: string): Promise<void> {
   for (let i = 0; ; i++) {
@@ -114,7 +114,7 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     _setUserDataOverride(dir);
     pushed = [];
     // Keep idle ticks out of the run (decisions present instantly since
-    // 260729 — the prethink delay is gone from the service).
+    // 260729 â€” the prethink delay is gone from the service).
     CHESS_TIMING.idleMinMs = 300_000;
     CHESS_TIMING.idleMaxMs = 300_000;
     initChessService({
@@ -180,7 +180,7 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     expect(final.history).toHaveLength(4);
     expect(final.status).toBe('active');
     // The turn block fed to the LLM carried real translated candidates. It
-    // lives in the messages tail now, not in `system` — see the cache-ordering
+    // lives in the messages tail now, not in `system` â€” see the cache-ordering
     // note in chessService (anything volatile in `system` sits above every
     // message in the cache prefix and makes the whole transcript uncacheable).
     const block = promptText(createSpy.mock.calls.at(-1)?.[0] as PromptParams);
@@ -188,3 +188,7 @@ describe.skipIf(!hasModel)('chess e2e with the real CCE engine', () => {
     expect(block).toMatch(/winning chances|cannot tell who is winning/);
   });
 });
+
+
+
+

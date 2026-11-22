@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { isMostlyUppercaseLatin, sentenceCaseSttText } from './sentenceCase';
 
 describe('isMostlyUppercaseLatin', () => {
@@ -12,7 +12,7 @@ describe('isMostlyUppercaseLatin', () => {
 
   it('does not fire on a short acronym-only utterance', () => {
     expect(isMostlyUppercaseLatin('OK')).toBe(false);
-    expect(isMostlyUppercaseLatin('NASA')).toBe(true); // 4 letters, all caps — borderline by design
+    expect(isMostlyUppercaseLatin('NASA')).toBe(true); // 4 letters, all caps â€” borderline by design
   });
 
   it('does not fire on prose that merely contains acronyms', () => {
@@ -20,7 +20,7 @@ describe('isMostlyUppercaseLatin', () => {
   });
 
   it('ignores non-Latin text entirely', () => {
-    expect(isMostlyUppercaseLatin('你好，最近怎么样？')).toBe(false);
+    expect(isMostlyUppercaseLatin('ä½ å¥½ï¼Œæœ€è¿‘æ€Žä¹ˆæ ·ï¼Ÿ')).toBe(false);
   });
 });
 
@@ -45,17 +45,21 @@ describe('sentenceCaseSttText', () => {
   });
 
   it('repairs the Latin runs of a mixed zh+EN caps line without touching the Chinese', () => {
-    expect(sentenceCaseSttText('你好 HELLO WORLD。THANKS')).toBe('你好 hello world。Thanks');
+    expect(sentenceCaseSttText('ä½ å¥½ HELLO WORLDã€‚THANKS')).toBe('ä½ å¥½ hello worldã€‚Thanks');
   });
 
   it('does not capitalize a Latin letter mid-sentence after a CJK sentence opener', () => {
     // The CJK char occupies the sentence-start slot, so the Latin word later
     // in the same sentence stays lowercase.
-    expect(sentenceCaseSttText('好的 OKAY SURE')).toBe('好的 okay sure');
+    expect(sentenceCaseSttText('å¥½çš„ OKAY SURE')).toBe('å¥½çš„ okay sure');
   });
 
   it('leaves an empty or non-Latin string unchanged', () => {
     expect(sentenceCaseSttText('')).toBe('');
-    expect(sentenceCaseSttText('你好')).toBe('你好');
+    expect(sentenceCaseSttText('ä½ å¥½')).toBe('ä½ å¥½');
   });
 });
+
+
+
+

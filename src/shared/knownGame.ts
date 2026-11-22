@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Already works in Sei" lookup for the Suggest-a-game form (261109, T379).
  *
  * Players kept typing "roblox" into Suggest a game while the Roblox tile sat
@@ -56,14 +56,14 @@ function normWord(s: string): string {
   return s
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
-    .replace(/['’]/g, '')
+    .replace(/['â€™]/g, '')
     .toLowerCase();
 }
 
 /** Every word with its place in the original text. */
 function words(text: string): Array<{ w: string; start: number; end: number }> {
   const out: Array<{ w: string; start: number; end: number }> = [];
-  for (const m of text.matchAll(/[\p{L}\p{N}'’]+/gu)) {
+  for (const m of text.matchAll(/[\p{L}\p{N}'â€™]+/gu)) {
     const w = normWord(m[0]);
     if (w) out.push({ w, start: m.index, end: m.index + m[0].length });
   }
@@ -178,3 +178,7 @@ function experienceQuery(
   if (!side.length || side.length > MAX_QUERY_WORDS) return undefined;
   return text.slice(side[0].start, side[side.length - 1].end);
 }
+
+
+
+

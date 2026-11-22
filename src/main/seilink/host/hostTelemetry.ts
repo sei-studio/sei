@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink host telemetry (261105), main side, pure. Shape only: enums,
  * counts, durations, buckets. No paths, no text, no window titles.
  *
@@ -28,7 +28,7 @@ export const HEARTBEAT_GAP_MS = 2_500;
 /** At most this many seilink_reattached events per cause per session; the rest are counts only. */
 export const REATTACH_EVENTS_PER_CAUSE = 3;
 
-// ── Small shapes ────────────────────────────────────────────────────────────
+// â”€â”€ Small shapes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** How she is attached: Windows layered child of Progman (24H2 raised), child of the WorkerW (classic), mac desktop level. */
 export type AttachMode = 'progman' | 'workerw' | 'mac_desktop_level' | 'fake' | 'other';
@@ -144,7 +144,7 @@ export function verifyReasonList(raw: unknown): string[] {
   return [...out].sort();
 }
 
-// ── Re-attach cause ─────────────────────────────────────────────────────────
+// â”€â”€ Re-attach cause â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type ReattachCause =
   | 'explorer_restart'
@@ -212,7 +212,7 @@ export function reattachCause(reason: unknown): { cause: ReattachCause; detail: 
   return { cause, detail };
 }
 
-// ── Counters ────────────────────────────────────────────────────────────────
+// â”€â”€ Counters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Named per-session counts. Keys are snake_case and flattened as props as is. */
 export class Counters {
@@ -247,7 +247,7 @@ export class Counters {
   }
 }
 
-// ── Shown watchdog ──────────────────────────────────────────────────────────
+// â”€â”€ Shown watchdog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type NotShownReason =
   /** The host never connected (spawn or boot trouble). */
@@ -398,7 +398,7 @@ export class ShownWatchdog {
   }
 }
 
-// ── Health ──────────────────────────────────────────────────────────────────
+// â”€â”€ Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface HeartbeatSample {
   /** Frame cap the host is at (0 = still). */
@@ -544,3 +544,7 @@ function props(w: HealthWindow, now: number): Record<string, number | string | n
     cpu_avg: w.cpuN ? Math.round((w.cpuSum / w.cpuN) * 10) / 10 : null,
   };
 }
+
+
+
+

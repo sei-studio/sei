@@ -1,8 +1,8 @@
-// src/bot/adapter/minecraft/loose-terms.js
+﻿// src/bot/adapter/minecraft/loose-terms.js
 //
-// Hand-curated natural-language → MC block ID resolver for the closed Zod
-// action registry. Pure data + pure function — zero mineflayer / minecraft-data
-// / vec3 dependencies — so callers like pillar-up can import resolveTerm()
+// Hand-curated natural-language â†’ MC block ID resolver for the closed Zod
+// action registry. Pure data + pure function â€” zero mineflayer / minecraft-data
+// / vec3 dependencies â€” so callers like pillar-up can import resolveTerm()
 // directly without dragging in the world-observer stack.
 //
 // Why server-side resolution:
@@ -13,12 +13,12 @@
 //     20-iteration loop cap.
 //
 // Reuse contract:
-//   pillar-up wants NL→ID lookup ("place dirt") without a locator call.
+//   pillar-up wants NLâ†’ID lookup ("place dirt") without a locator call.
 //   Import { resolveTerm } directly; no observer/registry plumbing.
 //
-// Pitfall — loose-term collision:
+// Pitfall â€” loose-term collision:
 //   Loose-term keys ALWAYS expand. `resolveTerm('stone')` returns 7 stone
-//   variants — `find('stone')` may return granite when the caller wanted
+//   variants â€” `find('stone')` may return granite when the caller wanted
 //   literal `stone`. To get a strict literal match, pass the exact MC ID
 //   (e.g. `find('stone')` returns variants; `find('granite')` returns only
 //   granite via the unknown-key fallthrough).
@@ -45,12 +45,12 @@ const TABLE = {
  *
  * Known loose keys (see {@link LOOSE_TERMS}) expand to their variant list.
  * Unknown inputs are lowercased / trimmed and returned as a single-element
- * array — the caller treats this as a strict exact-ID lookup.
+ * array â€” the caller treats this as a strict exact-ID lookup.
  *
  * @param {string} name  Loose term ("wood", "ore", ...) or exact MC ID
  *                       ("oak_log"). Coerced via String(...). Empty / nullish
  *                       inputs return `[]`.
- * @returns {string[]}   Array of MC block IDs. Always a fresh copy — safe
+ * @returns {string[]}   Array of MC block IDs. Always a fresh copy â€” safe
  *                       to mutate by the caller.
  */
 export function resolveTerm(name) {
@@ -65,3 +65,7 @@ export function resolveTerm(name) {
  * @type {string[]}
  */
 export const LOOSE_TERMS = Object.keys(TABLE)
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * When to offer bringing the own-key (local) profile's companions into a Sei
  * account (261023).
  *
@@ -99,9 +99,9 @@ export interface BootOfferDeps {
  * the existing-account offer never saw it, so their local companions sit in
  * the local profile; this offers them once.
  *
- *   'wait' — not a good moment; check again later.
- *   'done' — nothing to offer, or this account already answered.
- *   'show' — show the modal now (the UI is re-checked after the reads).
+ *   'wait' â€” not a good moment; check again later.
+ *   'done' â€” nothing to offer, or this account already answered.
+ *   'show' â€” show the modal now (the UI is re-checked after the reads).
  *   'party_full': there is something to bring, but it would not fit the
  *     party (261116): say so in one line instead of offering the modal.
  */
@@ -122,3 +122,7 @@ export async function checkBootImportOffer(
   if (importBlockedByParty(peek)) return { kind: 'party_full', peek };
   return { kind: 'show', peek };
 }
+
+
+
+

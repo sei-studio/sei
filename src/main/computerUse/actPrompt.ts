@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: prompt text for the vision chooser and the completion
  * check. Plain prose (see the prompt-writing-style note): no dramatic
  * framing, no example dialogue, no trigger phrases. The one rule that is
@@ -68,3 +68,7 @@ export const VERIFY_SYSTEM = `You check whether a task on a computer screen is f
 export function buildVerifyText(goal: string): string {
   return `The task was: "${goal.trim()}"\nIs this task achieved in the screenshot? Answer yes or no and give a short reason.`;
 }
+
+
+
+

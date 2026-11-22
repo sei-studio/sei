@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   UI_LANGUAGES,
   UI_LANGUAGE_NATIVE_NAMES,
@@ -18,8 +18,8 @@ describe('UI language list', () => {
       expect(UI_LANGUAGE_SHORT[l]).toBeTruthy();
       expect(() => new Intl.DateTimeFormat(uiLocaleTag(l))).not.toThrow();
     }
-    expect(UI_LANGUAGE_NATIVE_NAMES.ja).toBe('日本語');
-    expect(UI_LANGUAGE_NATIVE_NAMES.ru).toBe('Русский');
+    expect(UI_LANGUAGE_NATIVE_NAMES.ja).toBe('æ—¥æœ¬èªž');
+    expect(UI_LANGUAGE_NATIVE_NAMES.ru).toBe('Ð ÑƒÑÑÐºÐ¸Ð¹');
     expect(UI_LANGUAGE_NATIVE_NAMES.it).toBe('Italiano');
   });
 
@@ -72,12 +72,12 @@ describe('formatMessage', () => {
   });
 
   it('picks Russian plural forms', () => {
-    const t = '{n, plural, one {# день} few {# дня} many {# дней} other {# дня}}';
-    expect(formatMessage(t, { n: 1 }, 'ru')).toBe('1 день');
-    expect(formatMessage(t, { n: 3 }, 'ru')).toBe('3 дня');
-    expect(formatMessage(t, { n: 5 }, 'ru')).toBe('5 дней');
-    expect(formatMessage(t, { n: 21 }, 'ru')).toBe('21 день');
-    expect(formatMessage(t, { n: 1.5 }, 'ru')).toBe('1.5 дня');
+    const t = '{n, plural, one {# Ð´ÐµÐ½ÑŒ} few {# Ð´Ð½Ñ} many {# Ð´Ð½ÐµÐ¹} other {# Ð´Ð½Ñ}}';
+    expect(formatMessage(t, { n: 1 }, 'ru')).toBe('1 Ð´ÐµÐ½ÑŒ');
+    expect(formatMessage(t, { n: 3 }, 'ru')).toBe('3 Ð´Ð½Ñ');
+    expect(formatMessage(t, { n: 5 }, 'ru')).toBe('5 Ð´Ð½ÐµÐ¹');
+    expect(formatMessage(t, { n: 21 }, 'ru')).toBe('21 Ð´ÐµÐ½ÑŒ');
+    expect(formatMessage(t, { n: 1.5 }, 'ru')).toBe('1.5 Ð´Ð½Ñ');
   });
 
   it('picks one/other for pt-BR and es, and =N beats the category', () => {
@@ -95,9 +95,13 @@ describe('formatMessage', () => {
 
 describe('joinSentences', () => {
   it('joins CJK without a space and everything else with one', () => {
-    expect(joinSentences('ja', 'あ。', 'い。')).toBe('あ。い。');
-    expect(joinSentences('zh', '甲。', '乙。')).toBe('甲。乙。');
-    expect(joinSentences('ru', 'А.', 'Б.')).toBe('А. Б.');
+    expect(joinSentences('ja', 'ã‚ã€‚', 'ã„ã€‚')).toBe('ã‚ã€‚ã„ã€‚');
+    expect(joinSentences('zh', 'ç”²ã€‚', 'ä¹™ã€‚')).toBe('ç”²ã€‚ä¹™ã€‚');
+    expect(joinSentences('ru', 'Ð.', 'Ð‘.')).toBe('Ð. Ð‘.');
     expect(joinSentences('es', '', 'B.')).toBe('B.');
   });
 });
+
+
+
+

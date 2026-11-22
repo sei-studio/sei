@@ -1,5 +1,5 @@
-/**
- * DevDashShot — dev-only screenshot harness for the game dashboards, NOT
+﻿/**
+ * DevDashShot â€” dev-only screenshot harness for the game dashboards, NOT
  * part of the app UI (260909; same pattern as chess/DevChessShot).
  *
  * main.tsx lazy-loads this behind `import.meta.env.DEV` when the renderer
@@ -417,3 +417,7 @@ function DevHomeShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

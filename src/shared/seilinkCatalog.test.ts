@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The 261105 room catalog format: patterns, accents, light colour, cycle,
  * particles, shared files, cover fit, new slots and per-pack labels.
  */
@@ -299,3 +299,7 @@ describe('room shape for analytics', () => {
     expect(roomShapeOf(manifest, setSlotComponent(manifest, s0, 'lights', null)).particles).toBe(1);
   });
 });
+
+
+
+

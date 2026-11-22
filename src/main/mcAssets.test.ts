@@ -1,5 +1,5 @@
-/**
- * mcAssets.test.ts — the /mcassets URL contract (260721): strict parse (no
+﻿/**
+ * mcAssets.test.ts â€” the /mcassets URL contract (260721): strict parse (no
  * traversal, no percent-decoding), closest-version pick, and item-name ->
  * texture-file resolution through prismarine-viewer's items_textures.json,
  * including the containment guard. Plus the skin server endpoint end to end
@@ -162,7 +162,7 @@ describe('resolveMcAssetFile caching (260725)', () => {
     await mkdir(path.join(late, '1.21.4', 'items'), { recursive: true });
     expect(await resolveMcAssetFile(late, '1.21.4', 'iron_pickaxe')).toBeNull();
 
-    // Once both reads succeed the item resolves — no restart needed.
+    // Once both reads succeed the item resolves â€” no restart needed.
     await writeFile(
       path.join(late, '1.21.4', 'items_textures.json'),
       JSON.stringify([
@@ -206,3 +206,7 @@ describe('skin server /mcassets endpoint', () => {
     expect(traversal.headers.get('content-type')).toBe('text/plain');
   });
 });
+
+
+
+

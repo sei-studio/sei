@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../ipcClient', () => ({
   sei: { avatarGet: vi.fn(async () => null), facepackForCharacter: vi.fn(async () => null), seilinkAnimaCutout: vi.fn(async () => null) },
@@ -78,3 +78,7 @@ describe('WorldLink uploaded looks (261116)', () => {
     expect(await worldlinkCustomImage({ ...aria, id: 'h' })).toBe(false);
   });
 });
+
+
+
+

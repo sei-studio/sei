@@ -1,9 +1,9 @@
-// src/bot/adapter/minecraft/behaviors/reflex.test.js
+﻿// src/bot/adapter/minecraft/behaviors/reflex.test.js
 //
 // Reflex evasion micro-controller (Phase 17, plan 17-01).
-//   Task 2 — ray math (closestApproach) + threat scan/priority + non-goal
+//   Task 2 â€” ray math (closestApproach) + threat scan/priority + non-goal
 //            pulse responses (arrow sidestep, melee strafe).
-//   Task 3 — creeper flee goal takeover + _seiReflexActive mutex + single
+//   Task 3 â€” creeper flee goal takeover + _seiReflexActive mutex + single
 //            sei:reflex announcement per engagement.
 //
 // The arrow ray test is the unit core: closest-approach (point-to-line)
@@ -62,20 +62,20 @@ afterEach(() => {
 })
 
 describe('closestApproach (arrow ray math)', () => {
-  it('arrow aimed directly at the bot → missDist ≈ 0, ahead = true', () => {
+  it('arrow aimed directly at the bot â†’ missDist â‰ˆ 0, ahead = true', () => {
     // Arrow at (5,0,0) flying toward the origin where the bot stands.
     const r = closestApproach({ x: 5, y: 0, z: 0 }, { x: -1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 })
     expect(r.ahead).toBe(true)
     expect(r.missDist).toBeCloseTo(0, 5)
   })
 
-  it('arrow already past the bot (velocity points away) → ahead = false', () => {
+  it('arrow already past the bot (velocity points away) â†’ ahead = false', () => {
     // Arrow at the origin moving in +x, bot behind it at -x: it is leaving.
     const r = closestApproach({ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: -10, y: 0, z: 0 })
     expect(r.ahead).toBe(false)
   })
 
-  it('arrow offset 5 blocks laterally → missDist ≈ 5, ahead = true (no dodge)', () => {
+  it('arrow offset 5 blocks laterally â†’ missDist â‰ˆ 5, ahead = true (no dodge)', () => {
     // Arrow flies along +x; bot is 5 blocks off that line on +z.
     const r = closestApproach({ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 10, y: 0, z: 5 })
     expect(r.ahead).toBe(true)
@@ -102,7 +102,7 @@ describe('scanThreats (classification + priority)', () => {
     const bot = makeBot()
     // Arrow on a direct collision course (would be an arrow threat on its own).
     bot.entities[2] = { id: 2, name: 'arrow', position: { x: 5, y: 0, z: 0 }, velocity: { x: -1, y: 0, z: 0 } }
-    // A creeper mid-fuse (metadata[16] === 1) — panic override.
+    // A creeper mid-fuse (metadata[16] === 1) â€” panic override.
     bot.entities[3] = { id: 3, name: 'creeper', position: { x: 6, y: 0, z: 0 }, metadata: { 16: 1 } }
 
     const threat = scanThreats(bot, cfg().adapter.minecraft)
@@ -120,7 +120,7 @@ describe('scanThreats (classification + priority)', () => {
 
   it('ignores an arrow that misses by more than the threshold', () => {
     const bot = makeBot()
-    // Flies along +x, 5 blocks off the bot line → missDist 5 ≫ 1.2.
+    // Flies along +x, 5 blocks off the bot line â†’ missDist 5 â‰« 1.2.
     bot.entities[2] = { id: 2, name: 'arrow', position: { x: 0, y: 0, z: 5 }, velocity: { x: 1, y: 0, z: 0 } }
     const threat = scanThreats(bot, cfg().adapter.minecraft)
     expect(threat).toBeNull()
@@ -143,7 +143,7 @@ describe('scanThreats (classification + priority)', () => {
 
 describe('inFieldOfView + scanThreats sight gate (head direction, not body)', () => {
   // mineflayer convention (same as gaze.js aimAt): yaw 0 faces -z, pitch
-  // positive is up. cos(60°) = cos of the default 120°-total half-angle.
+  // positive is up. cos(60Â°) = cos of the default 120Â°-total half-angle.
   const COS60 = Math.cos(Math.PI / 3)
   const eye = (yaw = 0, pitch = 0) => ({ yaw, pitch, position: { x: 0, y: 0, z: 0 } })
 
@@ -152,14 +152,14 @@ describe('inFieldOfView + scanThreats sight gate (head direction, not body)', ()
     expect(inFieldOfView(eye(), { x: 0, y: 1.62, z: 5 }, COS60)).toBe(false)
   })
 
-  it('target 90° off the look direction is outside a 120° cone', () => {
+  it('target 90Â° off the look direction is outside a 120Â° cone', () => {
     expect(inFieldOfView(eye(), { x: 5, y: 1.62, z: 0 }, COS60)).toBe(false)
     // ...but inside once the head turns toward it (yaw -PI/2 faces +x... check:
     // viewDir.x = -sin(-PI/2) = 1).
     expect(inFieldOfView(eye(-Math.PI / 2), { x: 5, y: 1.62, z: 0 }, COS60)).toBe(true)
   })
 
-  it('fails OPEN when the entity has no yaw/pitch (no head data → cannot gate)', () => {
+  it('fails OPEN when the entity has no yaw/pitch (no head data â†’ cannot gate)', () => {
     expect(inFieldOfView({ position: { x: 0, y: 0, z: 0 } }, { x: 0, y: 0, z: 5 }, COS60)).toBe(true)
   })
 
@@ -179,7 +179,7 @@ describe('inFieldOfView + scanThreats sight gate (head direction, not body)', ()
     bot.entity.pitch = 0
     bot.entities[7] = { id: 7, name: 'creeper', position: { x: 0, y: 0, z: 5 } } // behind, in band
     expect(scanThreats(bot, cfg().adapter.minecraft)).toBeNull()
-    bot.entities[7].metadata = { 16: 1 } // fuse lit — audio cue, sight gate exempt
+    bot.entities[7].metadata = { 16: 1 } // fuse lit â€” audio cue, sight gate exempt
     const threat = scanThreats(bot, cfg().adapter.minecraft)
     expect(threat?.kind).toBe('creeper')
     expect(threat?.panic).toBe(true)
@@ -265,7 +265,7 @@ describe('startReflex pulse responses (no pathfinder goal contention)', () => {
     const dispose = startReflex(bot, cfg())
     bot.emit('physicsTick') // strafing this tick
     expect(['left', 'right'].some((s) => bot._controls[s] === true)).toBe(true)
-    // Mob leaves scan range → the next tick must drop the strafe controls so the
+    // Mob leaves scan range â†’ the next tick must drop the strafe controls so the
     // bot does not keep drifting after the fight.
     delete bot.entities[2]
     bot.emit('physicsTick')
@@ -277,7 +277,7 @@ describe('startReflex pulse responses (no pathfinder goal contention)', () => {
     const bot = makeBot()
     bot._controls.forward = true // e.g. the pathfinder is mid-move
     const dispose = startReflex(bot, cfg())
-    bot.emit('physicsTick') // no threats → releaseStrafe is a guarded no-op
+    bot.emit('physicsTick') // no threats â†’ releaseStrafe is a guarded no-op
     expect(bot._controls.forward).toBe(true)
     dispose()
   })
@@ -322,7 +322,7 @@ describe('startReflex creeper flee (goal takeover + mutex + announcement)', () =
     dispose()
   })
 
-  it('drives a creeper 7→13 blocks: GoalInvert set once, saved goal restored once (no oscillation)', () => {
+  it('drives a creeper 7â†’13 blocks: GoalInvert set once, saved goal restored once (no oscillation)', () => {
     const bot = makeBot()
     const dispose = startReflex(bot, cfg())
     const priorGoal = { _id: 'gather-goal' }
@@ -331,13 +331,13 @@ describe('startReflex creeper flee (goal takeover + mutex + announcement)', () =
     bot.entities[7] = creeperAt(7)
     bot.emit('physicsTick') // enter flee
 
-    // Inside the hysteresis band (8 < d ≤ 12): keep fleeing, no new setGoal.
+    // Inside the hysteresis band (8 < d â‰¤ 12): keep fleeing, no new setGoal.
     bot.entities[7].position.x = 9
     bot.emit('physicsTick')
     bot.entities[7].position.x = 11
     bot.emit('physicsTick')
 
-    // Past the exit band → restore.
+    // Past the exit band â†’ restore.
     bot.entities[7].position.x = 13
     bot.emit('physicsTick')
 
@@ -371,3 +371,7 @@ describe('startReflex creeper flee (goal takeover + mutex + announcement)', () =
     dispose()
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unvoiced lines (261121, T507): a line whose TTS failed is still shown, and
  * the generic voice-failure notice is shown once, cleared by audio, and not
  * flashed again within the gap. Plus the queue contract the store relies on:
@@ -30,9 +30,9 @@ describe('nextUnvoicedRun', () => {
   });
 
   it('joins CJK lines without a space', () => {
-    let run = nextUnvoicedRun(null, '', 'sui', '真的吗？', 1000);
-    run = nextUnvoicedRun(run, run.caption, 'sui', '带我去看看。', 2000);
-    expect(run.caption).toBe('真的吗？带我去看看。');
+    let run = nextUnvoicedRun(null, '', 'sui', 'çœŸçš„å—ï¼Ÿ', 1000);
+    run = nextUnvoicedRun(run, run.caption, 'sui', 'å¸¦æˆ‘åŽ»çœ‹çœ‹ã€‚', 2000);
+    expect(run.caption).toBe('çœŸçš„å—ï¼Ÿå¸¦æˆ‘åŽ»çœ‹çœ‹ã€‚');
   });
 
   it('keeps only the newest lines of a long run', () => {
@@ -146,3 +146,7 @@ describe('a failed slot reports at the playhead (queue contract)', () => {
     expect(done).toHaveBeenCalledWith(false);
   });
 });
+
+
+
+

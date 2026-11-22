@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew Valley renderer registration (game adapters M1, 260908). Imported
  * once from App.tsx for its side effects: the launch + dashboard panels, the
  * summon flow (install gate before the world gate), the error routes for the
@@ -53,3 +53,7 @@ BOT_ERROR_ROUTES.stardew = {
 
 registerGameSettingsSection({ game: 'stardew', title: 'Stardew Valley', Section: StardewSettingsSection });
 registerGameSetupModal('stardew', StardewSetupModal);
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * 260817 (china-compat W10) — maia download source ordering.
+﻿/**
+ * 260817 (china-compat W10) â€” maia download source ordering.
  *
  * The W10 cloud-no-regression rule: a supported-region user's first chess
  * launch downloads from the ORIGINAL GitHub release URL first (byte-identical
@@ -31,7 +31,7 @@ describe('modelUrlOrder (W10)', () => {
   });
 });
 
-// ── 260929: timeout + retry ─────────────────────────────────────────────────
+// â”€â”€ 260929: timeout + retry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The first-game model download used to be a bare fetch() with no timeout: a
 // stalled connection left the board in "preparing" forever. These pin the
@@ -170,3 +170,7 @@ describe('downloadModelFile (260929 timeout + retry)', () => {
     await expect(stat(`${target}.download`)).rejects.toThrow();
   });
 });
+
+
+
+

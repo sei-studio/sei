@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: perception for the text chooser. Turns one frame's
  * Accessibility tree (helper ax_dump) and on-device OCR boxes (helper
  * screenshot ocr:true) into
@@ -308,3 +308,7 @@ export function focusInTarget(focused: AxNode | null | undefined, target: Rect):
   if (!focused?.frame) return false;
   return !!intersect(focused.frame, target);
 }
+
+
+
+

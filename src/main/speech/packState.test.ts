@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Mirror-first URL builder + pack-state reducer tests (260816 local speech).
  */
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,7 @@ describe('speechSources (mirror-first)', () => {
     expect(sources[0].url.startsWith('https://dl.sei.gg/speech/')).toBe(true);
     expect(sources[0].connectTimeoutMs).toBe(MIRROR_CONNECT_TIMEOUT_MS);
     expect(sources[1].url).toBe(def.originUrl);
-    // The origin has NO short connect timeout — it must work mirror-less.
+    // The origin has NO short connect timeout â€” it must work mirror-less.
     expect(sources[1].connectTimeoutMs).toBeUndefined();
   });
 
@@ -46,7 +46,7 @@ describe('reducePackState', () => {
     expect(s['tts-en'].state).toBe('absent');
   });
 
-  it('download-start → progress (monotonic) → done', () => {
+  it('download-start â†’ progress (monotonic) â†’ done', () => {
     let s = reducePackState(null, { kind: 'snapshot', ready: [] });
     s = reducePackState(s, { kind: 'download-start', packId: 'tts-en' });
     expect(s['tts-en']).toMatchObject({ state: 'downloading', pct: 0 });
@@ -88,3 +88,7 @@ describe('reducePackState', () => {
     expect(s['tts-en'].pct).toBe(100);
   });
 });
+
+
+
+

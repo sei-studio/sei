@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Avatar library client (261106): a character's server-stored avatars
  * (sei-proxy /avatars/v1), kept in step with this app. Design:
  * docs/agents/avatar-library.md. Wiring: avatarLibraryRuntime.ts.
@@ -175,7 +175,7 @@ export class AvatarLibraryClient {
     this.lastEffective.clear();
   }
 
-  // ── reads ─────────────────────────────────────────────────────────────────
+  // â”€â”€ reads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async view(characterId: string, opts: { fresh?: boolean } = {}): Promise<AvatarLibraryView> {
     const list = await this.list(characterId, opts.fresh === true).catch((err) => {
@@ -203,7 +203,7 @@ export class AvatarLibraryClient {
     return eff && eff.kind === 'portrait' ? { avatarId: eff.id, rev: eff.rev } : null;
   }
 
-  // ── writes ────────────────────────────────────────────────────────────────
+  // â”€â”€ writes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   /** Upload an image as a new portrait avatar (owner). */
   async addPortrait(characterId: string, bytes: Uint8Array, name: string | null): Promise<AvatarLibraryResult> {
@@ -338,7 +338,7 @@ export class AvatarLibraryClient {
     return this.setPick(characterId, portrait.id);
   }
 
-  // ── internals ─────────────────────────────────────────────────────────────
+  // â”€â”€ internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   private flight(key: string, fn: () => Promise<AvatarLibraryView>): Promise<AvatarLibraryView> {
     const live = this.flights.get(key);
@@ -681,3 +681,7 @@ export class AvatarLibraryClient {
     }
   }
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * LocalImportRow — Settings → Account entry for the own-key import (261023).
+﻿/**
+ * LocalImportRow â€” Settings â†’ Account entry for the own-key import (261023).
  *
  * The import is offered on sign-in and once at boot; a player who chose "Not
  * now" (or never saw it) can bring their local companions in from here. The
@@ -98,3 +98,7 @@ export function LocalImportRow({ accountId }: { accountId: string }): React.Reac
     </>
   );
 }
+
+
+
+

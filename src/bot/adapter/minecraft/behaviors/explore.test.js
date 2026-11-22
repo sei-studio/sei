@@ -1,4 +1,4 @@
-// 261108 (quality pass 47): explore heading, column goal, walk-on and detours.
+﻿// 261108 (quality pass 47): explore heading, column goal, walk-on and detours.
 // Free play: "forward" walked her back to base behind the player (gaze turned
 // her), a 3D goal inside a hill had no path, an 8s leg ran out a third of the
 // way, and a blocked first leg gave up.
@@ -165,7 +165,7 @@ describe('exploreAction', () => {
     const walk = vi.fn(async () => 'cant_reach')
     const r = await exploreAction({ orientation: 'north', blocks: 20 }, bot, {}, { walk })
     expect(walk).toHaveBeenCalledTimes(5)
-    expect(r).toMatch(/^couldn't move north \(cant_reach\); also tried northwest, northeast, west, east — blocked/)
+    expect(r).toMatch(/^couldn't move north \(cant_reach\); also tried northwest, northeast, west, east â€” blocked/)
   })
 
   it('stops on abort', async () => {
@@ -175,3 +175,7 @@ describe('exploreAction', () => {
     expect(await exploreAction({}, bot, { signal: ac.signal }, { walk })).toBe('aborted')
   })
 })
+
+
+
+

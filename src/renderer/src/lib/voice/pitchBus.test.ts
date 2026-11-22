@@ -1,11 +1,11 @@
-/**
- * The rate → semitones conversion (260731).
+﻿/**
+ * The rate â†’ semitones conversion (260731).
  *
  * Everything else in pitchBus.ts is Web Audio graph plumbing that only means
  * anything against a real AudioContext; this is the one piece of arithmetic,
  * and it is the seam where the migration could silently mistune every voice in
  * the app. Character metadata still stores a frequency MULTIPLIER (so nothing
- * migrated), while the shifter is driven in SEMITONES — get this wrong by a
+ * migrated), while the shifter is driven in SEMITONES â€” get this wrong by a
  * factor and Sui comes back as a different person.
  */
 import { describe, it, expect } from 'vitest';
@@ -38,3 +38,7 @@ describe('semitonesFromRate', () => {
     expect(semitonesFromRate(VOICE_PITCH_MAX)).toBeCloseTo(5.8, 1);
   });
 });
+
+
+
+

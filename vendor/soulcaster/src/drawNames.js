@@ -1,4 +1,4 @@
-// Random candidate-name draw (BYOK/local copy).
+﻿// Random candidate-name draw (BYOK/local copy).
 //
 // The model used to pick names freely and collapsed onto a few favourites, so
 // castSoul now draws a short list of candidates at random and the model picks
@@ -34,9 +34,9 @@ export function normalizeName(name) {
     .normalize('NFKD')
     .replace(/\p{M}/gu, '')
     .toLowerCase()
-    .replace(/ø/g, 'o')
-    .replace(/[łŀ]/g, 'l')
-    .replace(/ı/g, 'i')
+    .replace(/Ã¸/g, 'o')
+    .replace(/[Å‚Å€]/g, 'l')
+    .replace(/Ä±/g, 'i')
     .replace(/[^\p{L}]/gu, '');
 }
 
@@ -167,3 +167,7 @@ export function nameMatchesCandidates(name, candidates) {
     return k === whole || words.includes(k) || whole.startsWith(k);
   });
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Tests for IconRail — B3 (Discord-style sidebar refactor).
+﻿/**
+ * Tests for IconRail â€” B3 (Discord-style sidebar refactor).
  *
  * Project convention (no @testing-library/react installed): exercise the
  * source contract via grep-style file presence checks plus module-import
@@ -7,12 +7,12 @@
  *
  * Invariants under test:
  *   1. Module exports an IconRail function symbol.
- *   2. Source removes the Minecraft button + Add-game (Plus → coming-soon)
+ *   2. Source removes the Minecraft button + Add-game (Plus â†’ coming-soon)
  *      affordances.
  *   3. Source renders a scrollable character avatar cluster (uses
  *      PixelPortrait or <img> at size 44).
- *   4. Source surfaces the round + button → add-character navigation.
- *   5. Source surfaces the CompassIcon → World tab gateway and writes
+ *   4. Source surfaces the round + button â†’ add-character navigation.
+ *   5. Source surfaces the CompassIcon â†’ World tab gateway and writes
  *      homeTab='world' before navigating.
  *   6. The StarIcon opens the Playtime page on both backends (261110; the
  *      local "Switch to cloud?" prompt moved to Playtime's Sei tab).
@@ -126,3 +126,7 @@ describe('IconRail (B3 Discord-style sidebar)', () => {
     expect(source.includes('slice(0, MAX_COMPANION_SLOTS)')).toBe(false);
   });
 });
+
+
+
+

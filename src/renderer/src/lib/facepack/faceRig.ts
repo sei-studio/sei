@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Face-set rig geometry (261116, product call 261116), pure. A face set is
  * flat pictures (a base per expression and head pose, eye and mouth patches),
  * so her idle life is drawn as a gentle WARP of those pictures (facepackGl.ts):
@@ -216,3 +216,7 @@ export function irisVisible(open: Uint8ClampedArray, w: number, e: Ellipse): boo
   const sd = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
   return sd > 0.09;
 }
+
+
+
+

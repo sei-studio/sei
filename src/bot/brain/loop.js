@@ -1,5 +1,5 @@
-/**
- * Loop — owns the canonical `messages` array for one Sei active task cycle
+﻿/**
+ * Loop â€” owns the canonical `messages` array for one Sei active task cycle
  * Public API is locked:
  *
  *   appendUserTurn(blocks, { seed })
@@ -14,24 +14,24 @@
  *   _internal: { messages }    -> harness seam (mirrors src/llm/chains.js)
  *
  * Trim algorithm (D-43, rebuild-on-call):
- *   • `messages` stays canonical and is NEVER mutated by buildAnthropicPayload.
- *   • The output payload clones every user turn; for each text block:
+ *   â€¢ `messages` stays canonical and is NEVER mutated by buildAnthropicPayload.
+ *   â€¢ The output payload clones every user turn; for each text block:
  *       - drop the `name` field (Anthropic SDK schema has no `name` on text
- *         blocks — Pitfall 1)
+ *         blocks â€” Pitfall 1)
  *       - if `name === 'snapshot'` AND this turn is NOT the last user turn, skip it
  *       - seed turns keep `seed_player` text blocks across the
  *         entire loop (D-45); the seed turn's snapshot block is still subject
  *         to the "strip if not last" rule.
  *       - once supersedeSeedConversation() ran, the seed's
  *         `recent_conversation` and `own_repeats` blocks are skipped too.
- *   • Tool_result blocks pass through unchanged.
- *   • Assistant turns pass through unchanged (their tool_use blocks are SDK-shaped).
+ *   â€¢ Tool_result blocks pass through unchanged.
+ *   â€¢ Assistant turns pass through unchanged (their tool_use blocks are SDK-shaped).
  *
  * Pairing invariant (D-44, Pitfall 3): appendToolResults asserts that the
  * count and ids of `tool_use` blocks in the prior assistant turn match the
  * supplied results 1:1. Mismatched ids throw.
  *
- * Closure-private state — mirrors src/llm/inflight.js + src/llm/chains.js.
+ * Closure-private state â€” mirrors src/llm/inflight.js + src/llm/chains.js.
  */
 
 let _loopId = 1
@@ -52,7 +52,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
   }
   // 260619: the say() reminder used to ride only on the SEED turn, so every
   // mid-loop continuation turn (a long gather/dig/craft chain) carried no say()
-  // contract at all — the model kept acting and dumped any speech into its
+  // contract at all â€” the model kept acting and dumped any speech into its
   // private text, which is never sent (the "Sui silent through a whole build"
   // bug). When set, appendToolResults restates it as the last block of every
   // continuation turn so the contract is present on EVERY turn, not just the seed.
@@ -128,12 +128,12 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
   /**
    * Image retention cap: replace every image block currently in history with a
    * short text placeholder. Called by the orchestrator right BEFORE it appends
-   * a fresh frame, so the canonical history never holds more than one image —
+   * a fresh frame, so the canonical history never holds more than one image â€”
    * bounding both byteSize() and the per-call payload (each 256px frame is
    * ~7KB base64 / ~90 input tokens that would otherwise be re-sent on EVERY
    * subsequent iteration of the loop). This is a deliberate exception to the
    * "canonical is append-only" posture: the newest view supersedes older ones
-   * the way the newest snapshot supersedes older snapshots (D-43) — but unlike
+   * the way the newest snapshot supersedes older snapshots (D-43) â€” but unlike
    * the snapshot rule it must shrink the CANONICAL array, not just the payload,
    * or long follow-loops accumulate dead base64 in memory.
    */
@@ -164,7 +164,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
         out.push({ role: 'assistant', content: turn.content.map(b => ({ ...b })) })
         continue
       }
-      // User turn — rebuild content with trim rules
+      // User turn â€” rebuild content with trim rules
       const newContent = []
       for (const blk of turn.content) {
         if (!blk || typeof blk !== 'object') continue
@@ -174,15 +174,15 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
         }
         if (blk.type === 'text') {
           const isSnapshot = blk.name === 'snapshot'
-          // Snapshot stripped from any non-last user turn (applies to seed too — D-45).
+          // Snapshot stripped from any non-last user turn (applies to seed too â€” D-45).
           if (isSnapshot && i !== lastUserIdx) continue
           if (turn.seed && seedConversationSuperseded && SEED_SUPERSEDED_BLOCKS.has(blk.name)) continue
-          // Strip the `name` field — Anthropic SDK schema has no `name` on text blocks.
+          // Strip the `name` field â€” Anthropic SDK schema has no `name` on text blocks.
           const { name: _omit, ...rest } = blk
           newContent.push({ ...rest })
           continue
         }
-        // Unknown block type — pass through deep-cloned.
+        // Unknown block type â€” pass through deep-cloned.
         newContent.push({ ...blk })
       }
       out.push({ role: 'user', content: newContent })
@@ -212,7 +212,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
     get abortController() { return abortController },
     // Expose a setter so the orchestrator's replaceAbortController can swap
     // controllers cleanly. Validates the
-    // argument shape — must look like an AbortController.
+    // argument shape â€” must look like an AbortController.
     _setAbortController(c) {
       if (!c || typeof c.abort !== 'function' || !c.signal) {
         throw new Error('_setAbortController: AbortController-shaped instance required')
@@ -223,3 +223,7 @@ export function createLoop({ iterationCap, logger = console, speakReminder = nul
     _internal: { messages },
   }
 }
+
+
+
+

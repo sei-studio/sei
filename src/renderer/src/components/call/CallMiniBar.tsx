@@ -1,7 +1,7 @@
-/**
- * CallMiniBar — the app-level call watchdog (260722 rework). Renders nothing
+﻿/**
+ * CallMiniBar â€” the app-level call watchdog (260722 rework). Renders nothing
  * except the call-level popups that must survive every view (260810: the
- * inactivity "Are you still there?" popup — hosted here precisely because
+ * inactivity "Are you still there?" popup â€” hosted here precisely because
  * this component is mounted in the App shell on every screen, so the popup
  * overlays the call view, game surfaces, backdrop scenes, and any other
  * screen the player wandered to while the call runs in the background).
@@ -88,7 +88,7 @@ export function CallMiniBar(): React.ReactElement {
     }
   }, [gameActive, awayFromCall, participants, navigate]);
 
-  // Armed share → live call. 'live' and not 'connecting': the capture pipeline
+  // Armed share â†’ live call. 'live' and not 'connecting': the capture pipeline
   // and the call's turn loop are the same conversation (useVoiceStore routes a
   // player utterance THROUGH the share), so starting the share against a call
   // that has not finished connecting would attach the grid to a session that is
@@ -114,3 +114,7 @@ export function CallMiniBar(): React.ReactElement {
     </>
   );
 }
+
+
+
+

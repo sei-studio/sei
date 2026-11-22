@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The SeiLink entry points, in one place (261105, T337).
  *
  * Every way into SeiLink goes through here: the chat top bar's SeiLink
@@ -172,3 +172,7 @@ export function moveInOrOut(characterId: string, source: SeilinkEntrySource): Pr
     await moveIn(characterId, source);
   });
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { isPoolVoiceId } from './poolVoiceIds';
+﻿import { isPoolVoiceId } from './poolVoiceIds';
 
 /**
  * Shared voice-id sentinels (260720).
@@ -73,7 +73,7 @@ export function isWellFormedVoiceId(id: unknown): id is string {
  * voice is not an own-account pick (pool voice, Auto, No voice, malformed).
  * A Sei pool (or legacy) id is never an own voice, even with a marker beside
  * it (261024): v0.6.9 stamped the marker on pool voices picked while the
- * user's ElevenLabs library held a copy of them ("Sei — Josh"), and those
+ * user's ElevenLabs library held a copy of them ("Sei â€” Josh"), and those
  * stale markers must read as a plain pool voice everywhere. */
 export function ownVoiceOf(metadata: Record<string, unknown> | undefined | null): OwnVoicePick | null {
   if (!metadata || !isWellFormedVoiceId(metadata.voiceId)) return null;
@@ -173,3 +173,7 @@ export function applySharedVoicePick(
   else delete next[SHARED_VOICE_KEY];
   return next;
 }
+
+
+
+

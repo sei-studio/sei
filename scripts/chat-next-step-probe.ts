@@ -1,5 +1,5 @@
-/**
- * scripts/chat-next-step-probe.ts — live check of the text-chat "next time"
+﻿/**
+ * scripts/chat-next-step-probe.ts â€” live check of the text-chat "next time"
  * check (261107, src/main/chatNextStep.ts).
  *
  * Builds each scene's check input with the REAL chat builder (chatCheckInput:
@@ -394,3 +394,7 @@ main().catch((err) => {
   console.error(err instanceof Error ? err.message : err);
   process.exit(1);
 });
+
+
+
+

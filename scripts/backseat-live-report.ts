@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * scripts/backseat-live-report.ts — metrics, transcripts and captioned review
+ * scripts/backseat-live-report.ts â€” metrics, transcripts and captioned review
  * clips for runs produced by scripts/backseat-live-replay.ts (261009).
  *
  *   npx tsx scripts/backseat-live-report.ts <runsDir> <vidsDir> <outDir> [--clips] [--crf 25] [--videos minecraft,roblox] [--badge "(tuned)"]
@@ -219,7 +219,7 @@ function transcriptMd(m: RunM, run: ReturnType<typeof loadRun>): string {
     if (e.type === 'log' && /NO LINE/.test(e.msg)) items.push({ vt: e.vt, row: `| ${e.vt.toFixed(1)} | ${String(e.msg).match(/turn (\w+)/)?.[1] ?? '?'} | 0 | | _(silence) reply on an always-speak tick_ |` })
   }
   items.sort((a, b) => a.vt - b.vt)
-  rows.push(`# ${m.name} (${m.model})`, '', `Source label: ${m.label} · seed ${m.seed} · ${m.lines} lines · ${m.linesPerMin}/min · cost $${m.cost}`, '',
+  rows.push(`# ${m.name} (${m.model})`, '', `Source label: ${m.label} Â· seed ${m.seed} Â· ${m.lines} lines Â· ${m.linesPerMin}/min Â· cost $${m.cost}`, '',
     'vt = seconds into the 170 s clip; latency = API time for the turn that produced the line (ms).', '',
     '| vt (s) | tick | words | latency ms | text |', '|---|---|---|---|---|', ...items.map((i) => i.row), '')
   return rows.join('\n')
@@ -253,7 +253,7 @@ Style: Badge,Noto Sans,24,&H00FFFFFF,&H00FFFFFF,&H50000000,&H50000000,1,0,0,0,10
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `
   const ev: string[] = []
-  ev.push(`Dialogue: 0,${assTime(0)},${assTime(run.durationS + 1)},Badge,,0,0,0,,${assEsc(`Sui on Haiku ${tag}${badgeSuffix} · ${title}`)}`)
+  ev.push(`Dialogue: 0,${assTime(0)},${assTime(run.durationS + 1)},Badge,,0,0,0,,${assEsc(`Sui on Haiku ${tag}${badgeSuffix} Â· ${title}`)}`)
   const lines = [...run.lines].sort((a, b) => a.vt - b.vt)
   lines.forEach((l, i) => {
     let end = l.vt + 5
@@ -403,3 +403,7 @@ function main() {
 }
 
 main()
+
+
+
+

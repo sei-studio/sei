@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NSIS -> Velopack migration on Windows (261030). The plan and every rule are
  * in velopackMigrationPolicy.ts; this file runs them.
  *
@@ -688,3 +688,7 @@ export function scheduleVelopackMigration(deps: MigrationDeps): void {
 
 /** The NSIS-side install, for velopackMigration.test.ts: scheduleVelopackMigration runs it only in a packaged Windows build. */
 export const installVelopackForTest = installVelopack;
+
+
+
+

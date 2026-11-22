@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Search QA, Backseat game sessions (261003).
  *
  *   npx vitest run --config scripts/search-qa/vitest.config.ts backseat
@@ -199,3 +199,7 @@ describe('search QA: backseat', () => {
     await writeFile(path.join(OUT, `backseat-${tag}.json`), JSON.stringify(results, null, 2));
   }, 3_600_000);
 });
+
+
+
+

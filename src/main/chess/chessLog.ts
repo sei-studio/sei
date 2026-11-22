@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-game chess session log (260722).
  *
  * Rides the exact same pipeline as the Minecraft bot logs so a chess game can
@@ -12,7 +12,7 @@
  *   - session start/end: gameId, colors, elo, result;
  *   - every committed ply: SAN + UCI + FEN after;
  *   - every LLM turn as ONE multi-line [chess:turn] event: kind, the chess
- *     context block that was sent (compact — the persona prefix is stable and
+ *     context block that was sent (compact â€” the persona prefix is stable and
  *     omitted), each hop's raw text + tool calls + tool_result notes, what was
  *     spoken vs suppressed, token usage, wall time;
  *   - hold lifecycle: decided (with sampled prethink), presented, revised,
@@ -21,7 +21,7 @@
 import type { LogBatch } from '../../shared/ipc';
 import { createLogRouter, type LogRouter } from '../logRouter';
 
-/** `[HH:MM:SS.mmm]` — same stamp shape src/bot/brain/log.js emits. */
+/** `[HH:MM:SS.mmm]` â€” same stamp shape src/bot/brain/log.js emits. */
 function ts(): string {
   return `[${new Date().toISOString().slice(11, 23)}]`;
 }
@@ -76,3 +76,7 @@ export async function createChessLog(
 function flatten(s: string): string {
   return s.replace(/\s*\n\s*/g, ' | ');
 }
+
+
+
+

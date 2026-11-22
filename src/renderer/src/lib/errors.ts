@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Plain-English error narration surface (GUI-05).
  *
  * Sources:
- *   - 04-UI-SPEC.md §"Plain-English error copy" — verbatim copy table
- *   - 04-RESEARCH.md §"Pitfall 3" — KEYCHAIN_FALLBACK_PLAINTEXT (Linux fallback)
- *   - 04-09 PLAN — classifyRendererError heuristic table
+ *   - 04-UI-SPEC.md Â§"Plain-English error copy" â€” verbatim copy table
+ *   - 04-RESEARCH.md Â§"Pitfall 3" â€” KEYCHAIN_FALLBACK_PLAINTEXT (Linux fallback)
+ *   - 04-09 PLAN â€” classifyRendererError heuristic table
  *
  * Renderer-side ONLY. Adding a new ErrorClass requires:
  *   1. update src/shared/errorClasses.ts (the union)
@@ -19,7 +19,7 @@ import { PROVIDER_REGION_COPY, PROVIDER_REGION_FALLBACK_NAME, providerFromRegion
 import { errorMessageOf, stripIpcWrapper } from '@shared/ipcError';
 
 /**
- * Plain-English error copy. Verbatim from UI-SPEC §"Plain-English error copy".
+ * Plain-English error copy. Verbatim from UI-SPEC Â§"Plain-English error copy".
  * Adding a new ErrorClass requires adding a row here AND updating
  * src/shared/errorClasses.ts.
  */
@@ -32,7 +32,7 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // later on the same world), so lead with it.
   BOT_START_TIMEOUT: "Couldn't finish joining your world in time. Press Launch to try again.",
   LAN_NOT_OPEN: "We can't see an open LAN world. In Minecraft, press Esc, choose Open to LAN, then click Start LAN World.",
-  INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings → re-run onboarding to paste a fresh key.",
+  INVALID_API_KEY: "Your Anthropic API key was rejected. Open Settings â†’ re-run onboarding to paste a fresh key.",
   RATE_LIMITED: "Anthropic is throttling requests. Wait a minute and try again.",
   NETWORK_OFFLINE: "No internet connection. Reconnect and try again.",
   // 260916: the button this sits under says Launch, not Summon, and "stopped
@@ -75,18 +75,18 @@ export const ERROR_COPY: Record<ErrorClass, string> = {
   // routed modal (ForgeHostBlocked) carries the launcher steps; this is the
   // one-line model-row copy.
   FORGE_HOST_BLOCKED: "Sei can't join Forge or NeoForge worlds. Open the Sei profile in the Minecraft Launcher, open or create a world there, and open it to LAN.",
-  // Skin pipeline + setup-wizard errors. Do NOT rephrase — the UI checker
+  // Skin pipeline + setup-wizard errors. Do NOT rephrase â€” the UI checker
   // matches these strings byte-for-byte against the spec.
   MOD_DOWNLOAD_FAILED: "Couldn't download CustomSkinLoader. Check your connection and try the setup again.",
   FABRIC_INSTALL_FAILED: "Couldn't install Fabric Loader. Make sure Minecraft is closed, then try the setup again.",
   MC_INSTALL_NOT_FOUND: "We couldn't find any Minecraft installs. Install Minecraft, then re-run setup from Settings.",
   MOJANG_LOOKUP_FAILED: "Couldn't look up that username on Mojang. Check the spelling and your connection.",
-  SKIN_FILE_INVALID: "That doesn't look like a Minecraft skin PNG. Skins must be 64×64 pixels.",
+  SKIN_FILE_INVALID: "That doesn't look like a Minecraft skin PNG. Skins must be 64Ã—64 pixels.",
   SKIN_SERVER_PORT_TAKEN: "Sei couldn't reserve a local port for serving skins. Restart Sei and try again.",
   WIZARD_PERMISSION_DENIED: "Sei doesn't have permission to write to your Minecraft folder. Grant access and try again.",
   CLOUD_CREDITS_DEPLETED: "You've used this week's credits. Upgrade or top up in Playtime, or switch to your own API key there.",
   DAILY_LIMIT_REACHED: "Too many requests right now. Wait a little and try again.",
-  // 260828: pre-gate refusal — onboarding never captured a name. Previously
+  // 260828: pre-gate refusal â€” onboarding never captured a name. Previously
   // surfaced as BOT_CRASH ("Sei stopped unexpectedly. Press Summon to restart."),
   // which told users to retry the one thing that cannot work until they fix it.
   // 260916: names the exact field. "Re-run onboarding" sent people back
@@ -267,7 +267,7 @@ export function userFacingDetail(err: unknown, tr: typeof t = t): string | null 
 /**
  * Non-fatal warning copy (260518-o1k T8).
  *
- * Distinct from ERROR_COPY because these are not ErrorClass-keyed — they
+ * Distinct from ERROR_COPY because these are not ErrorClass-keyed â€” they
  * surface as inline informational text on the wizard's pick step or as
  * tooltips on the done-step exclusion list. The user can proceed past
  * any of these; there is no "Continue blocked" semantic.
@@ -288,10 +288,10 @@ export const WARN_COPY = {
 /**
  * Best-effort classification of an arbitrary error into an ErrorClass + copy.
  *
- * Uses keyword heuristics on the error message — falls back to BOT_CRASH-shaped
+ * Uses keyword heuristics on the error message â€” falls back to BOT_CRASH-shaped
  * generic narration if nothing matches. The renderer uses this for ad-hoc IPC
  * failures (saveConfig, saveApiKey, etc.); structured BotStatus from main
- * already comes pre-classified — those should NOT be re-run through this
+ * already comes pre-classified â€” those should NOT be re-run through this
  * helper, just look up `ERROR_COPY[status.error]` directly.
  */
 export function classifyRendererError(err: unknown): { class: ErrorClass; copy: string } {
@@ -322,7 +322,7 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   }
   // Before the LAN branch (260806): the modded-host kick text contains "kicked"
   // and often "connect" ("Please install Forge to connect"), so it would
-  // otherwise be swallowed as LAN_NOT_OPEN — which is exactly the bug this class
+  // otherwise be swallowed as LAN_NOT_OPEN â€” which is exactly the bug this class
   // exists to fix. Mirrors isModdedHostRejection in the bot's connect.js.
   if (/modded_host_rejected|\bfml\b|neoforge|\bforge\b|\bquilt\b/i.test(lower) ||
       (lower.includes('fabric') && (lower.includes('mod') || lower.includes('require'))) ||
@@ -345,7 +345,11 @@ export function classifyRendererError(err: unknown): { class: ErrorClass; copy: 
   return {
     class: 'BOT_CRASH',
     copy: t('Something went wrong. {detail}Try again.', {
-      detail: detail ? (/[.!?。！？]$/.test(detail) ? detail : detail + '.') + ' ' : '',
+      detail: detail ? (/[.!?ã€‚ï¼ï¼Ÿ]$/.test(detail) ? detail : detail + '.') + ' ' : '',
     }),
   };
 }
+
+
+
+

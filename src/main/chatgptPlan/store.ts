@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): storage for "Continue with ChatGPT".
  *
  * - The credential vault: every saved registration (issued client_id +
@@ -130,3 +130,7 @@ export function getChatgptHostId(): Promise<string> {
   }
   return hostIdPromise;
 }
+
+
+
+

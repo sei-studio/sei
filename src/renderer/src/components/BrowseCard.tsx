@@ -1,11 +1,11 @@
-/**
- * BrowseCard — World scouting card (v0.3 overlay style, 260709).
+﻿/**
+ * BrowseCard â€” World scouting card (v0.3 overlay style, 260709).
  *
  * Full-bleed 3:4 portrait (cover via PixelPortrait's image override,
  * procedural sprite fallback) with the name (Oswald 16px) + "by {creator}"
- * line overlaid on a bottom dark gradient — no solid meta section. The whole
+ * line overlaid on a bottom dark gradient â€” no solid meta section. The whole
  * card body opens the character profile, where the "Add to library" CTA
- * lives — there is no in-card invite action anymore.
+ * lives â€” there is no in-card invite action anymore.
  *
  * 261110: the "by" line carries the library add count on its right
  * (AddCount; hidden for 0 / unknown).
@@ -34,7 +34,7 @@ export interface BrowseCardProps {
    * External reveal gate for the above-the-fold rows. The parent holds the
    * first two visible rows as one group and flips this true once every
    * portrait in those rows has loaded (or failed / timed out), so they reveal
-   * together instead of popping in one by one. Omit for below-the-fold cards —
+   * together instead of popping in one by one. Omit for below-the-fold cards â€”
    * they fall back to the per-card lazy reveal (settle on their own portrait).
    */
   ready?: boolean;
@@ -42,7 +42,7 @@ export interface BrowseCardProps {
    * Fired after a short hover / focus DWELL (lib/hoverDwell.ts, cancelled if
    * the pointer leaves first) to warm the cache-on-demand path (character row
    * + skin + full portrait) so the subsequent open is instant. Fire-and-forget
-   * and idempotent — the parent dedupes; main skips a portrait it already has
+   * and idempotent â€” the parent dedupes; main skips a portrait it already has
    * for this version and dedupes in-flight downloads. Optional so other
    * callers can omit it.
    */
@@ -60,7 +60,7 @@ export function BrowseCard({
   const palette = pickPalette(entry.id + entry.name, theme);
 
   // Hold the wireframe until the portrait has actually SETTLED (loaded or
-  // fallen back to the sprite) — otherwise the grid pops in with empty art
+  // fallen back to the sprite) â€” otherwise the grid pops in with empty art
   // blocks while Storage images stream (260705). PixelPortrait stays mounted
   // underneath (visibility-hidden) so the image keeps loading; the static
   // skeleton overlay mirrors the card layout so nothing jumps on reveal.
@@ -147,3 +147,7 @@ export function BrowseCard({
     </div>
   );
 }
+
+
+
+

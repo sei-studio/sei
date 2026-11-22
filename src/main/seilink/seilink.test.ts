@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath as realpathOf, rm, symlink, writeFile } from 'node:fs/promises';
+﻿import { mkdir, mkdtemp, readFile, realpath as realpathOf, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -279,3 +279,7 @@ describe('seilink room store', () => {
     expect(await roomSource.getRoom('../x')).toBeNull();
   });
 });
+
+
+
+

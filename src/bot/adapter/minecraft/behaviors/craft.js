@@ -1,14 +1,14 @@
-// src/bot/adapter/minecraft/behaviors/craft.js
+﻿// src/bot/adapter/minecraft/behaviors/craft.js
 //
-// craft(item, n) — craft N of a product item using mineflayer's built-in recipe
+// craft(item, n) â€” craft N of a product item using mineflayer's built-in recipe
 // API. Decisions in docs/design/craft-tool-260617.md:
-//   - n is the number of the PRODUCT desired. Many recipes batch (1 log → 4
+//   - n is the number of the PRODUCT desired. Many recipes batch (1 log â†’ 4
 //     planks), so we craft ceil(n / batchSize) repetitions (may overshoot to the
 //     batch boundary), capped by available materials, and report the ACTUAL
 //     produced.
 //   - 261011: walks to a crafting_table within 16 blocks and crafts missing
 //     parts first (see "Crafting the parts first"). Before that: no auto-walk.
-//     A 3×3 recipe needs a crafting_table in reach; if none is,
+//     A 3Ã—3 recipe needs a crafting_table in reach; if none is,
 //     craft() fails with actionable guidance and the LLM moves itself (find/goTo)
 //     or crafts a crafting_table first.
 //
@@ -106,7 +106,7 @@ function canCraftNow(bot, itemId, craftingTable) {
   }
 }
 
-// A recipe variant needs a crafting table when its shape doesn't fit the 2×2
+// A recipe variant needs a crafting table when its shape doesn't fit the 2Ã—2
 // inventory grid: a shaped recipe taller/wider than 2, or a shapeless recipe
 // with more than 4 ingredients. Mirrors prismarine-recipe's requiresTable
 // derivation, computed straight from minecraft-data so this behavior depends
@@ -132,7 +132,7 @@ function explainNoRecipe(bot, itemId, item, hadTable) {
   // and we weren't near one, that's the blocker; otherwise it's materials.
   const allNeedTable = variants.every(variantNeedsTable)
   if (allNeedTable && !hadTable) {
-    return `can't craft ${item} here — it needs a crafting table. Go to a crafting_table (find/goTo one), or craft a crafting_table from planks first.`
+    return `can't craft ${item} here â€” it needs a crafting table. Go to a crafting_table (find/goTo one), or craft a crafting_table from planks first.`
   }
   const miss = missingFor(bot, itemId, hadTable)
   return miss
@@ -140,7 +140,7 @@ function explainNoRecipe(bot, itemId, item, hadTable) {
     : `not enough materials to craft ${item}`
 }
 
-// ── Crafting the parts first (261011) ───────────────────────────────────────
+// â”€â”€ Crafting the parts first (261011) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Asked for a wooden_pickaxe with only logs in the bag, craft used to answer
 // "need 3 more oak_planks + 2 more stick (you can craft it from what you
 // have)" and the model then spent two or three more calls (and as many
@@ -432,3 +432,7 @@ export async function craftAction(args, bot, config) {
   }
   return `crafted ${got} ${item}${over}${partsNote}${tableNote}${placeNote(item)}`
 }
+
+
+
+

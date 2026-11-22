@@ -1,4 +1,4 @@
-// Headless two-shard respawn check (261104, scripts/dst-respawn-headless.ts): the REAL bot runtime
+﻿// Headless two-shard respawn check (261104, scripts/dst-respawn-headless.ts): the REAL bot runtime
 // (createRuntime), the REAL main DST module + watcher, the supervisor's
 // dst-listen / dst-respawn-offer glue re-done here, a stub brain that attaches
 // the real adapter and records the death turn's prompt text. Deaths are forced
@@ -191,3 +191,7 @@ try { await rt.stop(); } catch {}
 await sleep(1500);
 watcher.stop();
 process.exit(0);
+
+
+
+

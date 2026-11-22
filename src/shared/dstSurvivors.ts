@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together survivor roster (game-adapters M2, 260908).
  *
  * The companion's DST body is a vanilla survivor prefab the CHARACTER picks on
@@ -32,7 +32,7 @@ export interface DstSurvivor {
   sanity: string;
   perks: string;
   downsides: string;
-  /* ── Mechanics the body has to manage (data for the mod + the primer) ── */
+  /* â”€â”€ Mechanics the body has to manage (data for the mod + the primer) â”€â”€ */
   diet: DstDiet;
   /** Eats spoiled/stale food with no penalty (WX-78; Webber for monster meat). */
   eatsSpoiled: boolean;
@@ -183,3 +183,7 @@ export function renderDstSurvivorBrief(prefab: string): string {
   const tail = manage.length ? ` What that means for you: ${manage.join('; ')}.` : '';
   return `You are playing as ${s.name} (health ${s.health}, hunger ${s.hunger}, sanity ${s.sanity}). Perks: ${s.perks} Downsides: ${s.downsides}${tail}`;
 }
+
+
+
+

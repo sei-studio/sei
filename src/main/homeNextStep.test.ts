@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+﻿import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -77,7 +77,7 @@ describe('plan parsing', () => {
 
   it('display text is one line, capitalized, no trailing period', () => {
     expect(planDisplayText('  finish the\n roof.  ')).toBe('Finish the roof');
-    expect(planDisplayText('去挖钻石。')).toBe('去挖钻石');
+    expect(planDisplayText('åŽ»æŒ–é’»çŸ³ã€‚')).toBe('åŽ»æŒ–é’»çŸ³');
   });
 
   it('planKey matches across punctuation and case', () => {
@@ -429,3 +429,7 @@ describe('files', () => {
     expect(await readHomeNextStep(dir, 'c1', NOW)).toMatchObject({ source: 'goal', game: 'dontstarve', surface: 'game' });
   });
 });
+
+
+
+

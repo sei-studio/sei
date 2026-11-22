@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HardStopModal "Keep playing free" (261103, T307): a free player at the
  * credit wall also gets the ways to keep playing that cost Sei nothing, the
  * ChatGPT plan and their own API key or local model.
@@ -9,14 +9,14 @@
  * "click" a button by calling the onClick the modal passed it.
  *
  * Invariants:
- *   F.1 — the options show for a free plan at the credit wall, and not for a
+ *   F.1 â€” the options show for a free plan at the credit wall, and not for a
  *         rate limit or a subscriber's wall.
- *   F.2 — the ChatGPT option is hidden when the plan is already the provider
+ *   F.2 â€” the ChatGPT option is hidden when the plan is already the provider
  *         in use, and when the region check said blocked.
- *   F.3 — each click tracks credit_wall_action with its own action, dismisses
+ *   F.3 â€” each click tracks credit_wall_action with its own action, dismisses
  *         the popup FIRST, then routes: 'chatgpt' through the shared
  *         startChatgptPlan flow, 'own_key' to Settings at the AI Backend row.
- *   F.4 — the region check is the region:status pre-check and feeds the
+ *   F.4 â€” the region check is the region:status pre-check and feeds the
  *         options; copy is plain (no em dash, never "friend") and translated.
  */
 import React from 'react';
@@ -201,11 +201,15 @@ describe('HardStopModal: free options at the wall', () => {
   it('F.4: the new copy is plain and has a zh translation', () => {
     for (const s of ["You've used this week's allowance.", 'Use your own API key or a local model', 'Works with ChatGPT Plus or Pro.']) {
       expect(ZH.includes(`'${s}':`) || ZH.includes(`"${s}":`)).toBe(true);
-      expect(s).not.toContain('—');
+      expect(s).not.toContain('â€”');
       expect(s.toLowerCase()).not.toContain('friend');
     }
     const section = SRC.slice(SRC.indexOf('data-testid="wall-free-options"'), SRC.indexOf('<ModalFooter>', SRC.indexOf('data-testid="wall-free-options"')));
     expect(section.length).toBeGreaterThan(0);
-    expect(section).not.toContain('—');
+    expect(section).not.toContain('â€”');
   });
 });
+
+
+
+

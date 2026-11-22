@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useChatgptLogin: shared state machine for "Continue with ChatGPT" as a Sei
  * ACCOUNT sign-in (261023).
  *
@@ -241,3 +241,7 @@ export function useChatgptLogin(onSignedIn?: () => void): ChatgptLoginState {
 
   return { phase, emailHint, reason, code, setCode, error, failure, note, resending, start, submit, resend, cancel };
 }
+
+
+
+

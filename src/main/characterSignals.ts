@@ -1,4 +1,4 @@
-/**
+﻿/**
  * A character file was written (261105). Dependency-free so characterStore
  * can announce saves without importing the features that care (the anima
  * client re-checks her face set when her portrait changed).
@@ -21,3 +21,7 @@ export function onCharacterSaved(l: Listener): () => void {
   listeners.add(l);
   return () => listeners.delete(l);
 }
+
+
+
+

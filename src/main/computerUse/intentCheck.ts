@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the intent check in front of an immediate control run
  * (controlPolicy.IntentCheck). The lexical check can only say that the goal's
  * words are in the player's line; "please don't delete my save file", "should
@@ -56,3 +56,7 @@ export function createIntentCheck(o: { call: LlmCall; model?: string; anthropic?
     return isCleanYes(res.text);
   };
 }
+
+
+
+

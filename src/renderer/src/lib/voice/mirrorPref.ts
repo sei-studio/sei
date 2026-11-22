@@ -1,14 +1,14 @@
-/**
+﻿/**
  * 260816 (china-compat): should model downloads try the dl.sei.gg mirror
  * BEFORE Hugging Face? HF is hard-blocked in mainland China, and the region
  * verdict main already caches for the auth gate (region:status) is the same
- * signal — a blocked-region user is exactly the user whose HF fetch will
+ * signal â€” a blocked-region user is exactly the user whose HF fetch will
  * hang or die.
  *
  * The answer is served SYNCHRONOUSLY from a cache primed at module import,
  * because the whisper-worker init sites are synchronous setup code. Until
  * the async prime resolves the answer is false (HF first), which is always
- * SAFE: the worker falls back to the other host on failure either way —
+ * SAFE: the worker falls back to the other host on failure either way â€”
  * mirror-first is a latency optimization for blocked regions, never a
  * correctness requirement.
  */
@@ -24,7 +24,7 @@ function prime(): void {
       })
       .catch(() => {});
   } catch {
-    /* preload bridge absent (tests) — HF-first stands */
+    /* preload bridge absent (tests) â€” HF-first stands */
   }
 }
 prime();
@@ -33,3 +33,7 @@ prime();
 export function whisperMirrorFirst(): boolean {
   return mirrorFirstCached;
 }
+
+
+
+

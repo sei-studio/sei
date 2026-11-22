@@ -1,5 +1,5 @@
-/**
- * GameControlsWindow + GameStatusStrip — the runtime controls every
+﻿/**
+ * GameControlsWindow + GameStatusStrip â€” the runtime controls every
  * bot-backed game dashboard shares (game adapters M2, 260908): the status
  * line ("Gathering twigs...", "Paused"), the play/pause toggle, the
  * reactive/proactive mode pair, and Disconnect. Same store actions and IPC
@@ -75,3 +75,7 @@ export function GameControlsWindow({ characterId, game }: GameControlsWindowProp
     </section>
   );
 }
+
+
+
+

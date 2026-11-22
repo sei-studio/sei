@@ -1,4 +1,4 @@
-/**
+﻿/**
  * One frame of the first-link intro, as plain numbers and CSS strings:
  * computeFrame(times, t, W, H, reduced, end, tone) is pure, so a seek redraws
  * exactly the same picture (the video harness depends on it) and the view
@@ -372,3 +372,7 @@ export function dayInk(behind: number): number {
 export function captionTop(H: number, captionH: number): number {
   return Math.max(0, (H - captionH) / 2);
 }
+
+
+
+

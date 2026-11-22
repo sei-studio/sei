@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { minecraftVocabulary } from './vocabulary.js'
 import { repeatedOwnPhrases, repeatedOpener } from '../../brain/ownRepeats.js'
 
@@ -30,7 +30,7 @@ describe('the repeat note with the real vocabulary', () => {
   it('never names the job', () => {
     expect(repeatedOwnPhrases(session(['heading to the oak trees', 'heading to the oak trees']), [], { now: now(2), vocab })).toEqual([])
     expect(repeatedOwnPhrases(session(['need a crafting table', 'need a crafting table']), [], { now: now(2), vocab })).toEqual([])
-    expect(repeatedOwnPhrases(session(['need iron ingots', 'need iron ingots']), [], { now: now(2), vocab, context: ['raw_iron×3'] })).toEqual([])
+    expect(repeatedOwnPhrases(session(['need iron ingots', 'need iron ingots']), [], { now: now(2), vocab, context: ['raw_ironÃ—3'] })).toEqual([])
     expect(repeatedOpener(session(["table's down", "table's ready"]), { now: now(2), vocab })).toBeNull()
   })
 
@@ -41,3 +41,7 @@ describe('the repeat note with the real vocabulary', () => {
       .map((h) => h.phrase)).toEqual(['owe me a snack'])
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-// Small helpers for action error strings — keep adapter-side reasons compact
+﻿// Small helpers for action error strings â€” keep adapter-side reasons compact
 // and free of stack traces so the LLM gets useful signal without context blow.
 
 export function firstLine(s) {
@@ -8,7 +8,7 @@ export function firstLine(s) {
 
 export function truncate(s, max = 80) {
   const str = String(s ?? '')
-  return str.length <= max ? str : str.slice(0, max - 1) + '…'
+  return str.length <= max ? str : str.slice(0, max - 1) + 'â€¦'
 }
 
 /**
@@ -16,7 +16,7 @@ export function truncate(s, max = 80) {
  *
  * NOTE: Do NOT post-decorate the result with held-item / inventory
  * context inside action wrappers. Haiku reads decoration as causal
- * ("with stick" → "stick is wrong tool"). If an action can fail for
+ * ("with stick" â†’ "stick is wrong tool"). If an action can fail for
  * multiple distinct reasons, branch on the reason and emit a
  * self-contained message that names the actual root cause (no block,
  * unbreakable, out of range, ...). (260505-twx)
@@ -27,7 +27,7 @@ export function reason(err) {
 
 /**
  * One-line, model-readable rendering of an error for tool results. ZodErrors
- * (schema validation on tool args) render as `field: message` pairs — the raw
+ * (schema validation on tool args) render as `field: message` pairs â€” the raw
  * `.message` on a ZodError is the multi-line JSON issue dump, which the model
  * was previously shown verbatim (260709: craft count 92 produced a 12-line
  * JSON blob where "count: Number must be less than or equal to 64" says it
@@ -42,3 +42,7 @@ export function errLine(err) {
   }
   return firstLine(err?.message ?? err) || 'unknown'
 }
+
+
+
+

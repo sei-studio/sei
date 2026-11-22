@@ -1,18 +1,18 @@
-/**
- * useDominantColor — extract a character portrait's signature color for
+﻿/**
+ * useDominantColor â€” extract a character portrait's signature color for
  * surface tinting (chat presence panel, 260705).
  *
  * Loading: the image is fetched to a blob first (sei-portrait:// has
  * supportFetchAPI, and a blob: URL is same-origin) so canvas readback never
  * taints; a plain <img> load is the fallback for anything fetch can't reach.
  *
- * Extraction: downscale to 24×24 and vote hue buckets over VIVID pixels only
- * (opaque, saturated, mid-to-bright) — flat white/transparent backgrounds and
+ * Extraction: downscale to 24Ã—24 and vote hue buckets over VIVID pixels only
+ * (opaque, saturated, mid-to-bright) â€” flat white/transparent backgrounds and
  * black linework carry zero weight, so the character's own color wins even on
  * a mostly-background portrait. The winning bucket's average is then boosted
- * to a bright tint (saturation ≥ 0.65, value ≥ 0.9) so the wash reads as the
+ * to a bright tint (saturation â‰¥ 0.65, value â‰¥ 0.9) so the wash reads as the
  * character's color, not a muddy mean. Returns `rgb(r g b)` or null (no
- * portrait / load failure / nothing vivid) — callers fall back to the plain
+ * portrait / load failure / nothing vivid) â€” callers fall back to the plain
  * surface. Results are memoized per src for the session.
  */
 
@@ -49,7 +49,7 @@ function extract(img: HTMLImageElement): string | null {
     ctx.drawImage(img, 0, 0, N, N);
     const data = ctx.getImageData(0, 0, N, N).data;
 
-    // 12 hue buckets (30° each). Two passes: strict (vivid only), then a
+    // 12 hue buckets (30Â° each). Two passes: strict (vivid only), then a
     // relaxed pass for pale/muted portraits where nothing clears the bar.
     const vote = (minSat: number, minVal: number): { h: number; s: number; v: number } | null => {
       const buckets = Array.from({ length: 12 }, () => ({ h: 0, s: 0, v: 0, w: 0 }));
@@ -86,11 +86,11 @@ function extract(img: HTMLImageElement): string | null {
     const picked = vote(0.3, 0.35) ?? vote(0.12, 0.2);
     if (!picked) return null;
     // Brighten: the tint is mixed at low opacity into a dark surface, so pin
-    // it vivid — keep the hue, floor saturation and value.
+    // it vivid â€” keep the hue, floor saturation and value.
     const [r, g, b] = hsvToRgb(picked.h, Math.max(picked.s, 0.65), Math.max(picked.v, 0.9));
     return `rgb(${r} ${g} ${b})`;
   } catch {
-    // Tainted canvas (readback blocked) — no tint.
+    // Tainted canvas (readback blocked) â€” no tint.
     return null;
   }
 }
@@ -118,7 +118,7 @@ async function load(src: string): Promise<string | null> {
       return await fromImage(url, () => URL.revokeObjectURL(url));
     }
   } catch {
-    // fetch unsupported for this src (or network refusal) — try direct.
+    // fetch unsupported for this src (or network refusal) â€” try direct.
   }
   return fromImage(src);
 }
@@ -151,7 +151,7 @@ export function useDominantColor(
     let cancelled = false;
     void load(src).then((c) => {
       // Only memoize a successful extraction. A null (portrait 404 during the
-      // write-race, or a decode failure) must stay retryable — pinning it would
+      // write-race, or a decode failure) must stay retryable â€” pinning it would
       // leave the tint permanently absent for the session even after the PNG
       // lands.
       if (c !== null) cache.set(key, c);
@@ -163,3 +163,7 @@ export function useDominantColor(
   }, [key]);
   return color;
 }
+
+
+
+

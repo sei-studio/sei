@@ -1,5 +1,5 @@
-/**
- * TopUpModal — buy extra credits (260724 weekly-subscription model).
+﻿/**
+ * TopUpModal â€” buy extra credits (260724 weekly-subscription model).
  *
  * Opened from the extra-credits row on the plan screen and from the hard-stop
  * popup. Two one-time packages, sold through the same proxy-minted Polar
@@ -10,7 +10,7 @@
  * These packages are one-time purchases, so no auto-renewal consent gate
  * applies (CA ARL covers recurring charges only).
  *
- * 260725: the package cards come from `useCreditsStore.topUpPackages` — the
+ * 260725: the package cards come from `useCreditsStore.topUpPackages` â€” the
  * server-driven pricing catalog (proxy `topup_config` rows), seeded with the
  * bundled launch copy as the offline fallback. A package added or retuned
  * server-side appears here without a client release; its `kind` (the config
@@ -88,3 +88,7 @@ export function TopUpModal({ onClose, onProceed }: TopUpModalProps): React.React
     </ModalShell>
   );
 }
+
+
+
+

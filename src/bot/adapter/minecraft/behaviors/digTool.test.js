@@ -1,4 +1,4 @@
-// 261025 quality pass 27: the model-facing dig walks into reach first and
+﻿// 261025 quality pass 27: the model-facing dig walks into reach first and
 // says what reached the inventory.
 import { describe, it, expect, vi } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -110,8 +110,8 @@ describe('digToolAction (261025)', () => {
 describe('digToolAction review fixes (261025)', () => {
   it('a far block up a hill is not marked after a timed-out walk', async () => {
     const bot = makeBot({ blocks: { '30,80,0': 'oak_log' } })
-    const goTo = vi.fn(async () => 'timeout — unreachable — try build to Y=80')
-    const digAction = vi.fn(async () => 'out of range (33.6m, need ≤4.5) for oak_log @30,80,0 — unreachable — try build to Y=80')
+    const goTo = vi.fn(async () => 'timeout â€” unreachable â€” try build to Y=80')
+    const digAction = vi.fn(async () => 'out of range (33.6m, need â‰¤4.5) for oak_log @30,80,0 â€” unreachable â€” try build to Y=80')
     const r = await digToolAction({ block: 'oak_log' }, bot, {}, { goTo, digAction, sleep: noSleep })
     expect(isUnreachable(bot, { x: 30, y: 80, z: 0 })).toBe(false)
     // The vertical hint is said once.
@@ -122,7 +122,7 @@ describe('digToolAction review fixes (261025)', () => {
   it('a timeout near the block does not mark it either', async () => {
     const bot = makeBot({ blocks: { '4,70,0': 'oak_log' } })
     const goTo = vi.fn(async () => 'timeout')
-    const digAction = vi.fn(async () => 'out of range (6.2m, need ≤4.5) for oak_log @4,70,0')
+    const digAction = vi.fn(async () => 'out of range (6.2m, need â‰¤4.5) for oak_log @4,70,0')
     await digToolAction({ x: 4, y: 70, z: 0 }, bot, {}, { goTo, digAction, sleep: noSleep })
     expect(isUnreachable(bot, { x: 4, y: 70, z: 0 })).toBe(false)
   })
@@ -130,14 +130,14 @@ describe('digToolAction review fixes (261025)', () => {
   it('from inside her own shaft, a block above is not marked', async () => {
     const bot = makeBot({ at: new Vec3(0.5, 60, 0.5), blocks: { '3,65,0': 'oak_log' } })
     const goTo = vi.fn(async () => 'stuck in a hole at 0,60,0, 5 blocks below where you are going')
-    const digAction = vi.fn(async () => 'out of range (5.3m, need ≤4.5) for oak_log @3,65,0 — unreachable — try build to Y=65')
+    const digAction = vi.fn(async () => 'out of range (5.3m, need â‰¤4.5) for oak_log @3,65,0 â€” unreachable â€” try build to Y=65')
     await digToolAction({ x: 3, y: 65, z: 0 }, bot, {}, { goTo, digAction, sleep: noSleep })
     expect(isUnreachable(bot, { x: 3, y: 65, z: 0 })).toBe(false)
   })
 
   it('a walk that got there or could not get closer, ending near the block, marks it', async () => {
     const bot = makeBot({ blocks: { '4,70,0': 'oak_log', '0,70,5': 'oak_log' } })
-    const digAction = vi.fn(async ({ x, y, z }) => `out of range (5.5m, need ≤4.5) for oak_log @${x},${y},${z}`)
+    const digAction = vi.fn(async ({ x, y, z }) => `out of range (5.5m, need â‰¤4.5) for oak_log @${x},${y},${z}`)
     await digToolAction({ x: 4, y: 70, z: 0 }, bot, {}, { goTo: vi.fn(async () => 'reached'), digAction, sleep: noSleep })
     expect(isUnreachable(bot, { x: 4, y: 70, z: 0 })).toBe(true)
     await digToolAction({ x: 0, y: 70, z: 5 }, bot, {}, { goTo: vi.fn(async () => 'cant_reach (closest=5.4m to target 0,70,5)'), digAction, sleep: noSleep })
@@ -205,3 +205,7 @@ describe('digToolAction review fixes (261025)', () => {
     expect(r).toBe('dug oak_leaves')
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft dashboard: shared renderer <-> main contract (260721).
  *
  * While a character is summoned into a LAN world, its bot process emits a
@@ -147,3 +147,7 @@ export function decodeMcDashCells(cells: string): Uint8Array {
  *     snapshots at all) only while true. Safe to call for idle characters.
  *   onMcDashboardSnapshot(cb: (s: McDashboardSnapshotPush) => void): () => void
  */
+
+
+
+

@@ -1,4 +1,4 @@
-// 261017 (issue #46): OpenAI Responses API wire format for the ChatGPT-plan
+﻿// 261017 (issue #46): OpenAI Responses API wire format for the ChatGPT-plan
 // provider ("Continue with ChatGPT"). Pure functions, no I/O. Shared by BOTH
 // LLM layers: the bot's chatgptProvider.js (game brains) and main's
 // src/main/llm/chatgptResponses.ts (chat, voice, folds, chess, Draw!,
@@ -40,9 +40,9 @@ export const UNSUPPORTED_BODY_FIELDS = Object.freeze([
   'temperature', 'top_logprobs', 'top_p', 'truncation', 'user', 'previous_response_id',
 ])
 
-// ─── Request mapping ─────────────────────────────────────────────────────
+// â”€â”€â”€ Request mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/** Anthropic system (string or text blocks) → one instructions string. */
+/** Anthropic system (string or text blocks) â†’ one instructions string. */
 export function flattenInstructions(system) {
   if (typeof system === 'string') return system
   if (!Array.isArray(system)) return ''
@@ -66,7 +66,7 @@ function inputImage(blk) {
   return url ? { type: 'input_image', image_url: url, detail: 'auto' } : null
 }
 
-/** A tool_result's content → function_call_output `output` (string or parts). */
+/** A tool_result's content â†’ function_call_output `output` (string or parts). */
 function toolResultOutput(content) {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return JSON.stringify(content ?? '')
@@ -87,13 +87,13 @@ function toolResultOutput(content) {
 }
 
 /**
- * Anthropic messages → Responses `input` items.
+ * Anthropic messages â†’ Responses `input` items.
  *
- * user turn:      tool_result blocks → function_call_output items (FIRST, so
- *                 each output directly follows its call); text/image blocks →
+ * user turn:      tool_result blocks â†’ function_call_output items (FIRST, so
+ *                 each output directly follows its call); text/image blocks â†’
  *                 one {type:'message', role:'user'} with input_text/input_image.
- * assistant turn: text → {type:'message', role:'assistant'} output_text;
- *                 tool_use → {type:'function_call', call_id, name, namespace,
+ * assistant turn: text â†’ {type:'message', role:'assistant'} output_text;
+ *                 tool_use â†’ {type:'function_call', call_id, name, namespace,
  *                 arguments}. No item `id` is sent: with store:false an id
  *                 refers to nothing server-side, and reasoning models reject a
  *                 function_call id that arrives without its reasoning item.
@@ -150,7 +150,7 @@ export function anthropicToResponsesInput(messages) {
 }
 
 /**
- * Anthropic tool defs → ONE namespace tool. `strict:false` is explicit: the
+ * Anthropic tool defs â†’ ONE namespace tool. `strict:false` is explicit: the
  * Responses API defaults function tools to strict mode, which demands
  * additionalProperties:false and every property required, and the Zod-emitted
  * schemas satisfy neither. cache_control markers are dropped.
@@ -208,7 +208,7 @@ export function buildResponsesBody({ model, system, messages, tools, toolChoice,
   return body
 }
 
-// ─── SSE parsing ─────────────────────────────────────────────────────────
+// â”€â”€â”€ SSE parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Incremental SSE parser. `push(text)` returns the parsed JSON payloads of
@@ -257,7 +257,7 @@ export function createSseParser() {
   return { push, flush }
 }
 
-// ─── Stream accumulation ─────────────────────────────────────────────────
+// â”€â”€â”€ Stream accumulation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Accumulator for one streamed response. `fold(event)` returns
@@ -265,8 +265,8 @@ export function createSseParser() {
  * and a function call whose arguments just finished (the say() early emit).
  */
 export function createResponsesAccumulator() {
-  const items = new Map() // output_index → item under construction
-  const byId = new Map()  // item id → output_index
+  const items = new Map() // output_index â†’ item under construction
+  const byId = new Map()  // item id â†’ output_index
   const state = {
     items,
     status: null,          // 'completed' | 'failed' | 'incomplete' | null (stream cut)
@@ -417,7 +417,7 @@ function callOf(item) {
   }
 }
 
-/** Responses usage → the Anthropic-shaped usage both layers report. */
+/** Responses usage â†’ the Anthropic-shaped usage both layers report. */
 export function normalizeResponsesUsage(usage) {
   if (!usage || typeof usage !== 'object') return {}
   const total = Number(usage.input_tokens) || 0
@@ -479,13 +479,13 @@ export function finalizeResponses(acc) {
   return { text, toolUses, content, usage: normalizeResponsesUsage(state.usage), stopReason }
 }
 
-// ─── Errors ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Typed error codes. TERMINAL ones must not be retried with the same request
  * (the docs: "do not repeat the same request or loop through OAuth"); the
  * callers latch on them and show the matching surface:
- *   CHATGPT_USAGE_LIMIT   429 subscription_sharing_usage_limit_exceeded → usage-limit dialog
+ *   CHATGPT_USAGE_LIMIT   429 subscription_sharing_usage_limit_exceeded â†’ usage-limit dialog
  *   CHATGPT_NOT_ELIGIBLE  403 subscription_sharing_user_not_eligible
  *   CHATGPT_FORBIDDEN     403 policy / region / chatpass_v2_* scope failures
  *   CHATGPT_UNSUPPORTED   400 subscription_sharing_unsupported_capability, route_not_supported
@@ -702,3 +702,7 @@ export async function streamResponses({ fetchImpl, url, token, body, signal, onC
   await handle(parser.flush())
   return finalizeResponses(acc)
 }
+
+
+
+

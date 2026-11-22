@@ -1,5 +1,5 @@
-/**
- * AvatarView (260817) — renders whichever avatar model the character has
+﻿/**
+ * AvatarView (260817) â€” renders whichever avatar model the character has
  * imported: a real Live2D Cubism model (Live2DView) or a simple layered rig
  * (RigView), chosen by the manifest's `kind`. Hosts pass the shared surface
  * contract once and never care which format is behind it; both the profile
@@ -68,3 +68,7 @@ export function AvatarView(props: AvatarViewProps): React.ReactElement | null {
   if (kind === 'live2d') return <Live2DView {...props} />;
   return null;
 }
+
+
+
+

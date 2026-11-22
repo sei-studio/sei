@@ -1,14 +1,14 @@
-/**
+﻿/**
  * Reset memory vs the background summary fold (260705).
  *
  * chat.jsonl and bridge.json live INSIDE the per-character memory dir, so
- * resetMemoryForCharacter is also the chat wipe — and the fold is fired by the
+ * resetMemoryForCharacter is also the chat wipe â€” and the fold is fired by the
  * chat surface regardless of whether a bot is summoned, so the IPC handler's
  * isActive gate does NOT cover it. Without the clearContinuity epoch bump in
  * the reset path, a fold in flight across the rm would write bridge.json into
  * the freshly wiped dir: a resurrected summary of the erased conversation with
  * a watermark above the now-empty transcript (the exact chat:clear race the
- * 260705 clear-epoch guard closed — chat:clear is gone; reset memory is the
+ * 260705 clear-epoch guard closed â€” chat:clear is gone; reset memory is the
  * one wipe surface left and must hold the same guarantee).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -82,7 +82,7 @@ async function seed(n: number, from = 0): Promise<void> {
 
 describe('reset memory racing an in-flight fold (260705)', () => {
   it('a reset during the fold LLM call does not resurrect bridge.json into the wiped dir', async () => {
-    await seed(100); // window(50) + batch(50) → a fold is due
+    await seed(100); // window(50) + batch(50) â†’ a fold is due
     // Block the summarizer on a deferred so the reset can land mid-fold.
     let release!: (v: { content: Array<{ type: string; text: string }> }) => void;
     createSpy.mockImplementationOnce(
@@ -91,7 +91,7 @@ describe('reset memory racing an in-flight fold (260705)', () => {
     const fold = foldIfDue(CHAR);
     await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
 
-    // The player hits "Reset memory" (no bot summoned — the isActive gate
+    // The player hits "Reset memory" (no bot summoned â€” the isActive gate
     // upstream does not apply; the fold belongs to the chat surface).
     await resetMemoryForCharacter(CHAR);
 
@@ -110,3 +110,7 @@ describe('reset memory racing an in-flight fold (260705)', () => {
     expect(ctx.history.map((m) => m.text)).toEqual(['msg 0', 'msg 1', 'msg 2']);
   });
 });
+
+
+
+

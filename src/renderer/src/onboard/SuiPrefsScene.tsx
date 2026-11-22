@@ -1,5 +1,5 @@
-/**
- * SuiPrefsScene — "update my preferences", asked by Sui (260731).
+﻿/**
+ * SuiPrefsScene â€” "update my preferences", asked by Sui (260731).
  *
  * The retake used to be ProfileQuestionsScreen in 'all' mode: the same three
  * questions as a form, in the app's dark chrome. It is the same three
@@ -17,7 +17,7 @@
  * because that is the one moment the answers are actually needed.
  *
  * Saving is the same partial-patch write the form used (sei.prefsSave), fired
- * once after the third answer — so backing out of the scene early changes
+ * once after the third answer â€” so backing out of the scene early changes
  * nothing.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -59,7 +59,7 @@ const SCRIPT: Record<LineId, string> = {
 /** Voice clip ids, deliberately their OWN namespace: three of these lines read
  * differently from the first-run ones, so reusing those clips would speak text
  * that is not on screen. Cut 260731 (public/voice/onboard/prefs-<id>.en.mp3),
- * through the same three steps as the first-run clips — see useSuiVoice. */
+ * through the same three steps as the first-run clips â€” see useSuiVoice. */
 const CLIP: Record<LineId, string> = {
   welcome: 'prefs-welcome',
   qDyn: 'prefs-qDyn',
@@ -91,7 +91,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
   const [sui, setSui] = useState<SuiPose>('hidden');
   const { prefs: voicePrefs, setPrefs: setVoicePrefs, volume } = useVoicePrefs();
 
-  // ── Answers ────────────────────────────────────────────────────────────
+  // â”€â”€ Answers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // State, not a ref: "Back" re-renders the previous picker and it has to open
   // on what is already chosen. null = not loaded / never answered.
   const [dynamics, setDynamics] = useState<Dynamic[] | null>(null);
@@ -103,7 +103,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
 
   // Prefill from the stored profile. Resolves long before the first question
   // (the walk-in plus the greeting is several seconds), and a failure still
-  // flips `loaded` — an unreachable profile must not lock the scene shut.
+  // flips `loaded` â€” an unreachable profile must not lock the scene shut.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -126,7 +126,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
     };
   }, []);
 
-  // ── Scene choreography ─────────────────────────────────────────────────
+  // â”€â”€ Scene choreography â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const timer = setTimeout(() => setGroundIn(true), 350);
     return () => clearTimeout(timer);
@@ -160,7 +160,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
     setSui('leaving');
   }, []);
 
-  // ── Line rendering ─────────────────────────────────────────────────────
+  // â”€â”€ Line rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const line = phase.k === 'line' ? phase.id : null;
   const lineText = line ? tt(SCRIPT[line]) : '';
   const tw = useTypewriter(lineText);
@@ -180,7 +180,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
     return () => clearTimeout(timer);
   }, [line, tw.done]);
 
-  // ── Save ───────────────────────────────────────────────────────────────
+  // â”€â”€ Save â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // One write, after the third answer. The same partial patch the form sent:
   // main merges it over the stored answers under the config lock.
   const save = useCallback(
@@ -332,3 +332,7 @@ export function SuiPrefsScene({ next }: SuiPrefsSceneProps): React.ReactElement 
     </div>
   );
 }
+
+
+
+

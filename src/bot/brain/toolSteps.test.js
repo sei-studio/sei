@@ -1,4 +1,4 @@
-// 261029: a talk-only turn on a provider whose model takes tool calls one
+﻿// 261029: a talk-only turn on a provider whose model takes tool calls one
 // step at a time (capabilities.toolSteps, the ChatGPT-plan provider) gets one
 // more call with that turn's outputs, so the action it meant for its next
 // step runs ("follow me" -> say("on your six") -> follow). Providers without
@@ -173,3 +173,7 @@ describe('chatgpt provider: toolSteps capability', () => {
     p.dispose?.()
   })
 })
+
+
+
+

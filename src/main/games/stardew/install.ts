@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew Valley install support (game-adapters M1, 260908).
  *
  * Three jobs, all main-process:
@@ -62,7 +62,7 @@ const GOG_REGISTRY_ID = '1453375253';
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const STALL_MS = 30_000;
 
-/* ── Environment (overridable for tests) ─────────────────────────────── */
+/* â”€â”€ Environment (overridable for tests) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface StardewInstallEnv {
   platform: 'darwin' | 'win32' | 'linux';
@@ -146,7 +146,7 @@ export function defaultEnv(): StardewInstallEnv {
   };
 }
 
-/* ── Pure helpers ────────────────────────────────────────────────────── */
+/* â”€â”€ Pure helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** Minimal Valve KeyValues (VDF) parser: nested objects of string values. */
 export function parseVdf(text: string): Record<string, unknown> {
@@ -364,7 +364,7 @@ export function gameVersionOk(version: string | null): boolean | null {
   return c == null ? null : c >= 0;
 }
 
-/* ── Detection ───────────────────────────────────────────────────────── */
+/* â”€â”€ Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** Every folder worth checking, custom + registry + Steam libraries + defaults, deduplicated in order. */
 export async function candidateGamePaths(env: StardewInstallEnv): Promise<string[]> {
@@ -538,7 +538,7 @@ export async function detectStardew(env: StardewInstallEnv = defaultEnv()): Prom
   return base;
 }
 
-/* ── SMAPI download + install ────────────────────────────────────────── */
+/* â”€â”€ SMAPI download + install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function composedAbort(timeoutMs: number, signal?: AbortSignal | null): { signal: AbortSignal; cleanup: () => void } {
   const ctrl = new AbortController();
@@ -651,7 +651,7 @@ async function findFile(root: string, tail: string[]): Promise<string | null> {
   return null;
 }
 
-/* ── The mod files + config ──────────────────────────────────────────── */
+/* â”€â”€ The mod files + config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export function newToken(): string {
   return randomBytes(32).toString('hex');
@@ -728,7 +728,7 @@ export async function upgradeModIfNewer(gamePath: string, packRoot: string): Pro
   return { upgraded: true, from, to };
 }
 
-/* ── SMAPI failure causes (261104) ───────────────────────────────────── */
+/* â”€â”€ SMAPI failure causes (261104) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * The SMAPI installer's failure, read into its own class so the setup can
@@ -763,7 +763,7 @@ export async function smapiFilesRemoved(gamePath: string, platform: StardewInsta
   return !(await exists(launcher));
 }
 
-/* ── The whole install ───────────────────────────────────────────────── */
+/* â”€â”€ The whole install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export interface InstallStardewOpts {
   onProgress?: (ev: StardewInstallProgressEvent) => void;
@@ -774,7 +774,7 @@ export interface InstallStardewOpts {
 }
 
 /**
- * Detect → (SMAPI if missing) → mod files → config. Throws an Error whose
+ * Detect â†’ (SMAPI if missing) â†’ mod files â†’ config. Throws an Error whose
  * message starts with the ErrorClass (GAME_NOT_INSTALLED / SMAPI_INSTALL_FAILED /
  * GAME_INSTALL_FAILED); the IPC handler forwards it and the last progress
  * event carries the same class.
@@ -902,7 +902,7 @@ export function sha256(buf: Buffer): string {
   return createHash('sha256').update(buf).digest('hex');
 }
 
-/* ── Launch ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Launch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Start the game THROUGH SMAPI. Windows: StardewModdingAPI.exe in the game
@@ -930,7 +930,7 @@ export async function spawnGame(gamePath: string, platform: StardewInstallEnv['p
   return { via };
 }
 
-/* ── Choose folder (261104) ──────────────────────────────────────────── */
+/* â”€â”€ Choose folder (261104) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * The setup's Choose folder: `pick` shows the folder dialog (null =
@@ -961,3 +961,7 @@ export async function chooseStardewFolder(
   safeTrack(track, { game: 'stardew', step: 'choose_folder', outcome: 'ok', store: storeFromPath(resolved.gamePath) === 'unknown' ? 'manual' : storeFromPath(resolved.gamePath) });
   return { ok: true, state };
 }
+
+
+
+

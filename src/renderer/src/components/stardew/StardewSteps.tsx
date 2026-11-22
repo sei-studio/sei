@@ -1,5 +1,5 @@
-/**
- * useStardewSetupSteps — the Stardew Valley setup steps as DATA (260909),
+﻿/**
+ * useStardewSetupSteps â€” the Stardew Valley setup steps as DATA (260909),
  * for the one-step-at-a-time window on the launch panel (SetupStepper).
  * The three states the panel used to draw as one big card (plan section
  * 4.2: set up / waiting / launch) are the three steps:
@@ -289,3 +289,7 @@ export function useStardewSetupSteps(skin: StepSkin): StardewSetup {
     known: install != null,
   };
 }
+
+
+
+

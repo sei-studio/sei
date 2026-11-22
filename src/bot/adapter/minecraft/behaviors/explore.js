@@ -1,17 +1,17 @@
-// src/bot/adapter/minecraft/behaviors/explore.js
+﻿// src/bot/adapter/minecraft/behaviors/explore.js
 //
-// 260616: `explore` — short directional hop, "like a player walking off to look
+// 260616: `explore` â€” short directional hop, "like a player walking off to look
 // around." goTo to a far target frequently times out as unreachable when the
 // destination is across unloaded chunks or up a cliff (260616 playlog: Sui stuck
 // at spawn, two goTo timeouts, never moved). A long one-shot pathfind to a
-// 40m+ point is the wrong primitive for that — exploration is incremental.
+// 40m+ point is the wrong primitive for that â€” exploration is incremental.
 // `explore` walks a SHORT reachable distance (default 16 blocks) in a direction
 // RELATIVE to the bot's current facing, which loads new chunks and repositions
 // the bot, then auto-looks (renders) in that direction so the model SEES where
 // it ended up.
 //
 // 260617: directions are RELATIVE to current facing (forward/backwards/left/
-// right, or an angle 0..360°), matching `look` — not world-absolute compass
+// right, or an angle 0..360Â°), matching `look` â€” not world-absolute compass
 // headings. The waypoint and the post-arrival auto-look use the SAME target yaw.
 //
 // 261108 (quality pass 47). Free play (gather_craft 02-B/03-B) had explore as
@@ -94,7 +94,7 @@ function hdist(a, b) {
 /** Human label for the chosen direction, for the result text. */
 function dirLabel(args) {
   if (typeof args?.orientation === 'string') return args.orientation.toLowerCase()
-  if (typeof args?.angle === 'number' && Number.isFinite(args.angle)) return `${Math.round(args.angle)}°`
+  if (typeof args?.angle === 'number' && Number.isFinite(args.angle)) return `${Math.round(args.angle)}Â°`
   return 'forward'
 }
 
@@ -192,7 +192,7 @@ function recordExplore(bot, start, end, yaw) {
  * @param {{orientation?:string, angle?:number, blocks?:number}} args
  * @param {object} bot
  * @param {object} config
- * @param {{vision?:boolean, walk?:Function}} [opts]  vision:true ⇒ auto-look after the hop.
+ * @param {{vision?:boolean, walk?:Function}} [opts]  vision:true â‡’ auto-look after the hop.
  */
 export async function exploreAction(args, bot, config, opts = {}) {
   const signal = config?.signal
@@ -256,15 +256,15 @@ export async function exploreAction(args, bot, config, opts = {}) {
       notes.push(`${blocks} asked, the rest did not path: ${String(result).split(' ')[0]}`)
     }
     const note = notes.length ? ` (${notes.join('; ')})` : ''
-    text = `explored ${moved} blocks ${went}${note}, now at ${Math.round(now.x)},${Math.round(now.y)},${Math.round(now.z)} — new terrain loaded`
+    text = `explored ${moved} blocks ${went}${note}, now at ${Math.round(now.x)},${Math.round(now.y)},${Math.round(now.z)} â€” new terrain loaded`
     recordExplore(bot, pos, now, travelYaw)
   } else {
     const also = tried.length ? `; also tried ${tried.join(', ')}` : ''
-    text = `couldn't move ${labelWord} (${result})${also} — blocked; try a different direction or dig/scaffold through`
+    text = `couldn't move ${labelWord} (${result})${also} â€” blocked; try a different direction or dig/scaffold through`
   }
 
   // Auto-look in the direction we explored so the model SEES the result (only
-  // when the provider supports vision — explore is registered for every
+  // when the provider supports vision â€” explore is registered for every
   // provider, but a non-VLM one can't use the image). Face the target yaw first
   // (pathfinding may have re-aimed the head mid-walk). Best-effort: a degrade
   // or abort just returns the text.
@@ -280,3 +280,7 @@ export async function exploreAction(args, bot, config, opts = {}) {
   }
   return text
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * recoveryService tests — the failsafe ordering is the point. Pins:
+﻿/**
+ * recoveryService tests â€” the failsafe ordering is the point. Pins:
  *   - scan returns shape only, skips backup dirs, filters dismissed keys;
  *   - repair backs up + quarantines BEFORE rewriting, rewrites atomically,
  *     removes bridge.json, and NEVER touches MEMORY.archive.md;
@@ -51,7 +51,7 @@ async function seedCharacter(): Promise<void> {
   await writeFile(
     path.join(charDir(), 'MEMORY.md'),
     [
-      '## World 1 — home',
+      '## World 1 â€” home',
       `- [${iso(T0 - 86_400_000)}] real fact`,
       `- [${iso(T0 + 60_000)}] junk from the flood`,
       '',
@@ -90,7 +90,7 @@ describe('scanRecovery', () => {
     expect(c.startTs).toBe(T0);
     expect(c.userRows).toBeGreaterThanOrEqual(50);
     expect(c.medianGapS).toBeLessThanOrEqual(15);
-    // Shape only — no message text field anywhere on the candidate.
+    // Shape only â€” no message text field anywhere on the candidate.
     expect(Object.keys(c).sort()).toEqual(
       ['characterId', 'characterName', 'endTs', 'medianGapS', 'startTs', 'totalRows', 'userRows'].sort(),
     );
@@ -123,7 +123,7 @@ describe('repairRecovery', () => {
 
     // MEMORY.md: junk line gone, header + real fact byte-identical.
     const mem = await readFile(path.join(charDir(), 'MEMORY.md'), 'utf8');
-    expect(mem).toContain('## World 1 — home');
+    expect(mem).toContain('## World 1 â€” home');
     expect(mem).toContain('real fact');
     expect(mem).not.toContain('junk from the flood');
 
@@ -184,3 +184,7 @@ describe('repairRecovery', () => {
     expect(memEntries).toEqual([CHAR]);
   });
 });
+
+
+
+

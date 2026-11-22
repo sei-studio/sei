@@ -1,4 +1,4 @@
-// src/behaviors/dig.js — single-flight dig with timeout + abort (D-22, Pitfall 2)
+﻿// src/behaviors/dig.js â€” single-flight dig with timeout + abort (D-22, Pitfall 2)
 import { Vec3 } from 'vec3'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { goTo, stopPathfinderDig, dropWalkOpts } from './pathfind.js'
@@ -9,7 +9,7 @@ import { lowOnAir, surfaceForAir, airLevel } from './air.js'
 export const DEFAULT_TIMEOUT_MS = 8000
 // Hard ceiling on the derived timeout below. Anything that needs longer than
 // this with the best tool we own (obsidian bare-handed is ~250s) is not worth
-// standing still for — the timeout is the give-up.
+// standing still for â€” the timeout is the give-up.
 export const MAX_TIMEOUT_MS = 30000
 const PICKUP_TIMEOUT_MS = 3000
 // Walks aim to end within this of the block (eyes to center; the goal is
@@ -23,7 +23,7 @@ export const DIG_REACH = 4.5
  * CELL the feet are in (its center), and the walk stops as soon as the body is
  * within 0.35 of the last node on each axis, so a walk aimed at 4.2 ends with
  * the eyes up to ~0.7 farther. Free play showed it on every gather_craft run:
- * "out of range (4.5m, need ≤4.5) ... (the walk toward it ended: reached)",
+ * "out of range (4.5m, need â‰¤4.5) ... (the walk toward it ended: reached)",
  * 4.5 to 5.0m, then the block was marked unreachable and she walked off to
  * find stone that was under her feet. Nothing about the block stops that dig:
  * mineflayer's canDigBlock allows 5.1 from the eyes (it uses 1.65 for them,
@@ -73,9 +73,9 @@ export async function closeInForDig(bot, pos, goTo, signal, walkOpts = {}) {
   return goTo(bot, pos.x, pos.y, pos.z, 2, CLOSE_IN_TIMEOUT_MS, signal, { ...walkOpts, reach: CLOSE_IN_REACH })
 }
 
-// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.dig.
+// LLM-facing tool description moved to ../prompts.js â†’ ACTION_DESCRIPTIONS.dig.
 
-export const CUBOID_ITERATION_ORDER = 'Y-desc → X-asc → Z-asc' // D-07
+export const CUBOID_ITERATION_ORDER = 'Y-desc â†’ X-asc â†’ Z-asc' // D-07
 
 export function enumerateDigCells(from, to, hollow) {
   const minX = Math.min(from.x, to.x), maxX = Math.max(from.x, to.x)
@@ -136,7 +136,7 @@ export async function digCuboid(args, bot, config) {
 
 /**
  * Dig a block. Single-flight; refuses if another dig is in flight.
- * Returns deterministic *what*-only result strings (D-35) — every failure
+ * Returns deterministic *what*-only result strings (D-35) â€” every failure
  * carries enough context that the LLM does not have to guess (e.g. it does
  * NOT need to invent "I need an axe" from a generic "cannot dig").
  */
@@ -182,28 +182,28 @@ export async function digAction(args, bot, config) {
     return `busy digging ${cn}${where}`
   }
 
-  // Reach check — pathfinder is best-effort, the LLM should know it needs to
+  // Reach check â€” pathfinder is best-effort, the LLM should know it needs to
   // walk closer before issuing another dig at this block.
   const dist = digReachDistance(bot, block.position)
   if (Number.isFinite(dist) && dist > DIG_MAX_REACH) {
-    const baseMsg = `out of range (${dist.toFixed(1)}m, need ≤${DIG_MAX_REACH.toFixed(1)}) for ${blockName} @${bx},${by},${bz}`
+    const baseMsg = `out of range (${dist.toFixed(1)}m, need â‰¤${DIG_MAX_REACH.toFixed(1)}) for ${blockName} @${bx},${by},${bz}`
     const bp = bot.entity?.position
     if (bp && by > bp.y + 2) {
-      return `${baseMsg} — unreachable — try build to Y=${by}`
+      return `${baseMsg} â€” unreachable â€” try build to Y=${by}`
     }
     return baseMsg
   }
 
   // Distinguish "no block at coord" (snapshot stale, model picked empty
   // space) from "block exists but cannot be broken" (bedrock, water, ...).
-  // The held-item suffix is gone — Haiku was reading "with stick" as
+  // The held-item suffix is gone â€” Haiku was reading "with stick" as
   // causal ("stick is wrong tool for log") when the real issue was empty
   // space. (260505-twx)
   if (blockName === 'air' || blockName === 'cave_air' || blockName === 'void_air') {
     return `no block at ${bx},${by},${bz} (target was ${blockName})`
   }
   // 260731: the old message here said "unbreakable or wrong tool", but
-  // mineflayer's canDigBlock only checks diggability + reach — it has never
+  // mineflayer's canDigBlock only checks diggability + reach â€” it has never
   // looked at the held item, so the tool half of that sentence was a lie the
   // model kept acting on.
   if (typeof bot.canDigBlock === 'function' && !bot.canDigBlock(block)) {
@@ -225,7 +225,7 @@ export async function digAction(args, bot, config) {
     : DEFAULT_TIMEOUT_MS
   const timeoutMs = args.timeout_ms ?? config?.dig_timeout_ms ?? derived
 
-  // Capture position before the block disappears — drop spawns at this location.
+  // Capture position before the block disappears â€” drop spawns at this location.
   const dropPos = { x: bx, y: by, z: bz }
   let pickupNote = ''
 
@@ -243,7 +243,7 @@ export async function digAction(args, bot, config) {
       // bounded timeout, ignore result (if blocked, we still dug successfully).
       //
       // 260709: walk to where the drop LANDS, not to the block's original
-      // coords. Items fall — a trunk log dug 3 blocks up drops to the ground,
+      // coords. Items fall â€” a trunk log dug 3 blocks up drops to the ground,
       // but pathing to the old mid-air coordinate made the pathfinder CLIMB
       // (scaffold up the tree, burn the timeout, end up on the canopy). That
       // was the live tree-hopping bug: after each high log the bot stood on
@@ -287,7 +287,7 @@ export async function digAction(args, bot, config) {
 
   // Tear the timer + abort listener down when the race settles. Previously the
   // timeout's setTimeout leaked: after a dig resolved normally, its stale timer
-  // still fired ~timeoutMs later and called bot.stopDigging() — but by then the
+  // still fired ~timeoutMs later and called bot.stopDigging() â€” but by then the
   // gather/cuboid loop had MOVED ON, so it aborted the *next* block mid-swing.
   // That is the "breaks a block most of the way, then cancels and skips to
   // another" symptom. (Each gather iteration also leaked an abort listener on
@@ -349,3 +349,7 @@ function airStopText(bot, blockName, bx, by, bz) {
   const air = airLevel(bot)
   return `${AIR_STOP_PREFIX}: you were running out of air under water, so you swam up first${air != null ? ` (air now ${air}/20)` : ''}; ${blockName} @${bx},${by},${bz} was not dug. Dig somewhere dry, or go back down with full air`
 }
+
+
+
+

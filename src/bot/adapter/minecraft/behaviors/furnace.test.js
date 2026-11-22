@@ -1,4 +1,4 @@
-// Furnace 3-slot smelting (MCRAFT-01) — open + load input/fuel + take output.
+﻿// Furnace 3-slot smelting (MCRAFT-01) â€” open + load input/fuel + take output.
 // Mirrors the container/craft test mock style. Session is module-scoped, so a
 // beforeEach closeFurnaceSession() resets the single-flight state between cases.
 
@@ -159,7 +159,7 @@ describe('smeltInputAction', () => {
     expect(furnace.putInput.mock.calls[0][0]).toBe(id('raw_iron'))
   })
 
-  // 261011: quality eval 2026-10-11 — iron_ingot sitting in the input slot made
+  // 261011: quality eval 2026-10-11 â€” iron_ingot sitting in the input slot made
   // every later smeltInput(raw_iron) fail with a bare "destination full".
   it('takes a different item out of the input slot before loading', async () => {
     const furnace = makeFurnace({ input: { name: 'iron_ingot', count: 2 }, fuel: { name: 'coal', count: 1 } })
@@ -170,7 +170,7 @@ describe('smeltInputAction', () => {
     expect(res).toBe('took 2 iron_ingot back out of the input slot, then smelting 3 raw_iron')
   })
 
-  // 261011: "crafted 4 oak_planks" then "no oak_planks to fuel" — the open
+  // 261011: "crafted 4 oak_planks" then "no oak_planks to fuel" â€” the open
   // window holds the player's slots and bot.inventory lagged it.
   it('finds the item in the open furnace window when bot.inventory lags', async () => {
     const furnace = makeFurnace({ fuel: { name: 'coal', count: 1 }, windowItems: [{ name: 'raw_iron', type: id('raw_iron'), count: 2 }] })
@@ -457,3 +457,7 @@ describe('what is left cooking', () => {
     expect(bot._seiFurnaceCooking).toBeNull()
   })
 })
+
+
+
+

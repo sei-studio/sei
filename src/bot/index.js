@@ -1,4 +1,4 @@
-// src/bot/index.js — bot entry (forked by Electron main). THE COMPOSER.
+﻿// src/bot/index.js â€” bot entry (forked by Electron main). THE COMPOSER.
 //
 // Startup: wait for the {type:'init', ...} message over MessagePort, build a
 // ConfigSchema-conformant config, dynamic-import the GAME RUNTIME named by the
@@ -8,7 +8,7 @@
 // same port AND mirrored to stdout for the rolling log file.
 //
 // Game-adapters M0 (260908): this file is GAME-AGNOSTIC. Nothing under
-// ./adapter/ is imported statically — the runtime is loaded by name, so a
+// ./adapter/ is imported statically â€” the runtime is loaded by name, so a
 // Stardew or Don't Starve session never loads mineflayer. The composer owns:
 // config parse, the pack loader hook, brain start (through the runtime's
 // createBrain hook), the returned handle, port dispatch, lifecycle and error
@@ -17,14 +17,14 @@
 // src/bot/brain/types.js.
 //
 // (260722: the standalone `sei` CLI path was removed; the bot only runs as a
-// utilityProcess now, so it never discovers the world itself — main hands the
+// utilityProcess now, so it never discovers the world itself â€” main hands the
 // join target over per CONTEXT D-25 / Pitfall 6.)
 //
 // Sources:
-//   - RESEARCH §Pattern 1 (bot side) — parentPort message flow
+//   - RESEARCH Â§Pattern 1 (bot side) â€” parentPort message flow
 //   - CONTEXT D-15 (mineflayer ONLY in utilityProcess), D-18 (config over
 //     MessagePortMain), D-19 (lifecycle vocabulary), D-25 (bot does NOT
-//     re-discover LAN during summon — main hands the cached port over)
+//     re-discover LAN during summon â€” main hands the cached port over)
 
 // First on purpose: ESM evaluates static imports in order, so bootTiming's
 // process_start stamp is taken before the heavy graph below loads.
@@ -74,21 +74,21 @@ export async function loadRuntimeModule(kind) {
   return import(`./adapter/${kind}/runtime.js`)
 }
 
-// ─── Core start() — config-in, handle-out ─────────────────────────────────
+// â”€â”€â”€ Core start() â€” config-in, handle-out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The Electron path receives `config` over MessagePort; from here down it is
 // load the runtime, let it connect, start the brain per connection.
 //
 // `hooks`:
-//   onReady()            — the runtime reported its FIRST successful spawn
+//   onReady()            â€” the runtime reported its FIRST successful spawn
 //                          (the Electron path emits `summon-ready`).
 //   onError({error, message, retryAfterSeconds?})
-//                        — the runtime hit a TERMINAL connect/disconnect
+//                        â€” the runtime hit a TERMINAL connect/disconnect
 //                          failure, already classified to an ErrorClass.
-//   onTerminalError(info)— the BRAIN halted (402 depleted, 429, …).
-//   onAuthExpired()      — the brain saw a 401 expired JWT.
-//   onDashboard(snapshot)— telemetry snapshots (straight up the port).
-//   runtime              — an already-imported runtime module ({createRuntime});
-//                          absent → loaded by config.adapter.kind. Tests pass a
+//   onTerminalError(info)â€” the BRAIN halted (402 depleted, 429, â€¦).
+//   onAuthExpired()      â€” the brain saw a 401 expired JWT.
+//   onDashboard(snapshot)â€” telemetry snapshots (straight up the port).
+//   runtime              â€” an already-imported runtime module ({createRuntime});
+//                          absent â†’ loaded by config.adapter.kind. Tests pass a
 //                          fake here to boot the composer without a game.
 export async function start(config, hooks = {}) {
   const {
@@ -123,14 +123,14 @@ export async function start(config, hooks = {}) {
   // runtime can (re)start it per connection while the callbacks stay here.
   const createBrain = (adapter) => startBrain({
     config, adapter, logger, onTerminalError, onAuthExpired,
-    // Task 4 — a reply to a message that came in over Sei chat (not in-game)
+    // Task 4 â€” a reply to a message that came in over Sei chat (not in-game)
     // is routed back UP to the chat surface instead of spoken in-world.
     onSeiChatReply: (text) => emitLifecycle({ type: 'chat', from: config?.persona?.name ?? 'your companion', text }),
     // 261028 facepack pilot: say()'s optional `expression`, offered only when
     // main's init set config._seiFaces (dev flag). Main pushes it to the
     // renderer as a face cue; game logic never reads it.
     onFace: (expression) => emitLifecycle({ type: 'face', expression }),
-    // Party redesign §2/§5 — the orchestrator dispatched a world-acting tool
+    // Party redesign Â§2/Â§5 â€” the orchestrator dispatched a world-acting tool
     // (name set) or drained back to idle (name null). Emit an `action`
     // lifecycle so main forwards it to the renderer's presence verb line.
     // Same emit path as onSeiChatReply; emitLifecycle guards the port (a CLI
@@ -143,14 +143,14 @@ export async function start(config, hooks = {}) {
         emitLifecycle({ type: 'action', name: payload?.name ?? null, args: payload?.args })
       } catch {}
     },
-    // Task 4 — the bot called quit(): leave the game the same graceful way a
-    // main-initiated stop would (drain, disconnect, exit → supervisor reaps).
+    // Task 4 â€” the bot called quit(): leave the game the same graceful way a
+    // main-initiated stop would (drain, disconnect, exit â†’ supervisor reaps).
     // 261008: `nextStepHook` = the quit carried a next_time hook (already
     // saved to MEMORY.md); it rides summon-stopped for bot_session_ended.
     // 261014: + `nextStepLine`, that plan written to the player (Home card).
     // 261020: + `nextStepGame`, the game the plan is for ('none' = no game).
     onQuitRequested: (info) => { try { gracefulShutdown('quit', { nextStepHook: info?.nextStepHook === true, nextStepLine: info?.nextStepLine, nextStepGame: info?.nextStepGame }) } catch {} },
-    // Voice calls (260705) — the bot called end_call(): ask main to hang up
+    // Voice calls (260705) â€” the bot called end_call(): ask main to hang up
     // the player's call (the bot stays in the game). The farewell say() was
     // already routed up before this fires, and the renderer drains its TTS
     // queue before tearing the call down.
@@ -180,7 +180,7 @@ export async function start(config, hooks = {}) {
       }
     },
     onDisconnected: (info) => {
-      logger.info(`[sei] ${kind} body disconnected (${info?.reason ?? 'unknown'})${info?.willRetry ? ' — retrying' : ''}`)
+      logger.info(`[sei] ${kind} body disconnected (${info?.reason ?? 'unknown'})${info?.willRetry ? ' â€” retrying' : ''}`)
     },
     onError: (info) => {
       try { onError(info) } catch (err) {
@@ -209,11 +209,11 @@ export async function start(config, hooks = {}) {
     },
     /**
      * Task 4 (fix 260703): forward an in-app Sei chat message into the live
-     * brain as a P1 chat event. This passthrough was MISSING — the parentPort
+     * brain as a P1 chat event. This passthrough was MISSING â€” the parentPort
      * 'sei-chat' handler calls `_running?.deliverSeiChat?.(...)`, and with no
      * such method on this wrapper the optional chain silently no-op'd: every
      * in-app message to an in-game companion was dropped and the chat UI hung
-     * on "typing…" forever. The brain method existed all along (brain/index.js
+     * on "typingâ€¦" forever. The brain method existed all along (brain/index.js
      * deliverSeiChat); it just was never reachable from the port.
      */
     deliverSeiChat(payload) {
@@ -225,7 +225,7 @@ export async function start(config, hooks = {}) {
      * {type:'sei-chat-observe'} handler into the live brain. Same missing-
      * passthrough trap as deliverSeiChat above: the brain method existed all
      * along, but without this forwarder `_running?.observeSeiChat?.()`
-     * silently no-op'd — two in-game companions on a call were deaf to each
+     * silently no-op'd â€” two in-game companions on a call were deaf to each
      * other's lines while their standalone transcripts recorded everything
      * (the ledger write and this mirror live on different sides of the port).
      * See src/bot/portForwarders.test.js, which pins every port-dispatched
@@ -255,14 +255,14 @@ export async function start(config, hooks = {}) {
     },
     /**
      * 260725 runtime game mode: forward the reactive/proactive toggle from the
-     * parentPort {type:'game-mode'} handler. Never persisted — every summon
+     * parentPort {type:'game-mode'} handler. Never persisted â€” every summon
      * starts proactive (see the persona.proactiveness seed in rawConfig).
      */
     setGameMode(mode) {
       try { _brain?.setGameMode?.(mode === 'reactive' ? 'reactive' : 'proactive') } catch {}
     },
     /**
-     * Voice calls (260705): the call pipeline just went live — prompt the brain
+     * Voice calls (260705): the call pipeline just went live â€” prompt the brain
      * to greet the player first (like the spawn greeting, but into the call).
      */
     deliverVoiceCallGreeting() {
@@ -288,13 +288,13 @@ export async function start(config, hooks = {}) {
       try { _brain?.setCompanions?.(list) } catch {}
     },
     /**
-     * WR-05 follow-up: live-swap the AI backend (cloud-proxy ↔ BYOK) on the
+     * WR-05 follow-up: live-swap the AI backend (cloud-proxy â†” BYOK) on the
      * running brain without a re-summon. Called by the parentPort
      * {type:'backend-switch'} handler when the supervisor flips
      * ai_backend_kind mid-session. No-op when cloudMode/BYOK is irrelevant or
      * the brain has not yet started. 260828: the local shape also carries the
      * `llm` provider section (see applyLlmSwitch in llmInit.js) so a
-     * cloud→local switch lands on the CONFIGURED provider, not Anthropic.
+     * cloudâ†’local switch lands on the CONFIGURED provider, not Anthropic.
      * @param {{cloudMode?:{baseURL:string,authToken:string}, api_key?:string, llm?:{provider:string,model?:string,base_url?:string,api_key?:string}}} backend
      */
     setBackend(backend) {
@@ -316,7 +316,7 @@ export async function start(config, hooks = {}) {
     },
     /**
      * Dashboard (260721): the renderer's visibility flag, forwarded from the
-     * parentPort {type:'dashboard-watch'} handler. NOT a brain passthrough —
+     * parentPort {type:'dashboard-watch'} handler. NOT a brain passthrough â€”
      * telemetry lives on the runtime side of the seam (portForwarders.test.js
      * exempts it). The runtime remembers the flag so a reconnect's fresh
      * telemetry instance resumes in the same state.
@@ -335,7 +335,7 @@ export async function start(config, hooks = {}) {
   }
 }
 
-// ─── Electron utilityProcess path ─────────────────────────────────────────
+// â”€â”€â”€ Electron utilityProcess path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // When forked by main, wait for the init message on the transferred
 // MessagePort, build a ConfigSchema-conformant config, and bootstrap.
 // Lifecycle events go to BOTH parentPort (structured for status row) AND
@@ -346,8 +346,8 @@ let _running = null         // { stop } returned by start()
 
 // 260618: reactive JWT recovery. The brain calls this (via onAuthExpired) when a
 // cloud-proxy call returns 401 expired_jwt. We ask main for a fresh token; main
-// (botSupervisor) handles {type:'request-jwt'} → getProxyJwt() → posts a
-// cloud-jwt-update back → setAuthToken → the next call succeeds. Without this the
+// (botSupervisor) handles {type:'request-jwt'} â†’ getProxyJwt() â†’ posts a
+// cloud-jwt-update back â†’ setAuthToken â†’ the next call succeeds. Without this the
 // bot just re-hammers the dead token every idle tick and freezes until stopped.
 // Best-effort: a closed port (teardown) silently no-ops.
 function requestJwtRefresh() {
@@ -431,7 +431,7 @@ function emitLifecycle(payload) {
 }
 
 /**
- * Init payload → {game, joinTarget, worldLabel, packRoot} (M0, 260908).
+ * Init payload â†’ {game, joinTarget, worldLabel, packRoot} (M0, 260908).
  *
  * New shape: `game` ('minecraft' | 'stardew' | 'dontstarve'), `joinTarget`
  * (game-specific; Minecraft `{port, motd, mc_username, skinServerBaseUrl}`),
@@ -465,7 +465,7 @@ async function bootstrapWithInit(initData) {
     apiKey,
     // 260801: epoch ms at which the supervisor's summon watchdog fires. Sized
     // by main so the connect guard below can report a specific failure a beat
-    // BEFORE the generic one lands. Absent on older main → connect.js falls
+    // BEFORE the generic one lands. Absent on older main â†’ connect.js falls
     // back to its flat CONNECT_TIMEOUT_MS.
     summonDeadlineAt,    // number | undefined
     // 260926: the supervisor's READY budget (ms). Its ready watchdog now starts
@@ -486,7 +486,7 @@ async function bootstrapWithInit(initData) {
     // supervisor from UserConfig.provider + provider_config for LOCAL (BYOK)
     // sessions. {provider, model?, base_url?, api_key} | undefined. Mapped
     // onto config.llm by applyLlmInit below; absent (older main, or
-    // cloud-proxy mode) → the Anthropic default path, unchanged.
+    // cloud-proxy mode) â†’ the Anthropic default path, unchanged.
     llm: llmInit,        // {provider, model?, base_url?, api_key?} | undefined
     // The user-facing Looking (vision) mode, bridged by the supervisor from
     // UserConfig.vision_mode. Maps into config.vision below; the remaining
@@ -495,12 +495,12 @@ async function bootstrapWithInit(initData) {
     visionMode,           // 'off' | 'on-demand' | 'continuous' | undefined
     // Appearance & feel: the "Realistic typing" toggle, bridged by the
     // supervisor from UserConfig.realistic_typing. Maps into
-    // config.realistic_typing below. undefined (older main / CLI) → default true.
+    // config.realistic_typing below. undefined (older main / CLI) â†’ default true.
     realisticTyping,      // boolean | undefined
     // 260709: conversation language, bridged by the supervisor from
     // UserConfig.chat_language. Maps into config.chat_language below (drives
     // the # LANGUAGE directive in the cached system prefix). undefined (older
-    // main / CLI standalone) → ConfigSchema default 'en'.
+    // main / CLI standalone) â†’ ConfigSchema default 'en'.
     chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es'|'ru'|'pt'|'it' | undefined
     // 261116: true when the companion is someone else's character (from the
     // World). main already resolved chatLanguage without the creator's pin,
@@ -568,15 +568,15 @@ async function bootstrapWithInit(initData) {
   }
 
   // Build a config shape that satisfies ConfigSchema.parse (see
-  // src/bot/config.js — the adapter.<game> block comes from the runtime's
+  // src/bot/config.js â€” the adapter.<game> block comes from the runtime's
   // adapterConfigFrom; for Minecraft that is {host, auth, username, port,
   // version}). Username comes from the persona / character.username (NOT
-  // from character.id — characters are personas, not game accounts).
+  // from character.id â€” characters are personas, not game accounts).
   // player_username is seeded from preferred_name so the bot recognises the
   // human player from the first chat.
   //
   // Memory paths are explicit: player_md_path + memory_md_path. A
-  // `memory.dir` wrapper is NOT part of ConfigSchema — passing one would
+  // `memory.dir` wrapper is NOT part of ConfigSchema â€” passing one would
   // be silently stripped by Zod, leaving the defaults (./memory/...)
   // which EROFS in the read-only packaged Sei.app bundle.
   const memDir = `${userDataDir}/memory/${character.id}`
@@ -602,7 +602,7 @@ async function bootstrapWithInit(initData) {
     ? runtimeModule.botUsernameFor(character)
     : String(character?.name || 'Sei')
 
-  // player_username is a label/pin only — v1.0 single-human LAN no longer
+  // player_username is a label/pin only â€” v1.0 single-human LAN no longer
   // gates owner-recognition on a username match (chat.js treats any non-bot
   // chatter as the player; sessionState adopts the first human it sees). We
   // still seed a sensible value: mc_username if present (legacy), else the
@@ -620,7 +620,7 @@ async function bootstrapWithInit(initData) {
     emitLifecycle({
       type: 'error',
       error: 'BOT_CRASH',
-      message: 'persona expansion missing — re-save the character in the GUI to populate persona.expanded',
+      message: 'persona expansion missing â€” re-save the character in the GUI to populate persona.expanded',
     })
     return
   }
@@ -660,13 +660,13 @@ async function bootstrapWithInit(initData) {
       // exact 'deliberate' value opts out of the casual trailing-period strip;
       // anything else (missing, junk) falls to the ConfigSchema default
       // ('casual'). MIRROR: src/main/chat/chatService.ts clampPunctuation()
-      // applies the same read for the chat surface — keep the two in sync.
+      // applies the same read for the chat surface â€” keep the two in sync.
       ...(character.metadata?.punctuation === 'deliberate' ? { punctuation: 'deliberate' } : {}),
       // 260730: per-character language pin (metadata.language, stamped at
       // creation under the Chinese UI). Only known codes pass; anything else
       // falls through to config.chat_language. MIRROR:
       // src/shared/chatLanguage.ts characterLanguage() for the main-process
-      // surfaces — keep the two reads in sync.
+      // surfaces â€” keep the two reads in sync.
       // 261116: never for an adopted (World) character: that pin is the
       // creator's choice, not this player's.
       ...(languageAdopted === true
@@ -676,14 +676,14 @@ async function bootstrapWithInit(initData) {
           : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
-    // proxy with Bearer auth (apiKey is unused — anthropicClient passes
+    // proxy with Bearer auth (apiKey is unused â€” anthropicClient passes
     // apiKey:null to suppress the X-Api-Key header). Otherwise the legacy
     // BYOK path is preserved (D-57).
     anthropic: cloudMode
       ? { api_key: '', cloudMode: { baseURL: cloudMode.baseURL, authToken: cloudMode.authToken } }
       : { api_key: apiKey },
     // The game's adapter block, built by its runtime from the join target
-    // (Minecraft: loopback host, offline auth, version 'auto' → resolved by a
+    // (Minecraft: loopback host, offline auth, version 'auto' â†’ resolved by a
     // status ping in the runtime).
     adapter: {
       kind: game,
@@ -702,7 +702,7 @@ async function bootstrapWithInit(initData) {
       worlds_json_path: `${memDir}/worlds.json`,
     },
     // Bridge the vision tier + cadence into config.vision. Every other vision
-    // field (image_quality, resolution_px ≤512 cap) is
+    // field (image_quality, resolution_px â‰¤512 cap) is
     // filled by the ConfigSchema vision defaults. The `.default({})` on the
     // vision block means omitting it entirely is also valid; absent init
     // fields fall to the schema defaults via the conditional spread.
@@ -734,7 +734,7 @@ async function bootstrapWithInit(initData) {
   startSessionDigest()
 
   // 260618: stash the initial companion roster on the (mutable) parsed config
-  // so chat.js — which runs without an orchestrator handle — can read it to skip
+  // so chat.js â€” which runs without an orchestrator handle â€” can read it to skip
   // interrupts aimed at a sibling. Re-applied to the brain after it starts, and
   // updated live via the {type:'roster'} port message.
   try {
@@ -765,7 +765,7 @@ async function bootstrapWithInit(initData) {
 
   // 260801: the supervisor's watchdog deadline, read by connect.js to size its
   // connect guard so a stalled join names its own cause. Stashed post-parse
-  // like _seiKnowledge — ConfigSchema strips unknown keys.
+  // like _seiKnowledge â€” ConfigSchema strips unknown keys.
   //
   // 260926: with readyBudgetMs the deadline starts NOW (booted), matching the
   // supervisor, which re-arms its watchdog for the same budget when it
@@ -801,7 +801,7 @@ async function bootstrapWithInit(initData) {
   markBoot('booted')
   emitLifecycle({ type: 'init-ack' })
 
-  // Trust main's handover — it owns the per-game watcher and revalidates
+  // Trust main's handover â€” it owns the per-game watcher and revalidates
   // freshness itself. The bot never re-discovers the world (Pitfall 6,
   // CONTEXT D-25); this is only the bot-side backstop for a payload with
   // nothing to join (Minecraft: LAN_NOT_OPEN, same message as before).
@@ -817,7 +817,7 @@ async function bootstrapWithInit(initData) {
     `(username=${bot_mc_username}, player=${config.player_username})`,
   )
   // Log the skin-server URL so a developer running `npm run dev` can
-  // confirm the supervisor → bot init handover. The bot
+  // confirm the supervisor â†’ bot init handover. The bot
   // never fetches from this URL (CustomSkinLoader on the host's MC client is
   // the actual consumer); this line exists purely for verification.
   if (joinTarget?.skinServerBaseUrl) {
@@ -826,8 +826,8 @@ async function bootstrapWithInit(initData) {
 
   // 260508-nkk root cause #2: previously `summon-ready` fired immediately
   // after `await start(config)` resolved, but start() resolves once
-  // bringUp+startBrain have wired up — BEFORE mineflayer's TCP handshake
-  // and 'spawn' event. The status flip "Connecting → Online" therefore
+  // bringUp+startBrain have wired up â€” BEFORE mineflayer's TCP handshake
+  // and 'spawn' event. The status flip "Connecting â†’ Online" therefore
   // had no relationship to the bot actually being in the world. Move the
   // emit into the onReady hook so it fires off mineflayer's first spawn.
   // start() rejecting still surfaces as a BOT_CRASH lifecycle below.
@@ -838,10 +838,10 @@ async function bootstrapWithInit(initData) {
       onReady: () => {
         emitLifecycle({ type: 'summon-ready' })
       },
-      // 260618: reactive JWT recovery — bot → main "send me a fresh token".
+      // 260618: reactive JWT recovery â€” bot â†’ main "send me a fresh token".
       onAuthExpired: requestJwtRefresh,
       // Dashboard telemetry (260721): snapshots go straight up the port.
-      // Deliberately NOT emitLifecycle — its stdout mirror would spam the
+      // Deliberately NOT emitLifecycle â€” its stdout mirror would spam the
       // rolling log with a ~1.5KB base64 minimap every 2s.
       onDashboard: (snapshot) => {
         try { initPort?.postMessage({ type: 'dashboard', snapshot }) } catch {}
@@ -899,8 +899,8 @@ async function bootstrapWithInit(initData) {
     })
     _running = _running_local
     // Phase 15 (D-10/VIS-03): once start() resolves the brain is fully wired
-    // (bringUp → startBrain assigned _brain), so the active provider's vision
-    // capability is now readable. Push it up the port → main → renderer so the
+    // (bringUp â†’ startBrain assigned _brain), so the active provider's vision
+    // capability is now readable. Push it up the port â†’ main â†’ renderer so the
     // Settings auto-render toggle (15-05) gates its disabled state on a REAL
     // signal instead of inferring from ai_backend_kind. A later backend switch
     // re-emits via the parentPort 'backend-switch' handler below.
@@ -917,9 +917,9 @@ async function bootstrapWithInit(initData) {
 /**
  * Phase 15 (D-10/VIS-03): read the active provider's vision capability off the
  * running brain and push a `{type:'vision-capability', visionCapable}` message
- * up the port. The supervisor routes it to main → renderer (useUiStore). Fails
+ * up the port. The supervisor routes it to main â†’ renderer (useUiStore). Fails
  * closed (visionCapable:false) when the brain hasn't started or can't report.
- * Idempotent — safe to call on summon-ready and again on a backend switch.
+ * Idempotent â€” safe to call on summon-ready and again on a backend switch.
  */
 async function emitVisionCapability() {
   // 261010: an Ollama provider learns its vision capability from /api/show a
@@ -946,14 +946,14 @@ async function gracefulShutdown(reason = 'stop', { nextStepHook = false, nextSte
   // backstop in botSupervisor.ts now actively drains the session on the same
   // error the bot self-latches on). Without this, stop() runs twice and two
   // process.exit timers race; the doc comment on onTerminalError long claimed
-  // this guard existed — now it actually does.
+  // this guard existed â€” now it actually does.
   if (_shuttingDown) return
   _shuttingDown = true
   // Hard deadline: the avatar must LEAVE the world. _running.stop() awaits
-  // brain.stop() → adapter.closeAnySessions(), any of which could stall (a
+  // brain.stop() â†’ adapter.closeAnySessions(), any of which could stall (a
   // hung container-close ack, a wedged pathfinder). If stop() never resolves
   // the process would stay alive and socket-connected and the avatar would
-  // freeze in-game — exactly the trial-rate-limit symptom. So race stop()
+  // freeze in-game â€” exactly the trial-rate-limit symptom. So race stop()
   // against a timeout and exit unconditionally either way: process death
   // closes the socket and the server reaps the player.
   const STOP_DEADLINE_MS = 3_000
@@ -983,7 +983,7 @@ if (process.parentPort) {
   // we exit. Catch synchronous throws inside the message handler and grace
   // the process exit so the parent's stderr sink + lifecycle message both
   // flush. Also install last-resort unhandled-rejection / uncaught-exception
-  // hooks for the same reason — surface the trace, then exit cleanly.
+  // hooks for the same reason â€” surface the trace, then exit cleanly.
   const surfaceCrash = (label, err) => {
     const stack = (err && err.stack) || String(err)
     // Write to BOTH stderr (so the supervisor's tail buffer captures it)
@@ -1011,12 +1011,12 @@ if (process.parentPort) {
       if (!ports.length) {
         // A first message with no transferred MessagePort means the init
         // handshake is broken (or something else beat init onto parentPort).
-        // This used to `return` silently — the once() listener was consumed,
+        // This used to `return` silently â€” the once() listener was consumed,
         // the event loop drained, and the bot exited code 0 with zero output
         // (the 260702 "stuck connecting" symptom). Surface it loudly instead.
         surfaceCrash(
           'parentPort.message',
-          new Error('first parentPort message carried no MessagePort — expected the init handshake with [port2]'),
+          new Error('first parentPort message carried no MessagePort â€” expected the init handshake with [port2]'),
         )
         return
       }
@@ -1036,7 +1036,7 @@ if (process.parentPort) {
         try { initPort?.postMessage({ type: 'boot-timing', marks }) } catch {}
       })
       // Future commands from main (e.g. {type:'stop'} during graceful
-      // shutdown — supervisor sends this via port1.postMessage) arrive here.
+      // shutdown â€” supervisor sends this via port1.postMessage) arrive here.
       initPort.on('message', (e) => {
         try {
           const data = (e && e.data !== undefined) ? e.data : e
@@ -1066,7 +1066,7 @@ if (process.parentPort) {
           } else if (data && data.type === 'voice-call') {
             // Voice-call mode (260705): the player opened (active:true) or hung
             // up (active:false) a voice call with this companion. While active,
-            // say() lines route up to the chat surface (→ TTS in the renderer)
+            // say() lines route up to the chat surface (â†’ TTS in the renderer)
             // and in-game chat stays silent; each turn carries the voice-call
             // primer at the start of its prompt.
             try { _running?.setVoiceCall?.(data.active === true) } catch {}
@@ -1078,7 +1078,7 @@ if (process.parentPort) {
             try { _running?.setDashboardWatch?.(data.active === true) } catch {}
           } else if (data && data.type === 'voice-call-greet') {
             // Voice calls (260705): the renderer's call pipeline just went live
-            // — ask the brain to speak first (say() routes into the call).
+            // â€” ask the brain to speak first (say() routes into the call).
             try { _running?.deliverVoiceCallGreeting?.() } catch {}
           } else if (data && data.type === 'game-pause') {
             // 260725: in-app play/pause button. paused:true freezes the brain
@@ -1113,7 +1113,7 @@ if (process.parentPort) {
             //
             // BL-02 (Phase 13 REVIEW): we previously wrote
             // `process.env.CLOUD_PROXY_JWT = data.jwt`, but
-            //   (a) no module reads CLOUD_PROXY_JWT — the Anthropic SDK reads
+            //   (a) no module reads CLOUD_PROXY_JWT â€” the Anthropic SDK reads
             //       its env via ANTHROPIC_AUTH_TOKEN at construction only, and
             //   (b) env-var writes do not propagate to a live SDK instance;
             //       the mutable surface is `sdk.authToken` (see
@@ -1135,17 +1135,17 @@ if (process.parentPort) {
               })
             } catch {}
           } else if (data && data.type === 'backend-switch') {
-            // WR-05 follow-up: the user flipped cloud ↔ local in Settings
+            // WR-05 follow-up: the user flipped cloud â†” local in Settings
             // while the bot is running. The supervisor ships the new routing
             // descriptor (cloudMode for proxy; apiKey + llm section for BYOK)
-            // and the live provider is rebuilt in place — no stop+re-summon.
+            // and the live provider is rebuilt in place â€” no stop+re-summon.
             // Previously this required a manual restart (the "Restart your
             // bot" banner).
             //
             // 260828: the local descriptor now carries the SAME `llm` section
             // the summon init payload does ({provider, model?, base_url?,
             // api_key} from src/main/llmInitSection.ts). Without it, a
-            // cloud→local switch left the brain on Anthropic with stale
+            // cloudâ†’local switch left the brain on Anthropic with stale
             // defaults regardless of the configured provider. The brain folds
             // it in via applyLlmSwitch (src/bot/llmInit.js) and rebuilds its
             // provider instance when the kind changes. Absent llm (older
@@ -1159,8 +1159,8 @@ if (process.parentPort) {
                       ...(data.llm && typeof data.llm === 'object' ? { llm: data.llm } : {}),
                     },
               )
-              // Phase 15 (D-10/VIS-03): a cloud↔local switch can change the
-              // active provider's vision capability — re-emit so the renderer's
+              // Phase 15 (D-10/VIS-03): a cloudâ†”local switch can change the
+              // active provider's vision capability â€” re-emit so the renderer's
               // Settings auto-render toggle (15-05) updates its disabled state.
               emitVisionCapability()
             } catch {}
@@ -1171,7 +1171,7 @@ if (process.parentPort) {
       })
       // 260508-nkk root cause: the init payload was delivered alongside the
       // port transfer in THIS parentPort message (supervisor calls
-      // `child.postMessage({type:'init', ...}, [port2])` — Electron carries
+      // `child.postMessage({type:'init', ...}, [port2])` â€” Electron carries
       // both `data` and the transferList in the same MessageEvent). The bot
       // previously ignored msg.data and waited for an 'init' message on
       // initPort that main never sent, so bootstrapWithInit never ran. The
@@ -1184,10 +1184,10 @@ if (process.parentPort) {
         // The one-shot listener just consumed a non-init message: bootstrap can
         // never run and the process would otherwise exit 0 in total silence.
         // Only init is ever posted on parentPort (everything else rides the
-        // transferred port), so this is always a handshake bug — say so.
+        // transferred port), so this is always a handshake bug â€” say so.
         surfaceCrash(
           'parentPort.message',
-          new Error(`first parentPort message was not init (type=${data && data.type}) — bootstrap cannot run`),
+          new Error(`first parentPort message was not init (type=${data && data.type}) â€” bootstrap cannot run`),
         )
       }
     } catch (err) {
@@ -1196,6 +1196,10 @@ if (process.parentPort) {
   })
 }
 
-// (260722: the standalone CLI path that lived here — discoverLanPort +
-// loadConfig('./config.json') behind a !process.parentPort guard — was
+// (260722: the standalone CLI path that lived here â€” discoverLanPort +
+// loadConfig('./config.json') behind a !process.parentPort guard â€” was
 // removed. The bot only starts as an Electron utilityProcess.)
+
+
+
+

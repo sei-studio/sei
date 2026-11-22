@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../ipcClient', () => ({ sei: {} }));
 
@@ -16,3 +16,7 @@ describe('chatPreviewFor (product call (261116): desktop lines stay desktop bubb
     expect(chatPreviewFor(s, 'c')).toEqual({ role: 'companion', text: 'see you in chat', ts: 1 });
   });
 });
+
+
+
+

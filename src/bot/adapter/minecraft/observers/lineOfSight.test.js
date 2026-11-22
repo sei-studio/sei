@@ -1,9 +1,9 @@
-// src/bot/adapter/minecraft/observers/lineOfSight.test.js
+﻿// src/bot/adapter/minecraft/observers/lineOfSight.test.js
 //
-// Phase 15 — Plan 15-03 Task 2 (TDD). Behavior gate for the custom
+// Phase 15 â€” Plan 15-03 Task 2 (TDD). Behavior gate for the custom
 // line-of-sight helper (VIS-05). The whole point of a CUSTOM helper (vs raw
 // bot.world.raycast) is that fluids and intervening entity bounding boxes are
-// treated as occluders — raycast misses both (RESEARCH Pitfall 3). These tests
+// treated as occluders â€” raycast misses both (RESEARCH Pitfall 3). These tests
 // pin every behavior bullet from 15-03-PLAN.md.
 
 import { describe, it, expect } from 'vitest'
@@ -28,7 +28,7 @@ function makeBot({ eye, eyeHeight = 1.6, blockAt, entities = {} }) {
   }
 }
 
-/** A block that fully fills its cell (1×1×1 collision shape). */
+/** A block that fully fills its cell (1Ã—1Ã—1 collision shape). */
 function solidBlock(name = 'stone') {
   return { name, shapes: [[0, 0, 0, 1, 1, 1]] }
 }
@@ -46,7 +46,7 @@ function target(pos, { height = 1.8, width = 0.6 } = {}) {
 describe('hasClearLineOfSight (VIS-05)', () => {
   it('returns false when the target is beyond the 16-block range gate, even through clear air', () => {
     const bot = makeBot({ eye: { x: 0, y: 64, z: 0 }, blockAt: () => airBlock() })
-    // 20 blocks away on the X axis — past the 16-block gate.
+    // 20 blocks away on the X axis â€” past the 16-block gate.
     const tgt = target({ x: 20, y: 64, z: 0 })
     expect(hasClearLineOfSight(bot, tgt)).toBe(false)
   })
@@ -64,12 +64,12 @@ describe('hasClearLineOfSight (VIS-05)', () => {
     expect(hasClearLineOfSight(bot, tgt, { maxRange: 64 })).toBe(true)
   })
 
-  it('returns false when a fluid block lies on the ray (fluids are occluders — raycast would MISS this)', () => {
+  it('returns false when a fluid block lies on the ray (fluids are occluders â€” raycast would MISS this)', () => {
     const bot = makeBot({
       eye: { x: 0, y: 64, z: 0 },
       blockAt: (v) => {
         // Put water at x=3 (on the ray to a target at x=6). Fluids have EMPTY
-        // collision shapes, so a shapes-only test would pass through — the
+        // collision shapes, so a shapes-only test would pass through â€” the
         // helper must treat the fluid NAME as an occluder.
         if (Math.floor(v.x) === 3) return { name: 'water', shapes: [] }
         return airBlock()
@@ -118,7 +118,7 @@ describe('hasClearLineOfSight (VIS-05)', () => {
 
   it('does NOT treat the bot itself or the target entity as occluders', () => {
     // The bot's own entity and the target are in bot.entities; neither should
-    // block the ray. (clear air otherwise → LOS true)
+    // block the ray. (clear air otherwise â†’ LOS true)
     const tgt = target({ x: 6, y: 64, z: 0 })
     const bot = makeBot({
       eye: { x: 0, y: 64, z: 0 },
@@ -128,7 +128,7 @@ describe('hasClearLineOfSight (VIS-05)', () => {
     expect(hasClearLineOfSight(bot, tgt)).toBe(true)
   })
 
-  it('returns false when a block on the ray is in an unloaded chunk (blockAt → null)', () => {
+  it('returns false when a block on the ray is in an unloaded chunk (blockAt â†’ null)', () => {
     const bot = makeBot({
       eye: { x: 0, y: 64, z: 0 },
       blockAt: (v) => (Math.floor(v.x) === 3 ? null : airBlock()),
@@ -151,3 +151,7 @@ describe('hasClearLineOfSight (VIS-05)', () => {
     expect(raycastCalled).toBe(false)
   })
 })
+
+
+
+

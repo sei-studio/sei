@@ -1,7 +1,7 @@
-/**
+﻿/**
  * Maia model store: the CCE engine needs the ~21 MB Maia-3 ONNX model, which
  * is NOT bundled (it would grow every installer and update). It downloads once
- * on first chess launch and lives in userData (app-global, not profile-scoped —
+ * on first chess launch and lives in userData (app-global, not profile-scoped â€”
  * the model is identity-free).
  *
  * The file is our own ONNX export (cce-1 scripts/export-maia3.py) of the
@@ -23,7 +23,7 @@ const MODEL_BYTES = 21_130_791;
 // Two sources (260816, china-compat): GitHub's release-asset CDN is
 // unreliable from mainland China, so blocked-region users try the R2 mirror
 // first; everyone else keeps the historical GitHub-first order (the W10
-// cloud-no-regression rule — same regionStatus gate the whisper host loop
+// cloud-no-regression rule â€” same regionStatus gate the whisper host loop
 // uses). The loop below falls through to the next URL on any failure, so a
 // missing/unreachable mirror costs one failed attempt and nothing else.
 // Assets land in the bucket via scripts/mirror-assets.mjs.
@@ -45,7 +45,7 @@ async function modelUrls(): Promise<string[]> {
     const { getRegionStatus } = await import('../regionDetect');
     mirrorFirst = (await getRegionStatus()).blocked === true;
   } catch {
-    /* region unknown → historical origin-first order */
+    /* region unknown â†’ historical origin-first order */
   }
   return modelUrlOrder(mirrorFirst);
 }
@@ -240,7 +240,7 @@ export async function downloadModelFile(
       } catch (err) {
         throw new ModelDownloadError((err as Error).message, 'disk');
       }
-      console.log(`[sei/chess] model downloaded from ${host} sha256=${hash.digest('hex').slice(0, 16)}…`);
+      console.log(`[sei/chess] model downloaded from ${host} sha256=${hash.digest('hex').slice(0, 16)}â€¦`);
       opts.onProgress?.(100);
       return target;
     } catch (err) {
@@ -267,3 +267,7 @@ export async function downloadModelFile(
 async function download(target: string, onProgress?: DownloadProgress): Promise<string> {
   return downloadModelFile(target, await modelUrls(), { onProgress });
 }
+
+
+
+

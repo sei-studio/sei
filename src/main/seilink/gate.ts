@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Is SeiLink on? (261104, M4.) One place every SeiLink path asks.
  *
  * On when either:
@@ -67,3 +67,7 @@ export function setSeilinkResident(characterId: string | null): void {
 export function __setSeilinkEnabledForTest(v: boolean | null): void {
   testOverride = v;
 }
+
+
+
+

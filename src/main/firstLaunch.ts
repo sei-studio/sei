@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `installer_first_launch` (260926): one analytics event per install, on the
  * very first launch.
  *
@@ -16,10 +16,10 @@
  * anything else creates Sei state under userData, so the probe below can tell
  * a fresh install from an existing one updating to the first build that has
  * this code:
- *   - marker present                  → 'seen'     (no event)
- *   - no marker, older Sei state      → 'upgrade'  (marker written, no event)
- *   - no marker, no Sei state         → 'fresh'    (marker written, EVENT)
- *   - marker could not be written     → 'unrecorded' (no event, so a disk
+ *   - marker present                  â†’ 'seen'     (no event)
+ *   - no marker, older Sei state      â†’ 'upgrade'  (marker written, no event)
+ *   - no marker, no Sei state         â†’ 'fresh'    (marker written, EVENT)
+ *   - marker could not be written     â†’ 'unrecorded' (no event, so a disk
  *     that refuses the write cannot turn every launch into a "first" launch)
  * The event is emitted only after the marker was created, so it fires at most
  * once per userData dir. Deleting the app but keeping userData is not a new
@@ -51,7 +51,7 @@ export const PRIOR_STATE_ENTRIES: readonly string[] = [
   'skin-setup-state.json',       // Minecraft wizard state
   'session.bin',                 // Supabase session
   'device-id.json',              // trial-claim device id
-  'migration-uuid-rename.json',  // slug→UUID migration marker
+  'migration-uuid-rename.json',  // slugâ†’UUID migration marker
   'notices.json',                // notices inbox state
   // NOT session.json (crashReporting's session marker) or logs/: they are
   // written at whenReady, BEFORE noteLaunch, on a fresh install too, so
@@ -176,7 +176,7 @@ export function currentFirstLaunchEnv(): FirstLaunchEnv {
   };
 }
 
-// ── Process-level wiring ────────────────────────────────────────────────────
+// â”€â”€ Process-level wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let pendingFirstLaunch = false;
 let launchKind: LaunchKind | null = null;
@@ -211,3 +211,7 @@ export function takeInstallerFirstLaunch(): boolean {
   pendingFirstLaunch = false;
   return pending;
 }
+
+
+
+

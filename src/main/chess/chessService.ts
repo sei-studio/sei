@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess minigame service (main process): authoritative game state + the
  * character's turn runner.
  *
@@ -12,7 +12,7 @@
  * only expresses STYLE.
  *
  * Turn scheduling (260714) rides the game-agnostic FSM core from
- * src/bot/brain/fsm.js — one priority queue per session, single-flight:
+ * src/bot/brain/fsm.js â€” one priority queue per session, single-flight:
  *   P1  sei:chat_received  player message(s); consecutive sends coalesce into
  *                          ONE reply turn (chatBuffer drained at dispatch).
  *   P2  sei:your_move      the player's move committed; decide OUR move.
@@ -28,7 +28,7 @@
  *   printing/speaking) -> ack -> commit.
  * A player chat during the hold runs as a normal P1 reply turn that KNOWS the
  * queued move but can neither change nor delay it: reply turns are TEXT-ONLY
- * (260730: the play()-revision and wait() hold-back path was dropped — a live
+ * (260730: the play()-revision and wait() hold-back path was dropped â€” a live
  * game logged 17 rejected play()/wait() calls whose retries doubled every
  * reply turn, and the model spoke its confusion out loud). A hard cap (reply
  * cycles / wall clock) force-commits so chat spam cannot stall the game.
@@ -86,7 +86,7 @@ import { nudgeDueInMs } from './turnNudge';
 import { createChessLog, NULL_CHESS_LOG, type ChessLog } from './chessLog';
 import { loadAnalytics } from '../lazyAnalytics';
 
-// ── deps + module state ──────────────────────────────────────────────────────
+// â”€â”€ deps + module state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ChessDeps {
   pushState: (state: ChessGameState) => void;
@@ -207,7 +207,7 @@ interface Session {
    *
    * Never persisted (the renderer's transcript stays chat-only) and rendered
    * deterministically, so turn N's array is a strict prefix-extension of turn
-   * N-1's — which is exactly what prefix-incremental prompt caching needs.
+   * N-1's â€” which is exactly what prefix-incremental prompt caching needs.
    */
   gameLog: Array<{ ts: number; text: string }>;
   /**
@@ -346,7 +346,7 @@ async function getEngine() {
   return enginePromise;
 }
 
-// ── snapshots ────────────────────────────────────────────────────────────────
+// â”€â”€ snapshots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function snapshot(s: Session): ChessGameState {
   return {
@@ -371,7 +371,7 @@ function push(s: Session): ChessGameState {
   return state;
 }
 
-// ── public api (wired to IPC handlers) ──────────────────────────────────────
+// â”€â”€ public api (wired to IPC handlers) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function isChessActive(characterId: string): boolean {
   const s = sessions.get(characterId);
@@ -492,7 +492,7 @@ export async function startChess(
   push(s);
 
   // Analytics (260728): a game surface must report its own playtime, or it is
-  // invisible — `minutes` used to mean Minecraft only. Lazy import so the
+  // invisible â€” `minutes` used to mean Minecraft only. Lazy import so the
   // module graph (and the tests) never depend on analytics being initialized;
   // capture() is a no-op when it is not. No board state, no chat, no persona.
   void (async () => {
@@ -707,7 +707,7 @@ export async function ackReveal(characterId: string, uci: string): Promise<Chess
   return snapshot(s);
 }
 
-// ── chat routing ─────────────────────────────────────────────────────────────
+// â”€â”€ chat routing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * A player chat message while a game is open. Returns null when chess should
@@ -758,7 +758,7 @@ function characterId(args: { characterId: string }): string {
 
 /** Log payload clamp: chat/LLM text lines stay readable, never unbounded. */
 function truncateForLog(text: string, max = 500): string {
-  return text.length <= max ? text : `${text.slice(0, max)}… [+${text.length - max} chars]`;
+  return text.length <= max ? text : `${text.slice(0, max)}â€¦ [+${text.length - max} chars]`;
 }
 
 /**
@@ -766,7 +766,7 @@ function truncateForLog(text: string, max = 500): string {
  * Session.gameLog). Call immediately after history.push, from BOTH sides.
  *
  * For our own move the line also carries the candidate set we chose from, so a
- * later turn can honestly answer "why didn't you take with the other knight" —
+ * later turn can honestly answer "why didn't you take with the other knight" â€”
  * the alternatives are otherwise gone the moment the turn ends.
  */
 function recordPly(s: Session, mine: boolean): void {
@@ -788,7 +788,7 @@ function recordPly(s: Session, mine: boolean): void {
   s.gameLog.push({ ts: Date.now(), text });
 }
 
-// ── internals ────────────────────────────────────────────────────────────────
+// â”€â”€ internals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function requireActive(id: string): Session {
   const s = sessions.get(id);
@@ -796,7 +796,7 @@ function requireActive(id: string): Session {
   return s;
 }
 
-// ── fsm dispatch ─────────────────────────────────────────────────────────────
+// â”€â”€ fsm dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function enqueueYourMove(s: Session): void {
   if (s.status !== 'active' || s.chess.turn() === s.playerColor) return;
@@ -869,7 +869,7 @@ async function dispatchYourMove(s: Session): Promise<void> {
         } catch { /* analytics is never load-bearing */ }
       })();
       // Usage limit (260730): raise the popup, skip the retry (it would 402
-      // again), and fall through to fallbackPlay — the ENGINE picks the move
+      // again), and fall through to fallbackPlay â€” the ENGINE picks the move
       // for free, so the game stays alive and playable. 260926: a depleted
       // allowance also latches quiet mode, so the following moves skip the LLM
       // entirely (no 402 per move, no popup per move) and one chat notice
@@ -916,7 +916,7 @@ async function dispatchChat(s: Session, nudge: boolean): Promise<void> {
       })();
     }
   }
-  // streamed: true — every reply line was already persisted AND pushed live
+  // streamed: true â€” every reply line was already persisted AND pushed live
   // over the chat:message push inside runChessLlmTurn (speak()). Without the
   // flag the renderer's reveal loop re-appends result.replies on top of the
   // pushed copies, so every gameplay reply rendered twice (260721).
@@ -958,7 +958,7 @@ async function dispatchIdle(s: Session): Promise<void> {
   s.idleStreak = replies.length === 0 ? s.idleStreak + 1 : 0;
 }
 
-// ── the "your move" nudge (260929) ──────────────────────────────────────────
+// â”€â”€ the "your move" nudge (260929) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Moves the player has made this game (the history alternates from White). */
 function playerMoveCount(s: Session): number {
@@ -1056,7 +1056,7 @@ function sampleIdleDelayMs(s: Session): number {
   return base * Math.min(1 + s.idleStreak, T.idleBackoffCap);
 }
 
-// ── the presentation hold ────────────────────────────────────────────────────
+// â”€â”€ the presentation hold â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Enter the hold for a decided move. Presentation is the CALLER's job once
  * the turn's commentary is final (it used to be the prethink timer's; the
@@ -1227,7 +1227,7 @@ function endSession(
         duration_ms: durationMs,
         plies: s.history.length,
         reason: opts?.reason ?? result.reason,
-        // 'player' | 'ai' | 'draw' — never the raw colour, which would need
+        // 'player' | 'ai' | 'draw' â€” never the raw colour, which would need
         // playerColor to interpret.
         outcome: result.winner === null ? 'draw' : result.winner === s.playerColor ? 'player' : 'ai',
         ai_elo: s.profile.elo,
@@ -1262,7 +1262,7 @@ function endSession(
       }),
     );
   }
-  // Transcript event ("You and X played chess. You won in N moves.") — same
+  // Transcript event ("You and X played chess. You won in N moves.") â€” same
   // shape the Minecraft/watch sessions append, rendered with the gamepad icon.
   // Abandoned games leave no row ONLY when nothing happened at all (no moves
   // AND no chat): if any table talk landed in the transcript, the closing row
@@ -1365,7 +1365,7 @@ export function chessSummaryText(
 ): string {
   if (result.reason === 'abandoned') {
     return language === 'zh'
-      ? `你和${name}有一局国际象棋没有下完。`
+      ? `ä½ å’Œ${name}æœ‰ä¸€å±€å›½é™…è±¡æ£‹æ²¡æœ‰ä¸‹å®Œã€‚`
       : `You and ${name} left a chess game unfinished.`;
   }
   // One shape for every game surface, results deliberately omitted: see the
@@ -1374,7 +1374,7 @@ export function chessSummaryText(
   // carries them for the replay card.
   void playerColor;
   void plyCount;
-  return playSummaryText(name, language === 'zh' ? '国际象棋' : 'Chess', durationMs, language);
+  return playSummaryText(name, language === 'zh' ? 'å›½é™…è±¡æ£‹' : 'Chess', durationMs, language);
 }
 
 /** Log-friendly error description including status and the cause chain. */
@@ -1388,7 +1388,7 @@ function describeErr(err: unknown): string {
   return out;
 }
 
-/** Transport-level failure (never got an HTTP response) — worth one retry. */
+/** Transport-level failure (never got an HTTP response) â€” worth one retry. */
 function isConnectionError(err: unknown): boolean {
   const e = err as Error & { status?: number };
   return e?.name === 'APIConnectionError' || (e?.status === undefined && /connection error/i.test(e?.message ?? ''));
@@ -1406,7 +1406,7 @@ async function candidatesFor(s: Session): Promise<CandidateOut> {
   return out;
 }
 
-// ── credit-wall quiet mode (260926) ─────────────────────────────────────────
+// â”€â”€ credit-wall quiet mode (260926) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function readCreditsSnapshot(): Promise<ChessCreditsSnapshot | null> {
   const read = (async (): Promise<ChessCreditsSnapshot | null> => {
@@ -1563,7 +1563,7 @@ async function fallbackPlay(s: Session, why = 'no valid play() from the model'):
   await presentHold(s);
 }
 
-// ── the LLM turn ─────────────────────────────────────────────────────────────
+// â”€â”€ the LLM turn â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PLAY_TOOL = {
   name: 'play',
@@ -1603,15 +1603,15 @@ const FORFEIT_TOOL = {
 /**
  * ONE tool array for every turn kind, deliberately.
  *
- * `tools` is the FIRST element of Anthropic's cache prefix (tools → system →
- * messages), so any change to it invalidates the entire cached prompt — system
+ * `tools` is the FIRST element of Anthropic's cache prefix (tools â†’ system â†’
+ * messages), so any change to it invalidates the entire cached prompt â€” system
  * and transcript included. Handing move turns one array and chat/idle/game-over
  * turns another meant the prefix flipped on nearly every turn: a live 15-minute
  * game logged cacheRead=0 on ~half its requests, every one of them re-billing
  * the whole persona + memory + transcript at the cache-WRITE rate.
  *
  * Which tools are actually legal right now is a per-turn fact, so it belongs in
- * the turn block (prose, in the uncached tail) and in the tool_result notes —
+ * the turn block (prose, in the uncached tail) and in the tool_result notes â€”
  * not in the tool list. An out-of-context call costs one hop and is answered
  * with a correction; a churning tool array cost several thousand tokens a turn.
  */
@@ -1712,7 +1712,7 @@ function describeRecentPlies(s: Session, n: number): Array<{ mine: boolean; text
  *
  * 260724 rewrite. The old contract banned "no piece-to-square descriptions",
  * "no plans", "no analysis" on top of the notation ban, which left mood as the
- * only compliant output — and produced exactly that: 21 of 24 move turns in a
+ * only compliant output â€” and produced exactly that: 21 of 24 move turns in a
  * live game opened with a contentless "ok" / "alright" / "okay okay". Chess talk
  * is the point of the feature; the ONLY thing that actually has to go is
  * coordinates, because square names read as robotic out loud. So: encourage the
@@ -1782,7 +1782,7 @@ export const SQUARE_NAMES_REMINDER =
 /**
  * The VOLATILE half: what is true on the board right now, and what this turn is
  * for. Appended as the LAST user message (after the cache breakpoint), never to
- * the system array — see BuildSystemArgs.extraStable for why that matters.
+ * the system array â€” see BuildSystemArgs.extraStable for why that matters.
  */
 async function buildChessTurnBlock(
   s: Session,
@@ -1816,7 +1816,7 @@ async function buildChessTurnBlock(
   // player did (that is how commentary starts hallucinating moves).
   //
   // The FULL game is already above as "(game) Move N: ..." lines in the thread,
-  // so this is only the immediate delta — what changed since it last looked up.
+  // so this is only the immediate delta â€” what changed since it last looked up.
   const moveNo = Math.floor(s.history.length / 2) + 1;
   if (s.history.length === 0) {
     lines.push('Move 1. No moves have been played yet.');
@@ -1827,7 +1827,7 @@ async function buildChessTurnBlock(
     );
     lines.push(`Move ${moveNo}.\n${recentLines.join('\n')}`);
   }
-  // How the game feels to HER, on every turn kind — not just when she is moving.
+  // How the game feels to HER, on every turn kind â€” not just when she is moving.
   // This band is deliberately wide (cce-1 bandHalfWidth at her Elo): she cannot
   // actually tell how she is doing, and that uncertainty is what her confidence
   // is built on. It has to be present on chat and idle turns too, or she talks
@@ -1945,7 +1945,7 @@ async function buildChessTurnBlock(
  * and the append-only game record (Session.gameLog), merged by timestamp.
  *
  * Both inputs only ever grow at the end and both carry real wall-clock stamps,
- * so the merged array is append-only too — turn N's rendering of rows 1..k is
+ * so the merged array is append-only too â€” turn N's rendering of rows 1..k is
  * byte-identical to turn N-1's. That is the property prefix-incremental prompt
  * caching needs, and it is why nothing here may be rewritten retroactively.
  *
@@ -1978,14 +1978,14 @@ async function readMemoryTail(id: string): Promise<string> {
 
 /**
  * Run one chess LLM turn. kind:
- *   'move'       — it is the AI's move: optional commentary + the play/draw/
+ *   'move'       â€” it is the AI's move: optional commentary + the play/draw/
  *                  forfeit loop. Commentary is BUFFERED into the hold and
  *                  presents with the move as soon as the turn loop ends.
- *   'chat-reply' — answer player chat with the game as context. Text-only:
+ *   'chat-reply' â€” answer player chat with the game as context. Text-only:
  *                  it is told any queued move but cannot change or delay it
  *                  (it may still accept a standing draw offer).
- *   'idle'       — quiet-table tick; a line is optional, silence expected.
- *   'game-over'  — react to the finished game.
+ *   'idle'       â€” quiet-table tick; a line is optional, silence expected.
+ *   'game-over'  â€” react to the finished game.
  * Returns the persisted commentary messages (for 'move', the buffered ones).
  */
 async function runChessLlmTurn(
@@ -2043,7 +2043,7 @@ async function runChessLlmTurn(
     '--- turn ---',
   ];
 
-  // 260724: the whole game as one conversation. No slice() — the transcript and
+  // 260724: the whole game as one conversation. No slice() â€” the transcript and
   // the move record both ride in full, so at move 25 she can still see move 3,
   // what she was considering at the time, and everything either of you said.
   // The growth is ~110 tokens a ply and it is all cache reads; the previous
@@ -2052,8 +2052,8 @@ async function runChessLlmTurn(
 
   // Cache breakpoint at the end of the STABLE prefix, then the volatile turn
   // block folded on after it. Order matters and is the whole point:
-  //   tools (fixed) → system (fixed + persona/memory/summary) → thread ...★... turn block
-  // Everything up to ★ is byte-identical to last turn, so it is a cache READ.
+  //   tools (fixed) â†’ system (fixed + persona/memory/summary) â†’ thread ...â˜…... turn block
+  // Everything up to â˜… is byte-identical to last turn, so it is a cache READ.
   // The turn block changes every turn, so it must sit AFTER the mark; when the
   // thread already ends on a user turn the block folds into it (Anthropic wants
   // alternating roles) and the mark moves one turn back, which costs only that
@@ -2068,7 +2068,7 @@ async function runChessLlmTurn(
   const stale = (): boolean => s.turnSeq !== seq || ctrl.signal.aborted;
   const timeout = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
 
-  // Fixed for every turn kind — see CHESS_TOOLS. Which ones are legal right now
+  // Fixed for every turn kind â€” see CHESS_TOOLS. Which ones are legal right now
   // is stated in the turn block instead, where it costs nothing to vary.
   const tools = CHESS_TOOLS;
 
@@ -2097,7 +2097,7 @@ async function runChessLlmTurn(
       // alone does not hold it: a live game had her say a bare "c6" out loud on
       // move 1 and the player had to correct her in-game. Squares and notation
       // read as robotic aloud, so a line carrying them is dropped rather than
-      // mangled — everything else about the chess is encouraged.
+      // mangled â€” everything else about the chess is encouraged.
       if (hasChessCoordinates(part)) {
         turnLog.push(`suppressed (coordinates in spoken line): ${truncateForLog(part, 120)}`);
         continue;
@@ -2130,8 +2130,8 @@ async function runChessLlmTurn(
     for (let hop = 0; hop < CHESS_MAX_HOPS && !stale(); hop++) {
       // stop_sequences (260722): the model may not continue the transcript
       // past its own turn. A live voice-call game had a chat-reply turn keep
-      // writing — a fabricated player line ("Human: ... *plays Nc6*") plus an
-      // invented "(it is your turn)" direction — and speak() faithfully
+      // writing â€” a fabricated player line ("Human: ... *plays Nc6*") plus an
+      // invented "(it is your turn)" direction â€” and speak() faithfully
       // persisted and TTS'd all of it. Cutting generation at the other side's
       // line-start markers means the leak text is never produced at all.
       const res = await llm.call({
@@ -2269,11 +2269,11 @@ async function runChessLlmTurn(
 
     if (opts.kind === 'move') {
       if (!played) {
-        // The model never produced a valid play() — keep the game moving.
+        // The model never produced a valid play() â€” keep the game moving.
         await fallbackPlay(s);
       } else if (s.hold) {
         // Attach the buffered table talk to the hold and present right away
-        // (260729: no prethink delay — commentary is final once the loop ends).
+        // (260729: no prethink delay â€” commentary is final once the loop ends).
         s.hold.commentary = spoken.slice();
         await presentHold(s);
       }
@@ -2391,3 +2391,7 @@ export const __chessPromptProbe = {
   buildGameThread,
   recordPly,
 };
+
+
+
+

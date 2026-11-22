@@ -1,5 +1,5 @@
-// Game-adapters M2 (260908): the DST runtime against the fake mod
-// (scripts/fake-dst-mod.mjs) — connect, summon timeout, poll hold,
+﻿// Game-adapters M2 (260908): the DST runtime against the fake mod
+// (scripts/fake-dst-mod.mjs) â€” connect, summon timeout, poll hold,
 // heartbeat loss, death + respawn (261104), stop. No Electron, no game.
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createRuntime, createDstLink, adapterConfigFrom, botUsernameFor, checkJoinTarget } from './runtime.js'
@@ -418,4 +418,8 @@ describe('DST link: what the helper reports at spawn', () => {
     })
   }
 })
+
+
+
+
 

@@ -1,12 +1,12 @@
-// goTo() orphaned navigate() retry loop (Finding 6).
+﻿// goTo() orphaned navigate() retry loop (Finding 6).
 //
 // navigate() races a wall-clock timeout against bot.pathfinder.goto(goal).
-// When the timeout wins, goTo() has already returned to its caller — but the
+// When the timeout wins, goTo() has already returned to its caller â€” but the
 // navigate() loop was still alive: if a reflex flee (bot._seiReflexActive)
 // happened to be active at the moment the timeout rejected the in-flight
 // goto, the old code treated that rejection as "flee took the goal" and
 // looped back around to wait for the flee to clear, then re-issued
-// `bot.pathfinder.goto(goal)` with the STALE destination — long after goTo
+// `bot.pathfinder.goto(goal)` with the STALE destination â€” long after goTo
 // already resolved and some other consumer (e.g. the follow tick) may have
 // installed a different goal. The `settled` flag added in pathfind.js must
 // stop that: once the race is settled, the orphaned loop exits without
@@ -20,7 +20,7 @@ const require = createRequire(import.meta.url)
 const VERSION = '1.21.1'
 const mcData = require('minecraft-data')(VERSION)
 
-// Real minecraft-data registry (same pattern as craft.test.js) — Movements'
+// Real minecraft-data registry (same pattern as craft.test.js) â€” Movements'
 // constructor reads real block tables (registry.blocksByName.chest, etc.), so
 // a bare stub object is not enough.
 function makeBot() {
@@ -52,14 +52,14 @@ function makeBot() {
   return bot
 }
 
-describe('goTo — orphaned navigate() retry loop after timeout (Finding 6)', () => {
+describe('goTo â€” orphaned navigate() retry loop after timeout (Finding 6)', () => {
   it('does not re-issue pathfinder.goto when a reflex yield resumes after the timeout already won the race', async () => {
     vi.useFakeTimers()
     try {
       const bot = makeBot()
 
       // y stays equal to the bot's own y so composeVerticalHint doesn't
-      // append an "unreachable" suffix — irrelevant to this test.
+      // append an "unreachable" suffix â€” irrelevant to this test.
       const resultPromise = goTo(bot, 10, 0, 10, 1, 1000)
 
       // The goto call happens synchronously inside navigate() before its
@@ -78,7 +78,7 @@ describe('goTo — orphaned navigate() retry loop after timeout (Finding 6)', ()
 
       // The reflex flee now clears, as it eventually does in real play. The
       // orphaned navigate() loop (still alive in the background) must NOT
-      // wake up from waitForReflexClear and re-issue a stale goto — goTo
+      // wake up from waitForReflexClear and re-issue a stale goto â€” goTo
       // already returned to its caller, who may have installed a different
       // goal by now.
       bot._seiReflexActive = false
@@ -257,7 +257,7 @@ describe('GoalDigReach (261011)', () => {
     // Standing on the ground next to the trunk: feet at y=64, eyes ~65.6,
     // block center 68.5. Distance ~3.1 from x=1.
     expect(g.isEnd({ x: 1, y: 64, z: 0 })).toBe(true)
-    // GoalNear(…,3) would demand the feet within 3 of y=68, i.e. a climb.
+    // GoalNear(â€¦,3) would demand the feet within 3 of y=68, i.e. a climb.
     expect(g.isEnd({ x: 6, y: 64, z: 0 })).toBe(false)
   })
 })
@@ -281,7 +281,7 @@ describe('goTo checks it actually ended at the goal (261015)', () => {
     bot.entity.position = { x: 180.5, y: 71, z: 6.5 }
     bot.pathfinder.goto = vi.fn(async () => {})
     const r = await goTo(bot, 184, 77, 6, 2, 1000)
-    expect(r).toMatch(/^cant_reach \(closest=7\.0m to target 184,77,6\) — unreachable — try build to Y=77$/)
+    expect(r).toMatch(/^cant_reach \(closest=7\.0m to target 184,77,6\) â€” unreachable â€” try build to Y=77$/)
   })
 
   it('still reports reached at the goal, and within a block of the range', async () => {
@@ -390,3 +390,7 @@ describe('goTo after an interruption (261019)', () => {
     expect(await p).toBe('reached')
   })
 })
+
+
+
+

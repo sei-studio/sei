@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { newWidget, type RoomWidget } from '@shared/seilinkWidgets';
@@ -69,3 +69,7 @@ describe('Lighting panel (product call 261120)', () => {
     expect(html).toContain('Reset');
   });
 });
+
+
+
+

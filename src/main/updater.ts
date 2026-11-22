@@ -1,34 +1,34 @@
-/**
- * In-app updater (quick/260604-uoy) — reverses D-63.
+﻿/**
+ * In-app updater (quick/260604-uoy) â€” reverses D-63.
  *
  * Replaces the notify-and-redirect updateChecker.ts. Drives `electron-updater`
  * over the GitHub Releases channel, with update POLICY (changelog + mandatory
  * timing) carried by the existing https://sei.gg/version.json side-channel.
  *
- * `electron-updater` MUST only be loaded behind `app.isPackaged` — its
+ * `electron-updater` MUST only be loaded behind `app.isPackaged` â€” its
  * `autoUpdater` throws when the app is not packaged (no app-update.yml). In dev
  * the pure policy fns still run (deriveLevel/etc), but `autoUpdater` is never
  * touched and the what's-new check is skipped entirely (app.getVersion()
  * returns a dev string, and there's no install to update). The
- * `electron-updater` import lives ONLY in this file — never in updatePolicy.ts,
+ * `electron-updater` import lives ONLY in this file â€” never in updatePolicy.ts,
  * the renderer, or any pure-fn module.
  *
  * Flows (see PLAN.md):
- *   A. Startup auto-check — checkForUpdates() → on update-available:
- *      optional → push app:update-available (no download); mandatory →
+ *   A. Startup auto-check â€” checkForUpdates() â†’ on update-available:
+ *      optional â†’ push app:update-available (no download); mandatory â†’
  *      downloadUpdate() silently + stash pending; on downloaded honor apply.
- *   B. Settings "Check for updates" — manual check, surfaces checking/
+ *   B. Settings "Check for updates" â€” manual check, surfaces checking/
  *      not-available/available/error to the renderer.
- *   C. Optional accept — downloadUpdate(), progress ticks, then ready-to-install.
+ *   C. Optional accept â€” downloadUpdate(), progress ticks, then ready-to-install.
  *      Both C and the mandatory on-restart tail are BACKGROUND on the renderer
  *      side (260801): progress and the ready prompt render in the sidebar
  *      "Update Sei" button (261023, was a corner pill), and nothing installs
  *      until the user clicks it or the app quits. Only apply:'now' still
  *      takes the window.
- *   D. Post-update what's-new — on launch, show stashed/ fallback changelog.
+ *   D. Post-update what's-new â€” on launch, show stashed/ fallback changelog.
  *
  * Source:
- *   - src/main/updateChecker.ts (version.json net.request logic — ported here)
+ *   - src/main/updateChecker.ts (version.json net.request logic â€” ported here)
  *   - src/main/updatePolicy.ts (pure level/apply derivation)
  *   - src/main/updateStateStore.ts (device-global pending/lastSeen persistence)
  */
@@ -76,12 +76,12 @@ const VERSION_FETCH_TIMEOUT_MS = 5000;
 const FORCED_RESTART_DELAY_MS = 3500;
 /**
  * Background re-check cadence (260710). The startup check alone meant a
- * long-running app never noticed a release — v0.4.4 sat invisible to every
+ * long-running app never noticed a release â€” v0.4.4 sat invisible to every
  * open 0.4.3 instance until users happened to relaunch.
  *
  * Responsiveness now comes from EVENTS, not the clock (260722): a check fires
  * when the user returns to the app (window focus) or the machine wakes / the
- * screen unlocks — the moments a stale app is most likely and the user is right
+ * screen unlocks â€” the moments a stale app is most likely and the user is right
  * there to act on it. The periodic timer below is just a backstop for a session
  * left continuously in the foreground. Every automatic check funnels through
  * maybeBackgroundCheck(), which enforces MIN_BACKGROUND_GAP_MS between checks so
@@ -117,11 +117,11 @@ interface VersionPolicy {
   minSupported: string | null;
 }
 
-/** Module singleton — set once by initUpdater. */
+/** Module singleton â€” set once by initUpdater. */
 let getMainWindow: (() => BrowserWindow | null) | null = null;
 /** True once autoUpdater event handlers have been attached (packaged only). */
 let wired = false;
-/** Lazily-resolved autoUpdater (packaged only) — typed loosely to avoid a
+/** Lazily-resolved autoUpdater (packaged only) â€” typed loosely to avoid a
  *  top-level electron-updater import leaking into the unpackaged graph. */
 type AutoUpdater = {
   autoDownload: boolean;
@@ -137,7 +137,7 @@ type AutoUpdater = {
   allowPrerelease: boolean;
   /**
    * electron-updater's own logger. Defaults to bare `console`, which is
-   * invisible in a packaged build — every reason an update failed used to be
+   * invisible in a packaged build â€” every reason an update failed used to be
    * written there and nowhere else. Always assign this.
    */
   logger: unknown;
@@ -192,8 +192,8 @@ function retryOnMirror(au: AutoUpdater, why: string): boolean {
 
 /**
  * The current update channel, mirrored onto `autoUpdater.allowPrerelease`.
- * false (default) = stable only — a normal user is NEVER offered a pre-release.
- * true = beta — any newer release, including GitHub pre-releases, is eligible.
+ * false (default) = stable only â€” a normal user is NEVER offered a pre-release.
+ * true = beta â€” any newer release, including GitHub pre-releases, is eligible.
  * Seeded from `config.advanced_updates` in initUpdater and flipped live by
  * setUpdateChannel when the Settings toggle changes; ensureAutoUpdater applies
  * it to the SDK instance on first wiring so the startup check honors it.
@@ -220,7 +220,7 @@ let offeredOptional: { version: string; changelog: string } | null = null;
  * True while the in-flight checkForUpdates() came from the background timer.
  * Read synchronously at the top of handleUpdateAvailable (the event fires
  * inside the check, before the finally that clears this). Background
- * discoveries are handled more gently than launch-time ones — see the two
+ * discoveries are handled more gently than launch-time ones â€” see the two
  * uses below.
  */
 let backgroundCheck = false;
@@ -234,7 +234,7 @@ let manualCheckInFlight = false;
 /**
  * Whether a discovery from the in-flight check should be treated as background
  * (silent checking/not-available + per-run version dedup). Only when a
- * background check is running AND no manual check is in flight — a manual check
+ * background check is running AND no manual check is in flight â€” a manual check
  * overrides, so the Settings flow always resolves to a terminal status.
  */
 function isBackgroundDiscovery(): boolean {
@@ -247,7 +247,7 @@ function isBackgroundDiscovery(): boolean {
  * always resolves to a terminal status event.
  */
 const handledVersions = new Set<string>();
-/** Wall-clock (ms) of the last automatic check's start — drives the throttle. */
+/** Wall-clock (ms) of the last automatic check's start â€” drives the throttle. */
 let lastBackgroundCheckAt = 0;
 /** True while an automatic check is in flight, so overlapping triggers dedup. */
 let backgroundCheckInFlight = false;
@@ -260,7 +260,7 @@ let eventsWired = false;
  * update when the PROCESS terminates. The macOS catch is that closing the last
  * window does not terminate anything (the app stays resident in the dock), so
  * index.ts reads this via isUpdateReadyToInstall() to quit for real when the
- * last window closes and nothing is still running — otherwise the staged
+ * last window closes and nothing is still running â€” otherwise the staged
  * update is silently thrown away and re-downloaded next session.
  */
 let updateReadyToInstall = false;
@@ -330,7 +330,7 @@ export function recheckAfterRepairHold(): void {
 /**
  * Best-effort fetch of a policy feed. Returns null on any failure (no network,
  * timeout, bad JSON, non-2xx). Backward-compatible: the legacy
- * `{version, downloadUrl, notes}` shape still parses — `changelog` falls back
+ * `{version, downloadUrl, notes}` shape still parses â€” `changelog` falls back
  * to `notes` and `apply` defaults to `on-restart` when absent.
  */
 function fetchPolicyFrom(url: string): Promise<VersionPolicy | null> {
@@ -401,7 +401,7 @@ function fetchPolicyFrom(url: string): Promise<VersionPolicy | null> {
  * LIMITATION worth remembering: the client that reads this is the one being
  * OFFERED the update, i.e. the older build. So a given release's notes are
  * segmented only if the build the user is upgrading FROM already had this code.
- * The first beta to benefit is the one after 0.5.0-beta.1 — every 0.4.7 client
+ * The first beta to benefit is the one after 0.5.0-beta.1 â€” every 0.4.7 client
  * offered 0.5.0-beta.1 still read the shared version.json, and there was no way
  * to segment it: the URL is a constant and the request carries no app version
  * (Electron's default UA has no app token).
@@ -474,14 +474,14 @@ export function flushUpdatePushes(): void {
 
 /**
  * Lazily load + configure electron-updater's autoUpdater and attach the event
- * handlers ONCE. Returns null in dev (unpackaged) — the caller must guard on
+ * handlers ONCE. Returns null in dev (unpackaged) â€” the caller must guard on
  * app.isPackaged before relying on the return value. Any load failure
  * (corrupt install, missing app-update.yml) degrades to null + a warn so the
  * app still boots.
  */
 function ensureAutoUpdater(): AutoUpdater | null {
   if (!app.isPackaged) {
-    logger.info('updater disabled in dev (autoUpdater not loaded — unpackaged)');
+    logger.info('updater disabled in dev (autoUpdater not loaded â€” unpackaged)');
     return null;
   }
   if (migrationRestart || repairRestart) return null;
@@ -532,7 +532,7 @@ function ensureAutoUpdater(): AutoUpdater | null {
   autoUpdater.allowPrerelease = allowPrerelease;
 
   // checking/not-available are FEEDBACK for the manual Settings button (and
-  // the startup check) — a background re-check stays invisible unless it
+  // the startup check) â€” a background re-check stays invisible unless it
   // actually finds something, so the Settings status label never flips on its
   // own when a focus/wake/timer check runs.
   autoUpdater.on('checking-for-update', () => {
@@ -583,19 +583,19 @@ function ensureAutoUpdater(): AutoUpdater | null {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Flow A/B — update-available handling                                       */
+/*  Flow A/B â€” update-available handling                                       */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Handle electron-updater's `update-available`. Derives the level from semver,
  * fetches the version.json policy (changelog + apply + minSupported, which
  * raises optional to mandatory below it), and branches:
- *   - optional → push app:update-available (no download yet).
- *   - mandatory → downloadUpdate() silently + stash the pending changelog;
+ *   - optional â†’ push app:update-available (no download yet).
+ *   - mandatory â†’ downloadUpdate() silently + stash the pending changelog;
  *     the actual install timing is decided in handleUpdateDownloaded.
  */
 async function handleUpdateAvailable(info: unknown): Promise<void> {
-  // Captured before the first await — the event fires inside checkForUpdates(),
+  // Captured before the first await â€” the event fires inside checkForUpdates(),
   // so a manual check that overlaps a background one is still in flight here and
   // correctly forces foreground treatment (feedback + no dedup).
   const fromBackground = isBackgroundDiscovery();
@@ -609,7 +609,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   const semverLevel = deriveLevel(currentVersion, latestVersion);
   if (semverLevel === 'none') {
     // electron-updater thinks newer, our policy says no (downgrade/equal/
-    // unparseable) — treat as up to date (silently for a background check).
+    // unparseable) â€” treat as up to date (silently for a background check).
     if (!fromBackground) send(IpcChannel.app.updateNotAvailable);
     return;
   }
@@ -622,7 +622,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   // apply is the operator's severity lever (version.json):
   //   - "on-restart" (the DEFAULT for normal releases): silent download,
   //     dismissable "restart now / later" popup, installs on next quit.
-  //   - "now" (CRITICAL releases only): forced restart after the download —
+  //   - "now" (CRITICAL releases only): forced restart after the download â€”
   //     including apps that discover it via a background check, i.e.
   //     mid-session. Reserve it for updates worth interrupting a live game or
   //     call for; everything else ships as on-restart.
@@ -647,7 +647,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
     return;
   }
 
-  // mandatory (patch-only, or below minSupported) → silent download. Stash
+  // mandatory (patch-only, or below minSupported) â†’ silent download. Stash
   // the changelog so it can be shown on the next launch (on-restart) or right
   // after the forced restart.
   mandatoryApply = apply;
@@ -670,18 +670,18 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Flow C tail / mandatory tail — update-downloaded handling                  */
+/*  Flow C tail / mandatory tail â€” update-downloaded handling                  */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Handle electron-updater's `update-downloaded`. Behavior depends on which
  * flow drove the download:
- *   - mandatory + apply==='now'  → push downloaded{forced:true}, then
+ *   - mandatory + apply==='now'  â†’ push downloaded{forced:true}, then
  *     quitAndInstall() after a brief overlay delay.
- *   - mandatory + apply==='on-restart' → push downloaded{forced:false,
+ *   - mandatory + apply==='on-restart' â†’ push downloaded{forced:false,
  *     onRestart:true}; the renderer shows the sidebar "Update Sei" button.
  *     autoInstallOnAppQuit applies it on the next quit either way.
- *   - optional (consented) → push downloaded{forced:false}; same button,
+ *   - optional (consented) â†’ push downloaded{forced:false}; same button,
  *     same deal. The renderer no longer auto-installs (260801): the user may have
  *     accepted the download minutes ago and be mid-game by the time it lands,
  *     so the restart is theirs to trigger via app:update-install.
@@ -722,7 +722,7 @@ async function handleUpdateDownloaded(version?: string): Promise<void> {
     }, FORCED_RESTART_DELAY_MS);
     return;
   }
-  // apply === 'on-restart' → surface the "ready, restart to apply" state so
+  // apply === 'on-restart' â†’ surface the "ready, restart to apply" state so
   // the download indicator doesn't hang at 100% (it previously sent nothing
   // here, leaving the renderer stuck in the 'downloading' state). The update
   // still installs on the next quit via autoInstallOnAppQuit; the sidebar
@@ -735,22 +735,22 @@ async function handleUpdateDownloaded(version?: string): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Flow D — post-update what's-new (next launch)                              */
+/*  Flow D â€” post-update what's-new (next launch)                              */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Run on launch (packaged only). If a stashed `pending` matches the running
  * version, show it and clear the record. Otherwise fall back to a best-effort
- * version.json fetch IF lastSeenVersion → cur is a patch-only forward bump
+ * version.json fetch IF lastSeenVersion â†’ cur is a patch-only forward bump
  * (the user never saw a changelog up front). Always record lastSeenVersion=cur.
  *
  * Skipped entirely when !app.isPackaged: app.getVersion() is a benign dev
- * string there, and there's no real install to have updated — writing junk to
+ * string there, and there's no real install to have updated â€” writing junk to
  * update-state.json would only confuse the next packaged run.
  */
 // Holds the post-update changelog from this launch's check until the renderer
 // pulls it (via getPendingWhatsNew). The `send()` push is fire-and-forget and
-// races the renderer mounting its onWhatsNew listener — especially on a forced
+// races the renderer mounting its onWhatsNew listener â€” especially on a forced
 // `apply:"now"` restart, where the push fires during early main bootstrap and
 // is dropped because nothing is listening yet. Retaining it here lets the
 // renderer pull it on mount, so the changelog is never silently lost. (260625)
@@ -840,7 +840,7 @@ async function runWhatsNewCheck(): Promise<void> {
     await saveUpdateState({
       version: 1,
       lastSeenVersion: cur,
-      // Clear pending once shown (or if it was for a different version — a
+      // Clear pending once shown (or if it was for a different version â€” a
       // stale stash from an aborted update should not linger).
       pending: shown ? null : state.pending && state.pending.version === cur ? null : state.pending,
       // The timing is consumed on every launch: a relaunch at the SAME version
@@ -869,7 +869,7 @@ function maybeBackgroundCheck(reason: string): void {
   const now = Date.now();
   if (now - lastBackgroundCheckAt < MIN_BACKGROUND_GAP_MS) return;
   lastBackgroundCheckAt = now;
-  // Notices ride this exact clock (260725) — one throttle, one set of triggers,
+  // Notices ride this exact clock (260725) â€” one throttle, one set of triggers,
   // one extra ~1KB GET per wake-up. It sits ABOVE the autoUpdater guard on
   // purpose: nothing about fetching a JSON feed is packaged-only, so notices
   // work in dev while the update check stays disabled there.
@@ -885,7 +885,7 @@ function maybeBackgroundCheck(reason: string): void {
       const message = err instanceof Error ? err.message : String(err);
       logger.warn(`updater: background checkForUpdates failed (${message})`);
       // Missing artifacts is a release-shape condition, not a network failure
-      // — the mirror carries the same release, so flipping onto it would
+      // â€” the mirror carries the same release, so flipping onto it would
       // strand a supported-region user there for nothing (260817, W10; the
       // manual check path has always filtered this).
       if (!isMissingReleaseArtifacts(err) && retryOnMirror(au, message)) {
@@ -904,7 +904,7 @@ function maybeBackgroundCheck(reason: string): void {
 /**
  * Initialize the updater. Wires autoUpdater (packaged only), runs the launch
  * what's-new check, then kicks off the startup auto-check (Flow A). Safe to
- * call in dev — it just logs "disabled in dev" and runs nothing that touches
+ * call in dev â€” it just logs "disabled in dev" and runs nothing that touches
  * autoUpdater.
  */
 /** How long the startup check waits for the profile scope before reading the channel anyway. */
@@ -942,7 +942,7 @@ export function initUpdater(deps: UpdaterInitDeps): void {
   if (deps.holdPushes) heldPushes = heldPushes ?? [];
   const safeMode = deps.safeMode === true;
   safeModeActive = safeMode;
-  // Flow D — what's-new on launch (skipped in dev internally). Memoized so the
+  // Flow D â€” what's-new on launch (skipped in dev internally). Memoized so the
   // renderer's pull (getPendingWhatsNew) shares this one computation.
   // Not in safe mode: it records lastSeenVersion, and the changelog belongs
   // to the normal app that can show it.
@@ -953,7 +953,7 @@ export function initUpdater(deps: UpdaterInitDeps): void {
   // holds on the dev path too (where the notices refresh below is the only
   // thing riding the cadence).
   lastBackgroundCheckAt = Date.now();
-  // Notices — startup leg of the shared cadence (260725). Runs in dev as well.
+  // Notices â€” startup leg of the shared cadence (260725). Runs in dev as well.
   if (!safeMode && deps.startupNotices !== false) void refreshNotices('startup');
 
   const au = ensureAutoUpdater();
@@ -980,7 +980,7 @@ export function initUpdater(deps: UpdaterInitDeps): void {
     if (au) au.allowPrerelease = allowPrerelease;
   })();
   if (au && !safeMode) {
-    // Flow A — startup auto-check.
+    // Flow A â€” startup auto-check.
     void (async () => {
       await channelInit;
       au.checkForUpdates().catch((err: unknown) => {
@@ -996,21 +996,21 @@ export function initUpdater(deps: UpdaterInitDeps): void {
     })();
   }
 
-  // Flow A' — self-notice a release without a relaunch. Responsiveness is
+  // Flow A' â€” self-notice a release without a relaunch. Responsiveness is
   // event-driven (see maybeBackgroundCheck); the periodic timer is only a
   // backstop for a session left continuously in the foreground. All triggers
   // share the same throttle + background-only softenings: an already-seen
   // version is not re-handled, and checking/not-available stay silent. apply is
-  // NOT softened — "now" means critical, so running apps restart too (see
+  // NOT softened â€” "now" means critical, so running apps restart too (see
   // handleUpdateAvailable).
   setInterval(() => maybeBackgroundCheck('periodic'), PERIODIC_CHECK_INTERVAL_MS);
 
   if (!eventsWired) {
     eventsWired = true;
-    // The user just returned to the app — the most likely moment to act on an
+    // The user just returned to the app â€” the most likely moment to act on an
     // update, after any length of time away.
     app.on('browser-window-focus', () => maybeBackgroundCheck('window-focus'));
-    // The machine woke or the screen unlocked — likely a long gap since the
+    // The machine woke or the screen unlocked â€” likely a long gap since the
     // last check. powerMonitor is main-process only and safe post-ready.
     powerMonitor.on('resume', () => maybeBackgroundCheck('resume'));
     powerMonitor.on('unlock-screen', () => maybeBackgroundCheck('unlock-screen'));
@@ -1018,12 +1018,12 @@ export function initUpdater(deps: UpdaterInitDeps): void {
 }
 
 /**
- * Flow B — manual "Check for updates" (Settings). In dev, immediately reports
+ * Flow B â€” manual "Check for updates" (Settings). In dev, immediately reports
  * not-available so the UI resolves. In packaged, triggers a real check whose
  * events flow through the same handlers as the startup check.
  */
 export async function checkForUpdatesManual(): Promise<void> {
-  // A manual check refreshes notices too — same cadence, and the user asking
+  // A manual check refreshes notices too â€” same cadence, and the user asking
   // "is there anything new" is exactly when an unseen announcement should land.
   // Not from the safe-mode screen: it cannot show a popup.
   if (!safeModeActive) void refreshNotices('manual');
@@ -1072,11 +1072,11 @@ export async function checkForUpdatesManual(): Promise<void> {
  * persists `advanced_updates` in config; this applies the choice to the live
  * updater so it takes effect without a re-launch.
  *
- *   - `advanced` true  → beta channel: `allowPrerelease = true`, so any newer
+ *   - `advanced` true  â†’ beta channel: `allowPrerelease = true`, so any newer
  *     release (including GitHub pre-releases) is offered. A check fires now so a
  *     waiting beta surfaces immediately instead of at the next focus/timer tick.
- *   - `advanced` false → stable only: `allowPrerelease = false`. No check is
- *     fired — the user simply stops being offered pre-releases; a build already
+ *   - `advanced` false â†’ stable only: `allowPrerelease = false`. No check is
+ *     fired â€” the user simply stops being offered pre-releases; a build already
  *     installed is not downgraded (electron-updater's default), so they hold
  *     until stable catches up.
  *
@@ -1086,13 +1086,13 @@ export function setUpdateChannel(advanced: boolean): void {
   allowPrerelease = advanced;
   const au = ensureAutoUpdater();
   if (!au) {
-    logger.info(`updater: channel = ${advanced ? 'beta' : 'stable'} (no autoUpdater — dev/load failure)`);
+    logger.info(`updater: channel = ${advanced ? 'beta' : 'stable'} (no autoUpdater â€” dev/load failure)`);
     return;
   }
   au.allowPrerelease = advanced;
   // The generic mirror feed encodes the channel in its feed FILENAME
   // (latest-mac.yml vs beta-mac.yml), so when the mirror is active the toggle
-  // must re-arm the feed URL too — allowPrerelease alone only affects the
+  // must re-arm the feed URL too â€” allowPrerelease alone only affects the
   // GitHub provider's release filtering.
   if (mirrorFeedActive) {
     try {
@@ -1109,7 +1109,7 @@ export function setUpdateChannel(advanced: boolean): void {
 }
 
 /**
- * Flow C — consent to download an available OPTIONAL update. download-progress
+ * Flow C â€” consent to download an available OPTIONAL update. download-progress
  * ticks push app:update-progress; on completion handleUpdateDownloaded pushes
  * app:update-downloaded {forced:false}.
  */
@@ -1204,3 +1204,7 @@ export async function installDownloadedUpdate(): Promise<void> {
   if (!au) return;
   await restartIntoUpdate(au, WINDOWS_RESTART_NOTE_MS);
 }
+
+
+
+

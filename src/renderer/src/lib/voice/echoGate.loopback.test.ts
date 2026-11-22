@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Windows loopback share (261030): the screen reference records the whole
  * system mix, so her own TTS is in the screen transcript. stripOwnWords takes
  * her words back out before the screen overlap is judged.
@@ -63,3 +63,7 @@ describe('loopback share: her voice in the screen reference', () => {
     expect(screenVerdict(GAME_LINE, stripOwnWords(LOOPBACK, [HER_LINE]))).toBe(true);
   });
 });
+
+
+
+

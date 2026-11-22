@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the segmented email-code entry transforms (260804).
  *
  * These cover the cases that are invisible in a screenshot and are where a
@@ -23,7 +23,7 @@ describe('writeAt', () => {
   });
 
   it('overwrites from the target cell rather than inserting', () => {
-    // Focus cell 1 on "123456" and type 9 → "19", not "192345".
+    // Focus cell 1 on "123456" and type 9 â†’ "19", not "192345".
     expect(writeAt('123456', 1, '9', LEN)).toEqual({ next: '19', focus: 2 });
   });
 
@@ -63,7 +63,7 @@ describe('backspaceAt', () => {
 
 describe('typedInto', () => {
   it('takes the last digit when the browser appends to a filled cell', () => {
-    // Cell held "1", user typed "9" → the input reports "19".
+    // Cell held "1", user typed "9" â†’ the input reports "19".
     expect(typedInto('1', '19')).toBe('9');
   });
 
@@ -76,3 +76,7 @@ describe('typedInto', () => {
     expect(typedInto(undefined, 'a')).toBe('');
   });
 });
+
+
+
+

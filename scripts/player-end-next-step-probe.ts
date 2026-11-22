@@ -1,5 +1,5 @@
-/**
- * scripts/player-end-next-step-probe.ts — live check of the player-end "next
+﻿/**
+ * scripts/player-end-next-step-probe.ts â€” live check of the player-end "next
  * time" check (261011, src/main/playerEndNextStep.ts).
  *
  * Runs realistic player-ended sessions through the REAL prompt builder
@@ -233,7 +233,7 @@ const SCENES: Scene[] = [
       P('nice, ok night'),
     ],
   },
-  // ── first sessions (261013, T119): no memories yet ─────────────────────
+  // â”€â”€ first sessions (261013, T119): no memories yet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   {
     id: 'FS_MC_IRON_GOAL',
     group: 'first',
@@ -437,3 +437,7 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+
+

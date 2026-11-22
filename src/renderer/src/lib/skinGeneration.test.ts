@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261027 lazy skins: the launch panel and profile copy. Every failure says
  * the companion still plays (with the simple skin), the button says it costs
  * credits, and nothing has a zh gap or an em dash.
@@ -88,9 +88,13 @@ describe('copy hygiene', () => {
     expect(keys.size).toBeGreaterThan(8);
     for (const k of keys) {
       expect(ZH[k], k).toBeTruthy();
-      expect(k).not.toContain('—');
-      expect(ZH[k]).not.toContain('—');
+      expect(k).not.toContain('â€”');
+      expect(ZH[k]).not.toContain('â€”');
       for (const ph of k.match(/\{\w+\}/g) ?? []) expect(ZH[k], k).toContain(ph);
     }
   });
 });
+
+
+
+

@@ -1,8 +1,8 @@
-// src/bot/adapter/minecraft/observers/entities.visibility.test.js
+﻿// src/bot/adapter/minecraft/observers/entities.visibility.test.js
 //
 // 260618: nearbyEntities visibility filter (requireLineOfSight). The snapshot
-// lists only entities the bot can actually SEE — within the radius and not
-// occluded by terrain/fluids — so underground / behind-wall mobs (a skeleton in
+// lists only entities the bot can actually SEE â€” within the radius and not
+// occluded by terrain/fluids â€” so underground / behind-wall mobs (a skeleton in
 // a cave below) drop out, while entities BEHIND the bot still count. Pinned
 // users (the human + AI teammates) are exempt so their coords never vanish.
 
@@ -12,7 +12,7 @@ import { nearbyEntities } from './entities.js'
 
 // Ground slab fills y 56..63 (solid); everything else is air. A surface ray
 // (bot eye ~y65.6) stays clear; a ray down to an entity at y55 crosses the slab
-// and is occluded — the "underground mob" the filter is meant to hide.
+// and is occluded â€” the "underground mob" the filter is meant to hide.
 function makeBot(entities) {
   const map = {}
   let id = 1
@@ -84,3 +84,7 @@ describe('nearbyEntities requireLineOfSight', () => {
     expect(names).toContain('zombie')
   })
 })
+
+
+
+

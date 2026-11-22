@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/errors.js — DST connect-error classification
+﻿// src/bot/adapter/dontstarve/errors.js â€” DST connect-error classification
 // (contract v2 classifyConnectError). Pure; used by runtime.js before an
 // adapter exists and declared on the adapter.
 //
@@ -24,3 +24,7 @@ export function classifyConnectError(message) {
   for (const k of KNOWN) if (m.startsWith(k)) return k
   return 'BOT_START_TIMEOUT'
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Tests for UsageBar — the weekly-allowance usage bar (260724).
+﻿/**
+ * Tests for UsageBar â€” the weekly-allowance usage bar (260724).
  *
  * Project convention (no @testing-library/react installed): exercise the
  * source contract via grep-style checks plus a module-import smoke. Mirrors
@@ -81,7 +81,7 @@ describe('UsageBar (weekly-allowance usage bar)', () => {
     expect(source.includes('data-tip={tooltip}')).toBe(true);
     expect(source.includes('total_playtime_ms')).toBe(true);
     // Never render a raw token count, raw micros, or a "left" estimate.
-    expect(source.includes('µ$')).toBe(false);
+    expect(source.includes('Âµ$')).toBe(false);
     expect(/~\$\{?[A-Za-z]*h? ?left/.test(source)).toBe(false);
     expect(source.includes("'left'")).toBe(false);
   });
@@ -102,7 +102,7 @@ describe('UsageBar (weekly-allowance usage bar)', () => {
     expect(css.includes('display: flex')).toBe(true);
   });
 
-  it('Test 7: 260602-uv9 — PercentBar track is visibly distinct (inset var(--border) outline)', () => {
+  it('Test 7: 260602-uv9 â€” PercentBar track is visibly distinct (inset var(--border) outline)', () => {
     // The unused portion of the usage bar must read against the page background
     // in both themes. PercentBar .root carries a 1px inset var(--border) outline
     // and an elevated theme-token track. Strip comment-body lines (start with
@@ -121,3 +121,7 @@ describe('UsageBar (weekly-allowance usage bar)', () => {
     expect(/#[0-9a-fA-F]{3,8}\b/.test(cssNoCommentBody)).toBe(false);
   });
 });
+
+
+
+

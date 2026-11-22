@@ -1,4 +1,4 @@
-// The undici package and the fetch built into Electron's Node share one
+﻿// The undici package and the fetch built into Electron's Node share one
 // global dispatcher slot, so they must stay on the same major (261103, T303).
 import { describe, it, expect, afterEach } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -81,3 +81,7 @@ describe('installSystemProxy', () => {
     expect(await installSystemProxy({ resolve: () => 'DIRECT' })).toBe(d)
   })
 })
+
+
+
+

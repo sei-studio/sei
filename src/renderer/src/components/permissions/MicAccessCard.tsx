@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MicAccessCard (260929): a call is waiting on microphone access.
  *
  * Replaces the old dead end ("Microphone access was blocked. Allow it and try
@@ -140,3 +140,7 @@ export function MicAccessCardBody({
     </ModalShell>
   );
 }
+
+
+
+

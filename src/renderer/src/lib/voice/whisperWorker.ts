@@ -1,5 +1,5 @@
-/**
- * Whisper STT worker (260705) — dictation transcription off the UI thread.
+﻿/**
+ * Whisper STT worker (260705) â€” dictation transcription off the UI thread.
  *
  * Loads a small open-source Whisper model (Apache-2.0) via transformers.js:
  * fully local inference (WebGPU when available, WASM otherwise), no audio
@@ -8,17 +8,17 @@
  * offline-fast.
  *
  * Conversation language (260709): English keeps the tuned English-only build
- * (whisper-tiny.en, ~40MB — zero change for existing users). Any other
+ * (whisper-tiny.en, ~40MB â€” zero change for existing users). Any other
  * conversation language loads the MULTILINGUAL whisper-base (~80MB q8)
- * instead — tiny's multilingual variant is too weak on zh/ja/ko to hold a
- * live call — and pins the decode language, since auto-detect on 1-3s VAD
+ * instead â€” tiny's multilingual variant is too weak on zh/ja/ko to hold a
+ * live call â€” and pins the decode language, since auto-detect on 1-3s VAD
  * utterances is unreliable.
  *
  * Protocol (postMessage):
- *   in:  { type: 'init', language? }               → { type: 'progress', pct }* then
+ *   in:  { type: 'init', language? }               â†’ { type: 'progress', pct }* then
  *                                                    { type: 'ready' } | { type: 'init-error', message }
- *   in:  { type: 'transcribe', id, audio }         → { type: 'transcript', id, text }
- *        (audio: Float32Array, 16kHz mono)           errors → { type: 'transcript', id, text: '' }
+ *   in:  { type: 'transcribe', id, audio }         â†’ { type: 'transcript', id, text }
+ *        (audio: Float32Array, 16kHz mono)           errors â†’ { type: 'transcript', id, text: '' }
  */
 
 import { pipeline, env } from '@huggingface/transformers';
@@ -32,7 +32,7 @@ const MODEL_MULTILINGUAL = 'onnx-community/whisper-base';
 const KNOWN_LANGUAGES = new Set(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']);
 
 // Multi-threaded WASM when SharedArrayBuffer is available (main enables the
-// Chromium feature flag — see src/main/index.ts). Cuts utterance
+// Chromium feature flag â€” see src/main/index.ts). Cuts utterance
 // transcription time by roughly the thread count; falls back to 1 thread
 // (the old behavior) when SAB is absent (older builds / flag removed).
 try {
@@ -43,7 +43,7 @@ try {
     );
   }
 } catch {
-  /* env shape changed — single-threaded is still correct */
+  /* env shape changed â€” single-threaded is still correct */
 }
 
 type AsrOptions = { language?: string; task?: 'transcribe' };
@@ -89,7 +89,7 @@ async function init(language: string, mirrorFirst: boolean): Promise<void> {
   const WEIGHT_FILE_MIN_BYTES = 1_000_000;
   // Reported percentage is clamped monotonic: `total` can still grow if a
   // weight file registers late (its full size lands before its bytes do),
-  // which would let the raw ratio jump backward (e.g. 88% → 40%) and read as
+  // which would let the raw ratio jump backward (e.g. 88% â†’ 40%) and read as
   // a stall. Never report a lower number than we already have.
   let lastPct = 0;
   const reportProgress = (info: { status?: string; file?: string; loaded?: number; total?: number }): void => {
@@ -140,7 +140,7 @@ async function init(language: string, mirrorFirst: boolean): Promise<void> {
  * Whisper hallucinates fillers on silence/noise; drop the well-known ones.
  * The non-English entries are Whisper's notorious dataset-watermark
  * hallucinations (video-outro phrases and subtitle credits it emits on
- * silence in that decode language) — without them, quiet stretches on a call
+ * silence in that decode language) â€” without them, quiet stretches on a call
  * produce phantom turns.
  */
 const NOISE_TRANSCRIPTS = new Set([
@@ -148,36 +148,36 @@ const NOISE_TRANSCRIPTS = new Set([
   '', 'you', 'thank you.', 'thanks for watching!', 'thank you for watching!',
   '.', 'bye.', 'so', 'the',
   // Chinese
-  '谢谢观看', '谢谢大家', '谢谢', '字幕由amara.org社区提供', '请订阅',
+  'è°¢è°¢è§‚çœ‹', 'è°¢è°¢å¤§å®¶', 'è°¢è°¢', 'å­—å¹•ç”±amara.orgç¤¾åŒºæä¾›', 'è¯·è®¢é˜…',
   // Japanese
-  'ご視聴ありがとうございました', 'ありがとうございました', 'おやすみなさい',
-  'ん', 'チャンネル登録をお願いします',
+  'ã”è¦–è´ã‚ã‚ŠãŒã¨ã†ã”ã–ã„ã¾ã—ãŸ', 'ã‚ã‚ŠãŒã¨ã†ã”ã–ã„ã¾ã—ãŸ', 'ãŠã‚„ã™ã¿ãªã•ã„',
+  'ã‚“', 'ãƒãƒ£ãƒ³ãƒãƒ«ç™»éŒ²ã‚’ãŠé¡˜ã„ã—ã¾ã™',
   // Korean
-  '시청해주셔서 감사합니다', '감사합니다', '구독과 좋아요 부탁드립니다',
+  'ì‹œì²­í•´ì£¼ì…”ì„œ ê°ì‚¬í•©ë‹ˆë‹¤', 'ê°ì‚¬í•©ë‹ˆë‹¤', 'êµ¬ë…ê³¼ ì¢‹ì•„ìš” ë¶€íƒë“œë¦½ë‹ˆë‹¤',
   // French
-  'merci', "merci d'avoir regardé", "sous-titres réalisés par la communauté d'amara.org",
-  'à bientôt',
+  'merci', "merci d'avoir regardÃ©", "sous-titres rÃ©alisÃ©s par la communautÃ© d'amara.org",
+  'Ã  bientÃ´t',
   // Spanish
-  'gracias', 'gracias por ver el video', 'subtítulos realizados por la comunidad de amara.org',
-  '¡gracias!',
+  'gracias', 'gracias por ver el video', 'subtÃ­tulos realizados por la comunidad de amara.org',
+  'Â¡gracias!',
   // Russian, Portuguese, Italian (261116)
-  'спасибо', 'спасибо за просмотр', 'продолжение следует...', 'субтитры сделал dimatorzok',
+  'ÑÐ¿Ð°ÑÐ¸Ð±Ð¾', 'ÑÐ¿Ð°ÑÐ¸Ð±Ð¾ Ð·Ð° Ð¿Ñ€Ð¾ÑÐ¼Ð¾Ñ‚Ñ€', 'Ð¿Ñ€Ð¾Ð´Ð¾Ð»Ð¶ÐµÐ½Ð¸Ðµ ÑÐ»ÐµÐ´ÑƒÐµÑ‚...', 'ÑÑƒÐ±Ñ‚Ð¸Ñ‚Ñ€Ñ‹ ÑÐ´ÐµÐ»Ð°Ð» dimatorzok',
   'obrigado', 'obrigado por assistir', 'legendas pela comunidade amara.org',
-  'grazie', 'grazie per la visione', 'sottotitoli creati dalla comunità amara.org',
+  'grazie', 'grazie per la visione', 'sottotitoli creati dalla comunitÃ  amara.org',
 ]);
 
 function cleanTranscript(raw: string): string {
-  // Whisper annotates non-speech as bracketed/parenthesized tags — observed
-  // live: keyboard sounds → "[clicking]". Strip every such group; if nothing
+  // Whisper annotates non-speech as bracketed/parenthesized tags â€” observed
+  // live: keyboard sounds â†’ "[clicking]". Strip every such group; if nothing
   // spoken remains, the utterance was noise, not words.
   const text = raw
     .replace(/\[[^\]]*\]|\([^)]*\)/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   const norm = text.toLowerCase();
-  // CJK output ends in full-width punctuation ("谢谢观看。") — compare with the
+  // CJK output ends in full-width punctuation ("è°¢è°¢è§‚çœ‹ã€‚") â€” compare with the
   // trailing punctuation stripped too, so the noise list stays short.
-  const bare = norm.replace(/[.。．!！?？、,，\s]+$/u, '');
+  const bare = norm.replace(/[.ã€‚ï¼Ž!ï¼?ï¼Ÿã€,ï¼Œ\s]+$/u, '');
   return NOISE_TRANSCRIPTS.has(norm) || NOISE_TRANSCRIPTS.has(bare) ? '' : text;
 }
 
@@ -213,3 +213,7 @@ self.onmessage = (e: MessageEvent) => {
       .catch(() => self.postMessage({ type: 'transcript', id, text: '' }));
   }
 };
+
+
+
+

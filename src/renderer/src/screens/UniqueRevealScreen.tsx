@@ -1,5 +1,5 @@
-/**
- * UniqueRevealScreen — the meeting moment after a successful unique-companion
+﻿/**
+ * UniqueRevealScreen â€” the meeting moment after a successful unique-companion
  * cast (260703 procgen, spec item 3). Loads the freshly-generated character and
  * introduces it using the same full-bleed layout as CharacterPage: the portrait
  * bleeds off the RIGHT edge behind a left-to-right scrim, and a left content
@@ -8,8 +8,8 @@
  * name + public_id tag (when the cloud row has assigned one), a short intro
  * pulled from the character's description (falling back to the first sentences
  * of persona.source), and two CTAs:
- *   - "Say hello" → open the in-app chat with the new companion.
- *   - "Later"     → home.
+ *   - "Say hello" â†’ open the in-app chat with the new companion.
+ *   - "Later"     â†’ home.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -30,7 +30,7 @@ function firstSentences(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return '';
   const parts = trimmed.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
-  return parts.length > 240 ? parts.slice(0, 240).trimEnd() + '…' : parts;
+  return parts.length > 240 ? parts.slice(0, 240).trimEnd() + 'â€¦' : parts;
 }
 
 export interface UniqueRevealScreenProps {
@@ -67,15 +67,15 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
     navigate({ kind: 'chat', characterId });
   };
 
-  // ── Fallback states (load failure / still loading) ────────────────────────
-  // These keep a simple centered column — there's no character to bleed a
+  // â”€â”€ Fallback states (load failure / still loading) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // These keep a simple centered column â€” there's no character to bleed a
   // portrait from yet, so the full-bleed layout below doesn't apply.
   if (loadError) {
     return (
       <div className={styles.fallback}>
         <div className={styles.fallbackCol}>
           <div className={styles.heading}>{t('Your companion is ready')}</div>
-          <p className={styles.intro}>{t('They’re waiting in your party.')}</p>
+          <p className={styles.intro}>{t('Theyâ€™re waiting in your party.')}</p>
           <div className={styles.actions}>
             <Button kind="accent" size="lg" onClick={() => navigate({ kind: 'home' })}>
               {t('Go home')}
@@ -87,7 +87,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
   }
 
   if (!character) {
-    // Brief pre-load state — a blank fallback beats a stray label flashing in.
+    // Brief pre-load state â€” a blank fallback beats a stray label flashing in.
     return <div className={styles.fallback} />;
   }
 
@@ -95,7 +95,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
   const palette = pickPalette(character.id + character.name, theme);
   // Per-character accent tint for the portrait bloom (mirrors CharacterPage).
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
-  // description is now the full backstory paragraph (150-300 words) — clamp it
+  // description is now the full backstory paragraph (150-300 words) â€” clamp it
   // to a couple of sentences here so the reveal stays a short intro with the
   // CTAs above the fold; the full text lives on the character page.
   const intro =
@@ -140,3 +140,7 @@ export function UniqueRevealScreen({ characterId }: UniqueRevealScreenProps): Re
     </div>
   );
 }
+
+
+
+

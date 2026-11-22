@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: pure coordinate math. No Electron, no helper.
  *
  * The mapping model px -> global points is LINEAR through the frame's rect and
@@ -146,3 +146,7 @@ export function planCapture(
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * configStore.addPlaytimeMs — profile-wide cumulative playtime accumulator.
+﻿/**
+ * configStore.addPlaytimeMs â€” profile-wide cumulative playtime accumulator.
  *
  * 260615: the UsageBar tooltip's "played Xh Ym" reads `total_playtime_ms` off
  * UserConfig. It's incremented at session-end (botSupervisor) so the total
@@ -121,7 +121,7 @@ describe('saveConfigFromRenderer', () => {
   });
 
   it('a stale renderer copy can never revert chat_language (260725: auto-detected in main)', async () => {
-    const mountSnapshot = await loadConfig(); // chat_language absent (≡ 'en')
+    const mountSnapshot = await loadConfig(); // chat_language absent (â‰¡ 'en')
     // The voice auto-switch lands a detection mid-call...
     await saveConfig({ ...(await loadConfig()), chat_language: 'es' });
     // ...then an open Settings screen saves its stale whole-config copy back.
@@ -185,7 +185,7 @@ describe('saveConfigFromRenderer', () => {
   });
 
   it('keeps a sign-in cloud default written before onboarding submits', async () => {
-    // switchScopeForAuth → applyCloudDefaultForSignIn writes this before the
+    // switchScopeForAuth â†’ applyCloudDefaultForSignIn writes this before the
     // renderer routes to onboarding, so onboarding's wholesale save must not
     // undo it.
     await saveConfig({
@@ -287,7 +287,7 @@ describe('backfillTotalPlaytimeOnce', () => {
     expect(cfg.total_playtime_backfilled).toBe(true);
 
     // Idempotent: a second run (even after more time accrues) does NOT re-sum.
-    await addPlaytimeMs(500); // a later session → 4000
+    await addPlaytimeMs(500); // a later session â†’ 4000
     await backfillTotalPlaytimeOnce();
     cfg = await loadConfig();
     expect(cfg.total_playtime_ms).toBe(4000);
@@ -301,3 +301,7 @@ describe('backfillTotalPlaytimeOnce', () => {
     expect((await loadConfig()).total_playtime_ms).toBe(9000); // max(9000, 1000)
   });
 });
+
+
+
+

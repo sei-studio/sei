@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink look(): her room as one picture, WITHOUT her in it (261104).
  *
  * Composes a preset's pack layers in the main process with sharp, from the
@@ -60,7 +60,7 @@ export interface RoomImage {
   height: number;
 }
 
-// ── sharp (minimal surface, so the module does not need sharp's types) ─────
+// â”€â”€ sharp (minimal surface, so the module does not need sharp's types) â”€â”€â”€â”€â”€
 
 interface RawOut {
   data: Buffer;
@@ -103,7 +103,7 @@ function loadSharp(): SharpFn | null {
   return null;
 }
 
-// ── layers ──────────────────────────────────────────────────────────────
+// â”€â”€ layers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Layer {
   data: Buffer; // raw RGBA
@@ -448,3 +448,7 @@ export async function renderRoomImage(
     .toBuffer();
   return { data, mediaType: 'image/jpeg', width: W, height: H };
 }
+
+
+
+

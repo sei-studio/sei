@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Resume after "Restart Sei and continue" (260929). Main keeps a one-shot flag
  * (permissions/osPermissions takeResume, ten-minute TTL); once the app has
  * booted into a normal view, take it and reopen what the player was doing:
@@ -66,3 +66,7 @@ export function usePermissionResume(): void {
     }
   }
 }
+
+
+
+

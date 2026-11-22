@@ -1,4 +1,4 @@
-# Credits and licenses
+﻿# Credits and licenses
 
 Sei is licensed under [AGPL-3.0](LICENSE). This page lists the projects, models, fonts, and art Sei builds on, with their licenses.
 
@@ -62,3 +62,7 @@ Sei is not affiliated with Mojang, Microsoft, ConcernedApe, Klei Entertainment, 
 - [Character.AI](https://character.ai): demonstrated personalized AI characters
 - [Neuro-sama](https://vedal.ai/): showed that AI can make people happy
 - Hoshimachi Suisei: the GOAT
+
+
+
+

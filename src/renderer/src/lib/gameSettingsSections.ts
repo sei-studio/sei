@@ -1,5 +1,5 @@
-/**
- * GAME_SETTINGS_SECTIONS — the per-game groups on the Settings screen (game
+﻿/**
+ * GAME_SETTINGS_SECTIONS â€” the per-game groups on the Settings screen (game
  * adapters M0, 260908). SettingsScreen renders one `.group` per entry, in
  * order, with the entry's title and its Section body. Minecraft's group is
  * the pre-M0 "Minecraft" group, content unchanged
@@ -39,3 +39,7 @@ export function registerGameSettingsSection(section: GameSettingsSection): void 
   if (i >= 0) GAME_SETTINGS_SECTIONS[i] = section;
   else GAME_SETTINGS_SECTIONS.push(section);
 }
+
+
+
+

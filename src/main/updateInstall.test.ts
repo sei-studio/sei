@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { restartInstallArgs } from './updateInstall';
 
 describe('restartInstallArgs', () => {
@@ -28,3 +28,7 @@ describe('restartInstallArgs', () => {
     expect(restartInstallArgs('linux')).toEqual([]);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261114 (quality pass 55): where listed blocks and entities are, in words,
+﻿// 261114 (quality pass 55): where listed blocks and entities are, in words,
 // next to their coordinates. With only the numbers she read them out in chat
 // ("already got one down at 174,70,-2 lol").
 
@@ -80,3 +80,7 @@ describe('snapshot nearby lists say where things are (261114)', () => {
     expect(snap).toMatch(/ Alex @6,64,2 \(6 blocks east\)$/m)
   })
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * SharedVoiceChoice (261019) — "Others will hear" for a character whose voice
+﻿/**
+ * SharedVoiceChoice (261019) â€” "Others will hear" for a character whose voice
  * is the author's own ElevenLabs voice.
  *
  * An own voice only plays in the author's ElevenLabs account, so anyone else
@@ -277,3 +277,7 @@ export function SharedVoiceLabel({
     </div>
   );
 }
+
+
+
+

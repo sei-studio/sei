@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Anima pack store (261105): downloaded face sets on disk.
  *
  *   <root>/packs/<an-id>/facepack.json + frames   (an extracted pack.zip)
@@ -373,3 +373,7 @@ export class AnimaPackStore {
     this.index = null;
   }
 }
+
+
+
+

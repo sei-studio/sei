@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The own-key spend alert (261110): one line at the top of the app when this
  * month's estimated own-key spend passes the "Alert me at $N a month" amount
  * (main's usage ledger fires it once a month, usage:spend-alert). It only
@@ -57,3 +57,7 @@ export function SpendAlertBanner(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

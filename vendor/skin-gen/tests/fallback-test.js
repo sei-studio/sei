@@ -1,4 +1,4 @@
-// Fallback branch tests, no API needed.
+﻿// Fallback branch tests, no API needed.
 //  1. Real character image: valid skin, byte-identical across runs.
 //  2. Synthetic figure with known colors: the top colors must route to the
 //     right template slots (primary -> shirt, secondary -> pants,
@@ -60,3 +60,7 @@ check('hair recolored red', hairPx[0] > hairPx[1] && hairPx[0] > hairPx[2], hair
 
 console.log(failures === 0 ? 'FALLBACK: PASS' : `FALLBACK: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);
+
+
+
+

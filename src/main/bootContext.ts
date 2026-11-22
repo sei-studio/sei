@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runtime half of the boot guard (261031, T277): the one place boot.ts (the
  * entry shim) and index.ts (the app) share start-up state.
  *
@@ -474,3 +474,7 @@ export function _resetBootContextForTests(): void {
 export function _bootStateForTests(): BootState {
   return ctx.state;
 }
+
+
+
+

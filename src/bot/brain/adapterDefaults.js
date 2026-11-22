@@ -1,9 +1,9 @@
-// src/bot/brain/adapterDefaults.js — contract v2 member defaults (M0, 260908).
+﻿// src/bot/brain/adapterDefaults.js â€” contract v2 member defaults (M0, 260908).
 //
 // Every OPTIONAL v2 member of the Adapter contract (see ./types.js) resolves
 // through resolveAdapterCaps(): the adapter's own declaration when present,
 // else the value the brain used to hardcode. The defaults are the MINECRAFT
-// values on purpose — a v1 adapter, or a test fake that declares none of
+// values on purpose â€” a v1 adapter, or a test fake that declares none of
 // them, keeps the exact pre-v2 behavior, which is what makes the refactor a
 // no-op for Minecraft (pinned by systemBlocks.minecraft.test.js) while a new
 // game's adapter declares only what differs.
@@ -146,3 +146,7 @@ export function resolveAdapterCaps(adapter, config) {
     classifyConnectError: pick('classifyConnectError'),
   }
 }
+
+
+
+

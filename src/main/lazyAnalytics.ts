@@ -1,4 +1,4 @@
-/**
+﻿/**
  * One shared lazy import of the analytics module (260926).
  *
  * The game surfaces import analytics lazily (CLAUDE.md, "Instrumenting a game
@@ -19,3 +19,7 @@ export function loadAnalytics(): Promise<typeof import('./analytics')> {
   });
   return analyticsModule;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// Shared by the fixture generator and the pin test (game-adapters M0).
+﻿// Shared by the fixture generator and the pin test (game-adapters M0).
 // Builds the cached system blocks + tool list for a Minecraft session under
 // three configurations that cover every optional block the prefix can carry.
 import path from 'node:path'
@@ -68,3 +68,7 @@ export async function buildMinecraftFacesCapture(memDir) {
   faces._seiFaces = true
   return capture(faces, bot)
 }
+
+
+
+

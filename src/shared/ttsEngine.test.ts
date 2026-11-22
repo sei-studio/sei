@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { SEI_VOICES_FOR_CHATGPT_ENABLED, localTtsModel, seiVoicesActive, voiceSourceOf } from './ttsEngine';
 import { UserConfigSchema } from './characterSchema';
 
@@ -60,3 +60,7 @@ describe('Sei voices on the ChatGPT plan (261110)', () => {
     expect(seiVoicesActive({ ...cfg, ai_backend_kind: 'cloud-proxy' }, true)).toBe(false);
   });
 });
+
+
+
+

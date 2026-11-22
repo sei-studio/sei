@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Character edits made inline on your own companion's profile tabs
  * (261119: the tabs are the edit surface; the Edit companion popup is gone).
  *
@@ -33,7 +33,7 @@ import type { VoiceParams } from './voicePicker';
 
 type Meta = Record<string, unknown> | undefined | null;
 
-// ── Voice ─────────────────────────────────────────────────────────────────
+// â”€â”€ Voice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VoiceDraft {
   /** null = Auto, NO_VOICE_ID = silent, else a pinned voice. */
@@ -94,7 +94,7 @@ export function voiceMetadataToSave(characterId: string, latest: Meta, draft: Vo
   return metadata;
 }
 
-// ── Name and description ──────────────────────────────────────────────────
+// â”€â”€ Name and description â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AboutDraft {
   name: string;
@@ -117,7 +117,7 @@ export function aboutToSave(draft: AboutDraft): { name: string; description: str
   return { name, description: description === '' ? null : description };
 }
 
-// ── Chess ─────────────────────────────────────────────────────────────────
+// â”€â”€ Chess â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ChessDraft {
   custom: boolean;
@@ -148,7 +148,7 @@ export function chessMetadataToSave(latest: Meta, draft: ChessDraft): Record<str
   return metadata;
 }
 
-// ── Persona ───────────────────────────────────────────────────────────────
+// â”€â”€ Persona â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PersonaMode = 'standard' | 'advanced';
 
@@ -156,3 +156,7 @@ export type PersonaMode = 'standard' | 'advanced';
 export function personaModeOf(character: Pick<Character, 'metadata'>): PersonaMode {
   return character.metadata?.prompt_mode === 'advanced' ? 'advanced' : 'standard';
 }
+
+
+
+

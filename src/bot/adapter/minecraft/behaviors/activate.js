@@ -1,4 +1,4 @@
-// src/behaviors/activate.js — activate the held item (right-click) (D-22)
+﻿// src/behaviors/activate.js â€” activate the held item (right-click) (D-22)
 import { reason } from '../../../brain/errStrings.js'
 
 export const DEFAULT_TIMEOUT_MS = 2000
@@ -29,3 +29,7 @@ export async function activateItemAction(args, bot, config) {
 
   return Promise.race([op, tmo, abrt])
 }
+
+
+
+

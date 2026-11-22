@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink validation (261104, host pass). Packs come from a download or a
  * dev dir and room states from a file on disk that the editor writes, so
  * both are checked before anything draws or path-joins them. Pure.
@@ -429,3 +429,7 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
   else if ((s.lighting as Record<string, unknown> | undefined)?.character === true) out.lighting = { ...DEFAULT_LIGHTING, character: true };
   return settleItems(manifest, out);
 }
+
+
+
+

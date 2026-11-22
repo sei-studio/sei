@@ -1,5 +1,5 @@
-/**
- * GameErrorModal — a bot-backed game session failed with one of the
+﻿/**
+ * GameErrorModal â€” a bot-backed game session failed with one of the
  * game-neutral error classes (GAME_*; game adapters M0, 260908). Opened
  * centrally from useDataStore's onStatus routing (lib/botErrorRouting) so
  * every summon entry point is covered. Shows ERROR_COPY for the class plus
@@ -60,3 +60,7 @@ export function GameErrorModal({ game, characterId, error, message }: GameErrorM
     </ModalShell>
   );
 }
+
+
+
+

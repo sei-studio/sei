@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room host launch arguments (261104). No imports on purpose: boot.ts,
  * velopackBoot.ts and velopackMigration.ts read this before anything else, to
  * keep a host launch out of the single-instance lock, the boot guard and the
@@ -39,3 +39,7 @@ export function parseSeilinkHostArgs(argv: readonly string[]): SeilinkHostArgs |
 export function seilinkHostArgv(opts: { ipc: string; userData: string; test: boolean }): string[] {
   return [SEILINK_HOST_FLAG, `--seilink-ipc=${opts.ipc}`, `--seilink-userdata=${opts.userData}`, ...(opts.test ? ['--seilink-test'] : [])];
 }
+
+
+
+

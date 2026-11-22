@@ -1,11 +1,11 @@
-/**
- * CallScene — renders a `CallScene` descriptor: a painted stage a character
+﻿/**
+ * CallScene â€” renders a `CallScene` descriptor: a painted stage a character
  * walks into and talks on, used as the voice call's backdrop.
  *
  * This is the generic renderer. It knows nothing about Sui, grass, or which
  * character is on the call; everything it draws comes from the descriptor
  * (`shared/callScene.ts`, resolved by `lib/callScenes.ts`). The onboarding
- * scene is the prototype it generalizes — see `onboard/OnboardScene.tsx` for
+ * scene is the prototype it generalizes â€” see `onboard/OnboardScene.tsx` for
  * the original, which stays as-is because it choreographs dialogue this one
  * has no concept of.
  *
@@ -17,7 +17,7 @@
  * the moment the window aspect leaves the art's.
  *
  * Frames are cross-toggled by opacity with every image mounted at once, never
- * swapped in `src` — a pose change must not wait on a decode.
+ * swapped in `src` â€” a pose change must not wait on a decode.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -35,7 +35,7 @@ import styles from './CallScene.module.css';
 /**
  * Where the character is in the scene's little life cycle.
  *
- * `offstage` holds her off the edge while the call connects — the backdrop is
+ * `offstage` holds her off the edge while the call connects â€” the backdrop is
  * up immediately, she is not. `entering` runs the walk exactly once.
  */
 export type CallScenePhase = 'offstage' | 'entering' | 'idle' | 'talking';
@@ -118,7 +118,7 @@ export function CallScene({
   const { actor } = scene;
 
   // Which pose is showing. A scene without a `walk`/`talk` paint degrades to
-  // idle rather than erroring — the eventual customization UI will let people
+  // idle rather than erroring â€” the eventual customization UI will let people
   // supply a single image and nothing else.
   const pose: 'walk' | 'talk' | 'idle' =
     phase === 'entering' && actor.walk ? 'walk' : phase === 'talking' && actor.talk ? 'talk' : 'idle';
@@ -157,7 +157,7 @@ export function CallScene({
     ),
   );
 
-  // ── Arrival ──────────────────────────────────────────────────────────────
+  // â”€â”€ Arrival â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // onEntered gates the character's first spoken line, so a dropped
   // transitionend would leave the call permanently silent. The timer is the
   // backstop, and `firedRef` keeps whichever wins from double-firing.
@@ -184,7 +184,7 @@ export function CallScene({
     enteredCb.current?.();
   };
 
-  // ── Stepping in front of the foreground ──────────────────────────────────
+  // â”€â”€ Stepping in front of the foreground â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // She walks in from behind the front layers and passes them partway across
   // (`entrance.frontAfter`). The switch is a z-index flip on the one actor
   // element, timed from the descriptor + the walk easing rather than measured
@@ -199,7 +199,7 @@ export function CallScene({
     if (switchDelay == null) return undefined;
     if (phase !== 'entering') {
       // Mounted already live (the entrance was skipped): she is wherever she
-      // rests, so no timer — just the answer.
+      // rests, so no timer â€” just the answer.
       setInFront(restIsPastFront(actor));
       return undefined;
     }
@@ -282,3 +282,7 @@ export function CallScene({
     </div>
   );
 }
+
+
+
+

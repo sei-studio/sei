@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newWidget, type RoomWidget } from '@shared/seilinkWidgets';
@@ -85,3 +85,7 @@ describe('the widget ticker (261119)', () => {
     stop();
   });
 });
+
+
+
+

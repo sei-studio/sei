@@ -1,5 +1,5 @@
-/**
- * foldPrompt.ts (260810) — the pure fold-prompt module.
+﻿/**
+ * foldPrompt.ts (260810) â€” the pure fold-prompt module.
  *
  * Pins the <summary> tag backstop (a stray preamble must never be stored as
  * summary text; missing tags degrade to the old whole-text behavior) and the
@@ -41,7 +41,7 @@ describe('buildFoldSystem', () => {
     expect(sys).toContain('<summary>');
     expect(sys).toContain('low-signal');
     // The noise is described in prose by shape; no BAD/GOOD example dialogue
-    // (quoting a phrase inside a ban feeds it — measured on this project).
+    // (quoting a phrase inside a ban feeds it â€” measured on this project).
     expect(sys).not.toMatch(/BAD:|GOOD:/);
   });
 
@@ -96,3 +96,7 @@ describe('buildFoldCalendar / buildFoldUserText', () => {
     expect(buildFoldUserText('', [{ role: 'user', text: 'a' }])).toBe('Existing summary:\n(none yet)\n\nNew messages:\nPlayer: a');
   });
 });
+
+
+
+

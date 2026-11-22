@@ -1,4 +1,4 @@
-/**
+﻿/**
  * App UI i18n (260730). English and Simplified Chinese; 261104 adds Japanese,
  * Russian, Brazilian Portuguese, Spanish and Italian (the list lives in
  * src/shared/uiLanguage.ts).
@@ -10,10 +10,10 @@
  * no behavior change at all while the language is 'en'.
  *
  * Interpolation: keys may carry `{name}`-style placeholders. Call
- * `t('Welcome back, {name}!', { name })` — the lookup happens on the raw key,
+ * `t('Welcome back, {name}!', { name })` â€” the lookup happens on the raw key,
  * the substitution afterwards, so one dictionary entry covers every value.
  * A translation may also carry an ICU-lite plural block,
- * `{n, plural, one {# день} few {# дня} many {# дней} other {# дня}}`, chosen
+ * `{n, plural, one {# Ð´ÐµÐ½ÑŒ} few {# Ð´Ð½Ñ} many {# Ð´Ð½ÐµÐ¹} other {# Ð´Ð½Ñ}}`, chosen
  * with Intl.PluralRules for the UI locale (Russian needs it; the English key
  * never does). See formatMessage in src/shared/uiLanguage.ts.
  *
@@ -55,7 +55,7 @@ interface LangState {
 /** Mirror the UI language onto <html lang>. Without it the page stays
  *  lang="en" and the browser picks its CJK fallback font by guesswork (on
  *  Linux and Windows often a Japanese face: centered full-width punctuation,
- *  "什么 ？" with a gap, and Japanese glyph forms for some Han characters). */
+ *  "ä»€ä¹ˆ ï¼Ÿ" with a gap, and Japanese glyph forms for some Han characters). */
 function applyDocumentLang(lang: UiLanguage): void {
   try {
     if (typeof document !== 'undefined' && document.documentElement) {
@@ -102,3 +102,7 @@ export function uiLanguage(): UiLanguage {
 export function uiLocale(): string {
   return uiLocaleTag(useLangStore.getState().lang);
 }
+
+
+
+

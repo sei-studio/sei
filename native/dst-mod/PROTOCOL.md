@@ -1,4 +1,4 @@
-# Sei <-> Don't Starve Together helper: wire protocol
+﻿# Sei <-> Don't Starve Together helper: wire protocol
 
 Version 1 (game-adapters M2, 260908). Mirrored in `src/shared/dstIpc.ts`
 (main-process zod schemas) and `src/bot/adapter/dontstarve/protocol.js`
@@ -226,3 +226,7 @@ through this.
   ground before `inst:Remove()` (the body is never saved with the world).
 - The QueryServer request timeout is undocumented; the 400 ms hold is the
   day-one measurement item (plan section 5) and is raised only if safe.
+
+
+
+

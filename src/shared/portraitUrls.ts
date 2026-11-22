@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Versioned portrait / World-thumbnail URLs (261111, Supabase egress fix).
  *
  * Portraits are overwritten in place at `portraits/<owner>/<id>.png`, and
@@ -55,3 +55,7 @@ export function browseArtSources(entry: { thumbUrl?: string | null; portraitUrl:
   if (thumb) return { primary: thumb, fallback: full && full !== thumb ? full : null };
   return { primary: full, fallback: null };
 }
+
+
+
+

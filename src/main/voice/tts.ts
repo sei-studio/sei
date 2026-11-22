@@ -1,21 +1,21 @@
-/**
- * Voice-call TTS (260705) — synthesize a companion's spoken line (MAIN only).
+﻿/**
+ * Voice-call TTS (260705) â€” synthesize a companion's spoken line (MAIN only).
  *
- * Normal path: POST `${proxy}/tts/speech` with the Supabase Bearer JWT — the
+ * Normal path: POST `${proxy}/tts/speech` with the Supabase Bearer JWT â€” the
  * ElevenLabs key lives on the proxy and never ships in the client. Requires a
  * signed-in session, like every other cloud surface.
  *
  * Direct path: when resolveElevenLabsRoute (voice/elevenLabsKeyStore.ts)
- * yields a key — the SEI_TTS_DEV_KEY env (dev shells only — never a committed
+ * yields a key â€” the SEI_TTS_DEV_KEY env (dev shells only â€” never a committed
  * file; see .env.example) or, for BYOK ('local' backend) users, their own
- * stored ElevenLabs key — main talks to ElevenLabs directly. Model/format
+ * stored ElevenLabs key â€” main talks to ElevenLabs directly. Model/format
  * pins mirror the proxy (sei-proxy src/tts/forward.ts). BYOK with no key
  * stored throws VOICE_NOT_CONFIGURED instead of falling through to the proxy.
  *
  * Errors are thrown as Error with a sentinel message prefix the renderer can
- * match on: VOICE_NO_SESSION, VOICE_NO_CREDITS (402 — playtime balance
+ * match on: VOICE_NO_SESSION, VOICE_NO_CREDITS (402 â€” playtime balance
  * exhausted; TTS bills from the same ledger as LLM turns), VOICE_RATE_LIMITED
- * (429 — daily $ cap), VOICE_NOT_CONFIGURED, VOICE_NOT_IN_LIBRARY (direct
+ * (429 â€” daily $ cap), VOICE_NOT_CONFIGURED, VOICE_NOT_IN_LIBRARY (direct
  * route: the voice is not in that ElevenLabs account), VOICE_TTS_FAILED.
  * 261019, direct route only (the user's own ElevenLabs account answered):
  * VOICE_NEEDS_PAID_PLAN (a free ElevenLabs plan cannot use Voice Library
@@ -96,12 +96,12 @@ const TTS_TIMEOUT_MS = 30_000;
 /** Streaming synthesis: max quiet gap between body chunks before the stream is
  * declared dead. ElevenLabs (and the proxy relaying it) emits chunks at a
  * sub-second cadence for the whole clip, so this long a silence only ever means
- * a stalled socket — and a stream that never terminates is what wedged a whole
+ * a stalled socket â€” and a stream that never terminates is what wedged a whole
  * call mute (the renderer's audio queue and pendingTts counter unwedge ONLY on
  * the pump's terminal {done}/{error} event). */
 const TTS_STREAM_STALL_MS = 10_000;
 /** Proxy-side request cap (ttsGate); clip rather than 400 on long replies.
- * PROXY PATH ONLY (260725) — the direct path (dev env key or the BYOK stored
+ * PROXY PATH ONLY (260725) â€” the direct path (dev env key or the BYOK stored
  * key) talks to ElevenLabs directly (model limit ~40k chars), so clipping
  * there just cut long lines off mid-sentence for no reason. 2500 mirrors the
  * proxy's cap as of release v35 (260725, was 1000); raising it further needs
@@ -167,7 +167,7 @@ const VOICE_ELEVEN_KEY_INVALID = 'VOICE_ELEVEN_KEY_INVALID: ElevenLabs rejected 
 /**
  * Map a DIRECT-route (the user's own ElevenLabs account) failure to a
  * sentinel, or null for "no specific meaning, use the generic mapping".
- * Must run before the generic 402 → VOICE_NO_CREDITS mapping: that copy
+ * Must run before the generic 402 â†’ VOICE_NO_CREDITS mapping: that copy
  * talks about Sei's credits, which a BYOK user does not have.
  */
 export function directElevenLabsError(status: number, body: string): string | null {
@@ -191,7 +191,7 @@ export function directElevenLabsError(status: number, body: string): string | nu
  * 260709: conversation language for TTS. Non-English pins ElevenLabs'
  * `language_code` (eleven_flash_v2_5 is multilingual; auto-detect is flaky on
  * the short one-liners a live call produces, so pinning wins). 'en' sends
- * nothing — request bodies stay byte-identical to before. Read fresh per
+ * nothing â€” request bodies stay byte-identical to before. Read fresh per
  * synthesis so an auto-switch applies to the very next spoken line.
  */
 /** The config, or null when it cannot be read (callers fall back to defaults). */
@@ -225,11 +225,11 @@ async function characterTtsLanguage(character: Parameters<typeof companionLangua
 // katakana, halfwidth katakana) can only be Japanese; hangul only Korean;
 // han is shared by zh and ja, so it reads as Japanese only when the
 // conversation is already Japanese (a kanji-only line mid-ja-call).
-const KANA_RE = /[぀-ヿㇰ-ㇿｦ-ﾟ]/g;
-const HANGUL_RE = /[가-힣ᄀ-ᇿ㄰-㆏]/g;
-const HAN_RE = /[一-鿿㐀-䶿豈-﫿]/g;
+const KANA_RE = /[\u3040-\u30FF\u31F0-\u31FF\uFF66-\uFF9F]/g;
+const HANGUL_RE = /[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/g;
+const HAN_RE = /[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g;
 
-/** Letters in any script — the denominator of the dominance ratio below. */
+/** Letters in any script â€” the denominator of the dominance ratio below. */
 const LETTER_RE = /\p{L}/gu;
 /**
  * How much of a line's letter content must be CJK before its script overrides
@@ -267,8 +267,8 @@ export function ttsLanguageForText(text: string, conversationLanguage: ChatLangu
 }
 
 /**
- * Chat-register → spoken-register shorthand expansion is an ENGLISH word list
- * ("lmao" → "haha"); on any other conversation language it must not touch the
+ * Chat-register â†’ spoken-register shorthand expansion is an ENGLISH word list
+ * ("lmao" â†’ "haha"); on any other conversation language it must not touch the
  * text (a \b-bounded English token can still shadow a real word in French or
  * Spanish). Pure pass-through for non-English.
  */
@@ -277,10 +277,10 @@ function spokenTextFor(text: string, language: ChatLanguage): string {
 }
 
 /**
- * The full chat-register → spoken-register conversion for one clip: bracketed
- * stage directions removed (see audioTags.ts — the shipped model READS `[laughs]`
+ * The full chat-register â†’ spoken-register conversion for one clip: bracketed
+ * stage directions removed (see audioTags.ts â€” the shipped model READS `[laughs]`
  * aloud as a word rather than performing it), then shorthand expansion (English
- * only), then utterance form — sentence casing and the terminal full stop the
+ * only), then utterance form â€” sentence casing and the terminal full stop the
  * texting register drops (see toSpokenUtterance for why that is prosody and not
  * formality). Every language gets tag-stripping and utterance form; the stop
  * mark itself is per-script.
@@ -295,26 +295,26 @@ function speechTextFor(text: string, language: ChatLanguage): string {
 
 /**
  * Utterance-context conditioning (260726). ElevenLabs renders the end of a
- * request's text with utterance-FINAL prosody — a hard terminal pitch drop —
+ * request's text with utterance-FINAL prosody â€” a hard terminal pitch drop â€”
  * whenever nothing follows it. `next_text` is read by the model but never
  * spoken: it says "more speech comes after this", so the last word keeps a
  * mid-conversation contour instead of landing hard. The string's content
  * barely matters (only that speech plausibly continues); per-language so a
  * non-English call isn't conditioned on English. `previous_text` is the
  * character's own last spoken line, which stops each clip's START from
- * resetting to fresh-utterance pitch. Live-call speech only — the voice-picker
+ * resetting to fresh-utterance pitch. Live-call speech only â€” the voice-picker
  * sample SHOULD sound like a complete statement, and its cache key must stay
  * param-stable. The proxy relays both fields (v36); an older deployed proxy
  * strips them (endings just fall again, never an error).
  */
 const TTS_NEXT_TEXT: Record<ChatLanguage, string> = {
   en: " anyway, there's more I wanted to say about that.",
-  zh: '总之，这件事我还有话想说。',
-  ja: 'とにかく、それについてまだ話したいことがあるんだ。',
-  ko: '아무튼, 그 얘기는 아직 더 하고 싶은 게 남았어.',
-  fr: " enfin, j'ai encore des choses à dire là-dessus.",
-  es: ' en fin, todavía tengo más que decir sobre eso.',
-  ru: ' в общем, я ещё хотела кое-что об этом сказать.',
+  zh: 'æ€»ä¹‹ï¼Œè¿™ä»¶äº‹æˆ‘è¿˜æœ‰è¯æƒ³è¯´ã€‚',
+  ja: 'ã¨ã«ã‹ãã€ãã‚Œã«ã¤ã„ã¦ã¾ã è©±ã—ãŸã„ã“ã¨ãŒã‚ã‚‹ã‚“ã ã€‚',
+  ko: 'ì•„ë¬´íŠ¼, ê·¸ ì–˜ê¸°ëŠ” ì•„ì§ ë” í•˜ê³  ì‹¶ì€ ê²Œ ë‚¨ì•˜ì–´.',
+  fr: " enfin, j'ai encore des choses Ã  dire lÃ -dessus.",
+  es: ' en fin, todavÃ­a tengo mÃ¡s que decir sobre eso.',
+  ru: ' Ð² Ð¾Ð±Ñ‰ÐµÐ¼, Ñ ÐµÑ‰Ñ‘ Ñ…Ð¾Ñ‚ÐµÐ»Ð° ÐºÐ¾Ðµ-Ñ‡Ñ‚Ð¾ Ð¾Ð± ÑÑ‚Ð¾Ð¼ ÑÐºÐ°Ð·Ð°Ñ‚ÑŒ.',
   pt: ' enfim, ainda tenho mais coisa pra dizer sobre isso.',
   it: " comunque, ho ancora qualcosa da dire su questo.",
 };
@@ -327,15 +327,15 @@ const TTS_PREVIOUS_TEXT_MAX = 500;
  * the trailing context outweighs it, so it is a next_text problem end to end.
  *
  * 260730: previous_text is no longer gated by it (and the floor itself went
- * 24 → 10). previous_text never bled — it is behind the clip, not in front of
- * it, so there is no head for the model to run into — and gating it was the
+ * 24 â†’ 10). previous_text never bled â€” it is behind the clip, not in front of
+ * it, so there is no head for the model to run into â€” and gating it was the
  * direct cause of the "starts squeaky, then calms down" report: a call opens on
  * its shortest lines, all of them fell under the floor, and a clip told nothing
  * about what preceded it is synthesized as an isolated exclamation (high onset,
  * wide excursion, no declination) which then takes the character's pitch shift
  * on top. Long sentences carry their own falling contour, so the same shift
  * reads as calm and the call seemed to settle as it went on. It deliberately no
- * longer mirrors STREAM_MIN_CHARS (24) in the voice store — that one picks a
+ * longer mirrors STREAM_MIN_CHARS (24) in the voice store â€” that one picks a
  * PLAYBACK route and says nothing about how a clip is rendered.
  */
 const TTS_NEXT_TEXT_MIN_CHARS = 10;
@@ -343,13 +343,13 @@ const TTS_NEXT_TEXT_MIN_CHARS = 10;
 /**
  * Utterance-context conditioning, scoped to ONE reply.
  *
- *   previous_text — the line of THIS SAME reply that ran immediately before
+ *   previous_text â€” the line of THIS SAME reply that ran immediately before
  *     this clip. Supplied by the renderer, which is the only layer that knows
  *     the reply's line array; main used to keep its own last-spoken-per-
  *     character map with a 3-minute TTL, which bled context ACROSS turns (and
  *     raced: a multi-line reply fires all its TTS requests in one tick, so the
  *     map still held the PREVIOUS turn's last line for every one of them).
- *   next_text — sent when another line of this same reply follows, so the clip
+ *   next_text â€” sent when another line of this same reply follows, so the clip
  *     does not land a sentence-final pitch drop mid-reply.
  *
  * Both are strictly intra-reply now: the first line of a reply has no
@@ -367,7 +367,7 @@ function ttsContextFor(
   prev: string | undefined,
   more: boolean,
 ): Record<string, string> {
-  // previous_text at ANY length (260730 — see TTS_NEXT_TEXT_MIN_CHARS): the
+  // previous_text at ANY length (260730 â€” see TTS_NEXT_TEXT_MIN_CHARS): the
   // shortest clips are the ones that most need to know what they follow, and
   // they are exactly what the old shared floor withheld it from.
   const withNext = more && text.trim().length >= TTS_NEXT_TEXT_MIN_CHARS;
@@ -379,13 +379,13 @@ function ttsContextFor(
 
 /**
  * ElevenLabs voice_settings for the dev path (the proxy path sends the same
- * knobs as flat fields — see synthesize). `style: 0` rides along with any
+ * knobs as flat fields â€” see synthesize). `style: 0` rides along with any
  * stability pin so a nonzero per-voice style default can't re-dramatize the
  * delivery that stability just flattened.
  *
  * 260731: `speed` is gone. It existed only to slow a clip so the renderer's
  * pitched playback landed at normal pace, and it was the unreliable half of
- * that pair — a conditioning hint, not arithmetic, and a short utterance gives
+ * that pair â€” a conditioning hint, not arithmetic, and a short utterance gives
  * the model no room to express it. Pitch is shifted locally now
  * (renderer lib/voice/pitchBus.ts) and synthesis is asked for its natural pace.
  */
@@ -409,7 +409,7 @@ async function getJwtOrNull(): Promise<string | null> {
  * main (src/main/speech/) instead of ElevenLabs. Absent means 'elevenlabs'.
  *
  * 261118: the local voice PACKS stay BYOK-only, but Fish Audio also speaks
- * on a cloud account (see fishOnCloud) — the text still bills Sei's credits,
+ * on a cloud account (see fishOnCloud) â€” the text still bills Sei's credits,
  * the user's own Fish key only generates the audio.
  */
 async function localTtsSelected(backend?: AiBackendKind | null): Promise<boolean> {
@@ -472,7 +472,7 @@ function noteFishCloudSpoke(stage: 'clip' | 'stream'): void {
 /**
  * A local synthesis spoke with a SUBSTITUTE voice pack because the pack
  * matching the line's language (the conversation language, or the line's own
- * script when it is predominantly Chinese — see detectSpokenLanguage) is not
+ * script when it is predominantly Chinese â€” see detectSpokenLanguage) is not
  * installed (260908). Pushed to the renderer (main/ipc.ts forwards over
  * voice:tts-notice) so the call UI can show a system notice naming the
  * better-fitting download; the line itself still plays. Fields are pack ids
@@ -758,13 +758,13 @@ function ownKeyFallback(plan: SpeakPlan, character: Character, err: unknown): Ow
  * cross-language substitute additionally emits a TtsNotice naming the pack
  * that would fit better. Only when NO voice pack is installed does
  * `VOICE_PACK_MISSING:<packId>` still throw, carrying the language-matching
- * pack id — the renderer turns that into a download hint; never
+ * pack id â€” the renderer turns that into a download hint; never
  * auto-download mid-call.
  *
  * The language keyed on is the LINE's effective language, not just the
  * conversation's (speech detectSpokenLanguage): a predominantly Chinese line
  * in an 'en' conversation prefers an installed zh pack, and when the zh pack
- * is missing the notice names it — the line is what cannot be spoken well,
+ * is missing the notice names it â€” the line is what cannot be spoken well,
  * whatever the session language says.
  */
 async function synthesizeLocalClip(
@@ -973,12 +973,12 @@ async function fetchAudio(
 
 /**
  * Route a (text, voiceId) pair to a resolved ElevenLabs key or the proxy
- * (see resolveElevenLabsRoute — the dev env key and the BYOK stored key are
+ * (see resolveElevenLabsRoute â€” the dev env key and the BYOK stored key are
  * the 'direct' branch; BYOK with no key throws VOICE_NOT_CONFIGURED).
- * `stability` (high for calm characters — see voiceStabilityFor) flattens
+ * `stability` (high for calm characters â€” see voiceStabilityFor) flattens
  * delivery. The proxy relays it into voice_settings; an older deployed proxy
  * strips the field (speech then runs expressive until the proxy ships, never
- * an error). Pitch is NOT a synthesis parameter — see voiceSettingsFor.
+ * an error). Pitch is NOT a synthesis parameter â€” see voiceSettingsFor.
  */
 async function synthesize(
   text: string,
@@ -989,8 +989,8 @@ async function synthesize(
   context?: Record<string, string>,
 ): Promise<ArrayBuffer> {
   // Non-English pins the synthesis language (per-message via
-  // ttsLanguageForText). An older deployed proxy strips the unknown field —
-  // speech still auto-detects, never an error — same forward-compat stance
+  // ttsLanguageForText). An older deployed proxy strips the unknown field â€”
+  // speech still auto-detects, never an error â€” same forward-compat stance
   // as `speed`.
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(stability);
@@ -1083,7 +1083,7 @@ async function voiceTtsClip(
   }
   const voiceId = await resolveVoiceId(character);
   // Per-message pin: the text's own script beats the conversation language
-  // (see ttsLanguageForText — the fix for English-accented CJK). A
+  // (see ttsLanguageForText â€” the fix for English-accented CJK). A
   // character-pinned language (metadata.language, 260730) beats auto-detect.
   const language = ttsLanguageForText(
     args.text,
@@ -1091,7 +1091,7 @@ async function voiceTtsClip(
   );
   // Local TTS route (see localTtsSelected): same register conversion, no
   // proxy clip cap (the IPC boundary already bounds text length), WAV bytes
-  // instead of mp3 — the renderer's blob playback sniffs the container.
+  // instead of mp3 â€” the renderer's blob playback sniffs the container.
   const own = ownVoicePickOf(character);
   // A Voice Library voice (261119): its gender picks the local voice and the
   // stand-in, like an own voice's.
@@ -1136,7 +1136,7 @@ async function voiceTtsClip(
   const { route } = plan;
   trace.provider = providerOfRoute(route);
   // BYOK on the ElevenLabs engine with no key stored (260908): before failing
-  // with the setup hint, try any installed local voice pack — an accented or
+  // with the setup hint, try any installed local voice pack â€” an accented or
   // substitute local voice beats a silent call, and the hint still shows when
   // nothing local can speak either.
   if (route.kind === 'unconfigured') {
@@ -1148,7 +1148,7 @@ async function voiceTtsClip(
   }
   // Spoken register BEFORE the cap: chat lines mirrored into the call carry
   // shorthand ("lmao", "rn") that TTS would read literally, and texting
-  // punctuation that reads as an unfinished thought — see speechTextFor.
+  // punctuation that reads as an unfinished thought â€” see speechTextFor.
   const spoken = speechTextFor(args.text, language);
   const text = clipForRoute(spoken, route);
   if (!text) throw new Error('VOICE_TTS_FAILED: empty text');
@@ -1220,7 +1220,7 @@ async function openTtsStream(
   stability: number | undefined,
   context: Record<string, string>,
 ): Promise<OpenedTtsStream> {
-  // Language pin for non-English (see synthesize — same forward-compat stance).
+  // Language pin for non-English (see synthesize â€” same forward-compat stance).
   const langField = language !== 'en' ? { language_code: language } : {};
   const settings = voiceSettingsFor(stability);
   const url = route.kind === 'direct'
@@ -1291,13 +1291,13 @@ export type TtsStreamEvent =
   | { streamId: string; error: string };
 
 /**
- * Streaming synthesis (260705). Same request as voiceTts — the proxy (and the
+ * Streaming synthesis (260705). Same request as voiceTts â€” the proxy (and the
  * dev path) already hit ElevenLabs' /stream endpoint; the buffering was OURS
  * (res.arrayBuffer()). This resolves { streamId } as soon as upstream says
  * 200 and then pumps body chunks to `sink` (ordered; terminal {done} or
  * {error}), so the renderer can start playback on the first mp3 frame.
  * Pre-flight failures (no session, 402/429/503, fetch error) reject the
- * returned promise with the same sentinels as voiceTts — the renderer's
+ * returned promise with the same sentinels as voiceTts â€” the renderer's
  * existing catch copy applies unchanged.
  */
 export async function voiceTtsStream(
@@ -1322,7 +1322,7 @@ async function voiceTtsStreamOpen(
 ): Promise<{ streamId: string }> {
   const character = await getCharacter(args.characterId);
   if (!character) throw new Error('VOICE_TTS_FAILED: character not found');
-  // Silent companion (see voiceTts) — reject before any network work.
+  // Silent companion (see voiceTts) â€” reject before any network work.
   if (character.metadata?.voiceId === NO_VOICE_ID) {
     throw new Error('VOICE_DISABLED: this companion has no voice');
   }
@@ -1418,9 +1418,9 @@ async function voiceTtsStreamOpen(
     return { streamId };
   }
   // Delivery calmness (see voiceStabilityFor). Pitch is not a synthesis
-  // parameter — the renderer shifts it locally (see voiceSettingsFor).
+  // parameter â€” the renderer shifts it locally (see voiceSettingsFor).
   const stability = voiceStabilityFor(character);
-  // Utterance-context conditioning (see ttsContextFor) — keeps a multi-line
+  // Utterance-context conditioning (see ttsContextFor) â€” keeps a multi-line
   // reply from dropping pitch between its own sentences. `prev` is normalized
   // like the clip itself (see voiceTts).
   const prev = args.prev ? speechTextFor(args.prev, language) : undefined;
@@ -1496,7 +1496,7 @@ function pumpTtsStream(
   // audio-queue slot, its pendingTts counter, the chess reveal gate polling
   // voiceTtsDrained) unwedges ONLY on the terminal {done}/{error} event. A
   // half-dead socket used to hang reader.read() forever with the timer already
-  // cleared — no terminal event, so the call went permanently mute behind the
+  // cleared â€” no terminal event, so the call went permanently mute behind the
   // frozen playhead until the OS gave up on the socket minutes later (heard as
   // a "random TTS message" long after). Abort when no chunk arrives for
   // TTS_STREAM_STALL_MS: read() rejects and the catch emits the {error}.
@@ -1521,7 +1521,7 @@ function pumpTtsStream(
       sink({ streamId, done: true });
     } catch (err) {
       sink({ streamId, error: `VOICE_TTS_FAILED: ${(err as Error).message}` });
-      // Analytics (260828): a mid-stream TTS failure mutes a spoken line —
+      // Analytics (260828): a mid-stream TTS failure mutes a spoken line â€”
       // previously invisible. The stall watchdog aborts read() on a hung
       // socket, so an abort HERE is that stall (a genuine failure), not a
       // user hang-up: emit it as its own class instead of dropping it.
@@ -1551,22 +1551,22 @@ function pumpTtsStream(
  */
 const PREVIEW_LINES: Record<ChatLanguage, string> = {
   en: 'Hi, this is what I sound like.',
-  zh: '嗨，这就是我的声音。',
-  ja: 'やあ、これが私の声だよ。',
-  ko: '안녕, 이게 내 목소리야.',
+  zh: 'å—¨ï¼Œè¿™å°±æ˜¯æˆ‘çš„å£°éŸ³ã€‚',
+  ja: 'ã‚„ã‚ã€ã“ã‚ŒãŒç§ã®å£°ã ã‚ˆã€‚',
+  ko: 'ì•ˆë…•, ì´ê²Œ ë‚´ ëª©ì†Œë¦¬ì•¼.',
   fr: 'Salut, voici ma voix.',
-  es: 'Hola, así es como sueno.',
-  ru: 'Привет, вот так звучит мой голос.',
-  pt: 'Oi, essa é a minha voz.',
-  it: 'Ciao, questa è la mia voce.',
+  es: 'Hola, asÃ­ es como sueno.',
+  ru: 'ÐŸÑ€Ð¸Ð²ÐµÑ‚, Ð²Ð¾Ñ‚ Ñ‚Ð°Ðº Ð·Ð²ÑƒÑ‡Ð¸Ñ‚ Ð¼Ð¾Ð¹ Ð³Ð¾Ð»Ð¾Ñ.',
+  pt: 'Oi, essa Ã© a minha voz.',
+  it: 'Ciao, questa Ã¨ la mia voce.',
 };
 
 /**
  * Voice-picker sample (260705; disk-cached 260720; playground params 260725):
- * speak the sample line in an arbitrary curated-pool voice — no character
+ * speak the sample line in an arbitrary curated-pool voice â€” no character
  * needed (the picker runs before the voice is committed). Pool membership is
  * enforced here AND by the proxy allowlist. Each (voice, line, params) tuple
- * synthesizes at most once per machine — repeat plays are served from the
+ * synthesizes at most once per machine â€” repeat plays are served from the
  * userData cache for free (params ride into the cache key via the hashed text
  * argument, so the no-params key is unchanged and old entries stay valid).
  *
@@ -1725,3 +1725,7 @@ export async function voicePreviewAvailable(): Promise<boolean> {
   if (route.kind === 'unconfigured') return false;
   return (await getJwtOrNull()) !== null;
 }
+
+
+
+

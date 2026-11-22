@@ -1,8 +1,8 @@
-// 260816 (china-compat W2): map the supervisor's init `llm` section onto the
+﻿// 260816 (china-compat W2): map the supervisor's init `llm` section onto the
 // bot's ConfigSchema shape, BEFORE ConfigSchema.parse fills defaults.
 //
 // Why this exists: UserConfig.provider + provider_config (written by the
-// Settings picker) were read by NOTHING — botSupervisor's init payload
+// Settings picker) were read by NOTHING â€” botSupervisor's init payload
 // carried no llm config, so `llm:` was omitted from rawConfig and Zod
 // defaulted every bot session to Anthropic regardless of the picker. Main now
 // ships `{provider, model?, base_url?, api_key}` for local (BYOK) sessions
@@ -10,7 +10,7 @@
 //
 // Rules, mirroring the other init bridges (chat_language, punctuation):
 // junk falls to the schema default instead of failing the whole parse, and
-// cloud-proxy sessions are NEVER rerouted — cloudMode always means the
+// cloud-proxy sessions are NEVER rerouted â€” cloudMode always means the
 // Anthropic proxy path.
 
 import { LLM_PROVIDER_KINDS } from './config.js'
@@ -50,7 +50,7 @@ const validUrl = (v) => {
  * @param {object|undefined} llm  init payload section:
  *        { provider, model?, base_url?, api_key? } | undefined
  * @param {string} apiKey  the top-level init apiKey (BYOK key; back-compat
- *        field — also the fallback when llm.api_key is absent)
+ *        field â€” also the fallback when llm.api_key is absent)
  * @returns {object} rawConfig with `llm`/`anthropic` sections applied
  */
 export function applyLlmInit(rawConfig, llm, apiKey) {
@@ -87,7 +87,7 @@ export function applyLlmInit(rawConfig, llm, apiKey) {
 
 /**
  * 260828 (BYOK-switch fix): apply a mid-session `{type:'backend-switch'}`
- * descriptor onto the PARSED, live config — the runtime sibling of
+ * descriptor onto the PARSED, live config â€” the runtime sibling of
  * applyLlmInit above, which only runs pre-parse at init time.
  *
  * MUTATES `config` in place (the orchestrator, adapter and providers all hold
@@ -97,13 +97,13 @@ export function applyLlmInit(rawConfig, llm, apiKey) {
  * through the factory or can be flipped in place.
  *
  * Rules:
- * - `backend.cloudMode` (local→cloud): cloud ALWAYS rides the
- *   anthropic+cloudMode path — config.llm.provider is forced back to
+ * - `backend.cloudMode` (localâ†’cloud): cloud ALWAYS rides the
+ *   anthropic+cloudMode path â€” config.llm.provider is forced back to
  *   'anthropic' (a local session may have been running any provider).
  * - local (`backend.api_key` + optional `backend.llm`): cloudMode is cleared,
  *   the key applied, and the llm section folded in with the same
  *   junk-tolerance as applyLlmInit (unknown provider / junk base_url fall to
- *   the anthropic default / provider default base rather than throwing —
+ *   the anthropic default / provider default base rather than throwing â€”
  *   there is no ConfigSchema.parse safety net at runtime).
  * - Unlike applyLlmInit, providers are MERGED (never replaced wholesale):
  *   the parsed config.llm carries live knobs (rate_limit_per_min, max_hops,
@@ -159,3 +159,7 @@ export function applyLlmSwitch(config, backend) {
   }
   return provider
 }
+
+
+
+

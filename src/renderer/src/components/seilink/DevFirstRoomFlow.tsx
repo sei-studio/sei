@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dev-only picture of the first-room flow (261106; v3: plain spawn and the
  * guided setup) on a simulated desktop, in a plain browser tab:
  * `?seilinkflow=1&pack=<url of the cozy pack dir>/` (the other packs are
@@ -173,7 +173,7 @@ function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state
   };
 }
 
-// ── Simulated desktop chrome (generic, no brands) ───────────────────────────
+// â”€â”€ Simulated desktop chrome (generic, no brands) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ICONS: Array<{ label: string; kind: 'folder' | 'file' | 'image' }> = [
   { label: 'Documents', kind: 'folder' },
@@ -275,7 +275,7 @@ function DesktopChrome(): React.ReactElement {
   );
 }
 
-// ── The page ────────────────────────────────────────────────────────────────
+// â”€â”€ The page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Loaded {
   /** The packs found beside `pack` (cozy first). */
@@ -392,3 +392,7 @@ export function DevFirstRoomFlow(): React.ReactElement {
     </>
   );
 }
+
+
+
+

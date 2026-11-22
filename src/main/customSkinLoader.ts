@@ -1,15 +1,15 @@
-/**
+﻿/**
  * CustomSkinLoader mod downloader + config writer.
  *
  * Two responsibilities:
  *
- *   1. `downloadCustomSkinLoader(opts)` — fetch the latest CSL Fabric or Forge
+ *   1. `downloadCustomSkinLoader(opts)` â€” fetch the latest CSL Fabric or Forge
  *      JAR from Modrinth, falling back to GitHub Releases if Modrinth has no
  *      compatible build. Validates the JAR via ZIP magic before placing it
  *      into the target install's `mods/` directory atomically (rename, with
- *      EXDEV → copy+unlink fallback).
+ *      EXDEV â†’ copy+unlink fallback).
  *
- *   2. `writeCustomSkinLoaderConfig(opts)` — write the JSON config that tells
+ *   2. `writeCustomSkinLoaderConfig(opts)` â€” write the JSON config that tells
  *      CSL to fetch skins from Sei's loopback HTTP server. The config is
  *      placed at `<install>/config/CustomSkinLoader/CustomSkinLoader.json`
  *      atomically via `atomicWrite`.
@@ -21,10 +21,10 @@
  *
  *        - `CustomSkinAPI` is a JsonAPILoader subtype. CSL's
  *          `CustomSkinAPI.toJsonUrl(root, username)` returns
- *          `{root}{username}.json` — CSL expects a JSON document containing
+ *          `{root}{username}.json` â€” CSL expects a JSON document containing
  *          texture hash IDs, then makes a SECOND `GET {root}/textures/<id>`
  *          for the actual PNG. Our skin server serves direct PNG bytes at
- *          `/skins/<username>.png` — no JSON intermediate.
+ *          `/skins/<username>.png` â€” no JSON intermediate.
  *
  *        - `Legacy` (the `LegacyLoader` class) takes a `skin` URL template
  *          containing `{USERNAME}`, substitutes the in-game username via
@@ -59,7 +59,7 @@ const logger = {
 const USER_AGENT = 'sei-electron/0.1.0';
 const META_TIMEOUT_MS = 30_000;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
-/** ZIP magic — first 4 bytes of every JAR file. */
+/** ZIP magic â€” first 4 bytes of every JAR file. */
 const ZIP_MAGIC = [0x50, 0x4B, 0x03, 0x04] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -167,7 +167,7 @@ interface GithubRelease {
 /**
  * Detect a CustomSkinLoader JAR inside an existing `mods/` directory. Returns
  * `installed: true` + parsed version when a matching JAR is present. ENOENT
- * on the mods dir → not installed. Used by the wizard UI's "already installed"
+ * on the mods dir â†’ not installed. Used by the wizard UI's "already installed"
  * badge and by the orchestrator's skip-redundant-download fast path.
  */
 export async function isCustomSkinLoaderInstalled(
@@ -208,7 +208,7 @@ export interface DownloadCustomSkinLoaderOpts {
   modsDir: string;
   /** Abort signal threaded here from main's Map<sessionId, AbortController>. */
   signal?: AbortSignal;
-  /** Progress callback — currently called at 0/30/70/100 milestones. */
+  /** Progress callback â€” currently called at 0/30/70/100 milestones. */
   onProgress?: (pct: number) => void;
 }
 
@@ -229,7 +229,7 @@ async function selectCslDownloadUrl(
 ): Promise<{ url: string; filename: string; version: string }> {
   const { loaderKind, mcVersion, signal } = opts;
 
-  // ── Modrinth (preferred) ──────────────────────────────────────────────
+  // â”€â”€ Modrinth (preferred) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try {
     const versions = await fetchJsonWithTimeout<ModrinthVersion[]>(
       'https://api.modrinth.com/v2/project/customskinloader/version',
@@ -247,8 +247,8 @@ async function selectCslDownloadUrl(
       // Avoid the CSL 15.x "Universal" rework on MC versions a 14.x build still
       // covers. 15.x replaced the mixin engine with a bootstrap runtime
       // transformer (customskinloader.bootstrap.*) that aborts game init on
-      // 1.21.x — "Patch ... matched protocol 767 but did not modify any
-      // bytecode" → MixinApplyError → crash code 255. Both 15.0 and 15.0.1 ship
+      // 1.21.x â€” "Patch ... matched protocol 767 but did not modify any
+      // bytecode" â†’ MixinApplyError â†’ crash code 255. Both 15.0 and 15.0.1 ship
       // as version_type `release`, so a stability filter can't catch them; we
       // gate on the major version instead. Modrinth returns newest-first, so
       // [0] of each list is the freshest. Fall back to the newest match overall
@@ -269,11 +269,11 @@ async function selectCslDownloadUrl(
       }
     }
   } catch (err) {
-    // Soft-fail Modrinth — try GitHub fallback.
+    // Soft-fail Modrinth â€” try GitHub fallback.
     logger.warn(`customSkinLoader: Modrinth lookup failed: ${(err as Error).message}`);
   }
 
-  // ── GitHub Releases (fallback) ────────────────────────────────────────
+  // â”€â”€ GitHub Releases (fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   try {
     const release = await fetchJsonWithTimeout<GithubRelease>(
       'https://api.github.com/repos/xfl03/MCCustomSkinLoader/releases/latest',
@@ -313,14 +313,14 @@ export async function downloadCustomSkinLoader(
     throw new Error('MOD_DOWNLOAD_FAILED: cancelled');
   }
 
-  // ── Pick a URL ────────────────────────────────────────────────────────
+  // â”€â”€ Pick a URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const pick = await selectCslDownloadUrl(opts);
   onProgress?.(30);
 
-  // ── Download ──────────────────────────────────────────────────────────
+  // â”€â”€ Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (signal?.aborted) throw new Error('MOD_DOWNLOAD_FAILED: cancelled');
   const bytes = await fetchBytesWithTimeout(pick.url, DOWNLOAD_TIMEOUT_MS, signal);
-  // ZIP magic check — JARs are ZIP archives.
+  // ZIP magic check â€” JARs are ZIP archives.
   if (
     bytes.length < 4 ||
     bytes[0] !== ZIP_MAGIC[0] ||
@@ -328,12 +328,12 @@ export async function downloadCustomSkinLoader(
     bytes[2] !== ZIP_MAGIC[2] ||
     bytes[3] !== ZIP_MAGIC[3]
   ) {
-    // PK ZIP magic 0x50, 0x4B, 0x03, 0x04 — JAR download corrupt.
+    // PK ZIP magic 0x50, 0x4B, 0x03, 0x04 â€” JAR download corrupt.
     throw new Error('MOD_DOWNLOAD_FAILED: downloaded JAR is corrupt');
   }
   onProgress?.(70);
 
-  // ── Write to tmp, then atomic rename into modsDir ─────────────────────
+  // â”€â”€ Write to tmp, then atomic rename into modsDir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await fs.mkdir(modsDir, { recursive: true });
   const tmpDir = path.join(paths.userData(), 'tmp');
   await fs.mkdir(tmpDir, { recursive: true });
@@ -352,7 +352,7 @@ export async function downloadCustomSkinLoader(
   // Remove any prior CustomSkinLoader jar(s) before placing the new one, so we
   // never leave two CSL builds in mods/. Fabric loads both, and that is exactly
   // how a crashing 15.x landed next to a working 14.x and aborted game init
-  // (the filename differs — `_Fabric-14.28` vs `_Fabric-15.0.1-Universal` — so a
+  // (the filename differs â€” `_Fabric-14.28` vs `_Fabric-15.0.1-Universal` â€” so a
   // plain rename never overwrote it). Done only after the replacement bytes are
   // validated and staged in tmp, so a failed download never strands the user
   // with no CSL at all.
@@ -362,7 +362,7 @@ export async function downloadCustomSkinLoader(
       if (cslJarRe.test(name)) await fs.unlink(path.join(modsDir, name)).catch(() => {});
     }
   } catch {
-    /* modsDir freshly created / unreadable — nothing to dedupe */
+    /* modsDir freshly created / unreadable â€” nothing to dedupe */
   }
 
   const finalPath = path.join(modsDir, finalName);
@@ -405,7 +405,7 @@ export interface WriteCustomSkinLoaderConfigOpts {
   targetDir: string;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   loaderKind: 'fabric' | 'forge';
-  /** e.g. 'http://127.0.0.1:54321' — no trailing slash. */
+  /** e.g. 'http://127.0.0.1:54321' â€” no trailing slash. */
   skinServerBaseUrl: string;
 }
 
@@ -414,12 +414,12 @@ export interface WriteCustomSkinLoaderConfigOpts {
  * `<install>/config/CustomSkinLoader/CustomSkinLoader.json`. The path is the
  * canonical location for modern Fabric AND Forge CSL builds (CSL writes its
  * own config there on first launch; pre-seeding it here means our entry
- * lands in the loadlist with priority 0 — the user doesn't have to touch it).
+ * lands in the loadlist with priority 0 â€” the user doesn't have to touch it).
  *
  * Loader-type rationale: see file header. Short version: `Legacy` is the
  * verified-correct loader for a literal-URL backend serving PNG bytes.
  * `CustomSkinAPI` would require us to also serve JSON metadata at
- * `/<username>.json` and a separate texture endpoint — neither of which our
+ * `/<username>.json` and a separate texture endpoint â€” neither of which our
  * skin server does.
  *
  * Returns the absolute config path so callers can log it for debugging.
@@ -434,7 +434,7 @@ export async function writeCustomSkinLoaderConfig(
   // already, but defensive trim costs nothing.
   const base = skinServerBaseUrl.replace(/\/+$/, '');
 
-  // Sei's SeiLocal entry — prepended to whatever loadlist already exists
+  // Sei's SeiLocal entry â€” prepended to whatever loadlist already exists
   // (legacy default places Mojang at priority 1, which beats our entry and
   // serves Steve+cape for any username that resolves on Mojang).
   const SEI_ENTRY = {
@@ -446,14 +446,14 @@ export async function writeCustomSkinLoaderConfig(
   };
 
   // Fallback providers for the FRESH-config path (see writeOne's else branch).
-  // When SeiLocal 404s for a username that isn't one of our personas — i.e. the
-  // human player's own name — CSL must fall through to a real skin source or the
+  // When SeiLocal 404s for a username that isn't one of our personas â€” i.e. the
+  // human player's own name â€” CSL must fall through to a real skin source or the
   // player renders as Steve. Before gameDir isolation (260518-o1k T5) Sei wrote
   // into the root .minecraft where CSL had ALREADY generated its default loadlist
-  // (GameProfile → Mojang → …), so prepending SeiLocal preserved those fallbacks.
+  // (GameProfile â†’ Mojang â†’ â€¦), so prepending SeiLocal preserved those fallbacks.
   // The isolated <.minecraft>/sei/ gameDir has no pre-existing CSL config, so the
   // fresh branch must seed these itself. GameProfile resolves textures embedded in
-  // the session's GameProfile; Mojang resolves real skins by username — together
+  // the session's GameProfile; Mojang resolves real skins by username â€” together
   // they restore the pre-isolation behavior for human players.
   const FALLBACK_ENTRIES = [
     { name: 'GameProfile', type: 'GameProfile' },
@@ -465,31 +465,31 @@ export async function writeCustomSkinLoaderConfig(
     },
   ];
 
-  // ── Schema (per upstream config classes — see file header) ────────────
+  // â”€â”€ Schema (per upstream config classes â€” see file header) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   //  Loadlist entry fields used:
   //    - name          arbitrary identifier (CSL identifies entries by name)
-  //    - type          loader type — must be the canonical CSL identifier
-  //                    `Legacy` (NOT `CustomSkinAPI` — see file header note)
+  //    - type          loader type â€” must be the canonical CSL identifier
+  //                    `Legacy` (NOT `CustomSkinAPI` â€” see file header note)
   //    - skin          URL template; CSL substitutes `{USERNAME}` at fetch
   //                    time and expects raw PNG bytes back
-  //    - checkPNG      true → CSL validates the response is PNG-magic-prefixed
+  //    - checkPNG      true â†’ CSL validates the response is PNG-magic-prefixed
   //                    (defense-in-depth; aligns with skinServer's response)
-  //    - model         "auto" → let CSL detect classic vs slim from the PNG
-  //                    metadata; vanilla 64×64 skins are classic-shaped
+  //    - model         "auto" â†’ let CSL detect classic vs slim from the PNG
+  //                    metadata; vanilla 64Ã—64 skins are classic-shaped
   //
   //  Top-level config fields:
-  //    - loadlist                — array of entries; ours is sole entry
-  //    - enableTransparentSkin   — render translucent pixels correctly
-  //    - enableUpdateSkull       — refresh head models when skin changes
-  //    - enableLocalProfileCache — false: user expects fresh skin after editor
+  //    - loadlist                â€” array of entries; ours is sole entry
+  //    - enableTransparentSkin   â€” render translucent pixels correctly
+  //    - enableUpdateSkull       â€” refresh head models when skin changes
+  //    - enableLocalProfileCache â€” false: user expects fresh skin after editor
   //                                changes; caching would show a stale skin
   //                                between sessions
-  //    - enableCacheAutoClean    — true: clean cache directory on startup
+  //    - enableCacheAutoClean    â€” true: clean cache directory on startup
   //                                (paired with localProfileCache=false)
   //
   //  We intentionally omit `version` and `buildNumber`. CSL's Config.loadConfig0
-  //  rewrites them to the current installed version on first launch — no
+  //  rewrites them to the current installed version on first launch â€” no
   //  benefit to hardcoding a stale value here, and a stale value triggers
   //  CSL's "config out of date" log spam.
   // CSL 14.x (verified against installed Fabric build) reads from
@@ -497,8 +497,8 @@ export async function writeCustomSkinLoaderConfig(
   // NOT the modern <install>/config/CustomSkinLoader/CustomSkinLoader.json
   // that the original plan assumed. Write to BOTH so we cover any CSL build
   // that reads either path. The root path is the one that actually matters
-  // on the user's current install — without it, CSL silently uses its own
-  // default loadlist (Mojang at priority 1 → Steve+cape skins).
+  // on the user's current install â€” without it, CSL silently uses its own
+  // default loadlist (Mojang at priority 1 â†’ Steve+cape skins).
   const writeOne = async (configPath: string): Promise<void> => {
     // Preserve any existing loadlist + settings the user already had; just
     // ensure SeiLocal sits at index 0 so our local skins win over Mojang and
@@ -510,7 +510,7 @@ export async function writeCustomSkinLoaderConfig(
       const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (parsed && typeof parsed === 'object') existing = parsed;
     } catch {
-      // ENOENT / parse error → write a fresh config.
+      // ENOENT / parse error â†’ write a fresh config.
     }
 
     let cfg: Record<string, unknown>;
@@ -542,3 +542,7 @@ export async function writeCustomSkinLoaderConfig(
   await writeOne(modernPath);
   return { configPath: rootPath };
 }
+
+
+
+

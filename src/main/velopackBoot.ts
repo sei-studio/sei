@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Velopack startup hook for Windows (261030).
  *
  * Side-effect module. MUST be the second import of src/main/boot.ts, right
@@ -345,3 +345,7 @@ export function velopackInstalled(): boolean {
 export function velopackRestartedVersion(): string | null {
   return restartedVersion;
 }
+
+
+
+

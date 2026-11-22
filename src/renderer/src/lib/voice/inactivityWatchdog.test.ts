@@ -1,16 +1,16 @@
-/**
+﻿/**
  * Tests for the voice-call inactivity watchdog's pure decision logic
  * (inactivityWatchdog.ts). The store owns timers; this owns the ladder:
  *
- *   W.1 — quiet under 10 min is 'ok'.
- *   W.2 — quiet at/over 10 min is 'prompt'.
- *   W.3 — with the prompt up, under 10 s is still 'prompt'; at/over 10 s
+ *   W.1 â€” quiet under 10 min is 'ok'.
+ *   W.2 â€” quiet at/over 10 min is 'prompt'.
+ *   W.3 â€” with the prompt up, under 10 s is still 'prompt'; at/over 10 s
  *         is 'end'.
- *   W.4 — an active screenshare is 'ok' no matter how stale the clock is,
+ *   W.4 â€” an active screenshare is 'ok' no matter how stale the clock is,
  *         even mid-countdown.
- *   W.5 — sleep/wake: a now far past BOTH thresholds with no prompt shown
+ *   W.5 â€” sleep/wake: a now far past BOTH thresholds with no prompt shown
  *         still lands on 'prompt' (the call never ends unasked).
- *   W.6 — countdownSecondsLeft walks 10 → 0 and clamps at 0.
+ *   W.6 â€” countdownSecondsLeft walks 10 â†’ 0 and clamps at 0.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -106,3 +106,7 @@ describe('decideInactivity', () => {
     expect(countdownSecondsLeft(T0, T0 + INACTIVITY_COUNTDOWN_MS + 5_000)).toBe(0);
   });
 });
+
+
+
+

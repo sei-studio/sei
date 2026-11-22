@@ -1,5 +1,5 @@
-/**
- * Update policy — pure decision functions for the in-app updater
+﻿/**
+ * Update policy â€” pure decision functions for the in-app updater
  * (quick/260604-uoy).
  *
  * This module is INTENTIONALLY electron-free: it imports only `semver` so it
@@ -7,16 +7,16 @@
  * and under vitest. The `autoUpdater` wiring lives in `updater.ts` and is
  * guarded by `app.isPackaged`.
  *
- * Two policy levels, derived from semver alone — no manual urgency flag:
+ * Two policy levels, derived from semver alone â€” no manual urgency flag:
  *
- *   | bump from `current` → `latest` | level     | behavior                       |
+ *   | bump from `current` â†’ `latest` | level     | behavior                       |
  *   |--------------------------------|-----------|--------------------------------|
  *   | major or minor                 | optional  | ask first, changelog up front  |
  *   | patch only                     | mandatory | silent download, changelog after|
  *   | equal / downgrade / invalid    | none      | nothing                        |
  *
  * If a user is several versions behind (on 0.1.1, latest 0.2.0) the MINOR
- * differs → `optional`, and the skipped patch rides along inside it. The
+ * differs â†’ `optional`, and the skipped patch rides along inside it. The
  * mandatory/silent path triggers ONLY when major.minor are equal and only the
  * patch component moved forward.
  *
@@ -36,16 +36,16 @@ export type UpdateLevel = 'optional' | 'mandatory' | 'none';
  * The mandatory-update apply timing carried by `version.json.apply`. Consulted
  * ONLY for mandatory (patch-only) updates; optional updates always ask first.
  *
- *   - `on-restart` (DEFAULT) — silent download, applies on next app quit via
+ *   - `on-restart` (DEFAULT) â€” silent download, applies on next app quit via
  *     `autoInstallOnAppQuit`; changelog shown on next launch.
- *   - `now` — silent download, then an immediate forced restart.
+ *   - `now` â€” silent download, then an immediate forced restart.
  */
 export type ApplyTiming = 'on-restart' | 'now';
 
 /**
  * Coerce a raw version string (possibly `v`-prefixed) to a valid semver string,
  * or `null` if it cannot be parsed. `semver.valid` rejects `v0.1.2`; `coerce`
- * tolerates it — but `coerce` is lossy on prerelease tags, so we try `valid`
+ * tolerates it â€” but `coerce` is lossy on prerelease tags, so we try `valid`
  * (after stripping a leading `v`) first and only fall back to `coerce`.
  */
 function clean(raw: string): string | null {
@@ -65,14 +65,14 @@ function baseDiff(from: string, to: string): 'major' | 'minor' | 'patch' | null 
   if (!d) return null;
   if (d.endsWith('major')) return 'major';
   if (d.endsWith('minor')) return 'minor';
-  // patch, prepatch, prerelease → treat as patch-level movement.
+  // patch, prepatch, prerelease â†’ treat as patch-level movement.
   return 'patch';
 }
 
 /**
  * Derive the update level from the installed `current` vs the available
  * `latest`. Returns `none` for equal versions, downgrades, or anything that
- * fails to parse (defensive — a malformed remote version must never trigger a
+ * fails to parse (defensive â€” a malformed remote version must never trigger a
  * silent mandatory download).
  */
 export function deriveLevel(current: string, latest: string): UpdateLevel {
@@ -142,7 +142,7 @@ export function normalizeApply(raw: unknown): ApplyTiming {
 /**
  * Decide whether to show a post-update "what's new" popup as a FALLBACK, when
  * there is no stashed `pending` record matching the current version. We only
- * surface the fallback for a patch-only forward bump — minor/major bumps showed
+ * surface the fallback for a patch-only forward bump â€” minor/major bumps showed
  * their changelog up front (optional flow), so re-showing would be redundant.
  *
  * `lastSeen` is the version recorded on the previous launch; `cur` is
@@ -162,7 +162,7 @@ export function shouldShowWhatsNew(lastSeen: string | null, cur: string): boolea
  * A git tag is PUBLIC the moment it is pushed, and GitHub's `releases.atom`
  * (which electron-updater's GitHubProvider reads when `allowPrerelease` is on,
  * instead of the API) lists tags that have no published release. A draft
- * release is invisible, but its TAG is not — so between `git push --tags` and
+ * release is invisible, but its TAG is not â€” so between `git push --tags` and
  * publishing, the draft's tag is the newest feed entry, and every channel-file
  * request against it 404s because draft assets are not downloadable. Same shape
  * when a tag is pushed before its build finishes, or when the build fails.
@@ -171,7 +171,7 @@ export function shouldShowWhatsNew(lastSeen: string | null, cur: string): boolea
  * client reported "check failed" for the whole window.
  *
  * Note this reports "up to date" rather than falling back to the newest tag
- * that DOES have assets — reproducing the provider's feed walk is not worth it
+ * that DOES have assets â€” reproducing the provider's feed walk is not worth it
  * for a transient state. A published release genuinely missing its `.yml` would
  * also land here, so callers should log it.
  */
@@ -198,3 +198,7 @@ export function isPrereleaseVersion(version: string): boolean {
   const v = semver.valid(semver.clean(version) ?? version);
   return v !== null && semver.prerelease(v) !== null;
 }
+
+
+
+

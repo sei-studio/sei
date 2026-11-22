@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CompanionLine (261004): the companion saying one short line, with their
  * portrait and a speech bubble. It fronts the "hop in, i'll be watching"
  * wait on the call (ShareWaiting), so that screen reads as the companion
@@ -113,3 +113,7 @@ export function CompanionLine({
     </div>
   );
 }
+
+
+
+

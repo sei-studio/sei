@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The SeiLink first-link intro's memory (261105, T337): it plays once per
  * account, on the first move-in that works, and "Replay WorldLink intro" in the
  * companion menu plays it again on demand.
@@ -46,3 +46,7 @@ export function markIntroSeen(): void {
 export function shouldPlayFirstLink(input: { seen: boolean; failedStart?: boolean }): boolean {
   return !input.seen && input.failedStart !== true;
 }
+
+
+
+

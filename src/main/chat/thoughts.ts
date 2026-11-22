@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Thought steering seam (main process).
  *
  * A "thought" is a natural-language string queued per character and folded into
@@ -128,3 +128,7 @@ export function thoughtFirstMoment(primary: 'chess' | 'minecraft' | 'backseat'):
     'A button to start it will appear under your message, so you do not need to explain where to click.'
   );
 }
+
+
+
+

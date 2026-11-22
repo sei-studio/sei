@@ -1,12 +1,12 @@
-/**
- * Backseat streaming STT (260728) — the glue between the normalized PCM feed
+﻿/**
+ * Backseat streaming STT (260728) â€” the glue between the normalized PCM feed
  * and the transcript ring.
  *
  * Reuses the EXACT Whisper worker voice calls ship (voice/whisperWorker.ts):
  * same model, same browser-cache download, same noise-hallucination filter. If
  * the player has ever made a voice call, the model is already on disk and this
  * costs nothing to start; if not, the first backseat session downloads ~40MB
- * once, in the background, and transcripts simply begin when it is ready —
+ * once, in the background, and transcripts simply begin when it is ready â€”
  * a session is fully functional (video + gain) before and without STT.
  *
  * Policy lives in transcriptRing.ts (tested); this file owns the worker, the
@@ -15,7 +15,7 @@
  *   push()            accumulate 16 kHz mono PCM. When a full STT_CHUNK_MS is
  *                     pending and the worker is idle, transcribe it. Chunks
  *                     whose energy sits at the noise floor skip the worker
- *                     entirely — most game audio without speech costs nothing.
+ *                     entirely â€” most game audio without speech costs nothing.
  *   tickTranscript()  what a tick calls: flush the in-progress tail through
  *                     Whisper (bounded by STT_FLUSH_WAIT_MS, the spec's "wait
  *                     a few milliseconds for the stt to catch up"), then
@@ -69,7 +69,7 @@ export interface SttStream {
    *  Resolves '' when there is no audio, no speech, or no model yet. */
   tickTranscript(): Promise<string>;
   /** Echo gate (260807): every segment overlapping [t0, t1], joined. Reads
-   *  what has been chewed so far — no flush, no cap; the gate compares words,
+   *  what has been chewed so far â€” no flush, no cap; the gate compares words,
    *  it does not ship them to a model. */
   textAround(t0: number, t1: number): string;
   /**
@@ -115,7 +115,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
         return;
       }
       if (msg.type === 'init-error') {
-        // No model, no transcripts — the session stays fully functional.
+        // No model, no transcripts â€” the session stays fully functional.
         console.warn(`[sei] backseat stt unavailable: ${msg.message}`);
         failWorker('init-error', false);
         return;
@@ -355,3 +355,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
     },
   };
 }
+
+
+
+

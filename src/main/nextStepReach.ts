@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which session ends get the "next time" check (261107, O2 reach). Pure, so
  * the routing is pinned in nextStepReach.test.ts; index.ts applies it.
  *
@@ -64,3 +64,7 @@ export function mainClosedCallRoute(p: {
   // account_switch, renderer_gone, renderer_reload: not the player leaving.
   return { kind: 'report', outcome: 'not_covered' };
 }
+
+
+
+

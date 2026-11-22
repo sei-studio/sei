@@ -1,13 +1,13 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { readFileSync } from 'fs'
 
-// Brain-side config — game-agnostic. The persona, anthropic, llm, and memory
+// Brain-side config â€” game-agnostic. The persona, anthropic, llm, and memory
 // branches live here; game-specific fields nest under `adapter.<kind>.*`.
 //
 // The top-level fields `host`, `port`, `auth`, `username`,
 // `minecraft_version`, `pathfinder_timeout_ms`, `follow_range` are under
 // `adapter.minecraft.*` (not top-level). No backwards-compat shim is provided
-// per CLAUDE.md — existing config.json files MUST be updated (the CLI's `sei
+// per CLAUDE.md â€” existing config.json files MUST be updated (the CLI's `sei
 // config` flow will rewrite them when re-run, or the loader auto-migrates
 // legacy top-level keys at parse time below).
 
@@ -23,15 +23,15 @@ const MinecraftAdapterSchema = z.object({
   reconnect_delay_ms: z.number().int().min(0).default(5000),
   pathfinder_timeout_ms: z.number().int().min(1000).default(12000),
   follow_range: z.number().int().min(1).default(3),
-  // Leading-edge throttle window for combat-hit → sei:attacked emission. The
+  // Leading-edge throttle window for combat-hit â†’ sei:attacked emission. The
   // FIRST hit fires a reaction immediately; further hits within the window are
   // suppressed so a sustained beating (mob hits land every ~250-500ms) does not
   // re-fire the LLM faster than it can answer. Must comfortably exceed typical
   // Haiku round-trip (~1.5-3s) or every attack reaction gets preempt-aborted
-  // before it can speak/act — the combat livelock (Sui frozen + silent while
+  // before it can speak/act â€” the combat livelock (Sui frozen + silent while
   // taking damage) seen in the 2026-06-19 playlogs. 0 disables (test escape).
   attack_react_throttle_ms: z.number().int().min(0).default(3500),
-  // 260730 — defending the owner. Until this, entityHurt was ignored unless the
+  // 260730 â€” defending the owner. Until this, entityHurt was ignored unless the
   // BOT was the one hurt, so a player being swarmed produced no event and no
   // help; the companion only found out if the player said so out loud. That is
   // the "why is Sui never pulling any aggro" report: hostile targeting picks
@@ -44,7 +44,7 @@ const MinecraftAdapterSchema = z.object({
   // ours and walking in would only drag more of the world along.
   defend_owner: z.boolean().default(true),
   defend_radius_blocks: z.number().min(0).default(16),
-  // 261012 — the owner-threat watch (combat.js). The defend engagement above
+  // 261012 â€” the owner-threat watch (combat.js). The defend engagement above
   // starts only once a mob has HIT the owner; at low health that is too late
   // (quality eval protect_player: a 10 hp player and two zombies, the
   // companion walked over to stand beside them and the second zombie killed
@@ -56,7 +56,7 @@ const MinecraftAdapterSchema = z.object({
   owner_threat_radius_blocks: z.number().min(0).default(12),
   // Reflex evasion micro-controller (Phase 17, D-05). A ~20 Hz physicsTick
   // survival loop (behaviors/reflex.js) that evades incoming damage BEFORE it
-  // lands — arrow sidestep, creeper goal-owning flee, melee circle-strafe. It
+  // lands â€” arrow sidestep, creeper goal-owning flee, melee circle-strafe. It
   // runs entirely on the adapter side (never enters fsm.js). These eight keys
   // are read via the `mc = config?.adapter?.minecraft ?? config ?? {}` slice.
   reflex_enabled: z.boolean().default(true),
@@ -67,7 +67,7 @@ const MinecraftAdapterSchema = z.object({
   // shoot range) and react to any incoming arrow ray regardless of distance.
   arrow_watch_blocks: z.number().int().min(0).default(16),
   // Closest-approach miss distance (blocks) below which an incoming arrow ray
-  // triggers a sidestep. Non-int (sub-block precision) → no `.int()`.
+  // triggers a sidestep. Non-int (sub-block precision) â†’ no `.int()`.
   arrow_miss_threshold: z.number().min(0).default(1.2),
   // Enter creeper flee at this distance (margin over the 3-block / 30-tick
   // ignite so the bot breaks contact before the fuse swells).
@@ -76,25 +76,25 @@ const MinecraftAdapterSchema = z.object({
   // gives hysteresis so the bot does not oscillate at the boundary.
   creeper_flee_exit_blocks: z.number().int().min(0).default(12),
   // Melee kite band centre (blocks): strafe to hold ~2.5-4 blocks just outside
-  // a melee mob's reach. Non-int → no `.int()`.
+  // a melee mob's reach. Non-int â†’ no `.int()`.
   melee_kite_blocks: z.number().min(0).default(4.5),
   // Reflex sight cone (degrees, TOTAL width) around the bot's head-look
-  // direction (yaw+pitch — the head, not body facing). Threats outside the
+  // direction (yaw+pitch â€” the head, not body facing). Threats outside the
   // cone never trigger a reflex, matching a human player who cannot react to
-  // a mob behind them. 120° ≈ the default Minecraft screen plus a little
+  // a mob behind them. 120Â° â‰ˆ the default Minecraft screen plus a little
   // peripheral. Exception: a fusing creeper (the audible hiss) panics at any
   // facing. 360 disables the gate.
   reflex_fov_deg: z.number().min(0).max(360).default(120),
   // Head-look ("gaze", behaviors/gaze.js): cosmetic, LLM-uninvolved tracking of
-  // the owner — full yaw+pitch when idle and within range, pitch-only tracking
+  // the owner â€” full yaw+pitch when idle and within range, pitch-only tracking
   // while moving toward them (follow/goTo) so the pathfinder keeps yaw.
   gaze_enabled: z.boolean().default(true),
   // Idle gaze range (blocks). 96 = 6 chunks per the feature request.
   gaze_range_blocks: z.number().int().min(0).default(96),
   // Re-aim cadence (ms) for the gaze controller's plain interval loop. Cosmetic
-  // head movement only — no need for reflex.js's ~20 Hz physicsTick cost.
+  // head movement only â€” no need for reflex.js's ~20 Hz physicsTick cost.
   gaze_tick_ms: z.number().int().min(0).default(250),
-  // ── Survival micro-controllers (behaviors/survival.js) ──────────────────
+  // â”€â”€ Survival micro-controllers (behaviors/survival.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // A second ~20 Hz physicsTick loop, sibling of the reflex loop, covering the
   // two failure modes reflex.js does NOT: automatic drowning swim-up and a
   // critical-HP flee. Owns its own goal-ownership flags (bot._seiSurvivalActive
@@ -110,7 +110,7 @@ const MinecraftAdapterSchema = z.object({
   // Critical-HP retreat (health is 0-20). Force-flee the nearest hostile when
   // health <= enter AND a hostile is within the enter radius; keep fleeing until
   // health > exit OR no hostile remains within the (larger) exit radius.
-  // 260707: DISABLED by default — the walking flee lost to night mobs and its
+  // 260707: DISABLED by default â€” the walking flee lost to night mobs and its
   // movement mutex blocked the model's own survival calls; disengaging is now
   // an LLM decision (explore/goTo/follow, offered in the attacked prompt).
   critical_retreat_enabled: z.boolean().default(false),
@@ -118,7 +118,7 @@ const MinecraftAdapterSchema = z.object({
   critical_hp_exit: z.number().min(0).default(10),
   critical_hostile_enter_blocks: z.number().min(0).default(8),
   critical_hostile_exit_blocks: z.number().min(0).default(16),
-  // GoalInvert(GoalFollow(mob, N)) flee radius — how far to break away to.
+  // GoalInvert(GoalFollow(mob, N)) flee radius â€” how far to break away to.
   critical_flee_range: z.number().min(0).default(14),
   // Player-knockback stagger window (ms). When a PLAYER hits the bot, combat.js
   // opens this window during which reflex.js, follow.js, and attack.js pursuit
@@ -217,10 +217,10 @@ const AdapterSchema = z.object({
 })
 
 // The full set of provider kinds the bot factory can run (see
-// src/bot/brain/llm/index.js SUPPORTED_PROVIDERS — same members). Exported so
+// src/bot/brain/llm/index.js SUPPORTED_PROVIDERS â€” same members). Exported so
 // the init-payload mapper (llmInit.js) can validate a provider shipped by main
 // without importing the whole schema. Deliberately duplicated from
-// src/shared/llmCatalog.ts — this process cannot import shared TS; llmCatalog
+// src/shared/llmCatalog.ts â€” this process cannot import shared TS; llmCatalog
 // stays the documented source of truth for what the UI OFFERS (its
 // SHOWN_PROVIDERS is a subset of this list; the rest are grandfathered).
 export const LLM_PROVIDER_KINDS = [
@@ -230,8 +230,8 @@ export const LLM_PROVIDER_KINDS = [
 ]
 
 const ConfigObjectSchema = z.object({
-  // chat_mode: 'chat' (default) — only `say()` lines reach Minecraft chat.
-  // 'full' — assistant `text` (private scratch) ALSO reaches chat with a
+  // chat_mode: 'chat' (default) â€” only `say()` lines reach Minecraft chat.
+  // 'full' â€” assistant `text` (private scratch) ALSO reaches chat with a
   // `[think] ` prefix so the player can watch the bot's reasoning in real
   // time. Default keeps existing config.json files (which lack the field)
   // on the prior behavior.
@@ -239,22 +239,22 @@ const ConfigObjectSchema = z.object({
   // "Realistic typing" (Appearance & feel toggle, bridged from
   // UserConfig.realistic_typing by botSupervisor). When true, the bot pauses to
   // "read" the player's message (scaled to its length) before replying, then
-  // staggers the say() line as if typing it (scaled to the say length) — the
+  // staggers the say() line as if typing it (scaled to the say length) â€” the
   // same pacing as the in-app chat. Default true; the CLI/standalone path
   // inherits it when config.json omits the field.
   realistic_typing: z.boolean().default(true),
   // 260709: conversation language (bridged from UserConfig.chat_language by
-  // botSupervisor → init payload → bot/index.js). Selects the # LANGUAGE
+  // botSupervisor â†’ init payload â†’ bot/index.js). Selects the # LANGUAGE
   // directive appended to the cached system prefix (promptLibrary.js
   // renderLanguageDirective) so say() lines land in the player's language.
-  // 'en' renders nothing — existing sessions are byte-for-byte unchanged.
+  // 'en' renders nothing â€” existing sessions are byte-for-byte unchanged.
   // Keep the enum in sync with CHAT_LANGUAGES in src/shared/chatLanguage.ts
   // (this process cannot import that TS module).
   chat_language: z.enum(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']).default('en'),
   player_username: z.string(),
   // Human label for the world this session joins (Minecraft: the LAN MOTD /
   // level name; Stardew: the farm name; DST: the cluster name), used by the
-  // world registry / MEMORY.md section headers. Optional — the adapter's
+  // world registry / MEMORY.md section headers. Optional â€” the adapter's
   // getWorldIdentity() falls back to its own label when absent. 260908: was
   // `lan_motd`; the legacy key is hoisted into this one at parse time below.
   world_label: z.string().nullable().default(null),
@@ -262,18 +262,18 @@ const ConfigObjectSchema = z.object({
   // and convo memory in place of the raw MC username so the bot never speaks
   // the player's gamertag. Falls back to player_username when empty.
   player_display_name: z.string().default(''),
-  // 260516-0yw: `backstory` retired in favor of `expanded` — the LLM-generated
+  // 260516-0yw: `backstory` retired in favor of `expanded` â€” the LLM-generated
   // long-form persona prompt produced at character-save time by
   // src/main/personaExpansion.ts. No backwards-compat shim (per CLAUDE.md
-  // "no backwards-compat hacks") — configs missing `persona.expanded` will
+  // "no backwards-compat hacks") â€” configs missing `persona.expanded` will
   // fail Zod parsing explicitly so the user re-saves the character in the GUI.
   persona: z.object({
     name: z.string().min(1),
     expanded: z.string(),
-    // Author-set proactiveness dial (0–2: Passive / Reactive / Agentic).
+    // Author-set proactiveness dial (0â€“2: Passive / Reactive / Agentic).
     // Drives a shared leveled directive injected into the heartbeat block each
     // loop (see prompts.js PROACTIVENESS_DIRECTIVES), the idle-tick CADENCE
-    // (IDLE_CADENCE_MS — 10min / 1min / 5s), AND the UI bar. Distinct from
+    // (IDLE_CADENCE_MS â€” 10min / 1min / 5s), AND the UI bar. Distinct from
     // goal-completion: a Passive bot still executes accepted standing orders to
     // completion, it just never initiates. Default 1 (Reactive) so configs
     // predating the dial behave sensibly. Legacy value 3 (old "Driven") is
@@ -282,7 +282,7 @@ const ConfigObjectSchema = z.object({
     // 260705: texting punctuation register (character.metadata.punctuation).
     // 'casual' = normal modern texting, trailing periods stripped per message
     // (most characters). 'deliberate' = sentences keep their full stops (flat,
-    // measured — e.g. Marv). Drives PUNCTUATION_DIRECTIVES in the cached
+    // measured â€” e.g. Marv). Drives PUNCTUATION_DIRECTIVES in the cached
     // system prefix AND the splitChatMessages trailing-period behavior.
     punctuation: z.enum(['casual', 'deliberate']).default('casual'),
     // 260730: per-character language pin (character.metadata.language,
@@ -308,7 +308,7 @@ const ConfigObjectSchema = z.object({
     // (llmCatalogSync.test.js keeps them equal). anthropicClient sends Haiku 5
     // requests with thinking disabled (llm/anthropicModelDefaults.js).
     model: z.string().default('claude-haiku-5-5'),
-    // 260610: 20s → 12s. This budget is the player-visible worst-case
+    // 260610: 20s â†’ 12s. This budget is the player-visible worst-case
     // silence when the backend misbehaves (healthy calls run 1-3s; a slow
     // first call with a full cache write plus anthropicClient's one capped
     // rescue retry still fits comfortably).
@@ -346,7 +346,7 @@ const ConfigObjectSchema = z.object({
     // so configs predating this phase still boot unchanged. The Anthropic
     // path also covers the Sei cloud proxy (`anthropic.cloudMode`).
     //
-    // 260816 (china-compat): + 'qwen'. Grandfathering is a UI concern —
+    // 260816 (china-compat): + 'qwen'. Grandfathering is a UI concern â€”
     // mistral/together/groq/fireworks/cerebras/perplexity are no longer
     // OFFERED by the picker (src/shared/llmCatalog.ts SHOWN_PROVIDERS) but
     // stay in this enum and in the factory so a config already set to one
@@ -356,23 +356,23 @@ const ConfigObjectSchema = z.object({
     // be populated; the others can stay default-empty.
     //
     // 260828: the default model strings below MIRROR src/shared/llmCatalog.ts
-    // DEFAULT_MODELS — the single source of truth (this process cannot import
+    // DEFAULT_MODELS â€” the single source of truth (this process cannot import
     // shared TS, so the values are duplicated by hand). They had drifted
     // (gpt-4o-mini vs gpt-5-mini, grok-2-latest vs grok-4, gemini-2.0 vs 2.5,
-    // and openrouter's 'anthropic/claude-haiku-4-5' — the dash form is not a
+    // and openrouter's 'anthropic/claude-haiku-4-5' â€” the dash form is not a
     // real OpenRouter slug). src/bot/llmCatalogSync.test.js asserts the two
     // tables agree so they cannot drift again; change models in the catalog
-    // FIRST, then here. (qwen deliberately stays 'qwen-plus' in both — an old
+    // FIRST, then here. (qwen deliberately stays 'qwen-plus' in both â€” an old
     // plan said qwen3-max, superseded.)
     providers: z.object({
       openai:     z.object({ api_key: z.string().default(''), model: z.string().default('gpt-5-mini'),                                        base_url: z.string().url().optional() }).default({}),
       gemini:     z.object({ api_key: z.string().default(''), model: z.string().default('gemini-2.5-flash'),                                  base_url: z.string().url().optional() }).default({}),
       grok:       z.object({ api_key: z.string().default(''), model: z.string().default('grok-4'),                                            base_url: z.string().url().optional() }).default({}),
       openrouter: z.object({ api_key: z.string().default(''), model: z.string().default('anthropic/claude-haiku-4.5'),                        base_url: z.string().url().optional() }).default({}),
-      // 260816: 'deepseek-chat' alias discontinued 2026-07-24 → deepseek-v4-flash.
+      // 260816: 'deepseek-chat' alias discontinued 2026-07-24 â†’ deepseek-v4-flash.
       deepseek:   z.object({ api_key: z.string().default(''), model: z.string().default('deepseek-v4-flash'),                                 base_url: z.string().url().optional() }).default({}),
       // 260816: Alibaba DashScope compatible mode. Default base URL lives in
-      // the factory (src/bot/brain/llm/index.js BASE_URLS → the CN endpoint);
+      // the factory (src/bot/brain/llm/index.js BASE_URLS â†’ the CN endpoint);
       // international accounts override base_url via provider_config.
       qwen:       z.object({ api_key: z.string().default(''), model: z.string().default('qwen-plus'),                                         base_url: z.string().url().optional() }).default({}),
       mistral:    z.object({ api_key: z.string().default(''), model: z.string().default('mistral-large-latest'),                              base_url: z.string().url().optional() }).default({}),
@@ -406,8 +406,8 @@ const ConfigObjectSchema = z.object({
     worlds_json_path: z.string().default('./memory/worlds.json'),
     // Per-loop tool-use chain bound. This is a RUNAWAY BACKSTOP, not an
     // execution budget: a single dispatch (chat / idle / action-complete) may
-    // chain this many LLM turns — including the 10s action-tick monitors that
-    // fire while a long-runner is suspended — before being force-closed. 30 was
+    // chain this many LLM turns â€” including the 10s action-tick monitors that
+    // fire while a long-runner is suspended â€” before being force-closed. 30 was
     // far too low for genuine agentic play (a long gather alone ticks ~6/min, so
     // a multi-step burst hit it routinely); raised to an effectively-unlimited
     // backstop that only trips on a true infinite spin. Set to 0 to disable the
@@ -434,18 +434,18 @@ const ConfigObjectSchema = z.object({
   // stance).
   //
   // mode is the user-facing Looking tier:
-  //   'off'        — no pictures; the look tool is not registered.
-  //   'on-demand'  — the model can call look()/explore(); no automatic views.
-  //   'continuous' — on-demand PLUS an automatic view rides an existing LLM turn
+  //   'off'        â€” no pictures; the look tool is not registered.
+  //   'on-demand'  â€” the model can call look()/explore(); no automatic views.
+  //   'continuous' â€” on-demand PLUS an automatic view rides an existing LLM turn
   //                  on a fixed cadence (_PASSIVE_FRAME_INTERVAL_TURNS in the
   //                  orchestrator). Legacy 'passive'/'active' collapse to this.
   //
-  // resolution_px is the SINGLE enforcement point of VIS-06's 512×512 ceiling:
+  // resolution_px is the SINGLE enforcement point of VIS-06's 512Ã—512 ceiling:
   // `.max(512)` here means ConfigSchema.parse REJECTS any larger value, and the
   // downscale/JPEG-encode path (15-01/15-04) reads this cap, so no render can
-  // ever exceed it. Default 256 (D-03: aggressive downscale — the model only
+  // ever exceed it. Default 256 (D-03: aggressive downscale â€” the model only
   // needs general shapes, not detail). 260705: the old explicit_cap_per_hour
-  // knob was removed along with the proxy's vision_hourly gate — explicit
+  // knob was removed along with the proxy's vision_hourly gate â€” explicit
   // renders are metered by the credit ledger like any other turn (existing
   // config.json files carrying the key still parse; Zod strips unknown keys).
   vision: z.object({
@@ -454,7 +454,7 @@ const ConfigObjectSchema = z.object({
       z.enum(['off', 'on-demand', 'continuous']),
     ).default('on-demand'),
     image_quality: z.number().min(0.1).max(1).default(0.4),          // "image quality" (D-03)
-    resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 ≤512 HARD CEILING
+    resolution_px: z.number().int().min(64).max(512).default(256),   // D-03 ~256; VIS-06 â‰¤512 HARD CEILING
   }).default({}),
   // 260909: web access for the brain (search + visit tools, src/bot/web).
   // `enabled:false` withholds both tools from the tool list entirely.
@@ -512,7 +512,7 @@ export const ConfigSchema = z.preprocess(hoistLegacyWorldLabel, ConfigObjectSche
 /**
  * Hoist legacy top-level minecraft fields into adapter.minecraft.* if the
  * caller hasn't already supplied an `adapter` object. This is NOT a
- * backwards-compat shim — it is a one-shot migration applied at parse time
+ * backwards-compat shim â€” it is a one-shot migration applied at parse time
  * so the first run after upgrade still boots. The CLI's `sei config` flow
  * is expected to rewrite config.json with the new shape on next save.
  */
@@ -552,3 +552,7 @@ export function loadConfig(path = './config.json', overrides = {}) {
   }
   return ConfigSchema.parse(raw)
 }
+
+
+
+

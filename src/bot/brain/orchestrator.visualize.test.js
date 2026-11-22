@@ -1,16 +1,16 @@
-// src/bot/brain/orchestrator.visualize.test.js
+﻿// src/bot/brain/orchestrator.visualize.test.js
 //
-// 15-06 coverage — wiring the rendered frame back to the LLM (VIS-02) + routing
+// 15-06 coverage â€” wiring the rendered frame back to the LLM (VIS-02) + routing
 // the post-explicit-visualize turn through the proxy vision-cap path (VIS-07/D-09).
 //
 // These tests drive a REAL orchestrator with a scripted LLM provider + a mock
 // adapter whose `visualize` action returns the exact 15-04 contract shape. They
 // assert the three audit hazards are resolved end-to-end:
-//   H1 — visualize settles via handleActionComplete (the short-lived path).
-//   H2 — the structured { text, image } result NEVER leaks base64 into the
+//   H1 â€” visualize settles via handleActionComplete (the short-lived path).
+//   H2 â€” the structured { text, image } result NEVER leaks base64 into the
 //        tool_result content, into lastActionResult (snapshot last_action_result),
 //        or into conversation history; the image rides a FRESH user turn instead.
-//   H3 — exactly the ONE post-visualize turn routes via /vision/v1/messages in
+//   H3 â€” exactly the ONE post-visualize turn routes via /vision/v1/messages in
 //        cloud mode; BYOK/local turns do NOT; idle never arms the flag.
 
 import os from 'node:os'
@@ -98,7 +98,7 @@ const chat = (text) => ({ text, username: 'Steve', playerSpoke: true, ts: Date.n
 const SUCCESS = { text: 'rendered view attached', image: { mediaType: 'image/jpeg', dataBase64: B64 } }
 
 // Build an orchestrator whose re-enqueued events (e.g. the long-runner settle's
-// sei:action_complete) are drained back into handleDispatch — mirroring the
+// sei:action_complete) are drained back into handleDispatch â€” mirroring the
 // real brain's FSM priority queue. `runTurn` dispatches one event and drives
 // the loop to quiescence (settle -> action_complete -> next personality turn).
 function makeOrch({ adapter, config, provider }) {
@@ -121,14 +121,14 @@ function makeOrch({ adapter, config, provider }) {
   return { orch, runTurn }
 }
 
-describe('15-06 explicit visualize — frame delivery + vision-path routing', () => {
+describe('15-06 explicit visualize â€” frame delivery + vision-path routing', () => {
   it('attaches the frame as a FRESH user image turn and routes the post-visualize turn to /vision (cloud)', async () => {
     _setTickIntervalForTests(10_000_000) // park the 10s auto-tick
     const { adapter, captured } = makeAdapter(SUCCESS)
     const provider = makeProvider([
       // Call 1 (fresh loop): the model invokes `visualize`.
       { text: '', toolUses: [{ id: 'vu1', name: 'visualize', input: {} }] },
-      // Call 2 (post-visualize turn): text-only reply → loop terminates.
+      // Call 2 (post-visualize turn): text-only reply â†’ loop terminates.
       { text: 'i see a forest', toolUses: [] },
     ])
     const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
@@ -149,7 +149,7 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     const msgs = provider.calls[1].messages
     const flat = JSON.stringify(msgs)
     expect(flat).toContain('"type":"image"')
-    expect(flat).toContain(B64) // the base64 IS present — but only in the image block
+    expect(flat).toContain(B64) // the base64 IS present â€” but only in the image block
 
     // Locate the image block and assert it lives on a user turn, not a tool_result.
     let imageOnUserTurn = false
@@ -178,20 +178,20 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     // string (JSON-escaped quotes inside the flattened payload).
     expect(flat).toContain('last_action_result=\\"rendered view attached\\"')
     expect(flat).not.toContain(`last_action_result=\\"${B64}`)
-    // The ONLY place base64 appears is the image block's `data` — never a
+    // The ONLY place base64 appears is the image block's `data` â€” never a
     // snapshot line or a tool_result. (Count: exactly one occurrence.)
     const occurrences = flat.split(B64).length - 1
     expect(occurrences).toBe(1)
   })
 
-  it('does NOT route to /vision in BYOK/local mode (no cloudMode) — D-11 uncapped', async () => {
+  it('does NOT route to /vision in BYOK/local mode (no cloudMode) â€” D-11 uncapped', async () => {
     _setTickIntervalForTests(10_000_000)
     const { adapter } = makeAdapter(SUCCESS)
     const provider = makeProvider([
       { text: '', toolUses: [{ id: 'vu1', name: 'visualize', input: {} }] },
       { text: 'nice view', toolUses: [] },
     ])
-    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: false }), provider }) // BYOK/local — no cloudMode
+    const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: false }), provider }) // BYOK/local â€” no cloudMode
 
     await runTurn('sei:chat_received', chat('look around'))
 
@@ -237,8 +237,8 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     const provider = makeProvider([
       // Loop A call 1: the model invokes `visualize` (render succeeds, frame attaches).
       { text: '', toolUses: [{ id: 'vu1', name: 'visualize', input: {} }] },
-      // Loop A call 2 (post-visualize continuation): transport dies — the
-      // 404→502 chain shape. The frame was attached but NEVER delivered.
+      // Loop A call 2 (post-visualize continuation): transport dies â€” the
+      // 404â†’502 chain shape. The frame was attached but NEVER delivered.
       () => { const e = new Error('502 origin_bad_gateway'); e.status = 502; throw e },
       // Loop B call 3: plain reply (a spoken one: a text-only answer to a
       // player line would get the 261011 unanswered retry).
@@ -246,14 +246,14 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     ])
     const { runTurn } = makeOrch({ adapter, config: makeConfig({ cloud: true }), provider })
 
-    await runTurn('sei:chat_received', chat('look around')) // loop A: attach → continuation dies
+    await runTurn('sei:chat_received', chat('look around')) // loop A: attach â†’ continuation dies
     await runTurn('sei:chat_received', chat('thoughts?'))   // loop B: fresh loop
 
     expect(provider.calls.length).toBe(3)
     const flat = JSON.stringify(provider.calls[2].messages)
-    // Honest snapshot: the model is told the view never arrived — NOT
+    // Honest snapshot: the model is told the view never arrived â€” NOT
     // "rendered view attached" (which made it confabulate scenery on 260610).
-    expect(flat).toContain('last_action_result=\\"view not delivered (connection trouble) — a fresh look is queued\\"')
+    expect(flat).toContain('last_action_result=\\"view not delivered (connection trouble) â€” a fresh look is queued\\"')
     expect(flat).not.toContain('last_action_result=\\"rendered view attached\\"')
     // Cadence re-armed: loop B's FIRST turn carries a FRESH automatic view
     // (an un-re-armed counter sits at 0 after the visualize attach and would
@@ -278,6 +278,10 @@ describe('15-06 explicit visualize — frame delivery + vision-path routing', ()
     expect(provider.calls.length).toBe(3)
     expect(provider.calls[0].path).toBeUndefined()        // initial turn
     expect(provider.calls[1].path).toBe(VISION_MESSAGES_PATH) // the ONE post-visualize turn
-    expect(provider.calls[2].path).toBeUndefined()        // reverted — flag consumed
+    expect(provider.calls[2].path).toBeUndefined()        // reverted â€” flag consumed
   })
 })
+
+
+
+

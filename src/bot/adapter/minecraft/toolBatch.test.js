@@ -1,4 +1,4 @@
-// Game-adapters M0 (260908): the three Minecraft batch rules that moved out of
+﻿// Game-adapters M0 (260908): the three Minecraft batch rules that moved out of
 // the orchestrator (dig cap, follow+attackEntity collapse, cant_reach dedup).
 import { describe, it, expect } from 'vitest'
 import { prefilterToolBatch, postProcessToolBatch } from './toolBatch.js'
@@ -51,3 +51,7 @@ describe('postProcessToolBatch', () => {
     expect(postProcessToolBatch(uses, results, loopState, nudge)).toEqual({ nudge: null })
   })
 })
+
+
+
+

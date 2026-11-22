@@ -1,4 +1,4 @@
-# Playtime page (261110)
+﻿# Playtime page (261110)
 
 The rail's star opens **Playtime** (`view.kind === 'credits'`,
 `screens/PlaytimeScreen.tsx`). It holds every AI, model and voice choice the
@@ -149,3 +149,7 @@ All through `sei.track`; `main/analytics.ts` files them under the `credits` surf
 - Tests: `shared/llmUsage.test.ts`, `main/usage/llmUsageLedger.test.ts`,
   `lib/playtimeTabs.test.ts`, `lib/playtimeDeepLinks.test.ts`, and the
   moved contracts in `screens/SettingsScreen.test.tsx`.
+
+
+
+

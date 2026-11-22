@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for the local-setup wizard's pure helpers (260817, china-compat W6)
  * plus the zh dictionary coverage of the wizard's new strings.
  */
@@ -62,7 +62,7 @@ describe('packsTotalBytes', () => {
 
 describe('packsPct', () => {
   it('weights progress by archive bytes', () => {
-    // 100-byte pack ready (100%), 300-byte pack at 0% → 25% overall.
+    // 100-byte pack ready (100%), 300-byte pack at 0% â†’ 25% overall.
     const packs = { a: push('ready', 100), b: push('downloading', 300, 0) };
     expect(packsPct(['a', 'b'], packs)).toBe(25);
   });
@@ -140,7 +140,7 @@ describe('key-step probe (260817)', () => {
     expect(keyProbeVerdict('anthropic', 'network')).toBe('unreachable');
     expect(keyProbeVerdict('qwen', 'timeout')).toBe('unreachable');
   });
-  it('ambiguous tokens pass through — not a key problem, the model step Test diagnoses', () => {
+  it('ambiguous tokens pass through â€” not a key problem, the model step Test diagnoses', () => {
     expect(keyProbeVerdict('anthropic', 'http_404')).toBe('ok');
     expect(keyProbeVerdict('openrouter', 'http_402')).toBe('ok'); // valid key, no credits
     expect(keyProbeVerdict('deepseek', 'unknown')).toBe('ok');
@@ -212,7 +212,7 @@ describe('zh coverage of the wizard strings', () => {
   });
   it('no em dash in any new value (both-language rule)', () => {
     for (const [k, v] of Object.entries(ZH)) {
-      expect(v.includes('—'), `em dash in zh value for "${k}"`).toBe(false);
+      expect(v.includes('â€”'), `em dash in zh value for "${k}"`).toBe(false);
     }
   });
 });
@@ -248,3 +248,7 @@ describe('routeAfterAuthDecision (261103)', () => {
     expect(routeAfterAuthDecision('returning', null, false, true)).toBe('complete-returning');
   });
 });
+
+
+
+

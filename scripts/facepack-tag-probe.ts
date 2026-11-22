@@ -1,5 +1,5 @@
-/**
- * scripts/facepack-tag-probe.ts — does the companion lead its lines with an
+﻿/**
+ * scripts/facepack-tag-probe.ts â€” does the companion lead its lines with an
  * [expression] tag when the FACE block is in the prompt (261028, desktop
  * companion facepack pilot)?
  *
@@ -236,7 +236,7 @@ function analyze(raw: string, punctuation: 'casual' | 'deliberate', spoken: bool
   const firstSpoken = lines.find((l) => l.replace(/\[[^\]]*\]/g, '').trim());
   const leadTag = firstSpoken ? readFaceTags(firstSpoken, palette).lead : null;
   const parts = splitReplyParts(raw, punctuation, spoken, palette).filter((p) => !(spoken && isSilenceFiller(p.text)));
-  const visible = parts.map((p) => p.text).filter((t) => t && t !== '…');
+  const visible = parts.map((p) => p.text).filter((t) => t && t !== 'â€¦');
   const joined = visible.join(' ');
   const leakHit = joined.match(MOOD_WORD) ?? joined.match(/\[[^\]]*\]/);
   return {
@@ -425,8 +425,8 @@ const sd = (xs: number[]) => {
   const m = mean(xs);
   return xs.length > 1 ? Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1)) : NaN;
 };
-/** mean ± 95% CI half-width */
-const ci = (xs: number[]) => `${mean(xs).toFixed(1)} ±${((1.96 * sd(xs)) / Math.sqrt(Math.max(1, xs.length))).toFixed(1)} (n=${xs.length})`;
+/** mean Â± 95% CI half-width */
+const ci = (xs: number[]) => `${mean(xs).toFixed(1)} Â±${((1.96 * sd(xs)) / Math.sqrt(Math.max(1, xs.length))).toFixed(1)} (n=${xs.length})`;
 
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -544,3 +544,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

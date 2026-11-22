@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The guided first moment (260926), main side: chat:opened can carry
  * `firstMoment: {primary}`, which adds ONE thought to the ordinary
  * first-meeting greeting so it ends on an offer to play. Everything else about
@@ -135,7 +135,7 @@ describe('thoughtFirstMoment copy', () => {
   it('is plain model-facing text with no em or en dashes', () => {
     for (const p of ['chess', 'minecraft', 'backseat'] as const) {
       const t = thoughtFirstMoment(p);
-      expect(t).not.toMatch(/[—–]/);
+      expect(t).not.toMatch(/[â€”â€“]/);
       expect(t).toContain('button');
     }
   });
@@ -146,3 +146,7 @@ describe('thoughtFirstMoment copy', () => {
     expect(thoughtFirstMoment('minecraft')).toContain('Minecraft world');
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/pickup.js — `pickup` action.
+﻿// src/bot/adapter/minecraft/behaviors/pickup.js â€” `pickup` action.
 //
 // 261011: there was no way to pick up dropped items on purpose. In the
 // combat_night quality run she died, her stone sword and food lay a few
@@ -157,3 +157,7 @@ export async function pickupAction(args, bot, config, _deps) {
   }
   return `could not pick up the ${what} (walked to ${seen}, nothing reached your inventory; they may be out of reach or your inventory is full)`
 }
+
+
+
+

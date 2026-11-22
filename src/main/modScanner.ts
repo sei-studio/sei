@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft mod metadata scanner (Phase quick/260518-o1k Task 1).
  *
  * Pure, network-free, subprocess-free, IPC-free scanner that reads
@@ -6,14 +6,14 @@
  * directory and decides whether the JAR's declared `minecraft` version
  * constraint is satisfied by the given target MC version.
  *
- * NO WALL-CLOCK TIMEOUT — INTENTIONAL.
+ * NO WALL-CLOCK TIMEOUT â€” INTENTIONAL.
  *
  *   CLAUDE.md's "every external call has a wall-clock timeout" rule applies to
  *   network / subprocess / IPC paths (pathfinder, Anthropic, java subprocess,
  *   fetch). This file does NONE of those. It opens a local JAR file via
  *   `yauzl.open()`, walks the ZIP central directory, reads a single entry,
  *   and parses JSON or TOML in memory. The operation is bounded by file
- *   size — modern mods are <50MB, even Pixelmon-tier modpacks are <2GB.
+ *   size â€” modern mods are <50MB, even Pixelmon-tier modpacks are <2GB.
  *
  *   If a future reader sees this and reflexively wants to add a timeout,
  *   please don't: a local-disk read does not need one, and adding one would
@@ -24,7 +24,7 @@
  *
  * Source format details:
  *   - Fabric: `fabric.mod.json` at the JAR root. JSON. `depends.minecraft`
- *     is a semver range — string OR array of strings OR omitted.
+ *     is a semver range â€” string OR array of strings OR omitted.
  *   - Forge / NeoForge: `META-INF/mods.toml`. TOML.
  *     `[[dependencies.<modId>]]` block with `modId = "minecraft"` carries
  *     `versionRange` (Maven-range syntax: `[1.20,1.21)`, `[1.16.5]`, etc.).
@@ -158,7 +158,7 @@ export function satisfiesFabric(range: string, version: string): boolean {
   if (v === '') return false;
   if (r === '' || r === '*' || r.toLowerCase() === 'any') return true;
 
-  // Normalize the version: `1.14` → `1.14.0`. Use coerce defensively.
+  // Normalize the version: `1.14` â†’ `1.14.0`. Use coerce defensively.
   const coercedV = semver.valid(v) ?? semver.coerce(v)?.version ?? v;
 
   // Try direct semver.satisfies first.
@@ -168,7 +168,7 @@ export function satisfiesFabric(range: string, version: string): boolean {
     // Range isn't a node-semver range; fall through to manual checks.
   }
 
-  // Handle bare exact-version (`1.8.9`, `1.14`) — node-semver treats `1.14`
+  // Handle bare exact-version (`1.8.9`, `1.14`) â€” node-semver treats `1.14`
   // as `>=1.14.0 <1.15.0` already via satisfies, so this is mostly for the
   // case where the range threw above. We accept the range as a prefix of
   // the version.
@@ -187,18 +187,18 @@ export function satisfiesFabric(range: string, version: string): boolean {
 /**
  * Parse a Maven version range like `[1.20,1.21)` and test it against a
  * concrete version. Supported forms:
- *   - `[a,b]`   closed on both sides — a <= v <= b
- *   - `[a,b)`   closed-open         — a <= v < b
- *   - `(a,b]`   open-closed         — a <  v <= b
- *   - `(a,b)`   open on both sides  — a <  v <  b
- *   - `[a,)`    no upper bound      — a <= v
- *   - `(,b]`    no lower bound      — v <= b
+ *   - `[a,b]`   closed on both sides â€” a <= v <= b
+ *   - `[a,b)`   closed-open         â€” a <= v < b
+ *   - `(a,b]`   open-closed         â€” a <  v <= b
+ *   - `(a,b)`   open on both sides  â€” a <  v <  b
+ *   - `[a,)`    no upper bound      â€” a <= v
+ *   - `(,b]`    no lower bound      â€” v <= b
  *   - `[a]`     exact (Maven syntactic shorthand for `[a,a]`)
- *   - `a`       bare exact          — v === a (semantically the same as [a])
+ *   - `a`       bare exact          â€” v === a (semantically the same as [a])
  *
- * Empty / `*` / `any` → true (any version).
+ * Empty / `*` / `any` â†’ true (any version).
  *
- * Comparison uses semver — Forge versions are always semver-shaped MC
+ * Comparison uses semver â€” Forge versions are always semver-shaped MC
  * releases (`1.20.1`, `1.21.4`), and node-semver's `gte / gt / lte / lt`
  * accept partial versions via coerce.
  */
@@ -229,7 +229,7 @@ export function satisfiesForgeMavenRange(range: string, version: string): boolea
     const lowInclusive = openParen === '[';
     const highInclusive = closeParen === ']';
 
-    // `[a]` — exact-version shorthand (no comma).
+    // `[a]` â€” exact-version shorthand (no comma).
     if (low && high === undefined) {
       return cmp(cv, '=', low);
     }
@@ -263,7 +263,7 @@ export function satisfiesForgeMavenRange(range: string, version: string): boolea
  * Parse just enough TOML to extract `mods.modId`, `mods.version`, and the
  * first `[[dependencies."<modId>"]]` block with `modId = "minecraft"`.
  *
- * mods.toml is small (<5KB typical) and structurally simple — top-level
+ * mods.toml is small (<5KB typical) and structurally simple â€” top-level
  * key=value pairs, single-line strings, and `[[array.of.tables]]` blocks.
  * We don't need a full TOML implementation; we only need enough to read
  * three fields.
@@ -292,7 +292,7 @@ function parseModsToml(text: string): ParsedModsToml {
     // Strip an inline `# comment`.
     let v = raw.trim();
     // Remove trailing comment if outside a quoted string.
-    // (Crude — sufficient for the simple values we extract.)
+    // (Crude â€” sufficient for the simple values we extract.)
     if (!(v.startsWith('"') || v.startsWith("'"))) {
       const hashIdx = v.indexOf('#');
       if (hashIdx >= 0) v = v.slice(0, hashIdx).trim();
@@ -329,7 +329,7 @@ function parseModsToml(text: string): ParsedModsToml {
       const name = sectionMatch[1].replace(/['"]/g, '');
       section = name;
 
-      // Track [[mods]] block — first one wins.
+      // Track [[mods]] block â€” first one wins.
       if (fullHeader.startsWith('[[') && name === 'mods') {
         firstModsBlockSeen = true;
         inMcDeps = false;
@@ -382,7 +382,7 @@ function parseModsToml(text: string): ParsedModsToml {
  *   @param targetMc Concrete MC version we're installing for, e.g. `1.21.4`.
  */
 export async function scanModJar(jarPath: string, targetMc: string): Promise<ModCompatibility> {
-  // Sanity check the path exists. ENOENT → read-error.
+  // Sanity check the path exists. ENOENT â†’ read-error.
   try {
     await fs.access(jarPath);
   } catch {
@@ -403,7 +403,7 @@ export async function scanModJar(jarPath: string, targetMc: string): Promise<Mod
     return { compatible: false, loader: null, reason: 'no-metadata' };
   }
 
-  // ── Fabric branch ─────────────────────────────────────────────────────
+  // â”€â”€ Fabric branch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (entry.name === 'fabric.mod.json') {
     let parsed: unknown;
     try {
@@ -438,7 +438,7 @@ export async function scanModJar(jarPath: string, targetMc: string): Promise<Mod
     } else if (Array.isArray(mcDep) && mcDep.length > 0 && typeof mcDep[0] === 'string') {
       declaredMc = mcDep[0];
     } else if (mcDep == null) {
-      // Mod doesn't declare an MC dependency — treat as no-metadata since we
+      // Mod doesn't declare an MC dependency â€” treat as no-metadata since we
       // can't make a compatibility decision.
       return { compatible: false, loader: null, reason: 'no-metadata', detail: 'fabric.mod.json has no depends.minecraft' };
     } else {
@@ -459,7 +459,7 @@ export async function scanModJar(jarPath: string, targetMc: string): Promise<Mod
     };
   }
 
-  // ── Forge / NeoForge branch ───────────────────────────────────────────
+  // â”€â”€ Forge / NeoForge branch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // entry.name === 'META-INF/mods.toml'
   let parsedToml: ParsedModsToml;
   try {
@@ -480,7 +480,7 @@ export async function scanModJar(jarPath: string, targetMc: string): Promise<Mod
   }
   const declaredMc = parsedToml.minecraftRange;
   if (declaredMc == null) {
-    // No minecraft dependency declared — can't decide.
+    // No minecraft dependency declared â€” can't decide.
     return { compatible: false, loader: null, reason: 'no-metadata', detail: 'mods.toml has no minecraft dependency' };
   }
 
@@ -497,3 +497,7 @@ export async function scanModJar(jarPath: string, targetMc: string): Promise<Mod
     reason: 'mc-version-mismatch',
   };
 }
+
+
+
+

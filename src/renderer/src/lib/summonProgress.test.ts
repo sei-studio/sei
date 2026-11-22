@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { connectingLabel } from './summonProgress';
 import { ZH_CHATUI as zhChatui } from './i18n/zh/chatui';
 
@@ -29,3 +29,7 @@ describe('connectingLabel', () => {
     expect(zhChatui['Joining your world...']).toBeTruthy();
   });
 });
+
+
+
+

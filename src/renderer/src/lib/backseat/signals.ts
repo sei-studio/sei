@@ -1,5 +1,5 @@
-/**
- * Backseat local signals (260801) — the arithmetic behind the jolt wake.
+﻿/**
+ * Backseat local signals (260801) â€” the arithmetic behind the jolt wake.
  *
  * Pure functions over explicit state, no canvases and no DOM, matching the
  * pcm.ts / transcriptRing.ts convention in this folder. captureWorker.ts owns
@@ -187,7 +187,7 @@ export function createJoltState(): JoltState {
   // means "a jolt just fired at the epoch" and silences the first
   // refractoryMs of any clock that starts near zero. Harmless in the app,
   // where `now` is Date.now(), and fatal for the offline sim's virtual clock,
-  // which starts at 0 — the kind of latent coupling to wall time that only
+  // which starts at 0 â€” the kind of latent coupling to wall time that only
   // shows up once the same code has to run in two places.
   return {
     gainTrace: [],
@@ -344,7 +344,7 @@ export function colorDelta(
 
 /** Median absolute deviation: the median distance from the median. Robust to
  *  the very outliers this is trying to detect, which a standard deviation is
- *  not — one big change would inflate sigma and hide the next one. */
+ *  not â€” one big change would inflate sigma and hide the next one. */
 export function mad(xs: number[]): number {
   if (!xs.length) return NaN;
   const m = median(xs);
@@ -447,3 +447,7 @@ export function decideJolt(
   }
   return null;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/** computeAvatarIds (260804) — the avatar overlay's mode semantics. */
+﻿/** computeAvatarIds (260804) â€” the avatar overlay's mode semantics. */
 import { describe, it, expect } from 'vitest';
 import { computeAvatarIds } from './overlayParticipants';
 
@@ -66,3 +66,7 @@ describe('computeAvatarIds', () => {
     ).toEqual([]);
   });
 });
+
+
+
+

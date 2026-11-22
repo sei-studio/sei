@@ -1,15 +1,15 @@
-/**
- * Phase 11 D-28 — Portrait validation (defense-in-depth).
+﻿/**
+ * Phase 11 D-28 â€” Portrait validation (defense-in-depth).
  *
- * Source: 11-RESEARCH §Code Example 4 + §Pattern 5.
+ * Source: 11-RESEARCH Â§Code Example 4 + Â§Pattern 5.
  * Reuses skinImageUtil's PNG IHDR parser for PNG dimension check.
  * JPEG/WebP dimensions trust the renderer canvas-resize upstream.
  *
  * Error vocabulary (renderer maps to copy):
- *   PORTRAIT_TOO_LARGE      — bytes > 500 KB
- *   PORTRAIT_TOO_SHORT      — bytes < 24
- *   PORTRAIT_BAD_MAGIC      — not PNG, JPEG, or WebP
- *   PORTRAIT_TOO_LARGE_DIM  — PNG width or height > 1024
+ *   PORTRAIT_TOO_LARGE      â€” bytes > 500 KB
+ *   PORTRAIT_TOO_SHORT      â€” bytes < 24
+ *   PORTRAIT_BAD_MAGIC      â€” not PNG, JPEG, or WebP
+ *   PORTRAIT_TOO_LARGE_DIM  â€” PNG width or height > 1024
  */
 
 import { parsePngIhdr } from './skinImageUtil';
@@ -47,3 +47,7 @@ export function validatePortrait(bytes: Buffer): { format: 'png' | 'jpeg' | 'web
   }
   return { format: isJpeg ? 'jpeg' : 'webp' };
 }
+
+
+
+

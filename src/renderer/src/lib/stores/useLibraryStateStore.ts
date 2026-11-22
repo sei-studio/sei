@@ -1,9 +1,9 @@
-/**
- * useLibraryStateStore — per-user library visibility state.
+﻿/**
+ * useLibraryStateStore â€” per-user library visibility state.
  *
  * Tracks two parallel sets keyed by character UUID:
  *   - addedDefaultIds: bundled defaults (sui/lyra/clawd) the user has invited
- *     into a Home slot (260703 procgen opt-in semantics — see below).
+ *     into a Home slot (260703 procgen opt-in semantics â€” see below).
  *   - addedWorldIds: non-default foreign-owned characters the user explicitly
  *     added from the World tab. Normally HomeGrid hides chars with
  *     owner !== currentUserId; this set opts them back in so Home reflects
@@ -25,7 +25,7 @@ import { sei } from '../ipcClient';
 interface LibraryStateStore {
   addedWorldIds: Set<string>;
   /**
-   * 260703 procgen — bundled defaults the user has EXPLICITLY invited into a
+   * 260703 procgen â€” bundled defaults the user has EXPLICITLY invited into a
    * Home slot (UserConfig.added_default_ids). Defaults now live in the World
    * tab and are hidden from Home UNLESS their id appears here. Consulted by
    * HomeGrid, IconRail, WorldGrid's "in library" pill, and CharacterPage's
@@ -55,3 +55,7 @@ export const useLibraryStateStore = create<LibraryStateStore>((set) => ({
     }
   },
 }));
+
+
+
+

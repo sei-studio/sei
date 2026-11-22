@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The feedback:submit IPC body, with its analytics (260926).
  *
  * `feedback_submitted` used to fire after every call, including the ones
@@ -60,3 +60,7 @@ export async function submitFeedbackTracked(args: FeedbackArgs, deps: FeedbackDe
   }
   return res;
 }
+
+
+
+

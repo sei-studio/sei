@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The user's own Fish Audio API key (261103), persisted with Electron
  * safeStorage exactly like elevenLabsKeyStore.ts: encrypted by the OS
  * keychain, written atomically to `<profileRoot>/fish_audio_key.bin`, and
@@ -62,3 +62,7 @@ export async function resolveFishKey(): Promise<string | null> {
     return null;
   }
 }
+
+
+
+

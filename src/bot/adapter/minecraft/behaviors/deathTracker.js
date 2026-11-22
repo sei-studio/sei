@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/deathTracker.js
+﻿// src/bot/adapter/minecraft/behaviors/deathTracker.js
 //
 // 261019 (quality pass 19): what the brain hears when she dies.
 //
@@ -167,3 +167,7 @@ export function trackDeaths(bot, opts = {}) {
     }
   }
 }
+
+
+
+

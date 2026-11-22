@@ -1,4 +1,4 @@
-// 261114 (quality pass 55): where a block or entity is, in words: "11 blocks
+﻿// 261114 (quality pass 55): where a block or entity is, in words: "11 blocks
 // southeast", "14 blocks southwest, 6 down", "right by you", plus ", by
 // Alex" when it sits within NEAR_OWNER_M of the player. The snapshot puts it
 // next to the coordinates of each listed block and entity, which stay for
@@ -42,3 +42,7 @@ export function whereFromYou(pos, selfPos, owner = null) {
   if (d > 2 && od != null && od <= NEAR_OWNER_M && owner.name) where += `, by ${owner.name}`
   return where
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first-link intro's timeline and frames (261105, T337; 261106 the
  * eclipse aurora, the plain ending, the climax into the theme's solid
  * colour; 261106 v6 the WorldLink status lines). The frames are pure, so the
@@ -523,3 +523,7 @@ describe('the success sequence (v7)', () => {
     }
   }
 });
+
+
+
+

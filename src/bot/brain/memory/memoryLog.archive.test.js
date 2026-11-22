@@ -1,4 +1,4 @@
-// src/bot/brain/memory/memoryLog.archive.test.js
+﻿// src/bot/brain/memory/memoryLog.archive.test.js
 //
 // Raw memory archive (260725): MEMORY.archive.md is a write-only mirror of
 // every entry line and world header, kept so future (better) compaction tech
@@ -30,16 +30,20 @@ describe('memory archive', () => {
     await appendMemory(file, 'ouen gave the dandelion back', '2026-07-08T04:00:35.040Z')
     const raw = await readFile(archive, 'utf8')
     expect(raw).toContain('# Memory archive')
-    expect(raw).toContain('## World 1 — plains village')
+    expect(raw).toContain('## World 1 â€” plains village')
     expect(raw).toContain('- [2026-07-08T04:00:35.040Z] ouen gave the dandelion back')
   })
 
   it('keeps forgotten lines and skips duplicate-guard rejects', async () => {
     await appendMemory(file, 'marv goes by mars now')
-    await appendMemory(file, 'marv goes by mars now') // dup — not written anywhere
+    await appendMemory(file, 'marv goes by mars now') // dup â€” not written anywhere
     await forgetMemory(file, 'mars')
     expect(await readFile(file, 'utf8')).not.toContain('mars')
     const raw = await readFile(archive, 'utf8')
     expect(raw.match(/marv goes by mars now/g)).toHaveLength(1)
   })
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * CharacterPage — a companion's profile (the "Summoning Terminal").
+﻿/**
+ * CharacterPage â€” a companion's profile (the "Summoning Terminal").
  *
  * Profile v2 (product call 261110, second pass): no long scroll, one tab of
  * a top section menu at a time, bigger type and the actions near the
@@ -35,7 +35,7 @@
  * Minecraft surface (launch panel, or the live dashboard when the bot is
  * already online) and never reflects game state.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §4.6 (frame), 261107 (rows).
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§4.6 (frame), 261107 (rows).
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -198,15 +198,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const [overview, setOverview] = useState<{ id: string; info: CharacterOverviewInfo } | null>(null);
   const [preparing, setPreparing] = useState<boolean>(false);
   // Flips true once the cache-miss mount effect has concluded (downloaded, or
-  // tried and still nothing). Distinguishes "still loading → skeleton" from
-  // "genuinely not here → not-found text" so neither state flashes the other.
+  // tried and still nothing). Distinguishes "still loading â†’ skeleton" from
+  // "genuinely not here â†’ not-found text" so neither state flashes the other.
   const [resolved, setResolved] = useState<boolean>(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   // 260703 procgen: inline failure line for the Add-to-library CTA (e.g. the
-  // main-process slot-limit backstop) — a silent no-op reads as a broken button.
+  // main-process slot-limit backstop) â€” a silent no-op reads as a broken button.
   const [addError, setAddError] = useState<string | null>(null);
   const [showSignIn, setShowSignIn] = useState<boolean>(false);
-  // 260706 — in-app report form (replaces the old mailto:dmca@sei.gg link).
+  // 260706 â€” in-app report form (replaces the old mailto:dmca@sei.gg link).
   const [showReport, setShowReport] = useState<boolean>(false);
   const [shareError, setShareError] = useState<string | null>(null);
   // The publish/unpublish modal is multi-phase: the user confirms, then the
@@ -245,7 +245,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     flowWasOpen.current = seilinkFlowOpen;
   }, [seilinkFlowOpen, bumpRefresh]);
   const [shareConfirm, setShareConfirm] = useState<'going_public' | 'going_private' | null>(null);
-  // 261019 — "Others will hear" choice in the publish confirm, shown only when
+  // 261019 â€” "Others will hear" choice in the publish confirm, shown only when
   // the voice is the author's own ElevenLabs voice. null = the close Sei
   // voice main rolls for adopters; seeded from metadata.voiceShared each time
   // the confirm opens.
@@ -266,13 +266,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setSharePhase('confirm');
     setShareConfirm('going_public');
   }, [needsDescription, savedDescription]);
-  // 260729 — full-art popup (the corner expand button over the portrait).
+  // 260729 â€” full-art popup (the corner expand button over the portrait).
   const [artOpen, setArtOpen] = useState<boolean>(false);
   const [artSaving, setArtSaving] = useState<boolean>(false);
   const [artSavedTo, setArtSavedTo] = useState<string | null>(null);
 
-  // ── Exit animation (mirror of the enter slide) ────────────────────────────
-  // The page enters with a slide (.content → detailIn) + portrait rise (.dPic →
+  // â”€â”€ Exit animation (mirror of the enter slide) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // The page enters with a slide (.content â†’ detailIn) + portrait rise (.dPic â†’
   // picRise). To play the reverse on close we keep the page mounted briefly:
   // `leaving` swaps in the *Leaving classes (detailOut / picFall), then we
   // navigate home after the animation duration. EXIT_MS must match the CSS
@@ -301,18 +301,18 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     );
   };
 
-  // ── Library-state hooks (hoisted above the early-return for stable count) ──
+  // â”€â”€ Library-state hooks (hoisted above the early-return for stable count) â”€â”€
   const addedDefaultIds = useLibraryStateStore((s) => s.addedDefaultIds);
   const addedWorldIds = useLibraryStateStore((s) => s.addedWorldIds);
   const refreshLibraryState = useLibraryStateStore((s) => s.refresh);
 
-  // ── Who this companion is to the player, and which rows / tabs it gets ──
+  // â”€â”€ Who this companion is to the player, and which rows / tabs it gets â”€â”€
   // Null-safe (the character may still be loading) so the hooks below can sit
   // above the early returns. Rules: lib/profileRows.ts.
   const currentUserId = authState.kind === 'signed_in' ? authState.user.id : null;
   const kind = character ? profileKind(character, currentUserId) : 'custom';
   const isDefault = character?.is_default === true;
-  // 260703 procgen: defaults are opt-in on Home — a default NOT in
+  // 260703 procgen: defaults are opt-in on Home â€” a default NOT in
   // added_default_ids shows "Add to library" instead of the Play CTA.
   const isRemovedDefault = !!character && isDefault && !addedDefaultIds.has(character.id);
   // A character with a cloud owner that isn't the current user is foreign /
@@ -320,7 +320,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const isForeignOwned = kind === 'world';
   const isWorldPreview = !!character && isForeignOwned && !addedWorldIds.has(character.id);
   const isAddedFromWorld = !!character && isForeignOwned && addedWorldIds.has(character.id);
-  // World-preview / removed-default entries aren't in the library yet — no
+  // World-preview / removed-default entries aren't in the library yet â€” no
   // memory to reset and nothing to release.
   const isPreview = isWorldPreview || isRemovedDefault;
   const access = profileAccess({
@@ -419,7 +419,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   useEffect(() => {
     if (character) return;
     let cancelled = false;
-    // Fresh attempt for this id — clear any prior error/resolved so a re-nav to
+    // Fresh attempt for this id â€” clear any prior error/resolved so a re-nav to
     // a different missing character shows the skeleton, not a stale not-found.
     setPrepareError(null);
     setResolved(false);
@@ -427,7 +427,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       try {
         await refreshCharacter(id);
       } catch {
-        // ignore — fall through to charsOpenPrepare
+        // ignore â€” fall through to charsOpenPrepare
       }
       if (cancelled) return;
       const stillMissing = !useDataStore.getState().characters.some((c) => c.id === id);
@@ -457,7 +457,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // or default character would otherwise never re-check the cloud. This runs
   // once per id: it asks main to refresh the local cache from cloud (no-op for
   // characters the user authors) and, if anything changed, pulls the new
-  // prompt / image / description into the store. Silent — no preparing spinner,
+  // prompt / image / description into the store. Silent â€” no preparing spinner,
   // so a stale cloud round-trip never blanks the page; the cached copy shows
   // immediately and updates in place. Memory is untouched by the main-side refresh.
   const updateCheckedRef = useRef<string | null>(null);
@@ -473,7 +473,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         if (cancelled) return;
         await refreshCharacter(id);
       } catch {
-        // offline / transient — keep showing the cached copy
+        // offline / transient â€” keep showing the cached copy
       }
     })();
     return () => {
@@ -482,10 +482,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   }, [id, refreshCharacter]);
 
   if (!character) {
-    // A download error, or a concluded attempt that turned up nothing → the
+    // A download error, or a concluded attempt that turned up nothing â†’ the
     // actionable text surface with a way home. Otherwise (first paint or a
-    // download in flight) → a wireframe skeleton so the wait reads as
-    // intentional instead of a blank flash or a bare "Downloading…" line.
+    // download in flight) â†’ a wireframe skeleton so the wait reads as
+    // intentional instead of a blank flash or a bare "Downloadingâ€¦" line.
     if (prepareError || (resolved && !preparing)) {
       return (
         <div className={styles.notFound}>
@@ -564,7 +564,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const onConfirmShareToggle = async (): Promise<void> => {
     if (!character || !shareConfirm) return;
     const target = shareConfirm === 'going_public';
-    // Keep the modal open and switch it into its progress state — the user
+    // Keep the modal open and switch it into its progress state â€” the user
     // watches it work and sees the outcome in place.
     setSharePhase('working');
     setShareError(null);
@@ -598,7 +598,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   };
 
   // Reset memory opens a confirmation popup (reset is irreversible and does NOT
-  // touch in-game inventory/location — the modal copy says so).
+  // touch in-game inventory/location â€” the modal copy says so).
   const onResetMemoryClick = (): void => {
     setResetConfirmOpen(true);
   };
@@ -608,7 +608,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     if (!character) return;
     try {
       await sei.resetMemory(character.id);
-      // The memory-dir wipe also deleted the chat transcript — evict the
+      // The memory-dir wipe also deleted the chat transcript â€” evict the
       // renderer cache so the chat screen refetches (empty) instead of
       // showing the wiped conversation from the loaded-once cache.
       useChatStore.getState().evictLocal(character.id);
@@ -650,7 +650,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
 
   const onAddToLibraryClick = async (): Promise<void> => {
     if (!character) return;
-    // Adding a World (foreign) character to your library needs an account —
+    // Adding a World (foreign) character to your library needs an account â€”
     // it writes to the user's cloud library. Prompt sign-in with the same
     // modal the share flow uses (item 5). Re-adding a bundled default is
     // local-only and needs no account, so it falls through.
@@ -1100,7 +1100,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           {sharePhase === 'working' ? (
             <>
               <h3 className={styles.confirmTitle}>
-                {shareConfirm === 'going_public' ? t('Publishing…') : t('Updating…')}
+                {shareConfirm === 'going_public' ? t('Publishingâ€¦') : t('Updatingâ€¦')}
               </h3>
               <p className={styles.confirmBody}>
                 {shareConfirm === 'going_public'
@@ -1201,3 +1201,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

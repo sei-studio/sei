@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Preload for the SeiLink room host page (261104, milestone 3). The page is
  * the companion's room drawn as wallpaper, inside the separate room host
  * process (src/main/seilink/host/hostEntry.ts), never the main app.
@@ -110,3 +110,7 @@ if (process.contextIsolated) {
     seilinkAnimaCutout: (characterId: string) => call('animaCutout', characterId),
   });
 }
+
+
+
+

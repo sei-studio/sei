@@ -1,4 +1,4 @@
-// DST quality eval driver (scripts/quality-eval/dst/run.ts, 261104).
+﻿// DST quality eval driver (scripts/quality-eval/dst/run.ts, 261104).
 //
 // Small, cheap, state-judged checks of the Don't Starve Together companion on
 // a headless Linux dedicated server, with the REAL brain (claude-haiku-5-5
@@ -80,7 +80,7 @@ function priorSpend(): number {
   return s;
 }
 
-// ── probes ──────────────────────────────────────────────────────────────
+// â”€â”€ probes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Probe = any;
 let srv: DstServer;
 let probeSeq = 0;
@@ -94,7 +94,7 @@ async function probe(): Promise<Probe | null> {
 const dist = (p: Probe) => (p && p.bx != null && p.sx != null ? Math.hypot(p.bx - p.sx, p.bz - p.sz) : null);
 const delivered = (p: Probe, prefab: string) => (p?.sinv?.[prefab] ?? 0) + (p?.sground?.[prefab] ?? 0);
 
-// ── one bot process ────────────────────────────────────────────────────
+// â”€â”€ one bot process â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface Bot {
   child: ChildProcess;
   events: any[];
@@ -162,7 +162,7 @@ function startBot(mod: ReturnType<typeof createDontStarveGameModule>, dir: strin
   return bot;
 }
 
-// ── scenarios ──────────────────────────────────────────────────────────
+// â”€â”€ scenarios â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface Ctx { rep: number; bot: Bot; probes: Probe[]; tick: () => Promise<Probe | null>; say: (t: string) => void }
 interface Scenario {
   /** Before the summon: world reset arguments + Lua run after the reset. */
@@ -329,7 +329,7 @@ const SCENARIOS: Record<string, Scenario> = {
   },
 };
 
-// ── judge (errand_chat only): one small Haiku call ─────────────────────
+// â”€â”€ judge (errand_chat only): one small Haiku call â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let judgeUsd = 0;
 async function judgeReply(question: string, reply: string | null) {
   if (!reply) return { ok: false, why: 'no reply within 15 s' };
@@ -342,7 +342,7 @@ async function judgeReply(question: string, reply: string | null) {
   return { ok: /^yes/i.test(text), why: text.slice(0, 200) };
 }
 
-// ── main ───────────────────────────────────────────────────────────────
+// â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const prevLink = pointModAt(path.join(REPO, 'native', 'dst-mod', 'sei'));
 log(`arm=${ARM} repo=${REPO} mod link was ${prevLink}`);
 const restoreLink = () => { if (prevLink) { try { unlinkSync(path.join(os.homedir(), 'dst-server', 'mods', 'sei')); symlinkSync(prevLink, path.join(os.homedir(), 'dst-server', 'mods', 'sei')); } catch {} } };
@@ -449,3 +449,7 @@ function summarize(p: string) {
   log(lines.join('\n'));
   writeFileSync(path.join(OUT, `${ARM}.summary.txt`), lines.join('\n') + '\n');
 }
+
+
+
+

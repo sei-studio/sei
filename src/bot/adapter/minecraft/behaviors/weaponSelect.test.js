@@ -1,4 +1,4 @@
-// 261011: attackEntity and the automatic swing-back hold the best weapon owned.
+﻿// 261011: attackEntity and the automatic swing-back hold the best weapon owned.
 import { describe, it, expect, vi } from 'vitest'
 import { weaponScore, chooseWeapon, equipBestWeapon } from './weaponSelect.js'
 
@@ -39,3 +39,7 @@ describe('weapon selection', () => {
     expect(await equipBestWeapon(b)).toBeNull()
   })
 })
+
+
+
+

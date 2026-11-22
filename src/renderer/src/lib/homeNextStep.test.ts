@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Home "up next" card's rules and events (261013, T119).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -103,8 +103,8 @@ describe('nextStepTarget + label', () => {
   it('every new string has zh and no em dash', () => {
     for (const s of ['Up next with {name}', 'Call {name}', 'Play {game}', 'Play', 'Dismiss']) {
       expect(ZH[s], s).toBeTruthy();
-      expect(s).not.toContain('—');
-      expect(ZH[s]).not.toContain('—');
+      expect(s).not.toContain('â€”');
+      expect(ZH[s]).not.toContain('â€”');
     }
   });
 });
@@ -182,3 +182,7 @@ describe('launchHomeNextStep', () => {
     expect(track).toHaveBeenCalledWith('home_next_step_clicked', expect.objectContaining({ surface: 'unknown' }));
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * languageAutoSwitch (260725) — the streak policy that turns per-utterance
+﻿/**
+ * languageAutoSwitch (260725) â€” the streak policy that turns per-utterance
  * Scribe detections into UserConfig.chat_language.
  *
  * Pins: a switch needs two consecutive confident detections of the same
@@ -124,4 +124,8 @@ describe('noteDetectedLanguage', () => {
     expect(mockUpdateConfig.mock.calls[0][0]({ ui_language: 'ja' })).toEqual({ ui_language: 'ja', chat_language: 'en' });
   });
 });
+
+
+
+
 

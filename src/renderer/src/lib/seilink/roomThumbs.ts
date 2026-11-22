@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink editor thumbnails (261104, editor pass): the small "inventory"
  * icons of the room editor are drawn from the pack's own art, with the same
  * compositing the room uses (roomCompose), so a recoloured part shows its
@@ -184,3 +184,7 @@ export function roomThumb(
     return toUrl(out);
   });
 }
+
+
+
+

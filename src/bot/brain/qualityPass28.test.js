@@ -1,4 +1,4 @@
-// 261026: quality pass 28. False claims about who made, gave or holds what
+﻿// 261026: quality pass 28. False claims about who made, gave or holds what
 // (8 of 17 off lines in the dev scripted convos): "made you a table AND a
 // pickaxe", "you still hand me bread", "7 coal and 8 logs" after one give.
 //  - The transcript ends on a session-wide hand-over line: what she gave and
@@ -99,7 +99,7 @@ describe('handOverDetail', () => {
   })
 })
 
-// ─── orchestrator ───────────────────────────────────────────────────────
+// â”€â”€â”€ orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -202,3 +202,7 @@ describe('orchestrator: the hand-over line', () => {
     expect(last).toContain('Handed over this session: you gave player (Steve) 7 coal.')
   })
 })
+
+
+
+

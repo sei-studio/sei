@@ -1,11 +1,11 @@
-/**
- * QuestionShell — the central column used by OnboardingScreen and
+﻿/**
+ * QuestionShell â€” the central column used by OnboardingScreen and
  * AddCharacterScreen for each step.
  *
  * Layout: 520px max-width column with a title / optional hint, the
  * field children, and a footer row of (Back | StepDots | Next).
  *
- * Source: 04-UI-SPEC.md §"Question shell max-width 520px" + 04-07 Task 1.
+ * Source: 04-UI-SPEC.md Â§"Question shell max-width 520px" + 04-07 Task 1.
  */
 
 import React from 'react';
@@ -79,3 +79,7 @@ export function QuestionShell(p: QuestionShellProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

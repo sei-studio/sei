@@ -1,4 +1,4 @@
-// 261025 (pass 27 review): the walk onto a dug block's drop carries the
+﻿// 261025 (pass 27 review): the walk onto a dug block's drop carries the
 // action's abort signal, so a stop ends it instead of leaving the pathfinder
 // walking for up to 3s (the stop-lag pattern of 260617).
 import { describe, it, expect, vi } from 'vitest'
@@ -29,3 +29,7 @@ describe('dig pickup walk and the abort signal (261025)', () => {
     expect(goToMock.mock.calls[0][6]).toBe(ac.signal)
   })
 })
+
+
+
+

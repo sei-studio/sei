@@ -1,4 +1,4 @@
-// 261112: a voice line that cut her off mid-line (the app's barge-in).
+﻿// 261112: a voice line that cut her off mid-line (the app's barge-in).
 //  - deliverSeiChat's event carries interrupted + cutLine (voiceLineEvent)
 //  - the turn tells the model it was cut off and what was not heard
 //  - the forced stop rules (bare-stop backstops, the 120 s player stop hold)
@@ -118,7 +118,7 @@ describe('plumbing (261112)', () => {
     expect(withLine).toContain(`"${CUT}"`)
     expect(withLine).toContain(CUT_MARK)
     expect(NUDGES.cutOff('')).toContain(CUT_MARK)
-    expect(`${withLine}${NUDGES.cutOff('')}`).not.toMatch(/—/)
+    expect(`${withLine}${NUDGES.cutOff('')}`).not.toMatch(/â€”/)
   })
 
   it('actionStats counts cut-in voice lines and the stops after them', () => {
@@ -255,3 +255,7 @@ describe('without a cut-in, stop works as before (261112 regression guard)', () 
     expect(sessionActionStats.snapshot().counters.voice_interrupt_stops).toBe(0)
   })
 })
+
+
+
+

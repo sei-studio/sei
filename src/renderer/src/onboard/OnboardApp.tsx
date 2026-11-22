@@ -1,5 +1,5 @@
-/**
- * OnboardApp — the first-run ritual (260728), rendered as a full-window view
+﻿/**
+ * OnboardApp â€” the first-run ritual (260728), rendered as a full-window view
  * inside the normal app window (view kind 'onboard' in App.tsx).
  *
  * Sui is the mascot: she walks into a hand-drawn scene, runs the whole setup
@@ -10,21 +10,21 @@
  * decision.
  *
  * Flow branches:
- *   returning  → sign-in only → complete, no tutorial
- *   new+cloud  → questionnaire → sign up → ToS → generation → full tutorial
- *   new+local  → questionnaire → "continue locally" → provider+key → model
- *                (list + test) → STT choice → TTS choice → prefsSave + BYOK
- *                generation → full tutorial (260817, china-compat W6 — the
+ *   returning  â†’ sign-in only â†’ complete, no tutorial
+ *   new+cloud  â†’ questionnaire â†’ sign up â†’ ToS â†’ generation â†’ full tutorial
+ *   new+local  â†’ questionnaire â†’ "continue locally" â†’ provider+key â†’ model
+ *                (list + test) â†’ STT choice â†’ TTS choice â†’ prefsSave + BYOK
+ *                generation â†’ full tutorial (260817, china-compat W6 â€” the
  *                local path gets the SAME arc as cloud; only portrait/skin
  *                degrade to the procedural look while signed out)
- *   skip       → no questionnaire/generation → reduced tutorial
+ *   skip       â†’ no questionnaire/generation â†’ reduced tutorial
  *   generation failure is silent: reduced tutorial (spec: "see 18").
  *   new branch, but the sign-in lands on an EXISTING account (the "I already
- *   have an account" form, or Google into an old account) → "welcome back"
+ *   have an account" form, or Google into an old account) â†’ "welcome back"
  *   notice, then complete as returning: no config write, no generation, no
  *   tutorial (260729).
  *
- * This surface deliberately has NO theme — one fixed light look — and no
+ * This surface deliberately has NO theme â€” one fixed light look â€” and no
  * window chrome: it hides the macOS traffic lights while mounted
  * (windowSetButtonsVisible) and never mounts MacosWindow's drag strip or
  * version tag; a transparent top strip keeps the window draggable. The scene
@@ -130,7 +130,7 @@ import { chatgptReady, useChatgptStore } from '../lib/stores/useChatgptStore';
 import { pickDefaultChatgptModel } from '@shared/chatgptPlan';
 import { userFacingError } from '../lib/errors';
 
-/* ── Script ──────────────────────────────────────────────────────────────── */
+/* â”€â”€ Script â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type LineId =
   | 'hey'
@@ -219,7 +219,7 @@ const HINT_LINES: LineId[] = [
   'noProfile',
 ];
 
-/* ── Machine ─────────────────────────────────────────────────────────────── */
+/* â”€â”€ Machine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type Phase =
   | { k: 'intro' } // ground slides in, Sui walks in
@@ -227,7 +227,7 @@ type Phase =
   | { k: 'walkoff'; to: 'auth-new' | 'auth-returning' } // Sui leaves, then ground leaves
   | { k: 'auth'; mode: 'new' | 'returning' }
   | { k: 'local-setup' }
-  | { k: 'setup' } // "setting up..." — config save + generation
+  | { k: 'setup' } // "setting up..." â€” config save + generation
   | { k: 'welcome-existing' } // new-user branch signed into an EXISTING account
   | { k: 'return' } // ground + Sui come back for the send-off
   // Sui comes back to re-ask: a returning sign-in made a NEW account
@@ -246,9 +246,9 @@ interface Answers {
 }
 
 export interface OnboardResult {
-  /** False → returning user: straight to Home, no tutorial. */
+  /** False â†’ returning user: straight to Home, no tutorial. */
   tutorial: boolean;
-  /** Companion for the full tutorial; null → reduced (home-only) tutorial. */
+  /** Companion for the full tutorial; null â†’ reduced (home-only) tutorial. */
   characterId: string | null;
 }
 
@@ -259,7 +259,7 @@ export interface OnboardAppProps {
    * this so a routine launch is one click, not a cutscene. Constant for the
    * component's lifetime. */
   startAtSignIn?: boolean;
-  /** startAtSignIn only: "I'm new here" — remount as the full scene so a new
+  /** startAtSignIn only: "I'm new here" â€” remount as the full scene so a new
    * person on this machine can reach account creation. */
   onStartFresh?: () => void;
 }
@@ -298,7 +298,7 @@ export function OnboardApp({
     returning: startAtSignIn === true,
   });
 
-  // ── Auth plumbing ──────────────────────────────────────────────────────
+  // â”€â”€ Auth plumbing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // 261029: start from the store (App applied main's snapshot before routing
   // here), not from `local`: a push that landed before this mount is gone.
   const authRef = useRef<AuthState>(useAuthStore.getState().state);
@@ -334,7 +334,7 @@ export function OnboardApp({
     };
   }, []);
 
-  // ── Scene choreography ─────────────────────────────────────────────────
+  // â”€â”€ Scene choreography â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Each stage (ground in, Sui in, Sui out, ground out) is a gate in
   // OnboardScene that ALWAYS completes: transitionend, a watchdog, or at once
   // under `sceneInstant` (261012). The intro used to wait on transitionend
@@ -359,7 +359,7 @@ export function OnboardApp({
 
   useEffect(() => {
     // startAtSignIn mounts on the empty sky (the state the normal flow is in
-    // once Sui has walked off) — no ground, no walk-in.
+    // once Sui has walked off) â€” no ground, no walk-in.
     if (startAtSignIn) return undefined;
     // Mount: let the sky paint, then slide the ground in. A window that is
     // not shown yet waits until it is (bounded), so the slide is seen.
@@ -374,7 +374,7 @@ export function OnboardApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- constant prop
   }, []);
 
-  // ── Scene analytics (261012) ───────────────────────────────────────────
+  // â”€â”€ Scene analytics (261012) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // How the intro advanced rides the intro step's closing onboarding_step
   // (`intro_advanced_by`: transition | watchdog | skip | reduced_motion), so
   // the watchdog rate is one property filter. A watchdog on any later stage
@@ -423,7 +423,7 @@ export function OnboardApp({
     (by: AdvanceSource) => {
       noteSceneAdvance('sui_entered', by);
       setSui('idle');
-      // A beat of her just standing there before she speaks — walking in and
+      // A beat of her just standing there before she speaks â€” walking in and
       // talking in the same instant read as rushed (260729). A skip asked
       // for speed, so it gets a shorter one.
       window.setTimeout(
@@ -477,7 +477,7 @@ export function OnboardApp({
     return () => window.removeEventListener('keydown', onKey);
   }, [phase.k, skipIntro]);
 
-  // ── Line advance logic ─────────────────────────────────────────────────
+  // â”€â”€ Line advance logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const goLine = useCallback((id: LineId) => setPhase({ k: 'line', id }), []);
 
   const walkOff = useCallback((to: 'auth-new' | 'auth-returning') => {
@@ -496,7 +496,7 @@ export function OnboardApp({
     setGroundIn(true);
   }, []);
 
-  // ── Step analytics (261005) ────────────────────────────────────────────
+  // â”€â”€ Step analytics (261005) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // onboarding_step per screen (see onboardSteps.ts). Not for the boot
   // sign-in variant: that is an onboarded profile signing in, not onboarding.
   const stepTrackerRef = useRef<OnboardStepTracker | null>(null);
@@ -557,7 +557,7 @@ export function OnboardApp({
     [onComplete],
   );
 
-  // ── Setup pipeline (cloud path) ────────────────────────────────────────
+  // â”€â”€ Setup pipeline (cloud path) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [setupError, setSetupError] = useState<string | null>(null);
   const genCharacterIdRef = useRef<string | null>(null);
   const setupRunRef = useRef(0);
@@ -620,7 +620,7 @@ export function OnboardApp({
           companion_dynamics: a.dynamics,
         });
       }
-      // Sui joins the party — best-effort, never blocks onboarding.
+      // Sui joins the party â€” best-effort, never blocks onboarding.
       void sei
         .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
         .catch(() => {});
@@ -633,7 +633,7 @@ export function OnboardApp({
           });
           if (res.ok) characterId = res.characterId;
         } catch {
-          // Generation failure is silent — reduced tutorial (spec step 18).
+          // Generation failure is silent â€” reduced tutorial (spec step 18).
         }
       }
       if (run !== setupRunRef.current) return;
@@ -646,7 +646,7 @@ export function OnboardApp({
     }
   }, [buildConfig, trackCompleted]);
 
-  // ── Setup pipeline (local path, 260817 china-compat W6) ────────────────
+  // â”€â”€ Setup pipeline (local path, 260817 china-compat W6) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The FULL onboarding arc for BYOK users: same config-save + prefsSave +
   // generation + full-tutorial shape as runCloudSetup, with the generation
   // riding the user's own provider (main's local generateUnique path). Set by
@@ -663,7 +663,7 @@ export function OnboardApp({
     try {
       // One config write carrying the whole wizard: backend, provider, the
       // picked model (provider_config is where the llm layer reads it), and
-      // the OPTIONAL voice engines — absent keys stay unwritten, so "decide
+      // the OPTIONAL voice engines â€” absent keys stay unwritten, so "decide
       // later" leaves Whisper-fallback STT / ElevenLabs TTS semantics. The
       // API key itself was saved at the wizard's key step (llm:list-models
       // needed it there).
@@ -681,13 +681,13 @@ export function OnboardApp({
           companion_dynamics: a.dynamics,
         });
       }
-      // Sui joins the party — best-effort, never blocks onboarding.
+      // Sui joins the party â€” best-effort, never blocks onboarding.
       void sei
         .charsAddToLibrary(DEFAULT_CHARACTER_UUIDS.sui)
         .catch(() => {});
       let characterId: string | null = null;
       // skipGeneration: the key-step probe said the key is REJECTED and the
-      // user chose Continue anyway — don't spend the generation timeout on a
+      // user chose Continue anyway â€” don't spend the generation timeout on a
       // call that cannot authenticate. Null characterId = reduced tutorial,
       // the same landing as a silent generation failure.
       if (!a.skipCreation && !choices.skipGeneration) {
@@ -698,7 +698,7 @@ export function OnboardApp({
           });
           if (res.ok) characterId = res.characterId;
         } catch {
-          // Generation failure is silent — reduced tutorial (spec step 18).
+          // Generation failure is silent â€” reduced tutorial (spec step 18).
         }
       }
       if (run !== setupRunRef.current) return;
@@ -733,7 +733,7 @@ export function OnboardApp({
     void (async () => {
       const a = answersRef.current;
       // skipCreation walks off before the questions, so there is nothing to
-      // carry — the same guard runCloudSetup uses.
+      // carry â€” the same guard runCloudSetup uses.
       if (!a.skipCreation) {
         try {
           await sei.prefsSave({
@@ -756,19 +756,19 @@ export function OnboardApp({
     };
   }, [phase.k, complete, trackCompleted]);
 
-  // Re-entering the scene for the send-off: ground slides in → Sui walks in
+  // Re-entering the scene for the send-off: ground slides in â†’ Sui walks in
   // (onGroundIn/onSuiEntered above route 'return' to the 'ready' line).
   useEffect(() => {
     if ((phase.k === 'return' || phase.k === 'no-account') && !groundIn) setGroundIn(true);
   }, [phase.k, groundIn]);
 
-  // ── Talking pose follows the typewriter ────────────────────────────────
+  // â”€â”€ Talking pose follows the typewriter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const line = phase.k === 'line' ? phase.id : null;
   // Display text: the 'ready' line has a variant for when a companion was
   // generated, and {name} placeholders render as the entered name (the name
   // is fixed before iSee/job render, so the typewriter never restarts
   // mid-line). Translation happens HERE, at render, via the subscribed
-  // translator — the module-level SCRIPT stays English keys, so a language
+  // translator â€” the module-level SCRIPT stays English keys, so a language
   // flip re-renders with the other language instead of baking one in at
   // import time.
   const lineText = line
@@ -781,7 +781,7 @@ export function OnboardApp({
     : '';
   const tw = useTypewriter(lineText);
 
-  // ── Sui's voice-over (260730) ──────────────────────────────────────────
+  // â”€â”€ Sui's voice-over (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The clips and the playback contract live in suiStage/useSuiVoice, shared
   // with the in-app scenes. Two script facts stay here: the two {name} lines
   // (iSee/job) were generated name-free, so the clip never has to speak a name
@@ -798,7 +798,7 @@ export function OnboardApp({
   useEffect(() => {
     if (!line) return;
     // The panic sequence holds the shock face straight through the
-    // "I skipped the third question!" line — flipping back to the talk flap
+    // "I skipped the third question!" line â€” flipping back to the talk flap
     // there undercut the whole beat (260729).
     if (line === 'ahh' || line === 'skippedThird') {
       setSui('shock');
@@ -832,7 +832,7 @@ export function OnboardApp({
     return () => clearTimeout(t);
   }, [line, tw.done]);
 
-  // ── Advance handlers ───────────────────────────────────────────────────
+  // â”€â”€ Advance handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const advance = useCallback(() => {
     if (!line) return;
     if (!tw.done) {
@@ -903,7 +903,7 @@ export function OnboardApp({
     if (line === 'heardQ') markAttributionAsked();
   }, [line]);
 
-  // ── Auth phase: already signed in? (relaunch mid-onboarding) ───────────
+  // â”€â”€ Auth phase: already signed in? (relaunch mid-onboarding) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (phase.k !== 'auth') return;
     if (authRef.current.kind === 'signed_in' && phase.mode === 'new') {
@@ -1040,7 +1040,7 @@ export function OnboardApp({
       try {
         try {
           const tos = await sei.tosStatus();
-          // null = check unavailable (offline) — proceed; the normal window's
+          // null = check unavailable (offline) â€” proceed; the normal window's
           // blocking AcceptToSModal re-asks. Only a definite false blocks here.
           if (tos.accepted === false) {
             setNeedsTos(true);
@@ -1078,7 +1078,7 @@ export function OnboardApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authTick, phase.k]);
 
-  // ── Local path completion ──────────────────────────────────────────────
+  // â”€â”€ Local path completion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The wizard hands over its choices; the heavy lifting (config save,
   // prefsSave, BYOK generation) runs in runLocalSetup under the same
   // "Setting up..." surface the cloud path uses.
@@ -1087,7 +1087,7 @@ export function OnboardApp({
     setPhase({ k: 'setup' });
   }, []);
 
-  // ── Step analytics wiring (261005) ─────────────────────────────────────
+  // â”€â”€ Step analytics wiring (261005) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [authSub, setAuthSub] = useState<AuthSubStep>('form');
   const [localSub, setLocalSub] = useState<LocalSubStep>('key');
   // A remounted panel starts on its first screen; forget the last visit's.
@@ -1121,7 +1121,7 @@ export function OnboardApp({
     };
   }, []);
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const showDialogue = phase.k === 'line';
   const clickAdvances =
     line !== null &&
@@ -1184,7 +1184,7 @@ export function OnboardApp({
               authIntentRef.current = i;
             }}
             onStartFresh={
-              // The App-level prop remounts the FULL scene — only meaningful
+              // The App-level prop remounts the FULL scene â€” only meaningful
               // from the signin-variant mount (different key). From within the
               // full scene the view/key wouldn't change, so replay in place.
               phase.mode === 'returning'
@@ -1273,7 +1273,7 @@ export function OnboardApp({
   );
 }
 
-/* ── Per-line controls ───────────────────────────────────────────────────── */
+/* â”€â”€ Per-line controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 interface LineControlsProps {
   line: LineId;
@@ -1469,7 +1469,7 @@ function LineControls(props: LineControlsProps): React.ReactElement | null {
   }
 }
 
-/* ── Auth panel ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Auth panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -1508,7 +1508,7 @@ function AuthPanel(props: {
   onLocal: () => void;
   /** Step analytics (261005): which of the panel's screens is showing. */
   onSubStep?: (sub: AuthSubStep) => void;
-  /** Returning panels only: "I'm new here" — replay the full Sui scene so a
+  /** Returning panels only: "I'm new here" â€” replay the full Sui scene so a
    * new person can reach account creation (the returning panel deliberately
    * has no sign-up form). The boot signin variant remounts via App; the
    * in-scene returning panel replays the walk-in in place. */
@@ -1528,7 +1528,7 @@ function AuthPanel(props: {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   /**
-   * 260804 — address the emailed code went to, and the flag that swaps this
+   * 260804 â€” address the emailed code went to, and the flag that swaps this
    * panel for the code entry. ONE panel covers signup, a sign-in against an
    * unconfirmed address, and forgot-password: the copy names none of them, so
    * it cannot reveal whether the address was already registered. Redemption
@@ -1684,7 +1684,7 @@ function AuthPanel(props: {
     );
   }
 
-  // W7 region gate (260816) — cloud accounts are unavailable here; steer to
+  // W7 region gate (260816) â€” cloud accounts are unavailable here; steer to
   // the local-setup path. Placed AFTER the needsTos branch on purpose: that
   // branch serves an already-signed-in user, and existing sessions are never
   // gated.
@@ -2004,7 +2004,7 @@ function AuthPanel(props: {
 
 /** Onboarding-styled stand-in for the app's dark OAuth interstitial: runs the
  * Google sign-in flow while the player finishes it in the system browser.
- * On success (or an explicit cancel) it just dismisses itself — the session
+ * On success (or an explicit cancel) it just dismisses itself â€” the session
  * lands via the auth push and OnboardApp proceeds from there. */
 function GoogleWaitPanel(props: {
   onDone: () => void;
@@ -2013,7 +2013,7 @@ function GoogleWaitPanel(props: {
 }): React.ReactElement {
   const tt = useT();
   const [error, setError] = useState<string | null>(null);
-  // W7 region gate (260816) — main refused before opening the browser.
+  // W7 region gate (260816) â€” main refused before opening the browser.
   const [regionBlocked, setRegionBlocked] = useState(false);
   const startedRef = useRef(false);
   const inFlightRef = useRef(false);
@@ -2048,7 +2048,7 @@ function GoogleWaitPanel(props: {
     try {
       await sei.cancelGoogle();
     } catch {
-      /* ignore — dismiss regardless */
+      /* ignore â€” dismiss regardless */
     }
     props.onDone();
   };
@@ -2101,7 +2101,7 @@ function GoogleWaitPanel(props: {
   );
 }
 
-/* ── Local (BYOK) setup wizard ───────────────────────────────────────────── */
+/* â”€â”€ Local (BYOK) setup wizard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 // 260816 (china-compat): the offered set comes from the shared catalog (8
 // providers; SHOWN_PROVIDERS in src/shared/llmCatalog.ts).
@@ -2112,8 +2112,8 @@ const PROVIDERS: Array<{ value: string; label: string }> = SHOWN_PROVIDERS.map((
 
 /**
  * 260817 (china-compat W6): the local path is a four-step wizard in the
- * scene's own panel vocabulary — provider + key, model (live list + Test),
- * STT choice, TTS choice. The API key saves at the key→model transition
+ * scene's own panel vocabulary â€” provider + key, model (live list + Test),
+ * STT choice, TTS choice. The API key saves at the keyâ†’model transition
  * because llm:list-models / llm:test read it from the main-side store;
  * everything else rides component state and lands in ONE config write inside
  * runLocalSetup via onDone. Both voice steps are optional: "Decide later"
@@ -2138,7 +2138,7 @@ function LocalSetupPanel(props: {
   const [error, setError] = useState<string | null>(null);
   const [model, setModel] = useState<string>(DEFAULT_MODELS.anthropic);
   const sttRef = useRef<SttEngineChoice | undefined>(undefined);
-  // ElevenLabs key presence — shared by the Scribe and ElevenLabs-voices
+  // ElevenLabs key presence â€” shared by the Scribe and ElevenLabs-voices
   // options so the key is asked for at most once across both steps.
   const [elKeySaved, setElKeySaved] = useState(false);
   useEffect(() => {
@@ -2154,7 +2154,7 @@ function LocalSetupPanel(props: {
     };
   }, []);
 
-  // Ollama runs locally and authenticates nothing — the key is optional there
+  // Ollama runs locally and authenticates nothing â€” the key is optional there
   // and skipped from the save; every other provider requires one.
   const keyOk = key.trim() !== '' || provider === 'ollama';
 
@@ -2453,7 +2453,7 @@ function ModelStep(props: {
 }): React.ReactElement {
   const tt = useT();
   const { provider, model, setModel } = props;
-  // null = loading. An empty array = listing failed → free-text fallback.
+  // null = loading. An empty array = listing failed â†’ free-text fallback.
   const [models, setModels] = useState<Array<{
     id: string;
     vision: 'yes' | 'no' | 'unknown';
@@ -2558,7 +2558,7 @@ function ModelStep(props: {
         <button className={styles.pill} disabled={test.k === 'busy' || !model.trim()} onClick={() => void runTest()}>
           {tt('Test')}
         </button>
-        {/* Continue stays live during a slow test — the test is optional. */}
+        {/* Continue stays live during a slow test â€” the test is optional. */}
         <button className={styles.pill} disabled={!model.trim()} onClick={props.onNext}>
           {tt('Continue')}
         </button>
@@ -2571,7 +2571,7 @@ function ModelStep(props: {
 }
 
 /**
- * STT choice — how companions hear the player on voice calls. Scribe needs
+ * STT choice â€” how companions hear the player on voice calls. Scribe needs
  * the ElevenLabs key (asked inline, once, shared with the TTS step);
  * SenseVoice needs its pack downloaded; Whisper downloads itself on first
  * use through the existing renderer worker, so it needs nothing here.
@@ -2634,7 +2634,7 @@ function SttStep(props: {
 }
 
 /**
- * TTS choice — how companions speak. Picking local voices downloads the pack
+ * TTS choice â€” how companions speak. Picking local voices downloads the pack
  * for the current UI language (one pack per language, both genders via
  * speaker ids). Characters keep their ElevenLabs voiceId either way; local
  * synthesis maps it to a gendered local voice at call time.
@@ -2750,10 +2750,10 @@ function ElKeyPanel(props: { onSaved: () => void; onBack: () => void }): React.R
 /**
  * Confirm-then-download for one or more speech packs. The confirm names the
  * EXACT archive cost, read off speech:pack-status (main's pack registry is
- * the single source of truth for sizes — the renderer hardcodes nothing).
+ * the single source of truth for sizes â€” the renderer hardcodes nothing).
  * The download runs in MAIN, so "Continue" is available the moment it
  * starts: leaving the panel does not cancel it, and a failed download just
- * leaves the pack absent — the first call then surfaces the typed
+ * leaves the pack absent â€” the first call then surfaces the typed
  * VOICE_PACK_MISSING caption pointing at the Settings download.
  * Already-downloaded packs (a re-run of onboarding) skip straight through.
  */
@@ -2854,3 +2854,7 @@ function PackDownloadPanel(props: {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * reply_latency (261106): sampling, props shape, the trust-boundary parsers
  * for the renderer and bot samples, and the chat clock's outcomes.
  */
@@ -208,3 +208,7 @@ describe('startChatReplyClock', () => {
     expect(b.samples[0].outcome).toBe('error');
   });
 });
+
+
+
+

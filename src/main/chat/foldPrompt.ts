@@ -1,17 +1,17 @@
-/**
- * Fold prompt construction (260810) — PURE, extracted from continuity.ts.
+﻿/**
+ * Fold prompt construction (260810) â€” PURE, extracted from continuity.ts.
  *
  * Why a separate module: continuity.ts drags in electron-bound plumbing
  * (paths, chatStore, the chat SDK), so nothing outside Electron could exercise
  * the fold's actual prompt text. The offline eval harness
  * (scripts/fold-noise-eval.ts) needs to run the REAL prompt against a real
- * model on real noisy data — the 260808 incident where ~20 consecutive folds
+ * model on real noisy data â€” the 260808 incident where ~20 consecutive folds
  * over phantom voice rows (a mic hearing reels audio) progressively destroyed
  * a good summary. Keeping the text and the transcript formatting here means
  * the harness and production build byte-identical prompts.
  *
  * NOTHING in this file may import from continuity.ts, paths.ts, sdk.ts, or
- * anything else that touches electron — plain `npx tsx` must be able to load it.
+ * anything else that touches electron â€” plain `npx tsx` must be able to load it.
  */
 
 export interface FoldMsg {
@@ -22,7 +22,7 @@ export interface FoldMsg {
 
 /**
  * Compact human timestamp for model-facing message stamps: "3 Jul 10:34"
- * (local time — main and the bot both run on the player's machine). Shared by
+ * (local time â€” main and the bot both run on the player's machine). Shared by
  * the chat prompt builder, the summary fold, and the launch continuity block.
  * (Lives here since 260810 so the fold harness gets it without electron;
  * continuity.ts re-exports it for its existing consumers.)
@@ -126,7 +126,7 @@ export function buildFoldUserText(summary: string, msgs: FoldMsg[]): string {
  * 260810 noise-robustness addition: the summarizer is told explicitly that a
  * low-signal batch should leave the existing summary's durable facts intact.
  * The instruction NAMES THE SHAPE of the noise in prose and never quotes an
- * example noise line — quoting a phrase inside a ban has been measured on this
+ * example noise line â€” quoting a phrase inside a ban has been measured on this
  * project (backseat 260807) to FEED the phrase back into outputs.
  */
 export function buildFoldSystem(personaExpanded?: string): string {
@@ -169,7 +169,7 @@ export function buildFoldSystem(personaExpanded?: string): string {
 /**
  * Deterministic backstop for the tag contract (260810). Measured on the noisy
  * corpus: asked in prose to "never open with a preamble", Sonnet still
- * sometimes prefixed a paragraph explaining what it kept and why — and the
+ * sometimes prefixed a paragraph explaining what it kept and why â€” and the
  * fold's output is stored VERBATIM, so that analysis would have been re-read
  * by every future prompt as if it were the summary. Same lesson as
  * plainLine/stripDashes: a prompt rule needs a mechanical strip behind it.
@@ -180,3 +180,7 @@ export function extractSummaryTag(text: string): string {
   const m = /<summary>([\s\S]*?)<\/summary>/i.exec(text);
   return (m ? m[1] : text).trim();
 }
+
+
+
+

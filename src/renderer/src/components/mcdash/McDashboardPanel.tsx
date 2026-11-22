@@ -1,5 +1,5 @@
-/**
- * McDashboardPanel — the Minecraft dashboard surface (260721): a live view
+﻿/**
+ * McDashboardPanel â€” the Minecraft dashboard surface (260721): a live view
  * of the summoned companion styled after Minecraft's own inventory screen (a
  * deliberate, contained exception to the app design tokens, per spec).
  *
@@ -53,7 +53,7 @@ const HOTBAR_SLOTS = Array.from({ length: 9 }, (_, i) => 36 + i);
 const ARMOR_SLOTS = [5, 6, 7, 8]; // head, chest, legs, feet
 const OFFHAND_SLOT = 45;
 
-/** "oak_log" → "Oak Log" (item names are title case in game). */
+/** "oak_log" â†’ "Oak Log" (item names are title case in game). */
 function itemLabel(name: string): string {
   return name
     .replace(/_/g, ' ')
@@ -167,20 +167,20 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
 
   return (
     <div className={styles.panel} aria-label={t("{name}'s Minecraft dashboard", { name })}>
-      {/* ── Header bar (vanilla gray strip) ── */}
+      {/* â”€â”€ Header bar (vanilla gray strip) â”€â”€ */}
       <header className={styles.head}>
         <span className={styles.headTitle}>{t('{name} in Minecraft', { name })}</span>
       </header>
 
       {snapshot ? (
         <div className={styles.body}>
-          {/* ── Status window (260725): full-width strip translating what the
+          {/* â”€â”€ Status window (260725): full-width strip translating what the
               AI is doing right now (activityLabel in the bot: "gathering oak
               logs...", "thinking", "idling"; "paused" is renderer state).
-              Shared with the other games' dashboards (McDashControls). ── */}
+              Shared with the other games' dashboards (McDashControls). â”€â”€ */}
           <McDashStatusStrip activity={snapshot.activity} paused={paused} name={name} companions={companions} />
 
-          {/* ── Inventory dialog (the classic light-gray window) ── */}
+          {/* â”€â”€ Inventory dialog (the classic light-gray window) â”€â”€ */}
           <section className={styles.dialog} aria-label={t("{name}'s inventory", { name })}>
             <div className={styles.topRow}>
               <div className={styles.armorCol}>
@@ -225,8 +225,8 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
             </div>
           </section>
 
-          {/* ── Map dialog (gray GUI framing around the minimap). The old
-              activity line moved to the dedicated status window above. ── */}
+          {/* â”€â”€ Map dialog (gray GUI framing around the minimap). The old
+              activity line moved to the dedicated status window above. â”€â”€ */}
           <section className={styles.dialog} aria-label={t('Minimap')}>
             <McDashMinimap map={snapshot.map} yaw={snapshot.yaw} sizePx={MINIMAP_PX} />
             <div className={styles.posLine}>
@@ -236,9 +236,9 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
             </div>
           </section>
 
-          {/* ── Controls window (260725): pause toggle, runtime play mode,
+          {/* â”€â”€ Controls window (260725): pause toggle, runtime play mode,
               Disconnect. Shared with the other games' dashboards
-              (McDashControls); mode is never persisted. ── */}
+              (McDashControls); mode is never persisted. â”€â”€ */}
           <McDashControls
             paused={paused}
             mode={mode}
@@ -254,3 +254,7 @@ export function McDashboardPanel({ characterId }: McDashboardPanelProps): React.
     </div>
   );
 }
+
+
+
+

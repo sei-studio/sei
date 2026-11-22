@@ -1,21 +1,21 @@
-/**
- * PortraitImagePicker — image-upload control used by the card image popup
+﻿/**
+ * PortraitImagePicker â€” image-upload control used by the card image popup
  * (PortraitVersionsModal), Settings and AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
- * the image as a base64 data URL — instead it:
+ * the image as a base64 data URL â€” instead it:
  *
  *   1. Loads the picked file into an HTMLImageElement
  *   2. Renders it to a <canvas> at min(originalDim, 1024) preserving aspect
- *   3. Re-encodes to PNG via canvas.toBlob (≤500KB after resize)
+ *   3. Re-encodes to PNG via canvas.toBlob (â‰¤500KB after resize)
  *   4. Sends the bytes to main via sei.charsApplyPortrait
  *   5. Stores the returned path reference '<uuid>.png' in onChange
  *
  * Main re-validates (magic + size + PNG dim) and writes to
  * <userData>/portraits/<uuid>.png. The picker is therefore characterId-bound:
  * the character must already exist before the picker can apply a portrait
- * (AddCharacterScreen does this — step 1 creates the character, step 2 picks
+ * (AddCharacterScreen does this â€” step 1 creates the character, step 2 picks
  * the portrait).
  *
- * Source: 11-06-PLAN.md Task 3 + 11-RESEARCH §Pattern 5.
+ * Source: 11-06-PLAN.md Task 3 + 11-RESEARCH Â§Pattern 5.
  */
 import React, { useRef } from 'react';
 import { sei } from '../lib/ipcClient';
@@ -42,7 +42,7 @@ export interface PortraitImagePickerProps {
   /** Called with the new path reference after a successful apply, or null on remove. */
   onChange: (portraitRef: string | null) => void;
   /**
-   * Phase 18/19 — apply/remove override hooks. When provided, the picker calls
+   * Phase 18/19 â€” apply/remove override hooks. When provided, the picker calls
    * these instead of the character portrait IPC (sei.charsApplyPortrait /
    * sei.charsRemovePortrait), letting the same control target the user's profile
    * picture. The bytes/encoding pipeline is unchanged. (D-28 semantics: main
@@ -76,7 +76,7 @@ export function PortraitImagePicker({
   const [cropImg, setCropImg] = React.useState<HTMLImageElement | null>(null);
   // Cache-buster bumped on each successful apply. The user profile picture keeps
   // a FIXED path ref ('_user.png'), so re-uploading returns the same ref and the
-  // same URL — without this the <img> src never changes and the browser shows the
+  // same URL â€” without this the <img> src never changes and the browser shows the
   // stale bytes until a full refresh. Bumping it forces an immediate re-fetch.
   const [bust, setBust] = React.useState<number>(0);
   // Object URL backing the crop modal's <img>; revoked when the modal closes.
@@ -95,7 +95,7 @@ export function PortraitImagePicker({
     setCropImg(null);
   };
 
-  // Pick → decode → open the crop/preview popup. We no longer reject on size:
+  // Pick â†’ decode â†’ open the crop/preview popup. We no longer reject on size:
   // any image is accepted here, then downsized to fit on confirm.
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     setError(null);
@@ -117,7 +117,7 @@ export function PortraitImagePicker({
     }
   };
 
-  // Confirm from the crop popup → compress the cropped canvas under the size
+  // Confirm from the crop popup â†’ compress the cropped canvas under the size
   // budget (auto-downscaling / re-encoding so ANY image fits), then apply.
   const onCropConfirm = async (canvas: HTMLCanvasElement): Promise<void> => {
     setBusy(true);
@@ -169,7 +169,7 @@ export function PortraitImagePicker({
     />
   );
 
-  // Avatar variant — circular, click-to-change, no buttons (Settings profile).
+  // Avatar variant â€” circular, click-to-change, no buttons (Settings profile).
   if (variant === 'avatar') {
     const base = value ? portraitSrc(value) : null;
     const src = base ? `${base}${base.includes('?') ? '&' : '?'}v=${bust}` : null;
@@ -187,7 +187,7 @@ export function PortraitImagePicker({
           ) : (
             <UserIcon size={22} />
           )}
-          <span className={avatarStyles.avatarOverlay}>{busy ? '…' : t('Change')}</span>
+          <span className={avatarStyles.avatarOverlay}>{busy ? 'â€¦' : t('Change')}</span>
         </button>
         {hiddenInput}
         {error ? <span className={avatarStyles.err}>{error}</span> : null}
@@ -210,7 +210,7 @@ export function PortraitImagePicker({
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap-control)', flexWrap: 'wrap' }}>
           {hiddenInput}
           <Button kind="secondary" size="sm" disabled={busy} onClick={onPick}>
-            {busy ? t('Working…') : value ? t('Upload a new image') : t('Upload')}
+            {busy ? t('Workingâ€¦') : value ? t('Upload a new image') : t('Upload')}
           </Button>
           {value ? (
             <Button kind="dangerSoft" size="sm" disabled={busy} onClick={() => void onRemove()}>
@@ -276,7 +276,7 @@ export function PortraitImagePicker({
       {/* The shared Button, like BackgroundImagePicker (261103): these two
           were hand-rolled with a fainter border than every other secondary. */}
       <Button kind="ghost" size="sm" disabled={busy} onClick={onPick}>
-        {busy ? t('Working…') : value ? t('Change') : t('Upload')}
+        {busy ? t('Workingâ€¦') : value ? t('Change') : t('Upload')}
       </Button>
       {value ? (
         <Button kind="danger" size="sm" disabled={busy} onClick={() => void onRemove()}>
@@ -301,7 +301,7 @@ export function PortraitImagePicker({
   );
 }
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -317,12 +317,12 @@ type PortraitFormat = 'png' | 'jpeg' | 'webp';
 /**
  * Compress a (cropped) canvas to bytes that fit `maxBytes`, downscaling and
  * lowering quality as needed so ANY image can be accepted. Strategy:
- *   - Opaque image → JPEG (great for photos), quality ladder per scale step.
- *   - Image with transparency → PNG first (lossless, preserves alpha), then
- *     lossy WebP (still preserves alpha) before shrinking further — we never
+ *   - Opaque image â†’ JPEG (great for photos), quality ladder per scale step.
+ *   - Image with transparency â†’ PNG first (lossless, preserves alpha), then
+ *     lossy WebP (still preserves alpha) before shrinking further â€” we never
  *     fall back to JPEG for alpha images (it would fill transparent pixels).
  * The original bug: the old path always re-encoded to lossless PNG at up to
- * 1024², so a small JPEG photo ballooned past 500KB and was rejected instead
+ * 1024Â², so a small JPEG photo ballooned past 500KB and was rejected instead
  * of compressed.
  */
 async function canvasToPortraitBytes(
@@ -363,7 +363,7 @@ async function canvasToPortraitBytes(
     }
   }
 
-  // Nothing fit even at the smallest scale/quality — apply the smallest we got
+  // Nothing fit even at the smallest scale/quality â€” apply the smallest we got
   // (main re-validates; an honest error surfaces only for truly pathological input).
   if (smallest) return smallest;
   throw new Error(tBare('Could not encode the image.'));
@@ -401,7 +401,7 @@ function canvasHasAlpha(canvas: HTMLCanvasElement): boolean {
 }
 
 /**
- * Chunked Uint8Array → base64 conversion. String.fromCharCode(...arr) blows
+ * Chunked Uint8Array â†’ base64 conversion. String.fromCharCode(...arr) blows
  * the stack on arrays bigger than ~65KB on some engines; chunk to keep it safe.
  */
 function bytesToBase64(bytes: Uint8Array): string {
@@ -416,9 +416,13 @@ function bytesToBase64(bytes: Uint8Array): string {
 
 /** Map the well-known main-side error codes to user-friendly copy. */
 function prettifyError(msg: string): string {
-  if (msg.includes('PORTRAIT_TOO_LARGE_DIM')) return tBare('Picture is too big (max 1024×1024).');
+  if (msg.includes('PORTRAIT_TOO_LARGE_DIM')) return tBare('Picture is too big (max 1024Ã—1024).');
   if (msg.includes('PORTRAIT_TOO_LARGE')) return tBare('File too large (max 500KB after resize).');
   if (msg.includes('PORTRAIT_TOO_SHORT')) return tBare('File looks empty.');
   if (msg.includes('PORTRAIT_BAD_MAGIC')) return tBare('Only PNG, JPEG, or WebP images are accepted.');
   return msg;
 }
+
+
+
+

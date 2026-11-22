@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/index.js — the Stardew Valley Adapter (the object
+﻿// src/bot/adapter/stardew/index.js â€” the Stardew Valley Adapter (the object
 // the brain drives; contract in src/bot/brain/types.js, v2 members declared
 // at the bottom). One instance per WebSocket connection; the runtime rebuilds
 // it on reconnect. The body lives in the SMAPI mod; every world action is a
@@ -93,7 +93,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
   return {
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
-    // ── Action surface ────────────────────────────────────────────────
+    // â”€â”€ Action surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // ship / give exist from mod 0.1.3; an older mod would answer "unknown action".
     listActions: () => {
       const all = registry.list()
@@ -107,7 +107,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
       return registry.execute(name, args, null, execConfig)
     },
 
-    // ── Perception + prompt blocks ────────────────────────────────────
+    // â”€â”€ Perception + prompt blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     createSnapshotComposer: () => createSnapshotComposer({ getObs: () => latestObs, getModVersion: modVersion }),
     /** The newest observation (tests + telemetry). */
     getLatestObservation: () => latestObs,
@@ -132,7 +132,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
      */
     getProgression: () => getProgression(latestObs, latches),
 
-    // ── Session lifecycle ─────────────────────────────────────────────
+    // â”€â”€ Session lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     attach(handlers) {
       if (_attachDispose) { try { _attachDispose() } catch {} }
       _handlers = handlers
@@ -170,7 +170,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
       })
     },
 
-    // ── Effects ───────────────────────────────────────────────────────
+    // â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     chat: (text) => {
       const line = String(text ?? '').trim()
       if (!line) return
@@ -185,11 +185,11 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     },
     closeAnySessions: async () => {},
 
-    // ── Capabilities ──────────────────────────────────────────────────
+    // â”€â”€ Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     supportsAutoEat: true,
     supportsFollow: true,
 
-    // ── Identity ──────────────────────────────────────────────────────
+    // â”€â”€ Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     get botUsername() { return botUsername },
     getKnownPlayers: () => {
       const out = {}
@@ -205,7 +205,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
       return out
     },
 
-    // ── Contract v2 members ───────────────────────────────────────────
+    // â”€â”€ Contract v2 members â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     gameName: 'Stardew Valley',
     wikiHosts: ['stardewvalleywiki.com'],
     // The in-game chat box wraps long lines but the bubble above the head
@@ -234,3 +234,7 @@ export function createStardewAdapter({ client, config, botUsername, logger = con
     classifyConnectError,
   }
 }
+
+
+
+

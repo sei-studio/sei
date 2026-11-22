@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Furnaces she saw earlier this session, pass 35 (261101).
  *
  * smelt_iron benchmark, 2026-11-01 B#3: her opening gather walked her ~20
@@ -37,7 +37,7 @@ describe('seenStationLine', () => {
     b.entity.position = new Vec3(160.5, 71, -10.5)
     const line = seenStationLine(b, [], { raw_iron: 3 }, 2000)
     expect(line).toBe('furnace you saw earlier: @179,71,2 (23 blocks away)')
-    expect(line).not.toMatch(/—/)
+    expect(line).not.toMatch(/â€”/)
   })
 
   it('says nothing while a furnace is in view', () => {
@@ -156,3 +156,7 @@ describe('snapshot wiring', () => {
     expect(composeSnapshot(b, {})).not.toContain('you saw earlier')
   })
 })
+
+
+
+

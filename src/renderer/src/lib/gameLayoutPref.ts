@@ -1,5 +1,5 @@
-/**
- * gameLayoutPref — the user's preferred size for the game area in ChatScreen
+﻿/**
+ * gameLayoutPref â€” the user's preferred size for the game area in ChatScreen
  * (260725).
  *
  * The game/chat split has two knobs: GameSurface's expand "V" (game covers the
@@ -55,7 +55,11 @@ export function writeGameLayout(layout: GameLayout): void {
     try {
       localStorage.setItem(KEY, JSON.stringify(layout));
     } catch {
-      /* private mode / quota — the layout just won't outlive the session */
+      /* private mode / quota â€” the layout just won't outlive the session */
     }
   }, WRITE_DEBOUNCE_MS);
 }
+
+
+
+

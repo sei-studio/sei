@@ -1,4 +1,4 @@
-import pkg from 'mineflayer-pathfinder'
+﻿import pkg from 'mineflayer-pathfinder'
 import { sessionActionStats } from '../../../brain/actionStats.js'
 import { climbOut, escapeUp, pitInfo, MIN_PIT_DEPTH } from './climbOut.js'
 import { goTo, protectBuiltBlocks } from './pathfind.js'
@@ -43,7 +43,7 @@ let _target = null
 // No-progress / unreachable detection (260617). The bare Movements below can
 // only climb by placing scaffolding blocks the bot is carrying, so a sheer
 // slope with a dirt-poor inventory yields NO path and GoalFollow silently
-// idles — the body sits still while the target walks away (the cliff freeze in
+// idles â€” the body sits still while the target walks away (the cliff freeze in
 // the play log). follow had no timeout/unreachable signal at all (unlike goTo).
 // These track last position + last forward progress so the 1s tick can flag
 // `_stuck`, which the snapshot surfaces so the model reacts instead of
@@ -117,21 +117,21 @@ function resolveTargetEntity() {
  * the AbortSignal until the orchestrator aborts (player-chat preempt, R2/R3/R4
  * dispatch, or the model calls unfollow).
  *
- * 260607 — follow is now PERSISTENT state. The abort does NOT clear `_target`
+ * 260607 â€” follow is now PERSISTENT state. The abort does NOT clear `_target`
  * anymore: an abort is almost always a player chat waking the suspended loop,
  * and clearing on it made every message cancel the follow (churn). The 1s
  * background tick below keeps trailing as long as `_target` is set, so the bot
  * stays on the owner while the model answers a chat. `_target` is cleared ONLY
  * by `unfollow` or by an explicit relocate (`goTo` and `explore`, which call
- * setFollowTarget(null) — explore added 260710 after a live run where the
+ * setFollowTarget(null) â€” explore added 260710 after a live run where the
  * follow tick yanked the bot straight back from every explore hop); incidental
  * actions (dig/gather/build) leave it set so the bot resumes trailing once
- * they finish. follow.js itself does not consume the signal — the registry
+ * they finish. follow.js itself does not consume the signal â€” the registry
  * handler owns the long-running lifecycle.
  */
 export function startFollow(bot, config, { keepMovements = false } = {}) {
   _bot = bot
-  // Resolve the minecraft adapter slice — the caller passes the top-level
+  // Resolve the minecraft adapter slice â€” the caller passes the top-level
   // config, but follow_range lives at config.adapter.minecraft.follow_range.
   // Without this resolution we silently pass `undefined` to GoalFollow and
   // get mineflayer-pathfinder's built-in default (1), so the configured
@@ -147,18 +147,18 @@ export function startFollow(bot, config, { keepMovements = false } = {}) {
   _movementsOwed = keepMovements
   if (!keepMovements) bot.pathfinder.setMovements(followMovements(bot))
 
-  // No default target — the LLM decides whether to call follow(player) on the
+  // No default target â€” the LLM decides whether to call follow(player) on the
   // join event. Hardcoding it caused the body to drift toward the player
   // between every gap in LLM-issued movement.
 
   // GoalFollow with dynamic=true tracks the entity itself, so we don't need
   // to recompute paths each tick. We only re-install when the pathfinder is
-  // idle and our goal isn't currently set — this yields naturally to any
+  // idle and our goal isn't currently set â€” this yields naturally to any
   // LLM-issued movement action (goTo, dig, etc.) without an explicit pause.
   clearInterval(_interval)
   _interval = setInterval(() => {
     // 260725 play/pause: the body is frozen, so do not re-install the follow
-    // goal or judge progress. `_target` is KEPT — the player pressing play
+    // goal or judge progress. `_target` is KEPT â€” the player pressing play
     // resumes trailing where it left off. The progress clock is held at "now"
     // so a long pause never surfaces as a bogus stuck report on resume.
     // A climb out of a hole stops too (261016 review): left running, its
@@ -167,14 +167,14 @@ export function startFollow(bot, config, { keepMovements = false } = {}) {
     if (!_target) { _stuck = null; _lastPos = null; return }
     const ent = resolveTargetEntity()
     const me = bot?.entity
-    if (!ent || !me) return // target or self not loaded — can't assess progress
+    if (!ent || !me) return // target or self not loaded â€” can't assess progress
     // Re-install the follow goal when the pathfinder has gone idle (yields to
     // any LLM-issued movement without an explicit pause). Also yield while a
     // reflex creeper-flee owns the goal (bot._seiReflexActive, Plan 01 mutex):
     // re-installing GoalFollow here would fight the flee tick-for-tick. The flee
     // restores the prior goal when it clears, and this tick resumes naturally.
     // Also yield to a survival takeover (bot._seiSurvivalActive / _seiCriticalRetreat,
-    // survival.js — the drowning swim-up / critical-HP flee): re-installing here
+    // survival.js â€” the drowning swim-up / critical-HP flee): re-installing here
     // would tug against the flee whenever the pathfinder momentarily idles.
     // Also hold off while digIn is holding position (bot._seiHoldPosition > 0):
     // re-installing GoalFollow(owner) between dig primitives walks the bot out of
@@ -289,3 +289,7 @@ export function stopFollow() {
   _stuck = null
   _lastPos = null
 }
+
+
+
+

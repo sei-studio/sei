@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -44,3 +44,7 @@ describe('stardew dashboard telemetry', () => {
     expect(activityLabel('give', { item: 'Wood' })).toBe('handing over Wood...')
   })
 })
+
+
+
+

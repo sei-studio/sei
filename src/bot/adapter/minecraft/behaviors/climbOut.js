@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/climbOut.js
+﻿// src/bot/adapter/minecraft/behaviors/climbOut.js
 //
 // 261015 quality pass 10: get out of a 1x1 shaft before walking somewhere
 // above it.
@@ -436,13 +436,13 @@ async function climbOutInner(bot, target, opts = {}) {
   }
 }
 
-// ── escapeUp: any hole, after a walk up out of it failed ───────────────────
+// â”€â”€ escapeUp: any hole, after a walk up out of it failed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // 261015 compare (pass 10 B side): the 1x1 check above misses the holes she
 // actually ends up in during errands. The pathfinder digs down toward buried
 // ore, she mines the ore out of the shaft wall, and now the bottom is an
 // irregular pocket: a side cell is open, so pitInfo says "not a pit", and the
-// walk back up still times out ("timeout — unreachable — try build to Y=71",
+// walk back up still times out ("timeout â€” unreachable â€” try build to Y=71",
 // errands-02-B and 04-B). escapeUp is the general fallback, run when a walk to
 // a target well above her has failed: find a nearby column that is open above
 // (her own shaft, usually a step or two away), stand in its center, and
@@ -659,3 +659,7 @@ async function escapeUpInner(bot, target, opts = {}) {
       failAdvice(why),
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink error analytics (261105), shape only: an error CLASS from a closed
  * set, never the message, a path or a pack-relative file name.
  *
@@ -85,3 +85,7 @@ export function _resetSeilinkErrorsForTests(): void {
   packSent.clear();
   roomSent.clear();
 }
+
+
+
+

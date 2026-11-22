@@ -1,4 +1,4 @@
-// 261017 (issue #46): the bot side of the ChatGPT-plan token hand-off.
+﻿// 261017 (issue #46): the bot side of the ChatGPT-plan token hand-off.
 //
 // Main owns the OAuth session (src/main/chatgptPlan/session.ts): the refresh
 // token never leaves main, and refreshes are serialized there because the
@@ -114,3 +114,7 @@ export function _resetChatgptTokenBridgeForTests() {
   waiters.clear()
   listeners.clear()
 }
+
+
+
+

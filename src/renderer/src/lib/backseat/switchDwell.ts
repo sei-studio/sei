@@ -1,5 +1,5 @@
-/**
- * The switch dwell (260806) — the restartable clock behind the 'switch' wake.
+﻿/**
+ * The switch dwell (260806) â€” the restartable clock behind the 'switch' wake.
  *
  * Feed it a change signal (a colour jolt from the worker, a share-label change
  * from the poll) and it fires ONCE, dwellMs after the LAST signal. A further
@@ -22,7 +22,7 @@ export interface SwitchDwell {
 export function createSwitchDwell(opts: {
   dwellMs: number;
   /** Called once per settled change; `sinceChangeMs` is the time since the
-   *  LAST change signal (≈ dwellMs plus timer drift). */
+   *  LAST change signal (â‰ˆ dwellMs plus timer drift). */
   onFire: (sinceChangeMs: number) => void;
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -30,7 +30,7 @@ export function createSwitchDwell(opts: {
 }): SwitchDwell {
   const now = opts.now ?? Date.now;
   // The timer id is opaque: window setTimeout returns number, Node's returns
-  // Timeout, and injected fakes return whatever they like — this code only
+  // Timeout, and injected fakes return whatever they like â€” this code only
   // ever hands it back to the matching clear.
   const setT: (fn: () => void, ms: number) => unknown =
     opts.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
@@ -57,3 +57,7 @@ export function createSwitchDwell(opts: {
     },
   };
 }
+
+
+
+

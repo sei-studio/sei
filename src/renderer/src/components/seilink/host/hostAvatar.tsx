@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host: THE AVATAR MOUNT POINT (261104, milestone 3).
  *
  * The wallpaper page (SeilinkHostView) renders `<HostAvatar>` in the room's
@@ -208,3 +208,7 @@ function useSyllableLevel(on: boolean): React.MutableRefObject<number> {
   }, [on]);
   return level;
 }
+
+
+
+

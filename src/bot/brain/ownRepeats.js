@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261012: words and short phrases the companion keeps putting in its OWN
  * recent lines, so the next turn can be told about them.
  *
@@ -38,7 +38,7 @@ const STOP = new Set((
 
 function tokensOf(text) {
   return String(text ?? '').toLowerCase()
-    .replace(/[‘’]/g, "'")
+    .replace(/[â€˜â€™]/g, "'")
     .replace(/[^a-z0-9'\s-]+/g, ' ')
     .split(/\s+/)
     .map((w) => w.replace(/^['-]+|['-]+$/g, ''))
@@ -250,7 +250,7 @@ const FACT_BIT_TURNS = 3
 // The player's line asks something ("where's the cave again", "hows it
 // going", "u got wood?"). Chat questions often have no question mark.
 const QUESTION_RE = /\?\s*$|^(where|what|how|why|when|which|who|whats|wheres|hows|is|are|do|does|did|can|could|got|u got|you got|any)\b/i
-const isQuestion = (text) => QUESTION_RE.test(String(text ?? '').trim().replace(/[‘’]/g, "'").replace(/'/g, ''))
+const isQuestion = (text) => QUESTION_RE.test(String(text ?? '').trim().replace(/[â€˜â€™]/g, "'").replace(/'/g, ''))
 
 const clip = (s, n = MAX_QUOTE_CHARS) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim()
@@ -488,3 +488,7 @@ export function ownRepeatsNote(selfLines, playerLines = [], opts = {}) {
   const parts = [lines, ticNote(tics)].filter(Boolean)
   return parts.length ? parts.join(' ') : null
 }
+
+
+
+

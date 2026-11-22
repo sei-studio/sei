@@ -1,16 +1,16 @@
-// src/bot/brain/anthropicClient.streamSay.test.js
+﻿// src/bot/brain/anthropicClient.streamSay.test.js
 //
 // Voice-call early say emit (260724). When call() is given an `onSay`
 // callback, the request runs with SSE streaming and onSay fires the moment
-// the FIRST `say` tool_use block's input JSON completes — before the rest of
-// the turn has streamed — so the caller can start TTS while the remaining
+// the FIRST `say` tool_use block's input JSON completes â€” before the rest of
+// the turn has streamed â€” so the caller can start TTS while the remaining
 // scratchpad / world-action calls are still generating. These tests assert:
 //   1. onSay fires early (before the stream is fully consumed), exactly once,
 //      with the say text + tool_use id, and the resolved response is shaped
 //      identically to the non-streaming path.
 //   2. A second say block never re-fires onSay.
 //   3. A transient failure AFTER onSay fired still rescue-retries (260725),
-//      because the tool calls bundled after the say() were being dropped —
+//      because the tool calls bundled after the say() were being dropped â€”
 //      but the retry REPLAYS the already-spoken say block (original id + text)
 //      instead of speaking the retry's new line, so the bot never repeats
 //      itself while its come()/remember() calls survive.
@@ -53,7 +53,7 @@ function makeConfig() {
 
 const REQ = { systemBlocks: [{ type: 'text', text: 'sys' }], tools: [], messages: [{ role: 'user', content: 'hi' }] }
 
-/** Standard event sequence: scratchpad text → say tool_use → follow tool_use. */
+/** Standard event sequence: scratchpad text â†’ say tool_use â†’ follow tool_use. */
 function turnEvents() {
   return [
     { type: 'message_start', message: { usage: { input_tokens: 42, cache_read_input_tokens: 10 } } },
@@ -147,7 +147,7 @@ describe('voice-call early say emit (onSay streaming)', () => {
   })
 
   it('transient failure AFTER onSay fired retries, replaying the spoken line', async () => {
-    // Attempt 1 dies right after the say block closed (event index 9) — the
+    // Attempt 1 dies right after the say block closed (event index 9) â€” the
     // player has heard "hey player" but follow() never arrived. Attempt 2
     // regenerates with a DIFFERENT say line, which must not be spoken.
     const retryEvents = turnEvents()
@@ -257,3 +257,7 @@ describe('voice-call early say emit (onSay streaming)', () => {
     expect(resp.text).toBe('fine.')
   })
 })
+
+
+
+

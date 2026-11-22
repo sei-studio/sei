@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: WHEN a control() call may drive. Pure, no Electron.
  *
  * The threat is the screen: a page, a document or a chat on the shared window
@@ -46,15 +46,15 @@ export type ControlDecision =
   | { kind: 'run'; goal: string; origin: 'asked'; request: string }
   | { kind: 'propose'; goal: string; why: 'not_user_tick' | 'not_asked' | 'unsafe_goal' | 'voice_doubt' };
 
-const CJK = /[぀-ヿ㐀-䶿一-鿿가-힯]/;
-const CJK_RUN = /[぀-ヿ㐀-䶿一-鿿가-힯]+/g;
+const CJK = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]/;
+const CJK_RUN = /[\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF]+/g;
 
 /** Lowercase, apostrophes dropped, everything that is not a letter or digit to one space. */
 export function normalizeWords(s: string): string {
   return s
     .normalize('NFKC')
     .toLowerCase()
-    .replace(/['’‘`]/g, '')
+    .replace(/['â€™â€˜`]/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
@@ -224,14 +224,14 @@ export function decideControl(o: {
   return { kind: 'run', goal, origin: 'asked', request: o.call.request!.trim() };
 }
 
-// ── The player's answer to an offer ──────────────────────────────────────
+// â”€â”€ The player's answer to an offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The yes itself. */
 const YES_CORE = ['yes', 'yeah', 'yea', 'yep', 'yup', 'sure', 'do it', 'go ahead'];
 /** Allowed around it, and nothing else. */
 const YES_EXTRA = ['please', 'pls', 'plz', 'ok', 'okay'];
 /** CJK yes pieces; an answer must be made only of these. */
-const CJK_YES = ['好的', '好啊', '好吧', '好', '可以', '行', '是的', '要', '麻烦了', 'はい', 'うん', 'いいよ', 'お願いします', 'お願い', 'おねがい', '네', '응', '좋아', '그래'];
+const CJK_YES = ['å¥½çš„', 'å¥½å•Š', 'å¥½å§', 'å¥½', 'å¯ä»¥', 'è¡Œ', 'æ˜¯çš„', 'è¦', 'éº»çƒ¦äº†', 'ã¯ã„', 'ã†ã‚“', 'ã„ã„ã‚ˆ', 'ãŠé¡˜ã„ã—ã¾ã™', 'ãŠé¡˜ã„', 'ãŠã­ãŒã„', 'ë„¤', 'ì‘', 'ì¢‹ì•„', 'ê·¸ëž˜'];
 
 /**
  * A bare yes: yes / yeah / sure / do it / go ahead, optionally with please
@@ -299,7 +299,7 @@ export function resolvePending(
   return micInDoubt(mic) ? 'unsure' : 'affirmed';
 }
 
-// ── Intent: is the player asking for this, now? ──────────────────────────
+// â”€â”€ Intent: is the player asking for this, now? â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Asks a small model whether `utterance` directly asks for `goal` right now.
@@ -331,7 +331,7 @@ export function proposalLine(goal: string): string {
   return `want me to ${g}?`;
 }
 
-// ── Per-session state ─────────────────────────────────────────────────────
+// â”€â”€ Per-session state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type LineOutcome =
   | { kind: 'none' }
@@ -491,3 +491,7 @@ export class ControlGate {
     this.pending = null;
   }
 }
+
+
+
+

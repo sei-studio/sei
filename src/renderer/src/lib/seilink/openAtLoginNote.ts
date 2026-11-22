@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261110: the line shown when "Open on login" truly could not change (main
  * read the OS item back and it did not take). It says where the user can do
  * it by hand on their OS; the caller adds the app's support path (the
@@ -14,3 +14,7 @@ export function openAtLoginFailNote(platform: string | undefined): string {
   if (platform === 'darwin') return OPEN_AT_LOGIN_FAIL_MAC;
   return OPEN_AT_LOGIN_FAIL_OTHER;
 }
+
+
+
+

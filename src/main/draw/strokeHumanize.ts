@@ -1,5 +1,5 @@
-/**
- * Stroke humanization (260727) — turns the model's sparse polylines into
+﻿/**
+ * Stroke humanization (260727) â€” turns the model's sparse polylines into
  * strokes that read as a hand rather than a plotter.
  *
  * The model emits a `pen` call with a handful of control points. Replaying
@@ -77,7 +77,7 @@ export interface HumanizedStroke {
   durationMs: number;
 }
 
-/** mulberry32 — small, fast, good enough, and seedable from a string. */
+/** mulberry32 â€” small, fast, good enough, and seedable from a string. */
 function makeRng(seed: string): () => number {
   let h = 1779033703 ^ seed.length;
   for (let i = 0; i < seed.length; i++) {
@@ -298,3 +298,7 @@ export function humanizeStroke(
 
   return { stroke: { id, points: wobbled }, delayBeforeMs, durationMs };
 }
+
+
+
+

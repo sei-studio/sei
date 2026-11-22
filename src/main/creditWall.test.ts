@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import {
   CREDIT_WALL_QUIET_MS,
   CreditWallDeduper,
@@ -248,3 +248,7 @@ describe('createCreditWallReporter', () => {
     await expect(r.note({ reason: 'depleted' }, { surface: 'chat' })).resolves.toBeUndefined();
   });
 });
+
+
+
+

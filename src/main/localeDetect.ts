@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260816 (china-compat), 261104 (ja, ru, pt-BR, es): first-launch UI
  * language detection.
  *
@@ -51,3 +51,7 @@ export async function applyLocaleDetection(): Promise<void> {
     /* detection is never worth failing boot over */
   }
 }
+
+
+
+

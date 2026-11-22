@@ -1,4 +1,4 @@
-// src/observers/entities.js — pure function of bot state
+﻿// src/observers/entities.js â€” pure function of bot state
 
 import { hasClearLineOfSight } from './lineOfSight.js'
 
@@ -9,12 +9,12 @@ import { hasClearLineOfSight } from './lineOfSight.js'
  * which knows the version-specific metadata index and parses the raw network
  * slot into an Item with `.name`/`.count`. The old hand-rolled metadata scan
  * below never fired on 1.21.x (the raw slot is `{itemId, itemCount}` with no
- * `.name`, so every dropped item rendered as an anonymous `item` — the bot
+ * `.name`, so every dropped item rendered as an anonymous `item` â€” the bot
  * could not tell a cooked-beef gift from its own dirt drop). The scan is kept
  * only as a legacy fallback for entities without getDroppedItem.
  *
  * Returns `null` if the entity isn't a dropped item or the metadata hasn't
- * arrived yet — caller falls back to the generic 'item' label.
+ * arrived yet â€” caller falls back to the generic 'item' label.
  *
  * @param {object} entity
  * @returns {{ name: string, count: number }|null}
@@ -28,7 +28,7 @@ export function droppedItemName(entity) {
     if (it && typeof it.name === 'string' && it.name) {
       return { name: it.name, count: Number.isFinite(it.count) && it.count > 0 ? it.count : 1 }
     }
-  } catch { /* metadata not arrived / unsupported version — fall through */ }
+  } catch { /* metadata not arrived / unsupported version â€” fall through */ }
   const meta = entity.metadata
   if (!meta) return null
   const values = Array.isArray(meta) ? meta : Object.values(meta)
@@ -165,12 +165,12 @@ export function isDeadEntity(bot, entity) {
  * `pin`: a username (typically the human player) that is force-included in
  * the result whenever it is within `radius`, even if `count` closer entities
  * would otherwise filter it out. The pinned entry keeps its true distance
- * position in the sort, so it appears among the closest visually — it just
+ * position in the sort, so it appears among the closest visually â€” it just
  * isn't subject to the count cap. Without this, the player can vanish from the
  * snapshot in busy areas (sheep / foxes / traders / llamas at <40 blocks),
  * leaving the model with no real coords to feed `goTo` or `follow`.
  *
- * `pins`: additional usernames force-included the same way (260618 — the other
+ * `pins`: additional usernames force-included the same way (260618 â€” the other
  * AI companions in a multi-bot session). The human and a couple of teammates
  * is a small set, so they all stay visible with coords; items and mobs fill the
  * remaining slots. Without this, a sibling bot competes with sheep for the 6
@@ -203,7 +203,7 @@ export function nearbyEntities(bot, opts = {}) {
     if (isDeadEntity(bot, e)) continue
     const d = e.position.distanceTo(me.position)
     if (d > radius) continue
-    // Visibility filter (260618): only keep entities the bot can actually SEE —
+    // Visibility filter (260618): only keep entities the bot can actually SEE â€”
     // a clear line of sight within the radius, with terrain and fluids as
     // occluders. This drops mobs that are underground / behind walls / over a
     // hill (e.g. a skeleton in a cave below), so `nearby entities` reflects what
@@ -228,7 +228,7 @@ export function nearbyEntities(bot, opts = {}) {
   // entry (so two pins never evict each other). Naive "concat + re-sort + re-slice"
   // would just drop the pin again (it's at rank > count by definition). If every
   // visible slot is already a pin, we let the set overflow slightly rather than
-  // drop a teammate — the pin set is small (human + a teammate or two).
+  // drop a teammate â€” the pin set is small (human + a teammate or two).
   if (pinSet.size > 0 || pinIds.size > 0) {
     for (const pinEntry of all) {
       if (!isPinned(pinEntry.entity)) continue
@@ -252,3 +252,7 @@ export function nearbyEntities(bot, opts = {}) {
   const more = Math.max(0, all.length - entries.length)
   return { entries, more }
 }
+
+
+
+

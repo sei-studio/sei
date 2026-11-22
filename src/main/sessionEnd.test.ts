@@ -1,5 +1,5 @@
-/**
- * 260929 — bot_session_ended.reason mapping (see sessionEnd.ts).
+﻿/**
+ * 260929 â€” bot_session_ended.reason mapping (see sessionEnd.ts).
  */
 import { describe, it, expect } from 'vitest';
 import { sessionEndProps, isSessionFailure } from './sessionEnd';
@@ -95,3 +95,7 @@ describe('isSessionFailure', () => {
     expect(isSessionFailure({ kind: 'idle', characterId: id, endReason: 'user_stop' })).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import {
   eventAddendum, worldPrimer, DST_BASELINE, DST_BASELINE_CAPS, dstBaseline, ACTION_DESCRIPTIONS, ACTION_DESCRIPTIONS_CAPS, describeAction, ALERT_HINTS,
   CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CAPS, capabilityParagraph, ACTION_RULES, ACTION_RULES_CAPS, actionRules,
@@ -157,3 +157,7 @@ describe('DST death turn after a respawn (261104)', () => {
     }
   })
 })
+
+
+
+

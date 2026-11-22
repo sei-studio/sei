@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Local pitch shifting for companion speech (260731).
  *
  * WHY THIS EXISTS. ElevenLabs has no pitch parameter, so a "high, clearly AI"
@@ -7,7 +7,7 @@
  * `playbackRate = rate` with preservesPitch OFF (renderer), which raises pitch
  * and pace together. The resample is exact arithmetic. The speed compensation
  * is a MODEL CONDITIONING HINT, and a short utterance gives the model almost no
- * room to express it — so on "oh." or "yeah?" the compensation under-delivered
+ * room to express it â€” so on "oh." or "yeah?" the compensation under-delivered
  * while the resample applied at full strength, and the line came out fast. That
  * was structural, not a glitch, and no tuning fixes it.
  *
@@ -18,7 +18,7 @@
  * WHAT IT SOUNDS LIKE. Formant compensation is deliberately OFF. A phase
  * vocoder with formants left alone moves them WITH the pitch, which is exactly
  * what the old resample did, so every existing character sounds identical to
- * before — same timbre, same stored voicePitch, just the right pace now. Turning
+ * before â€” same timbre, same stored voicePitch, just the right pace now. Turning
  * it on would give "same person, higher voice", a real option worth having, but
  * not one to slip in under a migration whose whole point is that nothing
  * audible changes except the bug.
@@ -28,7 +28,7 @@
  * node built across that switch comes up attached to an output being torn down
  * (see voiceAudio.ts whenSteady, and the ring bug it was written for). So the
  * bus takes the same context every call sound uses, and builds behind the same
- * gate — warmed from the ring, which fires after the mic is up, not from dial.
+ * gate â€” warmed from the ring, which fires after the mic is up, not from dial.
  *
  * READINESS IS SYNCHRONOUS ON PURPOSE. The audio queue starts clips from
  * synchronous code paths, and threading a promise through them would put an
@@ -44,7 +44,7 @@ import { sharedContext, whenSteady } from './voiceAudio';
  * node reports latency() == blockMs exactly, at every size tried.
  *
  * That latency lands between the element's 'playing' event and the first sample
- * the player hears, so it offsets everything downstream of onAudible — the
+ * the player hears, so it offsets everything downstream of onAudible â€” the
  * avatar ring, the caption, a call scene's talking animation, the barge-in
  * grace window (260730 tuned all of those). The library's 120ms default is more
  * than that budget wants.
@@ -95,7 +95,7 @@ const attached = new WeakMap<HTMLAudioElement, MediaElementAudioSourceNode>();
  * Build the shifter, once, when the output is genuinely rendering. Safe to call
  * repeatedly (every dial does). Failure is silent and permanent for the
  * session: attach() keeps returning null and speech plays unshifted, which is
- * the honest degradation — see attach().
+ * the honest degradation â€” see attach().
  */
 export function warm(): void {
   if (node || building) return;
@@ -125,7 +125,7 @@ export function ready(): boolean {
 }
 
 /**
- * Warm, then resolve when the shifter is usable — or false if it is not within
+ * Warm, then resolve when the shifter is usable â€” or false if it is not within
  * `timeoutMs`. For callers that CAN wait a moment and would rather not play the
  * wrong thing: the voice picker, where an unshifted sample is not a slightly
  * flat call, it is the slider appearing to do nothing. The audio queue must not
@@ -155,7 +155,7 @@ export function whenReady(timeoutMs = 1500): Promise<boolean> {
 /**
  * Route `el` through the shifter at `rate` (1 = as recorded). Returns a detach
  * to call when the clip is torn down, or null when the shift cannot be applied
- * — the caller then plays the element normally, at its natural pitch AND pace.
+ * â€” the caller then plays the element normally, at its natural pitch AND pace.
  *
  * Unshifted is the right fallback rather than the old resample: with no pace
  * compensation left in the synthesis request, resampling would play the clip
@@ -165,7 +165,7 @@ export function whenReady(timeoutMs = 1500): Promise<boolean> {
  */
 /**
  * The MediaElementSourceNode attach() built for `el`, if any (260804). The
- * avatar level tap must observe the SAME node — an element can only ever have
+ * avatar level tap must observe the SAME node â€” an element can only ever have
  * one source node, so it cannot build its own once the shifter owns it.
  */
 export function pitchSourceFor(el: HTMLAudioElement): MediaElementAudioSourceNode | undefined {
@@ -189,7 +189,7 @@ export function attach(el: HTMLAudioElement, rate: number): (() => void) | null 
   attached.set(el, src);
   if (rate !== scheduledRate) {
     scheduledRate = rate;
-    // formantCompensation stays off — see the file header.
+    // formantCompensation stays off â€” see the file header.
     node.schedule({ semitones: semitonesFromRate(rate), formantCompensation: false });
   }
   src.connect(node);
@@ -202,3 +202,7 @@ export function attach(el: HTMLAudioElement, rate: number): (() => void) | null 
     attached.delete(el);
   };
 }
+
+
+
+

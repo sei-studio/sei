@@ -1,4 +1,4 @@
-// weakWeaponNote (260708) — when a mob survives the batch and the bot is not
+﻿// weakWeaponNote (260708) â€” when a mob survives the batch and the bot is not
 // holding a real weapon, the result string must say so and point at the right
 // fix: equip the weapon already in the inventory if one exists, otherwise
 // craft one (Lyra fought a zombie and a skeleton with a stick while the player
@@ -169,7 +169,7 @@ describe('attackEntity pursuit keeps its goal (261012)', () => {
     await new Promise((r) => setTimeout(r, 250))
     expect(set.length).toBeGreaterThanOrEqual(2)
     bot.entities[7].position = new Vec3(1, 64, 0)
-    expect(await p).toMatch(/attacked zombie 1×|killed|zombie/)
+    expect(await p).toMatch(/attacked zombie 1Ã—|killed|zombie/)
   })
 })
 
@@ -202,7 +202,7 @@ describe('continueAttack (261019)', () => {
     expect(reply).toMatch(/^your attackEntity is already on that zombie \(1 swing so far\), so it keeps going with up to 3 more/)
     // 1 swing before the repeat call + 3 more, not the original 2.
     expect(bot.attack).toHaveBeenCalledTimes(4)
-    expect(r).toMatch(/attacked zombie 4×/)
+    expect(r).toMatch(/attacked zombie 4Ã—/)
     // Closed once the action returns.
     expect(continueAttack(bot, running, again({ entity: 'zombie' }))).toBeNull()
   })
@@ -450,3 +450,7 @@ describe('the running attack, as the turn sees it (261106)', () => {
     expect(withAttackRunState(bot, 'sei:attacked', data)).toBe(data)
   })
 })
+
+
+
+

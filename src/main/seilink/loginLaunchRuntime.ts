@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Electron wiring for "Open Sei when I log in" (261107): binds openAtLogin.ts
  * to the real app, decides whether this run is a login launch, and keeps the
  * one LoginLaunch (loginLaunch.ts) index.ts feeds. The rules live in those
@@ -168,3 +168,7 @@ export async function settleLoginLaunch(): Promise<void> {
   }
   launch.startupSettled(seilinkRoomUp(seilinkHostStatus()));
 }
+
+
+
+

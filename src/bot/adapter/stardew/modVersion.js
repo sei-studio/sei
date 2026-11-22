@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/modVersion.js: what the connected SMAPI mod can do,
+﻿// src/bot/adapter/stardew/modVersion.js: what the connected SMAPI mod can do,
 // read from the version in its welcome/hello. The bundled mod DLL is rebuilt
 // on a Mac, so the app can ship prompt text ahead of the mod it describes;
 // anything that depends on new mod behavior gates on this.
@@ -45,3 +45,7 @@ export function modHoldsFollow(version) {
 export function modHasChores(version) {
   return modVersionAtLeast(version, CHORES_MIN_MOD)
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 import { boardTokens, mirrorFen, mirrorMove, mirrorSquare } from '../src/encode.js';
@@ -46,3 +46,7 @@ test('mirrorFen swaps castling rights and mirrors en passant', () => {
   // Double mirror is identity.
   assert.equal(mirrorFen(mirrored), fen);
 });
+
+
+
+

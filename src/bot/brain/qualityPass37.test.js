@@ -1,4 +1,4 @@
-// 261102: quality pass 37, item hand-offs (11-02 scorecard, dev ad499375).
+﻿// 261102: quality pass 37, item hand-offs (11-02 scorecard, dev ad499375).
 //  - errands-02: the arrival note said "look back at what they asked you
 //    for", and she handed over the logs they had called off while the coal
 //    they asked for stayed in her bag. Open asks now remember the items the
@@ -29,14 +29,14 @@ afterEach(() => { vi.restoreAllMocks() })
 describe('NUDGES.arrivedCarrying / deliveryNote', () => {
   const asks = [{ line: 'grab me some coal and bring it back', items: [{ item: 'coal', n: 6 }] }]
   it('names the items and the line they were for, and both outcomes', () => {
-    expect(NUDGES.arrivedCarrying({ who: 'Alex', asks })).toBe('You are next to Alex now. You are carrying coal×6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, and anything they called off stays with you.')
-    expect(NUDGES.deliveryNote({ who: 'Alex', asks })).toBe('hand-over: you set off toward Alex carrying coal×6, which you got for their line "grab me some coal and bring it back". It reaches them only through give, which walks to them first. If they called it off, keep it.')
+    expect(NUDGES.arrivedCarrying({ who: 'Alex', asks })).toBe('You are next to Alex now. You are carrying coalÃ—6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, and anything they called off stays with you.')
+    expect(NUDGES.deliveryNote({ who: 'Alex', asks })).toBe('hand-over: you set off toward Alex carrying coalÃ—6, which you got for their line "grab me some coal and bring it back". It reaches them only through give, which walks to them first. If they called it off, keep it.')
   })
   it('joins several asks and cuts a long line', () => {
     const t = NUDGES.arrivedCarrying({ who: null, asks: [...asks, { line: 'x'.repeat(150), items: [{ item: 'oak_log', n: 3 }, { item: 'birch_log', n: 1 }] }] })
     expect(t).toContain('the player now')
-    expect(t).toContain('; and oak_log×3 and birch_log×1, which you got for their line "' + 'x'.repeat(97) + '..."')
-    expect(t).not.toMatch(/—/)
+    expect(t).toContain('; and oak_logÃ—3 and birch_logÃ—1, which you got for their line "' + 'x'.repeat(97) + '..."')
+    expect(t).not.toMatch(/â€”/)
   })
 })
 
@@ -199,8 +199,8 @@ describe('orchestrator: open asks remember their items', () => {
     await send('grab me some coal and bring it back')
     const t = allText(arrivalCalls().at(-1))
     expect(t).toContain(CARRYING)
-    expect(t).toContain('coal×6, which you got for their line \\"grab me some coal and bring it back\\"')
-    expect(t).not.toContain('cobblestone×')
+    expect(t).toContain('coalÃ—6, which you got for their line \\"grab me some coal and bring it back\\"')
+    expect(t).not.toContain('cobblestoneÃ—')
     // Named once, by the arrival note, not again by the delivery line.
     expect(t).not.toContain(DELIVERY)
   })
@@ -232,8 +232,8 @@ describe('orchestrator: open asks remember their items', () => {
     await send('get me 8 logs')
     const t = allText(arrivalCalls().at(-1))
     expect(t).toContain(CARRYING)
-    expect(t).toContain('coal×6')
-    expect(t).not.toContain('oak_log×')
+    expect(t).toContain('coalÃ—6')
+    expect(t).not.toContain('oak_logÃ—')
   })
 
   it('a give of the coal closes its ask', async () => {
@@ -260,7 +260,7 @@ describe('orchestrator: open asks remember their items', () => {
       turn(act('a3', 'end_loop')),
     ], { inv })
     await send('grab me some coal')
-    expect(allText(arrivalCalls().at(-1))).toContain('coal×3')
+    expect(allText(arrivalCalls().at(-1))).toContain('coalÃ—3')
   })
 })
 
@@ -278,7 +278,7 @@ describe('orchestrator: a give of the product closes a recipe chain (review)', (
     await send('make me a crafting table')
     const t = allText(arrivalCalls().at(-1))
     expect(t).not.toContain(CARRYING)
-    expect(t).not.toContain('oak_log×')
+    expect(t).not.toContain('oak_logÃ—')
     expect(t).not.toContain(GENERAL)
   })
 
@@ -294,7 +294,7 @@ describe('orchestrator: a give of the product closes a recipe chain (review)', (
     await send('smelt me some iron')
     const t = allText(arrivalCalls().at(-1))
     expect(t).not.toContain(CARRYING)
-    expect(t).not.toContain('raw_iron×')
+    expect(t).not.toContain('raw_ironÃ—')
   })
 
   it('a give no open ask names closes them all (pass 32)', async () => {
@@ -308,7 +308,7 @@ describe('orchestrator: a give of the product closes a recipe chain (review)', (
     await send('bring me some torches')
     const t = allText(arrivalCalls().at(-1))
     expect(t).not.toContain(CARRYING)
-    expect(t).not.toContain('coal×')
+    expect(t).not.toContain('coalÃ—')
   })
 
   it('her own gather on a later loop does not become the items of "go explore east"', async () => {
@@ -331,7 +331,7 @@ describe('orchestrator: a give of the product closes a recipe chain (review)', (
     const arrival = arrivalCalls().at(-1)
     expect(arrival).toBeTruthy()
     expect(allText(arrival)).not.toContain(CARRYING)
-    expect(allText(arrival)).not.toContain('oak_log×')
+    expect(allText(arrival)).not.toContain('oak_logÃ—')
   })
 })
 
@@ -370,7 +370,7 @@ describe('orchestrator: a stop closes only the asks whose work it ended', () => 
     await send('actually forget the logs, just meet me over here')
     await flush()
     const arrival = provider.calls.filter((c) => /reached Steve/.test(allText(c))).at(-1)
-    expect(allText(arrival)).toContain('coal×1')
+    expect(allText(arrival)).toContain('coalÃ—1')
   })
 })
 
@@ -387,7 +387,7 @@ describe('orchestrator: the delivery line', () => {
     await send('lol ok')
     const t = allText(provider.calls.at(-1))
     expect(t).toContain(DELIVERY)
-    expect(t).toContain('coal×1')
+    expect(t).toContain('coalÃ—1')
   })
 
   it('rides the walk, and is gone once the walk has ended (the arrival note says it once)', async () => {
@@ -451,3 +451,7 @@ describe('orchestrator: the delivery line', () => {
     expect(allText(provider.calls.at(-1))).not.toContain(DELIVERY)
   })
 })
+
+
+
+

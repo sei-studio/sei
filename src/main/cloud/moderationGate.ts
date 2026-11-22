@@ -1,38 +1,38 @@
-/**
- * Phase 12 Plan 07 — Pre-publish moderation orchestrator (SHARE-05/06/07).
+﻿/**
+ * Phase 12 Plan 07 â€” Pre-publish moderation orchestrator (SHARE-05/06/07).
  *
  * MAIN PROCESS ONLY. Wraps the two synchronous Edge Function gates
  * (`moderate-character-images` from 12-03, `moderate-character-prompt` from
  * 12-04) and returns a tagged-union `PublishResult` that the renderer-facing
  * IPC handler in Wave 3 (12-08) translates into ERROR_COPY entries.
  *
- * ─── Order of operations (mandatory; covered by tests 1–8) ─────────────────
+ * â”€â”€â”€ Order of operations (mandatory; covered by tests 1â€“8) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  *
  *   1. Image moderation (Edge Function `moderate-character-images`).
  *      portraitUrl is DERIVED here from
  *        `${supabaseUrl}/storage/v1/object/public/portraits/${ownerUuid}/${characterId}.png`
  *      so the caller (renderer or IPC handler) CANNOT point at a different
  *      image (T-12-03-01 mitigation; 12-03-SUMMARY caller invariant).
- *      Provider 502 / network error / timeout → CLOUD_MODERATION_PROVIDER_UNAVAILABLE
+ *      Provider 502 / network error / timeout â†’ CLOUD_MODERATION_PROVIDER_UNAVAILABLE
  *      (Pitfall 12 hard-fail; never silently treated as clean).
  *
  *   2. Prompt moderation (Edge Function `moderate-character-prompt`).
  *      Body shape from 12-04: `{ name, persona_source, persona_expanded? }`.
  *      Three possible verdicts:
- *        - 'clean'      → proceed to upsert.
- *        - 'block'      → CLOUD_MODERATION_PROMPT_FLAGGED. Terminal — caller
+ *        - 'clean'      â†’ proceed to upsert.
+ *        - 'block'      â†’ CLOUD_MODERATION_PROMPT_FLAGGED. Terminal â€” caller
  *                         must edit name or persona_source.
- *        - 'regenerate' → re-expand persona via `reExpandPersona` and retry.
+ *        - 'regenerate' â†’ re-expand persona via `reExpandPersona` and retry.
  *                         Cap = SOFT_RETRY_CAP (2). 3rd consecutive regenerate
  *                         returns CLOUD_MODERATION_PROMPT_FLAGGED (Pitfall 6 /
  *                         T-12-07-02).
- *      Provider error → same hard-fail as image step.
+ *      Provider error â†’ same hard-fail as image step.
  *
  *   3. Upsert with shared=true + moderation_status='clean' + provider stamps.
  *      Failure here is NOT a moderation-gate failure; it bubbles up as the
  *      existing CLOUD_SYNC_UPSERT_FAILED sentinel from cloudCharacterClient.
  *
- * ─── Why dependency injection ──────────────────────────────────────────────
+ * â”€â”€â”€ Why dependency injection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * The orchestrator never imports `callEdgeFunction`, `upsertCharacter`,
  * `getCharacter`, or the Supabase URL directly. All collaborators are passed
  * through `PublishDeps` so:
@@ -44,7 +44,7 @@
  *   - `reExpandPersona` is wired to the existing persona-expansion LLM call
  *     from Phase 11 (`expandAndSaveCharacter`); production callers pass that
  *     function. v1.0 may pass a graceful-fallback identity function if the
- *     expander isn't yet ready — in that case soft regenerate becomes a single
+ *     expander isn't yet ready â€” in that case soft regenerate becomes a single
  *     retry with the same expanded text, which will (correctly) re-flag and
  *     trip the cap.
  */
@@ -64,13 +64,13 @@ const SOFT_RETRY_CAP = 2;
 
 /**
  * Per-call timeout for moderation Edge Functions. 30s headroom: SightEngine
- * + OpenAI moderation typically respond in 5–10s; the Edge Function itself
+ * + OpenAI moderation typically respond in 5â€“10s; the Edge Function itself
  * adds ~1s of cold-start latency. The default 15s in edgeFunctionClient is
  * too tight for the long tail on free-tier provider quotas.
  */
 const MODERATION_TIMEOUT_MS = 30_000;
 
-/** Friendly copy — never references provider names or raw categories (D-33c / T-12-07-03). */
+/** Friendly copy â€” never references provider names or raw categories (D-33c / T-12-07-03). */
 const FRIENDLY_IMAGE_FLAGGED =
   'Image flagged by automated review. Please use a different portrait.';
 const FRIENDLY_PROMPT_FLAGGED =
@@ -83,7 +83,7 @@ const FRIENDLY_PROVIDER_UNAVAILABLE =
 const TEXT_PROVIDER_LABEL = 'openai-omni-moderation-latest';
 
 /**
- * The character row shape the gate consumes. Deliberately narrow — we only
+ * The character row shape the gate consumes. Deliberately narrow â€” we only
  * need the fields that flow into the two Edge Function bodies plus the
  * upsert payload spread.
  *
@@ -114,7 +114,7 @@ interface PromptModerationResponse {
   flaggedCategoriesInternal?: string[];
 }
 
-/** Public PublishResult tagged-union — consumed by Wave 3 IPC handler. */
+/** Public PublishResult tagged-union â€” consumed by Wave 3 IPC handler. */
 export type PublishResult =
   | { ok: true; moderationProvider: string; textProvider: string }
   | {
@@ -148,7 +148,7 @@ export interface PublishDeps {
    * Soft-tier regenerate hook. Production = an LLM re-expansion that pulls
    * the current row, runs the persona-expander with mod-steering context,
    * and returns the new expanded text. Returns the NEW persona_expanded
-   * string (does NOT persist on its own — this function persists via the
+   * string (does NOT persist on its own â€” this function persists via the
    * final upsertCharacter call).
    */
   reExpandPersona: (characterId: string) => Promise<string>;
@@ -164,7 +164,7 @@ export interface PublishDeps {
 }
 
 /**
- * Orchestrate pre-publish moderation. Pure with respect to its deps — any
+ * Orchestrate pre-publish moderation. Pure with respect to its deps â€” any
  * external side effect (Edge Function call, DB write, LLM expansion) flows
  * through `deps`. Returns a tagged-union result; never throws on moderation
  * outcomes (it only throws if upsertCharacter throws or getCharacter throws).
@@ -176,13 +176,13 @@ export async function publishWithModeration(
   const char = await deps.getCharacter(characterId);
   const jwt = await deps.getJwt();
 
-  // ── Step 1: derive portraitUrl server-side (T-12-03-01 mitigation) ──────
-  // Caller (renderer) NEVER supplies this URL — it's reconstructed here from
+  // â”€â”€ Step 1: derive portraitUrl server-side (T-12-03-01 mitigation) â”€â”€â”€â”€â”€â”€
+  // Caller (renderer) NEVER supplies this URL â€” it's reconstructed here from
   // the just-uploaded Storage path layout owned by cloudCharacterClient
   // (`portraits/<ownerUuid>/<characterId>.png`).
   const portraitUrl = buildPortraitUrl(deps.supabaseUrl, char.owner, characterId);
 
-  // ── Step 2: image moderation ────────────────────────────────────────────
+  // â”€â”€ Step 2: image moderation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let imageResult: ImageModerationResponse;
   try {
     imageResult = await deps.callEdgeFunction<ImageModerationResponse>(
@@ -196,7 +196,7 @@ export async function publishWithModeration(
   } catch (err) {
     // Pitfall 12 / T-12-07-04: never silently treat as clean. Log the real
     // failure so a stuck "Moderation service is temporarily unavailable"
-    // surface has a debuggable breadcrumb — the friendly copy is for the
+    // surface has a debuggable breadcrumb â€” the friendly copy is for the
     // user, the console line is for whoever is triaging.
     console.warn(
       `[sei] moderation gate: moderate-character-images call failed for ${characterId}: ${(err as Error).message}`,
@@ -212,7 +212,7 @@ export async function publishWithModeration(
     };
   }
 
-  // ── Step 3: prompt moderation with bounded soft-retry loop ──────────────
+  // â”€â”€ Step 3: prompt moderation with bounded soft-retry loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   let personaExpanded = char.persona_expanded;
   for (let attempt = 0; attempt <= SOFT_RETRY_CAP; attempt += 1) {
     let promptResult: PromptModerationResponse;
@@ -242,11 +242,11 @@ export async function publishWithModeration(
     }
 
     if (promptResult.verdict === 'block') {
-      // Hard-tier flag is terminal — no retry path (D-33b).
+      // Hard-tier flag is terminal â€” no retry path (D-33b).
       return promptFlagged();
     }
 
-    // verdict === 'regenerate' — soft tier.
+    // verdict === 'regenerate' â€” soft tier.
     if (attempt === SOFT_RETRY_CAP) {
       // Exhausted retries (3rd consecutive regenerate). Fail closed.
       return promptFlagged();
@@ -256,7 +256,7 @@ export async function publishWithModeration(
     personaExpanded = await deps.reExpandPersona(characterId);
   }
 
-  // ── Step 4: publish (clean across both gates) ───────────────────────────
+  // â”€â”€ Step 4: publish (clean across both gates) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const nowIso = new Date().toISOString();
   await deps.upsertCharacter(
     {
@@ -279,10 +279,10 @@ export async function publishWithModeration(
   };
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────
+// â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * Storage public URL layout — MUST match `cloudCharacterClient.portraitStoragePath`
+ * Storage public URL layout â€” MUST match `cloudCharacterClient.portraitStoragePath`
  * exactly (`<owner>/<characterId>.png`). Hand-rolled rather than calling
  * supabase-js `getPublicUrl` so the gate can derive the URL without holding
  * a supabase client reference (keeping the orchestrator purely
@@ -308,3 +308,7 @@ function promptFlagged(): PublishResult {
     friendlyMessage: FRIENDLY_PROMPT_FLAGGED,
   };
 }
+
+
+
+

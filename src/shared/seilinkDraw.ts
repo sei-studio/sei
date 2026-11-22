@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink draw plan (261104, host pass). Pure: no DOM, no Node. The room
  * renderer (RoomCanvas), the editor and the AI's look() composite all draw
  * from the same plan, so the three can never disagree about what is where.
@@ -336,7 +336,7 @@ export function itemRect(layer: ItemLayer, natural: [number, number]): RoomBox {
   return [layer.x - w / 2, layer.y - h, w, h];
 }
 
-// ── Soft tops ───────────────────────────────────────────────────────────────
+// â”€â”€ Soft tops â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * How a sunk item meets a soft top, canvas px. The sprite is drawn `shift`
@@ -420,7 +420,7 @@ export function baseSpan(
   return null;
 }
 
-// ── Time of day ─────────────────────────────────────────────────────────────
+// â”€â”€ Time of day â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Minutes a clock change of room time takes to crossfade. */
 export const ROOM_TIME_FADE_MIN = 30;
@@ -467,7 +467,7 @@ export function roomTimeMix(state: Pick<RoomState, 'time'>, now: Date = new Date
   return roomTimeMixAt(now);
 }
 
-// ── Overlay tint ────────────────────────────────────────────────────────────
+// â”€â”€ Overlay tint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const FALLBACK_OVERLAY: Record<RoomTime, string> = { day: '#efe6da', dusk: '#6b4a5a', night: '#1c2033' };
 
@@ -523,7 +523,7 @@ export function roomOverlay(
   return { color, light, ink: light ? '#1d1b22' : '#f4f1ee' };
 }
 
-// ── Viewport ────────────────────────────────────────────────────────────────
+// â”€â”€ Viewport â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type RoomFit = 'cover' | 'contain';
 
@@ -603,7 +603,7 @@ export function viewportToCanvas(vp: RoomViewport, x: number, y: number): [numbe
   return vp.scale > 0 ? [(x - vp.left) / vp.scale, (y - vp.top) / vp.scale] : [0, 0];
 }
 
-// ── Glow effects ────────────────────────────────────────────────────────────
+// â”€â”€ Glow effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Opacity of an animated glow at `ms` (any monotonic clock). 'pulse' breathes
@@ -619,3 +619,7 @@ export function glowAlpha(effect: RoomGlowEffect | null, ms: number, seed = 0): 
   }
   return 1;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The WorldLink entrance gating (261119): which trigger plays her entrance,
  * when her look counts as on its way, and the closed shapes on the wire.
  */
@@ -104,3 +104,7 @@ describe('timing', () => {
     expect(LINK_TIMEOUT_MS).toBeGreaterThan(EXPECTED_LINK_MS);
   });
 });
+
+
+
+

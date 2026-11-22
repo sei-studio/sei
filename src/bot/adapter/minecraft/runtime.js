@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/runtime.js — the Minecraft game runtime (M0, 260908).
+﻿// src/bot/adapter/minecraft/runtime.js â€” the Minecraft game runtime (M0, 260908).
 //
 // The composer (src/bot/index.js) dynamic-imports `./adapter/<kind>/runtime.js`
 // by config.adapter.kind, so mineflayer and its native dependencies load ONLY
@@ -11,15 +11,15 @@
 //
 // Contract: RuntimeHooks / RuntimeHandle in src/bot/brain/types.js. The four
 // exports every game runtime provides:
-//   botUsernameFor(character)            → the in-game name this body logs in as
-//   adapterConfigFrom({joinTarget, botUsername}) → the `adapter.<kind>` config block
-//   checkJoinTarget(joinTarget)          → {error, message} when nothing to join, else null
-//   createRuntime(config, hooks)         → RuntimeHandle
+//   botUsernameFor(character)            â†’ the in-game name this body logs in as
+//   adapterConfigFrom({joinTarget, botUsername}) â†’ the `adapter.<kind>` config block
+//   checkJoinTarget(joinTarget)          â†’ {error, message} when nothing to join, else null
+//   createRuntime(config, hooks)         â†’ RuntimeHandle
 //
 // The Electron path hands the bot `version: 'auto'`. createRuntime resolves
 // that to an EXPLICIT, supported version via a status ping (resolveServerVersion)
-// before the first connect — so the bot matches whatever the player's LAN world
-// runs (1.20.6, 1.21.x, …) while staying bounded to minecraft-protocol's
+// before the first connect â€” so the bot matches whatever the player's LAN world
+// runs (1.20.6, 1.21.x, â€¦) while staying bounded to minecraft-protocol's
 // supported set. Pinning a single version (the old '1.21.1') broke every world
 // on a different version; raw mineflayer in-handshake auto-detect was avoided
 // because it produced protocol kicks. Ping-then-pass-explicit gets both:
@@ -38,8 +38,8 @@ import { sessionActionStats } from '../../brain/actionStats.js'
  * (else the server kicks with multiplayer.disconnect.name_taken). Prefer the
  * per-persona character.username (CharacterSchema already enforces the MC
  * regex + 16-char cap); else the persona name with accented letters folded
- * ("Sofía" -> "Sofia") and sanitized to MC's username constraints:
- * [A-Za-z0-9_], ≤16 chars, non-empty, 'Sei' as the last resort. The rule is
+ * ("SofÃ­a" -> "Sofia") and sanitized to MC's username constraints:
+ * [A-Za-z0-9_], â‰¤16 chars, non-empty, 'Sei' as the last resort. The rule is
  * src/bot/names.js mcUsernameFromName, which src/shared/characterSchema.ts
  * effectiveMcUsername() calls too, so main and the bot cannot drift.
  */
@@ -52,7 +52,7 @@ export function botUsernameFor(character) {
  * The `adapter.minecraft` block for ConfigSchema. `joinTarget` is main's
  * `{ port, motd, mc_username, skinServerBaseUrl }` (src/shared/gameIpc.ts
  * MinecraftJoinTarget). Sei is same-machine only, so the host is loopback and
- * auth is offline. 'auto' → resolved to the world's actual version by the
+ * auth is offline. 'auto' â†’ resolved to the world's actual version by the
  * status ping in createRuntime.
  */
 export function adapterConfigFrom({ joinTarget, botUsername }) {
@@ -68,7 +68,7 @@ export function adapterConfigFrom({ joinTarget, botUsername }) {
 /**
  * Main hands the cached LAN port over (it owns the LAN watcher and revalidates
  * freshness via its 3-second stale window); the bot never re-discovers it.
- * No port means nothing to join — the same LAN_NOT_OPEN the supervisor's own
+ * No port means nothing to join â€” the same LAN_NOT_OPEN the supervisor's own
  * pre-check raises, kept here as the bot-side backstop.
  */
 export function checkJoinTarget(joinTarget) {
@@ -77,7 +77,7 @@ export function checkJoinTarget(joinTarget) {
       error: 'LAN_NOT_OPEN',
       message:
         'No LAN broadcast detected. Make sure your Minecraft world is open to LAN ' +
-        '(ESC → Open to LAN → Start LAN World) and click Summon again.',
+        '(ESC â†’ Open to LAN â†’ Start LAN World) and click Summon again.',
     }
   }
   return null
@@ -148,14 +148,14 @@ export async function createRuntime(config, hooks) {
   let _dashWatching = false
   let _stopped = false
   let _reconnectTimer = null
-  // 260508-nkk: only forward the FIRST spawn → onConnected; subsequent
+  // 260508-nkk: only forward the FIRST spawn â†’ onConnected; subsequent
   // reconnect-spawns are normal recovery and must not duplicate summon-ready
   // (the supervisor already gates on summonResolved, but belt-and-suspenders).
   let _readyFired = false
   let _reconnectAttempts = 0
   let _lastSpawnAt = 0
 
-  // Terminal failure → the composer emits the lifecycle error and shuts down.
+  // Terminal failure â†’ the composer emits the lifecycle error and shuts down.
   // `end` (260929): {endReason, kickCode} for a post-spawn drop, so main can
   // say WHY a live session ended (bot_session_ended.reason).
   const fail = (message, end = null) => {
@@ -167,7 +167,7 @@ export async function createRuntime(config, hooks) {
     }
   }
 
-  // ─── Resolve the Minecraft protocol version ────────────────────────────────
+  // â”€â”€â”€ Resolve the Minecraft protocol version â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Resolved ONCE here; reconnects reuse it. A ping FAILURE is non-fatal: fall
   // back to mineflayer's own auto-detect (connect.js omits `version` when it
   // sees 'auto'), and let the normal connect / reconnect loop handle a
@@ -184,10 +184,10 @@ export async function createRuntime(config, hooks) {
         return makeHandle()
       }
       logger.warn(
-        `[sei] Version ping failed (${err && err.message}) — ` +
+        `[sei] Version ping failed (${err && err.message}) â€” ` +
         `falling back to mineflayer auto-detect.`,
       )
-      mc.version = 'auto' // connect.js omits version when 'auto' → mineflayer detects in-handshake
+      mc.version = 'auto' // connect.js omits version when 'auto' â†’ mineflayer detects in-handshake
     }
   }
   markBoot('version_resolved')
@@ -205,7 +205,7 @@ export async function createRuntime(config, hooks) {
         // brain wires session start via adapter.attach onSpawn; this hook is
         // for the surrounding lifecycle (summon-ready emit). Fires onConnected
         // the first time mineflayer's spawn event lands so the supervisor's
-        // "Connecting…" → "Online" flip happens at the right moment.
+        // "Connectingâ€¦" â†’ "Online" flip happens at the right moment.
         _lastSpawnAt = Date.now()
         if (_readyFired) return
         _readyFired = true
@@ -240,11 +240,11 @@ export async function createRuntime(config, hooks) {
           }
           loadPovStack().catch(() => { /* logged by the loader; look() degrades */ })
         }, VISION_WARMUP_DELAY_MS)
-        // TEMPORARY — Phase 15-01 de-risk spike (REMOVE after the packaged-build
+        // TEMPORARY â€” Phase 15-01 de-risk spike (REMOVE after the packaged-build
         // checkpoint approves). Behind SEI_VISION_SPIKE=1 so it ships nothing
         // permanent. Proves the native gl/canvas render path loads + renders inside
         // the bot utilityProcess under the Electron 42 ABI (dev AND packaged dist).
-        // Dynamic import keeps povRenderer (→ native gl/canvas dlopen) off the normal
+        // Dynamic import keeps povRenderer (â†’ native gl/canvas dlopen) off the normal
         // startup path; only loaded when the flag is set.
         if (process.env.SEI_VISION_SPIKE === '1') {
           // Give chunks ~3s to stream in after spawn before the one-shot render.
@@ -255,10 +255,10 @@ export async function createRuntime(config, hooks) {
               if (result?.ok) {
                 logger.info(`vision spike: rendered ${result.buffer.length} bytes JPEG`)
               } else {
-                logger.warn(`vision spike: degraded (${result?.reason ?? 'unknown'}) — render returned no frame`)
+                logger.warn(`vision spike: degraded (${result?.reason ?? 'unknown'}) â€” render returned no frame`)
               }
             } catch (err) {
-              logger.error(`vision spike: render threw — ${(err && err.stack) || err}`)
+              logger.error(`vision spike: render threw â€” ${(err && err.stack) || err}`)
             }
           }, 3000)
         }
@@ -271,14 +271,14 @@ export async function createRuntime(config, hooks) {
         // dangling listeners on a dead mineflayer instance.
         try { _adapter?.detach?.() } catch {}
         _adapter = null
-        // Dashboard telemetry is bound to the dead instance — a reconnect
+        // Dashboard telemetry is bound to the dead instance â€” a reconnect
         // creates a fresh one (bringUp) with the same watching flag.
         try { _dash?.stop() } catch {}
         _dash = null
         _bot = null
         clearTimeout(_reconnectTimer)
 
-        // MODDED HOST — terminal on the FIRST kick, before either branch below
+        // MODDED HOST â€” terminal on the FIRST kick, before either branch below
         // (260806). A Forge/NeoForge world that requires its mods client-side
         // rejects a vanilla client every single time, so the reconnect budget
         // buys nothing: it just spends 15 seconds re-earning the same kick three
@@ -289,7 +289,7 @@ export async function createRuntime(config, hooks) {
         // whether we were kicked during the join handshake or after spawning.
         if (info?.modded) {
           _stopped = true
-          logger.error(`[sei] Modded world rejected Sei (${humanizedReason}) — not retrying.`)
+          logger.error(`[sei] Modded world rejected Sei (${humanizedReason}) â€” not retrying.`)
           try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
           fail(
             `MODDED_HOST_REJECTED: ${humanizedReason}.`,
@@ -307,7 +307,7 @@ export async function createRuntime(config, hooks) {
         // LAN_NOT_OPEN ("Re-open the world to LAN") for a world that was open.
         if (info?.onlineMode) {
           _stopped = true
-          logger.error(`[sei] Online-mode world rejected Sei (${humanizedReason}) — not retrying.`)
+          logger.error(`[sei] Online-mode world rejected Sei (${humanizedReason}) â€” not retrying.`)
           try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
           fail(
             `ONLINE_MODE_REJECTED: ${humanizedReason}.`,
@@ -322,21 +322,21 @@ export async function createRuntime(config, hooks) {
         //   1. The `_reconnectAttempts = 0` reset was gated on `_readyFired`,
         //      so the counter was wiped on EVERY post-spawn drop and the bot
         //      reconnected FOREVER into a genuinely closed world.
-        //   2. The brain from the dead session was never stopped — its
+        //   2. The brain from the dead session was never stopped â€” its
         //      orchestrator loop kept firing idle-tick Anthropic calls into a
         //      detached adapter (phantom chat into a closed socket).
         // 260710: always-terminal overcorrected. Server KICKS with the world
-        // still open are real — live case: a chat-signing rejection
+        // still open are real â€” live case: a chat-signing rejection
         // (multiplayer.disconnect.chat_validation_failed, an nmp 1.66.0
         // chat-checksum bug on 1.21.11) killed the session and told the user
         // to "re-open" a world that was open the whole time. Disambiguate by
         // STATUS-PINGING the LAN port:
-        //   - ping answers  → the world is up; this was a kick. Stop the dead
+        //   - ping answers  â†’ the world is up; this was a kick. Stop the dead
         //     session's brain (fixes historical bug 2), then bounded rejoin.
         //     The attempt counter is deliberately NOT reset on reconnect
         //     spawns (fixes historical bug 1), so a kick loop still gives up
         //     after MAX_RECONNECT_ATTEMPTS for the whole session.
-        //   - ping dead → the player really closed the world; terminal
+        //   - ping dead â†’ the player really closed the world; terminal
         //     LAN_NOT_OPEN exactly as before.
         if (_readyFired) {
           const droppedAt = Date.now()
@@ -348,10 +348,10 @@ export async function createRuntime(config, hooks) {
               logger.warn(`brain stop after disconnect threw: ${err && err.message}`)
             }
             if (_stopped) return
-            // closed, unreachable, or version weirdness on every ping → terminal path
+            // closed, unreachable, or version weirdness on every ping â†’ terminal path
             const worldStillOpen = await worldAnswers((timeoutMs) => resolveServerVersion({
               host: mc.host, port: mc.port, timeoutMs,
-              logger: { info: () => {} }, // quiet — this is a liveness probe, not version resolution
+              logger: { info: () => {} }, // quiet â€” this is a liveness probe, not version resolution
             }), { stopped: () => _stopped })
             if (_stopped) return
             const noteDrop = (o) => { try { sessionActionStats.noteBodyDrop({ cls: info?.dropClass, ...o }) } catch {} }
@@ -362,7 +362,7 @@ export async function createRuntime(config, hooks) {
               if (_reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
                 noteDrop({ rejoin: true })
                 logger.info(
-                  `[sei] Kicked from the world but it is still open (${humanizedReason}) — ` +
+                  `[sei] Kicked from the world but it is still open (${humanizedReason}) â€” ` +
                   `rejoining in ${mc.reconnect_delay_ms}ms ` +
                   `(attempt ${_reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}).`,
                 )
@@ -374,13 +374,13 @@ export async function createRuntime(config, hooks) {
                 }, mc.reconnect_delay_ms)
                 return
               }
-              // Kick loop — the server keeps ejecting us. Give up with an
+              // Kick loop â€” the server keeps ejecting us. Give up with an
               // honest message (NOT "re-open your world": it IS open).
               noteDrop({})
               _stopped = true
               logger.error(
                 `[sei] Kicked ${MAX_RECONNECT_ATTEMPTS} times by a world that is still open ` +
-                `(${humanizedReason}) — giving up.`,
+                `(${humanizedReason}) â€” giving up.`,
               )
               try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
               fail(
@@ -394,7 +394,7 @@ export async function createRuntime(config, hooks) {
             noteDrop({ pingFailed: true })
             _stopped = true
             logger.info(
-              `[sei] Lost connection to the LAN world (${humanizedReason}) — stopping. ` +
+              `[sei] Lost connection to the LAN world (${humanizedReason}) â€” stopping. ` +
               `Re-open the world to LAN and click Summon again.`,
             )
             try { onDisconnected({ reason: humanizedReason, willRetry: false }) } catch {}
@@ -408,7 +408,7 @@ export async function createRuntime(config, hooks) {
         }
 
         // PRE-SPAWN: never reached the world yet (stale/wrong LAN port, or a
-        // world that isn't actually open). Bounded reconnect — the counter is
+        // world that isn't actually open). Bounded reconnect â€” the counter is
         // correct here because _readyFired is false, so a wrong port gives up
         // after MAX_RECONNECT_ATTEMPTS instead of hammering the server and
         // spawning a fresh brain (+greeting Anthropic call) on every retry.
@@ -449,12 +449,12 @@ export async function createRuntime(config, hooks) {
       },
     })
 
-    // visionEnabled: true — registration is unconditional here because the
+    // visionEnabled: true â€” registration is unconditional here because the
     // provider (and its capabilities.vision) does not exist yet at adapter
     // construction; the AUTHORITATIVE D-10 gate is the orchestrator's
     // tool-list filter (combinedToolsFor), which never offers `look` to
     // a non-VLM provider. Without this flag the action was never registered
-    // at all — the filter can only remove tools, not add them (15-VERIFICATION
+    // at all â€” the filter can only remove tools, not add them (15-VERIFICATION
     // gap, VIS-02).
     _adapter = createMinecraftAdapter({ bot: _bot, config, visionEnabled: true })
     // Minecraft dashboard (260721): telemetry for THIS mineflayer instance.
@@ -467,14 +467,14 @@ export async function createRuntime(config, hooks) {
     }
     // Keep the brain local until we've confirmed the connection survived the
     // createBrain await. onEnd (a fast-failing reconnect, or the user closing
-    // the world) can fire DURING this await — it nulls _bot and _adapter. If
+    // the world) can fire DURING this await â€” it nulls _bot and _adapter. If
     // we assigned _brain unconditionally and then touched _bot._sei_startChat,
     // we hit "Cannot read properties of null (reading '_sei_startChat')" on
     // every dropped reconnect (observed in the field log).
     const brain = await createBrain(_adapter)
     if (_stopped || !_bot) {
       // The connection dropped (or we were stopped) while createBrain awaited.
-      // This brain is already orphaned — tear it down instead of wiring chat
+      // This brain is already orphaned â€” tear it down instead of wiring chat
       // onto a dead/null bot. Any reconnect was already scheduled by onEnd.
       try { await brain.stop() } catch {}
       return
@@ -488,9 +488,9 @@ export async function createRuntime(config, hooks) {
     // nearby filtering and sei:chat_received emission) without an
     // orchestrator handle. fsmWires translates sei:chat_received into
     // brain.onChat; the brain priority queue handles player-chat preemption
-    // (P1→P0 escalation when a non-P0 action is in flight). Stop-verb
+    // (P1â†’P0 escalation when a non-P0 action is in flight). Stop-verb
     // fast-path body-cancel was previously a synchronous side-effect of
-    // chat.js when given an orchestrator; with the brain↔adapter seam,
+    // chat.js when given an orchestrator; with the brainâ†”adapter seam,
     // that fast path runs through the normal queue (one extra Haiku
     // round-trip on "stop").
     try { _bot._sei_startChat?.(null) } catch (err) {
@@ -555,3 +555,7 @@ export async function createRuntime(config, hooks) {
   void emitVisionCapability
   return makeHandle()
 }
+
+
+
+

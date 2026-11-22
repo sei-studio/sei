@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The first-link intro's picture (261105, T337; 261106 the eclipse aurora
  * and its climax; 261106 v6 the WorldLink status lines): data in props, no
  * IPC, so the app (FirstLinkIntro) and the dev harness (DevIntroPreview)
@@ -575,3 +575,7 @@ function paintLine(el: HTMLElement | null, s: Typed, set: (el: HTMLElement | nul
     set(m, 'opacity', i < s.dots ? '1' : '0');
   });
 }
+
+
+
+

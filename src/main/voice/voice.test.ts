@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Voice-call seams (260705).
  *
  * Pins the three pieces of novel main-process logic:
  *   - buildSystemBlocks leads block 0 with the voice-call primer ONLY while a
  *     call is open (the "start of prompts" contract from the feature spec).
  *   - resolveVoiceId: metadata.voiceId wins; legacy characters get a
- *     deterministic fallback (same character id → same voice), persisted to
+ *     deterministic fallback (same character id â†’ same voice), persisted to
  *     metadata, honoring the soulcaster gender filter and roster exclusion.
  *   - callState: the trivial set/read used by chat + supervisor.
  */
@@ -139,7 +139,7 @@ describe('resolveVoiceId', () => {
   });
 
   it('excludes voices other library characters already use', async () => {
-    // Every eligible voice except one is taken → the roll must land on it.
+    // Every eligible voice except one is taken â†’ the roll must land on it.
     const c = makeCharacter({
       metadata: { soulcaster_sheet: { gender: 'female', age: 22, background: 'human' } },
     });
@@ -158,7 +158,7 @@ describe('resolveVoiceId', () => {
   });
 });
 
-// 260705 — the Marv fix: sheet-less characters derive voice-roll seeds (and
+// 260705 â€” the Marv fix: sheet-less characters derive voice-roll seeds (and
 // robot status) from their persona prose instead of rolling personality-blind.
 describe('personaVoiceHints', () => {
   it('maps a dead-inside monotone robot to flat/dark seeds + robot', () => {
@@ -178,14 +178,14 @@ describe('personaVoiceHints', () => {
 
   it('caps at two seeds and returns none for bland personas', () => {
     const many = personaVoiceHints(
-      'grumpy, sarcastic, gloomy, fierce, scheming — all of it at once',
+      'grumpy, sarcastic, gloomy, fierce, scheming â€” all of it at once',
     );
     expect(many.seeds).toHaveLength(2);
     expect(personaVoiceHints('a person who exists').seeds).toHaveLength(0);
   });
 
   it('seed-weighted fallback gives a monotone-robot persona a robotic or deep/dry/calm voice', async () => {
-    // Not a determinism re-test — assert the ROLLED voice for a Marv-like
+    // Not a determinism re-test â€” assert the ROLLED voice for a Marv-like
     // persona is either a robotic voice (the robot rule, 261119: robotic
     // voices take a fixed 70% of a robot's roll, and Vector carries no
     // mood tags) or carries one of the tags its seeds weight toward, across
@@ -238,7 +238,7 @@ describe('assignedVoiceId', () => {
   });
 
   // 260707 pool trim: ids removed from the assignment pool stay valid for
-  // characters that already persisted them — the voice must never re-roll.
+  // characters that already persisted them â€” the voice must never re-roll.
   it('keeps a legacy (pre-trim) voice id instead of re-rolling', async () => {
     mockSave.mockClear();
     const legacy = 'EXAVITQu4vr4xnSDxMaL'; // Sarah, cut from the pool 260707
@@ -556,3 +556,7 @@ describe('Voice Library voices (metadata.voiceLibrary, 261119)', () => {
     expect(saved.metadata).toEqual({ voiceId: v });
   });
 });
+
+
+
+

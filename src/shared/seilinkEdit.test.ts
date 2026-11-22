@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { defaultRoomState, describeRoom, type RoomPresetManifest } from './seilinkRoom';
 import { roomDrawPlan, planFiles } from './seilinkDraw';
 import { parseRoomManifest, sanitizeRoomState } from './seilinkValidate';
@@ -245,3 +245,7 @@ describe('format additions round-trip', () => {
     expect(describeRoom(manifest, s).things).toContain('blue floor cushion');
   });
 });
+
+
+
+

@@ -1,10 +1,10 @@
-/**
- * DownloadConfirmModal (260817, china-compat W5) — the shared "Download?
+﻿/**
+ * DownloadConfirmModal (260817, china-compat W5) â€” the shared "Download?
  * (XX MB)" confirm for on-demand model packs: the local TTS voice packs and
  * the SenseVoice STT model in Settings, and any future pack surface.
  *
  * The size ALWAYS comes from the caller in exact bytes (the pack registry's
- * archiveBytes, delivered over the speech:pack-status push) — never a
+ * archiveBytes, delivered over the speech:pack-status push) â€” never a
  * hardcoded "about NN MB" string, so registry changes can't drift the copy.
  * Renders through ModalShell like every other confirm.
  */
@@ -66,3 +66,7 @@ export function DownloadConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

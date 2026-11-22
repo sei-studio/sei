@@ -1,11 +1,11 @@
-// Proves the explicit-relocate actions end follow mode (260710). The 1s follow
+﻿// Proves the explicit-relocate actions end follow mode (260710). The 1s follow
 // tick re-installs GoalFollow as long as a target is set, so any relocate that
 // does NOT clear it walks out and gets yanked straight back to the owner (the
 // live cow-hunt run: explore hopped 13 blocks, follow dragged the bot home).
 // Contract under test: goTo and explore clear the follow target; explore's
 // up/down guidance early-returns (which don't move the bot) leave it intact.
 //
-// registry.js statically imports the visualize behavior → povRenderer → native
+// registry.js statically imports the visualize behavior â†’ povRenderer â†’ native
 // gl/canvas (Electron-ABI, unloadable under system-Node vitest), so we mock
 // that module the same way registry.vision.test.js does. explore is mocked too
 // so the handler runs without a live bot/pathfinder.
@@ -79,7 +79,7 @@ describe('follow is ended by explicit relocates', () => {
 
 // 260730: follow is a MODE, and any acting action ends it. Before this only
 // goTo/explore/unfollow did, so a dig or a gather left the 1s tick re-installing
-// GoalFollow toward a target that could be stale or unreachable — live, the
+// GoalFollow toward a target that could be stale or unreachable â€” live, the
 // player died and the bot kept trailing a position it could not path to, and
 // dug itself into a hole. The clear happens in a wrapper at registration, so a
 // NEW action inherits it; only queries and self-managed relocates are exempt.
@@ -141,3 +141,7 @@ describe('follow result on interrupt says whether the trail goes on', () => {
     expect(String(await p)).toBe('follow Alex ended (no longer following them)')
   })
 })
+
+
+
+

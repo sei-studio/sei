@@ -1,5 +1,5 @@
-/**
- * useMcDashboardStore — per-character Minecraft dashboard telemetry (renderer
+﻿/**
+ * useMcDashboardStore â€” per-character Minecraft dashboard telemetry (renderer
  * mirror). The producer is the live bot process (via main's
  * mcDashboardService); this store caches the last pushed snapshot per
  * character plus the panel view mode.
@@ -39,10 +39,10 @@ function dashApi(): Partial<McDashApi> {
 }
 
 interface McDashboardStoreState {
-  /** characterId → last pushed telemetry snapshot. */
+  /** characterId â†’ last pushed telemetry snapshot. */
   snapshots: Record<string, McDashboardSnapshot | null>;
   /**
-   * characterId → WHICH game's LAUNCH panel is open in the chat game aside
+   * characterId â†’ WHICH game's LAUNCH panel is open in the chat game aside
    * (260721; per-game since M0 260908), or null/absent for none. Set by the
    * games picker's tile while the bot is not online; ChatScreen clears it
    * (handing off to the live dashboard) once the bot comes online, and the
@@ -51,13 +51,13 @@ interface McDashboardStoreState {
    */
   launch: Record<string, GameId | null>;
   /**
-   * Game adapters (M0): characterId → last pushed snapshot for a NON-Minecraft
+   * Game adapters (M0): characterId â†’ last pushed snapshot for a NON-Minecraft
    * game (gamedash:snapshot). Minecraft's rides `snapshots`.
    */
   gameSnapshots: Record<string, GenericGameDashboardSnapshot | null>;
   hydrated: Record<string, boolean>;
   /**
-   * 260725 runtime controls, per character. NEVER persisted — reset() (bot
+   * 260725 runtime controls, per character. NEVER persisted â€” reset() (bot
    * left / session ended) drops the entry, so every summon starts unpaused
    * and proactive. Absent entry == the default { paused: false, mode:
    * 'proactive' }.
@@ -72,11 +72,11 @@ interface McDashboardStoreState {
   setLaunch: (characterId: string, open: boolean | GameId | null) => void;
   /** Pull the latest snapshot once (entering ChatScreen mid-session). */
   hydrate: (characterId: string) => Promise<void>;
-  /** Visibility hint → the bot only samples the minimap while true. */
+  /** Visibility hint â†’ the bot only samples the minimap while true. */
   setWatching: (characterId: string, watching: boolean) => void;
-  /** 260725: play/pause toggle — optimistic local state + bot forward. */
+  /** 260725: play/pause toggle â€” optimistic local state + bot forward. */
   setPaused: (characterId: string, paused: boolean) => void;
-  /** 260725: reactive/proactive mode — optimistic local state + bot forward. */
+  /** 260725: reactive/proactive mode â€” optimistic local state + bot forward. */
   setMode: (characterId: string, mode: McGameMode) => void;
   /** Session ended: drop the snapshot + runtime controls. */
   reset: (characterId: string) => void;
@@ -100,7 +100,7 @@ export const useMcDashboardStore = create<McDashboardStoreState>((set, get) => {
       offGame?.();
     };
   } catch {
-    /* preload without the dashboard bridge — pushes just won't stream */
+    /* preload without the dashboard bridge â€” pushes just won't stream */
   }
 
   return {
@@ -134,7 +134,7 @@ export const useMcDashboardStore = create<McDashboardStoreState>((set, get) => {
       void dashApi()
         .mcDashboardSetWatching?.(characterId, watching)
         .catch(() => {
-          /* session already gone — nothing to throttle */
+          /* session already gone â€” nothing to throttle */
         });
     },
 
@@ -144,7 +144,7 @@ export const useMcDashboardStore = create<McDashboardStoreState>((set, get) => {
       void dashApi()
         .mcSetPaused?.(characterId, paused)
         .catch(() => {
-          /* session already gone — reset() clears the local state anyway */
+          /* session already gone â€” reset() clears the local state anyway */
         });
     },
 
@@ -178,3 +178,7 @@ if (import.meta.hot) {
     offSnapshot = null;
   });
 }
+
+
+
+

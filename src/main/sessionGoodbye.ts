@@ -1,4 +1,4 @@
-import { isGameId, type GameId } from '../shared/gameIpc';
+﻿import { isGameId, type GameId } from '../shared/gameIpc';
 
 /**
  * How a session's goodbye went (261008, retention fix 2(c)), as analytics
@@ -10,8 +10,8 @@ import { isGameId, type GameId } from '../shared/gameIpc';
  * next greeting can raise it (src/bot/brain/nextStep.js). Whether it did is
  * the one fact this module carries from that moment to the session's single
  * end choke point:
- *   - game: `closePlaySession` → `bot_session_ended.next_step_hook`;
- *   - call: the call-ended report → `voice_call_ended.next_step_hook` and
+ *   - game: `closePlaySession` â†’ `bot_session_ended.next_step_hook`;
+ *   - call: the call-ended report â†’ `voice_call_ended.next_step_hook` and
  *     `ended_by_companion`.
  *
  * Booleans only: never the hook text, never anything the companion said.
@@ -131,3 +131,7 @@ export function callEndHookProps(
 export function _resetGoodbyeNotes(): void {
   notes.clear();
 }
+
+
+
+

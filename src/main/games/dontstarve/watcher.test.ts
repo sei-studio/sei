@@ -1,4 +1,4 @@
-/** Game-adapters M2 (260908): the DST discovery watcher with a fixture client. */
+﻿/** Game-adapters M2 (260908): the DST discovery watcher with a fixture client. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createDstWatcher, dstOfferShard } from './watcher';
 import { heartbeatUntilOffer } from '../../../../scripts/fake-dst-mod.mjs';
@@ -223,3 +223,7 @@ describe('createDstWatcher (socket)', () => {
     expect(third.getState().kind).toBe('closed');
   });
 });
+
+
+
+

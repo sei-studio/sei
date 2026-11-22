@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, afterEach } from 'vitest';
 import { AvatarRelay, RELAY_CUTOUT_MAX_BYTES, RELAY_FILE_MAX_BYTES, type FileReader } from './avatarRelay';
 import type { FromHost } from './protocol';
 
@@ -93,3 +93,7 @@ describe('AvatarRelay', () => {
     expect(sent).toHaveLength(3);
   });
 });
+
+
+
+

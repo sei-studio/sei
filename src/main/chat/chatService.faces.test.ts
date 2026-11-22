@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Facepack pilot (261028): leading [expression] tags on chat/voice lines are
  * read before stripAudioTags removes them, never reach a bubble, and the
  * FACE prompt block appears only when asked for.
@@ -92,3 +92,7 @@ describe('FACE prompt block', () => {
     expect(on).toContain(JSON.stringify(FACE_PROMPT).slice(1, -1));
   });
 });
+
+
+
+

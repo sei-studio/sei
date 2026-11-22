@@ -1,10 +1,10 @@
-/**
- * strokeHumanize — the properties that make a stroke read as a hand.
+﻿/**
+ * strokeHumanize â€” the properties that make a stroke read as a hand.
  *
  * The bend assertions exist because of a real regression (260728): the wobble
  * tapered to exactly zero at both ends and its frequency was indexed by point
- * position rather than arc length, so short strokes — window mullions, stick
- * limbs, tick marks — came out ruler-straight next to wobbly outlines, and the
+ * position rather than arc length, so short strokes â€” window mullions, stick
+ * limbs, tick marks â€” came out ruler-straight next to wobbly outlines, and the
  * picture read as half hand-drawn, half plotter.
  */
 
@@ -129,3 +129,7 @@ describe('humanizeStroke', () => {
     expect(short.delayBeforeMs).toBeGreaterThan(0);
   });
 });
+
+
+
+

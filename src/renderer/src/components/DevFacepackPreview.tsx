@@ -1,5 +1,5 @@
-/**
- * DevFacepackPreview (261028) — dev-only preview for the desktop companion
+﻿/**
+ * DevFacepackPreview (261028) â€” dev-only preview for the desktop companion
  * facepack pilot, NOT part of the app UI. main.tsx lazy-loads it behind
  * `import.meta.env.DEV` when the URL carries `?facepack=1`.
  *
@@ -417,3 +417,7 @@ export function DevFacepackPreview(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

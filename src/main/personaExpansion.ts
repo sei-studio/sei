@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260516-0yw: Main-process persona expansion.
  *
  * Takes a short user-written persona blurb (`source`) and expands it into a
@@ -8,7 +8,7 @@
  * Anthropic API key (decrypted from safeStorage via apiKeyStore).
  *
  * Contract:
- *   - Fixed model: 'claude-sonnet-5' — latest Sonnet family alias (260702;
+ *   - Fixed model: 'claude-sonnet-5' â€” latest Sonnet family alias (260702;
  *     was claude-haiku-4-5). MUST stay in lockstep with the proxy /free
  *     route's ALLOWED_EXPANSION_MODELS (forwardFree.ts).
  *   - Wall-clock timeout: 60s (per CLAUDE.md "every external call has a
@@ -25,12 +25,12 @@
  *     users stream through the proxy's /free SSE passthrough; BYOK users
  *     stream straight from api.anthropic.com.
  *   - Output must include all four base-personality section headers
- *     (# CORE, # VOICE, # EXTERNAL, # INTERNAL). Missing any → throw
+ *     (# CORE, # VOICE, # EXTERNAL, # INTERNAL). Missing any â†’ throw
  *     'persona expansion failed: incomplete response'.
  *   - System prompt is STABLE across calls (no player name, no session data,
  *     no live config) so it's safe to cache key-by-key in the API layer.
  *   - On edit (regeneration), `priorExpanded` is passed as voice-continuity
- *     reference in the USER message — never in the SYSTEM message — so the
+ *     reference in the USER message â€” never in the SYSTEM message â€” so the
  *     stable system prompt stays cacheable.
  *
  * Dependency-injection seam: `_clientFactory` lets tests swap in a fake
@@ -43,7 +43,7 @@ import Anthropic from '@anthropic-ai/sdk';
 // below so existing importers of `./personaExpansion` keep working.
 import { EXPANSION_SYSTEM as EXPANSION_SYSTEM_TEXT } from '../bot/brain/promptLibrary.js';
 
-// 260702: bumped from claude-haiku-4-5 — persona quality compounds (the
+// 260702: bumped from claude-haiku-4-5 â€” persona quality compounds (the
 // expansion is re-read by every bot and chat call for the character's
 // lifetime), so it's worth the latest Sonnet. MUST stay in lockstep with the
 // proxy's forwardFree.ts ALLOWED_EXPANSION_MODELS (add claude-sonnet-5 there
@@ -56,7 +56,7 @@ export const EXPANSION_TIMEOUT_MS = 60_000;
 export const EXPANSION_MAX_TOKENS = 2048;
 
 /**
- * System prompt for the expansion call. Stable — does NOT include any per-call
+ * System prompt for the expansion call. Stable â€” does NOT include any per-call
  * data (no player name, no session data, no live config) so it stays cacheable.
  * The text lives in the single editable prompt document; re-exported here so
  * existing importers (and tests) keep resolving `EXPANSION_SYSTEM` from this
@@ -68,7 +68,7 @@ export const EXPANSION_SYSTEM = EXPANSION_SYSTEM_TEXT;
 /**
  * Cloud-proxy mode mirrors the bot's `anthropicClient.js` wiring:
  *   - baseURL points at the Sei Fly.io proxy
- *   - authToken is the user's Supabase access_token (sent as `Authorization: Bearer …`)
+ *   - authToken is the user's Supabase access_token (sent as `Authorization: Bearer â€¦`)
  *   - apiKey is left null so no `X-Api-Key` header is emitted
  * When set, `apiKey` is ignored.
  */
@@ -82,7 +82,7 @@ export interface ExpandPersonaCloudMode {
  * monotonic-ish estimate suitable for a progress bar; `section` is a short
  * human label of what the model is currently writing (e.g. "Voice & samples")
  * so the UI can show meaningful status alongside the bar. Computed purely from
- * the accumulated text so far — see `computeExpansionProgress`.
+ * the accumulated text so far â€” see `computeExpansionProgress`.
  */
 export interface ExpansionProgress {
   fraction: number;
@@ -96,7 +96,7 @@ export interface ExpandPersonaInput {
    * user message so the expansion LLM has franchise context (e.g. naming a
    * character "Pikachu" or "Goku" lets the model write a recognizable CORE
    * and VOICE without the user needing to spell it out in the source blurb).
-   * Required — no default — so a missing name surfaces as a clear TypeScript
+   * Required â€” no default â€” so a missing name surfaces as a clear TypeScript
    * compile error at every call site rather than silently disabling the hint.
    */
   name: string;
@@ -108,7 +108,7 @@ export interface ExpandPersonaInput {
    * so parseProactivenessLine and REQUIRED_SECTION_HEADERS keep working.
    * Goes in the USER message deliberately: the cloud proxy overwrites
    * `system` server-side, but the user message is ours on both paths.
-   * Absent/'en' → no extra instruction, byte-identical to before.
+   * Absent/'en' â†’ no extra instruction, byte-identical to before.
    */
   language?: 'en' | 'zh';
   /** BYOK mode. Ignored when `cloudMode` is set. */
@@ -120,16 +120,16 @@ export interface ExpandPersonaInput {
    * system prompt now; cloud users get it injected server-side, but BYOK calls
    * Anthropic directly and must supply it. When set, this overrides the bundled
    * EXPANSION_SYSTEM so local-key users pick up prompt improvements without a
-   * reship. Undefined → the bundled fallback is used. Ignored in cloud mode
+   * reship. Undefined â†’ the bundled fallback is used. Ignored in cloud mode
    * (the proxy overwrites `system` regardless).
    */
   systemPromptOverride?: string;
   signal?: AbortSignal;
   /**
    * Streaming progress sink. Invoked (throttled) as text deltas arrive so the
-   * caller can drive a progress bar. Fires once with fraction≈0 right before
+   * caller can drive a progress bar. Fires once with fractionâ‰ˆ0 right before
    * the stream opens ("connecting") and then on meaningful advances. Never
-   * called after `expandPersona` resolves/rejects. Optional — when omitted the
+   * called after `expandPersona` resolves/rejects. Optional â€” when omitted the
    * call still streams internally (same result), it just emits no progress.
    */
   onProgress?: (p: ExpansionProgress) => void;
@@ -149,7 +149,7 @@ export interface ExpandPersonaResult {
   expanded: string;
   /** Parsed from a leading `PROACTIVENESS:` line when present. 260725: the
    *  level is no longer saved anywhere (proactiveness became a runtime-only
-   *  Minecraft mode) — this field survives only because the cloud proxy /
+   *  Minecraft mode) â€” this field survives only because the cloud proxy /
    *  server prompt override may still ask the model for the line, and callers
    *  may want to log it. Defaults to 1 when the line is absent. */
   proactiveness: number;
@@ -158,7 +158,7 @@ export interface ExpandPersonaResult {
 /** Strip a leading `PROACTIVENESS: <word>` line if the model emitted one
  *  (older prompts, the cloud proxy, or a server prompt override may still ask
  *  for it) and return the persona text without it. The parsed level is
- *  legacy — see ExpandPersonaResult.proactiveness. */
+ *  legacy â€” see ExpandPersonaResult.proactiveness. */
 const PROACTIVENESS_WORD_TO_LEVEL: Record<string, number> = { passive: 0, reactive: 1, agentic: 2 };
 export function parseProactivenessLine(text: string): { level: number; body: string } {
   const m = text.match(/^\s*PROACTIVENESS:\s*(passive|reactive|agentic)\b[^\n]*\n?/im);
@@ -185,9 +185,9 @@ const REQUIRED_SECTION_HEADERS: { name: string; re: RegExp }[] = [
 
 /**
  * Short, friendly labels for each of the four sections, in order. Parallel to
- * REQUIRED_SECTION_HEADERS — index i is the label shown while the model is
+ * REQUIRED_SECTION_HEADERS â€” index i is the label shown while the model is
  * writing section i. Surfaced next to the progress bar so the user sees what's
- * happening ("Writing voice & samples…") rather than a bare percentage.
+ * happening ("Writing voice & samplesâ€¦") rather than a bare percentage.
  */
 const SECTION_LABELS = [
   'Core',
@@ -198,7 +198,7 @@ const SECTION_LABELS = [
 
 /** Rough expected character length of a single section's body, used to ease
  *  the bar forward smoothly WITHIN a section (between header milestones). A
- *  loose estimate is fine — the per-section milestone is the load-bearing
+ *  loose estimate is fine â€” the per-section milestone is the load-bearing
  *  signal; this only controls intra-section creep. */
 const EXPECTED_SECTION_CHARS = 420;
 
@@ -214,7 +214,7 @@ const EXPECTED_SECTION_CHARS = 420;
  *
  * Monotonic across growing prefixes: we anchor `within` to the last RECOGNIZED
  * header (not any `#` line), so a partially-streamed header like "# DEFAULT
- * DYN…" doesn't reset the offset before its section actually counts. `within`
+ * DYNâ€¦" doesn't reset the offset before its section actually counts. `within`
  * is capped below 1.0, so when the next header is recognized (`completed`
  * increments and `within` resets toward 0) the fraction still rises. Exported
  * for unit testing.
@@ -224,7 +224,7 @@ export function computeExpansionProgress(text: string): ExpansionProgress {
   let seen = 0;
   let lastHeaderIdx = -1;
   for (const h of REQUIRED_SECTION_HEADERS) {
-    // Non-global regexes — `.exec` is stateless and yields the first match's
+    // Non-global regexes â€” `.exec` is stateless and yields the first match's
     // index. Headers appear in order, so the max index is the current section.
     const m = h.re.exec(text);
     if (m) {
@@ -240,7 +240,7 @@ export function computeExpansionProgress(text: string): ExpansionProgress {
     const sinceHeader = text.length - lastHeaderIdx;
     within = Math.min(0.95, sinceHeader / EXPECTED_SECTION_CHARS);
   } else {
-    // Preamble before the first header — small creep so the bar isn't frozen
+    // Preamble before the first header â€” small creep so the bar isn't frozen
     // at 0 during the model's opening tokens.
     within = Math.min(0.5, text.length / 120);
   }
@@ -274,7 +274,7 @@ export function buildExpansionUserMessage(
   if (priorExpanded && priorExpanded.trim()) {
     lines.push(
       '',
-      'Prior expanded persona (for voice-continuity reference — match its voice patterns where consistent with the new source, but do not preserve content that contradicts the new source):',
+      'Prior expanded persona (for voice-continuity reference â€” match its voice patterns where consistent with the new source, but do not preserve content that contradicts the new source):',
       priorExpanded,
     );
   }
@@ -305,7 +305,7 @@ function isAsyncIterable(x: unknown): x is AsyncIterable<unknown> {
 }
 
 /** Pull the text out of a streaming `content_block_delta` event, or null for
- *  any other event type (message_start/stop, ping, content_block_start, …). */
+ *  any other event type (message_start/stop, ping, content_block_start, â€¦). */
 function extractTextDelta(event: unknown): string | null {
   if (event == null || typeof event !== 'object') return null;
   const e = event as { type?: unknown; delta?: { type?: unknown; text?: unknown } };
@@ -330,7 +330,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   const { name, source, priorExpanded, apiKey, cloudMode, systemPromptOverride, signal, onProgress, _clientFactory } =
     input;
   // Cloud: the proxy injects the server-owned system prompt, so what we send is
-  // overwritten (we still send the bundled copy — harmless). BYOK: use the
+  // overwritten (we still send the bundled copy â€” harmless). BYOK: use the
   // server-fetched override when present, else the bundled EXPANSION_SYSTEM.
   const systemPrompt = cloudMode ? EXPANSION_SYSTEM : (systemPromptOverride ?? EXPANSION_SYSTEM);
 
@@ -348,7 +348,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
         const { withUsageMeter } = await import('./usage/llmUsageLedger');
         layerProvider = withUsageMeter(await llmMod.buildLocalProviderFor(localKind));
       } catch (err) {
-        // e.g. LOCAL_NO_API_KEY for a key-needing provider — same failure
+        // e.g. LOCAL_NO_API_KEY for a key-needing provider â€” same failure
         // class as the missing-apiKey throw below, with the specific message.
         throw new Error(`persona expansion failed: ${(err as Error)?.message ?? String(err)}`);
       }
@@ -366,7 +366,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     throw new Error('persona expansion failed: source blurb is empty');
   }
   // ITEM 12 (quick/260523-t8d): name is required so franchise context can
-  // flow through. Missing/empty is a programmer error — CharacterSchema
+  // flow through. Missing/empty is a programmer error â€” CharacterSchema
   // (name.min(1)) enforces it upstream.
   if (!name || typeof name !== 'string' || !name.trim()) {
     throw new Error('persona expansion failed: name is empty');
@@ -384,7 +384,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     // Production path: construct the SDK client INSIDE this module so the
     // bot's createAnthropicClient (which is utilityProcess-only) is not
     // imported here. The main and bot sides each construct their own SDK
-    // instance; that's fine — the SDK is a thin HTTP wrapper. Skipped on the
+    // instance; that's fine â€” the SDK is a thin HTTP wrapper. Skipped on the
     // layer path (no Anthropic key to construct with).
     : layerProvider
       ? null
@@ -395,13 +395,13 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   const userMessage = buildExpansionUserMessage(name, source, priorExpanded, input.language);
 
   // Emit an immediate "connecting" tick so the renderer can paint the progress
-  // bar the moment the IPC call lands — before the first token arrives (covers
+  // bar the moment the IPC call lands â€” before the first token arrives (covers
   // network latency + a possible Fly proxy cold start). Small non-zero value so
   // there's visible motion right away.
   onProgress?.({ fraction: 0.02, section: 'Connecting' });
 
   // Throttle: text deltas arrive many times per second. Forward a tick only
-  // when the fraction advances ≥1% or the section label changes — bounds IPC
+  // when the fraction advances â‰¥1% or the section label changes â€” bounds IPC
   // chatter to ~100 events across a full expansion while staying smooth.
   let lastFraction = 0.02;
   let lastSection = 'Connecting';
@@ -460,7 +460,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
       // when it elapses. `signal` (if passed) is plumbed so a renderer-side
       // cancel (e.g. closing the modal mid-call) unblocks the await.
       //
-      // maxRetries:0 in cloud-proxy mode — a persona_daily 429 won't clear for
+      // maxRetries:0 in cloud-proxy mode â€” a persona_daily 429 won't clear for
       // hours, so the SDK's default retry-with-backoff would just freeze the
       // progress bar at ~2% before eventually erroring. Fail fast so the caller
       // surfaces the limit modal immediately. BYOK keeps the SDK default (a
@@ -500,7 +500,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   }
 
   // Derive the final text. For the non-streaming fallback, mirror the original
-  // duck-typed extraction — kept OUTSIDE the try so these validation errors
+  // duck-typed extraction â€” kept OUTSIDE the try so these validation errors
   // aren't double-prefixed with "persona expansion failed:".
   let text: string;
   if (streamedText !== null) {
@@ -524,12 +524,12 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     console.error('[personaExpansion] empty text in response');
     throw new Error('persona expansion failed: empty response from model');
   }
-  // Cluster K (260525-tia) M18 — real-person likeness refusal sentinel.
+  // Cluster K (260525-tia) M18 â€” real-person likeness refusal sentinel.
   // EXPANSION_SYSTEM instructs the model to emit ONLY the literal
   // 'REFUSED:REAL_PERSON' when it detects a real living/recently-deceased
   // public figure in the source blurb. Detect that sentinel here BEFORE the
   // section validator (which would otherwise reject the refusal as
-  // 'missing sections' — wrong error class for the user).
+  // 'missing sections' â€” wrong error class for the user).
   //
   // Friendly message intentionally lowercase + casual to match the renderer's
   // existing error-chip register. The 'persona expansion failed:' prefix
@@ -539,7 +539,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
   // Defensive note: a determined user can rewrite the source to disguise the
   // real-person reference. This guard adds friction and creates a documented
   // good-faith effort for right-of-publicity defense; it is NOT a perfect
-  // filter. The strict-equality check is correct given the .trim() above —
+  // filter. The strict-equality check is correct given the .trim() above â€”
   // no separate regex needed (Test 4 trailing-whitespace case covered).
   if (text === 'REFUSED:REAL_PERSON') {
     throw new Error(
@@ -547,14 +547,14 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
       'Please use a fictional name and persona.',
     );
   }
-  // Split off the leading `PROACTIVENESS: <word>` line — it's config-only and
+  // Split off the leading `PROACTIVENESS: <word>` line â€” it's config-only and
   // must NOT ship in the persona text shown to the bot. `body` is the four
   // sections; `level` seeds the runtime dial (caller can override later).
   const { level: proactiveness, body: rawBody } = parseProactivenessLine(text);
   // Hard-drop em/en-dashes from the shipped persona, independent of model
   // compliance. The bot mirrors this prompt's register, so a stray dash here
   // teaches it to use them; normalize to a plain hyphen.
-  const body = rawBody.replace(/[—–]/g, '-');
+  const body = rawBody.replace(/[â€”â€“]/g, '-');
   // Validate the four required sections are present via tolerant regex.
   const missing = REQUIRED_SECTION_HEADERS.filter(h => !h.re.test(body)).map(h => h.name);
   if (missing.length > 0) {
@@ -567,7 +567,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
 
 /**
  * Fetch the server-owned expansion system prompt from the proxy's public
- * GET /free/prompts endpoint (no auth — see the proxy's promptsRoute.ts). Used
+ * GET /free/prompts endpoint (no auth â€” see the proxy's promptsRoute.ts). Used
  * by the BYOK path so local-key users pick up prompt improvements without a
  * client reship. Best-effort: returns null on any failure (network, non-200,
  * malformed body, timeout) so the caller falls back to the bundled
@@ -590,3 +590,7 @@ export async function fetchServerExpansionSystem(baseURL: string): Promise<strin
     clearTimeout(timer);
   }
 }
+
+
+
+

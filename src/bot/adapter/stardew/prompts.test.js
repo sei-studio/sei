@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { eventAddendum, ACTION_DESCRIPTIONS, STARDEW_BASELINE, WORLD_PRIMER, CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CHORES, ACTION_RULES, ACTION_RULES_CHORES, ACTION_RULES_LEGACY, SESSION_END_CLAUSE, actionRules, capabilityParagraph, describeAction } from './prompts.js'
 import { modVersionAtLeast, modHoldsFollow, modHasChores } from './modVersion.js'
 import { VERB_NAMES } from './registry.js'
@@ -141,3 +141,7 @@ describe('stardew prompts', () => {
     expect(eventAddendum('sei:idle', { reason: 'player_activity' })).not.toMatch(/took out their/)
   })
 })
+
+
+
+

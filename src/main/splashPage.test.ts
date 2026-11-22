@@ -1,4 +1,4 @@
-/**
+﻿/**
  * product call (261108): no startup splash on a normal launch; the Windows
  * update splash keeps its status line, now readable on a light desktop.
  */
@@ -31,12 +31,12 @@ describe('launchSplashStatus', () => {
   });
 
   it('the launch right after Update.exe restarted Sei shows the update splash', () => {
-    expect(launchSplashStatus(false, () => 'Updating…')).toBe('Updating…');
-    expect(launchSplashStatus(false, () => "Couldn't update. Opening Sei…")).toBe("Couldn't update. Opening Sei…");
+    expect(launchSplashStatus(false, () => 'Updatingâ€¦')).toBe('Updatingâ€¦');
+    expect(launchSplashStatus(false, () => "Couldn't update. Opening Seiâ€¦")).toBe("Couldn't update. Opening Seiâ€¦");
   });
 
   it('a login launch shows nothing and leaves the one-shot update note alone', () => {
-    const read = vi.fn(() => 'Updating…');
+    const read = vi.fn(() => 'Updatingâ€¦');
     expect(launchSplashStatus(true, read)).toBeUndefined();
     expect(read).not.toHaveBeenCalled();
   });
@@ -64,7 +64,7 @@ describe('splashHtml', () => {
     // --bg3 is defined per theme; the glow uses the dark theme's value.
     expect(tokens).toMatch(/--bg3:\s*#101a2e/i);
     expect(GLOW_WIDE_RGB).toBe('16,26,46');
-    const html = splashHtml('AAAA', { status: 'Updating…', style: 'glow' });
+    const html = splashHtml('AAAA', { status: 'Updatingâ€¦', style: 'glow' });
     expect(html).not.toContain('background:rgba(');
     expect(html).toContain(`text-shadow:0 0 1px rgba(${GLOW_RGB},1)`);
     expect(html).toContain(`data-fs="${GLOW_STATUS_FONT_PX}"`);
@@ -80,15 +80,15 @@ describe('splashHtml', () => {
   });
 
   it('pill: a translucent light blue fill behind the status line, no border', () => {
-    const html = splashHtml('AAAA', { status: 'Updating…', style: 'pill' });
+    const html = splashHtml('AAAA', { status: 'Updatingâ€¦', style: 'pill' });
     expect(html).toContain(`background:rgba(${SEI_LIGHT_BLUE_RGB},`);
     expect(html).toMatch(/border-radius:\d+px/);
     expect(html).not.toMatch(/border:|border-(width|style|color|top|right|bottom|left):/);
-    expect(html).toContain('>Updating…</div>');
+    expect(html).toContain('>Updatingâ€¦</div>');
   });
 
   it('shadow: no backdrop, a strong shadow under the line', () => {
-    const html = splashHtml('AAAA', { status: 'Updating…', style: 'shadow' });
+    const html = splashHtml('AAAA', { status: 'Updatingâ€¦', style: 'shadow' });
     expect(html).not.toContain('background:rgba(');
     expect(html).toContain('text-shadow:0 0 2px rgba(0,0,0,.95)');
   });
@@ -100,7 +100,7 @@ describe('splashHtml', () => {
   });
 
   it('has no fade (the update screen must match the overlay frame exactly)', () => {
-    const html = splashHtml('AAAA', { status: 'Updating…' });
+    const html = splashHtml('AAAA', { status: 'Updatingâ€¦' });
     expect(html).not.toContain('opacity');
     expect(html).not.toContain('transition');
   });
@@ -157,7 +157,7 @@ describe.skipIf(!CHROME)('update overlay frames, rendered in Chrome', () => {
         }, png.toString('base64'));
         return new Uint8Array(Buffer.from(rgba64, 'base64'));
       };
-      // Per language: "Updating…", the error line and the longest time
+      // Per language: "Updatingâ€¦", the error line and the longest time
       // estimate (the widest lines). The default style at 1x and 2x, the
       // other at 1x.
       const runs: Array<[SplashStatusStyle, number, readonly string[]]> = [
@@ -199,3 +199,7 @@ describe.skipIf(!CHROME)('update overlay frames, rendered in Chrome', () => {
     expect(problems).toEqual([]);
   }, 120_000);
 });
+
+
+
+

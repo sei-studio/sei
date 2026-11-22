@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dev-only preview of the SeiLink wallpaper page with its dock and bubble
  * (261104, M4), in a plain browser tab: `?seilinkhost=1&pack=<url to a pack
  * dir>/`. A fake bridge plays the host's part. Params:
@@ -181,3 +181,7 @@ export function DevHostPreview(): React.ReactElement {
     />
   );
 }
+
+
+
+

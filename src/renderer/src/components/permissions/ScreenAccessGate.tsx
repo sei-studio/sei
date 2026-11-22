@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ScreenAccessGate (260929): macOS Screen Recording, before the share picker
  * lists anything.
  *
@@ -159,3 +159,7 @@ export function ScreenAccessGate({
     </>
   );
 }
+
+
+
+

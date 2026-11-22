@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/skyColor.js
+﻿// src/bot/adapter/minecraft/render/skyColor.js
 //
 // 260611: time-of-day sky approximation for the single-frame POV render.
 // prismarine-viewer hardcodes scene.background to 'lightblue' regardless of
@@ -6,11 +6,11 @@
 // daylight scenes at midnight. Approximate the vanilla cycle with keyframes
 // over `bot.time.timeOfDay` (0..24000 ticks: 0 sunrise, 6000 noon, ~12000
 // sunset starts, ~13800-22200 night, ~23200 dawn) and lerp between them.
-// Deliberately coarse — the goal is "the sky reads as the right time of
+// Deliberately coarse â€” the goal is "the sky reads as the right time of
 // day", not shader-accurate atmospherics.
 //
 // Lives in its own module (no GL/canvas imports) so it is unit-testable
-// under system-Node vitest — povRenderer.js dlopens natives at import time.
+// under system-Node vitest â€” povRenderer.js dlopens natives at import time.
 
 const SKY_KEYFRAMES = [
   [0,     [140, 180, 235]],  // early morning
@@ -27,7 +27,7 @@ const SKY_KEYFRAMES = [
  * Approximate sky color for a Minecraft time-of-day tick.
  *
  * @param {number} timeOfDay  0..24000 (wrapped/clamped defensively).
- * @returns {number[]} [r,g,b] 0..255. Missing/invalid input → full day.
+ * @returns {number[]} [r,g,b] 0..255. Missing/invalid input â†’ full day.
  */
 export function skyColorForTime (timeOfDay) {
   const t = Number.isFinite(timeOfDay) ? ((timeOfDay % 24000) + 24000) % 24000 : 6000
@@ -44,3 +44,7 @@ export function skyColorForTime (timeOfDay) {
   }
   return SKY_KEYFRAMES[1][1].slice()
 }
+
+
+
+

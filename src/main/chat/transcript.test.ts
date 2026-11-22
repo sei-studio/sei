@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The voice-call transcript window (261024). The window's first row is the
  * start of the cached transcript prefix, so it must stay put across turns and
  * only move in whole steps, counted on absolute transcript positions.
@@ -154,3 +154,7 @@ describe('toMessages appendOnly', () => {
     expect(after.slice(0, before.length)).not.toEqual(before);
   });
 });
+
+
+
+

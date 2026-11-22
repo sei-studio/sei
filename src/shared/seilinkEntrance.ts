@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorldLink entrance (261119, product call (261119)): her arrival on the
  * desktop, apart from the one-time first-link intro.
  *
@@ -10,7 +10,7 @@
  *
  *  - wait:  her look is still being made (an Anima bake or its download).
  *           Her place shows one quiet status line in the intro's style
- *           ("Inviting {name}…"); a click on it lets her in now.
+ *           ("Inviting {name}â€¦"); a click on it lets her in now.
  *  - hold:  her look is ready but the app has not stepped aside yet (a move-in
  *           from the app): nothing in her place, so the entrance is seen.
  *  - enter: she comes in (the intro's arrival: a fade with a slight rise and
@@ -132,7 +132,7 @@ export function arrivalMode(i: { trigger: EntranceTrigger; arrived: boolean; pen
   return i.revealed ? 'enter' : 'hold';
 }
 
-// ── Analytics (shape only) ──────────────────────────────────────────────────
+// â”€â”€ Analytics (shape only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * seilink_entrance, once per session (main/seilink/host/arrival.ts):
@@ -152,3 +152,7 @@ export function sanitizeArrivedReport(v: unknown): { played: boolean; reduced: b
   const kind = typeof a.kind === 'string' && (ANIMA_SHOWN_KINDS as readonly string[]).includes(a.kind) ? (a.kind as AnimaShownKind) : null;
   return { played: a.played === true, reduced: a.reduced === true, kind };
 }
+
+
+
+

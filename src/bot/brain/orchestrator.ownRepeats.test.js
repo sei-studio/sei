@@ -1,4 +1,4 @@
-// src/bot/brain/orchestrator.ownRepeats.test.js
+﻿// src/bot/brain/orchestrator.ownRepeats.test.js
 //
 // 261013 (pass6a review): the own_repeats note takes its wording from the kind
 // of turn. A reply to the player keeps the full ask (what moved the MC
@@ -165,3 +165,7 @@ describe('own_repeats on the reply to a hello that crossed hers', () => {
     expect(blockText(provider.calls[2], 'own_repeats')).toContain(REPLY_ASK)
   })
 })
+
+
+
+

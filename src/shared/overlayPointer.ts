@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Polled-pointer hover for the avatar overlay (261029).
  *
  * The overlay's chrome (the pencil that enters edit mode, the hold-to-drag
@@ -80,3 +80,7 @@ export function overlayChromeVisible(args: {
 }): boolean {
   return args.editing || args.domHovered || args.polled?.inside === true;
 }
+
+
+
+

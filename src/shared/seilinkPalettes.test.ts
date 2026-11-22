@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Curated palettes (261105 colour pass, T333): every recolourable part of the
  * bundled packs offers its own palette, the shipped look stays the first
  * swatch, and rooms saved with an older palette's colours draw the same.
@@ -108,3 +108,7 @@ describe('rooms saved with an older palette', () => {
     for (const id of ROOM_PRESET_IDS) expect(roomShapeOf(pack(id), defaultRoomState(id)).customColors).toBe(0);
   });
 });
+
+
+
+

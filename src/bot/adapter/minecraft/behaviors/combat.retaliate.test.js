@@ -1,4 +1,4 @@
-// 261019 (quality pass 19): a mob hit used to wreck whatever walk was running.
+﻿// 261019 (quality pass 19): a mob hit used to wreck whatever walk was running.
 // Retaliation called stopFollow() (the follow target was forgotten for good)
 // and its 1s exit called pathfinder.stop() unconditionally, so a goTo or
 // pickup walk hit on the way failed as "cant_reach (closest=3.4m)" on open
@@ -130,3 +130,7 @@ describe('own-hit swing-back after a death took her weapon', () => {
     expect(bot.attack).not.toHaveBeenCalled()
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * scopeBarrier (260926): the write barrier an account switch drains before it
  * re-points the profile scope, and the teardown flag the fold defers on.
  */
@@ -163,3 +163,7 @@ describe('chat turn scope', () => {
     expect(scopedTurnCurrent()).toBe(true);
   });
 });
+
+
+
+

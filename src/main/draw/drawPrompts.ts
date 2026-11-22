@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! prompts + the pen tool (260727).
  *
  * Two turn kinds share one contract:
@@ -12,7 +12,7 @@
  * (the rules, the coordinate space, the pen contract) goes in `extraStable`
  * so it rides inside the cached system region across all ten turns; only the
  * volatile per-turn block is re-billed. Putting the role-specific instructions
- * in the turn block rather than in extraStable is deliberate — a game
+ * in the turn block rather than in extraStable is deliberate â€” a game
  * alternates roles every turn, so a role-split contract would miss the cache
  * on every single turn.
  *
@@ -279,7 +279,7 @@ export function roundsRecap(opts: {
  * they are the largest thing in it, so the last text the model read before
  * answering was chat from the PREVIOUS turn. Live capture: the character
  * guessed the player's drawing correctly, and its turn-end line was "hehe ok
- * you're reading these too fast, that's not fair" — the drawer's frame,
+ * you're reading these too fast, that's not fair" â€” the drawer's frame,
  * continued straight out of the previous turn's banter, which was sitting at
  * the bottom of the prompt. The turn block said YOU GOT IT two thousand tokens
  * earlier. Recency won.
@@ -381,19 +381,19 @@ export function buildGuessTurnBlock(opts: {
 
   return [
     ...head,
-    `The image attached is ${playerName}'s canvas as it looks RIGHT NOW. It is unfinished — they are still drawing, ` +
+    `The image attached is ${playerName}'s canvas as it looks RIGHT NOW. It is unfinished â€” they are still drawing, ` +
       'so expect a partial sketch and expect it to change.',
     '',
     'The answer is ONE OR TWO WORDS: an everyday object, animal, food, place or thing. ' +
-      'Look at the sketch and say your guess in chat. Say the actual word — "is it a lighthouse?" counts, ' +
+      'Look at the sketch and say your guess in chat. Say the actual word â€” "is it a lighthouse?" counts, ' +
       '"i see a tall thing" does not.',
     `${playerName} is supposed to draw it, not write it. If they have written the word on the canvas, tease them about cheating instead of using it.`,
     '',
     'Guess out loud even when you are not sure, and react to what is on the page. One or two short lines. ' +
-      'Do not repeat a guess you have already made this turn, and do not list five guesses at once — say what it looks like now.',
+      'Do not repeat a guess you have already made this turn, and do not list five guesses at once â€” say what it looks like now.',
     '',
     '## Your guesses and lines so far THIS turn',
-    myGuesses.length > 0 ? myGuesses.map((g) => `- ${g}`).join('\n') : '(none yet — this is your first look)',
+    myGuesses.length > 0 ? myGuesses.map((g) => `- ${g}`).join('\n') : '(none yet â€” this is your first look)',
     '',
     `Right now: you are GUESSING. ${playerName} drew that picture, you have never seen the word, ` +
       'and your job is to name it. Say it straight to them: "you", never their name or "they", and no formatting.',
@@ -483,7 +483,7 @@ export function buildDrawTurnBlock(opts: {
         ]
       : []),
     // A live test had Haiku open with "I'll draw a lighthouse for you! Let me
-    // start with the main structure." — assistant-style narration that both
+    // start with the main structure." â€” assistant-style narration that both
     // leaks the answer and breaks character. Banning the narration outright is
     // what fixes it; the redaction backstop only makes the leak less costly.
     'Do NOT narrate or announce what you are about to draw ("I\'ll draw a...", "let me start with..."). ' +
@@ -493,7 +493,7 @@ export function buildDrawTurnBlock(opts: {
     '',
     'Draw it with `pen` calls. Aim for something a person could recognise in a few seconds:',
     // 260728: this used to read "16 at most, and fewer is usually better",
-    // which is a ceiling and a nudge downward, and the character took it — a
+    // which is a ceiling and a nudge downward, and the character took it â€” a
     // live turn ended after three strokes with two minutes left, having drawn
     // two overlapping blobs. It cannot see the page, so it cannot tell that is
     // not enough. A floor is the useful number here.
@@ -513,7 +513,7 @@ export function buildDrawTurnBlock(opts: {
     lines.push(
       '',
       `You have already drawn ${strokesUsed} stroke${strokesUsed === 1 ? '' : 's'} of this picture. ` +
-        'Continue it — do not start over. Stop calling `pen` when the drawing is done.',
+        'Continue it â€” do not start over. Stop calling `pen` when the drawing is done.',
     );
   }
 
@@ -652,12 +652,16 @@ export function turnEndLine(opts: {
   const zh = opts.language === 'zh';
   if (!guessed) {
     const line = `Time. It was "${word}".`;
-    return { text: zh ? `时间到。答案是「${word}」。` : line, modelText: line };
+    return { text: zh ? `æ—¶é—´åˆ°ã€‚ç­”æ¡ˆæ˜¯ã€Œ${word}ã€ã€‚` : line, modelText: line };
   }
   return {
     text: zh
-      ? `${guesser === 'ai' ? aiName : playerName}猜对了。答案是「${word}」。`
+      ? `${guesser === 'ai' ? aiName : playerName}çŒœå¯¹äº†ã€‚ç­”æ¡ˆæ˜¯ã€Œ${word}ã€ã€‚`
       : `${guesser === 'ai' ? aiName : playerName} got it. It was "${word}".`,
     modelText: `${guesser === 'ai' ? 'You' : playerName} got it. It was "${word}".`,
   };
 }
+
+
+
+

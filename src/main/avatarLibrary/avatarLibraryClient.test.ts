@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { AvatarManifest } from '../../shared/ipc';
 import { isLastPublicDeleteBlocked, isLastPublicLock, effectiveAvatar, parseAvatarList, publicCount } from '../../shared/avatarLibrary';
 import {
@@ -564,7 +564,7 @@ describe('AvatarLibraryClient', () => {
     expect(await h.client.addPortrait(CHAR, ZIP, null)).toEqual({ ok: false, error: 'bad_content' });
     expect(h.calls).toEqual([]);
   });
-  // ── round 3: upload limits, refusals, busy, processing ──────────────────────
+  // â”€â”€ round 3: upload limits, refusals, busy, processing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function uploadRoutes(h: H, avatars: () => unknown[], over: Record<string, unknown> = {}) {
     h.routes.set(`GET /avatars/v1/${CHAR}`, () => ({ status: 200, body: listBody(over, avatars()) }));
@@ -701,3 +701,7 @@ describe('AvatarLibraryClient', () => {
     expect(h2.events.filter((e) => e.event === 'avatar_library_failed')).toEqual([]);
   });
 });
+
+
+
+

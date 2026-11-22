@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import type { BeaconEntry, BeaconHandle } from './lanBeacon';
 import type { ListeningPort } from './listeningPorts';
 import {
@@ -125,3 +125,7 @@ describe('winLanFallback', () => {
     expect(h.beaconStop).toHaveBeenCalled();
   });
 });
+
+
+
+

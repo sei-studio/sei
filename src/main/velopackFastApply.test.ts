@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { UI_LANGUAGES } from '../shared/uiLanguage';
 import {
   APPLYING_MARKER_MAX_AGE_MS,
@@ -83,18 +83,18 @@ describe('update screen text', () => {
     }
   });
 
-  it('keeps "Updating…" in every estimate and words the buckets naturally', () => {
+  it('keeps "Updatingâ€¦" in every estimate and words the buckets naturally', () => {
     const en = updateScreenText('en');
-    expect(en.updating).toBe('Updating…');
-    expect(en.eta['eta-20']).toBe('Updating… about 20 seconds left');
-    expect(en.eta['eta-60']).toBe('Updating… about a minute left');
-    expect(en.eta['eta-120']).toBe('Updating… about 2 minutes left');
-    expect(en.eta['eta-long']).toBe('Updating… a few more minutes');
-    expect(en.error).toBe("Couldn't update. Opening Sei…");
+    expect(en.updating).toBe('Updatingâ€¦');
+    expect(en.eta['eta-20']).toBe('Updatingâ€¦ about 20 seconds left');
+    expect(en.eta['eta-60']).toBe('Updatingâ€¦ about a minute left');
+    expect(en.eta['eta-120']).toBe('Updatingâ€¦ about 2 minutes left');
+    expect(en.eta['eta-long']).toBe('Updatingâ€¦ a few more minutes');
+    expect(en.error).toBe("Couldn't update. Opening Seiâ€¦");
     const zh = updateScreenText('zh');
-    expect(zh.updating).toBe('正在更新…');
-    expect(zh.eta['eta-20']).toBe('正在更新…大约还需 20 秒');
-    expect(zh.error).toBe('更新失败，正在打开 Sei…');
+    expect(zh.updating).toBe('æ­£åœ¨æ›´æ–°â€¦');
+    expect(zh.eta['eta-20']).toBe('æ­£åœ¨æ›´æ–°â€¦å¤§çº¦è¿˜éœ€ 20 ç§’');
+    expect(zh.error).toBe('æ›´æ–°å¤±è´¥ï¼Œæ­£åœ¨æ‰“å¼€ Seiâ€¦');
     for (const lang of ['ja', 'ru', 'pt-BR', 'es', 'it'] as const) {
       const t = updateScreenText(lang);
       for (const v of Object.values(t.eta)) {
@@ -223,3 +223,7 @@ describe('stale applying.pid guard', () => {
     expect(isUpdaterImage('svchost.exe')).toBe(false);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room host: the avatar bridge relay (261104). The host page's
  * RoomAvatar reads her imported model and her face set through a few
  * `window.sei` calls (SEILINK_HOST_AVATAR_METHODS). The host process has no
@@ -123,3 +123,7 @@ export class AvatarRelay {
     return value ?? null;
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// 260730 — defending the owner.
+﻿// 260730 â€” defending the owner.
 //
 // Live report: "sui is not attracting mob aggro, mobs are all on me". Reading
 // two sessions of snapshots, the mobs were as often nearer to HER than to the
@@ -96,7 +96,7 @@ describe('a hostile hitting the owner wakes the bot', () => {
     vi.advanceTimersByTime(300)
 
     expect(bot.attack).toHaveBeenCalledWith(zombie)
-    // Out of swing range, so a pursuit goal was installed — without it the
+    // Out of swing range, so a pursuit goal was installed â€” without it the
     // "defence" is the bot waving at a zombie six blocks away.
     expect(bot.pathfinder.setGoal).toHaveBeenCalled()
   })
@@ -185,7 +185,7 @@ describe('a hostile hitting the owner wakes the bot', () => {
     expect(seen[0].engaged).toBe(false)
   })
 
-  it('another player being hit is not our business — only the owner', () => {
+  it('another player being hit is not our business â€” only the owner', () => {
     const bot = makeBot()
     const seen = capture(bot)
     startCombat(bot, cfg())
@@ -211,3 +211,7 @@ describe('a hostile hitting the owner wakes the bot', () => {
     expect(attacked[0].attackerKind).toBe('hostile_mob')
   })
 })
+
+
+
+

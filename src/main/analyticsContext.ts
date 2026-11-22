@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Build, device and provider facts stamped on every analytics event (261031,
  * T278 / scale plan C7 + PostHog audit fixes 1-2).
  *
@@ -49,7 +49,7 @@ export function parseBakedChannel(raw: string | undefined | null): string {
   return v === 'stable' || v === 'beta' || v === 'test' ? v : '';
 }
 
-/** A semver prerelease part: 0.7.0-beta.1 → 'beta.1', 0.7.0 → ''. */
+/** A semver prerelease part: 0.7.0-beta.1 â†’ 'beta.1', 0.7.0 â†’ ''. */
 function prerelease(version: string): string {
   const core = version.split('+')[0];
   const i = core.indexOf('-');
@@ -104,7 +104,7 @@ export function uuidv7(now: number = Date.now()): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 
-// ── AI provider ──────────────────────────────────────────────────────────────
+// â”€â”€ AI provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type AiProviderKind = 'cloud' | 'chatgpt' | 'byok' | 'ollama' | 'unset';
 
@@ -169,7 +169,7 @@ export function providerProps(
 
 export type PlanProp = 'free' | 'quest' | 'party' | 'none' | 'unknown';
 
-// ── Purchases ───────────────────────────────────────────────────────────────
+// â”€â”€ Purchases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type PlanTierProp = 'free' | 'quest' | 'party';
 
@@ -231,3 +231,7 @@ export function processSessionId(): string {
 export function bakedChannel(): string {
   return parseBakedChannel(import.meta.env.SEI_RELEASE_CHANNEL);
 }
+
+
+
+

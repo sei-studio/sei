@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileSettings: a companion's settings rows.
  *
  *  - Your own companion (access.view 'owner'): one tab of the page's
@@ -248,7 +248,7 @@ function RowButton({
   );
 }
 
-// ── Look ──────────────────────────────────────────────────────────────────
+// â”€â”€ Look â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface CardVersions {
   id: string;
@@ -536,7 +536,7 @@ function SkinHead({ character }: { character: Character }): React.ReactElement |
   );
 }
 
-// ── Voice ─────────────────────────────────────────────────────────────────
+// â”€â”€ Voice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * The voice's name as the player should read it (the name only, no vibe
@@ -610,7 +610,7 @@ function VoiceRow(p: RowProps): React.ReactElement {
   );
 }
 
-// ── Personality ───────────────────────────────────────────────────────────
+// â”€â”€ Personality â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Name and description, read-only (yours is edited in AboutEditor). */
 function AboutRow(p: RowProps): React.ReactElement {
@@ -703,7 +703,7 @@ function KnowledgeRow(p: RowProps): React.ReactElement {
   );
 }
 
-// ── Games ─────────────────────────────────────────────────────────────────
+// â”€â”€ Games â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DST_NAME = "Don't Starve Together";
 
@@ -777,7 +777,7 @@ function DstRow(p: RowProps): React.ReactElement {
   );
 }
 
-// ── Sharing ───────────────────────────────────────────────────────────────
+// â”€â”€ Sharing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PublicRow(p: RowProps): React.ReactElement {
   const t = useT();
@@ -836,7 +836,7 @@ function OthersHearRow(p: RowProps): React.ReactElement {
   );
 }
 
-// ── WorldLink ─────────────────────────────────────────────────────────────
+// â”€â”€ WorldLink â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 'gear' is the profile's settings entry for seilink_entry (it was the gear
 // menu until 261107); kept so the series stays whole.
 
@@ -973,7 +973,7 @@ function IntroRow(p: RowProps): React.ReactElement {
   );
 }
 
-// ── Danger zone ───────────────────────────────────────────────────────────
+// â”€â”€ Danger zone â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ResetMemoryRow(p: RowProps): React.ReactElement {
   const t = useT();
@@ -1020,3 +1020,7 @@ function UnbindRow(p: RowProps): React.ReactElement {
     />
   );
 }
+
+
+
+

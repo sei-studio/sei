@@ -1,21 +1,21 @@
-/**
- * AwakenScreen — the "awaken a companion" chooser view (Party redesign §4.3).
+﻿/**
+ * AwakenScreen â€” the "awaken a companion" chooser view (Party redesign Â§4.3).
  * Replaces AddCompanionChooserModal: a full view (rail visible) with the
  * flagship "Meet my companion" match hero on the left and the secondary
  * origins stacked on the right: explore World first (the most used, product
  * call 261116), then create my own, then connect an existing one.
  *
  * Gates (moved verbatim from the old HomeGrid handlers):
- *   - Meet my companion → signed-in + cloud backend required, else SignInModal
+ *   - Meet my companion â†’ signed-in + cloud backend required, else SignInModal
  *     with the "meet your unique companion" framing; then straight into Sui's
  *     meet scene. Config reads fail OPEN. (260802: the questionnaire gate that
- *     used to sit here, bouncing the player out to a form and back, is gone —
+ *     used to sit here, bouncing the player out to a form and back, is gone â€”
  *     Sui asks for any missing answers inside the scene, mid-conversation.)
- *   - Create your own → daily creation quota (checkCreateQuota) shows
+ *   - Create your own â†’ daily creation quota (checkCreateQuota) shows
  *     CreationLimitModal when blocked, else the add-character wizard.
- *   - Invite from World → Home's World tab.
+ *   - Invite from World â†’ Home's World tab.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §4.3; mockup view-awaken.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§4.3; mockup view-awaken.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -42,7 +42,7 @@ export function AwakenScreen(): React.ReactElement {
   // The hero CTA label tells the truth about what the click does (260705):
   // signed-out or local-backend (BYOK) users get routed to sign-in first, so
   // show "Sign In" instead of "Begin" for them. Config read fails open to
-  // "Begin" — same fail-open stance as handleBegin's own gate.
+  // "Begin" â€” same fail-open stance as handleBegin's own gate.
   const [backendLocal, setBackendLocal] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +73,7 @@ export function AwakenScreen(): React.ReactElement {
       const cfg = await sei.getConfig();
       backendLocal = (cfg.ai_backend_kind ?? 'local') !== 'cloud-proxy';
     } catch {
-      // Fail OPEN — let the generation pipeline surface any real backend issue
+      // Fail OPEN â€” let the generation pipeline surface any real backend issue
       // rather than blocking an eligible user on a transient config read.
       backendLocal = false;
     }
@@ -119,7 +119,7 @@ export function AwakenScreen(): React.ReactElement {
     <div className={styles.root}>
       <div className={styles.head}>
         <Button kind="quiet" size="sm" onClick={() => navigate({ kind: 'home' })}>
-          {t('← Back')}
+          {t('â† Back')}
         </Button>
       </div>
       <div className={styles.body}>
@@ -152,7 +152,7 @@ export function AwakenScreen(): React.ReactElement {
           </button>
         </div>
       </div>
-      {/* 260706: retake entry — the full questionnaire, prefilled, returning
+      {/* 260706: retake entry â€” the full questionnaire, prefilled, returning
           here. Signed-in only (the questionnaire is a cloud-user concept,
           same as the match hero). 260731: Sui asks it, in her scene. */}
       {authKind === 'signed_in' ? (
@@ -175,3 +175,7 @@ export function AwakenScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

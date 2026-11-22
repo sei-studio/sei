@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Plain-English error narration surface (GUI-05).
  *
  * Each variant maps to a copy entry in src/renderer/src/lib/errors.ts.
  * Sources:
- *   - UI-SPEC §"Plain-English error copy" — 9 seeded classes
- *   - RESEARCH §"Pitfall 3" — KEYCHAIN_FALLBACK_PLAINTEXT (Linux fallback warning)
- *   - UI spec for skin/wizard ERROR_COPY entries — 7 skin/wizard classes
+ *   - UI-SPEC Â§"Plain-English error copy" â€” 9 seeded classes
+ *   - RESEARCH Â§"Pitfall 3" â€” KEYCHAIN_FALLBACK_PLAINTEXT (Linux fallback warning)
+ *   - UI spec for skin/wizard ERROR_COPY entries â€” 7 skin/wizard classes
  *
  * Adding a new ErrorClass: also add a row to ERROR_COPY in lib/errors.ts.
  */
@@ -44,7 +44,7 @@ export type ErrorClass =
   | 'DAILY_LIMIT_REACHED'
   // 260828: summon pre-gate refusal when onboarding never captured a name.
   // Previously mislabeled as BOT_CRASH in the BotStatus while the throw already
-  // used this token — production analytics showed users retry-looping on the
+  // used this token â€” production analytics showed users retry-looping on the
   // misleading "Sei stopped unexpectedly" copy.
   | 'PREFERRED_NAME_MISSING'
   // Game adapters (M0, 260908): game-neutral classes for the second and third
@@ -172,3 +172,7 @@ export const ALL_ERROR_CLASSES: readonly ErrorClass[] = Object.freeze([
   'CHATGPT_PLAN_DISABLED',
   'PROVIDER_REGION_UNSUPPORTED',
 ]);
+
+
+
+

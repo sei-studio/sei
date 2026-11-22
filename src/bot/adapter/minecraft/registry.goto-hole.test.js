@@ -1,8 +1,8 @@
-// 261017 (pass 12): goTo out of a hole. In the 261016 errands eval climbOut
+﻿// 261017 (pass 12): goTo out of a hole. In the 261016 errands eval climbOut
 // pillared two blocks to a dead-end pocket in the shaft wall, the walk timed
 // out 13 blocks underground, escapeUp never ran (it only ran when climbOut
 // had NOT climbed), and the result told her she was out of the hole:
-// "timeout — unreachable — try build to Y=71 (first pillared out of the
+// "timeout â€” unreachable â€” try build to Y=71 (first pillared out of the
 // 2-deep hole you were in)". She told the player "almost there".
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Vec3 } from 'vec3'
@@ -57,7 +57,7 @@ describe('goTo from a hole', () => {
     const bot = holeBot()
     climbOutMock.mockResolvedValue({ status: 'climbed', depth: 2, how: 'pillar', exit: false })
     goToMock
-      .mockResolvedValueOnce('timeout — unreachable — try build to Y=71')
+      .mockResolvedValueOnce('timeout â€” unreachable â€” try build to Y=71')
       .mockImplementationOnce(async (b) => { b.entity.position = new Vec3(4.5, 71, 0.5); return 'reached' })
     escapeUpMock.mockImplementation(async (b) => { b.entity.position = new Vec3(0.5, 71, 0.5); return { status: 'climbed', depth: 12, how: 'pillar' } })
     const reg = createDefaultRegistry()
@@ -70,7 +70,7 @@ describe('goTo from a hole', () => {
   it('says plainly she is still in the hole, how far down, and drops the "try build" hint', async () => {
     const bot = holeBot()
     climbOutMock.mockResolvedValue({ status: 'climbed', depth: 2, how: 'pillar', exit: false })
-    goToMock.mockResolvedValue('timeout — unreachable — try build to Y=71')
+    goToMock.mockResolvedValue('timeout â€” unreachable â€” try build to Y=71')
     // escapeUp gets nowhere new (say the pillar ran out of time partway).
     escapeUpMock.mockResolvedValue({ status: 'not_in_pit' })
     const reg = createDefaultRegistry()
@@ -86,7 +86,7 @@ describe('goTo from a hole', () => {
   it('with no climb to report, the line still reads cleanly and gives the next step', async () => {
     const bot = holeBot(57)
     climbOutMock.mockResolvedValue({ status: 'not_in_pit' })
-    goToMock.mockResolvedValue('timeout — unreachable — try build to Y=71')
+    goToMock.mockResolvedValue('timeout â€” unreachable â€” try build to Y=71')
     escapeUpMock.mockResolvedValue({ status: 'not_in_pit' })
     const reg = createDefaultRegistry()
     const r = String(await reg.execute('goTo', { x: 4, y: 71, z: 0 }, bot, {}))
@@ -97,7 +97,7 @@ describe('goTo from a hole', () => {
   it('a failed escape keeps its own "stuck in a hole" line first', async () => {
     const bot = holeBot()
     climbOutMock.mockResolvedValue({ status: 'climbed', depth: 2, how: 'pillar', exit: false })
-    goToMock.mockResolvedValue('timeout — unreachable — try build to Y=71')
+    goToMock.mockResolvedValue('timeout â€” unreachable â€” try build to Y=71')
     escapeUpMock.mockResolvedValue({ status: 'failed', line: 'stuck in a hole at 0,59,0: 12 blocks below where you are going and could not climb up (now y=59, 0 scaffold blocks; pillar: ran out of blocks). Get dirt or cobblestone to pillar up with, or dig a staircase up the wall' })
     const reg = createDefaultRegistry()
     const r = String(await reg.execute('goTo', { x: 4, y: 71, z: 0 }, bot, {}))
@@ -114,10 +114,14 @@ describe('goTo from a hole', () => {
       blockAt: (p) => ({ name: p.y <= 70 ? 'stone' : 'air', position: p, boundingBox: p.y <= 70 ? 'block' : 'empty' }),
     }
     climbOutMock.mockResolvedValue({ status: 'not_in_pit' })
-    goToMock.mockResolvedValue('cant_reach — unreachable — try build to Y=80')
+    goToMock.mockResolvedValue('cant_reach â€” unreachable â€” try build to Y=80')
     escapeUpMock.mockResolvedValue({ status: 'not_in_pit' })
     const reg = createDefaultRegistry()
     const r = await reg.execute('goTo', { x: 4, y: 80, z: 0 }, bot, {})
-    expect(r).toBe('cant_reach — unreachable — try build to Y=80')
+    expect(r).toBe('cant_reach â€” unreachable â€” try build to Y=80')
   })
 })
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * AcceptToSModal — BLOCKING ToS + Privacy Policy acceptance modal (D-26).
+﻿/**
+ * AcceptToSModal â€” BLOCKING ToS + Privacy Policy acceptance modal (D-26).
  *
  * Mounts at next launch for any signed-in user without a current-version
  * tos_acceptance row. The catch-all for:
@@ -7,19 +7,19 @@
  *   - Google OAuth users (Plan 11-12 inline signup form skips them; they land here post-callback)
  *   - Any user signed in BEFORE a TOS_VERSION / PRIVACY_VERSION bump
  *
- * Layout invariants per Phase 10 UI-SPEC §Layout rules (mirrored from
+ * Layout invariants per Phase 10 UI-SPEC Â§Layout rules (mirrored from
  * DeleteAccountModal):
  *   - 460px width, 32px padding, scrim 0.45 alpha
- *   - ESC SUPPRESSED unconditionally (blocking modal — no dismissal path)
+ *   - ESC SUPPRESSED unconditionally (blocking modal â€” no dismissal path)
  *   - Click-outside does NOT close (no onClick on scrim)
  *   - Primary action disabled until checkbox is checked
  *
  * Submit calls `sei.tosAccept()` (Plan 11-12). On success the modal closes via
- * onAccepted (parent refreshes tosAccepted in useAuthStore → modal unmounts).
+ * onAccepted (parent refreshes tosAccepted in useAuthStore â†’ modal unmounts).
  * On {ok:false} the message renders inline and the user can retry.
  *
  * Source: 11-CONTEXT D-26 (blocking modal for legacy + version-bump cases),
- *         LIB-06 (no cloud write before acceptance — defense-in-depth in
+ *         LIB-06 (no cloud write before acceptance â€” defense-in-depth in
  *         Plan 11-14's isCloudWriteAllowed gate).
  */
 import React, { useEffect, useState } from 'react';
@@ -33,7 +33,7 @@ import { userFacingError } from '../lib/errors';
 // Plan 11-12 ships `sei.tosAccept` + `sei.openExternal` on `RendererApi`. This
 // plan (11-13) lands in parallel with 11-12; the type bridge below lets
 // AcceptToSModal compile standalone in this worktree and is a no-op once the
-// 11-12 types land (RendererApi gains the real properties — the cast is then
+// 11-12 types land (RendererApi gains the real properties â€” the cast is then
 // equivalent to the source type).
 type TosBridge = {
   tosAccept(): Promise<{ ok: true } | { ok: false; message: string }>;
@@ -52,9 +52,9 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ESC suppression — this is a BLOCKING modal (D-26). Unlike DeleteAccountModal
+  // ESC suppression â€” this is a BLOCKING modal (D-26). Unlike DeleteAccountModal
   // which only suppresses ESC during the in-flight submit, AcceptToSModal blocks
-  // ESC unconditionally — there is no "cancel" path for a legal-gate prompt.
+  // ESC unconditionally â€” there is no "cancel" path for a legal-gate prompt.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
@@ -91,10 +91,10 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
   };
 
   // BLOCKING legal gate. ESC + click-outside SUPPRESSED (escClose false, no
-  // scrimClose, no onClose) — there is no dismissal path. The dedicated
+  // scrimClose, no onClose) â€” there is no dismissal path. The dedicated
   // keydown/preventDefault effect above also stops any other ESC handler.
   return (
-    <ModalShell title={t('Review Sei’s Terms')} width={460} escClose={false}>
+    <ModalShell title={t('Review Seiâ€™s Terms')} width={460} escClose={false}>
       <p className={styles.body}>
         {t(
           'We have published a Privacy Policy and Terms of Service. Please review and accept to continue.',
@@ -129,9 +129,13 @@ export function AcceptToSModal({ onAccepted }: AcceptToSModalProps): React.React
           onClick={handleSubmit}
           disabled={!checked || submitting}
         >
-          {submitting ? t('Accepting…') : t('Accept and continue')}
+          {submitting ? t('Acceptingâ€¦') : t('Accept and continue')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

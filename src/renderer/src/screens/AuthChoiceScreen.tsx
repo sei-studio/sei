@@ -1,12 +1,12 @@
-/**
- * AuthChoiceScreen — first-launch embedded sign-in surface.
+﻿/**
+ * AuthChoiceScreen â€” first-launch embedded sign-in surface.
  *
  * B2 refactor: replaces the prior two-tile picker with the user-approved
  * embedded form. The sign-in / sign-up logic was extracted from SignInModal
  * and rendered INLINE (no scrim / no modal) so the very first screen of the
  * app is the sign-in surface itself, not a chooser.
  *
- * Layout (top → bottom):
+ * Layout (top â†’ bottom):
  *   1. SeiPixelMark (height 44)
  *   2. "Welcome to Sei." heading
  *   3. Embedded email + password form
@@ -15,15 +15,15 @@
  *   6. Official "Sign in with Google" button (full width), then
  *      "Continue with ChatGPT" (261023, full width, own code sub-state)
  *   7. Toggle link "New here? Create an account" / "Already have an account? Sign in"
- *   8. DOB triple + ToS checkbox (signup mode only — mirrors SignInModal)
- *   9. "Continue locally →" text link at the very bottom (calls onChooseLocal)
+ *   8. DOB triple + ToS checkbox (signup mode only â€” mirrors SignInModal)
+ *   9. "Continue locally â†’" text link at the very bottom (calls onChooseLocal)
  *
  * Reuses OAuthInterstitialModal + all auth IPC verbatim from SignInModal.
  * ESC support is preserved (when not mid-submit). framingLabel is supported
  * in case a caller wires it, but first-launch flow passes null.
  *
  * Sources:
- *   - 10-UI-SPEC §AuthChoiceScreen + §SignInModal copy
+ *   - 10-UI-SPEC Â§AuthChoiceScreen + Â§SignInModal copy
  *   - CONTEXT D-01 (unified sign-in/up), D-02 (equal-citizen local), D-04
  *     (verification non-blocking)
  *   - F-10 (quick/260525-usc) COPPA DOB age gate
@@ -49,7 +49,7 @@ type Mode = 'signin' | 'signup';
  * Lightweight email shape check. Pre-validates the field client-side so an
  * obviously-malformed address gets an immediate, specific message instead of
  * the server's generic "Email or password doesn't match" (item 8). This is a
- * UX hint, not a security gate — main + Supabase remain the source of truth.
+ * UX hint, not a security gate â€” main + Supabase remain the source of truth.
  */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,7 +57,7 @@ export interface AuthChoiceScreenProps {
   /** Called when the user picks the bottom "Continue locally" link. Caller routes to home or onboarding per Pitfall A8. */
   onChooseLocal: () => void;
   /**
-   * D-10 framing micro-copy mirrored from SignInModal — null on first-launch.
+   * D-10 framing micro-copy mirrored from SignInModal â€” null on first-launch.
    * Kept on the API so a future inline-upgrade caller can reuse this screen.
    */
   framingLabel?: string | null;
@@ -73,7 +73,7 @@ export function AuthChoiceScreen({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   /**
-   * 261023 — the failed-password message that earns the "Signed up with Google
+   * 261023 â€” the failed-password message that earns the "Signed up with Google
    * or ChatGPT?" hint. Keyed to the message so the hint goes away with it.
    * Shown for every invalid_credentials answer, which Supabase gives for a
    * wrong password and for an unknown address alike, so it reveals nothing
@@ -82,7 +82,7 @@ export function AuthChoiceScreen({
   const [hintFor, setHintFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   /**
-   * 260804 — ONE code panel for every path that emails something: a signup
+   * 260804 â€” ONE code panel for every path that emails something: a signup
    * needing confirmation, a sign-in against an unconfirmed account, and
    * "Forgot your password?". They previously had two separate "check your
    * email" panels whose copy differed, which under the code flow would have
@@ -92,9 +92,9 @@ export function AuthChoiceScreen({
    */
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [oauthInFlight, setOauthInFlight] = useState(false);
-  // Plan 11-12 (D-26 / LIB-06) — at-sign-up ToS capture.
+  // Plan 11-12 (D-26 / LIB-06) â€” at-sign-up ToS capture.
   const [tosChecked, setTosChecked] = useState(false);
-  // F-10 (quick/260525-usc) — COPPA DOB age gate (mirrors SignInModal).
+  // F-10 (quick/260525-usc) â€” COPPA DOB age gate (mirrors SignInModal).
   const [dobYear, setDobYear] = useState<string>('');
   const [dobMonth, setDobMonth] = useState<string>('');
   const [dobDay, setDobDay] = useState<string>('');
@@ -124,7 +124,7 @@ export function AuthChoiceScreen({
     e.preventDefault();
     if (submitting) return;
     setError(null);
-    // Item 8 — surface a specific message for a malformed email before we even
+    // Item 8 â€” surface a specific message for a malformed email before we even
     // hit the network, rather than letting it fall through to a generic
     // credentials error.
     if (!EMAIL_RE.test(email.trim())) {
@@ -177,7 +177,7 @@ export function AuthChoiceScreen({
   const onForgot = async (): Promise<void> => {
     if (submitting) return;
     setError(null);
-    // Reuse the typed email — the field sits directly above the link. Require a
+    // Reuse the typed email â€” the field sits directly above the link. Require a
     // valid-looking address first so we don't send the user to a dead-end panel.
     if (!EMAIL_RE.test(email.trim())) {
       setError(t('Enter your email above, then tap "Forgot your password?"'));
@@ -191,7 +191,7 @@ export function AuthChoiceScreen({
         // recovery session and App.tsx raises SetNewPasswordModal.
         setCodeSentTo(email);
       } else {
-        // rate_limited / network / oauth_only — surface inline; the email field
+        // rate_limited / network / oauth_only â€” surface inline; the email field
         // stays filled.
         setError(userFacingError(res.message));
       }
@@ -202,8 +202,8 @@ export function AuthChoiceScreen({
 
   const ctaLabel = submitting
     ? mode === 'signin'
-      ? t('Signing in…')
-      : t('Creating account…')
+      ? t('Signing inâ€¦')
+      : t('Creating accountâ€¦')
     : mode === 'signin'
       ? t('Sign In')
       : t('Create Account');
@@ -249,10 +249,10 @@ export function AuthChoiceScreen({
             disabled={gpt.phase === 'verifying' || gpt.code.length === 0}
             onClick={() => void gpt.submit()}
           >
-            {gpt.phase === 'verifying' ? t('Checking…') : t('Verify')}
+            {gpt.phase === 'verifying' ? t('Checkingâ€¦') : t('Verify')}
           </Button>
           <Button kind="quiet" size="md" disabled={gpt.resending} onClick={() => void gpt.resend()}>
-            {gpt.resending ? t('Sending…') : t('Send a new code')}
+            {gpt.resending ? t('Sendingâ€¦') : t('Send a new code')}
           </Button>
           <Button kind="quiet" size="md" onClick={gpt.cancel}>
             {t('Back')}
@@ -299,7 +299,7 @@ export function AuthChoiceScreen({
             disabled={codeState.submitting || codeState.code.length === 0}
             onClick={() => void codeState.submit()}
           >
-            {codeState.submitting ? t('Checking…') : t('Verify')}
+            {codeState.submitting ? t('Checkingâ€¦') : t('Verify')}
           </Button>
           <Button
             kind="quiet"
@@ -307,7 +307,7 @@ export function AuthChoiceScreen({
             disabled={codeState.resending}
             onClick={() => void codeState.resend()}
           >
-            {codeState.resending ? t('Sending…') : t('Send a new code')}
+            {codeState.resending ? t('Sendingâ€¦') : t('Send a new code')}
           </Button>
           <Button
             kind="quiet"
@@ -321,7 +321,7 @@ export function AuthChoiceScreen({
           </Button>
         </div>
         <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-          {t('Continue locally →')}
+          {t('Continue locally â†’')}
         </button>
       </div>
     );
@@ -363,11 +363,11 @@ export function AuthChoiceScreen({
           </div>
 
           {/*
-            F-10 (quick/260525-usc) — COPPA DOB age gate. Three dropdowns
+            F-10 (quick/260525-usc) â€” COPPA DOB age gate. Three dropdowns
             (month / day / year). The DOB is sent to main on submit; main
             computes age via wall-clock today and rejects with
             `code: 'under_13'` if the user is younger than 13. The DOB is
-            NEVER persisted (privacy minimisation — see privacy.html §7).
+            NEVER persisted (privacy minimisation â€” see privacy.html Â§7).
           */}
           {mode === 'signup' ? (
             <div className={styles.fieldGroup}>
@@ -534,7 +534,7 @@ export function AuthChoiceScreen({
       </div>
 
       <button type="button" className={styles.localLink} onClick={onChooseLocal}>
-        {t('Continue locally →')}
+        {t('Continue locally â†’')}
       </button>
 
       {oauthInFlight ? (
@@ -553,3 +553,7 @@ export function AuthChoiceScreen({
     </div>
   );
 }
+
+
+
+

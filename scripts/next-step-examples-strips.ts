@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Home "up next" strip renders for the plans in scripts/next-step-examples.ts
  * results (261014), through the `?dashshot=home&name=&text=&surface=` harness.
  *
@@ -89,3 +89,7 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+
+

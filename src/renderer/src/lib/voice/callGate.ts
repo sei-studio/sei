@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Whether a call can dial now, or needs the voice module first (261110).
  * The same check VoiceCallScreen's install gate makes (260705/260725), for
  * surfaces that start a call in place (the WorldLink room editor's Call
@@ -20,3 +20,7 @@ export async function callGate(characterId: string): Promise<CallGate> {
   if (await isVoiceModelReady()) return 'ready';
   return prefetchInProgress() ? 'installing' : 'consent';
 }
+
+
+
+

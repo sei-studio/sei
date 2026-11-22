@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Main-process side of the `game_setup_step` event (261104). The shape and
  * its rules live in src/shared/setupTelemetry.ts; this file only sends it,
  * through the shared lazy analytics import (CLAUDE.md, "Instrumenting a game
@@ -247,3 +247,7 @@ export function trackStardewFarmSeen(store: string, sink: SetupSink = trackSetup
     /* ignore */
   }
 }
+
+
+
+

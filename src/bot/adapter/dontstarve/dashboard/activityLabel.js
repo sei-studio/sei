@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/dashboard/activityLabel.js — current tool call
+﻿// src/bot/adapter/dontstarve/dashboard/activityLabel.js â€” current tool call
 // -> the lowercase activity line for the DST dashboard status strip (the
 // renderer sentence-cases it). Vocabulary mirrors registry.js; unknown tools
 // fall back to the humanized name. User copy: no em dashes.
@@ -54,3 +54,7 @@ export function activityLabel(name, args) {
     default: return humanize(name)
   }
 }
+
+
+
+

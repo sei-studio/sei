@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft's "Open to LAN" multicast announcement (224.0.2.60:4445), as an
  * extra discovery source on Windows only (issue #52).
  *
@@ -156,3 +156,7 @@ export function startLanBeacon(deps: BeaconDeps = {}): BeaconHandle {
     },
   };
 }
+
+
+
+

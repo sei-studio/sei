@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileOverview (product call 261110): what a player sees first on a
  * companion they do not own (a built-in like Sui, or someone else's World
  * companion). It leads with who it is, not with settings rows:
@@ -89,7 +89,7 @@ export function ProfileOverview(p: ProfileOverviewProps): React.ReactElement {
   );
 }
 
-// ── Avatars: a corner button on the portrait + a small popover ───────────
+// â”€â”€ Avatars: a corner button on the portrait + a small popover â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Its avatars from the library; [] until read. */
 function useAvatarList(characterId: string): AvatarItem[] {
@@ -264,3 +264,7 @@ function AvatarsIcon({ size = 16 }: { size?: number }): React.ReactElement {
     </svg>
   );
 }
+
+
+
+

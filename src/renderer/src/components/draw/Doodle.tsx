@@ -1,4 +1,4 @@
-/**
+﻿/**
  * A traced doodle, drawn with the surface's pen.
  *
  * The drawings on the start page are shown at deliberately different sizes (the
@@ -145,3 +145,7 @@ export function Doodle({ doodle, label, wash, className }: DoodleProps): React.R
     </svg>
   );
 }
+
+
+
+

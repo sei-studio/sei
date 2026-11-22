@@ -1,5 +1,5 @@
-/**
- * Tests for Plan 11-14 — isCloudWriteAllowed defense-in-depth gate.
+﻿/**
+ * Tests for Plan 11-14 â€” isCloudWriteAllowed defense-in-depth gate.
  *
  * Stubs `./tosGate` (created by parallel plan 11-12) so the gate can be
  * exercised in isolation. Asserts the four branches (local / unverified /
@@ -7,7 +7,7 @@
  * getTosAcceptance throws or returns 'unknown' (260610), the 60s TTL cache
  * behaviour (definitive results only), and the invalidateTosCache hook.
  *
- * The authState module is module-scoped — currentState is a closure variable.
+ * The authState module is module-scoped â€” currentState is a closure variable.
  * We drive transitions via the existing transitionToLocal / transitionToSignedIn
  * exports (they're documented as test-only entry points in authState.ts).
  */
@@ -20,7 +20,7 @@ vi.mock('./tosGate', () => ({
   getTosAcceptance: (...args: unknown[]) => getTosAcceptanceMock(...args),
 }));
 
-// ---- Mock supabaseClient (260606 — validateSessionOrSignOut) -------------
+// ---- Mock supabaseClient (260606 â€” validateSessionOrSignOut) -------------
 const getUserMock = vi.fn();
 const signOutMock = vi.fn().mockResolvedValue({ error: null });
 const dropSessionLocallyMock = vi.fn(async (..._a: unknown[]) => {});
@@ -102,7 +102,7 @@ describe('isCloudWriteAllowed', () => {
     expect(await isCloudWriteAllowed()).toBe(false);
   });
 
-  it('caches the tos result for 60s — two consecutive calls hit getTosAcceptance once', async () => {
+  it('caches the tos result for 60s â€” two consecutive calls hit getTosAcceptance once', async () => {
     getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
@@ -134,18 +134,18 @@ describe('isCloudWriteAllowed', () => {
     }
   });
 
-  it("does NOT cache an 'unknown' result — next call re-queries (260610 offline fix)", async () => {
+  it("does NOT cache an 'unknown' result â€” next call re-queries (260610 offline fix)", async () => {
     getTosAcceptanceMock.mockResolvedValue('unknown');
     transitionToSignedIn(makeUser({ emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(false);
-    // Connectivity returns — the very next call must re-query instead of
+    // Connectivity returns â€” the very next call must re-query instead of
     // serving a stale 60s "false" from the cache.
     getTosAcceptanceMock.mockResolvedValue('accepted');
     expect(await isCloudWriteAllowed()).toBe(true);
     expect(getTosAcceptanceMock).toHaveBeenCalledTimes(2);
   });
 
-  it('cache is per-user — switching users invalidates the prior cache entry', async () => {
+  it('cache is per-user â€” switching users invalidates the prior cache entry', async () => {
     getTosAcceptanceMock.mockResolvedValue('accepted');
     transitionToSignedIn(makeUser({ id: '11111111-1111-4111-8111-111111111111', emailVerified: true }));
     expect(await isCloudWriteAllowed()).toBe(true);
@@ -157,7 +157,7 @@ describe('isCloudWriteAllowed', () => {
   });
 });
 
-describe('validateSessionOrSignOut (260606 — auto sign-out of a dead session)', () => {
+describe('validateSessionOrSignOut (260606 â€” auto sign-out of a dead session)', () => {
   it('signs out when getUser returns a 401 (user deleted/revoked)', async () => {
     transitionToSignedIn(makeUser());
     getUserMock.mockResolvedValue({ data: { user: null }, error: { status: 401, message: 'user_not_found' } });
@@ -212,3 +212,7 @@ describe('validateSessionOrSignOut (260606 — auto sign-out of a dead session)'
     expect(getCurrentAuthState().kind).toBe('signed_in');
   });
 });
+
+
+
+

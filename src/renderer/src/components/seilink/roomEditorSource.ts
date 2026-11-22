@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Where the room editor reads and writes (261104, editor pass).
  *
  * In the app it is IPC (ipcRoomEditorSource): packs from main's pack loader,
@@ -107,3 +107,7 @@ export function memoryRoomEditorSource(packs: EditorPack[], initial: RoomState |
     },
   };
 }
+
+
+
+

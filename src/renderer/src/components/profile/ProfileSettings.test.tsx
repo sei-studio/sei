@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileSettings (product call 261110), server-rendered: your own companion
  * shows one section menu tab at a time (More holds Sharing, WorldLink and the
  * Danger zone under headings), someone else's shows only the rows
@@ -325,7 +325,11 @@ describe('copy rules', () => {
       }).replace(/="[^"]*"/g, '');
       expect(html, kind).not.toContain('Companions you create can change all of it.');
       expect(html).not.toContain('Wipes chats and memories');
-      expect(html).not.toContain('—');
+      expect(html).not.toContain('â€”');
     }
   });
 });
+
+
+
+

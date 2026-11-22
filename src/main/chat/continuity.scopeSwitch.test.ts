@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The rolling-summary fold across an account switch (260926).
  *
  *   1. While the switch is ending the old account's sessions
@@ -112,3 +112,7 @@ describe('fold across an account switch (260926)', () => {
     expect(await bridgeIn(UUID_A)).toMatchObject({ summary: 'ROLLED SUMMARY', summarizedCount: 50 });
   });
 });
+
+
+
+

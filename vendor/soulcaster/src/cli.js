@@ -1,12 +1,12 @@
-#!/usr/bin/env node
-// soulcaster CLI — for testing and manual generation.
+﻿#!/usr/bin/env node
+// soulcaster CLI â€” for testing and manual generation.
 //
 //   node src/cli.js --gender female [--dynamic caretaker] [--profile profile.json] [--seed 42] [--mock]
 //
 // --mock  skip the LLM: print the rolled fields plus a stub sheet.
 // no flag use ANTHROPIC_API_KEY from env (plain fetch to the Anthropic API).
 //
-// The Anthropic fetch lives ONLY here — it is a CLI convenience and never part
+// The Anthropic fetch lives ONLY here â€” it is a CLI convenience and never part
 // of the library path. Library callers inject their own `llm` into castSoul.
 
 import { readFileSync } from 'node:fs';
@@ -27,7 +27,7 @@ function parseArgs(argv) {
   return args;
 }
 
-const USAGE = `soulcaster — procedural character-sheet generator
+const USAGE = `soulcaster â€” procedural character-sheet generator
 
 Usage:
   node src/cli.js --gender <male|female|other> [options]
@@ -115,7 +115,7 @@ function stubSheet(gender, rolled) {
       : null,
     voice_style: 'speaks plainly, with short sentences and a dry edge',
     punctuation: 'casual',
-    // Always the rolled value, never invented — see castSoul's authoritative
+    // Always the rolled value, never invented â€” see castSoul's authoritative
     // overwrite in src/index.js for why this is never LLM-derived even in a
     // real (non-mock) run.
     combat: rolled.combat,
@@ -186,3 +186,7 @@ main().catch((err) => {
   console.error(err.stack || String(err));
   process.exitCode = 1;
 });
+
+
+
+

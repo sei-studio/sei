@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OS permission flows (260929): microphone for calls, Screen Recording for
  * screen share on macOS. Shared between main (permissions/*) and the renderer
  * (lib/permissions/*).
@@ -33,3 +33,7 @@ export type PermissionResume =
 
 /** A resume flag older than this is ignored: the player has moved on. */
 export const PERMISSION_RESUME_TTL_MS = 10 * 60 * 1000;
+
+
+
+

@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Markdown strip for chat lines the player actually reads (260728).
  *
  * The Minecraft bot has had this since 260615 (`postProcessSay` in
  * src/bot/brain/orchestrator.js, "strip asterisks so *stage directions* never
  * reach chat"); the in-app surfaces never did, because nothing prompted the
  * model to format until the prompts themselves grew headers, backticks and
- * bullet lists. Live capture in Draw!: "is it a **hearing aid**?" — the model
+ * bullet lists. Live capture in Draw!: "is it a **hearing aid**?" â€” the model
  * emphasising its own guess, rendered as literal asterisks in a handwritten
  * chat bubble.
  *
@@ -37,3 +37,7 @@ export function plainLine(text: string): string {
       .trim()
   );
 }
+
+
+
+

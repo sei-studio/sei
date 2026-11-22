@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host (261104, milestone 3): the companion's room as a live
  * wallpaper behind the desktop icons. Shared by main (the service and the
  * host process, src/main/seilink/host/), the main window (status, start/stop)
@@ -171,7 +171,7 @@ export interface SeilinkHostBridge {
   firstFrame(): void;
   /** Ask for the current room + fps (the page mounted). */
   ready(): void;
-  // ── M4: the dock and her desktop lines ──
+  // â”€â”€ M4: the dock and her desktop lines â”€â”€
   /** The display's work area in page CSS px (the dock sits above the taskbar / Dock). */
   onLayout(cb: (layout: SeilinkHostLayout) => void): () => void;
   /** Dock state from main (deafened, 261106 the decorate-together offer). */
@@ -184,7 +184,7 @@ export interface SeilinkHostBridge {
   dockAction(action: SeilinkDockAction): void;
   /** A short line from her (a click reply or a rare idle line), shown as a bubble. */
   onLine(cb: (line: SeilinkHostLine) => void): () => void;
-  // ── 261110 ──
+  // â”€â”€ 261110 â”€â”€
   /** Her voice (TTS in the main window) started or stopped: her mouth moves. */
   onVoice?(cb: (speaking: boolean) => void): () => void;
   /** Her voice's level (0..1) while it plays, about 25 a second. */
@@ -193,7 +193,7 @@ export interface SeilinkHostBridge {
   onHover?(cb: (hover: boolean) => void): () => void;
   /** A press went down on her: a small reaction at once (the click itself waits for the double-click time). */
   onPress?(cb: () => void): () => void;
-  // ── 261119: her arrival (shared/seilinkEntrance.ts) ──
+  // â”€â”€ 261119: her arrival (shared/seilinkEntrance.ts) â”€â”€
   /** How she arrives now: wait for her look, hold, come in, or just be there. */
   onArrival?(cb: (arrival: unknown) => void): () => void;
   /** She is in: her entrance played (or she was shown as she is), with the avatar kind it showed. */
@@ -254,7 +254,7 @@ export interface SeilinkHostLine {
   face?: string | null;
 }
 
-// ── 261106: the desktop stage and the first-room offer ──────────────────────
+// â”€â”€ 261106: the desktop stage and the first-room offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** What the main window steps out over the desktop for (main/seilink/desktopStage.ts); `move_in` only steps aside (a first room with no intro). */
 export const SEILINK_STAGE_PURPOSES = ['intro', 'editor', 'move_in'] as const;
@@ -304,3 +304,7 @@ export interface SeilinkOpenEditor {
 
 /** seilink:offer: the desktop shows her new blank room; ask about decorating together. */
 export type SeilinkOfferVia = 'intro' | 'move_in';
+
+
+
+

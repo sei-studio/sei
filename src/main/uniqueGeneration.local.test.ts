@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Source-contract tests for the local (BYOK) generateUnique path (260817,
  * china-compat W6). The orchestrator is electron-coupled, so the mode split
  * is pinned grep-style over the source (same convention as the renderer's
@@ -76,3 +76,7 @@ describe('JWT-gated proxy stages (W6)', () => {
     expect(src).toContain('userId: string | null');
   });
 });
+
+
+
+

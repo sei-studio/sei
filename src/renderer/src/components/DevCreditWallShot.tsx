@@ -1,5 +1,5 @@
-/**
- * DevCreditWallShot — dev-only screenshot harness for the credit wall
+﻿/**
+ * DevCreditWallShot â€” dev-only screenshot harness for the credit wall
  * surfaces (260926), NOT part of the app UI. Mounted by DevDashShot for
  * `?dashshot=creditwall`, with `&part=`:
  *
@@ -112,3 +112,7 @@ export function DevCreditWallShot(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-# Stardew Valley companion body: prior art + technical facts
+﻿# Stardew Valley companion body: prior art + technical facts
 
 Research date: 2026-09-08. Scope: how to give Sei's existing Node brain (LLM + Zod action
 registry + FSM, currently embodied through mineflayer in Minecraft) a body inside the
@@ -105,14 +105,14 @@ Body construction (`BotManager.SpawnBot`, `CompanionFarmer` ctor):
 - Every action starts with `SyncFromNpc()` (copy Position/currentLocation/FacingDirection from NPC to shadow).
 
 Action surface (`CompanionFarmer.cs`):
-- `UseToolAt(tile, typeof(Pickaxe|Axe|Hoe|WateringCan|MeleeWeapon))` → `tool.DoFunction(location, tileX*64, tileY*64, 1, Shadow)`; weapons → `weapon.DoDamage(location, x, y, facing, 1, Shadow)`; then `Shadow.checkForExhaustion(oldStamina)`.
-- `AreaAttack` → `location.damageMonster(rect, min, max, ..., Shadow)`.
-- Fishing: `rod.beginUsing(location, x, y, Shadow)`, `rod.castingPower = 1f`, `rod.tickUpdate(gameTime, Shadow)` every frame, and on `rod.isNibbling` → `rod.DoFunction(location, 1, 1, 1, Shadow)`. See fact 1 for why this is fragile.
+- `UseToolAt(tile, typeof(Pickaxe|Axe|Hoe|WateringCan|MeleeWeapon))` â†’ `tool.DoFunction(location, tileX*64, tileY*64, 1, Shadow)`; weapons â†’ `weapon.DoDamage(location, x, y, facing, 1, Shadow)`; then `Shadow.checkForExhaustion(oldStamina)`.
+- `AreaAttack` â†’ `location.damageMonster(rect, min, max, ..., Shadow)`.
+- Fishing: `rod.beginUsing(location, x, y, Shadow)`, `rod.castingPower = 1f`, `rod.tickUpdate(gameTime, Shadow)` every frame, and on `rod.isNibbling` â†’ `rod.DoFunction(location, 1, 1, 1, Shadow)`. See fact 1 for why this is fragile.
 - Shopping: bypasses ShopMenu entirely, `Game1.player.Money -= total; Game1.player.addItemToInventory(ItemRegistry.Create(qualifiedId, qty))` (note: adds to the HOST's inventory, and charges the host).
 - `WarpTo(locationName, x, y)`: remove NPC from old `characters`, set `Position/currentLocation`, `target.addCharacter(npc)`, mirror to shadow.
 - `CompanionActions.cs`: direct tile manipulation (`dirt.state.Value = 1` to water, `crop.harvest`, debris removal) used by the autonomous farm mode; `WaterAll`/`HarvestAll` are instant cheats.
 
-Movement (`CompanionAI.cs`): `npc.controller = new PathFindController(npc, location, targetPoint, 2)` with a 15-tick recalculation cooldown, distance > 10 tiles → teleport next to player, stuck detection at 120 ticks, `WarpToPlayerIfNeeded()` whenever the player changes location (there is no cross-location routing; it teleports).
+Movement (`CompanionAI.cs`): `npc.controller = new PathFindController(npc, location, targetPoint, 2)` with a 15-tick recalculation cooldown, distance > 10 tiles â†’ teleport next to player, stuck detection at 120 ticks, `WarpToPlayerIfNeeded()` whenever the player changes location (there is no cross-location routing; it teleports).
 
 Day cycle: `OnDayEnding`/`TimeChanged>=2600` set `Shadow.isInBed = true` ("prevent deadlock"); `OnDayStarted` restores stamina/health and warps companions out of mines. Since the shadow is not in `otherFarmers` it cannot actually participate in `FarmerTeam` ready checks (fact 1), so this is defensive rather than required.
 
@@ -221,7 +221,7 @@ Evidence: Farmtronics `Bot/BotObject.cs` + `Bot/BotFarmer.cs`; amarisaster `Comp
 
 ### Fact 7. Chat in and out (HIGH)
 
-- Reading: SMAPI exposes no chat event (wiki Multiplayer API lists only `ModMessageReceived`). Every mod reads chat by hooking `ChatBox.receiveChatMessage(long sourceFarmer, int chatKind, LocalizedContentManager.LanguageCode language, string message)` (`ChatBox.cs:986`): JunimoServer via Harmony postfix (`ChatWatcher.receiveChatMessage_Postfix`), SMAPIDedicatedServerMod by replacing `Game1.chatBox` with a subclass (which evicts SMAPI's own `SChatBox`, `SCore.cs:1256`; prefer the postfix). Both local and remote lines pass through it: the local player's typed line goes `ChatBox.textBoxEnter(string)` → `Game1.multiplayer.sendChatMessage(...)` + `receiveChatMessage(Game1.player.UniqueMultiplayerID, 0, ...)` (`ChatBox.cs:113-131`); remote lines arrive as message type 10 in `Multiplayer.processIncomingMessage` → `Multiplayer.receiveChatMessage(Farmer source, long recipient, ...)` → `Game1.chatBox.receiveChatMessage(...)` (`Multiplayer.cs:1133-1145`). `chatKind` 0 = public, 3 = private, 2 = notification, 1/other = error. Chat commands start with `/` and are intercepted before sending.
+- Reading: SMAPI exposes no chat event (wiki Multiplayer API lists only `ModMessageReceived`). Every mod reads chat by hooking `ChatBox.receiveChatMessage(long sourceFarmer, int chatKind, LocalizedContentManager.LanguageCode language, string message)` (`ChatBox.cs:986`): JunimoServer via Harmony postfix (`ChatWatcher.receiveChatMessage_Postfix`), SMAPIDedicatedServerMod by replacing `Game1.chatBox` with a subclass (which evicts SMAPI's own `SChatBox`, `SCore.cs:1256`; prefer the postfix). Both local and remote lines pass through it: the local player's typed line goes `ChatBox.textBoxEnter(string)` â†’ `Game1.multiplayer.sendChatMessage(...)` + `receiveChatMessage(Game1.player.UniqueMultiplayerID, 0, ...)` (`ChatBox.cs:113-131`); remote lines arrive as message type 10 in `Multiplayer.processIncomingMessage` â†’ `Multiplayer.receiveChatMessage(Farmer source, long recipient, ...)` â†’ `Game1.chatBox.receiveChatMessage(...)` (`Multiplayer.cs:1133-1145`). `chatKind` 0 = public, 3 = private, 2 = notification, 1/other = error. Chat commands start with `/` and are intercepted before sending.
 - Writing so it renders like another player: `formatMessage` (`ChatBox.cs`, private) resolves the speaker name via `Game1.player` or `Game1.otherFarmers[sourceFarmer]`, else the `Strings\UI:Chat_UnknownUserName` string. Since the shadow farmer is not in `otherFarmers`, options are: (a) host-local `Game1.chatBox.addMessage("Sei: hi", color)` (what amarisaster does; not networked); (b) `Game1.chatBox.receiveChatMessage(shadowId, 0, lang, text)` which renders with the unknown-user format; (c) chatKind 2 notification format with the name baked in; (d) network delivery to farmhands via `Game1.server.sendMessage(peerId, 10, Game1.player, recipient, lang, text)` (renders as the HOST's name) or via SMAPI `SendMessage` to a client-side copy of the mod that calls `addMessage` locally. The Minecraft integration already emits chat lines with a name prefix; (a) on host + (d)/(SMAPI message) for farmhands is the pragmatic mapping. Add `NPC.showTextAboveHead` for an in-world speech bubble on the host.
 - The game filters chat through `Program.sdk.FilterDirtyWords` on both send and receive.
 
@@ -239,20 +239,20 @@ Evidence: Farmtronics `Bot/BotObject.cs` + `Bot/BotFarmer.cs`; amarisaster `Comp
 
 ```
 Electron main (src/main)                 SMAPI mod "SeiCompanion" (C#, net6.0)      Stardew 1.6.15 process
-  stardewInstaller.ts                      ┌───────────────────────────────┐
-   - GameScanner port (fact 6)             │ ModEntry                      │
-   - download SMAPI zip, run installer     │  - AssetRequested: Data/Characters entry + Characters/Sei sheet
-     --install --no-prompt --game-path     │  - UpdateTicked: drain cmd queue, tick bodies, push snapshots
-   - copy Mods/SeiCompanion                │  - Harmony postfix ChatBox.receiveChatMessage → chat events
-   - launch StardewModdingAPI(.exe)        │ Body                          │
-  botSupervisor.ts                         │  - NPC visual (+ animation frames for tool use)
-   - forks src/bot with adapter=stardew    │  - BotFarmer shadow (tools, combat, inventory, stamina)
-                                           │  - PathFindController + WarpPathfindingCache routing
-src/bot (utilityProcess, Node)             │ Server                        │
-  adapter/stardew/                          │  - 127.0.0.1:<port> WebSocket (HttpListener) or NDJSON TCP
-   - connect.js  (ws client, token)  ◀────▶│  - hello/token, cmd{id,name,args} → result{id,ok,detail}
-   - observers.js (snapshot → text)        │  - push: snapshot @2-4 Hz, events (chat, damage, warped, day)
-   - registry.js (Zod tools, ~18 actions)  └───────────────────────────────┘
+  stardewInstaller.ts                      â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+   - GameScanner port (fact 6)             â”‚ ModEntry                      â”‚
+   - download SMAPI zip, run installer     â”‚  - AssetRequested: Data/Characters entry + Characters/Sei sheet
+     --install --no-prompt --game-path     â”‚  - UpdateTicked: drain cmd queue, tick bodies, push snapshots
+   - copy Mods/SeiCompanion                â”‚  - Harmony postfix ChatBox.receiveChatMessage â†’ chat events
+   - launch StardewModdingAPI(.exe)        â”‚ Body                          â”‚
+  botSupervisor.ts                         â”‚  - NPC visual (+ animation frames for tool use)
+   - forks src/bot with adapter=stardew    â”‚  - BotFarmer shadow (tools, combat, inventory, stamina)
+                                           â”‚  - PathFindController + WarpPathfindingCache routing
+src/bot (utilityProcess, Node)             â”‚ Server                        â”‚
+  adapter/stardew/                          â”‚  - 127.0.0.1:<port> WebSocket (HttpListener) or NDJSON TCP
+   - connect.js  (ws client, token)  â—€â”€â”€â”€â”€â–¶â”‚  - hello/token, cmd{id,name,args} â†’ result{id,ok,detail}
+   - observers.js (snapshot â†’ text)        â”‚  - push: snapshot @2-4 Hz, events (chat, damage, warped, day)
+   - registry.js (Zod tools, ~18 actions)  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
    - fsmWires.js (P0 safety, P1 chat, P2 movement, P3 idle)
 ```
 
@@ -267,7 +267,7 @@ around the body (passable/water/object/crop state/breakable), monsters, NPCs, pl
 inventory, stamina/health, time/season/weather, warps, plus `chat` and `damage` events.
 
 Adapter-side: reuse the brain untouched (orchestrator, FSM, memory, say tool). The Stardew
-adapter's registry mirrors the Minecraft one (`follow/come/goto, dig→mine/chop/till, gather,
+adapter's registry mirrors the Minecraft one (`follow/come/goto, digâ†’mine/chop/till, gather,
 place, equip, consume, sleep, container ops, fish, attack`). Long-running actions are
 mod-side state machines reporting progress; the adapter polls or awaits completion with the
 same wall-clock timeout discipline as `pathfinder_timeout_ms`. `world` fingerprint for memory
@@ -373,3 +373,7 @@ Game API reference (read-only, copyright ConcernedApe):
 - `sdv-decompiled/Stardew Valley/StardewValley.Pathfinding/{PathFindController,WarpPathfindingCache}.cs`, `StardewValley/{Farmer,NPC,GameLocation,Multiplayer,InputState,GameRunner}.cs`, `StardewValley.Menus/ChatBox.cs`, `StardewValley.Tools/FishingRod.cs`, `StardewValley/Tool.cs`, `Netcode/NetRefTypes.cs`.
 
 Wiki text extracts (curl'd HTML + `textutil` text) in `$R/wiki-*.txt`: Multiplayer API, Get Started, Player Guide, Installing SMAPI on Windows/Mac, Migrate to 1.6, Migrate to SMAPI 4.0, Version History, Input, Utilities.
+
+
+
+

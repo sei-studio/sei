@@ -1,5 +1,5 @@
-/**
- * 260929 — why a live session ended (BotStatus.endReason → bot_session_ended
+﻿/**
+ * 260929 â€” why a live session ended (BotStatus.endReason â†’ bot_session_ended
  * .reason) and the modded-host timeout reclassification. Drives a fake forked
  * child; mock set and child rig mirror botSupervisor.bootWatchdog.test.ts.
  */
@@ -390,3 +390,7 @@ describe('Forge host pre-gate (260929)', () => {
     }
   });
 });
+
+
+
+

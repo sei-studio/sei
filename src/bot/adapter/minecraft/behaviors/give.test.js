@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/give.test.js
+﻿// src/bot/adapter/minecraft/behaviors/give.test.js
 //
 // 261015: give hands items to the player in one call: walk into tossing range
 // when needed, face them, toss, and say how many left the inventory.
@@ -201,3 +201,7 @@ describe('give result feeds the hand-over ledger', () => {
     expect(adapter.handOverDetail('give', r)).toEqual({ item: 'oak_log', n: 6, to: 'Alex' })
   })
 })
+
+
+
+

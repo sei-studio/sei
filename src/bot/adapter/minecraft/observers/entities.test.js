@@ -1,4 +1,4 @@
-// droppedItemName (260708) — dropped items must decode to their contents.
+﻿// droppedItemName (260708) â€” dropped items must decode to their contents.
 // The hand-rolled metadata scan never fired on 1.21.x (raw slot has no
 // `.name`), so every drop rendered as an anonymous `item` and the bot could
 // not find a cooked-beef gift (Lyra post-mortem). Primary path is now
@@ -51,3 +51,7 @@ describe('droppedItemName', () => {
     expect(droppedItemName(null)).toBeNull()
   })
 })
+
+
+
+

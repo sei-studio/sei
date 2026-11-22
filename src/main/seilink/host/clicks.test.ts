@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClickClassifier } from './clicks';
 
 function make() {
@@ -95,3 +95,7 @@ describe('seilink click classifier', () => {
     expect(outcomes.at(-1)).toBe('tap');
   });
 });
+
+
+
+

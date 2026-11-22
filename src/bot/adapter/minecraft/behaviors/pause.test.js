@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/behaviors/pause.test.js
+﻿// src/bot/adapter/minecraft/behaviors/pause.test.js
 //
-// Play/pause body freeze (260725). Pausing the brain only stops LLM turns —
+// Play/pause body freeze (260725). Pausing the brain only stops LLM turns â€”
 // these tests pin the ADAPTER side: the freeze switch itself (goal dropped,
 // controls released, auto-eat off, mutexes cleared), the re-apply hook a
 // reconnect goes through, and the paused early-returns in the autonomous
@@ -185,7 +185,7 @@ describe('paused autonomous loops', () => {
 
     setWorldPaused(bot, true)
     vi.advanceTimersByTime(3000)
-    // Only the freeze's own setGoal(null) — no GoalFollow re-install.
+    // Only the freeze's own setGoal(null) â€” no GoalFollow re-install.
     expect(bot._goalLog.filter(Boolean).length).toBe(0)
 
     setWorldPaused(bot, false)
@@ -193,3 +193,7 @@ describe('paused autonomous loops', () => {
     expect(bot._goalLog.filter(Boolean).length).toBeGreaterThan(0)
   })
 })
+
+
+
+

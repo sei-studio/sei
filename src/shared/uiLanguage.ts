@@ -1,4 +1,4 @@
-/**
+﻿/**
  * App UI languages (260730 en+zh, 261104 + ja, ru, pt-BR, es, it).
  *
  * The ONE list of UI languages, shared by main (config schema, analytics,
@@ -19,22 +19,22 @@ export type UiLanguage = (typeof UI_LANGUAGES)[number];
 /** Each language named in its own language, for the pickers. */
 export const UI_LANGUAGE_NATIVE_NAMES: Record<UiLanguage, string> = {
   en: 'English',
-  zh: '中文',
-  ja: '日本語',
-  ru: 'Русский',
-  'pt-BR': 'Português (Brasil)',
-  es: 'Español',
+  zh: 'ä¸­æ–‡',
+  ja: 'æ—¥æœ¬èªž',
+  ru: 'Ð ÑƒÑÑÐºÐ¸Ð¹',
+  'pt-BR': 'PortuguÃªs (Brasil)',
+  es: 'EspaÃ±ol',
   it: 'Italiano',
 };
 
 /** Compact native names for the onboarding corner menu (one short word each). */
 export const UI_LANGUAGE_SHORT: Record<UiLanguage, string> = {
   en: 'English',
-  zh: '中文',
-  ja: '日本語',
-  ru: 'Русский',
-  'pt-BR': 'Português',
-  es: 'Español',
+  zh: 'ä¸­æ–‡',
+  ja: 'æ—¥æœ¬èªž',
+  ru: 'Ð ÑƒÑÑÐºÐ¸Ð¹',
+  'pt-BR': 'PortuguÃªs',
+  es: 'EspaÃ±ol',
   it: 'Italiano',
 };
 
@@ -100,7 +100,7 @@ export function joinsWithoutSpace(lang: UiLanguage): boolean {
   return lang === 'zh' || lang === 'ja';
 }
 
-/** Join two sentences the way the language does ("A. B." vs "A。B。"). */
+/** Join two sentences the way the language does ("A. B." vs "Aã€‚Bã€‚"). */
 export function joinSentences(lang: UiLanguage, a: string, b: string): string {
   if (!a) return b;
   if (!b) return a;
@@ -209,3 +209,7 @@ export function formatMessage(
   }
   return out;
 }
+
+
+
+

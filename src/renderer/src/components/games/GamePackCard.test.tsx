@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GamePackCard (260908). Rendered with react-dom/server against a seeded
  * store (no @testing-library in this repo). Invariants:
  *   1. ready -> renders nothing.
@@ -104,9 +104,9 @@ describe('GamePackCard', () => {
     expect(all.length).toBeGreaterThanOrEqual(6);
     const { ZH } = await import('../../lib/i18n/zh');
     for (const k of all) {
-      expect(k, `em dash in "${k}"`).not.toContain('—');
+      expect(k, `em dash in "${k}"`).not.toContain('â€”');
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(ZH[k]).not.toContain('—');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
 
@@ -114,6 +114,10 @@ describe('GamePackCard', () => {
     const { ERROR_COPY } = await import('../../lib/errors');
     const mb = packSizeMb(GAME_PACKS.minecraft.sizeHintBytes);
     expect(ERROR_COPY.GAME_PACK_DOWNLOAD_FAILED).toContain(`${mb} MB`);
-    expect(ERROR_COPY.GAME_PACK_DOWNLOAD_FAILED).not.toContain('—');
+    expect(ERROR_COPY.GAME_PACK_DOWNLOAD_FAILED).not.toContain('â€”');
   });
 });
+
+
+
+

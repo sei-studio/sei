@@ -1,4 +1,4 @@
-# Kokoro local voice
+﻿# Kokoro local voice
 
 Kokoro-82M is one of the two on-device voice models for local (own key) mode,
 next to the original voice packs, which the UI calls **Fast**. It came in with
@@ -91,3 +91,7 @@ the remaining sentences.
 `<isolated userData>/speech-models/tts-kokoro/`, add the `pack.json` marker
 (see `packStore.ts`), then run it with `SEI_KOKORO_LIVE_DIR` set to that
 userData. Never point it at a real profile.
+
+
+
+

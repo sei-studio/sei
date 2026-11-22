@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Chess } from 'chess.js';
 import { cpToWin, macroText, materialCount, naiveMaterialWin, winBand } from '../src/macro.js';
@@ -76,3 +76,7 @@ test('macro text mentions material and the band', () => {
   assert.match(text, /Material is even/);
   assert.match(text, /between 30% and 70%/);
 });
+
+
+
+

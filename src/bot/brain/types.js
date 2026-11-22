@@ -1,6 +1,6 @@
-// src/brain/types.js
+﻿// src/brain/types.js
 //
-// Adapter interface contract — the seam between game-agnostic brain and
+// Adapter interface contract â€” the seam between game-agnostic brain and
 // game-specific adapter implementations (e.g. the minecraft adapter under
 // src/adapter/).
 //
@@ -24,7 +24,7 @@
 // by declaring them. A new game's adapter declares every member it needs to
 // differ on and nothing else.
 //
-// No runtime types — JSDoc only.
+// No runtime types â€” JSDoc only.
 
 /**
  * @typedef {Object} Player
@@ -42,13 +42,13 @@
 /**
  * Attacker kinds carried by `onAttacked` (and consumed by `eventAddendum`
  * for the 'sei:attacked' event):
- *   - 'player' | 'mob' | 'unknown' — the bot WAS hit. Queued at P0_SAFETY.
- *   - 'reflex'  — a proactive threat warning: the bot was NOT hit, the
+ *   - 'player' | 'mob' | 'unknown' â€” the bot WAS hit. Queued at P0_SAFETY.
+ *   - 'reflex'  â€” a proactive threat warning: the bot was NOT hit, the
  *                 adapter's body loops are already evading (Minecraft:
  *                 behaviors/reflex.js + survival.js; `data.noticed`,
  *                 `data.count`, `data.survivalKind` ride along). Queued at
  *                 P1_CHAT so it never preempts a player-chat reply.
- *   - 'defend'  — the OWNER is being hit near the bot (Minecraft:
+ *   - 'defend'  â€” the OWNER is being hit near the bot (Minecraft:
  *                 sei:owner_attacked; `data.engaged` says whether the body is
  *                 already swinging). Queued at P1_CHAT.
  * The brain keys the priority on this field (fsm.js attackedPriority) and
@@ -138,17 +138,17 @@
 /**
  * @typedef {Object} Adapter
  *
- * Action surface — brain calls these by name+args (closed registry):
+ * Action surface â€” brain calls these by name+args (closed registry):
  * @property {() => string[]}                                              listActions
  * @property {(name: string) => any}                                       getActionSchema
  * @property {(name: string) => string}                                    getActionDescription
  * @property {(name: string, args: any, ctx: ExecuteActionContext) => Promise<string>} executeAction
- *   Always returns a string (success: 'dug oak_log'; failure: 'out of range (5.4m, need ≤4.5)').
+ *   Always returns a string (success: 'dug oak_log'; failure: 'out of range (5.4m, need â‰¤4.5)').
  *
- * World perception — brain consumes plain text only:
+ * World perception â€” brain consumes plain text only:
  * @property {() => SnapshotComposer}                                      createSnapshotComposer
  *
- * Prompt blocks — natural-language instructions the brain joins into the
+ * Prompt blocks â€” natural-language instructions the brain joins into the
  * cached system prefix and seed user turn. All game-specific NL text comes
  * through these methods so the brain stays game-agnostic. Edit the strings
  * in src/bot/adapter/<game>/prompts.js.
@@ -162,7 +162,7 @@
  *   Seed-block text teaching the two-corner build/dig grammar.
  * @property {(event: string, data: any) => string}                        eventAddendum
  *   Per-event seed addendum. THE ONLY SOURCE of game-flavored event prose:
- *   'sei:idle' (the idle tick text incl. stuck nudges — what the plan calls
+ *   'sei:idle' (the idle tick text incl. stuck nudges â€” what the plan calls
  *   idleTickText()), 'sei:loop_end', 'sei:attacked' (every AttackerKind:
  *   hit / reflex / survival / defend), 'sei:death'. Returns '' for unknown
  *   events; the brain adds nothing of its own.
@@ -178,7 +178,7 @@
  * Session lifecycle:
  * @property {(handlers: AdapterHandlers) => void}                         attach
  * @property {() => void}                                                  [detach]
- *   Tear down listeners on reconnect; idempotent. Optional — not in
+ *   Tear down listeners on reconnect; idempotent. Optional â€” not in
  *   REQUIRED_ADAPTER_MEMBERS so adapters that don't need teardown don't fail
  *   boot. Boot composer guards with `_adapter?.detach?.()`.
  * @property {(paused: boolean) => void}                                   [setWorldPaused]
@@ -205,7 +205,7 @@
  * @property {string}                                                      botUsername
  * @property {() => Object<string, Player>}                                getKnownPlayers
  *
- * ── Contract v2 members (all OPTIONAL; defaults in ./adapterDefaults.js) ──
+ * â”€â”€ Contract v2 members (all OPTIONAL; defaults in ./adapterDefaults.js) â”€â”€
  *
  * @property {string}                                                      [gameName]
  *   Proper name of the game ('Minecraft'). Interpolated into every brain
@@ -241,7 +241,7 @@
  *   Runs AFTER the batch's results are collected (results[i] pairs with
  *   toolUses[i]). May return a one-shot `nudge` appended to the next user
  *   turn (it outranks the brain's silence nudge). Minecraft: the per-loop
- *   goTo cant_reach dedup → cantReachNudge. Default: no nudge.
+ *   goTo cant_reach dedup â†’ cantReachNudge. Default: no nudge.
  * @property {(prevMobId: any, data: any) => boolean}                    [sameFight]
  *   261111 (pass 51): whether a hit event (`data`, with `data.attacker`)
  *   belongs to the fight her last fight line was about (`prevMobId`, that
@@ -338,7 +338,7 @@
  *   The body died; the runtime has already stopped (or is stopping) the
  *   brain. The composer drops its forwarder pointer.
  * @property {() => void} onConnected
- *   FIRST successful spawn of the session → the composer emits summon-ready.
+ *   FIRST successful spawn of the session â†’ the composer emits summon-ready.
  *   Reconnect spawns must NOT call it again.
  * @property {(info: { reason?: string, willRetry: boolean }) => void} onDisconnected
  *   Informational; the composer logs it.
@@ -366,3 +366,7 @@
  */
 
 export const ADAPTER_INTERFACE_VERSION = 2
+
+
+
+

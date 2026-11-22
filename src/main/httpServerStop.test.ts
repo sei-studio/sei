@@ -1,4 +1,4 @@
-/** 261031 (T278): a keep-alive socket cannot hold the quit teardown open. */
+﻿/** 261031 (T278): a keep-alive socket cannot hold the quit teardown open. */
 import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
@@ -44,3 +44,7 @@ describe('stopHttpServer', () => {
     sock.destroy();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// src/observers/posHealer.js — recover bot.entity.position from NaN poisoning.
+﻿// src/observers/posHealer.js â€” recover bot.entity.position from NaN poisoning.
 //
 // Background: prismarine-physics occasionally produces NaN for vel.x/vel.z under
 // knockback. Once pos goes NaN, mineflayer's physics tick (line 79) and outbound
@@ -9,7 +9,7 @@
 // Strategy: track lastGoodPos from `move` events (which fire only AFTER mineflayer
 // has already accepted+sent that position to the server). On NaN detection, write
 // lastGoodPos back into bot.entity.position and zero velocity. From the server's
-// perspective this is a 0-block, 0-packet "teleport" — no anti-cheat trigger.
+// perspective this is a 0-block, 0-packet "teleport" â€” no anti-cheat trigger.
 
 import { Vec3 } from 'vec3'
 import { logHeal } from '../../../brain/log.js'
@@ -39,7 +39,7 @@ export function getHealedPos(bot) {
 }
 
 /**
- * Start the healer. Idempotent — calling twice replaces the prior install.
+ * Start the healer. Idempotent â€” calling twice replaces the prior install.
  * @param {import('mineflayer').Bot} bot
  */
 export function startPosHealer(bot) {
@@ -65,7 +65,7 @@ export function startPosHealer(bot) {
   // Initial capture (in case 'move' hasn't fired yet but bot is spawned).
   onMove()
 
-  // Watchdog — heal if NaN detected.
+  // Watchdog â€” heal if NaN detected.
   _watchdog = setInterval(() => {
     if (!bot.entity) return
     const p = bot.entity.position
@@ -78,7 +78,7 @@ export function startPosHealer(bot) {
 
     if (!posBad && !velBad && !yawBad && !pitchBad) return
 
-    // Heal velocity first — without this, the next physics tick re-NaNs pos.
+    // Heal velocity first â€” without this, the next physics tick re-NaNs pos.
     if (velBad && v) {
       v.x = 0; v.y = 0; v.z = 0
     }
@@ -95,10 +95,10 @@ export function startPosHealer(bot) {
     if (pitchBad) bot.entity.pitch = _lastGoodPitch
 
     logHeal({
-      pos: posBad ? (_lastGood ? `→${_lastGood.x.toFixed(2)},${_lastGood.y.toFixed(2)},${_lastGood.z.toFixed(2)}` : 'NaN (no lastGood)') : 'ok',
-      vel: velBad ? '→0,0,0' : 'ok',
-      yaw: yawBad ? `→${_lastGoodYaw.toFixed(2)}` : 'ok',
-      pitch: pitchBad ? `→${_lastGoodPitch.toFixed(2)}` : 'ok',
+      pos: posBad ? (_lastGood ? `â†’${_lastGood.x.toFixed(2)},${_lastGood.y.toFixed(2)},${_lastGood.z.toFixed(2)}` : 'NaN (no lastGood)') : 'ok',
+      vel: velBad ? 'â†’0,0,0' : 'ok',
+      yaw: yawBad ? `â†’${_lastGoodYaw.toFixed(2)}` : 'ok',
+      pitch: pitchBad ? `â†’${_lastGoodPitch.toFixed(2)}` : 'ok',
     })
   }, WATCHDOG_MS)
 
@@ -113,3 +113,7 @@ export function stopPosHealer() {
   _watchdog = null
   _attached = null
 }
+
+
+
+

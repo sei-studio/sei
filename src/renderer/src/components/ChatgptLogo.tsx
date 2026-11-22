@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The ChatGPT logo (261017, issue #46), the official vector from OpenAI's
  * "Continue with ChatGPT" button assets, inlined so it takes `currentColor`
  * (black on the white button, white on the black one). Do not redraw,
@@ -25,3 +25,7 @@ export function ChatgptLogo({ size = 21, className }: { size?: number; className
     </svg>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenAI-compatible adapter for the main-process LLM layer: openai, grok,
  * openrouter, deepseek, qwen (DashScope compatible mode) + the grandfathered
  * set (mistral, together, groq, fireworks, cerebras, perplexity). All speak
@@ -7,10 +7,10 @@
  * Beyond the bot's adapter this one adds:
  *   - SSE streaming when onTextDelta is given: text deltas surface as they
  *     arrive; tool_call deltas are BUFFERED per index and parsed once complete.
- *   - stopSequences → `stop`.
- *   - forced tool_choice → {type:'function', function:{name}}, with a
+ *   - stopSequences â†’ `stop`.
+ *   - forced tool_choice â†’ {type:'function', function:{name}}, with a
  *     JSON-parse fallback when the model answers in text anyway.
- *   - DeepSeek: DEEPSEEK_EXTRA_BODY (thinking disabled — V4 thinking mode
+ *   - DeepSeek: DEEPSEEK_EXTRA_BODY (thinking disabled â€” V4 thinking mode
  *     requires reasoning_content round-trips that plain OpenAI-compat clients
  *     strip) and the FIRST_TOKEN_TIMEOUT_FLOOR_MS floor (DeepSeek QUEUES under
  *     load instead of 429ing; a stalled request must never be fast-retried,
@@ -242,3 +242,7 @@ export function createOpenAICompatProvider(opts: {
     streaming: true,
   };
 }
+
+
+
+

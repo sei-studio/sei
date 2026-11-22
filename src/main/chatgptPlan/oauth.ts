@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the OAuth half of "Continue with ChatGPT" (OpenAI SIWC,
  * open-source flow). Protocol only: PKCE, the authorize URL, callback
  * validation, code exchange, refresh, revocation, discovery and ID-token
@@ -39,7 +39,7 @@ import {
 
 export type FetchLike = typeof fetch;
 
-// ─── PKCE / random values ─────────────────────────────────────────────────
+// â”€â”€â”€ PKCE / random values â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function base64url(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -65,7 +65,7 @@ export function callbackUri(port: number): string {
   return `http://127.0.0.1:${port}${CHATGPT_CALLBACK_PATH}`;
 }
 
-// ─── Discovery ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Discovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface OidcEndpoints {
   issuer: string;
@@ -116,7 +116,7 @@ export async function discoverEndpoints(fetchImpl: FetchLike, timeoutMs = 8000):
   }
 }
 
-// ─── Authorize URL ────────────────────────────────────────────────────────
+// â”€â”€â”€ Authorize URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface AuthorizeParams {
   endpoint?: string;
@@ -173,7 +173,7 @@ export function redactAuthorizeUrl(url: string): string {
   }
 }
 
-// ─── Callback validation ──────────────────────────────────────────────────
+// â”€â”€â”€ Callback validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface PendingAttempt {
   state: string;
@@ -212,7 +212,7 @@ export function validateCallback(params: URLSearchParams, pending: PendingAttemp
   return { kind: 'code', code, clientId: pending.issuedClientId };
 }
 
-// ─── Token endpoint ───────────────────────────────────────────────────────
+// â”€â”€â”€ Token endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface TokenResponse {
   access_token: string;
@@ -404,7 +404,7 @@ export async function revokeRefreshToken(
   return false;
 }
 
-// ─── ID token ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ ID token â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface IdTokenClaims {
   iss: string;
@@ -528,3 +528,7 @@ export async function verifyIdToken(
   if (typeof claims.sub !== 'string' || !claims.sub) throw new IdTokenError('subject');
   return claims;
 }
+
+
+
+

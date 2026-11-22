@@ -1,4 +1,4 @@
-// src/observers/snapshot.js — composes line-oriented world snapshot (D-26)
+﻿// src/observers/snapshot.js â€” composes line-oriented world snapshot (D-26)
 // and registers #N targeting handles via setHandles() (D-25).
 import { vitals } from './vitals.js'
 import { world } from './world.js'
@@ -54,13 +54,13 @@ export function giveStillWalking(bot, inFlight, ownerPinName, companions) {
 }
 
 // Resolve the owner's live player entry. `pinUsername` is the name the bot
-// calls the player (config.player_username — often a preferred_name like
+// calls the player (config.player_username â€” often a preferred_name like
 // "Ouen"), but on a LAN world bot.players is keyed by the actual login (e.g.
 // "SSk1tz"). A hard bot.players[pinUsername] lookup then ALWAYS misses, so the
-// snapshot reported the owner "out of view — position unknown" on EVERY tick
+// snapshot reported the owner "out of view â€” position unknown" on EVERY tick
 // even when the player was standing adjacent (field bug 260625), which left the
 // model unable to do anything but follow(). Resolve by exact name, then
-// case-insensitively, then — single-human LAN — the lone human in the tab list
+// case-insensitively, then â€” single-human LAN â€” the lone human in the tab list
 // that is neither this bot nor a companion. Returns {username, player} or null.
 export function resolveOwner(bot, pinUsername, companions) {
   if (!pinUsername) return null
@@ -81,13 +81,13 @@ export function resolveOwner(bot, pinUsername, companions) {
   return null
 }
 
-// 260703 — owner-distance NaN guard. Right after combat / a teleport / a
+// 260703 â€” owner-distance NaN guard. Right after combat / a teleport / a
 // respawn, a player or the bot's own entity can be partially loaded with NaN
 // position components. The old owner-whereabouts line did
 // `Math.round(ownerEnt.position.distanceTo(me.position))`, which returns NaN
 // for such a position; `NaN != null` is true, so the snapshot printed
 // "(NaN blocks away)". Compute the straight-line distance from the raw coords
-// with a hard Number.isFinite gate on every component and return null (→ omit
+// with a hard Number.isFinite gate on every component and return null (â†’ omit
 // the parenthetical) when any is non-finite. Pure + exported for unit testing.
 export function ownerDistanceBlocks(ownerPos, selfPos) {
   if (!ownerPos || !selfPos) return null
@@ -226,7 +226,7 @@ export function hostileDistances(e, me, ownerEnt, ownerLabel) {
 // from 24 so the player stays visible (with coords) as they walk a few chunks
 // ahead, instead of dropping out of the snapshot and forcing the model to
 // hallucinate a `goTo` target. The kill heuristic in createSnapshotComposer
-// intentionally stays at its tighter radius — wider tracking there produces
+// intentionally stays at its tighter radius â€” wider tracking there produces
 // false-positive "killed mob" events when entities just wander out of range.
 const ENTITY_RADIUS = 64
 
@@ -261,11 +261,11 @@ export function composeSnapshot(bot, opts = {}) {
   const survey = surveyBlocks(bot, { radius: 16, maxNames: 10 })
   try { noteSeenStations(bot, survey.groups) } catch { /* best-effort */ }
   // requireLineOfSight (260618): list only entities the bot can actually see
-  // (within ENTITY_RADIUS and not occluded by terrain/fluids — so no underground
+  // (within ENTITY_RADIUS and not occluded by terrain/fluids â€” so no underground
   // or behind-wall mobs). Entities behind the bot still count; the pinned owner
   // + companions are exempt so their coords never drop out.
   // Resolve the owner's live entity ONCE (handles preferred_name vs LAN login
-  // mismatch — see resolveOwner). The resolved actual username is what we pin in
+  // mismatch â€” see resolveOwner). The resolved actual username is what we pin in
   // `nearby entities` so the player can't be evicted by entity congestion, and
   // it's what the owner-whereabouts line reads coords from below.
   const owner = resolveOwner(bot, pinUsername ?? null, companions)
@@ -283,7 +283,7 @@ export function composeSnapshot(bot, opts = {}) {
 
   const lines = []
   // Which world this is (multi-world memory). Surfaced first so the bot anchors
-  // its memory to the right world before reasoning — memories from other worlds
+  // its memory to the right world before reasoning â€” memories from other worlds
   // are labeled `## World N` in MEMORY.md.
   if (worldTag) lines.push(`world: ${worldTag}`)
   // Position / biome / time
@@ -310,12 +310,12 @@ export function composeSnapshot(bot, opts = {}) {
   lines.push(`biome: ${w.biome}  surroundings: ${w.surroundings}${light}  time: ${w.time.isDay ? 'day' : 'night'} (${w.time.timeOfDay})`)
   // Real-world clock + session age (260703). The model has no sense of elapsed
   // time and guessed session length wrong ("probably 8-9 mins" on a 7-minute
-  // session) — give it the wall clock and minutes-since-join so "how long have
+  // session) â€” give it the wall clock and minutes-since-join so "how long have
   // we been playing" is answered from data, not vibes.
   if (typeof sessionStartedAtMs === 'number') {
     const mins = Math.floor((Date.now() - sessionStartedAtMs) / 60_000)
     const clock = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    lines.push(`real time: ${clock} — you joined this session ${mins < 1 ? 'under a minute' : `${mins} min`} ago`)
+    lines.push(`real time: ${clock} â€” you joined this session ${mins < 1 ? 'under a minute' : `${mins} min`} ago`)
   }
 
   // Vitals
@@ -344,7 +344,7 @@ export function composeSnapshot(bot, opts = {}) {
     lines.push('holding: nothing')
   }
 
-  // In-flight action — surfaced early so the LLM sees it before reasoning
+  // In-flight action â€” surfaced early so the LLM sees it before reasoning
   // about new actions. 260513-wkd: rendered via getInFlightLineForSnapshot so
   // brain + adapter share a single source-of-truth formatter. The helper
   // preserves the em-dash + y=<currentY> channels byte-stable;
@@ -366,14 +366,14 @@ export function composeSnapshot(bot, opts = {}) {
     lines.push(idleLineForSnapshot({ recentActions: opts.recentActions, following }))
   }
 
-  // Inventory — append `(K/36 slots)` so the LLM can't confabulate "inventory
+  // Inventory â€” append `(K/36 slots)` so the LLM can't confabulate "inventory
   // full" when downstream actions return "no X in inventory" (the real cause
   // is usually a dig-drop that hasn't been auto-collected yet, not capacity).
   // bot.inventory.items() returns the 36 main-inventory slots only (excludes
   // armor / offhand / crafting), so .length is the used-slot count.
   const invEntries = Object.entries(inv)
   const invStr = invEntries.length
-    ? invEntries.map(([k, n]) => `${k}×${n}`).join(' ')
+    ? invEntries.map(([k, n]) => `${k}Ã—${n}`).join(' ')
     : 'empty'
   const slotsUsed = liveInventoryItems(bot).length
   // 261012 (pass 4a): "N of 36 slots used", not "N/36": a fraction next to
@@ -391,31 +391,31 @@ export function composeSnapshot(bot, opts = {}) {
   // 261031 (pass 33): only after a death took her weapon (weaponSelect).
   try { const w = lostWeaponLine(bot); if (w) lines.push(w) } catch { /* best-effort */ }
 
-  // Craftable — what the bot can make RIGHT NOW from its materials. Gated by a
-  // crafting table in reach: without one only 2×2 (inventory-grid) recipes show;
-  // within reach of a crafting_table the 3×3 recipes appear too. Crafting
+  // Craftable â€” what the bot can make RIGHT NOW from its materials. Gated by a
+  // crafting table in reach: without one only 2Ã—2 (inventory-grid) recipes show;
+  // within reach of a crafting_table the 3Ã—3 recipes appear too. Crafting
   // CONSUMES the listed materials and the bot sees only the product here (not the
-  // ingredients) — the capability text tells it to plan crafts carefully.
+  // ingredients) â€” the capability text tells it to plan crafts carefully.
   // Defensive + cached inside getCraftableEntries; omitted entirely when empty.
   const craftable = getCraftableEntries(bot)
   if (craftable.entries.length > 0) {
     const where = craftable.nearTable
-      ? 'crafting_table in reach — 3×3 recipes included'
-      : 'no crafting_table in reach — 2×2 (inventory) recipes only; more unlock at a table'
+      ? 'crafting_table in reach â€” 3Ã—3 recipes included'
+      : 'no crafting_table in reach â€” 2Ã—2 (inventory) recipes only; more unlock at a table'
     lines.push(`craftable (${where}): crafting uses up materials, plan carefully`)
     for (const e of craftable.entries) {
       lines.push(`  ${e.name} craftable - ${e.count}x`)
     }
   }
 
-  // Around feet — grouped non-air blocks in 5x4x5 cube. Implicit coords (bot
+  // Around feet â€” grouped non-air blocks in 5x4x5 cube. Implicit coords (bot
   // is standing in them); no #N handles minted (would flood the table).
   // (D-1sk-03)
   const feet = aroundFeet(bot)
   if (feet.total === 0) {
     lines.push('terrain at feet: (clear)')
   } else {
-    // count-first, comma-separated — distinct from inventory's `name×N` format
+    // count-first, comma-separated â€” distinct from inventory's `nameÃ—N` format
     // so the LLM can't confuse environmental blocks with carried items.
     const parts = feet.groups.map(g => `${g.count} ${g.name}`)
     const tail = feet.more > 0 ? ` (+${feet.more} more types)` : ''
@@ -441,7 +441,7 @@ export function composeSnapshot(bot, opts = {}) {
   }
 
   // Nearby blocks: one line per unique block name within radius. The #N
-  // handle is anchored at the NEAREST member of that name — pass it to
+  // handle is anchored at the NEAREST member of that name â€” pass it to
   // dig/gather/goTo when the LLM wants to act on this resource.
   lines.push('nearby blocks:')
   if (survey.groups.length === 0) {
@@ -466,7 +466,7 @@ export function composeSnapshot(bot, opts = {}) {
       let label = e.username ?? e.name ?? `entity-${e.id}`
       // Decode dropped-item entities to `item(<name> xN)` so the LLM can see
       // what it's looking at (a cooked-beef gift from the player vs its own
-      // dirt drop) and walk to the right one — walking onto it picks it up.
+      // dirt drop) and walk to the right one â€” walking onto it picks it up.
       if (label === 'item' || label === 'item_stack') {
         const it = droppedItemName(e)
         if (it) {
@@ -499,18 +499,18 @@ export function composeSnapshot(bot, opts = {}) {
     if (ents.more > 0) lines.push(`  +${ents.more} more`)
   }
 
-  // Follow status — bot's awareness of its own auto-follow behavior
+  // Follow status â€” bot's awareness of its own auto-follow behavior
   const followLabel = getFollowTargetLabel()
   const followStuck = followLabel ? getFollowStuckInfo() : null
   if (followStuck) {
-    // No forward progress for a while — the target likely climbed terrain the
+    // No forward progress for a while â€” the target likely climbed terrain the
     // pathfinder can't scale. Surface it loudly so the model REACTS (the check-
     // in nudge has a matching stuck-exception) instead of trailing a frozen
     // follow. The 'try goTo/pillar up' hint mirrors goTo's vertical recovery.
     const highHint = followStuck.deltaY >= 3
-      ? ` and ${followStuck.deltaY} blocks ABOVE you — you can't path up a climb that steep`
+      ? ` and ${followStuck.deltaY} blocks ABOVE you â€” you can't path up a climb that steep`
       : ''
-    lines.push(`follow_target: ${followLabel} — STUCK: no progress for ${followStuck.stuckSec}s, ${followLabel} is ${followStuck.dist}m away${highHint}. Don't just wait: call them back to you (one say()), or unfollow and do your own thing, or goTo them / pillar up toward them.`)
+    lines.push(`follow_target: ${followLabel} â€” STUCK: no progress for ${followStuck.stuckSec}s, ${followLabel} is ${followStuck.dist}m away${highHint}. Don't just wait: call them back to you (one say()), or unfollow and do your own thing, or goTo them / pillar up toward them.`)
   } else {
     lines.push(`follow_target: ${followLabel ?? '(none)'}`)
   }
@@ -518,7 +518,7 @@ export function composeSnapshot(bot, opts = {}) {
   // Advisory next: line (17-04, D-07). One per-turn surfacing of the nearest
   // progression milestone + the single action that advances it, so the model
   // always sees "what's next" without re-deriving it. Best-effort: any error
-  // (or a malformed spine) just skips the line — a snapshot tick never throws.
+  // (or a malformed spine) just skips the line â€” a snapshot tick never throws.
   // This is ADDITIVE; the heartbeat frontier path (orchestrator renderHeartbeat)
   // is complementary and untouched.
   // 261017 (pass 14): left out while the player is owed something
@@ -529,12 +529,12 @@ export function composeSnapshot(bot, opts = {}) {
     const nm = nextMilestone(pstate)
     if (nm?.node) {
       const recipe = recipeNote(nm.node, pstate.items)
-      lines.push(`next: ${nm.node.label} — ${nm.action}${recipe ? `. ${recipe}` : ''}`)
+      lines.push(`next: ${nm.node.label} â€” ${nm.action}${recipe ? `. ${recipe}` : ''}`)
     }
   } catch { /* progression advisory is best-effort; never break a snapshot tick */ }
 
   // Owner whereabouts (260607). The pinned owner can be BEYOND the entity
-  // render radius — then they're absent from `nearby entities` and the model
+  // render radius â€” then they're absent from `nearby entities` and the model
   // has no coords for "come to me", so it hallucinates (in the field logs it
   // walked to its OWN position and claimed it arrived). Resolve the owner from
   // the players tab list and state their position explicitly, or say plainly
@@ -563,7 +563,7 @@ export function composeSnapshot(bot, opts = {}) {
       lines.push(`owner ${pinUsername}${liveName}: @${ox},${oy},${oz}${dist != null ? ` (${dist} blocks away)` : ''}${hpClause}`)
       if (/\bdied\b/.test(hpClause)) markOwnerDeathShown(bot)
       // Who the hostiles are on (260731). Only worth printing when the two of
-      // us are close enough for it to be ONE fight — see AGGRO_PAIR_RANGE. Not
+      // us are close enough for it to be ONE fight â€” see AGGRO_PAIR_RANGE. Not
       // line-of-sight filtered like `nearby entities`: a zombie hitting the
       // player from behind a corner is still on the player, and a tally that
       // silently omits it reads as "nothing is happening". Best-effort.
@@ -586,7 +586,7 @@ export function composeSnapshot(bot, opts = {}) {
         const age = d && Number.isFinite(d.at) ? Date.now() - d.at : NaN
         if (age >= 0 && age <= OWNER_DEATH_NOTE_MS) died = ` They died ${agoText(age)}${d.text ? ` (${d.text})` : ''}.`
       } catch { /* leave it out */ }
-      lines.push(`owner ${pinUsername}: out of view — position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords — do NOT guess a destination)${died}`)
+      lines.push(`owner ${pinUsername}: out of view â€” position unknown (to reach them call follow; if they are not loaded, ask them to come closer or share coords â€” do NOT guess a destination)${died}`)
       if (died) markOwnerDeathShown(bot)
     }
   }
@@ -604,7 +604,7 @@ export function composeSnapshot(bot, opts = {}) {
 // Kills are sourced from REAL bot.on('entityDead') events (260607). The prior
 // implementation inferred "killed X" from any entity leaving a 24-block radius,
 // which fired on mobs that merely walked away, on every teleport (the whole
-// nearby set despawns at once → "killed wolf; killed arrow"), and on picked-up
+// nearby set despawns at once â†’ "killed wolf; killed arrow"), and on picked-up
 // or despawned dropped items ("killed item"). That fed the model fabricated
 // history. Inventory + hp deltas remain diff-based.
 // 261014: which of her own actions can account for an inventory change.
@@ -788,7 +788,7 @@ export function createSnapshotComposer({ bot }) {
       if (!entity || entity.username) return            // players are not kills
       const name = entity.name ?? ''
       if (NON_CREATURE.has(name)) return                // projectiles / drops / xp
-      // Only deaths within view — far-world deaths are not the bot's business.
+      // Only deaths within view â€” far-world deaths are not the bot's business.
       const me = bot.entity
       if (me?.position && entity.position) {
         let d
@@ -803,11 +803,11 @@ export function createSnapshotComposer({ bot }) {
 
   // Returns { inv, other }: inventory deltas are split out so next() can render
   // them as their OWN prominent section right under the inventory line (260617
-  // — the bot kept overlooking handoffs like "i'll turn your logs to planks"
+  // â€” the bot kept overlooking handoffs like "i'll turn your logs to planks"
   // because the gain/loss was buried in a trailing recent_events line). Deaths +
-  // hp stay in `other` → the existing recent_events line.
+  // hp stay in `other` â†’ the existing recent_events line.
   function computeEvents(currInv, currHp, recentActions, now) {
-    // 1. Inventory deltas — gains then losses, capped to 6 entries total.
+    // 1. Inventory deltas â€” gains then losses, capped to 6 entries total.
     const deltas = []
     if (prevInventory) {
       // Gains / increases
@@ -845,14 +845,14 @@ export function createSnapshotComposer({ bot }) {
     const dropMobs = [...new Set(drops.map((d) => d.from.name))]
 
     const other = []
-    // 2. Real creature deaths near the bot (from entityDead — see above). No
+    // 2. Real creature deaths near the bot (from entityDead â€” see above). No
     //    attacker attribution from the protocol, so phrase as "X died" rather
     //    than claiming a kill the bot may not have made.
     for (const [name, count] of deaths) {
-      other.push(count > 1 ? `${name} died ×${count}` : `${name} died`)
+      other.push(count > 1 ? `${name} died Ã—${count}` : `${name} died`)
     }
 
-    // 3. HP loss only — regen is noisy.
+    // 3. HP loss only â€” regen is noisy.
     if (prevHp != null && currHp < prevHp) {
       other.push(`hp -${prevHp - currHp}`)
     }
@@ -886,7 +886,7 @@ export function createSnapshotComposer({ bot }) {
         if (gains.length > 0) { try { opts.onUnexplainedGains(gains) } catch { /* never break a snapshot */ } }
       }
 
-      // Update inv/hp state AFTER computing — first call has no deltas.
+      // Update inv/hp state AFTER computing â€” first call has no deltas.
       prevInventory = currInv
       prevHp = currHp
       prevTickAt = now
@@ -918,7 +918,7 @@ export function createSnapshotComposer({ bot }) {
       }
 
       // Inventory changes get a LOUD, dedicated section right under the
-      // inventory line — the bot reads inventory there, so a handoff / pickup /
+      // inventory line â€” the bot reads inventory there, so a handoff / pickup /
       // drop is impossible to miss, and it knows to act on what just arrived.
       if (inv.length > 0) {
         const invLine = `*** INVENTORY JUST CHANGED ***: ${inv.join(', ')}  <- items entered or left your inventory since last tick (the player handed you something, you picked it up, or you used/dropped it). React to it: equip a new tool, eat new food, build with new blocks. If you were waiting on something you asked for, this is it arriving.`
@@ -949,3 +949,7 @@ export function createSnapshotComposer({ bot }) {
     },
   }
 }
+
+
+
+

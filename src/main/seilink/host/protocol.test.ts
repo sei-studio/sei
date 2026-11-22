@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { createLineReader, encodeLine, hostPipePath } from './protocol';
 
@@ -29,3 +29,7 @@ describe('seilink host wire protocol', () => {
     expect(hostPipePath('darwin', 42, '/tmp', path.posix.join, 4)).not.toBe(hostPipePath('darwin', 42, '/tmp', path.posix.join, 3));
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useChatgptStore (261017, issue #46, review round 2): a latched
  * AUTH_REJECTED / REQUEST_REJECTED opens its dialog once, on the transition,
  * and the dialog closes when main lifts the latch.
@@ -64,3 +64,7 @@ describe('useChatgptStore block dialog', () => {
     off();
   });
 });
+
+
+
+

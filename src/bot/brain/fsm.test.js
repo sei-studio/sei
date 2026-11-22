@@ -1,4 +1,4 @@
-// Tests for the FSM preempt hook (onPreempt) added to unblock the dispatch
+﻿// Tests for the FSM preempt hook (onPreempt) added to unblock the dispatch
 // thread when a player chat / attack arrives while a mid-loop LLM call is
 // parked inside onDispatch. See createPriorityQueue({ onPreempt }).
 
@@ -7,7 +7,7 @@ import { createPriorityQueue, Priority, attackedPriority } from './fsm.js'
 
 // Drain the queue's setImmediate-chained dispatch loop. processNext handles ONE
 // item then re-schedules itself via setImmediate, so draining K items needs K
-// cycles — a single macrotask (setTimeout 0) races under load and could observe
+// cycles â€” a single macrotask (setTimeout 0) races under load and could observe
 // 1 dispatch where the test expects 2. Pump several setImmediate cycles so a
 // multi-item enqueue settles deterministically.
 const flush = async () => {
@@ -25,7 +25,7 @@ describe('createPriorityQueue onPreempt hook', () => {
 
     expect(onPreempt).toHaveBeenCalledTimes(1)
     expect(onPreempt).toHaveBeenCalledWith('sei:chat_received', { playerSpoke: true, text: 'hi' })
-    // Claimed → the event is folded into the running loop, not dispatched.
+    // Claimed â†’ the event is folded into the running loop, not dispatched.
     expect(onDispatch).not.toHaveBeenCalled()
     q.dispose()
   })
@@ -39,7 +39,7 @@ describe('createPriorityQueue onPreempt hook', () => {
     await flush()
 
     expect(onPreempt).toHaveBeenCalledWith('sei:attacked', { entityId: 7 })
-    // Not claimed → the attack is dispatched through its own branch.
+    // Not claimed â†’ the attack is dispatched through its own branch.
     expect(onDispatch).toHaveBeenCalledTimes(1)
     expect(onDispatch.mock.calls[0][0]).toBe('sei:attacked')
     q.dispose()
@@ -98,7 +98,7 @@ describe('createPriorityQueue onPreempt hook', () => {
     q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, text: 'hi' })
     await flush()
 
-    // Hook threw → not claimed → event still dispatched (no message lost).
+    // Hook threw â†’ not claimed â†’ event still dispatched (no message lost).
     expect(onDispatch).toHaveBeenCalledTimes(1)
     q.dispose()
   })
@@ -111,7 +111,7 @@ describe('createPriorityQueue onPreempt hook', () => {
 // helper (used by index.js onAttacked) and the enqueue-time onPreempt fast-path
 // exclusion.
 describe('reflex-tagged sei:attacked is conversation-tier, not safety-tier', () => {
-  it('(i) attackedPriority: reflex → P1_CHAT, real attack (player/mob/unknown) → P0_SAFETY', () => {
+  it('(i) attackedPriority: reflex â†’ P1_CHAT, real attack (player/mob/unknown) â†’ P0_SAFETY', () => {
     expect(attackedPriority({ attackerKind: 'reflex' })).toBe(Priority.P1_CHAT)
     expect(attackedPriority({ attackerKind: 'player' })).toBe(Priority.P0_SAFETY)
     expect(attackedPriority({ attackerKind: 'mob' })).toBe(Priority.P0_SAFETY)
@@ -131,7 +131,7 @@ describe('reflex-tagged sei:attacked is conversation-tier, not safety-tier', () 
     })
     await flush()
 
-    // Fast-path excluded → no attempt to abort a parked LLM call. It still
+    // Fast-path excluded â†’ no attempt to abort a parked LLM call. It still
     // dispatches normally through the queue.
     expect(onPreempt).not.toHaveBeenCalled()
     expect(onDispatch).toHaveBeenCalledTimes(1)
@@ -154,18 +154,18 @@ describe('reflex-tagged sei:attacked is conversation-tier, not safety-tier', () 
 
   it('a reflex does NOT outrank a pending player chat (FIFO within P1); a real attack DOES (P0 first)', async () => {
     // Ordering proof through the real queue. No onPreempt so the fast-path is a
-    // no-op; nothing is in flight at enqueue time so the chat→P0 promotion does
+    // no-op; nothing is in flight at enqueue time so the chatâ†’P0 promotion does
     // not apply. Priority ordering alone decides dispatch order.
     const order = []
     const onDispatch = vi.fn((event) => { order.push(event) })
     const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1_000_000 })
 
-    // Player chat queued FIRST, then a reflex — both land at P1_CHAT.
+    // Player chat queued FIRST, then a reflex â€” both land at P1_CHAT.
     q.enqueue(Priority.P1_CHAT, 'sei:chat_received', { playerSpoke: true, text: 'hi' })
     q.enqueue(attackedPriority({ attackerKind: 'reflex' }), 'sei:attacked', { attackerKind: 'reflex' })
     await flush()
 
-    // Same tier → FIFO → the waiting player is answered before the heads-up.
+    // Same tier â†’ FIFO â†’ the waiting player is answered before the heads-up.
     expect(order).toEqual(['sei:chat_received', 'sei:attacked'])
     q.dispose()
 
@@ -265,7 +265,7 @@ describe('createPriorityQueue setHold (game pause, 260725)', () => {
   })
 })
 
-// 260730 — consecutive idle ticks back off.
+// 260730 â€” consecutive idle ticks back off.
 //
 // The agentic tier's idle cadence is 5s (IDLE_CADENCE_MS[2]) so a self-directed
 // character resumes its GOAL almost immediately after finishing a step. That is
@@ -284,13 +284,13 @@ describe('idle backoff across consecutive ticks (260730)', () => {
     const q = createPriorityQueue({ onDispatch, idleFallbackMs: 1000 })
     const idles = () => onDispatch.mock.calls.filter((c) => c[0] === 'sei:idle').length
 
-    await vi.advanceTimersByTimeAsync(1100)   // t=1100 — first tick at the base cadence
+    await vi.advanceTimersByTimeAsync(1100)   // t=1100 â€” first tick at the base cadence
     expect(idles()).toBe(1)
-    await vi.advanceTimersByTimeAsync(1000)   // t=2100 — the second is due at 3000, not 2000
+    await vi.advanceTimersByTimeAsync(1000)   // t=2100 â€” the second is due at 3000, not 2000
     expect(idles()).toBe(1)
     await vi.advanceTimersByTimeAsync(1000)   // t=3100
     expect(idles()).toBe(2)
-    await vi.advanceTimersByTimeAsync(3000)   // t=6100 — the third is due at 7000
+    await vi.advanceTimersByTimeAsync(3000)   // t=6100 â€” the third is due at 7000
     expect(idles()).toBe(2)
     await vi.advanceTimersByTimeAsync(1000)   // t=7100
     expect(idles()).toBe(3)
@@ -326,7 +326,7 @@ describe('idle backoff across consecutive ticks (260730)', () => {
   })
 })
 
-// 260921 — quiet is measured from the END of the companion's turn.
+// 260921 â€” quiet is measured from the END of the companion's turn.
 //
 // The idle timer used to count from the last event's ARRIVAL. At the agentic
 // 5s cadence it fired while the reply to that event was still generating (a
@@ -359,3 +359,7 @@ describe('idle tick never fires into a turn that is still running (260921)', () 
     vi.useRealTimers()
   })
 })
+
+
+
+

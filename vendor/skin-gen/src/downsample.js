@@ -1,4 +1,4 @@
-// Dominant-color downsample: any square image → 64x64.
+﻿// Dominant-color downsample: any square image â†’ 64x64.
 // For each target pixel, look at the source cell and pick the modal color
 // (colors bucketed to 4 bits/channel to tolerate generation noise), then
 // average the actual pixels in the winning bucket.
@@ -83,3 +83,7 @@ export async function writeSkinPng(rgba, outFile) {
     .toFile(outFile);
   return outFile;
 }
+
+
+
+

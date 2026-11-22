@@ -1,9 +1,9 @@
-// src/bot/adapter/minecraft/forgeHandshake.js
+﻿// src/bot/adapter/minecraft/forgeHandshake.js
 //
-// SPIKE (260806) — join a Forge/NeoForge world as a vanilla-protocol client.
+// SPIKE (260806) â€” join a Forge/NeoForge world as a vanilla-protocol client.
 // OFF unless SEI_FORGE_HANDSHAKE=1. Nothing below runs in a normal build.
 //
-// ── Why this can work at all ────────────────────────────────────────────────
+// â”€â”€ Why this can work at all â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // node-minecraft-protocol answers "not understood" to every login plugin
 // request (src/client/pluginChannels.js onLoginPluginRequest), exactly like a
@@ -23,7 +23,7 @@
 // own channel map back reports, by construction, an exact version match for
 // every channel, and is accepted. That is what this module does.
 //
-// ── Wire format (all source-verified against NeoForge 1.20.1) ───────────────
+// â”€â”€ Wire format (all source-verified against NeoForge 1.20.1) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 //   login_plugin_request.channel == 'fml:loginwrapper'
 //   payload (LoginWrapper.wrapPacket):
@@ -62,7 +62,7 @@
 //   echo; the names are re-emitted with an empty marker, which is safe
 //   precisely because nothing server-side reads them.
 //
-// ── The handshake address marker ────────────────────────────────────────────
+// â”€â”€ The handshake address marker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // ConnectionType.forVersionFlag (ConnectionType.java:23) decides MODDED vs
 // VANILLA purely from `vers.startsWith("FML")`, where `vers` is the second
@@ -72,7 +72,7 @@
 // FML2, hence FML_MARKER being a parameter rather than a constant.
 // nmp exposes `client.tagHost`, appended to options.host in setProtocol.js.
 //
-// ── WHAT THIS DOES NOT DO, AND THE OPEN QUESTION ────────────────────────────
+// â”€â”€ WHAT THIS DOES NOT DO, AND THE OPEN QUESTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // S2CRegistry (id 3) carries the server's registry SNAPSHOT: the numeric ids
 // for blocks, items and entities including modded content. A real Forge client
@@ -107,7 +107,7 @@ export const PACKET_MOD_DATA = 5
 export const PACKET_CHANNEL_MISMATCH = 6
 export const PACKET_ACKNOWLEDGE = 99
 
-// ── Primitive codecs ────────────────────────────────────────────────────────
+// â”€â”€ Primitive codecs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Minecraft VarInt + length-prefixed UTF-8. Deliberately hand-rolled rather
 // than reached for from protodef: this module has to stay usable from a plain
 // unit test with no minecraft-data version loaded.
@@ -155,7 +155,7 @@ export function writeString (str) {
   return Buffer.concat([writeVarInt(body.length), body])
 }
 
-// ── fml:loginwrapper ────────────────────────────────────────────────────────
+// â”€â”€ fml:loginwrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Unwrap a `fml:loginwrapper` payload.
@@ -176,7 +176,7 @@ export function buildLoginWrapper (channel, inner) {
   return Buffer.concat([writeString(channel), writeVarInt(inner.length), inner])
 }
 
-// ── fml:handshake messages ──────────────────────────────────────────────────
+// â”€â”€ fml:handshake messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Decode S2CModList. `inner` INCLUDES the discriminator byte.
@@ -286,7 +286,7 @@ export function respondToLoginWrapper (data, log = () => {}) {
   // immediately after sending this, so there is nothing to reply; log it,
   // because it is the signal that the echo strategy has stopped working.
   if (id === PACKET_CHANNEL_MISMATCH) {
-    log('[sei/forge] server reported a channel mismatch — the mod-list echo was rejected')
+    log('[sei/forge] server reported a channel mismatch â€” the mod-list echo was rejected')
     return null
   }
 
@@ -318,7 +318,7 @@ export function summarizeRegistrySnapshot (inner) {
   }
 }
 
-// ── Installation ────────────────────────────────────────────────────────────
+// â”€â”€ Installation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Is the spike enabled? Off unless explicitly asked for. */
 export function forgeHandshakeEnabled (env = process.env) {
@@ -400,7 +400,7 @@ export function sampleWorldNames (bot, logger = console, radius = 16) {
  * Attach the handshake to a mineflayer bot's underlying protocol client.
  *
  * Must run BEFORE the connection reaches the login state, i.e. immediately
- * after createBot — `tagHost` is read in nmp's `connect` handler.
+ * after createBot â€” `tagHost` is read in nmp's `connect` handler.
  *
  * nmp installs its own `login_plugin_request` listener that unconditionally
  * replies "not understood"; leaving it attached would send a SECOND response
@@ -420,7 +420,7 @@ export function installForgeHandshake (bot, opts = {}) {
   const logger = opts.logger ?? console
   const log = (m) => logger.info?.(m)
 
-  // `<host>\0FML3\0` — see the ConnectionType note in the header.
+  // `<host>\0FML3\0` â€” see the ConnectionType note in the header.
   client.tagHost = `\0${marker}\0`
 
   client.removeAllListeners('login_plugin_request')
@@ -441,5 +441,9 @@ export function installForgeHandshake (bot, opts = {}) {
       response ? { messageId: packet.messageId, data: response } : { messageId: packet.messageId })
   })
 
-  log(`[sei/forge] handshake spike active (marker ${marker}) — modded content will NOT be visible`)
+  log(`[sei/forge] handshake spike active (marker ${marker}) â€” modded content will NOT be visible`)
 }
+
+
+
+

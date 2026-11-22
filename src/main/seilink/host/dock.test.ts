@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   DOCK_HOVER_PX,
   dockHover,
@@ -112,3 +112,7 @@ describe('gazeSample (product call (261116): she follows the cursor on the deskt
     expect(gazeMoved({ x: 0.1, y: 0.1 }, { x: 0.12, y: 0.1 })).toBe(true);
   });
 });
+
+
+
+

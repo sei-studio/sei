@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { errorMessageOf, stripIpcWrapper, unwrapIpcRejection } from './ipcError';
 
 const LIMIT = 'You can only have 4 companions. Remove one to make room.';
@@ -67,3 +67,7 @@ describe('unwrapIpcRejection', () => {
     expect(unwrapIpcRejection(undefined).message).toBe('');
   });
 });
+
+
+
+

@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Inline SVG icons. Ported verbatim from the v0.1 design mockup (ui.jsx).
  *
- * No icon font dependency, no external SVG sprite — just typed React components
+ * No icon font dependency, no external SVG sprite â€” just typed React components
  * keyed by `size` (default 18) so callers can scale per-site (UI-SPEC sidebar
- * lists per-icon sizes — HomeIcon 30, MCBlock 34, PlusIcon 26, etc.).
+ * lists per-icon sizes â€” HomeIcon 30, MCBlock 34, PlusIcon 26, etc.).
  *
  * `currentColor` propagation lets parent CSS drive icon color via `color: var(--accent)`.
  */
@@ -31,7 +31,7 @@ export const HomeIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
- * RosterIcon — the mockup's "Summons / roster" nav glyph: a 2×2 grid of sharp
+ * RosterIcon â€” the mockup's "Summons / roster" nav glyph: a 2Ã—2 grid of sharp
  * squares (ui.jsx `Icon.roster`). This is the square home/roster icon the rail
  * uses for the Home view; replaces the old rounded house so the rail matches
  * the reference terminal.
@@ -67,7 +67,7 @@ export const PlusIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-/** SearchIcon — magnifier, for search fields (261004, the Roblox pick step). */
+/** SearchIcon â€” magnifier, for search fields (261004, the Roblox pick step). */
 export const SearchIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
     width={size}
@@ -84,7 +84,7 @@ export const SearchIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-/** CloseIcon — a plain x, for clearing a field. */
+/** CloseIcon â€” a plain x, for clearing a field. */
 export const CloseIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
     width={size}
@@ -101,11 +101,11 @@ export const CloseIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
- * PricingIcon — wallet/credit glyph whose inner rect fills bottom-up based on
+ * PricingIcon â€” wallet/credit glyph whose inner rect fills bottom-up based on
  * `remainingPct` (0..100). Inherits theme color via `currentColor`.
  *
  * Used by IconRail.tsx as a conditional RailButton (only when
- * `aiBackendKind === 'cloud-proxy'` — defense-in-depth BYOK bypass per
+ * `aiBackendKind === 'cloud-proxy'` â€” defense-in-depth BYOK bypass per
  * PROXY-11; the icon is unmounted, NOT CSS-hidden).
  *
  * The inner fill rect carries a 200ms transition on `height` and `y` so
@@ -118,7 +118,7 @@ export const PricingIcon: React.FC<PricingIconProps> = ({
   size = 24,
   remainingPct = 0,
 }) => {
-  // Clamp to [0, 100] — defensive against transient out-of-range values from
+  // Clamp to [0, 100] â€” defensive against transient out-of-range values from
   // the server / store before init() completes.
   const pct = Math.max(0, Math.min(100, remainingPct));
   // Inner wallet body spans y=6..y=20 (height 14) in the 24-unit viewBox.
@@ -142,7 +142,7 @@ export const PricingIcon: React.FC<PricingIconProps> = ({
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Inner fill — clipped to the wallet body via stacking order (drawn
+      {/* Inner fill â€” clipped to the wallet body via stacking order (drawn
           BEFORE the outline stroke so the outline frames it cleanly). */}
       <rect
         x={5}
@@ -169,7 +169,7 @@ export const PricingIcon: React.FC<PricingIconProps> = ({
 };
 
 /**
- * SettingsIcon — the mockup's rail "settings" glyph: a two-track slider /
+ * SettingsIcon â€” the mockup's rail "settings" glyph: a two-track slider /
  * equalizer (ui.jsx `Icon.settings`). Knobs are punched out with the window
  * fill so the track reads through them. (The cog lives on as `GearIcon`, used
  * by the per-character options menu on the detail screen.)
@@ -252,7 +252,7 @@ export const PencilIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
- * UploadIcon — up-arrow over a tray. The Knowledge drop-zone glyph.
+ * UploadIcon â€” up-arrow over a tray. The Knowledge drop-zone glyph.
  * Stroke-only, inherits currentColor.
  */
 export const UploadIcon: React.FC<IconProps> = ({ size = 24 }) => (
@@ -274,7 +274,7 @@ export const UploadIcon: React.FC<IconProps> = ({ size = 24 }) => (
 );
 
 /**
- * FileTextIcon — a sheet with a folded corner and text lines. Marks uploaded
+ * FileTextIcon â€” a sheet with a folded corner and text lines. Marks uploaded
  * knowledge files in lists. Stroke-only, inherits currentColor.
  */
 export const FileTextIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -296,7 +296,7 @@ export const FileTextIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * NotePlusIcon — a sheet with a plus. The "Add text context" affordance in
+ * NotePlusIcon â€” a sheet with a plus. The "Add text context" affordance in
  * the Knowledge popup. Stroke-only, inherits currentColor.
  */
 export const NotePlusIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -318,7 +318,7 @@ export const NotePlusIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * TrashIcon — delete affordance (knowledge entries, etc.). Stroke-only so it
+ * TrashIcon â€” delete affordance (knowledge entries, etc.). Stroke-only so it
  * picks up the surrounding text color via `currentColor`.
  */
 export const TrashIcon: React.FC<IconProps> = ({ size = 14 }) => (
@@ -341,7 +341,7 @@ export const TrashIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
- * Two-arrows-in-a-circle rotate / swap icon used to flip the persona ↔
+ * Two-arrows-in-a-circle rotate / swap icon used to flip the persona â†”
  * description sub-panes on CharacterPage. Stroke-only so it picks up the
  * surrounding text color via `currentColor`.
  */
@@ -375,7 +375,7 @@ export const SparkleIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
- * StarIcon — four-point sparkle star. The IconRail Playtime affordance
+ * StarIcon â€” four-point sparkle star. The IconRail Playtime affordance
  * (260603): replaces the PricingIcon wallet/arc, which encoded remaining-percent
  * in the glyph itself. The rail no longer surfaces a percent in the icon; the
  * "~Xh left" estimate still shows in the button tooltip. Filled via currentColor
@@ -383,15 +383,15 @@ export const SparkleIcon: React.FC<IconProps> = ({ size = 14 }) => (
  */
 export const StarIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    {/* Mockup `Icon.spark` — a sharp four-point diamond star (Mana glyph). */}
+    {/* Mockup `Icon.spark` â€” a sharp four-point diamond star (Mana glyph). */}
     <path d="M12 2l1.6 7.4L21 11l-7.4 1.6L12 20l-1.6-7.4L3 11l7.4-1.6z" />
   </svg>
 );
 
 /**
- * RefreshIcon — circular-arrow reload glyph. Used for the manual playtime
+ * RefreshIcon â€” circular-arrow reload glyph. Used for the manual playtime
  * refresh affordance on CreditsScreen (260606). Stroke-only so it inherits the
- * button's currentColor (quiet/muted → accent on hover).
+ * button's currentColor (quiet/muted â†’ accent on hover).
  */
 export const RefreshIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
@@ -457,7 +457,7 @@ export const BackIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * CompassIcon — IconRail "World" affordance. Matches the mockup's `Icon.world`
+ * CompassIcon â€” IconRail "World" affordance. Matches the mockup's `Icon.world`
  * globe (a circle crossed by an equator + two meridians) so the rail's World
  * nav reads identically to the reference terminal. (Name kept for call-site /
  * test stability; the glyph is the mockup globe.)
@@ -479,7 +479,7 @@ export const CompassIcon: React.FC<IconProps> = ({ size = 22 }) => (
 );
 
 /**
- * CloudIcon — B3 IconRail credits-cluster affordance for `ai_backend_kind ===
+ * CloudIcon â€” B3 IconRail credits-cluster affordance for `ai_backend_kind ===
  * 'local'` users. Stroked cloud glyph using `currentColor`. Replaces the
  * PricingIcon arc for users who haven't opted into the cloud proxy yet.
  */
@@ -503,7 +503,7 @@ const GAMEPAD_BODY =
   'M17.5 6H6.5a4.5 4.5 0 0 0-4.46 3.9l-.8 5.6A2.4 2.4 0 0 0 3.6 18.2c.9 0 1.7-.5 2.1-1.3L6.5 15h11l.8 1.9c.4.8 1.2 1.3 2.1 1.3a2.4 2.4 0 0 0 2.36-2.7l-.8-5.6A4.5 4.5 0 0 0 17.5 6z';
 
 /**
- * GamepadIcon — chat header "Games" affordance. TWO controllers, the second
+ * GamepadIcon â€” chat header "Games" affordance. TWO controllers, the second
  * peeking out from behind the first, so the glyph reads as "play together"
  * rather than "play". Both copies are the same geometry at 0.68 scale, offset
  * along a diagonal.
@@ -590,7 +590,7 @@ export const GamepadIcon: React.FC<IconProps & { single?: boolean }> = ({
 };
 
 /**
- * UserIcon — chat header "Profile" affordance (opens CharacterPage). Stroked
+ * UserIcon â€” chat header "Profile" affordance (opens CharacterPage). Stroked
  * head + shoulders, inherits currentColor.
  */
 export const UserIcon: React.FC<IconProps> = ({ size = 18 }) => (
@@ -611,7 +611,7 @@ export const UserIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
- * PhoneIcon — chat header "Voice call" affordance. Classic handset glyph,
+ * PhoneIcon â€” chat header "Voice call" affordance. Classic handset glyph,
  * inherits currentColor.
  */
 export const PhoneIcon: React.FC<IconProps> = ({ size = 18 }) => (
@@ -631,7 +631,7 @@ export const PhoneIcon: React.FC<IconProps> = ({ size = 18 }) => (
 );
 
 /**
- * PlayIcon — voice-preview play control (VoicePicker). Filled triangle,
+ * PlayIcon â€” voice-preview play control (VoicePicker). Filled triangle,
  * inherits currentColor.
  */
 export const PlayIcon: React.FC<IconProps> = ({ size = 14 }) => (
@@ -641,7 +641,7 @@ export const PlayIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
- * StopIcon — voice-preview stop control (VoicePicker). Filled square,
+ * StopIcon â€” voice-preview stop control (VoicePicker). Filled square,
  * inherits currentColor.
  */
 export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
@@ -651,7 +651,7 @@ export const StopIcon: React.FC<IconProps> = ({ size = 14 }) => (
 );
 
 /**
- * DotsIcon — a quiet overflow-menu trigger (three dots in a row, the Voice
+ * DotsIcon â€” a quiet overflow-menu trigger (three dots in a row, the Voice
  * tab's Auto / No voice menu, 261120). Inherits currentColor.
  */
 export const DotsIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -663,7 +663,7 @@ export const DotsIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * PhoneOffIcon — voice-call "hang up" control (rotated handset + slash). Filled
+ * PhoneOffIcon â€” voice-call "hang up" control (rotated handset + slash). Filled
  * red via currentColor at the call site.
  */
 export const PhoneOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
@@ -684,7 +684,7 @@ export const PhoneOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
 );
 
 /**
- * HandIcon — voice-call interrupt control (261030): a raised open palm, the
+ * HandIcon â€” voice-call interrupt control (261030): a raised open palm, the
  * "hold on" gesture. Stroke style matches MicIcon so it sits in the same row.
  */
 export const HandIcon: React.FC<IconProps> = ({ size = 22 }) => (
@@ -706,7 +706,7 @@ export const HandIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** MicIcon — voice-call mute control (unmuted state). */
+/** MicIcon â€” voice-call mute control (unmuted state). */
 export const MicIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -724,7 +724,7 @@ export const MicIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** MicOffIcon — voice-call mute control (muted state, with slash). */
+/** MicOffIcon â€” voice-call mute control (muted state, with slash). */
 export const MicOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -745,7 +745,7 @@ export const MicOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** HeadphonesIcon — voice-call deafen control (hearing state). */
+/** HeadphonesIcon â€” voice-call deafen control (hearing state). */
 export const HeadphonesIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -764,7 +764,7 @@ export const HeadphonesIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** HeadphonesOffIcon — voice-call deafen control (deafened, with slash). */
+/** HeadphonesOffIcon â€” voice-call deafen control (deafened, with slash). */
 export const HeadphonesOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -784,7 +784,7 @@ export const HeadphonesOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** MountainIcon — voice-call backdrop toggle (scene / character art vs the
+/** MountainIcon â€” voice-call backdrop toggle (scene / character art vs the
  * plain avatar view). Sits beside mute + deafen, so it matches their weight. */
 export const MountainIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
@@ -803,7 +803,7 @@ export const MountainIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** SendIcon — chat composer send button (paper-plane). */
+/** SendIcon â€” chat composer send button (paper-plane). */
 export const SendIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
     width={size}
@@ -821,7 +821,7 @@ export const SendIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-/** CopyIcon — duplicate-sheets glyph for the per-message "copy text" action. */
+/** CopyIcon â€” duplicate-sheets glyph for the per-message "copy text" action. */
 export const CopyIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -839,7 +839,7 @@ export const CopyIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
-/** ReplyIcon — curved back-arrow for the per-message "quote & reply" action. */
+/** ReplyIcon â€” curved back-arrow for the per-message "quote & reply" action. */
 export const ReplyIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -857,7 +857,7 @@ export const ReplyIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
-/** MinimizeIcon — a single lower bar; collapses the voice call to the corner. */
+/** MinimizeIcon â€” a single lower bar; collapses the voice call to the corner. */
 export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   <svg
     width={size}
@@ -874,7 +874,7 @@ export const MinimizeIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-/** ScreenShareIcon — a monitor with an arrow leaving it (start sharing). */
+/** ScreenShareIcon â€” a monitor with an arrow leaving it (start sharing). */
 export const ScreenShareIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -968,7 +968,7 @@ export const SeilinkIcon: React.FC<IconProps> = ({ size = 18 }) => (
   </svg>
 );
 
-/** ScreenShareOffIcon — the same monitor, struck through (stop sharing). */
+/** ScreenShareOffIcon â€” the same monitor, struck through (stop sharing). */
 export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   <svg
     width={size}
@@ -987,7 +987,7 @@ export const ScreenShareOffIcon: React.FC<IconProps> = ({ size = 22 }) => (
   </svg>
 );
 
-/** FullscreenIcon — corner arrows pointing out (enter app fullscreen). */
+/** FullscreenIcon â€” corner arrows pointing out (enter app fullscreen). */
 export const FullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -1007,7 +1007,7 @@ export const FullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
-/** ExitFullscreenIcon — corner arrows pointing in (leave app fullscreen). */
+/** ExitFullscreenIcon â€” corner arrows pointing in (leave app fullscreen). */
 export const ExitFullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -1027,7 +1027,7 @@ export const ExitFullscreenIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
-/** ChatIcon — speech bubble, the "just chat" activity tile. */
+/** ChatIcon â€” speech bubble, the "just chat" activity tile. */
 export const ChatIcon: React.FC<IconProps> = ({ size = 30 }) => (
   <svg
     width={size}
@@ -1044,7 +1044,7 @@ export const ChatIcon: React.FC<IconProps> = ({ size = 30 }) => (
   </svg>
 );
 
-/** InfoIcon — circled "i", the per-tile "about this game" affordance. */
+/** InfoIcon â€” circled "i", the per-tile "about this game" affordance. */
 export const InfoIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -1063,7 +1063,7 @@ export const InfoIcon: React.FC<IconProps> = ({ size = 16 }) => (
   </svg>
 );
 
-/** LockIcon — locked "coming soon" game tile badge. */
+/** LockIcon â€” locked "coming soon" game tile badge. */
 export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
   <svg
     width={size}
@@ -1082,7 +1082,7 @@ export const LockIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * KeyIcon — a key: round bow, shaft and two teeth. The usage-limit popup's
+ * KeyIcon â€” a key: round bow, shaft and two teeth. The usage-limit popup's
  * "own API key or local model" option (261103). Stroke-only, currentColor.
  */
 export const KeyIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -1105,7 +1105,7 @@ export const KeyIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * FlipIcon — two curved arrows chasing each other in a circle. Chess HUD
+ * FlipIcon â€” two curved arrows chasing each other in a circle. Chess HUD
  * "flip board" control. Stroke-only, inherits currentColor.
  */
 export const FlipIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -1128,7 +1128,7 @@ export const FlipIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * DrawIcon — two horizontal bars, the chess "=" draw sign. Legible at 16px;
+ * DrawIcon â€” two horizontal bars, the chess "=" draw sign. Legible at 16px;
  * a handshake would turn to mush at this size. Chess HUD "offer draw" control.
  */
 export const DrawIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -1149,7 +1149,7 @@ export const DrawIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * FlagIcon — waving flag on a pole. Chess HUD "resign" control. Stroke-only,
+ * FlagIcon â€” waving flag on a pole. Chess HUD "resign" control. Stroke-only,
  * inherits currentColor.
  */
 export const FlagIcon: React.FC<IconProps> = ({ size = 16 }) => (
@@ -1170,7 +1170,7 @@ export const FlagIcon: React.FC<IconProps> = ({ size = 16 }) => (
 );
 
 /**
- * Generic pixel "block" icon — abstract grass-style cube.
+ * Generic pixel "block" icon â€” abstract grass-style cube.
  * NOT Minecraft branding (D-34): green grass top, brown dirt body, no logo.
  */
 export const MCBlock: React.FC<IconProps> = ({ size = 30 }) => (
@@ -1192,3 +1192,7 @@ export const MCBlock: React.FC<IconProps> = ({ size = 30 }) => (
     <rect x={6} y={11} width={1} height={1} fill="#A37D4D" />
   </svg>
 );
+
+
+
+

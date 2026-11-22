@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/dashboard/telemetry.js — the DST dashboard
+﻿// src/bot/adapter/dontstarve/dashboard/telemetry.js â€” the DST dashboard
 // feed (game-adapters M2, 260908). While the renderer says it is watching,
 // emit one snapshot per second (plus immediately when the current tool
 // changes): position, the vitals triple, temperature, held item, inventory,
@@ -89,3 +89,7 @@ export function createDashboardTelemetry({ state, emit, logger = console, prefab
     },
   }
 }
+
+
+
+

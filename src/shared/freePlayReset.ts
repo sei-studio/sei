@@ -1,4 +1,4 @@
-/**
+﻿/**
  * "Free play resets in N days (Tuesday, Sep 30)." The credit wall's pause
  * line (260926).
  *
@@ -50,7 +50,7 @@ export function resetCountdown(
   return { days, atMs };
 }
 
-/** "Tuesday, Sep 30" / "9月30日星期二" / "30 de set., terça-feira"... */
+/** "Tuesday, Sep 30" / "9æœˆ30æ—¥æ˜ŸæœŸäºŒ" / "30 de set., terÃ§a-feira"... */
 export function formatResetDate(atMs: number, lang: ResetLang): string {
   return new Intl.DateTimeFormat(uiLocaleTag(lang), {
     weekday: 'long',
@@ -78,7 +78,7 @@ function formatResetTime(atMs: number, lang: ResetLang): string {
  *   en: Free play resets in 3 days (Tuesday, Sep 30).
  *       Free play resets tomorrow (Saturday, Sep 27).
  *       Free play resets today at 9:30 PM.
- *   zh: 免费游玩将在3天后重置（9月30日星期二）。
+ *   zh: å…è´¹æ¸¸çŽ©å°†åœ¨3å¤©åŽé‡ç½®ï¼ˆ9æœˆ30æ—¥æ˜ŸæœŸäºŒï¼‰ã€‚
  */
 export function formatResetLine(
   resetsAt: string | null | undefined,
@@ -90,11 +90,11 @@ export function formatResetLine(
   const { lang } = opts;
   const free = (opts.plan ?? 'free') === 'free';
   if (lang === 'zh') {
-    const subject = free ? '免费游玩' : '每周额度';
-    if (c.days === 0) return `${subject}将在今天${formatResetTime(c.atMs, lang)}重置。`;
+    const subject = free ? 'å…è´¹æ¸¸çŽ©' : 'æ¯å‘¨é¢åº¦';
+    if (c.days === 0) return `${subject}å°†åœ¨ä»Šå¤©${formatResetTime(c.atMs, lang)}é‡ç½®ã€‚`;
     const date = formatResetDate(c.atMs, lang);
-    if (c.days === 1) return `${subject}将在明天重置（${date}）。`;
-    return `${subject}将在${c.days}天后重置（${date}）。`;
+    if (c.days === 1) return `${subject}å°†åœ¨æ˜Žå¤©é‡ç½®ï¼ˆ${date}ï¼‰ã€‚`;
+    return `${subject}å°†åœ¨${c.days}å¤©åŽé‡ç½®ï¼ˆ${date}ï¼‰ã€‚`;
   }
   if (lang !== 'en') {
     const copy = FREE_PLAY_RESET_ADDED[lang];
@@ -131,9 +131,9 @@ export function quietCompanionNotice(opts: {
   const reset = formatResetLine(opts.resetsAt, opts.nowMs, { lang, plan: opts.plan });
   if (lang === 'zh') {
     const lead = free
-      ? `你的免费游玩已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`
-      : `本周额度已用完，${name}会继续安静地陪你下完这局，但暂时不会聊天。`;
-    return `${lead}${reset ?? ''}${top ? '充值' : '充值或升级'}可以让TA更早开口。`;
+      ? `ä½ çš„å…è´¹æ¸¸çŽ©å·²ç”¨å®Œï¼Œ${name}ä¼šç»§ç»­å®‰é™åœ°é™ªä½ ä¸‹å®Œè¿™å±€ï¼Œä½†æš‚æ—¶ä¸ä¼šèŠå¤©ã€‚`
+      : `æœ¬å‘¨é¢åº¦å·²ç”¨å®Œï¼Œ${name}ä¼šç»§ç»­å®‰é™åœ°é™ªä½ ä¸‹å®Œè¿™å±€ï¼Œä½†æš‚æ—¶ä¸ä¼šèŠå¤©ã€‚`;
+    return `${lead}${reset ?? ''}${top ? 'å……å€¼' : 'å……å€¼æˆ–å‡çº§'}å¯ä»¥è®©TAæ›´æ—©å¼€å£ã€‚`;
   }
   if (lang !== 'en') {
     const copy = FREE_PLAY_RESET_ADDED[lang];
@@ -194,3 +194,7 @@ export function decideFreePlayBanner(
   if (Number.isFinite(at) && at <= nowMs) return { show: true, store: null };
   return { show: false, store: null };
 }
+
+
+
+

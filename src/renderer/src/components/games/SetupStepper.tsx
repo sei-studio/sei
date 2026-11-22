@@ -1,5 +1,5 @@
-/**
- * SetupStepper — the one-step-at-a-time setup window every bot-backed
+﻿/**
+ * SetupStepper â€” the one-step-at-a-time setup window every bot-backed
  * game's launch panel opens (260909). It replaced the numbered lists that
  * used to sit on the panels (McSteps, DstSteps on the panel): three or four
  * steps with their copy and buttons made the panel taller than the game
@@ -165,11 +165,11 @@ export function SetupStepper({ steps, mode, onClose, skin = DEFAULT_STEPPER_SKIN
       <header className={skin.head}>
         <span className={skin.count}>{t('Step {n} of {m}', { n: index + 1, m: steps.length })}</span>
         <span className={skin.title} data-done={step.done ? 'true' : undefined}>
-          {step.done ? '✓ ' : ''}
+          {step.done ? 'âœ“ ' : ''}
           {step.title}
         </span>
         <button type="button" className={skin.close} aria-label={t('Close')} onClick={onClose}>
-          ×
+          Ã—
         </button>
       </header>
       <div className={skin.body}>{step.body}</div>
@@ -189,3 +189,7 @@ export function SetupStepper({ steps, mode, onClose, skin = DEFAULT_STEPPER_SKIN
     </section>
   );
 }
+
+
+
+

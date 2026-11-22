@@ -1,4 +1,4 @@
-/**
+﻿/**
  * T120 end to end on the production wiring: a pending app-quit file runs
  * through quitNextStep's default deps -> startPlayerEndNextStep's default
  * deps (real MEMORY.md append, real NEXT_STEP.json tag, real Home notifier),
@@ -171,3 +171,7 @@ describe('app-quit check on the next launch (production wiring)', () => {
     expect(existsSync(path.join(dirOf('char-1'), PENDING_FILE))).toBe(true);
   });
 });
+
+
+
+

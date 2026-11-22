@@ -1,4 +1,4 @@
-/**
+﻿/**
  * A launch by "Open Sei when I log in" (261107, openAtLogin.ts).
  *
  * Such a launch is for her desktop room only:
@@ -169,3 +169,7 @@ export function keepRunningWithoutWindows(i: {
   if (i.platform !== 'win32') return false;
   return i.roomUp && (i.wanted || i.loginLaunch);
 }
+
+
+
+

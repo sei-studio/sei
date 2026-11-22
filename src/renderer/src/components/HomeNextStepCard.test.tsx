@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HomeNextStepCard (261013, T119), server-rendered. Effects do not run under
  * renderToStaticMarkup, so the shown event is covered in
  * lib/homeNextStep.test.ts, not here.
@@ -58,3 +58,7 @@ describe('HomeNextStepCard', () => {
     expect(html).toContain('Play Stardew Valley');
   });
 });
+
+
+
+

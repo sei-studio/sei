@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The transcript ring is what turns "we should send the STT transcript with
  * the grid" into something that works at tick time. These pin the behaviors
  * the design leans on: overlap selection (a sentence that started early still
@@ -106,3 +106,7 @@ describe('pcm normalization', () => {
     expect(rmsDb(new Float32Array(0))).toBe(-100);
   });
 });
+
+
+
+

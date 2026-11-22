@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Speech model download bases (260816, china-compat W3+W4).
  *
  * Every speech model asset is tried MIRROR FIRST: `dl.sei.gg` is our R2 bucket
@@ -40,3 +40,7 @@ export function speechSources(asset: string, originUrl: string): SpeechSource[] 
     { url: originUrl },
   ];
 }
+
+
+
+

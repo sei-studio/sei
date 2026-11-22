@@ -1,4 +1,4 @@
-// Anthropic adapter — thin wrapper around the existing anthropicClient.js so
+﻿// Anthropic adapter â€” thin wrapper around the existing anthropicClient.js so
 // orchestrator imports flow through the provider factory instead of binding
 // directly to the SDK. Preserves cloud-proxy mode + setAuthToken rotation
 // hook + cache_control prompt-cache marker.
@@ -17,8 +17,8 @@ export function createAnthropicProvider(config) {
     call: client.call,
     buildCachedSystem: client.buildCachedSystem,
     setAuthToken: client.setAuthToken,
-    // WR-05 follow-up: live cloud↔local routing swap. Only the Anthropic
-    // provider implements this — other providers (OpenAI-compat, Gemini,
+    // WR-05 follow-up: live cloudâ†”local routing swap. Only the Anthropic
+    // provider implements this â€” other providers (OpenAI-compat, Gemini,
     // Ollama) have no cloud-proxy concept, so the orchestrator calls it with
     // optional chaining and they no-op.
     setBackend: client.setBackend,
@@ -27,3 +27,7 @@ export function createAnthropicProvider(config) {
     kind: 'anthropic',
   }
 }
+
+
+
+

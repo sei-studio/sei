@@ -1,10 +1,10 @@
-/**
- * Atomic file replace via tmp + rename. Standard Unix idiom — kernel rename(2)
+﻿/**
+ * Atomic file replace via tmp + rename. Standard Unix idiom â€” kernel rename(2)
  * is atomic on the same filesystem, so readers either see the old file or the
  * new one, never a partial write.
  *
  * The tmp file MUST live in the same directory as the target (NOT in the
- * system temp dir) — otherwise `rename` may fail with EXDEV across
+ * system temp dir) â€” otherwise `rename` may fail with EXDEV across
  * filesystems.
  *
  * No fsync for v1: SPEC/CONTEXT do not require crash-durability for PLAYER.md /
@@ -72,3 +72,7 @@ export async function atomicWrite(path, contents) {
     throw err
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "next time" hook for sessions the PLAYER ends (261011, retention O2).
  *
  * T80 (261008, sessionGoodbye.ts + src/bot/brain/nextStep.js) lets the
@@ -100,7 +100,7 @@ export function worthChecking(p: { durationMs: number; playerLines: number; goal
   return p.durationMs >= PLAYER_END_MIN_MS && (p.playerLines >= (p.minPlayerLines ?? 2) || p.goals > 0);
 }
 
-// ── session digests from the bot port ─────────────────────────────────────
+// â”€â”€ session digests from the bot port â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const digests = new Map<string, SessionDigest>();
 
@@ -145,7 +145,7 @@ export function clearSessionDigest(characterId: string): void {
   digests.delete(characterId);
 }
 
-// ── prompt ────────────────────────────────────────────────────────────────
+// â”€â”€ prompt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Entry texts of a MEMORY.md / HEARTBEAT.md body, stamps removed, oldest first. */
 export function entryTexts(body: string): string[] {
@@ -156,7 +156,7 @@ export function entryTexts(body: string): string[] {
     .filter(Boolean);
 }
 
-/** A MEMORY.md entry and the section it sits under ("World 2 — Sky Base (Minecraft)"), or null above the first section. */
+/** A MEMORY.md entry and the section it sits under ("World 2 â€” Sky Base (Minecraft)"), or null above the first section. */
 export interface MemoryEntry {
   text: string;
   place: string | null;
@@ -246,26 +246,26 @@ export function buildPlayerEndPrompt(p: {
 function cleanNote(raw: string): string | null {
   let s = raw
     .trim()
-    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '')
+    .replace(/^["'â€œâ€â€˜â€™`]+|["'â€œâ€â€˜â€™`]+$/g, '')
     .replace(/^(plan for next time(?: in [^:]{1,60})?|next time|next step)\s*:\s*/i, '')
-    .replace(/[.。]+$/, '')
+    .replace(/[.ã€‚]+$/, '')
     .trim();
-  s = s.replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '').trim();
+  s = s.replace(/^["'â€œâ€â€˜â€™`]+|["'â€œâ€â€˜â€™`]+$/g, '').trim();
   if (!s) return null;
   if (/^(none|nothing|no|n\/a)(?![a-z])/i.test(s) && s.split(/\s+/).length <= 3) return null;
-  if (/^(无|没有|なし|없음)$/.test(s)) return null;
+  if (/^(æ— |æ²¡æœ‰|ãªã—|ì—†ìŒ)$/.test(s)) return null;
   return normalizeNextStep(s);
 }
 
-const LABELED = /^\s*[*_-]*\s*(note|player|game)\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+const LABELED = /^\s*[*_-]*\s*(note|player|game)\s*[*_]*\s*[:ï¼š]\s*[*_]*\s*(.*)$/i;
 /** A possible second label later on the same line ("note: x player: y"). */
-const INLINE_LABEL = /\s+(?=[*_]*\s*(note|player|game)\s*[*_]*\s*[:：])/gi;
+const INLINE_LABEL = /\s+(?=[*_]*\s*(note|player|game)\s*[*_]*\s*[:ï¼š])/gi;
 const LABEL_ORDER = ['note', 'player', 'game'];
 
 /** A mid-line `game:` value that is really an answer: exactly a game's id or name, or none. */
 function isExactGameAnswer(raw: string): boolean {
-  const v = raw.replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`.。]+$/g, '').trim();
-  if (/^(none|no|n\/a|nothing|无|没有|なし|없음)$/i.test(v)) return true;
+  const v = raw.replace(/^[\s*_"'â€œâ€â€˜â€™`]+|[\s*_"'â€œâ€â€˜â€™`.ã€‚]+$/g, '').trim();
+  if (/^(none|no|n\/a|nothing|æ— |æ²¡æœ‰|ãªã—|ì—†ìŒ)$/i.test(v)) return true;
   const q = v.toLowerCase().replace(/[^a-z0-9]+/g, '');
   return GAME_IDS.some((id) => q === id || q === gameDisplayName(id).toLowerCase().replace(/[^a-z0-9]+/g, ''));
 }
@@ -317,9 +317,9 @@ export interface PlayerEndPlan {
 /** A `game:` answer as a game id, 'none', or null when it names no known game. */
 export function parseGameAnswer(raw: string | null): GameId | 'none' | null {
   if (raw === null) return null;
-  const v = raw.replace(/[\s*_"'“”‘’`.。]+$/g, '').replace(/^[\s*_"'“”‘’`]+/, '').trim();
+  const v = raw.replace(/[\s*_"'â€œâ€â€˜â€™`.ã€‚]+$/g, '').replace(/^[\s*_"'â€œâ€â€˜â€™`]+/, '').trim();
   if (!v) return null;
-  if (/^(none|no|n\/a|nothing|无|没有|なし|없음)$/i.test(v)) return 'none';
+  if (/^(none|no|n\/a|nothing|æ— |æ²¡æœ‰|ãªã—|ì—†ìŒ)$/i.test(v)) return 'none';
   return gameIdFromName(v);
 }
 
@@ -410,7 +410,7 @@ export function parseNextStepReply(text: string): string | null {
   return parsePlayerEndReply(text)?.step ?? null;
 }
 
-// ── the check ─────────────────────────────────────────────────────────────
+// â”€â”€ the check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface PlayerEndInput {
   characterId: string;
@@ -649,7 +649,7 @@ function reportCheckOutcome(
   }
 }
 
-// ── session ends that never run the check ────────────────────────────────
+// â”€â”€ session ends that never run the check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Every surface a session can end on, for analytics (the check itself covers NextStepSurface). */
 export type NextStepEventSurface = NextStepSurface | 'chat' | 'chess' | 'draw';
@@ -729,7 +729,7 @@ export function reportGoodbyePlanSaved(
   }
 }
 
-// ── scheduling ────────────────────────────────────────────────────────────
+// â”€â”€ scheduling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const inflight = new Map<string, { ctrl: AbortController; local: boolean | null; always: boolean }>();
 const lastRun = new Map<string, number>();
@@ -792,7 +792,7 @@ export function _resetPlayerEndNextStep(): void {
   digests.clear();
 }
 
-// ── production wiring ─────────────────────────────────────────────────────
+// â”€â”€ production wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function defaultDeps(): PlayerEndDeps {
   return {
@@ -941,3 +941,7 @@ export function bindPlayerEndRuntime(b: {
 export function goalsFileFor(memoryDir: string, game: string): string {
   return path.join(memoryDir, game === 'minecraft' ? 'HEARTBEAT.md' : `HEARTBEAT.${game}.md`);
 }
+
+
+
+

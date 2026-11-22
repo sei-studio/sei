@@ -1,5 +1,5 @@
-/**
- * regeneratePortrait orchestration (260909) — exercised with an injected
+﻿/**
+ * regeneratePortrait orchestration (260909) â€” exercised with an injected
  * `generate` so no KusArt / network is touched. Also covers the pure prompt
  * builders it relies on.
  */
@@ -45,7 +45,7 @@ import { MAX_PORTRAIT_REGENS } from '../shared/characterSchema';
 
 const UUID_A = '550e8400-e29b-41d4-a716-446655440000';
 
-// ── Minimal valid PNG (64x64 RGBA) with a per-tag marker chunk ─────────────
+// â”€â”€ Minimal valid PNG (64x64 RGBA) with a per-tag marker chunk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -110,7 +110,7 @@ const SHEET = {
   name: 'Anaya',
   gender: 'female',
   background: 'beastkin',
-  personality: { tone: 'direct and candid — never flustered', values: [], quirks: [], fears: [] },
+  personality: { tone: 'direct and candid â€” never flustered', values: [], quirks: [], fears: [] },
   image_prompt: 'A wolf-eared ranger with silver hair.',
 };
 
@@ -126,11 +126,11 @@ afterEach(async () => {
 
 describe('assemblePortraitPrompt', () => {
   it('appends the framing suffix, tone + beastkin clauses and strips dashes', () => {
-    const p = assemblePortraitPrompt({ subject: 'A knight — armored.', tone: 'calm – steady', beastkin: true });
+    const p = assemblePortraitPrompt({ subject: 'A knight â€” armored.', tone: 'calm â€“ steady', beastkin: true });
     expect(p.startsWith('A knight, armored. One character, medium shot from the waist up.')).toBe(true);
     expect(p).toContain('convey: calm, steady.');
     expect(p).toContain('Beastkin: fully human face');
-    expect(p).not.toMatch(/[—–]/);
+    expect(p).not.toMatch(/[â€”â€“]/);
   });
   it('omits the optional clauses when absent', () => {
     const p = assemblePortraitPrompt({ subject: 'A scholar' });
@@ -147,7 +147,7 @@ describe('assemblePortraitPrompt', () => {
     expect(p).toBe(MALE_PORTRAIT_PREFIX + assemblePortraitPrompt(args));
   });
   it('leaves female, other and unspecified-gender prompts byte-identical', () => {
-    const args = { subject: 'A fox beastkin woman — ranger.', tone: 'warm', beastkin: true };
+    const args = { subject: 'A fox beastkin woman â€” ranger.', tone: 'warm', beastkin: true };
     const plain = assemblePortraitPrompt(args);
     expect(assemblePortraitPrompt({ ...args, gender: 'female' })).toBe(plain);
     expect(assemblePortraitPrompt({ ...args, gender: 'other' })).toBe(plain);
@@ -290,3 +290,7 @@ describe('regeneratePortrait', () => {
     expect((await getPortraitVersions(UUID_A)).regenCount).toBe(MAX_PORTRAIT_REGENS);
   });
 });
+
+
+
+

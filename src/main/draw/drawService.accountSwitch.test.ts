@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! on an account switch (260926). endAllDraw ends every game through the
  * same choke point as a player closing it (finishGame): draw_game_ended with
  * duration_ms and reason 'account_switch', the play row, and the session is
@@ -159,3 +159,7 @@ describe('Draw! starts across an account switch', () => {
     expect(events('draw_game_started')).toHaveLength(0);
   });
 });
+
+
+
+

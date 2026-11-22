@@ -1,4 +1,4 @@
-// 261018: quality pass 15. "We want natural behavior initiated by the AI,
+﻿// 261018: quality pass 15. "We want natural behavior initiated by the AI,
 // rather than hard coded." The pass-14 phrase matchers (isMovementOrder cut
 // the running action on "follow me"; isHoldLine plus a hard block held her
 // after "stay here") are gone:
@@ -18,7 +18,7 @@ import { createOrchestrator, _setTickIntervalForTests } from './orchestrator.js'
 
 afterEach(() => { vi.restoreAllMocks() })
 
-// ─── orchestrator harness ───────────────────────────────────────────────
+// â”€â”€â”€ orchestrator harness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -121,12 +121,12 @@ describe('a movement line mid-action is the model\'s call', () => {
     ])
     await orch.handleDispatch('sei:chat_received', line('get some stone'))
     expect(orch.currentLoop?.inFlight?.name).toBe('gather')
-    await orch.handleDispatch('sei:chat_received', line('跟我来'))
+    await orch.handleDispatch('sei:chat_received', line('è·Ÿæˆ‘æ¥'))
     await flush()
     await drain()
     expect(provider.calls.length).toBe(2)
     const text = lastUserText(provider.calls[1])
-    expect(text).toContain('跟我来')
+    expect(text).toContain('è·Ÿæˆ‘æ¥')
     expect(text).toContain('If they ask you to come to them or follow them, or point out where they are, call the action that takes you to them')
     expect(text).not.toContain('KEEP GOING')
     expect(aborted).toEqual(['gather'])
@@ -170,11 +170,11 @@ describe('the stay note', () => {
   it('is set by her stop in answer to a line in any language', async () => {
     const { orch, provider, drain } = setup([
       turn(say('s1', 'on it'), act('a1', 'gather', { name: 'stone' })),
-      turn(say('s2', '好的'), act('st', 'stop')),
+      turn(say('s2', 'å¥½çš„'), act('st', 'stop')),
       turn(say('s3', 'lol')),
     ])
     await orch.handleDispatch('sei:chat_received', line('get some stone'))
-    await orch.handleDispatch('sei:chat_received', line('别动'))
+    await orch.handleDispatch('sei:chat_received', line('åˆ«åŠ¨'))
     await flush()
     await drain()
     await orch.handleDispatch('sei:chat_received', line('haha nice'))
@@ -182,7 +182,7 @@ describe('the stay note', () => {
     await drain()
     const last = provider.calls[provider.calls.length - 1]
     expect(hasNote(last)).toBe(true)
-    expect(lastUserText(last)).toContain('别动')
+    expect(lastUserText(last)).toContain('åˆ«åŠ¨')
   })
 
   it('a plain chat line does not end it; new work from the player does', async () => {
@@ -353,6 +353,10 @@ describe('the stay note', () => {
     const t = NUDGES.stayNote({ who: 'Steve', line: 'stay here', secs: 12 })
     expect(t).toContain('12s ago')
     expect(t).toContain('"stay here"')
-    expect(t).not.toMatch(/—|[A-Z]{4,}/)
+    expect(t).not.toMatch(/â€”|[A-Z]{4,}/)
   })
 })
+
+
+
+

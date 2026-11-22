@@ -1,7 +1,7 @@
-/**
- * ComingSoonScreen — "Other games" stub.
+﻿/**
+ * ComingSoonScreen â€” "Other games" stub.
  *
- * Source: 04-UI-SPEC.md §ComingSoonScreen + 04-07 Task 2.
+ * Source: 04-UI-SPEC.md Â§ComingSoonScreen + 04-07 Task 2.
  */
 
 import React from 'react';
@@ -23,3 +23,7 @@ export function ComingSoonScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

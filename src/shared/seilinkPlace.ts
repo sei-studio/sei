@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink physics-aware placement (261105, product feedback: "make it somewhat physics
  * aware... the bottom of furniture pics has to touch" the ground or a shelf).
  * Pure: no DOM, no Node. The editor snaps with it, the draw plan takes depth
@@ -116,7 +116,7 @@ export const LIP_TUCK = 10;
 const TOP_Z_LO = 0.5;
 const TOP_Z_HI = 0.95;
 
-// ── Geometry ────────────────────────────────────────────────────────────────
+// â”€â”€ Geometry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Even-odd containment. A point exactly on an edge may go either way; callers nudge. */
 export function pointInPolygon(poly: readonly (readonly [number, number])[], x: number, y: number): boolean {
@@ -194,7 +194,7 @@ const inBlock = (poly: RoomPolygon, x: number, y: number): boolean => pointInPol
 const inAnyArea = (polys: readonly RoomPolygon[], x: number, y: number): boolean => polys.some((p) => inArea(p, x, y));
 const inAnyBlock = (polys: readonly RoomPolygon[], x: number, y: number): boolean => polys.some((p) => inBlock(p, x, y));
 
-// ── Regions in this room ────────────────────────────────────────────────────
+// â”€â”€ Regions in this room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface SurfaceBase {
   slot: RoomSlotId;
@@ -437,7 +437,7 @@ export function placementRegions(manifest: RoomPresetManifest, state: RoomState)
   return { canvas: [w, h], labelled, perspective, floor, floorBlocks, wall, wallBlocks, surfaces, floorTop, floorFront, horizon };
 }
 
-// ── Depth: scale and z ──────────────────────────────────────────────────────
+// â”€â”€ Depth: scale and z â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Perspective factor for a floor item whose anchor is at y (1 at its artist spot). Other classes: 1. */
 export function depthScale(r: PlacementRegions, component: RoomComponent, y: number): number {
@@ -513,7 +513,7 @@ export function contactY(r: PlacementRegions, component: RoomComponent, it: Pick
   return it.y - foot * (it.scale ?? 1) * depthScale(r, component, it.y);
 }
 
-// ── Validity ────────────────────────────────────────────────────────────────
+// â”€â”€ Validity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The sprite at an anchor y, canvas px: its size and the depth of its contact shadow. */
 export type SpriteFit = (y: number) => { w: number; h: number; foot: number } | null;
@@ -608,7 +608,7 @@ export function spotValid(r: PlacementRegions, cls: PlacementClass, x: number, y
   return wallSamples(f).every(([dx, dy]) => wallOk(r, x + dx, y + dy));
 }
 
-// ── Snapping ────────────────────────────────────────────────────────────────
+// â”€â”€ Snapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface Snap {
   x: number;
@@ -940,3 +940,7 @@ export function scaleRangeAt(
   const fitMax = Math.floor(((room * 0.9) / w) * 100) / 100;
   return [min, Math.max(min, Math.min(max, fitMax))];
 }
+
+
+
+

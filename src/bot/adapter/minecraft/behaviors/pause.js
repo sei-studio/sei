@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/pause.js — the body freeze behind the
+﻿// src/bot/adapter/minecraft/behaviors/pause.js â€” the body freeze behind the
 // in-app play/pause button (260725).
 //
 // Pausing the BRAIN (orchestrator.setGamePaused + the FSM queue hold) stops
@@ -15,8 +15,8 @@
 // their keyboard: still loaded in the world, still takes damage, does nothing.
 //
 // The desired state is module-scoped (not just a flag on the bot instance) so
-// a reconnect — which builds a FRESH mineflayer bot while the brain stays
-// paused — can re-apply it from connect.js's spawn wiring (applyWorldPause).
+// a reconnect â€” which builds a FRESH mineflayer bot while the brain stays
+// paused â€” can re-apply it from connect.js's spawn wiring (applyWorldPause).
 //
 // Unpausing does NOT re-issue anything: the loops simply resume (follow still
 // holds its target, so trailing picks back up) and the orchestrator's resume
@@ -45,7 +45,7 @@ export function setWorldPaused(bot, paused) {
     try { bot.autoEat?.enableAuto?.() } catch (_) {}
     return
   }
-  // Engage: come to a full stop. Every call is guarded — a half-connected bot
+  // Engage: come to a full stop. Every call is guarded â€” a half-connected bot
   // (no pathfinder yet, socket already gone) must never throw out of a pause.
   try { bot.pathfinder?.setGoal(null) } catch (_) {}
   try { bot.pathfinder?.stop() } catch (_) {}
@@ -73,3 +73,7 @@ export function applyWorldPause(bot) {
   if (!bot) return
   setWorldPaused(bot, _paused)
 }
+
+
+
+

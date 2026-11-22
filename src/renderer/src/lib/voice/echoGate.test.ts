@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   companionAudioGapMs,
   classifyScreenEcho,
@@ -14,7 +14,7 @@ import {
   textOverlap,
   type EnvSample, shareVoiceDuring, SHARE_VOICE_LEAD_MS } from './echoGate';
 
-/** Deterministic pseudo-random (LCG) — tests must not depend on Math.random. */
+/** Deterministic pseudo-random (LCG) â€” tests must not depend on Math.random. */
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -62,11 +62,11 @@ describe('normalizeTokens', () => {
     expect(normalizeTokens('Wait, WHAT?! [BLANK_AUDIO] (music)')).toEqual(['wait', 'what']);
   });
   it('splits CJK into per-character tokens so fragments overlap', () => {
-    expect(normalizeTokens('等等吧')).toEqual(['等', '等', '吧']);
-    expect(normalizeTokens('고춧가루요')).toEqual(['고', '춧', '가', '루', '요']);
+    expect(normalizeTokens('ç­‰ç­‰å§')).toEqual(['ç­‰', 'ç­‰', 'å§']);
+    expect(normalizeTokens('ê³ ì¶§ê°€ë£¨ìš”')).toEqual(['ê³ ', 'ì¶§', 'ê°€', 'ë£¨', 'ìš”']);
   });
   it('keeps latin words whole next to CJK', () => {
-    expect(normalizeTokens('ok我们go')).toEqual(['ok', '我', '们', 'go']);
+    expect(normalizeTokens('okæˆ‘ä»¬go')).toEqual(['ok', 'æˆ‘', 'ä»¬', 'go']);
   });
 });
 
@@ -107,7 +107,7 @@ describe('envelopeCorrelation', () => {
   });
   it('marks a short window invalid instead of guessing', () => {
     // 1.5s is a perfectly ordinary utterance and correlation cannot separate
-    // echo from coincidence there — the transcript decides those.
+    // echo from coincidence there â€” the transcript decides those.
     const ref = burstEnvelope(0, 3_000, lcg(7));
     const mic = ref.filter((s) => s.t <= 1_500).map((s) => ({ t: s.t + 200, db: s.db }));
     const c = envelopeCorrelation(mic, ref, 200, 1_700);
@@ -245,7 +245,7 @@ describe('shareVoiceDuring (260925 act)', () => {
   });
 
   it('is false for music tags, silence, or words while the window was quiet', () => {
-    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '[Music] ♪', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
+    expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '[Music] â™ª', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
     expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
     expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -70), transcript: 'hello there', judgedThrough: DONE }, 1_200, 1_600)).toBe(false);
   });
@@ -265,3 +265,7 @@ describe('shareVoiceDuring (260925 act)', () => {
     expect(shareVoiceDuring({ envelope: env(1_000, 2_000, -30), transcript: '', judgedThrough: 1_600 }, 1_200, 1_600)).toBe(false);
   });
 });
+
+
+
+

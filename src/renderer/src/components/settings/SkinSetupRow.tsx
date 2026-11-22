@@ -1,5 +1,5 @@
-/**
- * SkinSetupRow — Minecraft skin setup wizard status row (moved verbatim out
+﻿/**
+ * SkinSetupRow â€” Minecraft skin setup wizard status row (moved verbatim out
  * of SettingsScreen.tsx by game adapters M0, 260908).
  *
  * "Run setup" / "Re-run setup" opens SetupWizardModal in re-entry mode. The
@@ -23,7 +23,7 @@ export function SkinSetupRow(): React.ReactElement {
   const [state, setState] = useState<WizardState | null>(null);
 
   useEffect(() => {
-    // Skip while the wizard is open — the fetch would race its in-flight
+    // Skip while the wizard is open â€” the fetch would race its in-flight
     // install. The effect re-runs when wizardOpen flips back to false.
     if (wizardOpen) return;
     let cancelled = false;
@@ -54,3 +54,7 @@ export function SkinSetupRow(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

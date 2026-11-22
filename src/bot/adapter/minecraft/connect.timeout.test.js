@@ -1,5 +1,5 @@
-/**
- * connectTimeoutFor — the connect guard's budget.
+﻿/**
+ * connectTimeoutFor â€” the connect guard's budget.
  *
  * Regression cover for 260801: the guard is armed at createBot while the
  * supervisor's watchdog is armed at fork, so a flat 20s only reported first
@@ -60,3 +60,7 @@ describe('connectTimeoutFor', () => {
     expect(SUMMON_BUDGET_MS - (bootMs + forBoot(bootMs))).toBe(REPORT_MARGIN_MS);
   });
 });
+
+
+
+

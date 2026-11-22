@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Dependency-free Minecraft Server List Ping (SLP) over a TCP socket.
  *
  * Used by the loopback LAN watcher (src/main/lanWatcher.ts) to confirm that a
  * locally-listening TCP port is actually a Minecraft "open to LAN" world and to
- * read its MOTD + version — replacing the old multicast beacon, which macOS 26
+ * read its MOTD + version â€” replacing the old multicast beacon, which macOS 26
  * silently drops for signed apps unless the app carries the restricted
  * `com.apple.developer.networking.multicast` entitlement (which bricks launch
  * without an embedded provisioning profile). Loopback TCP is exempt from Local
@@ -89,7 +89,7 @@ function motdToText(desc: unknown): string {
 /**
  * Status-ping a TCP endpoint. Resolves with the parsed status when the peer
  * speaks the Minecraft status protocol; rejects on timeout, socket error, or a
- * non-Minecraft response. `host` defaults to loopback — the only thing Sei can
+ * non-Minecraft response. `host` defaults to loopback â€” the only thing Sei can
  * actually reach, since the bot connects over 127.0.0.1.
  */
 export function mcPing(port: number, host = '127.0.0.1', timeoutMs = 800): Promise<McStatus> {
@@ -162,3 +162,7 @@ export function mcPing(port: number, host = '127.0.0.1', timeoutMs = 800): Promi
     });
   });
 }
+
+
+
+

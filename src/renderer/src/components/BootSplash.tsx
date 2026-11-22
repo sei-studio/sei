@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BootSplash (261029): what the window shows while App's boot routing decides
  * the first view. That wait used to render an empty fragment, which was fine
  * while it took a frame, but it waits for main's auth state, and once the
@@ -15,3 +15,7 @@ export function BootSplash(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

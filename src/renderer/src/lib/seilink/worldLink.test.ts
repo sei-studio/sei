@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The WorldLink status lines (261106 v6): World N, the order and pacing of
  * the nine lines on the Anima milestones, early finishes, holds, failures and
  * the analytics report.
@@ -54,20 +54,20 @@ describe('worldNumber', () => {
 describe('the copy', () => {
   it('is the approved text, with real ellipses and no em dashes', () => {
     expect(STATUS_LINES.map((l) => l.key)).toEqual([
-      'Initializing WorldLink…',
-      'Sending signal to World {world}…',
-      'Awaiting response…',
+      'Initializing WorldLinkâ€¦',
+      'Sending signal to World {world}â€¦',
+      'Awaiting responseâ€¦',
       'Signal received.',
-      'Syncing world clocks…',
-      'Matching physics constants…',
-      'Correcting for time dilation…',
-      'Stabilizing the link…',
-      'Inviting {name}…',
+      'Syncing world clocksâ€¦',
+      'Matching physics constantsâ€¦',
+      'Correcting for time dilationâ€¦',
+      'Stabilizing the linkâ€¦',
+      'Inviting {name}â€¦',
     ]);
     expect(SUCCESS_LINE).toBe('WorldLink established between World 0 and World {world}.');
     expect(FAILURE_LINE).toBe('WorldLink failed. Lost contact with World {world}. Come back later.');
     for (const s of [...STATUS_LINES.map((l) => l.key), SUCCESS_LINE, FAILURE_LINE]) {
-      expect(s).not.toContain('—');
+      expect(s).not.toContain('â€”');
       expect(s).not.toContain('...');
       expect(s).not.toContain('#');
     }
@@ -172,7 +172,7 @@ describe('planLink', () => {
   });
 
   it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 6 s', () => {
-    // The request went out, no answer, then the network gave up 1 s into "Awaiting response…".
+    // The request went out, no answer, then the network gave up 1 s into "Awaiting responseâ€¦".
     const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 6700, failure: 'network' } };
     const p = planLink(log);
     expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7]);
@@ -182,7 +182,7 @@ describe('planLink', () => {
     expect(planLink({ ...log, failed: { at: 10_000, failure: 'network' } }).fail!.at).toBe(10_000);
   });
 
-  it('a slow proxy holds "Awaiting response…" until it answers', () => {
+  it('a slow proxy holds "Awaiting responseâ€¦" until it answers', () => {
     const p = planLink({ at: { sent: 250, answered: 40_000, host: 2500 }, failed: null });
     expect(p.lines[3]).toBe(40_000);
     expect(p.lines[3] - p.lines[2]).toBeGreaterThan(lineDwell(2));
@@ -282,3 +282,7 @@ describe('linkReport', () => {
     expect(r).not.toHaveProperty('failure');
   });
 });
+
+
+
+

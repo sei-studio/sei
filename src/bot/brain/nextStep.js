@@ -1,4 +1,4 @@
-// 261008: the "next time" hook a companion can attach to its goodbye
+﻿// 261008: the "next time" hook a companion can attach to its goodbye
 // (retention fix 2(c), ~/suisei/reports/retention-2026-10-05.md).
 //
 // Every goodbye tool (game quit_game / end_call, chat-surface quit_game /
@@ -72,6 +72,8 @@ export const PLAN_GAMES = Object.freeze({
   minecraft: 'Minecraft',
   stardew: 'Stardew Valley',
   dontstarve: "Don't Starve Together",
+  CONNECT4: 'Forza 4',
+  BATTLESHIP: 'Battleship',
 })
 
 // Whole answers that name one game: its id, its name, a leading part of the
@@ -87,7 +89,7 @@ const PLAN_GAME_ALIASES = Object.freeze({
 function gameWords(s) {
   return s
     .toLowerCase()
-    .replace(/['’`]/g, '')
+    .replace(/['â€™`]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .replace(/^the\s+/, '')
@@ -101,12 +103,12 @@ function gameWords(s) {
  */
 export function parsePlanGameField(raw) {
   if (typeof raw !== 'string') return null
-  const v = raw.replace(/^[\s*_"'`“”‘’]+|[\s*_"'`“”‘’.。]+$/g, '').trim()
+  const v = raw.replace(/^[\s*_"'`â€œâ€â€˜â€™]+|[\s*_"'`â€œâ€â€˜â€™.ã€‚]+$/g, '').trim()
   if (!v) return null
   // "None of them", "none (just talk)": a short answer that starts with none,
   // as the player-end check reads its note (cleanNote).
   if (/^(none|nothing|no|n\/a)(?![a-z])/i.test(v) && v.split(/\s+/).length <= 3) return 'none'
-  if (/^(无|没有|なし|없음)$/.test(v)) return 'none'
+  if (/^(æ— |æ²¡æœ‰|ãªã—|ì—†ìŒ)$/.test(v)) return 'none'
   // A trailing aside does not change the game: "Minecraft (the lighthouse)".
   const words = gameWords(v.replace(/\s*\([^)]*\)\s*$/, ''))
   for (const [id, aliases] of Object.entries(PLAN_GAME_ALIASES)) {
@@ -136,7 +138,7 @@ export const PLAYER_LINE_HARD_MAX_CHARS = 90
 // or the start, where removing them cannot break the clause.
 // A possessive ("tonight's stream", "Tonight's the Night") is left alone:
 // dropping the day there leaves "'s stream".
-const RELATIVE_ANYWHERE = /(?:\s*,)?\s*\b(?:(?:by|for|until|on)\s+)?(?:tomorrow|tonight|tmrw?)\b(?!['’]s)(?:\s+(?:morning|night|evening))?/gi
+const RELATIVE_ANYWHERE = /(?:\s*,)?\s*\b(?:(?:by|for|until|on)\s+)?(?:tomorrow|tonight|tmrw?)\b(?!['â€™]s)(?:\s+(?:morning|night|evening))?/gi
 const RELATIVE_EDGE_END = /(?:\s*,)?\s+(?:(?:later\s+)?today|later|next time|this (?:morning|afternoon|evening|weekend))\s*$/i
 const RELATIVE_EDGE_START = /^(?:next time|later|today|this (?:morning|afternoon|evening|weekend))\s*[,:]?\s+/i
 
@@ -149,7 +151,7 @@ const MIN_CLAUSE_HEAD = 8
  * ("blaze powder, pufferfish and a brewing stand").
  */
 function firstClause(s) {
-  const re = /(?:\s*;\s+|,?\s+(?:and then|then)\s+|\s+[-–—]\s+)/g
+  const re = /(?:\s*;\s+|,?\s+(?:and then|then)\s+|\s+[-â€“â€”]\s+)/g
   for (let m = re.exec(s); m; m = re.exec(s)) {
     const head = s.slice(0, m.index).replace(/[\s,]+$/, '').trim()
     if (head.length >= MIN_CLAUSE_HEAD) return head
@@ -160,14 +162,14 @@ function firstClause(s) {
 /** One cleanup pass: quotes, relative days, edge punctuation. */
 function cleanPlayerLine(s) {
   return s
-    .replace(/^["'“”‘’`]+|["'“”‘’`]+$/g, '')
+    .replace(/^["'â€œâ€â€˜â€™`]+|["'â€œâ€â€˜â€™`]+$/g, '')
     .trim()
     .replace(RELATIVE_ANYWHERE, '')
     .replace(RELATIVE_EDGE_END, '')
     .replace(RELATIVE_EDGE_START, '')
     .replace(/\s+([,.!?])/g, '$1')
     .replace(/\s+/g, ' ')
-    .replace(/[\s,;:.。-]+$/, '')
+    .replace(/[\s,;:.ã€‚-]+$/, '')
     .replace(/^[\s,;:-]+/, '')
     .trim()
 }
@@ -194,7 +196,7 @@ export function normalizePlayerLine(raw) {
     const max = PLAYER_LINE_HARD_MAX_CHARS - 1
     const cut = s.slice(0, max)
     const space = cut.lastIndexOf(' ')
-    s = (space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:-]+$/, '').replace(/\s+(?:and|or|with|to|the|a|an|of|for)$/i, '').trim() + '…'
+    s = (space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:-]+$/, '').replace(/\s+(?:and|or|with|to|the|a|an|of|for)$/i, '').trim() + 'â€¦'
   }
   if (/^[a-z]/.test(s)) s = s[0].toUpperCase() + s.slice(1)
   return s || null
@@ -259,3 +261,7 @@ export function acceptPlayerLine(raw, names = {}) {
   if (!line) return null
   return playerLineProblem(line, names) ? null : line
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NSIS -> Velopack migration on Windows (261030): pure helpers, no electron
  * import, so they unit-test on any host. velopackMigration.ts runs them.
  *
@@ -448,3 +448,7 @@ export function asarPackageVersion(readAt: (offset: number, length: number) => B
     return null;
   }
 }
+
+
+
+

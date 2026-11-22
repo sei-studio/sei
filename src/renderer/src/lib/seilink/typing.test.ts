@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+﻿import { describe, expect, it, vi } from 'vitest';
 import {
   CHAR_IN_MS,
   DOT_STEP_MS,
@@ -17,22 +17,22 @@ import {
 import { FAILURE_LINE, LINE_DWELL_MS, STATUS_LINES, SUCCESS_LINE, lineDwell } from './worldLink';
 import { DICTIONARIES } from '../i18n';
 
-const LINE = 'Initializing WorldLink…';
+const LINE = 'Initializing WorldLinkâ€¦';
 
 describe('splitEllipsis', () => {
   it('takes a trailing ellipsis off, in the forms the catalogs use', () => {
-    expect(splitEllipsis('Waiting for response…')).toEqual({ body: 'Waiting for response', dot: '.' });
+    expect(splitEllipsis('Waiting for responseâ€¦')).toEqual({ body: 'Waiting for response', dot: '.' });
     expect(splitEllipsis('Waiting for response...')).toEqual({ body: 'Waiting for response', dot: '.' });
-    expect(splitEllipsis('応答を待っています…')).toEqual({ body: '応答を待っています', dot: '.' });
-    expect(splitEllipsis('正在等待回应……')).toEqual({ body: '正在等待回应', dot: '.' });
-    expect(splitEllipsis('応答を待っています。。。')).toEqual({ body: '応答を待っています', dot: '。' });
-    expect(splitEllipsis('Loading⋯ ')).toEqual({ body: 'Loading', dot: '.' });
+    expect(splitEllipsis('å¿œç­”ã‚’å¾…ã£ã¦ã„ã¾ã™â€¦')).toEqual({ body: 'å¿œç­”ã‚’å¾…ã£ã¦ã„ã¾ã™', dot: '.' });
+    expect(splitEllipsis('æ­£åœ¨ç­‰å¾…å›žåº”â€¦â€¦')).toEqual({ body: 'æ­£åœ¨ç­‰å¾…å›žåº”', dot: '.' });
+    expect(splitEllipsis('å¿œç­”ã‚’å¾…ã£ã¦ã„ã¾ã™ã€‚ã€‚ã€‚')).toEqual({ body: 'å¿œç­”ã‚’å¾…ã£ã¦ã„ã¾ã™', dot: 'ã€‚' });
+    expect(splitEllipsis('Loadingâ‹¯ ')).toEqual({ body: 'Loading', dot: '.' });
   });
 
   it('leaves a line without one alone', () => {
     expect(splitEllipsis('Signal received.')).toEqual({ body: 'Signal received.', dot: null });
     expect(splitEllipsis('Done..')).toEqual({ body: 'Done..', dot: null });
-    expect(splitEllipsis('A… then more')).toEqual({ body: 'A… then more', dot: null });
+    expect(splitEllipsis('Aâ€¦ then more')).toEqual({ body: 'Aâ€¦ then more', dot: null });
   });
 });
 
@@ -44,13 +44,13 @@ describe('typeUnits', () => {
   });
 
   it('keeps emoji, flags, combined letters and CJK whole', () => {
-    expect(typeUnits('Hi 👋🏽!')).toEqual(['H', 'i', ' ', '👋🏽', '!']);
-    expect(typeUnits('🇯🇵 👨‍👩‍👧')).toEqual(['🇯🇵', ' ', '👨‍👩‍👧']);
+    expect(typeUnits('Hi ðŸ‘‹ðŸ½!')).toEqual(['H', 'i', ' ', 'ðŸ‘‹ðŸ½', '!']);
+    expect(typeUnits('ðŸ‡¯ðŸ‡µ ðŸ‘¨â€ðŸ‘©â€ðŸ‘§')).toEqual(['ðŸ‡¯ðŸ‡µ', ' ', 'ðŸ‘¨â€ðŸ‘©â€ðŸ‘§']);
     expect(typeUnits('Cafe\u0301')).toEqual(['C', 'a', 'f', 'e\u0301']);
-    expect(typeUnits('正在初始化 WorldLink')).toEqual(['正', '在', '初', '始', '化', ' ', 'W', 'o', 'r', 'l', 'd', 'L', 'i', 'n', 'k']);
-    expect(typeUnits('応答を待っています')).toHaveLength(9);
-    expect(typeUnits('𠮷野家')).toEqual(['𠮷', '野', '家']);
-    for (const s of ['Hi 👋🏽!', '🇯🇵 👨‍👩‍👧', 'WorldLinkを初期化しています', '正在初始化 WorldLink', 'Cafe\u0301']) expect(typeUnits(s).join('')).toBe(s);
+    expect(typeUnits('æ­£åœ¨åˆå§‹åŒ– WorldLink')).toEqual(['æ­£', 'åœ¨', 'åˆ', 'å§‹', 'åŒ–', ' ', 'W', 'o', 'r', 'l', 'd', 'L', 'i', 'n', 'k']);
+    expect(typeUnits('å¿œç­”ã‚’å¾…ã£ã¦ã„ã¾ã™')).toHaveLength(9);
+    expect(typeUnits('ð ®·é‡Žå®¶')).toEqual(['ð ®·', 'é‡Ž', 'å®¶']);
+    for (const s of ['Hi ðŸ‘‹ðŸ½!', 'ðŸ‡¯ðŸ‡µ ðŸ‘¨â€ðŸ‘©â€ðŸ‘§', 'WorldLinkã‚’åˆæœŸåŒ–ã—ã¦ã„ã¾ã™', 'æ­£åœ¨åˆå§‹åŒ– WorldLink', 'Cafe\u0301']) expect(typeUnits(s).join('')).toBe(s);
   });
 
   it('falls back to code points without Intl.Segmenter (surrogate pairs stay whole)', async () => {
@@ -59,8 +59,8 @@ describe('typeUnits', () => {
     delete (Intl as unknown as { Segmenter?: unknown }).Segmenter;
     try {
       const fresh = await import('./typing');
-      expect(fresh.typeUnits('a😀b𠮷')).toEqual(['a', '😀', 'b', '𠮷']);
-      expect(fresh.typedAt('ab…', 10_000)).toMatchObject({ typed: 'a', fresh: 'b', rest: '', done: true });
+      expect(fresh.typeUnits('aðŸ˜€bð ®·')).toEqual(['a', 'ðŸ˜€', 'b', 'ð ®·']);
+      expect(fresh.typedAt('abâ€¦', 10_000)).toMatchObject({ typed: 'a', fresh: 'b', rest: '', done: true });
     } finally {
       (Intl as unknown as { Segmenter?: unknown }).Segmenter = Seg;
       vi.resetModules();
@@ -97,14 +97,14 @@ describe('typeDelays', () => {
     const letters = d.filter((_, i) => /\p{L}/u.test(u[i]));
     expect(avg(spaces)).toBeGreaterThan(avg(letters));
     expect(d[u.indexOf(',')]).toBeGreaterThan(Math.max(...letters));
-    const cjk = typeUnits('同期中、しばらく。');
+    const cjk = typeUnits('åŒæœŸä¸­ã€ã—ã°ã‚‰ãã€‚');
     const dc = typeDelays(cjk);
-    expect(dc[cjk.indexOf('、')]).toBeGreaterThanOrEqual(TYPE_CHAR_MS - TYPE_SPREAD_MS + TYPE_PUNCT_MS);
+    expect(dc[cjk.indexOf('ã€')]).toBeGreaterThanOrEqual(TYPE_CHAR_MS - TYPE_SPREAD_MS + TYPE_PUNCT_MS);
   });
 
   it('differs between lines but not between runs', () => {
     expect(typeDelays(typeUnits('Syncing world clocks'))).not.toEqual(typeDelays(typeUnits('Syncing world clockz')).slice(0));
-    expect(typeLength('Syncing world clocks…')).toBe(typeLength('Syncing world clocks…'));
+    expect(typeLength('Syncing world clocksâ€¦')).toBe(typeLength('Syncing world clocksâ€¦'));
   });
 
   it('types a very long line faster, within TYPE_MAX_MS', () => {
@@ -145,15 +145,15 @@ describe('typedAt', () => {
   });
 
   it('types CJK and emoji one whole grapheme at a time', () => {
-    const text = '同期中 🇯🇵👋🏽…';
-    const body = '同期中 🇯🇵👋🏽';
+    const text = 'åŒæœŸä¸­ ðŸ‡¯ðŸ‡µðŸ‘‹ðŸ½â€¦';
+    const body = 'åŒæœŸä¸­ ðŸ‡¯ðŸ‡µðŸ‘‹ðŸ½';
     const seen: string[] = [];
     for (let age = 0; age < 3000; age += 5) {
       const s = typedAt(text, age);
       expect(s.typed + s.fresh + s.rest).toBe(body);
       if (s.fresh && seen[seen.length - 1] !== s.fresh) seen.push(s.fresh);
     }
-    expect(seen).toEqual(['同', '期', '中', ' ', '🇯🇵', '👋🏽']);
+    expect(seen).toEqual(['åŒ', 'æœŸ', 'ä¸­', ' ', 'ðŸ‡¯ðŸ‡µ', 'ðŸ‘‹ðŸ½']);
     expect(typedAt(text, 3000)).toMatchObject({ done: true, dot: '.' });
   });
 
@@ -196,8 +196,12 @@ describe('typing fits every line', () => {
   it('every status line in every catalog that ends in an ellipsis is found', () => {
     const catalogs = Object.values(DICTIONARIES).filter(Boolean) as Array<Record<string, string>>;
     for (const l of STATUS_LINES) {
-      if (!l.key.endsWith('…')) continue;
+      if (!l.key.endsWith('â€¦')) continue;
       for (const cat of catalogs) if (cat[l.key]) expect(splitEllipsis(cat[l.key]).dot, cat[l.key]).not.toBeNull();
     }
   });
 });
+
+
+
+

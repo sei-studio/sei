@@ -1,19 +1,19 @@
-/**
+﻿/**
  * Wizard state persistence.
  *
  * Persisted JSON at `<userData>/skin-setup-state.json`. Records:
- *   - hasRunOnce — true after the first successful wizard run; gates the
- *     "first launch — finish setup" modal vs the settings-reopened flow
- *   - enabledInstallIds — which McInstall.id values the user previously
+ *   - hasRunOnce â€” true after the first successful wizard run; gates the
+ *     "first launch â€” finish setup" modal vs the settings-reopened flow
+ *   - enabledInstallIds â€” which McInstall.id values the user previously
  *     ticked. mcInstallScan cross-references this to set `sei_enabled` on
  *     each detected install so the UI re-renders the correct rows-selected
  *     state on re-detect
- *   - lastRunAt — ISO timestamp, surfaced in the settings UI ("last run …")
- *   - lastSkinServerPort — the port-drift detector compares this to the
+ *   - lastRunAt â€” ISO timestamp, surfaced in the settings UI ("last run â€¦")
+ *   - lastSkinServerPort â€” the port-drift detector compares this to the
  *     current skinServer.port; mismatch means an installed CSL config
  *     points at a stale loopback port and needs rewriting
  *
- * Atomic writes via `atomicWrite` + `withFileLock` — same discipline as
+ * Atomic writes via `atomicWrite` + `withFileLock` â€” same discipline as
  * characterStore.ts. Defensive parsing: any structural defect (missing
  * field, wrong type, non-JSON) resets to defaults rather than crashing
  * boot. Forward-compat: unknown fields in the JSON are silently dropped
@@ -37,7 +37,7 @@ const logger = {
 const SCHEMA_VERSION = 1 as const;
 
 /* -------------------------------------------------------------------------- */
-/*  Link manifest (260518-o1k T6) — persisted per vanilla install              */
+/*  Link manifest (260518-o1k T6) â€” persisted per vanilla install              */
 /* -------------------------------------------------------------------------- */
 
 /**
@@ -68,7 +68,7 @@ export interface LinkManifestEntry {
 export interface LinkManifestExclusion {
   /** Basename of the mod JAR that was excluded. */
   name: string;
-  /** Why it was excluded — surfaced in the wizard UI on the done step. */
+  /** Why it was excluded â€” surfaced in the wizard UI on the done step. */
   reason: 'mc-version-mismatch' | 'unparseable' | 'no-metadata' | 'read-error';
   /** Declared MC range, when known (only for mc-version-mismatch). */
   declaredMc?: string;
@@ -82,7 +82,7 @@ export interface LinkManifest {
 }
 
 /**
- * Extended wizard state — the publicly typed WizardState (in shared/ipc)
+ * Extended wizard state â€” the publicly typed WizardState (in shared/ipc)
  * is the original 5-field shape; this main-side extension carries the
  * link-manifest map. We keep it main-side because the renderer never
  * needs the persisted manifest directly (it receives modLinkSummary on
@@ -108,7 +108,7 @@ function defaults(): WizardStateExtended {
   };
 }
 
-/** Allowed exclusion reasons — matches LinkManifestExclusion.reason. */
+/** Allowed exclusion reasons â€” matches LinkManifestExclusion.reason. */
 const EXCLUSION_REASONS = new Set([
   'mc-version-mismatch',
   'unparseable',
@@ -116,7 +116,7 @@ const EXCLUSION_REASONS = new Set([
   'read-error',
 ]);
 
-/** Allowed link strategies — matches LinkManifestEntry.strategy. */
+/** Allowed link strategies â€” matches LinkManifestEntry.strategy. */
 const LINK_STRATEGIES = new Set(['link', 'symlink', 'copy']);
 
 /**
@@ -179,7 +179,7 @@ function coerceLinkManifest(raw: unknown): LinkManifest {
 /**
  * Coerce an arbitrary JSON-parsed value into a valid WizardStateExtended,
  * falling back to defaults for any field that isn't strictly typed
- * correctly. Defensive — never throws on malformed input.
+ * correctly. Defensive â€” never throws on malformed input.
  *
  * Backward-compat: pre-260518-o1k state files had no `linkManifests`
  * field; coerce just defaults to `{}` in that case.
@@ -188,26 +188,26 @@ function coerce(raw: unknown): WizardStateExtended {
   if (!raw || typeof raw !== 'object') return defaults();
   const obj = raw as Record<string, unknown>;
 
-  // hasRunOnce: must be boolean; anything else (including undefined) → false.
+  // hasRunOnce: must be boolean; anything else (including undefined) â†’ false.
   const hasRunOnce = obj.hasRunOnce === true;
 
-  // enabledInstallIds: filter to string entries; non-arrays → [].
+  // enabledInstallIds: filter to string entries; non-arrays â†’ [].
   const enabledInstallIds = Array.isArray(obj.enabledInstallIds)
     ? obj.enabledInstallIds.filter((x): x is string => typeof x === 'string')
     : [];
 
-  // lastRunAt: must be a non-empty string (ISO timestamp); anything else → null.
+  // lastRunAt: must be a non-empty string (ISO timestamp); anything else â†’ null.
   const lastRunAt =
     typeof obj.lastRunAt === 'string' && obj.lastRunAt !== '' ? obj.lastRunAt : null;
 
-  // lastSkinServerPort: must be a finite integer in [1, 65535]; else → null.
+  // lastSkinServerPort: must be a finite integer in [1, 65535]; else â†’ null.
   const port = obj.lastSkinServerPort;
   const lastSkinServerPort =
     typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535
       ? port
       : null;
 
-  // linkManifests: optional map of installId → LinkManifest. Each value
+  // linkManifests: optional map of installId â†’ LinkManifest. Each value
   // goes through coerceLinkManifest; non-object inputs collapse to {}.
   let linkManifests: Record<string, LinkManifest> = {};
   if (obj.linkManifests && typeof obj.linkManifests === 'object') {
@@ -230,7 +230,7 @@ function coerce(raw: unknown): WizardStateExtended {
 
 /**
  * Read `<userData>/skin-setup-state.json`. Returns defaults on ENOENT or any
- * parse failure (corrupted file → don't crash boot, just reset).
+ * parse failure (corrupted file â†’ don't crash boot, just reset).
  */
 export async function loadWizardState(): Promise<WizardStateExtended> {
   const target = paths.wizardStatePath();
@@ -262,7 +262,7 @@ export async function loadWizardState(): Promise<WizardStateExtended> {
  * quick succession; the lock prevents interleaved rename(2) ordering bugs).
  */
 export async function saveWizardState(next: WizardStateExtended): Promise<void> {
-  // Coerce here too — if a caller hand-rolled a WizardState literal with a
+  // Coerce here too â€” if a caller hand-rolled a WizardState literal with a
   // bad type, we'd rather silently normalize than persist garbage.
   const validated = coerce(next);
   const target = paths.wizardStatePath();
@@ -271,3 +271,7 @@ export async function saveWizardState(next: WizardStateExtended): Promise<void> 
     await atomicWrite(target, JSON.stringify(validated, null, 2) + '\n');
   });
 }
+
+
+
+

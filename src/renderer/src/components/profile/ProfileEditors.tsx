@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ProfileEditors (261119): the inline editors on your own companion's
  * profile tabs. The tabs are the edit surface; the old Edit companion popup
  * (its own sidebar of Basic / Appearance / Voice / Persona / Games / Danger)
@@ -249,7 +249,7 @@ function SaveBar({
   );
 }
 
-// ── Voice ─────────────────────────────────────────────────────────────────
+// â”€â”€ Voice â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * One voice save on top of the stored row (the popup's persistVoiceSettings).
@@ -361,7 +361,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
           }}
           onSave={() => void onSave()}
           saveLabel={t('Save')}
-          busyLabel={t('Saving…')}
+          busyLabel={t('Savingâ€¦')}
         />
       }
     >
@@ -404,7 +404,7 @@ export function VoiceEditor({ character, onAction, onTipOpen }: EditorProps): Re
   );
 }
 
-// ── Name and description ──────────────────────────────────────────────────
+// â”€â”€ Name and description â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * One name + description save (the popup's persistBasic). Throws 'empty_name'
@@ -493,7 +493,7 @@ export function AboutEditor({
           }}
           onSave={() => void onSave()}
           saveLabel={t('Save')}
-          busyLabel={t('Saving…')}
+          busyLabel={t('Savingâ€¦')}
         />
       }
     >
@@ -529,7 +529,7 @@ export function AboutEditor({
   );
 }
 
-// ── Persona ───────────────────────────────────────────────────────────────
+// â”€â”€ Persona â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** A persona draft kept past leaving the page (it is never applied on the way out). */
 interface PersonaDraft {
@@ -700,7 +700,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
             onDiscard={discard}
             onSave={() => void regenerate()}
             saveLabel={t('Regenerate')}
-            busyLabel={t('Regenerating…')}
+            busyLabel={t('Regeneratingâ€¦')}
             saveKind="accent"
             saveDisabled={source.trim() === ''}
           />
@@ -713,7 +713,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
             onDiscard={discard}
             onSave={() => void saveAdvanced()}
             saveLabel={t('Save')}
-            busyLabel={regenerating ? t('Regenerating…') : t('Saving…')}
+            busyLabel={regenerating ? t('Regeneratingâ€¦') : t('Savingâ€¦')}
           />
         )
       }
@@ -754,7 +754,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
               {t('Keep editing')}
             </Button>
             <Button kind="accent" size="sm" onClick={() => void confirmSwitchToStandard()} disabled={busy}>
-              {regenerating ? t('Regenerating…') : t('Regenerate & switch')}
+              {regenerating ? t('Regeneratingâ€¦') : t('Regenerate & switch')}
             </Button>
           </div>
         </div>
@@ -808,7 +808,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
       {expansion ? (
         <div className={styles.field} aria-live="polite">
           <span className={styles.label}>
-            {t('Expanding persona: {label} · {pct}%', { label: expansion.label, pct: expansion.pct })}
+            {t('Expanding persona: {label} Â· {pct}%', { label: expansion.label, pct: expansion.pct })}
           </span>
           <PercentBar
             value={expansion.pct}
@@ -827,7 +827,7 @@ export function PersonaEditor({ character, onAction, onTipOpen }: EditorProps): 
   );
 }
 
-// ── Chess ─────────────────────────────────────────────────────────────────
+// â”€â”€ Chess â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One chess save: write (or clear, for Auto) metadata.chess. False = the companion is no longer stored. */
 async function saveChess(characterId: string, draft: ChessDraft): Promise<boolean> {
@@ -904,7 +904,7 @@ export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): Re
           }}
           onSave={() => void onSave()}
           saveLabel={t('Save')}
-          busyLabel={t('Saving…')}
+          busyLabel={t('Savingâ€¦')}
         />
       }
     >
@@ -973,3 +973,7 @@ export function ChessEditor({ character, onAction, onTipOpen }: EditorProps): Re
     </EditorBlock>
   );
 }
+
+
+
+

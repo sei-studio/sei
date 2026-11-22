@@ -1,16 +1,16 @@
-/**
- * LogsPanel — virtualized terminal-style log viewer.
+﻿/**
+ * LogsPanel â€” virtualized terminal-style log viewer.
  *
  * Reads from `useDataStore.logs` (5000-line ring buffer; D-53). Sources:
- *  - Color tagging via `tagLog(message)` (UI-SPEC §Logs panel D-67).
+ *  - Color tagging via `tagLog(message)` (UI-SPEC Â§Logs panel D-67).
  *  - Hand-rolled virtualization with a 200-line render window for lists
- *    > 500 lines (UI-SPEC §Defaults — "Hand-rolled windowing with
+ *    > 500 lines (UI-SPEC Â§Defaults â€” "Hand-rolled windowing with
  *    IntersectionObserver + a 200-line render window").
  *  - Scroll-pinned: when the user is within PIN_THRESHOLD px of the bottom,
  *    new lines auto-scroll. Scroll up >PIN_THRESHOLD pauses autoscroll and
- *    surfaces a "↓ N new lines" pill that resumes on click.
- *  - "Copy all" Button (ghost sm) → navigator.clipboard.writeText.
- *  - "Pause autoscroll" toggle (quiet sm) — label flips to "Resume" when
+ *    surfaces a "â†“ N new lines" pill that resumes on click.
+ *  - "Copy all" Button (ghost sm) â†’ navigator.clipboard.writeText.
+ *  - "Pause autoscroll" toggle (quiet sm) â€” label flips to "Resume" when
  *    paused per Copywriting Contract.
  *  - When `useDataStore.dropped > 0`, render a muted footer line.
  *
@@ -19,14 +19,14 @@
  *
  * Note on virtualization implementation: we use scrollTop / approximate line
  * height to compute the visible window rather than per-line IntersectionObserver
- * sentinels — same effect (only render a 200-line window), but cheaper to set
+ * sentinels â€” same effect (only render a 200-line window), but cheaper to set
  * up and correct on dynamic content. The "IntersectionObserver-based" wording
- * in UI-SPEC §Defaults is a reference to the technique class (windowed render
+ * in UI-SPEC Â§Defaults is a reference to the technique class (windowed render
  * driven by a scroll observer); per the deferred-items policy, this is the
  * pragmatic implementation that satisfies the contract without pulling in
  * react-virtuoso.
  *
- * Source: 04-UI-SPEC.md §Logs panel + §Defaults; D-53.
+ * Source: 04-UI-SPEC.md Â§Logs panel + Â§Defaults; D-53.
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -41,7 +41,7 @@ const PIN_THRESHOLD = 80;
 const APPROX_LINE_PX = 18;
 
 export function LogsPanel(): React.ReactElement {
-  // Store-level subscription per RESEARCH §Resolved Q5 — useDataStore lives
+  // Store-level subscription per RESEARCH Â§Resolved Q5 â€” useDataStore lives
   // outside this component so log lines aren't dropped on navigation.
   const logs = useDataStore((s) => s.logs);
   const dropped = useDataStore((s) => s.dropped);
@@ -167,9 +167,13 @@ export function LogsPanel(): React.ReactElement {
       ) : null}
       {!autoScroll && newSinceScroll > 0 ? (
         <button type="button" className={styles.newLinesPill} onClick={resumeScroll}>
-          ↓ {newSinceScroll} new lines
+          â†“ {newSinceScroll} new lines
         </button>
       ) : null}
     </div>
   );
 }
+
+
+
+

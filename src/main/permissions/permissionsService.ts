@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OS permission flows, electron side (260929). See osPermissions.ts for the
  * pure parts and shared/permissionsIpc.ts for the contract.
  *
@@ -134,3 +134,7 @@ export function registerPermissionHandlers(): void {
     relaunchForResume(resume);
   });
 }
+
+
+
+

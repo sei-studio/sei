@@ -1,4 +1,4 @@
-# Draw! minigame (260727)
+﻿# Draw! minigame (260727)
 
 Turn-based sketch guessing, launched from the "Play together" tiles. **Mutually
 exclusive with a Minecraft summon and with chess** per character (the shared
@@ -51,7 +51,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   `"Round 1 of 3. Your turn to draw: horn."` did two things at once: handed the
   GUESSER the answer, and read as second-person instruction to the model, which
   is why the character believed it had drawn the player's words and
-  misattributed whole rounds. Fixed with `DrawChatMessage.modelText` — an
+  misattributed whole rounds. Fixed with `DrawChatMessage.modelText` â€” an
   optional third-person, secret-free wording that `renderChat` prefers and the
   renderer ignores. **Any new system line written in the second person, or
   naming a live word, MUST carry one.** `drawPrompts.test.ts` pins this. The
@@ -63,7 +63,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   thing in it: the last text the model read before answering was chat from the
   PREVIOUS turn. Live capture: the character guessed the player's drawing
   correctly, and its turn-end line was "hehe ok you're reading these too fast,
-  that's not fair" — a drawer's frame, continued straight out of the banter
+  that's not fair" â€” a drawer's frame, continued straight out of the banter
   sitting at the bottom of the prompt, while `YOU GOT IT` sat 2000 tokens above
   it. `contextSections()` now emits recap + chat (chronological) FIRST, and each
   block closes on one line naming the role ("Right now: you are GUESSING..."),
@@ -125,7 +125,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   thread it re-starts the picture every hop, because "you have drawn 4 strokes"
   says nothing about WHERE. The `pen` tool is adapted from tldraw's
   agent-template `PenAction` (MIT), narrowed to `{intent, points, style,
-  closed}` — no colour, no fill, no ids, since black-at-one-thickness is all
+  closed}` â€” no colour, no fill, no ids, since black-at-one-thickness is all
   either player gets.
 - **The drawer gets EYES, rationed (260728).** It used to draw blind: the
   guesser was sent a real snapshot every few seconds and the drawer got the
@@ -151,14 +151,14 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   a DIFFERENT way instead of the same picture twice. The engine also wipes a
   failed picture itself (auto-clear: `AUTO_CLEAR_WRONG_GUESSES` 6 wrong lines,
   once per turn, only past `AUTO_CLEAR_MIN_STROKES` and with
-  `AUTO_CLEAR_MIN_LEFT_MS` left) — waiting for the model to decide to clear was
+  `AUTO_CLEAR_MIN_LEFT_MS` left) â€” waiting for the model to decide to clear was
   measured optimistic. A text-only response on a BLANK canvas (cleared or
   never-drawn) gets a bounded corrective hop (`blankNudges` <= 2, reset per
   wipe) folded into the next user note before the turn may park.
 - **The drawing turn has an idle backup (260729, from the web).** A parked
   runner (done, or out of strokes) used to wake ONLY on player chat, so a
   silent player meant the character sat on a three-stroke picture for the rest
-  of the turn — the "no changes to drawing for 30 seconds" bug. The AI turn's
+  of the turn â€” the "no changes to drawing for 30 seconds" bug. The AI turn's
   free poll slot hosts `tickDrawIdle`: after `DRAW_IDLE_NUDGE_MS` (30s) of
   quiet (not inside the last `DRAW_IDLE_FLOOR_MS` 20s), the runner re-enters
   with `idleNudge`, which bypasses the park conditions for exactly one hop,
@@ -183,11 +183,11 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   can never leak.
 - **Chat routing + voice calls (260729).** While a Draw! game is live
   (`drawing`/`turn-end`), `chat:send` routes into `drawService.handlePlayerChat`
-  exactly as chess does — which is also how a line DICTATED on a live voice
+  exactly as chess does â€” which is also how a line DICTATED on a live voice
   call lands in the game as a guess. The reply comes back over the draw:state
   push, so the handler returns `{replies: [], streamed: true}`. On a live call
   every line the character says in the game is additionally pushed as a
-  `voice: true` chat message (`speakOnCall`) — spoken by the renderer, never
+  `voice: true` chat message (`speakOnCall`) â€” spoken by the renderer, never
   rendered, and deliberately NOT persisted (the per-line game chat stays out of
   the transcript). Calls are NOT exclusive with games: `isGameSurfaceOpen`
   (callLaunch.ts) and CallMiniBar's `gameActive` both count Draw! and backseat,
@@ -195,7 +195,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   fullscreen call view.
 - **Game chrome (260729).** The Draw! page carries the same universal bottom
   button row as the chat-hosted surfaces: `GameChromeRow`, extracted from
-  GameSurface — fullscreen toggle, the call cluster (or the phone chip that
+  GameSurface â€” fullscreen toggle, the call cluster (or the phone chip that
   starts a call when none is running), and the unified end "x" with the
   end-game confirm. The old top-right corner fullscreen/x buttons are gone.
 - **Mid-turn hops re-state the address rule (260728).** The drawing turn's
@@ -208,7 +208,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   say `never their name or "they"`.
 - **Humanization** (`strokeHumanize.ts`) resamples, offsets along the normal by
   smooth noise, overshoots the end, and samples playback timing. It is seeded
-  from the stroke id and therefore DETERMINISTIC — the gallery and the exported
+  from the stroke id and therefore DETERMINISTIC â€” the gallery and the exported
   PNG must redraw exactly what the player watched appear.
 - **Streamed playback:** strokes leave on `draw:ai-stroke` as their tool_use
   block completes, so the first stroke is on the player's canvas seconds before
@@ -246,7 +246,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
     the surface ROOT (not its own parent) so the rules, chat box and buttons
     track the canvas scale instead of drifting onto a static fallback. Nothing
     may use `text-decoration: underline` (use `SquiggleUnderline`), a CSS
-    border, or a native control that draws its own track — an
+    border, or a native control that draws its own track â€” an
     `<input type=range>` is why the round chooser is gone. `-webkit-text-stroke`
     corrects the TITLE only: applying it to body text was tried and reverted,
     because at 22px it does not read as a heavier pen, it reads as bold.
@@ -270,7 +270,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
     rectangle is the one shape this surface does not draw. It is always mounted
     and revealed with opacity, because `:hover` cannot mount a component and
     re-seeding the shape per pointer-entry makes it crawl. Anything that must
-    stay readable on top of it needs `.btnLabel` — a bare text node has no box
+    stay readable on top of it needs `.btnLabel` â€” a bare text node has no box
     to raise above an absolutely-positioned sibling. On a winning guess the
     swipe sits behind the WORD, not the sentence (260728): main locates it
     (`findWordMatch` in `guessMatch.ts`, the same token walk as `matchesWord`
@@ -278,7 +278,7 @@ exclusive with a Minecraft summon and with chess** per character (the shared
     whole-line swipe survives only as the fallback when the span is missing.
 - **The saved PNG is a square share tile,** not a screenshot of the page: a
   big centred lowercase `draw!` on the yellow highlighter blob (260729; the
-  web tile says `draw! with sui` because it fronts one character — the app
+  web tile says `draw! with sui` because it fronts one character â€” the app
   tile stays just `draw!`), a row per player with the art scaled to whatever
   fits 2 x rounds cells, `sei.gg/draw` bottom right, and NO score (the same
   reasoning that keeps results out of the play row). Cell size is the smaller
@@ -288,18 +288,18 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   flex row hugging height-driven art (a 1fr grid left a moat of slack). The
   bug that motivated the redesign: the gallery reused the game view's `.score`
   class, whose `height: 100%` made a one-line paragraph swallow the page and
-  starve the `flex: 1 1 0` rows to zero — the "empty gallery". It previously rendered a magnified crop of each
+  starve the `flex: 1 1 0` rows to zero â€” the "empty gallery". It previously rendered a magnified crop of each
   drawing's corner: `paintStrokes` resets the transform outright, so a caller
   that translated first had its translate discarded and got clipped to where it
   meant to paint. Pass `PaintOpts.translate` instead of translating first.
   "Save to Downloads" confirms with an in-page popup (260728): "Saved!", the tile
   itself, and an x button. It is anchored to `.gallery` (position: relative) so
   the paper-toned backdrop never covers the IconRail, and it opens only after
-  the file is actually on disk — `useDrawStore.saveGallery` resolves the
+  the file is actually on disk â€” `useDrawStore.saveGallery` resolves the
   written path (null on failure) precisely so the popup cannot claim a save
   that did not happen.
 - **A single drawing saves too (260801, ported from the web).** Clicking a
-  gallery cell composes `composeCellPng` — the same square sheet, pen and
+  gallery cell composes `composeCellPng` â€” the same square sheet, pen and
   credit line as the game tile, carrying ONE drawing large with the caption
   "according to {name}, this is a {word}." on two lines, the word on the
   highlighter. The game tile is a set of thumbnails, so the one round somebody
@@ -308,9 +308,13 @@ exclusive with a Minecraft summon and with chess** per character (the shared
   localized but with `{word}` still in it (the composer has to know where the
   word sits to put the highlighter behind it alone, and `t` lives in React);
   and the drawer is named, not "you", because the file is made to leave this
-  machine — the same reason the exported game tile's rows use real names while
+  machine â€” the same reason the exported game tile's rows use real names while
   the on-screen sheet says "you". The popup is now shared: the whole-game save
   opens it as a confirmation ("Saved!"), a clicked cell opens it as a preview
   with the save still to offer. An empty round is inert, not a button that
   does nothing, and the affordance on a played one is the cursor alone (a
   hover tint would be a second ink).
+
+
+
+

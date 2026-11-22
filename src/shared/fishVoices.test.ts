@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   FISH_TTS_MODEL,
   FISH_VOICES,
@@ -19,8 +19,8 @@ describe('Fish Audio voice table', () => {
     expect(pickFishVoice('male', 'en').name).toBe('ivish');
     expect(pickFishVoice('female', 'ja').name).toBe('Akari');
     expect(pickFishVoice('male', 'ja').name).toBe('Satoru');
-    expect(pickFishVoice('female', 'zh').name).toBe('桃桃');
-    expect(pickFishVoice('male', 'zh').name).toBe('温柔沉稳男声');
+    expect(pickFishVoice('female', 'zh').name).toBe('æ¡ƒæ¡ƒ');
+    expect(pickFishVoice('male', 'zh').name).toBe('æ¸©æŸ”æ²‰ç¨³ç”·å£°');
     // Region tags and case do not matter.
     expect(pickFishVoice('male', 'zh-CN').id).toBe(FISH_VOICES.zh.male.id);
     expect(pickFishVoice('female', 'JA_jp').id).toBe(FISH_VOICES.ja.female.id);
@@ -97,3 +97,7 @@ describe('parseFishVoiceRef', () => {
     expect(parseFishVoiceRef(42)).toBeNull();
   });
 });
+
+
+
+

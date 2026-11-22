@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Screenshots of the Roblox backseat tile flow (260929), for review.
  *
  *   npx tsx scripts/roblox-backseat-shots.ts [--url http://127.0.0.1:5173] [--out dir]
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const box = page.getByRole('textbox');
   await box.fill('https://www.roblox.com/games/4924922222/Brookhaven-RP');
   await box.press('Enter');
-  await page.getByText('Brookhaven 🏡RP').first().waitFor({ timeout: 15_000 });
+  await page.getByText('Brookhaven ðŸ¡RP').first().waitFor({ timeout: 15_000 });
   await page.waitForTimeout(1200);
   await shot(page, '4-pick-link');
 
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   await open(page, 'intro', 'zh');
   await page.waitForTimeout(600);
   await shot(page, '8-zh-intro');
-  await page.getByRole('button', { name: '继续' }).click();
+  await page.getByRole('button', { name: 'ç»§ç»­' }).click();
   await page.waitForTimeout(2500);
   await shot(page, '9-zh-pick');
 
@@ -110,3 +110,7 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+
+
+

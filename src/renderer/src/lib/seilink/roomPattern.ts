@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pattern layers for the room renderer (261105, room catalog). The maths is
  * shared (src/shared/seilinkPatterns.ts); this file only caches canvases.
  *
@@ -149,3 +149,7 @@ export function clearPatternCache(): void {
   colourCache.clear();
   frameIds = new WeakMap();
 }
+
+
+
+

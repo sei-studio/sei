@@ -1,4 +1,4 @@
-// 261101 (pass 35): furnaces she has seen this session, for when she is
+﻿// 261101 (pass 35): furnaces she has seen this session, for when she is
 // holding something to smelt and none is in `nearby blocks` any more.
 //
 // smelt_iron benchmark: her opening gather walked her ~20 blocks from the
@@ -71,3 +71,7 @@ export function seenStationLine(bot, groups, inv, now = Date.now()) {
   if (!best) return null
   return `${best.name} you saw earlier: @${best.p.x},${best.p.y},${best.p.z} (${Math.round(best.d)} blocks away)`
 }
+
+
+
+

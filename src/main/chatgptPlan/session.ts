@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the ChatGPT-plan session manager. Main owns the tokens
  * and the refresh; everything else (main's LLM provider, the bots) asks it
  * for a fresh ACCESS token and never sees the refresh token.
@@ -66,7 +66,7 @@ import {
 } from './oauth';
 import type { CallbackListener } from './loopback';
 
-// ─── Stored shape ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Stored shape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** One registration's credential record (the docs' local credential file). */
 export interface StoredAccount {
@@ -162,7 +162,7 @@ export function accountIdOf(clientId: string, subject: string): string {
 const isSignedIn = (a: StoredAccount): boolean => !!a.access_token && !!a.refresh_token;
 const planEnabled = (a: StoredAccount): boolean => a.scopes.includes(CHATGPT_PLAN_SCOPE);
 
-// ─── Errors handed to providers ───────────────────────────────────────────
+// â”€â”€â”€ Errors handed to providers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function chatgptError(code: string, detail: string, terminal: boolean): Error & { code: string; terminal: boolean } {
   const e = new Error(`${code}: ${detail}`) as Error & { code: string; terminal: boolean; retryable?: boolean };
@@ -190,7 +190,7 @@ const BLOCKED_DETAIL: Record<string, string> = {
   default: 'ChatGPT plan usage is not available for this account right now',
 };
 
-// ─── Deps + tuning ────────────────────────────────────────────────────────
+// â”€â”€â”€ Deps + tuning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ChatgptSessionDeps {
   vault: ChatgptVault;
@@ -416,7 +416,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     if (!keepIdToken) rec.id_token = null;
   }
 
-  // ── Sign-in ────────────────────────────────────────────────────────────
+  // â”€â”€ Sign-in â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function fail(reason: ChatgptSignInFailure, message?: string): ChatgptSignInResult {
     return { ok: false, reason, ...(message ? { message } : {}) };
@@ -748,7 +748,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     attempt?.abort();
   }
 
-  // ── Sign-out / switch ──────────────────────────────────────────────────
+  // â”€â”€ Sign-out / switch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function signOut(accountId?: string): Promise<ChatgptSignOutResult> {
     const d = await data();
@@ -811,7 +811,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     return status();
   }
 
-  // ── Tokens ─────────────────────────────────────────────────────────────
+  // â”€â”€ Tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function signedOut(detail: string): Error {
     return chatgptError('CHATGPT_SIGNED_OUT', `${detail}. Sign in with ChatGPT again in Settings.`, true);
@@ -981,7 +981,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     return status();
   }
 
-  // ── Models ─────────────────────────────────────────────────────────────
+  // â”€â”€ Models â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function fetchModels(token: string): Promise<Response> {
     return deps.fetchImpl(CHATGPT_MODELS_URL, {
@@ -1041,3 +1041,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     },
   };
 }
+
+
+
+

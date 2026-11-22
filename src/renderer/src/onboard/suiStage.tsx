@@ -1,5 +1,5 @@
-/**
- * suiStage — the pieces every Sui scene shares (260731).
+﻿/**
+ * suiStage â€” the pieces every Sui scene shares (260731).
  *
  * Sui started as the first-run ritual only (OnboardApp), so her typewriter,
  * her voice-over, the corner controls and the continue hint all lived inside
@@ -18,7 +18,7 @@ import { t, useLangStore, useT, type UiLanguage } from '../lib/i18n';
 import styles from './onboard.module.css';
 import { UI_LANGUAGES, UI_LANGUAGE_SHORT } from '@shared/uiLanguage';
 
-/* ── Voice preferences ───────────────────────────────────────────────────
+/* â”€â”€ Voice preferences â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Volume/mute for Sui's voice-over, persisted in localStorage (not config:
    it is a per-machine playback preference, and the scene must be able to read
    it synchronously on the first frame). */
@@ -64,7 +64,7 @@ export function useVoicePrefs(): {
   return { prefs, setPrefs, volume };
 }
 
-/* ── Sui's voice-over ────────────────────────────────────────────────────
+/* â”€â”€ Sui's voice-over â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    ENGLISH ONLY. Pre-generated clips bundled under
    public/voice/onboard/<clip>.en.mp3, PLAYED AS RECORDED. Chinese was tried on
    both flash_v2_5 and multilingual_v2 and cut (260730): her English voice
@@ -74,10 +74,10 @@ export function useVoicePrefs(): {
    touches playbackRate:
 
      1. ElevenLabs, voice tnVKC6NjwhdRxoQIfKue, model eleven_flash_v2_5,
-        stability 0.75, style 0, output mp3_44100_128 — and NO speed. That is
+        stability 0.75, style 0, output mp3_44100_128 â€” and NO speed. That is
         byte-for-byte the request a live call now sends.
      2. The SAME shifter a call uses: signalsmith-stretch, formantCompensation
-        off, semitones = 12*log2(rate) — i.e. lib/voice/pitchBus.ts attach(),
+        off, semitones = 12*log2(rate) â€” i.e. lib/voice/pitchBus.ts attach(),
         driven offline through a headless Chromium page. rate is Sui's
         voicePitch ON HER CLOUD ROW (1.25 at 260731b), not the code default.
      3. Encoded back to mp3 44100/128k mono, scaled down where the shift
@@ -88,7 +88,7 @@ export function useVoicePrefs(): {
    six "meet" lines through rubberband instead: it delivered the same 1.3 ratio
    to within measurement error and still did not sound like Sui, and two
    shifters across one script is an inconsistency with nothing to recommend it.
-   Baking at all is what makes the ritual independent of the Web Audio graph —
+   Baking at all is what makes the ritual independent of the Web Audio graph â€”
    the first-run scene plays before any call has warmed the shifter.
 
    WATCH THE TAKE, NOT JUST THE SHIFT. An exclamation followed by a question
@@ -105,7 +105,7 @@ export function useVoicePrefs(): {
    They used to work the other way: synthesized at speed 1/1.3 and played at
    playbackRate 1.3 with preservesPitch off, so the resample cancelled the
    slowdown. That is the trick deleted at 260731 (see shared/voicePitch.ts),
-   and it failed hardest exactly here — on the short exclamatory lines, where
+   and it failed hardest exactly here â€” on the short exclamatory lines, where
    the model had no room to act on `speed`. Measured on the old files: the
    long lines came back 1.24-1.36x slow as asked, but "AHHHHH!" came back 1.08x
    and "Hey. I'm Sui!" 1.05x, so both played back roughly 20% too fast.
@@ -139,11 +139,11 @@ export function useSuiVoice(clip: string | null, volume: number): void {
   }, [clip, uiLang]);
 }
 
-/* ── Corner controls (260730) ────────────────────────────────────────────
+/* â”€â”€ Corner controls (260730) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    One always-visible row in the top-right: [volume] [language] [close].
-   Chrome-less by design — bare ink on the sky, no boxes. Each control's
+   Chrome-less by design â€” bare ink on the sky, no boxes. Each control's
    dropdown opens on HOVER (only two languages, so a popup would be
-   overkill): the globe reveals two text items (EN / 中文), the speaker
+   overkill): the globe reveals two text items (EN / ä¸­æ–‡), the speaker
    reveals a minimal vertical volume slider. Clicking the speaker toggles
    mute; clicking a language flips the live UI language and persists
    config.ui_language so the rest of the scene, and every character created
@@ -172,9 +172,9 @@ function VolumeIcon({ muted }: { muted: boolean }): React.ReactElement {
 export function CornerControls(props: {
   prefs: VoicePrefs;
   onPrefs: (next: VoicePrefs) => void;
-  /** What the X does. Omitted → quit the app (the first-run ritual). */
+  /** What the X does. Omitted â†’ quit the app (the first-run ritual). */
   onClose?: () => void;
-  /** Accessible label for the X. Omitted → "Quit Sei". */
+  /** Accessible label for the X. Omitted â†’ "Quit Sei". */
   closeLabel?: string;
   /** Drop the X entirely, for the stretch of a scene there is no backing out
    * of. A button that is present but does nothing reads as broken, and one
@@ -224,7 +224,7 @@ export function CornerControls(props: {
               step={0.05}
               value={prefs.muted ? 0 : prefs.volume}
               aria-label={tt('Voice volume')}
-              // Dragging the slider always unmutes — a muted slider that
+              // Dragging the slider always unmutes â€” a muted slider that
               // moves silently reads as broken.
               onChange={(e) => onPrefs({ volume: Number(e.target.value), muted: false })}
             />
@@ -241,7 +241,7 @@ export function CornerControls(props: {
           className={styles.cornerBtn}
           aria-label={tt('Language')}
           aria-expanded={open === 'lang'}
-          // Click also toggles the menu — hover opens it, but a click that
+          // Click also toggles the menu â€” hover opens it, but a click that
           // does nothing reads as broken.
           onClick={() => setOpen((o) => (o === 'lang' ? null : 'lang'))}
         >
@@ -267,7 +267,7 @@ export function CornerControls(props: {
           </div>
         ) : null}
       </div>
-      {/* An svg X (not a text ×): a glyph sits on the font baseline, which
+      {/* An svg X (not a text Ã—): a glyph sits on the font baseline, which
           left it riding higher than the icon boxes beside it. */}
       {props.closeHidden ? null : (
         <button
@@ -299,14 +299,14 @@ export function fmtNodes(template: string, nodes: Record<string, React.ReactNode
   });
 }
 
-/* ── Typewriter ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Typewriter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 const CHAR_MS = 24;
 // Breath at the end of a sentence (260729). `paused` is exposed so the talk
 // flap can close the mouth for the beat instead of flapping through it.
 const FULL_STOP_PAUSE_MS = 340;
 
-/** Typewriter — chars appear over time; skip() completes instantly. */
+/** Typewriter â€” chars appear over time; skip() completes instantly. */
 export function useTypewriter(text: string): {
   shown: string;
   done: boolean;
@@ -365,7 +365,7 @@ export function useTypewriter(text: string): {
   };
 }
 
-/* ── Continue hint ───────────────────────────────────────────────────────── */
+/* â”€â”€ Continue hint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** The "click" half of the continue hint: a mouse with the left button shaded. */
 function MouseIcon(): React.ReactElement {
@@ -379,7 +379,7 @@ function MouseIcon(): React.ReactElement {
   );
 }
 
-/** "(mouse) or ↵ to continue" — the idle nudge under a text-only line. */
+/** "(mouse) or â†µ to continue" â€” the idle nudge under a text-only line. */
 export function ContinueHint(): React.ReactElement {
   const tt = useT();
   return (
@@ -397,7 +397,7 @@ export function fadeThemeClass(): string {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? styles.fadeDark : styles.fadeLight;
 }
 
-/* ── Enter-advances ──────────────────────────────────────────────────────── */
+/* â”€â”€ Enter-advances â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** Enter advances any line that advances on click. Form fields own their own
  * Enter (the auth panel, the name input), so focus inside one is ignored. */
@@ -420,3 +420,7 @@ export function useEnterAdvances(advance: () => void): void {
     return () => window.removeEventListener('keydown', onKey);
   }, [advance]);
 }
+
+
+
+

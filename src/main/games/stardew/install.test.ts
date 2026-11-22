@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew install support (M1): the GameScanner port's pure helpers, the
  * detection pass over a fake game folder, the mod copy + config write, and
  * the whole install against a local http fixture serving a fake SMAPI
@@ -534,3 +534,7 @@ describe('SMAPI failure causes (261104)', () => {
     }
   });
 });
+
+
+
+

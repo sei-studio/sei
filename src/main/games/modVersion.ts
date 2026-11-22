@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Helper-mod version comparison (260925), shared by the Stardew and DST
  * installers. The mod a game pack ships can be newer than the copy already in
  * the game folder (an app update brings a new pack; the game keeps the old
@@ -71,3 +71,7 @@ export function packModIsNewer(packVersion: string | null | undefined, installed
   if (!parseModVersion(installedVersion)) return true;
   return compareModVersions(packVersion, installedVersion) === 1;
 }
+
+
+
+

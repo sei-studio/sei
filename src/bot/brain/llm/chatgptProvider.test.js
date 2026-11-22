@@ -1,4 +1,4 @@
-// 261017 (issue #46): the ChatGPT-plan bot provider and its token bridge.
+﻿// 261017 (issue #46): the ChatGPT-plan bot provider and its token bridge.
 // Canned SSE only; main's side of the bridge is a recorded transport.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createChatgptProvider, collapseSay, CHATGPT_DEFAULT_MODEL } from './chatgptProvider.js'
@@ -334,7 +334,7 @@ describe('createChatgptProvider', () => {
     p.dispose()
   })
 
-  it('writes the same [haiku?]/[haiku!]/[haiku✗] turn log as anthropicClient', async () => {
+  it('writes the same [haiku?]/[haiku!]/[haikuâœ—] turn log as anthropicClient', async () => {
     const logged = []
     const spy = vi.spyOn(console, 'log').mockImplementation((s) => { logged.push(String(s)) })
     try {
@@ -356,7 +356,7 @@ describe('createChatgptProvider', () => {
     expect(done).toContain('dig({"x":1})')
     const usage = JSON.parse(done.match(/usage: (.*)/)[1])
     expect(usage).toMatchObject({ input_tokens: 10, output_tokens: 3 })
-    expect(block('[haiku✗]')).toContain('CHATGPT_USAGE_LIMIT')
+    expect(block('[haikuâœ—]')).toContain('CHATGPT_USAGE_LIMIT')
   })
 })
 
@@ -366,3 +366,7 @@ describe('collapseSay', () => {
     expect(r.toolUses).toEqual([{ id: 's1', name: 'say', input: { text: 'hey' } }])
   })
 })
+
+
+
+

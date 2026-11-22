@@ -1,4 +1,4 @@
-// 261030 (quality pass 31): mark a mob-fight event as unarmed when the turn is
+﻿// 261030 (quality pass 31): mark a mob-fight event as unarmed when the turn is
 // written.
 //
 // In the combat_night eval, a first death dropped her sword at the river, and
@@ -32,3 +32,7 @@ export function withWeaponState(bot, event, data) {
   try { unarmed = lostWeaponUnarmed(bot) } catch { return data }
   return unarmed ? { ...data, unarmed: true } : data
 }
+
+
+
+

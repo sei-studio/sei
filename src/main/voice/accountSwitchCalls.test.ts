@@ -1,4 +1,4 @@
-/**
+﻿/**
  * endCallsForAccountSwitch (260926): what index.ts's endVoiceCallsForAccountSwitch
  * does with every open call when the account changes.
  */
@@ -154,3 +154,7 @@ describe('endCallsForAccountSwitch', () => {
     await expect(done).resolves.toBeUndefined();
   });
 });
+
+
+
+

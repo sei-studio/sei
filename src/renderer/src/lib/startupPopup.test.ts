@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Startup popup renderer rules (261027): when it may open, and its size.
  */
 import { readFileSync } from 'node:fs';
@@ -223,3 +223,7 @@ describe('StartupPopup styles (source pins)', () => {
     expect(css).toContain('.close:hover');
   });
 });
+
+
+
+

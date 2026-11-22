@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Why a voice call or a backseat (screen-share) session ended (261023), as
  * analytics props on `voice_call_ended` and `backseat_ended`.
  *
@@ -143,3 +143,7 @@ export function captureErrorClass(err: unknown): CaptureErrorClass {
   if (/produced no video/i.test(msg)) return 'no_video';
   return 'other';
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Host Minecraft client classifier (260709).
  *
  * Sei only speaks the vanilla protocol, so before summoning into a LAN world
@@ -22,8 +22,8 @@
  *   - Deliberately NO bare 'forge' marker: CurseForge instance paths contain
  *     "curseforge" even when the instance itself is vanilla.
  *
- * The lookup runs at most once per (pid, port) pair — lanWatcher caches the
- * result — so the 2s poll loop never spawns per-poll subprocesses.
+ * The lookup runs at most once per (pid, port) pair â€” lanWatcher caches the
+ * result â€” so the 2s poll loop never spawns per-poll subprocesses.
  *
  * Failure mode is always 'unknown' (no disclaimer), never a thrown error: a
  * missing `ps`, a dead pid, or a truncated command line must not break LAN
@@ -37,8 +37,8 @@ import type { LanHostClient } from '../shared/ipc';
 const CMDLINE_TIMEOUT_MS = 4000;
 
 /**
- * Classify a java process command line. Pure — exported for tests.
- * '' / whitespace → 'unknown' (we learned nothing, so no disclaimer).
+ * Classify a java process command line. Pure â€” exported for tests.
+ * '' / whitespace â†’ 'unknown' (we learned nothing, so no disclaimer).
  */
 export function classifyCmdline(cmdline: string): LanHostClient {
   const c = cmdline.toLowerCase();
@@ -131,9 +131,13 @@ export async function cmdlineForPid(pid: number | null): Promise<string> {
 
 /**
  * Classify the client hosting the LAN world by its owning process id.
- * Never throws; null/unreadable pid → 'unknown'.
+ * Never throws; null/unreadable pid â†’ 'unknown'.
  */
 export async function classifyHostClient(pid: number | null): Promise<LanHostClient> {
   if (pid == null) return 'unknown';
   return classifyCmdline(await cmdlineForPid(pid));
 }
+
+
+
+

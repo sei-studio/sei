@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Starting a program Sei has just written to disk (261102, T293). Windows
  * refuses to start an image while any process holds a write handle on it
  * (ERROR_SHARING_VIOLATION, which Node reports as a synchronous `spawn EBUSY`
@@ -64,3 +64,7 @@ export async function spawnWhenFree<T>(start: () => T, opts: SpawnRetryOptions =
     }
   }
 }
+
+
+
+

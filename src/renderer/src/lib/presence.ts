@@ -1,12 +1,12 @@
-/**
- * Presence model (Party redesign, docs/design/UI-REDESIGN-PARTY.md §2).
+﻿/**
+ * Presence model (Party redesign, docs/design/UI-REDESIGN-PARTY.md Â§2).
  *
  * Five categories, computed from live summon state + last interaction:
- *   in-game    — bot is online in the player's world ("In your world")
- *   connecting — summon in flight ("Connecting…")
- *   new        — never chatted and never launched ("New")
- *   online     — last interaction within 30 minutes ("Online")
- *   idle       — everything else ("Idle")
+ *   in-game    â€” bot is online in the player's world ("In your world")
+ *   connecting â€” summon in flight ("Connectingâ€¦")
+ *   new        â€” never chatted and never launched ("New")
+ *   online     â€” last interaction within 30 minutes ("Online")
+ *   idle       â€” everything else ("Idle")
  *
  * `usePresence` re-renders on a shared 60s ticker so `online` decays to
  * `idle` without navigation.
@@ -30,7 +30,7 @@ export const ONLINE_WINDOW_MS = 30 * 60 * 1000;
 
 const PRESENCE_LABEL: Record<PresenceCategory, string> = {
   'in-game': 'In your world',
-  connecting: 'Connecting…',
+  connecting: 'Connectingâ€¦',
   new: 'New',
   online: 'Online',
   idle: 'Idle',
@@ -58,9 +58,9 @@ export function presenceOf(
   return { category: 'idle', label: t(PRESENCE_LABEL.idle) };
 }
 
-/* ── Shared 60s ticker ─────────────────────────────────────────────────
+/* â”€â”€ Shared 60s ticker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * One interval for the whole app; subscribers re-render each minute so
- * time-derived presence (online → idle) stays honest. Interval starts with
+ * time-derived presence (online â†’ idle) stays honest. Interval starts with
  * the first subscriber and stops with the last. */
 
 let tick = 0;
@@ -88,3 +88,7 @@ function subscribeTick(cb: () => void): () => void {
 export function useMinuteTick(): number {
   return useSyncExternalStore(subscribeTick, () => tick);
 }
+
+
+
+

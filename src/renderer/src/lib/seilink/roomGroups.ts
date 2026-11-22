@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which room editor panel holds each slot (261105, msgs 1576 + 1580).
  * The rail has five tiles: Avatar, Room, Walls & fabrics, Furniture, Items.
  * The three middle ones list slots as sections:
@@ -44,3 +44,7 @@ export function groupSlots(slots: readonly RoomSlotId[], group: SlotGroup, manif
   };
   return slots.filter((s) => slotGroup(s, manifest) === group).sort((a, b) => rank(a) - rank(b) || slots.indexOf(a) - slots.indexOf(b));
 }
+
+
+
+

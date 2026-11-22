@@ -1,8 +1,8 @@
-/**
- * Phase 11 D-28 — Portrait persistence (per-character UUID-keyed file).
+﻿/**
+ * Phase 11 D-28 â€” Portrait persistence (per-character UUID-keyed file).
  *
- * Source: 11-RESEARCH §Pattern 5 (portrait pipeline change) +
- *         11-PATTERNS §portraitStore (composite of skinStore.applyPng +
+ * Source: 11-RESEARCH Â§Pattern 5 (portrait pipeline change) +
+ *         11-PATTERNS Â§portraitStore (composite of skinStore.applyPng +
  *         portraitImageUtil.validatePortrait).
  *
  * Layout: <userData>/portraits/<uuid>.png (mirrors the cloud Storage bucket
@@ -11,10 +11,10 @@
  * resolves it to a real URL at render time.
  *
  * Defense-in-depth: applyPortrait re-validates bytes via validatePortrait
- * BEFORE writing — the renderer already validated, but main is the trust
+ * BEFORE writing â€” the renderer already validated, but main is the trust
  * boundary.
  *
- * ── Versions (260909) ─────────────────────────────────────────────────────
+ * â”€â”€ Versions (260909) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * Every portrait that lands on a character is ALSO kept as a sidecar
  * `<uuid>-v<n>.png` next to the canonical file, recorded in
  * `metadata.portrait_versions` (+ `portrait_active`, `portrait_regen_count`).
@@ -322,7 +322,7 @@ export async function selectPortraitVersion(args: {
  * the same sweep character delete runs; leaving the marker behind would make
  * a later re-upload of identical bytes look already-uploaded). The lifetime
  * regen count is kept (it is a cap, not a per-portrait budget). ENOENT (file
- * already gone) is swallowed — best-effort cleanup.
+ * already gone) is swallowed â€” best-effort cleanup.
  */
 export async function removePortrait(characterId: string): Promise<void> {
   const char = await getCharacter(characterId);
@@ -336,3 +336,7 @@ export async function removePortrait(characterId: string): Promise<void> {
 
 /** Re-exported for callers that only need the sidecar shape. */
 export type { PortraitVersion };
+
+
+
+

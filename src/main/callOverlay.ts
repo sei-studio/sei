@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Always-on-top avatar overlay window (260706 as the "call overlay"; 260804
  * avatar rework).
  *
@@ -16,7 +16,7 @@
  *
  * Interaction model (260804; view/edit split 260805; per-region 260806): the
  * window is click-through by DEFAULT (`setIgnoreMouseEvents(true, {forward:
- * true})` — `forward` keeps mousemove flowing to the page on Windows/macOS).
+ * true})` â€” `forward` keeps mousemove flowing to the page on Windows/macOS).
  * Forwarding is not enough on its own: Linux has none, and it did not reach
  * the page on a user's Live2D setup (261028), which left the pencil, the only
  * way into edit mode, unreachable. So main ALSO polls the global cursor while
@@ -28,13 +28,13 @@
  * whatever is under her, like the caption window) and for the whole of edit
  * mode. Edit mode resizes the WINDOW through `resizeOverlay` (corner handles
  * only) and moves it through the hold-to-drag button's `moveAvatarOverlay`
- * stream (ordinary chrome, NOT an app-region — an app-region swallows
+ * stream (ordinary chrome, NOT an app-region â€” an app-region swallows
  * pointer events, which would break the per-region interactivity tracking;
  * the button shows in view mode too); wheel + drag over a Live2D tile instead
- * adjust the CHARACTER's camera within the tile (`setOverlayCamera` — zoom to
+ * adjust the CHARACTER's camera within the tile (`setOverlayCamera` â€” zoom to
  * the face, pan, 260806).
  * Geometry + cameras persist in UserConfig.avatar_overlay (written HERE,
- * main-owned — deliberately not renderer-settable). While a call/backseat is
+ * main-owned â€” deliberately not renderer-settable). While a call/backseat is
  * live the overlay grows mute + captions buttons; captions open the sibling
  * captionOverlay.ts window, which rides the same state pushes.
  */
@@ -80,7 +80,7 @@ const MAX_TILE = 1024;
 
 /** Tile HEIGHT the window is currently laid out for (hydrated from config). */
 let tileSize = DEFAULT_TILE;
-/** Tile WIDTH (260807): independent of height since free-form resize — the
+/** Tile WIDTH (260807): independent of height since free-form resize â€” the
  * corner handles stream both axes, so the window can be any rectangle. Equal
  * to tileSize (square) until the user drags a corner off-diagonal; configs
  * from before `width` existed hydrate square. */
@@ -92,12 +92,12 @@ let storedPos: { x: number; y: number } | null = null;
 let cameras: Record<string, AvatarCamera> = {};
 /** True once hydrateGeometry has read config (so we only read it once). */
 let geometryHydrated = false;
-/** UserConfig.avatar_in_captures — see setAvatarCaptureVisible. */
+/** UserConfig.avatar_in_captures â€” see setAvatarCaptureVisible. */
 let captureVisible = false;
 
 /** Participant count the window is currently sized/positioned for. Position is
  * only recomputed when this changes (or the window is (re)created), never on the
- * per-speaking-change state pushes — see updateCallOverlay. */
+ * per-speaking-change state pushes â€” see updateCallOverlay. */
 let lastCount = 0;
 /** Debounce handle for display-metrics-driven repositioning. */
 let repositionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -184,7 +184,7 @@ function windowSize(count: number): { width: number; height: number } {
 /**
  * Clamp bounds fully inside the work area of the display they (mostly) sit on
  * (260819). Geometry persisted on a big monitor can land off-screen, or come
- * out BIGGER than the screen, after a display change — and off-screen chrome
+ * out BIGGER than the screen, after a display change â€” and off-screen chrome
  * is unrecoverable: the window is click-through outside the button column, so
  * a move/edit button past the screen edge can never be hovered again. Size is
  * capped to the work area and the origin pulled in so every edge stays
@@ -237,7 +237,7 @@ function setBoundsProgrammatic(bounds: Electron.Rectangle): void {
 /**
  * Hard safety net (macOS): even with skipTransformProcessType, spawning/showing
  * an all-workspaces, screen-saver-level window has been observed to demote the
- * app to an ACCESSORY process — which strips its Dock icon and cmd-tab entry and
+ * app to an ACCESSORY process â€” which strips its Dock icon and cmd-tab entry and
  * drops the main window behind everything (the "app disappears when a call
  * starts" report: gone from the Dock and cmd-tab). Re-assert a regular
  * foreground app with a Dock icon so a call can never demote Sei. Idempotent and
@@ -248,7 +248,7 @@ function keepAppForeground(): void {
   try {
     app.setActivationPolicy('regular');
   } catch {
-    /* older Electron without setActivationPolicy — skipTransformProcessType covers it */
+    /* older Electron without setActivationPolicy â€” skipTransformProcessType covers it */
   }
   void app.dock?.show();
 }
@@ -287,8 +287,8 @@ function ensureWindow(): BrowserWindow | null {
     transparent: true,
     backgroundColor: '#00000000',
     // NOT resizable: a frameless resizable window keeps invisible OS
-    // resize-frame regions along its edges — exactly where the corner handles
-    // sit — and a click there is window-frame interaction: macOS ACTIVATED the
+    // resize-frame regions along its edges â€” exactly where the corner handles
+    // sit â€” and a click there is window-frame interaction: macOS ACTIVATED the
     // app ("clicking the corner opens up the app") and the frame region fought
     // the handles' CSS resize cursor. All real resizing goes through setBounds
     // (resizeOverlay), which ignores `resizable`; the corner handles stream
@@ -305,7 +305,7 @@ function ensureWindow(): BrowserWindow | null {
     hasShadow: false,
     alwaysOnTop: true,
     // macOS: without this, the FIRST click into the overlay while Sei is not
-    // the active app is treated as an activation click — AppKit activates Sei
+    // the active app is treated as an activation click â€” AppKit activates Sei
     // and raises the main window ("clicking the resize handle pops open the
     // app", 260806) and the click never reaches the handle. acceptFirstMouse
     // delivers that click to the page instead; focusable:false + the panel
@@ -322,7 +322,7 @@ function ensureWindow(): BrowserWindow | null {
       nodeIntegration: false,
       sandbox: false,
       // A Live2D tile must keep animating while a fullscreen game occludes
-      // the window — same reasoning as the main window (windowChrome.ts).
+      // the window â€” same reasoning as the main window (windowChrome.ts).
       backgroundThrottling: false,
     },
   });
@@ -330,9 +330,9 @@ function ensureWindow(): BrowserWindow | null {
   // Float above fullscreen apps (a game/stream), across every workspace.
   win.setAlwaysOnTop(true, 'screen-saver');
   // skipTransformProcessType is load-bearing: without it, setVisibleOnAllWorkspaces
-  // transforms the app's process type (Foreground ↔ UIElement) on macOS, which
+  // transforms the app's process type (Foreground â†” UIElement) on macOS, which
   // "will hide the window and dock for a short time every time it is called"
-  // (Electron docs) — that flash HID the MAIN Sei window every time a call
+  // (Electron docs) â€” that flash HID the MAIN Sei window every time a call
   // launched. Skipping the transform keeps the main window visible; the overlay
   // is already non-activating (focusable:false, skipTaskbar) so the transform
   // bought us nothing.
@@ -341,7 +341,7 @@ function ensureWindow(): BrowserWindow | null {
     skipTransformProcessType: true,
   });
   applyDefaultMousePolicy(win);
-  // By default the avatar never appears in screen captures — including Sei's
+  // By default the avatar never appears in screen captures â€” including Sei's
   // own backseat share ("self is hidden from screenshare") and the player's
   // OBS/Discord capture of a game. The overlay is for the PLAYER's eyes.
   // Opt out via the share picker's toggle; see setAvatarCaptureVisible.
@@ -355,7 +355,7 @@ function ensureWindow(): BrowserWindow | null {
     void win.loadFile(t, { search: 'overlay=1' });
   }
 
-  // Persist the position after any native move (safety net — the hold-to-drag
+  // Persist the position after any native move (safety net â€” the hold-to-drag
   // button streams through moveAvatarOverlay/setBounds now, which persists at
   // 'end' itself). 'moved' also fires for programmatic setBounds, so
   // applyingBounds guards reposition/resize paths from being mistaken for a
@@ -374,7 +374,7 @@ function ensureWindow(): BrowserWindow | null {
 
   // Show without stealing focus once loaded, and seed it with the latest state.
   // `ready-to-show` is known to never fire for some transparent windows
-  // (electron#29036 and friends) — when it silently skipped, the overlay window
+  // (electron#29036 and friends) â€” when it silently skipped, the overlay window
   // existed but was never shown (the "call popup doesn't show sometimes"
   // report). Reveal on whichever of ready-to-show / did-finish-load lands
   // first, with a wall-clock backstop in case neither ever does.
@@ -439,7 +439,7 @@ export function updateCallOverlay(state: CallOverlayState): void {
 /**
  * Current overlay state, for the overlay renderer to PULL on mount. The seed
  * push (`pushState` at reveal) races the overlay page's React effect that
- * subscribes to `voice:overlay-state` — when the push landed first, the
+ * subscribes to `voice:overlay-state` â€” when the push landed first, the
  * subscriber missed it and the window stayed empty until the next
  * speaking-state change. The overlay pulls this right after subscribing, so a
  * lost seed can no longer leave it blank.
@@ -457,7 +457,7 @@ export function getCallOverlayState(): CallOverlayState | null {
  * EVERY capture path, so there is no way to be visible to OBS and hidden from
  * Sei's own backseat share. Turning it off therefore also means a companion
  * sharing an ENTIRE SCREEN can see her own tile (a window share is unaffected
- * — a window capture cannot contain another window), which is why the toggle
+ * â€” a window capture cannot contain another window), which is why the toggle
  * is off by default and says so.
  *
  * Applied to the LIVE window rather than only at creation: the player is
@@ -487,7 +487,7 @@ export function repushOverlayState(): void {
   pushState();
 }
 
-/** Relay a mouth-level sample (main window → overlay window). Per-frame
+/** Relay a mouth-level sample (main window â†’ overlay window). Per-frame
  * animation data: no queueing, no persistence, dropped when no window. */
 export function forwardOverlayLevel(id: string, level: number): void {
   if (overlayWin && !overlayWin.isDestroyed()) {
@@ -531,7 +531,7 @@ export function moveAvatarOverlay(phase: 'start' | 'move' | 'end', dx: number, d
   moveStartPos = null;
   // Settle fully on-screen: the stream itself is unclamped (a drag must be
   // able to cross displays 1:1 under the pointer), but the RESTING place may
-  // not leave any chrome past a screen edge — an off-screen button column is
+  // not leave any chrome past a screen edge â€” an off-screen button column is
   // unreachable forever on a click-through window.
   const settled = clampToWorkArea(b);
   if (settled.x !== b.x || settled.y !== b.y) setBoundsProgrammatic(settled);
@@ -549,7 +549,7 @@ export function moveAvatarOverlay(phase: 'start' | 'move' | 'end', dx: number, d
  *   clicks when it lands on the buttons, so edit mode is reachable even
  *   where mouse forwarding never reaches the page.
  * - GAZE (260806, only while a Live2D/rig tile shows): the cursor normalized
- *   to [-1, 1] around the window's center (x right, y UP — the
+ *   to [-1, 1] around the window's center (x right, y UP â€” the
  *   focusController's frame), scaled by the half-extent of the display the
  *   window sits on. The renderer alternates its gaze between this and the
  *   idle wander; a feed that stops (window gone) just means wander.
@@ -593,9 +593,9 @@ function reconcileCursorPoll(): void {
 
 /**
  * Resize from the overlay renderer: apply `size` (tile HEIGHT, px) and
- * `width` (tile WIDTH, px — free-form since 260807; absent keeps the current
+ * `width` (tile WIDTH, px â€” free-form since 260807; absent keeps the current
  * width) keeping the `anchor` corner fixed ('center' kept for programmatic
- * use, grows around the window center). `commit` persists the geometry — the
+ * use, grows around the window center). `commit` persists the geometry â€” the
  * stream itself only moves the window.
  */
 export async function resizeOverlay(
@@ -661,3 +661,7 @@ export function closeCallOverlay(): void {
   if (overlayWin && !overlayWin.isDestroyed()) overlayWin.destroy();
   overlayWin = null;
 }
+
+
+
+

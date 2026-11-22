@@ -1,12 +1,12 @@
-/**
- * planCatalog — plan cards + top up packages as the UI presents them.
+﻿/**
+ * planCatalog â€” plan cards + top up packages as the UI presents them.
  *
  * 260725: the catalog is SERVER-DRIVEN. Main reads the proxy's world-readable
  * `plan_config` / `topup_config` tables (credits:catalog IPC) and
  * `useCreditsStore.loadCatalog()` overlays the result onto the store via the
  * normalizers here, so a price/name/blurb retune (or a whole new top up
  * package) repaints every up-to-date client without a release. The literals
- * below are the LAUNCH copy, kept only as the offline / failure fallback —
+ * below are the LAUNCH copy, kept only as the offline / failure fallback â€”
  * if they disagree with the server, the server wins and this copy is stale.
  *
  * ONE place for the money formatting so the plan cards and ReceiptScreen (the
@@ -47,23 +47,23 @@ export interface TopUpPackage {
   credits: string;
 }
 
-/** 800 → "$8", 750 → "$7.50". Card-face price. */
+/** 800 â†’ "$8", 750 â†’ "$7.50". Card-face price. */
 function formatPrice(cents: number): string {
   const dollars = cents / 100;
   return cents % 100 === 0 ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
-/** 800 → "$8.00". Exact-charge form for the legal disclosures. */
+/** 800 â†’ "$8.00". Exact-charge form for the legal disclosures. */
 function formatCharge(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
 /**
- * Launch fallback copy — see the header note. Server catalog wins.
+ * Launch fallback copy â€” see the header note. Server catalog wins.
  *
  * 260725: plan blurbs are POSITIONING copy, never credit amounts. The weekly
  * allowance sizes are deliberately not shown anywhere in the app (or in the
- * Polar product copy) — the usage bar communicates headroom as a percentage.
+ * Polar product copy) â€” the usage bar communicates headroom as a percentage.
  */
 export const PLANS: readonly PlanCard[] = [
   {
@@ -94,7 +94,7 @@ export const PLANS: readonly PlanCard[] = [
 
 /**
  * Launch fallback copy for the top up packages. Server catalog wins. Unlike
- * the plans, a top up card DOES state its credits — that is the product.
+ * the plans, a top up card DOES state its credits â€” that is the product.
  */
 export const TOP_UPS: readonly TopUpPackage[] = [
   { kind: 'topup_small', price: '$5', credits: '800 credits' },
@@ -117,7 +117,7 @@ export const TIER_ORDER: Record<PlanTier, number> = { free: 0, quest: 1, party: 
 /**
  * Normalize the server catalog into plan cards. Free stays price-qualifier-
  * and disclosure-free. A null server blurb falls back to the bundled
- * positioning line for that tier — NEVER a derived credit amount (260725:
+ * positioning line for that tier â€” NEVER a derived credit amount (260725:
  * allowance sizes are not shown in the app).
  */
 export function plansFromCatalog(catalog: PricingCatalog): PlanCard[] {
@@ -144,9 +144,9 @@ export function topUpsFromCatalog(catalog: PricingCatalog): TopUpPackage[] {
 }
 
 /**
- * Lookup helpers. Callers pass the CURRENT card set — normally
+ * Lookup helpers. Callers pass the CURRENT card set â€” normally
  * `useCreditsStore(s => s.planCards)`, which starts as the bundled PLANS and
- * is overlaid with the server catalog once loaded — so every surface
+ * is overlaid with the server catalog once loaded â€” so every surface
  * (cards, consent modal, disclosures, receipt) discloses the same amounts.
  */
 export function planCard(cards: readonly PlanCard[], tier: PlanTier): PlanCard {
@@ -169,7 +169,7 @@ export function planName(cards: readonly PlanCard[], tier: PlanTier): string {
 
 /**
  * "Free plan" / "Quest plan". Free gets its own key because the translated
- * word does not fit the "{name} plan" frame ("Тариф Бесплатный").
+ * word does not fit the "{name} plan" frame ("Ð¢Ð°Ñ€Ð¸Ñ„ Ð‘ÐµÑÐ¿Ð»Ð°Ñ‚Ð½Ñ‹Ð¹").
  */
 export function planLabel(cards: readonly PlanCard[], tier: PlanTier): string {
   const card = planCard(cards, tier);
@@ -209,3 +209,7 @@ export function topUpCreditsLine(credits: string): string {
 export function planChargeUsd(cards: readonly PlanCard[], tier: PlanTier): string | null {
   return planCard(cards, tier).chargeUsd;
 }
+
+
+
+

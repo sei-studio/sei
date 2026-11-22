@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Last-interaction helper (chat change #6/#7).
  *
  * A companion's "last active" moment is the most recent of an in-game session
@@ -19,3 +19,7 @@ export function lastInteractionAt(c: WithActivity): string | null {
   const max = launched > chatted ? launched : chatted;
   return max || null;
 }
+
+
+
+

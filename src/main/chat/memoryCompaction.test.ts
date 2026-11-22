@@ -1,5 +1,5 @@
-/**
- * Chat-side MEMORY.md compaction (260810) — memoryCompaction.ts.
+﻿/**
+ * Chat-side MEMORY.md compaction (260810) â€” memoryCompaction.ts.
  *
  * Pins: the 32 KB threshold gate, the never-while-summoned race guard, the
  * per-character single-flight, that a pass actually shrinks MEMORY.md while
@@ -59,7 +59,7 @@ async function seedBigMemory(characterId: string): Promise<{ file: string; archi
   for (let i = 0; i < 220; i++) {
     entries.push(`- [2026-08-01T00:${String(i % 60).padStart(2, '0')}:00.000Z] entry ${i} ${'x'.repeat(150)}`);
   }
-  const raw = HEADER + '## World 1 — testland\n' + entries.join('\n') + '\n';
+  const raw = HEADER + '## World 1 â€” testland\n' + entries.join('\n') + '\n';
   expect(Buffer.byteLength(raw, 'utf8')).toBeGreaterThan(CHAT_COMPACTION_TRIGGER_BYTES);
   const file = path.join(memDir, 'MEMORY.md');
   const archive = path.join(memDir, 'MEMORY.archive.md');
@@ -101,11 +101,11 @@ describe('maybeCompactChatMemory (260810)', () => {
     expect(createSpy).toHaveBeenCalled();
 
     const after = await readFile(file, 'utf8');
-    expect(after).toContain('## World 1 — testland');
+    expect(after).toContain('## World 1 â€” testland');
     expect(after).toContain('- [2026-08-08] one merged entry about the player');
     expect(Buffer.byteLength(after, 'utf8')).toBeLessThan(CHAT_COMPACTION_TRIGGER_BYTES);
 
-    // The raw archive is the permanent record — byte-identical after the pass.
+    // The raw archive is the permanent record â€” byte-identical after the pass.
     expect(await readFile(archive, 'utf8')).toBe(archiveBefore);
 
     // The compaction call used the chat SDK with the noise-guarded system
@@ -195,3 +195,7 @@ describe('maybeCompactChatMemory (260810)', () => {
     expect(await first).toBe(true);
   });
 });
+
+
+
+

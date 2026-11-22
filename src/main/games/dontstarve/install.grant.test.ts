@@ -1,4 +1,4 @@
-/**
+﻿/**
  * macOS one-click DST helper install (260925): the decision logic of
  * installMod's grant path, over an in-memory disk that refuses writes inside
  * the game bundle until the Open panel grants the mods folder (the measured
@@ -328,3 +328,7 @@ describe('installMod off macOS', () => {
     expect(s).not.toHaveProperty('permission');
   });
 });
+
+
+
+

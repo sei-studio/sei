@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sei's voice pool ids, for every process (261024).
  *
  * The one place that answers "is this id one of Sei's voices?". Main
@@ -7,7 +7,7 @@
  * picker's own-voice marker) both read it, so they can never disagree.
  *
  * Why the renderer needs it: Sei's company ElevenLabs library holds copies of
- * the pool voices ("Sei — Josh"), and a user's own library can too, so the
+ * the pool voices ("Sei â€” Josh"), and a user's own library can too, so the
  * "Your ElevenLabs voices" list can contain a pool id. A pool id is never an
  * own voice: tagging it as one showed a "Voice for others" label and an extra
  * step when going public, for a voice everyone can already hear.
@@ -29,9 +29,9 @@ export const POOL_VOICE_IDS: ReadonlySet<string> = new Set(VOICES.map((v) => v.i
 
 /**
  * Voice ids removed from the assignment pool on 260707, when the soulcaster
- * table was curated down to use_case 'characters_animation' (64 → 25; the full
+ * table was curated down to use_case 'characters_animation' (64 â†’ 25; the full
  * entries live in vendor/soulcaster/src/voices.js git history). They are still
- * valid on the ElevenLabs account — the cut was for NEW assignments only — so
+ * valid on the ElevenLabs account â€” the cut was for NEW assignments only â€” so
  * existing characters keep them and their voice never silently changes:
  * without this set, assignedVoiceId would reject the persisted id and
  * resolveVoiceId would re-roll, persist, and cloud-sync a different voice.
@@ -39,7 +39,7 @@ export const POOL_VOICE_IDS: ReadonlySet<string> = new Set(VOICES.map((v) => v.i
  *
  * 260725: the five neutral voices cut in the 260707 curation (River, Sammy,
  * Riley, Ramona, Aaron) rejoined the pool as the neutral section of VOICES,
- * so they were removed from this set — membership in both would be
+ * so they were removed from this set â€” membership in both would be
  * contradictory (this set is for voices REMOVED from the pool).
  *
  * 261119 (voice library refresh, product call (261119)): eight more voices
@@ -105,3 +105,7 @@ export const LEGACY_VOICE_IDS: ReadonlySet<string> = new Set([
 export function isPoolVoiceId(id: unknown): boolean {
   return typeof id === 'string' && (POOL_VOICE_IDS.has(id) || LEGACY_VOICE_IDS.has(id));
 }
+
+
+
+

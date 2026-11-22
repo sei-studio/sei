@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { actFlagFromEnv, CONTROL_TOOL, controlCall, controlEventNote, controlGoal } from './controlTool';
 import { normalizeKey, parseCombo } from './keys';
 
@@ -6,7 +6,7 @@ describe('control tool', () => {
   it('is named control and takes a goal', () => {
     expect(CONTROL_TOOL.name).toBe('control');
     expect((CONTROL_TOOL.input_schema as { required: string[] }).required).toEqual(['goal']);
-    expect(CONTROL_TOOL.description).not.toMatch(/—/);
+    expect(CONTROL_TOOL.description).not.toMatch(/â€”/);
   });
   it('reads the goal from an assistant turn', () => {
     expect(controlGoal([{ type: 'text' }, { type: 'tool_use', name: 'control', input: { goal: '  open settings ' } }])).toBe('open settings');
@@ -25,7 +25,7 @@ describe('control tool', () => {
   it('writes the completion event plainly', () => {
     const n = controlEventNote('open settings', { status: 'gave_up', steps: 1, summary: 'It needs a password' });
     expect(n).toMatch(/for "open settings" gave up after 1 step\. Status: gave_up\. It needs a password\. The screenshot/);
-    expect(n).not.toMatch(/—/);
+    expect(n).not.toMatch(/â€”/);
     expect(controlEventNote('x', { status: 'done', steps: 3, summary: '' })).toMatch(/finished after 3 steps\. Status: done\. The screenshot/);
   });
   it('is gated on macOS plus the dev flag', () => {
@@ -52,3 +52,7 @@ describe('keys', () => {
     expect(parseCombo('t+cmd')).toMatchObject({ error: expect.stringMatching(/not a modifier/) });
   });
 });
+
+
+
+

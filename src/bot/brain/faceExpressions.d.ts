@@ -1,4 +1,4 @@
-// Types for src/bot/brain/faceExpressions.js (imported by main and the renderer).
+﻿// Types for src/bot/brain/faceExpressions.js (imported by main and the renderer).
 export interface FaceExpressionDef {
   name: string;
   description: string;
@@ -28,3 +28,7 @@ export const FACE_OFFERED_NAMES: ReadonlyArray<string>;
 export const FACE_PROMPT: string;
 export const FACE_EXPRESSION_ENUM: ReadonlyArray<string>;
 export const SAY_EXPRESSION_DESCRIPTION: string;
+
+
+
+

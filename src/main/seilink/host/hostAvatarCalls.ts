@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host, main side: what the room host page may learn about
  * her looks (261104).
  *
@@ -117,3 +117,7 @@ export async function answerHostAvatarCall(
   }
   return null;
 }
+
+
+
+

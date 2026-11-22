@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   resetCountdown,
   formatResetLine,
@@ -57,13 +57,13 @@ describe('formatResetLine', () => {
 
   it('Chinese copy', () => {
     expect(formatResetLine(iso(at(2026, 9, 30, 9)), NOW, { lang: 'zh' })).toBe(
-      '免费游玩将在4天后重置（9月30日星期三）。',
+      'å…è´¹æ¸¸çŽ©å°†åœ¨4å¤©åŽé‡ç½®ï¼ˆ9æœˆ30æ—¥æ˜ŸæœŸä¸‰ï¼‰ã€‚',
     );
     expect(formatResetLine(iso(at(2026, 9, 27, 9)), NOW, { lang: 'zh' })).toBe(
-      '免费游玩将在明天重置（9月27日星期日）。',
+      'å…è´¹æ¸¸çŽ©å°†åœ¨æ˜Žå¤©é‡ç½®ï¼ˆ9æœˆ27æ—¥æ˜ŸæœŸæ—¥ï¼‰ã€‚',
     );
     expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'zh', plan: 'party' })).toBe(
-      '每周额度将在今天21:30重置。',
+      'æ¯å‘¨é¢åº¦å°†åœ¨ä»Šå¤©21:30é‡ç½®ã€‚',
     );
   });
 
@@ -75,7 +75,7 @@ describe('formatResetLine', () => {
     for (const lang of ['en', 'zh'] as const) {
       for (const plan of ['free', 'quest'] as const) {
         for (const ms of [at(2026, 9, 26, 22), at(2026, 9, 27, 9), at(2026, 10, 2, 9)]) {
-          expect(formatResetLine(iso(ms), NOW, { lang, plan })).not.toContain('—');
+          expect(formatResetLine(iso(ms), NOW, { lang, plan })).not.toContain('â€”');
         }
       }
     }
@@ -112,15 +112,15 @@ describe('quietCompanionNotice', () => {
     expect(quietCompanionNotice({ name: 'Marv', lang: 'en', plan: 'quest', resetsAt: '', nowMs: NOW })).toContain(
       'Top up or upgrade',
     );
-    const zh = quietCompanionNotice({ name: '小马', lang: 'zh', plan: 'party', resetsAt: '', nowMs: NOW });
-    expect(zh).not.toContain('升级');
+    const zh = quietCompanionNotice({ name: 'å°é©¬', lang: 'zh', plan: 'party', resetsAt: '', nowMs: NOW });
+    expect(zh).not.toContain('å‡çº§');
   });
 
   it('Chinese', () => {
-    const line = quietCompanionNotice({ name: '小马', lang: 'zh', resetsAt: iso(at(2026, 9, 30, 9)), nowMs: NOW });
-    expect(line).toContain('小马');
-    expect(line).toContain('4天后重置');
-    expect(line).not.toContain('—');
+    const line = quietCompanionNotice({ name: 'å°é©¬', lang: 'zh', resetsAt: iso(at(2026, 9, 30, 9)), nowMs: NOW });
+    expect(line).toContain('å°é©¬');
+    expect(line).toContain('4å¤©åŽé‡ç½®');
+    expect(line).not.toContain('â€”');
   });
 });
 
@@ -147,16 +147,16 @@ describe('the 261104 languages', () => {
     // 24 h clock outside English.
     expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'es' })).toContain('21:30');
     expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'ja' })).toContain('21:30');
-    // 3 days: Russian "3 дня", Spanish "3 días".
-    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'ru' })).toContain('3 дня');
-    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'es' })).toContain('3 días');
+    // 3 days: Russian "3 Ð´Ð½Ñ", Spanish "3 dÃ­as".
+    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'ru' })).toContain('3 Ð´Ð½Ñ');
+    expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'es' })).toContain('3 dÃ­as');
     expect(formatResetLine(iso(at(2026, 9, 26, 21, 30)), NOW, { lang: 'it' })).toContain('21:30');
     expect(formatResetLine(iso(at(2026, 9, 29, 9)), NOW, { lang: 'it' })).toContain('3 giorni');
   });
 
   it('Japanese joins sentences without a space', () => {
     const notice = quietCompanionNotice({ name: 'Marv', lang: 'ja', resetsAt: iso(at(2026, 9, 29, 9)), nowMs: NOW });
-    expect(notice).not.toMatch(/。 /);
+    expect(notice).not.toMatch(/ã€‚ /);
   });
 });
 
@@ -219,3 +219,7 @@ describe('decideFreePlayBanner', () => {
     });
   });
 });
+
+
+
+

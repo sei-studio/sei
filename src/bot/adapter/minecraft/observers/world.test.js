@@ -1,15 +1,15 @@
-// src/bot/adapter/minecraft/observers/world.test.js
+﻿// src/bot/adapter/minecraft/observers/world.test.js
 //
 // 260617: describeSurroundings must not label open terrain "underground" just
-// because stored skyLight reads 0 — it under-reports on freshly-loaded chunks
+// because stored skyLight reads 0 â€” it under-reports on freshly-loaded chunks
 // (the first seconds after join) and at the foot of a cliff. A mountainside
 // spawn was mislabelled "underground" and the bot dug straight UP out of open
-// ground. These pin: clear sky → outside; skyLight 0 but open column → outside;
-// roof + daylight a short hop away → sheltered; sealed → underground.
+// ground. These pin: clear sky â†’ outside; skyLight 0 but open column â†’ outside;
+// roof + daylight a short hop away â†’ sheltered; sealed â†’ underground.
 //
 // 260721: the roof scan passed plain {x,y,z} to blockAt, which throws in real
 // prismarine-world (`pos.floored()` is a Vec3 method), so live play collapsed
-// everything non-'outside' to 'unknown' — while these tests passed, because
+// everything non-'outside' to 'unknown' â€” while these tests passed, because
 // the old mock accepted plain objects. The mock is now strict: blockAt rejects
 // anything without `.floored()`, mimicking the real library. Also pinned: a
 // cavern taller than the old 24-block scan cap is 'underground' not 'outside',
@@ -46,35 +46,35 @@ function makeBot({ sky = {}, solid = new Set(), pos = { x: 0, y: 64, z: 0 }, gam
 }
 
 describe('describeSurroundings (via world().surroundings)', () => {
-  it('clear sky overhead and daylight all around → outside', () => {
+  it('clear sky overhead and daylight all around â†’ outside', () => {
     expect(world(makeBot({ sky: { default: 15 } })).surroundings).toBe('outside')
   })
 
-  it('skyLight 0 but an OPEN column above → outside (fresh-chunk / cliff-foot guard)', () => {
+  it('skyLight 0 but an OPEN column above â†’ outside (fresh-chunk / cliff-foot guard)', () => {
     // The 260617 mountainside bug: stored skyLight 0 everywhere, nothing solid
     // overhead. Must NOT read as "underground".
     expect(world(makeBot({ sky: { default: 0 }, solid: new Set() })).surroundings).toBe('outside')
   })
 
-  it('roof overhead with open sky a short hop away → sheltered', () => {
+  it('roof overhead with open sky a short hop away â†’ sheltered', () => {
     const solid = new Set(['0,67,0'])        // block in the head column
     const sky = { default: 0, '5,65,0': 14 } // daylight 5 blocks east at head height
     expect(world(makeBot({ sky, solid })).surroundings).toBe('sheltered')
   })
 
-  it('roof overhead and no daylight anywhere near → underground', () => {
+  it('roof overhead and no daylight anywhere near â†’ underground', () => {
     const solid = new Set(['0,67,0'])
     expect(world(makeBot({ sky: { default: 0 }, solid })).surroundings).toBe('underground')
   })
 
-  it('cavern ceiling ABOVE the old 24-block scan cap → still underground', () => {
+  it('cavern ceiling ABOVE the old 24-block scan cap â†’ still underground', () => {
     // Marv-in-a-cave regression class: a tall cave (roof 56 blocks up) used to
     // exhaust the fixed-24 scan, read "no roof", and report 'outside'.
     const solid = new Set(['0,120,0'])
     expect(world(makeBot({ sky: { default: 0 }, solid })).surroundings).toBe('underground')
   })
 
-  it('sky visible ONLY straight up (shaft / ravine bottom) → pit, not outside', () => {
+  it('sky visible ONLY straight up (shaft / ravine bottom) â†’ pit, not outside', () => {
     const sky = { default: 0, '0,65,0': 15 } // bright in own head column only
     expect(world(makeBot({ sky })).surroundings).toBe('pit')
   })
@@ -88,7 +88,7 @@ describe('describeSurroundings (via world().surroundings)', () => {
 
   // 261017 (pass 12): the errands eval snapshot said "outside" at the bottom
   // of a 13-deep self-dug shaft (sky light in it still read 0).
-  it('open column but walled in above head height on every side (dark shaft) → pit', () => {
+  it('open column but walled in above head height on every side (dark shaft) â†’ pit', () => {
     const solid = new Set()
     for (let y = 64; y <= 76; y++) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) solid.add(`${dx},${y},${dz}`)
     expect(world(makeBot({ sky: { default: 0 }, solid })).surroundings).toBe('pit')
@@ -101,8 +101,8 @@ describe('describeSurroundings (via world().surroundings)', () => {
   })
 
   it('respects the dimension build height from bot.game', () => {
-    // Roof above the dimension top must not count: minY 0 + height 80 → scan
-    // stops at y=80, the block at y=90 is never seen → open column → outside.
+    // Roof above the dimension top must not count: minY 0 + height 80 â†’ scan
+    // stops at y=80, the block at y=90 is never seen â†’ open column â†’ outside.
     const solid = new Set(['0,90,0'])
     const bot = makeBot({ sky: { default: 0 }, solid, game: { minY: 0, height: 80 } })
     expect(world(bot).surroundings).toBe('outside')
@@ -122,3 +122,7 @@ describe('world().light', () => {
     expect(world(bot).light).toEqual({ sky: null, block: null })
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-# Call scenes + the backdrop toggle (260730)
+﻿# Call scenes + the backdrop toggle (260730)
 
 A voice call has two views now, switched by the mountain pill beside
 mute/deafen (`CallControls`, opt-in via props so GameSurface's in-game cluster
@@ -11,7 +11,7 @@ onboarding grass field); everyone else's backdrop is their own art.
   between, plus actor poses `idle`/`talk`/`walk`, rest position, entrance);
   `renderer/src/lib/callScenes.ts` is the registry + resolver + pure geometry;
   `components/call/CallScene.tsx` is the generic renderer. The whole point of
-  the seam is that user-authored scenes only have to produce a descriptor —
+  the seam is that user-authored scenes only have to produce a descriptor â€”
   `resolveCallScene` starts reading `character.metadata` and nothing else
   changes. Every visual slot is one `ScenePaint` union (`images` cycled on a
   timer, or a `video`), so "scene image/video" and "talking animation
@@ -31,7 +31,7 @@ onboarding grass field); everyone else's backdrop is their own art.
   instant the call view mounts (pressing call must land you somewhere; waiting
   on a connection would make the scene read as a loading screen). The character
   waits off-stage and walks on when the call goes LIVE, so the walk reads as
-  her answering. Her first line waits until she has ARRIVED — otherwise she
+  her answering. Her first line waits until she has ARRIVED â€” otherwise she
   greets you from off-screen mid-stride.
   Only a call that is ALREADY LIVE at mount may skip the entrance. The first
   cut tested "status is not connecting", which meant every dial skipped it and
@@ -43,13 +43,13 @@ onboarding grass field); everyone else's backdrop is their own art.
   when a line reached the audio queue's playhead, which for a streamed clip is
   before the TTS request has even been sent: the whole synthesis round trip sat
   between the signal and the first sample. Every visible sign of speech in the
-  app was therefore early — the avatar rings on all five call surfaces, the
+  app was therefore early â€” the avatar rings on all five call surfaces, the
   caption, and (where it became impossible to ignore) the scene's talking
   animation. `useVoiceStore` now publishes the START of speech from the queue's
   `onAudible` callback, which already existed for the barge-in grace window and
   now carries the speaker and the line; only the STOP still comes from
   `onSpeakingChange`. The dictation half-duplex hold deliberately stays on the
-  SLOT (see the comment there) — the synthesis gap must keep the stiffer barge
+  SLOT (see the comment there) â€” the synthesis gap must keep the stiffer barge
   bar. So: anything the player SEES follows `onAudible`; anything arbitrating
   the microphone follows the playhead.
 - **The greeting gate reuses the buffer that already existed.**
@@ -65,7 +65,7 @@ onboarding grass field); everyone else's backdrop is their own art.
   `cover` rule covers both pane shapes: on a wide window a portrait is
   width-driven and overflows vertically (the "fit to width, drag up and down"
   case), and in a narrow split column it flips to height-driven and simply
-  fills instead of letterboxing. Drag maps px→`background-position-y` % through
+  fills instead of letterboxing. Drag maps pxâ†’`background-position-y` % through
   the real overflow so the art tracks the cursor 1:1. Characters with no
   uploaded art fall back to their procedural portrait as pixelated wallpaper.
 - **Group calls never get a scene** (a scene stages ONE actor): they always get
@@ -84,10 +84,10 @@ onboarding grass field); everyone else's backdrop is their own art.
   collapse into one bar revealed on pointer-proximity to the bottom edge (the
   same reveal GameSurface uses), always shown while not live so a ringing or
   failed call is never un-hangupable. Captions and the STT-fallback offer stay
-  visible — an accessibility aid you have to hover to read is not one.
+  visible â€” an accessibility aid you have to hover to read is not one.
   `.stageBackdrop` sets `isolation: isolate` because positioned children paint
   above static siblings, so without a stacking context the art would cover the
-  captions it sits behind. The bar has **no panel behind it** — a box cuts a
+  captions it sits behind. The bar has **no panel behind it** â€” a box cuts a
   rectangle out of the picture the mode exists to show. What separates it from
   the art instead is a drop-shadow plus a theme-INDEPENDENT treatment for
   anything sitting on top: `CallControls`' `onArt` variant (fixed dark scrim,
@@ -95,3 +95,7 @@ onboarding grass field); everyone else's backdrop is their own art.
   colours are chosen against the app's surface, so on art they fail one way in
   light and the other way in dark. Same reasoning the share view uses when it
   paints its own chrome over someone else's screen.
+
+
+
+

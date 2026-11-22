@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { checkScope, type ScopeContext } from './scope';
 import { targetFromSourceId } from './env';
 import type { WindowInfo } from './types';
@@ -61,3 +61,7 @@ describe('targetFromSourceId', () => {
     expect(targetFromSourceId('camera:1')).toBeNull();
   });
 });
+
+
+
+

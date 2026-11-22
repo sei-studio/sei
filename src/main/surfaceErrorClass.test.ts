@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: local/Ollama/BYOK failures classified as unknown/turn_unknown (180
  * events from one Ollama user in 30 days). These tests drive the REAL
  * providers with fake HTTP responses (the bodies are the ones Ollama, OpenAI-
@@ -203,3 +203,7 @@ describe('surfaceErrorClass: transport codes and our own sentinels', () => {
     for (const s of samples) expect(surfaceErrorClass(s)).toMatch(/^[a-z0-9_]{1,64}$/);
   });
 });
+
+
+
+

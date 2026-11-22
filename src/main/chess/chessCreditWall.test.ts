@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess on the credit wall (260926): a 402 on the cloud allowance must not
  * end or stall the game. The engine plays every AI move from then on (the top
  * sampled candidate), no further LLM turn runs (no 402 and no popup per move),
@@ -230,7 +230,7 @@ describe('chess on the credit wall', () => {
     expect(notices).toHaveLength(1);
     expect(notices[0].text).toContain('Marv');
     expect(notices[0].text).toMatch(/Free play resets in 3 days \(\w+, \w+ \d+\)\./);
-    expect(notices[0].text).not.toContain('—');
+    expect(notices[0].text).not.toContain('â€”');
     await waitFor(() => (degradedEvents().length ? true : undefined));
     expect(degradedEvents()).toHaveLength(1);
     expect(degradedEvents()[0][1]).toMatchObject({ surface: 'chess', character_id: CHAR, mode: 'engine_only' });
@@ -392,3 +392,7 @@ describe('creditWallLifted', () => {
     expect(creditWallLifted(null, { ...wall, usage_pct: 10 })).toBe(true);
   });
 });
+
+
+
+

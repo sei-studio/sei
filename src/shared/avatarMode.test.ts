@@ -1,4 +1,4 @@
-/** effectiveAvatarMode (260804) — the deprecated-boolean fold. */
+﻿/** effectiveAvatarMode (260804) â€” the deprecated-boolean fold. */
 import { describe, it, expect } from 'vitest';
 import { effectiveAvatarMode } from './characterSchema';
 
@@ -20,3 +20,7 @@ describe('effectiveAvatarMode', () => {
     expect(effectiveAvatarMode({ avatar_mode: 'activity' })).toBe('activity');
   });
 });
+
+
+
+

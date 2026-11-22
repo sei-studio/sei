@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
+﻿import { mkdtemp, readdir, rm, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -92,7 +92,7 @@ describe('AnimaPackStore', () => {
   });
 });
 
-// ── AnimaClient ─────────────────────────────────────────────────────────────
+// â”€â”€ AnimaClient â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Harness {
   client: AnimaClient;
@@ -431,7 +431,7 @@ describe('AnimaClient per-avatar bakes (261106)', () => {
   });
 });
 
-// ── cloud cut-outs (261118) ─────────────────────────────────────────────────
+// â”€â”€ cloud cut-outs (261118) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 73, 72, 68, 82, 1, 2, 3]);
 const PNG2 = new Uint8Array([...PNG, 4]);
@@ -530,3 +530,7 @@ describe('AnimaClient cut-outs (261118)', () => {
     expect(h.ready).toEqual([CHAR, CHAR]);
   });
 });
+
+
+
+

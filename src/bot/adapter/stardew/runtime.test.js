@@ -1,4 +1,4 @@
-// Runtime lifecycle against the fake mod (scripts/fake-stardew-mod.mjs):
+﻿// Runtime lifecycle against the fake mod (scripts/fake-stardew-mod.mjs):
 // connect + spawn + brain start + summon-ready, the refused-spawn and
 // unreachable-port terminal paths, the token failure, reconnect after a drop
 // with the world still open, terminal after a drop with the world gone,
@@ -58,10 +58,10 @@ describe('stardew runtime helpers', () => {
     expect(botUsernameFor({ username: 'Marv_2', name: 'x' })).toBe('Marv_2')
     expect(botUsernameFor({})).toBe('Sei')
     // 261027: accented letters are folded, not deleted; other scripts as before.
-    expect(botUsernameFor({ name: 'Martín Salazar' })).toBe('Martin Salazar')
-    expect(botUsernameFor({ name: 'Søren-Åke Straße' })).toBe('Soren-Ake Strasse')
-    expect(botUsernameFor({ name: '晨辉' })).toBe('Sei')
-    expect(botUsernameFor({ name: 'ßßßßßßßßßßßßß' })).toBe('ssssssssssssssssssssssss')
+    expect(botUsernameFor({ name: 'MartÃ­n Salazar' })).toBe('Martin Salazar')
+    expect(botUsernameFor({ name: 'SÃ¸ren-Ã…ke StraÃŸe' })).toBe('Soren-Ake Strasse')
+    expect(botUsernameFor({ name: 'æ™¨è¾‰' })).toBe('Sei')
+    expect(botUsernameFor({ name: 'ÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸÃŸ' })).toBe('ssssssssssssssssssssssss')
     expect(adapterConfigFrom({ joinTarget: { port: 1, token: 't' }, botUsername: 'Sui' })).toEqual({ host: 'localhost', port: 1, token: 't', username: 'Sui' })
     expect(checkJoinTarget(null)?.error).toBe('GAME_WORLD_NOT_OPEN')
     expect(checkJoinTarget({ port: 1 })?.error).toBe('GAME_WORLD_NOT_OPEN')
@@ -251,3 +251,7 @@ describe('stardew runtime against the fake mod', () => {
     expect(hooks.onDisconnected).toHaveBeenLastCalledWith(expect.objectContaining({ willRetry: false }))
   })
 })
+
+
+
+

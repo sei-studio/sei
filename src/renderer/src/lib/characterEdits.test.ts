@@ -1,4 +1,4 @@
-/**
+﻿/**
  * characterEdits (261119): the save rules the profile's inline editors use,
  * carried over unchanged from the Edit companion popup.
  */
@@ -141,3 +141,7 @@ describe('persona', () => {
     expect(personaModeOf({ metadata: {} })).toBe('standard');
   });
 });
+
+
+
+

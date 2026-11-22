@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rollFields, mulberry32, COMBAT_ARCHETYPES, COMBAT_SPECIES_MODIFIERS } from '../src/index.js';
 
@@ -102,3 +102,7 @@ test('combat object always has exactly the four stats plus archetype', () => {
   assert.deepEqual(Object.keys(r.combat).sort(), ['archetype', 'defense', 'intelligence', 'melee', 'ranged']);
   assert.equal(typeof r.combat.archetype, 'string');
 });
+
+
+
+

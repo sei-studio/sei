@@ -1,12 +1,12 @@
-/**
- * Minimal tar reader (260816, china-compat W3+W4) — just enough to unpack the
+﻿/**
+ * Minimal tar reader (260816, china-compat W3+W4) â€” just enough to unpack the
  * known k2-fsa model archives: ustar/pax regular files and directories, with
  * pax `path` extended headers and GNU longname (type 'L') honored because the
  * archives are produced by modern GNU/BSD tar. Symlinks, hardlinks and devices
  * are SKIPPED (the model archives contain none; extracting links from a
  * downloaded archive would be a path-traversal surface).
  *
- * Pure function over bytes → entry list; the caller owns writing to disk (and
+ * Pure function over bytes â†’ entry list; the caller owns writing to disk (and
  * the traversal check on entry names).
  */
 
@@ -102,3 +102,7 @@ export function parseTar(buf: Uint8Array): TarEntry[] {
   }
   return entries;
 }
+
+
+
+

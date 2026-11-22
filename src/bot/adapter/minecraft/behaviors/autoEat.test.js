@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { shouldAutoEat, inCombat, noteCombat, STARVING_FOOD, IN_COMBAT_MS, FIGHT_EAT_HEALTH } from './autoEat.js'
 import { keepWeaponInHand } from './weaponSelect.js'
 
@@ -62,3 +62,7 @@ describe('keepWeaponInHand (261011)', () => {
     expect(keepWeaponInHand(bot('stone_sword'))).toBe(false)
   })
 })
+
+
+
+

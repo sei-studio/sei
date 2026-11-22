@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 review: the network steps of a profile move are bounded. The cloud
  * name backfill reads the session first (a token refresh, ~25 s or more
  * offline) and the own-character pull talks to the cloud; a hung one held the
@@ -82,3 +82,7 @@ describe('profile move network steps', { timeout: 20_000 }, () => {
     expect((await loadConfig()).preferred_name).toBe('Ann');
   });
 });
+
+
+
+

@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Electron main process: the app. Loaded by the boot shim (boot.ts, the built
  * dist/main/index.js) after the app name, the single-instance lock, the boot
  * guard and the updater are set up; never loaded in safe mode.
  *
  * Composes:
- *   - First-launch migration (legacy persona → characters/sui.json)
+ *   - First-launch migration (legacy persona â†’ characters/sui.json)
  *   - BrowserWindow (1180x760, platform-branched chrome)
  *   - LAN watcher (shared UDP socket, 3s stale)
  *   - Bot supervisor (one bot at a time)
@@ -12,9 +12,9 @@
  *   - Graceful shutdown on before-quit
  *
  * Sources:
- *   - PATTERNS §src/main/index.ts (lines 370–424)
- *   - RESEARCH §Pattern 1 (utilityProcess + MessageChannel) — used inside botSupervisor
- *   - RESEARCH §Pitfall 5 (everything behind app.whenReady)
+ *   - PATTERNS Â§src/main/index.ts (lines 370â€“424)
+ *   - RESEARCH Â§Pattern 1 (utilityProcess + MessageChannel) â€” used inside botSupervisor
+ *   - RESEARCH Â§Pitfall 5 (everything behind app.whenReady)
  *   - CONTEXT D-15, D-21, D-32, project constraints
  */
 // remoteDebugGuard, velopackBoot and velopackMigration's early boot run from
@@ -135,7 +135,7 @@ import { IpcChannel, lanHostWarning, forgeHostBlock, FORGE_HOST_BLOCKED, type La
 registerPortraitScheme([{ ...SEILINK_SCHEME_PRIVILEGES, privileges: { ...SEILINK_SCHEME_PRIVILEGES.privileges } }]);
 
 // Backseat (260728): ask Chromium for the macOS system-audio loopback path.
-// MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 — the track
+// MEASURED NOT TO WORK on macOS 26.4 / Electron 42 / Chromium 148 â€” the track
 // is created and labelled "System audio" but carries digital silence, in every
 // request shape. Electron documents `loopback` as Windows-only and that matches
 // reality. The switches are left in because they cost nothing, they are the
@@ -191,7 +191,7 @@ registerGameModule(createStardewGameModule({ logger }));
 let watchersRunning = false;
 let supervisor: ReturnType<typeof createBotSupervisor> | null = null;
 // Loopback HTTP server serving persona skin PNGs to
-// CustomSkinLoader on the host's MC client. Bound on boot (port 0 → OS-chosen
+// CustomSkinLoader on the host's MC client. Bound on boot (port 0 â†’ OS-chosen
 // ephemeral) so the supervisor + IPC layer can hand the baseUrl out via the
 // injected closures below.
 let skinServer: { baseUrl: string; port: number; stop: () => Promise<void> } | null = null;
@@ -261,7 +261,7 @@ function nextStepForMainClosedCall(reason: string, id: string, connectedMs: numb
 }
 
 /**
- * Voice calls (260705): a call cannot survive its renderer — the mic and
+ * Voice calls (260705): a call cannot survive its renderer â€” the mic and
  * audio playback live there. Sweep the call flags on any main-frame
  * navigation (incl. reload/HMR) and on renderer death, telling any live bot
  * to resume normal in-game chat; without this a mid-call reload leaves the
@@ -498,7 +498,7 @@ function wireMainWindowEvents(win: BrowserWindow): void {
 
 function broadcastLan(state: LanState): void {
   // Transition log (260703): broadcastLan only fires on CHANGE (the watcher's
-  // emit gate), so this is one line per flip — enough to reconstruct exactly
+  // emit gate), so this is one line per flip â€” enough to reconstruct exactly
   // what the companion/pill believed at any moment when triaging "Marv says my
   // open world is closed" reports.
   console.log(
@@ -551,9 +551,9 @@ async function worldCheckNow(game: GameId): Promise<WorldState> {
 
 /**
  * Current per-character bot status, maintained by broadcastStatus (idle drops
- * the key, everything else upserts — same shape the renderer keeps). Backs the
+ * the key, everything else upserts â€” same shape the renderer keeps). Backs the
  * bot:get-statuses snapshot pull: status pushes only fire on TRANSITIONS, so a
- * renderer that (re)subscribes after 'online' — reload, dev HMR, late mount —
+ * renderer that (re)subscribes after 'online' â€” reload, dev HMR, late mount â€”
  * would otherwise never learn a session is live (260703).
  */
 const currentStatuses = new Map<string, BotStatus>();
@@ -561,7 +561,7 @@ const currentStatuses = new Map<string, BotStatus>();
 /**
  * Characters whose bot is fully ONLINE (spawned in-world), so a chat message can
  * be safely routed into that live session (task 4). A merely-'connecting' session
- * must NOT be routed to — it may never spawn, which would strand the chat's
+ * must NOT be routed to â€” it may never spawn, which would strand the chat's
  * typing indicator waiting for a reply that never comes.
  */
 const onlineIds = new Set<string>();
@@ -659,7 +659,7 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
     role: 'system',
     text:
       callLanguage === 'zh'
-        ? `你和${name}通话了${formatPlayDuration(durationMs, 'zh')}。`
+        ? `ä½ å’Œ${name}é€šè¯äº†${formatPlayDuration(durationMs, 'zh')}ã€‚`
         : `You and ${name} called for ${formatPlayDuration(durationMs)}.`,
     // A call is not a game, so it keeps its own verb; only the shared duration
     // phrasing is reused.
@@ -668,7 +668,7 @@ async function emitCallSession(characterId: string, durationMs: number): Promise
   });
 }
 
-/** Voice calls (260705): the companion hung up (end_call) — clear main-side
+/** Voice calls (260705): the companion hung up (end_call) â€” clear main-side
  *  call state and tell the renderer, which finishes speaking the goodbye then
  *  tears the call down (and reports connectedMs back for the call-log row). */
 function endVoiceCallFromCompanion(characterId: string): void {
@@ -678,18 +678,18 @@ function endVoiceCallFromCompanion(characterId: string): void {
       // account switch in between can still close it in the right account.
       const { endCallFromCompanion } = await import('./voice/callState');
       endCallFromCompanion(characterId);
-    } catch { /* state module unavailable — renderer teardown still proceeds */ }
+    } catch { /* state module unavailable â€” renderer teardown still proceeds */ }
   })();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(IpcChannel.voice.callEnded, { characterId });
   }
 }
 
-// 260703: the "joined your world" system line was removed — the floating
+// 260703: the "joined your world" system line was removed â€” the floating
 // SummonedWidget is the live-session surface, so the chat row was redundant.
 
 /**
- * Party redesign §2/§5: push the companion's current world action to the
+ * Party redesign Â§2/Â§5: push the companion's current world action to the
  * renderer over `bot:action`. `name` null clears the verb (loop idle / session
  * ended). The renderer maps name+args to a presence phrase.
  */
@@ -875,19 +875,19 @@ function broadcastStatus(status: BotStatus): void {
   const id = (status as { characterId?: string }).characterId;
   if (!id) return;
   // A TRANSIENT error (BotStatus.error.transient) is advisory: the session is
-  // still live (e.g. a mid-session backend switch to local with no key — the
+  // still live (e.g. a mid-session backend switch to local with no key â€” the
   // bot stays connected and just 401s). It must NOT be treated as a session
   // end. We still upsert it into currentStatuses and forward it to the renderer
   // above (the model row should surface the "no key" error), but we leave
   // onlineIds and playStartedAt untouched so chat keeps routing to the live bot
   // and the eventual REAL end still reports the right total duration (260703).
   const transientError = status.kind === 'error' && status.transient === true;
-  // Snapshot map for bot:get-statuses — mirror the renderer's summons-map
+  // Snapshot map for bot:get-statuses â€” mirror the renderer's summons-map
   // semantics ('idle' means the session is gone). A transient error still
   // upserts (renderer keeps showing the error over the still-live session).
   if (status.kind === 'idle') currentStatuses.delete(id);
   else currentStatuses.set(id, status);
-  // Dashboard (260721): the session is gone — drop the cached telemetry so a
+  // Dashboard (260721): the session is gone â€” drop the cached telemetry so a
   // later summon never hydrates a stale snapshot (every game's cache).
   if (status.kind === 'idle') clearGameDashboard(id);
   if (transientError) return;
@@ -900,7 +900,7 @@ function broadcastStatus(status: BotStatus): void {
   // Play-session bookkeeping: stamp first-online, and on the terminal
   // idle/error post a "played for X" row (only if the bot was actually live).
   if (status.kind === 'online') {
-    // 260828: a successful summon proves the pre-gate condition is gone —
+    // 260828: a successful summon proves the pre-gate condition is gone â€”
     // release the auto-retry block (see summonGuard.ts).
     clearSummonBlock(id);
     if (!playStartedAt.has(id)) {
@@ -944,7 +944,7 @@ function broadcastStatus(status: BotStatus): void {
     // took it when the session was live).
     takeSessionDigest(id);
     // 260720: the thin summon_failed capture that used to live here (terminal
-    // error with no live session → character_id + reason) moved to the
+    // error with no live session â†’ character_id + reason) moved to the
     // supervisor's onSummonFailure wiring (see createBotSupervisor below),
     // which ships the same event name enriched with phase, exit code, and
     // redacted diagnostics. Capturing here too would double-count.
@@ -988,7 +988,7 @@ function broadcastExpansionProgress(ev: ExpansionProgressEvent): void {
   }
 }
 
-// 260703 procgen — unique-companion generation stage-progress push channel. The
+// 260703 procgen â€” unique-companion generation stage-progress push channel. The
 // gen:start handler forwards each GenProgressEvent through here so the renderer's
 // `window.sei.onGenProgress(...)` subscription drives the generation ritual UI.
 function broadcastGenProgress(ev: GenProgressEvent): void {
@@ -1066,7 +1066,7 @@ async function bootstrap(): Promise<void> {
     logger.warn(`install marker failed: ${(err as Error).message}`);
   }
 
-  // 0. Auth foundation — wire safeStorage-backed session storage into the
+  // 0. Auth foundation â€” wire safeStorage-backed session storage into the
   //    Supabase client BEFORE any auth IPC handler can call getClient().
   //    This is the only legal point in the lifecycle to call setStorageAdapter
   //    (plan 10-01 throws SUPABASE_CLIENT_ALREADY_CREATED if called later).
@@ -1076,10 +1076,10 @@ async function bootstrap(): Promise<void> {
     setStorageAdapter(createSessionStorageAdapter());
   }
 
-  // 0a. Per-profile partitioning (260603) — determine the active scope from
+  // 0a. Per-profile partitioning (260603) â€” determine the active scope from
   //     the persisted Supabase session BEFORE any per-account store is read or
-  //     written. Signed in at boot → the account's UUID profile owns the
-  //     existing data; signed out → the anonymous 'local' profile. The
+  //     written. Signed in at boot â†’ the account's UUID profile owns the
+  //     existing data; signed out â†’ the anonymous 'local' profile. The
   //     auth-event subscription (step 5b) re-points the scope on any later
   //     sign-in/out/swap, and initAuthState moves it when its own session
   //     load disagrees with this one.
@@ -1098,7 +1098,7 @@ async function bootstrap(): Promise<void> {
     markProfileScopeReady();
   }
 
-  // 0b. One-shot global→profile partition. Relocates a pre-existing install's
+  // 0b. One-shot globalâ†’profile partition. Relocates a pre-existing install's
   //     global per-account data (config, characters, skins, portraits, memory,
   //     api key, sync queue, trackers) into the scope set above. Idempotent via
   //     profiles-partitioned.json. MUST run BEFORE the legacy migrations and
@@ -1114,7 +1114,7 @@ async function bootstrap(): Promise<void> {
   try { await runFirstLaunchMigration(); }
   catch (err) { logger.warn(`migration failed: ${(err as Error).message}`); }
 
-  // 1a. Slug→UUID rename (Phase 11 D-23). Idempotent via
+  // 1a. Slugâ†’UUID rename (Phase 11 D-23). Idempotent via
   //     <userData>/migration-uuid-rename.json. MUST run BEFORE botSupervisor
   //     is wired (Pitfall 7: rename mid-summon would corrupt skinServer
   //     state) and BEFORE any cloud-mirror call could fire (Plan 11-07/08
@@ -1134,11 +1134,11 @@ async function bootstrap(): Promise<void> {
   // normal owned/public World shape (is_default:false, owner =
   // DEFAULT_CHARACTERS_OWNER, kind:'custom', cloud_updated_at:null). After the
   // flip, cache-on-demand's refreshFromCloud pulls the authoritative persona /
-  // portrait / skin from the cloud row on next open — no bundle re-assert
+  // portrait / skin from the cloud row on next open â€” no bundle re-assert
   // needed. Idempotent (state-gated heal + config.defaults_to_world_migrated);
   // a no-op on a fresh install that has no is_default files.
   try { await runDefaultsToWorldMigration(); }
-  catch (err) { logger.warn(`defaults→world migration failed: ${(err as Error).message}`); }
+  catch (err) { logger.warn(`defaultsâ†’world migration failed: ${(err as Error).message}`); }
 
   // 1b-4. First-launch UI language detection (260816, china-compat): a
   // Chinese system locale switches the UI to zh, once, only while the user
@@ -1148,7 +1148,7 @@ async function bootstrap(): Promise<void> {
     await applyLocaleDetection();
   }
 
-  // 1b-3. Cloud-default self-heal. The signed-in→cloud default is written on the
+  // 1b-3. Cloud-default self-heal. The signed-inâ†’cloud default is written on the
   // sign-in TRANSITION only; a session-restore launch re-points the scope at
   // boot, so that transition never re-fires and a profile stuck on the schema
   // default 'local' (e.g. last signed in on a build predating the default) would
@@ -1168,7 +1168,7 @@ async function bootstrap(): Promise<void> {
   } catch (err) { logger.warn(`playtime backfill failed: ${(err as Error).message}`); }
 
   // 1c. Start the loopback skin HTTP server BEFORE any bot is
-  // summoned — the bot supervisor passes the baseUrl into the bot init payload
+  // summoned â€” the bot supervisor passes the baseUrl into the bot init payload
   // (where the bot logs it for verification; CustomSkinLoader on the host's MC
   // client is the real consumer). Bind failure is non-fatal: the bot still
   // launches without custom skins, and the renderer's getSkinServerUrl IPC
@@ -1194,8 +1194,8 @@ async function bootstrap(): Promise<void> {
   // fixed port). If the wizard has been run before AND the current port
   // differs from the one persisted in wizardState, the CSL configs on disk
   // for previously-enabled installs point at a stale loopback URL and skins
-  // won't load — rewrite them in place. Bounded by enabledInstallIds (≤ ~10);
-  // each rewrite is a small atomic JSON write (≤ 1s typical).
+  // won't load â€” rewrite them in place. Bounded by enabledInstallIds (â‰¤ ~10);
+  // each rewrite is a small atomic JSON write (â‰¤ 1s typical).
   if (skinServer) {
     try {
       const wizardState = await loadWizardState();
@@ -1207,13 +1207,13 @@ async function bootstrap(): Promise<void> {
         logger.info(
           `skin server port drift detected, rewriting ${wizardState.enabledInstallIds.length} CSL configs`,
         );
-        // Lazy import — only loaded when drift is detected. Keeps the
+        // Lazy import â€” only loaded when drift is detected. Keeps the
         // bootstrap fast path (no drift on most launches) module-init free
         // of customSkinLoader's network-tracing dependencies.
         const { writeCustomSkinLoaderConfig } = await import('./customSkinLoader');
         const { scanMcInstalls } = await import('./mcInstallScan');
         // scanMcInstalls failing here used to abort the whole block via the
-        // outer catch — silently leaving every CSL config frozen at a stale
+        // outer catch â€” silently leaving every CSL config frozen at a stale
         // port (the exact symptom: bot joins as Steve after a Sei restart).
         // Isolate it so the failure is logged distinctly and we don't persist
         // a new port we never actually wrote into any config.
@@ -1223,7 +1223,7 @@ async function bootstrap(): Promise<void> {
         } catch (err) {
           logger.warn(
             `port drift rewrite: scanMcInstalls failed (${(err as Error).message}); ` +
-              `CSL configs left unchanged — skins may load from a stale port until the wizard is re-run`,
+              `CSL configs left unchanged â€” skins may load from a stale port until the wizard is re-run`,
           );
           installs = null;
         }
@@ -1233,7 +1233,7 @@ async function bootstrap(): Promise<void> {
           const inst = byId.get(installId);
           if (!inst) {
             // User moved / deleted the MC dir between wizard runs. Skip
-            // gracefully — the row will just disappear from the wizard UI
+            // gracefully â€” the row will just disappear from the wizard UI
             // next time the user opens it.
             logger.warn(`port drift rewrite: install ${installId} no longer detected; skipping`);
             continue;
@@ -1242,11 +1242,11 @@ async function bootstrap(): Promise<void> {
           // processOneInstall); nothing to rewrite at boot either.
           if (inst.kind === 'lunar') continue;
 
-          // Same loader-kind decision as wizard.ts: vanilla → fabric;
-          // CurseForge → detected loader (fabric or forge), default forge.
+          // Same loader-kind decision as wizard.ts: vanilla â†’ fabric;
+          // CurseForge â†’ detected loader (fabric or forge), default forge.
           const loaderKind: 'fabric' | 'forge' =
             inst.kind === 'vanilla' ? 'fabric' : (inst.loader === 'fabric' ? 'fabric' : 'forge');
-          // 260518-o1k T5: targetDir matches the wizard's placement rule —
+          // 260518-o1k T5: targetDir matches the wizard's placement rule â€”
           // vanilla writes config into the isolated <.minecraft>/sei/ dir;
           // CurseForge writes into the instance dir (unchanged). Without
           // this, port-drift rewrites would target the OLD vanilla-shared
@@ -1260,9 +1260,9 @@ async function bootstrap(): Promise<void> {
               loaderKind,
               skinServerBaseUrl: skinServer.baseUrl,
             });
-            logger.info(`port drift rewrite: ${installId} → ${skinServer.baseUrl}`);
+            logger.info(`port drift rewrite: ${installId} â†’ ${skinServer.baseUrl}`);
           } catch (err) {
-            // Best-effort — config dir might be read-only or the install
+            // Best-effort â€” config dir might be read-only or the install
             // might be on an unmounted drive. The user can rerun the wizard
             // from settings to fix this manually.
             logger.warn(`port drift rewrite: ${installId} failed: ${(err as Error).message}`);
@@ -1270,13 +1270,13 @@ async function bootstrap(): Promise<void> {
         }
           // Persist the new port so the next launch (if no further drift) is
           // a no-op rather than re-rewriting the same configs. Only after a
-          // successful scan — otherwise we'd record a port that no config
+          // successful scan â€” otherwise we'd record a port that no config
           // actually points at.
           await saveWizardState({ ...wizardState, lastSkinServerPort: skinServer.port });
         }
       }
     } catch (err) {
-      // Non-fatal — bot still launches, just the configs may be stale. User
+      // Non-fatal â€” bot still launches, just the configs may be stale. User
       // can re-run the wizard from Settings to fix it manually.
       logger.warn(`port drift detection failed: ${(err as Error).message}`);
     }
@@ -1309,7 +1309,7 @@ async function bootstrap(): Promise<void> {
     });
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
     if (process.platform === 'win32') {
-      // 260709 — Windows never shows a per-app mic prompt for desktop apps:
+      // 260709 â€” Windows never shows a per-app mic prompt for desktop apps:
       // getUserMedia either works silently or fails because the OS privacy
       // toggle ("Let desktop apps access your microphone") is off. There is
       // no askForMediaAccess on Windows, so we can only read the status and
@@ -1325,14 +1325,14 @@ async function bootstrap(): Promise<void> {
           );
         }
       } catch {
-        /* older Electron — getMediaAccessStatus unavailable; nothing to log */
+        /* older Electron â€” getMediaAccessStatus unavailable; nothing to log */
       }
     }
   }
 
   // 2. Create main window
   //    Attach the sei-portrait:// request handler first so the renderer can
-  //    resolve <img src="sei-portrait://…"> the moment it loads.
+  //    resolve <img src="sei-portrait://â€¦"> the moment it loads.
   registerPortraitProtocol();
   registerSeilinkProtocol();
   // 261120: cap notices outside the window (OS notification, replay).
@@ -1369,7 +1369,7 @@ async function bootstrap(): Promise<void> {
   // target so it can load the overlay-mode bundle.
   initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
 
-  // 3. World watchers (D-21 — single instance per game for the whole app
+  // 3. World watchers (D-21 â€” single instance per game for the whole app
   // session). Minecraft's is the LAN watcher behind its GameModule.
   for (const mod of listGameModules()) mod.watcher.start({ onUpdate: broadcastWorld });
   watchersRunning = true;
@@ -1403,7 +1403,7 @@ async function bootstrap(): Promise<void> {
     // Phase 15 (D-10/VIS-03): forward the bot's vision-capability push to the
     // renderer over the dedicated vision:capability channel.
     sendVisionCapability: broadcastVisionCapability,
-    // Task 4 — a live in-game bot replied to a message routed in from the chat.
+    // Task 4 â€” a live in-game bot replied to a message routed in from the chat.
     // Persist it to the transcript and surface it live (same as a normal reply).
     onBotChat: (characterId, text) => {
       const trimmed = (text ?? '').trim();
@@ -1421,11 +1421,11 @@ async function bootstrap(): Promise<void> {
         ...(wasCallRecentlyActive(characterId) ? { voice: true } : {}),
       });
     },
-    // Party redesign §2/§5 — the live bot's current world action (verb line).
+    // Party redesign Â§2/Â§5 â€” the live bot's current world action (verb line).
     onBotAction: broadcastAction,
-    // Dashboard (260721) — telemetry snapshots from the live bot, dispatched
-    // on snapshot.game (Minecraft → mcDashboardService → mcdash:snapshot;
-    // other games → gamedash:snapshot). Validated before the renderer sees it.
+    // Dashboard (260721) â€” telemetry snapshots from the live bot, dispatched
+    // on snapshot.game (Minecraft â†’ mcDashboardService â†’ mcdash:snapshot;
+    // other games â†’ gamedash:snapshot). Validated before the renderer sees it.
     onDashboard: publishGameDashboardSnapshot,
     onActionStats: (characterId, stats) => mcSessionReporter.stats(characterId, stats),
     onDstLives: (characterId, raw) => dstLivesReporter.note(characterId, raw),
@@ -1444,7 +1444,7 @@ async function bootstrap(): Promise<void> {
     // Pre-flight gate (260724): block a cloud-proxy summon when the account is
     // over its weekly limit with no extra credits left, so the bot never joins
     // the world to idle. cloudOverLimit self-guards (no-session / BYOK / errors
-    // → false), so the dynamic import is the only thing we defend against here.
+    // â†’ false), so the dynamic import is the only thing we defend against here.
     cloudOverLimit: async () => {
       try {
         const { cloudOverLimit } = await import('./cloud/proxyClient');
@@ -1457,12 +1457,12 @@ async function bootstrap(): Promise<void> {
     // Voice calls (260705): lets summon-ready re-apply an open call to a bot
     // that spawned mid-call (launch()-from-a-call handoff).
     isVoiceCallActive: isCallActive,
-    // Voice calls (260705): the in-game bot called end_call() — hang up the
+    // Voice calls (260705): the in-game bot called end_call() â€” hang up the
     // player's call (the renderer finishes speaking the goodbye first).
     onCallEndRequested: endVoiceCallFromCompanion,
     // P0 failed-summon diagnostics (260720): ship a REDACTED diagnostic to
     // PostHog at each terminal summon failure. Replaces the old thin
-    // summon_failed capture in broadcastStatus — same event name for dashboard
+    // summon_failed capture in broadcastStatus â€” same event name for dashboard
     // continuity (`reason` kept as a legacy alias of error_class), now with
     // phase, exit code, redacted stderr/stdout tails, and MC/world context.
     // Note summon_phase == 'mid_session' rows are post-summon crashes; filter
@@ -1473,7 +1473,7 @@ async function bootstrap(): Promise<void> {
       pendingBootProps.set(characterId, bootProps);
     },
     onSummonFailure: (info) => {
-      // 260828 retry-loop guard: a pre-gate refusal is deterministic — arm the
+      // 260828 retry-loop guard: a pre-gate refusal is deterministic â€” arm the
       // auto-retry block so the launch() tool and the voice launch honors stop
       // re-attempting it (manual Summon clicks clear it; see summonGuard.ts).
       // Synchronous and before the async capture so the block is armed even if
@@ -1603,7 +1603,37 @@ async function bootstrap(): Promise<void> {
     });
   }
 
-  // Minecraft dashboard (260721): push deps for src/main/mcDashboard.
+  // Forza 4 minigame: module-state deps for src/main/connect4/connect4Service.
+  // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
+  {
+    const { initCONNECT4Service } = await import('./connect4/connect4Service');
+    initCONNECT4Service({
+      pushState: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcChannel.CONNECT4.state, state);
+        }
+      },
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+    });
+  }
+
+  // Battleship minigame: module-state deps for src/main/battleship/battleshipService.
+  // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
+  {
+    const { initBATTLESHIPService } = await import('./battleship/battleshipService');
+    const send = (channel: string, payload: unknown): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
+    };
+    initBATTLESHIPService({
+      pushState: (state) => send(IpcChannel.BATTLESHIP.state, state),
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+    });
+  }
+
   initMcDashboardService({
     pushSnapshot: (s) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1692,7 +1722,7 @@ async function bootstrap(): Promise<void> {
   registerIpcHandlers({
     supervisor,
     // Voice streaming (260706): the streaming chat turn emits each sentence here
-    // (already persisted) so it reaches the renderer — and TTS — immediately.
+    // (already persisted) so it reaches the renderer â€” and TTS â€” immediately.
     pushChatMessage,
     getSkinServerBaseUrl: () => skinServer?.baseUrl ?? null,
     // wizard:install handler forwards per-step progress events here; this
@@ -1707,14 +1737,14 @@ async function bootstrap(): Promise<void> {
     getLanState: () => latestLanState,
     // 260703: run one detection pass right now (refreshes latestLanState via
     // the watcher's emit path). The chat turn awaits this before building the
-    // prompt so the companion answers "is my world open?" from live truth —
+    // prompt so the companion answers "is my world open?" from live truth â€”
     // the player often messages seconds after clicking "Open to LAN", inside
     // the 2s poll window, and the stale 'closed' had Marv insisting an open
     // world was "not broadcasting".
     refreshLanState: async () => {
       try { await minecraftModule.watcher.checkNow(); } catch { /* best-effort */ }
     },
-    // 260703: like refreshLanState but RETURNS the fresh state — backs the
+    // 260703: like refreshLanState but RETURNS the fresh state â€” backs the
     // `lan:check-now` channel the summon click awaits. checkNow's emit path
     // also refreshes latestLanState as a side effect, so the getLanPort() the
     // actual summon reads is fresh by the time it lands. Falls back to the
@@ -1733,16 +1763,16 @@ async function bootstrap(): Promise<void> {
     worldCheckNow,
     // Snapshot pull for the renderer's summons map (see broadcastStatus).
     getBotStatuses: () => [...currentStatuses.values()],
-    // Task 4 — only route chat into a bot that's fully spawned in-world.
+    // Task 4 â€” only route chat into a bot that's fully spawned in-world.
     isSessionOnline: (id) => onlineIds.has(id),
     // 261020: the live session's game, so a chat quit_game plan with no
     // next_time_game is labeled with the game main tags it with at game end.
     sessionGame: (id) => playStartedAt.get(id)?.game ?? null,
-    // A non-blocking chat-launched join failed — tell the COMPANION (task 2,
+    // A non-blocking chat-launched join failed â€” tell the COMPANION (task 2,
     // 260702): its last message said "hopping in", so without a correcting turn
     // its own history claims it joined and it later insists "i'm already in".
     // sendLaunchFailedTurn runs a short persona-voiced turn (persisted), and we
-    // push the replies live. No canned system row (task 7) — the companion
+    // push the replies live. No canned system row (task 7) â€” the companion
     // reports the failure in its own words.
     notifyLaunchFailed: (id, reason) => {
       // 260926: a stop cancelled the join. The player did that on purpose.
@@ -1757,7 +1787,7 @@ async function bootstrap(): Promise<void> {
         }
       })();
     },
-    // Voice calls (260705): a live call ended — post the "You and X called for
+    // Voice calls (260705): a live call ended â€” post the "You and X called for
     // Y" system row (renderer supplies how long audio actually flowed).
     notifyCallEnded: (id, connectedMs, reason, interrupts) => {
       void trackScopedWrite(emitCallSession(id, connectedMs)).catch(() => {});
@@ -1800,7 +1830,7 @@ async function bootstrap(): Promise<void> {
         void startCallNextStep(id, connectedMs);
       }
     },
-    // Voice calls (260705): the call went live — companion greets first. An
+    // Voice calls (260705): the call went live â€” companion greets first. An
     // in-game session takes it over the port (say() routes into the call); an
     // idle character runs a standalone greeting turn whose replies are pushed
     // (and spoken by the renderer's TTS hook).
@@ -1810,7 +1840,7 @@ async function bootstrap(): Promise<void> {
       noteNewSessionForQuit(id); // 261013 (T120)
       // A solo in-game session greets over the port (say() routes to the call).
       // On a group call we always run the standalone greeting turn so the joiner
-      // can name the room — the in-game greet path has no group framing.
+      // can name the room â€” the in-game greet path has no group framing.
       if (peers.length === 0 && onlineIds.has(id) && supervisor?.greetVoiceCall(id)) {
         // 261013 (T119): a new session, so the Home card stops offering the
         // plan (the game's own first greeting was already told about it).
@@ -1864,7 +1894,7 @@ async function bootstrap(): Promise<void> {
 
   // 5b-ii. Product analytics (260707). Init AFTER initAuthState so the backend
   //         kind is settled; the app_opened event is the session-start signal.
-  //         Never throws — analytics must not block startup.
+  //         Never throws â€” analytics must not block startup.
   try {
     const { initAnalytics, capture } = await import('./analytics');
     await initAnalytics();
@@ -1910,7 +1940,7 @@ async function bootstrap(): Promise<void> {
   // 5b-bis. JWT bridge (plan 10-06). Pushes session.access_token to the bot
   //          supervisor on every relevant Supabase auth event, and null on
   //          SIGNED_OUT. Runs AFTER createBotSupervisor (5b uses `supervisor`)
-  //          so updateJwt() has a target. Bind failure is non-fatal —
+  //          so updateJwt() has a target. Bind failure is non-fatal â€”
   //          summons still work, just without an initial JWT seeded in
   //          (Phase 13 will surface its own error if cloud-AI is selected).
   try {
@@ -1948,9 +1978,9 @@ async function bootstrap(): Promise<void> {
   // launch what's-new check (Flow D) immediately and kicks off the startup
   // auto-check (Flow A). In dev it's a no-op (autoUpdater is unpackaged-unsafe);
   // the manual "Check for updates" + download/install IPC handlers route into
-  // the same updater module via ipc.ts. No artificial 8s delay needed —
+  // the same updater module via ipc.ts. No artificial 8s delay needed â€”
   // electron-updater's check is already async + non-blocking.
-  // Operator feed (260725; the startup popup since 261027) — wire the push
+  // Operator feed (260725; the startup popup since 261027) â€” wire the push
   // channel BEFORE initUpdater, which fires the startup refresh as the first
   // leg of the shared cadence.
   // 261031 (T277): the updater itself starts in boot.ts before bootstrap, so a
@@ -1969,7 +1999,7 @@ async function bootstrap(): Promise<void> {
   // 6. Linux fallback warning (RESEARCH Pitfall 3)
   if (process.platform === 'linux' && safeStorageBackendKind() === 'basic_text') {
     logger.warn(
-      'safeStorage backend is basic_text — API key encryption is plaintext-with-hardcoded-key on this system. ' +
+      'safeStorage backend is basic_text â€” API key encryption is plaintext-with-hardcoded-key on this system. ' +
       'Renderer will surface KEYCHAIN_FALLBACK_PLAINTEXT warning to the user.',
     );
   }
@@ -2038,7 +2068,7 @@ async function bootstrap(): Promise<void> {
     );
 
     // Update splash (261030): on Windows, right after Update.exe restarted
-    // Sei, the white Sei logo with "Updating…" (or the error line) under it,
+    // Sei, the white Sei logo with "Updatingâ€¦" (or the error line) under it,
     // matching the update overlay it replaces, closed when the main window
     // first paints. product call (261108): a normal launch shows no splash,
     // the main window appears on its own once it has painted (it stays hidden
@@ -2111,7 +2141,7 @@ async function bootstrap(): Promise<void> {
     }
     // 261005: the app stays resident but the onboarding view is gone.
     reportOnboardingAbandoned('window_closed', capture);
-    // macOS stays resident when the last window closes — which meant a
+    // macOS stays resident when the last window closes â€” which meant a
     // downloaded update NEVER installed for anyone who "closed and reopened
     // the app" (260909): Squirrel.Mac applies a staged update on process
     // TERMINATION, and closing the window terminates nothing, so the staged
@@ -2128,7 +2158,7 @@ async function bootstrap(): Promise<void> {
         logger.info('update ready and last window closed: quitting so it installs');
         app.quit();
       } catch {
-        /* stay resident — the pill's restart still installs */
+        /* stay resident â€” the pill's restart still installs */
       }
     })();
   });
@@ -2140,7 +2170,7 @@ async function bootstrap(): Promise<void> {
     // was still on screen. Both before the flush below.
     try { captureAppQuit(); } catch { /* best-effort */ }
     reportOnboardingAbandoned('quit', capture);
-    // Close any open text-chat session BEFORE the flush below — quitting
+    // Close any open text-chat session BEFORE the flush below â€” quitting
     // mid-conversation is the normal way a chat ends, and an event captured
     // after shutdownAnalytics() would never be sent.
     try { await (await import('./chat/chatSession')).endAllChatSessions(); } catch { /* best-effort */ }
@@ -2177,7 +2207,7 @@ async function bootstrap(): Promise<void> {
     // after SERVER_STOP_TIMEOUT_MS (httpServerStop.ts); before, a keep-alive
     // socket could hold server.close, and so the quit, open forever.
     try { if (skinServer) await skinServer.stop(); } catch { /* best-effort */ }
-    // Same for the auth loopback callback server — release port 54321.
+    // Same for the auth loopback callback server â€” release port 54321.
     try { if (loopbackAuthServer) await loopbackAuthServer.stop(); } catch { /* best-effort */ }
     supervisor = null;
     watchersRunning = false;
@@ -2186,3 +2216,7 @@ async function bootstrap(): Promise<void> {
     app.exit(0);
   });
 }
+
+
+
+

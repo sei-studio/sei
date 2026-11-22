@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together renderer registrations (game adapters M2, 260908).
  * Imported once from App.tsx for its side effects:
  *
@@ -46,3 +46,7 @@ registerSummonFlow('dontstarve', {
     await worldGate.attempt(id);
   },
 });
+
+
+
+

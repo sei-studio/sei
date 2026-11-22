@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Share-screen picker (260728 as a games-picker panel, remade as a call modal
  * 260803).
  *
@@ -148,7 +148,7 @@ export function ShareScreenModal({
   }, []);
 
   // Optimistic, with rollback, over a read-modify-write of the freshest on-disk
-  // config — saveConfig replaces the whole object, so a cached copy would
+  // config â€” saveConfig replaces the whole object, so a cached copy would
   // clobber whatever else changed since this modal opened (the 260725
   // stale-wholesale-save hazard). Main applies it to the live overlay windows.
   const toggleInCaptures = async (next: boolean): Promise<void> => {
@@ -466,3 +466,7 @@ function SourceTile({
     </button>
   );
 }
+
+
+
+

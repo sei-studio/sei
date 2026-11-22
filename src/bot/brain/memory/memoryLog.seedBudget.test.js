@@ -1,4 +1,4 @@
-// readMemoryForSeed budget (261013): a MEMORY.md with no `- [` entry lines
+﻿// readMemoryForSeed budget (261013): a MEMORY.md with no `- [` entry lines
 // used to come back whole, the one path around seed_memory_budget_bytes.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -40,3 +40,7 @@ describe('readMemoryForSeed', () => {
     expect(out).not.toContain('fact number 0\n')
   })
 })
+
+
+
+

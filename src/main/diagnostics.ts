@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Failed-summon diagnostics (260720, P0).
  *
  * ~50% of production summon attempts fail, and the thin `summon_failed`
@@ -8,8 +8,8 @@
  * user machine reaches PostHog with enough context to debug:
  *
  *   botSupervisor.onSummonFailure(info)   raw tails, phase, exit code
- *     → buildSummonDiagnostic(info, ctx)  redaction + MC/world context (here)
- *     → captureDiagnostic('summon_failed', diag)  allowlisted long-text capture
+ *     â†’ buildSummonDiagnostic(info, ctx)  redaction + MC/world context (here)
+ *     â†’ captureDiagnostic('summon_failed', diag)  allowlisted long-text capture
  *
  * Privacy: `redact()` is the load-bearing gate. Everything that leaves the
  * machine through this path is scrubbed of home-directory paths, API keys,
@@ -18,7 +18,7 @@
  * again as a backstop and enforces length caps; unit-tested in
  * diagnostics.test.ts.
  *
- * Also owns `pruneLogsDir` — startup pruning of the previously-unbounded
+ * Also owns `pruneLogsDir` â€” startup pruning of the previously-unbounded
  * `<userData>/logs` directory (log-hygiene quick win, same 260720 work).
  *
  * Deliberately imports NO electron API so the whole module is unit-testable
@@ -29,29 +29,29 @@ import path from 'node:path';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import type { LanState } from '../shared/ipc';
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Where in the summon lifecycle the attempt died:
- *   - 'pre_gate'      → refused before fork (credit gate, daily limit, missing
+ *   - 'pre_gate'      â†’ refused before fork (credit gate, daily limit, missing
  *                       key/name, LAN closed, username conflict, store errors).
- *   - 'fork'          → the child process failed at the process level (spawn
+ *   - 'fork'          â†’ the child process failed at the process level (spawn
  *                       error, or exited before signaling summon-ready).
- *   - 'connect'       → the bot ran and reported a structured lifecycle error
+ *   - 'connect'       â†’ the bot ran and reported a structured lifecycle error
  *                       before summon-ready (MC connect refused, bad version...).
- *   - 'boot_timeout'  → the bot never finished booting (no init-ack) within
+ *   - 'boot_timeout'  â†’ the bot never finished booting (no init-ack) within
  *                       the cold-boot budget (260926; 90s since 261007).
- *   - 'ready_timeout' → the bot booted but did not reach summon-ready within
+ *   - 'ready_timeout' â†’ the bot booted but did not reach summon-ready within
  *                       the 30s ready budget, which starts at init-ack.
- *   - 'mid_session'   → the bot WAS live and crashed (nonzero exit, no stop
- *                       requested). Not a failed summon per se — filter on
+ *   - 'mid_session'   â†’ the bot WAS live and crashed (nonzero exit, no stop
+ *                       requested). Not a failed summon per se â€” filter on
  *                       summon_phase in dashboards that count summon failures.
  */
 export type SummonPhase = 'pre_gate' | 'fork' | 'connect' | 'boot_timeout' | 'ready_timeout' | 'mid_session';
 
 /**
  * Raw failure info handed up by botSupervisor's onSummonFailure callback.
- * Tails and message are UNREDACTED here — buildSummonDiagnostic scrubs them.
+ * Tails and message are UNREDACTED here â€” buildSummonDiagnostic scrubs them.
  */
 export interface SummonFailureInfo {
   characterId: string;
@@ -63,7 +63,7 @@ export interface SummonFailureInfo {
   stderrTail?: string;
   stdoutTail?: string;
   /** Wall-clock ms since the summon attempt started. For phase 'mid_session'
-   *  this spans the whole live session (connect time included) — it doubles as
+   *  this spans the whole live session (connect time included) â€” it doubles as
    *  a crude time-to-crash signal. */
   durationMs: number;
   backend?: 'local' | 'cloud-proxy' | null;
@@ -151,18 +151,18 @@ export function bootPhaseProps(info: BootTimingInfo): Record<string, number | st
 
 /** Main-process context stamped onto the diagnostic at capture time. */
 export interface SummonDiagnosticContext {
-  /** Latest LAN watcher state — carries MC version/protocol/host when open. */
+  /** Latest LAN watcher state â€” carries MC version/protocol/host when open. */
   lan: LanState | null;
   signedIn: boolean;
   packaged: boolean;
 }
 
-// ── Redaction ───────────────────────────────────────────────────────────────
+// â”€â”€ Redaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Post-redaction cap for error_message (PostHog prop budget). */
 const ERROR_MESSAGE_CAP = 2048;
-/** Post-redaction cap per tail — keeps the END (most recent output, where the
- *  crash is). 261031: 8KB → 2KB per the PostHog audit; the crash trace fits,
+/** Post-redaction cap per tail â€” keeps the END (most recent output, where the
+ *  crash is). 261031: 8KB â†’ 2KB per the PostHog audit; the crash trace fits,
  *  the older log lines that mostly carried names and addresses do not. Must
  *  not exceed the analytics-side DIAG_LONG_TEXT_CAP. */
 const TAIL_CAP = 2048;
@@ -171,10 +171,10 @@ const TAIL_CAP = 2048;
  * Log tags whose lines/blocks carry conversation or prompt content
  * (src/bot/brain/log.js emitBlock vocabulary): player/bot chat in+out, the
  * LLM request/response/error blocks, and say/think output. These are stripped
- * wholesale — a crash diagnostic never needs what anyone SAID.
+ * wholesale â€” a crash diagnostic never needs what anyone SAID.
  * [act!]/[heal]/[log] blocks (tool args, coords, plumbing) are kept.
  */
-const CONTENT_TAG_RE = /\[(?:chat<-|chat->|haiku\?|haiku!|haiku✗|say|think|sei-chat)\]/;
+const CONTENT_TAG_RE = /\[(?:chat<-|chat->|haiku\?|haiku!|haikuâœ—|say|think|sei-chat)\]/;
 /** `[HH:MM:SS.mmm] [tag] begin|end` block sentinels (mirrors logRouter). */
 const BLOCK_SENTINEL_RE = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\s+(\[[^\]]+\])\s+(begin|end)\s*$/;
 
@@ -183,10 +183,10 @@ const STRIPPED_MARKER = '[chat/prompt content stripped]';
 /**
  * Drop every line that belongs to a chat/prompt content block or carries a
  * content tag. Handles three shapes:
- *   - a complete `begin ... end` block → replaced by one marker line;
- *   - a block truncated at the END of the tail (begin, no end) → stripped to EOF;
+ *   - a complete `begin ... end` block â†’ replaced by one marker line;
+ *   - a block truncated at the END of the tail (begin, no end) â†’ stripped to EOF;
  *   - a block truncated at the START of the tail (orphan end): everything
- *     before the orphan end is suspect continuation content → stripped.
+ *     before the orphan end is suspect continuation content â†’ stripped.
  */
 function stripContentLines(text: string): string {
   const lines = text.split('\n');
@@ -213,7 +213,7 @@ function stripContentLines(text: string): string {
         continue;
       }
       // Orphan end with no seen begin: the tail started mid-block. For a
-      // content tag every preceding kept line may be its continuation — drop
+      // content tag every preceding kept line may be its continuation â€” drop
       // them all. For a non-content tag keep everything as-is.
       if (isContent) {
         out.length = 0;
@@ -234,7 +234,7 @@ function stripContentLines(text: string): string {
     out.push(line);
   }
   if (inContentBlock) {
-    // begin with no end before the tail was cut — already emitted the marker.
+    // begin with no end before the tail was cut â€” already emitted the marker.
     inContentBlock = false;
   }
   return out.join('\n');
@@ -360,7 +360,7 @@ function redactPlayerNames(s: string): string {
  *   2. API keys for every provider we support, `Bearer`/`Basic` tokens,
  *      `key=`/`api_key=`/`token=`-style query and JSON values, JWTs;
  *   3. emails;
- *   4. home-directory paths → `~` (this machine's homedir plus generic
+ *   4. home-directory paths â†’ `~` (this machine's homedir plus generic
  *      /Users/<name>, /home/<name>, C:\Users\<name> on any machine) and this
  *      machine's account name anywhere else;
  *   5. IPv4/IPv6 addresses, LAN included (loopback kept), versions untouched;
@@ -383,7 +383,7 @@ export function redact(text: string, opts: RedactOptions = {}): string {
   const home = os.homedir();
   if (home && home.length > 1) s = s.split(home).join('~');
   // Generic per-user roots (any machine's traces, e.g. paths baked into a
-  // dependency's sourcemap). Replaces `/Users/<name>` → `~`, keeping the rest.
+  // dependency's sourcemap). Replaces `/Users/<name>` â†’ `~`, keeping the rest.
   // Windows first (C:\Users\x, JSON-escaped C:\\Users\\x, C:/Users/x); its
   // account names may contain spaces ("Jane Doe").
   s = s.replace(/[A-Za-z]:(?:\\{1,2}|\/)Users(?:\\{1,2}|\/)[^\\/:'"\n]+/gi, '~');
@@ -403,11 +403,11 @@ export function redact(text: string, opts: RedactOptions = {}): string {
   return s;
 }
 
-// ── Assembly ────────────────────────────────────────────────────────────────
+// â”€â”€ Assembly â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * User-environment failure classes (founder decision, 260720): these are the
- * user's world setup, not Sei crashes — LAN_NOT_OPEN means no world was open
+ * user's world setup, not Sei crashes â€” LAN_NOT_OPEN means no world was open
  * to LAN, UNSUPPORTED_MC_VERSION means the world runs a version outside our
  * networking stack. The summon_failed event still fires for funnel counting,
  * but WITHOUT the heavy text payload (error_message + stderr/stdout tails):
@@ -416,12 +416,12 @@ export function redact(text: string, opts: RedactOptions = {}): string {
  * dashboard needs.
  *
  * Phase refinement (260720): the slim treatment for LAN_NOT_OPEN applies ONLY
- * at phase 'pre_gate' — the supervisor refused before forking because no world
+ * at phase 'pre_gate' â€” the supervisor refused before forking because no world
  * was detected, which really is just the user's environment. When a summon got
  * PAST the gate (a world WAS detected) and then died with LAN_NOT_OPEN at
  * 'fork' / 'connect' / 'ready_timeout' / 'mid_session', the world was
- * announced but unjoinable — the suspected-Windows-firewall pattern we most
- * need tails for — so the full payload ships. UNSUPPORTED_MC_VERSION stays
+ * announced but unjoinable â€” the suspected-Windows-firewall pattern we most
+ * need tails for â€” so the full payload ships. UNSUPPORTED_MC_VERSION stays
  * slim at every phase: the version mismatch is fully described by the cheap
  * enum context regardless of where it surfaced.
  */
@@ -446,10 +446,10 @@ export function omitsHeavyText(errorClass: string, phase: SummonPhase): boolean 
  * live LAN state, signed-in flag, and app.isPackaged.
  *
  * When omitsHeavyText(errorClass, phase) holds, the heavy text fields
- * (error_message, stderr_tail, stdout_tail) are omitted entirely — cheap enum
+ * (error_message, stderr_tail, stdout_tail) are omitted entirely â€” cheap enum
  * context only.
  *
- * Ship with `captureDiagnostic('summon_failed', ...)` — plain capture() would
+ * Ship with `captureDiagnostic('summon_failed', ...)` â€” plain capture() would
  * truncate the tails to 200 chars.
  */
 export function buildSummonDiagnostic(
@@ -465,7 +465,7 @@ export function buildSummonDiagnostic(
     backend: info.backend ?? null,
     signed_in: ctx.signedIn,
     // MC/world context from the LAN watcher's status ping (null when no world
-    // was detected at failure time — itself a diagnostic signal).
+    // was detected at failure time â€” itself a diagnostic signal).
     mc_version: lanOpen?.versionName ?? null,
     mc_protocol: lanOpen?.protocol ?? null,
     host_client: lanOpen?.host?.client ?? null,
@@ -480,7 +480,7 @@ export function buildSummonDiagnostic(
   if (!omitsHeavyText(info.errorClass, info.phase)) {
     const r = { botName: info.botName, playerNames: info.playerNames };
     diag.error_message = redact(info.errorMessage ?? '', r).slice(0, ERROR_MESSAGE_CAP);
-    // Keep the END of each tail — the crash is at the bottom. Redact first so
+    // Keep the END of each tail â€” the crash is at the bottom. Redact first so
     // the cut can never split a secret into an unrecognizable fragment.
     diag.stderr_tail = redact(info.stderrTail ?? '', r).slice(-TAIL_CAP);
     diag.stdout_tail = redact(info.stdoutTail ?? '', r).slice(-TAIL_CAP);
@@ -488,7 +488,7 @@ export function buildSummonDiagnostic(
   return diag;
 }
 
-// ── Log pruning (startup hygiene) ───────────────────────────────────────────
+// â”€â”€ Log pruning (startup hygiene) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const LOG_PRUNE_MAX_FILES = 20;
 export const LOG_PRUNE_MAX_BYTES = 50 * 1024 * 1024; // 50MB
@@ -521,7 +521,7 @@ export async function pruneLogsDir(
       const st = await stat(full);
       if (st.isFile()) files.push({ full, mtimeMs: st.mtimeMs, size: st.size });
     } catch {
-      /* raced away — skip */
+      /* raced away â€” skip */
     }
   }
   files.sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
@@ -541,3 +541,7 @@ export async function pruneLogsDir(
   }
   return { deleted };
 }
+
+
+
+

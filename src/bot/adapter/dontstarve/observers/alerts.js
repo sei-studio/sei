@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/observers/alerts.js: the situations a good
+﻿// src/bot/adapter/dontstarve/observers/alerts.js: the situations a good
 // Don't Starve partner notices without being asked (260926).
 //
 // The mod's reflexes already ACT at frame rate (light, fuel, gear, defend,
@@ -183,3 +183,7 @@ export function createAlertWatcher({ state, onWake, onNudge, allowNudges = () =>
     },
   }
 }
+
+
+
+

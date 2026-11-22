@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink click classifier (261104): turns raw presses on her into click /
  * double click / drag.
  *
@@ -113,3 +113,7 @@ export class ClickClassifier {
     this.pending = null;
   }
 }
+
+
+
+

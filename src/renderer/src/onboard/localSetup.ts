@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Pure helpers for OnboardApp's local (BYOK) setup wizard (260817,
- * china-compat W6). Kept out of the component so the load-bearing choices —
+ * china-compat W6). Kept out of the component so the load-bearing choices â€”
  * which speech packs a language needs, how a byte count reads in the
- * "Download? (XX MB)" confirm, how a typed llm:test error maps to copy — are
+ * "Download? (XX MB)" confirm, how a typed llm:test error maps to copy â€” are
  * unit-testable without mounting the scene.
  *
  * Pack SIZES are never hardcoded here: the renderer reads exact archive bytes
@@ -103,7 +103,7 @@ export function allPacksReady(
 
 /**
  * Which IPC the key-step probe rides when Continue is pressed (260817).
- * OpenRouter's GET /models is PUBLIC — a bad key still lists — so it is the
+ * OpenRouter's GET /models is PUBLIC â€” a bad key still lists â€” so it is the
  * one provider probed with a real 1-token llm:test instead. Everyone else
  * uses llm:list-models: fast, free, and auth-gated on every other provider
  * (Anthropic/OpenAI-compat 401, Gemini 400). For Ollama the listing doubles
@@ -116,11 +116,11 @@ export function keyProbeTransport(provider: string): 'list' | 'test' {
 export type KeyProbeVerdict = 'ok' | 'rejected' | 'unreachable' | 'region';
 
 /**
- * Probe outcome → verdict. `token` is the typed error vocabulary from
+ * Probe outcome â†’ verdict. `token` is the typed error vocabulary from
  * listModels.ts `typedError` (null = the call succeeded). Only DEFINITE
  * verdicts block the wizard: ambiguous tokens (http_NNN, unknown) mean the
- * key authenticated far enough that the failure is not about the key — a
- * missing default model, a provider hiccup — and the model step's Test is
+ * key authenticated far enough that the failure is not about the key â€” a
+ * missing default model, a provider hiccup â€” and the model step's Test is
  * the right place to diagnose those. Ollama has no key, so every failure
  * there reads as "can't reach it".
  */
@@ -148,7 +148,7 @@ export function keyProbeLine(provider: string, verdict: 'rejected' | 'unreachabl
 
 /** Second line of the key-probe popup: the consequence. A rejected key makes
  * generation IMPOSSIBLE (will); an unreachable provider might recover by
- * setup time (may) — generation is still attempted there. */
+ * setup time (may) â€” generation is still attempted there. */
 export function keyProbeConsequence(verdict: 'rejected' | 'unreachable' | 'region'): string {
   // A region refusal fails generation exactly like a rejected key.
   return verdict === 'rejected' || verdict === 'region'
@@ -157,7 +157,7 @@ export function keyProbeConsequence(verdict: 'rejected' | 'unreachable' | 'regio
 }
 
 /**
- * Typed llm:test error token → English copy key (t() translates). The token
+ * Typed llm:test error token â†’ English copy key (t() translates). The token
  * vocabulary is listModels.ts `typedError`; http_NNN and unknown fold into
  * the generic line rather than surfacing a raw status code.
  */
@@ -225,3 +225,7 @@ export function routeAfterAuthDecision(
   const existing = hasProfile === null ? existingAccount : hasProfile;
   return existing ? 'welcome-existing' : 'setup';
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HoverTip (261107, profile v0.7): a hover / keyboard-focus tooltip for the
  * profile rows' explanations (they used to be a subtext line under the label)
  * and the Locked marker.
@@ -116,3 +116,7 @@ export function HoverTip({ tip, onOpen, align = 'start', className, children, ..
     </>
   );
 }
+
+
+
+

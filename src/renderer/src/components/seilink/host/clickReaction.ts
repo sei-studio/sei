@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her reaction to a click on the desktop (261119, product call 261119: "clicking
  * her bounces too much, and twice"). The host sends `press` the moment a button
  * goes down on her and `poke` 'click' once the double-click time has passed, and
@@ -49,3 +49,7 @@ export class ClickReaction {
     return true;
   }
 }
+
+
+
+

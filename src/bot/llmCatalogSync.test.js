@@ -1,8 +1,8 @@
-// 260828: no-drift guard between the SHARED provider catalog
-// (src/shared/llmCatalog.ts — the source of truth every app surface reads)
+﻿// 260828: no-drift guard between the SHARED provider catalog
+// (src/shared/llmCatalog.ts â€” the source of truth every app surface reads)
 // and the bot's hand-mirrored copies. The bot ships as plain ESM JS and
 // cannot import the shared TS module at runtime, so its tables are duplicated
-// by hand — and they had drifted: openai gpt-4o-mini vs gpt-5-mini, grok
+// by hand â€” and they had drifted: openai gpt-4o-mini vs gpt-5-mini, grok
 // grok-2-latest vs grok-4, gemini 2.0-flash vs 2.5-flash, and openrouter
 // 'anthropic/claude-haiku-4-5' (the dash form is not a real OpenRouter slug).
 // A BYOK user therefore ran a DIFFERENT model in Minecraft than on every
@@ -11,7 +11,7 @@
 // every mirror to the catalog so the drift cannot recur. Change models in
 // llmCatalog.ts FIRST; these mirrors follow.
 //
-// Note: qwen deliberately defaults to 'qwen-plus' in both tables — an old
+// Note: qwen deliberately defaults to 'qwen-plus' in both tables â€” an old
 // plan said qwen3-max; that was superseded, qwen-plus is correct.
 
 import { describe, it, expect } from 'vitest'
@@ -96,7 +96,7 @@ describe('bot mirrors of src/shared/llmCatalog.ts (no-drift)', () => {
       expect(botCtx.neededNumCtx(p, m)).toBe(mainCtx.neededNumCtx(p, m))
     }
     const req = {
-      messages: [{ role: 'system', content: 'You are Sui. 你好' }, { role: 'user', content: 'look', images: ['AAAA'] }],
+      messages: [{ role: 'system', content: 'You are Sui. ä½ å¥½' }, { role: 'user', content: 'look', images: ['AAAA'] }],
       tools: [{ type: 'function', function: { name: 'say', parameters: {} } }],
     }
     expect(botCtx.estimateOllamaPromptTokens(req)).toBe(mainCtx.estimateOllamaPromptTokens(req))
@@ -106,3 +106,7 @@ describe('bot mirrors of src/shared/llmCatalog.ts (no-drift)', () => {
     expect(BOT_LOCAL_FLOOR).toBe(MAIN_LOCAL_FLOOR)
   })
 })
+
+
+
+

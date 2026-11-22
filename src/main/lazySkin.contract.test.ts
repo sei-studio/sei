@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261027 lazy skins, pinned at the source: the billed Gemini skin call
  * (POST /generate/skin) lives in skinGeneration.ts ONLY. Creation paints the
  * free skin and marks the character pending; nothing else in main, the bot
@@ -40,3 +40,7 @@ describe('lazy skin contract', () => {
     expect(cast).toMatch(/skinPending: true/);
   });
 });
+
+
+
+

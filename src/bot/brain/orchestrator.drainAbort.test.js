@@ -1,4 +1,4 @@
-// 261011: the post-teardown drain (drainPendingToolsOnTeardown) must be
+﻿// 261011: the post-teardown drain (drainPendingToolsOnTeardown) must be
 // stoppable. It used to run leftover batch tools on a throwaway AbortController,
 // so stop, pause and a new preempt could not halt a drained goTo/gather and it
 // kept running alongside the next turn. These tests drive the real orchestrator
@@ -235,3 +235,7 @@ describe('261011 post-teardown drain is abortable', () => {
     expect(names(executed)).toEqual(['goTo'])
   })
 })
+
+
+
+

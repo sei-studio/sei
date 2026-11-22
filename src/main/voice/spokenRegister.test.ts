@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { toSpokenRegister, toSpokenUtterance } from './spokenRegister';
 
 describe('toSpokenRegister', () => {
@@ -71,14 +71,18 @@ describe('toSpokenUtterance', () => {
   });
 
   it('writes the ideographic full stop for zh/ja and a period for ko', () => {
-    expect(toSpokenUtterance('我们去挖矿吧', 'zh')).toBe('我们去挖矿吧。');
-    expect(toSpokenUtterance('鉄はもう集めたよ', 'ja')).toBe('鉄はもう集めたよ。');
-    expect(toSpokenUtterance('철은 벌써 모았어', 'ko')).toBe('철은 벌써 모았어.');
+    expect(toSpokenUtterance('æˆ‘ä»¬åŽ»æŒ–çŸ¿å§', 'zh')).toBe('æˆ‘ä»¬åŽ»æŒ–çŸ¿å§ã€‚');
+    expect(toSpokenUtterance('é‰„ã¯ã‚‚ã†é›†ã‚ãŸã‚ˆ', 'ja')).toBe('é‰„ã¯ã‚‚ã†é›†ã‚ãŸã‚ˆã€‚');
+    expect(toSpokenUtterance('ì² ì€ ë²Œì¨ ëª¨ì•˜ì–´', 'ko')).toBe('ì² ì€ ë²Œì¨ ëª¨ì•˜ì–´.');
     // Already terminated: no second mark.
-    expect(toSpokenUtterance('今天想干嘛？', 'zh')).toBe('今天想干嘛？');
+    expect(toSpokenUtterance('ä»Šå¤©æƒ³å¹²å˜›ï¼Ÿ', 'zh')).toBe('ä»Šå¤©æƒ³å¹²å˜›ï¼Ÿ');
   });
 
   it('is a no-op on empty text', () => {
     expect(toSpokenUtterance('   ', 'en')).toBe('');
   });
 });
+
+
+
+

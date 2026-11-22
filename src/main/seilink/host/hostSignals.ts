@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host: signals from the rest of main (261104). A tiny,
  * dependency-free module so chatService and ipc.ts can tell the host
  * service what happened without importing it (and its process plumbing).
@@ -100,3 +100,7 @@ export class BusyTracker {
     this.onChange(v);
   }
 }
+
+
+
+

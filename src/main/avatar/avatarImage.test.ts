@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { MAX_PORTRAIT_SIDE, MAX_TEXTURE_SIDE, avatarImageProblem, imageFacts, sniffAvatarImage } from './avatarImage';
 
 /** Header-only PNG: signature, IHDR (w x h), optional acTL before or after an IDAT, IEND. CRCs are not checked. */
@@ -96,3 +96,7 @@ describe('avatarImage (the proxy rules, read from the header)', () => {
     expect(avatarImageProblem(new Uint8Array([1, 2, 3]), 4096)).toBe('bad_image');
   });
 });
+
+
+
+

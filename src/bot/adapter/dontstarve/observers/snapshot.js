@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/observers/snapshot.js — the per-turn text the
+﻿// src/bot/adapter/dontstarve/observers/snapshot.js â€” the per-turn text the
 // brain reads (game-adapters M2, 260908). Renders the observation state
 // (protocol.js) into ~1.0k tokens: world clock, the vitals triple, inventory
 // + equips, nearby entities BUCKETED by what can be done to them with `#N`
@@ -194,3 +194,7 @@ export function createSnapshotComposer({
     },
   }
 }
+
+
+
+

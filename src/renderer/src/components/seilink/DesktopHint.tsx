@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The desktop hint (product call (261116)): one brief line at the bottom of
  * the app after WorldLink opened or updated the desktop, with "Hide windows"
  * (other apps' windows minimized on Windows, hidden on macOS, then Sei steps
@@ -113,3 +113,7 @@ export function DesktopHint({ hint, onDone }: { hint: DesktopHintData; onDone():
   };
   return <DesktopHintView leaving={leaving} busy={busy} onHide={canHide ? hide : undefined} onHover={setOver} />;
 }
+
+
+
+

@@ -1,9 +1,9 @@
-/**
- * Toggle — the on/off switch. 34×19, squared track + knob on --radius-sm
+﻿/**
+ * Toggle â€” the on/off switch. 34Ã—19, squared track + knob on --radius-sm
  * (261103, was a pill), knob slides right and the track fills accent when
  * on. Replaces On/Off button pairs across Settings and the share toggle.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §1.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§1.
  */
 
 import React from 'react';
@@ -29,3 +29,7 @@ export function Toggle({ on, onChange, disabled, ...rest }: ToggleProps): React.
     />
   );
 }
+
+
+
+

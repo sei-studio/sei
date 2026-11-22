@@ -1,28 +1,28 @@
-/**
- * LanHostWarningModal — pre-summon compatibility disclaimer (260709,
+﻿/**
+ * LanHostWarningModal â€” pre-summon compatibility disclaimer (260709,
  * three-way classification 260721).
  *
  * Shown by summonFlow when the detected LAN host warrants a heads-up:
- *   - 'vanilla' → plain vanilla Minecraft, i.e. WITHOUT Sei's Fabric skin
+ *   - 'vanilla' â†’ plain vanilla Minecraft, i.e. WITHOUT Sei's Fabric skin
  *                 setup. The companion joins and plays normally but renders
  *                 with a default Minecraft skin (CustomSkinLoader never runs).
- *   - 'forge'   → Forge/NeoForge host (260929). BLOCKING: no "Summon
+ *   - 'forge'   â†’ Forge/NeoForge host (260929). BLOCKING: no "Summon
  *                 anyway". Every Forge-hosted summon in the 09-22..28 data
  *                 was kicked or timed out, costing players 2 to 32 minutes of
  *                 retries, so the modal says Sei can't join and points at the
  *                 Sei profile instead (ForgeHostBlocked below).
- *   - 'modded'  → Quilt, Forge/NeoForge seen only in weak cmdline markers
+ *   - 'modded'  â†’ Quilt, Forge/NeoForge seen only in weak cmdline markers
  *                 (a possible misread, so never a hard stop), or Fabric
  *                 with mods besides Sei's skin mod. Sei
  *                 joins as a vanilla player; client-side mods (minimaps etc.)
  *                 are fine, but content mods can make the world refuse the
  *                 join.
- *   - 'lunar'   → Lunar Client detected. Joining works, but Lunar loads no
+ *   - 'lunar'   â†’ Lunar Client detected. Joining works, but Lunar loads no
  *                 third-party mods, so the companion's custom skin can't be
  *                 shown there (CustomSkinLoader never runs).
  *
  * Fabric running ONLY Sei's own skin mod shows no modal at all (see
- * lanHostWarning in src/shared/ipc.ts) — that is our own setup, not "modded
+ * lanHostWarning in src/shared/ipc.ts) â€” that is our own setup, not "modded
  * Minecraft".
  *
  * The other kinds never block: "Summon anyway" acknowledges the warning for the rest of the
@@ -183,7 +183,7 @@ function LanHostWarningPrompt({
   const onSummonAnyway = (): void => {
     acknowledgeHostWarning(warning);
     if (showDontShowAgain && dontShowAgain) {
-      // Best-effort persistence — never let a config hiccup block the summon.
+      // Best-effort persistence â€” never let a config hiccup block the summon.
       void sei
         .getConfig()
         .then((cfg) =>
@@ -293,3 +293,7 @@ function LanHostWarningPrompt({
     </ModalShell>
   );
 }
+
+
+
+

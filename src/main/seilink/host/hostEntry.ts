@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room host process (261104, milestone 3). The companion's room as a
  * live wallpaper: one window behind the desktop icons on the primary
  * display, plus (macOS) a small hit panel over her.
@@ -95,7 +95,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: SEILINK_ROOM_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
-// ── Log ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const LOG_FILE = path.join(ARGS.userData, 'host.log');
 try {
@@ -115,7 +115,7 @@ function log(msg: string, level: 'info' | 'warn' = 'info'): void {
   if (level === 'warn') send({ type: 'log', level, msg: msg.slice(0, 500) });
 }
 
-// ── Pipe to main ────────────────────────────────────────────────────────────
+// â”€â”€ Pipe to main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let sock: net.Socket | null = null;
 let connected = false;
@@ -142,7 +142,7 @@ function connect(): void {
   s.on('error', (e) => log(`pipe error ${e.message}`));
 }
 
-// ── State ───────────────────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let addon: SeilinkAddon | null = null;
 let win: BrowserWindow | null = null;
@@ -273,7 +273,7 @@ function failure(v: unknown, fallback: SeilinkHostFailure): SeilinkHostFailure {
   return isSeilinkHostFailure(v) ? v : fallback;
 }
 
-// ── Commands from main ──────────────────────────────────────────────────────
+// â”€â”€ Commands from main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function onCommand(m: ToHost): void {
   switch (m.type) {
@@ -363,7 +363,7 @@ function setRoom(payload: SeilinkHostRoom, files: Array<[string, string]>, portr
   toPage(CH.room, payload);
 }
 
-// ── sei-room:// (only the files main listed) ───────────────────────────────
+// â”€â”€ sei-room:// (only the files main listed) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function registerRoomProtocol(): void {
   protocol.handle(SEILINK_ROOM_SCHEME, async (request) => {
@@ -398,7 +398,7 @@ function registerRoomProtocol(): void {
   });
 }
 
-// ── The room window ─────────────────────────────────────────────────────────
+// â”€â”€ The room window â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function primaryDisplay(): Display {
   return screen.getPrimaryDisplay();
@@ -640,7 +640,7 @@ function sendFacts(when: 'start' | 'first_frame' | 'gpu_update' | 'display' = 's
   }
 }
 
-// ── Hit area ────────────────────────────────────────────────────────────────
+// â”€â”€ Hit area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * macOS: the hit panel keeps this far (points) from the work area's edges. A zoomed window
@@ -699,7 +699,7 @@ function applyHitRect(): void {
   }
 }
 
-// ── Dock hover (261110) and her gaze (261116) ───────────────────────────────
+// â”€â”€ Dock hover (261110) and her gaze (261116) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** How often the cursor is checked against the dock and her face. */
 const HOVER_POLL_MS = 150;
@@ -787,7 +787,7 @@ async function testProbe(id: number): Promise<void> {
   gazeSamples = 0;
 }
 
-// ── Attach ──────────────────────────────────────────────────────────────────
+// â”€â”€ Attach â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Windows: a fresh Explorer starts without its Progman/DefView for a moment. */
 async function waitForShell(): Promise<void> {
@@ -947,7 +947,7 @@ function validateSoon(trigger: string): void {
   setTimeout(() => void validate(`${trigger}+1500`), 1500);
 }
 
-// ── Native events ───────────────────────────────────────────────────────────
+// â”€â”€ Native events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function onNativeEvent(json: string): void {
   let e: Record<string, unknown>;
@@ -1026,7 +1026,7 @@ function onNativeEvent(json: string): void {
   }
 }
 
-// ── Heartbeat ───────────────────────────────────────────────────────────────
+// â”€â”€ Heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function heartbeat(): void {
   const now = Date.now();
@@ -1057,7 +1057,7 @@ function heartbeat(): void {
   });
 }
 
-// ── Lifecycle ───────────────────────────────────────────────────────────────
+// â”€â”€ Lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function shutdown(why: string): void {
   if (quitting) return;
@@ -1169,3 +1169,7 @@ void app
 function clicksDblMs(ms: number): void {
   clicks.setDoubleClickMs(Math.max(200, Math.min(900, Number(ms) || 500)));
 }
+
+
+
+

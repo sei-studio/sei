@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/render/meshlineThree.js
+﻿// src/bot/adapter/minecraft/render/meshlineThree.js
 //
 // 260926: `Cannot find module 'three'` from the game pack (0.6.5-beta.1,
 // `game-packs\minecraft\0.6.5-beta.1`), thrown on the first POV render.
@@ -50,3 +50,7 @@ export function loadMeshlineWithViewerThree(pvRequire) {
     Module._resolveFilename = origResolve
   }
 }
+
+
+
+

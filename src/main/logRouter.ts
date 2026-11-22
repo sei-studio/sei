@@ -1,10 +1,10 @@
-/**
- * Bot log routing: stdout/stderr → batched IPC + rolling file.
+﻿/**
+ * Bot log routing: stdout/stderr â†’ batched IPC + rolling file.
  *
  * Sources:
- *   - PATTERNS §src/main/logRouter.ts
- *   - RESEARCH §Pitfall 7 (batching: 50ms / 100 lines / drop above 1000 with sentinel)
- *   - src/bot/brain/log.js — tag prefix vocabulary the router classifies
+ *   - PATTERNS Â§src/main/logRouter.ts
+ *   - RESEARCH Â§Pitfall 7 (batching: 50ms / 100 lines / drop above 1000 with sentinel)
+ *   - src/bot/brain/log.js â€” tag prefix vocabulary the router classifies
  *
  * Behavior:
  *   - Every `append(line)` call parses + classifies the line, writes a copy
@@ -15,11 +15,11 @@
  *     into ONE LogEntry whose `message` carries the full multi-line body joined
  *     by `\n`. Dropped-end recovery (new begin while an event is open, or close()
  *     while an event is open) flushes the in-progress event with an appended
- *     `  [truncated]` marker line. The file tee remains per-physical-line — only
+ *     `  [truncated]` marker line. The file tee remains per-physical-line â€” only
  *     IPC granularity changes.
  *   - Flushes every FLUSH_INTERVAL_MS (50ms) or when MAX_BATCH (100) is hit,
  *     whichever comes first. Above HARD_BUFFER_CAP (1000) we drop the oldest
- *     entries and surface a `dropped` sentinel on the next batch — keeps the
+ *     entries and surface a `dropped` sentinel on the next batch â€” keeps the
  *     renderer alive under firehose conditions (T-04-16 mitigation).
  */
 import { createWriteStream, type WriteStream } from 'node:fs';
@@ -101,7 +101,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
     try {
       sendBatch(batch);
     } catch {
-      // best-effort — renderer may be torn down; swallow to avoid log-loop
+      // best-effort â€” renderer may be torn down; swallow to avoid log-loop
     }
   };
 
@@ -139,7 +139,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
       try {
         stream.write(cleaned + '\n');
       } catch {
-        // ignore — file may be temporarily unavailable; in-memory batch unaffected
+        // ignore â€” file may be temporarily unavailable; in-memory batch unaffected
       }
 
       const sentinelMatch = cleaned.match(SENTINEL_RE);
@@ -162,7 +162,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
           finalizeOpenEvent('end');
           return;
         }
-        // Mismatched / orphan end — push as single-line defensive entry.
+        // Mismatched / orphan end â€” push as single-line defensive entry.
         const entry: LogEntry = {
           timestamp: new Date().toISOString(),
           tag,
@@ -188,7 +188,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
         return;
       }
 
-      // No open event — single-line passthrough (session header, stray lines).
+      // No open event â€” single-line passthrough (session header, stray lines).
       const { tag, level } = classify(cleaned);
       const entry: LogEntry = {
         timestamp: new Date().toISOString(),
@@ -209,7 +209,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
       clearInterval(interval);
       // Finalize any still-open event with a truncated marker before final flush.
       // We cannot call finalizeOpenEvent() here because it depends on flush(),
-      // which short-circuits when `closed` is true — so do it inline.
+      // which short-circuits when `closed` is true â€” so do it inline.
       if (openTag !== null) {
         openLines.push('  [truncated]');
         buffer.push({
@@ -241,3 +241,7 @@ export async function createLogRouter(opts: LogRouterOptions): Promise<LogRouter
     },
   };
 }
+
+
+
+

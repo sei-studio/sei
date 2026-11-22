@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Text-driven effective language for LOCAL TTS (260908).
  *
  * The conversation language (chat_language) says what the SESSION is in; a
@@ -15,28 +15,28 @@
  * Detection is HAN-ONLY, by decision: Han is the script the aishell3 pack can
  * actually read, and it is what separates a Chinese line from a Latin one.
  * Kana (hiragana/katakana/halfwidth katakana) can only be Japanese, which no
- * local pack speaks, so any kana in the line VETOES the zh upgrade — a
+ * local pack speaks, so any kana in the line VETOES the zh upgrade â€” a
  * Japanese sentence's kanji must not route it to the Chinese voice. Hangul is
  * simply not Han and never counts. "Predominant" means either of:
  *   - Han characters are more than HAN_SHARE_THRESHOLD of the line's letters
  *     (mirrors the CJK_PIN_RATIO reasoning in voice/tts.ts: one quoted hanzi
  *     in an English line must not flip the whole clip), or
  *   - the line carries a run of HAN_RUN_MIN consecutive Han characters (a
- *     real Chinese phrase, even inside a longer English sentence — Chinese
+ *     real Chinese phrase, even inside a longer English sentence â€” Chinese
  *     needs no spaces, so three-in-a-row is already a phrase, while loanword
  *     mentions are one or two characters).
  *
  * Pure and dependency-free so it unit-tests without the engine.
  */
 
-/** Han ideographs (URO + Ext-A + compatibility) — matches voice/tts.ts. */
-const HAN_CHAR = '一-鿿㐀-䶿豈-﫿';
+/** Han ideographs (URO + Ext-A + compatibility) â€” matches voice/tts.ts. */
+const HAN_CHAR = 'ä¸€-é¿¿ã€-ä¶¿ï¤€-ï«¿';
 const HAN_RE = new RegExp(`[${HAN_CHAR}]`, 'gu');
 const HAN_RUN_MIN = 3;
 const HAN_RUN_RE = new RegExp(`[${HAN_CHAR}]{${HAN_RUN_MIN},}`, 'u');
 /** Kana (hiragana, katakana, katakana extensions, halfwidth katakana):
- * Japanese-only script — its presence vetoes the zh upgrade. */
-const KANA_RE = /[぀-ヿㇰ-ㇿｦ-ﾟ]/u;
+ * Japanese-only script â€” its presence vetoes the zh upgrade. */
+const KANA_RE = /[\u3040-\u30FF\u31F0-\u31FF\uFF66-\uFF9F]/u;
 const LETTER_RE = /\p{L}/gu;
 const HAN_SHARE_THRESHOLD = 0.3;
 
@@ -55,3 +55,7 @@ export function detectSpokenLanguage<T extends string>(text: string, chatLanguag
   if (han / letters > HAN_SHARE_THRESHOLD || HAN_RUN_RE.test(text)) return 'zh';
   return chatLanguage;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useChatgptLogin (261023): copy coverage + surface wiring.
  *
  * Renderer convention here is source-grep plus pure-function checks (no
@@ -51,7 +51,7 @@ describe('ChatGPT login copy', () => {
         continue;
       }
       expect(copy, f).toBeTruthy();
-      expect(copy!.includes('—'), f).toBe(false);
+      expect(copy!.includes('â€”'), f).toBe(false);
       expect(ZH[copy!], `zh for ${f}`).toBeTruthy();
     }
   });
@@ -73,7 +73,7 @@ describe('ChatGPT login copy', () => {
     const lines = REASONS.map((r) => chatgptCodeReasonCopy(r, ident));
     expect(new Set(lines).size).toBe(REASONS.length);
     for (const l of lines) {
-      expect(l.includes('—')).toBe(false);
+      expect(l.includes('â€”')).toBe(false);
       expect(ZH[l]).toBeTruthy();
     }
   });
@@ -118,3 +118,7 @@ describe('ChatGPT login surfaces', () => {
     expect(row.includes("t('Link ChatGPT')")).toBe(true);
   });
 });
+
+
+
+

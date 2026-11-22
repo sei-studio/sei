@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Crash-safe file replacement (261031, T277).
  *
  * `atomicWrite` (src/bot/brain/storage/atomicWrite.js) writes a temp file and
@@ -151,3 +151,7 @@ export async function writeFileDurable(target: string, data: string | Uint8Array
   }
   await fsyncDir(path.dirname(target));
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useDstStore install-state persistence (260925, v0.6.5-beta.2 playtest).
  * "Add Sei's helper" failed with EPERM (macOS App Management) and the step
  * showed the permission line for under 3 s: the setup hook's 3 s poll called
@@ -127,3 +127,7 @@ describe('useDstStore', () => {
     expect(useDstStore.getState().install).toEqual(INSTALLED);
   });
 });
+
+
+
+

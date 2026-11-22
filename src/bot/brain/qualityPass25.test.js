@@ -1,4 +1,4 @@
-// 261023: MC quality pass 25.
+﻿// 261023: MC quality pass 25.
 //  - next_time and goodbye wording follow real progress: a goal set this
 //    session that no world work has followed is marked not started in the
 //    heartbeat (seed block and the mid-loop heartbeatNow list), and the
@@ -132,7 +132,7 @@ describe('next_time texts follow progress', () => {
   })
 
   it('has no em or en dashes', () => {
-    for (const t of [NEXT_TIME_FIELD, NEXT_TIME_GOODBYE, NEXT_TIME_FOR_PLAYER_FIELD, GOAL_NOT_STARTED_NOTE]) expect(t).not.toMatch(/[–—]/)
+    for (const t of [NEXT_TIME_FIELD, NEXT_TIME_GOODBYE, NEXT_TIME_FOR_PLAYER_FIELD, GOAL_NOT_STARTED_NOTE]) expect(t).not.toMatch(/[â€“â€”]/)
   })
 })
 
@@ -142,13 +142,13 @@ describe('the player comes before her own goal', () => {
 
   it('the agentic directive says so', () => {
     expect(PROACTIVENESS_DIRECTIVES[2]).toContain(RULE)
-    expect(RULE).not.toMatch(/[–—]/)
+    expect(RULE).not.toMatch(/[â€“â€”]/)
   })
 
   it('the own-goal heads say so, the on-hold head does not need to', () => {
     expect(renderHeartbeat(2, goalLine(T0, 'Build a hut.'), '')).toContain(HEAD)
     expect(renderHeartbeat(2, `${goalLine(T0, '(player task) get logs')}\n${goalLine(T0, 'Build a hut.')}`, '')).toContain(HEAD)
-    expect(HEAD).not.toMatch(/[–—]/)
+    expect(HEAD).not.toMatch(/[â€“â€”]/)
   })
 })
 
@@ -387,3 +387,7 @@ describe('orchestrator: a drained action starts the player task', () => {
     expect(allText(next)).not.toContain('you have not started')
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Main-process side of the system-proxy routing (261103, T303). The routing
  * itself lives in src/bot/net/ (systemProxy.js installs proxyDispatcher.js)
  * so the bot's utilityProcess can share it.
@@ -81,3 +81,7 @@ export async function botProxySnapshot(
   if (!Object.values(map).some((a) => !/^\s*DIRECT\s*$/i.test(a))) return undefined;
   return JSON.stringify({ default: map[proxyOrigin] ?? 'DIRECT', origins: map });
 }
+
+
+
+

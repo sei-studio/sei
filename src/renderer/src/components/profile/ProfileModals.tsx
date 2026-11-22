@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Small popups the profile rows open (261107, profile v0.7). Each wraps an
  * existing editor unchanged; they only give it a modal of its own so a row
  * opens just its thing instead of the whole edit modal.
@@ -71,3 +71,7 @@ export function FloatingAvatarModal({ character, onClose }: { character: Charact
     </ModalShell>
   );
 }
+
+
+
+

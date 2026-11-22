@@ -1,8 +1,8 @@
-/**
+﻿/**
  * LineTyper (261004): types a companion line out, one character at a time,
  * and never cuts a line off.
  *
- * A replay caught a line cut off mid-word ("Ooh, Brookhaven 🏡RP! Le") when a
+ * A replay caught a line cut off mid-word ("Ooh, Brookhaven ðŸ¡RP! Le") when a
  * screen left on a fixed beat shorter than the line. So the rules here are:
  *
  *   - A line that is still typing is never replaced. A newer line waits until
@@ -136,3 +136,7 @@ export class LineTyper {
     this.wait = null;
   }
 }
+
+
+
+

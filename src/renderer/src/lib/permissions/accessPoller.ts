@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Access poller (260929) for the permission cards: while a card is open, ask
  * "is access on yet?" about once a second and continue on its own the moment
  * it is. Pure (no window.sei) so the timing is unit tested with fake timers.
@@ -90,3 +90,7 @@ export const RESTART_OFFER_AFTER_MS = 20_000;
 export function restartOfferDue(confirmedAt: number | null, now: number): boolean {
   return confirmedAt !== null && now - confirmedAt >= RESTART_OFFER_AFTER_MS;
 }
+
+
+
+

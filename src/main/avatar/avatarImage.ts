@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Avatar image rules (261106), read from the header without decoding: the
  * same checks the avatar library proxy runs on every portrait and every image
  * in a model zip (sei-proxy src/avatars/image.ts), so whatever the local store
@@ -154,3 +154,7 @@ export function imageProblem(facts: ImageFacts | null, maxSide: number): ImagePr
 export function avatarImageProblem(bytes: Uint8Array, maxSide: number): ImageProblem | null {
   return imageProblem(imageFacts(bytes), maxSide);
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BackseatGameModal (260929): what a backseat game tile (Roblox) opens.
  *
  * A backseat game is not a surface of its own. It is the ordinary screen share
@@ -430,7 +430,7 @@ function GameCard({
   const thumb = !thumbFailed ? game.thumbnailUrl : undefined;
   const icon = !iconFailed ? game.iconUrl : undefined;
   const count = game.playing !== undefined && game.playing > 0 ? compact(game.playing) : null;
-  // The caption drops the store tags and emoji ("[🎃] Adopt Me!" reads
+  // The caption drops the store tags and emoji ("[ðŸŽƒ] Adopt Me!" reads
   // "Adopt Me!"); the full store title stays in the hover tooltip.
   const name = cleanGameTitle(game.name);
   return (
@@ -502,3 +502,7 @@ function compact(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
   return String(n);
 }
+
+
+
+

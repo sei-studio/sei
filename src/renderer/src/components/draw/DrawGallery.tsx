@@ -1,5 +1,5 @@
-/**
- * DrawGallery — the end-of-game sheet: a row per player, one cell per round,
+﻿/**
+ * DrawGallery â€” the end-of-game sheet: a row per player, one cell per round,
  * word under each drawing, and a save button that writes the same layout to
  * the Downloads folder as a PNG (composed on canvas, not screenshotted, so the
  * file is identical everywhere).
@@ -305,3 +305,7 @@ export function DrawGallery({
     </div>
   );
 }
+
+
+
+

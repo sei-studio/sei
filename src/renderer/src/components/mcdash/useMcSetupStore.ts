@@ -1,5 +1,5 @@
-/**
- * useMcSetupStore — what the Minecraft launch panel's setup list needs to
+﻿/**
+ * useMcSetupStore â€” what the Minecraft launch panel's setup list needs to
  * know (260909): the detected Minecraft installs (the same scan the skin
  * wizard runs), whether any of them is Sei-ready (Fabric for a version Sei
  * can join + the companion-skin mod; shared/mcSetup.ts), and whether the
@@ -88,3 +88,7 @@ export function selectReadyVersion(installs: McInstall[] | null, supported: read
   if (!installs) return null;
   return anyMcInstallReady(installs, supported);
 }
+
+
+
+

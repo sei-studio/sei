@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { createStardewRegistry, VERB_NAMES, VERB_SCHEMAS, patchTiles, tillPatch, MAX_TILL_TILES } from './registry.js'
 import { ACTION_DESCRIPTIONS } from './prompts.js'
 
@@ -144,3 +144,7 @@ describe('stardew registry', () => {
     expect(cancelled).toHaveBeenCalledTimes(1)
   })
 })
+
+
+
+

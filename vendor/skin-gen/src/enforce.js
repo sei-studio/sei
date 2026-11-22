@@ -1,4 +1,4 @@
-// Layout enforcement: turn a raw 64x64 RGBA buffer into a structurally valid
+﻿// Layout enforcement: turn a raw 64x64 RGBA buffer into a structurally valid
 // Minecraft skin.
 //  - Never-rendered whitespace -> fully transparent.
 //  - Base layer -> fully opaque (no holes; the game renders base as opaque).
@@ -96,7 +96,7 @@ export function enforceLayout(rgba, { variant = "classic", cutoff = 30 } = {}) {
 
 // If the generator left a base face entirely background-colored (it drew
 // nothing there), that face would come out as flat background color. Detect
-// faces whose pixels are all within cutoff of the background — callers can
+// faces whose pixels are all within cutoff of the background â€” callers can
 // warn or in-paint from neighboring faces.
 export function flatBaseFaces(rgba, { variant = 'classic', cutoff = 30 } = {}) {
   const bg = estimateBackground(rgba);
@@ -111,3 +111,7 @@ export function flatBaseFaces(rgba, { variant = 'classic', cutoff = 30 } = {}) {
   }
   return flat;
 }
+
+
+
+

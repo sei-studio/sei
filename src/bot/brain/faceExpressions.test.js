@@ -1,4 +1,4 @@
-// 261028 facepack pilot: the expression vocabulary, tag reader and prompt.
+﻿// 261028 facepack pilot: the expression vocabulary, tag reader and prompt.
 import { describe, it, expect } from 'vitest'
 import {
   FACE_EXPRESSIONS,
@@ -84,7 +84,7 @@ describe('FACE_PROMPT', () => {
     expect(FACE_PROMPT).toMatch(/not spoken or shown/)
   })
   it('has no em dash (prompt-writing style)', () => {
-    expect(FACE_PROMPT).not.toContain('—')
+    expect(FACE_PROMPT).not.toContain('â€”')
     expect(FACE_PROMPT).toMatch(/Begin each reply with a face tag/)
     // 261028: the line that keeps replies at their normal length.
     expect(FACE_PROMPT).toMatch(/then reply as you normally would/)
@@ -189,3 +189,7 @@ describe('pack palettes', () => {
     for (const e of FACE_ALL_EXPRESSIONS) for (const a of e.aliases) expect(all.has(a)).toBe(false)
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Home "up next" card (261013, retention O2 / T119): shared contract.
  *
  * Main reads each Home character's latest unexpired, unconsumed "Plan for
@@ -75,3 +75,7 @@ export function gameIdFromName(name: string | null | undefined): GameId | null {
 export function gameDisplayName(game: GameId): string {
   return GAME_CATALOG.find((g) => g.id === game)?.name ?? game;
 }
+
+
+
+

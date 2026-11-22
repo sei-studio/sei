@@ -1,5 +1,5 @@
-/**
- * Call scenes — the data model for a character's custom voice-call backdrop.
+﻿/**
+ * Call scenes â€” the data model for a character's custom voice-call backdrop.
  *
  * A call scene replaces the default call view (profile-picture tiles on the
  * app background) with a painted stage the character physically walks into.
@@ -8,7 +8,7 @@
  * "customize your companion's call scene" feature only has to produce one of
  * these descriptors instead of a second renderer.
  *
- * ── The four pieces the model needs ─────────────────────────────────────────
+ * â”€â”€ The four pieces the model needs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * A scene is a BACKDROP plus an ACTOR, and the actor needs three appearances:
  * standing, talking, and walking. Everything else (where she stops, which edge
  * she comes from, how long the walk takes) is a number in the descriptor.
@@ -19,14 +19,14 @@
  * standing in the field rather than pasted on top of it. Any scene with
  * foreground detail (tufts, railings, a desk edge) needs the same seam.
  *
- * ── Paints ──────────────────────────────────────────────────────────────────
- * Every visual slot — a backdrop layer, a character pose — is a `ScenePaint`,
+ * â”€â”€ Paints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * Every visual slot â€” a backdrop layer, a character pose â€” is a `ScenePaint`,
  * which is either a list of still images cycled on a timer or a video. One
  * union means "scene image/video" and "talking animation image/video" are the
  * same thing to the renderer, so a future scene can ship an mp4 loop for its
  * water while another ships three PNGs, and neither needs new code.
  *
- * ── Coordinates ─────────────────────────────────────────────────────────────
+ * â”€â”€ Coordinates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * All positions are FRACTIONS OF THE STAGE (0..1), never pixels. The stage is
  * a fixed-aspect box that covers the window, so one scale factor applies to
  * the backdrop and the sprite together. Mixing units there is what makes
@@ -34,7 +34,7 @@
  * window aspect drifts (the SCALE LOCK note in OnboardScene.tsx).
  *
  * NOTE ON VALIDATION: these are plain TS types because every scene in the app
- * today is a built-in literal in `lib/callScenes.ts` — nothing untrusted
+ * today is a built-in literal in `lib/callScenes.ts` â€” nothing untrusted
  * produces one. When scenes become user data crossing the IPC bridge, this
  * file is where the Zod schema goes, alongside the types.
  */
@@ -45,7 +45,7 @@
  * `images` with a single entry is a still. With several it is an ambient loop
  * (Sui's grass sway, a mouth flap) advanced every `frameMs`. Frames are
  * cross-toggled by opacity rather than swapped in `src`, so a loop never
- * flickers on decode — which means all frames of every paint in a scene are
+ * flickers on decode â€” which means all frames of every paint in a scene are
  * mounted at once. Keep frame counts small.
  */
 export type ScenePaint =
@@ -113,7 +113,7 @@ export interface SceneActor {
      * stuck in the far distance. Omit it and she stays behind the front layers
      * for the whole scene, which is the original behaviour.
      *
-     * Measured against the sprite BOX's centre — the only position the renderer
+     * Measured against the sprite BOX's centre â€” the only position the renderer
      * knows, since art alpha bounds are not inspected.
      */
     frontAfter?: number;
@@ -122,7 +122,7 @@ export interface SceneActor {
 
 /** A complete call scene. */
 export interface CallScene {
-  /** Stable id — what the saved view preference and any future sync key on. */
+  /** Stable id â€” what the saved view preference and any future sync key on. */
   id: string;
   /** Stage aspect ratio, width / height. The art's own aspect. */
   stageAspect: number;
@@ -139,3 +139,7 @@ export interface CallScene {
    */
   footsteps?: string[];
 }
+
+
+
+

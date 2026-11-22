@@ -1,4 +1,4 @@
-// src/observers/world.js — pure function of bot state
+﻿// src/observers/world.js â€” pure function of bot state
 import { getHealedPos } from './posHealer.js'
 import { facingFrame } from '../facing.js'
 import mcDataLib from 'minecraft-data'
@@ -21,18 +21,18 @@ function resolveBiomeName(bot, p) {
 
 /**
  * Inside / outside detection. Returns one of:
- *   - 'outside'     — open sky overhead AND daylight around — genuinely in
+ *   - 'outside'     â€” open sky overhead AND daylight around â€” genuinely in
  *                     the open (or a clear vertical column on unlit chunks)
- *   - 'pit'         — sky visible straight up but enclosed all around: the
+ *   - 'pit'         â€” sky visible straight up but enclosed all around: the
  *                     bottom of a shaft, ravine, or walled hole
- *   - 'sheltered'   — solid cover overhead BUT open sky a short hop away
- *                     (overhang, cave mouth, tree edge, doorway) — walk out
- *   - 'underground' — sealed above AND no open sky nearby — genuinely buried
- *   - 'unknown'     — world data unavailable
+ *   - 'sheltered'   â€” solid cover overhead BUT open sky a short hop away
+ *                     (overhang, cave mouth, tree edge, doorway) â€” walk out
+ *   - 'underground' â€” sealed above AND no open sky nearby â€” genuinely buried
+ *   - 'unknown'     â€” world data unavailable
  *
  * 260617: the old version returned 'underground' on `skyLight === 0` alone.
  * skyLight reads 0 on freshly-loaded chunks (the first seconds after join) and
- * at the foot of a cliff even under open sky — so a mountainside spawn was
+ * at the foot of a cliff even under open sky â€” so a mountainside spawn was
  * labelled "underground" and the bot tried to dig straight UP out of open
  * terrain instead of walking downhill. We CONFIRM cover with a column scan (a
  * clear column = outside regardless of stored skyLight) and, when there IS a
@@ -41,13 +41,13 @@ function resolveBiomeName(bot, p) {
  *
  * 260721: two fixes. (1) The column scan passed a plain {x,y,z} to blockAt;
  * prismarine-world needs a Vec3 (`pos.floored()`), so every call threw and the
- * catch collapsed everything non-'outside' to 'unknown' — sheltered and
+ * catch collapsed everything non-'outside' to 'unknown' â€” sheltered and
  * underground were unreachable in live play. (2) The scan capped at 24 blocks,
  * so a cavern taller than that read "no roof" and became 'outside'; it now
  * scans to the world build height (early-exits on the first solid block, so
  * the full-height walk only happens on genuinely open columns). Also added
  * 'pit': sky light directly overhead used to short-circuit to 'outside' even
- * at the bottom of a 1×1 shaft; now open sky must ALSO show up in the ring.
+ * at the bottom of a 1Ã—1 shaft; now open sky must ALSO show up in the ring.
  */
 const RING = [[5, 0], [-5, 0], [0, 5], [0, -5], [4, 4], [-4, -4], [4, -4], [-4, 4]]
 
@@ -85,7 +85,7 @@ function describeSurroundings(bot, p) {
     return false
   }
 
-  // Sky straight overhead (cheap common case) — but that alone does not mean
+  // Sky straight overhead (cheap common case) â€” but that alone does not mean
   // open ground: a shaft or ravine bottom sees sky straight up too.
   const sky = skyAt(px, headY, pz)
   if (sky != null && sky >= 14) return daylightNearby() ? 'outside' : 'pit'
@@ -112,7 +112,7 @@ function describeSurroundings(bot, p) {
   if (!covered) return walledIn(bot, px, py, pz) ? 'pit' : 'outside'
 
   // Roofed. With no light data we can only say it is covered; otherwise probe
-  // the ring for daylight — an overhang / cave mouth with a way out
+  // the ring for daylight â€” an overhang / cave mouth with a way out
   // ('sheltered') vs a sealed or deep space ('underground').
   if (sky == null) return 'sheltered'
   return daylightNearby() ? 'sheltered' : 'underground'
@@ -132,7 +132,7 @@ export function world(bot) {
   return {
     pos,
     // 260803: which way the body points, resolved to world axes. Note this
-    // reads the RAW entity yaw, not the healed position — yaw has no healer
+    // reads the RAW entity yaw, not the healed position â€” yaw has no healer
     // and needs none (a stale yaw is a wrong answer for one tick; a stale
     // position was corrupting coordinates).
     facing: facingFrame(bot.entity?.yaw),
@@ -163,3 +163,7 @@ function lightAtHead(bot, pos) {
     block: read(bot.world?.getBlockLight?.bind(bot.world)),
   }
 }
+
+
+
+

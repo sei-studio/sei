@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Portrait file helpers with NO characterStore dependency (260909).
  *
  * portraitStore.ts owns the character-aware operations (apply / select /
@@ -71,3 +71,7 @@ export async function deletePortraitFiles(characterId: string): Promise<void> {
   }
   await unlinkPortraitVersionFiles(characterId);
 }
+
+
+
+

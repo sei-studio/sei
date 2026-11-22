@@ -1,4 +1,4 @@
-# CCE-1: Character Chess Engine
+﻿# CCE-1: Character Chess Engine
 
 Skill-conditioned move generation with LLM personality selection, Elo 400 to 2000.
 
@@ -16,10 +16,10 @@ AI game companions must play chess as a believable character *and* as a believab
 ## Architecture
 
 ```
-persona layer:      Soulcaster ──> Chess Profile (Elo + overrides)
+persona layer:      Soulcaster â”€â”€> Chess Profile (Elo + overrides)
 
-move generation:    Elo-Adjusted Maia ──> Move Sampler (temperature)
-                    ──> Blunder ──> Blinder ──> 4-Move Candidate Set
+move generation:    Elo-Adjusted Maia â”€â”€> Move Sampler (temperature)
+                    â”€â”€> Blunder â”€â”€> Blinder â”€â”€> 4-Move Candidate Set
 
 per candidate:      Lookahead (alternating Maia rollout, depth n(Elo))
 context:            Macro Context (material + W/D/L probability range)
@@ -32,15 +32,15 @@ selection:          LLM with persona text picks purely by character.
 
 ### Components
 
-- **Chess profile** (`src/profile.js`) — the persona config: Elo (400-2000) plus optional overrides for temperature, blunder rate, blinder rate, lookahead depth, and band width. Everything derives from Elo by default.
-- **Elo-adjusted Maia** (`src/maia.js`) — Maia inference conditioned on persona Elo (`elo_oppo = elo_self`), returning a probability distribution over all legal moves. This implementation runs the official Maia-3 5M checkpoint ([CSSLab/maia3](https://github.com/CSSLab/maia3), Chessformer architecture), exported to ONNX by `scripts/export-maia3.py` and run with onnxruntime-node. Elo conditioning is continuous; we use the 600-2600 range.
-- **Move sampler** (`src/sampler.js`) — Gumbel-top-k over the tempered distribution: `s(m) = log p(m)/T + g_m`, keep the top 4; equivalent to sequential sampling without replacement from `q(m) ∝ p(m)^(1/T)`. Temperature is 1 inside Maia's calibrated range and rises linearly below it (a 400 persona gets T = 2). Moves below 1% raw probability are dropped before tempering so the flattening spreads mass over bad-but-human moves, not the full legal tail.
-- **Blunder** (`src/cce.js`) — with Elo-scaled probability `P = b_max · e^{-(Elo-400)/λ}`, swaps one candidate for a move from the bottom tail of the distribution. Models impulsive lapses.
-- **Blinder** (`src/cce.js`) — when Stockfish detects a short forced mate or a wide-gap tactic, removes it from the candidate set with probability `P = 1 - σ((Elo-μ)/s)`. Models not seeing what is on the board and counters Maia's tactical-sharpness quirk. Both curves start near certainty at 400 and near zero at 2000.
-- **Lookahead** (`src/cce.js`) — for each candidate, one rollout of alternating Maia predictions, all plies conditioned on persona Elo and sampled at persona temperature, so the imagined line is rating-appropriate on both sides. One rollout per candidate, never averaged. Depth `n(Elo) = clip(floor(Elo/250), 1, 8)` plies: a 400 sees only its own move, a 2000 sees four moves per side.
-- **Translation** (`src/translate.js`) — a deterministic chess.js tagger converts each move and rollout into plain sentences: captures, checks, mates, promotions, threats, hanging pieces, material deltas. No raw FEN reaches the LLM (SAN is included so the picker can name its move).
-- **Macro context** (`src/macro.js`) — material count plus a win/draw/loss assessment shown as a probability *range*, not a confidence score. The band's half-width shrinks linearly from the full range at 400 to about 5 points at 2000, and at low Elo the band center shifts toward a naive material-only evaluation: weak players are confidently wrong, not just uncertain.
-- **Stockfish** (`src/stockfish.js`) — bundled stockfish.js 18 lite (single-threaded WASM, ~7 MB) used for the Blinder's tactic detection and the macro band's engine estimate.
+- **Chess profile** (`src/profile.js`) â€” the persona config: Elo (400-2000) plus optional overrides for temperature, blunder rate, blinder rate, lookahead depth, and band width. Everything derives from Elo by default.
+- **Elo-adjusted Maia** (`src/maia.js`) â€” Maia inference conditioned on persona Elo (`elo_oppo = elo_self`), returning a probability distribution over all legal moves. This implementation runs the official Maia-3 5M checkpoint ([CSSLab/maia3](https://github.com/CSSLab/maia3), Chessformer architecture), exported to ONNX by `scripts/export-maia3.py` and run with onnxruntime-node. Elo conditioning is continuous; we use the 600-2600 range.
+- **Move sampler** (`src/sampler.js`) â€” Gumbel-top-k over the tempered distribution: `s(m) = log p(m)/T + g_m`, keep the top 4; equivalent to sequential sampling without replacement from `q(m) âˆ p(m)^(1/T)`. Temperature is 1 inside Maia's calibrated range and rises linearly below it (a 400 persona gets T = 2). Moves below 1% raw probability are dropped before tempering so the flattening spreads mass over bad-but-human moves, not the full legal tail.
+- **Blunder** (`src/cce.js`) â€” with Elo-scaled probability `P = b_max Â· e^{-(Elo-400)/Î»}`, swaps one candidate for a move from the bottom tail of the distribution. Models impulsive lapses.
+- **Blinder** (`src/cce.js`) â€” when Stockfish detects a short forced mate or a wide-gap tactic, removes it from the candidate set with probability `P = 1 - Ïƒ((Elo-Î¼)/s)`. Models not seeing what is on the board and counters Maia's tactical-sharpness quirk. Both curves start near certainty at 400 and near zero at 2000.
+- **Lookahead** (`src/cce.js`) â€” for each candidate, one rollout of alternating Maia predictions, all plies conditioned on persona Elo and sampled at persona temperature, so the imagined line is rating-appropriate on both sides. One rollout per candidate, never averaged. Depth `n(Elo) = clip(floor(Elo/250), 1, 8)` plies: a 400 sees only its own move, a 2000 sees four moves per side.
+- **Translation** (`src/translate.js`) â€” a deterministic chess.js tagger converts each move and rollout into plain sentences: captures, checks, mates, promotions, threats, hanging pieces, material deltas. No raw FEN reaches the LLM (SAN is included so the picker can name its move).
+- **Macro context** (`src/macro.js`) â€” material count plus a win/draw/loss assessment shown as a probability *range*, not a confidence score. The band's half-width shrinks linearly from the full range at 400 to about 5 points at 2000, and at low Elo the band center shifts toward a naive material-only evaluation: weak players are confidently wrong, not just uncertain.
+- **Stockfish** (`src/stockfish.js`) â€” bundled stockfish.js 18 lite (single-threaded WASM, ~7 MB) used for the Blinder's tactic detection and the macro band's engine estimate.
 
 ## Usage
 
@@ -90,3 +90,7 @@ node scripts/calibrate.mjs --elo 800 --games 20 --anchor 1320
 ## License
 
 AGPL-3.0-only (same as Sei). The bundled Stockfish WASM build (`engines/`, unmodified `stockfish-18-lite-single` from [stockfish.js](https://github.com/nmrugg/stockfish.js) v18.0.8) is GPL-3.0; see `engines/Copying.txt`, with corresponding source at that repository and the [Stockfish](https://github.com/official-stockfish/Stockfish) project. The Maia-3 model in this repo's releases is our ONNX export (`scripts/export-maia3.py`) of the official [Maia3-5M](https://huggingface.co/UofTCSSLab/Maia3-5M) checkpoint released by the [Maia Chess](https://www.maiachess.com) project (CSSLab, University of Toronto) under AGPL-3.0 at [CSSLab/maia3](https://github.com/CSSLab/maia3); it stays AGPL-3.0. CCE-1 is not affiliated with the Maia or Stockfish projects.
+
+
+
+

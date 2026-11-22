@@ -1,4 +1,4 @@
-/**
+﻿/**
  * OpenAI-compat adapter tests (china-compat W1): deepseek extra body + the
  * first-token timeout floor, stop_sequences mapping, forced tool_choice with
  * JSON fallback, SSE delta folding (text surfaced, tool_calls buffered), and
@@ -206,3 +206,7 @@ describe('createOpenAICompatProvider', () => {
     expect(hdrCalls[0][1].headers.authorization).toBeUndefined();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261115 (quality pass 56): a fight that lands while she is busy with a long
+﻿// 261115 (quality pass 56): a fight that lands while she is busy with a long
 // action of her own.
 //
 // Scorecard 11-14 (night_social-03): she was running shelter() when a zombie
@@ -31,7 +31,7 @@ describe('pass 56 busy-action fight text', () => {
     expect(t).not.toMatch(/do not need to call attackEntity/)
     expect(t).toMatch(/Call attackEntity on it/)
     expect(t).toMatch(/replaces shelter/)
-    expect(t).not.toMatch(/—/)
+    expect(t).not.toMatch(/â€”/)
   })
 
   it('a defend turn with nothing running (or the fight action on it) keeps its text', () => {
@@ -43,7 +43,7 @@ describe('pass 56 busy-action fight text', () => {
 
   it('a mob hit while an action runs says the action is in the way and how to fight', () => {
     const t = eventAddendum('sei:attacked', { ...hit, busyAction: 'gather 3 oak_log' })
-    expect(t).toMatch(/^Interrupted — zombie hit you\. TELL THE PLAYER/)
+    expect(t).toMatch(/^Interrupted â€” zombie hit you\. TELL THE PLAYER/)
     expect(t).not.toMatch(/swing back on their own if you stand your ground/)
     expect(t).toMatch(/gather 3 oak_log is still running/)
     expect(t).toMatch(/call attackEntity on it \(that replaces gather 3 oak_log\)/)
@@ -247,3 +247,7 @@ describe('pass 56 fight that replaced a long action', () => {
     expect(kill).not.toContain('cut short')
   })
 })
+
+
+
+

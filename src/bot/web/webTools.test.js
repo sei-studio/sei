@@ -1,4 +1,4 @@
-// src/bot/web/webTools.test.js — parsers, labels, text extraction, URL gate,
+﻿// src/bot/web/webTools.test.js â€” parsers, labels, text extraction, URL gate,
 // and the session behavior (provider chain fallback, paging, budget) against
 // a scripted fetch. No network.
 import fs from 'node:fs'
@@ -175,7 +175,7 @@ describe('labels + urls', () => {
 
   it('clip cuts on a word boundary with an ellipsis', () => {
     expect(clip('short', 10)).toBe('short')
-    expect(clip('the quick brown fox jumps', 16)).toBe('the quick brown…')
+    expect(clip('the quick brown fox jumps', 16)).toBe('the quick brownâ€¦')
   })
 
   it('exposes exactly the two tools with the expected names', () => {
@@ -740,3 +740,7 @@ describe('Roblox experience wikis (261003)', () => {
     expect(wikisForQuery('brookhaven rp house')[0].host).toBe('brookhaven.fandom.com')
   })
 })
+
+
+
+

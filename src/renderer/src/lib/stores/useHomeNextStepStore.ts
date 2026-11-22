@@ -1,5 +1,5 @@
-/**
- * useHomeNextStepStore — the Home "up next" card's data (261013, T119).
+﻿/**
+ * useHomeNextStepStore â€” the Home "up next" card's data (261013, T119).
  *
  * Holds main's answer to `home:next-steps` for the Home roster, plus the
  * cards the player dismissed this app session (a dismissed card comes back on
@@ -49,3 +49,7 @@ export const useHomeNextStepStore = create<HomeNextStepState>((set, get) => ({
     set((s) => ({ steps: {}, dismissed: new Set<string>(), epoch: s.epoch + 1 }));
   },
 }));
+
+
+
+

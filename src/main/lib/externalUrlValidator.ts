@@ -1,8 +1,8 @@
-// src/main/lib/externalUrlValidator.ts
+﻿// src/main/lib/externalUrlValidator.ts
 //
 // Shared gate for every `shell.openExternal` call site.
 //
-// 260725 — the HOST allowlist was removed (user directive). It previously
+// 260725 â€” the HOST allowlist was removed (user directive). It previously
 // enumerated the handful of destinations the app itself linked to (sei.gg,
 // dmca.copyright.gov, polar.sh, and briefly discord/youtube), which made the
 // notices inbox unable to link anywhere the client build had not been taught
@@ -12,16 +12,16 @@
 // a release cycle per link. Any host is now allowed.
 //
 // The PROTOCOL gate stays, and it is the load-bearing half. `shell.openExternal`
-// hands the URI to the OS, which resolves registered protocol handlers —
-// `file:///…`, and on Windows schemes like `ms-msdt:` / `search-ms:`, are code
+// hands the URI to the OS, which resolves registered protocol handlers â€”
+// `file:///â€¦`, and on Windows schemes like `ms-msdt:` / `search-ms:`, are code
 // execution or local-file surfaces, not links. Restricting to https (plus
 // mailto for contact links) keeps that door shut while leaving every real
 // destination reachable.
 //
 // Retained callers and what this still buys them:
-//  - ipc.ts `app:open-external` — a compromised renderer (or an XSS hole in our
+//  - ipc.ts `app:open-external` â€” a compromised renderer (or an XSS hole in our
 //    own strings) cannot smuggle a `javascript:` / `file:` URI to the OS.
-//  - proxyClient.ts checkout / customer-portal URLs — a compromised proxy or
+//  - proxyClient.ts checkout / customer-portal URLs â€” a compromised proxy or
 //    MITM can now redirect the user to an arbitrary *site* (previously bounded
 //    to polar.sh), but still not to a local-protocol URI.
 
@@ -31,8 +31,8 @@
  * single-sourced.
  *
  * Reject reasons:
- *  - Malformed URL → "rejected (malformed URL)".
- *  - Any protocol other than https: or mailto: → "rejected".
+ *  - Malformed URL â†’ "rejected (malformed URL)".
+ *  - Any protocol other than https: or mailto: â†’ "rejected".
  */
 export function assertSafeExternalUrl(url: string): void {
   let u: URL;
@@ -45,3 +45,7 @@ export function assertSafeExternalUrl(url: string): void {
     throw new Error(`assertSafeExternalUrl rejected: ${url}`);
   }
 }
+
+
+
+

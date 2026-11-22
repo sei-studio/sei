@@ -1,4 +1,4 @@
-// shelter() convenience (MCRAFT-06) — composes build() (hollow walls + roof)
+﻿// shelter() convenience (MCRAFT-06) â€” composes build() (hollow walls + roof)
 // and dig() (doorway) into a correct enclosed structure. The mocks let us
 // assert the COMPOSITION shape (which cuboids, hollow vs solid, doorway carved)
 // without standing up a real mineflayer world.
@@ -67,7 +67,7 @@ describe('shelterAction', () => {
   it('starts the walls on the ground layer the bot is standing in', async () => {
     await shelterAction({ size: 3 }, makeBot(), {})
     const wallsCall = buildAction.mock.calls.find((c) => c[0].hollow === true)
-    // Ground is y=63, the bot's feet are at 64 → the walls start at 64.
+    // Ground is y=63, the bot's feet are at 64 â†’ the walls start at 64.
     expect(wallsCall[0].from.y).toBe(64)
     // 261102 (pass 36): two layers of wall, the roof right on top.
     expect(wallsCall[0].to.y).toBe(65)
@@ -80,7 +80,7 @@ describe('shelterAction', () => {
   it('centers the footprint on the cell the bot stands in', async () => {
     await shelterAction({ size: 5 }, makeBot(), {})
     const w = buildAction.mock.calls.find((c) => c[0].hollow === true)[0]
-    // bot x 0.4 → cell 0, z 0.6 → cell 0; a 5-wide footprint is -2..2.
+    // bot x 0.4 â†’ cell 0, z 0.6 â†’ cell 0; a 5-wide footprint is -2..2.
     expect([w.from.x, w.to.x, w.from.z, w.to.z]).toEqual([-2, 2, -2, 2])
   })
 
@@ -191,7 +191,7 @@ describe('shelterAction', () => {
   })
 })
 
-describe('shelterAction — interrupted (261012)', () => {
+describe('shelterAction â€” interrupted (261012)', () => {
   it('says it stopped partway instead of "no shelter built"', async () => {
     buildAction.mockResolvedValueOnce('aborted after 32 placed of 48 cells')
     const res = await shelterAction({ size: 5 }, makeBot(), {})
@@ -473,3 +473,7 @@ describe('shelterAction: her own body and walls already there (261102)', () => {
     expect(res).toMatch(/^built shelter 3x3x2/)
   })
 })
+
+
+
+

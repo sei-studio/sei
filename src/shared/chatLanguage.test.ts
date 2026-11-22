@@ -1,5 +1,5 @@
-/**
- * chatLanguage — the Scribe-code mapping used by the voice language
+﻿/**
+ * chatLanguage â€” the Scribe-code mapping used by the voice language
  * auto-switch (src/main/voice/languageAutoSwitch.ts). The input is an
  * untrusted upstream string (ElevenLabs Scribe, or the proxy relaying it), so
  * the table lookup must never resolve to an inherited Object.prototype member.
@@ -137,3 +137,7 @@ describe('companionLanguage', () => {
     expect(companionLanguage(sui, { ui_language: 'es' }, 'me')).toEqual({ language: 'es', adopted: false });
   });
 });
+
+
+
+

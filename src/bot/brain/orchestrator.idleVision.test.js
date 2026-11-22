@@ -1,20 +1,20 @@
-// src/bot/brain/orchestrator.idleVision.test.js
+﻿// src/bot/brain/orchestrator.idleVision.test.js
 //
 // Looking (vision) mode coverage. These tests drive a REAL orchestrator with a
 // scripted LLM provider and a mock adapter exposing the renderIdleFrame seam,
 // and assert the mode semantics the orchestrator must hold:
-//   1. continuous → an automatic view rides the FIRST turn of a session
-//      (counter seeded "due" — the first-join orienting frame), then every
+//   1. continuous â†’ an automatic view rides the FIRST turn of a session
+//      (counter seeded "due" â€” the first-join orienting frame), then every
 //      _PASSIVE_FRAME_INTERVAL_TURNS turns, on the STANDARD LLM path (D-09:
 //      automatic views are never routed to /vision/v1/messages, even in cloud).
-//   2. off → no pictures, ever, and the look tool is not offered.
-//   3. on-demand → the look tool IS offered, but NO automatic view is ever fed
-//      (even at the most aggressive cadence); continuous → tool offered AND the
+//   2. off â†’ no pictures, ever, and the look tool is not offered.
+//   3. on-demand â†’ the look tool IS offered, but NO automatic view is ever fed
+//      (even at the most aggressive cadence); continuous â†’ tool offered AND the
 //      automatic view flows.
-//   4. {skip:true} (D-02 pose-dedupe) / degrade string → no image attached;
+//   4. {skip:true} (D-02 pose-dedupe) / degrade string â†’ no image attached;
 //      the turn still runs. Degrade does NOT reset the cadence (retry next
 //      turn); skip does.
-//   5. Image retention: a newer frame demotes the older one — at most ONE
+//   5. Image retention: a newer frame demotes the older one â€” at most ONE
 //      image block in any payload.
 //
 // The automatic-view cadence is a fixed production constant (5 turns); these
@@ -133,7 +133,7 @@ describe('Looking (vision) modes', () => {
     const flat = JSON.stringify(provider.calls[0].messages)
     expect(flat).toContain('"type":"image"')
     expect(flat).toContain(B64)
-    // D-09 (the load-bearing assertion): automatic views use the STANDARD path —
+    // D-09 (the load-bearing assertion): automatic views use the STANDARD path â€”
     // never routed to /vision/v1/messages, even though cloudMode is set.
     expect(provider.calls[0].path).toBeUndefined()
   })
@@ -173,7 +173,7 @@ describe('Looking (vision) modes', () => {
 
   it('on-demand: offers the look tool but never feeds an automatic view', async () => {
     _setTickIntervalForTests(10_000_000)
-    // Even at the most aggressive cadence, on-demand must NOT stream a view —
+    // Even at the most aggressive cadence, on-demand must NOT stream a view â€”
     // the model only ever sees what it explicitly asks for via look()/explore().
     _setPassiveFrameIntervalForTests(1)
     const { adapter, captured } = makeAdapter({ idleFrame: SUCCESS })
@@ -223,7 +223,7 @@ describe('Looking (vision) modes', () => {
     const { runTurn } = makeOrch({ adapter, config: makeConfig({ mode: 'continuous' }), provider })
 
     await runTurn('sei:idle', {})
-    await runTurn('sei:idle', {}) // counter reset by skip → not due yet
+    await runTurn('sei:idle', {}) // counter reset by skip â†’ not due yet
 
     expect(captured.rendered).toBe(1)
     expect(countImages(provider.calls[0].messages)).toBe(0)
@@ -247,9 +247,9 @@ describe('Looking (vision) modes', () => {
     expect(countImages(provider.calls[1].messages)).toBe(1)
   })
 
-  it('image retention: a newer frame demotes the older one — at most ONE image per payload', async () => {
+  it('image retention: a newer frame demotes the older one â€” at most ONE image per payload', async () => {
     _setTickIntervalForTests(10_000_000)
-    // cadence 1 → a frame on EVERY turn. The tool call keeps the SAME loop alive
+    // cadence 1 â†’ a frame on EVERY turn. The tool call keeps the SAME loop alive
     // across two LLM calls, so without the demotion cap the second call's
     // history would carry BOTH frames.
     _setPassiveFrameIntervalForTests(1)
@@ -264,9 +264,13 @@ describe('Looking (vision) modes', () => {
 
     expect(provider.calls.length).toBe(2)
     expect(countImages(provider.calls[0].messages)).toBe(1)
-    // Second call (same loop): exactly one LIVE image — the older frame is
+    // Second call (same loop): exactly one LIVE image â€” the older frame is
     // demoted to its text placeholder, not re-sent as base64.
     expect(countImages(provider.calls[1].messages)).toBe(1)
     expect(JSON.stringify(provider.calls[1].messages)).toContain('a picture was shown here on an earlier turn')
   })
 })
+
+
+
+

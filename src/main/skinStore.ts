@@ -1,31 +1,31 @@
-/**
+﻿/**
  * Per-persona skin PNG storage.
  *
  * Responsibilities:
- *   - applyPng: validate PNG magic + IHDR (64×64 RGBA), write atomically under
+ *   - applyPng: validate PNG magic + IHDR (64Ã—64 RGBA), write atomically under
  *     <userData>/skins/<personaId>.png, then persist skin descriptor + optional
  *     per-persona MC username via a SINGLE saveCharacter call (atomic
- *     two-field update — never half-applied).
+ *     two-field update â€” never half-applied).
  *   - removePng: unlink user-applied PNG (best-effort) and reset skin descriptor
  *     to 'none' (server falls through to Steve/Alex).
  *   - resolveSkinPng: source-of-truth lookup the HTTP server uses to translate
  *     a request URL into bytes (honors `skin.source`).
- *   - readSkinPng: pure helper from username → character lookup → resolveSkinPng.
+ *   - readSkinPng: pure helper from username â†’ character lookup â†’ resolveSkinPng.
  *
  * 260707: NO bundled skins ship with the app. The only bytes served are the
  * per-user cached override at <userData>/skins/<id>.png (pointed at by an
  * 'upload'/'username' descriptor). The three former defaults (sui/lyra/marv) are
  * ordinary public characters whose skin is downloaded from their cloud row by
- * cache-on-demand, exactly like any other public character — no offline
+ * cache-on-demand, exactly like any other public character â€” no offline
  * baseline, Steve until the cloud skin caches.
  *
  * Path-traversal safety: every caller MUST validate personaId via main/ipc.ts's
- * IdSchema (kebab-case slug regex) BEFORE calling into this module — the persona
+ * IdSchema (kebab-case slug regex) BEFORE calling into this module â€” the persona
  * id is consumed by paths.skinPngPath which builds a filesystem path component.
  * The IdSchema is the defense-in-depth gate; this module trusts its input.
  *
  * Sources:
- *   - CONTEXT.md §decisions "Skin serving: local HTTP, loopback only by default"
+ *   - CONTEXT.md Â§decisions "Skin serving: local HTTP, loopback only by default"
  *   - characterStore.ts (atomic-write + index-update pattern mirrored here)
  */
 import { readFile, mkdir, unlink } from 'node:fs/promises';
@@ -41,7 +41,7 @@ import { SKIN_PENDING_KEY, type Character, type Skin, type SkinSource } from '..
 /**
  * Read the PNG bytes that should be served for this persona, honoring its
  * skin.source descriptor. Returns null when no skin should be served
- * (`source === 'none'` OR the file the descriptor points at is missing —
+ * (`source === 'none'` OR the file the descriptor points at is missing â€”
  * e.g. user deleted it out-of-band).
  */
 export async function resolveSkinPng(character: Character): Promise<Buffer | null> {
@@ -49,18 +49,18 @@ export async function resolveSkinPng(character: Character): Promise<Buffer | nul
 
   // The only skin bytes the app serves are the cached override under
   // <userData>/skins/<id>.png, pointed at by an 'upload'/'username' descriptor.
-  // 260707: sui/lyra/marv are ordinary public characters now — cache-on-demand
+  // 260707: sui/lyra/marv are ordinary public characters now â€” cache-on-demand
   // flips their skin.source to 'upload' and downloads the cloud bytes here, the
   // same as any other public character. There is NO bundled baseline: when the
   // cached file is absent (source 'none'/'bundled', or an 'upload'/'username'
   // whose bytes have not downloaded yet), we serve nothing and the skin server
-  // 404s → CustomSkinLoader renders Steve until the cloud skin caches. This is
+  // 404s â†’ CustomSkinLoader renders Steve until the cloud skin caches. This is
   // identical to how every other public character behaves.
   if (s.source === 'upload' || s.source === 'username') {
     try {
       return await readFile(paths.skinPngPath(character.id));
     } catch {
-      /* no cached bytes on disk yet → nothing to serve */
+      /* no cached bytes on disk yet â†’ nothing to serve */
     }
   }
   return null;
@@ -72,15 +72,15 @@ export async function resolveSkinPng(character: Character): Promise<Buffer | nul
  * persist via a SINGLE saveCharacter call (atomic two-field update).
  *
  * `username` argument semantics:
- *   - undefined → leave the persisted username untouched (skin-only update)
- *   - null      → leave the persisted username untouched (renderer sentinel for "no change")
- *   - '' (empty string after trim) → clear the username (fall back to effectiveMcUsername: the folded persona name)
- *   - any other string → set as the per-persona MC username (CharacterSchema.parse
+ *   - undefined â†’ leave the persisted username untouched (skin-only update)
+ *   - null      â†’ leave the persisted username untouched (renderer sentinel for "no change")
+ *   - '' (empty string after trim) â†’ clear the username (fall back to effectiveMcUsername: the folded persona name)
+ *   - any other string â†’ set as the per-persona MC username (CharacterSchema.parse
  *     inside saveCharacter validates the regex `^[A-Za-z0-9_]+$` + length 1-16)
  *
  * Defense-in-depth: we re-validate PNG bytes here even though the renderer's
  * upload dialog and the IPC schema both reject non-PNG input. Main
- * is the trust boundary — never assume the renderer already validated.
+ * is the trust boundary â€” never assume the renderer already validated.
  */
 export async function applyPng(args: {
   personaId: string;
@@ -109,14 +109,14 @@ export async function applyPng(args: {
       pngBytes[2] !== 0x4E || pngBytes[3] !== 0x47) {
     throw new Error('applyPng: not a PNG (magic-byte mismatch)');
   }
-  // mojangSkinLookup normalizes legacy 64×32 skins to 64×64 BEFORE
+  // mojangSkinLookup normalizes legacy 64Ã—32 skins to 64Ã—64 BEFORE
   // handing the buffer here; applyPng can safely reject anything that isn't
-  // 64×64 as a defense-in-depth check against a renderer that bypasses the
+  // 64Ã—64 as a defense-in-depth check against a renderer that bypasses the
   // upload validator.
   const width = pngBytes.readUInt32BE(16);
   const height = pngBytes.readUInt32BE(20);
   if (width !== 64 || height !== 64) {
-    throw new Error(`applyPng: PNG must be 64×64 (got ${width}×${height})`);
+    throw new Error(`applyPng: PNG must be 64Ã—64 (got ${width}Ã—${height})`);
   }
   await mkdir(paths.skinsDir(), { recursive: true });
   const target = paths.skinPngPath(personaId);
@@ -146,7 +146,7 @@ export async function applyPng(args: {
       nextUsername = trimmed; // explicit set; regex+length validated downstream
     }
   }
-  // null / undefined → leave character.username unchanged
+  // null / undefined â†’ leave character.username unchanged
 
   // SINGLE atomic write. Skin descriptor + username
   // land together so the persisted character is never half-applied.
@@ -157,13 +157,13 @@ export async function applyPng(args: {
     metadata: withSkinPending(character.metadata, skinPending === true),
   });
 
-  // Phase 11 — Mirror the updated character + skin bytes to cloud.
+  // Phase 11 â€” Mirror the updated character + skin bytes to cloud.
   // saveCharacter already enqueues an upsert; we enqueue a second one here
   // EXPLICITLY (it collapses with the first via enqueueUpsert's same-uuid
   // filter) so the cloud-mirror path is obvious at the skin call site.
   // The queue drainer re-reads <userData>/skins/<uuid>.png at drain time per
   // Pattern 4, so the freshly-written bytes are what land in Storage.
-  // Defaults (D-22) never upload — skip the enqueue.
+  // Defaults (D-22) never upload â€” skip the enqueue.
   if (!character.is_default) {
     void (async () => {
       try {
@@ -180,7 +180,7 @@ export async function applyPng(args: {
 
 /**
  * Reset a persona's skin to 'none' (server falls through to Steve/Alex). The
- * username is NOT touched — the user can clear it independently via the skin
+ * username is NOT touched â€” the user can clear it independently via the skin
  * editor's username field.
  *
  * The on-disk PNG under <userData>/skins/<id>.png is unlinked best-effort; if
@@ -193,7 +193,7 @@ export async function removePng(personaId: string): Promise<Skin> {
   try {
     await unlink(paths.skinPngPath(personaId));
   } catch {
-    /* ignore ENOENT — best-effort cleanup */
+    /* ignore ENOENT â€” best-effort cleanup */
   }
   const newSkin: Skin = {
     source: 'none',
@@ -232,14 +232,14 @@ function withSkinPending(
  *      renderer that hasn't wired character.username yet still resolves the
  *      right character on first launch.
  *   3. 261027 alias: the name the OLD rule derived (accents deleted, "Sofa"
- *      for "Sofía"), tried only when nothing matched 1 or 2, so a request
+ *      for "SofÃ­a"), tried only when nothing matched 1 or 2, so a request
  *      under a pre-fold name (a CSL client or preview still holding it) still
  *      gets the character's skin. Skins are stored by character id, so the
  *      rename moves no file; this only keeps the old URL answering.
  *
  * 260707: no bundled-default fallback. sui/lyra/marv are ordinary public
  * characters; when one isn't cached locally yet, this returns null and the skin
- * server 404s → Steve, identical to any other public character whose cloud skin
+ * server 404s â†’ Steve, identical to any other public character whose cloud skin
  * has not downloaded.
  */
 export async function readSkinPng(args: {
@@ -247,7 +247,7 @@ export async function readSkinPng(args: {
   listCharacters: () => Promise<Character[]>;
 }): Promise<Buffer | null> {
   const all = await args.listCharacters();
-  // Case-insensitive comparison — MC usernames preserve case in display but
+  // Case-insensitive comparison â€” MC usernames preserve case in display but
   // upstream CSL/preview consumers occasionally lowercase the slug. The skin
   // server's URL regex (skinServer.ts) restricts the path to [A-Za-z0-9_]{1,16}
   // so this is a pure case-fold compare on the request side; the character
@@ -260,8 +260,12 @@ export async function readSkinPng(args: {
         mcUsernameFromName(c.name).toLowerCase() === wantLower,
     ) ??
     // Only after every current name missed: a real character named "Sofa"
-    // keeps its own skin even while "Sofía" (old name Sofa) exists.
+    // keeps its own skin even while "SofÃ­a" (old name Sofa) exists.
     all.find((c) => legacyMcUsernameFromName(c.name).toLowerCase() === wantLower);
   if (match) return await resolveSkinPng(match);
   return null;
 }
+
+
+
+

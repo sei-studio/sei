@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: real-key eval of the intent check (intentCheck.ts) in
  * front of an immediate control run. Every case here already PASSES the
  * lexical precondition (requestMatches), so the classifier is the only thing
@@ -36,7 +36,7 @@ const CASES: Array<[string, string, string, boolean]> = [
   ['yo close that popup', 'close that popup', 'close that popup', true],
   ['could you mute the game', 'mute the game', 'mute the game', true],
   ['move it from downloads to trash', 'move it from downloads to trash', 'move it from downloads to trash', true],
-  ['帮我打开设置', '打开设置', '打开设置', true],
+  ['å¸®æˆ‘æ‰“å¼€è®¾ç½®', 'æ‰“å¼€è®¾ç½®', 'æ‰“å¼€è®¾ç½®', true],
   // The review's cases: the words are there, the request is not.
   ["please don't delete my save file", "don't delete my save file", 'delete my save file', false],
   ['should i uninstall this game?', 'uninstall this game', 'uninstall this game', false],
@@ -116,3 +116,7 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+
+
+

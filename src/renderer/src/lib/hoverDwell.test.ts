@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HOVER_DWELL_MS, createHoverDwell } from './hoverDwell';
 
 beforeEach(() => vi.useFakeTimers());
@@ -44,3 +44,7 @@ describe('createHoverDwell', () => {
     expect(fire).toHaveBeenCalledTimes(2);
   });
 });
+
+
+
+

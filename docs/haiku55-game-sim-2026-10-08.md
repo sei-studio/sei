@@ -1,4 +1,4 @@
-# Haiku 4.5 vs Haiku 5.5 on the game surfaces (2026-10-08)
+﻿# Haiku 4.5 vs Haiku 5.5 on the game surfaces (2026-10-08)
 
 A measurement only. No prompts were changed. The prompt and tool assembly for every surface comes from the app's own code: `scripts/game-sim-probe.ts`. The one exception is the scene inputs (snapshots, chat lines, board positions, canvases and screen frames).
 
@@ -44,18 +44,18 @@ How to rerun: `npx tsx scripts/game-sim-probe.ts [--reps 3] [--arms h45,h55off] 
 
 **Supplementary arm: 5.5 with no thinking param, 1 rep.**
 - Pass rates: Minecraft 8/8, Stardew 6/6, DST 4/5, chess 2/5, Draw! 3/4, Backseat 1/4.
-- Latency: TTFT was 1.2–2.3 s against about 0.5–0.65 s with thinking disabled. A full Minecraft turn took 2.6 s against 1.4 s.
+- Latency: TTFT was 1.2â€“2.3 s against about 0.5â€“0.65 s with thinking disabled. A full Minecraft turn took 2.6 s against 1.4 s.
 - Thinking blocks appeared on 29 of 33 turns.
 - On the short-budget surfaces, thinking ate the whole `max_tokens`:
   - backseat: 3 of 4 turns hit `max_tokens` with nothing spoken (cap 160);
   - chess: one move turn produced no `play()` (cap 160).
 - Thinking-disabled calls reported 0 thinking blocks.
 
-**Token counts.** For the same text, 5.5 reports roughly 20–30% more prompt tokens than 4.5:
+**Token counts.** For the same text, 5.5 reports roughly 20â€“30% more prompt tokens than 4.5:
 - game brain: 21.7k vs 16.8k on Minecraft, 18.2k vs 14.1k on Stardew;
 - chess: 4.2k vs 3.5k.
 
-Backseat (mostly image tokens) is about 7% lower on 5.5. Even with the extra tokens, a warm turn costs 7–30x less on 5.5.
+Backseat (mostly image tokens) is about 7% lower on 5.5. Even with the extra tokens, a warm turn costs 7â€“30x less on 5.5.
 
 **Caching.**
 - **4.5 chess never cached.** The chess prefix (about 3.5k tokens) is below Haiku 4.5's minimum cacheable length, so cache read and write were both 0.
@@ -115,7 +115,7 @@ Backseat (mostly image tokens) is about 7% lower on 5.5. Even with the extra tok
 - **D_HIT:** in 2 of 3 runs 4.5 said "hound on me, heading to the fire" or "heading your way" but called no movement tool. 5.5 said "hound got me ouen, im at 40 hp, running to the fire" and called `flee` in all 3 runs.
 - **D_SCIENCE:** both arms named the right ingredients (gold, logs, rocks). 4.5's miss was an em dash. 5.5's miss called `goTo` instead of `mine`. That is reasonable, but outside the action set the scene expects.
 - **D_HOUNDS:** 5.5 named the hounds only once in 3 runs. Its other lines were "wait WHAT growling?? get by the campfire rn ouen" and "oh no oh no. get by the campfire". It still made the right move to the fire (`goTo`, 3/3). 4.5 said "hounds!" in all 3 runs but called no tool, only `say`. The scene did not require one.
-- **D_PICK** (forced `tool_choice`, which works on 5.5): both arms picked a valid survivor every time, almost always WX-78. Both wrote a 45–60 word "one sentence" reason, and 4.5 also used em dashes. Neither model has this problem more than the other; it comes from the prompt.
+- **D_PICK** (forced `tool_choice`, which works on 5.5): both arms picked a valid survivor every time, almost always WX-78. Both wrote a 45â€“60 word "one sentence" reason, and 4.5 also used em dashes. Neither model has this problem more than the other; it comes from the prompt.
 
 ### Chess (5 scenes; real cce-1 candidates)
 
@@ -173,7 +173,7 @@ No illegal moves from either arm. On C_BLUNDER, every `play()` was the top candi
 | B_MC | Minecraft nether screenshot | 3/3 | 0/3 |
 | B_MENU | static menu, nothing happening | 3/3 (adj 0/3) | 1/3 |
 
-**5.5 is clearly worse on length.** The contract asks for one line under twenty words. 5.5's lines run 30–47 words, and 6 of 12 turns went over the probe's 30-word limit. Example from B_MC: "Ouen, you are literally standing on a block of dirt over lava in the Nether, and Marv is up there looking like a tiny red tower. Are you actually going to bridge across that, or is this a crime against chess players?"
+**5.5 is clearly worse on length.** The contract asks for one line under twenty words. 5.5's lines run 30â€“47 words, and 6 of 12 turns went over the probe's 30-word limit. Example from B_MC: "Ouen, you are literally standing on a block of dirt over lava in the Nether, and Marv is up there looking like a tiny red tower. Are you actually going to bridge across that, or is this a crime against chess players?"
 
 That example also shows two more problems:
 - "over lava" is a stretch: the frame shows a dirt bridge in the Nether fog with a few ember specks, not lava;
@@ -190,7 +190,7 @@ Other 5.5 failures:
 - Invented history: "wait you actually got past the library? i thought you were stuck on the puzzle".
 - Misread the screen: "the flooded library was chapter one though right".
 
-5.5 read the same screen correctly ("Chapter two is the drowned spires ... Continue or New Game?"), but 2 of its 3 lines ran 32–47 words.
+5.5 read the same screen correctly ("Chapter two is the drowned spires ... Continue or New Game?"), but 2 of its 3 lines ran 32â€“47 words.
 
 B_OBBY_ASK: both arms gave a sensible timing answer.
 - 4.5 used `web_search` in 2 of 3 runs, 5.5 in 1 of 3.
@@ -317,3 +317,7 @@ The probe gained `--bs-variant ./variant.ts` (override contract, tickNote, maxTo
 - **4.5 got shorter too** (median 16 to 11). The lines are still in character.
 
 Spend for this round: about $0.40.
+
+
+
+

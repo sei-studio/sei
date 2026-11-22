@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Avatar library tiles (261106), the "Avatars" block of the edit modal's
  * Appearance section. One tile per server-stored avatar (her card image, any
  * extra portraits, Live2D/rig models), each with a public/private lock and a
@@ -123,7 +123,7 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
     }
   };
 
-  if (!view) return <p className={styles.hint}>{t('Loading avatars…')}</p>;
+  if (!view) return <p className={styles.hint}>{t('Loading avatarsâ€¦')}</p>;
   if (view.state === 'none' || !view.list) {
     return <p className={styles.hint}>{t('Avatars are stored once this companion is saved to your account.')}</p>;
   }
@@ -235,7 +235,7 @@ export function AvatarLibraryTiles({ characterId, characterShared }: AvatarLibra
           </div>
         ) : null}
       </div>
-      {busy === 'add' ? <p className={styles.hint}>{t('Uploading…')}</p> : null}
+      {busy === 'add' ? <p className={styles.hint}>{t('Uploadingâ€¦')}</p> : null}
       {error ? (
         <p className={styles.err} role="alert">
           {t(ERROR_TEXT[error] ?? 'Something went wrong with avatars. Try again.')}
@@ -333,3 +333,7 @@ export function AvatarLibraryPicker({ characterId }: { characterId: string }): R
     </div>
   );
 }
+
+
+
+

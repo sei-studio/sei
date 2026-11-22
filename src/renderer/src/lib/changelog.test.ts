@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { stripDuplicateTitleHeading, topChangelogLine } from './changelog';
 
-const TITLES = ['What’s new in 0.6.9-beta.3'];
+const TITLES = ['Whatâ€™s new in 0.6.9-beta.3'];
 
 describe('stripDuplicateTitleHeading (261020, T158)', () => {
   it('drops a first heading that repeats the modal title', () => {
@@ -11,7 +11,7 @@ describe('stripDuplicateTitleHeading (261020, T158)', () => {
 
   it('matches across apostrophe style, case, a "v" prefix and trailing colon', () => {
     for (const h of [
-      '## What’s new in 0.6.9-beta.3',
+      '## Whatâ€™s new in 0.6.9-beta.3',
       "## WHAT'S NEW IN v0.6.9-beta.3:",
       "#  What's  new in 0.6.9-beta.3",
     ]) {
@@ -21,7 +21,7 @@ describe('stripDuplicateTitleHeading (261020, T158)', () => {
 
   it('drops it when it matches the English title on a localized UI', () => {
     const md = "## What's new in 0.6.9-beta.3\n- A";
-    expect(stripDuplicateTitleHeading(md, ['0.6.9-beta.3 版本更新内容', "What's new in 0.6.9-beta.3"])).toBe('- A');
+    expect(stripDuplicateTitleHeading(md, ['0.6.9-beta.3 ç‰ˆæœ¬æ›´æ–°å†…å®¹', "What's new in 0.6.9-beta.3"])).toBe('- A');
   });
 
   it('keeps a heading for a different version or with other text', () => {
@@ -64,3 +64,7 @@ describe('topChangelogLine (261023)', () => {
     expect(topChangelogLine('## Only a heading')).toBe('');
   });
 });
+
+
+
+

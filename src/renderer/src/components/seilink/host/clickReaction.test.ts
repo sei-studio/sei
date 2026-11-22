@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { CLICK_REACT_KEYFRAMES, CLICK_REACT_MS, ClickReaction, PRESS_COVERS_CLICK_MS } from './clickReaction';
 
 describe('ClickReaction (261119: one slight reaction per click)', () => {
@@ -43,3 +43,7 @@ describe('ClickReaction (261119: one slight reaction per click)', () => {
     expect(CLICK_REACT_KEYFRAMES[CLICK_REACT_KEYFRAMES.length - 1].transform).toBe('scale(1, 1)');
   });
 });
+
+
+
+

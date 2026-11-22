@@ -1,10 +1,10 @@
-/**
- * 260817 (china-compat W10) — the local-mode API-key guard vs keyless ollama.
+﻿/**
+ * 260817 (china-compat W10) â€” the local-mode API-key guard vs keyless ollama.
  *
  * The 260703 hard guard refuses a local summon when no BYOK key is saved so a
  * keyless config can never silently ride the paid cloud. Ollama is the one
  * KEYLESS local provider (plain local HTTP; the W6 wizard deliberately saves
- * no key for it), so the guard must skip it — before W10 every keyless ollama
+ * no key for it), so the guard must skip it â€” before W10 every keyless ollama
  * summon died with INVALID_API_KEY while chat worked fine, because the main
  * llm layer already skipped the key for ollama and the supervisor did not.
  *
@@ -78,7 +78,7 @@ beforeEach(() => {
 
 describe('local-mode key guard (W10)', () => {
   it('anthropic (default provider) with no key is refused with LOCAL_NO_API_KEY', async () => {
-    loadConfigSpy.mockResolvedValue({}); // provider absent → anthropic
+    loadConfigSpy.mockResolvedValue({}); // provider absent â†’ anthropic
     const sup = makeSupervisor();
     await expect(sup.summon(A)).rejects.toThrow(/LOCAL_NO_API_KEY/);
     expect(sendStatusSpy).toHaveBeenCalledWith(
@@ -105,3 +105,7 @@ describe('local-mode key guard (W10)', () => {
     expect(hasApiKeySpy).toHaveBeenCalled();
   });
 });
+
+
+
+

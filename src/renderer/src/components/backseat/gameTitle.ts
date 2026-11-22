@@ -1,24 +1,24 @@
-/**
+﻿/**
  * Roblox game titles, cleaned for display (261004).
  *
- * Roblox titles carry marketing tags: "[🎃] Adopt Me!", "[SKY ASSASSIN]
- * Jujutsu Shenanigans", "Brookhaven 🏡RP", "🎃 Dandy's World [ALPHA]". Those
+ * Roblox titles carry marketing tags: "[ðŸŽƒ] Adopt Me!", "[SKY ASSASSIN]
+ * Jujutsu Shenanigans", "Brookhaven ðŸ¡RP", "ðŸŽƒ Dandy's World [ALPHA]". Those
  * are fine on the store page and noise on a card caption. This cleans the
  * DATA title for display; it never touches anything the model says.
  */
 
 /** Emoji and their glue (ZWJ, variation selectors, skin tones, flags). */
-const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{1F3FB}-\u{1F3FF}‍︎️⃣]/gu;
+const EMOJI = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{1F3FB}-\u{1F3FF}â€ï¸Žï¸âƒ£]/gu;
 
-/** A bracketed tag at the start: [UPD], 【NEW】, (X2 EVENT)... */
-const LEAD_TAG = /^\s*(?:\[[^\]]*\]|【[^】]*】|〔[^〕]*〕|\([^)]*\)|（[^）]*）|\{[^}]*\})/u;
+/** A bracketed tag at the start: [UPD], ã€NEWã€‘, (X2 EVENT)... */
+const LEAD_TAG = /^\s*(?:\[[^\]]*\]|ã€[^ã€‘]*ã€‘|ã€”[^ã€•]*ã€•|\([^)]*\)|ï¼ˆ[^ï¼‰]*ï¼‰|\{[^}]*\})/u;
 /** A square-bracketed tag at the end: [ALPHA], [TD]. */
-const TRAIL_TAG = /(?:\[[^\]]*\]|【[^】]*】|〔[^〕]*〕)\s*$/u;
+const TRAIL_TAG = /(?:\[[^\]]*\]|ã€[^ã€‘]*ã€‘|ã€”[^ã€•]*ã€•)\s*$/u;
 /** A trailing parenthesis, only when it shouts like a tag: (UPD 5), (BETA).
  *  "(Book 2)" has lowercase letters and is part of the name. */
-const TRAIL_PAREN = /[(（]([^)）]*)[)）]\s*$/u;
+const TRAIL_PAREN = /[(ï¼ˆ]([^)ï¼‰]*)[)ï¼‰]\s*$/u;
 /** Separators left dangling once a tag is gone: "[UPD] - Game". */
-const EDGE_SEP = /^[\s\-–—|:•·,~]+|[\s\-–—|:•·,~]+$/gu;
+const EDGE_SEP = /^[\s\-â€“â€”|:â€¢Â·,~]+|[\s\-â€“â€”|:â€¢Â·,~]+$/gu;
 
 /**
  * The title without its marketing: leading/trailing bracketed tags and every
@@ -37,3 +37,7 @@ export function cleanGameTitle(raw: string): string {
   s = s.replace(EDGE_SEP, '').replace(/\s+/gu, ' ').trim();
   return /[\p{L}\p{N}]/u.test(s) ? s : raw.trim();
 }
+
+
+
+

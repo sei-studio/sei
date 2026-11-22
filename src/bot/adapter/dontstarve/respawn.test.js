@@ -1,4 +1,4 @@
-// 261104: the DST respawn decision (cap, quick-death streak = bad spot).
+﻿// 261104: the DST respawn decision (cap, quick-death streak = bad spot).
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -100,3 +100,7 @@ describe('death cause wording', () => {
     expect(copy).toContain(`coming back ${MAX_RESPAWNS} times`)
   })
 })
+
+
+
+

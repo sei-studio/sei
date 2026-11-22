@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Platform-branched BrowserWindow chrome.
- * Sources: UI-SPEC §MacosWindow/AppWindow, CONTEXT D-32, RESEARCH Pitfall 9, D-15.
+ * Sources: UI-SPEC Â§MacosWindow/AppWindow, CONTEXT D-32, RESEARCH Pitfall 9, D-15.
  */
 import { BrowserWindow, app, nativeImage, screen } from 'electron';
 import { readFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
   const isWin = process.platform === 'win32';
 
   // macOS keeps native traffic lights (hiddenInset). Windows runs frameless
-  // with the renderer's CUSTOM titlebar controls (MacosWindow) — titleBarOverlay
+  // with the renderer's CUSTOM titlebar controls (MacosWindow) â€” titleBarOverlay
   // was dropped because its native buttons rendered in a light box that clashed
   // with the dark chrome and went missing on some installs. Linux keeps its
   // native frame + WM-provided controls (no custom controls rendered there).
@@ -38,7 +38,7 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
       : {}; // Linux: native frame
 
   // Same default on every platform. The Party redesign shortened the window
-  // (1180×720, was ×760) and unlocked the floor (1000×560) — panels flex, so
+  // (1180Ã—720, was Ã—760) and unlocked the floor (1000Ã—560) â€” panels flex, so
   // the layout survives small sizes and the window can grow freely.
   const dims = { width: 1180, height: 720, minWidth: 1000, minHeight: 560 };
 
@@ -60,8 +60,8 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
       // Backseat (260728): while the player is in a fullscreen game, Sei's
       // window is hidden or fully occluded, and Chromium then clamps timers in
       // that renderer to roughly once a second. Backseat's whole job happens in
-      // exactly that state — the audio meter, the gate cadence and the rolling
-      // clip recorders all live there — so throttling has to be off. The frame
+      // exactly that state â€” the audio meter, the gate cadence and the rolling
+      // clip recorders all live there â€” so throttling has to be off. The frame
       // pump itself is already immune (it runs in a worker off
       // MediaStreamTrackProcessor), but its companions are not.
       backgroundThrottling: false,
@@ -74,7 +74,7 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
   win.center();
 
   // Custom-titlebar feedback: push every maximize/unmaximize so the renderer's
-  // control can swap the maximize⇄restore icon live. Harmless on macOS (the
+  // control can swap the maximizeâ‡„restore icon live. Harmless on macOS (the
   // native chrome never shows our custom control, but the events still fire).
   const pushMaximized = (isMaximized: boolean): void => {
     if (!win.isDestroyed()) {
@@ -131,7 +131,7 @@ function splashLogoB64(): string | null {
 
 /**
  * The update splash (261030): a tiny frameless window with the white Sei logo
- * and a status line ("Updating…", or the error line), placed in the middle of
+ * and a status line ("Updatingâ€¦", or the error line), placed in the middle of
  * the primary display's work area, the spot Update.exe's overlay frames are
  * drawn at. Self-contained data: URL (no renderer bundle, no dev-server
  * dependency), so it appears instantly. The logo PNG (black pixel art on
@@ -277,3 +277,7 @@ export function closeSplashWindow(win: BrowserWindow): Promise<void> {
   if (!win.isDestroyed()) win.close();
   return Promise.resolve();
 }
+
+
+
+

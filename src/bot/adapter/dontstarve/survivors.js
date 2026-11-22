@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/survivors.js — the eligible survivor roster on
+﻿// src/bot/adapter/dontstarve/survivors.js â€” the eligible survivor roster on
 // the bot side (game-adapters M2, 260908). MIRROR of
 // src/shared/dstSurvivors.ts (which owns the prose + the pick) and
 // native/dst-mod/sei/scripts/sei/survivors.lua (the safety layer); the
@@ -34,3 +34,7 @@ export function survivorName(prefab) {
 export function survivorFlags(prefab) {
   return DST_SURVIVORS[prefab] ?? DST_SURVIVORS[DST_DEFAULT_SURVIVOR]
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * How an explicit "restart to update" hands off to the installer (261023,
  * made visible 261030, Sei's own progress window 261030).
  *
@@ -62,3 +62,7 @@ export function restartInstallArgs(
   if (platform === 'win32') return opts.progressWindow ? [true, true] : [false, true];
   return [];
 }
+
+
+
+

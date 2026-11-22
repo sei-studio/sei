@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "next time" check for text chat (261107, O2 retention).
  *
  * Text chat was the one conversation surface with no next step: the check in
@@ -160,3 +160,7 @@ async function defaultDeps(): Promise<ChatNextStepDeps> {
     persist: (record) => persistQuitSession(record),
   };
 }
+
+
+
+

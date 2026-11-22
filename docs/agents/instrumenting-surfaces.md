@@ -1,4 +1,4 @@
-# Instrumenting a game or timed surface (REQUIRED)
+﻿# Instrumenting a game or timed surface (REQUIRED)
 
 **Every new game, minigame, or timed surface MUST emit analytics before it
 ships.** This is not optional polish. Chess shipped in v0.5.0 with zero
@@ -10,10 +10,10 @@ cost could not be attributed either. Fixed 260728.
 
 The contract is two events per surface:
 
-- **`<surface>_started`** — fired when the surface actually opens, with the
+- **`<surface>_started`** â€” fired when the surface actually opens, with the
   parameters that shape the session (for chess: `player_color`, `ai_elo`,
   `profile_source`).
-- **`<surface>_ended`** — fired at the single lifecycle choke point, carrying
+- **`<surface>_ended`** â€” fired at the single lifecycle choke point, carrying
   **`duration_ms`**. That key name is load-bearing: the analytics dashboard
   sums playtime with one query across every event in its `SESSION_EVENTS` list
   (`analytics/server.mjs`), so a surface that names its duration field anything
@@ -21,7 +21,7 @@ The contract is two events per surface:
 
 Rules that follow from the existing implementations:
 
-- Fire `_ended` on **abandoned/aborted** sessions too, with a `reason` — that
+- Fire `_ended` on **abandoned/aborted** sessions too, with a `reason` â€” that
   time was still spent. `chessService.endSession` is the choke point precisely
   because every exit path (resign, draw, checkmate, abandon, engine failure)
   routes through it.
@@ -186,7 +186,7 @@ Valley. Chat memories had been filed under the last world's header (a Stardew
 farm), nothing in a game's seed said memories span games, so the Stardew
 session greeted with the plan, setGoal'd it into `HEARTBEAT.stardew.md`, and
 the player-end check tagged its plan with the session's game. Now:
-- MEMORY.md sections name their game (`## World 2 — Sui Farm (Stardew
+- MEMORY.md sections name their game (`## World 2 â€” Sui Farm (Stardew
   Valley)`, `noteWorld(..., game)`), and app-side writers (chat, voice,
   chess, Draw!, backseat, an out-of-game player-end plan) pass
   `appendMemory(..., { section: 'app' })`, which opens
@@ -359,7 +359,7 @@ dashboard. `src/main/chat/chatSession.ts` models a session as a run of messages
 closed by a 5 minute idle gap, NOT as ChatScreen mount/unmount: a chat window
 left open in the background is not playtime, and the chat screen HOSTS the
 other surfaces, so mounted time would double-count every chess game, Draw!
-round and call against the chat clock. The overlap is excluded structurally —
+round and call against the chat clock. The overlap is excluded structurally â€”
 `noteChatMessage` is called from exactly one place in the `chat:send` handler,
 past the point where chess and Draw! have declined the message and with
 `inCall` false, so a line typed into a live game or spoken on a call is only
@@ -413,7 +413,7 @@ initAnalytics channel gate).
 `src/main/analytics.ts` stamps the APP UI language (not the per-character
 `chat_language`) on every event and `$set`s it on the person. Before this the
 only cloud-side trace of a non-English user was `characters.metadata.language`,
-which is written at character CREATION — so anyone using only the bundled
+which is written at character CREATION â€” so anyone using only the bundled
 defaults was invisible. Cached, not read per event (commonProps is sync);
 `setUiLanguage()` is refreshed from the `config:save` IPC handler, the single
 path both Settings and the onboarding Sui stage write it through.
@@ -635,3 +635,7 @@ the analytics:track handler, so no path, username or free text can ride.
   `choose_folder`, `smapi_download`, `smapi_run`, `mod_copy`, `mod_silent`
   (game up 15 s with the helper silent), `farm_seen` (first open farm per
   process).
+
+
+
+

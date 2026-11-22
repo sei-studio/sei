@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Canvas rendering primitives for Draw!.
  *
  * Pure functions over stroke data, shared by the three places pixels are
@@ -186,3 +186,7 @@ export const MIN_POINT_SPACING = 2.2;
 export const ERASER_RADIUS = 12;
 
 export const CANVAS_SIZE = { w: CANVAS_W, h: CANVAS_H };
+
+
+
+

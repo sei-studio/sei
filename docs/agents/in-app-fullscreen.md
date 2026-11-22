@@ -1,10 +1,10 @@
-# In-app fullscreen for game surfaces
+﻿# In-app fullscreen for game surfaces
 
 The fullscreen control on a game surface means **in-app**, not OS window
 fullscreen (260728: it used to call `window:fullscreen-toggle`, which took over
 the whole display and was awkward to undo). It gives the mounted game every
 pixel the app window has: the IconRail goes, the chat goes, and (260729) the
-ChatTopBar goes too — the top bar's own load-bearing buttons (call, end) live
+ChatTopBar goes too â€” the top bar's own load-bearing buttons (call, end) live
 in the game's bottom chrome row (`GameChromeRow`), so nothing up there is
 needed while it is hidden.
 
@@ -18,7 +18,7 @@ State is `useUiStore.gameFullscreen`, and the rule for any NEW game surface is:
   `GameSurface`; a full-page game route (Draw!) mounts `GameChromeRow` itself;
 - a full-page game route hides the chat by virtue of being a route, so it
   keeps the IconRail by DEFAULT and only drops it in fullscreen. Do not add the
-  route to `railHidden` — that is for onboarding-style ritual surfaces.
+  route to `railHidden` â€” that is for onboarding-style ritual surfaces.
 
 The `windowFullscreenToggle` / `windowIsFullscreen` IPC still exists on the
 preload bridge but no renderer surface calls it.
@@ -46,3 +46,7 @@ preload bridge but no renderer surface calls it.
 `?dashshot=chat|chatdst` mounts a dashboard inside the real ChatScreen (a
 Proxy over the stub bridge answers whatever the screen asks) for checking
 any of this in a plain tab.
+
+
+
+

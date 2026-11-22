@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Device-global device-id (anti-abuse / trial-claim hardening).
  *
  * MAIN PROCESS ONLY.
@@ -6,7 +6,7 @@
  * A locally-generated random UUID v4 (`crypto.randomUUID()`) persisted at the
  * DEVICE-GLOBAL tier (`<userData>/device-id.json`, via `paths.deviceIdPath()`).
  * It is:
- *   - NOT hardware fingerprinting, NOT PII — just a random opaque token.
+ *   - NOT hardware fingerprinting, NOT PII â€” just a random opaque token.
  *   - device-global: it lives directly under the userData root (NOT under any
  *     per-profile dir) so it SURVIVES account switches and sign-outs. This is
  *     what lets the trial-claim Edge Function enforce "one trial per device"
@@ -14,13 +14,13 @@
  *
  * The id is sent to the `trial-claim` Edge Function as `body.device_id`; the
  * server hashes it (salted sha-256) and records the hash in
- * `trial_device_claims` (the device gate). See ABUSE-GUARD-PLAN.md §6.
+ * `trial_device_claims` (the device gate). See ABUSE-GUARD-PLAN.md Â§6.
  *
  * Atomic tmp+rename write mirrors `apiKeyStore.ts` / `sessionStore.ts`.
  *
  * NOTE (paths.ts partition refactor): `deviceIdPath()` MUST stay in the
- * DEVICE-GLOBAL tier when the in-progress global/profile partition merges —
- * never under `profiles/<scope>/`. See ABUSE-GUARD-PLAN.md §9.
+ * DEVICE-GLOBAL tier when the in-progress global/profile partition merges â€”
+ * never under `profiles/<scope>/`. See ABUSE-GUARD-PLAN.md Â§9.
  */
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -44,7 +44,7 @@ async function readExisting(): Promise<string | null> {
     raw = await readFile(paths.deviceIdPath(), 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    // Any other read error (permissions, etc.) — treat as absent and regenerate.
+    // Any other read error (permissions, etc.) â€” treat as absent and regenerate.
     return null;
   }
   try {
@@ -53,7 +53,7 @@ async function readExisting(): Promise<string | null> {
       return parsed.deviceId.toLowerCase();
     }
   } catch {
-    // Corrupt JSON — fall through to regeneration.
+    // Corrupt JSON â€” fall through to regeneration.
   }
   return null;
 }
@@ -80,9 +80,9 @@ async function writeAtomic(deviceId: string): Promise<void> {
  * regenerates if the on-disk value is missing or corrupt. Never logs the id.
  *
  * If the write fails (e.g. read-only userData), the in-memory id is still
- * returned for THIS session so trial-claim can proceed — a non-persisted id
+ * returned for THIS session so trial-claim can proceed â€” a non-persisted id
  * just means the device gate falls back to per-session uniqueness, which the
- * account gate backstops. (We do not throw — a device-id failure must never
+ * account gate backstops. (We do not throw â€” a device-id failure must never
  * block sign-in or trial-claim.)
  */
 export async function getDeviceId(): Promise<string> {
@@ -106,3 +106,7 @@ export async function getDeviceId(): Promise<string> {
 export function _resetDeviceIdCacheForTests(): void {
   cached = null;
 }
+
+
+
+

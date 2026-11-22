@@ -1,5 +1,5 @@
-/**
- * McDashVitals — pixel hearts (health) + drumsticks (food) rows for the
+﻿/**
+ * McDashVitals â€” pixel hearts (health) + drumsticks (food) rows for the
  * Minecraft dashboard (260721). Original pixel-art shapes drawn as SVG rect
  * grids with crispEdges (no Mojang textures; the style is evoked with our
  * own cells). Values are the vanilla 0-20 half-unit scales: ten icons per
@@ -110,3 +110,7 @@ export function FoodRow({ food }: { food: number }): React.ReactElement {
     </div>
   );
 }
+
+
+
+

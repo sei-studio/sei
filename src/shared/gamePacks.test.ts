@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pure helpers of the game pack contract (260908). Pins:
  *   1. Asset naming round-trips through parsePackAssetName, including the
  *      `any-any` form for a pack with no native code.
@@ -97,3 +97,7 @@ describe('gamePacks: copy helpers', () => {
     expect(packProgressPct(200, 100)).toBe(100);
   });
 });
+
+
+
+

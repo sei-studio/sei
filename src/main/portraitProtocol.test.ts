@@ -1,10 +1,10 @@
-/**
- * portraitProtocol.readPortraitWithRetry — first-load 404 race fix.
+﻿/**
+ * portraitProtocol.readPortraitWithRetry â€” first-load 404 race fix.
  *
  * A `sei-portrait://` request can arrive in the window between a character's
  * `portrait_image` ref becoming visible and the async writer (cache-on-demand
- * download → atomicWrite rename) landing the PNG on disk. A plain readFile
- * throws ENOENT → the handler 404s → PixelPortrait pins to the procedural
+ * download â†’ atomicWrite rename) landing the PNG on disk. A plain readFile
+ * throws ENOENT â†’ the handler 404s â†’ PixelPortrait pins to the procedural
  * sprite for good. readPortraitWithRetry rides out that window: it retries on
  * ENOENT and resolves the instant the rename lands, while still failing fast on
  * a genuinely-absent file and on non-ENOENT (hard) errors.
@@ -69,12 +69,16 @@ describe('readPortraitWithRetry', () => {
     });
   });
 
-  it('does not retry non-ENOENT errors (a directory path → EISDIR surfaces at once)', async () => {
+  it('does not retry non-ENOENT errors (a directory path â†’ EISDIR surfaces at once)', async () => {
     // The temp dir itself is a directory; reading it as a file throws EISDIR,
     // which must NOT be retried. Assert it rejects fast (well under the budget).
     const started = Date.now();
     await expect(readPortraitWithRetry(tmp, 50, 100)).rejects.toBeTruthy();
-    // 50 retries × 100ms = 5s budget; a non-retried hard error returns promptly.
+    // 50 retries Ã— 100ms = 5s budget; a non-retried hard error returns promptly.
     expect(Date.now() - started).toBeLessThan(1000);
   });
 });
+
+
+
+

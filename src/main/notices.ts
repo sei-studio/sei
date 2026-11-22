@@ -1,5 +1,5 @@
-/**
- * Operator feed (260725, reworked 261027) — https://sei.gg/notices.json.
+﻿/**
+ * Operator feed (260725, reworked 261027) â€” https://sei.gg/notices.json.
  *
  * A side-channel JSON file hosted next to version.json and NOT linked from the
  * website. Until v0.6.9 it fed the notices inbox (markdown notices that opened
@@ -14,20 +14,20 @@
  * See startupPopup.ts for the popup fields and rules. Old clients only read
  * `notices` (and accept a bare array), so `popup` is invisible to them.
  *
- * CADENCE — deliberately not its own clock. The refresh is driven from
+ * CADENCE â€” deliberately not its own clock. The refresh is driven from
  * updater.ts's existing trigger points (startup, window focus, machine
  * resume/unlock, the 30-minute backstop timer, and a manual "Check for
  * updates"), sharing MIN_BACKGROUND_GAP_MS. One extra ~1KB GET on the same
  * wake-ups rather than a second timer.
  *
- * SHOW-ONCE — the popup is pushed to the renderer when a refresh finds an id
+ * SHOW-ONCE â€” the popup is pushed to the renderer when a refresh finds an id
  * this install has not shown, and the renderer also pulls it on mount (the
  * startup push can land before its listener exists). The renderer shows it
  * only on a calm screen, and only after main confirms the page really loaded
  * (popupFrameGuards.ts). The id is recorded in `popupShownIds` at that moment,
  * so a popup that failed to load (offline, 404) is tried again next time.
  *
- * SKIP — a popup with `skipIf` is not owed while its condition holds on this
+ * SKIP â€” a popup with `skipIf` is not owed while its condition holds on this
  * install (skipConditionHolds below). It is checked on every hand-out and in
  * the `app:startup-popup-loaded` handler, so a user who connects ChatGPT while
  * the page loads is not shown "Sign in with ChatGPT". A skipped popup is not
@@ -83,7 +83,7 @@ export function isPopupFrameUrl(url: string): boolean {
   return isAllowedPopupUrl(url, popupDevOrigins());
 }
 
-/** Module singleton — set once by initNotices. */
+/** Module singleton â€” set once by initNotices. */
 let getMainWindow: (() => BrowserWindow | null) | null = null;
 
 /**
@@ -106,7 +106,7 @@ function mutate<T>(fn: (state: NoticesState) => Promise<T> | T): Promise<T> {
   return run;
 }
 
-/** True while a refresh is in flight — collapses overlapping triggers. */
+/** True while a refresh is in flight â€” collapses overlapping triggers. */
 let refreshInFlight = false;
 
 /**
@@ -263,3 +263,7 @@ export async function markStartupPopupShown(id: string): Promise<void> {
     await saveNoticesState({ ...state, popupShownIds: [...state.popupShownIds, id] });
   });
 }
+
+
+
+

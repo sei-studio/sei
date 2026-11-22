@@ -1,4 +1,4 @@
-/**
+﻿/**
  * createDictation's failure paths (261023): each step that can stop a call
  * from starting tags its error with the stage, keeps the original error name
  * (friendlyError and the mic card read it), and releases what it already
@@ -157,3 +157,7 @@ describe('createDictation setup failures', () => {
     expect(callSetupFailureProps(err)).toEqual({ stage: 'mic_capture', error_name: 'NotFoundError' });
   });
 });
+
+
+
+

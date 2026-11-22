@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Face-set renderer on WebGL2 (261116, product call 261116: "head tilt jumps
  * from A to B", "idle feels like a still picture"). Draws one face-set frame
  * as a gentle warp of the pack's pictures, so the idle life is continuous
@@ -445,3 +445,7 @@ export class FaceGl {
     }
   }
 }
+
+
+
+

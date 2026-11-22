@@ -1,5 +1,5 @@
-/**
- * ProviderSelect — dropdown picker for the LLM provider.
+﻿/**
+ * ProviderSelect â€” dropdown picker for the LLM provider.
  *
  * Phase 14 landed all 13 backends; listing them as 13 tiles took a lot of
  * vertical space, so the picker is now a single dropdown (trigger + listbox).
@@ -100,7 +100,7 @@ export function ProviderSelect({
     setOpen(false);
   };
 
-  // Close and return focus to the trigger — used by keyboard paths so focus
+  // Close and return focus to the trigger â€” used by keyboard paths so focus
   // doesn't fall to <body> when the listbox unmounts.
   const closeToTrigger = (): void => {
     setOpen(false);
@@ -199,7 +199,7 @@ export function ProviderSelect({
                 onClick={() => choose(i)}
               >
                 <span className={styles.label}>{p.label}</span>
-                {isSelected ? <span className={styles.check} aria-hidden="true">✓</span> : null}
+                {isSelected ? <span className={styles.check} aria-hidden="true">âœ“</span> : null}
               </li>
             );
           })}
@@ -208,3 +208,7 @@ export function ProviderSelect({
     </div>
   );
 }
+
+
+
+

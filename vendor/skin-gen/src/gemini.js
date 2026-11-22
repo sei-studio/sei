@@ -1,4 +1,4 @@
-// Minimal Gemini image-generation client (REST, no SDK).
+﻿// Minimal Gemini image-generation client (REST, no SDK).
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -67,3 +67,7 @@ export async function generateImageToFile(opts, outFile) {
   await writeFile(outFile, buf);
   return outFile;
 }
+
+
+
+

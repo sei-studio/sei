@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   CLOCK_SAMPLE,
   DEFAULT_LIGHTING,
@@ -84,8 +84,8 @@ describe('clock formats (261119)', () => {
 
   it('the day period follows the locale, before the time where it goes first', () => {
     const f = { hour12: true, pad: false, seconds: false, ampm: true };
-    expect(formatClock(CLOCK_SAMPLE, f, 'ja-JP')).toBe('午後9:41');
-    expect(formatClock(CLOCK_SAMPLE, f, 'zh-CN')).toBe('下午9:41');
+    expect(formatClock(CLOCK_SAMPLE, f, 'ja-JP')).toBe('åˆå¾Œ9:41');
+    expect(formatClock(CLOCK_SAMPLE, f, 'zh-CN')).toBe('ä¸‹åˆ9:41');
   });
 });
 
@@ -99,7 +99,7 @@ describe('date formats (261119)', () => {
     expect(formatDate(d, 'numeric', 'en-US')).toBe('11/19');
     expect(formatDate(d, 'full', 'en-US')).toBe('Thursday, November 19, 2026');
     expect(formatDate(d, 'iso', 'ja-JP')).toBe('2026-11-19');
-    expect(formatDate(d, 'long', 'ja-JP')).toBe('11月19日木曜日');
+    expect(formatDate(d, 'long', 'ja-JP')).toBe('11æœˆ19æ—¥æœ¨æ›œæ—¥');
   });
   it('a bad locale falls back instead of throwing', () => {
     expect(formatDate(d, 'weekday', 'not a locale!!')).toBe('Thursday');
@@ -292,3 +292,7 @@ describe('analytics, shape only (261119)', () => {
     });
   });
 });
+
+
+
+

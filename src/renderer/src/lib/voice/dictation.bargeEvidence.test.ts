@@ -1,4 +1,4 @@
-/**
+﻿/**
  * False cuts (261031). On 0.6.11 a Windows user on a Backseat share was cut
  * off 19 times in 8 minutes ("it keeps getting cut off"). Replayed headless
  * over real game audio with her TTS echo on top and a real Whisper pass, the
@@ -77,7 +77,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// ── frame tags ──────────────────────────────────────────────────────────────
+// â”€â”€ frame tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const TAG_ECHO = 1;
 const TAG_PLAYER = 2;
 const TAG_UNIT = 1e-7; // tiny: changes no frame's RMS measurably
@@ -145,7 +145,7 @@ function pessimisticLike(word: string) {
  *  itself (word log-probability above -0.01 for "stop" / "wait"), while the
  *  trigger frame of her echo comes back about half the time as an invented
  *  word it is unsure of ("No" at -0.5 to -1.9), or in a script the call does
- *  not use ("你好"). `sure: false` drops the confidence, as a proxy that does
+ *  not use ("ä½ å¥½"). `sure: false` drops the confidence, as a proxy that does
  *  not relay it would. */
 function scribeLike(word: string, o: { invent?: string; sure?: boolean } = {}) {
   const rest = shortWordLike(word);
@@ -165,7 +165,7 @@ function ownVoiceCheck(info: { text: string; purpose: 'utterance' | 'barge' }): 
   return normalizeTokens(info.text).length >= min && textOverlap(info.text, HER_LINE) >= SELF_ECHO_OVERLAP;
 }
 
-// ── generated levels ────────────────────────────────────────────────────────
+// â”€â”€ generated levels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -194,7 +194,7 @@ function spikyGame(seed: number, base: number, n: number): number[] {
 
 const mix = (...xs: number[]): number => Math.sqrt(xs.reduce((a, x) => a + x * x, 0));
 
-// ── the scene ───────────────────────────────────────────────────────────────
+// â”€â”€ the scene â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface SceneOpts {
   share: boolean;
   /** Mic level of the room (and the game, during a share), per frame. */
@@ -788,13 +788,13 @@ describe('Scribe on a burst (261101)', () => {
   });
 
   it('an invented word in a script the call does not use does not cut her, even when sure', async () => {
-    const r = await runScene({ ...loudSyllables, stt: scribeLike('stop', { invent: '你好', sure: false }) });
+    const r = await runScene({ ...loudSyllables, stt: scribeLike('stop', { invent: 'ä½ å¥½', sure: false }) });
     expect(r.cuts).toBe(0);
     // On a Chinese call the same word is a word: only Latin calls are judged.
     const zh = await runScene({
       ...loudSyllables,
       language: 'zh',
-      stt: scribeLike('stop', { invent: '你好', sure: false }),
+      stt: scribeLike('stop', { invent: 'ä½ å¥½', sure: false }),
     });
     expect(zh.cuts).toBeGreaterThan(0);
   });
@@ -857,20 +857,20 @@ describe('burst word helpers (261101)', () => {
   });
 
   it('burstWordOffScript: Han, kana or Hangul with no Latin letter on a Latin-script call', () => {
-    expect(burstWordOffScript('你好', undefined)).toBe(true);
-    expect(burstWordOffScript('いいの', 'en')).toBe(true);
-    expect(burstWordOffScript('听吗？', 'fr')).toBe(true);
-    expect(burstWordOffScript('잠깐', 'en')).toBe(true);
+    expect(burstWordOffScript('ä½ å¥½', undefined)).toBe(true);
+    expect(burstWordOffScript('ã„ã„ã®', 'en')).toBe(true);
+    expect(burstWordOffScript('å¬å—ï¼Ÿ', 'fr')).toBe(true);
+    expect(burstWordOffScript('ìž ê¹', 'en')).toBe(true);
     expect(burstWordOffScript('Stop', 'en')).toBe(false);
-    expect(burstWordOffScript('¡Para!', 'es')).toBe(false);
-    expect(burstWordOffScript('等等', 'zh')).toBe(false);
+    expect(burstWordOffScript('Â¡Para!', 'es')).toBe(false);
+    expect(burstWordOffScript('ç­‰ç­‰', 'zh')).toBe(false);
     expect(burstWordOffScript('stop', 'ja')).toBe(false);
-    expect(burstWordOffScript('待って', 'ja')).toBe(false);
+    expect(burstWordOffScript('å¾…ã£ã¦', 'ja')).toBe(false);
     // Other scripts are kept even when the call looks English: the call
     // language can be a guess, and Scribe's invented words were never these.
-    expect(burstWordOffScript('стоп', 'en')).toBe(false);
-    expect(burstWordOffScript('стоп', 'ru')).toBe(false);
-    expect(burstWordOffScript('قف', 'en')).toBe(false);
+    expect(burstWordOffScript('ÑÑ‚Ð¾Ð¿', 'en')).toBe(false);
+    expect(burstWordOffScript('ÑÑ‚Ð¾Ð¿', 'ru')).toBe(false);
+    expect(burstWordOffScript('Ù‚Ù', 'en')).toBe(false);
   });
 
   it('burstLanguageFor: chat_language, then a non-English UI, then the OS locale', () => {
@@ -901,21 +901,21 @@ describe('burst words in the player\'s own language (261101 review)', () => {
     stt: scribeLike(word),
   });
 
-  it('a Japanese player with no chat_language yet: "待って" cuts her and reaches her', async () => {
-    const r = await runScene({ ...quietBurst('待って'), burstLanguage: burstLanguageFor(undefined, 'en', 'ja-JP') });
+  it('a Japanese player with no chat_language yet: "å¾…ã£ã¦" cuts her and reaches her', async () => {
+    const r = await runScene({ ...quietBurst('å¾…ã£ã¦'), burstLanguage: burstLanguageFor(undefined, 'en', 'ja-JP') });
     expect(r.cuts).toBe(1);
-    expect(r.utterances).toEqual(['待って']);
+    expect(r.utterances).toEqual(['å¾…ã£ã¦']);
   });
 
-  it('a Russian player: "стоп" cuts her, on a Russian call or one judged English', async () => {
+  it('a Russian player: "ÑÑ‚Ð¾Ð¿" cuts her, on a Russian call or one judged English', async () => {
     for (const lang of [burstLanguageFor(undefined, 'en', 'ru-RU'), 'en']) {
-      const r = await runScene({ ...quietBurst('стоп'), burstLanguage: lang });
+      const r = await runScene({ ...quietBurst('ÑÑ‚Ð¾Ð¿'), burstLanguage: lang });
       expect(r.cuts, lang).toBe(1);
-      expect(r.utterances, lang).toEqual(['стоп']);
+      expect(r.utterances, lang).toEqual(['ÑÑ‚Ð¾Ð¿']);
     }
   });
 
-  it('on an English call an echo burst that came back as "你好" is still no word', async () => {
+  it('on an English call an echo burst that came back as "ä½ å¥½" is still no word', async () => {
     const r = await runScene({
       share: false,
       room: () => QUIET,
@@ -925,7 +925,7 @@ describe('burst words in the player\'s own language (261101 review)', () => {
       gapFrames: 25,
       totalFrames: 600,
       burstLanguage: burstLanguageFor(undefined, 'en', 'en-US'),
-      stt: scribeLike('stop', { invent: '你好', sure: false }),
+      stt: scribeLike('stop', { invent: 'ä½ å¥½', sure: false }),
     });
     expect(r.sttCalls).toBeGreaterThan(0);
     expect(r.cuts).toBe(0);
@@ -1058,9 +1058,13 @@ describe('bargeVoiceBar', () => {
 
 describe('isBargeWord', () => {
   it('needs a word the finished-utterance filter also keeps', () => {
-    for (const w of ['wait', 'no', 'stop', 'hey', 'hold on', '等等']) expect(isBargeWord(w), w).toBe(true);
+    for (const w of ['wait', 'no', 'stop', 'hey', 'hold on', 'ç­‰ç­‰']) expect(isBargeWord(w), w).toBe(true);
     for (const w of ['', 'you', 'Thank you.', 'music', 'foreign', '[Music]', '(door closes)', 'hhhh']) {
       expect(isBargeWord(w), w).toBe(false);
     }
   });
 });
+
+
+
+

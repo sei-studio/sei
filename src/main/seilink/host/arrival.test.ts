@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her arrival on the desktop (261119): when the entrance plays, when she
  * waits for her look, and the seilink_entrance event.
  */
@@ -232,3 +232,7 @@ describe('her arrival', () => {
     expect(h.a.present()).toBe(true);
   });
 });
+
+
+
+

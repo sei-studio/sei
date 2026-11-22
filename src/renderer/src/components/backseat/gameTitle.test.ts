@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Roblox titles cleaned for the pick step's card captions (261004).
  * The raw titles are real ones from Roblox's popular and search lists.
  */
@@ -7,19 +7,19 @@ import { cleanGameTitle } from './gameTitle';
 
 describe('cleanGameTitle', () => {
   it.each([
-    ['[🎃] Adopt Me!', 'Adopt Me!'],
+    ['[ðŸŽƒ] Adopt Me!', 'Adopt Me!'],
     ['[SKY ASSASSIN] Jujutsu Shenanigans', 'Jujutsu Shenanigans'],
-    ['Brookhaven 🏡RP', 'Brookhaven RP'],
-    ['[💰X2] Cameraman Tower Defense', 'Cameraman Tower Defense'],
+    ['Brookhaven ðŸ¡RP', 'Brookhaven RP'],
+    ['[ðŸ’°X2] Cameraman Tower Defense', 'Cameraman Tower Defense'],
     ["Dandy's World [ALPHA]", "Dandy's World"],
-    ["🎃 Dandy's World [ALPHA]", "Dandy's World"],
-    ['99 Nights in the Forest 🔦', '99 Nights in the Forest'],
-    ['[🪓EXE REWORK] Tower Defense Simulator', 'Tower Defense Simulator'],
-    ['SNACK Defense! 🍉 [TD]', 'SNACK Defense!'],
-    ['[🎉FIXES🎉] Slop Tower Defense! 💔', 'Slop Tower Defense!'],
-    ['[🟣 OMEGA] Alliance Tower Defense! ⚔️', 'Alliance Tower Defense!'],
+    ["ðŸŽƒ Dandy's World [ALPHA]", "Dandy's World"],
+    ['99 Nights in the Forest ðŸ”¦', '99 Nights in the Forest'],
+    ['[ðŸª“EXE REWORK] Tower Defense Simulator', 'Tower Defense Simulator'],
+    ['SNACK Defense! ðŸ‰ [TD]', 'SNACK Defense!'],
+    ['[ðŸŽ‰FIXESðŸŽ‰] Slop Tower Defense! ðŸ’”', 'Slop Tower Defense!'],
+    ['[ðŸŸ£ OMEGA] Alliance Tower Defense! âš”ï¸', 'Alliance Tower Defense!'],
     ['[UPD] [X2] - Blox Fruits', 'Blox Fruits'],
-    ['【NEW】 Doors', 'Doors'],
+    ['ã€NEWã€‘ Doors', 'Doors'],
     ['Pet Sim (UPD 5)', 'Pet Sim'],
     ['  Murder   Mystery 2  ', 'Murder Mystery 2'],
   ])('%s -> %s', (raw, clean) => {
@@ -33,8 +33,12 @@ describe('cleanGameTitle', () => {
   });
 
   it('falls back to the raw title when cleaning would leave nothing', () => {
-    expect(cleanGameTitle('[🎃]')).toBe('[🎃]');
-    expect(cleanGameTitle('🔥🔥')).toBe('🔥🔥');
+    expect(cleanGameTitle('[ðŸŽƒ]')).toBe('[ðŸŽƒ]');
+    expect(cleanGameTitle('ðŸ”¥ðŸ”¥')).toBe('ðŸ”¥ðŸ”¥');
     expect(cleanGameTitle('[OBBY]')).toBe('[OBBY]');
   });
 });
+
+
+
+

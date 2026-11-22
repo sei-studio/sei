@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/unreachable.js
+﻿// src/bot/adapter/minecraft/behaviors/unreachable.js
 //
 // 261015 quality pass 10: a short memory of block targets the body could not
 // reach, so a retry picks a different block instead of the same one.
@@ -92,3 +92,7 @@ export function isUnreachableResult(result) {
   if (s.startsWith('stuck in a hole') || s.startsWith('could not climb out')) return false
   return s.startsWith('cant_reach') || s.startsWith('timeout') || s.startsWith('stuck at') || s.startsWith('out of range')
 }
+
+
+
+

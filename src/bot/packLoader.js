@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Game pack loader (260908, game-adapters M0b).
  *
  * A game adapter's heavy dependencies (Minecraft: mineflayer, minecraft-data,
@@ -11,12 +11,12 @@
  * specifiers resolve from a directory that is not an ancestor of the file
  * doing the importing. That is this module, in two halves:
  *
- *   ESM  — `module.register()` installs packLoaderHooks.js, whose `resolve`
+ *   ESM  â€” `module.register()` installs packLoaderHooks.js, whose `resolve`
  *          hook tries the normal resolution first and, only when a BARE
  *          specifier is not found, retries with `parentURL` pointed at the
  *          pack root. "Normal first, pack second" so anything the app itself
  *          bundles (zod, @anthropic-ai/sdk, ...) always wins.
- *   CJS  — `module.register()` hooks do not run for synchronous `require()`
+ *   CJS  â€” `module.register()` hooks do not run for synchronous `require()`
  *          (povRenderer.js builds one with createRequire and pulls
  *          `prismarine-viewer/viewer` and `node-canvas-webgl/lib` through
  *          it). The CJS loader does honor NODE_PATH as its last-resort search
@@ -95,3 +95,7 @@ export async function preparePackLoader(packRoot, { ownRoot } = {}) {
   registeredFor = plan.root
   return true
 }
+
+
+
+

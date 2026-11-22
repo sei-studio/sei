@@ -1,4 +1,4 @@
-// src/bot/brain/orchestrator.conversation.test.js
+﻿// src/bot/brain/orchestrator.conversation.test.js
 //
 // 260921: the conversation fixes that came out of one Stardew session log
 // (Lyra, 17 minutes, 48 loops). Each test below is one measured failure:
@@ -257,7 +257,7 @@ describe('isExactRepeatSincePlayerSpoke', () => {
     expect(isExactRepeatSincePlayerSpoke({ segments: ['what question, i\'m listening nya', 'oh, the spawn one'], selfLines, lastPlayer: null, now })).toBe(false)
   })
   it('works for non-Latin text', () => {
-    expect(isExactRepeatSincePlayerSpoke({ segments: ['等等，什么问题'], selfLines: [{ at: now - 1000, text: '等等,什么问题?' }], lastPlayer: null, now })).toBe(true)
+    expect(isExactRepeatSincePlayerSpoke({ segments: ['ç­‰ç­‰ï¼Œä»€ä¹ˆé—®é¢˜'], selfLines: [{ at: now - 1000, text: 'ç­‰ç­‰,ä»€ä¹ˆé—®é¢˜?' }], lastPlayer: null, now })).toBe(true)
   })
 })
 
@@ -738,3 +738,7 @@ describe('the player line in the seed turn (261017)', () => {
     expect(msg).toContain('do not repeat it back to them')
   })
 })
+
+
+
+

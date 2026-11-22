@@ -1,5 +1,5 @@
-/**
- * Tests for src/main/auth/tosGate — Phase 11 plan 12.
+﻿/**
+ * Tests for src/main/auth/tosGate â€” Phase 11 plan 12.
  *
  * Strategy: vi.mock the supabaseClient singleton with a hand-rolled mock
  * matching the exportBuilder.test.ts pattern. The mock's
@@ -7,8 +7,8 @@
  * whatever rows / error the per-test state slot is configured with.
  *
  * tosGate has two surfaces:
- *   - isTosAccepted(userId) — read-side, fail-closed
- *   - recordAcceptance(userId) — write-side, throws TOS_RECORD_FAILED
+ *   - isTosAccepted(userId) â€” read-side, fail-closed
+ *   - recordAcceptance(userId) â€” write-side, throws TOS_RECORD_FAILED
  *
  * Both wrap supabase in an AbortController timeout (CLAUDE.md invariant).
  */
@@ -148,7 +148,7 @@ describe('getTosAcceptance', () => {
     await expect(getTosAcceptance('user-uuid')).resolves.toBe('not_accepted');
   });
 
-  it("returns 'unknown' (not 'not_accepted') when supabase returns an error — offline launch must not re-show the legal modal", async () => {
+  it("returns 'unknown' (not 'not_accepted') when supabase returns an error â€” offline launch must not re-show the legal modal", async () => {
     const { getTosAcceptance } = await import('./tosGate');
     state.selectError = { message: 'TypeError: fetch failed' };
     await expect(getTosAcceptance('user-uuid')).resolves.toBe('unknown');
@@ -175,7 +175,7 @@ describe('recordAcceptance', () => {
     );
   });
 
-  it('treats a 23505 duplicate-key error as idempotent success (composite PK — user already accepted)', async () => {
+  it('treats a 23505 duplicate-key error as idempotent success (composite PK â€” user already accepted)', async () => {
     const { recordAcceptance } = await import('./tosGate');
     state.insertError = {
       code: '23505',
@@ -204,3 +204,7 @@ describe('recordAcceptance', () => {
     expect(state.capturedInsertSignal).toBeInstanceOf(AbortSignal);
   });
 });
+
+
+
+

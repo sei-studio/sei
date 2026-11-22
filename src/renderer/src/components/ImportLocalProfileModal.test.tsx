@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023: the own-key import offer has an existing-account variant (merge
  * copy, "Not now"), and every string it shows has a Chinese translation.
  */
@@ -98,3 +98,7 @@ describe('ImportLocalProfileModal', () => {
     expect(importAttemptFailed({ imported: ['a'], failed: [] } as never)).toBe(false);
   });
 });
+
+
+
+

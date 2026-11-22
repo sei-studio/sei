@@ -1,12 +1,12 @@
-/**
- * Phase 11 — Belt-and-suspenders Storage orphan cleanup writer.
+﻿/**
+ * Phase 11 â€” Belt-and-suspenders Storage orphan cleanup writer.
  *
- * Source: 11-RESEARCH §Pitfall 6 (cloud delete succeeds, Storage delete fails).
+ * Source: 11-RESEARCH Â§Pitfall 6 (cloud delete succeeds, Storage delete fails).
  *         Inserts a deletion_queue row at the moment of character delete; the
  *         Plan 11-01 storage_purge_extend cron iterates storage_paths nightly
  *         and deletes storage.objects. If the syncQueue.processNext path also
  *         deleted the storage objects directly, the cron finds them already
- *         gone (storage.objects DELETE is idempotent — WHERE clause filters to
+ *         gone (storage.objects DELETE is idempotent â€” WHERE clause filters to
  *         nothing).
  *
  * RLS contract:
@@ -20,7 +20,7 @@
  *     the row's user_id, so even a row that somehow named a foreign path
  *     cannot trigger a cross-user storage delete (T-11-10-01).
  *
- * MAIN PROCESS ONLY — do not import from renderer (Phase 10 invariant).
+ * MAIN PROCESS ONLY â€” do not import from renderer (Phase 10 invariant).
  */
 
 import { getClient } from '../auth/supabaseClient';
@@ -38,12 +38,12 @@ const CLOUD_DELETION_QUEUE_INSERT_FAILED = 'CLOUD_DELETION_QUEUE_INSERT_FAILED';
  *
  * Idempotency: callers may also fire a direct delete via the sync queue. If
  * the direct delete succeeds, the cron finds the objects already gone and
- * the DELETE WHERE name = ANY(...) is a no-op — safe.
+ * the DELETE WHERE name = ANY(...) is a no-op â€” safe.
  *
  * Behavior:
  *   - Empty `paths` returns immediately without calling supabase.
- *   - Supabase error → throw CLOUD_DELETION_QUEUE_INSERT_FAILED with the wrapped message.
- *   - 15s AbortController timeout — pattern from cloudCharacterClient.ts.
+ *   - Supabase error â†’ throw CLOUD_DELETION_QUEUE_INSERT_FAILED with the wrapped message.
+ *   - 15s AbortController timeout â€” pattern from cloudCharacterClient.ts.
  */
 export async function enqueueStorageOrphans(
   ownerUuid: string,
@@ -64,7 +64,7 @@ export async function enqueueStorageOrphans(
     // A unique violation means an equivalent pending row already covers these
     // paths (deletion_queue_user_pending_uniq, keyed on user_id +
     // storage_paths since 20260726000000). The insurance row exists, so the
-    // enqueue succeeded as far as callers are concerned — retrying a delete
+    // enqueue succeeded as far as callers are concerned â€” retrying a delete
     // must not surface as a failure.
     if (error && (error as { code?: string }).code === '23505') return;
     if (error) throw new Error(`${CLOUD_DELETION_QUEUE_INSERT_FAILED}: ${error.message}`);
@@ -72,3 +72,7 @@ export async function enqueueStorageOrphans(
     clearTimeout(handle);
   }
 }
+
+
+
+

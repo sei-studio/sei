@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Voice-module (Whisper model) prefetch + readiness (260705).
  *
  * The dictation model (~40 MB, whisper-tiny.en via transformers.js) downloads
- * on first use and lands in the browser Cache API — profile-local, survives
+ * on first use and lands in the browser Cache API â€” profile-local, survives
  * restarts. Two flows want to know/control that:
  *
  *   - Onboarding (SkinSetupScreen "Voice calls" opt-in): start the download in
@@ -53,7 +53,7 @@ export async function isVoiceModelReady(): Promise<boolean> {
     }
     return false;
   } catch {
-    // Cache API unavailable → claim not-ready; the install flow still works
+    // Cache API unavailable â†’ claim not-ready; the install flow still works
     // (the download just hits whatever HTTP cache exists).
     return false;
   }
@@ -102,7 +102,7 @@ export function prefetchVoiceModel(onProgress?: (pct: number) => void): Promise<
       }
     };
     const watchdog = setTimeout(
-      () => finish(new Error('voice module download took too long — check your connection and retry')),
+      () => finish(new Error('voice module download took too long â€” check your connection and retry')),
       PREFETCH_TIMEOUT_MS,
     );
     worker.onmessage = (e: MessageEvent) => {
@@ -124,3 +124,7 @@ export function prefetchVoiceModel(onProgress?: (pct: number) => void): Promise<
   });
   return inflight;
 }
+
+
+
+

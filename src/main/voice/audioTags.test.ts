@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { stripAudioTags, audioTagDirective, AUDIO_TAGS, SUPPORTS_AUDIO_TAGS } from './audioTags';
 
 describe('stripAudioTags', () => {
@@ -43,8 +43,8 @@ describe('stripAudioTags', () => {
   });
 
   it('leaves the silence sentinel for the detector that owns it', () => {
-    // These are tag-shaped, so stripping emptied them — which did not silence
-    // the turn, it produced a "…" bubble, because the filler drop downstream
+    // These are tag-shaped, so stripping emptied them â€” which did not silence
+    // the turn, it produced a "â€¦" bubble, because the filler drop downstream
     // then had nothing to match on.
     expect(stripAudioTags('[silence]')).toBe('[silence]');
     expect(stripAudioTags('[says nothing]')).toBe('[says nothing]');
@@ -69,3 +69,7 @@ describe('audioTagDirective', () => {
     }
   });
 });
+
+
+
+

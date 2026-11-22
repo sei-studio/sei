@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Macro context: material count plus a win/draw/loss assessment shown as a
  * probability RANGE, not a confidence score. The band narrows with Elo, and
  * at low Elo its center drifts toward a naive material-only evaluation:
@@ -89,3 +89,7 @@ export function macroText(fen, band, perspective) {
       : `Your sense of your winning chances: somewhere between ${band.lo}% and ${band.hi}%.`;
   return `${materialLine} ${bandLine}`;
 }
+
+
+
+

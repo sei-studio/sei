@@ -1,4 +1,4 @@
-/**
+﻿/**
  * She reacts to your room edits (261105, T335). No setup and no mode: when an
  * editor session for her room ends and the room really changed, she says one
  * short line about it in her desktop bubble.
@@ -254,3 +254,7 @@ export function onRoomEditorClosed(token: string, together?: TogetherSeen | null
     .closed(token, together)
     .catch((err) => console.warn(`[seilink] room reaction failed: ${(err as Error).message}`));
 }
+
+
+
+

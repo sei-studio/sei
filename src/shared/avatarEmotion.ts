@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Spoken-line emotion classification for the avatar overlay (260804). Moved
  * to shared 261105 so main can classify a SeiLink desktop line too
  * (seilinkExpression.ts); the renderer re-exports it from lib/avatar/emotion.ts.
@@ -30,37 +30,37 @@ const LEXICONS: Lexicon[] = [
   {
     emotion: 'surprised',
     en: /\b(what|whoa|woah|really|seriously|no way|huh|wait)\b|[?!]{2,}/i,
-    zh: ['什么', '真的吗', '居然', '竟然', '不会吧', '啊？', '欸'],
+    zh: ['ä»€ä¹ˆ', 'çœŸçš„å—', 'å±…ç„¶', 'ç«Ÿç„¶', 'ä¸ä¼šå§', 'å•Šï¼Ÿ', 'æ¬¸'],
   },
   {
     emotion: 'angry',
     en: /\b(angry|mad|furious|annoyed|annoying|ugh|hmph|grr|hate)\b/i,
-    zh: ['生气', '气死', '讨厌', '哼', '烦死', '可恶'],
+    zh: ['ç”Ÿæ°”', 'æ°”æ­»', 'è®¨åŽŒ', 'å“¼', 'çƒ¦æ­»', 'å¯æ¶'],
   },
   {
     emotion: 'sad',
     en: /\b(sad|sorry|cry|crying|miss you|unfortunately|sigh|aww no)\b/i,
-    zh: ['难过', '伤心', '呜', '哭', '可惜', '对不起', '抱歉', '唉'],
+    zh: ['éš¾è¿‡', 'ä¼¤å¿ƒ', 'å‘œ', 'å“­', 'å¯æƒœ', 'å¯¹ä¸èµ·', 'æŠ±æ­‰', 'å”‰'],
   },
   {
     emotion: 'love',
-    en: /\b(love|adore|cute|adorable|sweet|darling|dear)\b|❤|💕|💖/i,
-    zh: ['爱你', '喜欢你', '可爱', '最喜欢', '亲亲', '么么'],
+    en: /\b(love|adore|cute|adorable|sweet|darling|dear)\b|â¤|ðŸ’•|ðŸ’–/i,
+    zh: ['çˆ±ä½ ', 'å–œæ¬¢ä½ ', 'å¯çˆ±', 'æœ€å–œæ¬¢', 'äº²äº²', 'ä¹ˆä¹ˆ'],
   },
   {
     emotion: 'shy',
     en: /\b(blush|blushing|shy|embarrassed|embarrassing|flustered)\b/i,
-    zh: ['害羞', '脸红', '不好意思', '人家'],
+    zh: ['å®³ç¾ž', 'è„¸çº¢', 'ä¸å¥½æ„æ€', 'äººå®¶'],
   },
   {
     emotion: 'excited',
     en: /\b(wow|amazing|incredible|awesome|let'?s go|can'?t wait|hype|yes+)\b/i,
-    zh: ['哇', '太棒', '厉害', '好耶', '冲', '走吧', '来吧', '期待'],
+    zh: ['å“‡', 'å¤ªæ£’', 'åŽ‰å®³', 'å¥½è€¶', 'å†²', 'èµ°å§', 'æ¥å§', 'æœŸå¾…'],
   },
   {
     emotion: 'happy',
-    en: /\b(happy|glad|yay|haha|hehe|lol|nice|great|fun|good job)\b|😊|😄/i,
-    zh: ['开心', '高兴', '哈哈', '嘿嘿', '嘻嘻', '太好了', '不错', '棒'],
+    en: /\b(happy|glad|yay|haha|hehe|lol|nice|great|fun|good job)\b|ðŸ˜Š|ðŸ˜„/i,
+    zh: ['å¼€å¿ƒ', 'é«˜å…´', 'å“ˆå“ˆ', 'å˜¿å˜¿', 'å˜»å˜»', 'å¤ªå¥½äº†', 'ä¸é”™', 'æ£’'],
   },
 ];
 
@@ -111,3 +111,7 @@ export function classifyEmotion(text: string | null | undefined): AvatarEmotion 
   }
   return null;
 }
+
+
+
+

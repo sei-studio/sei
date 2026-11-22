@@ -1,9 +1,9 @@
-/**
- * Voice-streaming helpers (260706) — the pure pieces of the streamed voice turn:
+﻿/**
+ * Voice-streaming helpers (260706) â€” the pure pieces of the streamed voice turn:
  *   - takeSentences: incremental sentence extraction that must NOT split inside a
  *     decimal ("1.618") but MUST flush on real sentence boundaries, so TTS can
  *     speak sentence 1 while the model still writes sentence 2.
- *   - markLastMessageCached: the transcript cache breakpoint (string → text-block
+ *   - markLastMessageCached: the transcript cache breakpoint (string â†’ text-block
  *     array with cache_control), so the growing call transcript is a cache hit.
  */
 import { describe, it, expect } from 'vitest';
@@ -35,19 +35,19 @@ describe('takeSentences', () => {
     expect(r.rest).toBe('still going with no end');
   });
 
-  // 260709 (conversation language): CJK sentences end with 。！？ and no
+  // 260709 (conversation language): CJK sentences end with ã€‚ï¼ï¼Ÿ and no
   // trailing space. Without these boundaries a Chinese reply never split, so
   // the whole generation finished before the first bubble / TTS clip.
   it('splits on CJK terminators with no trailing whitespace', () => {
-    const r = takeSentences('你好呀。今天想干嘛？我们去挖矿吧！还是');
-    expect(r.sentences).toEqual(['你好呀。', '今天想干嘛？', '我们去挖矿吧！']);
-    expect(r.rest).toBe('还是');
+    const r = takeSentences('ä½ å¥½å‘€ã€‚ä»Šå¤©æƒ³å¹²å˜›ï¼Ÿæˆ‘ä»¬åŽ»æŒ–çŸ¿å§ï¼è¿˜æ˜¯');
+    expect(r.sentences).toEqual(['ä½ å¥½å‘€ã€‚', 'ä»Šå¤©æƒ³å¹²å˜›ï¼Ÿ', 'æˆ‘ä»¬åŽ»æŒ–çŸ¿å§ï¼']);
+    expect(r.rest).toBe('è¿˜æ˜¯');
   });
 
   it('still buffers an unterminated CJK tail', () => {
-    const r = takeSentences('我们先去砍树');
+    const r = takeSentences('æˆ‘ä»¬å…ˆåŽ»ç æ ‘');
     expect(r.sentences).toEqual([]);
-    expect(r.rest).toBe('我们先去砍树');
+    expect(r.rest).toBe('æˆ‘ä»¬å…ˆåŽ»ç æ ‘');
   });
 });
 
@@ -71,3 +71,7 @@ describe('markLastMessageCached', () => {
     expect(() => markLastMessageCached(msgs)).not.toThrow();
   });
 });
+
+
+
+

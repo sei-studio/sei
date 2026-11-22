@@ -1,4 +1,4 @@
-// src/bot/web/webTools.js
+﻿// src/bot/web/webTools.js
 //
 // 260909: ultralight web access for every AI surface. Two tools, one loop.
 //
@@ -211,7 +211,7 @@ export const GAME_WIKIS = Object.freeze([
   { name: 'Genshin Impact Wiki', host: 'genshin-impact.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bgenshin\b/i },
   { name: 'Honkai: Star Rail Wiki', host: 'honkai-star-rail.fandom.com', articlePath: '/wiki/', apiPath: '/api.php', match: /\bstar rail\b|\bhsr\b/i },
   { name: 'Hollow Knight Wiki', host: 'hollowknight.wiki', articlePath: '/w/', apiPath: '/api.php', match: /\bhollow knight\b|\bsilksong\b/i },
-  { name: 'Bulbapedia', host: 'bulbapedia.bulbagarden.net', articlePath: '/wiki/', apiPath: '/w/api.php', match: /\bpok[eé]mon\b/i },
+  { name: 'Bulbapedia', host: 'bulbapedia.bulbagarden.net', articlePath: '/wiki/', apiPath: '/w/api.php', match: /\bpok[eÃ©]mon\b/i },
   { name: 'Zelda Wiki', host: 'zeldawiki.wiki', articlePath: '/wiki/', apiPath: '/api.php', match: /\bzelda\b|\btears of the kingdom\b|\bbreath of the wild\b/i },
   { name: 'Factorio Wiki', host: 'wiki.factorio.com', articlePath: '/', apiPath: '/api.php', match: /\bfactorio\b/i },
   // The biggest Roblox experiences have their own wikis (261003, each api.php
@@ -504,10 +504,10 @@ export function mergeFollowUpContent(lead, next) {
 // Text helpers
 
 const NAMED_ENTITIES = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—',
-  hellip: '…', copy: '©', reg: '®', trade: '™', laquo: '«', raquo: '»',
-  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', middot: '·', bull: '•',
-  deg: '°', times: '×', euro: '€', pound: '£', yen: '¥',
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: 'â€“', mdash: 'â€”',
+  hellip: 'â€¦', copy: 'Â©', reg: 'Â®', trade: 'â„¢', laquo: 'Â«', raquo: 'Â»',
+  lsquo: 'â€˜', rsquo: 'â€™', ldquo: 'â€œ', rdquo: 'â€', middot: 'Â·', bull: 'â€¢',
+  deg: 'Â°', times: 'Ã—', euro: 'â‚¬', pound: 'Â£', yen: 'Â¥',
 }
 
 export function decodeEntities(s) {
@@ -538,7 +538,7 @@ export function clip(s, n) {
   // Cut on a word boundary when one is close, so a clipped title still reads.
   const cut = t.slice(0, n - 1)
   const sp = cut.lastIndexOf(' ')
-  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).trimEnd() + '…'
+  return (sp > n * 0.6 ? cut.slice(0, sp) : cut).trimEnd() + 'â€¦'
 }
 
 export function hostOf(url) {
@@ -569,7 +569,7 @@ export function htmlToText(html) {
   s = s.replace(/<\/(td|th)\s*>/gi, ' | ')
   s = s.replace(TAG_RE, ' ')
   s = decodeEntities(s)
-  s = s.replace(/[ \t ]+/g, ' ')
+  s = s.replace(/[ \tÂ ]+/g, ' ')
   s = s.replace(/ *\n */g, '\n')
   // Reference chrome that survives tag stripping and reads as noise to the
   // model: MediaWiki "[ edit ]" links, "[ 12 ]" citation markers, and the
@@ -1266,3 +1266,7 @@ export function createWebSession({ fetchImpl, fetchProvider = null, manualRedire
 export function isWebTool(name) {
   return WEB_TOOL_NAMES.has(name)
 }
+
+
+
+

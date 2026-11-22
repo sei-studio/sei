@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260926: a provider's OWN request timeout must not look like a user cancel.
  *
  * The local providers (ollama.ts, openaiCompat.ts, gemini.ts) enforce
@@ -66,3 +66,7 @@ export function timeoutOr(
   if (deadline.fired && !callerSignal?.aborted) return new LlmTimeoutError(kind, timeoutMs);
   return err;
 }
+
+
+
+

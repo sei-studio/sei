@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Runs the Authenticode check (velopackSignature.ts) before Sei runs a
  * downloaded Setup or applies a downloaded Velopack package (261031).
  *
@@ -127,3 +127,7 @@ export async function verifyPackage(stageDir: string, version: string, packagePa
   }
   return result;
 }
+
+
+
+

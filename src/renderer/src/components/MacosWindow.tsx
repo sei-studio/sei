@@ -1,5 +1,5 @@
-/**
- * MacosWindow / AppWindow — outer chrome (the "Summoning Terminal" shell).
+﻿/**
+ * MacosWindow / AppWindow â€” outer chrome (the "Summoning Terminal" shell).
  *
  * Full-bleed dark window with a thin top bar carrying a small "Sei"
  * mark. The bar doubles as the drag strip so the frameless window stays
@@ -9,14 +9,14 @@
  *  - macOS: native traffic lights (titleBarStyle: hiddenInset). The "Sei
  *    Launcher" mark is pushed right, past the rail, so it clears them.
  *  - Windows / Linux: frameless. The mark sits at the far LEFT (where macOS
- *    puts its traffic lights — there is nothing there on Windows) and we render
+ *    puts its traffic lights â€” there is nothing there on Windows) and we render
  *    our own min / maximize / close controls on the RIGHT, styled to match the
  *    dark chrome (the old native titleBarOverlay buttons clashed and sometimes
  *    went missing). Controls opt out of the drag region via no-drag.
  *
  * Mounts the HUD overlay layers (grain + vignette) once, above all content.
  *
- * Source: docs/design/UI-DESIGN-SYSTEM.md §Window shell; mockup ui.jsx titlebar.
+ * Source: docs/design/UI-DESIGN-SYSTEM.md Â§Window shell; mockup ui.jsx titlebar.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -31,7 +31,7 @@ interface MacosWindowProps {
   /**
    * True on the full-page entry surfaces (onboarding / auth / skin-setup) where
    * App.tsx omits the IconRail. When set, the top-bar hairline spans the full
-   * width — including the segment under the macOS traffic lights — instead of
+   * width â€” including the segment under the macOS traffic lights â€” instead of
    * being inset to the content area (its default, which avoids a seam where the
    * bar meets the rail).
    */
@@ -97,7 +97,7 @@ function WindowControls(): React.ReactElement {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function MacosWindow({ subtitle: _subtitle, railHidden = false, children }: MacosWindowProps): React.ReactElement {
   // Track the real packaged version (app.getVersion via IPC) instead of a
-  // hardcoded literal — Settings reads the same source, so the two never drift.
+  // hardcoded literal â€” Settings reads the same source, so the two never drift.
   const [version, setVersion] = useState<string>('');
   useEffect(() => {
     void sei
@@ -112,7 +112,7 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
   // the custom controls.
   const isWindows = sei.platform === 'win32';
 
-  // 260724 — custom app background: the image + its brightness dim paint here,
+  // 260724 â€” custom app background: the image + its brightness dim paint here,
   // window-wide and under everything (drag strip, rail, content), so the whole
   // shell sits over it. The chrome above swaps to translucent tints when this
   // is active (App.tsx mainStyle/elbowStyle + the `:root[data-app-bg]` rules).
@@ -133,7 +133,7 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
         />
       ) : null}
       {/*
-        Thin drag strip — keeps the frameless window movable and gives the OS /
+        Thin drag strip â€” keeps the frameless window movable and gives the OS /
         custom window controls clearance above the content.
       */}
       <div
@@ -145,7 +145,7 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
       </div>
       <div className={styles.body}>{children}</div>
 
-      {/* HUD atmosphere — mounted once, above all content, never interactive.
+      {/* HUD atmosphere â€” mounted once, above all content, never interactive.
           Grain + vignette only (the mockup's scanline + sweep layers are off). */}
       <div className="hud-overlays" aria-hidden="true">
         <div className="hud-grain" />
@@ -154,3 +154,7 @@ export function MacosWindow({ subtitle: _subtitle, railHidden = false, children 
     </div>
   );
 }
+
+
+
+

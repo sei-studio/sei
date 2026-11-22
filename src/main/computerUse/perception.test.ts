@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import fixture from './__fixtures__/login-page.json';
 import { formatOptions, perceive } from './perception';
 import type { AxNode, OcrBox } from './types';
@@ -126,3 +126,7 @@ describe('perceive (fixture: sign-in page)', () => {
     expect(formatOptions(p.options.slice(0, 2))).toBe('0. click button "close button"\n1. click the text "Welcome back"');
   });
 });
+
+
+
+

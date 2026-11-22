@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pattern swatches for the room editor (261105, room catalog): a small square
  * of the pattern in the part's two colours, drawn from the same grey tile the
  * room uses (a code pattern is generated, a painted one is loaded from the
@@ -62,3 +62,7 @@ export function patternThumb(def: PatternDef, base: string, accent: string, reso
   while (urls.size > MAX) urls.delete(urls.keys().next().value as string);
   return hit;
 }
+
+
+
+

@@ -1,4 +1,4 @@
-// 261111 (user feedback ae9a758e): "Sui won't put on or use what I give her"
+﻿// 261111 (user feedback ae9a758e): "Sui won't put on or use what I give her"
 // and "she doesn't know what copper armor is" (Minecraft 26.3).
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { EventEmitter } from 'node:events'
@@ -248,6 +248,10 @@ describe('what she is told', () => {
   it('names copper gear in the world primer only when the version has it', () => {
     expect(worldPrimer()).toBe(WORLD_PRIMER)
     expect(worldPrimer({ copperGear: true })).toContain(COPPER_GEAR_FACT)
-    expect(COPPER_GEAR_FACT).not.toMatch(/[–—]/)
+    expect(COPPER_GEAR_FACT).not.toMatch(/[â€“â€”]/)
   })
 })
+
+
+
+

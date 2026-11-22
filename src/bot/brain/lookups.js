@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Lookup log: what the companion found on the web, kept for the session.
  *
  * A web search lives inside ONE loop's history (the server_tool_use +
@@ -23,7 +23,7 @@ const TOLD_MAX_CHARS = 240
 
 function clip(s, n) {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim()
-  return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t
+  return t.length > n ? `${t.slice(0, n - 1).trimEnd()}â€¦` : t
 }
 
 /**
@@ -104,3 +104,7 @@ export function createLookupLog({ capacity = LOOKUP_CAPACITY } = {}) {
 
   return { record, formatBlock, get size() { return entries.length }, _internal: { entries } }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pure helpers behind the Don't Starve Together dashboard (260909). No
  * React, no stores, so the tests can pin the game facts the panel paints:
  * the clock's segment split per season, the temperature bands, the item
@@ -177,3 +177,7 @@ export function slotCount(itemCount: number): number {
   if (itemCount <= DST_BASE_SLOTS) return DST_BASE_SLOTS;
   return Math.ceil(itemCount / DST_BASE_SLOTS) * DST_BASE_SLOTS;
 }
+
+
+
+

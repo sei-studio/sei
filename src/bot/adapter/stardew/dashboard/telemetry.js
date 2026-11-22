@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/dashboard/telemetry.js — dashboard telemetry for a
+﻿// src/bot/adapter/stardew/dashboard/telemetry.js â€” dashboard telemetry for a
 // Stardew body (contract v2 createTelemetry). While the renderer watches, one
 // snapshot per second (plus one at once when the current tool changes):
 // {game:'stardew', location, x, y, stamina, health, held, items, activity,
@@ -120,3 +120,7 @@ export function createDashboardTelemetry({ getObs, emit, logger = console, inter
     stop() { stopped = true; disarm() },
   }
 }
+
+
+
+

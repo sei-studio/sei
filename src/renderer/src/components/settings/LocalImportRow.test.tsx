@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023: the Settings row for the own-key import shows only while the local
  * profile has something worth bringing, and its copy has zh translations.
  */
@@ -60,3 +60,7 @@ describe('LocalImportRowView', () => {
     expect(ZH['Bring over']).toBeTruthy();
   });
 });
+
+
+
+

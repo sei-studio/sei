@@ -1,4 +1,4 @@
-/**
+﻿/**
  * capNotices (261120): the credit wall and the own-key spend alert reach the
  * player outside the app window (OS notification when Sei is not in front)
  * and survive a window that opens after them (pending replay until ack).
@@ -143,7 +143,7 @@ describe('copy', () => {
       const c = CAP_NOTICE_COPY[lang];
       for (const v of Object.values(c)) {
         expect(v.length).toBeGreaterThan(0);
-        expect(v).not.toContain('—');
+        expect(v).not.toContain('â€”');
       }
       expect(c.spendBody).toContain('{amount}');
     }
@@ -153,3 +153,7 @@ describe('copy', () => {
     expect(capNoticeText('credit_wall', 'xx').title).toBe('Usage limit reached');
   });
 });
+
+
+
+

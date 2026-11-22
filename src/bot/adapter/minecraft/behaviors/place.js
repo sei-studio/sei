@@ -1,4 +1,4 @@
-// src/behaviors/place.js — place a block against a reference face (D-22)
+﻿// src/behaviors/place.js â€” place a block against a reference face (D-22)
 import { Vec3 } from 'vec3'
 import { resolveBlock, isStaleHandle } from '../observers/targeting.js'
 import { reason } from '../../../brain/errStrings.js'
@@ -172,3 +172,7 @@ export async function placeBlockAction(args, bot, config) {
   const step = stepped ? `, even after stepping to ${stepped.x},${stepped.y},${stepped.z}` : ''
   return `couldn't place ${itemName}: no open spot in reach${step}.${why} Walk a few blocks onto open, flat ground and try placeBlock again.`
 }
+
+
+
+

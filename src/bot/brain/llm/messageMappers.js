@@ -1,10 +1,10 @@
-// Translation between Anthropic's request/response shape (which the orchestrator
+﻿// Translation between Anthropic's request/response shape (which the orchestrator
 // natively emits/consumes) and the OpenAI Chat Completions + Google Gemini
 // REST shapes. Pure functions, no I/O.
 
 import { randomUUID } from 'crypto'
 
-// ─── Anthropic system blocks → flat system string ──────────────────────
+// â”€â”€â”€ Anthropic system blocks â†’ flat system string â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // systemBlocks: [{type:'text', text, cache_control?}]
 export function flattenSystemBlocks(systemBlocks) {
   if (!Array.isArray(systemBlocks)) return ''
@@ -14,24 +14,24 @@ export function flattenSystemBlocks(systemBlocks) {
     .join('\n\n')
 }
 
-// ─── Anthropic messages → OpenAI messages ─────────────────────────────
+// â”€â”€â”€ Anthropic messages â†’ OpenAI messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Anthropic msg.content can be `string` or an Array of blocks:
 //   {type:'text', text}
 //   {type:'tool_use', id, name, input}
 //   {type:'tool_result', tool_use_id, content, is_error?}
-//   {type:'thinking', ...}  (dropped — Anthropic-only)
+//   {type:'thinking', ...}  (dropped â€” Anthropic-only)
 export function anthropicToOpenAIMessages(messages, systemText) {
   const out = []
   if (systemText) out.push({ role: 'system', content: systemText })
   for (const msg of messages) {
     if (msg.role === 'user') {
       const blocks = Array.isArray(msg.content) ? msg.content : [{ type: 'text', text: String(msg.content ?? '') }]
-      // Split tool_results out — they become separate {role:'tool'} messages
+      // Split tool_results out â€” they become separate {role:'tool'} messages
       // in OpenAI's protocol. Any text blocks coalesce into one user message.
       // VIS-02: an `image` block (provider-neutral {type:'image',source:{...}})
       // becomes an `image_url` data-URL part. When any image is present the
-      // user message MUST use the multimodal ARRAY content form — OpenAI
+      // user message MUST use the multimodal ARRAY content form â€” OpenAI
       // rejects an image on a plain-string content, and an image NEVER rides a
       // {role:'tool'} result message (Pitfall 4).
       const textParts = []
@@ -88,7 +88,7 @@ export function anthropicToOpenAIMessages(messages, systemText) {
   return out
 }
 
-// ─── Anthropic messages → Ollama native /api/chat messages ────────────
+// â”€â”€â”€ Anthropic messages â†’ Ollama native /api/chat messages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // 261010: the native route is NOT the OpenAI shape (mirror of
 // src/main/llm/messageMappers.ts anthropicToOllamaMessages; both 400'd on
@@ -171,7 +171,7 @@ export function anthropicToolsToOpenAITools(tools) {
   }))
 }
 
-// ─── OpenAI response → Anthropic-shape response ───────────────────────
+// â”€â”€â”€ OpenAI response â†’ Anthropic-shape response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function openAIResponseToAnthropic(resp) {
   const choice = resp?.choices?.[0]
   const msg = choice?.message ?? {}
@@ -193,7 +193,7 @@ export function openAIResponseToAnthropic(resp) {
   }
 }
 
-// ─── Anthropic schema → Gemini-friendly schema ────────────────────────
+// â”€â”€â”€ Anthropic schema â†’ Gemini-friendly schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Gemini's v1beta `functionDeclarations.parameters` is a JSON Schema subset.
 // Strip every field Gemini explicitly rejects (the Zod-emitted JSON Schema
 // often includes `default`, `additionalProperties`, `$schema`, refs).
@@ -229,9 +229,9 @@ export function anthropicToolsToGeminiTools(tools) {
   }]
 }
 
-// ─── Anthropic messages → Gemini contents ─────────────────────────────
+// â”€â”€â”€ Anthropic messages â†’ Gemini contents â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
-// Pre-pass: walk every assistant turn and build an `id → name` map for each
+// Pre-pass: walk every assistant turn and build an `id â†’ name` map for each
 // tool_use block. Anthropic `tool_result` blocks only carry `tool_use_id`,
 // but Gemini's `functionResponse.name` must match the prior `functionCall.name`.
 // Without this map we'd send the raw id (e.g. `toolu_<uuid>`) as the name and
@@ -267,7 +267,7 @@ export function anthropicToGeminiContents(messages) {
           })
         }
         // VIS-02: provider-neutral image block -> Gemini inline_data part. Lands
-        // ONLY on a user turn (Pitfall 4 — never inside a functionResponse).
+        // ONLY on a user turn (Pitfall 4 â€” never inside a functionResponse).
         else if (blk.type === 'image') {
           parts.push({
             inline_data: { mime_type: blk.source.media_type, data: blk.source.data },
@@ -290,7 +290,7 @@ export function anthropicToGeminiContents(messages) {
   return out
 }
 
-// ─── Gemini response → Anthropic-shape response ───────────────────────
+// â”€â”€â”€ Gemini response â†’ Anthropic-shape response â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function geminiResponseToAnthropic(resp) {
   const cand = resp?.candidates?.[0]
   const parts = cand?.content?.parts ?? []
@@ -315,3 +315,7 @@ export function geminiResponseToAnthropic(resp) {
     stopReason: cand?.finishReason ?? 'STOP',
   }
 }
+
+
+
+

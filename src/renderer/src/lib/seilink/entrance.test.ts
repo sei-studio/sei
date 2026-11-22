@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her desktop entrance (261119): the intro's arrival curves, ending exactly
  * at rest so the switch to `show` never jumps.
  */
@@ -49,3 +49,7 @@ describe('her entrance', () => {
     expect(k[0].opacity).toBe(0);
   });
 });
+
+
+
+

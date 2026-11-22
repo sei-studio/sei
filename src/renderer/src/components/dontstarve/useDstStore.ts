@@ -1,5 +1,5 @@
-/**
- * useDstStore — renderer mirror of the Don't Starve Together install state
+﻿/**
+ * useDstStore â€” renderer mirror of the Don't Starve Together install state
  * and per-character survivor picks (game adapters M2, 260908). Main owns the
  * truth (src/main/games/dontstarve); this store caches what the launch panel,
  * the setup modal body and the settings section show, and forwards the
@@ -173,3 +173,7 @@ if (import.meta.hot) {
     offProgress = null;
   });
 }
+
+
+
+

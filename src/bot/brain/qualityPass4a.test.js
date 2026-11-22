@@ -1,4 +1,4 @@
-// 261012: quality pass 4a, protect_player target selection.
+﻿// 261012: quality pass 4a, protect_player target selection.
 //  - a hostile asked for by name resolves to the one nearest the OWNER, also
 //    past the old 16-block name bound, while the owner is under threat
 //  - a mob already at her feet still wins over one that is not on them yet
@@ -185,7 +185,7 @@ describe('reflex melee strafe during a committed attack', () => {
   })
 })
 
-// ── Issue 2 + 3: tool tiers, recipe counts, progress and inventory wording ──
+// â”€â”€ Issue 2 + 3: tool tiers, recipe counts, progress and inventory wording â”€â”€
 import { SPINE, recipeNote, pickaxeLine, furnaceLine } from '../adapter/minecraft/observers/progression.js'
 import { getInFlightLineForSnapshot } from './inflight.js'
 import { CAPABILITY_PARAGRAPH } from './promptLibrary.js'
@@ -291,4 +291,8 @@ describe('furnace line for what is still cooking', () => {
     expect(furnaceLine({ pos: [1, 2, 3], input: '1 raw_iron', t: 0 }, 601000)).toBeNull()
   })
 })
+
+
+
+
 

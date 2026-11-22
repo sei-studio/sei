@@ -1,4 +1,4 @@
-/**
+﻿/**
  * main/index.ts step 0a (260603 per-profile partitioning): pick the profile
  * scope the boot reads and writes, from the persisted Supabase session,
  * BEFORE any per-account store is touched. Signed in at boot -> the account's
@@ -29,3 +29,7 @@ export async function applyBootScope(
   setActiveScope(bootScope);
   return bootScope;
 }
+
+
+
+

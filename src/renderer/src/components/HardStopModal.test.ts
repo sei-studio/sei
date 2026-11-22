@@ -1,5 +1,5 @@
-/**
- * Tests for HardStopModal — the two hard-stop presentations and the
+﻿/**
+ * Tests for HardStopModal â€” the two hard-stop presentations and the
  * auto-dismiss guard (260725 regression fixes).
  *
  * Project convention (no @testing-library/react installed): exercise the
@@ -7,14 +7,14 @@
  * src/renderer/src/screens/SettingsScreen.test.tsx.
  *
  * Invariants:
- *   H.1 — auto-dismiss is NOT the bare `!over_limit` check. A hard-stop push
+ *   H.1 â€” auto-dismiss is NOT the bare `!over_limit` check. A hard-stop push
  *         carries no snapshot, so the store's over_limit is stale (normally
  *         false) and the popup used to unmount on its first effect run.
- *   H.2 — the modal refreshes credits when a stop arrives and only trusts that
+ *   H.2 â€” the modal refreshes credits when a stop arrives and only trusts that
  *         fresh, non-failed snapshot.
- *   H.3 — 'rate_limited' has its own branch: its own copy, the retry time from
+ *   H.3 â€” 'rate_limited' has its own branch: its own copy, the retry time from
  *         rateLimitedUntil, and NO billing CTAs.
- *   H.4 — the rate-limited branch is immune to the over_limit auto-dismiss.
+ *   H.4 â€” the rate-limited branch is immune to the over_limit auto-dismiss.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -73,6 +73,10 @@ describe('HardStopModal', () => {
     const start = SRC.indexOf('const retryWhen');
     const branch = SRC.slice(start, SRC.indexOf('</ModalShell>', start));
     expect(branch.length).toBeGreaterThan(0);
-    expect(branch.includes('—')).toBe(false);
+    expect(branch.includes('â€”')).toBe(false);
   });
 });
+
+
+
+

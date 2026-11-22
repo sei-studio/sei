@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime usage summary (261110): the profile's own count of off-cloud LLM
  * use (ChatGPT plan replies, own-key tokens and estimated spend), read from
  * main's ledger (main/usage/llmUsageLedger.ts) on demand. Account scoped:
@@ -32,3 +32,7 @@ export const useUsageStore = create<UsageState>((set) => ({
     set({ summary: null });
   },
 }));
+
+
+
+

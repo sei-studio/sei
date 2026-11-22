@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261008: Haiku 5 defaults to adaptive thinking, which eats the 200-token
  * chat/voice budget. The Anthropic adapter disables it for Haiku 5 unless the
  * caller asked for thinking, and leaves every other model's request alone.
@@ -118,3 +118,7 @@ describe('createAnthropicProvider prompt-size guard (261013)', () => {
     warn.mockRestore();
   });
 });
+
+
+
+

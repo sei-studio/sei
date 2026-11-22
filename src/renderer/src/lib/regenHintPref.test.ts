@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for regenHintPref (261107): the one-time "Not happy with the look?
  * Regenerate" hint on a companion's profile.
  *
@@ -204,3 +204,7 @@ describe('analytics', () => {
     expect(() => trackRegenHintDismissed('close', 10)).not.toThrow();
   });
 });
+
+
+
+

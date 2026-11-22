@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/behaviors/chat.death.test.js
+﻿// src/bot/adapter/minecraft/behaviors/chat.death.test.js
 //
-// 260730 — the PLAYER's death reaches the model as a death, with its cause.
+// 260730 â€” the PLAYER's death reaches the model as a death, with its cause.
 // Vanilla death lines arrive as SYSTEM chat, so before this they were relabeled
 // "ran a command (in-game, not a message or instruction to you): ..." and the
 // model discounted them: live, Sui asked the player how they died while
@@ -100,3 +100,7 @@ describe('chat.js death routing', () => {
     expect(events[0].playerSpoke).toBe(true)
   })
 })
+
+
+
+

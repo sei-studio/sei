@@ -1,4 +1,4 @@
-// DST quality eval: console Lua helpers (scripts/quality-eval/dst/).
+﻿// DST quality eval: console Lua helpers (scripts/quality-eval/dst/).
 //
 // Each entry is sent as ONE console line (server.ts collapses newlines), so
 // no Lua `--` comments in here. Every helper is a global set with rawset (the
@@ -71,3 +71,7 @@ export const HELPERS: string[] = [
   `rawset(_G,"QE_SAY",function(msg) local s=STEVE; Networking_Say(s.GUID,s.userid,s.name,s.prefab,msg,{1,1,1,1},false,false,nil) end)`,
   `rawset(_G,"QE_CLEARBODY",function() local n=0; for _,v in pairs(Ents) do if v:IsValid() and v:HasTag("sei_companion") then v:Remove(); n=n+1 end end; rawset(_G,"QE_B",nil); print("[qe-clear] "..json.encode({removed=n})) end)`,
 ];
+
+
+
+

@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 
 /**
  * A closed action registry. Only explicitly registered actions can be executed.
@@ -58,3 +58,7 @@ export function createRegistry() {
 }
 
 export const ActionRegistry = createRegistry
+
+
+
+

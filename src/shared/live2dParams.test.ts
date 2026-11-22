@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   effectiveLive2DParams,
   expressionDoesSomething,
@@ -116,16 +116,16 @@ describe('resolveLive2DParams (261122)', () => {
   it('display names alone are enough (Japanese, German, Spanish)', () => {
     const ja = resolveLive2DParams({
       params: [
-        { id: 'P0', name: '角度 X', min: -30, max: 30, def: 0 },
-        { id: 'P1', name: '角度 Y', min: -30, max: 30, def: 0 },
-        { id: 'P2', name: '左目　開閉', min: 0, max: 1, def: 1 },
-        { id: 'P3', name: '右目　開閉', min: 0, max: 1, def: 1 },
-        { id: 'P4', name: '目玉 X', min: -1, max: 1, def: 0 },
-        { id: 'P5', name: '目玉 Y', min: -1, max: 1, def: 0 },
-        { id: 'P6', name: '口　変形', min: -1, max: 1, def: 0 },
-        { id: 'P7', name: '口　開閉', min: 0, max: 1, def: 0 },
-        { id: 'P8', name: '体の回転　X', min: -10, max: 10, def: 0 },
-        { id: 'P9', name: '呼吸', min: 0, max: 1, def: 0 },
+        { id: 'P0', name: 'è§’åº¦ X', min: -30, max: 30, def: 0 },
+        { id: 'P1', name: 'è§’åº¦ Y', min: -30, max: 30, def: 0 },
+        { id: 'P2', name: 'å·¦ç›®ã€€é–‹é–‰', min: 0, max: 1, def: 1 },
+        { id: 'P3', name: 'å³ç›®ã€€é–‹é–‰', min: 0, max: 1, def: 1 },
+        { id: 'P4', name: 'ç›®çŽ‰ X', min: -1, max: 1, def: 0 },
+        { id: 'P5', name: 'ç›®çŽ‰ Y', min: -1, max: 1, def: 0 },
+        { id: 'P6', name: 'å£ã€€å¤‰å½¢', min: -1, max: 1, def: 0 },
+        { id: 'P7', name: 'å£ã€€é–‹é–‰', min: 0, max: 1, def: 0 },
+        { id: 'P8', name: 'ä½“ã®å›žè»¢ã€€X', min: -10, max: 10, def: 0 },
+        { id: 'P9', name: 'å‘¼å¸', min: 0, max: 1, def: 0 },
       ],
     });
     expect(ja.roles).toEqual({
@@ -156,8 +156,8 @@ describe('resolveLive2DParams (261122)', () => {
   it('never takes a mouth shape for the opening when several mouth parameters exist', () => {
     const r = resolveLive2DParams({
       params: [
-        { id: 'ParamMouthUp', name: '上がり口', min: 0, max: 1, def: 0 },
-        { id: 'ParamMouthDown', name: '下がり口', min: 0, max: 1, def: 0 },
+        { id: 'ParamMouthUp', name: 'ä¸ŠãŒã‚Šå£', min: 0, max: 1, def: 0 },
+        { id: 'ParamMouthDown', name: 'ä¸‹ãŒã‚Šå£', min: 0, max: 1, def: 0 },
         { id: 'ParamMouthForm', min: -1, max: 1, def: 0 },
       ],
     });
@@ -262,3 +262,7 @@ describe('live2dManifestShape', () => {
     expect(JSON.stringify(shape)).not.toMatch(/Bocca|Angry/);
   });
 });
+
+
+
+

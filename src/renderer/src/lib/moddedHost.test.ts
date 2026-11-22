@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { messageSaysFabric, namedMods } from './moddedHost';
 
 // 261007: the bot's humanized Fabric registry-sync kick, as the status carries it.
@@ -25,3 +25,7 @@ describe('moddedHost message helpers', () => {
     expect(messageSaysFabric(undefined)).toBe(false);
   });
 });
+
+
+
+

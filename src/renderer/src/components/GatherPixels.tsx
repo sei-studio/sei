@@ -1,10 +1,10 @@
-/**
- * GatherPixels — the 5×5 "gathering pixels" mark (mockup .gpx5). Abstract,
+﻿/**
+ * GatherPixels â€” the 5Ã—5 "gathering pixels" mark (mockup .gpx5). Abstract,
  * symmetric patterns whose body cells scatter in, two pale cells land last,
  * everything disperses, and the next pattern in the cycle rebuilds. Used by
  * dormant party slots and the Awaken "Be matched" hero.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §1; mockup GPX_PATTERNS.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§1; mockup GPX_PATTERNS.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -68,7 +68,7 @@ const PATTERNS: Record<string, Pattern> = {
 };
 
 /** Three patterns per cycle; each gathering forms the next in its cycle
- * (mockup GPX_CYCLES — one cycle per wall slot so no two slots match). */
+ * (mockup GPX_CYCLES â€” one cycle per wall slot so no two slots match). */
 export type GatherCycle = 'a' | 'b' | 'c' | 'd';
 const CYCLES: Record<GatherCycle, string[]> = {
   a: ['a', 'e', 'f'],
@@ -97,7 +97,7 @@ export function GatherPixels({
   const [step, setStep] = useState(0);
   useEffect(() => {
     // The swap interval starts after the stagger so cycle N swaps at
-    // stagger + 8s·N — first-cycle cell delays below carry the same offset,
+    // stagger + 8sÂ·N â€” first-cycle cell delays below carry the same offset,
     // keeping the whole timeline shifted as one piece.
     let interval: number | undefined;
     const timeout = window.setTimeout(() => {
@@ -112,7 +112,7 @@ export function GatherPixels({
   const names = CYCLES[cycle];
   const p = PATTERNS[names[step % names.length]];
   // Cells use `animation-fill-mode: both`, so shifting the first cycle's
-  // delays holds them invisible (0% frame) until the stagger elapses — no
+  // delays holds them invisible (0% frame) until the stagger elapses â€” no
   // layout jump, and adjacent slots gather out of phase.
   const offset = step === 0 ? stagger / 1000 : 0;
 
@@ -140,3 +140,7 @@ export function GatherPixels({
     </span>
   );
 }
+
+
+
+

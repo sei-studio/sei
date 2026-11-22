@@ -1,4 +1,4 @@
-// Provider region refusals (261103, T303).
+﻿// Provider region refusals (261103, T303).
 //
 // In local / BYOK mode Sei never pre-blocks by region: each provider decides,
 // and when one refuses because of where the request comes from, the player is
@@ -150,3 +150,7 @@ export function providerRegionError(kind, cause) {
   }
   return err
 }
+
+
+
+

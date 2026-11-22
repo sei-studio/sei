@@ -1,11 +1,11 @@
-/**
- * sttPolicy (260725; SenseVoice 260816) — the call-time STT mode matrix.
+﻿/**
+ * sttPolicy (260725; SenseVoice 260816) â€” the call-time STT mode matrix.
  *
  * Pins: cloud-proxy defaults to 'none' (Scribe primary, no model download);
  * the stt_local_fallback opt-in restores the eager race; BYOK is always
  * eager, with cloud wired unless stt_engine is 'whisper' or 'sensevoice';
  * absent config fields resolve to the cloud-forward defaults. 260816: the
- * localEngine dimension — SenseVoice for BYOK by choice (pack-gated), and the
+ * localEngine dimension â€” SenseVoice for BYOK by choice (pack-gated), and the
  * ONE sanctioned cloud change: zh-UI cloud users with the pack downloaded get
  * SenseVoice as the fallback engine instead of Whisper.
  */
@@ -13,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { sttPolicy } from './sttPolicy';
 
 describe('sttPolicy', () => {
-  it("cloud-proxy without the fallback opt-in → 'none' + cloud (no model download)", () => {
+  it("cloud-proxy without the fallback opt-in â†’ 'none' + cloud (no model download)", () => {
     expect(sttPolicy({}, 'cloud-proxy')).toEqual({
       localModel: 'none',
       localEngine: 'whisper',
@@ -31,7 +31,7 @@ describe('sttPolicy', () => {
     });
   });
 
-  it("cloud-proxy with stt_local_fallback → 'eager' + cloud (today's race)", () => {
+  it("cloud-proxy with stt_local_fallback â†’ 'eager' + cloud (today's race)", () => {
     expect(sttPolicy({ stt_local_fallback: true }, 'cloud-proxy')).toEqual({
       localModel: 'eager',
       localEngine: 'whisper',
@@ -39,7 +39,7 @@ describe('sttPolicy', () => {
     });
   });
 
-  it("BYOK default (no stt_engine) → 'eager' whisper + cloud (scribe is the default)", () => {
+  it("BYOK default (no stt_engine) â†’ 'eager' whisper + cloud (scribe is the default)", () => {
     expect(sttPolicy({}, 'local')).toEqual({
       localModel: 'eager',
       localEngine: 'whisper',
@@ -52,7 +52,7 @@ describe('sttPolicy', () => {
     });
   });
 
-  it("BYOK stt_engine 'scribe' → 'eager' whisper + cloud", () => {
+  it("BYOK stt_engine 'scribe' â†’ 'eager' whisper + cloud", () => {
     expect(sttPolicy({ stt_engine: 'scribe' }, 'local')).toEqual({
       localModel: 'eager',
       localEngine: 'whisper',
@@ -60,7 +60,7 @@ describe('sttPolicy', () => {
     });
   });
 
-  it("BYOK stt_engine 'whisper' → 'eager' whisper, cloud NOT wired", () => {
+  it("BYOK stt_engine 'whisper' â†’ 'eager' whisper, cloud NOT wired", () => {
     expect(sttPolicy({ stt_engine: 'whisper' }, 'local')).toEqual({
       localModel: 'eager',
       localEngine: 'whisper',
@@ -76,9 +76,9 @@ describe('sttPolicy', () => {
     });
   });
 
-  // ── SenseVoice (260816) ───────────────────────────────────────────────────
+  // â”€â”€ SenseVoice (260816) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  it("BYOK stt_engine 'sensevoice' + pack ready → SenseVoice local, cloud OFF", () => {
+  it("BYOK stt_engine 'sensevoice' + pack ready â†’ SenseVoice local, cloud OFF", () => {
     expect(sttPolicy({ stt_engine: 'sensevoice' }, 'local', { sensevoiceReady: true })).toEqual({
       localModel: 'eager',
       localEngine: 'sensevoice',
@@ -99,7 +99,7 @@ describe('sttPolicy', () => {
     });
   });
 
-  it('cloud zh-UI + pack ready → SenseVoice as the local-fallback engine (the one sanctioned cloud change)', () => {
+  it('cloud zh-UI + pack ready â†’ SenseVoice as the local-fallback engine (the one sanctioned cloud change)', () => {
     expect(
       sttPolicy({ stt_local_fallback: true }, 'cloud-proxy', {
         uiLanguage: 'zh',
@@ -108,7 +108,7 @@ describe('sttPolicy', () => {
     ).toEqual({ localModel: 'eager', localEngine: 'sensevoice', useCloud: true });
   });
 
-  it('cloud zh-UI WITHOUT the pack → unchanged (whisper fallback)', () => {
+  it('cloud zh-UI WITHOUT the pack â†’ unchanged (whisper fallback)', () => {
     expect(
       sttPolicy({ stt_local_fallback: true }, 'cloud-proxy', {
         uiLanguage: 'zh',
@@ -117,7 +117,7 @@ describe('sttPolicy', () => {
     ).toEqual({ localModel: 'eager', localEngine: 'whisper', useCloud: true });
   });
 
-  it('cloud en-UI with the pack → unchanged (whisper fallback)', () => {
+  it('cloud en-UI with the pack â†’ unchanged (whisper fallback)', () => {
     expect(
       sttPolicy({ stt_local_fallback: true }, 'cloud-proxy', {
         uiLanguage: 'en',
@@ -141,3 +141,7 @@ describe('sttPolicy', () => {
     ).toMatchObject({ localEngine: 'whisper' });
   });
 });
+
+
+
+

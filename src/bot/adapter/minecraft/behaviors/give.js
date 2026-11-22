@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/behaviors/give.js — `give` action (261015).
+﻿// src/bot/adapter/minecraft/behaviors/give.js â€” `give` action (261015).
 //
 // Quality pass 8: handing something to the player had no verb of its own.
 // The only way was dropItem, a bare "toss N of X where you stand", and the
@@ -178,3 +178,7 @@ export async function giveAction(args, bot, config, _deps) {
   }
   return `could not give ${item}: ${res}`
 }
+
+
+
+

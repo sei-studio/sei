@@ -1,23 +1,23 @@
-/**
+﻿/**
  * Theme resolution and application.
  *
  * Four named themes ship (260724):
- *   midnight — the dark "Summoning Terminal" hero (formerly 'dark')
- *   ice      — the pastel-sky light theme (formerly 'light')
- *   acorn    — pastel beige/brown light theme
- *   mint     — green light theme
+ *   midnight â€” the dark "Summoning Terminal" hero (formerly 'dark')
+ *   ice      â€” the pastel-sky light theme (formerly 'light')
+ *   acorn    â€” pastel beige/brown light theme
+ *   mint     â€” green light theme
  *
  * - applyTheme(mode): resolves 'system' to midnight/ice via matchMedia and
  *   writes BOTH `data-theme="<name>"` (per-theme token blocks in tokens.css)
  *   and `data-scheme="light|dark"` (scheme-scoped CSS like the HUD grain and
  *   any TS that needs a light/dark decision) on <html>.
  * - subscribeSystemTheme(cb): listens to prefers-color-scheme changes; only
- *   wired when current themeMode === 'system' (UI-SPEC §Theme toggle).
+ *   wired when current themeMode === 'system' (UI-SPEC Â§Theme toggle).
  * - clampThemeMode(v): maps persisted legacy values ('dark'/'light') and any
  *   unknown junk onto the current vocabulary, so old config.json files keep
  *   working.
  *
- * Source: 04-CONTEXT.md D-33, 04-UI-SPEC.md §Interaction Contracts → Theme toggle.
+ * Source: 04-CONTEXT.md D-33, 04-UI-SPEC.md Â§Interaction Contracts â†’ Theme toggle.
  */
 
 export type ThemeName = 'midnight' | 'ice' | 'acorn' | 'mint';
@@ -25,14 +25,14 @@ export type ThemeMode = 'system' | ThemeName;
 
 export const THEME_NAMES: readonly ThemeName[] = ['midnight', 'ice', 'acorn', 'mint'];
 
-/** Which scheme a theme belongs to — midnight is the only dark theme. */
+/** Which scheme a theme belongs to â€” midnight is the only dark theme. */
 export function themeScheme(name: ThemeName): 'light' | 'dark' {
   return name === 'midnight' ? 'dark' : 'light';
 }
 
 /**
  * Coerce a persisted theme_mode value onto the current vocabulary.
- * Legacy 'dark'→'midnight', 'light'→'ice'; anything unknown → 'system'.
+ * Legacy 'dark'â†’'midnight', 'light'â†’'ice'; anything unknown â†’ 'system'.
  */
 export function clampThemeMode(v: unknown): ThemeMode {
   if (v === 'dark') return 'midnight';
@@ -69,3 +69,7 @@ export function subscribeSystemTheme(cb: (resolved: 'light' | 'dark') => void): 
   mql.addEventListener('change', handler);
   return () => mql.removeEventListener('change', handler);
 }
+
+
+
+

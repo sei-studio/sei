@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import { StardewHelloSchema, StardewModConfigSchema, steamLaunchOption, isStardewDashboardSnapshot, STARDEW_MOD_PACK_PATH } from './stardewIpc';
 
 describe('stardewIpc contract', () => {
@@ -17,3 +17,7 @@ describe('stardewIpc contract', () => {
     expect(isStardewDashboardSnapshot({ game: 'minecraft', items: [] })).toBe(false);
   });
 });
+
+
+
+

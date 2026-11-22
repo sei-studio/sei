@@ -1,4 +1,4 @@
-// src/bot/brain/goalLink.js: link a free-text setGoal to the progression spine
+﻿// src/bot/brain/goalLink.js: link a free-text setGoal to the progression spine
 // so JS can clear it when it is really finished (261012).
 //
 // The first version (260618) linked a goal to ONE node: the longest spine key
@@ -129,3 +129,7 @@ export function linkFinished(link, prog) {
   if (!link?.ids?.length || !(done instanceof Set)) return false
   return link.ids.every((id) => done.has(id))
 }
+
+
+
+

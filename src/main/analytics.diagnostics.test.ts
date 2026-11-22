@@ -1,5 +1,5 @@
-/**
- * 260720 — captureDiagnostic / sanitizeDiagnostic: the long-text allowlist
+﻿/**
+ * 260720 â€” captureDiagnostic / sanitizeDiagnostic: the long-text allowlist
  * that lets pre-redacted stderr/stdout tails + error_message past sanitize()'s
  * 200-char truncation (2KB per-field cap since 261031, was 8KB), with the same gating as capture().
  *
@@ -145,3 +145,7 @@ describe('isSignedInAnalytics', () => {
     expect(isSignedInAnalytics()).toBe(false);
   });
 });
+
+
+
+

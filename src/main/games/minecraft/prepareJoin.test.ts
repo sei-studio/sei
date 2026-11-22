@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261027 lazy skins: a Minecraft launch waits for the character's first
  * Gemini skin, bounded, and never fails or blocks on it.
  */
@@ -50,3 +50,7 @@ describe('minecraft prepareJoin', () => {
     warn.mockRestore();
   });
 });
+
+
+
+

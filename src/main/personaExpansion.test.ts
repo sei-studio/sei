@@ -1,4 +1,4 @@
-/**
+﻿/**
  * personaExpansion.test.ts
  *
  * Locks in: buildExpansionUserMessage emits the "Character name: <name>" header
@@ -29,7 +29,7 @@ const FOUR_SECTIONS = [
 const MODEL_OUTPUT = 'PROACTIVENESS: agentic\n\n' + FOUR_SECTIONS;
 
 /** Build a `_clientFactory` fake whose `create` resolves to an async-iterable
- *  Stream of `content_block_delta` events — mirrors the SDK streaming shape. */
+ *  Stream of `content_block_delta` events â€” mirrors the SDK streaming shape. */
 function streamingClientFactory(chunks: string[]) {
   return () => ({
     messages: {
@@ -220,7 +220,7 @@ describe('computeExpansionProgress', () => {
   });
 
   it('labels the current section as headers stream in', () => {
-    expect(computeExpansionProgress('# CORE\nyou are…').section).toBe('Core');
+    expect(computeExpansionProgress('# CORE\nyou areâ€¦').section).toBe('Core');
     expect(computeExpansionProgress('# CORE\nx\n\n# VOICE\nlowercase').section).toBe('Voice & samples');
   });
 
@@ -231,3 +231,7 @@ describe('computeExpansionProgress', () => {
     expect(p.fraction).toBeGreaterThan(0.8);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-version cloud portrait cache (261111, World egress). MAIN PROCESS ONLY.
  *
  * The World card warms a character's data on a hover dwell (renderer
@@ -109,3 +109,7 @@ export function fetchPortraitOnce(
   void p.finally(() => inFlight.delete(key)).catch(() => {});
   return p;
 }
+
+
+
+

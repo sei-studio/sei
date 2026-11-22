@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The desktop hint (product call (261116)): when WorldLink opens or updates
  * the desktop, the app says so in one brief line that hides itself after
  * DESKTOP_HINT_MS, with "Hide windows" (main: seilink:stage minimize_others
@@ -60,3 +60,7 @@ export function openedHintFor(prev: SeilinkHostStatus, next: SeilinkHostStatus, 
 export function updatedHintFor(closed: { characterId: string; desktop: boolean }, savedFor: ReadonlySet<string>, livingId: string | null): boolean {
   return !closed.desktop && livingId === closed.characterId && savedFor.has(closed.characterId);
 }
+
+
+
+

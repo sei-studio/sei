@@ -1,9 +1,9 @@
-/**
- * SummonConflictModal — multi-summon guard popup.
+﻿/**
+ * SummonConflictModal â€” multi-summon guard popup.
  *
  * Shown when the user tries to summon a character whose in-game Minecraft
  * username matches one that's already in the world. Two bots can't share a
- * username — the server kicks the second with `name_taken` — so we block the
+ * username â€” the server kicks the second with `name_taken` â€” so we block the
  * summon and explain why. Dismiss-only (no destructive action); the user
  * resolves it by giving one persona a different in-game username on its page.
  *
@@ -77,3 +77,7 @@ export function SummonConflictModal({
     </ModalShell>
   );
 }
+
+
+
+

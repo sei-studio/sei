@@ -1,4 +1,4 @@
-import path from 'node:path';
+﻿import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyPattern, packFile, tintGlow } from './roomRender';
 import { mipTile, patternTile } from '../../shared/seilinkPatterns';
@@ -36,3 +36,7 @@ describe('look() catalog pieces (261105)', () => {
     expect(Array.from(glow)).toEqual([0, 200, 100, 255, 0, 0, 0, 255]);
   });
 });
+
+
+
+

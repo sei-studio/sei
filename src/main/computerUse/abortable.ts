@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: abort helpers. The stop-button lesson (260617) is that
  * a stop must interrupt every await, not just the one that happens to honor a
  * signal, so the act loop wraps each await in `abortable`, which rejects the
@@ -80,3 +80,7 @@ export function anySignal(signals: Array<AbortSignal | undefined>): AbortSignal 
   }
   return c.signal;
 }
+
+
+
+

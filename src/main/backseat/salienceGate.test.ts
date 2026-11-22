@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The adaptive threshold is the reason backseat can aim for "about a quarter of
  * grids are interesting" without hardcoding a rate. These cover the property
  * that matters: the cutoff tracks the DISTRIBUTION it is shown, so a model that
@@ -118,3 +118,7 @@ describe('scoreFromLogprobs', () => {
     expect(scoreFromLogprobs({ message: { content: 'maybe' } })).toBeNull();
   });
 });
+
+
+
+

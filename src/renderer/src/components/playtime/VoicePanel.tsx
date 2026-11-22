@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime > Voice (261110, product call 261110): where companions' voices
  * come from off the Sei cloud, moved here from Settings > Voice.
  *
@@ -215,7 +215,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
                 <Row key={row.id} label={<span className={styles.muted}>{t(row.label)}</span>}>
                   {st?.state === 'downloading' ? (
                     <span className={`${styles.mono} ${styles.warn}`} role="status">
-                      {t('Downloading… {pct}%', { pct: st.pct ?? 0 })}
+                      {t('Downloadingâ€¦ {pct}%', { pct: st.pct ?? 0 })}
                     </span>
                   ) : st?.state === 'ready' ? (
                     <>
@@ -231,7 +231,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
                       disabled={!st}
                       onClick={() => setPendingPack({ id: row.id, name: t(row.label) })}
                     >
-                      {t('Download…')}
+                      {t('Downloadâ€¦')}
                     </Button>
                   )}
                 </Row>
@@ -242,7 +242,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
         <Row label={t('Voice recognition')}>
           {packStates[SENSEVOICE_PACK_ID]?.state === 'downloading' ? (
             <span className={`${styles.mono} ${styles.warn}`} role="status">
-              {t('Downloading… {pct}%', { pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0 })}
+              {t('Downloadingâ€¦ {pct}%', { pct: packStates[SENSEVOICE_PACK_ID]?.pct ?? 0 })}
             </span>
           ) : null}
           <select
@@ -308,3 +308,7 @@ export function VoicePanel({ mode, cfg, persist, signedIn }: VoicePanelProps): R
     </section>
   );
 }
+
+
+
+

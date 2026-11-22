@@ -1,4 +1,4 @@
-// 260828: pins the shared llm-section builder used by BOTH bot credential
+﻿// 260828: pins the shared llm-section builder used by BOTH bot credential
 // paths (summon init payload AND the mid-session backend-switch message).
 // See src/main/llmInitSection.ts for why the two paths must agree.
 
@@ -53,3 +53,7 @@ describe('buildLlmInitSection', () => {
     expect(out).toEqual({ provider: 'ollama', api_key: '', model: DEFAULT_MODELS.ollama });
   });
 });
+
+
+
+

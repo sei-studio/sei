@@ -1,13 +1,13 @@
-// src/bot/adapter/minecraft/dashboard/activityLabel.js — current tool call →
+﻿// src/bot/adapter/minecraft/dashboard/activityLabel.js â€” current tool call â†’
 // natural-language activity line for the Minecraft dashboard (260721).
 //
 // Vocabulary mirrors the registered world actions in
 // src/bot/adapter/minecraft/registry.js. The style is deliberately lowercase
-// with a trailing "..." ("mining stone...", "following you...") — this string
+// with a trailing "..." ("mining stone...", "following you...") â€” this string
 // is user copy, so no em dashes. Unknown tools fall back to the humanized
 // tool name so a new registry action never breaks the dashboard.
 
-/** "oak_log" / "minecraft:oak_log" → "oak log". Null for non-strings. */
+/** "oak_log" / "minecraft:oak_log" â†’ "oak log". Null for non-strings. */
 function term(args, keys) {
   if (!args || typeof args !== 'object') return null
   for (const k of keys) {
@@ -19,7 +19,7 @@ function term(args, keys) {
   return null
 }
 
-/** Naive plural for a block/item term: "oak log" → "oak logs". */
+/** Naive plural for a block/item term: "oak log" â†’ "oak logs". */
 function plural(t) {
   return /s$/.test(t) ? t : `${t}s`
 }
@@ -30,7 +30,7 @@ function num(args, key) {
   return typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null
 }
 
-/** "someToolName" → "some tool name...". */
+/** "someToolName" â†’ "some tool name...". */
 function humanize(name) {
   const words = String(name)
     .replace(/[_-]+/g, ' ')
@@ -42,8 +42,8 @@ function humanize(name) {
 
 /**
  * Natural-language activity line for the currently-dispatching tool call.
- * `name` null (loop drained to idle) → "idling".
- * `name` 'thinking' (a player message is being processed) → "thinking".
+ * `name` null (loop drained to idle) â†’ "idling".
+ * `name` 'thinking' (a player message is being processed) â†’ "thinking".
  * @param {string|null|undefined} name
  * @param {Record<string, unknown>|undefined} [args]
  * @returns {string}
@@ -134,3 +134,7 @@ export function activityLabel(name, args) {
       return humanize(name)
   }
 }
+
+
+
+

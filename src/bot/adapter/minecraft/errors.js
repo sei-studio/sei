@@ -1,4 +1,4 @@
-// src/bot/adapter/minecraft/errors.js — Minecraft connect-error classification
+﻿// src/bot/adapter/minecraft/errors.js â€” Minecraft connect-error classification
 // (contract v2 classifyConnectError, M0 260908). Pure; used by runtime.js
 // (before an adapter instance exists) and declared on the adapter.
 //
@@ -22,3 +22,7 @@ export function classifyConnectError(message) {
   if (m.startsWith('LAN_NOT_OPEN')) return 'LAN_NOT_OPEN'
   return 'BOT_START_TIMEOUT'
 }
+
+
+
+

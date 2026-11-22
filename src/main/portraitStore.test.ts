@@ -1,5 +1,5 @@
-/**
- * Phase 11 Plan 11-06 Task 2 — portraitStore.applyPortrait + removePortrait.
+﻿/**
+ * Phase 11 Plan 11-06 Task 2 â€” portraitStore.applyPortrait + removePortrait.
  *
  * Verifies:
  *   - applyPortrait writes a file at paths.portraitPath(uuid) + updates
@@ -36,7 +36,7 @@ vi.mock('electron', () => ({
 // saveCharacter fires a best-effort, un-awaited cloud-mirror enqueue that
 // writes <profileRoot>/sync-queue.json via tmp+rename. With the tmpdir torn
 // down in afterEach, that late rename can surface as an ENOENT unhandled
-// rejection. We don't exercise cloud sync here — stub the queue inert.
+// rejection. We don't exercise cloud sync here â€” stub the queue inert.
 vi.mock('./cloud/syncQueue', () => ({
   enqueueUpsert: vi.fn(async () => {}),
   enqueueDelete: vi.fn(async () => {}),
@@ -81,7 +81,7 @@ function makeChar(id: string): Character {
   };
 }
 
-// ── PNG fixture (mirrors portraitImageUtil.test.ts) ────────────────────────
+// â”€â”€ PNG fixture (mirrors portraitImageUtil.test.ts) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CRC_TABLE = (() => {
@@ -204,7 +204,7 @@ describe('removePortrait', () => {
   });
 });
 
-// ── Versions (260909) ─────────────────────────────────────────────────────
+// â”€â”€ Versions (260909) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** A PNG whose IDAT differs per `tag` so version bytes are distinguishable. */
 function buildTaggedPng(tag: number): Buffer {
@@ -401,7 +401,7 @@ describe('portrait versions', () => {
   });
 });
 
-// ── Synced metadata vs local sidecars (second-device reconciliation) ──────
+// â”€â”€ Synced metadata vs local sidecars (second-device reconciliation) â”€â”€â”€â”€â”€â”€
 //
 // `metadata.portrait_versions` / `portrait_active` ride the cloud row verbatim
 // but the `<uuid>-v<n>.png` sidecars are local-only, so a second device (or a
@@ -490,3 +490,7 @@ describe('portrait versions: metadata synced without sidecars', () => {
     expect(next.regenCount).toBe(2);
   });
 });
+
+
+
+

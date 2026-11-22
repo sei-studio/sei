@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Game pack store (260908, game-adapters M0b): downloads a game adapter's
  * runtime (the `packs/<game>` workspace's production node_modules, natives
  * rebuilt for Electron) on first use and hands the bot a root to resolve it
@@ -59,7 +59,7 @@ import {
 
 export type { GameId, GamePackState } from '../../shared/gamePacks';
 
-// ── Environment (overridable for tests) ─────────────────────────────────────
+// â”€â”€ Environment (overridable for tests) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface GamePackEnv {
   /** app.isPackaged: false = dev short-circuit unless SEI_GAME_PACKS_DIR is set. */
@@ -123,7 +123,7 @@ export function _setGamePackEnvForTest(override: Partial<GamePackEnv> | null): v
   inflight.clear();
 }
 
-// ── Paths ───────────────────────────────────────────────────────────────────
+// â”€â”€ Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function gameDir(e: GamePackEnv, game: GameId): string {
   return path.join(e.storeRoot, game);
@@ -179,7 +179,7 @@ async function writeInstalled(e: GamePackEnv, rec: InstalledRecord): Promise<voi
   await writeFile(installedPath(e, rec.game), JSON.stringify(rec, null, 2));
 }
 
-// ── Live state + push fan-out ───────────────────────────────────────────────
+// â”€â”€ Live state + push fan-out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const live = new Map<GameId, GamePackState>();
 const listeners = new Set<(game: GameId, state: GamePackState) => void>();
@@ -217,7 +217,7 @@ export async function getPackState(game: GameId): Promise<GamePackState> {
   return { kind: 'missing' };
 }
 
-// ── ensurePack ──────────────────────────────────────────────────────────────
+// â”€â”€ ensurePack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface EnsurePackOptions {
   onProgress?: (received: number, total: number) => void;
@@ -329,7 +329,7 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// ── Network ─────────────────────────────────────────────────────────────────
+// â”€â”€ Network â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * One fetch attempt with a connect (headers) timeout and the caller's abort
@@ -451,7 +451,7 @@ async function downloadZip(
   throw new Error(`download failed: ${errText(lastErr ?? 'no sources')}`);
 }
 
-// ── Extract ─────────────────────────────────────────────────────────────────
+// â”€â”€ Extract â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Pure: is this zip entry name safe to extract under a target dir? */
 export function isSafeZipEntryName(name: string): boolean {
@@ -560,7 +560,7 @@ async function extractZip(
   return finalRoot;
 }
 
-// ── Integrity ───────────────────────────────────────────────────────────────
+// â”€â”€ Integrity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** The game's required payload files that are not regular files under root. */
 async function missingPayload(root: string, game: GameId): Promise<string[]> {
@@ -623,3 +623,7 @@ async function pruneOtherVersions(e: GamePackEnv, game: GameId, keep: string): P
     await rm(path.join(gameDir(e, game), n), { recursive: true, force: true }).catch(() => {});
   }
 }
+
+
+
+

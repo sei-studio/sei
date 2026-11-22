@@ -1,5 +1,5 @@
-/**
- * librarySync — mirror the local Home roster into the cloud `character_library`
+﻿/**
+ * librarySync â€” mirror the local Home roster into the cloud `character_library`
  * table (migration 20260801000000).
  *
  * WHY THIS EXISTS. `characters.owner` records who AUTHORED a character, which
@@ -8,7 +8,7 @@
  * (UserConfig.added_default_ids / added_world_ids), so nothing server-side knew
  * an account had them. Analytics could only INFER a roster from `character_id`
  * event properties, which sees a character exactly when it is summoned, called,
- * or played in a minigame — never when it is merely texted, and never at all
+ * or played in a minigame â€” never when it is merely texted, and never at all
  * for a user who opted out of analytics.
  *
  * WHOLE-SET RECONCILE, NOT PER-EVENT DELTAS. Roster membership is written from
@@ -18,7 +18,7 @@
  * a reconcile: this module reads the CURRENT config, diffs it against the
  * user's cloud rows, and writes the difference. That makes it idempotent,
  * self-healing (a write that failed offline is repaired by the next pass), and
- * correct for existing installs whose roster predates this table entirely —
+ * correct for existing installs whose roster predates this table entirely â€”
  * their first sign-in after upgrading uploads the whole thing.
  *
  * OWN CHARACTERS ARE NOT RECORDED. They are already discoverable through
@@ -42,7 +42,7 @@ interface RosterRow {
  * collision: the defaults-to-World migration (migration.ts
  * runDefaultsToWorldMigration) moves invited defaults across, and an install
  * caught mid-migration can briefly carry an id in both lists. Exported for
- * tests — pure, no IO.
+ * tests â€” pure, no IO.
  */
 export function rosterFromConfig(cfg: Pick<UserConfig, 'added_default_ids' | 'added_world_ids'>): RosterRow[] {
   const out = new Map<string, RosterRow>();
@@ -54,7 +54,7 @@ export function rosterFromConfig(cfg: Pick<UserConfig, 'added_default_ids' | 'ad
 /**
  * The writes needed to turn `remote` into `local`. A row whose SOURCE changed
  * is re-inserted, not left alone: the primary key is (user_id, character_id),
- * so the upsert corrects it in place. Exported for tests — pure, no IO.
+ * so the upsert corrects it in place. Exported for tests â€” pure, no IO.
  */
 export function diffRoster(
   local: RosterRow[],
@@ -106,7 +106,7 @@ async function reconcileOnce(reason: string): Promise<void> {
     const { getClient, getAuthedClient } = await import('../auth/supabaseClient');
     const session = (await getClient().auth.getSession()).data.session;
     const userId = session?.user?.id;
-    if (!userId || !session?.access_token) return; // signed out — nothing to mirror
+    if (!userId || !session?.access_token) return; // signed out â€” nothing to mirror
     const db = getAuthedClient(session.access_token);
 
     const { loadConfig } = await import('../configStore');
@@ -140,3 +140,7 @@ async function reconcileOnce(reason: string): Promise<void> {
     console.warn(`[sei] librarySync(${reason}) threw: ${(err as Error).message}`);
   }
 }
+
+
+
+

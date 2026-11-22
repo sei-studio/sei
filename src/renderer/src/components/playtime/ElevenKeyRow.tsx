@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The ElevenLabs key row (Playtime, 261110; moved from Settings > Voice).
  * Write-only: the raw key never comes back to the renderer, only whether one
  * is saved. 'byok' (an off-cloud setup speaking through the key) warns when
@@ -117,7 +117,7 @@ export function ElevenKeyRow({ mode }: { mode: 'byok' | 'cloud-optional' }): Rea
         ) : (
           <>
             <span className={hasKey || mode === 'cloud-optional' ? styles.mono : `${styles.mono} ${styles.warn}`}>
-              {hasKey ? '•'.repeat(KEY_BULLETS) : t('Not set')}
+              {hasKey ? 'â€¢'.repeat(KEY_BULLETS) : t('Not set')}
             </span>
             {hasKey ? (
               <Button kind="quiet" size="sm" onClick={() => void remove()}>
@@ -138,3 +138,7 @@ export function ElevenKeyRow({ mode }: { mode: 'byok' | 'cloud-optional' }): Rea
     </>
   );
 }
+
+
+
+

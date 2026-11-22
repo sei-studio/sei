@@ -1,5 +1,5 @@
-/**
- * voiceBridge (260705) — tiny mutable seam between the chat store and the
+﻿/**
+ * voiceBridge (260705) â€” tiny mutable seam between the chat store and the
  * voice store, so neither imports the other (both are module-init singletons;
  * a direct circular import would make their init order load-bearing).
  *
@@ -29,14 +29,14 @@ interface VoiceHooks {
   /** Is a voice call currently open with this character? */
   isCallActive(characterId: string): boolean;
   /**
-   * The companion asked to hang up (end_call() — via the send() result flag or
+   * The companion asked to hang up (end_call() â€” via the send() result flag or
    * the voice:call-ended push). Finish speaking what's queued, then end.
    */
   onRemoteEndCall(characterId: string): void;
   /**
    * A chat turn for this companion FAILED for real (not an interrupt). Returns
-   * true when the voice director owns the failure — it is retrying the turn
-   * and showing "Reconnecting…", so the chat surface must NOT append its
+   * true when the voice director owns the failure â€” it is retrying the turn
+   * and showing "Reconnectingâ€¦", so the chat surface must NOT append its
    * unspoken apology bubble. False (no call, or not a director-dispatched
    * turn) keeps the chat surface's normal failure copy.
    */
@@ -115,3 +115,7 @@ export function voiceCallPeers(characterId: string): string[] {
     return [];
   }
 }
+
+
+
+

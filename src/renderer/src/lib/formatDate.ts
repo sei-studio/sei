@@ -1,13 +1,13 @@
-import { uiLocale } from './i18n';
+﻿import { uiLocale } from './i18n';
 
 /**
- * formatDate — ISO-timestamp → "Jun 6, 2026" formatter that always renders in
+ * formatDate â€” ISO-timestamp â†’ "Jun 6, 2026" formatter that always renders in
  * the user's LOCAL timezone.
  *
  * Extracted from CharacterPage.tsx (the "Bonded" / "Last launch" stat lines) to
  * fix a timezone bug: a date-only value like "2026-06-06" was parsed by
  * `new Date("2026-06-06")` as UTC midnight, which in a negative-offset zone
- * (e.g. US Pacific) rolls back to the previous calendar day — the card showed
+ * (e.g. US Pacific) rolls back to the previous calendar day â€” the card showed
  * "Jun 5, 2026" at 12:45 AM Pacific on Jun 6. Full ISO timestamps (with a time
  * component) already localize correctly; only bare date strings needed the fix.
  *
@@ -44,3 +44,7 @@ function parseLocalDate(iso: string): Date {
   }
   return new Date(iso);
 }
+
+
+
+

@@ -1,17 +1,17 @@
-// 260611 regression — zombie loop after end_loop with a live long-runner,
+﻿// 260611 regression â€” zombie loop after end_loop with a live long-runner,
 // and the 429 rate-limit redrive.
 //
-// Playlog 25770cd6-…-2026-06-11T20-29-34: the model answered a player chat
+// Playlog 25770cd6-â€¦-2026-06-11T20-29-34: the model answered a player chat
 // with end_loop while `follow` was in flight. R3 set only `loop.isTerminal`;
 // the still-unsettled in_flight made every continuation tail return
-// "suspended", and the eventual settle was dropped by the isTerminal guard —
+// "suspended", and the eventual settle was dropped by the isTerminal guard â€”
 // so the loop was never torn down. currentLoop stayed set and THREE
 // subsequent player messages were swallowed (40s of silence) until the
 // player punched the bot (P0 attack teardown).
 //
 // Same harness pattern as orchestrator.visualize.test.js: real orchestrator,
 // scripted provider, mock adapter whose `follow` never settles (matching the
-// real follow behavior — a background trail with no natural completion).
+// real follow behavior â€” a background trail with no natural completion).
 
 import os from 'node:os'
 import path from 'node:path'
@@ -83,10 +83,10 @@ describe('260611 zombie-loop regression', () => {
   it('end_loop while follow is in flight tears the loop down; the next chat gets answered', async () => {
     _setTickIntervalForTests(10_000_000) // park the 10s auto-tick
     const provider = makeProvider([
-      // Turn 1 (chat "lets go explore"): start following → loop suspends.
+      // Turn 1 (chat "lets go explore"): start following â†’ loop suspends.
       { text: 'fine.', toolUses: [{ id: 'fu1', name: 'follow', input: { player: 'Steve' } }] },
       // Turn 2 (chat while following, delivered via the action-tick path):
-      // the model replies AND ends the loop — the playlog shape.
+      // the model replies AND ends the loop â€” the playlog shape.
       { text: 'jungle turned to plains. boring.', toolUses: [{ id: 'el1', name: 'end_loop', input: {} }] },
       // Turn 3 (the chat that used to be swallowed by the zombie).
       { text: 'you called it boring first.', toolUses: [{ id: 'el2', name: 'end_loop', input: {} }] },
@@ -112,7 +112,7 @@ describe('260611 zombie-loop regression', () => {
     expect(provider.calls.length).toBe(3) // the third chat reached the model
   })
 
-  it('261011: a chat answered with only end_loop stays silent — the scratchpad is never spoken', async () => {
+  it('261011: a chat answered with only end_loop stays silent â€” the scratchpad is never spoken', async () => {
     // The 260703 salvage spoke the text output when a player line ended in
     // end_loop with no say(). Quality eval 2026-10-11 (Haiku 5.5): 8 of 8
     // salvages were private reasoning ("alex has been repeating the same
@@ -153,10 +153,10 @@ describe('260611 zombie-loop regression', () => {
     await orch.handleDispatch('sei:chat_received', chat('thank you. it is my lifelong work'))
     expect(orch.currentLoop).toBeNull() // loop died on the 429
 
-    // No redrive yet (window not elapsed)…
+    // No redrive yet (window not elapsed)â€¦
     const before = reenqueued.filter(([ev]) => ev === 'sei:chat_received').length
     expect(before).toBe(0)
-    // …after retry_after (15s) + pad, the original chat is re-enqueued.
+    // â€¦after retry_after (15s) + pad, the original chat is re-enqueued.
     await vi.advanceTimersByTimeAsync(16_000)
     const redriven = reenqueued.filter(([ev]) => ev === 'sei:chat_received')
     expect(redriven.length).toBe(1)
@@ -167,7 +167,7 @@ describe('260611 zombie-loop regression', () => {
     // The 2s cap on quit()'s teardown defer predates realistic typing. With
     // config.realistic_typing on (the default), reading + typing delay alone
     // can reach 2500 + 5000 = 7500ms before the first goodbye segment even
-    // sends, and a multi-sentence farewell adds (segments-1)*550ms on top —
+    // sends, and a multi-sentence farewell adds (segments-1)*550ms on top â€”
     // comfortably over the old 2s cap. This reproduces exactly that: a long
     // trigger message (caps readingDelayMs) + a long, multi-sentence farewell
     // (caps typingDelayMs and adds segment stagger) and asserts onQuitRequested
@@ -213,23 +213,23 @@ describe('260611 zombie-loop regression', () => {
     // reached chat (the goodbye-before-teardown guarantee this defer exists for).
     await vi.advanceTimersByTimeAsync(200)
     expect(onQuitRequested).toHaveBeenCalledTimes(1)
-    // postProcessSay may normalize casing — compare case-insensitively.
+    // postProcessSay may normalize casing â€” compare case-insensitively.
     const said = adapter.chat.mock.calls.map((c) => c[0]).join(' ').toLowerCase()
     expect(said).toContain('see you around sometime soon')
   })
 })
 
-// 260703 — stale pre-interrupt action_complete must not hijack a batch drain,
+// 260703 â€” stale pre-interrupt action_complete must not hijack a batch drain,
 // and a loop torn down mid-batch must still run its model-ordered tools.
 //
 // Live-session failure (cloud proxy, claude-haiku-4-5): the player said "go pick
 // up the full diamond armor set" while a `goTo` was in flight, then "equip it".
 // The goTo settled (tick-claimed) BEFORE the "equip it" interrupt folded, so its
-// action_complete sat FIFO-queued at P2.1. The interrupt turn produced a batch —
+// action_complete sat FIFO-queued at P2.1. The interrupt turn produced a batch â€”
 // say() + equip(helmet/chest/legs/boots). The helmet dispatched (remaining 3
 // equips stashed on loop._pendingToolUses), but the STALE tick-claimed
 // "goTo -> reached" settle drained ahead of the helmet's own settle and drove a
-// full LLM iteration narrating it — which then died on a 502/timeout, dropping
+// full LLM iteration narrating it â€” which then died on a 502/timeout, dropping
 // the 3 remaining equips silently. See orchestrator.js handleActionCompleteTickClaimed
 // (fix a) and drainPendingToolsOnTeardown (fix b).
 
@@ -264,7 +264,7 @@ function makeBatchAdapter() {
   return { adapter, executed, resolveGoTo: (v) => goToResolve && goToResolve(v) }
 }
 
-// Flush pending settle microtasks (registry promise → settle handler → reenqueue).
+// Flush pending settle microtasks (registry promise â†’ settle handler â†’ reenqueue).
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
 // Drive the recorded sei:action_complete events back through handleDispatch in
@@ -282,7 +282,7 @@ async function pumpActionCompletes(orch, reenqueued) {
 }
 
 describe('260703 stale pre-interrupt action_complete + mid-batch teardown drain', () => {
-  it('(i) a stale tick-claimed settle does NOT stall the equip batch — all four equips execute, no iteration narrates it', async () => {
+  it('(i) a stale tick-claimed settle does NOT stall the equip batch â€” all four equips execute, no iteration narrates it', async () => {
     _setTickIntervalForTests(10_000_000) // park the 10s auto-tick
     const { adapter, executed, resolveGoTo } = makeBatchAdapter()
     const reenqueued = []
@@ -299,11 +299,11 @@ describe('260703 stale pre-interrupt action_complete + mid-batch teardown drain'
       ],
     }
     const provider = makeProvider([
-      // Call 1 (fresh loop, chat "come pick up the armor"): start goTo → suspend.
+      // Call 1 (fresh loop, chat "come pick up the armor"): start goTo â†’ suspend.
       { text: '', toolUses: [{ id: 'go1', name: 'goTo', input: { x: -28, y: 65, z: -10 } }] },
       // Call 2 (the "equip it" interrupt, delivered via the action-tick path
-      // because goTo is in flight): the goTo settles DURING this call — exactly
-      // as in the incident — then the model returns the say + 4-equip batch.
+      // because goTo is in flight): the goTo settles DURING this call â€” exactly
+      // as in the incident â€” then the model returns the say + 4-equip batch.
       async () => {
         resolveGoTo('reached')  // goTo settles (tick-claimed) before the batch dispatches
         await flush()           // let its settle handler null inFlight + enqueue the stale action_complete
@@ -321,7 +321,7 @@ describe('260703 stale pre-interrupt action_complete + mid-batch teardown drain'
     await orch.handleDispatch('sei:chat_received', chat('come pick up the full diamond armor set'))
     expect(orch.currentLoop?.inFlight?.name).toBe('goTo')
 
-    // "equip it" lands while goTo is in flight → Change-1 tick path. Inside the
+    // "equip it" lands while goTo is in flight â†’ Change-1 tick path. Inside the
     // resulting LLM call the goTo settles, then the batch dispatches the helmet.
     await orch.handleDispatch('sei:chat_received', chat('equip it'))
     await flush()
@@ -335,7 +335,7 @@ describe('260703 stale pre-interrupt action_complete + mid-batch teardown drain'
     // helmet's settle drain the remaining chest/legs/boots equips.
     await pumpActionCompletes(orch, reenqueued)
 
-    // All four armor pieces were equipped — the batch was NOT stalled.
+    // All four armor pieces were equipped â€” the batch was NOT stalled.
     const equipItems = executed.filter((e) => e.name === 'equip').map((e) => e.args.item)
     expect(equipItems).toEqual([
       'diamond_helmet', 'diamond_chestplate', 'diamond_leggings', 'diamond_boots',
@@ -385,14 +385,18 @@ describe('260703 stale pre-interrupt action_complete + mid-batch teardown drain'
     await orch.handleDispatch('sei:attacked', { attackerLabel: 'zombie', attackerKind: 'mob' })
     await flush()
 
-    // The three queued equips ran directly — the player's ordered actions still
+    // The three queued equips ran directly â€” the player's ordered actions still
     // happened even though the loop died.
     const equipItems = executed.filter((e) => e.name === 'equip').map((e) => e.args.item)
     expect(equipItems).toEqual(['diamond_helmet', 'diamond_chestplate', 'diamond_leggings'])
-    // The drain used NO LLM — exactly one personality call was ever made.
+    // The drain used NO LLM â€” exactly one personality call was ever made.
     expect(provider.calls.length).toBe(1)
     // Loop is gone; the attack was re-enqueued for a fresh reaction loop.
     expect(orch.currentLoop).toBeNull()
     expect(reenqueued.some((e) => e.ev === 'sei:attacked')).toBe(true)
   })
 })
+
+
+
+

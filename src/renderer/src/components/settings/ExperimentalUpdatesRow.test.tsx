@@ -1,5 +1,5 @@
-/**
- * 261103: Settings → About "Experimental updates" (config key
+﻿/**
+ * 261103: Settings â†’ About "Experimental updates" (config key
  * advanced_updates). Turning it ON opens an inline confirm and saves only on
  * Continue; Cancel saves nothing; turning it OFF saves at once.
  *
@@ -146,8 +146,12 @@ describe('ExperimentalUpdatesRow', () => {
     ];
     for (const en of copy) {
       expect(ZH[en], en).toBeTruthy();
-      expect(en).not.toContain('—');
-      expect(ZH[en]).not.toContain('—');
+      expect(en).not.toContain('â€”');
+      expect(ZH[en]).not.toContain('â€”');
     }
   });
 });
+
+
+
+

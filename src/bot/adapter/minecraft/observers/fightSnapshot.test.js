@@ -1,4 +1,4 @@
-// 261106 (quality pass 44): the snapshot while attackEntity runs.
+﻿// 261106 (quality pass 44): the snapshot while attackEntity runs.
 //
 // combat_night-01 (11-03 dev scorecard, 02:29): her attack was on a zombie in
 // the river. Water blocks the sight filter, so the snapshot showed
@@ -44,7 +44,7 @@ describe('snapshot while attackEntity runs (261106)', () => {
     const snap = composeSnapshot(bot, { inFlight, pinUsername: 'Alex' })
     const flight = snap.split('\n').find((l) => l.startsWith('in_flight:'))
     expect(flight).toMatch(/^in_flight: attackEntity\(zombie\) started=1\d\.\ds ago, 1 killed so far\. After this kill it goes on by itself to the zombie 11 blocks from Alex\.$/)
-    expect(flight).not.toMatch(/—/)
+    expect(flight).not.toMatch(/â€”/)
     // The zombie it is on shows despite the water; the other one stays hidden.
     expect(snap).toMatch(/ zombie @6,61,0 \(7 from you, 9 from Alex\)/)
     expect(snap).not.toMatch(/zombie @7,61,3/)
@@ -57,3 +57,7 @@ describe('snapshot while attackEntity runs (261106)', () => {
     expect(snap).not.toMatch(/zombie @6,61,0/)
   })
 })
+
+
+
+

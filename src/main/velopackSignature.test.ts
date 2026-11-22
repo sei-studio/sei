@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   AUTHENTICODE_SCRIPT,
   authenticodeEnv,
@@ -94,10 +94,14 @@ describe('AUTHENTICODE_SCRIPT', () => {
     expect(AUTHENTICODE_SCRIPT).toContain('$env:SEI_SIG_FILES');
     expect(AUTHENTICODE_SCRIPT).toContain('$env:SEI_SIG_PACKAGE');
     expect(AUTHENTICODE_SCRIPT).toContain('-LiteralPath');
-    expect(authenticodeEnv(['C:\\游戏\\Sei 测试\\a.exe', 'b.exe'], 'p.nupkg')).toEqual({
-      SEI_SIG_FILES: 'C:\\游戏\\Sei 测试\\a.exe\nb.exe',
+    expect(authenticodeEnv(['C:\\æ¸¸æˆ\\Sei æµ‹è¯•\\a.exe', 'b.exe'], 'p.nupkg')).toEqual({
+      SEI_SIG_FILES: 'C:\\æ¸¸æˆ\\Sei æµ‹è¯•\\a.exe\nb.exe',
       SEI_SIG_PACKAGE: 'p.nupkg',
     });
     expect(authenticodeEnv([])).toEqual({ SEI_SIG_FILES: '', SEI_SIG_PACKAGE: '' });
   });
 });
+
+
+
+

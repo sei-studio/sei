@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The guided room setup (261106, first-link v3, product feedback: set her room up step
  * by step, starting with the room). Pure helpers for RoomEditor's guided
  * mode; the editor owns the state and the UI.
@@ -65,3 +65,7 @@ export function withoutSetup(state: RoomState): RoomState {
   const { setup: _drop, ...rest } = state;
   return rest;
 }
+
+
+
+

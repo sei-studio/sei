@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Where the message-tail cache breakpoint goes.
  *
  * This is worth pinning because getting it wrong is invisible: the request
@@ -63,7 +63,7 @@ describe('an image-per-turn surface (backseat)', () => {
   /**
    * The shape backseatService.runTurn builds: a stable transcript, then one
    * volatile message carrying a freshly composited grid. The breakpoint belongs
-   * at the end of the transcript, NOT on the grid — that message never repeats,
+   * at the end of the transcript, NOT on the grid â€” that message never repeats,
    * so a breakpoint there is a guaranteed write with a guaranteed zero read,
    * while the transcript above it re-bills in full for want of one.
    */
@@ -232,3 +232,7 @@ describe('a voice call turn (261024)', () => {
     expect(messages).toHaveLength(3);
   });
 });
+
+
+
+

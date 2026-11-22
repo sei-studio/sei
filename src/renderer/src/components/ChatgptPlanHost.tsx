@@ -1,5 +1,5 @@
-/**
- * ChatgptPlanHost — the app-wide ChatGPT-plan dialogs (261017, issue #46).
+﻿/**
+ * ChatgptPlanHost â€” the app-wide ChatGPT-plan dialogs (261017, issue #46).
  * Mounted once in App.tsx; subscribes the store to main's status push.
  *
  * Two dialogs from OpenAI's UI guidelines:
@@ -170,3 +170,7 @@ export function ChatgptPlanHost(): React.ReactElement | null {
 
   return null;
 }
+
+
+
+

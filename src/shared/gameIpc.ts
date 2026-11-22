@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Game adapters: shared game-neutral contracts (M0, 260908).
  *
  * One bot process per character regardless of game; main's supervisor forks
@@ -19,15 +19,15 @@ import type { DstJoinTarget, DstWorldState, DstDashboardSnapshot } from './dstIp
 import type { StardewJoinTarget, StardewWorldState, StardewDashboardSnapshot } from './stardewIpc';
 
 /** The bot-backed games. Mirrors GAME_KINDS in src/bot/config.js (the bot is
- *  plain ESM JS and cannot import this file) — keep both lists in sync. */
-export type GameId = 'minecraft' | 'stardew' | 'dontstarve';
-export const GAME_IDS: readonly GameId[] = Object.freeze(['minecraft', 'stardew', 'dontstarve']);
+ *  plain ESM JS and cannot import this file) â€” keep both lists in sync. */
+export type GameId = 'minecraft' | 'stardew' | 'dontstarve' | 'CONNECT4' | 'BATTLESHIP';
+export const GAME_IDS: readonly GameId[] = Object.freeze(['minecraft', 'stardew', 'dontstarve', 'CONNECT4', 'BATTLESHIP']);
 
 export function isGameId(v: unknown): v is GameId {
   return typeof v === 'string' && (GAME_IDS as readonly string[]).includes(v);
 }
 
-/* ── Join targets (main → bot init payload) ─────────────────────────────── */
+/* â”€â”€ Join targets (main â†’ bot init payload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /** What the Minecraft runtime needs to join: the cached LAN port + MOTD, the
  *  player's own username (player recognition), and the skin server URL
@@ -47,9 +47,11 @@ export type GenericJoinTarget = Record<string, unknown>;
 export type JoinTarget =
   | { game: 'minecraft'; target: MinecraftJoinTarget }
   | { game: 'stardew'; target: StardewJoinTarget }
-  | { game: 'dontstarve'; target: DstJoinTarget };
+  | { game: 'dontstarve'; target: DstJoinTarget }
+  | { game: 'CONNECT4'; target: GenericJoinTarget }
+  | { game: 'BATTLESHIP'; target: GenericJoinTarget };
 
-/* ── World state (main → renderer, world:state) ─────────────────────────── */
+/* â”€â”€ World state (main â†’ renderer, world:state) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Game-neutral "is a world open" shape for the non-Minecraft games. `open`
@@ -68,14 +70,17 @@ export type WorldState =
   // `game_running_no_save` are the two extra states the launch panel shows.
   | ({ game: 'stardew' } & StardewWorldState)
   // M2 (260908): DST refines its member (worldName/day/season/phase/caves/
-  // players on `open`, plus `not_installed`); `open` still carries `label`
-  // for the generic consumers. See src/shared/dstIpc.ts.
-  | DstWorldState;
+  // players on `open`, plus `label` for the generic consumers. See src/shared/dstIpc.ts.
+  | DstWorldState
+  // Forza 4 (Connect Four) minigame: no world, always 'closed' on world:get.
+  | ({ game: 'CONNECT4' } & GenericWorldState)
+  // Battleship minigame: no world, always 'closed' on world:get.
+  | ({ game: 'BATTLESHIP' } & GenericWorldState);
 
 /** All games' current world states, keyed by game (the world:get snapshot). */
 export type WorldStates = Partial<Record<GameId, WorldState>>;
 
-/* ── Dashboard snapshots (bot → main → renderer) ────────────────────────── */
+/* â”€â”€ Dashboard snapshots (bot â†’ main â†’ renderer) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * The minimum every game's telemetry ships. `activity` is the lowercase
@@ -98,7 +103,7 @@ export type GameDashboardSnapshot =
   | StardewDashboardSnapshot
   | GenericGameDashboardSnapshot;
 
-/* ── Channels ───────────────────────────────────────────────────────────── */
+/* â”€â”€ Channels â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 /**
  * Generic per-game channels. `lan:*` and `mcdash:*` stay for Minecraft (one
@@ -109,21 +114,21 @@ export const GameIpcChannel = {
   world: {
     /** Push: WorldState (on change, per game). */
     state: 'world:state',
-    /** Invoke: () → WorldStates snapshot. */
+    /** Invoke: () â†’ WorldStates snapshot. */
     get: 'world:get',
-    /** Invoke: (game: GameId) → WorldState, one fresh detection pass. */
+    /** Invoke: (game: GameId) â†’ WorldState, one fresh detection pass. */
     checkNow: 'world:check-now',
   },
   gamedash: {
-    /** Invoke: (characterId) → GameDashboardSnapshot | null. */
+    /** Invoke: (characterId) â†’ GameDashboardSnapshot | null. */
     get: 'gamedash:get',
-    /** Invoke: ({characterId, watching}) → void. */
+    /** Invoke: ({characterId, watching}) â†’ void. */
     setWatching: 'gamedash:set-watching',
     /** Push: GameDashboardSnapshot. */
     snapshot: 'gamedash:snapshot',
-    /** Invoke: ({characterId, paused}) → boolean. */
+    /** Invoke: ({characterId, paused}) â†’ boolean. */
     setPaused: 'gamedash:set-paused',
-    /** Invoke: ({characterId, mode}) → boolean. */
+    /** Invoke: ({characterId, mode}) â†’ boolean. */
     setMode: 'gamedash:set-mode',
   },
 } as const;
@@ -131,13 +136,17 @@ export const GameIpcChannel = {
 /**
  * window.sei surface (implemented in src/preload/index.ts):
  *
- *   summon(characterId, game?)                       — bot:summon accepts {characterId, game}
- *   onWorldState(cb: (s: WorldState) => void)        — world:state push
- *   getWorldStates(): Promise<WorldStates>           — world:get
- *   worldCheckNow(game: GameId): Promise<WorldState> — world:check-now
- *   gameDashboardGet(characterId)                    — gamedash:get
- *   gameDashboardSetWatching(characterId, watching)  — gamedash:set-watching
- *   onGameDashboardSnapshot(cb)                      — gamedash:snapshot push
- *   gameSetPaused(characterId, paused)               — gamedash:set-paused
- *   gameSetMode(characterId, mode)                   — gamedash:set-mode
+ *   summon(characterId, game?)                       â€” bot:summon accepts {characterId, game}
+ *   onWorldState(cb: (s: WorldState) => void)        â€” world:state push
+ *   getWorldStates(): Promise<WorldStates>           â€” world:get
+ *   worldCheckNow(game: GameId): Promise<WorldState> â€” world:check-now
+ *   gameDashboardGet(characterId)                    â€” gamedash:get
+ *   gameDashboardSetWatching(characterId, watching)  â€” gamedash:set-watching
+ *   onGameDashboardSnapshot(cb)                      â€” gamedash:snapshot push
+ *   gameSetPaused(characterId, paused)               â€” gamedash:set-paused
+ *   gameSetMode(characterId, mode)                   â€” gamedash:set-mode
  */
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261105 (T336): decorating her room together, on the real chat turn.
  *
  * Pins: decorate() rides the tool list only while her editor is open (the
@@ -262,3 +262,7 @@ describe('live lines land in her chat', () => {
     closeTogether(TOKEN);
   });
 });
+
+
+
+

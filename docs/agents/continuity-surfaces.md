@@ -1,4 +1,4 @@
-# Continuity for a game or timed surface (REQUIRED)
+﻿# Continuity for a game or timed surface (REQUIRED)
 
 **Every surface where the character talks to the player MUST carry continuity
 in BOTH directions.** Context flowing IN is the easy half and is usually done
@@ -8,12 +8,12 @@ is missing: the game plays fine, and then the character has no idea it ever
 happened. Draw! shipped that way first (260727) and was fixed at 260728; chess
 had it from the start. The contract is three things.
 
-1. **IN** — the surface's `prepareCall` equivalent passes `persona`, `memory`
+1. **IN** â€” the surface's `prepareCall` equivalent passes `persona`, `memory`
    (`readMemoryTail`, the 12000-byte MEMORY.md tail via `humanizeMemoryStamps`),
    `summary` + `history` (`readChatContext`) and `knowledge`
    (`readKnowledgeForPrompt`) into `buildSystemBlocks`. Whole-game constants go
    in `extraStable` so they ride inside the cached region.
-2. **OUT, long-term** — offer `REMEMBER_TOOL` (`src/main/chat/chatPrompts.ts`)
+2. **OUT, long-term** â€” offer `REMEMBER_TOOL` (`src/main/chat/chatPrompts.ts`)
    on the surface's turns, so the character can write to the same per-character
    `MEMORY.md` that chat, voice and the bot share. A surface outside a game
    world passes `appendMemory(file, text, undefined, { section: 'app' })` (261020)
@@ -23,7 +23,7 @@ had it from the start. The contract is three things.
    inline after the response (`honorRememberCalls`) or the write is silently
    dropped. Tell the prompt what is NOT worth saving: Draw!'s words come from a
    random bank, so the contract says "save the person, not the round".
-3. **OUT, short-term** — write ONE `event: { kind: 'play', ... }` transcript row
+3. **OUT, short-term** â€” write ONE `event: { kind: 'play', ... }` transcript row
    at the surface's single end choke point, carrying enough shape to be worth
    summarizing, then fire `void foldIfDue(characterId, persona.expanded)`
    fire-and-forget. Without the fold the surface's rows are the ones that never
@@ -40,3 +40,7 @@ seconds apart, and wrong when they are minutes apart (Draw!'s are three, past
 the cache TTL already), where per-turn-kind arrays cost nothing and keep a
 guessing turn from being handed a drawing tool. Pick per surface and write down
 which you picked.
+
+
+
+

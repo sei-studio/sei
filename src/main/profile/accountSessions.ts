@@ -1,4 +1,4 @@
-/**
+﻿/**
  * End every live per-account session in MAIN (260926).
  *
  * An account switch (sign-in, sign-out, swapping accounts) used to stop only
@@ -64,10 +64,12 @@ export async function endAccountSessions(deps: AccountSessionDeps): Promise<void
     // Load every module first so step 1 below runs without yielding between
     // surfaces. Lazy, like every other cross-service call in main: the module
     // graph and the tests never depend on these being loaded.
-    const [chess, draw, backseat, chat, chatTurns, seilink] = await Promise.all([
+    const [chess, draw, backseat, CONNECT4, BATTLESHIP, chat, chatTurns, seilink] = await Promise.all([
       import('../chess/chessService').catch((err) => (warn('chess import', err), null)),
       import('../draw/drawService').catch((err) => (warn('draw import', err), null)),
       import('../backseat/backseatService').catch((err) => (warn('backseat import', err), null)),
+      import('../connect4/connect4Service').catch((err) => (warn('CONNECT4 import', err), null)),
+      import('../battleship/battleshipService').catch((err) => (warn('BATTLESHIP import', err), null)),
       import('../chat/chatSession').catch((err) => (warn('chat import', err), null)),
       import('../chat/chatService').catch((err) => (warn('chat turns import', err), null)),
       import('../seilink/host/seilinkHost').catch((err) => (warn('seilink import', err), null)),
@@ -90,6 +92,8 @@ export async function endAccountSessions(deps: AccountSessionDeps): Promise<void
     if (chess) run('chess', () => chess.endAllChess(reason));
     if (draw) run('draw', () => draw.endAllDraw(reason));
     if (backseat) run('backseat', () => backseat.endAllBackseat(reason));
+    if (CONNECT4) run('CONNECT4', () => CONNECT4.endAllCONNECT4(reason));
+    if (BATTLESHIP) run('BATTLESHIP', () => BATTLESHIP.endAllBATTLESHIP(reason));
     if (deps.endVoiceCalls) run('voice calls', () => deps.endVoiceCalls!(reason));
     if (chat) run('chat sessions', () => chat.endAllChatSessions(reason));
     // SeiLink desktop host: off the desktop; the old profile keeps its move-in (index.ts restores
@@ -119,3 +123,7 @@ export async function endAccountSessions(deps: AccountSessionDeps): Promise<void
     if (!drained) console.warn('[sei] account switch: closing rows still in flight after the drain timeout');
   }, deps.ceilingMs ?? ACCOUNT_TEARDOWN_CEILING_MS);
 }
+
+
+
+

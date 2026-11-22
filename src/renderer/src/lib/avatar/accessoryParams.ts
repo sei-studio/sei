@@ -1,5 +1,5 @@
-/**
- * Accessory expressions → per-frame parameter targets (260806).
+﻿/**
+ * Accessory expressions â†’ per-frame parameter targets (260806).
  *
  * VTuber exports ship item toggles as expressions (hat, phone, coat...) meant
  * to be flipped on and stay on. They cannot ride the expressionManager: it
@@ -61,3 +61,7 @@ export function computeAccessoryTargets(
   }
   return targets;
 }
+
+
+
+

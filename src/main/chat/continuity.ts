@@ -1,12 +1,12 @@
-/**
- * Cross-surface continuity bridge (design: docs/design/app-chat-and-memory.md §4).
+﻿/**
+ * Cross-surface continuity bridge (design: docs/design/app-chat-and-memory.md Â§4).
  *
  * Three tiers carry memory across the chat and Minecraft surfaces:
- *   1. MEMORY.md — durable, shared, already compacted (read directly by both).
- *   2. bridge.json — a recursive rolling summary of conversation that has aged
+ *   1. MEMORY.md â€” durable, shared, already compacted (read directly by both).
+ *   2. bridge.json â€” a recursive rolling summary of conversation that has aged
  *      past the recent window (cap ~150 words). Updated incrementally
  *      (new = f(old, evicted)) with a watermark, so an unchanged window costs 0.
- *   3. recent window — every not-yet-summarized message, verbatim.
+ *   3. recent window â€” every not-yet-summarized message, verbatim.
  *
  * Compaction cadence (260702): folds run in BATCHES of 50, not per-message.
  * The unsummarized tail grows from 50 up to 99 verbatim messages; when it
@@ -14,11 +14,11 @@
  * leaving exactly the last 50 verbatim. So context right after a compaction is
  * summary + 50 lines, and a single aged-out message never costs an LLM call.
  *
- * WHO folds: only the chat surface, in the BACKGROUND — chatService fires
+ * WHO folds: only the chat surface, in the BACKGROUND â€” chatService fires
  * foldIfDue() after each reply is persisted, so compaction runs while the
  * player is typing and no turn ever waits on it. Reads (readChatContext for
- * chat turns, buildLaunchContinuity for MC launches) are PURE — disk only,
- * never an LLM call — so Minecraft summoning is completely decoupled from
+ * chat turns, buildLaunchContinuity for MC launches) are PURE â€” disk only,
+ * never an LLM call â€” so Minecraft summoning is completely decoupled from
  * compaction. A fold backlog (e.g. a long in-game chat session appending
  * messages without chat turns) just means the next read ships a bigger
  * verbatim tail until the next chat turn drains it.
@@ -61,16 +61,16 @@ const RECENT_WINDOW = 50;
 /** A fold fires only once this many messages have piled up BEYOND the window. */
 const FOLD_BATCH = 50;
 /**
- * Hard ceiling on the verbatim tail a read may ever ship (1.5× the normal max of
+ * Hard ceiling on the verbatim tail a read may ever ship (1.5Ã— the normal max of
  * RECENT_WINDOW + FOLD_BATCH - 1 = 99). Safety valve for the case where folds
  * persistently FAIL: the watermark only advances via foldIntoSummary, so if every
  * fold 400s (e.g. a BYOK key that can call the chat Haiku but not SUMMARY_MODEL)
  * the unsummarized tail would otherwise grow without bound until the chat model's
- * context window overflows → permanent "sorry, i couldn't reply" with no recovery.
+ * context window overflows â†’ permanent "sorry, i couldn't reply" with no recovery.
  * Clamping the effective watermark from below degrades that failure to "the oldest
  * unsummarized messages fall out of context" instead. foldIfDue reads the bridge
  * directly (not readWindow), so the TRUE backlog still drains fully once folds
- * recover — this clamp only bounds what READS surface, never what the fold covers.
+ * recover â€” this clamp only bounds what READS surface, never what the fold covers.
  */
 const MAX_UNSUMMARIZED = 150;
 /**
@@ -107,7 +107,7 @@ interface BridgeState {
 export interface LaunchContinuity {
   summary: string;
   /** ts (epoch ms) rides along so the bot's continuity block can show WHEN
-   *  each line was said — a "hop on" after an overnight gap reads differently
+   *  each line was said â€” a "hop on" after an overnight gap reads differently
    *  from one ten seconds later. */
   recent: Array<{ role: 'user' | 'companion'; text: string; ts?: number }>;
 }
@@ -134,9 +134,9 @@ async function readBridge(id: string): Promise<BridgeState> {
  * 260810 fold safety: the bridge is the ONLY copy of everything already folded
  * (the folded messages themselves are past the watermark and never re-read), so
  * a torn write here is permanent summary loss. Two protections:
- *   1. tmp + rename (same-directory, so the rename is atomic) — a crash
+ *   1. tmp + rename (same-directory, so the rename is atomic) â€” a crash
  *      mid-write leaves the old bridge.json intact, never a partial file.
- *   2. a one-generation bridge.prev.json copy before every overwrite — the
+ *   2. a one-generation bridge.prev.json copy before every overwrite â€” the
  *      260808 incident (20 consecutive folds over phantom voice rows eroding a
  *      good summary) had NO recovery path because each fold overwrote the only
  *      copy. prev.json is not read by the app; it exists for manual recovery.
@@ -147,7 +147,7 @@ async function writeBridge(id: string, s: BridgeState): Promise<void> {
   try {
     await copyFile(dest, prevBridgePath(id));
   } catch {
-    /* first write — nothing to back up */
+    /* first write â€” nothing to back up */
   }
   const tmp = path.join(path.dirname(dest), `.bridge.json.tmp.${process.pid}.${Date.now()}`);
   await writeFile(tmp, JSON.stringify(s, null, 2) + '\n', 'utf8');
@@ -160,7 +160,7 @@ export async function readSummary(id: string): Promise<string> {
 }
 
 /**
- * 260705: per-character clear generation — supersede guard for the fold's LLM
+ * 260705: per-character clear generation â€” supersede guard for the fold's LLM
  * gap. foldIntoSummary snapshots the transcript, then spends up to
  * SUMMARY_TIMEOUT_MS in the summarizer; a chat:clear landing inside that gap
  * deletes bridge.json, and an unconditional writeBridge afterwards would
@@ -174,7 +174,7 @@ const clearEpoch = (id: string): number => clearEpochs.get(id) ?? 0;
 /**
  * Drop the rolling summary + watermark for a character. Called from chat:clear
  * alongside chatStore.clear so wiping the transcript also wipes the derived
- * summary — otherwise a later summon would re-seed a stale summary of a
+ * summary â€” otherwise a later summon would re-seed a stale summary of a
  * conversation the player already cleared.
  */
 export async function clearContinuity(id: string): Promise<void> {
@@ -187,9 +187,9 @@ export async function clearContinuity(id: string): Promise<void> {
 const isCounted = (m: ChatMessage): boolean => m.role === 'user' || m.role === 'companion';
 
 /**
- * Shared read core: transcript + bridge + clamped watermark. PURE — never
+ * Shared read core: transcript + bridge + clamped watermark. PURE â€” never
  * folds, never calls an LLM. A bridge whose watermark outran the transcript
- * (shrunken transcript) is treated as reset — see the 260705 comment below.
+ * (shrunken transcript) is treated as reset â€” see the 260705 comment below.
  */
 async function readWindow(
   characterId: string,
@@ -198,11 +198,11 @@ async function readWindow(
   const counted = raw.filter(isCounted);
   let bridge = await readBridge(characterId);
   // 260705: summarizedCount ABOVE the live transcript means the transcript shrank
-  // underneath the bridge (a clear racing a fold, manual edits) — the summary
+  // underneath the bridge (a clear racing a fold, manual edits) â€” the summary
   // describes messages that no longer exist. min() would pin the watermark at
   // counted.length: ZERO history, every send 400s ("at least one message
   // required") until the fresh conversation outgrows the stale count. Treat it
-  // as a RESET — a shrunken transcript degrades to "no summary", never "no
+  // as a RESET â€” a shrunken transcript degrades to "no summary", never "no
   // history".
   if (bridge.summarizedCount >= counted.length && bridge.summarizedCount > 0) {
     bridge = { summary: '', summarizedCount: 0 };
@@ -223,7 +223,7 @@ async function readWindow(
 const foldInFlight = new Set<string>();
 
 /**
- * Run one batch fold if due — the ONLY compaction entry point. Fired in the
+ * Run one batch fold if due â€” the ONLY compaction entry point. Fired in the
  * background (fire-and-forget) by chatService after a reply is persisted, so
  * it runs while the player is typing. Folds everything except the newest
  * RECENT_WINDOW (bounded per call by FOLD_MAX_MESSAGES, so a huge backlog
@@ -235,7 +235,7 @@ const foldInFlight = new Set<string>();
  * 260810: hard cap on messages drained by ONE fold call. A huge backlog (a
  * marathon backseat session appends thousands of rows with no chat turns; the
  * 260808 session left summarizedCount 2000+ behind) used to fold in a single
- * unbounded LLM call — a transcript that big both risks the context window and
+ * unbounded LLM call â€” a transcript that big both risks the context window and
  * hands one bad batch the power to rewrite the whole summary at once. Capped,
  * the backlog drains incrementally: foldIfDue fires after every reply and at
  * every surface's end choke point, so successive calls each take one bounded
@@ -252,14 +252,14 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
   if (isAccountTeardownActive()) return;
   // Chat-side MEMORY.md compaction (260810) piggybacks on the fold cadence:
   // foldIfDue is already fired (fire-and-forget) by every surface that appends
-  // memory in main — chat turns, chess, Draw!, backseat — so this one hook
+  // memory in main â€” chat turns, chess, Draw!, backseat â€” so this one hook
   // covers them all without touching each service. Self-single-flighted and
   // it exits on a cheap stat() when under threshold; never blocks the fold.
   void maybeCompactChatMemory(characterId).catch(() => {});
   if (foldInFlight.has(characterId)) return;
   foldInFlight.add(characterId);
   try {
-    // 260705: capture BEFORE the transcript read — a clear landing between
+    // 260705: capture BEFORE the transcript read â€” a clear landing between
     // this snapshot and the summarizer's return must invalidate the fold.
     const epoch = clearEpoch(characterId);
     // 260926: and the profile scope, compared before the write like the epoch.
@@ -267,7 +267,7 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
     const raw = await readAll(characterId);
     const counted = raw.filter(isCounted);
     let bridge = await readBridge(characterId);
-    // Same stale-bridge reset as readWindow (shrunken transcript → the summary
+    // Same stale-bridge reset as readWindow (shrunken transcript â†’ the summary
     // describes messages that no longer exist): degrade to "no summary" rather
     // than folding fresh messages into a stale one.
     if (bridge.summarizedCount >= counted.length && bridge.summarizedCount > 0) {
@@ -293,7 +293,7 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
 /**
  * Context window for a CHAT turn: the rolling summary + every raw transcript
  * row (including system rows, which toMessages needs for play events) from the
- * watermark onward. Pure read — compaction happens separately via foldIfDue.
+ * watermark onward. Pure read â€” compaction happens separately via foldIfDue.
  */
 export async function readChatContext(
   characterId: string,
@@ -320,7 +320,7 @@ export async function readChatContext(
 /**
  * Build the MC-launch handoff: { summary, recent } where `recent` is the full
  * unsummarized tail (50-99 messages between folds). Returns null when there is
- * no conversation yet. PURE READ — a summon never runs compaction; it ships
+ * no conversation yet. PURE READ â€” a summon never runs compaction; it ships
  * whatever the chat surface's background folds have produced so far.
  */
 export async function buildLaunchContinuity(
@@ -382,26 +382,26 @@ async function foldIntoSummary(
     }
     // extractSummaryTag: the summary rides inside <summary> tags so a stray
     // preamble/explanation can never be stored as summary text (measured on
-    // the noisy corpus — see foldPrompt.ts). Missing tags degrade to the whole
+    // the noisy corpus â€” see foldPrompt.ts). Missing tags degrade to the whole
     // trimmed text, i.e. the old behavior.
     const text = extractSummaryTag(
       res.content
         .map((b) => (b.type === 'text' ? (b as unknown as { text: string }).text : ''))
         .join(''),
     );
-    // 260810: a summary cut off by the token cap is WORSE than no fold — the
+    // 260810: a summary cut off by the token cap is WORSE than no fold â€” the
     // truncated text would be stored verbatim and poison every future prompt
     // until the next fold overwrites it (the live corpus had exactly this).
     // Treat it like a failed fold: keep the old summary AND the watermark so
     // the batch is retried. Should be rare at 800 tokens; see SUMMARY_MAX_TOKENS.
     if (res.stopReason === 'max_tokens') {
-      console.warn(`[sei] chat summary fold for ${id} hit max_tokens — discarding truncated output, will retry`);
+      console.warn(`[sei] chat summary fold for ${id} hit max_tokens â€” discarding truncated output, will retry`);
       return bridge;
     }
     // clearContinuity ran while the summarizer was in flight: the snapshot this
     // fold summarized was wiped, and writing would resurrect the deleted bridge.
     if (clearEpoch(id) !== epoch) {
-      console.warn(`[sei] chat summary fold for ${id} superseded by clear — dropping`);
+      console.warn(`[sei] chat summary fold for ${id} superseded by clear â€” dropping`);
       return bridge;
     }
     // The account changed while the summarizer ran (260926). bridgePath()
@@ -410,17 +410,17 @@ async function foldIntoSummary(
     // bundled defaults share ids across profiles). Drop it: the old account's
     // watermark never moved, so its next fold redoes this batch.
     if (getActiveScope() !== scope) {
-      console.warn(`[sei] chat summary fold for ${id} crossed an account switch — dropping`);
+      console.warn(`[sei] chat summary fold for ${id} crossed an account switch â€” dropping`);
       return bridge;
     }
     // 260810 fold safety: an empty/unusable fold output used to keep the OLD
-    // summary text while STILL advancing the watermark — the evicted messages
+    // summary text while STILL advancing the watermark â€” the evicted messages
     // were silently skipped forever, with no log. Treat it as a failed fold:
     // keep both the summary and the watermark so the next fold retries the
     // same batch. A persistently-empty model degrades via MAX_UNSUMMARIZED
     // like any other persistent failure.
     if (!text) {
-      console.warn(`[sei] chat summary fold for ${id} returned empty output — keeping watermark, will retry`);
+      console.warn(`[sei] chat summary fold for ${id} returned empty output â€” keeping watermark, will retry`);
       return bridge;
     }
     const next: BridgeState = {
@@ -431,9 +431,13 @@ async function foldIntoSummary(
     return next;
   } catch (err) {
     // Keep old summary + watermark so the next fold retries. Warn (was 100%
-    // silent) so a persistent failure — which pins the watermark and drives the
-    // MAX_UNSUMMARIZED clamp — is diagnosable rather than invisible.
+    // silent) so a persistent failure â€” which pins the watermark and drives the
+    // MAX_UNSUMMARIZED clamp â€” is diagnosable rather than invisible.
     console.warn(`[sei] chat summary fold failed for ${id}: ${(err as Error)?.message ?? err}`);
     return bridge;
   }
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * VerifyEmailModal — redeem an email code from inside the app (260804).
+﻿/**
+ * VerifyEmailModal â€” redeem an email code from inside the app (260804).
  *
  * The signed-in-but-unverified state has its own entry point because it does
  * not pass through any sign-in surface: the account already exists, the session
@@ -82,10 +82,10 @@ export function VerifyEmailModal({ email, onClose }: VerifyEmailModalProps): Rea
           disabled={code.submitting || code.code.length === 0}
           onClick={() => void code.submit()}
         >
-          {code.submitting ? t('Checking…') : t('Verify')}
+          {code.submitting ? t('Checkingâ€¦') : t('Verify')}
         </Button>
         <Button kind="quiet" size="md" disabled={code.resending} onClick={() => void code.resend()}>
-          {code.resending ? t('Sending…') : t('Send a new code')}
+          {code.resending ? t('Sendingâ€¦') : t('Send a new code')}
         </Button>
         <Button kind="quiet" size="md" onClick={onClose}>
           {t('Back to Sei')}
@@ -94,3 +94,7 @@ export function VerifyEmailModal({ email, onClose }: VerifyEmailModalProps): Rea
     </ModalShell>
   );
 }
+
+
+
+

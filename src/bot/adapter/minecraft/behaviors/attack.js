@@ -1,4 +1,4 @@
-// src/behaviors/attack.js — multi-swing attack on an entity (D-22, Pitfall 5)
+﻿// src/behaviors/attack.js â€” multi-swing attack on an entity (D-22, Pitfall 5)
 import pkg from 'mineflayer-pathfinder'
 import { resolveEntity, isStaleHandle, nearestNamedEntityBeyondBound, handleForEntity, pickHostileForOwner, ownerEntityOf } from '../observers/targeting.js'
 import { HOSTILE_MOBS, NO_AUTO_ENGAGE } from './hostiles.js'
@@ -81,7 +81,7 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist <= reach) return 'reached'
     // Yield the goal to a creeper-flee (Plan 01 mutex), a survival takeover
-    // (drowning swim-up / critical-HP retreat — survival.js re-asserts its flee
+    // (drowning swim-up / critical-HP retreat â€” survival.js re-asserts its flee
     // goal on any foreign goal_updated, so fighting it would just waste the
     // pursuit budget), or a stagger window; don't fight them tick-for-tick.
     // Re-assert once they clear.
@@ -106,7 +106,7 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
 }
 
 // 260708: a mob that survives the whole batch while the bot swings a stick is
-// invisible ineffectiveness — the model happily reports "i'm fighting" while
+// invisible ineffectiveness â€” the model happily reports "i'm fighting" while
 // doing ~1 damage (Lyra fought a zombie and a skeleton with a stick, at 4hp,
 // while the player died twice). When the target is still alive and the held
 // item is not a real weapon, say so, and point at the better move: equip the
@@ -118,7 +118,7 @@ export function weakWeaponNote(bot) {
   let owned = null
   try {
     owned = (bot.inventory?.items?.() ?? []).find(it => it?.name && WEAPON_RE.test(it.name))?.name ?? null
-  } catch { /* inventory unavailable — keep the generic note */ }
+  } catch { /* inventory unavailable â€” keep the generic note */ }
   const fix = owned
     ? `equip your ${owned}`
     : 'craft a weapon when you get the chance'
@@ -210,10 +210,10 @@ export async function attackEntityAction(args, bot, config) {
   // Refuse Players unless PvP mode is ON (bot._seiPvp, toggled by the setPvp
   // tool). When OFF this keeps the original refusal + message; when ON the
   // player is a legal target so the companion can spar (Task 2a).
-  if ((entity.type === 'player' || entity.username) && !bot._seiPvp) return 'cannot attack player — PvP spar mode is off; if they asked to fight/spar, call setPvp({enabled:true}) first, then attack'
+  if ((entity.type === 'player' || entity.username) && !bot._seiPvp) return 'cannot attack player â€” PvP spar mode is off; if they asked to fight/spar, call setPvp({enabled:true}) first, then attack'
 
   // Refuse item-class entities. Dropped items, xp
-  // orbs, and global entities (lightning) cannot die — the dispatch wastes
+  // orbs, and global entities (lightning) cannot die â€” the dispatch wastes
   // iterations chasing them and the model never learns they are non-targets
   // unless we surface a clear refusal here. The `entity.name === 'item'`
   // check covers mineflayer versions where dropped items report differently.
@@ -326,7 +326,7 @@ export async function attackEntityAction(args, bot, config) {
     // restore/re-assert it themselves, so nulling it here would just wipe an
     // active flee (survival re-asserts on goal_updated, but the wipe is a needless
     // race). When none is active, clearing to null lets the 1s follow tick
-    // (follow.js) re-install GoalFollow(owner) if a follow target is set — the
+    // (follow.js) re-install GoalFollow(owner) if a follow target is set â€” the
     // single-owner restore convention.
     try { bot.setControlState?.('sprint', false) } catch (_) {}
     // Restore the default Movements. We swapped in pursuitMovements (digCost=8,
@@ -616,11 +616,11 @@ async function fightOne(entity, ctx) {
 
   // Mark this mob as the deliberate offensive target so the survival reflex
   // (reflex.js) suppresses its melee circle-strafe while we are actively
-  // attacking it — otherwise the reflex fights our own lookAt/positioning.
+  // attacking it â€” otherwise the reflex fights our own lookAt/positioning.
   // Cleared by the caller's finally (guarded so a newer attack's flag is
   // never clobbered).
   bot._seiOffensiveTarget = entityId
-  // Attacking a player IS a PvP exchange — lock them as the reflex opponent
+  // Attacking a player IS a PvP exchange â€” lock them as the reflex opponent
   // (Task 2) so reflex.js kites this player and only this player. The `at`
   // refreshes on each swing below and decays ~10s after the last blow.
   if (isPlayerTarget && bot._seiPvp) bot._seiPvpOpponent = { id: entityId, at: Date.now() }
@@ -654,7 +654,7 @@ async function fightOne(entity, ctx) {
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist > REACH) {
       // Chase the LIVE entity with a dynamic follow goal until in reach. The
-      // overall timeout (deadline) is the ONLY give-up condition — no more
+      // overall timeout (deadline) is the ONLY give-up condition â€” no more
       // single-budget surrender on a kiting mob.
       const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal)
       if (res === 'aborted') return done(hits ? `aborted after ${hits}/${of()} hits on ${name}` : 'aborted')
@@ -662,7 +662,7 @@ async function fightOne(entity, ctx) {
       if (res === 'timeout') {
         return done(hits
           ? `${hits}/${of()} hits, then ${name} kept its distance until time ran out`
-          : `couldn't catch ${name} — it kept its distance`)
+          : `couldn't catch ${name} â€” it kept its distance`)
       }
       // res === 'reached'
       live = bot.entities?.[entityId]
@@ -729,8 +729,8 @@ async function fightOne(entity, ctx) {
 
   // A spar against a player is a running exchange, not a completed task: frame
   // the result so the model keeps fighting instead of narrating an ending.
-  if (isPlayerTarget) return done(`attacked ${name} ${hits}× — they're still standing and the spar is still ON; keep it going (attack again, reposition, trash-talk) until they say stop`)
-  return done(`attacked ${name} ${hits}× (target still alive)${weakWeaponNote(bot)}`)
+  if (isPlayerTarget) return done(`attacked ${name} ${hits}Ã— â€” they're still standing and the spar is still ON; keep it going (attack again, reposition, trash-talk) until they say stop`)
+  return done(`attacked ${name} ${hits}Ã— (target still alive)${weakWeaponNote(bot)}`)
 }
 
 function clampTimes(t) {
@@ -756,3 +756,7 @@ function sleepOrAbort(ms, signal) {
     }
   })
 }
+
+
+
+

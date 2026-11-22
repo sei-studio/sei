@@ -1,22 +1,22 @@
-/**
- * PixelPortrait — 12×12 deterministic procedural sprite.
+﻿/**
+ * PixelPortrait â€” 12Ã—12 deterministic procedural sprite.
  *
- * D-14: deterministic from `id + name` seed. FNV-1a → mulberry32-style PRNG →
- * 12×12 mirrored grid + fixed eye pixels at (row=3, col=4) and (row=3, col=7=12-1-4).
+ * D-14: deterministic from `id + name` seed. FNV-1a â†’ mulberry32-style PRNG â†’
+ * 12Ã—12 mirrored grid + fixed eye pixels at (row=3, col=4) and (row=3, col=7=12-1-4).
  *
- * Source: 04-UI-SPEC.md §Component Inventory → PixelPortrait + §Interaction
- * Contracts → PixelPortrait determinism (lines ~588–592 — algorithm constants
+ * Source: 04-UI-SPEC.md Â§Component Inventory â†’ PixelPortrait + Â§Interaction
+ * Contracts â†’ PixelPortrait determinism (lines ~588â€“592 â€” algorithm constants
  * 2246822507 and 3266489909 are NOT arbitrary; they reproduce the prototype's
  * sprite for the same seed).
  *
- * The pure function `generatePixelGrid(seed, palette)` returns a 12×12 array of
+ * The pure function `generatePixelGrid(seed, palette)` returns a 12Ã—12 array of
  * `#RRGGBB` strings; the React component paints it to <canvas> at the requested
  * `size` with `image-rendering: pixelated` for crisp scaling. Extracting the
  * pure function makes the determinism contract testable without a jsdom
  * canvas mock.
  *
  * Image override: if `portraitImage` is non-null and the <img> loads, we render
- * that instead of the canvas. Missing file → silent fallback to procedural (D-14).
+ * that instead of the canvas. Missing file â†’ silent fallback to procedural (D-14).
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -30,12 +30,12 @@ export const EYE_COLOR = '#0E0E0E';
 /**
  * Bust silhouette mask (260616). The procedural sprite is carved into a
  * head-and-shoulders shape: cut cells are LEFT UNPAINTED on the <canvas>, so
- * they stay transparent and the live theme background shows through — no baked
+ * they stay transparent and the live theme background shows through â€” no baked
  * colour, so it adapts to light/dark on the fly. Cut = the top row, plus the 3
- * outer columns on each side of the top 7 rows (the head) — leaving a 6-wide
+ * outer columns on each side of the top 7 rows (the head) â€” leaving a 6-wide
  * head (cols 3..8) over rows 1..6 on full-width shoulders (rows 7..11).
  *
- * Applied at paint time only; `generatePixelGrid` still returns the full 12×12
+ * Applied at paint time only; `generatePixelGrid` still returns the full 12Ã—12
  * colour grid (its determinism contract + acceptance pixels are unchanged).
  */
 export function isBustCut(y: number, x: number): boolean {
@@ -54,8 +54,8 @@ function hashSeed(str: string): number {
 
 /**
  * Mulberry32-style PRNG step.
- * Constants 2246822507 and 3266489909 are part of the determinism contract —
- * UI-SPEC §PixelPortrait determinism line 351–352 — port VERBATIM.
+ * Constants 2246822507 and 3266489909 are part of the determinism contract â€”
+ * UI-SPEC Â§PixelPortrait determinism line 351â€“352 â€” port VERBATIM.
  */
 function rngStep(state: { s: number }): number {
   state.s =
@@ -71,11 +71,11 @@ function _unused_lighten(_hex: string, _a: number): string {
 }
 
 /**
- * Pure deterministic generator. Returns a 12×12 array of `#RRGGBB` strings.
+ * Pure deterministic generator. Returns a 12Ã—12 array of `#RRGGBB` strings.
  *
  * Layout contract (must satisfy the acceptance pixel checks below):
- *   - rows 0..6 (head): 82% non-background, palette index 1 + floor(rng × (palLen-2))
- *   - rows 7..10 (body): 75% non-background, palette index 2 + floor(rng × (palLen-3))
+ *   - rows 0..6 (head): 82% non-background, palette index 1 + floor(rng Ã— (palLen-2))
+ *   - rows 7..10 (body): 75% non-background, palette index 2 + floor(rng Ã— (palLen-3))
  *   - row 11 (last row): palette[1] (forced bg)
  *   - background cells (col 0, row 11, rng-zeroed in head/body): palette[1] (sky lower)
  *   - left half cols 0..5 generated; right half cols 6..11 mirrored as grid[y][11-x]
@@ -83,7 +83,7 @@ function _unused_lighten(_hex: string, _a: number): string {
  *
  * Quick task 260508-nkk follow-up: rows 0..1 used to be a forced uniform
  * palette[0] "sky band" but it read on the cards as a flat-color stripe
- * masking the top of the sprite. Removed — head logic now runs from row 0.
+ * masking the top of the sprite. Removed â€” head logic now runs from row 0.
  *
  * Acceptance pixel checks for seed='sui Sui', theme='light', palette =
  * pickPalette('sui Sui', 'light'):
@@ -98,7 +98,7 @@ export function generatePixelGrid(
   const W = GRID_SIZE;
   const H = GRID_SIZE;
   const half = Math.ceil(W / 2);
-  // skyTop was 2 (rows 0..1 forced palette[0]) — disabled for quick task
+  // skyTop was 2 (rows 0..1 forced palette[0]) â€” disabled for quick task
   // 260508-nkk so the sprite's head content fills the whole top of the card.
   const skyTop = 0;
   const bodyStart = 7;
@@ -130,7 +130,7 @@ export function generatePixelGrid(
       }
       let color: string;
       if (y >= bodyStart) {
-        // Body: 75% non-bg, palette index 2 + floor(r2 × (palLen-3))
+        // Body: 75% non-bg, palette index 2 + floor(r2 Ã— (palLen-3))
         const r1 = rngStep(ref);
         const r2 = rngStep(ref);
         if (r1 > 0.25) {
@@ -140,7 +140,7 @@ export function generatePixelGrid(
           color = palette[1]!;
         }
       } else {
-        // Head (rows 2..6): 82% non-bg, palette index 1 + floor(r2 × (palLen-2))
+        // Head (rows 2..6): 82% non-bg, palette index 1 + floor(r2 Ã— (palLen-2))
         const r1 = rngStep(ref);
         const r2 = rngStep(ref);
         if (r1 > 0.18) {
@@ -172,7 +172,7 @@ interface PixelPortraitProps {
   seed: string;
   /**
    * Caller-derived (theme-resolved) palette. Retained for the per-card accent
-   * tint the callers compute from it — intentionally NOT used to paint the
+   * tint the callers compute from it â€” intentionally NOT used to paint the
    * sprite: the light/dark palettes are luminance-reversed per index, which
    * photo-negatives the sprite between themes. The sprite locks to a single
    * theme-independent palette below so a character reads the same in both modes.
@@ -190,7 +190,7 @@ interface PixelPortraitProps {
   /** Fires once when `portraitImage` failed and `fallbackImage` is tried. */
   onFallback?: () => void;
   /**
-   * Fires once the portrait override has SETTLED — loaded, failed (procedural
+   * Fires once the portrait override has SETTLED â€” loaded, failed (procedural
    * fallback shown), or absent. Lets callers hold a wireframe until real
    * pixels are on screen (260705 World-card skeletons). Idempotent callers only.
    */
@@ -217,7 +217,7 @@ export function PixelPortrait({
 
   // Lock the sprite to a theme-INDEPENDENT palette so it doesn't photo-negative
   // between light/dark (the two palette sets are luminance-reversed per index).
-  // Same seed → same character in both themes; the transparent cuts + themed
+  // Same seed â†’ same character in both themes; the transparent cuts + themed
   // .root background carry the light/dark difference instead.
   const grid = useMemo(() => generatePixelGrid(seed, pickPalette(seed, 'dark')), [seed]);
 
@@ -235,7 +235,7 @@ export function PixelPortrait({
   // Paint canvas whenever grid changes, AND whenever the canvas (re)enters the
   // DOM. `useImage` is a dep because the <canvas> is conditionally rendered:
   // when a portrait <img> fails after mount (stale ref, dead URL) the canvas
-  // mounts fresh and unpainted — without this dep the effect never re-ran for
+  // mounts fresh and unpainted â€” without this dep the effect never re-ran for
   // it and the "procedural fallback" was a blank transparent square (the
   // blank Home cards report, 260907).
   useEffect(() => {
@@ -250,7 +250,7 @@ export function PixelPortrait({
     ctx.clearRect(0, 0, GRID_SIZE, GRID_SIZE);
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
-        if (isBustCut(y, x)) continue; // unpainted → transparent → theme bg shows through
+        if (isBustCut(y, x)) continue; // unpainted â†’ transparent â†’ theme bg shows through
         ctx.fillStyle = grid[y]![x]!;
         ctx.fillRect(x, y, 1, 1);
       }
@@ -308,3 +308,7 @@ export function PixelPortrait({
     </div>
   );
 }
+
+
+
+

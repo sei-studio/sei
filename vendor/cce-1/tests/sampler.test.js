@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gumbelTopK, mulberry32, sampleBottomTail, sampleOne } from '../src/sampler.js';
 
@@ -58,3 +58,7 @@ test('sampleBottomTail avoids excluded moves and prefers the tail', () => {
     assert.ok(m.p <= 0.05, `picked ${m.uci} with p=${m.p}`);
   }
 });
+
+
+
+

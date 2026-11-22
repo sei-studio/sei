@@ -1,4 +1,4 @@
-// src/bot/brain/sessionDigest.js — the session's recent conversation, kept for
+﻿// src/bot/brain/sessionDigest.js â€” the session's recent conversation, kept for
 // main's player-end "next time" check (261011, retention O2).
 //
 // When the PLAYER ends a session (Stop, closing the world), the bot process is
@@ -57,3 +57,7 @@ export function createSessionDigest() {
 }
 
 export const sessionDigest = createSessionDigest()
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Tests for useBackseatStore's PENDING SHARE (260803): the arm the chat
  * header's Backseat button leaves behind when it starts a call so the share can
  * begin once that call is live.
@@ -559,3 +559,7 @@ describe('pickReacquireSource', () => {
     expect(pickReacquireSource([w('window:5:0', '')], { id: 'window:1:0', name: '' }, 'win32')).toBeNull();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// 261013 (T111): SillyTavern-style {{user}} / {{char}} card placeholders are
+﻿// 261013 (T111): SillyTavern-style {{user}} / {{char}} card placeholders are
 // filled before persona text reaches any prompt, deterministically, so the
 // cached persona block stays byte-stable across turns.
 import os from 'node:os'
@@ -126,3 +126,7 @@ describe('Minecraft cached system prefix', () => {
     expect(cachedBlocks('Ouen').join('\n')).not.toMatch(/\{\{/)
   })
 })
+
+
+
+

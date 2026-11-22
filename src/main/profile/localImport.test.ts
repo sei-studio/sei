@@ -1,5 +1,5 @@
-/**
- * Tests for the anonymous(local) → account on-device profile import (260603).
+﻿/**
+ * Tests for the anonymous(local) â†’ account on-device profile import (260603).
  *
  * Surface:
  *   - peekLocalProfile reports user-created characters + onboarding answers,
@@ -192,3 +192,7 @@ describe('importLocalProfileInto', () => {
     expect(getActiveScope()).toBe('local');
   });
 });
+
+
+
+

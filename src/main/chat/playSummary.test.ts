@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { formatPlayDuration, playSummaryText } from './playSummary';
 
 describe('formatPlayDuration', () => {
@@ -20,7 +20,7 @@ describe('formatPlayDuration', () => {
 });
 
 describe('playSummaryText', () => {
-  // 260728 — one sentence for every game surface. Each used to compose its own
+  // 260728 â€” one sentence for every game surface. Each used to compose its own
   // and report its own results; a scoreline read back days later is the least
   // interesting thing about having played, and four registers for one event
   // made the transcript read like four different games.
@@ -47,6 +47,10 @@ describe('playSummaryText', () => {
   });
 
   it('has no em dash, like all user-facing copy', () => {
-    expect(playSummaryText('Marv', 'Chess', 60_000)).not.toContain('—');
+    expect(playSummaryText('Marv', 'Chess', 60_000)).not.toContain('â€”');
   });
 });
+
+
+
+

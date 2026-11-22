@@ -1,4 +1,4 @@
-// 261012: the owner-threat watch.
+﻿// 261012: the owner-threat watch.
 //
 // Quality eval protect_player: a 10 hp player and two zombies 21 blocks out.
 // The order turn often called follow (which never swings), the loop ended,
@@ -216,3 +216,7 @@ describe('an attackEntity action already owns the fight', () => {
     expect(bot._seiOffensiveTarget).toBe(77)
   })
 })
+
+
+
+

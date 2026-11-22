@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { createStardewAdapter } from './index.js'
 import { CAPABILITY_PARAGRAPH, CAPABILITY_PARAGRAPH_CHORES, ACTION_RULES, ACTION_RULES_CHORES } from './prompts.js'
 
@@ -40,3 +40,7 @@ describe('stardew adapter mod-version gating', () => {
     expect(await a.executeAction('ship', {})).toBe('did ship')
   })
 })
+
+
+
+

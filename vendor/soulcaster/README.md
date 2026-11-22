@@ -1,4 +1,4 @@
-# soulcaster
+﻿# soulcaster
 
 Procedural character-sheet generator for [Sei](https://sei.gg), a Minecraft AI-companion app.
 
@@ -56,7 +56,7 @@ Two distinct temperament words are picked from a 24-word list (`PERSONALITY_SEED
 
 ### Relationship dynamics
 
-`rollFields` and `castSoul` take an optional `dynamic`: one of `partner-in-crime`, `caretaker` (someone who looks after you), `protege` (someone to look after), `chill-friend`, or `challenger` (someone who pushes you) — see `DYNAMICS` in `src/tables.js`. This is what the user said they are looking for in a companion; the caller resolves which dynamic applies to a given cast (in Sei, users rank dynamics at onboarding and the Nth unique companion uses the Nth ranked entry).
+`rollFields` and `castSoul` take an optional `dynamic`: one of `partner-in-crime`, `caretaker` (someone who looks after you), `protege` (someone to look after), `chill-friend`, or `challenger` (someone who pushes you) â€” see `DYNAMICS` in `src/tables.js`. This is what the user said they are looking for in a companion; the caller resolves which dynamic applies to a given cast (in Sei, users rank dynamics at onboarding and the Nth unique companion uses the Nth ranked entry).
 
 A dynamic biases the personality roll: seed 1 is drawn from the dynamic's `seed_pool` so the relationship reliably reads through, while seed 2 stays a free roll from the full list so two casts with the same dynamic still differ. The prompt also gains a `relationship_dynamic` line, and the sheet gains a `player_dynamic` field (one or two sentences on who the character is to the player). The player never appears in the backstory. With no dynamic, `player_dynamic` is derived from the personality by the model.
 
@@ -187,7 +187,7 @@ const { sheet, rolled: rolledUsed } = await castSoul({
   personality: { tone, values /* 3-5 */, quirks /* 2-3 */, fears /* 1-2 */ },
   backstory,               // 150 to 300 words, weaves in heritage and occupation
   voice_style,
-  punctuation,             // casual | deliberate — texting register, defaults casual.
+  punctuation,             // casual | deliberate â€” texting register, defaults casual.
                            // casual = normal modern texting, no sentence-ending periods
                            // (most characters). deliberate = ends sentences with full
                            // stops on purpose (deadpan, measured, can read
@@ -230,3 +230,7 @@ npm install
 ## License
 
 MIT
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Home "up next" card (261013, retention O2 / T119).
  *
  * 43 of 56 users active on day 0 were not back on day 1, and there is no
@@ -91,7 +91,7 @@ export interface PlanEntry extends StampedEntry {
   game: GameId | null;
 }
 
-// ── pure ──────────────────────────────────────────────────────────────────
+// â”€â”€ pure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Loose key for matching a plan's text: lowercase letters, digits, spaces. */
 export function planKey(text: string): string {
@@ -170,7 +170,7 @@ function capitalize(s: string): string {
 
 /** A plan as card text: one line, no trailing period, first letter up. */
 export function planDisplayText(text: string): string {
-  return capitalize(String(text ?? '').replace(/\s+/g, ' ').trim().replace(/[.。]+$/, '').trim());
+  return capitalize(String(text ?? '').replace(/\s+/g, ' ').trim().replace(/[.ã€‚]+$/, '').trim());
 }
 
 const FINISH_CUE = /\b(?:finish(?:ed)?|done|complete(?:d)?|success)\s*(?:when|once|if|after|:|=)/i;
@@ -288,7 +288,7 @@ export function parseLedger(raw: string | null): NextStepLedger {
   }
 }
 
-// ── files ─────────────────────────────────────────────────────────────────
+// â”€â”€ files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function readOrEmpty(file: string): Promise<string> {
   try {
@@ -435,7 +435,7 @@ export async function consumeNextStep(
   }
 }
 
-// ── renderer notification ────────────────────────────────────────────────
+// â”€â”€ renderer notification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let notify: ((characterId: string) => void) | null = null;
 
@@ -452,3 +452,7 @@ export function noteHomeNextStepChanged(characterId: string): void {
     /* a closed window just misses the push */
   }
 }
+
+
+
+

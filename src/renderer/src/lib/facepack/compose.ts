@@ -1,15 +1,15 @@
-/**
+﻿/**
  * sei-facepack v1 compose rule (261028), pure. Mirrors the bake's reference
  * compositor (face-sets tools/compose.py) so FacepackView draws exactly what
  * the QC sheets showed:
  *
  *   base (eyes open, mouth rest) at 0,0
- *   → eyes[half|closed] at eyes.box[0..1]  (only if blinking AND expression.blink)
- *   → mouth[viseme]    at mouth.box[0..1]  (only if viseme != rest)
- *   → each expression overlay, overlays[name][pose] or [c], at its box
+ *   â†’ eyes[half|closed] at eyes.box[0..1]  (only if blinking AND expression.blink)
+ *   â†’ mouth[viseme]    at mouth.box[0..1]  (only if viseme != rest)
+ *   â†’ each expression overlay, overlays[name][pose] or [c], at its box
  *
- * Fallbacks: unknown expression → the pack's default_expression (then
- * neutral, then the first one); unknown pose → default_pose → c; a missing
+ * Fallbacks: unknown expression â†’ the pack's default_expression (then
+ * neutral, then the first one); unknown pose â†’ default_pose â†’ c; a missing
  * eye state or viseme patch is skipped (open eyes / rest mouth).
  */
 import type {
@@ -295,3 +295,7 @@ export function irisHalfAt(ir: FacepackIris, xi: number): string | null {
   if (!ir.half) return null;
   return ir.half[Math.min(ir.x.length - 1, Math.max(0, xi))] ?? null;
 }
+
+
+
+

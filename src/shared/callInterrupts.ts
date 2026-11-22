@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Interrupt diagnostics for `voice_call_ended` (261030).
  *
  * The 0.6.10 "It doesnt let me interrupt it" report could not be answered
@@ -56,3 +56,7 @@ export function callInterruptProps(c: CallInterruptCounts): {
     interrupt_cut_lines: c.cut_lines,
   };
 }
+
+
+
+

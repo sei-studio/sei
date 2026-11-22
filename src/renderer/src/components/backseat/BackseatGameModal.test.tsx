@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Roblox pick step (261004 redesign) and its hand-off to the auto-share
  * watch. There is no DOM in this suite, so the step's decisions live in pure
  * helpers (resolveOutcome, noticeLine, pickHandoffMs) that are pinned here,
@@ -83,9 +83,9 @@ describe('the grid-area lines', () => {
       let key = '';
       const line = noticeLine(notice, (s, p) => ((key = s), en(s, p)), 'Roblox');
       expect(line.length).toBeLessThan(50);
-      expect(line).not.toMatch(/[—–]/);
+      expect(line).not.toMatch(/[â€”â€“]/);
       expect(ZH[key], key).toBeTruthy();
-      expect(ZH[key]).not.toMatch(/[—–]/);
+      expect(ZH[key]).not.toMatch(/[â€”â€“]/);
     }
   });
 
@@ -197,3 +197,7 @@ describe('handOffAutoShare', () => {
     vi.useRealTimers();
   });
 });
+
+
+
+

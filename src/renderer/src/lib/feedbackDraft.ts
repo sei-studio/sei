@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Unsent feedback drafts, per form (260926).
  *
  * A failed send must never cost the player their text. The form already keeps
@@ -29,3 +29,7 @@ export function clearFeedbackDraft(key: string): void {
 export function clearAllFeedbackDrafts(): void {
   drafts.clear();
 }
+
+
+
+

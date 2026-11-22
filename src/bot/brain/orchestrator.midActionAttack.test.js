@@ -1,4 +1,4 @@
-// 261011: a hit that lands while an action runs is delivered mid-action.
+﻿// 261011: a hit that lands while an action runs is delivered mid-action.
 //
 // Quality eval 2026-10-11 (combat_night): every throttled sei:attacked tore
 // the loop down, so attackEntity was aborted by the next hit 10 times, the
@@ -260,3 +260,7 @@ describe('261011 mid-action attack delivery', () => {
     expect(orch.currentLoop?.inFlight?.name).toBe('gather')
   })
 })
+
+
+
+

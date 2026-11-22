@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink IPC (261104, host pass): packs, per-companion room get/set, the
  * room-changed push, the dev preview window (dev flag only), and the desktop
  * host's start/stop/status (host/seilinkHost.ts).
@@ -168,3 +168,7 @@ export function openSeilinkPreview(opts: { preloadPath: string; rendererTarget: 
   else void previewWin.loadFile(t, { search: 'seilink=1' });
   return previewWin;
 }
+
+
+
+

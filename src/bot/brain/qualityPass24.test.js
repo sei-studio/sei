@@ -1,4 +1,4 @@
-// 261022: MC quality pass 24.
+﻿// 261022: MC quality pass 24.
 //  - her own goals are written as hers: the setGoal description and the
 //    agentic frontier block say a goal of her own leaves the player's name,
 //    "we" and "together" out until the player agreed to join (first-spawn
@@ -52,6 +52,10 @@ describe('her own goal is written as hers', () => {
     const built = await buildMinecraftSystemFixture(mkdtempSync(path.join(tmpdir(), 'sei-p24-')))
     const tool = built.base.tools.find((t) => t.name === 'setGoal')
     const added = tool.description.slice(tool.description.indexOf('Write a goal of your own'))
-    expect(added).not.toContain('—')
+    expect(added).not.toContain('â€”')
   })
 })
+
+
+
+

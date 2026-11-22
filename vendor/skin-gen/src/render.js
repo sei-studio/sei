@@ -1,4 +1,4 @@
-// Render front/back full-body previews from a 64x64 skin buffer.
+﻿// Render front/back full-body previews from a 64x64 skin buffer.
 // Front view canvas is 16x32 skin-pixels; upscaled with nearest for output.
 import sharp from 'sharp';
 import { SKIN_SIZE, parts } from './layout.js';
@@ -69,3 +69,7 @@ export async function renderPreview(skin, outFile, { variant = 'classic', scale 
     .toFile(outFile);
   return outFile;
 }
+
+
+
+

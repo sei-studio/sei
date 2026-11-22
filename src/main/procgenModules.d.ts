@@ -1,9 +1,9 @@
-/**
- * 260703 procgen — ambient type shims for the two sibling `file:` packages the
+﻿/**
+ * 260703 procgen â€” ambient type shims for the two sibling `file:` packages the
  * unique-companion pipeline consumes. Neither ships a `.d.ts`; these minimal
  * declarations give the main-process build enough surface to typecheck the
  * `castSoul` / `characterToSkin` call sites without pulling untyped JS into the
- * program. Runtime behavior is unaffected — see soulcaster/README.md and
+ * program. Runtime behavior is unaffected â€” see soulcaster/README.md and
  * img2skin/src/pipeline.js for the authoritative contracts.
  */
 
@@ -18,7 +18,7 @@ declare module 'soulcaster' {
     /** Relationship dynamic key (soulcaster DYNAMICS) or null to free-roll. */
     dynamic?: string | null;
     userProfile?: unknown;
-    /** ElevenLabs voice ids already used by the caller's other characters —
+    /** ElevenLabs voice ids already used by the caller's other characters â€”
      * excluded from the Stage 1 voice roll so roster voices rarely collide. */
     takenVoiceIds?: string[];
     /** Names never offered as name candidates (public characters). */
@@ -36,7 +36,7 @@ declare module 'soulcaster' {
     voice: { id: string; label: string; vibe: string };
     [k: string]: unknown;
   };
-  /** Zod schema for the character sheet — only the `safeParse` surface the
+  /** Zod schema for the character sheet â€” only the `safeParse` surface the
    *  main-process caller (castSoulViaProxy) uses is declared here. */
   export const CharacterSheetSchema: {
     safeParse(data: unknown):
@@ -57,7 +57,7 @@ declare module 'soulcaster' {
     /** false = picker only: listed, never rolled (261119). */
     roll?: false;
   }>;
-  /** Stage 1 voice roll — used directly for legacy-character fallback assignment. */
+  /** Stage 1 voice roll â€” used directly for legacy-character fallback assignment. */
   export function rollVoice(
     character: { gender: string; age: number; background: string; personality_seeds: string[] },
     opts?: { takenVoiceIds?: string[]; rng?: () => number },
@@ -85,3 +85,7 @@ declare module 'img2skin/src/pipeline.js' {
     [key: string]: unknown;
   }>;
 }
+
+
+
+

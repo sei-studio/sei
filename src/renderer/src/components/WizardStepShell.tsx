@@ -1,17 +1,17 @@
-/**
- * WizardStepShell — reusable wizard step body.
+﻿/**
+ * WizardStepShell â€” reusable wizard step body.
  *
  * Renders:
  *   - Step indicator "STEP n / 4" in pixel font (only when stepNumber !== null;
- *     branch states 1b/3b omit the indicator per UI-SPEC §"Setup wizard modal").
+ *     branch states 1b/3b omit the indicator per UI-SPEC Â§"Setup wizard modal").
  *   - <h2> heading in --sans 22px 600.
- *   - Body content (children) — flex: 1 so footers stick to the bottom of the modal.
- *   - Footer row — fixed margin-top to keep button alignment consistent across steps.
+ *   - Body content (children) â€” flex: 1 so footers stick to the bottom of the modal.
+ *   - Footer row â€” fixed margin-top to keep button alignment consistent across steps.
  *
  * Distinct from QuestionShell because wizard step content height varies
  * (welcome paragraph vs install list vs progress bars vs single line of copy).
  *
- * Source: 09-UI-SPEC.md §"Component Inventory" + §Typography (pixel-font reserved
+ * Source: 09-UI-SPEC.md Â§"Component Inventory" + Â§Typography (pixel-font reserved
  *         for SeiPixelMark + wizard step indicator).
  */
 
@@ -45,3 +45,7 @@ export function WizardStepShell({
     </div>
   );
 }
+
+
+
+

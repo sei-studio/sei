@@ -1,5 +1,5 @@
-/**
- * useMcSetupSteps — the Minecraft setup steps as DATA (260909), for the
+﻿/**
+ * useMcSetupSteps â€” the Minecraft setup steps as DATA (260909), for the
  * one-step-at-a-time window on the launch panel (SetupStepper). It used to
  * be a numbered list (McSteps) drawn on the panel itself, which put three
  * steps of copy and buttons between the title and Launch; the window shows
@@ -237,3 +237,7 @@ export function useMcSetupSteps(skin: StepSkin): McSetup {
     known: installs != null,
   };
 }
+
+
+
+

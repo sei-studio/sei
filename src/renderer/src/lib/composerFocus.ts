@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Focus her chat composer once her chat is up (product call (261116)): a
  * double click on her on the desktop brings Sei to the front on her chat,
  * ready to type. App.tsx asks before it navigates; ChatScreen takes the ask
@@ -29,3 +29,7 @@ export function onComposerFocusRequest(cb: () => void): () => void {
     listeners.delete(cb);
   };
 }
+
+
+
+

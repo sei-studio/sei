@@ -1,4 +1,4 @@
-/**
+﻿/**
  * librarySync pure-function tests (260801).
  *
  * The diff is the part worth pinning: it is the only thing standing between a
@@ -67,9 +67,13 @@ describe('diffRoster', () => {
 
   it('clears the remote when the user emptied their library', () => {
     // The honest counterpart of the case above: an empty local roster is a
-    // real state (every foreign character removed), not a failed read — the
+    // real state (every foreign character removed), not a failed read â€” the
     // caller is responsible for not calling this on a failed config load.
     const out = diffRoster([], [{ character_id: 'a', source: 'world' }]);
     expect(out).toEqual({ upsert: [], remove: ['a'] });
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * DstDashboardPanel — the live Don't Starve Together view, in the game's
+﻿/**
+ * DstDashboardPanel â€” the live Don't Starve Together view, in the game's
  * own register (redesigned 260909; the first cut was a tokens-only list).
  * A DELIBERATE, CONTAINED EXCEPTION to the design tokens, exactly like the
  * Minecraft panel: ink-black ground, aged-parchment windows with burnt
@@ -46,7 +46,7 @@ function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/* ── The organ icons, drawn once in ink on a 64x64 badge ─────────────── */
+/* â”€â”€ The organ icons, drawn once in ink on a 64x64 badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function HeartIcon(): React.ReactElement {
   return (
@@ -75,7 +75,7 @@ function BrainIcon(): React.ReactElement {
   );
 }
 
-/* ── One HUD badge: ring, parchment face, liquid meter, icon ─────────── */
+/* â”€â”€ One HUD badge: ring, parchment face, liquid meter, icon â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type VitalKind = 'health' | 'hunger' | 'sanity';
 
@@ -114,7 +114,7 @@ function Badge({ kind, label, value, max, lowBelow }: { kind: VitalKind; label: 
   );
 }
 
-/* ── The clock: 16 segments, the live phase lit, the day in the middle ── */
+/* â”€â”€ The clock: 16 segments, the live phase lit, the day in the middle â”€â”€ */
 
 function Clock({ season, phase, day, dayLabel }: { season: DstSeason; phase: DstPhase; day: number; dayLabel: string }): React.ReactElement {
   const segs = clockSegments(season);
@@ -331,3 +331,7 @@ export function DstDashboardPanel({ characterId }: DstDashboardPanelProps): Reac
     </div>
   );
 }
+
+
+
+

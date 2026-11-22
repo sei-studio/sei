@@ -1,5 +1,5 @@
-/**
- * UsageBar — the weekly-allowance usage bar (260724).
+﻿/**
+ * UsageBar â€” the weekly-allowance usage bar (260724).
  *
  * A lean primitive: a usage-percent progress bar (PercentBar fed `usage_pct`
  * from useCreditsStore, red once the allowance is spent) with a quiet refresh
@@ -21,7 +21,7 @@ import { RefreshIcon } from './icons';
 import { t, useT } from '../lib/i18n';
 import styles from './UsageBar.module.css';
 
-/** Cumulative playtime ms → "3h 17m", unit letters in the UI language. */
+/** Cumulative playtime ms â†’ "3h 17m", unit letters in the UI language. */
 export function formatPlayed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 60000));
   return t('{h}h {m}m', { h: Math.floor(total / 60), m: total % 60 });
@@ -33,7 +33,7 @@ export function usageTooltip(totalPlaytimeMs: number): string {
 }
 
 export interface UsageBarProps {
-  /** Bar size — 'lg' is the hero; 'sm'/'md' for inline rows. */
+  /** Bar size â€” 'lg' is the hero; 'sm'/'md' for inline rows. */
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -48,7 +48,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
   // are placeholders, so don't present "0 percent used" as account truth.
   const snapshotFailed = useCreditsStore((s) => s.snapshotFailed);
   // Cumulative playtime across all of this profile's characters (survives
-  // deletion — accumulated at session-end in config). Feeds the bar tooltip.
+  // deletion â€” accumulated at session-end in config). Feeds the bar tooltip.
   const [totalPlaytimeMs, setTotalPlaytimeMs] = useState(0);
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +80,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
           label={snapshotFailed ? t('usage unavailable') : t('{pct} percent used', { pct: Math.round(usagePct) })}
         />
       </div>
-      {/* Quiet refresh — immediate creditsGet() on top of any polling caller. */}
+      {/* Quiet refresh â€” immediate creditsGet() on top of any polling caller. */}
       <Button
         kind="quiet"
         size="sm"
@@ -96,3 +96,7 @@ export function UsageBar({ size = 'lg' }: UsageBarProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

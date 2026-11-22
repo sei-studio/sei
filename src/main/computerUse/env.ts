@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: the capture and scope functions the loop runs on,
  * built over an InputExecutor. No Electron here, so tests drive them with a
  * fake executor.
@@ -148,4 +148,8 @@ export function makeScope(o: {
     );
   };
 }
+
+
+
+
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The language a companion speaks to the player on every main-process surface
  * (chat, calls, TTS, the game bot, chess, Draw!, backseat, WorldLink lines),
  * 261116. The rules are pure (shared/chatLanguage.ts companionLanguage); this
@@ -20,3 +20,7 @@ export function companionLanguageFor(
   }
   return companionLanguage(c, config, viewer);
 }
+
+
+
+

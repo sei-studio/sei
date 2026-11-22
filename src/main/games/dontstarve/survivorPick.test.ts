@@ -1,4 +1,4 @@
-/** Game-adapters M2 (260908): the one-off survivor pick with a stubbed LLM. */
+﻿/** Game-adapters M2 (260908): the one-off survivor pick with a stubbed LLM. */
 import { describe, it, expect, vi } from 'vitest';
 import { getOrPickSurvivor, setSurvivor, readStoredPick, type SurvivorPickDeps } from './survivorPick';
 import type { UserConfig } from '../../../shared/characterSchema';
@@ -63,3 +63,7 @@ describe('setSurvivor', () => {
     await setSurvivor('c1', null, deps({ pick: async () => { throw new Error('no'); } }, { dst_survivor: { c1: { prefab: 'wurt', source: 'user' } } } as Partial<UserConfig>));
   });
 });
+
+
+
+

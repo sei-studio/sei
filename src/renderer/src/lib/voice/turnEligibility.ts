@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which companions on a call the voice director may hand a turn of its own
  * (261023, pulled out of useVoiceStore so the rule is pinned by a test).
  *
@@ -47,3 +47,7 @@ export function reactorPool(
 ): string[] {
   return participants.filter((id) => id === speakerId || directorMayDrive(id, summons, sharingFor));
 }
+
+
+
+

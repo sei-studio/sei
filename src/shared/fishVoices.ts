@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Fish Audio voices (261103): the automatic voice table and the parsing of a
  * user's own pick. Fish runs with the USER's own Fish API key, called from
  * main (main/voice/fishTts.ts); it never goes through the Sei proxy.
@@ -17,8 +17,8 @@
  *              found Akari good in English. OLAJUMOKE is the calmer runner-up.
  *   en male    ivish (young, conversational).
  *   ja female  Akari.            ja male  Satoru (young, Fish Official).
- *   zh female  桃桃 (young, playful; written for daily companionship).
- *   zh male    温柔沉稳男声 (young, warm).
+ *   zh female  æ¡ƒæ¡ƒ (young, playful; written for daily companionship).
+ *   zh male    æ¸©æŸ”æ²‰ç¨³ç”·å£° (young, warm).
  * Other chat languages (ko, fr, es) use the English voice of that gender: the
  * model is multilingual and the line's language is pinned in the request.
  *
@@ -76,8 +76,8 @@ export const FISH_VOICES: Record<TableLanguage, Record<FishVoiceGender, FishVoic
     male: { id: '297a6fd278df47c3b9da9bfdf55ac89a', name: 'Satoru', language: 'ja', gender: 'male', source: 'fish-official', speed: 1.15, volume: -1 },
   },
   zh: {
-    female: { id: 'c45cfee333d140189cdc36e36d241c5e', name: '桃桃', language: 'zh', gender: 'female', source: 'pvc', speed: 1.3, volume: 0 },
-    male: { id: 'd9956cb243a34292afc9b42ad3964f73', name: '温柔沉稳男声', language: 'zh', gender: 'male', source: 'pvc', speed: 1.05, volume: 0 },
+    female: { id: 'c45cfee333d140189cdc36e36d241c5e', name: 'æ¡ƒæ¡ƒ', language: 'zh', gender: 'female', source: 'pvc', speed: 1.3, volume: 0 },
+    male: { id: 'd9956cb243a34292afc9b42ad3964f73', name: 'æ¸©æŸ”æ²‰ç¨³ç”·å£°', language: 'zh', gender: 'male', source: 'pvc', speed: 1.05, volume: 0 },
   },
 };
 
@@ -128,3 +128,7 @@ export function parseFishVoiceRef(input: unknown): string | null {
   const id = m >= 0 ? parts[m + 1]?.toLowerCase() : undefined;
   return id && FISH_ID_RE.test(id) ? id : null;
 }
+
+
+
+

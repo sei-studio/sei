@@ -1,7 +1,7 @@
-// Minimap sampling + cell encoding for the Minecraft dashboard (260721).
-// Pins the block-name → palette classifier, the packed-byte layout (low
+﻿// Minimap sampling + cell encoding for the Minecraft dashboard (260721).
+// Pins the block-name â†’ palette classifier, the packed-byte layout (low
 // nibble palette, high nibble height+8), and a full sampleMap round trip
-// against a synthetic bot — including the shared-TS decoder so the bot-side
+// against a synthetic bot â€” including the shared-TS decoder so the bot-side
 // encoder and the renderer-side decoder can never drift apart.
 
 import { describe, it, expect } from 'vitest'
@@ -70,7 +70,7 @@ describe('packCell / cell decode', () => {
     expect(mcDashCellHeight(b)).toBe(3)
   })
 
-  it('base64 encode (bot) → decode (shared) round-trips', () => {
+  it('base64 encode (bot) â†’ decode (shared) round-trips', () => {
     const bytes = new Uint8Array([0, 1, 17, 255, packCell(PALETTE.WATER, -2)])
     const decoded = decodeMcDashCells(encodeCells(bytes))
     expect([...decoded]).toEqual([...bytes])
@@ -123,3 +123,7 @@ describe('sampleMap', () => {
     expect(sampleMap({ entity: null })).toBeNull()
   })
 })
+
+
+
+

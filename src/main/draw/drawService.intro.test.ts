@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! intro game + turn analytics (260929, UX review item 5).
  *
  * 12 of 18 games were abandoned, 4 at 0 turns about 70s in: the player always
@@ -281,3 +281,7 @@ describe('an intro stopped at the credit wall', () => {
     expect(again.rounds).toBe(INTRO_ROUNDS);
   });
 });
+
+
+
+

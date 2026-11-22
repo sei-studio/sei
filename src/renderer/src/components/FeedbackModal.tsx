@@ -1,5 +1,5 @@
-/**
- * FeedbackModal — the standing "Submit feedback" form (260706).
+﻿/**
+ * FeedbackModal â€” the standing "Submit feedback" form (260706).
  *
  * Opened from the plan screen after the one-time reward banner has been
  * used (and anywhere else a feedback entry point makes sense). Email is
@@ -194,7 +194,7 @@ export function FeedbackModal({
             {t('Cancel')}
           </Button>
           <Button kind="accent" size="md" type="submit" disabled={!canSubmit}>
-            {submitting ? t('Sending…') : t('Submit')}
+            {submitting ? t('Sendingâ€¦') : t('Submit')}
           </Button>
         </ModalFooter>
       </form>
@@ -217,3 +217,7 @@ export function FeedbackSent({ onClose, note }: { onClose: () => void; note?: st
     </ModalShell>
   );
 }
+
+
+
+

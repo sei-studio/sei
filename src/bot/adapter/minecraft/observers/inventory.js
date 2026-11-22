@@ -1,4 +1,4 @@
-// src/observers/inventory.js — pure functions of bot state
+﻿// src/observers/inventory.js â€” pure functions of bot state
 import { liveInventoryItems } from './liveInventory.js'
 /**
  * @param {import('mineflayer').Bot} bot
@@ -29,3 +29,7 @@ export function inventory(bot) {
   }
   return out
 }
+
+
+
+

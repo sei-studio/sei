@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JWT delivery from main process to utilityProcess.
  *
  * Subscribes to Supabase auth events; on SIGNED_IN / TOKEN_REFRESHED /
@@ -8,18 +8,18 @@
  *
  * Phase 10 wires this. Phase 13's proxy is the JWT consumer (the bot will
  * use it as a Bearer header when cloud-AI mode is selected). In Phase 10
- * the bot loop ignores the {type:'jwt'} message — that's expected; the
+ * the bot loop ignores the {type:'jwt'} message â€” that's expected; the
  * wiring is verified in plan 06's checkpoint.
  *
  * SECURITY (T-10-06-01): only `session.access_token` crosses to utilityProcess.
- * The refresh credential never leaves main — it stays in sessionStore.bin
+ * The refresh credential never leaves main â€” it stays in sessionStore.bin
  * behind safeStorage. The plan's verification gate greps the snake-case
  * Supabase field name (refresh- + -token, joined) against this file and
  * expects 0 matches.
  *
  * Sources:
  *   - 10-CONTEXT Claude's discretion (JWT-only crosses to utilityProcess)
- *   - 10-RESEARCH §Pitfall A4 (push on TOKEN_REFRESHED to avoid stale-JWT bot stop)
+ *   - 10-RESEARCH Â§Pitfall A4 (push on TOKEN_REFRESHED to avoid stale-JWT bot stop)
  */
 import { getClient } from './supabaseClient';
 import type { BotSupervisor } from '../botSupervisor';
@@ -76,7 +76,7 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
   // CRITICAL (260617 expired_jwt incident): `autoRefreshToken: true` is NOT
   // self-starting outside a browser. supabase-js only arms its refresh ticker
   // automatically via `visibilitychange`/focus events, which don't exist in
-  // Electron's main process — so the JWT silently expired ~1h after sign-in,
+  // Electron's main process â€” so the JWT silently expired ~1h after sign-in,
   // `TOKEN_REFRESHED` never fired, and a live bot 401'd mid-session with no
   // recovery (it spent 40s hammering a dead token, then dropped). Start the
   // ticker explicitly: it checks every ~10s and rotates the JWT before expiry,
@@ -95,7 +95,7 @@ export async function initJwtBridge(supervisor: BotSupervisor): Promise<void> {
       // A password-reset session arrives as PASSWORD_RECOVERY with no
       // SIGNED_IN (verifyOtp type 'recovery'), and it is a sign-in too (261029).
       case 'PASSWORD_RECOVERY':
-        // A fresh sign-in (re)arms the refresh ticker — a prior SIGNED_OUT may
+        // A fresh sign-in (re)arms the refresh ticker â€” a prior SIGNED_OUT may
         // have stopped it.
         startAutoRefreshSafely();
         supervisorRef.updateJwt(session?.access_token ?? null);
@@ -126,3 +126,7 @@ export function _disposeForTests(): void {
   supervisorRef = null;
   void supabase_stopAutoRefresh();
 }
+
+
+
+

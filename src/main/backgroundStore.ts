@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Custom app-background image persistence (260724). Follows the userProfile
  * profile-picture pattern: bytes land in a fixed `_bg` slot under the active
  * profile's portraits dir (atomic write + file lock), so the existing
@@ -7,8 +7,8 @@
  * under the theme's window color with user-set opacity/brightness.
  *
  * Validation is a background-sized variant of validatePortrait: same magic
- * checks (PNG/JPEG/WebP), but a wallpaper is allowed to be bigger — the
- * renderer downscales to ≤2560px and compresses before sending.
+ * checks (PNG/JPEG/WebP), but a wallpaper is allowed to be bigger â€” the
+ * renderer downscales to â‰¤2560px and compresses before sending.
  */
 import { mkdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -31,10 +31,10 @@ const WEBP_TAG = [0x57, 0x45, 0x42, 0x50];
 /**
  * Defense-in-depth validation at the main-process trust boundary.
  * Error vocabulary (renderer maps to copy):
- *   BACKGROUND_TOO_LARGE     — bytes > 4 MB
- *   BACKGROUND_TOO_SHORT     — bytes < 24
- *   BACKGROUND_BAD_MAGIC     — not PNG, JPEG, or WebP
- *   BACKGROUND_TOO_LARGE_DIM — PNG width or height > 4096
+ *   BACKGROUND_TOO_LARGE     â€” bytes > 4 MB
+ *   BACKGROUND_TOO_SHORT     â€” bytes < 24
+ *   BACKGROUND_BAD_MAGIC     â€” not PNG, JPEG, or WebP
+ *   BACKGROUND_TOO_LARGE_DIM â€” PNG width or height > 4096
  */
 export function validateBackground(bytes: Buffer): { format: 'png' | 'jpeg' | 'webp' } {
   if (bytes.length > BACKGROUND_MAX_BYTES) {
@@ -77,7 +77,11 @@ export async function removeBackgroundImage(): Promise<void> {
   try {
     await unlink(paths.portraitPath(BG_SLOT));
   } catch {
-    /* swallow ENOENT — best-effort */
+    /* swallow ENOENT â€” best-effort */
   }
   await updateConfig((cfg) => ({ ...cfg, background_image: null }));
 }
+
+
+
+

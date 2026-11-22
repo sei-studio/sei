@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261023: the opening look. A failed first turn used to leave the share in
  * silence for up to a minute (30 s budget, retried once by the SDK), and its
  * line could be dropped by the staleness gate on the slow first call. Pinned
@@ -234,3 +234,7 @@ describe('resumed share (261023)', () => {
     clock.mockRestore();
   });
 });
+
+
+
+

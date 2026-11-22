@@ -1,5 +1,5 @@
-/**
- * CodeInput — segmented entry for the 6-digit code Sei emails (260804).
+﻿/**
+ * CodeInput â€” segmented entry for the 6-digit code Sei emails (260804).
  *
  * Controlled on ONE string, not on per-cell state. Each cell is a view of
  * `value[i]`, which is what makes paste, autofill and backspace-across-cells
@@ -32,7 +32,7 @@ export interface CodeInputProps {
   length?: number;
   disabled?: boolean;
   autoFocus?: boolean;
-  /** Marks every cell, not just the focused one — the code is one value. */
+  /** Marks every cell, not just the focused one â€” the code is one value. */
   invalid?: boolean;
   /**
    * Styling seam for surfaces that do not use the app palette. The onboarding
@@ -60,7 +60,7 @@ export function CodeInput({
   const cells = useRef<Array<HTMLInputElement | null>>([]);
   /**
    * onComplete must fire once per arrival at a full code, not on every render
-   * that happens to see one — otherwise a failed submit that leaves the value
+   * that happens to see one â€” otherwise a failed submit that leaves the value
    * intact re-fires it on the next keystroke elsewhere in the panel.
    */
   const firedFor = useRef<string | null>(null);
@@ -156,3 +156,7 @@ export function CodeInput({
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-# Velopack on Windows: release and incident runbook
+﻿# Velopack on Windows: release and incident runbook
 
 Windows Sei moves from the NSIS installer + electron-updater to Velopack
 starting with v0.7.0. macOS stays on electron-updater. Through v0.7.x both
@@ -226,7 +226,7 @@ checks size and sha256, then Authenticode (fail closed), and hands off:
 
 The hand-off writes a small PowerShell runner and its `runner.json` (ASCII,
 non-ASCII path characters escaped as `\uXXXX`, read as UTF-8 so user names
-like `José` or `测试` survive Windows PowerShell 5.1) and quits. A safe-mode
+like `JosÃ©` or `æµ‹è¯•` survive Windows PowerShell 5.1) and quits. A safe-mode
 hand-off asks for a normal start next, so a same-version repair does not
 come back in safe mode. The runner waits for
 Sei to exit, checks the sha256 again and runs
@@ -299,7 +299,7 @@ that touch the updater code (and on dispatch):
   repair-packages-corrupt, repair-apply-fails (and -safe) (header of
   `scripts/velopack-ci/scenario.ps1`);
 - **migrate** (a real older NSIS release to Velopack): peruser-default,
-  peruser-custom, peruser-unicode (`C:\游戏\Sei 测试`), permachine,
+  peruser-custom, peruser-unicode (`C:\æ¸¸æˆ\Sei æµ‹è¯•`), permachine,
   setup-killed, sig-reject, nsis-newer (`scripts/velopack-ci/migrate.ps1`);
 - **authenticode**: the client's signature check against signed, unsigned,
   tampered, someone-else-signed and decoy files and packages, in a folder and
@@ -314,3 +314,7 @@ in-app check end to end: the first signed release is that test. Watch its
 `release.yml` with `-f dry_run=true` runs the Windows leg unsigned, packs
 against the live feed, smoke-launches it, and dry-runs the mirror (prints
 every write, makes none).
+
+
+
+

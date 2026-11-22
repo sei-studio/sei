@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LanNotOpenModal version hint (260929): the "up to" ceiling is the newest
  * version Sei can JOIN (26.3 on the shipped tables), not the setup wizard's
  * target (26.1), which is what the hint used to name.
@@ -21,3 +21,7 @@ describe('LanNotOpenModal', () => {
     expect(html).toContain(`Sei supports versions up to ${newest}.`);
   });
 });
+
+
+
+

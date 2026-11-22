@@ -1,5 +1,5 @@
-/**
- * KnowledgeDropZone — drag/drop + click-to-browse upload zone for Knowledge
+﻿/**
+ * KnowledgeDropZone â€” drag/drop + click-to-browse upload zone for Knowledge
  * files (260725). Used by the create-flow import phase and the Knowledge
  * popup on the character page.
  *
@@ -130,7 +130,7 @@ export function KnowledgeDropZone({
           </span>
           <p className={styles.secondary}>
             {busy
-              ? t('Reading files…')
+              ? t('Reading filesâ€¦')
               : dragOver
                 ? t('Drop to upload')
                 : t('.md, .txt, .text, .docx (max 512 KB each)')}
@@ -162,3 +162,7 @@ export function KnowledgeDropZone({
     </div>
   );
 }
+
+
+
+

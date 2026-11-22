@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Where the WorldLink dock sits on the wallpaper. Pure.
  *
  * 261110 (product call 261110): in the bottom-right corner of the work area
@@ -49,3 +49,7 @@ export function dockBottom(workArea: SeilinkBox): number {
 export function dockAwake(s: { hover: boolean; confirming: boolean; caption: boolean; offer: boolean; pressed: boolean }): boolean {
   return s.hover || s.confirming || s.caption || s.offer || s.pressed;
 }
+
+
+
+

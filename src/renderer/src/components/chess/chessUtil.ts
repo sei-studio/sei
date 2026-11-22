@@ -1,5 +1,5 @@
-/**
- * chessUtil — pure helpers for the renderer-side chess UI.
+﻿/**
+ * chessUtil â€” pure helpers for the renderer-side chess UI.
  *
  * The authoritative game lives in main (src/main/chess/); the renderer uses
  * chess.js only for LOCAL concerns: legality hints (move dots), promotion
@@ -79,12 +79,12 @@ export function legalTargets(fen: string, from: Square): LegalTarget[] {
   }
 }
 
-/** True when from→to is a legal move in the position. */
+/** True when fromâ†’to is a legal move in the position. */
 export function isLegal(fen: string, from: Square, to: Square): boolean {
   return legalTargets(fen, from).some((t) => t.to === to);
 }
 
-/** True when from→to is a legal PROMOTION move (needs the piece picker). */
+/** True when fromâ†’to is a legal PROMOTION move (needs the piece picker). */
 export function isPromotion(fen: string, from: Square, to: Square): boolean {
   return legalTargets(fen, from).some((t) => t.to === to && t.promotion);
 }
@@ -116,7 +116,7 @@ export function checkedKingSquare(fen: string): Square | null {
 
 export interface BoardPiece {
   square: Square;
-  /** 'wp' | 'wn' | ... | 'bk' — color + type. */
+  /** 'wp' | 'wn' | ... | 'bk' â€” color + type. */
   code: string;
 }
 
@@ -186,3 +186,7 @@ export function capturedMaterial(fen: string): { w: string[]; b: string[]; diff:
   // Positive = white is up material (black lost more).
   return { w, b, diff: sum(b) - sum(w) };
 }
+
+
+
+

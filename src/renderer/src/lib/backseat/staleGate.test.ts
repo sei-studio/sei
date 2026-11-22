@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+﻿import { describe, it, expect, vi } from 'vitest';
 import { createStaleGate } from './staleGate';
 import { BUFFER_MS, STALE_LINE_AGE_MS, STALE_SCENE_DELTA, staleLineVerdict } from '../../../../shared/backseatIpc';
 
@@ -33,3 +33,7 @@ describe('createStaleGate (261010)', () => {
     expect(log).toHaveBeenCalledTimes(1);
   });
 });
+
+
+
+

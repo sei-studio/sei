@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Hover dwell (261111). The World card warms a character's full data
  * (row + skin + full portrait) on hover so opening it is instant. Firing on
  * every pointer-enter also downloaded every portrait the pointer brushed past
@@ -36,3 +36,7 @@ export function createHoverDwell(fire: () => void, delayMs: number = HOVER_DWELL
     },
   };
 }
+
+
+
+

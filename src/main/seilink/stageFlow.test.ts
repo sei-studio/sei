@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => ({
   events: [] as Array<Record<string, unknown>>,
@@ -177,3 +177,7 @@ describe('stage flow', () => {
     m.minimize = { ok: true, minimized: 3 };
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * 260929 — the Forge/NeoForge variant of the host warning blocks: it names the
+﻿/**
+ * 260929 â€” the Forge/NeoForge variant of the host warning blocks: it names the
  * loader, points at the Sei profile, and renders no "Summon anyway".
  */
 import React from 'react';
@@ -27,7 +27,7 @@ describe('LanHostWarningModal forge block', () => {
     expect(html).toContain('Sei profile');
     expect(html).toContain('Set up Sei profile');
     expect(html).not.toContain('Summon anyway');
-    expect(html).not.toContain('—'); // no em-dashes in the copy
+    expect(html).not.toContain('â€”'); // no em-dashes in the copy
   });
 
   it('Forge on weak evidence gets the soft warning: says it may be Forge, keeps Summon anyway', () => {
@@ -37,10 +37,14 @@ describe('LanHostWarningModal forge block', () => {
     expect(html).toContain('may be running Forge');
     expect(html).toContain('Sei profile');
     expect(html).toContain('Summon anyway');
-    expect(html).not.toContain('—');
+    expect(html).not.toContain('â€”');
   });
 
   it('a Quilt host keeps the soft warning with its escape hatch', () => {
     expect(render('modded', 'quilt')).toContain('Summon anyway');
   });
 });
+
+
+
+

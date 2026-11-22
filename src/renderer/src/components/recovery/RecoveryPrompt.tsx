@@ -1,18 +1,18 @@
-/**
- * RecoveryPrompt — in-app phantom-call recovery (260810).
+﻿/**
+ * RecoveryPrompt â€” in-app phantom-call recovery (260810).
  *
  * Self-mounting like StartupPopup: renders null until a scan finds a
  * non-dismissed phantom-call session (a voice call left running while other
- * audio fed the mic — see src/main/recovery/phantomDetect.ts for the cadence
+ * audio fed the mic â€” see src/main/recovery/phantomDetect.ts for the cadence
  * signature). Scans run:
  *   - once shortly after app mount, and
  *   - debounced after a voice call or backseat share ENDS (subscribed to the
  *     store transitions here rather than hooked inside the stores, so the
  *     concurrently-edited 1800-line useVoiceStore stays untouched).
  *
- * Flow: prompt ("Is your companion acting weird?") → Ignore dismisses the
+ * Flow: prompt ("Is your companion acting weird?") â†’ Ignore dismisses the
  * shown windows for good, Begin recovery shows the session list (all
- * pre-checked) → Clean up runs recovery:repair per character, evicts the
+ * pre-checked) â†’ Clean up runs recovery:repair per character, evicts the
  * repaired characters from useChatStore so the cleaned transcript shows
  * without a restart, then shows the success state.
  */
@@ -56,7 +56,7 @@ export function RecoveryPrompt(): React.ReactElement | null {
 
   const runScan = useCallback(async () => {
     if (scanningRef.current || openRef.current) return;
-    // Never scan (or pop) while a surface is still live — the transcript is
+    // Never scan (or pop) while a surface is still live â€” the transcript is
     // being written and the end transition will re-trigger us anyway.
     if (useVoiceStore.getState().status !== 'idle') return;
     if (useBackseatStore.getState().sharingFor) return;
@@ -239,9 +239,13 @@ export function RecoveryPrompt(): React.ReactElement | null {
           {t('Cancel')}
         </Button>
         <Button kind="primary" size="md" onClick={() => void cleanUp()} disabled={busy || !anySelected}>
-          {busy ? t('Cleaning up…') : t('Clean up')}
+          {busy ? t('Cleaning upâ€¦') : t('Clean up')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

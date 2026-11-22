@@ -1,12 +1,12 @@
-/**
- * `sei-portrait://` custom protocol — serves locally-stored character portraits
+﻿/**
+ * `sei-portrait://` custom protocol â€” serves locally-stored character portraits
  * to the renderer.
  *
  * Why this exists: D-28 writes portrait bytes to
  * `<userData>/profiles/<scope>/portraits/<uuid>.png` and stores only the bare
  * reference `'<uuid>.png'` in `character.portrait_image`. The sandboxed renderer
- * has no way to load that on-disk file via a relative `<img src>` — it would
- * resolve against the Vite dev server / `file://…/renderer/` and 404, so the
+ * has no way to load that on-disk file via a relative `<img src>` â€” it would
+ * resolve against the Vite dev server / `file://â€¦/renderer/` and 404, so the
  * portrait silently fell back to the procedural sprite everywhere. This protocol
  * is the missing render-time resolver: the renderer's `portraitSrc()` helper maps
  * a bare ref onto `sei-portrait://local/<uuid>.png`, and this handler streams the
@@ -16,8 +16,8 @@
  * is correct because the renderer only ever displays the active profile's library.
  *
  * Two-step registration (Electron requirement):
- *   1. registerPortraitScheme()  — before app 'ready' (privileged scheme table)
- *   2. registerPortraitProtocol() — after app 'ready' (request handler)
+ *   1. registerPortraitScheme()  â€” before app 'ready' (privileged scheme table)
+ *   2. registerPortraitProtocol() â€” after app 'ready' (request handler)
  */
 import { protocol } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -28,15 +28,15 @@ export const PORTRAIT_SCHEME = 'sei-portrait';
 
 // Filenames we will serve: `<uuid>.png` (character portraits) plus the fixed
 // user-profile slot `_user.png`. Restricting the charset + extension (combined
-// with path.basename below) keeps the request inside the portraits dir — no
+// with path.basename below) keeps the request inside the portraits dir â€” no
 // traversal via `..` or absolute paths. The charset allows a-z, digits, dash
 // and underscore so the `_user` slot resolves (the old `[0-9a-f-]` hex-only set
-// rejected it → 400 → the player's avatar silently fell back everywhere).
+// rejected it â†’ 400 â†’ the player's avatar silently fell back everywhere).
 const SAFE_FILE_RE = /^[0-9a-z_-]+\.png$/i;
 
-// ── First-load 404 race ────────────────────────────────────────────────────
+// â”€â”€ First-load 404 race â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A `sei-portrait://` request only fires when a character's `portrait_image`
-// is a bare `'<uuid>.png'` ref — i.e. the app already believes a portrait
+// is a bare `'<uuid>.png'` ref â€” i.e. the app already believes a portrait
 // exists. But the PNG bytes are written ASYNCHRONOUSLY and independently of
 // that ref becoming visible to the renderer:
 //   - portraitStore.applyPortrait writes bytes THEN saves the ref (safe order);
@@ -45,18 +45,18 @@ const SAFE_FILE_RE = /^[0-9a-z_-]+\.png$/i;
 //     atomic-writes the bytes (writePortrait / healMissingAssets).
 // In the second case a card can render and request the URL in the window
 // between the ref appearing and the download's rename landing. The read throws
-// ENOENT → 404 → PixelPortrait's `<img onError>` latches `imgFailed` and pins
+// ENOENT â†’ 404 â†’ PixelPortrait's `<img onError>` latches `imgFailed` and pins
 // permanently to the procedural sprite; only a later remount (bytes now on
-// disk) recovers — the reported "404 on first load, works after a reload" bug.
+// disk) recovers â€” the reported "404 on first load, works after a reload" bug.
 //
-// Every writer lands the file via atomicWrite (writeFile → rename), and
+// Every writer lands the file via atomicWrite (writeFile â†’ rename), and
 // rename(2) is atomic on the same filesystem, so a reader sees the file either
-// absent or complete — never torn. That makes a short bounded ENOENT retry the
+// absent or complete â€” never torn. That makes a short bounded ENOENT retry the
 // correct, writer-agnostic fix: it turns the race into a brief wait, resolving
 // 200 the instant the write lands. Only a genuinely-absent portrait (deleted,
 // or a download that failed yet still adopted the ref) falls through to 404
 // after the budget, exactly as a missing portrait should. Non-ENOENT errors
-// (EACCES, EISDIR, …) are hard failures and are surfaced immediately.
+// (EACCES, EISDIR, â€¦) are hard failures and are surfaced immediately.
 const PORTRAIT_READ_RETRIES = 12;
 const PORTRAIT_READ_RETRY_DELAY_MS = 60; // ~720ms total budget, run per-request
 
@@ -101,7 +101,7 @@ export function registerPortraitScheme(extra: Electron.CustomScheme[] = []): voi
     {
       scheme: PORTRAIT_SCHEME,
       // corsEnabled + the ACAO header below let the renderer fetch() portrait
-      // bytes cross-origin (dev origin is http://localhost:5173) — needed for
+      // bytes cross-origin (dev origin is http://localhost:5173) â€” needed for
       // canvas color extraction (useDominantColor); a plain <img> src doesn't
       // allow readback from a custom scheme.
       privileges: {
@@ -136,7 +136,7 @@ export function registerPortraitProtocol(): void {
         status: 200,
         headers: {
           'Content-Type': 'image/png',
-          // Portrait bytes change in place on re-upload (same uuid → same URL),
+          // Portrait bytes change in place on re-upload (same uuid â†’ same URL),
           // so forbid caching to avoid a stale thumbnail surviving a "Change".
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           // Local-only bytes the renderer already displays; * lets fetch()
@@ -146,7 +146,7 @@ export function registerPortraitProtocol(): void {
         },
       });
     } catch {
-      // Still absent after the ENOENT retry budget (or a hard read error) →
+      // Still absent after the ENOENT retry budget (or a hard read error) â†’
       // 404 so the renderer's <img onError> falls back to the procedural sprite
       // (D-14), exactly as a deleted / genuinely-missing portrait should.
       return new Response('not found', {
@@ -156,3 +156,7 @@ export function registerPortraitProtocol(): void {
     }
   });
 }
+
+
+
+

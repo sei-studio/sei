@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Minecraft per-action outcome telemetry, main side (261011).
  *
  * The bot keeps aggregate counters for its session (src/bot/brain/actionStats.js)
@@ -96,7 +96,7 @@ export function parseActionStats(raw: unknown): ActionStatsSnapshot | null {
   return r.success ? r.data : null;
 }
 
-/** `goTo` → `go_to`, `placeBlock` → `place_block`; null for anything that is not an identifier. */
+/** `goTo` â†’ `go_to`, `placeBlock` â†’ `place_block`; null for anything that is not an identifier. */
 export function actionNameKey(name: string): string | null {
   if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(name)) return null;
   return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
@@ -323,3 +323,7 @@ export function createMcSessionReporter(capture: CaptureFn, now: () => number = 
     },
   };
 }
+
+
+
+

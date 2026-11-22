@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Start Minecraft (R1b, 260929): select the Sei profile in the Minecraft
  * Launcher and open the launcher, so the player only has to press Play.
  *
@@ -436,3 +436,7 @@ export async function startMinecraft(
     return { ok: false, reason: 'launch_failed', detail: (err as Error).message };
   }
 }
+
+
+
+

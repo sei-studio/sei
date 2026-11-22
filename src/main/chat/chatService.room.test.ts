@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261104 SeiLink: the room line and look() on the chat surfaces.
  *
  * Pins where the line goes per surface (typed chat: place + time in the
@@ -271,3 +271,7 @@ describe('desktop lines (M4)', () => {
     expect(createSpy).not.toHaveBeenCalled();
   });
 });
+
+
+
+

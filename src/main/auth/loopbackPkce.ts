@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Loopback PKCE server for Google OAuth.
  *
  * MANDATORY pattern per Pitfall 4 (Google's `disallowed_useragent` blocks
  * Electron's embedded-window OAuth) and Pitfall A1 (Supabase deep-link 401
- * bug avoided by exchanging the code INSIDE the main process — no URL
+ * bug avoided by exchanging the code INSIDE the main process â€” no URL
  * crosses the IPC boundary, no setSession in renderer).
  *
- * Binds 127.0.0.1:0 (OS-chosen ephemeral port — mirrors skinServer.ts).
+ * Binds 127.0.0.1:0 (OS-chosen ephemeral port â€” mirrors skinServer.ts).
  * The literal '127.0.0.1' is asserted by an acceptance grep so a future
  * edit can't accidentally widen the bind to all interfaces.
  *
@@ -14,19 +14,19 @@
  *   - Email-verification (10-04) uses a hardcoded port because the Supabase
  *     dashboard Site URL must literal-match the redirect.
  *   - Google OAuth (this file) registers `http://127.0.0.1` (no port) in the
- *     Google Cloud Console OAuth client config; per RFC 8252 §7.3 and
+ *     Google Cloud Console OAuth client config; per RFC 8252 Â§7.3 and
  *     Google's native-app guide, ANY port is then accepted. This lets us
  *     bind 0 and avoid port-collision retries.
  *
  * Sources:
- *   - 10-RESEARCH §Pattern 2 (FULL code template — copied verbatim with
+ *   - 10-RESEARCH Â§Pattern 2 (FULL code template â€” copied verbatim with
  *     opts.abortSignal integration added).
- *   - 10-RESEARCH §Pitfall A1 (exchange-in-main avoids #17722/#27181).
+ *   - 10-RESEARCH Â§Pitfall A1 (exchange-in-main avoids #17722/#27181).
  *   - Embedded-window OAuth is incompatible with Google sign-in, hence the
  *     system browser + loopback redirect.
  *   - Google native-app guide: https://developers.google.com/identity/protocols/oauth2/native-app
- *   - RFC 8252 §7.3 (loopback accepts any port).
- *   - src/main/skinServer.ts (127.0.0.1 + port-0 idiom — same shape).
+ *   - RFC 8252 Â§7.3 (loopback accepts any port).
+ *   - src/main/skinServer.ts (127.0.0.1 + port-0 idiom â€” same shape).
  */
 import { createServer, type Server } from 'node:http';
 import { shell } from 'electron';
@@ -34,7 +34,7 @@ import { getClient } from './supabaseClient';
 import type { OAuthResult } from '../../shared/ipc';
 
 /**
- * Indirection for tests — production opens the URL via electron.shell.openExternal.
+ * Indirection for tests â€” production opens the URL via electron.shell.openExternal.
  * Tests inject a stub that fires a simulated browser callback against the bound
  * loopback port so the suite doesn't actually spawn a system browser.
  */
@@ -53,9 +53,9 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
   let server: Server | null = null;
   let port: number;
 
-  // 1. Bind 127.0.0.1:0 — OS-chosen ephemeral port. The literal '127.0.0.1'
+  // 1. Bind 127.0.0.1:0 â€” OS-chosen ephemeral port. The literal '127.0.0.1'
   //    is asserted by an acceptance grep; never widen to all interfaces
-  //    (that would expose the callback to the LAN — T-10-05-05 mitigation).
+  //    (that would expose the callback to the LAN â€” T-10-05-05 mitigation).
   try {
     server = createServer();
     await new Promise<void>((resolve, reject) => {
@@ -76,7 +76,7 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
 
   // 2. Ask Supabase for the Google auth URL (PKCE flow).
   //    skipBrowserRedirect:true tells Supabase NOT to open the URL itself
-  //    (it can't in the main process anyway) — we open it via shell.openExternal.
+  //    (it can't in the main process anyway) â€” we open it via shell.openExternal.
   let authUrl: string;
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -114,7 +114,7 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
       }
       if (received) {
         // Subsequent hits after the first /callback (browser prefetch, back/
-        // forward, etc.) — return a friendly 200 so the browser stops
+        // forward, etc.) â€” return a friendly 200 so the browser stops
         // retrying without re-firing resolve/reject (Promise semantics
         // already keep the first resolution; this just avoids the polite
         // HTML being written twice).
@@ -130,7 +130,7 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(
         `<!doctype html><html><body style="font-family:system-ui;padding:2em;text-align:center">` +
-          `<h2>You can close this tab.</h2><p>Returning to Sei…</p>` +
+          `<h2>You can close this tab.</h2><p>Returning to Seiâ€¦</p>` +
           `<script>window.close()</script></body></html>`,
       );
       if (errParam) reject(new Error(`google_error:${errParam}`));
@@ -143,7 +143,7 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
   //    WR-06: capture the abort-listener handle so we can remove it
   //    explicitly when the race resolves. Otherwise the listener stays
   //    attached to the AbortSignal until the controller is GC'd by the
-  //    enclosing handler's finally block — bounded today, but a future
+  //    enclosing handler's finally block â€” bounded today, but a future
   //    refactor that keeps oauthController alive longer would turn this
   //    into a slow leak.
   let timeoutHandle: NodeJS.Timeout | null = null;
@@ -161,7 +161,7 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
   });
 
   // 5. Open the user's system browser via shell.openExternal (Pitfall 4
-  //    — never use Electron's embedded-window APIs for the OAuth flow).
+  //    â€” never use Electron's embedded-window APIs for the OAuth flow).
   try {
     await _openExternal(authUrl);
   } catch (err) {
@@ -198,7 +198,11 @@ export async function startGoogleOAuth(opts: StartGoogleOAuthOptions): Promise<O
     if (abortListener !== null) {
       opts.abortSignal.removeEventListener('abort', abortListener);
     }
-    // T-10-05-06 — always drain in-flight requests, no port leak.
+    // T-10-05-06 â€” always drain in-flight requests, no port leak.
     server.close();
   }
 }
+
+
+
+

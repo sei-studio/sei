@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+﻿import { describe, it, expect, beforeEach } from 'vitest'
 import { markBoot, bootMarks, onBootMark, __resetBootMarks } from './bootTiming.js'
 
 describe('bootTiming (260926)', () => {
@@ -37,3 +37,7 @@ describe('bootTiming (260926)', () => {
     expect(bootMarks()).toEqual({})
   })
 })
+
+
+
+

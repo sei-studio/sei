@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetOnboardingFunnelForTests,
   observeOnboardingEvent,
@@ -76,3 +76,7 @@ describe('onboardingFunnel', () => {
     expect(capture).toHaveBeenCalledTimes(1);
   });
 });
+
+
+
+

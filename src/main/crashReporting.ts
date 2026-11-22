@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Crash, hang and unclean-exit reporting (261031, T278, scale plan C4).
  *
  * No paid service and no minidump upload. Three layers:
@@ -22,7 +22,7 @@
  *      utility process that died (`child-process-gone`, kind `child_gone`;
  *      companion bots are skipped there, `summon_failed` /
  *      `bot_session_failed` already cover them), and a window that stopped
- *      responding (`unresponsive` → `app_hang` once it recovers or closes).
+ *      responding (`unresponsive` â†’ `app_hang` once it recovers or closes).
  *      A hung MAIN process cannot report itself; it shows up next launch as
  *      an unclean exit.
  *   3. The crash log (crashLog.ts): `<userData>/logs/crash/crash.log`, every
@@ -131,7 +131,7 @@ export function cleanToken(raw: unknown, max = 32): string {
   return /^[a-z0-9_.]{1,64}$/.test(s) ? s.slice(0, max) : 'unknown';
 }
 
-/** A page's html file name from its URL: `.../overlay.html#x` → 'overlay'; dev server root → 'index'. */
+/** A page's html file name from its URL: `.../overlay.html#x` â†’ 'overlay'; dev server root â†’ 'index'. */
 export function pageName(url: string): string {
   try {
     const u = new URL(url);
@@ -378,7 +378,7 @@ export function createCrashReporter(deps: CrashReporterDeps): CrashReporter {
   }
 }
 
-// ── Electron wiring ──────────────────────────────────────────────────────────
+// â”€â”€ Electron wiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let reporter: CrashReporter | null = null;
 
@@ -535,3 +535,7 @@ function safe<T>(fn: () => T, fallback: T): T {
     return fallback;
   }
 }
+
+
+
+

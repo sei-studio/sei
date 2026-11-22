@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+﻿import { describe, it, expect, beforeEach } from 'vitest';
 import {
   noteCompanionGoodbye,
   consumeGoodbye,
@@ -73,3 +73,7 @@ describe('goodbye plan game (261020 review)', () => {
     expect(goodbyePlanPlace({ surface: 'call' }, undefined)).toEqual({ surface: 'call' });
   });
 });
+
+
+
+

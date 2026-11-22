@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sign-in reconcile sweep: the added_world_ids write and the account scope
  * (260929).
  *
@@ -130,3 +130,7 @@ describe('reconcileLocalOwnershipOnSignIn', () => {
     expect(await exists(paths.characterPath(X))).toBe(true);
   });
 });
+
+
+
+

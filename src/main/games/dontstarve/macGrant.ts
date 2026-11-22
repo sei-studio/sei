@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The macOS side of the one-click DST helper install (260925): the real
  * MacGrant that install.ts's grantAndInstall drives. Kept apart from
  * install.ts so that file never imports electron.
@@ -33,9 +33,9 @@ export const GRANT_COPY = {
     button: 'Install helper',
   },
   zh: {
-    message: 'macOS 需要你确认一次。点击“安装助手”，让 Sei 把助手添加到《饥荒联机版》。',
-    hint: '选的不是这个文件夹。请在打开“mods”文件夹时直接点击“安装助手”。',
-    button: '安装助手',
+    message: 'macOS éœ€è¦ä½ ç¡®è®¤ä¸€æ¬¡ã€‚ç‚¹å‡»â€œå®‰è£…åŠ©æ‰‹â€ï¼Œè®© Sei æŠŠåŠ©æ‰‹æ·»åŠ åˆ°ã€Šé¥¥è’è”æœºç‰ˆã€‹ã€‚',
+    hint: 'é€‰çš„ä¸æ˜¯è¿™ä¸ªæ–‡ä»¶å¤¹ã€‚è¯·åœ¨æ‰“å¼€â€œmodsâ€æ–‡ä»¶å¤¹æ—¶ç›´æŽ¥ç‚¹å‡»â€œå®‰è£…åŠ©æ‰‹â€ã€‚',
+    button: 'å®‰è£…åŠ©æ‰‹',
   },
   ...DST_GRANT_ADDED,
 } as const;
@@ -105,3 +105,7 @@ export function createMacGrant(opts: { window: BrowserWindow | null; language: U
     chmod: (p, mode) => chmod(p, mode),
   };
 }
+
+
+
+

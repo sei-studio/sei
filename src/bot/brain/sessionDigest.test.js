@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { createSessionDigest, DIGEST_MAX_LINES, DIGEST_LINE_CHARS } from './sessionDigest.js'
 import { createConvoMemory } from './convoMemory.js'
 
@@ -50,3 +50,7 @@ describe('convoMemory onLine tap', () => {
     expect(recentChat.selfSize).toBe(1)
   })
 })
+
+
+
+

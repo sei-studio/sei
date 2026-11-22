@@ -1,4 +1,4 @@
-/** Game adapters (M0, 260908): the GameModule registry + the Minecraft module. */
+﻿/** Game adapters (M0, 260908): the GameModule registry + the Minecraft module. */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const { watchLanSpy } = vi.hoisted(() => ({ watchLanSpy: vi.fn() }));
@@ -59,3 +59,7 @@ describe('minecraft module', () => {
     expect(mod.install).toBeUndefined();
   });
 });
+
+
+
+

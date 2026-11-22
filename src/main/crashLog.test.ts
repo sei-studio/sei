@@ -1,4 +1,4 @@
-/** 261031 (T278): the local crash log: size cap + rotation, entry cap, scrub, frame helpers. */
+﻿/** 261031 (T278): the local crash log: size cap + rotation, entry cap, scrub, frame helpers. */
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,3 +97,7 @@ describe('error helpers', () => {
     expect(topFrame('Error: x\n    at new Promise (<anonymous>)')).toBeNull();
   });
 });
+
+
+
+

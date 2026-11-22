@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Companion profile page tabs and header (product call 261116),
  * server-rendered.
  *
@@ -117,3 +117,7 @@ describe('profile header (261116)', () => {
     expect(css).toMatch(/@container \(max-width: 520px\)\s*\{\s*\.meta \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   });
 });
+
+
+
+

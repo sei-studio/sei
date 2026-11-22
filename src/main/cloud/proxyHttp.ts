@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Small JSON + download helpers for sei-proxy routes that answer plain JSON
  * on the user's Sei JWT (Anima, the avatar library). Main process only.
  */
@@ -96,3 +96,7 @@ export async function putSigned(url: string, bytes: Uint8Array, mime: string): P
     clearTimeout(timer);
   }
 }
+
+
+
+

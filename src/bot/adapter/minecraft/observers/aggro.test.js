@@ -1,8 +1,8 @@
-// 260731 — the aggro tally.
+﻿// 260731 â€” the aggro tally.
 //
 // "sui is not attracting mob aggro, mobs are all on me". The defend swing
 // (combat.defend.test.js) answers the mobs that are ON the player; this is the
-// other half — the companion could not SEE the imbalance, because the snapshot
+// other half â€” the companion could not SEE the imbalance, because the snapshot
 // listed entities with coords and nothing about who they were chasing.
 //
 // The attribution is an inference from body yaw (no target field exists on the
@@ -113,7 +113,7 @@ describe('aggroLine', () => {
     expect(aggroLine({ tally: { onSelf: {}, onOwner: {}, unclear: 0, total: 0 }, ownerLabel: 'Ouen' })).toBeNull()
   })
 
-  // Counts only. It is a data line, not a coaching line — the "hit one to pull
+  // Counts only. It is a data line, not a coaching line â€” the "hit one to pull
   // it off them" half already lives in the capability prompt.
   it('is a bare tally by mob name, both sides', () => {
     const line = aggroLine({
@@ -131,3 +131,7 @@ describe('aggroLine', () => {
     expect(line).toBe('aggro: skeleton 1x on you, none on Ouen')
   })
 })
+
+
+
+

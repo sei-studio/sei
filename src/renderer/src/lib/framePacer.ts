@@ -1,4 +1,4 @@
-/**
+﻿/**
  * An even frame cadence under a frame cap (261110). Used by the room's idle
  * motion (RoomAvatar) and by the face-set view (FacepackView), whose loops
  * draw on requestAnimationFrame but at most `cap` times a second.
@@ -56,3 +56,7 @@ export class FramePacer {
     this.cap = 0;
   }
 }
+
+
+
+

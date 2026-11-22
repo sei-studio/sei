@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MoveInSheet (261104, SeiLink M4): "Move {name} onto your desktop".
  *
  * Shown from the companion page's gear menu (and the SeiLink button, the
@@ -270,3 +270,7 @@ export function MoveInSheet({ characterId, name, otherName, reason, entry, onClo
 }
 
 export default MoveInSheet;
+
+
+
+

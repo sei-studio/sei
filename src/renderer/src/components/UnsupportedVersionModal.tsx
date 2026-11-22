@@ -1,5 +1,5 @@
-/**
- * UnsupportedVersionModal — the world runs a Minecraft version Sei can't join
+﻿/**
+ * UnsupportedVersionModal â€” the world runs a Minecraft version Sei can't join
  * (outside minecraft-protocol's supported set, e.g. a brand-new snapshot).
  *
  * Opened centrally by the onStatus subscription in useDataStore.wireIpc when a
@@ -154,3 +154,7 @@ export function UnsupportedVersionModal({
     </ModalShell>
   );
 }
+
+
+
+

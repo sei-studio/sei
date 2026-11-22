@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink art packs on the wire (261104, host pass). Shared by main (which
  * loads and serves packs, src/main/seilink/packs.ts) and the renderer (which
  * draws them, components/seilink/RoomCanvas.tsx).
@@ -74,3 +74,7 @@ export type RoomUrlResolver = (rel: string) => string;
 export function seilinkResolver(pack: Pick<SeilinkPack, 'id' | 'rev'>): RoomUrlResolver {
   return (rel) => seilinkFileUrl(pack, rel);
 }
+
+
+
+

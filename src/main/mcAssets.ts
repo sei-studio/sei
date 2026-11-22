@@ -1,5 +1,5 @@
-/**
- * mcAssets — read-only Minecraft item texture resolution for the dashboard
+﻿/**
+ * mcAssets â€” read-only Minecraft item texture resolution for the dashboard
  * (260721). The renderer's Minecraft dashboard shows real item textures in
  * its inventory slots; this module backs the skin server's
  * `GET /mcassets/<version>/item/<name>.png` endpoint (see skinServer.ts).
@@ -13,13 +13,13 @@
  *
  * NOTE (legally cleanest future source): the tidiest origin for these
  * textures would be the user's OWN installed Minecraft client jar
- * (~/Library/Application Support/minecraft/versions/<v>/<v>.jar →
+ * (~/Library/Application Support/minecraft/versions/<v>/<v>.jar â†’
  * assets/minecraft/textures/...) extracted into a userData cache, falling
- * back to prismarine-viewer's copies. Not implemented yet — jar discovery +
+ * back to prismarine-viewer's copies. Not implemented yet â€” jar discovery +
  * zip extraction is not worth the weight for v0.5. Never commit Mojang asset
  * files to the repo or bundle them into build output.
  *
- * Item name → file mapping: prismarine-viewer ships a per-version
+ * Item name â†’ file mapping: prismarine-viewer ships a per-version
  * `items_textures.json` (`[{name, model, texture}]`) whose `texture` field
  * points at either an item sprite ("minecraft:items/iron_pickaxe") or, for
  * block items, a block face ("minecraft:block/cobblestone"). We resolve
@@ -38,7 +38,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bundleRequire } from './bundleRequire';
 
-/** GET /mcassets/<version>/item/<name>.png — the ONLY accepted URL shape. */
+/** GET /mcassets/<version>/item/<name>.png â€” the ONLY accepted URL shape. */
 const MC_ASSET_URL_RE =
   /^\/mcassets\/(latest|\d{1,2}(?:\.\d{1,3}){0,2})\/item\/([a-z0-9_]{1,64})\.png(\?.*)?$/;
 
@@ -59,7 +59,7 @@ export function parseMcAssetUrl(url: string): McAssetRequest | null {
   return { version: m[1], name: m[2] };
 }
 
-/** "1.21.4" → sortable numeric key. Null when unparsable. */
+/** "1.21.4" â†’ sortable numeric key. Null when unparsable. */
 function versionKey(v: string): number | null {
   const m = v.match(/^(\d{1,2})(?:\.(\d{1,3}))?(?:\.(\d{1,3}))?$/);
   if (!m) return null;
@@ -87,7 +87,7 @@ export function pickClosestVersion(requested: string, available: string[]): stri
 }
 
 /**
- * textures root → sorted version folder list (cached; missing root = []).
+ * textures root â†’ sorted version folder list (cached; missing root = []).
  *
  * 260725: a FAILED read is never left in the cache. These caches have no
  * eviction, so memoizing one transient error (antivirus scan, slow network
@@ -111,7 +111,7 @@ function listTextureVersions(texturesRoot: string): Promise<string[]> {
 }
 
 /**
- * `${root}|${version}` → item name → relative texture path ("items/x.png").
+ * `${root}|${version}` â†’ item name â†’ relative texture path ("items/x.png").
  * Same no-caching-a-failed-read rule as versionsCache above.
  */
 const itemMapCache = new Map<string, Promise<Map<string, string>>>();
@@ -185,7 +185,7 @@ let cachedRoot: string | null | undefined;
  * Locate prismarine-viewer's bundled textures dir. Resolved relative to this
  * bundle via bundleRequire (dev, vitest and packaged builds alike; the main
  * bundle is ESM, so there is no ambient `require`). Null when the package
- * can't be resolved — the endpoint then 404s and the renderer keeps its
+ * can't be resolved â€” the endpoint then 404s and the renderer keeps its
  * text-label slots.
  */
 export function defaultTexturesRoot(): string | null {
@@ -198,3 +198,7 @@ export function defaultTexturesRoot(): string | null {
   }
   return cachedRoot;
 }
+
+
+
+

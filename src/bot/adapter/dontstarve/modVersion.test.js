@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { modVersionAtLeast, modHasCaps, CAPS_MIN_MOD } from './modVersion.js'
@@ -24,3 +24,7 @@ describe('DST helper mod version gate', () => {
     expect(modVersionAtLeast(reported, CAPS_MIN_MOD)).toBe(true)
   })
 })
+
+
+
+

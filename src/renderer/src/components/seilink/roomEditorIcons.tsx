@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Line icons for the room editor (261104). Same drawing rules as
  * components/icons.tsx (24 grid, currentColor, round caps), sized by `size`.
  */
@@ -115,7 +115,7 @@ export const PaletteIcon = (p: P): React.ReactElement => (
   </Svg>
 );
 
-// ── SeiLink dock (M4) ──
+// â”€â”€ SeiLink dock (M4) â”€â”€
 
 /** Edit room: a paint brush. */
 export const BrushIcon = (p: P): React.ReactElement => (
@@ -148,7 +148,7 @@ export const MoveOutIcon = (p: P): React.ReactElement => (
   </Svg>
 );
 
-// ── Editor rail (261105): one line icon per slot, in place of image previews ──
+// â”€â”€ Editor rail (261105): one line icon per slot, in place of image previews â”€â”€
 
 /** Avatar: a person. */
 export const PersonIcon = (p: P): React.ReactElement => (
@@ -253,3 +253,7 @@ export const SparkleIcon = (p: P): React.ReactElement => (
     <circle cx="17.5" cy="6.5" r="0.8" />
   </Svg>
 );
+
+
+
+

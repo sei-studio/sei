@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/behaviors/chat.multiagent.test.js
+﻿// src/bot/adapter/minecraft/behaviors/chat.multiagent.test.js
 //
-// 260618 (M1) — multi-agent chat routing. A message aimed only at a sibling
+// 260618 (M1) â€” multi-agent chat routing. A message aimed only at a sibling
 // companion (or a sibling's own chatter) must be RECORDED to history but NOT
 // wake this bot: chat.js emits sei:chat_received with suppressInterrupt=true,
 // and brain/index.js's onChat records-then-skips on that flag. Here we assert
@@ -72,10 +72,10 @@ describe('chat.js multi-agent addressing', () => {
   it('does NOT suppress when a sibling bot addresses THIS bot BY NAME (260619)', () => {
     // The player can delegate task-giving to a teammate ("marv, listen to sui").
     // A sibling's by-name command must wake us, not just land silently in history
-    // — otherwise the directed bot sits idle while its teammate keeps asking.
+    // â€” otherwise the directed bot sits idle while its teammate keeps asking.
     bot.emit('chat', 'Marv', 'sui, mine that stone with me')
     expect(events).toHaveLength(1)
-    expect(events[0].suppressInterrupt).toBe(false) // by-name → wake
+    expect(events[0].suppressInterrupt).toBe(false) // by-name â†’ wake
     expect(events[0].addressed).toBe(true)
     expect(events[0].playerSpoke).toBe(false) // still a teammate, not the human
     expect(events[0].username).toBe('Marv') // keeps the sibling's real name
@@ -97,18 +97,22 @@ describe('chat.js multi-agent addressing', () => {
   })
 
   it('accented spellings address the folded login name (261027)', () => {
-    // Sofía joins as "Sofia" and Björn as "Bjorn"; players type the accents.
+    // SofÃ­a joins as "Sofia" and BjÃ¶rn as "Bjorn"; players type the accents.
     const sofia = makeBot('Sofia')
     const ev = capture(sofia)
     startChat(sofia, { player_display_name: 'Ouen', _seiCompanions: ['Bjorn'] }, null)
-    sofia.emit('chat', 'Ouen', 'sofía come here')
+    sofia.emit('chat', 'Ouen', 'sofÃ­a come here')
     expect(ev[0].addressed).toBe(true)
     expect(ev[0].suppressInterrupt).toBe(false)
-    sofia.emit('chat', 'Ouen', 'björn go mine')
+    sofia.emit('chat', 'Ouen', 'bjÃ¶rn go mine')
     expect(ev[1].addressed).toBe(false)
     expect(ev[1].suppressInterrupt).toBe(true)
     // A folded letter is still a name character: no false whole-word match.
-    sofia.emit('chat', 'Ouen', 'sofiaé')
+    sofia.emit('chat', 'Ouen', 'sofiaÃ©')
     expect(ev[2].addressed).toBe(false)
   })
 })
+
+
+
+

@@ -1,9 +1,9 @@
-/**
- * avatarStore (260804) — import/normalize/read/remove of Live2D model zips.
+﻿/**
+ * avatarStore (260804) â€” import/normalize/read/remove of Live2D model zips.
  *
  * The end-to-end import test runs against the REAL first test model (Snow
  * Bear Girl, GBK-named VTube Studio export) when it is present on this
- * machine, and is skipped otherwise — CI has no 19 MB proprietary model. The
+ * machine, and is skipped otherwise â€” CI has no 19 MB proprietary model. The
  * synthetic-zip tests cover the same normalization contract everywhere.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -36,7 +36,7 @@ import {
   MANIFEST_VERSION,
 } from './avatarStore';
 
-const REAL_ZIP = '/Users/ouen/Downloads/_雪熊企划_雪熊少女.zip';
+const REAL_ZIP = '/Users/ouen/Downloads/_é›ªç†Šä¼åˆ’_é›ªç†Šå°‘å¥³.zip';
 const REAL_RIG_ZIP = '/Users/ouen/slop/sei-studio/chibi-rig/chibi-rig-avatar.zip';
 
 let dir: string;
@@ -105,7 +105,7 @@ async function syntheticZip(opts?: {
   zip.file('mymodel/model.moc3', Buffer.from([1, 2, 3]));
   zip.file('mymodel/tex/texture_00.png', png(4, 5, 6));
   zip.file('mymodel/declared.exp3.json', EXPR);
-  zip.file('mymodel/生气.exp3.json', EXPR);
+  zip.file('mymodel/ç”Ÿæ°”.exp3.json', EXPR);
   zip.file('mymodel/__MACOSX/._junk', Buffer.from([0]));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
@@ -127,38 +127,38 @@ describe('sanitizeEntryPath', () => {
 
 describe('buildSafePathMap', () => {
   it('slugs non-ASCII and spaces to underscores, keeping extensions', () => {
-    const map = buildSafePathMap(['【雪熊企划】雪熊少女.moc3', '1 帽.exp3.json', 'plain.png']);
-    expect(map.get('【雪熊企划】雪熊少女.moc3')).toBe('_.moc3');
-    expect(map.get('1 帽.exp3.json')).toBe('1_.exp3.json');
+    const map = buildSafePathMap(['ã€é›ªç†Šä¼åˆ’ã€‘é›ªç†Šå°‘å¥³.moc3', '1 å¸½.exp3.json', 'plain.png']);
+    expect(map.get('ã€é›ªç†Šä¼åˆ’ã€‘é›ªç†Šå°‘å¥³.moc3')).toBe('_.moc3');
+    expect(map.get('1 å¸½.exp3.json')).toBe('1_.exp3.json');
     expect(map.get('plain.png')).toBe('plain.png');
     // Every output is loader-safe: encodeURI must be an identity.
     for (const v of map.values()) expect(encodeURI(v)).toBe(v);
   });
 
   it('dedupes collisions within a directory and maps directories consistently', () => {
-    const map = buildSafePathMap(['雪熊.png', '企划.png', '目录/a.png', '目录/b.png']);
-    const [first, second] = [map.get('企划.png'), map.get('雪熊.png')];
+    const map = buildSafePathMap(['é›ªç†Š.png', 'ä¼åˆ’.png', 'ç›®å½•/a.png', 'ç›®å½•/b.png']);
+    const [first, second] = [map.get('ä¼åˆ’.png'), map.get('é›ªç†Š.png')];
     expect(first).not.toBe(second);
     expect(new Set([first, second])).toEqual(new Set(['_.png', '_-2.png']));
-    expect(map.get('目录/a.png')!.split('/')[0]).toBe(map.get('目录/b.png')!.split('/')[0]);
+    expect(map.get('ç›®å½•/a.png')!.split('/')[0]).toBe(map.get('ç›®å½•/b.png')!.split('/')[0]);
   });
 });
 
 describe('mapEmotions', () => {
   it('maps the Snow Bear Girl expression names onto the closed emotion set', () => {
     const names = [
-      '1 帽', '2 手机', '3 麦克', '4 手柄', '5 外套',
-      '6 泪', '7 害羞', '8 生气', '9 爱心眼', '10 星星眼',
+      '1 å¸½', '2 æ‰‹æœº', '3 éº¦å…‹', '4 æ‰‹æŸ„', '5 å¤–å¥—',
+      '6 æ³ª', '7 å®³ç¾ž', '8 ç”Ÿæ°”', '9 çˆ±å¿ƒçœ¼', '10 æ˜Ÿæ˜Ÿçœ¼',
     ];
     const emotions = mapEmotions(names);
-    expect(emotions.sad).toBe('6 泪');
-    expect(emotions.shy).toBe('7 害羞');
-    expect(emotions.angry).toBe('8 生气');
-    expect(emotions.love).toBe('9 爱心眼');
-    expect(emotions.excited).toBe('10 星星眼');
+    expect(emotions.sad).toBe('6 æ³ª');
+    expect(emotions.shy).toBe('7 å®³ç¾ž');
+    expect(emotions.angry).toBe('8 ç”Ÿæ°”');
+    expect(emotions.love).toBe('9 çˆ±å¿ƒçœ¼');
+    expect(emotions.excited).toBe('10 æ˜Ÿæ˜Ÿçœ¼');
     // Accessory toggles map to nothing.
-    expect(Object.values(emotions)).not.toContain('1 帽');
-    expect(Object.values(emotions)).not.toContain('2 手机');
+    expect(Object.values(emotions)).not.toContain('1 å¸½');
+    expect(Object.values(emotions)).not.toContain('2 æ‰‹æœº');
   });
 
   it('maps English names too', () => {
@@ -173,8 +173,8 @@ describe('importAvatarZip (synthetic)', () => {
   it('imports, strips the common root, registers undeclared expressions and adds EyeBlink', async () => {
     const manifest = await importAvatarZip('char-1', await syntheticZip());
     expect(manifest.entry).toBe('model.model3.json');
-    expect(manifest.expressions.map((e) => e.name).sort()).toEqual(['declared', '生气']);
-    expect(manifest.emotions.angry).toBe('生气');
+    expect(manifest.expressions.map((e) => e.name).sort()).toEqual(['declared', 'ç”Ÿæ°”']);
+    expect(manifest.emotions.angry).toBe('ç”Ÿæ°”');
 
     // The stored settings were normalized.
     const files = await readAvatarModelFiles('char-1');
@@ -232,13 +232,13 @@ describe('importAvatarZip (synthetic)', () => {
     for (const f of files) {
       expect(encodeURI(f.path)).toBe(f.path); // no non-ASCII, no spaces
     }
-    // 生气.exp3.json was renamed on disk but keeps its pretty NAME.
+    // ç”Ÿæ°”.exp3.json was renamed on disk but keeps its pretty NAME.
     const settings = JSON.parse(
       Buffer.from(files.find((f) => f.path === manifest.entry)!.bytes).toString('utf8'),
     );
     const byPath = new Set(files.map((f) => f.path));
     const angry = settings.FileReferences.Expressions.find(
-      (e: { Name: string }) => e.Name === '生气',
+      (e: { Name: string }) => e.Name === 'ç”Ÿæ°”',
     );
     expect(angry).toBeDefined();
     expect(byPath.has(angry.File)).toBe(true);
@@ -253,27 +253,27 @@ describe('importAvatarZip (synthetic)', () => {
     const settings = {
       Version: 3,
       FileReferences: {
-        Moc: '雪熊少女.moc3',
-        Textures: ['雪熊少女.4096/texture_00.png'],
-        Expressions: [{ Name: '生气', File: '8 生气.exp3.json' }],
+        Moc: 'é›ªç†Šå°‘å¥³.moc3',
+        Textures: ['é›ªç†Šå°‘å¥³.4096/texture_00.png'],
+        Expressions: [{ Name: 'ç”Ÿæ°”', File: '8 ç”Ÿæ°”.exp3.json' }],
       },
       Groups: [{ Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen'] }],
     };
-    await writeP(path.join(storeDir, '雪熊少女.model3.json'), JSON.stringify(settings));
-    await writeP(path.join(storeDir, '雪熊少女.moc3'), Buffer.from([1]));
-    await mkdirP(path.join(storeDir, '雪熊少女.4096'), { recursive: true });
-    await writeP(path.join(storeDir, '雪熊少女.4096', 'texture_00.png'), png(2));
-    await writeP(path.join(storeDir, '8 生气.exp3.json'), EXPR);
+    await writeP(path.join(storeDir, 'é›ªç†Šå°‘å¥³.model3.json'), JSON.stringify(settings));
+    await writeP(path.join(storeDir, 'é›ªç†Šå°‘å¥³.moc3'), Buffer.from([1]));
+    await mkdirP(path.join(storeDir, 'é›ªç†Šå°‘å¥³.4096'), { recursive: true });
+    await writeP(path.join(storeDir, 'é›ªç†Šå°‘å¥³.4096', 'texture_00.png'), png(2));
+    await writeP(path.join(storeDir, '8 ç”Ÿæ°”.exp3.json'), EXPR);
     await writeP(
       path.join(storeDir, 'manifest.json'),
       JSON.stringify({
         version: 1,
-        name: '雪熊少女',
-        entry: '雪熊少女.model3.json',
+        name: 'é›ªç†Šå°‘å¥³',
+        entry: 'é›ªç†Šå°‘å¥³.model3.json',
         importedAt: new Date().toISOString(),
         bytes: 4,
-        expressions: [{ name: '生气', file: '8 生气.exp3.json' }],
-        emotions: { angry: '生气' },
+        expressions: [{ name: 'ç”Ÿæ°”', file: '8 ç”Ÿæ°”.exp3.json' }],
+        emotions: { angry: 'ç”Ÿæ°”' },
       }),
     );
 
@@ -290,7 +290,7 @@ describe('importAvatarZip (synthetic)', () => {
     const byPath = new Set(files.map((f) => f.path));
     expect(byPath.has(healedSettings.FileReferences.Moc)).toBe(true);
     expect(byPath.has(healedSettings.FileReferences.Textures[0])).toBe(true);
-    expect(healed!.emotions.angry).toBe('生气');
+    expect(healed!.emotions.angry).toBe('ç”Ÿæ°”');
     // Second read returns the healed manifest without re-running.
     expect((await getAvatarManifest('char-v1'))!.version).toBe(MANIFEST_VERSION);
   });
@@ -311,16 +311,16 @@ describe.skipIf(!existsSync(REAL_ZIP))('importAvatarZip (real Snow Bear Girl zip
     const manifest = await importAvatarZip('sui-test', bytes);
 
     // GBK filenames decoded (the model name is the Chinese folder name).
-    expect(manifest.name).toContain('雪熊');
+    expect(manifest.name).toContain('é›ªç†Š');
     expect(manifest.entry.endsWith('.model3.json')).toBe(true);
 
     // All 10 expressions registered despite model3.json declaring none.
     expect(manifest.expressions).toHaveLength(10);
-    expect(manifest.emotions.sad).toContain('泪');
-    expect(manifest.emotions.shy).toContain('害羞');
-    expect(manifest.emotions.angry).toContain('生气');
-    expect(manifest.emotions.love).toContain('爱心');
-    expect(manifest.emotions.excited).toContain('星星');
+    expect(manifest.emotions.sad).toContain('æ³ª');
+    expect(manifest.emotions.shy).toContain('å®³ç¾ž');
+    expect(manifest.emotions.angry).toContain('ç”Ÿæ°”');
+    expect(manifest.emotions.love).toContain('çˆ±å¿ƒ');
+    expect(manifest.emotions.excited).toContain('æ˜Ÿæ˜Ÿ');
 
     // The normalized settings reference files that exist in the bundle.
     const files = await readAvatarModelFiles('sui-test');
@@ -466,11 +466,11 @@ describe('parameter roles and no-op expressions (261122)', () => {
 describe('setAvatarAccessory', () => {
   it('toggles an accessory on and off, keeping the record sparse', async () => {
     await importAvatarZip('char-acc', await syntheticZip());
-    const on = await setAvatarAccessory('char-acc', '生气', true);
-    expect(on?.accessories).toEqual({ '生气': true });
+    const on = await setAvatarAccessory('char-acc', 'ç”Ÿæ°”', true);
+    expect(on?.accessories).toEqual({ 'ç”Ÿæ°”': true });
     // Persisted: a fresh read sees it.
-    expect((await getAvatarManifest('char-acc'))?.accessories).toEqual({ '生气': true });
-    const off = await setAvatarAccessory('char-acc', '生气', false);
+    expect((await getAvatarManifest('char-acc'))?.accessories).toEqual({ 'ç”Ÿæ°”': true });
+    const off = await setAvatarAccessory('char-acc', 'ç”Ÿæ°”', false);
     expect(off?.accessories).toBeUndefined();
     expect((await getAvatarManifest('char-acc'))?.accessories).toBeUndefined();
   });
@@ -556,7 +556,7 @@ describe('importAvatarZip (rig)', () => {
             z: 3,
             group: 'head',
             box: [524, 812, 1236, 1076],
-            states: { open: 'eyes_open.png', closed: 'eyes closed 图.png' },
+            states: { open: 'eyes_open.png', closed: 'eyes closed å›¾.png' },
           },
         ],
       }),
@@ -564,7 +564,7 @@ describe('importAvatarZip (rig)', () => {
     zip.file('back.png', png(1));
     zip.file('body.png', png(2));
     zip.file('eyes_open.png', png(3));
-    if (!opts?.dropImage) zip.file('eyes closed 图.png', png(4));
+    if (!opts?.dropImage) zip.file('eyes closed å›¾.png', png(4));
     return zip.generateAsync({ type: 'nodebuffer' });
   }
 
@@ -772,3 +772,7 @@ describe('setAvatarLibraryLink (261106)', () => {
     expect(m?.name).toBe('second');
   });
 });
+
+
+
+

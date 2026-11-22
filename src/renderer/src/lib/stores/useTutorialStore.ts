@@ -1,12 +1,12 @@
-/**
- * useTutorialStore — the post-onboarding guided tour (260728).
+﻿/**
+ * useTutorialStore â€” the post-onboarding guided tour (260728).
  *
  * Armed by App.tsx when the Sui onboarding scene completes (OnboardApp's
  * onComplete). Two shapes:
- *   full     — a companion was generated: starts on their page ('meet') and
- *              walks say-hi → chat surface → games → home terminal → settings
- *              → Sui → goodbye.
- *   reduced  — local mode / generation skipped or failed: no companion page
+ *   full     â€” a companion was generated: starts on their page ('meet') and
+ *              walks say-hi â†’ chat surface â†’ games â†’ home terminal â†’ settings
+ *              â†’ Sui â†’ goodbye.
+ *   reduced  â€” local mode / generation skipped or failed: no companion page
  *              to tour, so it starts at the home terminal step.
  *
  * The TutorialOverlay component owns rendering, step advancement, and target
@@ -65,7 +65,7 @@ interface TutorialState {
   mode: TutorialMode;
   /** The SeiLink tour's audience and which offer this is (mode 'seilink'). */
   seilink: { audience: TourAudience; offer: number } | null;
-  /** The generated companion the full tour introduces; null → reduced tour. */
+  /** The generated companion the full tour introduces; null â†’ reduced tour. */
   characterId: string | null;
   step: TutorialStep;
   start: (characterId: string | null) => void;
@@ -101,3 +101,7 @@ export const useTutorialStore = create<TutorialState>((set, get) => ({
     if (wasOnboarding) persist(null);
   },
 }));
+
+
+
+

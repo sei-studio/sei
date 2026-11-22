@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261116 (product call 261116): a World companion (someone else's character)
  * whose description names a language. Aria's creator wrote "Speak primarily
  * in natural, casual Spanish", and with an English player the # LANGUAGE
@@ -26,7 +26,7 @@ const args = (extra: Record<string, unknown>) =>
 const text = (blocks: Array<{ text: string }>) => blocks.map((b) => b.text).join('\n');
 
 describe('adopted-language note', () => {
-  it('is absent for the player’s own companions', () => {
+  it('is absent for the playerâ€™s own companions', () => {
     const all = text(buildSystemBlocks(args({ language: 'en' })));
     expect(all).not.toContain('Someone else wrote your description');
   });
@@ -50,3 +50,7 @@ describe('adopted-language note', () => {
     expect(renderAdoptedLanguageNote('xx')).toBe('');
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Game adapters (M0, 260908): the chat-surface launch tool is built from the
  * catalog's self-launchable games. With one game (today's catalog) it must be
  * the exact pre-M0 Minecraft tool, byte for byte; with several it names them.
@@ -10,7 +10,7 @@ import { GAME_CATALOG } from '../../shared/games';
 const PRE_M0_LAUNCH_TOOL = {
   name: 'launch',
   description:
-    'Join the player in Minecraft and start playing alongside them — this pulls you out of chat and into their world. ' +
+    'Join the player in Minecraft and start playing alongside them â€” this pulls you out of chat and into their world. ' +
     'ONLY call this when the player clearly asks you to play or join right now (e.g. "let\'s play", "come in", "join me"). ' +
     'Do NOT call it to answer a question about connection status, or just because a world is open. ' +
     'Minecraft is the only game you can start yourself; the others in # GAMES are opened by the player, so suggest those in words instead of calling this. ' +
@@ -41,6 +41,10 @@ describe('LAUNCH_TOOL', () => {
     expect(tool.input_schema.properties.game.enum).toEqual(['minecraft', 'stardew']);
     expect(tool.description).toContain('Minecraft or Stardew Valley');
     expect(tool.description).not.toContain('LAN world');
-    expect(tool.description).not.toContain('—'.repeat(2));
+    expect(tool.description).not.toContain('â€”'.repeat(2));
   });
 });
+
+
+
+

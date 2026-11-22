@@ -1,5 +1,5 @@
-/**
- * Voice for others (261019) — pure logic, no React.
+﻿/**
+ * Voice for others (261019) â€” pure logic, no React.
  *
  * A voice from the author's own ElevenLabs account only plays in that
  * account, so anyone else who invites a shared character hears a Sei pool
@@ -69,3 +69,7 @@ export function sharedVoiceMetadataToSave(
   if (sharedVoiceIdOf(metadata) === choice) return null;
   return applySharedVoicePick(metadata, choice);
 }
+
+
+
+

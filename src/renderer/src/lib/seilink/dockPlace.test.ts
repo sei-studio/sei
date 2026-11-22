@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { DOCK_BOTTOM_GAP, DOCK_SIDE_GAP, dockAwake, dockBottom, dockCorner } from './dockPlace';
 
 const work = { x: 0, y: 0, w: 1920, h: 1032 };
@@ -33,3 +33,7 @@ describe('dockAwake', () => {
     for (const k of Object.keys(rest) as Array<keyof typeof rest>) expect(dockAwake({ ...rest, [k]: true }), k).toBe(true);
   });
 });
+
+
+
+

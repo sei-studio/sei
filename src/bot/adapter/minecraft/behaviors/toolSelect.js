@@ -1,8 +1,8 @@
-// src/behaviors/toolSelect.js — pick and equip the right tool before a dig.
+﻿// src/behaviors/toolSelect.js â€” pick and equip the right tool before a dig.
 //
 // 260731: nothing on the dig path ever equipped anything. bot.dig() swings
 // whatever happens to be in hand, and mineflayer's canDigBlock() only checks
-// diggability + reach — it never looks at the held item — so dig.js's
+// diggability + reach â€” it never looks at the held item â€” so dig.js's
 // "unbreakable or wrong tool" branch could not fire on a bare-handed stone.
 // Two live failures came out of that:
 //
@@ -11,7 +11,7 @@
 //      ("timeout digging stone" three times in a row, then `dug stone` the
 //      instant the model happened to equip a wooden_pickaxe).
 //   2. Stone mined without a pickaxe DROPS NOTHING, so gather('cobblestone')
-//      could never accumulate — it reported 0/6, 0/7, 0/8 forever.
+//      could never accumulate â€” it reported 0/6, 0/7, 0/8 forever.
 //
 // The whole burden sat on the LLM remembering to call equip() first, and Haiku
 // forgot most turns. The adapter does it now, the same way place/build/consume
@@ -19,7 +19,7 @@
 //
 // Also exported: `harvestNote`, so a dig that still cannot harvest the block
 // (no pickaxe anywhere in the inventory) SAYS so in its result string instead
-// of silently returning nothing — the attack.js weakWeaponNote pattern.
+// of silently returning nothing â€” the attack.js weakWeaponNote pattern.
 
 const WATER = new Set(['water', 'flowing_water'])
 
@@ -83,7 +83,7 @@ function better(a, b) {
  * (possibly the one already held, possibly null for bare hand) and `current`
  * is the same shape for what is held right now.
  *
- * Pure apart from reading bot state — exported for the tests.
+ * Pure apart from reading bot state â€” exported for the tests.
  */
 export function chooseDigTool(bot, block) {
   const ctx = digContext(bot)
@@ -125,7 +125,7 @@ const EQUIP_TIMEOUT_MS = 2000
  * Equip the best available tool for `block`. Best-effort: an equip that fails
  * or hangs never blocks the dig, it just leaves whatever was in hand.
  *
- * Returns `{ equipped, ms, harvest }` — `equipped` is the item name we moved
+ * Returns `{ equipped, ms, harvest }` â€” `equipped` is the item name we moved
  * into the hand (null if we kept what was there), `ms` the expected dig time
  * with what is now held, `harvest` whether the block will drop.
  */
@@ -147,8 +147,12 @@ export async function equipBestTool(bot, block, config) {
 /**
  * Suffix for a successful dig that produced no drop because nothing in the
  * inventory can harvest it. Tells the model WHY the count never moves, which
- * is otherwise invisible — a gather just reports 0/6 forever.
+ * is otherwise invisible â€” a gather just reports 0/6 forever.
  */
 export function harvestNote(blockName) {
-  return ` (no drop — you have no tool that can harvest ${blockName}; craft the right pickaxe first)`
+  return ` (no drop â€” you have no tool that can harvest ${blockName}; craft the right pickaxe first)`
 }
+
+
+
+

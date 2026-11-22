@@ -1,9 +1,9 @@
-/**
- * Caption chunking (260806) — pure text/geometry math for the caption overlay
+﻿/**
+ * Caption chunking (260806) â€” pure text/geometry math for the caption overlay
  * window.
  *
  * The caption font size is FIXED (a user choice); the box is a fixed size (a
- * user choice). So a line that does not fit is never scaled down — it is
+ * user choice). So a line that does not fit is never scaled down â€” it is
  * broken into sequential CHUNKS that each fit the box, paged at reading
  * speed by the component. A bigger font or a smaller box just means more,
  * shorter chunks.
@@ -60,7 +60,7 @@ export function splitSentences(text: string): string[] {
   let current = '';
   for (const ch of text) {
     current += ch;
-    if (/[.!?。！？…]/.test(ch)) {
+    if (/[.!?ã€‚ï¼ï¼Ÿâ€¦]/.test(ch)) {
       out.push(current);
       current = '';
     }
@@ -136,3 +136,7 @@ export function chunkCaption(text: string, unitsPerChunk: number): string[] {
   flush();
   return chunks;
 }
+
+
+
+

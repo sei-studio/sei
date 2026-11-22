@@ -1,4 +1,4 @@
-// Minecraft 64x64 skin UV layout, computed from box-unwrap geometry.
+﻿// Minecraft 64x64 skin UV layout, computed from box-unwrap geometry.
 // Unwrap of a box (w,h,d) at origin (ox,oy):
 //   top(ox+d,oy,w,d) bottom(ox+d+w,oy,w,d)
 //   right(ox,oy+d,d,h) front(ox+d,oy+d,w,h) left(ox+d+w,oy+d,d,h) back(ox+2d+w,oy+d,w,h)
@@ -76,3 +76,7 @@ export function usedGrid(variant = 'classic', layer = 'both') {
   }
   return grid;
 }
+
+
+
+

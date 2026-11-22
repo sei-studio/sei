@@ -1,4 +1,4 @@
-/**
+﻿/**
  * R1b (260929): Start Minecraft selects the Sei profile (lastUsed = now in
  * every launcher file that has it) and opens the launcher. The real open and
  * the launcher's preselect need a Mac / Windows machine; these cover the
@@ -329,3 +329,7 @@ describe('openMinecraftLauncher (261104)', () => {
     ).toEqual({ ok: false, reason: 'launch_failed' });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Channels between the SeiLink room host process and its own page (261104).
  * Host-internal: they never reach the main app, so they are not in
  * IpcChannel. src/preload/seilinkHost.ts spells the same names out (it may
@@ -52,3 +52,7 @@ export const SEILINK_HOST_CHANNELS = {
   /** page -> host: {played, reduced, kind}, she is in (261119). */
   arrived: 'seilink-host:arrived',
 } as const;
+
+
+
+

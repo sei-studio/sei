@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backseat game registry (260929): link parsing and the share-picker hint.
  */
 import { describe, it, expect } from 'vitest';
@@ -90,7 +90,7 @@ describe('registry', () => {
   it('has user-facing copy and knowledge with no em dashes', () => {
     for (const g of BACKSEAT_GAMES) {
       for (const text of [g.name, g.tileName, g.promptName, g.tileDescription, g.introCopy, g.knowledge]) {
-        expect(text).not.toMatch(/—/);
+        expect(text).not.toMatch(/â€”/);
       }
     }
   });
@@ -101,3 +101,7 @@ describe('registry', () => {
     );
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * pieceGeometry — procedural 3D chess pieces (turned/lathe silhouettes).
+﻿/**
+ * pieceGeometry â€” procedural 3D chess pieces (turned/lathe silhouettes).
  *
  * Every piece is built from primitives at runtime, no model files:
  *   - pawn/rook/bishop/queen/king are LatheGeometry profiles (a classic
@@ -41,7 +41,7 @@ function lathe(points: Pt[], segments = 40): THREE.LatheGeometry {
   return geo;
 }
 
-// ── Lathe profiles (radius, height), base at y=0 ─────────────────────────────
+// â”€â”€ Lathe profiles (radius, height), base at y=0 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PAWN: Pt[] = [
   [0.3, 0],
@@ -293,3 +293,7 @@ export function createPieceLibrary(): PieceLibrary {
     },
   };
 }
+
+
+
+

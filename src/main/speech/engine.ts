@@ -1,16 +1,16 @@
-/**
+﻿/**
  * sherpa-onnx runtime host (260816, china-compat W3+W4): local TTS synthesis +
  * SenseVoice STT, in the MAIN process.
  *
- * ── Spike result (260816, spike run on macOS arm64, node 25) ────────────────
+ * â”€â”€ Spike result (260816, spike run on macOS arm64, node 25) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * sherpa-onnx-node and onnxruntime-node COEXIST in one process: sherpa's
  * platform package ships its own libonnxruntime.dylib and its sherpa-onnx.node
  * links it via `@rpath` with an `@loader_path` LC_RPATH, so dyld resolves it
  * from the platform package dir, distinct from onnxruntime-node's
- * libonnxruntime.1.dylib (different install names → no interposition). The
+ * libonnxruntime.1.dylib (different install names â†’ no interposition). The
  * spike loaded both, ran a Maia-3 inference through onnxruntime-node and TTS +
  * SenseVoice through sherpa in the same process, then created a second ort
- * session with sherpa live — all clean. So sherpa runs IN MAIN directly, no
+ * session with sherpa live â€” all clean. So sherpa runs IN MAIN directly, no
  * utilityProcess fork. All heavy calls use the *Async N-API variants, which
  * run on the libuv thread pool and never block the main-process event loop.
  *
@@ -27,7 +27,7 @@
  * 155 MB SenseVoice int8) and created lazily on first use. Kokoro engines are
  * the exception (larger, one per language): see the Kokoro section below.
  * A missing pack surfaces as the typed error `VOICE_PACK_MISSING:<packId>`
- * that the renderer maps to a download prompt — NEVER auto-downloaded
+ * that the renderer maps to a download prompt â€” NEVER auto-downloaded
  * mid-call.
  */
 import path from 'node:path';
@@ -45,7 +45,7 @@ export function packMissingError(packId: SpeechPackId): Error {
   return new Error(`VOICE_PACK_MISSING:${packId}`);
 }
 
-// ── sherpa module loading ───────────────────────────────────────────────────
+// â”€â”€ sherpa module loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type SherpaModule = any;
@@ -65,7 +65,7 @@ function loadSherpa(): SherpaModule {
   return sherpa;
 }
 
-// ── TTS ─────────────────────────────────────────────────────────────────────
+// â”€â”€ TTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type TtsEngine = { generateAsync(req: { text: string; sid: number; speed: number; enableExternalBuffer?: boolean }): Promise<{ samples: Float32Array; sampleRate: number }> ; numSpeakers: number };
 
@@ -134,8 +134,8 @@ async function ttsEngineFor(packId: SpeechPackId): Promise<TtsEngine> {
  * caller encodes WAV (voice/stt.ts encodeWav) for the clip pipeline.
  *
  * Whole-clip v1: sherpa's generateAsync CAN stream chunks through a callback
- * (GenerationConfig.enableExternalBuffer + callback) — the upgrade path if
- * sentence-sized clips ever feel slow — but the existing renderer clip
+ * (GenerationConfig.enableExternalBuffer + callback) â€” the upgrade path if
+ * sentence-sized clips ever feel slow â€” but the existing renderer clip
  * pipeline is whole-clip for short lines anyway, so v1 keeps it simple.
  */
 export async function synthesizeLocal(
@@ -167,7 +167,7 @@ export async function synthesizeLocal(
   return { samples: audio.samples, sampleRate: audio.sampleRate };
 }
 
-// ── Kokoro (261102) ─────────────────────────────────────────────────────────
+// â”€â”€ Kokoro (261102) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // One engine per phonemizer language (the espeak `lang` is fixed at create
 // time, so en/es/fr/it each need their own), about 250 MB resident each. They
@@ -281,7 +281,7 @@ export function _kokoroEngineCountForTests(): number {
   return kokoroEngines.size;
 }
 
-// ── STT (SenseVoice) ────────────────────────────────────────────────────────
+// â”€â”€ STT (SenseVoice) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type SttStream = { acceptWaveform(o: { samples: Float32Array; sampleRate: number }): void };
 type SttEngine = {
@@ -301,7 +301,7 @@ const SENSEVOICE_LANGS = new Set(['zh', 'en', 'ja', 'ko', 'yue']);
  * Map the app's conversation language (UserConfig.chat_language, see
  * src/shared/chatLanguage.ts) onto a SenseVoice language hint. Constraining
  * the decode language is the fix for full auto-detect drifting into Chinese
- * on English speech (and vice versa) — this build's known failure mode.
+ * on English speech (and vice versa) â€” this build's known failure mode.
  * Languages SenseVoice does not model (fr/es) fall back to 'auto'.
  */
 export function senseVoiceLanguage(chatLanguage: string | undefined): string {
@@ -325,7 +325,7 @@ async function sttEngineGet(language: string): Promise<SttEngine> {
           senseVoice: {
             model: path.join(dir, 'model.int8.onnx'),
             // Decode-language hint ('auto' = detect per utterance). Pinned to
-            // the conversation language by the caller — see senseVoiceLanguage.
+            // the conversation language by the caller â€” see senseVoiceLanguage.
             language,
             // Inverse text normalization ON: spoken numbers come back as
             // digits, matching what Scribe/Whisper produce for the chat log.
@@ -356,14 +356,14 @@ function normalizeLang(lang: string | undefined): string | undefined {
 /**
  * Transcribe one utterance of Float32 mono PCM (any sample rate; SenseVoice
  * consumes 16k and sherpa resamples internally off the declared rate).
- * Returns model text with ONE SenseVoice-specific repair applied — ALL-CAPS
- * English is rewritten to sentence case (sentenceCase.ts) — so every consumer
+ * Returns model text with ONE SenseVoice-specific repair applied â€” ALL-CAPS
+ * English is rewritten to sentence case (sentenceCase.ts) â€” so every consumer
  * gets readable casing; the caller still applies the same normalizeSttText
  * the cloud path uses.
  *
  * @param chatLanguage the app's conversation language (UserConfig.
  *   chat_language); mapped onto a SenseVoice decode-language hint via
- *   senseVoiceLanguage. Absent → 'auto' (per-utterance detection).
+ *   senseVoiceLanguage. Absent â†’ 'auto' (per-utterance detection).
  */
 export async function transcribeLocal(
   pcm: Float32Array,
@@ -383,3 +383,7 @@ export async function transcribeLocal(
   );
   return { text: sentenceCaseSttText(result.text ?? ''), language: normalizeLang(result.lang) };
 }
+
+
+
+

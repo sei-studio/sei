@@ -1,5 +1,5 @@
-/**
- * Tests for ReceiptScreen — quick/260525-sbo Task 6.
+﻿/**
+ * Tests for ReceiptScreen â€” quick/260525-sbo Task 6.
  *
  * RED phase: ReceiptScreen.tsx does not yet exist; import fails.
  *
@@ -9,10 +9,10 @@
  *
  * Invariants under test:
  *   1. Module exports a ReceiptScreen symbol.
- *   2. The charge line renders the TIER's exact amount (FTC 16 CFR §425.5
+ *   2. The charge line renders the TIER's exact amount (FTC 16 CFR Â§425.5
  *      plain-language charge acknowledgement).
  *   3. Source contains literal 'Billed monthly' (frequency).
- *   4. Source contains literal 'Cancel anytime in Playtime → Sei →
+ *   4. Source contains literal 'Cancel anytime in Playtime â†’ Sei â†’
  *      Manage billing' (cancellation steps; 261110 the billing button moved
  *      from Settings to the Playtime page's Sei tab).
  *   5. Source contains literal 'Back to Sei' (primary CTA label).
@@ -60,7 +60,7 @@ describe('ReceiptScreen', () => {
 
   it('Test 4: source contains cancellation-steps copy', () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('Cancel anytime in Playtime → Sei → Manage billing.')).toBe(true);
+    expect(source.includes('Cancel anytime in Playtime â†’ Sei â†’ Manage billing.')).toBe(true);
   });
 
   it('Test 5: source contains "Back to Sei" CTA label', () => {
@@ -70,6 +70,10 @@ describe('ReceiptScreen', () => {
 
   it('Test 6: the source records why the dollar amount must render here', () => {
     const source = readFileSync(SOURCE_PATH, 'utf-8');
-    expect(source.includes('FTC 16 CFR §425.5')).toBe(true);
+    expect(source.includes('FTC 16 CFR Â§425.5')).toBe(true);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-// src/bot/brain/sessionEvents.test.js
+﻿// src/bot/brain/sessionEvents.test.js
 //
 // 261014 (quality pass 7b): asked "what was i scared of earlier?", she said
 // "you hid behind me like i was a wall". The player's line was in her prompt;
@@ -218,7 +218,7 @@ describe('game lines in the conversation transcript', () => {
   })
 })
 
-// ── Through the orchestrator ───────────────────────────────────────────────
+// â”€â”€ Through the orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function makeProvider(script) {
   let i = 0
@@ -385,3 +385,7 @@ describe('deaths and game notices reach the transcript through recordGameEvent',
     expect(convo).not.toContain('pass out')
   })
 })
+
+
+
+

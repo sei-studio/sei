@@ -1,12 +1,12 @@
-// src/observers/aggro.js — who the hostiles in this fight are actually on.
+﻿// src/observers/aggro.js â€” who the hostiles in this fight are actually on.
 //
 // 260731. The companion had no way to see the thing the player complains about
 // ("the mobs are all on me"): the snapshot listed nearby entities with coords
 // and nothing else, so a zombie hitting the player and a zombie wandering past
 // read identically. This tallies them.
 //
-// There is no target field on the wire — a server never tells a client which
-// player a mob has acquired — so this is an INFERENCE from body yaw. A mob
+// There is no target field on the wire â€” a server never tells a client which
+// player a mob has acquired â€” so this is an INFERENCE from body yaw. A mob
 // pursuing someone faces them, so the mob is attributed to whichever of the two
 // of us sits inside its facing cone (nearest angle wins when both do). A mob
 // facing neither of us is counted `unclear` rather than guessed at, which is
@@ -40,7 +40,7 @@ const COS_HALF_CONE = Math.cos((AGGRO_CONE_DEG / 2) * (Math.PI / 180))
 
 // Horizontal only: mob body yaw is a compass bearing, and a spider on a ledge
 // above the player is still chasing the player. Convention matches gaze.js /
-// reflex.js — mineflayer yaw runs so that forward is (-sin yaw, -cos yaw).
+// reflex.js â€” mineflayer yaw runs so that forward is (-sin yaw, -cos yaw).
 function facingDot(mob, targetPos) {
   const yaw = mob?.yaw
   if (!Number.isFinite(yaw)) return null
@@ -63,10 +63,10 @@ function finitePos(p) {
 
 /**
  * Attribute nearby hostiles to the bot, the owner, or neither. Counts are kept
- * BY MOB NAME — "zombie 2x" is a different situation from "creeper 2x", and the
+ * BY MOB NAME â€” "zombie 2x" is a different situation from "creeper 2x", and the
  * names are already what the model reasons with everywhere else.
  *
- * Pure — takes plain positions so it is testable without a bot.
+ * Pure â€” takes plain positions so it is testable without a bot.
  *
  * @param {{ mobs: Array<object>, selfPos: {x:number,y:number,z:number}, ownerPos: {x:number,y:number,z:number}, radius?: number }} args
  * @returns {{ onSelf: Record<string,number>, onOwner: Record<string,number>, unclear: number, total: number }}
@@ -92,7 +92,7 @@ export function tallyAggro({ mobs, selfPos, ownerPos, radius = AGGRO_RADIUS }) {
 
     if (selfLocked && ownerLocked) {
       // Both inside the cone. That means we are standing close together, or the
-      // mob is lined up with both of us, and the angle cannot separate them —
+      // mob is lined up with both of us, and the angle cannot separate them â€”
       // the collinear case makes both dots exactly 1. Give it to whoever it
       // reaches first, which is the one that gets hit.
       bump(dSelf <= dOwner ? out.onSelf : out.onOwner, m.name)
@@ -123,3 +123,7 @@ export function aggroLine({ tally, ownerLabel }) {
   const who = ownerLabel || 'the player'
   return `aggro: ${renderSide(tally.onSelf)} on you, ${renderSide(tally.onOwner)} on ${who}`
 }
+
+
+
+

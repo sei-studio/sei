@@ -1,4 +1,4 @@
-/**
+﻿/**
  * sei-facepack v1 (261028, desktop companion pilot): the baked 2D face set a
  * FacepackView plays. Produced offline per character by the face-set bake
  * (~/suisei/work/face-sets, tools/compose.py is the reference compositor).
@@ -170,3 +170,7 @@ export function isSafePackPath(rel: string): boolean {
   if (rel.split('/').some((seg) => seg === '..' || seg === '.' || seg === '')) return false;
   return /\.(webp|png|json)$/i.test(rel);
 }
+
+
+
+

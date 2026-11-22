@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Roblox lookup for the backseat "which game are you playing?" step (260929).
  *
  * Public, unauthenticated Roblox web APIs only, called from MAIN (the renderer
@@ -74,10 +74,10 @@ const SEARCH_CACHE_MAX = 50;
  * list replaces it whenever it loads.
  */
 export const FALLBACK_POPULAR: readonly BackseatGameInfo[] = [
-  { universeId: 1686885941, placeId: 4924922222, name: 'Brookhaven 🏡RP' },
+  { universeId: 1686885941, placeId: 4924922222, name: 'Brookhaven ðŸ¡RP' },
   { universeId: 994732206, placeId: 2753915549, name: 'Blox Fruits' },
   { universeId: 66654135, placeId: 142823291, name: 'Murder Mystery 2' },
-  { universeId: 7326934954, placeId: 79546208627805, name: '99 Nights in the Forest 🔦' },
+  { universeId: 7326934954, placeId: 79546208627805, name: '99 Nights in the Forest ðŸ”¦' },
   { universeId: 383310974, placeId: 920587237, name: 'Adopt Me!' },
   { universeId: 2440500124, placeId: 6516141723, name: 'DOORS' },
   { universeId: 703124385, placeId: 1962086868, name: 'Tower of Hell' },
@@ -453,3 +453,7 @@ export function robloxClient(): RobloxClient {
   shared ??= createRobloxClient();
   return shared;
 }
+
+
+
+

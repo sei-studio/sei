@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Hand-drawn line primitives for the Draw! surface.
  *
  * Every rule and border on this screen is one of these rather than a CSS
@@ -52,7 +52,7 @@ interface FrameProps {
  * A wobbly outline filling the nearest positioned ancestor.
  *
  * There is deliberately NO strokeWidth prop (260728). Width and colour come
- * from CSS alone — `--hand-stroke` and `currentColor` — because every line on
+ * from CSS alone â€” `--hand-stroke` and `currentColor` â€” because every line on
  * this surface has to read as the same pen, and a per-call-site number is how
  * that drifted in the first place (the canvas frame was 2.5, everything else
  * 2, the pen about 3.9).
@@ -174,3 +174,7 @@ export function SquiggleRule({ seed }: { seed: string }): React.ReactElement {
     </div>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -73,13 +73,13 @@ describe('room line', () => {
   it('uses "at" for a place that starts with an article, and plain text only', () => {
     expect(placeSentence('a campfire in the forest')).toBe("You're at a campfire in the forest.");
     expect(placeSentence('your gaming room')).toBe("You're in your gaming room.");
-    expect(placeSentence('your\nroom‮')).toBe("You're in your room.");
+    expect(placeSentence('your\nroomâ€®')).toBe("You're in your room.");
     expect(placeSentence('')).toBe("You're in your room.");
   });
 
   it('is short and has no em dash', () => {
     const line = roomPromptLine(fixtureRoom(), { now: NIGHT, includeTime: true });
-    expect(line).not.toContain('—');
+    expect(line).not.toContain('â€”');
     expect(line.split(/\s+/).length).toBeLessThanOrEqual(8);
   });
 });
@@ -242,7 +242,7 @@ describe('the plain first state (261106)', () => {
   };
   it('says there is no room yet, with no time and no em dash', () => {
     expect(roomPromptLine(plainCtx(), { now: NIGHT, includeTime: true })).toBe(PLAIN_ROOM_LINE);
-    expect(PLAIN_ROOM_LINE).not.toContain('—');
+    expect(PLAIN_ROOM_LINE).not.toContain('â€”');
   });
   it('look() answers in words with no picture', async () => {
     const look = await lookAtRoom(plainCtx(), { vision: 'yes', now: NIGHT });
@@ -250,3 +250,7 @@ describe('the plain first state (261106)', () => {
     expect(look.text).toMatch(/plain background/);
   });
 });
+
+
+
+

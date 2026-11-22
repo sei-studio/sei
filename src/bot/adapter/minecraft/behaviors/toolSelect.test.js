@@ -1,4 +1,4 @@
-// toolSelect (260731) — auto-equip before a dig.
+﻿// toolSelect (260731) â€” auto-equip before a dig.
 //
 // The bug this exists to prevent from coming back: nothing on the dig path ever
 // equipped anything, so the bot mined stone bare-handed. That is 7500ms against
@@ -109,7 +109,7 @@ describe('chooseDigTool', () => {
 })
 
 describe('canHarvestWith', () => {
-  it('reports stone as unharvestable bare-handed — the silent 0/N gather', () => {
+  it('reports stone as unharvestable bare-handed â€” the silent 0/N gather', () => {
     expect(canHarvestWith(stone, null)).toBe(false)
     expect(canHarvestWith(stone, item(WOOD_PICK, 'wooden_pickaxe'))).toBe(true)
   })
@@ -154,3 +154,7 @@ describe('equipBestTool', () => {
     expect(r.equipped).toBe(null)
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Room editor analytics (261105), shape only. One seilink_editor_session per
  * editor session, sent when the editor closes (or the window goes away with it
  * open), plus seilink_editor_error the first time each kind of failure happens
@@ -197,3 +197,7 @@ export function useEditorAnalytics(telemetry: EditorTelemetry | null | undefined
 
   return { avatarUpload, pickerOpened, colorPicked, together, desktopSaved };
 }
+
+
+
+

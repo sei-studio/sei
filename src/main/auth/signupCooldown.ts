@@ -1,21 +1,21 @@
-/**
+﻿/**
  * Escalating per-device account-creation cooldown (anti-abuse, Layer 1).
  *
  * MAIN PROCESS ONLY.
  *
  * Backed by a DEVICE-GLOBAL JSON file `<userData>/signup-attempts.json` (via
  * `paths.signupAttemptsPath()`) holding a rolling window of signup ATTEMPT
- * timestamps (epoch ms). NO emails, NO PII — only timestamps.
+ * timestamps (epoch ms). NO emails, NO PII â€” only timestamps.
  *
- * Policy (ABUSE-GUARD-PLAN.md §4a) — tuned so a human making 2-3 accounts
+ * Policy (ABUSE-GUARD-PLAN.md Â§4a) â€” tuned so a human making 2-3 accounts
  * barely notices, but rapid automation is throttled hard:
  *
- *   attempts already in 24h window → required wait before the NEXT attempt
- *     0 → 0s        (1st signup: instant)
- *     1 → 30s       (2nd)
- *     2 → 2min      (3rd)
- *     3 → 8min      (4th)
- *     4+ → 30min    (5th and beyond, capped)
+ *   attempts already in 24h window â†’ required wait before the NEXT attempt
+ *     0 â†’ 0s        (1st signup: instant)
+ *     1 â†’ 30s       (2nd)
+ *     2 â†’ 2min      (3rd)
+ *     3 â†’ 8min      (4th)
+ *     4+ â†’ 30min    (5th and beyond, capped)
  *
  * The wait is measured from the MOST RECENT attempt. A human spacing signups
  * by more than the required wait never sees a block; a tight automation loop is
@@ -30,8 +30,8 @@
  * Atomic tmp+rename write mirrors `apiKeyStore.ts` / `sessionStore.ts`.
  *
  * NOTE (paths.ts partition refactor): `signupAttemptsPath()` MUST stay in the
- * DEVICE-GLOBAL tier — the cooldown is a property of the machine, not an
- * account. See ABUSE-GUARD-PLAN.md §9.
+ * DEVICE-GLOBAL tier â€” the cooldown is a property of the machine, not an
+ * account. See ABUSE-GUARD-PLAN.md Â§9.
  */
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -47,10 +47,10 @@ export const COOLDOWN_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
  */
 export const COOLDOWN_LADDER_MS: readonly number[] = [
   0,             // 1st
-  30_000,        // 2nd  → 30s
-  2 * 60_000,    // 3rd  → 2min
-  8 * 60_000,    // 4th  → 8min
-  30 * 60_000,   // 5th+ → 30min (cap)
+  30_000,        // 2nd  â†’ 30s
+  2 * 60_000,    // 3rd  â†’ 2min
+  8 * 60_000,    // 4th  â†’ 8min
+  30 * 60_000,   // 5th+ â†’ 30min (cap)
 ];
 
 interface AttemptsFile {
@@ -71,7 +71,7 @@ async function readAttempts(now: number): Promise<number[]> {
     raw = await readFile(paths.signupAttemptsPath(), 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    return []; // any other read error → treat as empty (fail open for humans)
+    return []; // any other read error â†’ treat as empty (fail open for humans)
   }
   try {
     const parsed = JSON.parse(raw) as Partial<AttemptsFile>;
@@ -111,7 +111,7 @@ function requiredWaitMs(attemptsInWindow: number): number {
 /**
  * Decide whether a signup attempt is allowed NOW, based on the escalating
  * ladder applied to the most-recent in-window attempt. Does NOT record an
- * attempt — call {@link recordSignupAttempt} when the attempt is actually made.
+ * attempt â€” call {@link recordSignupAttempt} when the attempt is actually made.
  *
  * `nowFn` is injectable for deterministic tests.
  */
@@ -138,7 +138,7 @@ export async function checkSignupCooldown(
  * server-side 4xx. Prunes out-of-window timestamps as a side effect.
  *
  * Best-effort: a write failure is swallowed (the cooldown is friction, not a
- * security gate — a failed write just means this attempt isn't counted).
+ * security gate â€” a failed write just means this attempt isn't counted).
  */
 export async function recordSignupAttempt(nowFn: () => number = Date.now): Promise<void> {
   const now = nowFn();
@@ -147,7 +147,7 @@ export async function recordSignupAttempt(nowFn: () => number = Date.now): Promi
   try {
     await writeAttempts(attempts);
   } catch {
-    // swallow — friction layer, never block signup on a write error
+    // swallow â€” friction layer, never block signup on a write error
   }
 }
 
@@ -155,3 +155,7 @@ export async function recordSignupAttempt(nowFn: () => number = Date.now): Promi
 export function _requiredWaitMsForTests(attemptsInWindow: number): number {
   return requiredWaitMs(attemptsInWindow);
 }
+
+
+
+

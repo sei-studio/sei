@@ -1,18 +1,18 @@
-/**
- * AddCharacterScreen — new character flow.
+﻿/**
+ * AddCharacterScreen â€” new character flow.
  *
  * Steps:
  *  0. Name.
- *  1. Persona blurb — LLM-facing, synthesized into the model's voice. This
+ *  1. Persona blurb â€” LLM-facing, synthesized into the model's voice. This
  *     step commits the create + runs expansion. (The old proactiveness step
  *     was removed 260725: proactiveness is a runtime-only Minecraft mode now,
  *     never saved per character.)
  *  2. Card image (skippable).
  *  3. Skin (skippable).
- *  4. Voice (260705) — Auto (runtime picks a fitting, roster-deduped voice) or
+ *  4. Voice (260705) â€” Auto (runtime picks a fitting, roster-deduped voice) or
  *     an explicit pick from the curated pool, with per-voice previews.
- *  5. Visibility — yes/no, "share with other players?"
- *  6. Description (only if visibility=yes) — human-facing copy other players
+ *  5. Visibility â€” yes/no, "share with other players?"
+ *  6. Description (only if visibility=yes) â€” human-facing copy other players
  *     will read on the World card.
  *
  * The character is persisted as SHARED=false at the end of step 1 (so the
@@ -20,7 +20,7 @@
  * user picks visibility=yes and writes a description, `setShared(true)` runs
  * at the end of step 5 and any moderation failure is surfaced inline.
  *
- * Description vs persona — strictly separated. Persona is the prompt the
+ * Description vs persona â€” strictly separated. Persona is the prompt the
  * LLM reads; description is the blurb other players read. Step copy makes
  * the distinction explicit on both screens.
  */
@@ -66,14 +66,14 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   const navigate = useUiStore((s) => s.navigate);
   const addCharacter = useDataStore((s) => s.addCharacter);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
-  // Item 6 — publishing requires a signed-in account (the cloud upload +
+  // Item 6 â€” publishing requires a signed-in account (the cloud upload +
   // moderation gate). A local (signed-out) user can only ever create a private
   // character, so we drop the Visibility + Description steps for them entirely
   // rather than letting them reach charsSetShared and hit the "Please sign in
   // and accept the Terms of Service before publishing" error.
   const signedIn = useAuthStore((s) => s.state.kind === 'signed_in');
-  // Signed-in: 7 steps (name → persona → image → skin → voice → visibility →
-  // description). Signed-out: 5 steps (name → persona → image → skin → voice),
+  // Signed-in: 7 steps (name â†’ persona â†’ image â†’ skin â†’ voice â†’ visibility â†’
+  // description). Signed-out: 5 steps (name â†’ persona â†’ image â†’ skin â†’ voice),
   // then save private.
   const totalSteps = signedIn ? STEPS : 5;
   const [step, setStep] = useState(0);
@@ -92,7 +92,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   const [compactPromptOpen, setCompactPromptOpen] = useState(false);
   const [knowledgeStatus, setKnowledgeStatus] = useState<string | null>(null);
   const [portraitImage, setPortraitImage] = useState<string | null>(null);
-  // Voice (step 5): null = Auto — leave metadata.voiceId unset so the runtime
+  // Voice (step 5): null = Auto â€” leave metadata.voiceId unset so the runtime
   // assigns a deterministic, roster-deduped pick on first use. 'none' = an
   // explicit silent companion; any other string pins that pool voice.
   const [voiceId, setVoiceId] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<Character | null>(null);
   // Daily-cap hit mid-flow (rare race past the pre-flight gate in
-  // CharactersScreen) — surfaces the same CreationLimitModal.
+  // CharactersScreen) â€” surfaces the same CreationLimitModal.
   const [limitHit, setLimitHit] = useState(false);
   // Streaming persona-expansion progress (step 1). `activeRequestId` gates
   // incoming ticks to THIS screen's in-flight save so a stale or unrelated
@@ -139,7 +139,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       return;
     }
     // Once the character is created (end of step 1), block back-navigation past
-    // the creation point — the record exists (and expansion already ran), so
+    // the creation point â€” the record exists (and expansion already ran), so
     // editing happens on the character page now.
     if (created && step <= 2) return;
     setStep((s) => s - 1);
@@ -174,14 +174,14 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         // for the expander to fill.
         persona: { source, expanded: expandPrompt ? '' : source },
         is_default: false,
-        // Start PRIVATE so the moderation pipeline doesn't fire here — it
+        // Start PRIVATE so the moderation pipeline doesn't fire here â€” it
         // runs at the end of step 5 if the user opted in. setShared(true)
         // then handles the gate.
         shared: false,
         slug: null,
         // prompt_mode (260725): expand OFF means the user wrote the exact
         // prompt, so the editor opens in Advanced for this character.
-        // (No proactiveness key anymore — it is a runtime-only Minecraft
+        // (No proactiveness key anymore â€” it is a runtime-only Minecraft
         // mode since 260725, never saved per character.)
         metadata: {
           prompt_mode: expandPrompt ? 'standard' : 'advanced',
@@ -206,7 +206,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       return persisted;
     } catch (err) {
       const message = (err as Error)?.message ?? '';
-      // Daily cap hit mid-flow (rare race past the pre-flight gate) — show the
+      // Daily cap hit mid-flow (rare race past the pre-flight gate) â€” show the
       // same friendly modal instead of the raw sentinel error string.
       if (message.includes('daily_limit_reached')) {
         setLimitHit(true);
@@ -224,7 +224,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   /**
    * Step-1 commit: create the character, then persist any imported knowledge
    * files (and optionally LLM-compact them into one entry). Knowledge
-   * failures are non-fatal — the character exists and Knowledge is editable
+   * failures are non-fatal â€” the character exists and Knowledge is editable
    * later from the character page.
    */
   const commitCreate = async (compact: boolean): Promise<void> => {
@@ -232,13 +232,13 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     if (!persisted) return;
     if (pendingKnowledge.length > 0) {
       setSubmitting(true);
-      setKnowledgeStatus(t('Saving knowledge…'));
+      setKnowledgeStatus(t('Saving knowledgeâ€¦'));
       try {
         for (const f of pendingKnowledge) {
           await sei.knowledgeAdd(persisted.id, { title: f.title, content: f.content, source: 'upload' });
         }
         if (compact) {
-          setKnowledgeStatus(t('Compressing knowledge…'));
+          setKnowledgeStatus(t('Compressing knowledgeâ€¦'));
           await sei.knowledgeCompact(persisted.id);
         }
       } catch (err) {
@@ -246,7 +246,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         setError(
           detail
             ? t('Some knowledge could not be saved: {error}. You can add it later from the companion page.', {
-                error: detail.replace(/[.。]$/, ''),
+                error: detail.replace(/[.ã€‚]$/, ''),
               })
             : t('Some knowledge could not be saved. You can add it later from the companion page.'),
         );
@@ -274,14 +274,14 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
 
   /**
    * Final step commit:
-   *   - Visibility = private → save the (empty / typed) description and
+   *   - Visibility = private â†’ save the (empty / typed) description and
    *     navigate. No moderation.
-   *   - Visibility = public  → save description, then setShared(true).
+   *   - Visibility = public  â†’ save description, then setShared(true).
    *     On moderation failure, stay on the description step and surface the
-   *     friendly message — the character is already saved locally as
+   *     friendly message â€” the character is already saved locally as
    *     shared=false, so the user can edit + retry without losing work.
    *
-   * The `created` snapshot we hold in component state is from step 1 — it
+   * The `created` snapshot we hold in component state is from step 1 â€” it
    * does NOT carry the portrait_image / skin updates that happened in steps
    * 2 and 3 (each of which writes to disk via its own IPC). Pull the latest
    * character from the main process before saving, otherwise we'd spread
@@ -333,8 +333,8 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       return;
     }
     if (step === 1) {
-      // Persona blurb collected — NOW commit the create + run expansion.
-      // Large knowledge import → offer compaction first (the stored copies
+      // Persona blurb collected â€” NOW commit the create + run expansion.
+      // Large knowledge import â†’ offer compaction first (the stored copies
       // only; originals on disk are never touched).
       const totalBytes = pendingKnowledge.reduce((s, f) => s + f.bytes, 0);
       if (pendingKnowledge.length > 0 && totalBytes > KNOWLEDGE_COMPACT_SUGGEST_BYTES) {
@@ -356,7 +356,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     }
     if (step === 4) {
       // Voice chosen (or Auto). Signed-out users have no visibility/
-      // description steps — finish here, saving the character as private.
+      // description steps â€” finish here, saving the character as private.
       if (!signedIn) {
         await commitFinal();
         return;
@@ -366,7 +366,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     }
     if (step === 5) {
       if (visibility === 'private') {
-        // Skip description entirely — private chars have no requirement.
+        // Skip description entirely â€” private chars have no requirement.
         await commitFinal();
         return;
       }
@@ -381,19 +381,19 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
 
   const skip = async (): Promise<void> => {
     if (step === 2) {
-      // Skip image — keep whatever was already there (likely null) and move on.
+      // Skip image â€” keep whatever was already there (likely null) and move on.
       setStep(3);
       return;
     }
     if (step === 3) {
-      // Skip skin — continue to the voice step.
+      // Skip skin â€” continue to the voice step.
       setStep(4);
       return;
     }
   };
 
-  // ── Import phase (260725, before step 0 when entered via the Awaken
-  // "Import from another platform" tile) ────────────────────────────────────
+  // â”€â”€ Import phase (260725, before step 0 when entered via the Awaken
+  // "Import from another platform" tile) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (importPhase) {
     const totalKb = Math.round(pendingKnowledge.reduce((s, f) => s + f.bytes, 0) / 1024);
     return (
@@ -481,7 +481,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 0 — Name ───────────────────────────────────────────────────────
+  // â”€â”€ Step 0 â€” Name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 0) {
     return (
       <QuestionShell
@@ -503,7 +503,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 1 — Persona source (commits create + runs expansion) ───────────
+  // â”€â”€ Step 1 â€” Persona source (commits create + runs expansion) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 1) {
     return (
       <QuestionShell
@@ -513,7 +513,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         currentStep={step}
         onBack={back}
         onNext={() => void next()}
-        nextLabel={submitting ? (expandPrompt ? 'Generating…' : 'Saving…') : 'Create'}
+        nextLabel={submitting ? (expandPrompt ? 'Generatingâ€¦' : 'Savingâ€¦') : 'Create'}
         nextKind="accent"
         nextDisabled={!validate()}
       >
@@ -591,7 +591,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 2 — Card image (skippable) ─────────────────────────────────────
+  // â”€â”€ Step 2 â€” Card image (skippable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 2) {
     return (
       <QuestionShell
@@ -618,7 +618,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 3 — Skin (skippable) ───────────────────────────────────────────
+  // â”€â”€ Step 3 â€” Skin (skippable) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 3) {
     return (
       <QuestionShell
@@ -648,7 +648,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 4 — Voice (260705) ─────────────────────────────────────────────
+  // â”€â”€ Step 4 â€” Voice (260705) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 4) {
     return (
       <QuestionShell
@@ -658,7 +658,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         currentStep={step}
         onBack={back}
         onNext={() => void next()}
-        nextLabel={!signedIn ? (submitting ? 'Saving…' : 'Finish') : 'Next'}
+        nextLabel={!signedIn ? (submitting ? 'Savingâ€¦' : 'Finish') : 'Next'}
         nextDisabled={!validate()}
       >
         <VoicePicker
@@ -677,7 +677,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 5 — Visibility (Public / Private) ──────────────────────────────
+  // â”€â”€ Step 5 â€” Visibility (Public / Private) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (step === 5) {
     return (
       <QuestionShell
@@ -687,7 +687,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         currentStep={step}
         onBack={back}
         onNext={() => void next()}
-        nextLabel={submitting ? 'Saving…' : visibility === 'private' ? 'Finish' : 'Next'}
+        nextLabel={submitting ? 'Savingâ€¦' : visibility === 'private' ? 'Finish' : 'Next'}
         nextKind={visibility === 'public' ? 'accent' : 'primary'}
         nextDisabled={!validate()}
       >
@@ -723,7 +723,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
     );
   }
 
-  // ── Step 6 — Description (only when public) ─────────────────────────────
+  // â”€â”€ Step 6 â€” Description (only when public) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   return (
     <QuestionShell
       title={t('Short description for your companion?')}
@@ -732,7 +732,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       currentStep={step}
       onBack={back}
       onNext={() => void next()}
-      nextLabel={submitting ? 'Publishing…' : 'Done'}
+      nextLabel={submitting ? 'Publishingâ€¦' : 'Done'}
       nextKind="accent"
       nextDisabled={!validate()}
     >
@@ -793,3 +793,7 @@ function ErrorRow({ message }: { message: string }): React.ReactElement {
     </div>
   );
 }
+
+
+
+

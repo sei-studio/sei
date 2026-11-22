@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The real wire for the credit wall (261120, v0.7.0 release gate): the proxy's
  * 402 reply, read by the SAME Anthropic SDK + options main uses on the cloud
  * (chat/sdk.ts), must classify as 'depleted' and must not be retried, both
@@ -82,3 +82,7 @@ describe('proxy 402 through the real SDK', () => {
     expect(emitted).toHaveLength(1);
   });
 });
+
+
+
+

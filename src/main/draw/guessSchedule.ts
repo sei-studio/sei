@@ -1,4 +1,4 @@
-/**
+﻿/**
  * When the character is allowed to look at the player's canvas and guess.
  *
  * Kept as a PURE function of state plus `now`, separate from the code that
@@ -20,7 +20,7 @@
  *              still deserves an answer.
  *
  * The chat trigger was missing until 260728 and the hole was bad. Player chat
- * during the player's OWN drawing turn woke nothing at all — it was recorded
+ * during the player's OWN drawing turn woke nothing at all â€” it was recorded
  * and the character only ever saw it on the next snapshot dispatch. That
  * dispatch then usually aborted on the unchanged-canvas hash (drawService), so
  * a player who stopped drawing to talk got total silence until they picked the
@@ -92,3 +92,7 @@ export function guessGate(i: GuessGateInput): GuessGate {
   if (i.now - i.lastDispatchAt >= TIME_TRIGGER_MS) return { go: true, reason: 'time' };
   return { go: false, reason: 'no-trigger' };
 }
+
+
+
+

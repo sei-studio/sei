@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Main-process entry shim (261031, T277): boot safety.
  *
  * This file is the built `dist/main/index.js`. It loads only what has to work
@@ -259,3 +259,7 @@ function startSafeMode(reason: SafeModeReason): void {
     }
   });
 }
+
+
+
+

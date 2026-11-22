@@ -1,5 +1,5 @@
-/**
- * scripts/call-fixture.ts — the synthetic voice-call fixture shared by
+﻿/**
+ * scripts/call-fixture.ts â€” the synthetic voice-call fixture shared by
  * call-cache-probe.ts and call-clock-eval.ts (261024). All content is
  * synthetic: a Sui persona, memory lines from the summary-eval fixtures, and a
  * scripted player.
@@ -73,7 +73,11 @@ export const COMPANION_AT = new Map<number, string>([
 ]);
 /** Same text as sendCompanionVoiceTurnImpl (depth below the wind-down). */
 export const companionNote = (speaker: string): string =>
-  `[System note — not the player speaking: ${speaker} just said the line above on the call. ` +
+  `[System note â€” not the player speaking: ${speaker} just said the line above on the call. ` +
   'If there is a live thread worth continuing, react in your own voice in ONE short spoken line, building on it rather than closing it off. ' +
   'If the exchange has genuinely run its course, reply with exactly (silence) and nothing else; it is never spoken, it just ends your turn quietly.' +
   ' Do not mention this note.]';
+
+
+
+

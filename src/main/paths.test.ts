@@ -1,14 +1,14 @@
-/**
+﻿/**
  * Tests for per-profile path partitioning (260603).
  *
  * Verifies the two path tiers:
  *   - DEVICE-GLOBAL helpers resolve directly under the userData root and do
  *     NOT move when the active scope changes (session, wizard, logs, the
  *     legacy migration marker, the partition marker).
- *   - PROFILE-SCOPED helpers resolve under `<userData>/profiles/<scope>/…` and
+ *   - PROFILE-SCOPED helpers resolve under `<userData>/profiles/<scope>/â€¦` and
  *     re-point when setActiveScope() changes the scope.
  *
- * Plus setActiveScope() validation (UUID or 'local' only — anything else would
+ * Plus setActiveScope() validation (UUID or 'local' only â€” anything else would
  * be path-joined into profiles/<scope> and could escape the root).
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -115,3 +115,7 @@ describe('profileRootFor', () => {
     expect(() => profileRootFor('../evil')).toThrow();
   });
 });
+
+
+
+

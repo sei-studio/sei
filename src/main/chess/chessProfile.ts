@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess profile: how strong (and in what style) a character plays.
  *
  * Auto-derived from the persona by a one-off LLM call on the first chess game
@@ -117,3 +117,7 @@ export async function getOrCreateChessProfile(characterId: string): Promise<Ches
   console.log(`[sei/chess] profile for ${character.name}: elo=${profile.elo} (${profile.source})`);
   return profile;
 }
+
+
+
+

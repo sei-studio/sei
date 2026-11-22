@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107 "Open Sei when I log in": the settings file, the OS login item and
  * the launch re-sync, against a fake of Electron's login item API per OS
  * (macOS SMAppService status, Windows HKCU Run values + StartupApproved).
@@ -452,3 +452,7 @@ describe('ownership and factory reset', () => {
     expect(win.run.size).toBe(0);
   });
 });
+
+
+
+

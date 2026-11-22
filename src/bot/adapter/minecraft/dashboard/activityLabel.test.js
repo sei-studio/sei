@@ -1,5 +1,5 @@
-// Activity-label mapping for the Minecraft dashboard (260721): registered
-// tool name + args → lowercase natural-language line. Pins the exact copy
+﻿// Activity-label mapping for the Minecraft dashboard (260721): registered
+// tool name + args â†’ lowercase natural-language line. Pins the exact copy
 // style ("mining stone...", trailing dots, no em dashes) and the humanized
 // fallback for unknown tools.
 
@@ -60,6 +60,10 @@ describe('activityLabel', () => {
       activityLabel('weirdUnknownAction'),
       activityLabel(null),
     ]
-    for (const s of samples) expect(s.includes('—')).toBe(false)
+    for (const s of samples) expect(s.includes('â€”')).toBe(false)
   })
 })
+
+
+
+

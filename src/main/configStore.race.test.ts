@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Config write race (260929): every main-process writer of the profile's
  * config.json goes through updateConfig's locked read-modify-write and sets
  * only the keys it owns.
@@ -83,3 +83,7 @@ describe('concurrent config writers', () => {
     expect(cfg.theme_mode).toBe('mint');
   });
 });
+
+
+
+

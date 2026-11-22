@@ -1,5 +1,5 @@
-/**
- * scripts/next-step-probe.ts — live check of the goodbye "next time" hook
+﻿/**
+ * scripts/next-step-probe.ts â€” live check of the goodbye "next time" hook
  * (261008, retention fix 2(c)).
  *
  * Runs real goodbye turns through the REAL prompt assembly and tool lists and
@@ -60,7 +60,7 @@ const fixture = JSON.parse(readFileSync(join(root, 'src/bot/brain/__fixtures__/m
 const sui = JSON.parse(readFileSync(join(root, 'demo/fixtures/default-characters/sui.json'), 'utf8'));
 const SUI_EXPANDED: string = sui.persona.expanded || sui.persona.source;
 
-// ── game surface ────────────────────────────────────────────────────────────
+// â”€â”€ game surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const GAME_BLOCKS: string[] = fixture.base.blocks.map((b: string, i: number) =>
   i === 1 ? renderPersona({ name: 'Sui', expanded: SUI_EXPANDED }) : b,
 );
@@ -70,7 +70,7 @@ const SNAP = `snapshot: pos: 12,70,-4
 biome: plains  surroundings: outside  time: day (9200)
 hp: 20/20  food: 18/20  xp: lvl 3
 holding: oak_planks
-inventory (5/36 slots): oak_planks×22 oak_log×6 stone_pickaxe×1 cobblestone×31 torch×4
+inventory (5/36 slots): oak_planksÃ—22 oak_logÃ—6 stone_pickaxeÃ—1 cobblestoneÃ—31 torchÃ—4
 terrain at feet: 20 grass_block, 6 dirt
 nearby blocks:
   #1 oak_planks x58 @10,70,-6
@@ -123,14 +123,14 @@ function playerChat(text: string) {
   const eventText = `Event: player_chat${eventAddendum('player_chat', { username: 'SSk1tz', text })}${NUDGES.playerInterruptHint}`;
   const playerMessageText =
     `the player just spoke to you. respond to THIS, not to the scene around you:\n"${text}"\n` +
-    'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-    'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.';
+    'Reply with the say() tool â€” a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+    'Your text output is a private scratchpad the player can NEVER see â€” a reply that exists only in your text is silence to them; only say() reaches them.';
   return { eventText, playerMessageText };
 }
 
-const FIRST_CONTACT = `Event: idle\nData: {"reason":"just_connected_first_spawn"}${eventAddendum('sei:idle', {})}\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello — anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). ${NEXT_TIME_GREETING} This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine — don't force it.`;
+const FIRST_CONTACT = `Event: idle\nData: {"reason":"just_connected_first_spawn"}${eventAddendum('sei:idle', {})}\n\nFIRST CONTACT: you just spawned into your friend's world â€” this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast â€” whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing. If your memories above hold something relevant, work it into that greeting instead of a generic hello â€” anything the player said last time about themselves, about you, or about what they wanted to do in Minecraft (say("yo how'd the interview go?") beats say("back in business")). ${NEXT_TIME_GREETING} This is only a hint: if you have no memories or nothing fits, a plain greeting is completely fine â€” don't force it.`;
 
-// ── chat surface (voice call) ───────────────────────────────────────────────
+// â”€â”€ chat surface (voice call) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function callTurn(memory: string, history: [string, string][]) {
   const system = buildSystemBlocks({
     persona: sui.persona,
@@ -168,7 +168,7 @@ async function callTurn(memory: string, history: [string, string][]) {
         tool_use_id: u.id,
         content:
           u.name === 'end_call'
-            ? 'You are hanging up the call — it ends right after this turn. If you have not said goodbye yet, say it now (it is still spoken aloud). The player can still reach you in text chat afterward.'
+            ? 'You are hanging up the call â€” it ends right after this turn. If you have not said goodbye yet, say it now (it is still spoken aloud). The player can still reach you in text chat afterward.'
             : u.name === 'remember'
               ? 'Saved to your memory. Continue your reply; do not mention saving it.'
               : 'Not available in this probe.',
@@ -180,7 +180,7 @@ async function callTurn(memory: string, history: [string, string][]) {
   return hops.join('\n      -- next hop --\n      ');
 }
 
-// ── shared ──────────────────────────────────────────────────────────────────
+// â”€â”€ shared â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function create(body: { system: unknown; tools: unknown; messages: unknown }): Promise<any> {
   for (let attempt = 0; ; attempt++) {
@@ -263,3 +263,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

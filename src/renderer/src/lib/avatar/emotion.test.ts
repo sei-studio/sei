@@ -1,4 +1,4 @@
-/** classifyEmotion (260804) — bilingual lexicon over spoken lines. */
+﻿/** classifyEmotion (260804) â€” bilingual lexicon over spoken lines. */
 import { describe, it, expect } from 'vitest';
 import { classifyEmotion, resolveEmotionExpression } from './emotion';
 
@@ -8,7 +8,7 @@ describe('classifyEmotion', () => {
     expect(classifyEmotion('')).toBeNull();
     expect(classifyEmotion('   ')).toBeNull();
     expect(classifyEmotion('I put the ore in the chest.')).toBeNull();
-    expect(classifyEmotion('我把矿石放进箱子了。')).toBeNull();
+    expect(classifyEmotion('æˆ‘æŠŠçŸ¿çŸ³æ”¾è¿›ç®±å­äº†ã€‚')).toBeNull();
   });
 
   it('classifies English lines', () => {
@@ -22,13 +22,13 @@ describe('classifyEmotion', () => {
   });
 
   it('classifies Chinese lines', () => {
-    expect(classifyEmotion('哈哈太好了！')).toBe('happy');
-    expect(classifyEmotion('呜呜，好难过')).toBe('sad');
-    expect(classifyEmotion('哼，气死我了')).toBe('angry');
-    expect(classifyEmotion('你真可爱')).toBe('love');
-    expect(classifyEmotion('哇，是钻石！')).toBe('excited');
-    expect(classifyEmotion('欸，居然是这样')).toBe('surprised');
-    expect(classifyEmotion('人家会不好意思的啦')).toBe('shy');
+    expect(classifyEmotion('å“ˆå“ˆå¤ªå¥½äº†ï¼')).toBe('happy');
+    expect(classifyEmotion('å‘œå‘œï¼Œå¥½éš¾è¿‡')).toBe('sad');
+    expect(classifyEmotion('å“¼ï¼Œæ°”æ­»æˆ‘äº†')).toBe('angry');
+    expect(classifyEmotion('ä½ çœŸå¯çˆ±')).toBe('love');
+    expect(classifyEmotion('å“‡ï¼Œæ˜¯é’»çŸ³ï¼')).toBe('excited');
+    expect(classifyEmotion('æ¬¸ï¼Œå±…ç„¶æ˜¯è¿™æ ·')).toBe('surprised');
+    expect(classifyEmotion('äººå®¶ä¼šä¸å¥½æ„æ€çš„å•¦')).toBe('shy');
   });
 
   it('does not match English keywords inside other words', () => {
@@ -37,30 +37,30 @@ describe('classifyEmotion', () => {
     expect(classifyEmotion('some asadero cheese')).toBeNull();
   });
 
-  it('开心 reads as happy, not love (bare 心 is deliberately not a keyword)', () => {
-    expect(classifyEmotion('今天真开心')).toBe('happy');
+  it('å¼€å¿ƒ reads as happy, not love (bare å¿ƒ is deliberately not a keyword)', () => {
+    expect(classifyEmotion('ä»Šå¤©çœŸå¼€å¿ƒ')).toBe('happy');
   });
 });
 
 describe('resolveEmotionExpression', () => {
-  // The Snow Bear Girl shape: no happy, no surprised — the two most common
+  // The Snow Bear Girl shape: no happy, no surprised â€” the two most common
   // classifications must still land on a face.
   const snowBear = {
-    sad: '6 泪',
-    shy: '7 害羞',
-    angry: '8 生气',
-    love: '9 爱心眼',
-    excited: '10 星星眼',
+    sad: '6 æ³ª',
+    shy: '7 å®³ç¾ž',
+    angry: '8 ç”Ÿæ°”',
+    love: '9 çˆ±å¿ƒçœ¼',
+    excited: '10 æ˜Ÿæ˜Ÿçœ¼',
   } as const;
 
   it('prefers the direct mapping', () => {
-    expect(resolveEmotionExpression(snowBear, 'sad')).toBe('6 泪');
-    expect(resolveEmotionExpression(snowBear, 'excited')).toBe('10 星星眼');
+    expect(resolveEmotionExpression(snowBear, 'sad')).toBe('6 æ³ª');
+    expect(resolveEmotionExpression(snowBear, 'excited')).toBe('10 æ˜Ÿæ˜Ÿçœ¼');
   });
 
   it('falls back for happy and surprised when unmapped', () => {
-    expect(resolveEmotionExpression(snowBear, 'happy')).toBe('10 星星眼');
-    expect(resolveEmotionExpression(snowBear, 'surprised')).toBe('10 星星眼');
+    expect(resolveEmotionExpression(snowBear, 'happy')).toBe('10 æ˜Ÿæ˜Ÿçœ¼');
+    expect(resolveEmotionExpression(snowBear, 'surprised')).toBe('10 æ˜Ÿæ˜Ÿçœ¼');
   });
 
   it('walks the fallback chain in order', () => {
@@ -82,3 +82,7 @@ describe('resolveEmotionExpression', () => {
     expect(resolveEmotionExpression(snowBear, null)).toBeNull();
   });
 });
+
+
+
+

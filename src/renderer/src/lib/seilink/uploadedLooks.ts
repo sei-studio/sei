@@ -1,4 +1,4 @@
-/**
+﻿/**
  * WorldLink and companions whose look is a picture someone uploaded
  * (261116, product call 261116: Aria #M5IR "failed terribly").
  *
@@ -105,3 +105,7 @@ export async function worldlinkLookBlock(
 export async function worldlinkCustomImage(c: Pick<Character, 'id' | 'kind' | 'is_default' | 'metadata' | 'portrait_image'>): Promise<boolean> {
   return (await worldlinkLookBlock(c, 'sei_looks')) === 'uploaded';
 }
+
+
+
+

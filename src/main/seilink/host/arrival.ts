@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Her arrival on the desktop, one per host session (261119, product call
  * (261119); the rules are shared/seilinkEntrance.ts `arrivalMode`).
  *
@@ -230,3 +230,7 @@ export class Arrival {
 }
 
 export type { ArrivalMode };
+
+
+
+

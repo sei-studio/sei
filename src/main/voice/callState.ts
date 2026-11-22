@@ -1,10 +1,10 @@
-/**
- * Voice-call state (260705) — which characters currently have an open voice
+﻿/**
+ * Voice-call state (260705) â€” which characters currently have an open voice
  * call. Main-process source of truth, written by the `voice:call-state` IPC
  * handler when the renderer opens/hangs up a call, and read by:
- *   - the chat.send handler → sendChatMessage voiceCall flag (idle-chat prompt
+ *   - the chat.send handler â†’ sendChatMessage voiceCall flag (idle-chat prompt
  *     gets the VOICE_CALL_PRIMER),
- *   - botSupervisor (via opts.isVoiceCallActive) → re-applies the mode to a
+ *   - botSupervisor (via opts.isVoiceCallActive) â†’ re-applies the mode to a
  *     bot that spawns mid-call (the launch()-during-a-call handoff).
  *
  * Deliberately not persisted: a call cannot outlive the renderer that is
@@ -14,7 +14,7 @@
 const activeCalls = new Set<string>();
 /** When each character's call last ended (ms epoch), kept briefly so a reply the
  * in-game bot generated DURING the call but emitted a beat after hang-up is still
- * treated as a call line — see wasCallRecentlyActive / onBotChat in index.ts. */
+ * treated as a call line â€” see wasCallRecentlyActive / onBotChat in index.ts. */
 const endedCalls = new Map<string, number>();
 
 /** Grace window after hang-up during which a late in-game say() is still counted
@@ -208,7 +208,7 @@ export function liveCallsNow(now = Date.now()): Array<{ characterId: string; con
   return out;
 }
 
-/** Ids with an open call — used by the renderer-death sweep in index.ts. */
+/** Ids with an open call â€” used by the renderer-death sweep in index.ts. */
 export function activeCallIds(): string[] {
   return [...activeCalls];
 }
@@ -216,7 +216,7 @@ export function activeCallIds(): string[] {
 /**
  * Drop every open call. A call cannot survive its renderer (the mic + audio
  * live there), so index.ts calls this when the renderer navigates/reloads or
- * its process dies — otherwise a mid-call reload leaves the flag stuck and an
+ * its process dies â€” otherwise a mid-call reload leaves the flag stuck and an
  * in-game bot mutes its minecraft chat forever.
  */
 export function clearAllCalls(): void {
@@ -229,3 +229,7 @@ export function clearAllCalls(): void {
   closedByMain.clear();
   unreported.clear();
 }
+
+
+
+

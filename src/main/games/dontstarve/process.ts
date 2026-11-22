@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Is Don't Starve Together running, and since when (260909).
  *
  * The helper mod is indexed once, at game start (Klei's modindex.lua reads
@@ -73,3 +73,7 @@ export async function findGameProcess(platform: NodeJS.Platform = process.platfo
   const out = await run('ps', ['-axo', 'pid=,lstart=,comm=']);
   return out == null ? { running: false, startedAt: null } : parsePsList(out);
 }
+
+
+
+

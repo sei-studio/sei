@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929 adaptive chess strength: the pure stepping rules and the persisted
  * per-character offset. Players won 2 of 16 decided games against fixed
  * persona Elo; a loss now lowers the next game a step, a win raises it by a
@@ -96,3 +96,7 @@ describe('persisted offset', () => {
     expect(cfg.current.chess_elo_offsets).toBeUndefined();
   });
 });
+
+
+
+

@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Anthropic adapter (covers BOTH cloud-proxy and local BYOK Anthropic).
  *
  * HARD CONSTRAINT (china-compat W1): this path must be byte-for-byte
  * behaviorally identical to the pre-layer code. It therefore:
  *   - builds its client through buildChatSdk() (the exact same SDK wiring,
  *     including apiKey:null header suppression on cloud-proxy and
- *     maxRetries:1) — which is also the seam every existing test mocks;
+ *     maxRetries:1) â€” which is also the seam every existing test mocks;
  *   - passes system / tools / tool_choice / stop_sequences / messages through
  *     UNTOUCHED, cache_control breakpoints included;
  *   - uses client.messages.stream() when a streaming callback is given
@@ -145,3 +145,7 @@ export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmP
     streaming: true,
   };
 }
+
+
+
+

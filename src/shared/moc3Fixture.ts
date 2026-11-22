@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Test fixture (261122): a minimal moc3 holding only the parts
  * `readMoc3Parameters` reads (header, section offset table, count table,
  * parameter ids, max, min and default values). Not a model the Cubism Core
@@ -40,3 +40,7 @@ export function fakeMoc3(
   });
   return buf;
 }
+
+
+
+

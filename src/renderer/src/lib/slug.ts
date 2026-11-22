@@ -1,8 +1,8 @@
-/**
- * slugify — derive a kebab-case character id from a free-form name.
+﻿/**
+ * slugify â€” derive a kebab-case character id from a free-form name.
  *
  * Source: 04-07-onboarding-and-home-PLAN.md Task 1; T-04-31 mitigation
- * (renderer-side defense — main re-validates via Zod). Collision-safe
+ * (renderer-side defense â€” main re-validates via Zod). Collision-safe
  * `-2`/`-3` suffix logic so re-creating "Sui" while `sui` exists yields
  * `sui-2`, `sui-3`, etc.
  *
@@ -10,7 +10,7 @@
  *  - Lower-case, NFKD-normalize, strip diacritics.
  *  - Replace any run of non-ASCII-alnum with a single hyphen.
  *  - Trim leading/trailing hyphens, collapse runs.
- *  - Empty result → fall back to `'character'`.
+ *  - Empty result â†’ fall back to `'character'`.
  *  - On collision with `existingIds`, append `-2`, then `-3`, etc.
  */
 export function slugify(name: string, existingIds: string[] = []): string {
@@ -18,8 +18,8 @@ export function slugify(name: string, existingIds: string[] = []): string {
     name
       .toLowerCase()
       .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '') // strip combining diacritical marks
-      .replace(/[^a-z0-9]+/g, '-') // non-alnum → hyphen
+      .replace(/[\u0300-\u036F]/g, '') // strip combining diacritical marks
+      .replace(/[^a-z0-9]+/g, '-') // non-alnum â†’ hyphen
       .replace(/^-+|-+$/g, '') // trim hyphens
       .replace(/-{2,}/g, '-') || 'character'; // collapse + fallback
 
@@ -28,3 +28,7 @@ export function slugify(name: string, existingIds: string[] = []): string {
   while (existingIds.includes(`${base}-${n}`)) n++;
   return `${base}-${n}`;
 }
+
+
+
+

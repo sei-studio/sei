@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261119 product report: a full party showed users "Error invoking remote
  * method 'chars:add-to-library': Error: You can only have 4 companions.
  * Remove one to make room." This drives the real preload bridge over a
@@ -77,3 +77,7 @@ describe('preload invoke error unwrapping', () => {
     await expect(exposed.api!.charsAddToLibrary('ok-id')).resolves.toBeUndefined();
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Mapper tests for the main-process LLM layer (china-compat W1): the
  * anthropic-shape -> OpenAI/Gemini round trips the tool loops depend on,
  * cache_control stripping, image normalization, stop/usage normalization,
@@ -330,3 +330,7 @@ describe('anthropicToOllamaMessages', () => {
     expect(out[0].content).toBe('');
   });
 });
+
+
+
+

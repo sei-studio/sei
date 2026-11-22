@@ -1,4 +1,4 @@
-// In-game name derivation, shared by the bot, main and the renderer (261027).
+﻿// In-game name derivation, shared by the bot, main and the renderer (261027).
 //
 // Lives in src/bot because the bot runs from app.asar.unpacked and cannot
 // import src/shared at runtime; main and the renderer import this file
@@ -6,31 +6,31 @@
 //
 // Why: a character with no explicit `username` plays under its display name
 // filtered to Minecraft's [A-Za-z0-9_]. The filter used to run on the raw
-// name, so every accented letter was DELETED: "Sofía" joined as "Sofa",
-// "Lucía" as "Luca", "Élodie" as "lodie". Product feedback (msg 901): "For accents just
+// name, so every accented letter was DELETED: "SofÃ­a" joined as "Sofa",
+// "LucÃ­a" as "Luca", "Ã‰lodie" as "lodie". Product feedback (msg 901): "For accents just
 // replace those letters for in game". foldLatin() replaces each accented
 // Latin letter with its plain one first, then the existing filter runs.
 
 /**
  * Latin letters NFKD does not decompose into base + combining mark, mapped by
- * hand. Everything else (é, ö, ñ, ǎ, ç, ...) is handled by NFKD.
+ * hand. Everything else (Ã©, Ã¶, Ã±, ÇŽ, Ã§, ...) is handled by NFKD.
  */
 const UNDECOMPOSED = {
-  'ß': 'ss', 'ẞ': 'SS',
-  'ø': 'o', 'Ø': 'O',
-  'æ': 'ae', 'Æ': 'AE',
-  'œ': 'oe', 'Œ': 'OE',
-  'ł': 'l', 'Ł': 'L',
-  'đ': 'd', 'Đ': 'D',
-  'ð': 'd', 'Ð': 'D',
-  'þ': 'th', 'Þ': 'Th',
-  'ı': 'i', 'İ': 'I',
-  'ħ': 'h', 'Ħ': 'H',
+  'ÃŸ': 'ss', 'áºž': 'SS',
+  'Ã¸': 'o', 'Ã˜': 'O',
+  'Ã¦': 'ae', 'Ã†': 'AE',
+  'Å“': 'oe', 'Å’': 'OE',
+  'Å‚': 'l', 'Å': 'L',
+  'Ä‘': 'd', 'Ä': 'D',
+  'Ã°': 'd', 'Ã': 'D',
+  'Ã¾': 'th', 'Ãž': 'Th',
+  'Ä±': 'i', 'Ä°': 'I',
+  'Ä§': 'h', 'Ä¦': 'H',
 }
-const UNDECOMPOSED_RE = /[ßẞøØæÆœŒłŁđĐðÐþÞıİħĦ]/g
+const UNDECOMPOSED_RE = /[ÃŸáºžÃ¸Ã˜Ã¦Ã†Å“Å’Å‚ÅÄ‘ÄÃ°ÃÃ¾ÃžÄ±Ä°Ä§Ä¦]/g
 
 // A Latin-script letter plus any combining marks that follow it (so a name
-// typed in decomposed form, "Sofía", folds the same as "Sofía").
+// typed in decomposed form, "SofiÌa", folds the same as "SofÃ­a").
 // Restricted to Script=Latin on purpose: Japanese, Chinese, Korean, Cyrillic,
 // Greek and every other script pass through untouched, so their in-game
 // names stay exactly what they were before this change.
@@ -38,8 +38,8 @@ const LATIN_CLUSTER_RE = /\p{Script=Latin}\p{M}*/gu
 
 /**
  * Replace each accented Latin letter with its plain ASCII letter(s):
- * Sofía -> Sofia, Björn -> Bjorn, Łukasz -> Lukasz, Straße -> Strasse,
- * Søren -> Soren, İpek -> Ipek. Characters of other scripts, digits,
+ * SofÃ­a -> Sofia, BjÃ¶rn -> Bjorn, Åukasz -> Lukasz, StraÃŸe -> Strasse,
+ * SÃ¸ren -> Soren, Ä°pek -> Ipek. Characters of other scripts, digits,
  * punctuation and spaces are returned unchanged. Does NOT filter or truncate;
  * callers apply their own game's character rule afterwards.
  *
@@ -102,3 +102,7 @@ export function stardewNameFromRaw(raw) {
   const cleaned = foldLatin(raw).replace(/[^A-Za-z0-9_ \-]/g, '').trim().slice(0, STARDEW_NAME_MAX)
   return cleaned || 'Sei'
 }
+
+
+
+

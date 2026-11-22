@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The room editor's Utilities and Lighting panels (261119, product call 261119;
  * simplified after product call 261120). Utilities adds the wallpaper widgets
  * (clock, date, text, progress) and edits the selected one; Lighting darkens, veils and warms the room. Both are plain
@@ -41,7 +41,7 @@ import { widgetLocale } from './RoomWidgets';
 import ed from './RoomEditor.module.css';
 import styles from './RoomDesktopPanels.module.css';
 
-// ── Icons (same drawing rules as roomEditorIcons.tsx) ───────────────────────
+// â”€â”€ Icons (same drawing rules as roomEditorIcons.tsx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const Svg = ({ size = 18, children }: { size?: number; children: React.ReactNode }): React.ReactElement => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -109,7 +109,7 @@ const AlignIcon = ({ align }: { align: WidgetAlign }): React.ReactElement => {
   );
 };
 
-// ── Labels (English; i18n keys) ─────────────────────────────────────────────
+// â”€â”€ Labels (English; i18n keys) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const WIDGET_KIND_LABEL: Readonly<Record<WidgetKind, string>> = {
   clock: 'Clock',
@@ -124,7 +124,7 @@ const ALIGN_LABEL: Readonly<Record<WidgetAlign, string>> = {
 };
 const SPAN_LABEL = { day: 'Today', year: 'This year' } as const;
 
-// ── Small controls ──────────────────────────────────────────────────────────
+// â”€â”€ Small controls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Slider(props: { label: string; value: number; min: number; max: number; step?: number; show?: string; onChange(v: number): void; onEnd(): void }): React.ReactElement {
   const { label, value, min, max, step = 1, show, onChange, onEnd } = props;
@@ -223,7 +223,7 @@ function ColorRow({ value, gesture, onTint, onGestureEnd }: { value: string; ges
   );
 }
 
-// ── Utilities: the widgets ──────────────────────────────────────────────────
+// â”€â”€ Utilities: the widgets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface WidgetsPanelProps {
   widgets: readonly RoomWidget[];
@@ -460,7 +460,7 @@ function WidgetSettings({ w, locale, onChange, onGestureEnd }: { w: RoomWidget; 
   );
 }
 
-// ── Lighting ────────────────────────────────────────────────────────────────
+// â”€â”€ Lighting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface LightingPanelProps {
   lighting: RoomLighting | undefined;
@@ -515,3 +515,7 @@ export function LightingPanel({ lighting, name, onChange, onReset, onGestureEnd 
     </section>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * callState: main closing calls on an account switch (260926).
  *
  * The renderer owns a call's audio, so main only learns when it went live
@@ -240,3 +240,7 @@ describe('companion hang-up racing an account switch', () => {
     expect(closeAllCallsFromMain()).toEqual([]);
   });
 });
+
+
+
+

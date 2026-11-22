@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Per-session backseat log (260728).
  *
  * Same pattern as chessLog: rides the bot log pipeline (logRouter) so a
@@ -17,7 +17,7 @@
 import type { LogBatch } from '../../shared/ipc';
 import { createLogRouter, type LogRouter } from '../logRouter';
 
-/** `[HH:MM:SS.mmm]` — same stamp shape src/bot/brain/log.js emits. */
+/** `[HH:MM:SS.mmm]` â€” same stamp shape src/bot/brain/log.js emits. */
 function ts(): string {
   return `[${new Date().toISOString().slice(11, 23)}]`;
 }
@@ -54,3 +54,7 @@ export async function createBackseatLog(
     },
   };
 }
+
+
+
+

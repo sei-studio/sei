@@ -1,14 +1,14 @@
-/**
+﻿/**
  * Identity anchors for the three characters that were once bundled defaults
  * (Sui, Marv, Lyra).
  *
  * 260707: the app no longer ships ANY bundle baseline for these three. They are
  * ordinary user-owned public World characters (owner = DEFAULT_CHARACTERS_OWNER)
- * and are delivered EXACTLY like every other public character — surfaced via the
+ * and are delivered EXACTLY like every other public character â€” surfaced via the
  * World tab and cached on demand from their cloud rows (portrait, skin, persona
  * all pulled from Supabase; `src/main/cloud/cacheOnDemand.ts`). There is no
  * `resources/default-characters/*.json`, no `resources/skins/*.png`, no
- * `refreshSeededDefaults`, and no bundled-skin fallback in skinStore — a fresh
+ * `refreshSeededDefaults`, and no bundled-skin fallback in skinStore â€” a fresh
  * or offline install shows the cloud art once it caches (Steve until then), the
  * same as any other public character.
  *
@@ -20,16 +20,16 @@
  *     pre-0.4 `is_default:true` local copy into the owned/public World shape,
  *     after which cache-on-demand refreshes it from the cloud row like anything
  *     else, and
- *   - the renderer's fresh-onboarding Sui seed (260728 — OnboardingScreen adds
+ *   - the renderer's fresh-onboarding Sui seed (260728 â€” OnboardingScreen adds
  *     Sui to the new user's party via chars:add-to-library), which is why this
  *     module lives in src/shared rather than src/main.
  */
 
 /**
- * Phase 11 D-22 — STABLE UUIDs for the three former bundled defaults.
+ * Phase 11 D-22 â€” STABLE UUIDs for the three former bundled defaults.
  *
  * These UUIDs were generated ONCE via crypto.randomUUID() at Phase 11 plan
- * execution time. They are FROZEN — re-rolling them breaks every existing
+ * execution time. They are FROZEN â€” re-rolling them breaks every existing
  * install's local cache and the cloud rows keyed on them.
  *
  * The `marv` slug was historically 'clawd' (the character's old codename); the
@@ -55,3 +55,7 @@ export type DefaultCharacterSlug = keyof typeof DEFAULT_CHARACTER_UUIDS;
  * FROZEN alongside DEFAULT_CHARACTER_UUIDS.
  */
 export const DEFAULT_CHARACTERS_OWNER = '571634bd-0f6d-4835-bef2-06fd7f449a3d';
+
+
+
+

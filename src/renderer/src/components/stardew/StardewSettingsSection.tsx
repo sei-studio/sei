@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StardewSettingsSection (game adapters M1): the Settings "Stardew Valley"
  * group. Install status (game found, SMAPI, the companion mod + version)
  * with a Run / Re-run setup button, and on Windows the Steam achievements
@@ -83,3 +83,7 @@ export function StardewSettingsSection(_props: GameSettingsSectionProps): React.
     </>
   );
 }
+
+
+
+

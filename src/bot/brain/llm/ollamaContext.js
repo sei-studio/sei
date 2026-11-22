@@ -1,4 +1,4 @@
-// Ollama context window (num_ctx) sizing for the bot (261010). MIRRORS
+﻿// Ollama context window (num_ctx) sizing for the bot (261010). MIRRORS
 // src/main/llm/ollamaContext.ts (this process cannot import main's TS;
 // src/bot/llmCatalogSync.test.js pins the two together). The header there has
 // the measurements; in short: Ollama runs a 4096-token window by default on
@@ -80,3 +80,7 @@ export async function chooseOllamaNumCtx({ baseURL, model, promptTokens, maxToke
   asked.set(key, Math.max(asked.get(key) ?? 0, Math.min(numCtx, OLLAMA_CTX_MAX)))
   return numCtx
 }
+
+
+
+

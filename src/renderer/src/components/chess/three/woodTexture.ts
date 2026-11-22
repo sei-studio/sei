@@ -1,5 +1,5 @@
-/**
- * woodTexture — procedural wood-grain canvas textures for the 3D chess scene.
+﻿/**
+ * woodTexture â€” procedural wood-grain canvas textures for the 3D chess scene.
  *
  * No external image assets: the grain is generated once per scene from a
  * seeded PRNG (stable across mounts, no flicker on HMR). Colors here are 3D
@@ -99,3 +99,7 @@ export function makeWoodTexture(spec: WoodSpec): THREE.CanvasTexture {
   tex.anisotropy = 8;
   return tex;
 }
+
+
+
+

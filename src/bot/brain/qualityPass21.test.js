@@ -1,4 +1,4 @@
-// 261021: quality pass 21.
+﻿// 261021: quality pass 21.
 //  - Reply turns recycled her own comeback: "rude." to "lmao thats so bad",
 //    two plain lines later "rude. i'm a rock with a sword" to "ur dumb as a
 //    rock". The comeback was one turn too old for the quote. A reply turn now
@@ -62,3 +62,7 @@ describe('a called-off request mid-action', () => {
     expect(midActionChoice('stop')).toContain('If they call off something they asked for, they no longer want it, even when you already have some of it or are handing it over: call stop, or the new action if they asked for one, and if it has a goal in your heartbeat, call clearGoal on that goal in this same turn.')
   })
 })
+
+
+
+

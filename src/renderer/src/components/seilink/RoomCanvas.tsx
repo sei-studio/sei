@@ -1,4 +1,4 @@
-/**
+﻿/**
  * RoomCanvas (261104, SeiLink milestone 1): draws a companion's room from its
  * pack manifest + room state, per the draw rules in shared/seilinkRoom.ts.
  *
@@ -307,3 +307,7 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
     </div>
   );
 }
+
+
+
+

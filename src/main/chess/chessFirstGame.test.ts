@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260929 chess first-game friction (UX review item 4), service level:
  *   - a failed engine warm-up keeps the game in 'preparing' with a friendly
  *     error code and a working retry, instead of silently ending 'abandoned';
@@ -330,3 +330,7 @@ describe('adaptive strength (260929)', () => {
     expect(cfg.current.chess_elo_offsets).toBeUndefined();
   });
 });
+
+
+
+

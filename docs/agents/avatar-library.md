@@ -1,4 +1,4 @@
-# Avatar library (261106)
+﻿# Avatar library (261106)
 
 Server-stored avatars per character, shareable, with a public/private lock on
 each one. Product feedback (261106): "store anima characters and live2d in
@@ -322,3 +322,7 @@ character id; never a file name, URL or model name):
    library" and keeps today's behaviour).
 3. Seed Sui's rows and trigger her bake (script above).
 4. Ship the client.
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ChatTopBar (261119): the Beta tags and the one-time WorldLink tip, rendered.
  *
  * Zustand v5 server-renders a store's INITIAL state, so the two stores the
@@ -157,3 +157,7 @@ describe('ChatTopBar WorldLink tip', () => {
     expect(html).not.toContain('seilink-btn');
   });
 });
+
+
+
+

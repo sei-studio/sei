@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: main-side client for the sei-mac-input helper
  * (native/mac-input), spawned the way audioTap.ts spawns the audio tap.
  *
@@ -337,3 +337,7 @@ export class MacInputHelper implements InputExecutor {
     this.onExit('disposed');
   }
 }
+
+
+
+

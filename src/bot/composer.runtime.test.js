@@ -1,4 +1,4 @@
-// Game-adapters M0 (260908): the composer (src/bot/index.js) is game-agnostic.
+﻿// Game-adapters M0 (260908): the composer (src/bot/index.js) is game-agnostic.
 //   - it boots against a FAKE 'stardew' runtime with no mineflayer anywhere;
 //   - every port forwarder reaches the brain the runtime hands over;
 //   - the init payload mapping accepts the new {game, joinTarget} shape AND
@@ -151,3 +151,7 @@ describe('game-agnostic composer (source pins)', () => {
     await expect(loadRuntimeModule('../brain/index')).rejects.toThrow(/unknown game kind/)
   })
 })
+
+
+
+

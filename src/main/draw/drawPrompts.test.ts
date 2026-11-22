@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { DrawChatMessage, DrawGalleryEntry } from '../../shared/drawIpc';
 import {
   buildDrawTurnBlock,
@@ -246,7 +246,7 @@ describe('the instructions come after the chat log', () => {
   // and they are the biggest thing in it, so the last text the model read
   // before answering was chat from the PREVIOUS turn. Live capture: the
   // character guessed the player's drawing correctly and its turn-end line was
-  // "hehe ok you're reading these too fast, that's not fair" — the drawer's
+  // "hehe ok you're reading these too fast, that's not fair" â€” the drawer's
   // frame, continued straight out of the banter sitting at the bottom of the
   // prompt. Position is the fix, so position is what this pins.
   it('puts the role statement below the chat on a guessing turn', () => {
@@ -333,3 +333,7 @@ describe('turnEndLine', () => {
     expect(r.modelText).toBe(r.text);
   });
 });
+
+
+
+

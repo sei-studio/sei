@@ -1,6 +1,6 @@
-// gaze suppression during world actions (260709). Live bug: the idle branch
+﻿// gaze suppression during world actions (260709). Live bug: the idle branch
 // re-aimed at the owner every 250ms BETWEEN dig swings (isMoving() is false
-// there), so a gathering bot punched trees while staring at the player —
+// there), so a gathering bot punched trees while staring at the player â€”
 // fighting faceBlock and mineflayer's own dig look. The adapter's
 // executeAction now holds bot._seiActionActive while any world action runs,
 // and the gaze tick stands down for it. Follow's persistent trailing runs
@@ -42,10 +42,14 @@ describe('gaze vs world actions', () => {
     const dispose = startGaze(bot, CONFIG)
     await vi.advanceTimersByTimeAsync(1000)
     expect(bot.lookAt).not.toHaveBeenCalled()
-    // Action settles → gaze resumes on the next tick.
+    // Action settles â†’ gaze resumes on the next tick.
     bot._seiActionActive = 0
     await vi.advanceTimersByTimeAsync(300)
     expect(bot.lookAt).toHaveBeenCalled()
     dispose()
   })
 })
+
+
+
+

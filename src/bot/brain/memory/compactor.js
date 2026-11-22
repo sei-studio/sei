@@ -1,15 +1,15 @@
-// MEMORY.md compactor.
+﻿// MEMORY.md compactor.
 //
 // Triggered after a successful remember() when the on-disk file exceeds
 // `compaction_trigger_bytes`. Reads the full file, asks the latest Sonnet
-// (260703; per-call model override — the main loop stays on Haiku) to
+// (260703; per-call model override â€” the main loop stays on Haiku) to
 // compress the entries in the being's own voice while preserving emotional
 // and objective detail, and atomically replaces the file with the compacted
-// body — unless the file changed while the LLM call was in flight, in which
+// body â€” unless the file changed while the LLM call was in flight, in which
 // case the pass is discarded (lost-update guard).
 //
 // Single-flight: at most one compaction is in flight at a time. Failures
-// are non-fatal — the file is left untouched and the next remember() will
+// are non-fatal â€” the file is left untouched and the next remember() will
 // re-attempt the trigger check. A pass that could not shrink anything sets a
 // plateau backoff so subsequent remember()s don't re-pay futile LLM calls
 // until the file has actually grown.
@@ -40,11 +40,11 @@ const HEADER =
  * This clause is appended to COMPACTION_SYSTEM on BOTH compaction surfaces
  * (the bot's and the chat-side compactor in src/main/chat/memoryCompaction.ts).
  * Deliberately prose that NAMES THE SHAPE and never quotes an example noise
- * line — quoting a phrase inside a ban has been measured (backseat 260807) to
+ * line â€” quoting a phrase inside a ban has been measured (backseat 260807) to
  * FEED that phrase back into outputs.
  */
 export const MEMORY_NOISE_GUARD = [
-  'Noise guard — durable person-facts outrank screen observations:',
+  'Noise guard â€” durable person-facts outrank screen observations:',
   '- Some entries are not memories of the player at all: guesses written while watching a screen the player was sharing, narration of background media, or the same speculative observation re-filed many times in a short span with slightly different wording.',
   '- Treat a long run of near-identical entries written minutes apart as ONE observation. Compress it to at most one short line framed as a guess about what was on screen, or drop it entirely when it says nothing about the player as a person.',
   '- Things the player actually said (their name and its spelling, corrections, stated preferences, standing requests, relationship beats) must survive intact. They are never displaced, reworded away, or contradicted by screen-derived guesses, no matter how many screen entries repeat the guess.',
@@ -91,7 +91,7 @@ function sectionKey(marker) {
  * headers piled up without bound. Every occurrence of a section is gathered at
  * its LAST position (so the file still ends in the section new entries are
  * filed under), in file order, under the newest header line (an old unlabeled
- * `## World 1 — Base` becomes `## World 1 — Base (Minecraft)`). A section left
+ * `## World 1 â€” Base` becomes `## World 1 â€” Base (Minecraft)`). A section left
  * with no entries is dropped, except the last one. Pure.
  */
 export function coalesceSegments(segments) {
@@ -147,7 +147,7 @@ export function chunkEntries(entries, maxBytes) {
 /**
  * @param {Object} opts
  * @param {{call: Function}} opts.anthropic     Anthropic client (createAnthropicClient instance).
- * @param {Object} opts.memoryLog               createMemoryLog() instance — used for .path only.
+ * @param {Object} opts.memoryLog               createMemoryLog() instance â€” used for .path only.
  * @param {Object} opts.config                  Validated config. Reads memory.compaction_trigger_bytes and anthropic.timeout_ms,
  *                                              plus the optional memory.compaction_max_tokens, compaction_chunk_bytes and
  *                                              compaction_timeout_ms knobs.
@@ -179,14 +179,14 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
   let inFlight = false
 
   // Plateau guard (260703): when a full pass could not shrink the file, the
-  // size stays over triggerBytes and — without this — EVERY later remember()
+  // size stays over triggerBytes and â€” without this â€” EVERY later remember()
   // would burn another round of futile compaction calls (the same per-message
   // thrash the chat-surface fold had). Remember the size the plateau happened
   // at and only retry once the file has grown meaningfully past it.
   let futileAtBytes = null
   const PLATEAU_REGROW_BYTES = 1024
 
-  // Latest Sonnet for compaction (260703) — parity with the chat surface's
+  // Latest Sonnet for compaction (260703) â€” parity with the chat surface's
   // summary fold: it runs rarely and its output is re-read by every future
   // session, so quality compounds. Per-call override; the main loop stays on
   // the configured (Haiku) model. Cloud-proxy note: the proxy's PRICING table
@@ -207,7 +207,7 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
   // 260810: the noise guard rides on both surfaces (see MEMORY_NOISE_GUARD).
   const baseSystem = `${COMPACTION_SYSTEM}\n\n${MEMORY_NOISE_GUARD}`
   const systemText = personaExpanded
-    ? `${baseSystem}\n\nThe being's persona — write the compacted entries in this voice:\n${personaExpanded}`
+    ? `${baseSystem}\n\nThe being's persona â€” write the compacted entries in this voice:\n${personaExpanded}`
     : baseSystem
 
   // Minimum entries in a single world-segment before we spend an LLM call on
@@ -319,7 +319,7 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
         // written while the compaction LLM calls were in flight. newBody was
         // derived from the pre-call snapshot, so writing it blindly would
         // silently clobber those entries. Re-read under the lock and discard
-        // this pass on any drift — the next remember() re-triggers against
+        // this pass on any drift â€” the next remember() re-triggers against
         // the fresh content.
         const current = await readFile(filePath, 'utf8').catch(() => null)
         if (current !== raw) {
@@ -329,7 +329,7 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
         await atomicWrite(filePath, newBody)
       })
       if (drifted) {
-        logger.warn?.('[sei/compact] MEMORY.md changed while compacting — discarding this pass')
+        logger.warn?.('[sei/compact] MEMORY.md changed while compacting â€” discarding this pass')
         return false
       }
     } catch (err) {
@@ -337,9 +337,9 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
       return false
     }
 
-    futileAtBytes = null // shrank — clear any plateau backoff
+    futileAtBytes = null // shrank â€” clear any plateau backoff
     const afterBytes = Buffer.byteLength(newBody, 'utf8')
-    logger.info?.(`[sei/compact] MEMORY.md compacted: ${totalEntries} → ${totalAfter} entries across ${segments.length} world-segment(s), ${beforeBytes} → ${afterBytes} bytes`)
+    logger.info?.(`[sei/compact] MEMORY.md compacted: ${totalEntries} â†’ ${totalAfter} entries across ${segments.length} world-segment(s), ${beforeBytes} â†’ ${afterBytes} bytes`)
     return true
   }
 
@@ -373,3 +373,7 @@ export function createMemoryCompactor({ anthropic, memoryLog, config, logger = c
     get triggerBytes() { return triggerBytes },
   }
 }
+
+
+
+

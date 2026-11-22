@@ -1,8 +1,8 @@
-// src/adapter/minecraft/index.js
+﻿// src/adapter/minecraft/index.js
 //
 // Minecraft Adapter implementation. Returns an object satisfying the contract
 // in src/brain/types.js. The brain orchestrator receives one of these at
-// construction and drives every game-shaped capability through it — no direct
+// construction and drives every game-shaped capability through it â€” no direct
 // mineflayer references in brain code.
 //
 // See src/brain/types.js for the contract; ADAPTER_INTERFACE_VERSION === 2
@@ -45,7 +45,7 @@ import {
  * @param {Object} args
  * @param {object} args.bot           Mineflayer Bot instance (from createBotInstance).
  * @param {object} args.config        Validated config; passed through to action handlers.
- * @param {boolean} [args.visionEnabled=false]  D-10 gate — register the `look`
+ * @param {boolean} [args.visionEnabled=false]  D-10 gate â€” register the `look`
  *   action only when the active provider is VLM-capable (capabilities.vision).
  *   The construction site (src/bot/index.js) does not hold the provider handle,
  *   so it defaults false here; the orchestrator's tool-list filter (combinedToolsFor)
@@ -67,10 +67,10 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
   let _attachDispose = null
 
   return {
-    // ─── Adapter contract version (stable identity) ───────────────────
+    // â”€â”€â”€ Adapter contract version (stable identity) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     interfaceVersion: ADAPTER_INTERFACE_VERSION,
 
-    // ─── Action surface ───────────────────────────────────────────────
+    // â”€â”€â”€ Action surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     listActions: () => registry.list(),
     getActionSchema: (name) => registry.schema(name),
     getActionDescription: (name) => describeAction(name, config?.vision?.mode) ?? registry.description?.(name) ?? '',
@@ -89,7 +89,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       }
       // 260709: while a world action executes, the head belongs to the action
       // (faceBlock + mineflayer's own dig/place looks), not to the cosmetic
-      // owner-gaze — gaze.js checks this counter and stands down, otherwise
+      // owner-gaze â€” gaze.js checks this counter and stands down, otherwise
       // its 4 Hz lookAt(player) yanks the head back mid-dig and the bot
       // punches trees while staring at the player. A counter (not a flag)
       // because a preempting dispatch can overlap the tail of an aborting one.
@@ -130,7 +130,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       }
     },
 
-    // ─── World perception + prompt blocks ──────────────────────────────
+    // â”€â”€â”€ World perception + prompt blocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     createSnapshotComposer: () => createSnapshotComposer({ bot }),
     /**
      * World-identity signals for the per-character world registry (worlds.js).
@@ -192,7 +192,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // (vocabulary.js), so it never names the job as a habit.
     gameVocabulary: () => minecraftVocabulary(bot.version),
 
-    // ─── Session lifecycle ───────────────────────────────────────────
+    // â”€â”€â”€ Session lifecycle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     attach(handlers) {
       if (_attachDispose) {
         try { _attachDispose() } catch {}
@@ -213,13 +213,13 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       }
     },
 
-    // ─── Effects ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Effects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // SECURITY (260525-s09 H4): drop any chat string whose first non-whitespace
     // char is `/`. Rationale: the single-layer Haiku LLM could be tricked by
     // a player prompt-injection into emitting `/op MyName`. Forwarding that
     // verbatim to bot.chat causes the Minecraft server to execute it as an
     // operator command. We DROP (not strip-and-send, not escape) so that the
-    // injection is fully neutralised — a stripped slash command would still
+    // injection is fully neutralised â€” a stripped slash command would still
     // leak the attacker's intended payload as visible chat noise.
     chat: (text) => {
       if (typeof text === 'string' && /^\s*\//.test(text)) {
@@ -229,7 +229,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       try {
         bot.chat(text)
       } catch (err) {
-        // Previously swallowed silently — a failed bot.chat (called after the
+        // Previously swallowed silently â€” a failed bot.chat (called after the
         // socket dropped, or a mineflayer chat-format error) left the user
         // staring at a silent companion with no signal why. Surface it.
         try { console.warn(`[adapter.chat] bot.chat failed: ${err && err.message}`) } catch {}
@@ -238,7 +238,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     /**
      * 260725 play/pause. OPTIONAL adapter member (not in
      * REQUIRED_ADAPTER_MEMBERS): the brain calls it, if present, from
-     * brain.setGamePaused. Holding the FSM queue only stops LLM-driven work —
+     * brain.setGamePaused. Holding the FSM queue only stops LLM-driven work â€”
      * this freezes the BODY (follow trailing, reflex evasion, combat
      * retaliation, survival, gaze, auto-eat), so a paused companion stands
      * still like a player away from their keyboard. See behaviors/pause.js.
@@ -249,25 +249,25 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
       try { await closeFurnaceSession() } catch {}
     },
 
-    // ─── Automatic-view render seam ('continuous' Looking mode) ─────────
+    // â”€â”€â”€ Automatic-view render seam ('continuous' Looking mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // The orchestrator drives the periodic "look around" (a fixed per-turn
     // cadence) through the adapter so the bot reference stays
-    // adapter-side (the brain↔adapter seam: the orchestrator never imports
+    // adapter-side (the brainâ†”adapter seam: the orchestrator never imports
     // mineflayer or src/adapter/). renderIdleFrame produces the deduped frame
     // via the SAME visualizeAction the explicit path uses, with idle:true so
-    // D-02 pose-dedupe applies. Cadence renders use the STANDARD LLM path —
+    // D-02 pose-dedupe applies. Cadence renders use the STANDARD LLM path â€”
     // there is NO /vision routing here (D-09).
     renderIdleFrame: () => visualizeAction({ idle: true }, bot, config),
 
-    // ─── Capabilities (read from registry / plugin presence) ─────────
+    // â”€â”€â”€ Capabilities (read from registry / plugin presence) â”€â”€â”€â”€â”€â”€â”€â”€â”€
     get supportsAutoEat() { return Boolean(bot.autoEat) },
     get supportsFollow() { return registry.list().includes('follow') },
 
-    // ─── Identity ─────────────────────────────────────────────────────
+    // â”€â”€â”€ Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     get botUsername() { return bot.username },
     getKnownPlayers: () => bot.players ?? {},
 
-    // ─── Contract v2 members (src/bot/brain/types.js) ──────────────────
+    // â”€â”€â”€ Contract v2 members (src/bot/brain/types.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Each value is exactly what the brain hardcoded before M0; declaring
     // them here (rather than relying on brain/adapterDefaults.js) is what
     // lets a second game's adapter differ without the brain knowing.
@@ -322,3 +322,7 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
 // Re-export the primer so callers can compare cached-prefix bytes without
 // also importing the primer module.
 export { MINECRAFT_PRIMER }
+
+
+
+

@@ -1,4 +1,4 @@
-// 261011: end_loop ends the TURN; stop cancels the running action.
+﻿// 261011: end_loop ends the TURN; stop cancels the running action.
 //
 // Quality eval 2026-10-11 (Haiku 5.5, 7 scenarios): 21 end_loop-only turns
 // landed while a foreground action was running. About 18 of them were the
@@ -216,3 +216,7 @@ describe('261011 end_loop keeps a running action; stop cancels it', () => {
     }
   })
 })
+
+
+
+

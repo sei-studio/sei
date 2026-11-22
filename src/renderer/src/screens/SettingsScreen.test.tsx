@@ -1,5 +1,5 @@
-/**
- * Tests for SettingsScreen — "Party" restyle (§4.7) plus the preserved
+﻿/**
+ * Tests for SettingsScreen â€” "Party" restyle (Â§4.7) plus the preserved
  * ui-A1 (backend mode gating + 13-provider picker), ui-A7 (developer console),
  * and D-FIX (unconditional reset-all-memories) invariants.
  *
@@ -8,16 +8,16 @@
  * src/renderer/src/screens/CharactersScreen.test.tsx.
  *
  * Structural invariants (Party restyle):
- *   S.1  — sentence-case Oswald group headers (Profile / Account / AI /
+ *   S.1  â€” sentence-case Oswald group headers (Profile / Account / AI /
  *          Games / Appearance / About / Danger); no all-caps eyebrows.
- *   S.2  — 261110: Settings has no backend switch. One "Brain, voice and
+ *   S.2  â€” 261110: Settings has no backend switch. One "Brain, voice and
  *          plan" row opens Playtime, whose tabs drive the
  *          SwitchBackendConfirmModal.
- *   S.3  — Theme is a <Seg> with the added System option.
- *   S.4  — Realistic typing + developer console are <Toggle>s.
- *   S.5  — Danger actions use the shared Button danger kind (no bespoke
+ *   S.3  â€” Theme is a <Seg> with the added System option.
+ *   S.4  â€” Realistic typing + developer console are <Toggle>s.
+ *   S.5  â€” Danger actions use the shared Button danger kind (no bespoke
  *          .dangerBtn CSS).
- *   S.6  — 260724: the Playtime row and every playtime-estimate reference are
+ *   S.6  â€” 260724: the Playtime row and every playtime-estimate reference are
  *          gone. Weekly usage lives on the plan screen.
  */
 
@@ -208,7 +208,7 @@ describe('SettingsScreen (ui-A1 mode gating)', () => {
 
   it('A1.6: UserConfigSchema provider enum keeps all 14 backends (incl. qwen) + has provider_config', () => {
     const src = readFileSync(SCHEMA_TS, 'utf-8');
-    // Grandfathered values MUST stay in the enum — existing configs round-trip.
+    // Grandfathered values MUST stay in the enum â€” existing configs round-trip.
     for (const id of ['anthropic', 'openai', 'gemini', 'ollama', 'grok', 'openrouter', 'deepseek', 'qwen', 'mistral', 'together', 'groq', 'fireworks', 'cerebras', 'perplexity']) {
       expect(src.includes(`'${id}'`)).toBe(true);
     }
@@ -292,7 +292,7 @@ describe('SettingsScreen (D-FIX reset-all-memories unconditional)', () => {
   it('D-FIX.3: reset-all-memories button opens the confirm popup', () => {
     const src = readFileSync(SETTINGS_TSX, 'utf-8');
     expect(src.includes('onResetAllMemoriesClick')).toBe(true);
-    expect(src.includes('Reset all memories…')).toBe(true);
+    expect(src.includes('Reset all memoriesâ€¦')).toBe(true);
     expect(src.includes('ResetAllMemoriesConfirmModal')).toBe(true);
     expect(src.includes('Click again to confirm reset')).toBe(false);
   });
@@ -307,7 +307,7 @@ describe('Playtime model picker (W5 china-compat, moved 261110)', () => {
     expect(src.includes('sei.llmListModels(provider)')).toBe(true);
   });
 
-  it('W5.2: the picked model persists to provider_config[provider].model — the field resolveLocalModel reads', () => {
+  it('W5.2: the picked model persists to provider_config[provider].model â€” the field resolveLocalModel reads', () => {
     const src = readFileSync(MYKEYS_TSX, 'utf-8');
     expect(src.includes('model: id }')).toBe(true);
     expect(src.includes('provider_config: pc')).toBe(true);
@@ -469,7 +469,7 @@ describe('VoiceEditor + VoicePicker (W5 local-TTS voice gating)', () => {
 
   it('G.3: the stored ElevenLabs voiceId is preserved untouched underneath', () => {
     const src = readFileSync(CHARACTER_EDITS_TS, 'utf-8');
-    // The deferred save still writes voiceId from the draft — which
+    // The deferred save still writes voiceId from the draft â€” which
     // localTtsMode never mutates, since the picker that changes it is hidden.
     // (261019: written through applyVoicePick, which also carries the
     // own-voice marker.)
@@ -490,7 +490,7 @@ describe('VoiceEditor + VoicePicker (W5 local-TTS voice gating)', () => {
       expect(block.includes(key)).toBe(true);
     }
     // No em dash anywhere in the W5 copy, either language.
-    expect(block.includes('—')).toBe(false);
+    expect(block.includes('â€”')).toBe(false);
   });
 });
 
@@ -538,3 +538,7 @@ describe('261023 settings tidy: web search tab + compact ChatGPT plan row', () =
     expect(body).toContain("setPendingSwitch('chatgpt')");
   });
 });
+
+
+
+

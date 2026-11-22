@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Decorating her room together (261105, T336): what main knows about an open
  * companion room editor, for her turns. Free of electron and the host so
  * chatService can import it; the timers and the live line are in
@@ -189,7 +189,7 @@ export function markSeen(s: TogetherSession, now: number): void {
   s.lastLiveAt = now;
 }
 
-// ── live lines ──────────────────────────────────────────────────────────
+// â”€â”€ live lines â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type LiveSkip =
   | 'no_change'
@@ -253,7 +253,7 @@ export function liveLineNote(changes: RoomChange[], undone = false): string {
   );
 }
 
-// ── her turns while the editor is open ──────────────────────────────────
+// â”€â”€ her turns while the editor is open â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Her decorate tool for this turn, or null (no editor open for her). Same object per pack, for the cache prefix. */
 export function decorateToolFor(characterId: string, room: RoomContext | null): ReturnType<typeof decorateTool> | null {
@@ -367,3 +367,7 @@ export function __resetTogetherForTest(): void {
   toolCache.clear();
   sink = null;
 }
+
+
+
+

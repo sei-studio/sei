@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Where a dragged item can go (261105, physics-aware placement), drawn only
  * while dragging, over the room as it is (nothing else is dimmed or blurred).
  *  - floor: the real floor, minus what the parts cover (bed, lamp, chair);
@@ -128,3 +128,7 @@ export function PlacementGuide({
     </svg>
   );
 }
+
+
+
+

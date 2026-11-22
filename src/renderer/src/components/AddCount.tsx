@@ -1,5 +1,5 @@
-/**
- * AddCount — the quiet "added by N players" number on World cards and on a
+﻿/**
+ * AddCount â€” the quiet "added by N players" number on World cards and on a
  * character profile opened from World (product call 261110). A person glyph
  * plus a compact count ("1.2K"); the full number is in the tooltip and the
  * accessible label. Renders nothing for 0 or an unknown count.
@@ -45,3 +45,7 @@ export function AddCount({ count, variant }: AddCountProps): React.ReactElement 
     </span>
   );
 }
+
+
+
+

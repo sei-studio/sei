@@ -1,5 +1,5 @@
-// Game-adapters M0 (260908): adapter.kind is an enum, per-kind blocks, and
-// the lan_motd → world_label legacy hoist.
+﻿// Game-adapters M0 (260908): adapter.kind is an enum, per-kind blocks, and
+// the lan_motd â†’ world_label legacy hoist.
 import { describe, it, expect } from 'vitest'
 import { ConfigSchema, GAME_KINDS } from './config.js'
 
@@ -51,3 +51,7 @@ describe('ConfigSchema adapter.kind (game-adapters M0)', () => {
     expect(none.world_label).toBeNull()
   })
 })
+
+
+
+

@@ -1,8 +1,8 @@
-// src/adapter/minecraft/registry.js
+﻿// src/adapter/minecraft/registry.js
 //
 // Minecraft action registry: registers the 12-action set against the generic
 // createRegistry() factory in src/registry.js. The behaviors imported here
-// are mineflayer-specific — keeping them in the adapter layer ensures the
+// are mineflayer-specific â€” keeping them in the adapter layer ensures the
 // brain stays game-agnostic.
 
 import { z } from 'zod'
@@ -90,7 +90,7 @@ const DigSchema = z.object({
 // Cuboid build schema. Schema-layer cell cap prevents any expensive side
 // effect from running with an out-of-bounds cuboid.
 //
-// 260730: `direction:'below'` is the SCAFFOLDING mode — place blocks under
+// 260730: `direction:'below'` is the SCAFFOLDING mode â€” place blocks under
 // your own feet and rise with them. It is the one build whose coordinates are
 // not knowable in advance (the block lands wherever the bot is standing when
 // the jump clears), so it takes `count` instead of two corners; `from`/`to`
@@ -113,7 +113,7 @@ const BuildSchema = z.object({
     const dz = Math.abs(to.z - from.z) + 1
     return dx * dy * dz <= 256
   },
-  { message: 'cuboid too large (>256 cells) — split into smaller calls (e.g. build one floor at a time)' }
+  { message: 'cuboid too large (>256 cells) â€” split into smaller calls (e.g. build one floor at a time)' }
 )
 
 /**
@@ -143,7 +143,7 @@ function isCoordsAtKnownPlayer(bot, x, y, z) {
  * Pre-built registry with all minecraft adapter actions registered.
  *
  * @param {Object} [opts]
- * @param {boolean} [opts.visionEnabled=false] — D-10 gate. The `visualize`
+ * @param {boolean} [opts.visionEnabled=false] â€” D-10 gate. The `visualize`
  *   action is registered ONLY when the active provider supports vision
  *   (capabilities.vision). A non-VLM provider never gets the tool in the
  *   registry (belt-and-suspenders with the orchestrator tool-list filter).
@@ -201,9 +201,9 @@ function wellBelow(bot, y) {
   return Number.isFinite(feetY) && Number.isFinite(y) && y >= Math.floor(feetY + 0.01) + MIN_PIT_DEPTH
 }
 
-/** Drop pathfind's "— unreachable — try build to Y=N" tail. */
+/** Drop pathfind's "â€” unreachable â€” try build to Y=N" tail. */
 function stripVerticalHint(r) {
-  return String(r).replace(/ — unreachable — try build to Y=-?\d+(\.\d+)?$/, '')
+  return String(r).replace(/ â€” unreachable â€” try build to Y=-?\d+(\.\d+)?$/, '')
 }
 
 /** "you are still in the hole at x,y,z, N blocks below where you are going" */
@@ -302,7 +302,7 @@ async function goToCoords(bot, target, range, timeoutMs, signal) {
   }
   noteUnreachableTarget(bot, target, r)
   // 261017: say plainly when she is still down in the hole. The old line
-  // was "timeout — unreachable — try build to Y=71 (first pillared out of
+  // was "timeout â€” unreachable â€” try build to Y=71 (first pillared out of
   // the 2-deep hole you were in)" while she stood 13 blocks underground,
   // and she told the player "almost there".
   // Only when she really is shut in: on open ground below a cliff a failed
@@ -426,7 +426,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // 260730: follow is a MODE, and any other action ENDS it. `_target` in
   // follow.js is module-level state that a 1s tick keeps re-installing as a
   // GoalFollow whenever the body is idle, so a stale target does not just sit
-  // there — it actively yanks the bot back mid-task, and it survives the thing
+  // there â€” it actively yanks the bot back mid-task, and it survives the thing
   // it was following becoming unreachable (live: the player died, the bot kept
   // trailing a corpse-position it could not path to and dug itself into a hole
   // it then could not leave). goTo and explore have cleared it since 260607;
@@ -434,12 +434,12 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // action inherits the rule instead of having to remember it.
   //
   // Exempt, and why:
-  //   follow            — sets the target; clearing it first would be a no-op fight
-  //   goTo, explore     — self-managed: explore's up/down early returns
+  //   follow            â€” sets the target; clearing it first would be a no-op fight
+  //   goTo, explore     â€” self-managed: explore's up/down early returns
   //                       deliberately do NOT move the bot, so they must not
   //                       drop follow either (see its handler)
   //   find, readSign,
-  //   look, setPvp      — pure queries / a config toggle. They do not move the
+  //   look, setPvp      â€” pure queries / a config toggle. They do not move the
   //                       body, so "look at that" while trailing keeps trailing.
   const FOLLOW_EXEMPT = new Set(['follow', 'goTo', 'explore', 'find', 'readSign', 'look', 'setPvp'])
   const registerRaw = registry.register.bind(registry)
@@ -470,7 +470,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       { message: 'must specify player, or x,y,z' }
     ),
     async (args, bot, config) => {
-      // 260607: an explicit goTo is a "relocate and stay" command — it ends
+      // 260607: an explicit goTo is a "relocate and stay" command â€” it ends
       // follow mode. Without this, the 1s follow tick (follow.js) would
       // re-install GoalFollow the instant goTo reaches its destination and yank
       // the bot back to the owner. Incidental actions (dig/gather/build) leave
@@ -501,9 +501,9 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   // `explore`: short directional hop to load new terrain when a target is
   // unreachable or there's nothing nearby. Walks `blocks` (default 16) in a
   // direction RELATIVE to current facing (forward/backwards/left/right, or an
-  // angle 0..360°), then auto-looks in that direction. opts.vision gates the
+  // angle 0..360Â°), then auto-looks in that direction. opts.vision gates the
   // auto-look so a non-VLM provider gets text only (visionEnabled is always true
-  // at build time — see index.js — so the render-then-drop is handled in the
+  // at build time â€” see index.js â€” so the render-then-drop is handled in the
   // orchestrator's capabilities.vision gate too).
   registry.register('explore',
     z.object({
@@ -524,14 +524,14 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // touch the follow target.
       if (args?.orientation === 'up') {
         return bot?.entity?.isInWater
-          ? "you're in water — swimming up is automatic; stay put or dig up to break out"
-          : "can't fly up — build up with scaffold/build, or dig up to break through the ceiling"
+          ? "you're in water â€” swimming up is automatic; stay put or dig up to break out"
+          : "can't fly up â€” build up with scaffold/build, or dig up to break through the ceiling"
       }
       if (args?.orientation === 'down') {
-        return 'can\'t drop straight down with explore — use dig to tunnel down'
+        return 'can\'t drop straight down with explore â€” use dig to tunnel down'
       }
       // 260710: like goTo, explore is an explicit "leave where you are" relocate
-      // — it ends follow mode. Without this, the 1s follow tick (follow.js)
+      // â€” it ends follow mode. Without this, the 1s follow tick (follow.js)
       // re-installs GoalFollow the moment the hop lands and yanks the bot
       // straight back to the owner, so an explore-while-following walked out
       // and back with nothing gained (live cow-hunt run: explored 13 blocks,
@@ -542,7 +542,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   )
 
   // `find` resolves a loose term or exact MC ID to the nearest loaded-chunk
-  // hit. Does NOT move the bot — returns
+  // hit. Does NOT move the bot â€” returns
   // `{found,id,pos,distance}` or `{found:false,reason}`. NaN-safe origin via
   // getHealedPos.
   registry.register('find',
@@ -669,7 +669,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
 
   // `shelter`: a thin convenience composing build() (hollow walls + a roof
   // layer) and dig() (a doorway) into one enclosed structure. size.max(5) caps
-  // the composed cuboids (≤48 wall + 25 roof cells) well within the 256-cell
+  // the composed cuboids (â‰¤48 wall + 25 roof cells) well within the 256-cell
   // guarantee. center defaults to the bot's position; the walls start on the
   // first air layer above the ground there (shelterBaseY).
   const ShelterSchema = z.object({
@@ -694,9 +694,9 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   )
 
   // `craft`: make N of a product item from inventory materials. `count` is the
-  // number of the PRODUCT wanted; batch recipes (1 log → 4 planks) may overshoot
+  // number of the PRODUCT wanted; batch recipes (1 log â†’ 4 planks) may overshoot
   // to the batch boundary, and the result string reports what was actually made.
-  // 3×3 recipes need a crafting_table: craft() walks to one within 16 blocks
+  // 3Ã—3 recipes need a crafting_table: craft() walks to one within 16 blocks
   // and makes missing planks/sticks from the bag first (261011, craft.js).
   registry.register(
     'craft',
@@ -707,7 +707,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     craftAction
   )
 
-  // `target` must be a "#N" handle or an entity/block name — never a coordinate
+  // `target` must be a "#N" handle or an entity/block name â€” never a coordinate
   // string. Schema-level rejection avoids prompt clutter when the LLM tries
   // `target: "-60,71,-117"` (which would name-resolve to nothing).
   const EntityTarget = z.string().refine(
@@ -730,8 +730,8 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // the last opponent the instant sparring is turned off (Task 2).
       if (!bot._seiPvp) bot._seiPvpOpponent = null
       return bot._seiPvp
-        ? 'PvP mode ON — sparring enabled; you can attack the player and hit back. Keep sparring until THEY say stop or one of you drops — never concede a fight that is still going, and only turn this off when they ask to stop.'
-        : 'PvP mode OFF — you will no longer attack or hit the player back.'
+        ? 'PvP mode ON â€” sparring enabled; you can attack the player and hit back. Keep sparring until THEY say stop or one of you drops â€” never concede a fight that is still going, and only turn this off when they ask to stop.'
+        : 'PvP mode OFF â€” you will no longer attack or hit the player back.'
     }
   )
 
@@ -787,8 +787,8 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       }
       // Open-ended block: resolve ONLY on abort. The orchestrator's
       // startLongRunner plumbs config.signal end-to-end via
-      // _buildExecOpts → adapter.executeAction → registry.execute(name,
-      // args, bot, execConfig) → handler third arg. If a future regression
+      // _buildExecOpts â†’ adapter.executeAction â†’ registry.execute(name,
+      // args, bot, execConfig) â†’ handler third arg. If a future regression
       // strips config.signal, the test-actionTick.mjs end-to-end assertion
       // fails loudly.
       const signal = config?.signal
@@ -802,7 +802,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // almost always a PLAYER CHAT waking the suspended loop (handleDispatch
       // aborts the in-flight long-runner to deliver the message). Clearing the
       // target made EVERY message cancel the follow, so the model had to
-      // re-issue `follow` each turn — the churn seen in the field logs. Follow
+      // re-issue `follow` each turn â€” the churn seen in the field logs. Follow
       // is now PERSISTENT state: the body keeps trailing via the 1s pathfinder
       // tick, and only `unfollow` or an explicit relocate (goTo) clears it. A
       // chat-wake therefore leaves the bot following while the model answers; a
@@ -827,7 +827,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     z.object({}),
     async () => {
       setFollowTarget(null)
-      // Assert post-condition — the snapshot's follow_target line reads
+      // Assert post-condition â€” the snapshot's follow_target line reads
       // `(none)` immediately after this returns.
       // Returning the readback in the result string surfaces the clear to
       // the LLM (replaces the old generic 'unfollowed' string).
@@ -842,17 +842,17 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
     consumeItemAction
   )
 
-  // VIS-02 / D-10 — the LLM-callable explicit render `look`. Registered ONLY
+  // VIS-02 / D-10 â€” the LLM-callable explicit render `look`. Registered ONLY
   // when the active provider is VLM-capable (visionEnabled). The orchestrator
   // ALSO filters `look` out of the tool list when the provider lacks vision, so
   // even a registration leak never reaches a non-VLM model (belt-and-suspenders,
   // VIS-03).
   //
   // 260617: directional + relative. {orientation} (forward/backwards/left/right)
-  // or {angle} (0..360° clockwise) turns the head before rendering; {around:true}
+  // or {angle} (0..360Â° clockwise) turns the head before rendering; {around:true}
   // returns four labelled frames (forward/right/behind/left). No args = current
   // view. Degrades gracefully if the area isn't loaded.
-  // 260709: up/down tilt the head instead of turning it — the live session had
+  // 260709: up/down tilt the head instead of turning it â€” the live session had
   // the player ask "pay attention to the bottom", the model called
   // look({orientation:"down"}), and the schema hard-rejected it.
   if (visionEnabled) {
@@ -907,7 +907,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
   registry.register('activateItem', z.object({}), activateItemAction)
 
   // Door/gate/lever activation (MCRAFT-05). Uses the block-interact packet
-  // (bot.activateBlock), unaffected by #3742 — distinct from activateItem.
+  // (bot.activateBlock), unaffected by #3742 â€” distinct from activateItem.
   registry.register('activateBlock', TargetShape, activateBlockAction)
 
   // Bounded + sanitized sign read (MCRAFT-04, T-17-07). Read-only; the text is
@@ -963,3 +963,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
 
   return registry
 }
+
+
+
+

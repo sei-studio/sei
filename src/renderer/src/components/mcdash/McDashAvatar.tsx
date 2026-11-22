@@ -1,5 +1,5 @@
-/**
- * McDashAvatar — the player-model viewport in the Minecraft dashboard's
+﻿/**
+ * McDashAvatar â€” the player-model viewport in the Minecraft dashboard's
  * inventory dialog (260721), the dark inset window beside the armor slots,
  * exactly like the real Java Edition inventory screen.
  *
@@ -15,7 +15,7 @@
  *   - viewer.dispose() on unmount releases the WebGL context.
  *   - loadSkin failures (skin not cached yet -> the server 404s with a 1x1
  *     transparent PNG) fall back to an ORIGINAL flat-color mannequin skin
- *     generated on a scratch canvas — never a bundled Mojang asset.
+ *     generated on a scratch canvas â€” never a bundled Mojang asset.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -173,3 +173,7 @@ export function McDashAvatar({ skinUrl, name, width, height }: McDashAvatarProps
     </div>
   );
 }
+
+
+
+

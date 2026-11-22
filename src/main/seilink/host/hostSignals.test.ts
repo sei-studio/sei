@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, afterEach } from 'vitest';
 import { BusyTracker, noteSeilinkChatTurn, onSeilinkChatTurn } from './hostSignals';
 
 afterEach(() => vi.useRealTimers());
@@ -45,3 +45,7 @@ describe('chat turn signal', () => {
     ]);
   });
 });
+
+
+
+

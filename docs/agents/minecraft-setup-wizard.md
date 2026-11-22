@@ -1,4 +1,4 @@
-# Minecraft setup wizard: the target version (260916)
+﻿# Minecraft setup wizard: the target version (260916)
 
 > Superseded in part by the games branch (260916, same day): the wizard now builds
 > ONE "Sei <version>" profile PER version with a picker in the setup list, and
@@ -95,3 +95,7 @@ failed `game_setup_step` `lan_wait` carries main's `discovery` class
 `no_java_listener`, `unverified`) and `win_state0`. There is no manual port
 entry; the bot CLI copy (`src/bot/adapter/minecraft/lanDiscovery.js`) has
 no fallback.
+
+
+
+

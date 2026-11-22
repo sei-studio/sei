@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { computeProgression, createProgressionLatches, getProgression, SPINE } from './progression.js'
 import { createObservationState } from '../protocol.js'
 import { createFakeMod } from '../../../../../scripts/fake-dst-mod.mjs'
@@ -44,3 +44,7 @@ describe('DST progression frontier', () => {
     expect(p.done.has('light')).toBe(true)
   })
 })
+
+
+
+

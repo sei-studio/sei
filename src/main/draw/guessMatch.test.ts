@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { findWordMatch, matchesWord, redactWord, saysWord } from './guessMatch';
 
 describe('matchesWord', () => {
@@ -52,7 +52,7 @@ describe('matchesWord', () => {
   });
 });
 
-// 260728 — the renderer highlights the winning WORD, not the winning line, and
+// 260728 â€” the renderer highlights the winning WORD, not the winning line, and
 // this is where it learns which characters those are. The contract that
 // matters: on any line matchesWord accepts, this returns the span it was
 // accepted for, in raw-text indices the renderer can slice with.
@@ -126,7 +126,7 @@ describe('redactWord', () => {
   });
 });
 
-// 260728 — the drawer's slip is now dropped WHOLE rather than patched in
+// 260728 â€” the drawer's slip is now dropped WHOLE rather than patched in
 // place: "[...]" still pointed at exactly where the answer went, and read to
 // the player as a bug rather than as the game stepping in. saysWord is the
 // question behind that drop, and it must stay as tolerant as the redaction it
@@ -153,71 +153,75 @@ describe('saysWord', () => {
   });
 });
 
-// 260730 — the CJK path. Chinese has no spaces, no plurals and no word
+// 260730 â€” the CJK path. Chinese has no spaces, no plurals and no word
 // boundaries, so the token walk cannot see it: matching is contiguous
 // containment over Han + alphanumeric characters, forgiving punctuation and
 // nothing else.
 describe('CJK matching', () => {
   it('matches a Chinese word inside a sentence', () => {
-    expect(matchesWord('是不是灯塔？？', '灯塔')).toBe(true);
-    expect(matchesWord('灯塔！', '灯塔')).toBe(true);
-    expect(matchesWord('我觉得像一座灯塔吧', '灯塔')).toBe(true);
+    expect(matchesWord('æ˜¯ä¸æ˜¯ç¯å¡”ï¼Ÿï¼Ÿ', 'ç¯å¡”')).toBe(true);
+    expect(matchesWord('ç¯å¡”ï¼', 'ç¯å¡”')).toBe(true);
+    expect(matchesWord('æˆ‘è§‰å¾—åƒä¸€åº§ç¯å¡”å§', 'ç¯å¡”')).toBe(true);
   });
 
   it('misses when the word is not there', () => {
-    expect(matchesWord('是房子吗', '灯塔')).toBe(false);
+    expect(matchesWord('æ˜¯æˆ¿å­å—', 'ç¯å¡”')).toBe(false);
     // Only half the word is not the word.
-    expect(matchesWord('好多灯啊', '灯塔')).toBe(false);
+    expect(matchesWord('å¥½å¤šç¯å•Š', 'ç¯å¡”')).toBe(false);
   });
 
   it('findWordMatch points at the raw span of the Chinese word', () => {
-    const m = findWordMatch('是不是灯塔？？', '灯塔');
+    const m = findWordMatch('æ˜¯ä¸æ˜¯ç¯å¡”ï¼Ÿï¼Ÿ', 'ç¯å¡”');
     expect(m).not.toBeNull();
-    expect('是不是灯塔？？'.slice(m!.start, m!.end)).toBe('灯塔');
+    expect('æ˜¯ä¸æ˜¯ç¯å¡”ï¼Ÿï¼Ÿ'.slice(m!.start, m!.end)).toBe('ç¯å¡”');
   });
 
   it('redacts and drops the drawer saying their own Chinese word', () => {
-    expect(saysWord('这是灯塔', '灯塔')).toBe(true);
-    expect(redactWord('这是灯塔', '灯塔')).toBe('这是[...]');
-    expect(redactWord('灯塔', '灯塔')).toBeNull();
-    expect(saysWord('快猜呀', '灯塔')).toBe(false);
+    expect(saysWord('è¿™æ˜¯ç¯å¡”', 'ç¯å¡”')).toBe(true);
+    expect(redactWord('è¿™æ˜¯ç¯å¡”', 'ç¯å¡”')).toBe('è¿™æ˜¯[...]');
+    expect(redactWord('ç¯å¡”', 'ç¯å¡”')).toBeNull();
+    expect(saysWord('å¿«çŒœå‘€', 'ç¯å¡”')).toBe(false);
   });
 });
 
-// 260731 — the word-slip guard is SCRIPT-AGNOSTIC. It used to decide "is there
+// 260731 â€” the word-slip guard is SCRIPT-AGNOSTIC. It used to decide "is there
 // anything left in this line" with `[^a-z0-9]`, which reads any line written
 // outside the Latin alphabet as EMPTY; saysWord then read that emptiness as
 // "the drawer typed their own word". A player typing Chinese while DRAWING had
 // their line dropped and was told "You can't type this word! You're drawing
-// it, not guessing it." — for a line that never contained the word. Reported
+// it, not guessing it." â€” for a line that never contained the word. Reported
 // live. The same misfire muted the character's own non-English lines mid
 // drawing turn and then corrected it for something it had not done.
 describe('word-slip guard across scripts', () => {
   it('lets a non-Latin line through when the answer is English', () => {
-    expect(saysWord('是笔吗', 'pencil')).toBe(false);
-    expect(saysWord('그게 뭐야', 'pencil')).toBe(false);
-    expect(saysWord('これは何ですか', 'pencil')).toBe(false);
-    expect(saysWord('это карандаш', 'pencil')).toBe(false);
+    expect(saysWord('æ˜¯ç¬”å—', 'pencil')).toBe(false);
+    expect(saysWord('ê·¸ê²Œ ë­ì•¼', 'pencil')).toBe(false);
+    expect(saysWord('ã“ã‚Œã¯ä½•ã§ã™ã‹', 'pencil')).toBe(false);
+    expect(saysWord('ÑÑ‚Ð¾ ÐºÐ°Ñ€Ð°Ð½Ð´Ð°Ñˆ', 'pencil')).toBe(false);
   });
 
   it('lets a line through that carries no letters at all', () => {
     expect(saysWord('???', 'pencil')).toBe(false);
-    expect(saysWord('🎨🎨', 'pencil')).toBe(false);
+    expect(saysWord('ðŸŽ¨ðŸŽ¨', 'pencil')).toBe(false);
   });
 
   it('leaves those lines untouched rather than nulling them', () => {
-    expect(redactWord('是笔吗', 'pencil')).toBe('是笔吗');
-    expect(redactWord('그게 뭐야', 'pencil')).toBe('그게 뭐야');
+    expect(redactWord('æ˜¯ç¬”å—', 'pencil')).toBe('æ˜¯ç¬”å—');
+    expect(redactWord('ê·¸ê²Œ ë­ì•¼', 'pencil')).toBe('ê·¸ê²Œ ë­ì•¼');
   });
 
   it('still catches the answer when it is mixed into a non-Latin line', () => {
-    expect(saysWord('是 pencil 吗', 'pencil')).toBe(true);
+    expect(saysWord('æ˜¯ pencil å—', 'pencil')).toBe(true);
   });
 
   it('non-Han scripts survive a Chinese answer too', () => {
     // The CJK branch had the mirror bug: Han + a-z0-9 only, so a hangul or
     // kana line in a Chinese game was read as empty the same way.
-    expect(saysWord('그게 뭐야', '灯塔')).toBe(false);
-    expect(redactWord('그게 뭐야', '灯塔')).toBe('그게 뭐야');
+    expect(saysWord('ê·¸ê²Œ ë­ì•¼', 'ç¯å¡”')).toBe(false);
+    expect(redactWord('ê·¸ê²Œ ë­ì•¼', 'ç¯å¡”')).toBe('ê·¸ê²Œ ë­ì•¼');
   });
 });
+
+
+
+

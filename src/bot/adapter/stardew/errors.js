@@ -1,4 +1,4 @@
-// src/bot/adapter/stardew/errors.js — connect-error classification for the
+﻿// src/bot/adapter/stardew/errors.js â€” connect-error classification for the
 // Stardew runtime (contract v2 classifyConnectError). Pure.
 //
 // The runtime tags every terminal message with the ErrorClass it wants main
@@ -32,3 +32,7 @@ export function classifyConnectError(message) {
 export function stripClassPrefix(message) {
   return String(message ?? '').replace(/^[A-Z_]+:\s*/, '')
 }
+
+
+
+

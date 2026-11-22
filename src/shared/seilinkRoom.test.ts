@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   bareRoomState,
   defaultRoomState,
@@ -110,3 +110,7 @@ describe('the plain first state and the guided setup marker (261106)', () => {
     expect(junk.setup).toBeUndefined();
   });
 });
+
+
+
+

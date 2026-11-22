@@ -1,4 +1,4 @@
-// Google Gemini adapter — uses the v1beta generateContent REST endpoint with
+﻿// Google Gemini adapter â€” uses the v1beta generateContent REST endpoint with
 // the API key passed as a query string (per Google's quickstart). Tool calls
 // use `functionDeclarations` + `tools.function_calling_config`. Non-streaming.
 
@@ -78,3 +78,7 @@ export function createGeminiProvider(config, { fetchImpl = globalThis.fetch } = 
     kind: 'gemini',
   }
 }
+
+
+
+

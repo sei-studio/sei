@@ -1,18 +1,18 @@
-/**
- * ApiKeySetupModal — BYOK ("use my own API key") setup prompt.
+﻿/**
+ * ApiKeySetupModal â€” BYOK ("use my own API key") setup prompt.
  *
  * Opened from HardStopModal's "Use my own API key" CTA. Prompts the user to
  * pick a model provider and paste an API key, then switches the AI backend to
- * local (BYOK) mode — the focused escape hatch from cloud playtime. Renders on
+ * local (BYOK) mode â€” the focused escape hatch from cloud playtime. Renders on
  * ModalShell's 'stacked' tier so it sits above the HardStopModal that opened it.
  *
  * Commit ordering (mirrors OnboardingScreen.tsx final submit): saveConfig
  * BEFORE saveApiKey BEFORE proxyConfigure('local'). The backend is only flipped
- * once the key is in hand, so a cancel — or any failure — leaves the user
+ * once the key is in hand, so a cancel â€” or any failure â€” leaves the user
  * exactly where they were (cloud-proxy, still hard-stopped). On a thrown step we
  * surface an inline error and keep the modal mounted for a clean retry.
  *
- * proxyConfigure('local') is the source of truth for the backend flip — it
+ * proxyConfigure('local') is the source of truth for the backend flip â€” it
  * persists ai_backend_kind via apiKeyStore.setAiBackendKind AND live-switches
  * the running bot (main/ipc.ts proxy.configure handler). We still write
  * ai_backend_kind:'local' through saveConfig so the persisted UserConfig agrees.
@@ -33,7 +33,7 @@ import styles from './ApiKeySetupModal.module.css';
 import { PROVIDER_LABELS } from '@shared/llmCatalog';
 
 export interface ApiKeySetupModalProps {
-  /** Close without switching — returns to the hard-stop modal. */
+  /** Close without switching â€” returns to the hard-stop modal. */
   onCancel: () => void;
   /** Provider + key saved and the backend switched to local. */
   onComplete: () => void;
@@ -46,7 +46,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Pre-select the provider the user last configured (best-effort — falls back
+  // Pre-select the provider the user last configured (best-effort â€” falls back
   // to the 'anthropic' default if the config read fails).
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +65,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
 
   const save = async (): Promise<void> => {
     const key = apiKey.trim();
-    // 260817 W10: ollama is keyless — an empty key is valid for it (matches
+    // 260817 W10: ollama is keyless â€” an empty key is valid for it (matches
     // Settings and the onboarding wizards).
     if (!key && provider !== 'ollama') {
       setError(t('API key cannot be empty.'));
@@ -76,7 +76,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
     try {
       // Spread the existing config so the provider change doesn't clobber
       // mc_username / preferred_name / theme etc. (saveConfig replaces
-      // wholesale). 260725: the backend flip is proxyConfigure's job alone —
+      // wholesale). 260725: the backend flip is proxyConfigure's job alone â€”
       // main strips ai_backend_kind from renderer saves.
       const cfg = await sei.getConfig();
       await sei.saveConfig({
@@ -120,7 +120,7 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           }}
           type="password"
           monospace
-          placeholder="sk-…"
+          placeholder="sk-â€¦"
           autoFocus
           onEnter={() => {
             if (canSave) void save();
@@ -136,9 +136,13 @@ export function ApiKeySetupModal({ onCancel, onComplete }: ApiKeySetupModalProps
           {t('Cancel')}
         </Button>
         <Button kind="primary" disabled={!canSave} onClick={() => void save()}>
-          {saving ? t('Saving…') : t('Save & switch')}
+          {saving ? t('Savingâ€¦') : t('Save & switch')}
         </Button>
       </ModalFooter>
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SharedVoiceChoice / SharedVoiceLabel (261019): first-render markup (SSR,
  * as in ChatgptPlanSettings.test.tsx). Effects do not run under SSR, so this
  * is the state before the pool and the close match load: the line is shown,
@@ -40,3 +40,7 @@ describe('SharedVoiceLabel', () => {
     expect(readOnly).not.toContain('Change');
   });
 });
+
+
+
+

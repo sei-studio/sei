@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Room changes she has not reacted to yet (261105, T335), and the two notes
  * that tell her about them. Kept free of electron and the host so chatService
  * can import it.
@@ -91,3 +91,7 @@ export function roomChangeTurnNote(characterId: string, room: RoomContext | null
     return '';
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/** Picking through a shelf's lip (261105 plank pass): you can't click an item through the plank. */
+﻿/** Picking through a shelf's lip (261105 plank pass): you can't click an item through the plank. */
 import { describe, expect, it } from 'vitest';
 import { defaultRoomState, type RoomPresetManifest, type RoomSlotId } from '@shared/seilinkRoom';
 import { RoomPicker } from './roomPick';
@@ -60,3 +60,7 @@ describe('RoomPicker over a lipped top', () => {
     expect(pick(100, 45, ['shell'])).toEqual({ kind: 'item', index: 0 });
   });
 });
+
+
+
+

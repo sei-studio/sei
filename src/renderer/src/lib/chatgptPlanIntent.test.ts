@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The "Use ChatGPT plan" switch intent is one-shot (261029 review): it waits
  * only while something is still loading and is dropped once the plan turns
  * out not to be ready, so a declined plan never leaves it set.
@@ -36,3 +36,7 @@ describe('chatgptPlanIntentStep', () => {
     expect(chatgptPlanIntentStep(true, status(true, true), 'local')).toBe('pick-local');
   });
 });
+
+
+
+

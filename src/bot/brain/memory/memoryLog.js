@@ -1,5 +1,5 @@
-/**
- * MEMORY.md — append-only long-term memory written by the LLM via the
+﻿/**
+ * MEMORY.md â€” append-only long-term memory written by the LLM via the
  * `remember(text)` tool and pruned via `forget(text)`. Loaded in full
  * (subject to a byte budget for display) into every loop's seed user turn.
  *
@@ -12,7 +12,7 @@
  *
  * Replaces the prior AFFECT.md + DIARY.md split. The LLM writes its own
  * summaries (one per loop) and any mid-loop moments worth keeping. No
- * model-driven compaction — entries persist until forgotten or rolled off
+ * model-driven compaction â€” entries persist until forgotten or rolled off
  * by display-budget truncation.
  */
 
@@ -35,7 +35,7 @@ const STAMP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 /**
  * Model-facing stamp humanization (260725). Entries are STORED with UTC ISO
- * timestamps (stable, sortable, parser-friendly — the file format does not
+ * timestamps (stable, sortable, parser-friendly â€” the file format does not
  * change), but the model reads them next to a local-time clock line like
  * "Fri 25 Jul 2026, 14:57", and relating a UTC ISO instant to that reliably
  * misjudges "how long ago" (live capture: a two-week-old "packing for LA"
@@ -89,9 +89,9 @@ export function createMemoryLog({ path: filePath } = {}) {
 }
 
 /**
- * World awareness: drop a `## World <num> — <label>` section header so the
+ * World awareness: drop a `## World <num> â€” <label>` section header so the
  * append-only log reads as world-segmented. Written on join (worlds.js), but
- * only when the world CHANGED — if the last world header already names this
+ * only when the world CHANGED â€” if the last world header already names this
  * world, this is a no-op so repeated summons into the same world don't stack
  * duplicate headers. Headers are deliberately NOT entry lines (`- [`), so
  * forget() leaves them alone; readMemoryForSeed and the compactor are taught to
@@ -129,20 +129,20 @@ function lastSectionIsWorld(body, num) {
 }
 
 /**
- * The header line for a world. 261020: it names the game too ("## World 2 —
+ * The header line for a world. 261020: it names the game too ("## World 2 â€”
  * Sei Farm (Stardew Valley)"). World numbers are shared by every game a
  * character plays, and a farm name alone does not say which game the section
  * is from.
  */
 function worldHeaderLine(num, label, game) {
   const gamePart = typeof game === 'string' && game.trim() && !String(label ?? '').includes(game.trim()) ? ` (${game.trim()})` : ''
-  const labelPart = label ? ` — ${label}${gamePart}` : gamePart
+  const labelPart = label ? ` â€” ${label}${gamePart}` : gamePart
   return `## World ${num}${labelPart}`
 }
 
-// ── Raw archive (260725) ────────────────────────────────────────────────
+// â”€â”€ Raw archive (260725) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A write-only shadow of MEMORY.md: every entry line and world header is
-// mirrored here at append time and then NEVER touched again — not by the
+// mirrored here at append time and then NEVER touched again â€” not by the
 // compactor, not by forget(), not by any truncation, and nothing reads it at
 // runtime. It exists purely so that if compaction tech improves later, the
 // original uncompacted memories can be recovered. Best-effort by design: an
@@ -180,7 +180,7 @@ function normalizeEntry(text) {
 
 // How far back the duplicate guard looks. The guard exists for a same-breath
 // double fire (live capture: the identical line written twice 9s apart, three
-// "marv goes by mars" variants inside 42s) — NOT for permanently banning a
+// "marv goes by mars" variants inside 42s) â€” NOT for permanently banning a
 // fact. A thing the player re-confirms next week MUST append again: the seed
 // prompt now tells the model to mind the gap between an entry's stamp and
 // today ("a weeks-old note is an old thread"), so keeping the old stamp would
@@ -239,7 +239,7 @@ export async function appendMemory(filePath, text, when, opts = {}) {
     // Duplicate guard (260725): remember() sometimes fires twice in one breath
     // (live capture: "hang up when they say bye" written twice, 9s apart).
     // Skip an append whose normalized text EXACTLY matches a RECENT entry in
-    // THIS world — deliberately loose, near-misses are the compactor's job.
+    // THIS world â€” deliberately loose, near-misses are the compactor's job.
     // Bounded on purpose: see DEDUPE_WINDOW_MS. Callers must treat 0 as "not
     // written" (the remember() tool_result says so).
     const atMs = Number.isFinite(whenDate.getTime()) ? whenDate.getTime() : Date.now()
@@ -275,7 +275,7 @@ export async function appendMemory(filePath, text, when, opts = {}) {
 export async function forgetMemory(filePath, query) {
   const q = String(query ?? '').trim().toLowerCase()
   if (!q) return 0
-  // "- [11 Jul 2026, 09:23] text" / "[11 jul 2026, 09:23] text" → "text". Only
+  // "- [11 Jul 2026, 09:23] text" / "[11 jul 2026, 09:23] text" â†’ "text". Only
   // a leading BRACKETED stamp is stripped (so a query that legitimately starts
   // with a dash is left alone), which narrows the match rather than widening
   // it; a query that is nothing but a stamp strips to empty and falls back to
@@ -386,7 +386,7 @@ export async function readMemoryForSeed(filePath, budgetBytes) {
     keep.add(lastMarker)
     remaining -= bytesOf(body[lastMarker])
   }
-  // Walk newest → oldest entries, keeping until the byte budget is exhausted.
+  // Walk newest â†’ oldest entries, keeping until the byte budget is exhausted.
   for (let k = entryIdx.length - 1; k >= 0; k--) {
     const i = entryIdx[k]
     const m = sectionOf[i]
@@ -405,3 +405,7 @@ export async function readMemoryForSeed(filePath, budgetBytes) {
   }
   return humanizeMemoryStamps(out.join('\n') + '\n')
 }
+
+
+
+

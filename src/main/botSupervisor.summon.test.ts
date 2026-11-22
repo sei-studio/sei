@@ -1,12 +1,12 @@
-/**
- * 260705 (issue #6) — the summon reservation.
+﻿/**
+ * 260705 (issue #6) â€” the summon reservation.
  *
  * `_summon`'s sessions.has() guard spans ~10 awaits (including the network
  * credit gate) between check and sessions.set, so two interleaved summons
  * could both pass it and both fork; the loser's teardown then deleted the
- * winner's map entry, leaving a live child with NO map entry — an unstoppable
+ * winner's map entry, leaving a live child with NO map entry â€” an unstoppable
  * orphan burning LLM spend until app quit. These tests pin the fix's three
- * faces, all in the pre-fork window (no utilityProcess is ever forked — every
+ * faces, all in the pre-fork window (no utilityProcess is ever forked â€” every
  * attempt is parked or failed at a mocked store/config read):
  *   - single-flight: a re-entrant summon joins the in-flight attempt;
  *   - stop consults the reservation instead of no-op'ing to "success";
@@ -76,7 +76,7 @@ beforeEach(() => {
 });
 
 describe('summon reservation (issue #6)', () => {
-  it('a re-entrant summon joins the in-flight attempt — one store read, same promise', async () => {
+  it('a re-entrant summon joins the in-flight attempt â€” one store read, same promise', async () => {
     const sup = makeSupervisor();
     let release!: (c: unknown) => void;
     getCharacterSpy.mockImplementationOnce(() => new Promise((r) => { release = r; }));
@@ -89,7 +89,7 @@ describe('summon reservation (issue #6)', () => {
     // reset memory / skin swap) must hold through the fork window too.
     expect(sup.isActive(A)).toBe(true);
 
-    release(null); // character vanished → the attempt fails pre-fork
+    release(null); // character vanished â†’ the attempt fails pre-fork
     await expect(first).rejects.toThrow('Character not found');
     expect(getCharacterSpy).toHaveBeenCalledTimes(1);
     expect(sup.isActive(A)).toBe(false); // reservation cleared on settle
@@ -113,12 +113,12 @@ describe('summon reservation (issue #6)', () => {
     release(null);
     await expect(summoning).rejects.toThrow('Character not found');
     await stopping;
-    // Failed attempt → nothing to stop; the idle push still clears the widget.
+    // Failed attempt â†’ nothing to stop; the idle push still clears the widget.
     // Game adapters (M0): every status is stamped with the session's game.
     expect(sendStatusSpy).toHaveBeenCalledWith({ kind: 'idle', characterId: B, game: 'minecraft', endReason: 'user_stop' });
   });
 
-  it('a pending summon already holds its username — a same-name character is refused pre-fork', async () => {
+  it('a pending summon already holds its username â€” a same-name character is refused pre-fork', async () => {
     const sup = makeSupervisor();
     let releaseA!: (c: unknown) => void;
     getCharacterSpy.mockImplementation((id: string) =>
@@ -127,7 +127,7 @@ describe('summon reservation (issue #6)', () => {
         : Promise.resolve(mkChar(B, 'Sui')),
     );
     // B races ahead of A: computes its username, then parks at the backend-kind
-    // read — registered in pendingUsernames but NOT yet in sessions, so the old
+    // read â€” registered in pendingUsernames but NOT yet in sessions, so the old
     // sessions-only guard would have been blind to it.
     getAiBackendKindSpy.mockImplementation(() => new Promise(() => { /* park */ }));
 
@@ -140,7 +140,7 @@ describe('summon reservation (issue #6)', () => {
     await expect(summonA).rejects.toThrow('SUMMON_USERNAME_CONFLICT');
   });
 
-  it('261027: "Sofía" and "Sofia" (no usernames) now share an in-game name and are refused', async () => {
+  it('261027: "SofÃ­a" and "Sofia" (no usernames) now share an in-game name and are refused', async () => {
     const sup = makeSupervisor();
     const named = (id: string, name: string): unknown => ({ ...(mkChar(id, name) as object), username: null });
     let releaseA!: (c: unknown) => void;
@@ -156,7 +156,11 @@ describe('summon reservation (issue #6)', () => {
     sup.summon(B).catch(() => { /* parked forever; supervisor discarded */ });
     await vi.waitFor(() => expect(getAiBackendKindSpy).toHaveBeenCalledTimes(1));
 
-    releaseA(named(A, 'Sofía')); // folds to Sofia (it used to be "Sofa")
+    releaseA(named(A, 'SofÃ­a')); // folds to Sofia (it used to be "Sofa")
     await expect(summonA).rejects.toThrow('SUMMON_USERNAME_CONFLICT: Sofia');
   });
 });
+
+
+
+

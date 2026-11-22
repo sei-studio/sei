@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Chess on an account switch (260926). endAllChess ends every game through
  * endSession, the same choke point as every other exit: chess_game_ended
  * carries duration_ms and reason 'account_switch' (the game's own result stays
@@ -216,3 +216,7 @@ describe('chess starts across an account switch', () => {
     expect(events('chess_game_started')).toHaveLength(0);
   });
 });
+
+
+
+

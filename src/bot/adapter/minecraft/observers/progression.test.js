@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import mcDataLib from 'minecraft-data'
 import {
   SPINE,
@@ -26,7 +26,7 @@ function achieve(state, node) {
   return next
 }
 
-describe('progression spine — connectivity', () => {
+describe('progression spine â€” connectivity', () => {
   it('reaches defeat(ender_dragon) by greedily taking the frontier from an empty start', () => {
     let state = { items: {}, pickaxeTier: 0, dim: 'overworld', flags: {} }
     const taken = []
@@ -53,13 +53,13 @@ describe('progression spine — connectivity', () => {
 })
 
 describe('frontier correctness', () => {
-  it('empty inventory → frontier is exactly gather wood', () => {
+  it('empty inventory â†’ frontier is exactly gather wood', () => {
     const { frontier, currentMilestone } = computeProgression({ items: {}, pickaxeTier: 0, dim: 'overworld' })
     expect(ids(frontier)).toEqual(['logs'])
     expect(currentMilestone.id).toBe('logs')
   })
 
-  it('with logs + crafting table → wooden pickaxe is reachable, stone is not yet', () => {
+  it('with logs + crafting table â†’ wooden pickaxe is reachable, stone is not yet', () => {
     const { frontier } = computeProgression({ items: { oak_log: 4, crafting_table: 1 }, pickaxeTier: 0, dim: 'overworld' })
     expect(ids(frontier)).toContain('wood_pickaxe')
     expect(ids(frontier)).not.toContain('stone_pickaxe')
@@ -84,7 +84,7 @@ describe('monotonic-progress closure (the consumption gotcha)', () => {
     // 0 raw diamonds in inventory, but a diamond pickaxe (tier 4) exists.
     const { done } = computeProgression({ items: { diamond_pickaxe: 1 }, pickaxeTier: 4, dim: 'overworld' })
     expect(done.has('diamonds')).toBe(true)        // implied by the downstream pickaxe
-    expect(done.has('iron_pickaxe')).toBe(true)    // …and everything before it
+    expect(done.has('iron_pickaxe')).toBe(true)    // â€¦and everything before it
   })
 
   it('spending obsidian + eyes to reach the End leaves those milestones done', () => {
@@ -113,7 +113,7 @@ describe('spine is consistent with real game data (minecraft-data 1.21.1)', () =
   it('every item the spine names exists in the game', () => {
     // Items referenced by goal.have, plus the pickaxe-tier items the `pickaxe`
     // predicate stands for, plus the craft micro-steps the spine intentionally
-    // leaves to the craft tool (planks, sticks) — all must be real ids.
+    // leaves to the craft tool (planks, sticks) â€” all must be real ids.
     const named = SPINE.map(n => n.goal.have).filter(Boolean)
     const pickaxes = ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe', 'diamond_pickaxe']
     const micro = ['oak_log', 'oak_planks', 'stick']
@@ -132,7 +132,7 @@ describe('spine is consistent with real game data (minecraft-data 1.21.1)', () =
     for (const name of ['oak_planks', 'stick', 'crafting_table', 'wooden_pickaxe', 'stone_pickaxe', 'furnace', 'iron_pickaxe', 'diamond_pickaxe', 'flint_and_steel', 'ender_eye']) {
       expect(hasRecipe(name), `${name} should be craftable`).toBe(true)
     }
-    // What the bot GATHERS / obtains with no crafting recipe at all — mined,
+    // What the bot GATHERS / obtains with no crafting recipe at all â€” mined,
     // looted, or killed. (diamond is excluded: the spine MINES it, but the item
     // is also block-craftable from a diamond_block, so it does carry a recipe.)
     for (const name of ['oak_log', 'obsidian', 'blaze_rod', 'ender_pearl']) {
@@ -142,7 +142,7 @@ describe('spine is consistent with real game data (minecraft-data 1.21.1)', () =
 })
 
 describe('progression.json externalization (D-04/D-07)', () => {
-  it('loads the spine from progression.json — all 16 ids incl. iron_pickaxe', () => {
+  it('loads the spine from progression.json â€” all 16 ids incl. iron_pickaxe', () => {
     const allIds = SPINE.map(n => n.id)
     expect(allIds).toContain('iron_pickaxe')
     expect(allIds).toContain('dragon')
@@ -182,7 +182,7 @@ describe('nextMilestone walker (D-07)', () => {
       dim: 'the_nether',
       flags: { entered_nether: true },
     }
-    expect(nextMilestone(state).node.id).toBe('blaze_rods') // no goal → currentMilestone
+    expect(nextMilestone(state).node.id).toBe('blaze_rods') // no goal â†’ currentMilestone
     expect(nextMilestone(state, 'go get some ender pearls').node.id).toBe('ender_pearls') // goal wins
   })
 
@@ -219,7 +219,7 @@ describe('matchGoalToNode', () => {
   })
 })
 
-describe('readProgressionState (live bot reader) — defensive', () => {
+describe('readProgressionState (live bot reader) â€” defensive', () => {
   it('reads inventory, best pickaxe tier and dimension off a bot-like object', () => {
     const bot = {
       version: '1.21.1',
@@ -240,7 +240,7 @@ describe('readProgressionState (live bot reader) — defensive', () => {
   it('degrades to an empty state on a stub bot (never throws)', () => {
     expect(() => getProgression({})).not.toThrow()
     const prog = getProgression({})
-    expect(ids(prog.frontier)).toEqual(['logs']) // empty state → start of the spine
+    expect(ids(prog.frontier)).toEqual(['logs']) // empty state â†’ start of the spine
   })
 })
 
@@ -258,3 +258,7 @@ describe('nextNeedAfterGive names the other parts the recipe still lacks', () =>
       .toBe('your next step (get an iron pickaxe) takes 1 log to make and you have 0, so you need 1 more for it')
   })
 })
+
+
+
+

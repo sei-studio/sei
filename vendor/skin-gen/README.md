@@ -1,4 +1,4 @@
-# img2skin
+﻿# img2skin
 
 Turn any character image into a valid Minecraft skin.
 
@@ -80,3 +80,7 @@ tests/            offline test suite (npm test, no API key needed)
 ## License
 
 MIT
+
+
+
+

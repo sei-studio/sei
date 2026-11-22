@@ -1,11 +1,11 @@
-/**
+﻿/**
  * ai_backend_kind change notification (260721).
  *
  * Analytics stamps a cached backend kind on every event; the cache is fed by
  * onAiBackendKindChanged. These tests pin that EVERY writer of ai_backend_kind
  * fires the listener, because the live bug was exactly one writer
  * (applyCloudDefaultForSignIn, the first-sign-in cloud default) persisting the
- * flip without telling analytics — a brand-new cloud user's whole first
+ * flip without telling analytics â€” a brand-new cloud user's whole first
  * session shipped stamped backend:'local'.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -58,7 +58,7 @@ describe('onAiBackendKindChanged', () => {
     await applyCloudDefaultForSignIn();
     expect(seen).toEqual(['cloud-proxy']);
     expect(await getAiBackendKind()).toBe('cloud-proxy');
-    // Idempotent: already cloud-proxy → no write, no notification.
+    // Idempotent: already cloud-proxy â†’ no write, no notification.
     await applyCloudDefaultForSignIn();
     expect(seen).toEqual(['cloud-proxy']);
   });
@@ -99,3 +99,7 @@ describe('onAiBackendKindChanged', () => {
     expect(seen).toEqual(['cloud-proxy']);
   });
 });
+
+
+
+

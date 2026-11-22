@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ sent: [] as string[], ps: '4' as string | null, env: null as Record<string, string> | null }));
 vi.mock('electron', () => ({
@@ -42,3 +42,7 @@ describe('minimizeOtherWindows (261110)', () => {
     expect(await minimizeOtherWindows()).toEqual({ ok: false, error: 'unsupported' });
   });
 });
+
+
+
+

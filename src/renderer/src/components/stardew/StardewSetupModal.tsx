@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StardewSetupModal (game adapters M1): the body of the {kind:'game-setup',
  * game:'stardew'} modal the summon flow opens when no farm is open. Same
  * contract as the generic GameSetupModal (pending summon parked in
@@ -121,3 +121,7 @@ export function StardewSetupModal(_props: StardewSetupModalProps): React.ReactEl
     </ModalShell>
   );
 }
+
+
+
+

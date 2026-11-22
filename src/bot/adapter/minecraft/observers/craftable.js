@@ -1,18 +1,18 @@
-// src/bot/adapter/minecraft/observers/craftable.js
+﻿// src/bot/adapter/minecraft/observers/craftable.js
 //
 // Per-tick "what can I craft right now" enumeration, surfaced in the world
 // snapshot and shared with the craft() behavior.
 //
 // Design (locked in docs/design/craft-tool-260617.md):
-//   - Built on mineflayer's recipe API — no extra dependency.
+//   - Built on mineflayer's recipe API â€” no extra dependency.
 //       bot.recipesFor(id, meta, minCount, tableBlock): recipes craftable given
-//       CURRENT inventory. tableBlock=null ⇒ 2×2 inventory grid only; a table
-//       Block ⇒ 3×3 recipes too.
+//       CURRENT inventory. tableBlock=null â‡’ 2Ã—2 inventory grid only; a table
+//       Block â‡’ 3Ã—3 recipes too.
 //   - The full enumeration is on the hot per-tick path, so it is CACHED at
 //     module level (safe: one bot per utilityProcess) and recomputed only when
 //     the inventory signature OR the crafting-table-in-range boolean changes.
 //   - The bot only ever SEES the product (this list + the craft result), never
-//     the ingredients — by design. The capability text tells the model crafting
+//     the ingredients â€” by design. The capability text tells the model crafting
 //     consumes materials so it plans carefully.
 //
 // Defensive contract: every export swallows its own errors and degrades to an
@@ -23,13 +23,13 @@ import mcDataLib from 'minecraft-data'
 import { liveInventoryItems } from './liveInventory.js'
 
 // Crafting-table interaction reach. Matches the reach gate the craft() behavior
-// enforces, so the "you can craft 3×3 recipes" the snapshot advertises is
+// enforces, so the "you can craft 3Ã—3 recipes" the snapshot advertises is
 // exactly what craft() will accept.
 export const CRAFT_TABLE_REACH = 4
 
-// ── per-version memoized helpers ─────────────────────────────────────────────
+// â”€â”€ per-version memoized helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // minecraft-data keyed by version string. Cheap to call repeatedly but we cache
-// the heavier derived structures (the ingredient→results reverse index).
+// the heavier derived structures (the ingredientâ†’results reverse index).
 const _mcDataByVersion = new Map()
 function mcData(bot) {
   const ver = bot?.version
@@ -41,7 +41,7 @@ function mcData(bot) {
   return d
 }
 
-// ingredient item-id → Set(result item-ids). Lets us prune the candidate set to
+// ingredient item-id â†’ Set(result item-ids). Lets us prune the candidate set to
 // only recipes whose ingredients the bot actually holds, instead of probing all
 // ~780 recipe outputs every recompute.
 const _reverseIndexByVersion = new Map()
@@ -88,7 +88,7 @@ function ingredientIds(variant) {
   return out
 }
 
-// ── inventory helpers ────────────────────────────────────────────────────────
+// â”€â”€ inventory helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function inventoryById(bot) {
   const out = new Map()
   const items = liveInventoryItems(bot)
@@ -120,10 +120,10 @@ export function maxRepetitions(recipe, invById) {
   return Number.isFinite(reps) ? reps : 0
 }
 
-// ── crafting-table detection ─────────────────────────────────────────────────
+// â”€â”€ crafting-table detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * Nearest crafting_table Block within reach, or null. Pass the returned Block to
- * bot.recipesFor / bot.craft to unlock 3×3 recipes.
+ * bot.recipesFor / bot.craft to unlock 3Ã—3 recipes.
  * @returns {import('prismarine-block').Block | null}
  */
 export function detectCraftingTable(bot) {
@@ -139,7 +139,7 @@ export function detectCraftingTable(bot) {
   }
 }
 
-// ── enumeration (cached) ─────────────────────────────────────────────────────
+// â”€â”€ enumeration (cached) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Module-level cache. One bot per process, so a single slot is correct.
 let _cache = { key: null, value: null }
 
@@ -197,3 +197,7 @@ export function getCraftableEntries(bot) {
 export function __resetCraftableCache() {
   _cache = { key: null, value: null }
 }
+
+
+
+

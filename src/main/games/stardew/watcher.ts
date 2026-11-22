@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew world watcher (game-adapters M1): "is a farm open?" for the
  * launch panel and the supervisor. Polls the mod's unauthenticated
  * `GET /hello` every 3 s on the port the mod's config.json names
@@ -39,7 +39,7 @@ export function stateLabel(s: StardewWorldState): string {
   return s.kind === 'open' ? `${s.farmName} Farm, ${s.season} ${s.day}` : s.kind;
 }
 
-/** Pure: hello JSON → world state (exported for tests). */
+/** Pure: hello JSON â†’ world state (exported for tests). */
 export function stateFromHello(hello: unknown, port: number, now: number, logger?: StardewWatcherDeps['logger']): StardewWorldState {
   const parsed = StardewHelloSchema.safeParse(hello);
   if (!parsed.success) return { kind: 'closed' };
@@ -160,3 +160,7 @@ export function createStardewWatcher(deps: StardewWatcherDeps): GameWatcher & { 
     latest: () => latest,
   };
 }
+
+
+
+

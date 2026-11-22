@@ -1,5 +1,5 @@
-/**
- * CrossLaunchConfirmModal — "X is still running. End it and start Y?" (260721).
+﻿/**
+ * CrossLaunchConfirmModal â€” "X is still running. End it and start Y?" (260721).
  *
  * Opened by lib/gameLaunch.requestGameLaunch when a game launch is attempted
  * while ANOTHER game is active for the same companion. Confirming ends the
@@ -53,3 +53,7 @@ export function CrossLaunchConfirmModal({
     </ModalShell>
   );
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * useCloudCharactersStore — renderer-side cache of the signed-in user's cloud
+﻿/**
+ * useCloudCharactersStore â€” renderer-side cache of the signed-in user's cloud
  * character UUID set.
  *
  * Drives the "LOCAL ONLY" chip on CharacterCard (Plan 11-17, requirement
@@ -18,8 +18,8 @@
  *
  * Sources:
  *   - 11-17-PLAN.md Task 1
- *   - 11-CONTEXT §D-19 (cache-on-demand; no eager prefetch on sign-in)
- *   - 11-CONTEXT §specifics: "subtle gray pill, not a warning color"
+ *   - 11-CONTEXT Â§D-19 (cache-on-demand; no eager prefetch on sign-in)
+ *   - 11-CONTEXT Â§specifics: "subtle gray pill, not a warning color"
  */
 
 import { create } from 'zustand';
@@ -36,7 +36,7 @@ interface CloudCharactersState {
    * Flips true after the first `refresh()` resolves (success OR empty
    * fallback). CharacterCard gates chip rendering on this so the chip
    * never lights up during the brief window between mount and the first
-   * IPC response — otherwise every user-created character would briefly
+   * IPC response â€” otherwise every user-created character would briefly
    * flash "LOCAL ONLY" while the snapshot is in flight.
    */
   initialized: boolean;
@@ -52,7 +52,7 @@ interface CloudCharactersActions {
    * cloudIds and flip initialized=true.
    */
   refresh: () => Promise<void>;
-  /** Selector helper — O(1) membership test for the "local only" predicate. */
+  /** Selector helper â€” O(1) membership test for the "local only" predicate. */
   isLocalOnly: (id: string) => boolean;
 }
 
@@ -68,13 +68,13 @@ export const useCloudCharactersStore = create<
       if (r.ok) {
         set({ cloudIds: new Set(r.ids), initialized: true });
       }
-      // r.ok === false → keep the prior cloudIds + initialized values. If this
+      // r.ok === false â†’ keep the prior cloudIds + initialized values. If this
       // is the first refresh, `initialized` stays false and CharacterCard's
       // chip predicate short-circuits to false (no chip), which is the safe
       // default during a transient cloud outage. If a prior refresh succeeded,
       // the cached set carries forward until the next successful refresh.
     } catch {
-      // Defensive — sei.charsListCloud is wired to swallow on main side, but
+      // Defensive â€” sei.charsListCloud is wired to swallow on main side, but
       // a contextBridge / preload-time failure could still surface here. Same
       // treatment as ok:false above: preserve prior state so the chip doesn't
       // light up on every char during a transient failure.
@@ -83,3 +83,7 @@ export const useCloudCharactersStore = create<
 
   isLocalOnly: (id: string): boolean => !get().cloudIds.has(id),
 }));
+
+
+
+

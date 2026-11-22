@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: key-name normalization, model side -> helper side.
  *
  * HELPER_KEYS must match KEY_CODES in native/mac-input/main.swift (the CI
@@ -101,3 +101,7 @@ export function parseCombo(combo: string): { key: string; modifiers: HelperModif
   }
   return { key, modifiers };
 }
+
+
+
+

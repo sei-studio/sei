@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The PowerShell runner a Velopack self-repair hands off to (velopackRepair.ts).
  *
  * Velopack's Setup stops every process running from the install folder before
@@ -28,7 +28,7 @@
  * PowerShell 5.1 reads a BOM-less script as ANSI; a locked-down machine may
  * run it in ConstrainedLanguage mode). runner.json is pure ASCII too
  * (runnerConfigJson escapes everything else as \uXXXX) and is read as UTF-8,
- * so a user name like José or 测试 in the paths survives either way.
+ * so a user name like JosÃ© or æµ‹è¯• in the paths survives either way.
  */
 
 export const RUNNER_SCRIPT = 'sei-repair-runner.ps1';
@@ -146,3 +146,7 @@ Relaunch
 export function runnerArgs(scriptPath: string, dir: string): string[] {
   return ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, '-Dir', dir];
 }
+
+
+
+

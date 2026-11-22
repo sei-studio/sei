@@ -1,5 +1,5 @@
-/**
- * The user's OWN ElevenLabs voices (261019) — MAIN only.
+﻿/**
+ * The user's OWN ElevenLabs voices (261019) â€” MAIN only.
  *
  * A BYOK user who cloned or designed a voice in ElevenLabs (or saved one from
  * the Voice Library) expects to pick it for a companion. The picker used to
@@ -15,9 +15,9 @@
  *                                personal, saved library, workspace voices)
  *     &next_page_token=...      (pagination; rely on has_more)
  *   header xi-api-key
- *   200 → { voices: [{ voice_id, name, category, labels, description,
+ *   200 â†’ { voices: [{ voice_id, name, category, labels, description,
  *            preview_url, ... }], has_more, total_count, next_page_token }
- *   401 → { detail: { status: 'invalid_api_key' | 'missing_permissions', ... } }
+ *   401 â†’ { detail: { status: 'invalid_api_key' | 'missing_permissions', ... } }
  * Built-in ('premade') voices are filtered out again here in case a future
  * API revision ignores voice_type: they are not "your" voices, and the
  * curated pool already covers what Sei offers.
@@ -227,7 +227,7 @@ export async function listOwnVoices(opts: { refresh?: boolean; fetchImpl?: Fetch
 
 /** Whether `id` is a voice in the account behind the CURRENT own-voice key.
  * The IPC preview boundary uses this beside isPoolVoiceId, so samples stay a
- * closed allowlist (pool ∪ the user's own library), never an arbitrary id. */
+ * closed allowlist (pool âˆª the user's own library), never an arbitrary id. */
 export async function isOwnVoiceId(id: string, opts: { fetchImpl?: FetchLike } = {}): Promise<boolean> {
   if (!isWellFormedVoiceId(id)) return false;
   try {
@@ -307,3 +307,7 @@ export async function ownVoicePreviewBytes(
     clearTimeout(timer);
   }
 }
+
+
+
+

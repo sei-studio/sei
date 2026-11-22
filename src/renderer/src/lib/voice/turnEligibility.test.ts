@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { directorMayDrive, idleNudgeEligible, reactorPool } from './turnEligibility';
 
 const summons = { mc: { kind: 'online' }, joining: { kind: 'connecting' }, idle: { kind: 'idle' } };
@@ -24,3 +24,7 @@ describe('voice director turn eligibility (261023)', () => {
     expect(reactorPool(['sui', 'lyra', 'mc'], 'lyra', summons, null)).toEqual(['sui', 'lyra']);
   });
 });
+
+
+
+

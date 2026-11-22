@@ -1,13 +1,13 @@
-/**
- * Chat turn correctness — the tool-use hop loop and the last_chatted stamp.
+﻿/**
+ * Chat turn correctness â€” the tool-use hop loop and the last_chatted stamp.
  *
  * Pins two invariants of sendChatMessage:
  *   - Every tool_use block in an assistant turn gets a matching tool_result in
  *     the next user message. With launch + quit both offered, the model can
- *     call them in parallel ("say bye and log off, then hop back in") — an
+ *     call them in parallel ("say bye and log off, then hop back in") â€” an
  *     unanswered tool_use id makes the follow-up create() 400.
  *   - The last_chatted stamp goes through patchCharacter (260705: fresh read
- *     inside the store's lock), never the turn's opening snapshot — that
+ *     inside the store's lock), never the turn's opening snapshot â€” that
  *     snapshot is seconds stale by the time the reply lands; spreading it
  *     would silently revert an edit saved mid-reply (and sync the revert to
  *     the cloud). Mirrors the last_launched stamp in botSupervisor.
@@ -86,7 +86,7 @@ beforeEach(async () => {
     persona: { source: 'grumpy robot', expanded: 'ORIGINAL PERSONA' },
     metadata: {},
   };
-  // Every read returns the CURRENT character — like the store, not a snapshot.
+  // Every read returns the CURRENT character â€” like the store, not a snapshot.
   getCharacterSpy.mockImplementation(async () => structuredClone(character));
   // patchCharacter fake mirrors the real contract: read the CURRENT character,
   // apply the updater, PERSIST the result back to the store (so later reads
@@ -114,12 +114,12 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe('sendChatMessage — parallel tool_use blocks', () => {
+describe('sendChatMessage â€” parallel tool_use blocks', () => {
   it('answers every tool_use id in one tool_result turn (quit + launch in parallel)', async () => {
     createSpy
       .mockResolvedValueOnce({
         content: [
-          { type: 'text', text: 'logging off — back when you reopen.' },
+          { type: 'text', text: 'logging off â€” back when you reopen.' },
           { type: 'tool_use', id: 'tu_quit', name: 'quit_game', input: {} },
           { type: 'tool_use', id: 'tu_launch', name: 'launch', input: { game: 'minecraft' } },
         ],
@@ -130,7 +130,7 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
     const result = await sendChatMessage({ characterId: CHAR, text: 'say bye and log off, then hop back in' }, d);
 
     expect(createSpy).toHaveBeenCalledTimes(2);
-    // The second hop's request must carry one tool_result per tool_use id —
+    // The second hop's request must carry one tool_result per tool_use id â€”
     // anything less is a guaranteed 400 from the API.
     const secondReq = createSpy.mock.calls[1][0] as {
       messages: Array<{ role: string; content: unknown }>;
@@ -150,7 +150,7 @@ describe('sendChatMessage — parallel tool_use blocks', () => {
       .mockResolvedValueOnce({
         content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }],
       })
-      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'world is closed — open to LAN first.' }] });
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'world is closed â€” open to LAN first.' }] });
 
     const result = await sendChatMessage({ characterId: CHAR, text: 'hop in' }, deps());
 
@@ -588,7 +588,7 @@ describe('silence-by-convention + idle nudge (260707)', () => {
     await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
 
     const nudge = await sendVoiceIdleTurn(CHAR, 30, []);
-    expect(nudge).toEqual({ messages: [] }); // skipped — a real turn is running
+    expect(nudge).toEqual({ messages: [] }); // skipped â€” a real turn is running
     expect(createSpy).toHaveBeenCalledTimes(1); // the nudge never called the LLM
 
     release({ content: [{ type: 'text', text: 'yo.' }] });
@@ -720,7 +720,7 @@ describe('end_call next_time_game (261020 review)', () => {
 
 // 260708: while one companion was in the player's world, a call-only companion
 // was told "no world open" (openWorldDetected hardcoded false) and its launch()
-// calls were dropped (single-shot turns run no tool loop) — it could only join
+// calls were dropped (single-shot turns run no tool loop) â€” it could only join
 // once the in-game sibling disconnected. These pin the fix: live LAN truth in
 // the prompt, and launch() honored via the caller's onLaunch.
 describe('call-only companion: world truth + single-shot launch honor (260708)', () => {
@@ -796,7 +796,7 @@ describe('call-only companion: world truth + single-shot launch honor (260708)',
 // 260708: on a group call a model sometimes ECHOES the transcript's attribution
 // convention and writes a line FOR the other companion inside its own reply
 // (live capture: Marv's reply opened with "(Sui, on the call): oh let's go..."
-// — spoken in Marv's voice, and a ghost Sui line entered the transcript). The
+// â€” spoken in Marv's voice, and a ghost Sui line entered the transcript). The
 // prefix is injected only on heard lines, so a reply part carrying it is always
 // fabricated dialogue and is dropped on the voice paths.
 describe('peer-impersonation drop (260708)', () => {
@@ -835,10 +835,10 @@ describe('peer-impersonation drop (260708)', () => {
   });
 });
 
-// 260725: proactiveness is a runtime-only Minecraft mode now — no per-character
+// 260725: proactiveness is a runtime-only Minecraft mode now â€” no per-character
 // dial. Every companion gets the take-it-or-leave-it nudge note with silence
 // sanctioned, even one whose (now-ignored) legacy metadata carries a dial.
-describe('idle nudge — single note, silence sanctioned (260725)', () => {
+describe('idle nudge â€” single note, silence sanctioned (260725)', () => {
   it('legacy metadata.proactiveness is ignored; the note sanctions silence', async () => {
     character.metadata = { proactiveness: 2 };
     setCallActive(CHAR, true);
@@ -866,7 +866,7 @@ describe('idle nudge — single note, silence sanctioned (260725)', () => {
   });
 });
 
-describe('sendChatMessage — last_chatted stamp', () => {
+describe('sendChatMessage â€” last_chatted stamp', () => {
   it('re-reads the character before stamping, so an edit saved mid-reply survives', async () => {
     // The player saves a persona edit WHILE the reply is generating: mutate the
     // store inside the mocked LLM call, i.e. after the turn's opening snapshot.
@@ -887,7 +887,7 @@ describe('sendChatMessage — last_chatted stamp', () => {
   });
 });
 
-describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
+describe('cancelInflightTurn (260705 â€” reset-memory interrupt)', () => {
   it('aborts the in-flight turn: CHAT_ABORTED surfaces, nothing persists after the wipe', async () => {
     // Park the LLM call on a deferred so the cancel can land mid-turn.
     let release!: (v: { content: Array<{ type: string; text: string }> }) => void;
@@ -899,10 +899,10 @@ describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
     const settled = expect(turn).rejects.toThrow(CHAT_ABORTED);
     await vi.waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
 
-    // Reset memory fires the external interrupt, then the LLM resolves anyway —
+    // Reset memory fires the external interrupt, then the LLM resolves anyway â€”
     // the reply must be dropped, not appended to the freshly wiped transcript.
     cancelInflightTurn(CHAR);
-    release({ content: [{ type: 'text', text: 'too late — the wipe already ran' }] });
+    release({ content: [{ type: 'text', text: 'too late â€” the wipe already ran' }] });
     await settled;
 
     // The success-path tail never ran: no reply persisted, no last_chatted stamp.
@@ -913,7 +913,7 @@ describe('cancelInflightTurn (260705 — reset-memory interrupt)', () => {
   });
 });
 
-describe('transcript stop sequences (260722 — chess voice-call TTS prompt leak)', () => {
+describe('transcript stop sequences (260722 â€” chess voice-call TTS prompt leak)', () => {
   // Live capture: during a voice-call chess game a reply turn continued the
   // transcript past its own lines (a fabricated "Human: ..." player turn plus
   // an invented "(it is your turn)" direction) and the continuation was
@@ -949,7 +949,7 @@ describe('transcript stop sequences (260722 — chess voice-call TTS prompt leak
 /**
  * The STREAMED voice turn's per-sentence emit (260729). A live call always
  * takes this path (isStreaming = isVoice), so it is where a call's spoken text
- * and its prosody context actually come from — the renderer's own prev/more
+ * and its prosody context actually come from â€” the renderer's own prev/more
  * bookkeeping lives in the blocking reveal loop, which a streamed reply skips.
  */
 describe('streamed voice turn: spoken text keeps its punctuation and carries reply context', () => {
@@ -1252,3 +1252,7 @@ describe('in-game route carries the barge-in mark (261112)', () => {
     expect(routeToBot).toHaveBeenNthCalledWith(2, CHAR, { from: 'Player', text: 'stop', voice: false });
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Why a live game session ended (260929), as analytics props.
  *
  * `bot_session_ended` used to carry no reason at all, so a player pressing
@@ -101,3 +101,7 @@ export function sessionEndProps(
 export function isSessionFailure(status: BotStatus): boolean {
   return status.kind === 'error' && status.transient !== true;
 }
+
+
+
+

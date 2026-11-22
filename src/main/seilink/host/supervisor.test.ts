@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HostSupervisor, hostBackoffMs, type HostChild } from './supervisor';
 
 interface FakeChild extends HostChild {
@@ -352,3 +352,7 @@ describe('seilink host supervisor', () => {
     expect(h.children).toHaveLength(2);
   });
 });
+
+
+
+

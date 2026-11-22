@@ -1,5 +1,5 @@
-/**
- * ChessPanel — the chess surface that slides into the chat screen (260710).
+﻿/**
+ * ChessPanel â€” the chess surface that slides into the chat screen (260710).
  *
  * States, in order of precedence:
  *   - launch screen (no game yet, engine download, or Rematch clicked after a
@@ -7,7 +7,7 @@
  *     (./img/chess-launch.png with a plain dark fallback behind it):
  *     "Chess" title, the inline White / Random / Black side picker, and one
  *     primary button ("Launch", or "Start" on the rematch pass);
- *   - status 'active' / 'ended' → the 3D board fills the whole panel edge to
+ *   - status 'active' / 'ended' â†’ the 3D board fills the whole panel edge to
  *     edge and everything else floats over it as a de-boxed HUD:
  *       top-left      icon-only controls (flip, offer draw, resign; tooltips
  *                     via data-tip, resign confirm appears inline in the row)
@@ -177,7 +177,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
     await doStart(colorChoice);
   };
 
-  // ── Move list auto-scroll ─────────────────────────────────────────────────
+  // â”€â”€ Move list auto-scroll â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const listRef = useRef<HTMLDivElement | null>(null);
   const historyLen = game?.history.length ?? 0;
   useEffect(() => {
@@ -219,7 +219,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
   return (
     <div className={styles.panel} aria-label={t('Chess with {name}', { name })}>
       {showLaunch ? (
-        /* ── Launch screen: content over the dark board photo ── */
+        /* â”€â”€ Launch screen: content over the dark board photo â”€â”€ */
         <div className={styles.launch}>
           <img
             className={styles.launchBg}
@@ -298,7 +298,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                   size="md"
                   disabled={starting}
                   onClick={() =>
-                    // 260721: the shared cross-launch gate — another live game
+                    // 260721: the shared cross-launch gate â€” another live game
                     // (screen share, a summoned bot) confirms before this one
                     // starts; otherwise it launches directly.
                     requestGameLaunch(characterId, { id: 'chess', name: 'Chess' }, () =>
@@ -306,14 +306,14 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
                     )
                   }
                 >
-                  {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
+                  {starting ? t('Startingâ€¦') : rematchScreen ? t('Start') : t('Launch')}
                 </Button>
               </>
             )}
           </div>
         </div>
       ) : game ? (
-        /* ── Board states: full-bleed 3D scene + floating HUD ── */
+        /* â”€â”€ Board states: full-bleed 3D scene + floating HUD â”€â”€ */
         <div className={styles.stage}>
           <div className={styles.boardFill}>
             <ChessBoard3D characterId={characterId} companionName={name} />
@@ -474,7 +474,7 @@ export function ChessPanel({ characterId }: ChessPanelProps): React.ReactElement
         </div>
       ) : null}
 
-      {/* ── Minecraft-session conflict confirm ── */}
+      {/* â”€â”€ Minecraft-session conflict confirm â”€â”€ */}
       {mcConflict ? (
         <ModalShell
           title={t('{name} is in Minecraft', { name })}
@@ -575,3 +575,7 @@ export function ResultBanner({
     </div>
   );
 }
+
+
+
+

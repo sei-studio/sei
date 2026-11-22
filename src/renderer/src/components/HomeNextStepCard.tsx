@@ -1,5 +1,5 @@
-/**
- * HomeNextStepCard — the Home "up next" strip (261013, retention O2 / T119).
+﻿/**
+ * HomeNextStepCard â€” the Home "up next" strip (261013, retention O2 / T119).
  *
  * One line above the party wall: the companion's face, "Up next with Sui",
  * the plan they made together (or the goal they are working on), and one
@@ -86,3 +86,7 @@ export function HomeNextStepCard({
     </section>
   );
 }
+
+
+
+

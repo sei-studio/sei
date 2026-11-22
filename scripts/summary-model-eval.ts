@@ -1,5 +1,5 @@
-/**
- * scripts/summary-model-eval.ts — can the rolling-summary fold (and chat
+﻿/**
+ * scripts/summary-model-eval.ts â€” can the rolling-summary fold (and chat
  * MEMORY.md compaction) run on Haiku 5.5 instead of Sonnet 5 without making
  * things up? (261024, free call budget work.)
  *
@@ -46,7 +46,7 @@ const FIXTURE_DIR = join(HERE, 'fixtures', 'summary-eval');
 const FOLD_CASES = join(FIXTURE_DIR, 'fold-cases.json');
 const COMPACT_CASES = join(FIXTURE_DIR, 'compact-cases.json');
 
-// ── CLI ─────────────────────────────────────────────────────────────────────
+// â”€â”€ CLI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const argv = process.argv.slice(2);
 const opt = (n: string, d: string | null = null): string | null => {
   const i = argv.indexOf(n);
@@ -141,7 +141,7 @@ function parseJson<T>(text: string): T {
   return JSON.parse(body) as T;
 }
 
-// ── fixtures ────────────────────────────────────────────────────────────────
+// â”€â”€ fixtures â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 interface FoldCase {
   id: string;
   title: string;
@@ -292,7 +292,7 @@ async function genCompact(spec: (typeof COMPACT_SPECS)[number]): Promise<Compact
   return { id: spec.id, title: j.title, persona: PERSONAS[spec.persona], memory: j.memory, mustKeep: j.mustKeep, traps: j.traps };
 }
 
-// ── frozen pre-261024 fold prompt (the "base" variant) ──────────────────────
+// â”€â”€ frozen pre-261024 fold prompt (the "base" variant) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function oldFoldTranscript(msgs: FoldMsg[]): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const stamp = (ts: number) => {
@@ -328,7 +328,7 @@ function oldFoldSystem(personaExpanded?: string): string {
   );
 }
 
-// ── fold leg ────────────────────────────────────────────────────────────────
+// â”€â”€ fold leg â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function foldMsgs(c: FoldCase): FoldMsg[] {
   const t0 = new Date(c.start).getTime();
   return c.messages.map((m) => ({ role: m.role, text: m.text, ts: t0 + m.min * 60_000 }));
@@ -423,7 +423,7 @@ async function runFold(): Promise<void> {
   report(samples, cases.map((c) => c.id));
 }
 
-// ── compaction leg ──────────────────────────────────────────────────────────
+// â”€â”€ compaction leg â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // End to end through the REAL createMemoryCompactor (segment split, section
 // coalescing, the production system prompt with noise guard and persona, the
 // "- [" line filter, chunking, cut-off check) on a throwaway copy, with the
@@ -483,7 +483,7 @@ async function runCompact(): Promise<void> {
   report(samples, cases.map((c) => c.id));
 }
 
-// ── report ──────────────────────────────────────────────────────────────────
+// â”€â”€ report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function report(samples: Sample[], caseIds: string[]): void {
   mkdirSync(OUT, { recursive: true });
   writeFileSync(join(OUT, `${LEG}-samples.json`), JSON.stringify(samples, null, 2));
@@ -534,7 +534,7 @@ function report(samples: Sample[], caseIds: string[]): void {
   console.log(`\noutputs: ${OUT}\nspend this run: $${spend.toFixed(3)}`);
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
+// â”€â”€ main â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function main(): Promise<void> {
   if (has('--gen')) {
     mkdirSync(FIXTURE_DIR, { recursive: true });
@@ -563,3 +563,7 @@ main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

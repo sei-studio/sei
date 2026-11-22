@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SenseVoice English casing repair (260907).
  *
  * SenseVoice emits English as ALL CAPS (its inverse text normalization does
@@ -6,9 +6,9 @@
  * module fixes exactly that shape and nothing else: when a transcript's Latin
  * letters are overwhelmingly uppercase, rewrite it to sentence case
  * (capitalize the first letter of each sentence, keep standalone "I" and its
- * contractions capitalized, lowercase the rest). Mixed-case text — i.e. any
+ * contractions capitalized, lowercase the rest). Mixed-case text â€” i.e. any
  * output from a healthy caser (Whisper, Scribe), or a deliberate acronym in
- * otherwise-normal text — passes through untouched. Non-Latin characters
+ * otherwise-normal text â€” passes through untouched. Non-Latin characters
  * (zh/ja/ko) are unaffected by the transform, so a mixed zh+EN line only has
  * its Latin runs repaired.
  *
@@ -34,7 +34,7 @@ export function isMostlyUppercaseLatin(text: string): boolean {
 }
 
 /** Sentence-ending punctuation (Latin + CJK forms). */
-const SENTENCE_END = /[.!?…。！？]/;
+const SENTENCE_END = /[.!?â€¦ã€‚ï¼ï¼Ÿ]/;
 
 /**
  * Rewrite an overwhelmingly-uppercase transcript to sentence case. Returns the
@@ -59,7 +59,11 @@ export function sentenceCaseSttText(raw: string): string {
     out += ch;
   }
   // English "I" survives as a capital: standalone i, and its contractions
-  // (i'm / i'll / i've / i'd — the \b covers them, the apostrophe is a
+  // (i'm / i'll / i've / i'd â€” the \b covers them, the apostrophe is a
   // non-word char). "wi-fi" style words have no standalone i and are safe.
   return out.replace(/\bi\b/g, 'I');
 }
+
+
+
+

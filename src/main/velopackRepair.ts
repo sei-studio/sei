@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Velopack self-repair on Windows (product call 261120). The rules and the
  * reasoning are in velopackRepairPolicy.ts; this file runs them.
  *
@@ -506,7 +506,7 @@ function release(why: string): void {
 }
 
 function repairFailedText(lang: UiLanguage): string {
-  if (lang === 'zh') return 'Sei 这次没能修复更新程序，稍后会再试。';
+  if (lang === 'zh') return 'Sei è¿™æ¬¡æ²¡èƒ½ä¿®å¤æ›´æ–°ç¨‹åºï¼Œç¨åŽä¼šå†è¯•ã€‚';
   if (lang === 'en') return "Sei couldn't repair its updater this time. It will try again later.";
   return VELOPACK_REPAIR_ADDED[lang].failed;
 }
@@ -902,4 +902,8 @@ export const __test = {
     handingOff = false;
   },
 };
+
+
+
+
 

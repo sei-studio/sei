@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { commitEdit, createHistory, endGesture, markSaved, undo } from './seilinkEdit';
 import { defaultRoomState, type RoomState } from './seilinkRoom';
 import { EditorSessionTracker, classifyEdit, isSeilinkRendererEvent, sanitizeSeilinkTrack } from './seilinkTelemetry';
@@ -306,3 +306,7 @@ describe('261106 first-link flow fields', () => {
     expect(classifyEdit(plain, defaultRoomState('cozy'))).toEqual(['preset_change']);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const installUpdate = vi.fn(async () => undefined);
 const fakeSei = { platform: 'darwin', installUpdate: () => installUpdate() };
@@ -93,3 +93,7 @@ describe('Windows update note platform gate (261030)', () => {
     expect(showsWindowsUpdateNote(undefined)).toBe(false);
   });
 });
+
+
+
+

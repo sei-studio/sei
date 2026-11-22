@@ -1,4 +1,4 @@
-/**
+﻿/**
  * McDashControls (extracted from McDashboardPanel, game adapters M1 260908):
  * the status strip and the controls window (pause, reactive/proactive mode,
  * disconnect) in the vanilla-inventory style, so a second game's dashboard
@@ -14,7 +14,7 @@ import { companionActivityText } from '../games/useGameCompanions';
 import type { GameCompanion } from '../games/useGameCompanions';
 import styles from './McDashboardPanel.module.css';
 
-/** "gathering oak logs..." → "Gathering oak logs...". */
+/** "gathering oak logs..." â†’ "Gathering oak logs...". */
 export function sentenceCase(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -146,3 +146,7 @@ export function McDashControls({ paused, mode, onPause, onMode, onDisconnect, ga
     </section>
   );
 }
+
+
+
+

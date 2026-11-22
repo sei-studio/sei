@@ -1,7 +1,7 @@
-/**
+﻿/**
  * In-flight action tracker.
  *
- * Snapshot of "what is the bot doing right now" — populated when an action
+ * Snapshot of "what is the bot doing right now" â€” populated when an action
  * starts, cleared when it ends. composeSnapshot renders an `in_flight:` line
  * so the LLM knows not to fire duplicate or competing actions.
  *
@@ -92,7 +92,7 @@ export function describeArgs(name, args) {
 /**
  * 260513-wkd: render the snapshot's `in_flight:` line from a tracker entry.
  *
- * Format: `in_flight: <name>(<argblurb>) started=<X.X>s ago[ — <completed>/<total>[, y=<currentY>]]`
+ * Format: `in_flight: <name>(<argblurb>) started=<X.X>s ago[ â€” <completed>/<total>[, y=<currentY>]]`
  *
  * Preserves the em-dash separator AND the `y=<currentY>` channel
  * exactly as snapshot.js rendered them; the ONLY visible delta vs the prior
@@ -111,7 +111,7 @@ export function describeArgs(name, args) {
  * at 6") or the stale tick instead of what she held.
  *
  * @param {{ id:number, name:string, args:any, startedAt:number, progress:any } | null} entry
- * @param {number} [now=Date.now()] — injected for deterministic tests.
+ * @param {number} [now=Date.now()] â€” injected for deterministic tests.
  * @param {{ inventory?: Record<string, number> | null, giveWalking?: boolean | null }} [opts]
  *   inventory: the item counts the same snapshot shows on its inventory line.
  *   giveWalking: true while a running give() is still walking to the player.
@@ -139,8 +139,8 @@ export function getInFlightLineForSnapshot(entry, now = Date.now(), opts = {}) {
       // 261012 (pass 4a): "1/6 dug" was read as "the 6th log" in a later
       // line, so the progress is spelled out.
       suffix = (typeof p.placed !== 'number' && typeof p.dug === 'number')
-        ? ` — broke ${completed} of the ${p.total} blocks asked for so far (what you hold is on your inventory line)${yPart}`
-        : ` — placed ${completed} of ${p.total} so far${yPart}`
+        ? ` â€” broke ${completed} of the ${p.total} blocks asked for so far (what you hold is on your inventory line)${yPart}`
+        : ` â€” placed ${completed} of ${p.total} so far${yPart}`
     }
   }
   // 261018 (pass 17): a hand-over still running. work_session-05 (pass 15
@@ -176,7 +176,7 @@ function heldGatherSuffix(p, inventory) {
   const picked = Math.max(0, held - p.before)
   const left = Math.max(0, p.total - picked)
   const label = p.items.length === 1 ? p.items[0] : p.items.join(' or ')
-  return ` — picked up ${picked} of the ${p.total} ${label} asked for so far, ${left} to go; you hold ${held} ${label} right now`
+  return ` â€” picked up ${picked} of the ${p.total} ${label} asked for so far, ${left} to go; you hold ${held} ${label} right now`
 }
 
 // Actions too brief or too passive to be "what she was doing". A look or an
@@ -219,3 +219,7 @@ export function idleLineForSnapshot({ recentActions = [], following = null, now 
   const how = last.aborted ? 'was stopped' : 'ended'
   return `${head}. Your last action (${label}) ${how} ${ago}s ago${result ? `: ${result}` : ''}. It is not running now.`
 }
+
+
+
+

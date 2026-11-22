@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -474,3 +474,7 @@ describe('sweepStaleHelperDirs', () => {
     expect(() => sweepStaleHelperDirs(path.join(root, 'gone'))).not.toThrow();
   });
 });
+
+
+
+

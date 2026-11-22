@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261017 (issue #46): the main-process ChatGPT-plan adapter. A fake session
  * (latches + tokens) and canned SSE; no network.
  */
@@ -286,3 +286,7 @@ describe('applyStopSequences', () => {
     expect(applyStopSequences('abc', undefined)).toEqual({ text: 'abc', stopped: false });
   });
 });
+
+
+
+

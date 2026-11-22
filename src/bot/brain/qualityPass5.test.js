@@ -1,4 +1,4 @@
-// 261012: quality pass 5.
+﻿// 261012: quality pass 5.
 //  - a player stop holds her own idle initiative: the next idle tick does
 //    not start the goal again (every stop_gather failure in the eval was an
 //    idle tick 5-7s after the stop re-issuing the gather from her goal)
@@ -330,3 +330,7 @@ describe('261013 a goal the player gives ends the stop hold', () => {
     expect(provider.calls.length).toBe(before + 1)
   })
 })
+
+
+
+

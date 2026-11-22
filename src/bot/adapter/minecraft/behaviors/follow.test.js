@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { createRequire } from 'module'
 import { followMovements, followSprintFor, FOLLOW_SPRINT_ON_DIST, FOLLOW_SPRINT_OFF_DIST } from './follow.js'
 
@@ -47,3 +47,7 @@ describe('pauseFollow (261019)', () => {
     stopFollow()
   })
 })
+
+
+
+

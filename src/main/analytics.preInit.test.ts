@@ -1,5 +1,5 @@
-/**
- * 261005 — events captured before initAnalytics() resolves are held and
+﻿/**
+ * 261005 â€” events captured before initAnalytics() resolves are held and
  * replayed (with their original timestamps) once init knows the user has not
  * opted out; under opt-out they are dropped. Also the `backend: 'unset'`
  * property before onboarding and `app_quit.last_surface`.
@@ -156,3 +156,7 @@ describe('app_quit', () => {
     expect(typeof q.session_ms).toBe('number');
   });
 });
+
+
+
+

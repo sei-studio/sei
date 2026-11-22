@@ -1,4 +1,4 @@
-// 261015: quality pass 8, announced-but-not-taken actions and hand-overs.
+﻿// 261015: quality pass 8, announced-but-not-taken actions and hand-overs.
 //  - a turn whose only work was a NEW setGoal gets one more call in the same
 //    loop, told the goal starts nothing (start its first step or end_loop)
 //  - setGoal, MEMORY_GOAL_TAIL and clearGoal say a goal / hand-over is not
@@ -223,7 +223,7 @@ describe('prompt text', () => {
   })
 
   it('has no em dashes and does not judge speech in the give description', () => {
-    for (const t of texts()) expect(t).not.toMatch(/—/)
+    for (const t of texts()) expect(t).not.toMatch(/â€”/)
     expect(ACTION_DESCRIPTIONS.give).not.toMatch(/\bsay(ing)?\b/i)
   })
 })
@@ -292,3 +292,7 @@ describe('orchestrator: clearGoal in the same turn as give', () => {
     expect(provider.calls.length).toBe(2)
   })
 })
+
+
+
+

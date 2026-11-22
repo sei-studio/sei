@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The room editor's custom colour (261105 colour pass, T333, product feedback: "add
  * color picker for everything where there's color selection"). The last cell
  * of every colour row is a custom swatch that opens this popover: a
@@ -183,7 +183,7 @@ function ColorPopover({
     [onClose],
   );
 
-  // ── place it under its swatch, inside the window ──
+  // â”€â”€ place it under its swatch, inside the window â”€â”€
   const place = useCallback(() => {
     const el = pop.current;
     if (!el) return;
@@ -233,7 +233,7 @@ function ColorPopover({
     return () => document.removeEventListener('pointerdown', onDown, true);
   }, [anchor, close]);
 
-  // ── pointer: drag in the square or along the hue bar ──
+  // â”€â”€ pointer: drag in the square or along the hue bar â”€â”€
   const drag = (kind: 'sv' | 'hue') => (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     const el = e.currentTarget;
@@ -259,7 +259,7 @@ function ColorPopover({
     el.addEventListener('pointercancel', up);
   };
 
-  // ── keys ──
+  // â”€â”€ keys â”€â”€
   const onSvKey = (e: React.KeyboardEvent): void => {
     const step = e.shiftKey ? 0.1 : 0.02;
     const d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
@@ -288,7 +288,7 @@ function ColorPopover({
     }
   };
 
-  // ── hex field ──
+  // â”€â”€ hex field â”€â”€
   const commitText = (): void => {
     const hex = parseHex(text);
     if (!hex) {
@@ -400,3 +400,7 @@ function ColorPopover({
   );
   return createPortal(node, host);
 }
+
+
+
+

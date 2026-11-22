@@ -1,6 +1,6 @@
-/**
+﻿/**
  * Per-character chat transcript persistence. Append-only JSONL at
- * <profileRoot>/memory/<characterId>/chat.jsonl — lives inside the per-character
+ * <profileRoot>/memory/<characterId>/chat.jsonl â€” lives inside the per-character
  * memory dir so it is already per-user/per-profile and travels with memory. Raw
  * transcripts stay local (never cloud-synced), per the carried runtime-memory
  * rule and the roadmap's "transcripts are a surface concern" decision.
@@ -25,7 +25,7 @@ export async function appendMessage(characterId: string, msg: ChatMessage): Prom
  * `{ role: 'system', text: '<name> joined your world', ts }` (and the LAN
  * join-failure counterpart) via an `emitJoinAck` that was removed in commit
  * 2418088. Those rows carry no `event` field. Every system row the current
- * code writes — see `emitPlaySession` in src/main/index.ts — always sets
+ * code writes â€” see `emitPlaySession` in src/main/index.ts â€” always sets
  * `event: { kind: 'play', ... }`, so an event-less system row is unambiguously
  * one of the old join-ack lines. They should neither render in the chat UI nor
  * reach the model as history, so scrub them at read time rather than rewriting
@@ -66,7 +66,7 @@ export async function readRecent(characterId: string, n: number): Promise<ChatMe
  * (infinite scrollback: the renderer walks backwards page by page from its
  * oldest loaded row). The cursor is an id, not an offset, so it stays stable
  * while new messages append to the file. Returns [] when `beforeId` is the
- * first row or is not found (transcript reset between pages) — the renderer
+ * first row or is not found (transcript reset between pages) â€” the renderer
  * reads a short page as "top of history reached".
  */
 export async function readBefore(
@@ -82,11 +82,11 @@ export async function readBefore(
 
 /**
  * Cheap read of the LAST renderable chat message for roster previews
- * (chat:previews / Party redesign §2). Scans lines from the end and
- * short-circuits on the first parseable, non-legacy row — so it never
+ * (chat:previews / Party redesign Â§2). Scans lines from the end and
+ * short-circuits on the first parseable, non-legacy row â€” so it never
  * materializes the whole transcript into a filtered array. Legacy event-less
  * system rows are skipped (see filterLegacySystemRows), as are voice-call rows
- * (voice === true), which the chat view hides — otherwise the roster preview
+ * (voice === true), which the chat view hides â€” otherwise the roster preview
  * could surface a spoken line (e.g. a garbled Whisper transcript) that never
  * appears in the visible transcript. Returns null when the file is missing or
  * holds no renderable message.
@@ -109,9 +109,9 @@ export async function readLast(characterId: string): Promise<ChatMessage | null>
     } catch {
       continue;
     }
-    // Skip legacy join-ack system rows (no `event`) — same rule as filterLegacySystemRows.
+    // Skip legacy join-ack system rows (no `event`) â€” same rule as filterLegacySystemRows.
     if (msg.role === 'system' && msg.event === undefined) continue;
-    // Skip voice-call rows — the chat view hides them, so they must not surface
+    // Skip voice-call rows â€” the chat view hides them, so they must not surface
     // as the roster "last message" preview.
     if (msg.voice === true) continue;
     // WorldLink desktop lines (ChatMessage.desktop) are hidden the same way.
@@ -125,6 +125,10 @@ export async function clear(characterId: string): Promise<void> {
   try {
     await rm(chatPath(characterId));
   } catch {
-    // ENOENT / already gone — fine.
+    // ENOENT / already gone â€” fine.
   }
 }
+
+
+
+

@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Backseat: shared renderer <-> main contract (260728).
  *
  * The companion watches a window the player shares (video + audio) and talks
- * about it: reacting to what just happened, and — true to the name — pushing
+ * about it: reacting to what just happened, and â€” true to the name â€” pushing
  * for what it wants to see next. It can also save the last 15 seconds as a clip
  * and drop it into the normal chat thread.
  *
@@ -16,7 +16,7 @@
  *             clip files, analytics, and the continuity rows. It never sees a
  *             raw frame, only finished grids. (On macOS it also SUPPLIES the
  *             sound: it spawns the bundled ScreenCaptureKit tap and relays raw
- *             PCM to the overlay renderer — see `backseat:pcm` below — because
+ *             PCM to the overlay renderer â€” see `backseat:pcm` below â€” because
  *             Chromium loopback is Windows-only.)
  *
  * Audio never reaches the big model as audio (260728). Screen sound exists for
@@ -50,7 +50,7 @@
  * existing conversation, not a second one.
  */
 
-// ── Ring buffer ───────────────────────────────────────────────────────────
+// â”€â”€ Ring buffer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // There are TWO independent buffers, and conflating them was the first design's
 // mistake. The frame ring only ever needs to reach back far enough to build a
@@ -86,11 +86,11 @@ export const CAPTURE_FPS = 60;
 export const CAPTURE_W = 1280;
 export const CAPTURE_H = 720;
 
-// ── Image grid (IG-VLM, arXiv 2403.18406) ─────────────────────────────────
+// â”€â”€ Image grid (IG-VLM, arXiv 2403.18406) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The paper's finding, reproduced here exactly: SIX frames, composited into a
 // single image on a 3-row x 2-column grid, filled row-first (left to right,
-// then down). N=6 beat 4/9/12/16/20, and near-square grids beat wide ones —
+// then down). N=6 beat 4/9/12/16/20, and near-square grids beat wide ones â€”
 // which is why 3x2 (not 2x3) is right for 16:9 cells: 2 cells across by 3 down
 // gives a 32:27 canvas, close to square, where 2 rows of 3 would be 32:9.
 //
@@ -118,7 +118,7 @@ export const GRID_H = CELL_H * GRID_ROWS; // 1008
  *  blow the cap and get the grid downscaled behind our back. */
 export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28); // 1548
 
-// ── Dropping duplicate frames (260804) ────────────────────────────────────
+// â”€â”€ Dropping duplicate frames (260804) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The grid was always six cells, so a screen that had not moved was sent as six
 // copies of one picture. The companion noticed and said so, which is the
@@ -135,7 +135,7 @@ export const GRID_VISUAL_TOKENS = Math.ceil(GRID_W / 28) * Math.ceil(GRID_H / 28
 // 4x3 split of the 32x18 thumbnail (signals.blockMaxDelta, the same measure the
 // colour jolt arm uses), so a change that covers only a corner of the screen
 // still counts as a difference. Anything at or under this is JPEG noise on a
-// still image. Erring toward keeping a frame is right — a redundant cell costs
+// still image. Erring toward keeping a frame is right â€” a redundant cell costs
 // tokens, a dropped one costs the sequence.
 
 /** At or below this largest-block distance two frames are the same picture. */
@@ -163,7 +163,7 @@ export function gridVisualTokens(n: number): number {
   return Math.ceil(w / 28) * Math.ceil(h / 28);
 }
 
-// ── The previous grid, carried as memory (260802) ─────────────────────────
+// â”€â”€ The previous grid, carried as memory (260802) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Chat history is text, and the service rebuilds every turn's messages from the
 // chat store, which has never held an image. So until now each look was the
@@ -197,7 +197,7 @@ export const PREV_GRID_VISUAL_TOKENS =
  */
 export const PREV_GRID_MAX_AGE_MS = 180_000;
 
-// ── Frame spacing: logarithmic, not uniform (260801) ──────────────────────
+// â”€â”€ Frame spacing: logarithmic, not uniform (260801) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Six frames at 1 Hz cannot show a sequence. A dodge-then-fire is roughly
 // 600 ms end to end, so at one sample a second it is either one frame or none,
@@ -210,15 +210,15 @@ export const PREV_GRID_MAX_AGE_MS = 180_000;
 // The offsets below are geometric, ratio 2, measured back from the moment the
 // grid is composited. Three consequences, all wanted:
 //
-//   • the same six-second reach as before, so context is not lost;
-//   • the last three cells are all inside the final second, which is where an
+//   â€¢ the same six-second reach as before, so context is not lost;
+//   â€¢ the last three cells are all inside the final second, which is where an
 //     action-then-consequence pair actually lives;
-//   • the gaps halve toward the present, which the prompt states, and which is
+//   â€¢ the gaps halve toward the present, which the prompt states, and which is
 //     itself a hint that the bottom of the grid is where to look.
 //
 // Verified on real footage before it was built: on a Valorant grid the HUD
-// round timer reads 1:13 / 1:10 / 1:08 / 1:07 / 1:07 / 1:07 across the cells —
-// exactly the 3.0 / 1.5 / 0.75 / sub-second deltas — and the ammo counter reads
+// round timer reads 1:13 / 1:10 / 1:08 / 1:07 / 1:07 / 1:07 across the cells â€”
+// exactly the 3.0 / 1.5 / 0.75 / sub-second deltas â€” and the ammo counter reads
 // 5 / 1 / 6 / 6 / 5 / 4, resolving fire-through-cover, reload, emerge, aim,
 // fire into three distinct states inside the last 600 ms.
 export const GRID_OFFSETS_S = [6.0, 3.0, 1.5, 0.75, 0.375, 0.1875];
@@ -245,7 +245,7 @@ export const SAMPLE_TOLERANCE_MS = 500;
 /** The window a grid spans: its oldest cell. */
 export const GRID_SPAN_MS = GRID_OFFSETS_S[0] * 1000; // 6000
 
-// ── Audio: gain + transcript, never the model's ears ──────────────────────
+// â”€â”€ Audio: gain + transcript, never the model's ears â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // One normalized pipeline on both platforms: whatever the source, the renderer
 // ends up holding mono Float32 PCM at STT_SAMPLE_RATE and feeds it to the gain
@@ -290,15 +290,15 @@ export const TICK_TRANSCRIPT_MS = GRID_SPAN_MS + 2_000;
  *  (closest to the moment the tick is about). */
 export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
-// ── What is being shared (260804) ─────────────────────────────────────────
+// â”€â”€ What is being shared (260804) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // One short line naming the surface: the shared window's current title, or on a
 // whole-screen share the title of whatever is frontmost. Read in main (see
 // backseat/shareLabel.ts) because only main can see the window list.
 //
 // This replaces SCREEN TEXT, and the trade is worth writing down. Screen text
-// was a full OCR pass over every frame — a bundled Swift Vision helper on
-// macOS, tesseract.js everywhere else — and it worked: whole phrases at ~72 ms,
+// was a full OCR pass over every frame â€” a bundled Swift Vision helper on
+// macOS, tesseract.js everywhere else â€” and it worked: whole phrases at ~72 ms,
 // 94 of 94 frames. What it did not do was answer the question that was actually
 // hurting, which is "what am I even looking at". A HUD full of numbers does not
 // tell you the difference between a game and a stream of that game, and the
@@ -308,19 +308,19 @@ export const TICK_TRANSCRIPT_MAX_CHARS = 600;
 
 /** How often the label is re-read. Titles change on human timescales (a tab
  *  switch, a new video), and this crosses an IPC boundary into a window
- *  enumeration — but a zero-thumbnail enumeration is a few ms, and since 260806
+ *  enumeration â€” but a zero-thumbnail enumeration is a few ms, and since 260806
  *  a label CHANGE also feeds the switch dwell below, whose 6 s promise is only
  *  as accurate as this poll. 2.5 s keeps the dwell honest to within half its
  *  own length while staying by far the slowest consumer in the pipeline. */
 export const SHARE_LABEL_INTERVAL_MS = 2_500;
 
-// ── The switch wake: react to the NEW thing, not the change (260806) ──────
+// â”€â”€ The switch wake: react to the NEW thing, not the change (260806) â”€â”€â”€â”€â”€â”€
 //
 // A colour jolt fires AT the discontinuity, and that timing is exactly wrong
 // for a content switch. Live on an Instagram Reels session the companion was
 // reliably one reel behind: the swipe fired the jolt, the grid composited at
 // that instant was five cells of the OLD reel and one sliver of the new, and
-// she reacted to what she could actually see — the reel the player had just
+// she reacted to what she could actually see â€” the reel the player had just
 // left. Every reaction landed on the previous subject, for the whole session.
 //
 // So a colour jolt no longer raises a tick directly. It (and a share-label
@@ -329,21 +329,21 @@ export const SHARE_LABEL_INTERVAL_MS = 2_500;
 // SWITCH_DWELL_MS with no further change, and every further change restarts
 // the clock. Two things fall out, both wanted:
 //
-//   • the grid at fire time spans exactly the dwell, so every cell shows the
+//   â€¢ the grid at fire time spans exactly the dwell, so every cell shows the
 //     new thing (the oldest may catch the tail of the old one, and the note
 //     says so);
-//   • a fast scroll through five reels produces NO wake until the player
+//   â€¢ a fast scroll through five reels produces NO wake until the player
 //     settles, instead of five reactions to five already-abandoned clips.
 //
 // The dwell equals GRID_SPAN_MS deliberately: shorter and the old content
 // still dominates the grid; longer and the reaction goes stale. GAIN jolts
-// stay immediate — a loudness spike is a moment inside a scene that is still
+// stay immediate â€” a loudness spike is a moment inside a scene that is still
 // going, and reacting at the moment is the point.
 export const SWITCH_DWELL_MS = 6_000;
 
-// ── Cadence ───────────────────────────────────────────────────────────────
+// â”€â”€ Cadence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ── The scheduled look ────────────────────────────────────────────────────
+// â”€â”€ The scheduled look â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // The steady-state wake. No model decides this and nothing about the screen
 // feeds into it: the companion simply glances up every so often, sees whatever
@@ -366,8 +366,8 @@ export const IDLE_MAX_MS = 60_000;
  * the wait is memoryless: however long it has already been quiet, the next
  * look is no more imminent than it was a moment ago, so the player cannot
  * learn the rhythm. A uniform draw over the same range has exactly the
- * opposite property — the longer the silence runs, the more overdue the next
- * line becomes — which is the metronome feel this is avoiding.
+ * opposite property â€” the longer the silence runs, the more overdue the next
+ * line becomes â€” which is the metronome feel this is avoiding.
  *
  * `rand` is injected so tests and the offline sim can seed it.
  */
@@ -381,11 +381,11 @@ export function nextIdleDelayMs(rand: () => number = Math.random): number {
  * Floor between two companion lines, whatever raised them. Backseat is a
  * commentator, not a stream of consciousness: without this a jolt landing on
  * the heels of an idle tick produces two lines about the same moment.
- * A 'user' tick ignores it — being talked to always earns an answer.
+ * A 'user' tick ignores it â€” being talked to always earns an answer.
  */
 export const MIN_SPEAK_GAP_MS = 8_000;
 
-// ── Backing off when nobody answers (261103) ──────────────────────────────
+// â”€â”€ Backing off when nobody answers (261103) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Feedback from a free user (Valheim, custom companion): the chatter was too
 // much and they quit after about 15 minutes. Every look speaks by design, so
@@ -449,7 +449,7 @@ export const JOLT_REFRACTORY_MS = 20_000;
  *                     still (median ~0, MAD ~0) cannot jolt on compression
  *                     noise.
  *
- * 260802: the colour arm also changed shape underneath these — it is now the
+ * 260802: the colour arm also changed shape underneath these â€” it is now the
  * largest change over a 4x3 split of the thumbnail, against the better of a
  * 1.0 s and a 2.5 s lookback, rather than a mean over the whole frame against
  * one lookback. Both changes exist because the arm only ever fired on hard
@@ -472,7 +472,7 @@ export const JOLT_GAIN_DB = 18;
 export const JOLT_COLOR_MAD = 4;
 export const JOLT_COLOR_FLOOR = 0.15;
 
-// ── Session shape ─────────────────────────────────────────────────────────
+// â”€â”€ Session shape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Voice mode speaks replies through the existing call; text mode shows them
  *  in the overlay's mini chat. Both persist to the same chat thread. */
@@ -560,7 +560,7 @@ export function shouldRetryOpening(outcome: BackseatTickOutcome | null | undefin
   return attempt < 1 && (outcome === 'failed' || outcome === 'silent');
 }
 
-// ── Staleness gate (261010) ───────────────────────────────────────────────
+// â”€â”€ Staleness gate (261010) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //
 // Product feedback: every comment lands in retrospect. A line about the screen is heard
 // a few seconds after the frame it was written from (replay: about 2.8 s to
@@ -654,7 +654,7 @@ export interface BackseatTick {
   mic?: { ttsGapMs: number | null; shareVoice?: boolean | null };
   /**
    * How old each frame in the grid is, in seconds before `capturedAt`, oldest
-   * first — one entry per cell ACTUALLY drawn, after duplicates were dropped.
+   * first â€” one entry per cell ACTUALLY drawn, after duplicates were dropped.
    *
    * It has to be sent now that the grid is variable-size. When every grid was
    * the same six cells at the same six offsets, the layout could be stated once
@@ -710,7 +710,7 @@ export const BACKSEAT_ERR_NO_SOURCE = 'BACKSEAT_NO_SOURCE';
  *   backseatAudioStart(): Promise<{sampleRate, channels} | null>
  *     macOS only: spawn the bundled system-audio tap and start relaying PCM to
  *     this window on backseat:pcm. Null when the tap cannot run (not macOS,
- *     helper missing, TCC refused, pre-13 macOS) — the renderer then tries a
+ *     helper missing, TCC refused, pre-13 macOS) â€” the renderer then tries a
  *     virtual device, else runs video-only.
  *   backseatAudioStop(): Promise<void>
  *   onBackseatPcm(cb: (chunk: ArrayBuffer) => void): () => void
@@ -725,3 +725,7 @@ export const BACKSEAT_ERR_NO_SOURCE = 'BACKSEAT_NO_SOURCE';
  *   onBackseatLine(cb: (l: BackseatLine & {characterId}) => void): () => void
  *   onBackseatClipRequest(cb: (r: {characterId, requestId}) => void): () => void
  */
+
+
+
+

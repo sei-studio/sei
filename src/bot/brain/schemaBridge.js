@@ -1,4 +1,4 @@
-// src/llm/schemaBridge.js
+﻿// src/llm/schemaBridge.js
 import { zodToJsonSchema } from 'zod-to-json-schema'
 
 /**
@@ -11,7 +11,7 @@ export function buildAnthropicTools(registry, descriptions = {}) {
   return registry.list().map(name => {
     const zodSchema = registry.schema(name)
     const json = zodToJsonSchema(zodSchema, { name, $refStrategy: 'none' })
-    // zodToJsonSchema wraps in { $ref, definitions } when name is given — unwrap to definitions[name]
+    // zodToJsonSchema wraps in { $ref, definitions } when name is given â€” unwrap to definitions[name]
     const inputSchema = json.definitions?.[name] ?? json
     return {
       name,
@@ -20,4 +20,8 @@ export function buildAnthropicTools(registry, descriptions = {}) {
     }
   })
 }
+
+
+
+
 

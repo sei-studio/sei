@@ -1,5 +1,5 @@
-/**
- * Chat-register → spoken-register normalization (260707).
+﻿/**
+ * Chat-register â†’ spoken-register normalization (260707).
  *
  * Everything a companion says on a voice call is read aloud by TTS, but not
  * every spoken line is authored under the voice-call primer: typed-chat
@@ -9,7 +9,7 @@
  * words. The primer handles the lines it sees; this is the deterministic
  * backstop at the synthesis boundary for the ones it doesn't.
  *
- * Applied ONLY to the text sent to TTS — chat bubbles, captions, and the
+ * Applied ONLY to the text sent to TTS â€” chat bubbles, captions, and the
  * persona's texting tone are untouched. The list is deliberately short and
  * unambiguous: expand only tokens with one plausible spoken reading, never
  * single letters ("u") or context-dependent slang.
@@ -46,7 +46,7 @@ export function toSpokenRegister(text: string): string {
 }
 
 /**
- * Utterance form (260729) — the second half of the same boundary: restore the
+ * Utterance form (260729) â€” the second half of the same boundary: restore the
  * sentence casing and terminal punctuation that the TEXTING register removed,
  * because to ElevenLabs those two marks are not formality, they are prosody.
  *
@@ -60,24 +60,24 @@ export function toSpokenRegister(text: string): string {
  * statements never did. A lowercase opening is the same story at the other end:
  * nothing marks the first word as the start of an utterance.
  *
- * Chat bubbles, captions and the transcript keep their texting look — this runs
+ * Chat bubbles, captions and the transcript keep their texting look â€” this runs
  * at synthesis only (voiceTts / voiceTtsStream), so it also catches speech the
  * voice-call prompt never saw: typed-chat replies mirrored onto a call and the
  * in-world bot's say() lines routed up to it.
  */
 
 /** Sentence-final marks, plus any closers that ride after them ("hm..." / (ok?) ). */
-const TERMINAL_RE = /[.!?…。！？][)\]}"'”’*»]*$/u;
+const TERMINAL_RE = /[.!?â€¦ã€‚ï¼ï¼Ÿ][)\]}"'â€â€™*Â»]*$/u;
 /**
  * Endings that WANT a full stop: a letter, a digit, or a closer sitting after
  * one. Anything else already ends on punctuation the writer chose (a trailing
  * comma, colon or dash is a deliberate hand-off), and a stop after it would
  * read as a stumble.
  */
-const NEEDS_STOP_RE = /[\p{L}\p{N})\]}"'”’*»]$/u;
+const NEEDS_STOP_RE = /[\p{L}\p{N})\]}"'â€â€™*Â»]$/u;
 /** zh/ja write the ideographic full stop; ko and the latin languages use '.'. */
 function fullStopFor(language: string): string {
-  return language === 'zh' || language === 'ja' ? '。' : '.';
+  return language === 'zh' || language === 'ja' ? 'ã€‚' : '.';
 }
 
 /**
@@ -89,16 +89,20 @@ function fullStopFor(language: string): string {
 function restoreSentenceCase(text: string): string {
   let out = text.replace(/^([^\p{L}]*)(\p{Ll})/u, (_m, lead: string, ch: string) => lead + ch.toUpperCase());
   out = out.replace(
-    /([.!?…。！？]["'”’)\]]*\s+)([^\p{L}]*)(\p{Ll})/gu,
+    /([.!?â€¦ã€‚ï¼ï¼Ÿ]["'â€â€™)\]]*\s+)([^\p{L}]*)(\p{Ll})/gu,
     (_m, boundary: string, lead: string, ch: string) => boundary + lead + ch.toUpperCase(),
   );
   return out;
 }
 
-/** Chat-register line → the form it should be READ in. Pure. */
+/** Chat-register line â†’ the form it should be READ in. Pure. */
 export function toSpokenUtterance(text: string, language: string): string {
   const t = restoreSentenceCase(text.trim());
   if (!t) return t;
   if (TERMINAL_RE.test(t) || !NEEDS_STOP_RE.test(t)) return t;
   return t + fullStopFor(language);
 }
+
+
+
+

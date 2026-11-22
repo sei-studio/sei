@@ -1,10 +1,10 @@
-/**
- * useAiMoveReveal — the presentation quiet gate for the AI move (postthink).
+﻿/**
+ * useAiMoveReveal â€” the presentation quiet gate for the AI move (postthink).
  *
  * Main decides the AI's move, waits out a sampled "human think" delay
  * (prethink), then pushes it as `pendingAiMove` alongside any commentary.
  * This hook is the second half of the pacing: the move lands only after the
- * table has been QUIET for the settle window — the last utterance finished
+ * table has been QUIET for the settle window â€” the last utterance finished
  * printing (typed) or speaking (voice), and the player did not jump in. A
  * player message during the window resets it (the chat store flips `awaiting`
  * on send), and the reply turn in main may then revise the pending move
@@ -14,16 +14,16 @@
  * which commits it.
  *
  * "Commentary done" is decided per surface:
- *   - Voice call active for this character → the TTS pipeline is fully
+ *   - Voice call active for this character â†’ the TTS pipeline is fully
  *     drained: no synthesis fetch in flight and nothing playing
  *     (voiceTtsDrained(), the same predicate the solo hang-up drain uses).
- *   - Typed chat → the chat store's paced reveal is idle: `awaiting` is false
+ *   - Typed chat â†’ the chat store's paced reveal is idle: `awaiting` is false
  *     (send()/chatOpened keep it true between multi-bubble reply reveals, so
  *     false means the last bubble has landed).
  *
  * Both signals are polled (awaiting flips through several non-reactive pacing
  * timers; the voice drain is module state), and must hold quiet for a settle
- * window before we trust them — a state push can arrive BEFORE the commentary
+ * window before we trust them â€” a state push can arrive BEFORE the commentary
  * even starts presenting, and a multi-bubble reply has short idle gaps. A
  * minimum grace covers the not-yet-started case and a hard cap guarantees the
  * game never deadlocks behind a mute companion.
@@ -37,10 +37,10 @@ import { isVoiceCallActive } from '../../lib/voice/voiceBridge';
 
 const POLL_MS = 200;
 /** The quiet signal must hold this long before the reveal fires: the
- * "postthink" gate — x seconds after the last message of any kind finishes,
+ * "postthink" gate â€” x seconds after the last message of any kind finishes,
  * the move plays. Player sends and reply bubbles both reset it. */
 const SETTLE_MS = 2000;
-/** Never reveal sooner than this after the pending move arrives — gives the
+/** Never reveal sooner than this after the pending move arrives â€” gives the
  * commentary a beat to START presenting (push ordering is not guaranteed). */
 const MIN_WAIT_MS = 900;
 /** Hard cap: a mute companion (no commentary at all, or a dropped TTS clip)
@@ -88,3 +88,7 @@ export function useAiMoveReveal(characterId: string): void {
     };
   }, [characterId, pendingUci, status]);
 }
+
+
+
+

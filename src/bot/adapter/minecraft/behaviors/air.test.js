@@ -1,4 +1,4 @@
-// 261108 (quality pass 47): dig and gather swim up for air instead of
+﻿// 261108 (quality pass 47): dig and gather swim up for air instead of
 // mining on until she drowns (gather_craft-02-B: drowned on a river bed with
 // the gather still running, lost every tool).
 
@@ -186,3 +186,7 @@ describe('the way out of a flooded cave', () => {
     expect(findBreathPath(bot)).toBe(null)
   })
 })
+
+
+
+

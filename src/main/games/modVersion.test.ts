@@ -1,4 +1,4 @@
-/** Helper-mod version comparison (260925): SMAPI manifest + DST modinfo versions. */
+﻿/** Helper-mod version comparison (260925): SMAPI manifest + DST modinfo versions. */
 import { describe, it, expect } from 'vitest';
 import { compareModVersions, packModIsNewer, parseModVersion } from './modVersion';
 
@@ -42,3 +42,7 @@ describe('packModIsNewer', () => {
     expect(packModIsNewer('garbage', null)).toBe(false);
   });
 });
+
+
+
+

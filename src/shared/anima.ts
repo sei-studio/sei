@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Anima face sets (261105): a companion's baked facepack, made in the cloud
  * from her portrait the first time SeiLink opens for her (sei-proxy
  * /anima/v1/*, baked on Modal), then kept on disk. See src/main/anima/.
@@ -80,3 +80,7 @@ export interface AnimaCutout {
   sha256: string;
   png: Uint8Array;
 }
+
+
+
+

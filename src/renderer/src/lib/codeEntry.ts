@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Pure transforms behind CodeInput (260804).
  *
  * The segmented code field looks like six inputs but is ONE string, and every
  * edit is "produce the next string, and say which cell should hold focus".
  * Splitting that out is what makes it testable: the renderer has no DOM test
- * harness (no jsdom, no @testing-library — see IconRail.test.tsx), so logic
+ * harness (no jsdom, no @testing-library â€” see IconRail.test.tsx), so logic
  * left inside the component can only ever be asserted by grepping its source.
  *
  * The value is always a prefix with no holes. A hole is not representable in a
@@ -66,3 +66,7 @@ export function typedInto(cellValue: string | undefined, raw: string): string {
   const clean = digitsOnly(raw);
   return clean.length > 1 && cellValue ? clean.slice(-1) : clean;
 }
+
+
+
+

@@ -1,18 +1,18 @@
-/**
- * HEARTBEAT.md — the bot's active operating state, surfaced into EVERY loop's
+﻿/**
+ * HEARTBEAT.md â€” the bot's active operating state, surfaced into EVERY loop's
  * seed user turn (the "heartbeat" that keeps a goal alive across loops).
  *
  * Distinct from MEMORY.md: MEMORY.md is subjective long-term impressions the
- * bot CHOSE to keep; HEARTBEAT.md is the here-and-now agenda — committed goals
+ * bot CHOSE to keep; HEARTBEAT.md is the here-and-now agenda â€” committed goals
  * and standing orders the bot is actively pursuing. Written by the LLM via the
  * `setGoal(text)` tool and cleared via `clearGoal(text)`. The composed seed
  * block prepends the proactiveness-level directive (see prompts.js
  * PROACTIVENESS_DIRECTIVES) to these goals so "how proactive am I" and "what am
  * I doing" arrive together every loop.
  *
- * Why a file (not just memory): a multi-step goal (gather 10 wood → build a
+ * Why a file (not just memory): a multi-step goal (gather 10 wood â†’ build a
  * statue) must survive a loop ending after step 1. MEMORY.md's tool description
- * actively bans transactional/goal content, so goals had no home — they fell
+ * actively bans transactional/goal content, so goals had no home â€” they fell
  * through the crack between loop_end ("don't chain a new action") and idle
  * ("defer to proactiveness"). HEARTBEAT.md is that home.
  *
@@ -28,7 +28,7 @@ import { PLAYER_TASK_TAG } from '../promptLibrary.js'
 const HEADER =
   '# Heartbeat\n' +
   '\n' +
-  'Your active goals and standing orders — what you are pursuing right now,\n' +
+  'Your active goals and standing orders â€” what you are pursuing right now,\n' +
   'across loops. Add with setGoal(); remove with clearGoal() once a goal is\n' +
   'done or abandoned. One line per goal.\n' +
   '\n'
@@ -183,7 +183,7 @@ export async function removeGoal(filePath, query) {
   // 261020 (pass 20 review): NUDGES.heartbeatNow shows a long goal cut at 157
   // characters with "..." on the end. A clearGoal that copies that line whole
   // must still match, so a trailing ellipsis is not part of the substring.
-  const q = String(query ?? '').trim().replace(/\s*(\.\.\.|…)$/, '').trim().toLowerCase()
+  const q = String(query ?? '').trim().replace(/\s*(\.\.\.|â€¦)$/, '').trim().toLowerCase()
   if (!q) return 0
 
   return withFileLock(filePath, async () => {
@@ -223,7 +223,7 @@ export async function readHeartbeatFull(filePath) {
  * Read the goals body, capped at `budgetBytes` by dropping oldest goals from
  * the display (file on disk untouched). Returns '' when there are no goals so
  * the caller can omit the block entirely (the proactiveness directive is shown
- * regardless). The header is dropped from the seed view — the composed block
+ * regardless). The header is dropped from the seed view â€” the composed block
  * supplies its own framing.
  */
 export async function readHeartbeatForSeed(filePath, budgetBytes) {
@@ -237,7 +237,7 @@ export async function readHeartbeatForSeed(filePath, budgetBytes) {
   let remaining = budgetBytes - markerBytes
   const kept = []
   let truncated = false
-  // Walk newest → oldest until the budget is exhausted.
+  // Walk newest â†’ oldest until the budget is exhausted.
   for (let i = entries.length - 1; i >= 0; i--) {
     const lineBytes = Buffer.byteLength(entries[i] + '\n', 'utf8')
     if (lineBytes > remaining) { truncated = true; break }
@@ -247,3 +247,7 @@ export async function readHeartbeatForSeed(filePath, budgetBytes) {
   if (kept.length === 0) return entries[entries.length - 1]
   return (truncated ? marker + '\n' : '') + kept.join('\n')
 }
+
+
+
+

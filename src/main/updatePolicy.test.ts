@@ -1,12 +1,12 @@
-/**
- * updatePolicy.test.ts — quick/260604-uoy Task 2.
+﻿/**
+ * updatePolicy.test.ts â€” quick/260604-uoy Task 2.
  *
  * Locks in the pure policy decisions that gate the in-app updater:
- *   - deriveLevel: minor/major → optional, patch-only → mandatory, equal /
- *     downgrade / invalid → none, multi-version skip with a minor diff →
+ *   - deriveLevel: minor/major â†’ optional, patch-only â†’ mandatory, equal /
+ *     downgrade / invalid â†’ none, multi-version skip with a minor diff â†’
  *     optional (the skipped patch rides inside the minor).
  *   - isPatchOnlyBump: forward patch-only true; minor/major/equal/down false.
- *   - normalizeApply: 'now' passes through; everything else → 'on-restart'.
+ *   - normalizeApply: 'now' passes through; everything else â†’ 'on-restart'.
  *   - applyMinSupported / parseMinSupported (261031): below the feed's
  *     minSupported an optional update is mandatory; at or above it, or with a
  *     missing/garbage value, the level is unchanged.
@@ -34,41 +34,41 @@ function updaterError(message: string, code?: string): Error {
 }
 
 describe('deriveLevel', () => {
-  it('patch-only bump → mandatory', () => {
+  it('patch-only bump â†’ mandatory', () => {
     expect(deriveLevel('0.1.1', '0.1.2')).toBe('mandatory');
     expect(deriveLevel('0.1.1', '0.1.5')).toBe('mandatory');
     expect(deriveLevel('1.4.0', '1.4.1')).toBe('mandatory');
   });
 
-  it('minor bump → optional', () => {
+  it('minor bump â†’ optional', () => {
     expect(deriveLevel('0.1.1', '0.2.0')).toBe('optional');
     expect(deriveLevel('1.0.0', '1.1.0')).toBe('optional');
   });
 
-  it('major bump → optional', () => {
+  it('major bump â†’ optional', () => {
     expect(deriveLevel('0.1.1', '1.0.0')).toBe('optional');
     expect(deriveLevel('1.9.9', '2.0.0')).toBe('optional');
   });
 
-  it('multi-version skip with a minor diff → optional (skipped patch rides along)', () => {
-    // On 0.1.1, latest 0.2.0 — the minor component moved, so even though a
+  it('multi-version skip with a minor diff â†’ optional (skipped patch rides along)', () => {
+    // On 0.1.1, latest 0.2.0 â€” the minor component moved, so even though a
     // patch was skipped (0.1.2), the level is optional, not mandatory.
     expect(deriveLevel('0.1.1', '0.2.0')).toBe('optional');
-    // On 0.1.1, latest 0.2.3 — minor moved AND patch moved → still optional.
+    // On 0.1.1, latest 0.2.3 â€” minor moved AND patch moved â†’ still optional.
     expect(deriveLevel('0.1.1', '0.2.3')).toBe('optional');
   });
 
-  it('equal version → none', () => {
+  it('equal version â†’ none', () => {
     expect(deriveLevel('0.1.2', '0.1.2')).toBe('none');
     expect(deriveLevel('1.0.0', '1.0.0')).toBe('none');
   });
 
-  it('downgrade → none (never act on an older remote version)', () => {
+  it('downgrade â†’ none (never act on an older remote version)', () => {
     expect(deriveLevel('0.2.0', '0.1.1')).toBe('none');
     expect(deriveLevel('1.0.0', '0.9.9')).toBe('none');
   });
 
-  it('invalid / unparseable versions → none (defensive)', () => {
+  it('invalid / unparseable versions â†’ none (defensive)', () => {
     expect(deriveLevel('0.1.1', 'not-a-version')).toBe('none');
     expect(deriveLevel('garbage', '0.1.2')).toBe('none');
     expect(deriveLevel('', '0.1.2')).toBe('none');
@@ -237,3 +237,7 @@ describe('applyMinSupported (feed minSupported, 261031)', () => {
     expect(parseMinSupported(7)).toBeNull();
   });
 });
+
+
+
+

@@ -1,27 +1,27 @@
-/**
- * Tests for src/main/cloud/moderationGate — Plan 12-07 pre-publish moderation
+﻿/**
+ * Tests for src/main/cloud/moderationGate â€” Plan 12-07 pre-publish moderation
  * orchestrator (SHARE-05 / SHARE-06 / SHARE-07).
  *
  * RED phase: this file is committed BEFORE moderationGate.ts exists. Imports
  * resolve once the GREEN-phase implementation lands in the sibling file.
  *
  * Invariants under test:
- *   1. Orchestration order — image moderation Edge Function is called BEFORE
+ *   1. Orchestration order â€” image moderation Edge Function is called BEFORE
  *      prompt moderation Edge Function (Pitfall 12 inherits from 12-03: portrait
  *      bytes must already be in Storage, image scan is the first gate).
  *   2. portraitUrl is DERIVED server-side from `${SUPABASE_URL}/storage/v1/object/
- *      public/portraits/${ownerUuid}/${characterId}.png` — caller never supplies
+ *      public/portraits/${ownerUuid}/${characterId}.png` â€” caller never supplies
  *      it (T-12-03-01 mitigation; per 12-03-SUMMARY caller invariant).
- *   3. SOFT_RETRY_CAP = 2 — 3rd consecutive regenerate verdict returns
+ *   3. SOFT_RETRY_CAP = 2 â€” 3rd consecutive regenerate verdict returns
  *      PROMPT_FLAGGED, never publishes (Pitfall 6 / T-12-07-02).
- *   4. Provider 502 / network error → CLOUD_MODERATION_PROVIDER_UNAVAILABLE.
+ *   4. Provider 502 / network error â†’ CLOUD_MODERATION_PROVIDER_UNAVAILABLE.
  *      upsertCharacter NEVER called with shared=true (Pitfall 12 / T-12-07-04).
  *   5. On any flag, upsertCharacter is not called with shared=true; the call
  *      flow short-circuits before the publish write.
  *   6. Clean path writes shared=true + moderation_status='clean' atomically.
  *
  * Mock strategy: dependency-inject all external collaborators via the `deps`
- * argument to publishWithModeration. No vi.mock — each test wires its own
+ * argument to publishWithModeration. No vi.mock â€” each test wires its own
  * vi.fn() stubs and asserts call order / payload shape.
  */
 
@@ -124,8 +124,8 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('publishWithModeration — happy path', () => {
-  it('Test 1: image clean + prompt clean → ok:true; upsertCharacter called with shared=true + moderation_status=clean', async () => {
+describe('publishWithModeration â€” happy path', () => {
+  it('Test 1: image clean + prompt clean â†’ ok:true; upsertCharacter called with shared=true + moderation_status=clean', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'clean', provider: 'sightengine-v2.1' }],
@@ -145,8 +145,8 @@ describe('publishWithModeration — happy path', () => {
   });
 });
 
-describe('publishWithModeration — image moderation gate', () => {
-  it('Test 2: image flagged → ok:false code=IMAGE_FLAGGED; upsertCharacter NEVER called with shared=true', async () => {
+describe('publishWithModeration â€” image moderation gate', () => {
+  it('Test 2: image flagged â†’ ok:false code=IMAGE_FLAGGED; upsertCharacter NEVER called with shared=true', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'flagged', provider: 'sightengine-v2.1', category: 'minor_or_sexual' }],
@@ -161,7 +161,7 @@ describe('publishWithModeration — image moderation gate', () => {
       expect(typeof result.friendlyMessage).toBe('string');
       expect(result.friendlyMessage.length).toBeGreaterThan(0);
     }
-    // No publish write whatsoever — and certainly none with shared=true.
+    // No publish write whatsoever â€” and certainly none with shared=true.
     for (const call of deps.__upsertCharacter.mock.calls) {
       expect(call[0]?.shared).not.toBe(true);
     }
@@ -173,8 +173,8 @@ describe('publishWithModeration — image moderation gate', () => {
   });
 });
 
-describe('publishWithModeration — prompt moderation hard tier', () => {
-  it('Test 3: image clean + hard-prompt block → ok:false code=PROMPT_FLAGGED; upsertCharacter NEVER called with shared=true', async () => {
+describe('publishWithModeration â€” prompt moderation hard tier', () => {
+  it('Test 3: image clean + hard-prompt block â†’ ok:false code=PROMPT_FLAGGED; upsertCharacter NEVER called with shared=true', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'clean', provider: 'sightengine-v2.1' }],
@@ -193,8 +193,8 @@ describe('publishWithModeration — prompt moderation hard tier', () => {
   });
 });
 
-describe('publishWithModeration — prompt moderation soft tier retry cap', () => {
-  it('Test 4: image clean + 3 consecutive regenerate verdicts → ok:false PROMPT_FLAGGED (Pitfall 6 cap=2)', async () => {
+describe('publishWithModeration â€” prompt moderation soft tier retry cap', () => {
+  it('Test 4: image clean + 3 consecutive regenerate verdicts â†’ ok:false PROMPT_FLAGGED (Pitfall 6 cap=2)', async () => {
     const deps = makeDeps();
     // Initial + SOFT_RETRY_CAP retries = 3 prompt-mod calls; all return regenerate.
     programEdge(deps.__callEdgeFunction, {
@@ -226,7 +226,7 @@ describe('publishWithModeration — prompt moderation soft tier retry cap', () =
     }
   });
 
-  it('Test 5: image clean + first retry yields clean → ok:true (single retry success path)', async () => {
+  it('Test 5: image clean + first retry yields clean â†’ ok:true (single retry success path)', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'clean', provider: 'sightengine-v2.1' }],
@@ -248,8 +248,8 @@ describe('publishWithModeration — prompt moderation soft tier retry cap', () =
   });
 });
 
-describe('publishWithModeration — provider error hard-fail (Pitfall 12)', () => {
-  it('Test 6: image Edge Function rejects → ok:false PROVIDER_UNAVAILABLE; upsertCharacter NEVER called', async () => {
+describe('publishWithModeration â€” provider error hard-fail (Pitfall 12)', () => {
+  it('Test 6: image Edge Function rejects â†’ ok:false PROVIDER_UNAVAILABLE; upsertCharacter NEVER called', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [new Error('HTTP 502 provider_error')],
@@ -265,8 +265,8 @@ describe('publishWithModeration — provider error hard-fail (Pitfall 12)', () =
   });
 });
 
-describe('publishWithModeration — invariants', () => {
-  it('Test 7: orchestration order — moderate-character-images is called before moderate-character-prompt', async () => {
+describe('publishWithModeration â€” invariants', () => {
+  it('Test 7: orchestration order â€” moderate-character-images is called before moderate-character-prompt', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'clean', provider: 'sightengine-v2.1' }],
@@ -283,7 +283,7 @@ describe('publishWithModeration — invariants', () => {
     expect(imageIdx).toBeLessThan(promptIdx);
   });
 
-  it('Test 8: portraitUrl is derived server-side from owner + characterId — NOT accepted from caller', async () => {
+  it('Test 8: portraitUrl is derived server-side from owner + characterId â€” NOT accepted from caller', async () => {
     const deps = makeDeps();
     programEdge(deps.__callEdgeFunction, {
       'moderate-character-images': [{ status: 'clean', provider: 'sightengine-v2.1' }],
@@ -305,3 +305,7 @@ describe('publishWithModeration — invariants', () => {
     );
   });
 });
+
+
+
+

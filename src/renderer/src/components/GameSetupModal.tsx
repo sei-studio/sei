@@ -1,9 +1,9 @@
-/**
- * GameSetupModal — the generic per-game setup window (game adapters M0,
+﻿/**
+ * GameSetupModal â€” the generic per-game setup window (game adapters M0,
  * 260908). Minecraft has its own (McSetupModal); this is the placeholder the
  * generic summon flow opens for the other bot-backed games when their world
  * is not open. The game agents fill the body (the install / enable / launch
- * steps) — the contract they inherit:
+ * steps) â€” the contract they inherit:
  *
  *   - opened as {kind:'game-setup', game} with useUiStore.pendingSummonId +
  *     pendingSummonGame set by summonFlows[game];
@@ -110,3 +110,7 @@ function GenericGameSetupModal({ game }: GameSetupModalProps): React.ReactElemen
     </ModalShell>
   );
 }
+
+
+
+

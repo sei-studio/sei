@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { desktopLineFace, EMOTION_FACE, isAvatarEmotion, isFaceWord } from './seilinkExpression';
 import { resolveExpression } from '../bot/brain/faceExpressions.js';
 
@@ -30,3 +30,7 @@ describe('desktopLineFace (261105)', () => {
     for (const face of Object.values(EMOTION_FACE)) expect(resolveExpression(face)).toBe(face);
   });
 });
+
+
+
+

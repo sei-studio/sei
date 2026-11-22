@@ -1,9 +1,9 @@
-// src/bot/brain/orchestrator.death.test.js
+﻿// src/bot/brain/orchestrator.death.test.js
 //
-// 260703 (death→brain): end-to-end delivery of the new sei:death event through
+// 260703 (deathâ†’brain): end-to-end delivery of the new sei:death event through
 // the orchestrator. Two guarantees:
 //   1. A fresh sei:death dispatch seeds the death framing (with the drop coords)
-//      into the model's turn — the model actually learns it died and where its
+//      into the model's turn â€” the model actually learns it died and where its
 //      items are, instead of confabulating.
 //   2. A sei:death arriving MID-LOOP (the player killed the bot mid-action) is
 //      NOT dropped by the single-flight branch: it aborts the loop, tears it
@@ -46,7 +46,7 @@ function makeAdapter() {
     capabilityParagraph: () => 'caps',
     worldPrimer: () => 'world',
     actionRules: () => 'rules',
-    // The REAL minecraft addendum — this is what frames sei:death for the prompt.
+    // The REAL minecraft addendum â€” this is what frames sei:death for the prompt.
     eventAddendum: (event, data) => eventAddendum(event, data, 'on-demand'),
     createSnapshotComposer: () => ({ next: () => 'SNAPSHOT' }),
     chat: vi.fn(),
@@ -55,7 +55,7 @@ function makeAdapter() {
       captured.executed.push(name)
       if (name === 'follow') {
         captured.signal = opts?.signal ?? null
-        return new Promise(() => {}) // pending forever → suspends the loop
+        return new Promise(() => {}) // pending forever â†’ suspends the loop
       }
       return Promise.resolve('done')
     },
@@ -98,7 +98,7 @@ describe('sei:death delivery through the orchestrator (260703)', () => {
   })
 
   // 260708: brain/index.js attaches the last real hit to sei:death (within a
-  // 30s window) so the model knows what killed it — Sui died mid-PvP-spar with
+  // 30s window) so the model knows what killed it â€” Sui died mid-PvP-spar with
   // Marv and said "i have literally no idea what just happened".
   it('a sei:death carrying lastAttack seeds the killer into the model turn', async () => {
     const { adapter } = makeAdapter()
@@ -363,3 +363,7 @@ describe('the window between dying and the death turn (pass 19)', () => {
     }
   })
 })
+
+
+
+

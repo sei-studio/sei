@@ -1,15 +1,15 @@
-/**
- * SkinEditor — the full per-persona Skin & Username editor surface on CharacterPage.
+﻿/**
+ * SkinEditor â€” the full per-persona Skin & Username editor surface on CharacterPage.
  *
  * Composes:
- *   - SkinPreview3d (left column, 240×320)
+ *   - SkinPreview3d (left column, 240Ã—320)
  *   - IN-GAME USERNAME TextField + hint
  *   - SKIN SOURCE radio switch (Upload PNG / Search MC)
  *   - SkinUploadZone or UsernameSearchField (based on switch)
  *   - "Apply skin" (accent) CTA + "Remove skin" (inline two-click destructive)
  *
  * Atomicity contract:
- *   onApply makes ONE IPC call — applySkin({ characterId, pngBase64, source,
+ *   onApply makes ONE IPC call â€” applySkin({ characterId, pngBase64, source,
  *   mojangUsername, username }). The renderer does NOT make a separate
  *   character-save IPC call. The main-side applyPng persists skin descriptor +
  *   username in a single store-layer write, so there's no half-applied state
@@ -21,7 +21,7 @@
  *   as its dependencies, so the 3D preview refreshes the moment the user types
  *   into the in-game username field (the URL path embeds usernameDraft).
  *
- * Sui-gating rule (UI-SPEC §"Sui-gating"):
+ * Sui-gating rule (UI-SPEC Â§"Sui-gating"):
  *   SkinEditor renders for ALL personas, including is_default: true ones.
  *   Skin + username are user-personalization the project wants accessible
  *   across all personas. The persona-source/name editing gate lives in the
@@ -30,11 +30,11 @@
  * Bot-active gating:
  *   If the bot is currently summoned as THIS persona, Apply + Remove are
  *   disabled with the inline hint "Stop the bot before changing skin.
- *   Skin applies on next summon." (UI-SPEC §"Skin editor — copy").
+ *   Skin applies on next summon." (UI-SPEC Â§"Skin editor â€” copy").
  *
- * Source: 09-UI-SPEC.md §"Layout Contracts → Skin editor on CharacterPage"
- *         + §"Skin editor (persona page section) — copy"
- *         + §"Interaction States" (Apply CTA + Remove button rows)
+ * Source: 09-UI-SPEC.md Â§"Layout Contracts â†’ Skin editor on CharacterPage"
+ *         + Â§"Skin editor (persona page section) â€” copy"
+ *         + Â§"Interaction States" (Apply CTA + Remove button rows)
  *         + the old EditCharacterModal two-click destructive pattern (Reset memory).
  */
 
@@ -62,17 +62,17 @@ export interface SkinEditorProps {
    * ITEM 13 (quick/260523-t8d): when true, render the read-only view path even
    * for non-default characters (used when CharacterPage detects a foreign-owned
    * cloud-imported character). Mirrors the existing `character.is_default`
-   * branch — same 3D preview, no edit affordances.
+   * branch â€” same 3D preview, no edit affordances.
    */
   viewOnly?: boolean;
   /**
    * When true, drop the standalone-section chrome (top margin, outer border,
-   * extra padding) so the editor fits inside a host panel — e.g. the
-   * CharacterPage Game tab — without forcing the panel to scroll.
+   * extra padding) so the editor fits inside a host panel â€” e.g. the
+   * CharacterPage Game tab â€” without forcing the panel to scroll.
    */
   compact?: boolean;
   /**
-   * Party redesign §4.6: caption shown beside the read-only 3D preview in the
+   * Party redesign Â§4.6: caption shown beside the read-only 3D preview in the
    * skin-pane layout (e.g. "This is how they appear in your world."). Only used
    * on the viewOnly / default preview path.
    */
@@ -104,7 +104,7 @@ type Mode = 'idle' | 'applying';
 
 const REMOVE_CONFIRM_WINDOW_MS = 4000;
 
-/** MC username regex — matches CharacterSchema.username constraint. */
+/** MC username regex â€” matches CharacterSchema.username constraint. */
 const MC_NAME_RE = /^[A-Za-z0-9_]{0,16}$/;
 
 export function SkinEditor({
@@ -118,18 +118,18 @@ export function SkinEditor({
 }: SkinEditorProps): React.ReactElement {
   const t = useT();
   const sectionClass = compact ? `${styles.section} ${styles.sectionCompact}` : styles.section;
-  // ── Source-of-skin switch + staged PNG bytes ─────────────────────────────
+  // â”€â”€ Source-of-skin switch + staged PNG bytes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [tab, setTab] = useState<'upload' | 'search'>('search');
   const [stagedPng, setStagedPng] = useState<StagedPng | null>(null);
 
-  // ── In-game username field ───────────────────────────────────────────────
+  // â”€â”€ In-game username field â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Defaults to the persisted character.username (or the persona name as a
   // visible placeholder hint). The field stores empty-string to mean "use the
-  // fallback" — onApply translates empty → null at the IPC boundary.
+  // fallback" â€” onApply translates empty â†’ null at the IPC boundary.
   const [usernameDraft, setUsernameDraft] = useState<string>(character.username ?? '');
   const [usernameError, setUsernameError] = useState<string | null>(null);
 
-  // ── Apply / Remove flow state ────────────────────────────────────────────
+  // â”€â”€ Apply / Remove flow state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [mode, setMode] = useState<Mode>('idle');
   const [error, setError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<boolean>(false);
@@ -137,22 +137,22 @@ export function SkinEditor({
   const [removeDone, setRemoveDone] = useState<boolean>(false);
   const removeTimerRef = useRef<number | null>(null);
 
-  // ── Skin-server base URL — fetched once on mount ─────────────────────────
+  // â”€â”€ Skin-server base URL â€” fetched once on mount â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
 
-  // ── Computed: preview data URL or skin-server URL ────────────────────────
+  // â”€â”€ Computed: preview data URL or skin-server URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  // ── Bot-active gating ────────────────────────────────────────────────────
+  // â”€â”€ Bot-active gating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Per-character (multi-summon): true only when THIS persona's bot is online.
   const botActiveForThisPersona = useDataStore(
     (s) => s.summons[character.id]?.kind === 'online',
   );
 
-  // ── Username-collision warning ───────────────────────────────────────────
+  // â”€â”€ Username-collision warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // In offline-mode LAN, the world keys inventory + position by the in-game
   // username (offline UUID). If two characters log in under the SAME name they
-  // share that playerdata — summon one after the other and the second inherits
+  // share that playerdata â€” summon one after the other and the second inherits
   // the first's items and location. Warn when this persona's effective name
   // collides with another library character so the user can rename one. The
   // resolved name uses the live draft, so the warning clears as they type.
@@ -164,7 +164,7 @@ export function SkinEditor({
       effectiveMcUsername(c).toLowerCase() === resolvedMcName.toLowerCase(),
   );
 
-  // ── Skin-setup gating ────────────────────────────────────────────────────
+  // â”€â”€ Skin-setup gating â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The 3D preview always renders (it hits the local skin server), but the
   // skin only actually appears in Minecraft once the host's MC client has
   // CustomSkinLoader installed via the setup wizard. When setup has never
@@ -177,7 +177,7 @@ export function SkinEditor({
   useEffect(() => {
     // Re-check on mount AND whenever the wizard closes (the user may have just
     // finished setup) so the overlay clears without a page reload. Skip while
-    // the wizard is open — that fetch would race its in-flight install.
+    // the wizard is open â€” that fetch would race its in-flight install.
     if (wizardOpen) return;
     let cancelled = false;
     void (async () => {
@@ -186,7 +186,7 @@ export function SkinEditor({
         if (!cancelled) setSkinsSetUp(st.hasRunOnce);
       } catch {
         // On a transient IPC failure, don't cover the preview with a false
-        // "not set up" overlay — assume set up.
+        // "not set up" overlay â€” assume set up.
         if (!cancelled) setSkinsSetUp(true);
       }
     })();
@@ -215,15 +215,15 @@ export function SkinEditor({
     };
   }, []);
 
-  // INFO 10 — preview URL refresh effect.
+  // INFO 10 â€” preview URL refresh effect.
   //
   // The dep array MUST include character.username (the persisted username, in
   // case main updates it out-of-band), character.skin (re-fetch on applySkin
   // success), baseUrl (becomes non-null once getSkinServerUrl resolves),
-  // usernameDraft (the user typing into the IN-GAME USERNAME field — this is
+  // usernameDraft (the user typing into the IN-GAME USERNAME field â€” this is
   // why the dep list cannot be reduced), and stagedPng (data: URL preview wins
   // over the server URL when bytes are staged).
-  // INFO 10 — useEffect dep array includes character.username (see deps below).
+  // INFO 10 â€” useEffect dep array includes character.username (see deps below).
   useEffect(() => {
     if (stagedPng) {
       setPreviewUrl(`data:image/png;base64,${stagedPng.pngBase64}`);
@@ -254,10 +254,10 @@ export function SkinEditor({
     };
   }, []);
 
-  // ── Username field validation (renderer-side, mirrors CharacterSchema) ───
+  // â”€â”€ Username field validation (renderer-side, mirrors CharacterSchema) â”€â”€â”€
   const onUsernameChange = (v: string): void => {
     setUsernameDraft(v);
-    // Empty is allowed (means "use fallback") — only flag if non-empty AND invalid.
+    // Empty is allowed (means "use fallback") â€” only flag if non-empty AND invalid.
     if (v.length > 0 && !MC_NAME_RE.test(v)) {
       setUsernameError(t('Letters, digits, and underscores only, max 16 characters.'));
     } else {
@@ -265,7 +265,7 @@ export function SkinEditor({
     }
   };
 
-  // ── Apply skin — single-call atomic apply ───────────────────────────────
+  // â”€â”€ Apply skin â€” single-call atomic apply â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const onApply = async (): Promise<void> => {
     if (!stagedPng) return;
     if (usernameError) return;
@@ -274,7 +274,7 @@ export function SkinEditor({
     try {
       // ONE IPC call that atomically updates skin descriptor + per-persona MC
       // username in a single store-layer write (main-side). The renderer must
-      // not issue a separate character-save IPC before this — that would be
+      // not issue a separate character-save IPC before this â€” that would be
       // two round-trips and risk a half-applied state.
       await sei.applySkin({
         characterId: character.id,
@@ -295,7 +295,7 @@ export function SkinEditor({
     }
   };
 
-  // ── Remove skin — inline two-click confirm (the old EditCharacterModal pattern) ──
+  // â”€â”€ Remove skin â€” inline two-click confirm (the old EditCharacterModal pattern) â”€â”€
   const onRemoveClick = async (): Promise<void> => {
     if (!removeArmed) {
       setRemoveArmed(true);
@@ -309,7 +309,7 @@ export function SkinEditor({
       }, REMOVE_CONFIRM_WINDOW_MS);
       return;
     }
-    // Second click within the window — actually remove.
+    // Second click within the window â€” actually remove.
     if (removeTimerRef.current !== null) {
       window.clearTimeout(removeTimerRef.current);
       removeTimerRef.current = null;
@@ -327,7 +327,7 @@ export function SkinEditor({
     }
   };
 
-  // ── Render helpers ───────────────────────────────────────────────────────
+  // â”€â”€ Render helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const applyDisabled =
     !stagedPng || mode === 'applying' || botActiveForThisPersona || !!usernameError;
 
@@ -341,7 +341,7 @@ export function SkinEditor({
         <div className={styles.setupOverlay}>
           <div className={styles.setupOverlayTitle}>{t('Skin setup not complete')}</div>
           <p className={styles.setupOverlayBody}>
-            {t('Your skin won’t show in Minecraft until you set up skins on this computer.')}
+            {t('Your skin wonâ€™t show in Minecraft until you set up skins on this computer.')}
           </p>
           <Button kind="accent" size="sm" onClick={() => openWizard(true)}>
             {t('Set up skins')}
@@ -352,7 +352,7 @@ export function SkinEditor({
   );
 
   // Skins are locked on default personas AND on foreign-owned cloud-imported
-  // characters (ITEM 13 viewOnly path) — show the 3D preview but hide every
+  // characters (ITEM 13 viewOnly path) â€” show the 3D preview but hide every
   // edit affordance. Users who want a different skin create their own persona.
   if (character.is_default || viewOnly) {
     // Skin-pane layout (mockup .skin-pane): read-only 3D preview + a side
@@ -386,7 +386,7 @@ export function SkinEditor({
         {previewColumn}
 
         <div className={styles.right}>
-          {/* In-game username field ─────────────────────────────────────── */}
+          {/* In-game username field â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className={styles.fieldEyebrow}>{t('In-game username')}</div>
           <TextField
             value={usernameDraft}
@@ -412,7 +412,7 @@ export function SkinEditor({
             </p>
           ) : null}
 
-          {/* Skin source radio switch ─────────────────────────────────── */}
+          {/* Skin source radio switch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className={styles.fieldEyebrow}>{t('Skin source')}</div>
           <div className={styles.sourceTabs} role="radiogroup" aria-label={t('Skin source')}>
             <label className={styles.sourceTabLabel}>
@@ -463,7 +463,7 @@ export function SkinEditor({
             />
           )}
 
-          {/* CTA row — Apply skin + Remove skin ─────────────────────────── */}
+          {/* CTA row â€” Apply skin + Remove skin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className={styles.ctaRow}>
             <Button
               kind="accent"
@@ -489,7 +489,7 @@ export function SkinEditor({
 
           <SkinGenerateButton character={character} onChanged={onChanged} />
 
-          {/* Inline status copy band ───────────────────────────────────── */}
+          {/* Inline status copy band â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           {botActiveForThisPersona ? (
             <p className={styles.warnCopy}>
               {t('Stop the bot before changing skin. Skin applies on next connect.')}
@@ -499,7 +499,7 @@ export function SkinEditor({
           {/*
             ITEM 11 (quick/260523-t8d): also gate on character.skin.source ===
             'none'. Once any skin source is applied ('bundled' | 'upload' |
-            'username'), the helper text is stale — the user has obviously
+            'username'), the helper text is stale â€” the user has obviously
             already picked one.
           */}
           {!stagedPng && !botActiveForThisPersona && mode !== 'applying' && !error && character.skin.source === 'none' ? (
@@ -515,3 +515,7 @@ export function SkinEditor({
     </section>
   );
 }
+
+
+
+

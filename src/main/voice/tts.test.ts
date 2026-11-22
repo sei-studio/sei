@@ -1,5 +1,5 @@
-/**
- * voiceTts (260705) — request routing + error mapping.
+﻿/**
+ * voiceTts (260705) â€” request routing + error mapping.
  *
  * Pins: a resolved ElevenLabs key (dev env / BYOK stored, 260725) talks to
  * ElevenLabs directly with the pinned model, the proxy route posts to the
@@ -72,7 +72,7 @@ import {
 const VOICE = VOICES[0].id;
 const CHAR = { id: 'c1', name: 'Testy' };
 const fetchSpy = vi.fn();
-/** The next_text conditioning tail (utterance-context, 260726) — English default. */
+/** The next_text conditioning tail (utterance-context, 260726) â€” English default. */
 const NEXT_TEXT = " anyway, there's more I wanted to say about that.";
 
 beforeEach(() => {
@@ -108,11 +108,11 @@ describe('voiceTts', () => {
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.sei.gg/tts/speech');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer jwt-123');
-    // Opening clip (no previous_text yet) carries NO conditioning at all — see
+    // Opening clip (no previous_text yet) carries NO conditioning at all â€” see
     // ttsContextFor: next_text on a conversation-opening line is what bled the
     // continuation string into the greeting's audio.
     // Utterance form (260729): the clip text carries the sentence capital and
-    // the full stop the texting register drops — see toSpokenUtterance.
+    // the full stop the texting register drops â€” see toSpokenUtterance.
     expect(JSON.parse(init.body as string)).toEqual({ text: 'Hello there.', voice_id: VOICE });
   });
 
@@ -162,7 +162,7 @@ describe('voiceTts', () => {
     fetchSpy.mockImplementation(async () => okAudio());
     // Mid-reply on both sides, but three characters of primary text: this is
     // the shape that got next_text SPOKEN ("yo what's up, eh"). previous_text
-    // has no head to run into, so it rides at any length (260730) — and a clip
+    // has no head to run into, so it rides at any length (260730) â€” and a clip
     // this small is precisely the one that needs to know what it follows.
     await voiceTts({ characterId: 'c1', text: 'you', prev: LONG, more: true });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
@@ -175,7 +175,7 @@ describe('voiceTts', () => {
 
   it('gives previous_text to a short opening clip: the squeaky-call fix', async () => {
     // 260730: previous_text used to share next_text's floor, so a call's
-    // OPENING lines — its shortest — were rendered knowing nothing about what
+    // OPENING lines â€” its shortest â€” were rendered knowing nothing about what
     // came before them: isolated exclamations, high onset, no declination,
     // then the character's pitch shift on top. The call seemed to "calm down"
     // only because its lines got longer. Nothing is withheld now.
@@ -233,7 +233,7 @@ describe('voiceTts', () => {
     expect((JSON.parse(init.body as string) as { text: string }).text.length).toBe(5001);
   });
 
-  it('BYOK with no stored key → VOICE_NOT_CONFIGURED without touching the network', async () => {
+  it('BYOK with no stored key â†’ VOICE_NOT_CONFIGURED without touching the network', async () => {
     mockResolveRoute.mockResolvedValue({ kind: 'unconfigured' });
     await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.toThrow(
       'VOICE_NOT_CONFIGURED: add your ElevenLabs key in Settings to enable voice',
@@ -241,7 +241,7 @@ describe('voiceTts', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('signed out → VOICE_NO_SESSION without touching the network', async () => {
+  it('signed out â†’ VOICE_NO_SESSION without touching the network', async () => {
     mockGetSession.mockResolvedValue({ data: { session: null } });
     await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.toThrow(/VOICE_NO_SESSION/);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -251,7 +251,7 @@ describe('voiceTts', () => {
   // BYOK key talking to the user's OWN account cannot speak those voices (and
   // BYOK never falls through to the proxy). Give that its own actionable
   // sentinel instead of a generic failure on every clip.
-  it('direct route + a voice the account does not have → VOICE_NOT_IN_LIBRARY', async () => {
+  it('direct route + a voice the account does not have â†’ VOICE_NOT_IN_LIBRARY', async () => {
     mockResolveRoute.mockResolvedValue({ kind: 'direct', key: 'byok-key' });
     const notFound = () =>
       new Response(
@@ -273,7 +273,7 @@ describe('voiceTts', () => {
     await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.toThrow(/VOICE_TTS_FAILED: status 404/);
   });
 
-  it('maps 429 → VOICE_RATE_LIMITED and 503 → VOICE_NOT_CONFIGURED', async () => {
+  it('maps 429 â†’ VOICE_RATE_LIMITED and 503 â†’ VOICE_NOT_CONFIGURED', async () => {
     fetchSpy.mockResolvedValue(new Response('{}', { status: 429 }));
     await expect(voiceTts({ characterId: 'c1', text: 'hi' })).rejects.toThrow(/VOICE_RATE_LIMITED/);
     fetchSpy.mockResolvedValue(new Response('{}', { status: 503 }));
@@ -288,7 +288,7 @@ describe('voiceTts', () => {
 describe('per-message language pin', () => {
   it('a Japanese line pins ja while the conversation language is en', async () => {
     fetchSpy.mockResolvedValue(okAudio());
-    await voiceTts({ characterId: 'c1', text: '何の話を聞きたいですか?' });
+    await voiceTts({ characterId: 'c1', text: 'ä½•ã®è©±ã‚’èžããŸã„ã§ã™ã‹?' });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(init.body as string) as Record<string, string>;
     expect(body.language_code).toBe('ja');
@@ -298,8 +298,8 @@ describe('per-message language pin', () => {
 
   it('a Chinese line pins zh; a Korean line pins ko', async () => {
     fetchSpy.mockImplementation(async () => okAudio());
-    await voiceTts({ characterId: 'c1', text: '你想听什么样的故事呢?' });
-    await voiceTts({ characterId: 'c1', text: '안녕, 오늘 어땠어?' });
+    await voiceTts({ characterId: 'c1', text: 'ä½ æƒ³å¬ä»€ä¹ˆæ ·çš„æ•…äº‹å‘¢?' });
+    await voiceTts({ characterId: 'c1', text: 'ì•ˆë…•, ì˜¤ëŠ˜ ì–´ë• ì–´?' });
     const bodies = fetchSpy.mock.calls.map(
       (c) => JSON.parse((c as [string, RequestInit])[1].body as string) as Record<string, string>,
     );
@@ -308,40 +308,40 @@ describe('per-message language pin', () => {
   });
 
   it('kana beats han (kanji + kana is Japanese, not Chinese)', () => {
-    expect(ttsLanguageForText('漢字とかなの文', 'en')).toBe('ja');
+    expect(ttsLanguageForText('æ¼¢å­—ã¨ã‹ãªã®æ–‡', 'en')).toBe('ja');
   });
 
   it('a kanji-only line reads as ja only when the conversation is already ja', () => {
-    expect(ttsLanguageForText('日本語', 'ja')).toBe('ja');
-    expect(ttsLanguageForText('日本語', 'en')).toBe('zh');
+    expect(ttsLanguageForText('æ—¥æœ¬èªž', 'ja')).toBe('ja');
+    expect(ttsLanguageForText('æ—¥æœ¬èªž', 'en')).toBe('zh');
   });
 
   // 260726: the script test used to be a single unanchored character, so ONE
   // quoted CJK character pinned a whole English line to zh/ja/ko and the clip
   // came back garbled. CJK now has to dominate the line's letters.
   it('an English line quoting one CJK character is NOT pinned', async () => {
-    expect(ttsLanguageForText('the kanji for mountain is 山, apparently', 'en')).toBe('en');
-    expect(ttsLanguageForText('she wrote 안 on the board and grinned', 'en')).toBe('en');
-    expect(ttsLanguageForText('we called the boss か for short, no idea why', 'en')).toBe('en');
+    expect(ttsLanguageForText('the kanji for mountain is å±±, apparently', 'en')).toBe('en');
+    expect(ttsLanguageForText('she wrote ì•ˆ on the board and grinned', 'en')).toBe('en');
+    expect(ttsLanguageForText('we called the boss ã‹ for short, no idea why', 'en')).toBe('en');
     // Same line mid-French call: still the conversation language, not zh.
-    expect(ttsLanguageForText('le kanji pour montagne est 山, parait-il', 'fr')).toBe('fr');
+    expect(ttsLanguageForText('le kanji pour montagne est å±±, parait-il', 'fr')).toBe('fr');
   });
 
   it('a mostly-CJK line still pins, loanwords and all', async () => {
-    expect(ttsLanguageForText('この機能は最高だと思う', 'en')).toBe('ja');
-    expect(ttsLanguageForText('今日は寒いね', 'en')).toBe('ja');
-    expect(ttsLanguageForText('안녕, 오늘 어땠어?', 'en')).toBe('ko');
+    expect(ttsLanguageForText('ã“ã®æ©Ÿèƒ½ã¯æœ€é«˜ã ã¨æ€ã†', 'en')).toBe('ja');
+    expect(ttsLanguageForText('ä»Šæ—¥ã¯å¯’ã„ã­', 'en')).toBe('ja');
+    expect(ttsLanguageForText('ì•ˆë…•, ì˜¤ëŠ˜ ì–´ë• ì–´?', 'en')).toBe('ko');
     // A short all-CJK reply has no Latin to dilute it.
-    expect(ttsLanguageForText('何?', 'en')).toBe('zh');
-    expect(ttsLanguageForText('はい', 'en')).toBe('ja');
+    expect(ttsLanguageForText('ä½•?', 'en')).toBe('zh');
+    expect(ttsLanguageForText('ã¯ã„', 'en')).toBe('ja');
     fetchSpy.mockResolvedValue(okAudio());
-    await voiceTts({ characterId: 'c1', text: 'the kanji for mountain is 山, apparently' });
+    await voiceTts({ characterId: 'c1', text: 'the kanji for mountain is å±±, apparently' });
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect('language_code' in (JSON.parse(init.body as string) as object)).toBe(false);
   });
 
   it('Latin script falls back to the conversation language (en stays unpinned)', async () => {
-    expect(ttsLanguageForText('salut, ça va?', 'fr')).toBe('fr');
+    expect(ttsLanguageForText('salut, Ã§a va?', 'fr')).toBe('fr');
     expect(ttsLanguageForText('hello there', 'en')).toBe('en');
     fetchSpy.mockResolvedValue(okAudio());
     await voiceTts({ characterId: 'c1', text: 'plain english line' });
@@ -352,7 +352,7 @@ describe('per-message language pin', () => {
   it('the streaming path pins per message too', async () => {
     fetchSpy.mockResolvedValue(new Response(new Uint8Array([1]), { status: 200 }));
     const events: TtsStreamEvent[] = [];
-    await voiceTtsStream({ characterId: 'c1', text: 'ごめんなさい、難しいです' }, (e) => events.push(e));
+    await voiceTtsStream({ characterId: 'c1', text: 'ã”ã‚ã‚“ãªã•ã„ã€é›£ã—ã„ã§ã™' }, (e) => events.push(e));
     const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect((JSON.parse(init.body as string) as Record<string, string>).language_code).toBe('ja');
   });
@@ -444,7 +444,7 @@ describe('voiceTtsStream stall watchdog', () => {
   });
 });
 
-// 260726: the probe must answer exactly what synthesize will do — it is what
+// 260726: the probe must answer exactly what synthesize will do â€” it is what
 // enables/disables the picker's play controls.
 describe('voicePreviewAvailable', () => {
   it('true on the direct route, regardless of session', async () => {
@@ -731,11 +731,11 @@ describe('voicePreviewTts by companion (261110, profile Overview sample)', () =>
 });
 
 describe('directElevenLabsError (BYOK account answers)', () => {
-  it('voice missing → VOICE_NOT_IN_LIBRARY', () => {
+  it('voice missing â†’ VOICE_NOT_IN_LIBRARY', () => {
     expect(directElevenLabsError(404, '{"detail":{"status":"voice_not_found"}}')).toMatch(/^VOICE_NOT_IN_LIBRARY/);
   });
 
-  it('free plan refusing a library voice → VOICE_NEEDS_PAID_PLAN', () => {
+  it('free plan refusing a library voice â†’ VOICE_NEEDS_PAID_PLAN', () => {
     const body = JSON.stringify({
       detail: { status: 'free_users_not_allowed', message: 'Free users cannot use library voices via the API.' },
     });
@@ -744,13 +744,13 @@ describe('directElevenLabsError (BYOK account answers)', () => {
     expect(directElevenLabsError(401, body)).toMatch(/^VOICE_NEEDS_PAID_PLAN/);
   });
 
-  it('out of their own credits → VOICE_ELEVEN_QUOTA, never Sei credit copy', () => {
+  it('out of their own credits â†’ VOICE_ELEVEN_QUOTA, never Sei credit copy', () => {
     expect(directElevenLabsError(401, '{"detail":{"status":"quota_exceeded"}}')).toMatch(/^VOICE_ELEVEN_QUOTA/);
     expect(directElevenLabsError(402, '{"detail":{"code":"insufficient_credits"}}')).toMatch(/^VOICE_ELEVEN_QUOTA/);
     expect(directElevenLabsError(402, '')).toMatch(/^VOICE_ELEVEN_QUOTA/);
   });
 
-  it('a rejected key → VOICE_ELEVEN_KEY_INVALID; other statuses fall through', () => {
+  it('a rejected key â†’ VOICE_ELEVEN_KEY_INVALID; other statuses fall through', () => {
     expect(directElevenLabsError(401, '{"detail":{"status":"invalid_api_key"}}')).toMatch(/^VOICE_ELEVEN_KEY_INVALID/);
     expect(directElevenLabsError(429, '{}')).toBeNull();
     expect(directElevenLabsError(500, 'oops')).toBeNull();
@@ -939,3 +939,7 @@ describe('voice_tts_failed reporting (261121)', () => {
     }
   });
 });
+
+
+
+

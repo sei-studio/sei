@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Playtime usage ledger, pure half (261110, product call 261110).
  *
  * Off the Sei cloud, the app keeps its OWN count of what the brain used so
@@ -395,3 +395,7 @@ export function formatTokens(v: number): string {
   if (v < 1e6) return `${(v / 1000).toFixed(v < 1e4 ? 1 : 0)}k`;
   return `${(v / 1e6).toFixed(1)}M`;
 }
+
+
+
+

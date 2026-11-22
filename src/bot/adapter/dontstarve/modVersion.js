@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/modVersion.js: what the connected DST helper mod
+﻿// src/bot/adapter/dontstarve/modVersion.js: what the connected DST helper mod
 // can do, read from the version it reports in its `spawned` event (mod 0.3.0
 // and later; older mods send no version and read as legacy).
 //
@@ -33,3 +33,7 @@ export function modVersionAtLeast(version, min) {
 export function modHasCaps(version) {
   return modVersionAtLeast(version, CAPS_MIN_MOD)
 }
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Game adapters (M0, 260908) — the supervisor's game-aware summon.
+﻿/**
+ * Game adapters (M0, 260908) â€” the supervisor's game-aware summon.
  *
  *   - summon(id) defaults to Minecraft: the init payload carries the new
  *     {game, joinTarget} shape AND the legacy top-level Minecraft keys (one
@@ -291,7 +291,7 @@ describe('summon(id, "stardew") through a registered GameModule', () => {
     await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
     fakeA.emitPortMessage({ type: 'summon-ready' });
     await pA;
-    // Different name, same one-body game → refused before fork with the module's error.
+    // Different name, same one-body game â†’ refused before fork with the module's error.
     await expect(sup.summon(B, 'stardew')).rejects.toThrow(/DST_ONE_COMPANION/);
     expect(forkSpy).toHaveBeenCalledTimes(1);
     // The same character re-summoning is not a second body.
@@ -309,9 +309,9 @@ describe('summon(id, "stardew") through a registered GameModule', () => {
     await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(1));
     fakeA.emitPortMessage({ type: 'summon-ready' });
     await pA;
-    // Same game, same name → refused before fork.
+    // Same game, same name â†’ refused before fork.
     await expect(sup.summon(B, 'stardew')).rejects.toThrow(/SUMMON_USERNAME_CONFLICT/);
-    // Different game, same name → allowed (its own world).
+    // Different game, same name â†’ allowed (its own world).
     const fakeB = armFakeChild();
     const pB = sup.summon(B, 'minecraft');
     await vi.waitFor(() => expect(forkSpy).toHaveBeenCalledTimes(2));
@@ -344,3 +344,7 @@ describe('sendSeiChat carries the barge-in mark (261112)', () => {
     ]);
   });
 });
+
+
+
+

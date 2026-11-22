@@ -1,4 +1,4 @@
-// src/bot/adapter/dontstarve/observers/habits.js: what the body did on its
+﻿// src/bot/adapter/dontstarve/observers/habits.js: what the body did on its
 // own lately (260926).
 //
 // Mod 0.3.0's reflexes (light, fuel, gear, heal, eat, defend) report every
@@ -67,3 +67,7 @@ export function createHabitLog(events, { now = Date.now, windowMs = WINDOW_MS } 
     dispose() { events?.off?.('survival', onSurvival) },
   }
 }
+
+
+
+

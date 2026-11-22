@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dev-only window.sei stubs for the `?dashshot=` screenshot harness (260909).
  *
  * lib/ipcClient.ts captures `window.sei` the moment it is evaluated, and
@@ -37,7 +37,7 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
   };
   const dev = window as unknown as DevRoblox;
   const fixturePopular = [
-    { universeId: 1686885941, name: 'Brookhaven 🏡RP', creator: 'Brookhaven by Voldex', playing: 402_113 },
+    { universeId: 1686885941, name: 'Brookhaven ðŸ¡RP', creator: 'Brookhaven by Voldex', playing: 402_113 },
     { universeId: 994732206, name: 'Blox Fruits', creator: 'Gamer Robot Inc', playing: 311_940 },
     { universeId: 66654135, name: 'Murder Mystery 2', creator: 'Nikilis', playing: 98_310 },
   ];
@@ -782,3 +782,7 @@ if (import.meta.env.DEV && w && harnessParams?.has('dashshot') && Number(harness
     });
   }
 }
+
+
+
+

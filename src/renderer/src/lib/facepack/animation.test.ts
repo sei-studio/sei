@@ -1,4 +1,4 @@
-/**
+﻿/**
  * FacepackView timing (261028): blink, viseme, expression decay, idle pose.
  */
 import { describe, it, expect } from 'vitest';
@@ -24,7 +24,7 @@ function seq(...xs: number[]): () => number {
 
 describe('BlinkScheduler', () => {
   it('blinks half, closed, half, then opens', () => {
-    // rand 0.5 → first blink at 800 + 0.5*3500 = 2550; 0.9 → no double.
+    // rand 0.5 â†’ first blink at 800 + 0.5*3500 = 2550; 0.9 â†’ no double.
     const b = new BlinkScheduler(0, seq(0.5, 0.5, 0.9));
     expect(b.stateAt(2000, true)).toBe('open');
     expect(b.stateAt(2550, true)).toBe('half');
@@ -169,3 +169,7 @@ describe('nextPose', () => {
     expect(nextPoseDelay(() => 1)).toBe(POSE_GAP_MAX_MS);
   });
 });
+
+
+
+

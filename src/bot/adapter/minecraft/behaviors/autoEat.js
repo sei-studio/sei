@@ -1,4 +1,4 @@
-import { loader as autoEat } from 'mineflayer-auto-eat'
+﻿import { loader as autoEat } from 'mineflayer-auto-eat'
 
 // When the plugin's own trigger would eat, and what we allow instead.
 //
@@ -56,11 +56,11 @@ export function shouldAutoEat(state, ctx = {}) {
 export function startAutoEat(bot) {
   bot.loadPlugin(autoEat)
   bot.autoEat.setOpts({
-    // saturation > foodPoints so cooked mutton is preferred over raw — raw
+    // saturation > foodPoints so cooked mutton is preferred over raw â€” raw
     // beats hunger but loses on saturation and risks food poisoning.
     priority: 'saturation',
     // Trigger earlier (was 14) so the bot tops up before the player has to
-    // ask. 17 = "missing one drumstick" — same threshold vanilla regen needs.
+    // ask. 17 = "missing one drumstick" â€” same threshold vanilla regen needs.
     minHunger: AUTO_EAT_MIN_HUNGER,
     minHealth: AUTO_EAT_MIN_HEALTH,
     bannedFood: ['rotten_flesh', 'spider_eye', 'pufferfish', 'poisonous_potato', 'chicken'],
@@ -82,3 +82,7 @@ export function startAutoEat(bot) {
   }
   bot.autoEat.enableAuto()
 }
+
+
+
+

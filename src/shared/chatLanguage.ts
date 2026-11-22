@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Conversation-language support (260709). One list, shared by the renderer
  * (voice previews, dictation model choice), main (chat prompt assembly, TTS,
  * STT language auto-switch), and the bot supervisor (init payload bridge).
  *
- * This is the CONVERSATION language only — what the companion speaks and
+ * This is the CONVERSATION language only â€” what the companion speaks and
  * understands in chat, on voice calls, and in game. It is NOT the app/UI
  * locale (uiLanguage.ts), but since 261116 the UI language is its default
  * (userChatLanguage, companionLanguage).
@@ -24,15 +24,15 @@
 
 export const CHAT_LANGUAGES = [
   { code: 'en', label: 'English', native: 'English' },
-  { code: 'zh', label: 'Chinese', native: '中文' },
-  { code: 'ja', label: 'Japanese', native: '日本語' },
-  { code: 'ko', label: 'Korean', native: '한국어' },
-  { code: 'fr', label: 'French', native: 'Français' },
-  { code: 'es', label: 'Spanish', native: 'Español' },
+  { code: 'zh', label: 'Chinese', native: 'ä¸­æ–‡' },
+  { code: 'ja', label: 'Japanese', native: 'æ—¥æœ¬èªž' },
+  { code: 'ko', label: 'Korean', native: 'í•œêµ­ì–´' },
+  { code: 'fr', label: 'French', native: 'FranÃ§ais' },
+  { code: 'es', label: 'Spanish', native: 'EspaÃ±ol' },
   // 261116: the UI languages added on 261104 (ru, pt-BR, it), so a companion's
   // default language can follow any UI language (userChatLanguage below).
-  { code: 'ru', label: 'Russian', native: 'Русский' },
-  { code: 'pt', label: 'Portuguese', native: 'Português' },
+  { code: 'ru', label: 'Russian', native: 'Ð ÑƒÑÑÐºÐ¸Ð¹' },
+  { code: 'pt', label: 'Portuguese', native: 'PortuguÃªs' },
   { code: 'it', label: 'Italian', native: 'Italiano' },
 ] as const;
 
@@ -42,7 +42,7 @@ export const CHAT_LANGUAGE_CODES = CHAT_LANGUAGES.map((l) => l.code) as ChatLang
 
 /**
  * Read a UserConfig.chat_language value defensively: the field is optional
- * (absent ≡ 'en' — the same not-defaulted convention as analytics_opt_out, so
+ * (absent â‰¡ 'en' â€” the same not-defaulted convention as analytics_opt_out, so
  * the many manual UserConfig literals don't all need to spell it out), and a
  * junk value from a hand-edited config.json falls back to English rather than
  * crashing a prompt build.
@@ -84,10 +84,10 @@ export function detectedToChatLanguage(raw: unknown): ChatLanguage | null {
 
 /**
  * 260730: per-CHARACTER language, stamped into `character.metadata.language`
- * at creation from the app's UI language ('zh' UI → 'zh' characters). When
+ * at creation from the app's UI language ('zh' UI â†’ 'zh' characters). When
  * set, it PINS every AI surface for that character (persona generation, chat,
  * voice, chess, Draw!, the Minecraft bot) to that language, overriding the
- * auto-detected conversation language above. Absent/invalid → null, meaning
+ * auto-detected conversation language above. Absent/invalid â†’ null, meaning
  * "no pin, follow chat_language". Read defensively like everything else on
  * metadata (free-form record, may hold junk from older clients).
  */
@@ -168,3 +168,7 @@ export function companionLanguage(
   const adopted = !own && !c.is_default;
   return { language: (own ? characterLanguage(c.metadata) : null) ?? userChatLanguage(config), adopted };
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room compositing (261104). Draws draw-plan layers (shared/
  * seilinkDraw.ts) onto a 2D context whose transform maps canvas px to the
  * target's pixels. Used by RoomRenderer for its cached layers; the editor can
@@ -491,3 +491,7 @@ export function drawRoomGlows(
   }
   ctx.globalAlpha = 1;
 }
+
+
+
+

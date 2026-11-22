@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The plan usage row's reset countdown (moved out of CreditsScreen 261104 so
  * it can be tested without the IPC bridge).
  */
@@ -33,4 +33,8 @@ export const RESETS_SOON = 'soon';
 export function resetsInLine(resetsIn: string): string {
   return resetsIn === RESETS_SOON ? t('Resets soon') : t('Resets in {time}', { time: resetsIn });
 }
+
+
+
+
 

@@ -1,5 +1,5 @@
-/**
- * noticesStore — coercion tests (260725).
+﻿/**
+ * noticesStore â€” coercion tests (260725).
  *
  * The feed is remote and hand-authored, and the state file is on the user's
  * disk, so both are treated as hostile input: every field is coerced, and a
@@ -75,3 +75,7 @@ describe('coerceNoticesState (261027 popupShownIds)', () => {
     expect(coerceNoticesState('x').popupShownIds).toEqual([]);
   });
 });
+
+
+
+

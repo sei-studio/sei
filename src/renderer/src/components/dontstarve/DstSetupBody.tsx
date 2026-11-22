@@ -1,5 +1,5 @@
-/**
- * DstSetupBody — the Don't Starve Together body of the generic setup modal
+﻿/**
+ * DstSetupBody â€” the Don't Starve Together body of the generic setup modal
  * (game adapters M2, 260908; registered through lib/gameSetupBodies). The
  * modal itself keeps the pending summon and auto-resumes when the world
  * opens; the body is the same numbered step list the launch panel shows
@@ -20,3 +20,7 @@ export function DstSetupBody(): React.ReactElement {
     </>
   );
 }
+
+
+
+

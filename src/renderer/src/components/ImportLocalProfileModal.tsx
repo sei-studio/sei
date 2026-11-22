@@ -1,5 +1,5 @@
-/**
- * ImportLocalProfileModal — offered on a sign-in from the anonymous `local`
+﻿/**
+ * ImportLocalProfileModal â€” offered on a sign-in from the anonymous `local`
  * (own key) profile (260603 per-profile partitioning; 261023 existing accounts).
  *
  * With per-profile partitioning, everything built while signed out stays in
@@ -12,9 +12,9 @@
  *     nothing in it. "Not now" leaves the companions on this computer, where
  *     they are offered again on the next sign-in from it.
  *
- * Never offered account→account, so switching between accounts starts fresh.
+ * Never offered accountâ†’account, so switching between accounts starts fresh.
  * Also offered once at boot to an account that signed in on an older build
- * (App.tsx, checkBootImportOffer), and from Settings → Account.
+ * (App.tsx, checkBootImportOffer), and from Settings â†’ Account.
  *
  * A failed import (261023) keeps the modal up with a short error line and a
  * "Try again"; the import is idempotent, so a retry only redoes what failed.
@@ -172,7 +172,7 @@ export function ImportLocalProfileModalView({
         </p>
       ) : null}
       {status === 'importing' ? (
-        <p className={styles.status}>{t('Importing…')}</p>
+        <p className={styles.status}>{t('Importingâ€¦')}</p>
       ) : status === 'full' ? (
         <ModalFooter>
           <Button kind="primary" onClick={onContinue}>
@@ -201,3 +201,7 @@ export function ImportLocalProfileModalView({
     </ModalShell>
   );
 }
+
+
+
+

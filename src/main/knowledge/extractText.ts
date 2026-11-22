@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Knowledge upload text extraction (260725).
  *
  * Single validated ingestion path for user-uploaded knowledge files. The
- * renderer NEVER parses uploads — it ships `{ name, bytes }` to main and this
+ * renderer NEVER parses uploads â€” it ships `{ name, bytes }` to main and this
  * module decides everything, so the security posture lives in one place:
  *
  *   - Allowed types: .md / .markdown / .txt / .text (plain text) and .docx
- *     (extracted here with a minimal in-repo zip reader — no external parser,
+ *     (extracted here with a minimal in-repo zip reader â€” no external parser,
  *     nothing executed). Legacy binary .doc is REJECTED with actionable copy.
  *   - Binary masquerading as text is rejected (NUL bytes / replacement-char
  *     ratio after UTF-8 decode).
@@ -64,8 +64,8 @@ export function capKnowledgeText(text: string, maxBytes = KNOWLEDGE_ENTRY_MAX_BY
   if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
   const marker = '\n\n[truncated: file exceeded the knowledge size limit]';
   let sliced = Buffer.from(text, 'utf8').subarray(0, maxBytes - Buffer.byteLength(marker, 'utf8')).toString('utf8');
-  // A byte-boundary cut can split a codepoint; toString replaces it with U+FFFD — drop it.
-  sliced = sliced.replace(/�+$/, '');
+  // A byte-boundary cut can split a codepoint; toString replaces it with U+FFFD â€” drop it.
+  sliced = sliced.replace(/ï¿½+$/, '');
   return sliced + marker;
 }
 
@@ -81,17 +81,17 @@ function decodeUtf8Strict(buf: Buffer, label: string): string {
     throw new KnowledgeExtractError(`${label} looks like a binary file, not text. Save it as .txt or .md and try again.`);
   }
   const text = buf.toString('utf8');
-  const bad = (text.match(/�/g) ?? []).length;
+  const bad = (text.match(/ï¿½/g) ?? []).length;
   if (text.length > 0 && bad / text.length > 0.02) {
     throw new KnowledgeExtractError(`${label} does not look like readable text. Save it as .txt or .md and try again.`);
   }
   return text;
 }
 
-/* ────────────────────────── minimal .docx reader ──────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ minimal .docx reader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
  * A .docx is a zip; the body text lives in word/document.xml. We walk the
- * central directory ourselves (EOCD → entries → local header) and inflate
- * with node:zlib — no third-party parser, no code paths that execute
+ * central directory ourselves (EOCD â†’ entries â†’ local header) and inflate
+ * with node:zlib â€” no third-party parser, no code paths that execute
  * document content. Anything malformed throws KnowledgeExtractError.
  */
 
@@ -201,3 +201,7 @@ export function extractKnowledgeText(name: string, bytes: Buffer): ExtractedKnow
   if (!content) throw new KnowledgeExtractError(`"${fileName}" contains no readable text.`);
   return { title, content };
 }
+
+
+
+

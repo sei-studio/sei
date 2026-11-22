@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import type { FacepackManifest } from '@shared/facepack';
 import { faceRigFor, findEyes, irisVisible } from './faceRig';
 import { LID_CLOSED_AT, LID_HALF_AT, lidWeights } from './facepackGl';
@@ -110,3 +110,7 @@ describe('lidWeights', () => {
     }
   });
 });
+
+
+
+

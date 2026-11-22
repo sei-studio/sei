@@ -1,16 +1,16 @@
-// src/bot/adapter/minecraft/observers/lineOfSight.js
+﻿// src/bot/adapter/minecraft/observers/lineOfSight.js
 //
-// Phase 15 — Custom line-of-sight helper (VIS-05). This is DELIBERATELY NOT
+// Phase 15 â€” Custom line-of-sight helper (VIS-05). This is DELIBERATELY NOT
 // bot.world.raycast. Raw raycast iterates `block.shapes` only, so it MISSES
-// fluids (water/lava have EMPTY collision shapes — the ray sails through a lake
+// fluids (water/lava have EMPTY collision shapes â€” the ray sails through a lake
 // as if it were air) and never tests entity bounding boxes at all (the owner
 // could be hidden behind a horse and raycast wouldn't know). For the idle
 // auto-render gate (VIS-04) that drives a bot to "look at the owner", treating
 // water/lava as opaque and treating intervening mobs as occluders is the safe,
-// product-correct reading (RESEARCH §"Custom LOS helper (VIS-05)" + Pitfall 3,
+// product-correct reading (RESEARCH Â§"Custom LOS helper (VIS-05)" + Pitfall 3,
 // assumption A6: fluids-as-occluders matches product intent).
 //
-// The idle gate FAILS CLOSED: any ambiguity (unloaded chunk → null block,
+// The idle gate FAILS CLOSED: any ambiguity (unloaded chunk â†’ null block,
 // target out of range) returns false so the bot does NOT auto-render when it
 // might be looking at the owner through cover (player-monitor privacy leak,
 // Pitfall 9 / T-15-03-02).
@@ -23,13 +23,13 @@ import { Vec3 } from 'vec3'
 /**
  * Fluid block names treated as sight occluders. Vanilla fluids carry these
  * names; the `flowing_*` variants cover moving water/lava. Fluids have empty
- * collision shapes, so the shapes test below never catches them — this name
+ * collision shapes, so the shapes test below never catches them â€” this name
  * set is the reason a CUSTOM helper exists (VIS-05 / Pitfall 3).
  */
 export const FLUID_NAMES = new Set(['water', 'lava', 'flowing_water', 'flowing_lava'])
 
 /** Default range gate (VIS-04 idle auto-render). Callers may widen it via
- *  `opts.maxRange` — the snapshot entity filter uses the full entity radius. */
+ *  `opts.maxRange` â€” the snapshot entity filter uses the full entity radius. */
 const MAX_RANGE_BLOCKS = 16
 
 /**
@@ -95,7 +95,7 @@ export function segmentIntersectsEntityAABB(from, to, e) {
   ]
   for (const [start, dir, lo, hi] of axes) {
     if (Math.abs(dir) < 1e-9) {
-      // Ray parallel to this slab — no intersection if the origin is outside.
+      // Ray parallel to this slab â€” no intersection if the origin is outside.
       if (start < lo || start > hi) return false
     } else {
       let t1 = (lo - start) / dir
@@ -116,10 +116,10 @@ export function segmentIntersectsEntityAABB(from, to, e) {
 /**
  * Returns true iff the bot has an unobstructed line of sight to `targetEntity`
  * within the 16-block range gate, treating fluids and intervening entity
- * bounding boxes as occluders. Ray-marches blocks directly — see the
+ * bounding boxes as occluders. Ray-marches blocks directly â€” see the
  * file header for why the built-in world-ray API is unsuitable (VIS-05).
  *
- * Fail-closed: out of range, an unloaded block (blockAt → null), a fluid on the
+ * Fail-closed: out of range, an unloaded block (blockAt â†’ null), a fluid on the
  * ray, a solid/partial block on the ray, or an intervening entity AABB all
  * return false. Only a fully clear ray within 16 blocks returns true.
  *
@@ -175,3 +175,7 @@ export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4, maxR
 
   return true
 }
+
+
+
+

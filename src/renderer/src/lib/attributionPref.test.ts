@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   ATTRIBUTION_ASKED_KEY,
   ATTRIBUTION_DETAIL_OPTIONS,
@@ -61,8 +61,8 @@ describe('attributionPref: options and payload', () => {
   it('labels have zh entries and no em dashes', () => {
     for (const o of ATTRIBUTION_OPTIONS) {
       expect(ZH[o.label], `missing zh entry for "${o.label}"`).toBeTypeOf('string');
-      expect(o.label).not.toContain('—');
-      expect(ZH[o.label]).not.toContain('—');
+      expect(o.label).not.toContain('â€”');
+      expect(ZH[o.label]).not.toContain('â€”');
     }
     const q = 'Quick one before we start. Where did you hear about Sei?';
     expect(ZH[q]).toBeTypeOf('string');
@@ -122,8 +122,8 @@ describe('attributionPref: follow-up detail (261012)', () => {
     const labels = Object.values(ATTRIBUTION_DETAIL_OPTIONS).flat().map((o) => o.label);
     for (const k of [...labels, 'Ooh, another AI! Which one?', 'Nice! What did you search for?']) {
       expect(ZH[k], `missing zh entry for "${k}"`).toBeTypeOf('string');
-      expect(k).not.toContain('—');
-      expect(ZH[k]).not.toContain('—');
+      expect(k).not.toContain('â€”');
+      expect(ZH[k]).not.toContain('â€”');
     }
   });
   it('an answer sends source + heard_from_detail; a skip sends "skipped"', () => {
@@ -137,3 +137,7 @@ describe('attributionPref: follow-up detail (261012)', () => {
     });
   });
 });
+
+
+
+

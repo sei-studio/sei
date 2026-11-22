@@ -1,17 +1,17 @@
-// 260708 regressions — group-voice-call session fixes (playlogs 25770cd6 +
+﻿// 260708 regressions â€” group-voice-call session fixes (playlogs 25770cd6 +
 // bbf5b66f, 2026-07-08T06-28: two companions in-game while the player talked
 // over a live call).
 //
 // Three structural failures from that session:
 //   1. Every voice utterance reached the in-game brain wrapped in "messaged
 //      you through Sei chat. They are NOT in the game with you right now."
-//      while the player stood 3 blocks away — and the mandatory-reply framing
+//      while the player stood 3 blocks away â€” and the mandatory-reply framing
 //      forced BOTH bots to answer every line, so addressing one bot by name
 //      never worked (names also arrive garbled by STT: "Marv" as "My bar",
 //      "Sui" as "sweet"/"soy"). Voice lines now deliver the RAW words with
 //      voice:true and take group-addressing framing (decide for yourself,
 //      silence yields to the teammate).
-//   2. A 12s call-budget timeout silently dropped the turn — Sui never
+//   2. A 12s call-budget timeout silently dropped the turn â€” Sui never
 //      responded to "fight each other" at all. A timeout now retries once.
 //   3. An attack teardown discarded a chat-TRIGGERED loop's own unanswered
 //      trigger ("Um" got zero response: its loop died to a sei:attacked
@@ -187,7 +187,7 @@ describe('260708 group-voice framing', () => {
 describe('260708 group-voice yield stays private (thought-leak fix)', () => {
   // Live failure (session 2026-07-08T17-58): a bot that decided a line was the
   // teammate's wrote the reasoning into its private scratchpad and called
-  // end_loop — and the 260703 scratchpad salvage spoke that reasoning over TTS
+  // end_loop â€” and the 260703 scratchpad salvage spoke that reasoning over TTS
   // ("the player said 'mars, where are you?' - that's marv, not me / i stay
   // silent and let marv answer that"). On a group-voice line the silent end is
   // deliberate, so the salvage must not fire.
@@ -319,7 +319,7 @@ describe('260708 teammate-line wakes (responsive to the whole call)', () => {
       onSeiChatReply: (msg) => spoken.push(msg),
       _anthropicOverride: provider,
     })
-    orch.setVoiceCall(true) // no in-game companions — the fromTeammate leg must cover this
+    orch.setVoiceCall(true) // no in-game companions â€” the fromTeammate leg must cover this
 
     await orch.handleDispatch('sei:chat_received', teammateChat('the universe is unchanged.'))
 
@@ -355,7 +355,7 @@ describe('260708 teammate-line wakes (responsive to the whole call)', () => {
     await orch.handleDispatch('sei:chat_received', voiceChat('follow me'))
     expect(orch.currentLoop?.inFlight?.name).toBe('follow')
 
-    // Pre-fix this fell to "dispatch arrived while loop active — dropping".
+    // Pre-fix this fell to "dispatch arrived while loop active â€” dropping".
     await orch.handleDispatch('sei:chat_received', teammateChat('sui, where are you?'))
 
     expect(provider.calls.length).toBe(2)
@@ -410,7 +410,7 @@ describe('260708 dropped-turn fixes', () => {
 
   it('an attack teardown preserves a chat-triggered loop\'s unanswered trigger and re-fires it', async () => {
     _setTickIntervalForTests(10_000_000)
-    // Call 1 (the chat turn) parks until its signal aborts — the in-flight
+    // Call 1 (the chat turn) parks until its signal aborts â€” the in-flight
     // shape the sei:attacked preempt hits. Call 2 answers the attack loop.
     const provider = makeProvider([
       (args) => new Promise((_, reject) => {
@@ -445,12 +445,12 @@ describe('260708 dropped-turn fixes', () => {
 })
 
 // 260709: continuous voice. Each onSeiChatReply message becomes its own TTS
-// stream, and ElevenLabs synthesizes every fragment cold — so the old
+// stream, and ElevenLabs synthesizes every fragment cold â€” so the old
 // texting-style splitChatMessages fragmentation put an audible prosody cut
 // between sentences of one spoken turn. On a live call the whole say() line
 // ships as ONE message (= one streamed clip); the typed chat surface (seiChat
 // without a call) keeps the texting-style split.
-describe('260709 continuous voice — one say() line = one TTS message', () => {
+describe('260709 continuous voice â€” one say() line = one TTS message', () => {
   const TWO_SENTENCES = "yeah, i'm okay. are you doing alright out there?"
 
   it('ships the whole line as ONE message while a call is live', async () => {
@@ -488,7 +488,7 @@ describe('260709 continuous voice — one say() line = one TTS message', () => {
       onSeiChatReply: (msg) => spoken.push(msg),
       _anthropicOverride: provider,
     })
-    // No setVoiceCall — a typed message from the chat panel.
+    // No setVoiceCall â€” a typed message from the chat panel.
     const typed = { ...voiceChat('how are you?'), voice: false }
     await orch.handleDispatch('sei:chat_received', typed)
 
@@ -501,8 +501,8 @@ describe('260709 continuous voice — one say() line = one TTS message', () => {
 // in the live path. Dashes now survive postProcessSay; the split consumes them
 // as breaks on text surfaces, and the unsplit voice line normalizes them to a
 // plain hyphen (no fancy dash may reach a user surface either way).
-describe('issue #4 — dash message-break fires in the live say() path', () => {
-  const DASHED = 'gonna build a base — walls, roof, the works'
+describe('issue #4 â€” dash message-break fires in the live say() path', () => {
+  const DASHED = 'gonna build a base â€” walls, roof, the works'
 
   it('typed sei-chat splits on the dash into two messages', async () => {
     _setTickIntervalForTests(10_000_000)
@@ -543,3 +543,7 @@ describe('issue #4 — dash message-break fires in the live say() path', () => {
     expect(spoken).toEqual(['gonna build a base - walls, roof, the works'])
   })
 })
+
+
+
+

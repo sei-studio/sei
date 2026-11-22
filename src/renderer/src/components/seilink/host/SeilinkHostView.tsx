@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink room host page (261104, milestone 3): the companion's room, full
  * screen, drawn as the desktop wallpaper by the room host process.
  *
@@ -228,7 +228,7 @@ export function SeilinkHostView(props: SeilinkHostViewProps = {}): React.ReactEl
     if (fpsRef.current <= 0 || frames.current > 0) maybeFirstFrame();
   }, [maybeFirstFrame]);
 
-  // ── Her click area: the box of what the avatar renders ──
+  // â”€â”€ Her click area: the box of what the avatar renders â”€â”€
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const lastBox = useRef<SeilinkBox | null>(null);
   const measure = useCallback(() => {
@@ -387,3 +387,7 @@ function FallbackRoom(props: {
     </div>
   );
 }
+
+
+
+

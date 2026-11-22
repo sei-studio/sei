@@ -1,4 +1,4 @@
-// DST quality eval: the headless dedicated server (scripts/quality-eval/dst/).
+﻿// DST quality eval: the headless dedicated server (scripts/quality-eval/dst/).
 //
 // Starts ONE Master shard of the SeiTest cluster (single shard, offline,
 // pause_when_empty=false; see native/dst-mod/sei/README.md) with the console
@@ -120,3 +120,7 @@ export async function startServer(opts: { cluster?: string; logPath: string; log
   await srv.stop();
   throw new Error('DST server did not become ready in 240 s');
 }
+
+
+
+

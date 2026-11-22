@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ollama context window (num_ctx) sizing (261010).
  *
  * Ollama runs every model with a default context of 4096 tokens on machines
@@ -133,3 +133,7 @@ export async function chooseOllamaNumCtx(opts: {
   asked.set(key, Math.max(asked.get(key) ?? 0, Math.min(numCtx, OLLAMA_CTX_MAX)));
   return numCtx;
 }
+
+
+
+

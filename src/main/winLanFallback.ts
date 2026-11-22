@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Windows-only extra discovery for when netstat cannot see the world
  * (issue #52: some Windows 11 builds report listeners with state 0, netstat
  * drops them, and Sei sat on "No open world" with the world reachable).
@@ -188,3 +188,7 @@ export function createWinLanFallback(deps: WinFallbackDeps): WinLanFallback {
     },
   };
 }
+
+
+
+

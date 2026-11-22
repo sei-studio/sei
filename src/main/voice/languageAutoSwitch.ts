@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Conversation-language auto-switch (260725).
  *
  * The chat-language picker was removed from onboarding and Settings; the
@@ -45,7 +45,7 @@ export function resetLanguageAutoSwitch(): void {
 
 /**
  * Record one utterance's detection and persist a language switch once the
- * streak policy is satisfied. Never throws — a failed config write costs a
+ * streak policy is satisfied. Never throws â€” a failed config write costs a
  * switch, not an utterance.
  */
 export async function noteDetectedLanguage(detection: {
@@ -80,3 +80,7 @@ export async function noteDetectedLanguage(detection: {
     console.warn(`[sei/voice] language auto-switch failed: ${(err as Error).message}`);
   }
 }
+
+
+
+

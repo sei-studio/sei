@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Auto-retry guard for summon pre-gate refusals (260828).
  *
  * Production analytics caught a retry loop: one user generated 56
@@ -6,21 +6,21 @@
  * (one every ~14 seconds), plus 8 LOCAL_NO_API_KEY the same way. A pre-gate
  * refusal (missing name, missing API key, depleted credits, LAN closed at the
  * gate) is deterministic: nothing the app does on its own can make the next
- * attempt succeed, so every AUTOMATIC re-attempt — the chat-surface launch()
- * tool, the voice idle-nudge and companion-turn launch honors — just burns an
+ * attempt succeed, so every AUTOMATIC re-attempt â€” the chat-surface launch()
+ * tool, the voice idle-nudge and companion-turn launch honors â€” just burns an
  * LLM round trip and another analytics event.
  *
  * This module remembers the last pre-gate refusal per character and lets the
  * automatic summon paths refuse to re-fire until either:
  *   - the USER acts (the renderer Summon button clears the block via the
- *     bot:summon IPC handler — manual retries are never blocked), or
+ *     bot:summon IPC handler â€” manual retries are never blocked), or
  *   - a summon succeeds (index.ts clears on the 'online' status), or
- *   - the block ages out (AUTO_RETRY_BLOCK_MS) — the safety net for a user who
+ *   - the block ages out (AUTO_RETRY_BLOCK_MS) â€” the safety net for a user who
  *     fixes the underlying condition (re-runs onboarding, adds a key) without
  *     ever pressing Summon.
  *
  * Deliberately pure (no electron imports) so it is unit-testable under plain
- * vitest — same stance as diagnostics.ts.
+ * vitest â€” same stance as diagnostics.ts.
  */
 
 /** How long an automatic re-attempt stays blocked after a pre-gate refusal. */
@@ -47,7 +47,7 @@ export function notePreGateFailure(
 }
 
 /**
- * Clear the block — the user acted (pressed Summon) or a summon succeeded.
+ * Clear the block â€” the user acted (pressed Summon) or a summon succeeded.
  */
 export function clearSummonBlock(characterId: string): void {
   lastPreGate.delete(characterId);
@@ -87,3 +87,7 @@ export function clearSummonBlocksOfClass(errorClass: string): void {
 export function resetSummonGuardForTest(): void {
   lastPreGate.clear();
 }
+
+
+
+

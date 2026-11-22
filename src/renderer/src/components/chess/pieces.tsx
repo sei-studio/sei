@@ -1,5 +1,5 @@
-/**
- * Chess piece set — the classic "cburnett" pieces as inline SVG, no fetches.
+﻿/**
+ * Chess piece set â€” the classic "cburnett" pieces as inline SVG, no fetches.
  *
  * Attribution: pieces by Colin M.L. Burnett (the set lichess ships as
  * "cburnett", lichess-org/lila public/piece/cburnett). Originally published on
@@ -24,7 +24,7 @@ const STROKE = {
 } as const;
 
 const GLYPHS: Record<string, React.ReactElement> = {
-  // ── White ────────────────────────────────────────────────────────────────
+  // â”€â”€ White â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   wk: (
     <g {...STROKE}>
       <path d="M22.5 11.63V6M20 8h5" strokeLinejoin="miter" />
@@ -96,7 +96,7 @@ const GLYPHS: Record<string, React.ReactElement> = {
       strokeLinecap="round"
     />
   ),
-  // ── Black ────────────────────────────────────────────────────────────────
+  // â”€â”€ Black â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   bk: (
     <g {...STROKE}>
       <path d="M22.5 11.63V6" strokeLinejoin="miter" />
@@ -220,3 +220,7 @@ export function Piece({ code, className }: PieceProps): React.ReactElement | nul
     </svg>
   );
 }
+
+
+
+

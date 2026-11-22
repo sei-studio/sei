@@ -1,4 +1,4 @@
-/**
+﻿/**
  * When the guide offers the SeiLink tour (261105, T337).
  *
  * The guide (Sui's onboarding sprites, TutorialOverlay) pops in once on a
@@ -8,10 +8,10 @@
  * later, then never.
  *
  * Two audiences, told apart by a record written when onboarding finishes:
- *   new      — onboarded on a build with the tour. Never in the session that
+ *   new      â€” onboarded on a build with the tour. Never in the session that
  *              onboarded, and not before NEW_USER_DELAY_MS after it, so it
  *              never stacks on the onboarding tour or the first moment.
- *   existing — no onboarding record: they used Sei before this version. The
+ *   existing â€” no onboarding record: they used Sei before this version. The
  *              guide says "Remember me? I'm back!".
  *
  * Nothing is offered when SeiLink is not available here, when the person
@@ -101,7 +101,7 @@ export function afterOnboarded(record: SeilinkTourRecord, now: number): SeilinkT
   return { ...record, onboardedAt: now };
 }
 
-// ── Storage ────────────────────────────────────────────────────────────────
+// â”€â”€ Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const KEY_BASE = 'sei.seilinkTour.v1';
 
@@ -143,7 +143,7 @@ export function updateTourRecord(fn: (r: SeilinkTourRecord) => SeilinkTourRecord
   return next;
 }
 
-// ── Session ────────────────────────────────────────────────────────────────
+// â”€â”€ Session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 let onboardedThisSession = false;
 
@@ -177,3 +177,7 @@ export function pickTourCompanion(
   }
   return characters.find((c) => c.id === suiId)?.id ?? characters[0].id;
 }
+
+
+
+

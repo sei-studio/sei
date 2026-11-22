@@ -1,4 +1,4 @@
-/**
+﻿/**
  * First-run session (261029): whether this app session is someone's first
  * one, which holds the startup popup back until the next launch.
  *
@@ -81,3 +81,7 @@ useFirstMomentStore.subscribe(check);
 export function _resetFirstRunSessionForTests(): void {
   firstRun = false;
 }
+
+
+
+

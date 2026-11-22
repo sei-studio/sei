@@ -1,10 +1,10 @@
-/**
- * Tests for useCreditsStore — renderer-side plan + weekly-usage store.
+﻿/**
+ * Tests for useCreditsStore â€” renderer-side plan + weekly-usage store.
  *
  * Invariants under test:
- *   1. init() is idempotent — calling twice → creditsGet called once.
+ *   1. init() is idempotent â€” calling twice â†’ creditsGet called once.
  *   2. init() subscribes BEFORE awaiting the seed (push-seq race guard from
- *      useSyncStore.ts:77-91 — without this, a push that arrives during the
+ *      useSyncStore.ts:77-91 â€” without this, a push that arrives during the
  *      await overwrites the seed with stale data).
  *   3. Push arriving DURING the initial-seed-await wins over the seed.
  *   4. refresh() re-fetches creditsGet and replaces state.
@@ -125,7 +125,7 @@ beforeEach(() => {
   };
 });
 
-// Helper — imports the store fresh after the window stub is in place + resets
+// Helper â€” imports the store fresh after the window stub is in place + resets
 // any leftover state so tests stay isolated.
 async function loadStore() {
   const mod = await import('./useCreditsStore');
@@ -137,7 +137,7 @@ async function loadStore() {
 // --- Tests ----------------------------------------------------------------
 
 describe('useCreditsStore', () => {
-  it('Test 1: init() is idempotent — calling twice calls creditsGet once', async () => {
+  it('Test 1: init() is idempotent â€” calling twice calls creditsGet once', async () => {
     creditsGetMock.mockResolvedValue(status({ usage_pct: 20 }));
     const store = await loadStore();
 
@@ -149,7 +149,7 @@ describe('useCreditsStore', () => {
   });
 
   it('Test 2: init() subscribes to onCreditsStatusUpdate BEFORE awaiting the seed', async () => {
-    // Deferred-promise pattern: capture the order — when does
+    // Deferred-promise pattern: capture the order â€” when does
     // onCreditsStatusUpdate fire relative to the await on creditsGet?
     let creditsGetResolved = false;
     let subscribedBeforeResolve = false;
@@ -429,7 +429,7 @@ describe('useCreditsStore', () => {
       expect(lower).not.toContain('token');
       expect(lower).not.toContain('dollar');
       expect(lower).not.toContain('usd');
-      // 'micro' is the µ$ ledger unit — banned from the renderer.
+      // 'micro' is the Âµ$ ledger unit â€” banned from the renderer.
       expect(lower).not.toContain('micro');
     }
   });
@@ -455,22 +455,22 @@ describe('useCreditsStore', () => {
    * doesn't ship @testing-library/react.
    * ----------------------------------------------------------------------- */
 
-  it('Test 14: shouldNavigateToReceipt — free → quest returns true (first subscription)', async () => {
+  it('Test 14: shouldNavigateToReceipt â€” free â†’ quest returns true (first subscription)', async () => {
     const mod = await import('./useCreditsStore');
     expect(mod.shouldNavigateToReceipt('free', 'quest')).toBe(true);
   });
 
-  it('Test 15: shouldNavigateToReceipt — quest → party returns true (upgrade is a new charge)', async () => {
+  it('Test 15: shouldNavigateToReceipt â€” quest â†’ party returns true (upgrade is a new charge)', async () => {
     const mod = await import('./useCreditsStore');
     expect(mod.shouldNavigateToReceipt('quest', 'party')).toBe(true);
   });
 
-  it('Test 16: shouldNavigateToReceipt — party → party returns false (no re-navigation on repeat push)', async () => {
+  it('Test 16: shouldNavigateToReceipt â€” party â†’ party returns false (no re-navigation on repeat push)', async () => {
     const mod = await import('./useCreditsStore');
     expect(mod.shouldNavigateToReceipt('party', 'party')).toBe(false);
   });
 
-  it('Test 17: shouldNavigateToReceipt — null (cold-load) → party returns false', async () => {
+  it('Test 17: shouldNavigateToReceipt â€” null (cold-load) â†’ party returns false', async () => {
     // Cold-load case: prevPlan starts null when the store is fresh; the very
     // first status push must NOT be classified as a transition (otherwise an
     // already-subscribed user would see ReceiptScreen on every app start).
@@ -478,7 +478,7 @@ describe('useCreditsStore', () => {
     expect(mod.shouldNavigateToReceipt(null, 'party')).toBe(false);
   });
 
-  it('Test 18: shouldNavigateToReceipt — party → quest / party → free return false (downgrades)', async () => {
+  it('Test 18: shouldNavigateToReceipt â€” party â†’ quest / party â†’ free return false (downgrades)', async () => {
     const mod = await import('./useCreditsStore');
     expect(mod.shouldNavigateToReceipt('party', 'quest')).toBe(false);
     expect(mod.shouldNavigateToReceipt('party', 'free')).toBe(false);
@@ -491,7 +491,7 @@ describe('useCreditsStore', () => {
     expect(store.getState().subscription_status_raw).toBe('past_due');
   });
 
-  it('Test 20: ends_at propagates through seed and push (cancel-scheduled → resumed)', async () => {
+  it('Test 20: ends_at propagates through seed and push (cancel-scheduled â†’ resumed)', async () => {
     creditsGetMock.mockResolvedValue(
       status({
         plan: 'party',
@@ -512,7 +512,7 @@ describe('useCreditsStore', () => {
 });
 
 /* ===========================================================================
- * Checkout watch — high-freq polling while the "complete your purchase" modal
+ * Checkout watch â€” high-freq polling while the "complete your purchase" modal
  * is open, with a wall-clock timeout, plus the pure detection predicate.
  * =========================================================================== */
 
@@ -556,7 +556,7 @@ describe('isPurchaseConfirmed', () => {
     ).toBe(true);
   });
 
-  it('subscription: true on status→active even before the tier lands', async () => {
+  it('subscription: true on statusâ†’active even before the tier lands', async () => {
     const { isPurchaseConfirmed } = await import('./useCreditsStore');
     expect(
       isPurchaseConfirmed('quest', base, {
@@ -578,7 +578,7 @@ describe('isPurchaseConfirmed', () => {
     ).toBe(false);
   });
 
-  it('resume: true when the sub flips off cancelled (cancelled→active)', async () => {
+  it('resume: true when the sub flips off cancelled (cancelledâ†’active)', async () => {
     const { isPurchaseConfirmed } = await import('./useCreditsStore');
     expect(
       isPurchaseConfirmed(
@@ -732,8 +732,8 @@ describe('checkout watch (beginPurchase / dismissCheckout)', () => {
     });
 
     await store.getState().beginResume();
-    expect(subscriptionCancelMock).toHaveBeenCalledTimes(1); // portal opened…
-    expect(creditsOpenCheckoutMock).not.toHaveBeenCalled(); // …NOT a new checkout
+    expect(subscriptionCancelMock).toHaveBeenCalledTimes(1); // portal openedâ€¦
+    expect(creditsOpenCheckoutMock).not.toHaveBeenCalled(); // â€¦NOT a new checkout
     expect(store.getState().checkoutStatus).toBe('waiting');
     expect(store.getState().checkoutKind).toBe('resume');
 
@@ -770,3 +770,7 @@ describe('useCreditsStore pending wall replay', () => {
     expect(store.getState().hardStopActive).toBe(false);
   });
 });
+
+
+
+

@@ -1,5 +1,5 @@
-/**
- * Tests for src/main/auth/exportBuilder — Phase 11 extension fills
+﻿/**
+ * Tests for src/main/auth/exportBuilder â€” Phase 11 extension fills
  * characters[] from supabase.from('characters').select('*').eq('owner', ...).
  *
  * Strategy: vi.mock the supabaseClient singleton with a hand-rolled mock
@@ -81,7 +81,7 @@ beforeEach(() => {
 
 // ---- Tests ---------------------------------------------------------------
 
-describe('buildExport (Phase 11 — characters[] fill)', () => {
+describe('buildExport (Phase 11 â€” characters[] fill)', () => {
   it('returns characters: [] when the cloud has no rows', async () => {
     const { buildExport } = await import('./exportBuilder');
     state.selectRows = [];
@@ -117,7 +117,7 @@ describe('buildExport (Phase 11 — characters[] fill)', () => {
     ];
     const out = await buildExport(makeSession());
     expect(out.characters).toHaveLength(2);
-    // Preserves DB row shape (snake_case columns) — not wrapped Character
+    // Preserves DB row shape (snake_case columns) â€” not wrapped Character
     expect(out.characters[0]).toMatchObject({
       id: 'char-1',
       persona_source: 'a friend',
@@ -139,7 +139,7 @@ describe('buildExport (Phase 11 — characters[] fill)', () => {
     expect(state.capturedOwner).toBe('specific-owner-uuid');
   });
 
-  it('schemaVersion stays exactly 1 (D-14 contract — no version bump)', async () => {
+  it('schemaVersion stays exactly 1 (D-14 contract â€” no version bump)', async () => {
     const { buildExport } = await import('./exportBuilder');
     state.selectRows = [{ id: 'x', name: 'y' }];
     const out = await buildExport(makeSession());
@@ -189,3 +189,7 @@ describe('buildExport (Phase 11 — characters[] fill)', () => {
     expect(state.capturedSignal).toBeInstanceOf(AbortSignal);
   });
 });
+
+
+
+

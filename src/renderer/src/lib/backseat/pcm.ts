@@ -1,5 +1,5 @@
-/**
- * Backseat PCM math (260728) — pure functions, no audio APIs, fully testable.
+﻿/**
+ * Backseat PCM math (260728) â€” pure functions, no audio APIs, fully testable.
  *
  * Both audio sources (the Windows loopback track read through
  * MediaStreamTrackProcessor, and the macOS ScreenCaptureKit tap relayed over
@@ -64,3 +64,7 @@ export function rmsDb(samples: Float32Array): number {
   const rms = Math.sqrt(sum / samples.length);
   return rms > 0 ? Math.max(-100, 20 * Math.log10(rms)) : -100;
 }
+
+
+
+

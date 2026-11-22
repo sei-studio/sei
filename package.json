@@ -93,5 +93,17 @@
     "vite": "^7.0.0",
     "vitest": "^4.1.6",
     "zustand": "5.0.13"
+  },
+  "allowScripts": {
+    "canvas@3.2.3": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.0": true,
+    "esbuild@0.27.7": true,
+    "file:C:\\Users\\liamv\\Desktop\\Progetti\\sei\\vendor\\gl-8.1.6-cxx20.tgz": true,
+    "onnxruntime-node@1.21.0": true,
+    "onnxruntime-node@1.27.0": true,
+    "protobufjs@7.6.5": true,
+    "sharp@0.34.5": true
   }
 }

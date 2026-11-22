@@ -1,5 +1,5 @@
-/**
- * scripts/model-ab-probe.ts — side-by-side model A/B on the real companion
+﻿/**
+ * scripts/model-ab-probe.ts â€” side-by-side model A/B on the real companion
  * surfaces (261008, Haiku 4.5 vs Haiku 5.5).
  *
  * Runs the same scenes through each "arm" (model + request extras) and prints,
@@ -9,11 +9,11 @@
  * model's list price. Ends with a per-arm summary table.
  *
  * Surfaces:
- *   game  — pinned Minecraft system blocks + tool list from
+ *   game  â€” pinned Minecraft system blocks + tool list from
  *           src/bot/brain/__fixtures__/minecraftSystemBlocks.json with the Sui
  *           persona swapped in, seed turn from composeSeedBlocks, max_tokens
  *           1024 (the brain default). Speech only via the say() tool.
- *   chat  — the chat surface (buildSystemBlocks) as a text chat or a voice
+ *   chat  â€” the chat surface (buildSystemBlocks) as a text chat or a voice
  *           call, max_tokens 200 (chatService's reply budget). Text is the reply.
  *
  * Prompts are NOT changed per arm; only the request parameters differ.
@@ -38,7 +38,7 @@ import { CUBOID_GRAMMAR, eventAddendum } from '../src/bot/adapter/minecraft/prom
 import { composeSeedBlocks } from '../src/bot/brain/orchestrator.js';
 import { buildSystemBlocks, LAUNCH_TOOL, QUIT_TOOL, END_CALL_TOOL, REMEMBER_TOOL } from '../src/main/chat/chatPrompts';
 
-// ── arms ────────────────────────────────────────────────────────────────────
+// â”€â”€ arms â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Price = { in: number; cw: number; cr: number; out: number }; // $/MTok
 const PRICES: Record<string, Price> = {
   'claude-haiku-4-5': { in: 1.0, cw: 1.25, cr: 0.1, out: 5.0 },
@@ -76,7 +76,7 @@ if (!apiKey) {
 }
 const client = new Anthropic({ apiKey, maxRetries: 0 });
 
-// ── persona ─────────────────────────────────────────────────────────────────
+// â”€â”€ persona â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 function loadSuiPersona(): { source: string; expanded?: string } {
   const p = process.env.SEI_PROBE_PERSONA;
@@ -90,7 +90,7 @@ function loadSuiPersona(): { source: string; expanded?: string } {
 const SUI = loadSuiPersona();
 const SUI_TEXT = SUI.expanded || SUI.source;
 
-// ── game surface ────────────────────────────────────────────────────────────
+// â”€â”€ game surface â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const fixture = JSON.parse(readFileSync(join(root, 'src/bot/brain/__fixtures__/minecraftSystemBlocks.json'), 'utf8'));
 const GAME_BLOCKS: string[] = fixture.base.blocks.map((b: string, i: number) =>
   i === 1 ? renderPersona({ name: 'Sui', expanded: SUI_TEXT }) : b,
@@ -111,7 +111,7 @@ const SNAP_WOODS = `snapshot: pos: 64,70,-12
 biome: forest  surroundings: outside  time: day (1200)
 hp: 20/20  food: 18/20  xp: lvl 0
 holding: oak_log
-inventory (2/36 slots): oak_log×3 dirt×1
+inventory (2/36 slots): oak_logÃ—3 dirtÃ—1
 terrain at feet: 20 grass_block, 6 oak_leaves
 nearby blocks:
   #1 oak_log x12 @62,71,-14
@@ -126,7 +126,7 @@ biome: plains  surroundings: outside  time: day (3000)
 hp: 20/20  food: 20/20  xp: lvl 0
 holding: wooden_pickaxe
 in_flight: dig() started=6.0s ago
-inventory (3/36 slots): oak_log×6 dirt×4 wooden_pickaxe×1
+inventory (3/36 slots): oak_logÃ—6 dirtÃ—4 wooden_pickaxeÃ—1
 terrain at feet: 25 grass_block, 8 short_grass
 nearby blocks:
   #1 oak_log x8 @118,65,28
@@ -140,7 +140,7 @@ const SNAP_CABIN = `snapshot: pos: 12,70,-4
 biome: plains  surroundings: outside  time: day (9200)
 hp: 20/20  food: 18/20  xp: lvl 3
 holding: oak_planks
-inventory (5/36 slots): oak_planks×22 oak_log×6 stone_pickaxe×1 cobblestone×31 torch×4
+inventory (5/36 slots): oak_planksÃ—22 oak_logÃ—6 stone_pickaxeÃ—1 cobblestoneÃ—31 torchÃ—4
 terrain at feet: 20 grass_block, 6 dirt
 nearby blocks:
   #1 oak_planks x58 @10,70,-6
@@ -154,7 +154,7 @@ const SNAP_LOWHP = `snapshot: pos: -2,94,14
 biome: plains  surroundings: outside  time: night (18414)
 hp: 4/20  food: 15/20  xp: lvl 0
 holding: dirt
-inventory (2/36 slots): dirt×1 white_banner×1
+inventory (2/36 slots): dirtÃ—1 white_bannerÃ—1
 terrain at feet: 13 grass_block, 11 dirt
 nearby blocks:
   #1 grass_block x183 @-2,94,14
@@ -168,7 +168,7 @@ const SNAP_ATTACKED = `snapshot: pos: -3,88,22
 biome: plains  surroundings: outside  time: night (17134)
 hp: 12/20  food: 16/20  xp: lvl 0
 holding: stone_sword
-inventory (3/36 slots): dirt×4 stone_sword×1 white_banner×1
+inventory (3/36 slots): dirtÃ—4 stone_swordÃ—1 white_bannerÃ—1
 terrain at feet: 16 stone, 8 grass_block, 6 dirt
 nearby blocks:
   #1 grass_block x369 @-3,88,21
@@ -186,12 +186,12 @@ function playerChat(text: string) {
   const eventText = `Event: player_chat${eventAddendum('player_chat', { username: 'SSk1tz', text })}${NUDGES.playerInterruptHint}`;
   const playerMessageText =
     `the player just spoke to you. respond to THIS, not to the scene around you:\n"${text}"\n` +
-    'Reply with the say() tool — a direct message never gets silence, even if your answer is a refusal or a single word. ' +
-    'Your text output is a private scratchpad the player can NEVER see — a reply that exists only in your text is silence to them; only say() reaches them.';
+    'Reply with the say() tool â€” a direct message never gets silence, even if your answer is a refusal or a single word. ' +
+    'Your text output is a private scratchpad the player can NEVER see â€” a reply that exists only in your text is silence to them; only say() reaches them.';
   return { eventText, playerMessageText };
 }
 
-const FIRST_CONTACT = `Event: idle\nData: {"reason":"just_connected_first_spawn"}${eventAddendum('sei:idle', {})}\n\nFIRST CONTACT: you just spawned into your friend's world — this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast — whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing.`;
+const FIRST_CONTACT = `Event: idle\nData: {"reason":"just_connected_first_spawn"}${eventAddendum('sei:idle', {})}\n\nFIRST CONTACT: you just spawned into your friend's world â€” this is the very first thing they will see from you this session. Before anything else, open with exactly ONE short in-character greeting via the say() tool (a hello, a tease, a boast â€” whatever fits your voice). Do NOT stay silent on this first tick and do NOT narrate the scene or your inventory; just greet them like you're glad (or smug) to be back, then you may start doing your own thing.`;
 
 type Expect = { mustSay?: boolean; anyOf?: string[]; noneOf?: string[] };
 type GameScene = {
@@ -230,7 +230,7 @@ const SCENES: Record<string, GameScene | ChatScene> = {
     expect: { mustSay: true }, note: '4 hp, "u good?": honest in-voice reply',
   },
   G_ATTACK: {
-    kind: 'game', heartbeat: '', memory: '', snapshot: SNAP_ATTACKED, eventText: 'Interrupted — zombie hit you. Respond appropriately.',
+    kind: 'game', heartbeat: '', memory: '', snapshot: SNAP_ATTACKED, eventText: 'Interrupted â€” zombie hit you. Respond appropriately.',
     expect: { anyOf: ['attackEntity'] }, note: 'zombie hits her: fight back',
   },
   T_CHAT: {
@@ -281,7 +281,7 @@ const SCENES: Record<string, GameScene | ChatScene> = {
   },
 };
 
-// ── calls ───────────────────────────────────────────────────────────────────
+// â”€â”€ calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 type Block = { type: string; text?: string; name?: string; input?: Record<string, unknown>; thinking?: string };
 type Result = {
   content: Block[];
@@ -378,7 +378,7 @@ async function chatCall(arm: string, s: ChatScene): Promise<Result> {
   );
 }
 
-// ── grading ─────────────────────────────────────────────────────────────────
+// â”€â”€ grading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function grade(s: GameScene | ChatScene, r: Result) {
   const tools = r.content.filter((b) => b.type === 'tool_use');
   const says = tools.filter((t) => t.name === 'say').map((t) => String(t.input?.text ?? ''));
@@ -392,7 +392,7 @@ function grade(s: GameScene | ChatScene, r: Result) {
   if (r.stop === 'refusal') issues.push('refusal');
   if (s.kind === 'game') {
     if (s.expect.mustSay && !says.length) issues.push(text ? 'LEAK(text-no-say)' : 'silent');
-    if (says.length > 1) issues.push(`say×${says.length}`);
+    if (says.length > 1) issues.push(`sayÃ—${says.length}`);
   } else if (!text && !tools.some((t) => t.name === 'end_call' && t.input?.farewell)) {
     issues.push('empty-reply');
   }
@@ -407,7 +407,7 @@ async function main() {
   for (const k of ARM_KEYS) stats[k] = { n: 0, pass: 0, ttft: [], total: [], say: [], inTok: [], outTok: [], cost: [], steady: [], issues: {} };
   const scenes = Object.entries(SCENES).filter(([id]) => !SCENE || id === SCENE);
   for (const [id, s] of scenes) {
-    console.log(`\n== ${id} — ${s.note}`);
+    console.log(`\n== ${id} â€” ${s.note}`);
     for (let r = 0; r < REPS; r++) {
       // Interleave arms inside each rep so time-of-day load hits all arms alike.
       for (const arm of ARM_KEYS) {
@@ -434,7 +434,7 @@ async function main() {
         st.outTok.push(res.usage.output_tokens);
         st.cost.push(cost(model, res.usage));
         st.steady.push(steadyCost(model, res.usage));
-        const speech = s.kind === 'game' ? (g.says.length ? g.says.map((x) => `“${x}”`).join(' ') : '(no say)') : g.text ? `“${g.text}”` : '(no text)';
+        const speech = s.kind === 'game' ? (g.says.length ? g.says.map((x) => `â€œ${x}â€`).join(' ') : '(no say)') : g.text ? `â€œ${g.text}â€` : '(no text)';
         const others = g.tools.filter((t) => t.name !== 'say').map((t) => `${t.name}(${JSON.stringify(t.input)})`).join(' ');
         console.log(
           `  [${arm}] #${r + 1} ${g.issues.length ? 'FAIL ' + g.issues.join(',') : 'ok'}  ttft=${res.ttftMs ?? '-'}ms total=${res.totalMs}ms in=${promptTok} out=${res.usage.output_tokens} think=${g.thinking} $${cost(model, res.usage).toFixed(5)}`,
@@ -456,9 +456,13 @@ async function main() {
     );
   }
   const spent = ARM_KEYS.reduce((acc, k) => acc + stats[k].cost.reduce((x, y) => x + y, 0), 0);
-  console.log(`\ntotal spend ≈ $${spent.toFixed(3)}`);
+  console.log(`\ntotal spend â‰ˆ $${spent.toFixed(3)}`);
 }
 main().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+
+
+

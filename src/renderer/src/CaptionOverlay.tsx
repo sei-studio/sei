@@ -1,15 +1,15 @@
-/**
- * CaptionOverlay (260806) — root component of the caption overlay window
+﻿/**
+ * CaptionOverlay (260806) â€” root component of the caption overlay window
  * (main/captionOverlay.ts), mounted when the renderer bundle loads with
  * `?captions=1` (see main.tsx).
  *
  * White companion captions over a darkened rounded box, fed by the same
  * `voice:overlay-state` pushes as the avatar overlay (lastSpoken /
  * lastSpokenId). The font size is FIXED: a line that does not fit the box is
- * broken into chunks (captionChunks.ts) and paged at reading speed — a bigger
+ * broken into chunks (captionChunks.ts) and paged at reading speed â€” a bigger
  * font or a smaller box just pages more often.
  *
- * Interaction: NONE in view mode — the window is fully click-through (main
+ * Interaction: NONE in view mode â€” the window is fully click-through (main
  * never lifts ignoreMouseEvents), so the cursor works on whatever is under
  * the captions. Edit mode (relayed from the avatar overlay's pencil over
  * avatar:caption-edit-state) makes the window interactive: corner handles
@@ -26,7 +26,7 @@ import styles from './CaptionOverlay.module.css';
 type Corner = 'tl' | 'tr' | 'bl' | 'br';
 const OPPOSITE: Record<Corner, Corner> = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
 
-/** Window edge → box inset and box padding — MUST match the CSS. */
+/** Window edge â†’ box inset and box padding â€” MUST match the CSS. */
 const BOX_INSET = 8;
 const BOX_PAD_X = 14;
 const BOX_PAD_Y = 10;
@@ -35,7 +35,7 @@ const BOX_PAD_Y = 10;
 const UNITS_PER_SEC = 16;
 const MIN_CHUNK_MS = 1600;
 /** How long the last shown chunk lingers after the speaker goes quiet.
- * Short (260806): the caption must end WITH the speech — a long linger read
+ * Short (260806): the caption must end WITH the speech â€” a long linger read
  * as the caption "continuing the response" after the voice had already moved
  * on (or been superseded by a newer turn). A new line becoming audible
  * replaces the text immediately either way. */
@@ -63,7 +63,7 @@ export function CaptionOverlay(): React.ReactElement | null {
   useEffect(() => {
     const offState = sei.onVoiceOverlayState?.((s) => setState(s));
     const offEdit = sei.onAvatarCaptionEditState?.((on) => setEditing(on));
-    // Pull the seeds — the reveal push can land before these subscriptions
+    // Pull the seeds â€” the reveal push can land before these subscriptions
     // exist (same race as the avatar overlay's).
     void sei
       .voiceOverlayGetState?.()
@@ -87,7 +87,7 @@ export function CaptionOverlay(): React.ReactElement | null {
     };
   }, []);
 
-  // ── Chunking + paging ───────────────────────────────────────────────────
+  // â”€â”€ Chunking + paging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const text = state?.lastSpoken ?? '';
   const speakerSpeaking =
     !!state?.lastSpokenId &&
@@ -112,7 +112,7 @@ export function CaptionOverlay(): React.ReactElement | null {
     if (chunkIdx >= chunks.length - 1) return undefined;
     // Page only while the voice is actually audible (260806): once the clip
     // has ended (or was interrupted), the remaining chunks describe speech
-    // that is over — advancing through them made the caption trail the audio
+    // that is over â€” advancing through them made the caption trail the audio
     // by whole sentences. The shown chunk freezes and the linger below ends it.
     if (!speakerSpeaking) return undefined;
     const ms = Math.max(MIN_CHUNK_MS, (visualUnits(chunks[chunkIdx] ?? '') / UNITS_PER_SEC) * 1000);
@@ -136,7 +136,7 @@ export function CaptionOverlay(): React.ReactElement | null {
     return () => clearTimeout(timer);
   }, [chunks, chunkIdx, speakerSpeaking]);
 
-  // ── Edit-mode geometry (streams mirror the avatar overlay's) ────────────
+  // â”€â”€ Edit-mode geometry (streams mirror the avatar overlay's) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const beginResize = useCallback(
     (e: React.PointerEvent<HTMLDivElement>, corner: Corner): void => {
       e.preventDefault();
@@ -259,3 +259,7 @@ export function CaptionOverlay(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

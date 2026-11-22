@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261010: Ollama's default window is 4096 tokens on GPUs under 24 GiB and it
  * silently drops the FRONT of a longer prompt (the system prompt). Every
  * request now carries a num_ctx sized to the prompt.
@@ -30,7 +30,7 @@ describe('estimateOllamaPromptTokens', () => {
   });
 
   it('counts CJK at a token per character', () => {
-    const est = estimateOllamaPromptTokens({ messages: [{ role: 'user', content: '你好'.repeat(500) }] });
+    const est = estimateOllamaPromptTokens({ messages: [{ role: 'user', content: 'ä½ å¥½'.repeat(500) }] });
     expect(est).toBeGreaterThanOrEqual(1000);
   });
 
@@ -108,3 +108,7 @@ describe('loadedContextLength', () => {
     expect(await loadedContextLength('http://h', 'llama3.1', fetchImpl)).toBeNull();
   });
 });
+
+
+
+

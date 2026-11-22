@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Account switch ends every live per-account session in MAIN (260926).
  *
  * switchScopeForAuth used to stop only the game bots, so a chess game, a Draw!
@@ -281,3 +281,7 @@ describe('switchScopeForAuth ends the outgoing account\'s sessions', () => {
     expect(sent).toEqual([]);
   });
 });
+
+
+
+

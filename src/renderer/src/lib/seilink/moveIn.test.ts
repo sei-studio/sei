@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { SEILINK_HOST_OFF } from '@shared/seilinkHost';
 import { moveInFailed, needsMoveInSheet } from './moveIn';
 
@@ -23,3 +23,7 @@ describe('seilink move-in (M4)', () => {
     expect(moveInFailed({ ...SEILINK_HOST_OFF, state: 'running', characterId: 'a' })).toBe(false);
   });
 });
+
+
+
+

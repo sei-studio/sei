@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import {
   flattenSystemBlocks,
   anthropicToOllamaMessages,
@@ -112,7 +112,7 @@ describe('Gemini mappers', () => {
     }])
   })
 
-  it('maps assistant tool_use → functionCall and user tool_result → functionResponse', () => {
+  it('maps assistant tool_use â†’ functionCall and user tool_result â†’ functionResponse', () => {
     const out = anthropicToGeminiContents([
       { role: 'user', content: [{ type: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'go', input: { x: 1 } }] },
@@ -169,7 +169,7 @@ describe('Gemini mappers', () => {
   })
 })
 
-// ─── Image block translation (VIS-02) ──────────────────────────────────
+// â”€â”€â”€ Image block translation (VIS-02) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The orchestrator appends a provider-neutral image block on a FRESH user
 // turn after an explicit `visualize`:
 //   { type:'image', source:{ type:'base64', media_type:'image/jpeg', data:<b64> } }
@@ -235,7 +235,7 @@ describe('image block translation (VIS-02)', () => {
       ])
       const toolMsg = out.find(m => m.role === 'tool')
       expect(toolMsg).toBeDefined()
-      // tool message content is a plain string — no image part anywhere on it.
+      // tool message content is a plain string â€” no image part anywhere on it.
       expect(typeof toolMsg.content).toBe('string')
       expect(JSON.stringify(toolMsg)).not.toContain('image_url')
       // The image lives ONLY on the user message.
@@ -310,3 +310,7 @@ describe('image block translation (VIS-02)', () => {
     })
   })
 })
+
+
+
+

@@ -1,4 +1,4 @@
-// Minecraft system-prompt byte pin (game-adapters M0, 260908).
+﻿// Minecraft system-prompt byte pin (game-adapters M0, 260908).
 //
 // The adapter-contract-v2 refactor moves every Minecraft-specific string the
 // brain used to own (surface baseline, chat cap, background/progress/vision
@@ -97,3 +97,7 @@ describe('facepack dev flag', () => {
     expect(faces.tools.map(strip)).toEqual(base.tools)
   })
 })
+
+
+
+

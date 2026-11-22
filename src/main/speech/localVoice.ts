@@ -1,16 +1,16 @@
-/**
- * ElevenLabs voiceId → local speech voice mapping (260816, china-compat W3+W4).
+﻿/**
+ * ElevenLabs voiceId â†’ local speech voice mapping (260816, china-compat W3+W4).
  *
- * Every character KEEPS `metadata.voiceId` as an ElevenLabs pool id — it is
+ * Every character KEEPS `metadata.voiceId` as an ElevenLabs pool id â€” it is
  * the persisted, cloud-synced identity of the voice. Local TTS derives from it
  * only what a local voice can express: GENDER. The pool metadata (soulcaster
  * VOICES) carries gender for current voices; the 260707-curated legacy ids get
  * a static gender table here (transcribed from the section comments in
- * shared/poolVoiceIds.ts LEGACY_VOICE_IDS — that set is closed history, so a
+ * shared/poolVoiceIds.ts LEGACY_VOICE_IDS â€” that set is closed history, so a
  * table cannot drift).
  *
- * (gender, conversation language) → one of four local voice slots, served by
- * TWO packs — each pack carries both genders via speaker ids:
+ * (gender, conversation language) â†’ one of four local voice slots, served by
+ * TWO packs â€” each pack carries both genders via speaker ids:
  *   en-f / en-m   vits-piper-en_US-libritts_r-medium (904 speakers)
  *   zh-f / zh-m   vits-icefall-zh-aishell3 (174 speakers)
  *
@@ -18,20 +18,20 @@
  * by autocorrelation over voiced 40ms windows of the same synthesized line
  * per speaker (scratchpad pitch-sweep; 16-speaker sweep for en, 17 for zh).
  *   en-f  sid 0    (~185 Hz, female register; also the speaker the Piper
- *                  authors demo libritts_r with — sid 100 at ~227 Hz is the
+ *                  authors demo libritts_r with â€” sid 100 at ~227 Hz is the
  *                  brighter alternate if 0 reads too low by ear)
  *   en-m  sid 50   (~105 Hz, clean male register; alternates 3/90/200 all
- *                  ~109-113 Hz). NOTE valid sid range is 0..903 — the model
+ *                  ~109-113 Hz). NOTE valid sid range is 0..903 â€” the model
  *                  clamps out-of-range sids to 0 with only a stderr warning.
  *   zh-f  sid 66   (~250 Hz; also the sherpa-onnx docs' demo speaker)
- *   zh-m  sid 40   (AISHELL3_MALE_REGISTER_SID, ~136 Hz — the lowest-pitch
+ *   zh-m  sid 40   (AISHELL3_MALE_REGISTER_SID, ~136 Hz â€” the lowest-pitch
  *                  aishell3 speaker in the sweep; sids 10 and 110 tie at
  *                  ~136-138 Hz). aishell3 is an all-female corpus, so this is
  *                  a male REGISTER rather than a male voice; a genuinely
  *                  deeper zh male needs a future dedicated pack. The one we
  *                  had (chaowen, ~162 Hz) was removed 260908 over licensing:
- *                  BZNSYP non-commercial weights lineage — see packs.ts.
- * To change a speaker: edit LOCAL_VOICE_SPEC below (sid), nothing else — the
+ *                  BZNSYP non-commercial weights lineage â€” see packs.ts.
+ * To change a speaker: edit LOCAL_VOICE_SPEC below (sid), nothing else â€” the
  * pack stays the same, no re-download.
  *
  * Only en and zh have local voices. Any other conversation language falls back
@@ -58,7 +58,7 @@ export interface LocalVoiceSpec {
 
 /** The deepest aishell3 register measured in the 260816 sweep (sid 40,
  * ~136 Hz median F0; sids 10 and 110 tie at ~136-138 Hz). This IS the zh male
- * voice since 260908 — the dedicated chaowen pack was removed over its
+ * voice since 260908 â€” the dedicated chaowen pack was removed over its
  * non-commercial weights lineage (see packs.ts). */
 export const AISHELL3_MALE_REGISTER_SID = 40;
 
@@ -131,7 +131,7 @@ const POOL_GENDER: Map<string, string> = new Map(
 
 /**
  * The gender the local voice should take for an ElevenLabs voice id.
- * 'neutral' pool voices (and unknown ids — a voice we cannot classify) map to
+ * 'neutral' pool voices (and unknown ids â€” a voice we cannot classify) map to
  * 'female': an arbitrary but stable default, chosen over guessing from the
  * persona because a wrong-but-consistent voice beats one that flips.
  */
@@ -156,7 +156,7 @@ export function localVoiceFor(gender: VoiceGender, language: string): LocalVoice
   return gender === 'male' ? 'en-m' : 'en-f';
 }
 
-/** Full resolution: ElevenLabs voiceId + language → local voice slot. */
+/** Full resolution: ElevenLabs voiceId + language â†’ local voice slot. */
 export function resolveLocalVoice(
   voiceId: string | undefined | null,
   language: string,
@@ -213,3 +213,7 @@ export function pickLocalVoice(
   }
   return null;
 }
+
+
+
+

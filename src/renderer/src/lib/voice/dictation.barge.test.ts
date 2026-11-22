@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Barge-in over game audio (261030). The 0.6.10 Windows report ("It doesnt let
  * me interrupt it") came from a backseat share on Roblox: game sound on the
  * speakers reaches the mic untouched by AEC, the adaptive noise floor climbs to
@@ -310,3 +310,7 @@ describe('stage two after a duck', () => {
     expect(r.aborts).toEqual(['no_word']);
   });
 });
+
+
+
+

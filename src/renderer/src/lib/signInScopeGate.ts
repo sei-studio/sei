@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 (login lock on restart): when the onboarding sign-in panel may move
  * on. A sign-in is done for the panel once main is signed in as that account
  * AND the active profile is that account's: the scene then reads the
@@ -109,3 +109,7 @@ export function createSignInScopeGate(deps: {
     },
   };
 }
+
+
+
+

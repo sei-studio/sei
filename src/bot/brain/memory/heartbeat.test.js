@@ -1,4 +1,4 @@
-// src/bot/brain/memory/heartbeat.test.js
+﻿// src/bot/brain/memory/heartbeat.test.js
 //
 // 260615: HEARTBEAT.md carries active goals/standing orders across loops so a
 // multi-step goal survives a loop ending after one step. Mirrors MEMORY.md's
@@ -157,4 +157,8 @@ describe('heartbeat player tasks', () => {
     expect(await readHeartbeatForSeed(file, 2048)).toBe('')
   })
 })
+
+
+
+
 

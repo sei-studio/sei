@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ShareWaiting (261004): the call's share area while the auto-share watch
  * waits for the game's window (useBackseatStore.watch).
  *
@@ -90,3 +90,7 @@ export function ShareWaiting({
     </div>
   );
 }
+
+
+
+

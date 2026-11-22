@@ -1,9 +1,9 @@
-/**
- * sttArbiter (260724) — the cloud/local race policy behind call dictation.
+﻿/**
+ * sttArbiter (260724) â€” the cloud/local race policy behind call dictation.
  *
  * Pins: cloud-first when cloud is faster; local + bounded grace when local
  * finishes first; cloud null/reject always degrades to local; cloud '' is
- * trusted (Scribe judged non-speech); no cloud configured → pure local
+ * trusted (Scribe judged non-speech); no cloud configured â†’ pure local
  * passthrough.
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -16,12 +16,12 @@ function after<T>(ms: number, value: T): Promise<T> {
 }
 
 describe('createSttArbiter', () => {
-  it('no cloud configured → local result, untouched', async () => {
+  it('no cloud configured â†’ local result, untouched', async () => {
     const t = createSttArbiter({ local: async () => 'local words', cloud: null, graceMs: 50 });
     await expect(t(AUDIO)).resolves.toBe('local words');
   });
 
-  it('cloud faster than local → cloud wins', async () => {
+  it('cloud faster than local â†’ cloud wins', async () => {
     const t = createSttArbiter({
       local: () => after(80, 'local words'),
       cloud: () => after(10, 'cloud words'),
@@ -30,7 +30,7 @@ describe('createSttArbiter', () => {
     await expect(t(AUDIO)).resolves.toBe('cloud words');
   });
 
-  it('local first, cloud lands inside the grace window → cloud wins', async () => {
+  it('local first, cloud lands inside the grace window â†’ cloud wins', async () => {
     const t = createSttArbiter({
       local: () => after(10, 'local words'),
       cloud: () => after(40, 'cloud words'),
@@ -39,7 +39,7 @@ describe('createSttArbiter', () => {
     await expect(t(AUDIO)).resolves.toBe('cloud words');
   });
 
-  it('local first, cloud misses the grace window → local, without waiting for cloud', async () => {
+  it('local first, cloud misses the grace window â†’ local, without waiting for cloud', async () => {
     const t = createSttArbiter({
       local: () => after(10, 'local words'),
       cloud: () => after(800, 'too late'),
@@ -47,11 +47,11 @@ describe('createSttArbiter', () => {
     });
     const started = Date.now();
     await expect(t(AUDIO)).resolves.toBe('local words');
-    // Well before the 800ms cloud pass — grace bounded the wait.
+    // Well before the 800ms cloud pass â€” grace bounded the wait.
     expect(Date.now() - started).toBeLessThan(500);
   });
 
-  it('cloud unavailable (null) → local, immediately once local is done', async () => {
+  it('cloud unavailable (null) â†’ local, immediately once local is done', async () => {
     const t = createSttArbiter({
       local: () => after(20, 'local words'),
       cloud: async () => null,
@@ -62,7 +62,7 @@ describe('createSttArbiter', () => {
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
-  it('cloud rejection is contained → local', async () => {
+  it('cloud rejection is contained â†’ local', async () => {
     const t = createSttArbiter({
       local: () => after(10, 'local words'),
       cloud: () => Promise.reject(new Error('transport bug')),
@@ -121,7 +121,7 @@ describe('createSttArbiter', () => {
   });
 });
 
-describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)", () => {
+describe("createSttArbiter cloud-only mode (local: null â€” the 'none' policy)", () => {
   it('cloud result is delivered as-is, no failure reported', async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({
@@ -135,7 +135,7 @@ describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)",
     expect(onCloudFailure).not.toHaveBeenCalled();
   });
 
-  it("cloud '' stays trusted non-speech — dropped upstream, NOT a failure", async () => {
+  it("cloud '' stays trusted non-speech â€” dropped upstream, NOT a failure", async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({
       local: null,
@@ -148,7 +148,7 @@ describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)",
     expect(onCloudFailure).not.toHaveBeenCalled();
   });
 
-  it("cloud null (unavailable) → '' and onCloudFailure fires", async () => {
+  it("cloud null (unavailable) â†’ '' and onCloudFailure fires", async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({
       local: null,
@@ -161,7 +161,7 @@ describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)",
     expect(onCloudFailure).toHaveBeenCalledTimes(1);
   });
 
-  it("cloud rejection is contained → '' and onCloudFailure fires", async () => {
+  it("cloud rejection is contained â†’ '' and onCloudFailure fires", async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({
       local: null,
@@ -189,14 +189,14 @@ describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)",
     expect(onCloudFailure).toHaveBeenCalledTimes(1);
   });
 
-  it("no cloud configured either → immediate '' + failure (nothing can transcribe)", async () => {
+  it("no cloud configured either â†’ immediate '' + failure (nothing can transcribe)", async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({ local: null, cloud: null, graceMs: 50, onCloudFailure });
     await expect(t(AUDIO)).resolves.toBe('');
     expect(onCloudFailure).toHaveBeenCalledTimes(1);
   });
 
-  it('failure fires per failed utterance (once-per-call gating is the caller’s)', async () => {
+  it('failure fires per failed utterance (once-per-call gating is the callerâ€™s)', async () => {
     const onCloudFailure = vi.fn();
     const t = createSttArbiter({
       local: null,
@@ -210,3 +210,7 @@ describe("createSttArbiter cloud-only mode (local: null — the 'none' policy)",
     expect(onCloudFailure).toHaveBeenCalledTimes(2);
   });
 });
+
+
+
+

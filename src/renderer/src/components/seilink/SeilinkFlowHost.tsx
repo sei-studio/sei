@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeilinkFlowHost (261105, T337): the one place the SeiLink surfaces render.
  *
  * Mounted once by App.tsx. It shows whatever useSeilinkStore holds:
@@ -84,3 +84,7 @@ export function SeilinkFlowHost(): React.ReactElement | null {
     </Suspense>
   );
 }
+
+
+
+

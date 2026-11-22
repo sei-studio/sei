@@ -1,5 +1,5 @@
-/**
- * Caption overlay window (260806) — the always-on-top captions box the avatar
+﻿/**
+ * Caption overlay window (260806) â€” the always-on-top captions box the avatar
  * overlay's captions button toggles while a call/backseat share is live.
  *
  * A second frameless, transparent, content-protected BrowserWindow (the same
@@ -8,7 +8,7 @@
  * darkened rounded box. It receives the SAME CallOverlayState pushes as the
  * avatar overlay (callOverlay.ts forwards them here).
  *
- * Interaction: the window is click-through ALWAYS outside edit mode — no
+ * Interaction: the window is click-through ALWAYS outside edit mode â€” no
  * hover chrome, no interactive flip, the cursor works on whatever is
  * underneath the captions. Edit mode (entered from the avatar overlay's
  * pencil, relayed over avatar:overlay-editing) makes it interactive: corner
@@ -51,7 +51,7 @@ let storedBox: { x?: number; y?: number; width: number; height: number } = {
 };
 let hydrated = false;
 let hydrating: Promise<void> | null = null;
-/** UserConfig.avatar_in_captures — see setCaptionCaptureVisible. */
+/** UserConfig.avatar_in_captures â€” see setCaptionCaptureVisible. */
 let captureVisible = false;
 
 export function initCaptionOverlay(config: OverlayConfig): void {
@@ -146,7 +146,7 @@ function desiredBounds(): Electron.Rectangle {
 }
 
 function applyMousePolicy(w: BrowserWindow): void {
-  // Click-through outside edit mode — the cursor interacts with whatever is
+  // Click-through outside edit mode â€” the cursor interacts with whatever is
   // under the captions. No {forward} either: there is no hover chrome.
   if (editing) w.setIgnoreMouseEvents(false);
   else w.setIgnoreMouseEvents(true);
@@ -206,7 +206,7 @@ function ensureWindow(): BrowserWindow | null {
     skipTransformProcessType: true,
   });
   applyMousePolicy(w);
-  // Like the avatar tiles: for the player's eyes only, never in captures —
+  // Like the avatar tiles: for the player's eyes only, never in captures â€”
   // unless the player has opted into recording them (setCaptionCaptureVisible).
   w.setContentProtection(!captureVisible);
 
@@ -218,7 +218,7 @@ function ensureWindow(): BrowserWindow | null {
   }
 
   // Reveal on whichever of ready-to-show / did-finish-load lands first, with a
-  // backstop — transparent windows are known to skip ready-to-show
+  // backstop â€” transparent windows are known to skip ready-to-show
   // (electron#29036; same guard as callOverlay.ts).
   let revealed = false;
   const reveal = (): void => {
@@ -276,7 +276,7 @@ export async function toggleCaptionOverlay(): Promise<boolean> {
 }
 
 /** The avatar overlay's edit mode, relayed: interactivity + edit chrome, and
- * (260806) a reconcile — edit mode shows the window with its placeholder even
+ * (260806) a reconcile â€” edit mode shows the window with its placeholder even
  * off-call, so leaving/entering it opens or closes the box as needed. */
 export function setCaptionEditing(on: boolean): void {
   editing = on;
@@ -361,3 +361,7 @@ export function closeCaptionOverlay(): void {
   win = null;
   moveStartPos = null;
 }
+
+
+
+

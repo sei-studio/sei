@@ -1,9 +1,9 @@
-# Backseat (260728, rebuilt 260801-260804)
+﻿# Backseat (260728, rebuilt 260801-260804)
 
 The companion watches a screen the player shares and talks about it live.
 **Started from the CALL CONTROLS**, not from the games picker: sharing a screen
 is not a game, it is what you do on a call, so it works the way Discord's does
-(share button → source picker → the preview takes over the call window and the
+(share button â†’ source picker â†’ the preview takes over the call window and the
 avatars shrink to a strip). It requires a call and ends with one. Still
 **mutually exclusive with a Minecraft summon** via the shared
 `lib/gameLaunch.ts` gate, because a companion cannot be watching your screen
@@ -37,13 +37,13 @@ The design and its measurements are committed at
   that timing made the companion reliably ONE REEL BEHIND: the swipe raised the
   tick, the grid at that instant was five cells of the old reel and a sliver of
   the new, and she reacted to the clip the player had just left, every time.
-  So a colour jolt or a share-label change no longer raises a tick — it arms
+  So a colour jolt or a share-label change no longer raises a tick â€” it arms
   the SWITCH DWELL (`SWITCH_DWELL_MS` 6 s = the grid span, `switchDwell.ts`,
   pure + tested): the wake fires only once the new content has held with no
   further change, every further change restarts the clock, and a fast scroll
   stays silent until the player settles. The tick goes up as `jolt:'switch'`
   with `sinceSwitchS`, and the note claims the content for NOW ("everything you
-  can see is the new thing... do not remark on the switch itself" — pinned in
+  can see is the new thing... do not remark on the switch itself" â€” pinned in
   `backseatPrompts.test.ts`). Two supporting changes: the share-label poll
   dropped 5 s -> 2.5 s (the dwell's promise is only as accurate as the poll),
   and a dwell that expires inside `MIN_SPEAK_GAP_MS` is DEFERRED past the gap
@@ -58,7 +58,7 @@ The design and its measurements are committed at
   turn's parts now push with `speech.turn` (one UUID per turn, plus the
   prev/more prosody context the streamed chat reply already had), and the audio
   queue drops a same-speaker QUEUED clip whose tag differs from the newly
-  enqueued one — the clip at the playhead always finishes, which is the
+  enqueued one â€” the clip at the playhead always finishes, which is the
   "current sentence ends" boundary since parts are sentence-sized. Untagged
   lines (greetings, chess, chat) are never dropped; `turn` is stripped before
   the TTS request. Backseat is the only setter today.
@@ -72,41 +72,41 @@ The design and its measurements are committed at
   reels session the companion decided caption-overlay clips were the player
   "editing captions in premiere", filed that via remember() on nearly EVERY
   jolt turn (30 entries in 14 minutes), and each next turn read its own guess
-  back as established fact — three explicit corrections from the player could
+  back as established fact â€” three explicit corrections from the player could
   not break the loop, because twenty memory lines outweigh one history line.
   Side effect: every write churned the memory block inside the cached prefix,
   so cacheRead sat at 0 all session. Two-part fix: `honorRemember` throttles
-  SCREEN-driven remembers to one per `REMEMBER_COOLDOWN_MS` (180s) — a
+  SCREEN-driven remembers to one per `REMEMBER_COOLDOWN_MS` (180s) â€” a
   remember on a USER tick is always honored, since dropping those is how a
-  correction gets forgotten — and the contract gained WATCHING IS NOT MAKING
+  correction gets forgotten â€” and the contract gained WATCHING IS NOT MAKING
   (finished-video shapes like word-by-word captions and repeated takes are not
   evidence of editing; the player's own account OUTRANKS the screen
   permanently; memory saves what they SAID, never a screen reading). Pinned in
   `backseatPrompts.test.ts`.
 - **Register loops on a static screen (260807).** The email session: six turns
   against one unchanging inbox frame and a monosyllabic player, five of six
-  lines opened "wait / you're actually..." — the same take re-litigated as a
+  lines opened "wait / you're actually..." â€” the same take re-litigated as a
   fresh discovery each turn. Replayed offline (harness + all measured arms in
   `.backseat-sim/email-replay/`, 16 runs x 6 turns per arm): the persona's own
   "actually"/"wait" sample lines are NOT the cause (stripping them all moved
   nothing), and quoting the offending phrase inside a contract ban FEEDS it
-  (+16 pts) — name the shape in prose, never quote the line, which sharpens
+  (+16 pts) â€” name the shape in prose, never quote the line, which sharpens
   260806's lesson. REPEATING YOURSELF was rewritten (same length) to ban
   shape-level repetition: same opener as your last line, pet words your recent
   lines already used, re-presenting known facts as discoveries, re-opening
-  answered questions. Measured across 156 lines/arm: "actually" 47%→37%,
-  loop sessions 54%→38%. That is the prompt-space ceiling — the residue is
+  answered questions. Measured across 156 lines/arm: "actually" 47%â†’37%,
+  loop sessions 54%â†’38%. That is the prompt-space ceiling â€” the residue is
   Haiku's register prior under speak-every-turn + opinion-not-narration on a
   still screen, and the reliable next step if it still grates live is
   mechanical, stripDashes-style (drop a reappraisal opener when the previous
   line used one).
 - **The contract carries NO example dialogue (260806, user direction).** The
   260803 BAD/GOOD pairs fixed the shapes they named (narration 0/10 -> 10/10
-  asking) but Haiku imitated the GOOD lines' register across whole sessions —
+  asking) but Haiku imitated the GOOD lines' register across whole sessions â€”
   the same stock quips ("is this a bit", "unhinged") every session. Modeled
   dialogue teaches a voice while teaching a shape, and the voice belongs to
   the persona. Bans now NAME THE SENTENCE SHAPE in prose ("you went from X to
-  Y", the report-opener quotes) — a test pins that no `BAD:`/`GOOD:` blocks
+  Y", the report-opener quotes) â€” a test pins that no `BAD:`/`GOOD:` blocks
   return. If narration measurably comes back, name the offending shape more
   precisely; do not restore example lines.
   `start` fires ONCE per session, `START_LOOK_MS` (1.8 s) after the share opens,
@@ -149,15 +149,15 @@ The design and its measurements are committed at
   the moment silence was removed.
 - **The share label replaced OCR (260804).** Every tick carries `shareLabel`:
   the shared window's CURRENT title, or on a whole-screen share the frontmost
-  window's (`src/main/backseat/shareLabel.ts`, polled every 2.5 s — was 5 s —
+  window's (`src/main/backseat/shareLabel.ts`, polled every 2.5 s â€” was 5 s â€”
   because a tab switch changes the screen under a fixed source id, and since
   260806 a label change also feeds the switch dwell). It costs one window
   enumeration and it is the model's only cheap answer to "am I watching a game
   or a film", which was the thing it kept getting wrong.
   **What it replaced was working, and was removed anyway.** 260802-260803 ran a
   full OCR pass over every other frame: a bundled Swift `VNRecognizeTextRequest`
-  helper on macOS, tesseract.js elsewhere. It was good — whole phrases at ~72 ms,
-  94/94 frames, 23 words a frame against Tesseract's 6 — and it answered the
+  helper on macOS, tesseract.js elsewhere. It was good â€” whole phrases at ~72 ms,
+  94/94 frames, 23 words a frame against Tesseract's 6 â€” and it answered the
   wrong question. A HUD full of numbers does not distinguish a game from a
   stream of that game; four words of window title do. Do not re-add OCR without
   a specific thing it is for that the title cannot carry.
@@ -168,7 +168,7 @@ The design and its measurements are committed at
   costs six cells. The test is `blockMaxDelta` over the 32x18 thumbnail already
   kept for the colour arm, so a change covering one corner still counts as
   different. This came from the companion ITSELF asking why it had been shown
-  "six identical YouTube frames" — six identical cells claim six sampled moments
+  "six identical YouTube frames" â€” six identical cells claim six sampled moments
   and carry the information of one. Because the grid is now variable-size, the
   tick carries `frameAges` and `tickNote` states them per look: the cached
   contract can no longer describe the shape.
@@ -202,7 +202,7 @@ The design and its measurements are committed at
   transcribing its own line occasionally is the accepted cost there). The helper
   exits on stdin EOF (orphan guard). Clips keep audio on macOS by regenerating a
   real track from the tap PCM via MediaStreamTrackGenerator. Source order:
-  Windows loopback → mac tap → virtual output device (`findLoopbackDevice`) →
+  Windows loopback â†’ mac tap â†’ virtual output device (`findLoopbackDevice`) â†’
   video-only, where the gain arm never fires and the colour arm still does.
 - **The jolt thresholds are RELATIVE, and per-arm (260802).** The colour arm is
   a block-max over a 4x3 split of the thumbnail (a whole-frame mean erases any
@@ -255,20 +255,20 @@ The design and its measurements are committed at
 - **remember() turns can leak the scratchpad, and the gate is mechanical
   (260807).** Chat-family surfaces have no say() split: the text output IS the
   spoken line, and that contract breaks specifically on turns that CALL
-  remember() — filing a memory puts Haiku in working mode and the text block
+  remember() â€” filing a memory puts Haiku in working mode and the text block
   slips into note register. Live (Marv, backseat): the tool input was correct
   and honored, and the SPOKEN line was "character note: sei's curious..." /
   "remember sei's into watching...". `isNoteLeak` (`src/main/chat/noteLeak.ts`,
   pure + tested, pinned on both leaked lines verbatim) drops such parts at all
   spoken choke points: backseat's part filter, persistReplies' voice path
   (callers pass `rememberCalled`), and the streaming bubble emitter (first
-  tier only — a streamed sentence can precede the turn's tool_use blocks, so
+  tier only â€” a streamed sentence can precede the turn's tool_use blocks, so
   the remember-aware tier cannot arm there). Two tiers, asymmetric: "character
   note:"/"note to self" openers drop always; "remember <third person>..."
   drops only when a remember tool_use rode the same turn, and never when the
   next word addresses the player ("remember when we...", "remember, you...").
   The REMEMBER_TOOL description also now says the memory goes in the tool
-  input ONLY — prose the model will still sometimes ignore, which is why the
+  input ONLY â€” prose the model will still sometimes ignore, which is why the
   gate exists.
 - **Attaching TOOLS suppresses speech.** Measured, n=60 per condition: 100% of
   turns produce a line with no tools, 78% with `REMEMBER_TOOL` alone, 68% with
@@ -324,7 +324,7 @@ The design and its measurements are committed at
   without anyone clearing storage by hand.
 - **UI (260803, 260804).** Entry is the share pill in `CallControls`; the picker
   is `ShareScreenModal` (a `ModalShell`, **Window / Entire screen as two tabs**
-  since 260804 — stacked sections put the screens below the fold behind however
+  since 260804 â€” stacked sections put the screens below the fold behind however
   many windows the player had open); the live view is the preview plus a demoted
   avatar strip inside `VoiceCallScreen`. There is no overlay window, no games
   tile, no text mode (there is nowhere to type) and no pause button (the share
@@ -378,7 +378,7 @@ The design and its measurements are committed at
   microphone, and the director's, which had the microphone and no grid. The
   player got a companion who could see their screen and never heard them,
   talking over one who could hear them and could not see. Nothing was broken in
-  either loop — there were two of them and neither knew. **Anything that gives a
+  either loop â€” there were two of them and neither knew. **Anything that gives a
   companion a turn has to check `useBackseatStore.sharingFor` first.** The share
   is the more informed loop, so it is always the one that wins.
 - **Barge-in is decided by a WORD, not by loudness (260804).** Two stages, with
@@ -397,9 +397,9 @@ The design and its measurements are committed at
   Sustained energy survived as a slow fallback (`BARGE_CONFIRM_MS`, 1400 ms)
   for when transcription cannot answer at all, until 261101 (word-only, see
   below): nothing but a confirmed word stops her now. `hasSpokenWord` is
-  stricter than the finished-utterance junk filter — it runs on 400 ms of audio
-  where every engine invents — and it is **scoped to Latin script for the
-  repeated-letter rule**, because 等等 is a word and rejecting it would make
+  stricter than the finished-utterance junk filter â€” it runs on 400 ms of audio
+  where every engine invents â€” and it is **scoped to Latin script for the
+  repeated-letter rule**, because ç­‰ç­‰ is a word and rejecting it would make
   barge-in silently impossible in Chinese.
   A confirmed barge also calls `backseatInterrupt`: clearing the queue only
   silences what is already synthesised, and the turn behind it would otherwise
@@ -451,7 +451,7 @@ The design and its measurements are committed at
   on a loud syllable of hers cuts her, about as often as 0.6.11 in the same
   scene, still one pass per duck. Unmeasured on real hardware.
   Cloud STT (261101): Scribe, unlike Whisper, made a word of the trigger
-  frame of her echo about half the time ("No", "You know", "你好"), which
+  frame of her echo about half the time ("No", "You know", "ä½ å¥½"), which
   cut her on speakers even with no game running. A burst pass now carries
   `SttHint.burst` through the arbiter to the voice store's cloud wrapper,
   and a burst word Scribe was unsure of (`burstWordUnsure`: its least
@@ -505,7 +505,7 @@ The design and its measurements are committed at
   the mic hears THREE voices, and two of them used to become "the player".
   Measured across two live Instagram sessions: reel dialogue was transcribed
   and dispatched as the player's own words ("Get ready with us, but Stas is
-  picking my outfit..." persisted as a user voice line — the companion's "is
+  picking my outfit..." persisted as a user voice line â€” the companion's "is
   this you on camera?" confusion was correct reasoning over counterfeit
   input), and her own TTS leaking past AEC kept confirming word-gated
   barge-ins against her. Chromium's AEC (the same self-referenced AEC3
@@ -514,8 +514,8 @@ The design and its measurements are committed at
   apps' answer is headphones. Sei's is `voice/echoGate.ts` (pure + tested):
   before a transcript is dispatched as the player or commits a barge,
   `micEchoCheck` (useVoiceStore) tests it against (1) the companion's own
-  audible lines — text only, the queue's onAudible/stop callbacks record
-  exact windows — and (2) the shared screen's audio via the capture handle's
+  audible lines â€” text only, the queue's onAudible/stop callbacks record
+  exact windows â€” and (2) the shared screen's audio via the capture handle's
   `echoProbe`: the tap's loudness contour cross-correlated over the
   speaker-path lag plus the screen transcript ring's words. The thresholds
   are calibrated, not guessed: max-over-lags Pearson on independent
@@ -523,7 +523,7 @@ The design and its measurements are committed at
   is `valid` only past 2.5 s and only CORR_STRONG (0.85) may condemn without
   matching words (music has no transcript). Everything shorter or softer goes
   'ambiguous' and waits ONE bounded screen-STT flush for the words to decide
-  — so double-talk (the player speaking OVER the reel) stays the player's,
+  â€” so double-talk (the player speaking OVER the reel) stays the player's,
   costing ~1 s of latency on exactly those utterances and nothing on the
   rest. The asymmetry is deliberate everywhere: text condemns, the envelope
   alone almost never does, and a barge echo-abort only delays a real
@@ -716,6 +716,10 @@ corpus. (2) On the Reels recording the two swipes at 00:50 and 00:53 are NOT
 separable by amplitude from the video's own motion in the same stretch (peaks
 0.187 / 0.179 against 0.176 / 0.177); the lower floor catches them but is
 buying sensitivity, not discrimination. (3) the mac audio tap is a bundled binary
-that has never been through a signed mac `dist` — verify it with `codesign` on
+that has never been through a signed mac `dist` â€” verify it with `codesign` on
 the first one. (4) `salienceGate.ts` and its `SEI_GATE_*` env knobs are parked
 unreferenced rather than deleted; either revive them or remove them.
+
+
+
+

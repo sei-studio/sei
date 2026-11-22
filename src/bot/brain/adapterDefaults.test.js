@@ -1,4 +1,4 @@
-// Game-adapters M0 (260908): the contract-v2 defaults ARE the values the
+﻿// Game-adapters M0 (260908): the contract-v2 defaults ARE the values the
 // Minecraft adapter declares, and adaptNudges() with those defaults renders the
 // exact NUDGES text. Together with systemBlocks.minecraft.test.js this is the
 // "no behavior change for Minecraft" proof for everything outside the cached
@@ -105,3 +105,7 @@ describe('adaptNudges', () => {
     expect(monitorOff).toContain('NOLOOK-STUCK')
   })
 })
+
+
+
+

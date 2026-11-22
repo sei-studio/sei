@@ -1,4 +1,4 @@
-// 261103: quality pass 38, the hand-over after a status answer (pass-37
+﻿// 261103: quality pass 38, the hand-over after a status answer (pass-37
 // compare, errands-04-B U5). The coal was gathered with no walk back; "hows
 // it going" was answered with "walking it to you" and a goTo to the player.
 // That walk-only line became the newest open ask (toPlayer), which kept the
@@ -25,14 +25,14 @@ afterEach(() => { vi.restoreAllMocks() })
 const asks = [{ line: 'grab me some coal and bring it back', items: [{ item: 'coal', n: 6 }] }]
 describe('NUDGES (pass 38)', () => {
   it('arrivedCarrying puts the hand-over first only when they asked for something since', () => {
-    const base = 'You are next to Alex now. You are carrying coal×6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, and anything they called off stays with you.'
+    const base = 'You are next to Alex now. You are carrying coalÃ—6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, and anything they called off stays with you.'
     expect(NUDGES.arrivedCarrying({ who: 'Alex', asks })).toBe(base)
     expect(NUDGES.arrivedCarrying({ who: 'Alex', asks, newer: true })).toBe(`${base} If they still want it, give it before you start anything they asked for since.`)
   })
   it('deliveryNote for a walk that answers their newer line names both outcomes', () => {
-    expect(NUDGES.deliveryNote({ who: 'Alex', asks, answered: true })).toBe('hand-over: you are walking to Alex carrying coal×6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, which walks to them first. If they called it off, keep it.')
-    expect(NUDGES.deliveryNote({ who: 'Alex', asks })).toMatch(/^hand-over: you set off toward Alex carrying coal×6/)
-    expect(NUDGES.deliveryNote({ who: null, asks, answered: true })).not.toMatch(/—/)
+    expect(NUDGES.deliveryNote({ who: 'Alex', asks, answered: true })).toBe('hand-over: you are walking to Alex carrying coalÃ—6, which you got for their line "grab me some coal and bring it back". Anything there they still want reaches them only through give, which walks to them first. If they called it off, keep it.')
+    expect(NUDGES.deliveryNote({ who: 'Alex', asks })).toMatch(/^hand-over: you set off toward Alex carrying coalÃ—6/)
+    expect(NUDGES.deliveryNote({ who: null, asks, answered: true })).not.toMatch(/â€”/)
   })
 })
 
@@ -180,14 +180,14 @@ describe('orchestrator: a status line answered with a walk to the player (errand
     await send('cool')
     const mid = lastSnapshot(provider.calls.at(-1))
     expect(mid).toContain(ANSWERED)
-    expect(mid).toContain('coal×6')
-    expect(mid).not.toContain('cobblestone×')
+    expect(mid).toContain('coalÃ—6')
+    expect(mid).not.toContain('cobblestoneÃ—')
     adapter.finish('goTo', 'reached Steve (1m away)')
     await flush()
     await drain()
     const arrival = allText(arrivalCalls(provider).at(-1))
     expect(arrival).toContain(CARRYING)
-    expect(arrival).toContain('coal×6')
+    expect(arrival).toContain('coalÃ—6')
     // The give closed the coal ask: no hand-over line after it.
     expect(lastSnapshot(provider.calls.at(-1))).not.toContain('hand-over:')
   })
@@ -208,7 +208,7 @@ describe('orchestrator: a status line answered with a walk to the player (errand
     await flush()
     await drain()
     const arrival = allText(arrivalCalls(provider).at(-1))
-    expect(arrival).toContain('coal×6')
+    expect(arrival).toContain('coalÃ—6')
     expect(arrival).toContain(FIRST)
   })
 
@@ -226,7 +226,7 @@ describe('orchestrator: a status line answered with a walk to the player (errand
     await flush()
     await drain()
     const arrival = allText(arrivalCalls(provider).at(-1))
-    expect(arrival).toContain('coal×6')
+    expect(arrival).toContain('coalÃ—6')
     expect(arrival).not.toContain(FIRST)
   })
 
@@ -263,6 +263,10 @@ describe('orchestrator: a status line answered with a walk to the player (errand
     await send('lol')
     const mid = lastSnapshot(provider.calls.at(-1))
     expect(mid).toContain('hand-over:')
-    expect(mid).not.toContain('oak_log×')
+    expect(mid).not.toContain('oak_logÃ—')
   })
 })
+
+
+
+

@@ -1,10 +1,10 @@
-/**
- * Preload — typed RendererApi bridge.
- * Sources: RESEARCH §Pattern 2, PATTERNS §src/preload/index.ts, CONTEXT D-17.
+﻿/**
+ * Preload â€” typed RendererApi bridge.
+ * Sources: RESEARCH Â§Pattern 2, PATTERNS Â§src/preload/index.ts, CONTEXT D-17.
  *
  * Exposes skin + wizard channels alongside bot / chars / config. The
  * wizardCancel binding is the IPC-crossing abort path for in-flight installs
- * — a renderer-local AbortController can't reach the child process running
+ * â€” a renderer-local AbortController can't reach the child process running
  * fabric-installer.
  */
 import { contextBridge, ipcRenderer } from 'electron';
@@ -77,7 +77,7 @@ const api: RendererApi = {
   deleteCharacter: (id) => ipcRenderer.invoke(IpcChannel.chars.delete, id),
   resetMemory: (id) => ipcRenderer.invoke(IpcChannel.chars.resetMemory, id),
 
-  // 260725 Knowledge — per-character user-provided reference files.
+  // 260725 Knowledge â€” per-character user-provided reference files.
   knowledgeExtract: (args) => ipcRenderer.invoke(IpcChannel.knowledge.extract, args),
   knowledgeList: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.list, characterId),
   knowledgeRead: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.read, characterId, entryId),
@@ -87,7 +87,7 @@ const api: RendererApi = {
   knowledgeDelete: (characterId, entryId) => ipcRenderer.invoke(IpcChannel.knowledge.delete, characterId, entryId),
   knowledgeCompact: (characterId) => ipcRenderer.invoke(IpcChannel.knowledge.compact, characterId),
 
-  // 260810 — phantom-call recovery (scan / repair / dismiss).
+  // 260810 â€” phantom-call recovery (scan / repair / dismiss).
   recoveryScan: () => ipcRenderer.invoke(IpcChannel.recovery.scan),
   recoveryRepair: (characterId, windows) =>
     ipcRenderer.invoke(IpcChannel.recovery.repair, characterId, windows),
@@ -96,25 +96,25 @@ const api: RendererApi = {
   // Phase 11 D-28 portrait pipeline.
   charsApplyPortrait: (args) => ipcRenderer.invoke(IpcChannel.chars.applyPortrait, args),
   charsRemovePortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.removePortrait, id),
-  // 260909 — card-image versions + regeneration.
+  // 260909 â€” card-image versions + regeneration.
   charsPortraitVersions: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitVersions, id),
   charsOverviewInfo: (id) => ipcRenderer.invoke(IpcChannel.chars.overviewInfo, id),
   charsPortraitRegenerate: (id) => ipcRenderer.invoke(IpcChannel.chars.portraitRegenerate, id),
   charsPortraitSelect: (args) => ipcRenderer.invoke(IpcChannel.chars.portraitSelect, args),
 
-  // Phase 11 D-16 — public/private toggle.
+  // Phase 11 D-16 â€” public/private toggle.
   charsSetShared: (args) => ipcRenderer.invoke(IpcChannel.chars.setShared, args),
 
-  // 260729 — save full portrait art to disk (native save dialog).
+  // 260729 â€” save full portrait art to disk (native save dialog).
   charsExportPortrait: (id) => ipcRenderer.invoke(IpcChannel.chars.exportPortrait, id),
 
   // Pre-flight daily character-creation quota check (MAX_CREATIONS_PER_DAY).
   checkCreateQuota: () => ipcRenderer.invoke(IpcChannel.chars.checkCreateQuota),
 
-  // Phase 11 plan 17 — cloud-character id set for the LOCAL ONLY chip.
+  // Phase 11 plan 17 â€” cloud-character id set for the LOCAL ONLY chip.
   charsListCloud: () => ipcRenderer.invoke(IpcChannel.chars.listCloud),
 
-  // Phase 11 plan 19 — cache-on-demand sync surface.
+  // Phase 11 plan 19 â€” cache-on-demand sync surface.
   charsOpenPrepare: (uuid: string) => ipcRenderer.invoke(IpcChannel.chars.openPrepare, uuid),
   charsListMerged: () => ipcRenderer.invoke(IpcChannel.chars.listMerged),
   charsRestoreDefault: (id: string) => ipcRenderer.invoke(IpcChannel.chars.restoreDefault, id),
@@ -122,7 +122,7 @@ const api: RendererApi = {
   charsRemoveFromLibrary: (id: string) =>
     ipcRenderer.invoke(IpcChannel.chars.removeFromLibrary, id),
 
-  // Phase 11 — cloud-sync queue surface.
+  // Phase 11 â€” cloud-sync queue surface.
   syncStatus: () => ipcRenderer.invoke(IpcChannel.sync.status),
   syncRetry: (uuid) => ipcRenderer.invoke(IpcChannel.sync.retry, uuid),
   onSyncStatusUpdate(cb: (status: SyncStatusPushEvent) => void) {
@@ -137,7 +137,7 @@ const api: RendererApi = {
   saveApiKey: (plaintext) => ipcRenderer.invoke(IpcChannel.config.saveApiKey, plaintext),
   hasApiKey: () => ipcRenderer.invoke(IpcChannel.config.hasApiKey),
 
-  // Product analytics (260707) — track is fire-and-forget (send, not invoke).
+  // Product analytics (260707) â€” track is fire-and-forget (send, not invoke).
   track: (event, props) => ipcRenderer.send(IpcChannel.analytics.track, { event, props }),
   getAnalyticsOptOut: () => ipcRenderer.invoke(IpcChannel.analytics.getOptOut),
   setAnalyticsOptOut: (optOut) => ipcRenderer.invoke(IpcChannel.analytics.setOptOut, optOut),
@@ -175,7 +175,7 @@ const api: RendererApi = {
   chessAckReveal: (characterId, uci) =>
     ipcRenderer.invoke(IpcChannel.chess.ackReveal, { characterId, uci }),
 
-  // Draw! minigame (260727) — see src/shared/drawIpc.ts.
+  // Draw! minigame (260727) â€” see src/shared/drawIpc.ts.
   drawOpen: (characterId) => ipcRenderer.invoke(IpcChannel.draw.open, characterId),
   drawStart: (characterId, rounds) =>
     ipcRenderer.invoke(IpcChannel.draw.start, { characterId, rounds }),
@@ -197,7 +197,7 @@ const api: RendererApi = {
   drawFinish: (characterId) => ipcRenderer.invoke(IpcChannel.draw.finish, characterId),
 
 
-  // OS permission flows (260929) — see src/shared/permissionsIpc.ts.
+  // OS permission flows (260929) â€” see src/shared/permissionsIpc.ts.
   permissionsStatus: (kind) => ipcRenderer.invoke(IpcChannel.permissions.status, kind),
   permissionsRequestMic: () => ipcRenderer.invoke(IpcChannel.permissions.requestMic),
   permissionsOpenSettings: (kind) => ipcRenderer.invoke(IpcChannel.permissions.openSettings, kind),
@@ -207,7 +207,7 @@ const api: RendererApi = {
   permissionsTakeResume: () => ipcRenderer.invoke(IpcChannel.permissions.takeResume),
   permissionsRelaunch: (resume) => ipcRenderer.invoke(IpcChannel.permissions.relaunch, resume),
 
-  // Backseat (260728) — see src/shared/backseatIpc.ts.
+  // Backseat (260728) â€” see src/shared/backseatIpc.ts.
   backseatSources: (opts?: { thumbnails?: boolean }) =>
     ipcRenderer.invoke(IpcChannel.backseat.sources, opts),
   backseatStart: (characterId, sourceId, sourceName, mode, game, trigger) =>
@@ -285,6 +285,40 @@ const api: RendererApi = {
     const handler = (_e: Electron.IpcRendererEvent, r: Parameters<typeof cb>[0]) => cb(r);
     ipcRenderer.on(IpcChannel.draw.snapshotRequest, handler);
     return () => ipcRenderer.off(IpcChannel.draw.snapshotRequest, handler);
+  },
+
+  // Forza 4 minigame (see src/shared/connect4Ipc.ts).
+  CONNECT4Start: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.CONNECT4.start, { characterId, playerColor: opts?.playerColor }),
+  CONNECT4GetState: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.getState, characterId),
+  CONNECT4Move: (characterId, column) =>
+    ipcRenderer.invoke(IpcChannel.CONNECT4.move, { characterId, column }),
+  CONNECT4Resign: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.resign, characterId),
+  CONNECT4Rematch: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.rematch, characterId),
+  CONNECT4End: (characterId) => ipcRenderer.invoke(IpcChannel.CONNECT4.end, characterId),
+  onCONNECT4State(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.CONNECT4.state, handler);
+    return () => ipcRenderer.off(IpcChannel.CONNECT4.state, handler);
+  },
+
+  // Battleship minigame (see src/shared/battleshipIpc.ts).
+  BATTLESHIPStart: (characterId, opts) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.start, { characterId, playerStarts: opts?.playerStarts }),
+  BATTLESHIPGetState: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.getState, characterId),
+  BATTLESHIPMove: (characterId, row, col) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.move, { characterId, row, col }),
+  BATTLESHIPResign: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.resign, characterId),
+  BATTLESHIPRematch: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.rematch, characterId),
+  BATTLESHIPEnd: (characterId) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.end, characterId),
+  onBATTLESHIPState(cb) {
+    const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
+    ipcRenderer.on(IpcChannel.BATTLESHIP.state, handler);
+    return () => ipcRenderer.off(IpcChannel.BATTLESHIP.state, handler);
   },
 
   // Minecraft dashboard (260721)
@@ -639,10 +673,10 @@ const api: RendererApi = {
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
   subscriptionStatus: () => ipcRenderer.invoke(IpcChannel.subscription.status),
   subscriptionCancel: () => ipcRenderer.invoke(IpcChannel.subscription.cancel),
-  // quick/260525-sbo Task 3 — auto-renewal consent INSERT before checkout.
+  // quick/260525-sbo Task 3 â€” auto-renewal consent INSERT before checkout.
   recordSubscriptionConsent: (args) =>
     ipcRenderer.invoke(IpcChannel.subscription.recordConsent, args),
-  // 260706 — in-app feedback + companion reports.
+  // 260706 â€” in-app feedback + companion reports.
   feedbackSubmit: (args) => ipcRenderer.invoke(IpcChannel.feedback.submit, args),
   reportSubmit: (args) => ipcRenderer.invoke(IpcChannel.feedback.report, args),
   onCreditsStatusUpdate(cb: (status: CreditsStatus) => void) {
@@ -727,7 +761,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.chars.expansionProgress, handler);
   },
 
-  // 260703 procgen — unique-companion generation + questionnaire prefs.
+  // 260703 procgen â€” unique-companion generation + questionnaire prefs.
   generateUnique: (input) => ipcRenderer.invoke(IpcChannel.gen.start, input),
   onGenProgress(cb: (ev: GenProgressEvent) => void) {
     const handler = (_e: Electron.IpcRendererEvent, ev: GenProgressEvent) => cb(ev);
@@ -866,3 +900,7 @@ function withCleanRejections<T extends object>(target: T): T {
 }
 
 contextBridge.exposeInMainWorld('sei', withCleanRejections(api));
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Stardew appearance (260921, reworked 260925): how a character looks as a
  * farmer in the player's game. ONE LLM call per character translates the
  * character into the game's own customization knobs (the closed shape in
@@ -514,3 +514,7 @@ export async function appearanceForSummon(
     return fallback;
   }
 }
+
+
+
+

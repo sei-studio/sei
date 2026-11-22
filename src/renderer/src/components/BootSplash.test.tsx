@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261029 review: App's 'loading' view used to be an empty fragment, a blank
  * window while the boot routing waited for main's auth state.
  */
@@ -34,3 +34,7 @@ describe('BootSplash', () => {
     expect(loadingGuard).toBeLessThan(firstNavigate);
   });
 });
+
+
+
+

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+﻿import { describe, it, expect } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { habitPhrase, createHabitLog } from './habits.js'
 
@@ -38,3 +38,7 @@ describe('DST habit log', () => {
     expect(log.recent()).toEqual([])
   })
 })
+
+
+
+

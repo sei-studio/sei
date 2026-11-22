@@ -1,8 +1,8 @@
-/**
- * StepDots — onboarding / add-character progress indicator.
+﻿/**
+ * StepDots â€” onboarding / add-character progress indicator.
  *
- * Source: 04-UI-SPEC.md §Component Inventory → StepDots + D-36.
- * Active dot 22×6 in --accent; past dot 6×6 in --text-2; future dot 6×6 in --border-strong.
+ * Source: 04-UI-SPEC.md Â§Component Inventory â†’ StepDots + D-36.
+ * Active dot 22Ã—6 in --accent; past dot 6Ã—6 in --text-2; future dot 6Ã—6 in --border-strong.
  */
 
 import React from 'react';
@@ -24,3 +24,7 @@ export function StepDots({ count, current }: StepDotsProps): React.ReactElement 
     </div>
   );
 }
+
+
+
+

@@ -1,14 +1,14 @@
-/**
- * ReceiptScreen — quick/260525-sbo Task 6.
+﻿/**
+ * ReceiptScreen â€” quick/260525-sbo Task 6.
  *
  * In-app receipt surface auto-navigated to when a user's plan moves UP into a
- * paid tier (Free → Quest / Party, or Quest → Party). Required by FTC 16 CFR
- * §425.5 ("plain-language acknowledgement of the charges at the point of
+ * paid tier (Free â†’ Quest / Party, or Quest â†’ Party). Required by FTC 16 CFR
+ * Â§425.5 ("plain-language acknowledgement of the charges at the point of
  * subscription"). The transition trigger lives in
  * useCreditsStore.shouldNavigateToReceipt + the status-push side-effect; this
  * component is the rendered surface.
  *
- * This screen renders the literal charged amount per FTC 16 CFR §425.5. It is
+ * This screen renders the literal charged amount per FTC 16 CFR Â§425.5. It is
  * the one surface that keeps a dollar figure for legal reasons (260725: the
  * consent modal + pre-CTA disclosure were removed; Polar's hosted checkout
  * carries the recurring terms), alongside the plan cards and top up packages.
@@ -60,7 +60,7 @@ export function ReceiptScreen(): React.ReactElement {
 
         <div className={styles.tile}>
           {/*
-            * "$X.00 charged today" is the FTC 16 CFR §425.5 plain-language
+            * "$X.00 charged today" is the FTC 16 CFR Â§425.5 plain-language
             * charge acknowledgement; the dollar amount MUST render in-app at
             * the activation moment, and MUST match the tier just purchased.
             * The amount interpolated below is {card.chargeUsd ?? '$0.00'},
@@ -72,7 +72,7 @@ export function ReceiptScreen(): React.ReactElement {
           <p className={styles.line}>{t('Billed monthly until you cancel.')}</p>
           <p className={styles.line}>{t('Next billing date: {date}.', { date: nextBilling })}</p>
           <p className={styles.line}>
-            {t('Cancel anytime in Playtime → Sei → Manage billing.')}
+            {t('Cancel anytime in Playtime â†’ Sei â†’ Manage billing.')}
           </p>
         </div>
 
@@ -85,3 +85,7 @@ export function ReceiptScreen(): React.ReactElement {
     </div>
   );
 }
+
+
+
+

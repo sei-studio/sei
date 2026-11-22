@@ -1,4 +1,4 @@
-/**
+﻿/**
  * surface_error classifier (260828, extended 260926).
  *
  * Maps a caught LLM-surface error (chat, chess, Draw!, backseat, TTS) to a
@@ -217,3 +217,7 @@ export function surfaceErrorClass(err: unknown): SurfaceErrorClass {
   if (name === 'TypeError' || name === 'ReferenceError' || name === 'RangeError') return 'internal_error';
   return 'unknown';
 }
+
+
+
+

@@ -1,7 +1,7 @@
-/**
+﻿/**
  * The note-leak gate (260807).
  *
- * On chat-family surfaces the model's text output IS the spoken line — there
+ * On chat-family surfaces the model's text output IS the spoken line â€” there
  * is no say() split like the Minecraft bot's, so there is no legitimate place
  * for the model to think out loud. That contract holds on tool-free turns and
  * breaks specifically on turns that CALL remember(): filing a memory puts
@@ -24,13 +24,13 @@
  *   to someone, so they drop unconditionally.
  * - A "remember ..." opener is only condemned when a remember() call actually
  *   rode the same turn (the caller passes that), and only when what follows is
- *   not addressed to the player — "remember when we...", "remember, you
+ *   not addressed to the player â€” "remember when we...", "remember, you
  *   gotta..." are real spoken lines and stay. Without the tool-call context
  *   the remember tier never fires, so a streamed sentence (where tool_use may
  *   not have arrived yet) is only ever checked against the first tier.
  */
 
-const NOTE_RE = /^[\s("'“‘]*((character|internal|mental|memory|private)\s+note|note to self)\b/i;
+const NOTE_RE = /^[\s("'â€œâ€˜]*((character|internal|mental|memory|private)\s+note|note to self)\b/i;
 
 /**
  * Words after "remember" that mark speech TO the player rather than a note
@@ -51,7 +51,7 @@ const REMEMBER_SPEECH_NEXT = new Set([
  * spoken by TTS and shown in the caption window. No prompt of ours mentions
  * the tag; it is the model's emergent scratchpad markup, so asking it to stop
  * is not a fix. Word-shaped tags only: "<3", "a < b", ":>" all survive because
- * a tag must open with a letter. Voice-scoped like the other gates — these
+ * a tag must open with a letter. Voice-scoped like the other gates â€” these
  * lines are spoken and captioned, where markup is never content.
  */
 const TAG_RE = /<\/?[a-z][a-z0-9_-]{0,40}(?:\s[^<>]{0,120})?>/gi;
@@ -68,8 +68,12 @@ export function isNoteLeak(part: string, rememberCalled: boolean): boolean {
   if (!t) return false;
   if (NOTE_RE.test(t)) return true;
   if (!rememberCalled) return false;
-  const m = /^[\s("'“‘]*remember\b[,:]?\s+(\S+)/i.exec(t);
+  const m = /^[\s("'â€œâ€˜]*remember\b[,:]?\s+(\S+)/i.exec(t);
   if (!m) return false;
   const next = m[1].toLowerCase().replace(/[^a-z']/g, '');
   return next.length > 0 && !REMEMBER_SPEECH_NEXT.has(next);
 }
+
+
+
+

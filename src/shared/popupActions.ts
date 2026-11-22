@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Startup popup actions (261029): the fixed set of in-app actions an operator
  * popup page may trigger.
  *
@@ -40,3 +40,7 @@ export type PopupAction = (typeof POPUP_ACTIONS)[number];
 export function isPopupAction(name: unknown): name is PopupAction {
   return typeof name === 'string' && (POPUP_ACTIONS as readonly string[]).includes(name);
 }
+
+
+
+

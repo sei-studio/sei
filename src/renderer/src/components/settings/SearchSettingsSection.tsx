@@ -1,5 +1,5 @@
-/**
- * SearchSettingsSection — the web search rows in Settings (260909), shown as
+﻿/**
+ * SearchSettingsSection â€” the web search rows in Settings (260909), shown as
  * the "Web search" tab of the "Games & search" group since 261023.
  *
  * Optional. Companions can look things up on the web through the search /
@@ -125,7 +125,7 @@ export function SearchSettingsSection({
           ) : (
             <>
               <span className={hasKey ? styles.monoValue : `${styles.monoValue} ${styles.statusWarn}`}>
-                {hasKey ? '•'.repeat(KEY_BULLET_LEN) : t('Not set')}
+                {hasKey ? 'â€¢'.repeat(KEY_BULLET_LEN) : t('Not set')}
               </span>
               <Button kind="ghost" size="sm" onClick={() => setEditingKey(true)}>
                 {hasKey ? t('Update') : t('Set')}
@@ -145,3 +145,7 @@ export function SearchSettingsSection({
     </>
   );
 }
+
+
+
+

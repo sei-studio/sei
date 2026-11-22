@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Draw! turn order (260929).
  *
  * A round is two turns, one per player. It used to be hard-wired as "the
@@ -37,3 +37,7 @@ export function nextTurn(args: {
   if (isLastTurn(args)) return { kind: 'gallery' };
   return { kind: 'turn', drawer: args.firstDrawer, round: args.round + 1 };
 }
+
+
+
+

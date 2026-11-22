@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+﻿import { describe, it, expect, vi } from 'vitest'
 import { computeAlerts, createAlertWatcher, lightMeans, nudgesAllowed, ALERT_TUNING } from './alerts.js'
 import { createObservationState } from '../protocol.js'
 import { createFakeMod } from '../../../../../scripts/fake-dst-mod.mjs'
@@ -139,3 +139,7 @@ describe('DST alert watcher', () => {
     expect(onNudge).toHaveBeenCalledTimes(2)
   })
 })
+
+
+
+

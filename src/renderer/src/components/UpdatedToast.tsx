@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UpdatedToast: the "Updated to vX" confirmation after an accepted update
  * relaunches Sei (261023).
  *
@@ -47,3 +47,7 @@ export function UpdatedToast(): React.ReactElement | null {
     </div>
   );
 }
+
+
+
+

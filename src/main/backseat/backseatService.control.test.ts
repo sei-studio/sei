@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 260925 backseat act: how backseatService wires control() (controlPolicy's
  * ControlGate) into real ticks. Everything around the turn is mocked; the
  * tick arbitration, the tool array, the gate and the spoken offer are real.
@@ -345,3 +345,7 @@ describe('backseat control() wiring', () => {
     expect(h.starts).toHaveLength(1);
   });
 });
+
+
+
+

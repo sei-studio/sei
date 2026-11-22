@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SeiLink desktop host service (261104, milestone 3), main side.
  *
  *   startSeilinkHost(characterId)  she moves in: her room becomes the live wallpaper
@@ -118,7 +118,7 @@ interface HostFacts {
   when: string;
 }
 
-/** Everything the host says, plus 'status' — the CI self-test (selfTest.ts) listens here. */
+/** Everything the host says, plus 'status' â€” the CI self-test (selfTest.ts) listens here. */
 export const seilinkHostEvents = new EventEmitter();
 
 /** 261106: the plain background's colour follows the OS theme (the host page draws it from prefers-color-scheme). */
@@ -313,7 +313,7 @@ function emitHealth(s: Session): void {
   });
 }
 
-// ── Start / stop ────────────────────────────────────────────────────────────
+// â”€â”€ Start / stop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * She moves in. Throws SEILINK_DISABLED (flag off), SEILINK_BAD_ID, ACCOUNT_SWITCHING.
@@ -483,7 +483,7 @@ export function onSeilinkCharacterRemoved(characterId: string): Promise<void> {
   });
 }
 
-// ── Session ─────────────────────────────────────────────────────────────────
+// â”€â”€ Session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function openSession(characterId: string, restored: boolean, trigger: EntranceTrigger): Promise<void> {
   const token = randomBytes(16).toString('hex');
@@ -1186,7 +1186,7 @@ async function endSession(reason: SeilinkEndReason, failure?: SeilinkHostFailure
   if (process.platform !== 'win32') rmSync(s.pipe, { force: true });
 }
 
-// ── Power ───────────────────────────────────────────────────────────────────
+// â”€â”€ Power â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function hookPower(): void {
   if (powerHooked) return;
@@ -1223,3 +1223,7 @@ function hookPower(): void {
       /* vitest stub */
     });
 }
+
+
+
+

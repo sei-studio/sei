@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ContinueWithChatGPTButton (261104): the label follows the UI language like
  * the Google button, "ChatGPT" stays verbatim, English is OpenAI's wording.
  */
@@ -37,3 +37,7 @@ describe('ContinueWithChatGPTButton label', () => {
     }
   });
 });
+
+
+
+

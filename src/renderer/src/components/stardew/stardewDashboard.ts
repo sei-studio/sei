@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pure helpers behind the Stardew Valley dashboard (260909). No React, no
  * stores, so the tests can pin the game facts the panel paints: the weekday
  * of a season day, the clock dial position, the weather and season keys,
@@ -79,3 +79,7 @@ export function pct(value: number, max: number): number {
 
 export const STARDEW_SLOTS = 36;
 export const STARDEW_COLUMNS = 12;
+
+
+
+

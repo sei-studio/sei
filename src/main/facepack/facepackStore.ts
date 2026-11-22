@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Pack store (261028, facepack pilot): reads baked packs from
  * SEI_FACEPACK_DIR (dev flag), and since 261105 the face sets downloaded by
  * the anima client (`an-` ids, src/main/anima/), which need no flag.
@@ -119,3 +119,7 @@ export async function facePaletteForCharacterName(name: string): Promise<FacePal
   const m = await readPackManifest(id);
   return m ? packPalette(m) : null;
 }
+
+
+
+

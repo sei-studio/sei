@@ -1,4 +1,4 @@
-// 260730 — the unprompted-chatter floor.
+﻿// 260730 â€” the unprompted-chatter floor.
 //
 // Live voice-call log, one minute of it: "just let me know when you're sorted"
 // / "cool, i'm just chilling here. take your time" / "all good on your end
@@ -13,7 +13,7 @@
 // scripted session: WHICH turns are gated, and what counts as the player
 // having answered.
 //
-// 260731 — the floor is now OFF by default (IDLE_SAY_GAP_MS === 0), because
+// 260731 â€” the floor is now OFF by default (IDLE_SAY_GAP_MS === 0), because
 // timestamps alone cannot tell a reworded repeat from a new thought and it was
 // killing invitations to play together. The mechanics below are still pinned
 // against an EXPLICIT gap so restoring it is a one-constant change; the last
@@ -37,7 +37,7 @@ describe('shouldSuppressIdleSay', () => {
     })).toBe(true)
   })
 
-  it('lets it speak once the gap has passed — an unanswered line gets to stand, not to be forever', () => {
+  it('lets it speak once the gap has passed â€” an unanswered line gets to stand, not to be forever', () => {
     expect(shouldSuppressIdleSay({
       triggerEvent: 'sei:idle',
       lastSelf: said(GAP / 1000 + 1),
@@ -81,7 +81,7 @@ describe('shouldSuppressIdleSay', () => {
 
   // The whole point of the gate is that it costs a REPLY nothing. A player
   // message folded into a running idle loop arrives as the iteration trigger,
-  // which is what _emitSayLine passes — so answering is never gagged, however
+  // which is what _emitSayLine passes â€” so answering is never gagged, however
   // recently the bot spoke.
   for (const trigger of ['sei:chat_received', 'sei:attacked', 'sei:death', 'sei:action_complete', 'sei:action_tick']) {
     it(`${trigger} may always speak`, () => {
@@ -120,3 +120,7 @@ describe('shouldSuppressIdleSay', () => {
     })).toBe(false)
   })
 })
+
+
+
+

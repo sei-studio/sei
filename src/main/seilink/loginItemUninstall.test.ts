@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261107: the Velopack uninstall hook removes the open-at-login Run value
  * only when it starts THIS install (loginItemUninstall.ts).
  */
@@ -67,3 +67,7 @@ describe('removeLoginValueForUninstall', () => {
     expect(exec.calls.filter((c) => c[1] === 'delete')).toEqual([]);
   });
 });
+
+
+
+

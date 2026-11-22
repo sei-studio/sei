@@ -1,4 +1,4 @@
-# Dependency patches (patch-package)
+﻿# Dependency patches (patch-package)
 
 `scripts/postinstall.mjs` runs `patch-package --error-on-fail` on every `npm install` / `npm ci`,
 so local dev, CI, the packaged app and the Minecraft game pack all get these edits. If a dep is
@@ -39,3 +39,7 @@ a 26.3 server. `patch-package` can be dropped from devDependencies when this fol
 The bot joins 26.2 / 26.3, but the setup wizard still builds its Fabric + CustomSkinLoader profile
 for 26.1 (`WIZARD_MAX_MC` in `src/shared/mcSetup.ts`): no CustomSkinLoader build lists 26.3 yet,
 and 26.2 only has the 15.x line. Raise the cap separately, after testing a CSL build in game.
+
+
+
+

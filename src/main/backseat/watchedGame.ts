@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Which game a Watch-together share is showing, as a CLOSED id (261031, T278,
  * PostHog audit fix 5).
  *
@@ -21,7 +21,7 @@ export interface WatchedClass {
 }
 
 /**
- * id → title pattern, matched against the normalized title (lower case, ™ ®
+ * id â†’ title pattern, matched against the normalized title (lower case, â„¢ Â®
  * stripped, whitespace collapsed). Word-bounded so a game's name inside an
  * unrelated title ("rust - visual studio code") needs the anchored forms.
  * Order matters only where one name contains another (minecraft dungeons
@@ -39,10 +39,10 @@ const GAMES: ReadonlyArray<[string, RegExp]> = [
   ['apex_legends', /^apex legends\b/],
   ['overwatch', /^overwatch\b/],
   ['marvel_rivals', /^marvel rivals\b/],
-  ['genshin_impact', /^genshin impact\b|^原神$/],
-  ['honkai_star_rail', /^honkai: star rail\b|^崩坏：星穹铁道$/],
-  ['zenless_zone_zero', /^zenless zone zero\b|^绝区零$/],
-  ['wuthering_waves', /^wuthering waves\b|^鸣潮$/],
+  ['genshin_impact', /^genshin impact\b|^åŽŸç¥ž$/],
+  ['honkai_star_rail', /^honkai: star rail\b|^å´©åï¼šæ˜Ÿç©¹é“é“$/],
+  ['zenless_zone_zero', /^zenless zone zero\b|^ç»åŒºé›¶$/],
+  ['wuthering_waves', /^wuthering waves\b|^é¸£æ½®$/],
   ['rocket_league', /^rocket league\b/],
   ['pubg', /^pubg\b|\bplayerunknown's battlegrounds\b/],
   ['call_of_duty', /^call of duty\b/],
@@ -50,7 +50,7 @@ const GAMES: ReadonlyArray<[string, RegExp]> = [
   ['destiny_2', /^destiny 2\b/],
   ['the_finals', /^the finals\b/],
   ['deadlock', /^deadlock$/],
-  ['helldivers_2', /^helldivers 2\b|^helldivers™ 2/],
+  ['helldivers_2', /^helldivers 2\b|^helldiversâ„¢ 2/],
   ['elden_ring', /^elden ring\b/],
   ['baldurs_gate_3', /^baldur's gate 3\b/],
   ['cyberpunk_2077', /^cyberpunk 2077\b/],
@@ -95,7 +95,7 @@ const GAMES: ReadonlyArray<[string, RegExp]> = [
   ['slay_the_spire', /^slay the spire\b/],
   ['balatro', /^balatro\b/],
   ['euro_truck_simulator_2', /^euro truck simulator 2\b/],
-  ['pokemon', /\bpok[eé]mon\b/],
+  ['pokemon', /\bpok[eÃ©]mon\b/],
 ];
 
 /** Video services: a film or a stream, whatever app or tab plays it. */
@@ -105,17 +105,17 @@ const VIDEO = /\b(youtube|netflix|twitch|disney\+|prime video|crunchyroll|plex|h
 const BROWSER = /\b(chrome|chromium|safari|firefox|edge|opera|brave|arc|vivaldi)\b/;
 
 /** Generic whole-screen source names: not a title at all. */
-const SCREEN_SOURCE = /^(entire screen|screen \d+|display \d+|built-in.*display|整个屏幕|屏幕 ?\d+)$/;
+const SCREEN_SOURCE = /^(entire screen|screen \d+|display \d+|built-in.*display|æ•´ä¸ªå±å¹•|å±å¹• ?\d+)$/;
 
 export function normalizeTitle(title: string): string {
   return title
-    .replace(/[™®©]/g, '')
+    .replace(/[â„¢Â®Â©]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
 }
 
-/** Classify one window title. null / empty / a bare screen name → 'unknown'. */
+/** Classify one window title. null / empty / a bare screen name â†’ 'unknown'. */
 export function classifyWatched(title: string | null | undefined): WatchedClass {
   const t = normalizeTitle(title ?? '');
   if (!t || SCREEN_SOURCE.test(t)) return { kind: 'unknown' };
@@ -167,3 +167,7 @@ export function watchedProps(tileGameId: string | null, watched: WatchedClass): 
   if (watched.kind === 'game' && watched.game) return { game: watched.game, game_source: 'title', watched_kind: 'game' };
   return { watched_kind: watched.kind };
 }
+
+
+
+

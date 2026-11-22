@@ -1,4 +1,4 @@
-/**
+﻿/**
  * dstDashboard helpers (260909): the game facts the DST dashboard paints.
  */
 import { describe, it, expect } from 'vitest';
@@ -56,3 +56,7 @@ describe('dstDashboard', () => {
     expect(slotCount(24)).toBe(30);
   });
 });
+
+
+
+

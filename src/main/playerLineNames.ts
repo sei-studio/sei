@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 261014 (review): the names the Home card's player line is checked against
  * before it is stored (nextStep.js playerLineProblem): the companion's name,
  * which the line may use, and the player's names, which it must not (a line
@@ -24,3 +24,7 @@ export async function readPlayerLineNames(characterId: string): Promise<PlayerLi
   ]);
   return { character, players };
 }
+
+
+
+

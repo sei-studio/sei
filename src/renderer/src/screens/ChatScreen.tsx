@@ -1,31 +1,31 @@
-/**
- * ChatScreen — Discord-style in-app chat with a companion (Phase 18/19).
+﻿/**
+ * ChatScreen â€” Discord-style in-app chat with a companion (Phase 18/19).
  *
  * Layout (260721 top/bottom split): the shared ChatTopBar, then a column with
  * the GAME AREA ON TOP (chess / screen share / Minecraft launch + dashboard,
  * inside the shared GameSurface chrome) and the chat BELOW: a scrollable
  * NO-BUBBLE message list (avatar + author header + text, grouped by
- * consecutive author, split by per-day separators), a "<name> is typing…"
+ * consecutive author, split by per-day separators), a "<name> is typingâ€¦"
  * line while a reply is in flight, and a floating boxed composer (send button
  * appears once the draft is non-empty). GameSurface's bottom-left "V" expands
  * the game down over the chat; its bottom-right "x" is the unified end
  * control.
  *
- * Party redesign (§4.5): the header name toggles a collapsible 260px presence
+ * Party redesign (Â§4.5): the header name toggles a collapsible 260px presence
  * side panel (portrait art + kind + Presence line + live action verb + an action
  * stack). Clicking a message author's name swaps the panel between the companion
  * card and the "You" (user) card; clicking the same author again closes it.
  *
  * Per-message hover affordances (copy / reply). Reply quotes the message: the
  * quote shows as a line above the composer and is prepended to the outgoing
- * message as `user quoted "…"`.
+ * message as `user quoted "â€¦"`.
  *
  * Messages + the awaiting flag live in useChatStore; history loads once on
  * mount. The companion avatar is the character's portrait (PixelPortrait
  * handles the procedural fallback); the user avatar is their profile picture
  * (sei.userGetProfile), falling back to a generic glyph.
  *
- * Source: docs/design/UI-REDESIGN-PARTY.md §4.5.
+ * Source: docs/design/UI-REDESIGN-PARTY.md Â§4.5.
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -35,9 +35,13 @@ import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/useChessStore';
+import { useConnect4Store, isCONNECT4Open } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore, isBATTLESHIPOpen } from '../lib/stores/useBattleshipStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
+import { CONNECT4Panel } from '../components/connect4/Connect4Panel';
+import { BattleshipPanel } from '../components/battleship/BattleshipPanel';
 import { useMcDashboardStore } from '../lib/stores/useMcDashboardStore';
 import { getGameSurface } from '../lib/gameSurfaces';
 import { botGameName } from '../lib/gameLaunch';
@@ -101,7 +105,7 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** "17/04/2026, 11:33" — DD/MM/YYYY, 24-hour, locale-independent. */
+/** "17/04/2026, 11:33" â€” DD/MM/YYYY, 24-hour, locale-independent. */
 function fmtTimestamp(ts: number): string {
   const d = new Date(ts);
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}, ${pad2(
@@ -109,16 +113,16 @@ function fmtTimestamp(ts: number): string {
   )}:${pad2(d.getMinutes())}`;
 }
 
-/** "17 Apr 2026" — day-separator label ("2026年4月17日" in Chinese). */
+/** "17 Apr 2026" â€” day-separator label ("2026å¹´4æœˆ17æ—¥" in Chinese). */
 function fmtDay(ts: number): string {
   const d = new Date(ts);
   const lang = uiLanguage();
   if (lang === 'zh') {
-    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+    return `${d.getFullYear()}å¹´${d.getMonth() + 1}æœˆ${d.getDate()}æ—¥`;
   }
   if (lang === 'en') return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
   // 261104 languages: the locale's own date order and month names
-  // ("2026年4月17日", "17 апр. 2026 г.", "17 de abr. de 2026").
+  // ("2026å¹´4æœˆ17æ—¥", "17 Ð°Ð¿Ñ€. 2026 Ð³.", "17 de abr. de 2026").
   return d.toLocaleDateString(uiLocale(), { day: 'numeric', month: lang === 'ja' ? 'long' : 'short', year: 'numeric' });
 }
 
@@ -149,15 +153,15 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const messages = useChatStore((s) => s.messages[characterId]) ?? EMPTY;
   // Voice-call lines (transcribed utterances / spoken replies) are persisted
-  // for the model's continuity but hidden here — a call is represented by its
+  // for the model's continuity but hidden here â€” a call is represented by its
   // "You and X called for Y" row alone. Filtered BEFORE the map so day
   // separators and author-run detection key on the visible neighbors.
   // WorldLink desktop lines (ChatMessage.desktop) likewise: they stay desktop bubbles.
   const visibleMessages = useMemo(() => messages.filter((m) => !m.voice && !m.desktop), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   // On a call the reply is SPOKEN and its row is a hidden voice row (see
-  // visibleMessages above), so "is typing…" would show and then nothing ever
-  // appears in the thread — read as the companion going unresponsive. While
+  // visibleMessages above), so "is typingâ€¦" would show and then nothing ever
+  // appears in the thread â€” read as the companion going unresponsive. While
   // this character is on the live (or dialing) call, the indicator stays off.
   const onCall = useVoiceStore(
     (s) => s.participants.includes(characterId) && (s.status === 'live' || s.status === 'connecting'),
@@ -176,10 +180,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const [draft, setDraft] = useState('');
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  // #9 — reply quoting + copy feedback. replyTo holds the quoted author + text.
+  // #9 â€” reply quoting + copy feedback. replyTo holds the quoted author + text.
   const [replyTo, setReplyTo] = useState<ChatReplyRef | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  // §4.5 — presence side panel: default OPEN (260705 revision); hiding it is a
+  // Â§4.5 â€” presence side panel: default OPEN (260705 revision); hiding it is a
   // sticky preference across companions and app restarts (useUiStore, persisted
   // via UserConfig.chat_panel_hidden). Which card shows stays per-screen state.
   const panelHidden = useUiStore((s) => s.chatPanelHidden);
@@ -245,7 +249,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     prependAnchorRef.current = { id: characterId, h: el.scrollHeight, t: el.scrollTop };
     void st.loadOlder(characterId).finally(() => {
       // A page with no fresh rows never re-renders the list, so the layout
-      // effect never consumes the anchor — drop it after paint, or the NEXT
+      // effect never consumes the anchor â€” drop it after paint, or the NEXT
       // message (a send) would anchor-restore instead of pinning to bottom.
       requestAnimationFrame(() => {
         prependAnchorRef.current = null;
@@ -256,10 +260,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // Auto-scroll to the bottom on new messages / typing-indicator changes, and on
   // entering a DM (characterId) once its transcript finishes loading. A single
   // post-paint write can land just short of the true bottom because portraits /
-  // images grow the list after the first layout, so re-pin on the next frame —
+  // images grow the list after the first layout, so re-pin on the next frame â€”
   // otherwise entry leaves the newest message (and the composer breathing room)
   // below the fold until you scroll. Layout effect (not useEffect) so the
-  // scrollback anchor restore lands before paint — no flash of wrong position.
+  // scrollback anchor restore lands before paint â€” no flash of wrong position.
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
@@ -270,7 +274,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       el.scrollTop = el.scrollHeight - anchor.h + anchor.t;
       // A page of only hidden rows (e.g. voice-call captions) adds no visible
       // height, so the viewport is still at the top and no scroll event will
-      // fire — keep draining until visible content (or the true top) arrives.
+      // fire â€” keep draining until visible content (or the true top) arrives.
       maybeLoadOlder();
       return;
     }
@@ -285,7 +289,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   // Scrollbar auto-hide: the thumb is transparent at rest and shows only
   // while the list is actively scrolling (data-scrolling, cleared after a
-  // short idle). Direct DOM writes — no re-render per scroll frame.
+  // short idle). Direct DOM writes â€” no re-render per scroll frame.
   const scrollFadeTimer = useRef<number | null>(null);
   const onListScroll = (): void => {
     const el = listRef.current;
@@ -295,7 +299,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     scrollFadeTimer.current = window.setTimeout(() => {
       delete el.dataset.scrolling;
     }, 700);
-    // Near the top → pull the next older transcript page (guards inside).
+    // Near the top â†’ pull the next older transcript page (guards inside).
     maybeLoadOlder();
   };
   useEffect(
@@ -305,7 +309,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     [],
   );
 
-  // Re-render each minute so the Presence line decays online → idle (§2).
+  // Re-render each minute so the Presence line decays online â†’ idle (Â§2).
   useMinuteTick();
 
   const theme: 'light' | 'dark' = resolvedScheme();
@@ -325,7 +329,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       // Only strip the leading name when it's the "<Name>, ..." appositive form
       // (comma REQUIRED). Without the comma the name is the sentence subject
       // ("Sui is the OG...") and stripping it drops the subject, leaving a
-      // mangled "Is the OG..." — so leave those intact.
+      // mangled "Is the OG..." â€” so leave those intact.
       d = d.replace(new RegExp(`^${esc},\\s+`, 'i'), '');
     }
     d = d.replace(/[.\s]+$/, '');
@@ -338,7 +342,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     [character?.id, character?.name, theme],
   );
   const userArtSrc = portraitSrc(userProfile?.profilePicture);
-  // §4.5 (260705) — tint the presence panel with the portrait's main color.
+  // Â§4.5 (260705) â€” tint the presence panel with the portrait's main color.
   // Null (no portrait / extraction blocked) falls back to the plain surface.
   const panelTint = useDominantColor(
     portraitSrc(character?.portrait_image ?? null),
@@ -359,10 +363,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
   const doSend = (): void => {
     const text = draft.trim();
-    // #9 — sending while a reply is in flight is allowed: it interrupts the
+    // #9 â€” sending while a reply is in flight is allowed: it interrupts the
     // in-flight LLM call (main aborts + supersedes) and sends this instead.
     if (!text) return;
-    // #9 — the quote travels as structured metadata (rendered in-chat + fed to
+    // #9 â€” the quote travels as structured metadata (rendered in-chat + fed to
     // the model), so the message text itself stays clean.
     const ref = replyTo ?? undefined;
     setDraft('');
@@ -421,7 +425,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         window.setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 1200);
       })
       .catch(() => {
-        /* clipboard blocked — no-op */
+        /* clipboard blocked â€” no-op */
       });
   };
 
@@ -464,6 +468,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // game at a time; chess wins a tie.
   const chessOpen = useChessStore((s) => isChessOpen(s, characterId));
   const chessGame = useChessStore((s) => s.games[characterId] ?? null);
+  const forzaOpen = useConnect4Store((s) => isCONNECT4Open(s, characterId));
+  const forzaGame = useConnect4Store((s) => s.games[characterId] ?? null);
+  const BATTLESHIPOpen = useBattleshipStore((s) => isBATTLESHIPOpen(s, characterId));
+  const BATTLESHIPGame = useBattleshipStore((s) => s.games[characterId] ?? null);
   // Chess replay (260724): a clicked "You and X played chess" transcript row
   // opens the recorded game in this same slot. Purely local view state; it
   // covers (and never disturbs) any live surface below it in the priority.
@@ -491,7 +499,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   const surfaceGame = mcOnline ? (summon?.game ?? 'minecraft') : (launchGame ?? 'minecraft');
   const gameSurface = getGameSurface(surfaceGame);
   const gameSurfaceName = botGameName(surfaceGame);
-  const gameOpen = chessReplayOpen || chessOpen || mcDashOpen || mcLaunchOpen;
+  const gameOpen = chessReplayOpen || chessOpen || forzaOpen || BATTLESHIPOpen || mcDashOpen || mcLaunchOpen;
 
   // Unified end control (260721): every surface ends from GameSurface's
   // bottom-right "x", through its existing end path. `confirmGameEnd` gates
@@ -508,6 +516,16 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
       void useChessStore.getState().end(characterId);
       return;
     }
+    if (forzaOpen) {
+      // Ends any game in main (an unfinished one is recorded as abandoned).
+      void useConnect4Store.getState().end(characterId);
+      return;
+    }
+    if (BATTLESHIPOpen) {
+      // Ends any game in main (an unfinished one is recorded as abandoned).
+      void useBattleshipStore.getState().end(characterId);
+      return;
+    }
     if (mcDashOpen || summon?.kind === 'connecting') {
       // Same instant-disconnect path as the presence panel button; the
       // !mcOnline effect above clears the dashboard state afterwards.
@@ -520,9 +538,13 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     ? false
     : chessOpen
     ? chessGame?.status === 'active'
-    : mcDashOpen
-      ? true
-      : summon?.kind === 'connecting';
+    : forzaOpen
+      ? forzaGame?.status === 'active'
+      : BATTLESHIPOpen
+        ? BATTLESHIPGame?.status === 'active'
+        : mcDashOpen
+        ? true
+        : summon?.kind === 'connecting';
 
   // Expand-over-chat (260721): the GameSurface bottom-left "V" grows the game
   // area to the full content height, hiding the chat below it.
@@ -644,20 +666,20 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
         gameFit ? styles.gameFit : ''
       }`}
     >
-      {/* ── Top bar: identical structure across chat, games and calls
-          (260721) — the shared ChatTopBar. Game fullscreen hides it too
+      {/* â”€â”€ Top bar: identical structure across chat, games and calls
+          (260721) â€” the shared ChatTopBar. Game fullscreen hides it too
           (260729): fullscreen means the game gets every pixel the app window
           has, and the bar's own buttons (call, end) live in the game's bottom
-          chrome row, so nothing up here is load-bearing while it is hidden. ── */}
+          chrome row, so nothing up here is load-bearing while it is hidden. â”€â”€ */}
       {!(gameOpen && gameFullscreen) ? (
         <ChatTopBar characterId={characterId} gameOpen={gameOpen} />
       ) : null}
 
       <div className={styles.content}>
         <div className={styles.mainCol} ref={mainColRef}>
-          {/* ── Game area (260721): the game surface rides ON TOP of the
+          {/* â”€â”€ Game area (260721): the game surface rides ON TOP of the
               chat. GameSurface's bottom-left "V" expands it down over the
-              chat; its bottom-right "x" is the unified end control. ── */}
+              chat; its bottom-right "x" is the unified end control. â”€â”€ */}
           <section
             className={styles.gameArea}
             ref={gameAreaRef}
@@ -696,6 +718,10 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   <ChessReplayPanel characterId={characterId} />
                 ) : chessOpen ? (
                   <ChessPanel characterId={characterId} />
+                ) : forzaOpen ? (
+                  <CONNECT4Panel characterId={characterId} />
+                ) : BATTLESHIPOpen ? (
+                  <BattleshipPanel characterId={characterId} />
                 ) : mcDashOpen ? (
                   <gameSurface.DashboardPanel characterId={characterId} />
                 ) : (
@@ -726,7 +752,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
 
           <div className={styles.chatCol} aria-hidden={chatHidden}>
 
-        {/* ── Message list ── */}
+        {/* â”€â”€ Message list â”€â”€ */}
         <div
           className={showTyping ? `${styles.list} ${styles.listTyping}` : styles.list}
           ref={listRef}
@@ -771,7 +797,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                   </div>
                 );
               }
-              // Voice calls (260705): "You and X called for Y." — same Discord-
+              // Voice calls (260705): "You and X called for Y." â€” same Discord-
               // style session row as play, with the handset glyph.
               if (m.event?.kind === 'call') {
                 return (
@@ -791,7 +817,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
             }
             const prev = arr[i - 1];
             const newDay = !prev || dayKey(prev.ts) !== dayKey(m.ts);
-            // A day break — or a quoted reply — restarts an author run so the
+            // A day break â€” or a quoted reply â€” restarts an author run so the
             // avatar + header (and the quote reference above it) are shown.
             const isLead = newDay || !!m.replyTo || !prev || prev.role !== m.role;
             const separator = newDay ? (
@@ -867,12 +893,12 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           ) : null}
         </div>
 
-        {/* ── Floating composer (hovers over the chat window) ── */}
+        {/* â”€â”€ Floating composer (hovers over the chat window) â”€â”€ */}
         {/* data-chat-composer: MiniTile measures this dock to float above it. */}
         <div className={styles.composerDock} data-chat-composer>
           {showTyping ? (
             <div className={styles.typingLine} aria-live="polite">
-              {t('{name} is typing…', { name: companionName })}
+              {t('{name} is typingâ€¦', { name: companionName })}
             </div>
           ) : null}
           {replyTo ? (
@@ -889,7 +915,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
                 aria-label={t('Cancel reply')}
                 title={t('Cancel reply')}
               >
-                ×
+                Ã—
               </button>
             </div>
           ) : null}
@@ -905,8 +931,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={t('Message {name}…', { name: companionName })}
-              // 260705: mirror the chat:send Zod cap — an over-limit paste would
+              placeholder={t('Message {name}â€¦', { name: companionName })}
+              // 260705: mirror the chat:send Zod cap â€” an over-limit paste would
               // otherwise be rejected pre-persist and show unfixable "try again" copy.
               maxLength={CHAT_TEXT_MAX}
               rows={1}
@@ -931,7 +957,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
           </div>
         </div>
 
-        {/* ── Presence side panel (§4.5) ── */}
+        {/* â”€â”€ Presence side panel (Â§4.5) â”€â”€ */}
         <aside
         className={styles.presPanel}
         style={
@@ -976,7 +1002,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               aria-label={t('Close profile')}
               title={t('Close profile')}
             >
-              ×
+              Ã—
             </button>
           </div>
           <div className={styles.presBody}>
@@ -1038,7 +1064,7 @@ const EMPTY: ChatMessage[] = [];
  * mirrors the real message layout (40px avatar gutter + text) so nothing jumps
  * when content lands: `lead` rows carry a circular avatar placeholder + a short
  * name bar, continuation rows are gutter-aligned text only. Widths vary 42-66%
- * to read like real chat. Static by design (260705) — no shimmer sweep.
+ * to read like real chat. Static by design (260705) â€” no shimmer sweep.
  */
 const SKELETON_ROWS: ReadonlyArray<{ lead: boolean; width: string }> = [
   { lead: true, width: '52%' },
@@ -1072,7 +1098,7 @@ function ChatSkeleton(): React.ReactElement {
   );
 }
 
-/** Circular companion avatar (portrait → procedural fallback via PixelPortrait). */
+/** Circular companion avatar (portrait â†’ procedural fallback via PixelPortrait). */
 function CompanionAvatar({
   character,
   theme,
@@ -1127,3 +1153,7 @@ function MessageAvatar({
     <UserIcon size={22} />
   );
 }
+
+
+
+

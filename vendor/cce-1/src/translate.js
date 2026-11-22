@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Translation layer: deterministic chess.js tagger that renders moves and
  * imagined lines as plain sentences. The consuming LLM receives these
  * sentences (plus SAN so it can name its move); it never has to parse FEN
@@ -146,7 +146,7 @@ export function describeCandidate(fen, candidateUci, rolloutUcis = []) {
   // Imagined continuation.
   //
   // 260724: this line NO LONGER states a material outcome. It used to end with
-  // describePoints(net) — "you come out 6 points of material ahead" — asserted
+  // describePoints(net) â€” "you come out 6 points of material ahead" â€” asserted
   // as fact from a SINGLE rollout whose opponent reply was sampled from Maia at
   // the persona's own Elo. It was wrong often and expensively: in a live 850
   // game the model was told Nxe3 came out "6 points ahead" (the sampled reply
@@ -159,7 +159,7 @@ export function describeCandidate(fen, candidateUci, rolloutUcis = []) {
   // The architecture already fixes strength upstream (Elo-conditioned Maia +
   // blunder/blinder); the LLM is only supposed to express STYLE. A confident
   // fake number turned a style choice into a strength choice. So the line now
-  // describes what she pictures happening and stops there — no score, nothing
+  // describes what she pictures happening and stops there â€” no score, nothing
   // to maximize. Checkmate stays, because a mate at the end of a line is
   // something a player of any strength would actually notice.
   let line = null;
@@ -200,3 +200,7 @@ export function describeCandidate(fen, candidateUci, rolloutUcis = []) {
 function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+
+
+

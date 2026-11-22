@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Backend switch data continuity (261023, product feedback: "make sure that signin to
  * chatgpt doesnt make them lose their current companion/memories").
  *
@@ -95,7 +95,7 @@ beforeEach(async () => {
   await saveCharacter(companion());
   const mem = paths.memoryDir(COMPANION);
   await mkdir(mem, { recursive: true });
-  await writeFile(path.join(mem, 'MEMORY.md'), '## World 1 — Home (Minecraft)\n- [2026-10-20] Sei likes building lighthouses\n');
+  await writeFile(path.join(mem, 'MEMORY.md'), '## World 1 â€” Home (Minecraft)\n- [2026-10-20] Sei likes building lighthouses\n');
   await writeFile(path.join(mem, 'PLAYER.md'), 'Sei, plays after work\n');
   await writeFile(path.join(mem, 'HEARTBEAT.md'), '- Build the copper lighthouse\n');
   await writeFile(path.join(mem, 'HEARTBEAT.stardew.md'), '- Plant parsnips\n');
@@ -165,3 +165,7 @@ describe('cloud -> ChatGPT plan -> cloud keeps the same companions and memories'
     expect((await loadConfig()).provider).toBe('chatgpt');
   });
 });
+
+
+
+

@@ -1,18 +1,18 @@
-/**
- * Home library filter (260703 procgen — the fixed-slot model). The SINGLE
+﻿/**
+ * Home library filter (260703 procgen â€” the fixed-slot model). The SINGLE
  * membership rule for "is this character in the user's party", shared by the
  * Home party wall, the IconRail avatar list, and the World tab's slots
  * indicator so all three always count the same set:
- *   - bundled defaults → hidden UNLESS explicitly invited into a slot
+ *   - bundled defaults â†’ hidden UNLESS explicitly invited into a slot
  *     (UserConfig.added_default_ids).
- *   - foreign chars (owner stamped, doesn't match current user) → hidden
+ *   - foreign chars (owner stamped, doesn't match current user) â†’ hidden
  *     UNLESS the id is in UserConfig.added_world_ids (invited from World).
- *   - legacy null-owner chars → shown for everyone.
- *   - own chars (owner === currentUserId) → shown.
- *   - signed out + owner-stamped chars → hidden UNLESS explicitly invited
- *     (added_world_ids — 260728, the fresh-onboarding Sui seed). A merely
+ *   - legacy null-owner chars â†’ shown for everyone.
+ *   - own chars (owner === currentUserId) â†’ shown.
+ *   - signed out + owner-stamped chars â†’ hidden UNLESS explicitly invited
+ *     (added_world_ids â€” 260728, the fresh-onboarding Sui seed). A merely
  *     cached copy of someone else's public character must never read as a
- *     party member — 260706: IconRail used to diverge here and showed them.
+ *     party member â€” 260706: IconRail used to diverge here and showed them.
  */
 import type { Character } from '@shared/characterSchema';
 import { countsAsHomeSlot } from '@shared/characterSchema';
@@ -53,3 +53,7 @@ export function railParty<T extends Character>(homeCharacters: readonly T[]): T[
   });
   return copy;
 }
+
+
+
+

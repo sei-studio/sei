@@ -1,29 +1,29 @@
-/**
- * useAuthStore — renderer-side mirror of main's AuthState, plus the
+﻿/**
+ * useAuthStore â€” renderer-side mirror of main's AuthState, plus the
  * D-10 upgrade-modal framing micro-copy slot.
  *
  * Subscribes to main's auth-state push channel ONCE at App.tsx mount via the
- * exported subscriber below. Plans 04–09 read s.state to drive routing,
+ * exported subscriber below. Plans 04â€“09 read s.state to drive routing,
  * conditional Banners, and Account-panel visibility.
  *
- * Source: 10-CONTEXT D-06, D-10. 10-UI-SPEC §Inline upgrade modal.
+ * Source: 10-CONTEXT D-06, D-10. 10-UI-SPEC Â§Inline upgrade modal.
  */
 import { create } from 'zustand';
 import { sei } from '../ipcClient';
 import type { AuthState } from '@shared/ipc';
 
-// LR-02 — Plan 11-12 has shipped (`sei.tosStatus()` is now part of RendererApi),
+// LR-02 â€” Plan 11-12 has shipped (`sei.tosStatus()` is now part of RendererApi),
 // so the parallel-worktree `TosStatusBridge` cast that used to live here is no
 // longer load-bearing. Removed; sei is consumed directly.
 
 /**
- * Plan 11-15 — pending share intent.
+ * Plan 11-15 â€” pending share intent.
  *
  * When a signed-out user clicks the public/private toggle on a character page
  * (D-17), the toggle handler opens SignInModal with framingLabel='share this
  * character'. The character.id is captured in `pendingShareIntent` so that the
  * post-sign-in auth-state transition can fire `sei.charsSetShared({id, shared:true})`
- * automatically — completing the upgrade-to-share UX in one continuous flow.
+ * automatically â€” completing the upgrade-to-share UX in one continuous flow.
  *
  * Lifecycle:
  *   - set by CharacterPage.onToggleShared when authState.kind !== 'signed_in'
@@ -31,11 +31,11 @@ import type { AuthState } from '@shared/ipc';
  *     resolves to true (Plan 11-13 ToS gate runs first; if ToS is pending, the
  *     pending intent stays parked until refreshTosStatus() flips tosAccepted=true,
  *     at which point the consumeShareIntent() helper fires)
- *   - cleared on transition to local (T-11-15-02 mitigation — no cross-session leak)
+ *   - cleared on transition to local (T-11-15-02 mitigation â€” no cross-session leak)
  *   - cleared on SignInModal dismissal without sign-in (MR-01) so a future
  *     unrelated sign-in does not unexpectedly toggle this character public
  *   - dropped at consume time if older than PENDING_SHARE_INTENT_TTL_MS
- *     (MR-01 defense-in-depth — an intent parked hours ago in a different
+ *     (MR-01 defense-in-depth â€” an intent parked hours ago in a different
  *     context should not silently fire)
  *
  * `createdAt` is an epoch-ms timestamp captured at the moment the intent was
@@ -44,7 +44,7 @@ import type { AuthState } from '@shared/ipc';
 export type PendingShareIntent = { characterId: string; createdAt: number } | null;
 
 /**
- * MR-01 — share intents older than this are dropped at consume time. The
+ * MR-01 â€” share intents older than this are dropped at consume time. The
  * happy path completes within ~30s (sign-in form + email verify + ToS modal),
  * so 5 minutes is comfortably above legitimate timing while still bounding
  * "user dismissed the modal hours ago, signed in for an unrelated reason"
@@ -64,11 +64,11 @@ export type UpgradeFraming =
   | 'browse public companions'
   | 'use cloud-hosted AI'
   | 'share this companion'
-  // Item 5 — a signed-out user tapping "Invite" on a World character gets the
+  // Item 5 â€” a signed-out user tapping "Invite" on a World character gets the
   // same sign-in modal as the share flow, framed for this action (260706: the
   // party redesign renamed "add to library" to "invite to your party").
   | 'invite this companion to your party'
-  // 260703 procgen — the flagship "meet your unique companion" path requires a
+  // 260703 procgen â€” the flagship "meet your unique companion" path requires a
   // cloud account (generation runs server-side). A signed-out / local-mode user
   // who picks it in the add-companion chooser gets the sign-in modal framed for
   // this action, same pattern as 'use cloud-hosted AI'.
@@ -78,28 +78,28 @@ interface AuthStore {
   state: AuthState;
   upgradeFraming: UpgradeFraming;
   /**
-   * Phase 11 D-26 — tristate gate for the blocking AcceptToSModal:
-   *   - null  → status unknown (initial load, or a tosStatus() call failed)
-   *   - true  → user has a current-version tos_acceptance row
-   *   - false → user is signed in but lacks a current-version acceptance row;
+   * Phase 11 D-26 â€” tristate gate for the blocking AcceptToSModal:
+   *   - null  â†’ status unknown (initial load, or a tosStatus() call failed)
+   *   - true  â†’ user has a current-version tos_acceptance row
+   *   - false â†’ user is signed in but lacks a current-version acceptance row;
    *             App.tsx mounts AcceptToSModal as a top-level overlay
    *
    * Refreshed by `refreshTosStatus` on every transition into signed_in and
-   * after a successful sei.tosAccept() submit. Reset to null on signed_in →
+   * after a successful sei.tosAccept() submit. Reset to null on signed_in â†’
    * local.
    */
   tosAccepted: boolean | null;
   /**
-   * 260610 — true when the last refreshTosStatus() while signed in came back
+   * 260610 â€” true when the last refreshTosStatus() while signed in came back
    * inconclusive (main couldn't reach the database: offline, DNS failure,
    * timeout) or the IPC call itself threw. Drives the dismissible
-   * OfflineRetryModal in App.tsx — we tell the user they're offline instead
+   * OfflineRetryModal in App.tsx â€” we tell the user they're offline instead
    * of mis-showing the blocking legal modal. Cleared by any conclusive
    * refresh and on transition to local.
    */
   tosCheckFailed: boolean;
   /**
-   * Plan 11-15 D-17 — pending share intent captured when a signed-out user
+   * Plan 11-15 D-17 â€” pending share intent captured when a signed-out user
    * attempts to flip the public/private toggle to public. Consumed after the
    * subsequent sign-in (and ToS acceptance) transition; see `consumeShareIntent`.
    */
@@ -120,8 +120,8 @@ interface AuthStore {
 
 export const useAuthStore = create<AuthStore>((set) => ({
   // Until the first onAuthState push fires, default to local. Main always
-  // pushes initial state during initAuthState — typically within a frame of
-  // window load — so this default is short-lived.
+  // pushes initial state during initAuthState â€” typically within a frame of
+  // window load â€” so this default is short-lived.
   state: { kind: 'local' },
   upgradeFraming: null,
   tosAccepted: null,
@@ -132,7 +132,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   refreshTosStatus: async (): Promise<void> => {
     try {
       const s = await sei.tosStatus();
-      // 260610 — s.accepted is tri-state: null means main couldn't reach the
+      // 260610 â€” s.accepted is tri-state: null means main couldn't reach the
       // database (offline / DNS / timeout). Keep tosAccepted null (no legal
       // modal) and raise the offline notice instead.
       set({ tosAccepted: s.accepted, tosCheckFailed: s.accepted === null });
@@ -156,7 +156,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
 }));
 
 /**
- * Plan 11-15 — fire `sei.charsSetShared({id, shared:true})` for a parked share
+ * Plan 11-15 â€” fire `sei.charsSetShared({id, shared:true})` for a parked share
  * intent, then clear it. Safe to call any time; no-op when there's no intent or
  * when the user isn't signed in / ToS-accepted.
  *
@@ -212,7 +212,7 @@ export function applyAuthState(s: AuthState): void {
   } else if (s.kind === 'local' && prevKind !== 'local') {
     // T-11-15-02 mitigation: clear any pending share intent on sign-out so
     // it can't leak across sessions (e.g. user A toggles share while signed
-    // out, signs in as user B — the intent would otherwise point at user A's
+    // out, signs in as user B â€” the intent would otherwise point at user A's
     // local character id). Also drop any stale recovery-prompt flag.
     useAuthStore.setState({
       tosAccepted: null,
@@ -231,7 +231,7 @@ export function applyAuthState(s: AuthState): void {
  */
 export function subscribeAuthState(): () => void {
   const unsubState = sei.onAuthState((s) => applyAuthState(s));
-  // Password-reset link landed a recovery session — surface SetNewPasswordModal.
+  // Password-reset link landed a recovery session â€” surface SetNewPasswordModal.
   // The recovery exchange in main also fired SIGNED_IN, so onAuthState above has
   // already routed the user into the app; this just raises the new-password
   // prompt on top.
@@ -243,3 +243,7 @@ export function subscribeAuthState(): () => void {
     unsubRecovery();
   };
 }
+
+
+
+

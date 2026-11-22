@@ -1,4 +1,4 @@
-/** The switch dwell (260806): fire once, dwellMs after the LAST change. */
+﻿/** The switch dwell (260806): fire once, dwellMs after the LAST change. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createSwitchDwell } from './switchDwell';
 
@@ -56,3 +56,7 @@ describe('createSwitchDwell', () => {
     expect(fired).toEqual([6000, 6000]);
   });
 });
+
+
+
+

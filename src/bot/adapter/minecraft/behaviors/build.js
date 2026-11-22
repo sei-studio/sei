@@ -1,7 +1,7 @@
-// src/bot/adapter/minecraft/behaviors/build.js
+﻿// src/bot/adapter/minecraft/behaviors/build.js
 //
 // Cuboid build with hand-rolled jump+place scaffolding (D-04).
-// Mirrors mineVein.js loop structure. Iterates Y↑→X→Z (D-07).
+// Mirrors mineVein.js loop structure. Iterates Yâ†‘â†’Xâ†’Z (D-07).
 // Skips occupied cells (D-05). Walls-only when hollow:true (D-04 derivative).
 
 import { Vec3 } from 'vec3'
@@ -45,7 +45,7 @@ const REFIRE_MS = 120            // min gap between place packets within one jum
 // it is called: it aims at the block and waits a tick first, so a fire at the
 // instant the feet clear the cell (feetY >= cellY + 1) lands the packet ~1-2
 // ticks LATER, by which time the bot is at or past the apex and often already
-// falling back into the cell — the server then rejects the block because the
+// falling back into the cell â€” the server then rejects the block because the
 // player's hitbox intersects it. That is the "it takes a few tries" behavior.
 // So we fire one tick EARLY (a jump rises ~0.35 blocks in the tick after 0.75)
 // and let the packet arrive while the bot is genuinely clear. An early packet
@@ -65,7 +65,7 @@ const FACE_PRIORITY = [
   { off: [0, 1, 0], face: [0, -1, 0] }, // ref above, place on its bottom
 ]
 
-// LLM-facing tool description moved to ../prompts.js → ACTION_DESCRIPTIONS.build.
+// LLM-facing tool description moved to ../prompts.js â†’ ACTION_DESCRIPTIONS.build.
 
 /** Squared horizontal distance from `origin` to a cell's CENTER. Horizontal
  * only: ordering happens within one Y layer, where the vertical term is a
@@ -80,7 +80,7 @@ function horizD2(c, origin) {
 /**
  * 260803. Reorder ONE layer so the builder starts at the cell nearest itself.
  *
- * Y stays ascending (lowest first) — a build wants its own support under it
+ * Y stays ascending (lowest first) â€” a build wants its own support under it
  * before the course above. What changed is X/Z: the old order was a min-corner
  * scan, so `build({from:{z:30}, to:{z:20}})` from z=42 began at z=20, the FAR
  * side, and the out-of-reach walk below marched the bot 22 blocks across the
@@ -130,7 +130,7 @@ export function enumerateBuildCells(from, to, hollow, origin = null) {
     const layer = []
     if (hollow) {
       // Perimeter-walk order (260709): emit each layer's wall cells as one
-      // trip around the rectangle instead of X→Z scan order. The scan order
+      // trip around the rectangle instead of Xâ†’Z scan order. The scan order
       // alternated between opposite walls, so the builder faced a far-side
       // cell every other step; walking the ring keeps consecutive cells
       // adjacent and the walk-closer step below cheap.
@@ -203,7 +203,7 @@ export function horizToCell(bot, c) {
 export function withinReach(bot, c) {
   const p = bot.entity?.position
   if (!p) return false
-  // Eye-anchored to the cell CENTER (260709) — the server measures placement
+  // Eye-anchored to the cell CENTER (260709) â€” the server measures placement
   // reach from the eyes, and the old feet-to-corner distance under-reported
   // reach by ~1.5 blocks upward. A 5-high wall is placeable from the ground
   // standing beside it; the feet-based check sent those cells to scaffolding.
@@ -214,7 +214,7 @@ export function withinReach(bot, c) {
 
 /**
  * Place the scaffold block in the cell the feet just vacated, mid-jump. Fires
- * the place the instant the feet clear the target cell ON THE WAY UP — not at
+ * the place the instant the feet clear the target cell ON THE WAY UP â€” not at
  * the apex. placeBlock has unavoidable latency (it faces the block and waits a
  * tick); firing while still rising means the bot is HIGHER when the packet
  * lands, so the cell is reliably clear of its hitbox. The old code placed at the
@@ -232,7 +232,7 @@ async function jumpPlace(bot, refBlock, col, cellY) {
     const now = Date.now()
     const feetY = bot.entity?.position?.y ?? 0
     // 260730: gate on the refire clock ONLY. The old code also held an
-    // `inFlight` flag until placeBlock's promise settled — but a REJECTED place
+    // `inFlight` flag until placeBlock's promise settled â€” but a REJECTED place
     // does not settle until its own block-update wait times out (seconds), so
     // one early miss silently blocked every retry for the rest of the jump and
     // the whole attempt was wasted. Rising + past the lead height is the whole
@@ -240,7 +240,7 @@ async function jumpPlace(bot, refBlock, col, cellY) {
     if (bot.entity?.onGround === false && feetY >= cellY + PLACE_LEAD_Y && now - lastFire >= REFIRE_MS) {
       lastFire = now
       // Fire-and-forget: a missed place rejects seconds later via placeBlock's
-      // own block-update wait; we don't await it — the world check confirms.
+      // own block-update wait; we don't await it â€” the world check confirms.
       Promise.resolve(bot.placeBlock(refBlock, FACE_UP)).catch(() => {})
     }
     await new Promise(r => setTimeout(r, 20))
@@ -357,7 +357,7 @@ async function shuffleTo(bot, cell, cellY, signal) {
 
 /**
  * D-04: hand-rolled jump+place. Builds a column of `blockName` under the bot
- * until bot.entity.position.y ≥ targetY - 1 (so feet are at targetY-1 and the
+ * until bot.entity.position.y â‰¥ targetY - 1 (so feet are at targetY-1 and the
  * next placement on the face above is in reach).
  */
 export async function scaffoldUp(bot, blockName, targetY, config) {
@@ -473,8 +473,8 @@ export async function buildAction(args, bot, config, deps = {}) {
   if (invCount() === 0) return `no ${args.block} in inventory`
 
   // 260730: scaffolding is build's `below` direction. Placing blocks UNDER
-  // yourself is the one build that has no fixed coordinates — where it goes
-  // depends on where you are standing when the block lands — so it cannot be
+  // yourself is the one build that has no fixed coordinates â€” where it goes
+  // depends on where you are standing when the block lands â€” so it cannot be
   // expressed as a from/to span, and asking the model to compute the column it
   // is standing in was a coin flip. `{direction:'below', count:N}` pillars up N
   // blocks using the same jump+place scaffolding the cuboid path already uses
@@ -507,13 +507,13 @@ export async function buildAction(args, bot, config, deps = {}) {
   const total = cells.length
   // Material check (260617): how many cells actually need a block placed (the
   // rest are already solid). If the bot runs out mid-build the end-return says
-  // so explicitly — the old path returned "0 placed" with no hint that the real
+  // so explicitly â€” the old path returned "0 placed" with no hint that the real
   // problem was too few blocks (the log: a 84-cell wall attempted with 4 dirt).
   const needed = cells.reduce((n, c) => n + (isOccupied(bot, c) ? 0 : 1), 0)
 
   // 260730: decide BEFORE moving. Both of these used to be discovered only
   // after the builder had walked the span, scaffolded, and placed what it
-  // could — minutes of the session spent to produce a result the block counts
+  // could â€” minutes of the session spent to produce a result the block counts
   // predicted up front.
   if (needed === 0 && total > 0) {
     // 261102 (pass 36): a single block aimed AT the ground (the model gave the
@@ -568,7 +568,7 @@ export async function buildAction(args, bot, config, deps = {}) {
     if (!pickReferenceFace(bot, c)) return 'noref'
 
     // 260709: WALK before scaffolding. scaffoldUp only pillars straight up at
-    // the bot's current column — it never closes horizontal distance, so a
+    // the bot's current column â€” it never closes horizontal distance, so a
     // far-wall cell used to fall through to a placeBlock that burned its 4s
     // timeout and counted as a silent skip. The live symptom: a 4-wall hollow
     // build finished as the two walls near the bot's corner (49 placed, 71
@@ -577,14 +577,14 @@ export async function buildAction(args, bot, config, deps = {}) {
     // 260803: this step now fires on FOLLOW_HORIZ rather than on total reach,
     // so the builder keeps up with its own work instead of only moving once a
     // cell has fallen out of reach entirely. FOLLOW_HORIZ (2.5) is below the
-    // old trigger (REACH - 1 = 3.5), so this strictly subsumes it — every cell
+    // old trigger (REACH - 1 = 3.5), so this strictly subsumes it â€” every cell
     // that used to trigger a walk still does.
     //
     // Best-effort by design, and the ordering below is what makes that safe: a
     // failed walk falls through to the SAME reach test as before, so the worst
     // case is today's behavior (place from range) rather than a stall. That
     // matters for bridging, where the goal column is thin air until the bridge
-    // reaches it — `range: 2` is load-bearing there, since it lets the goal be
+    // reaches it â€” `range: 2` is load-bearing there, since it lets the goal be
     // satisfied from the built part a couple of blocks short of the tip.
     if (horizToCell(bot, c) > FOLLOW_HORIZ) {
       await walk(bot, c.x, Math.floor(bot.entity?.position?.y ?? c.y), c.z, 2, WALK_TIMEOUT_MS, signal)
@@ -599,7 +599,7 @@ export async function buildAction(args, bot, config, deps = {}) {
         if (r !== 'ok') return { halt: `build halted: ${r} (placed ${placed}/${total})` }
       }
       // Still out of reach after walking (and scaffolding, when the cell is
-      // above) — skip WITHOUT attempting the place. The doomed placeBlock
+      // above) â€” skip WITHOUT attempting the place. The doomed placeBlock
       // used to cost its full timeout per far cell.
       if (!withinReach(bot, c)) return 'unreachable'
     }
@@ -725,13 +725,13 @@ export async function buildAction(args, bot, config, deps = {}) {
 
   // Ran out of material before finishing (this also catches scaffolding
   // consumption, since invCount() is the live remaining count). Make it an
-  // explicit, actionable signal — gather/ask for more — instead of a bare
+  // explicit, actionable signal â€” gather/ask for more â€” instead of a bare
   // "0 placed" the model couldn't distinguish from building into terrain.
   if (placed < needed && (ranOutWithCellsLeft || invCount() === 0)) {
     return `built ${placed} of ~${needed} needed, then ran out of ${args.block}. Get more ${args.block} (gather it, or ask the player for it) before finishing this build.`
   }
 
-  // 260607: a 0-placed result is NOT a soft success — every cell was already
+  // 260607: a 0-placed result is NOT a soft success â€” every cell was already
   // solid (building into terrain or at the bot's own feet level). The model
   // previously read "built 0 placed, N skipped" as progress and kept
   // "extending" a bridge that never grew. Make the no-op explicit so it
@@ -739,7 +739,7 @@ export async function buildAction(args, bot, config, deps = {}) {
   if (placed === 0 && total > 0 && skippedFail === 0) {
     return `built NOTHING: all ${total} cells were already occupied, so you are placing into solid blocks. Pick a clear span: a wall starts on the first air layer above the ground.`
   }
-  // Skip-reason honesty (260709): the bare "N skipped" read as done — the
+  // Skip-reason honesty (260709): the bare "N skipped" read as done â€” the
   // model rationalized 71 missing wall cells as "uneven terrain" and moved
   // on. Name what is missing and tell it the fix is another build call.
   if (skippedFail > 0) {
@@ -787,3 +787,7 @@ function groundBelow(bot, cells) {
   }
   return null
 }
+
+
+
+

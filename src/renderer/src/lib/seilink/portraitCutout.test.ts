@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { edgeMatte, keyAlpha, portraitMatte, silhouetteMatte, unmixKey, vignetteAlpha } from './portraitCutout';
 
 /** An RGBA image filled by fn(x, y) -> [r, g, b, a]. */
@@ -238,3 +238,7 @@ describe('silhouetteMatte (261105, T335)', () => {
     for (let y = 0; y < SH; y += 5) for (let x = 0; x < SW; x += 5) expect(m[y * SW + x]).toBeCloseTo(oldAlpha(d, x, y), 5);
   });
 });
+
+
+
+

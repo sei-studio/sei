@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The Velopack self-repair runtime on a temp folder: state file across
  * "launches", the feed (repair rule, setup manifest, rollout), the Setup
  * download with its sha256, the signature gate, and the hand-off to the
@@ -351,7 +351,7 @@ describe('repair', () => {
   });
 
   it('runner.json is pure ASCII for any user name, and the runner reads it as UTF-8', () => {
-    for (const user of ['José', '测试', 'Zoë Ølund']) {
+    for (const user of ['JosÃ©', 'æµ‹è¯•', 'ZoÃ« Ã˜lund']) {
       const cfg = {
         setup: `C:\\Users\\${user}\\AppData\\Local\\Temp\\sei-repair-ab12\\Sei-Setup.exe`,
         sha256: 'a'.repeat(64),
@@ -590,3 +590,7 @@ describe('leftover folders', () => {
     expect(existsSync(unrelated)).toBe(true);
   });
 });
+
+
+
+

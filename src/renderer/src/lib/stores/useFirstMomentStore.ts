@@ -1,5 +1,5 @@
-/**
- * useFirstMomentStore — the guided first moment's state (260926).
+﻿/**
+ * useFirstMomentStore â€” the guided first moment's state (260926).
  *
  * Lifecycle, one companion, one app session:
  *
@@ -205,3 +205,7 @@ export function enterFirstMoment(): boolean {
   useUiStore.getState().navigate({ kind: 'chat', characterId });
   return true;
 }
+
+
+
+

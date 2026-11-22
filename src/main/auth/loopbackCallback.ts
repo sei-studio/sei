@@ -1,18 +1,18 @@
-/**
+﻿/**
  * Loopback HTTP callback server for Supabase auth redirects.
  *
  * Started during bootstrap (after setStorageAdapter, before initAuthState).
- * Listens on a fixed dev port and handles the inbound `?code=…` query that
+ * Listens on a fixed dev port and handles the inbound `?code=â€¦` query that
  * Supabase appends to email-verification links AND (in plan 10-05) to the
  * Google OAuth redirect.
  *
  * Flow:
- *   1. User clicks verification link in their email →
+ *   1. User clicks verification link in their email â†’
  *      browser opens http://localhost:54321/auth/callback?code=<pkce_code>
  *   2. This server receives the request, extracts `code`, calls
  *      supabase.auth.exchangeCodeForSession(code). On success Supabase
  *      issues a session, the storage adapter persists it, and the
- *      onAuthStateChange subscription in authState.ts fires SIGNED_IN —
+ *      onAuthStateChange subscription in authState.ts fires SIGNED_IN â€”
  *      which broadcasts AuthState to every renderer.
  *   3. We write a small HTML "You can close this tab" response so the user
  *      isn't staring at a blank page. Then they switch back to the Sei
@@ -22,15 +22,15 @@
  * (3000, 5173, 8080) and matches the convention the skin server already
  * documents in its baseUrl format. The port is hardcoded because the
  * Supabase Site URL setting in the dashboard MUST point at the exact same
- * URL — letting the OS choose ephemeral would force the user to re-paste
+ * URL â€” letting the OS choose ephemeral would force the user to re-paste
  * the URL into the dashboard on every launch.
  *
- * Forward-compat (plan 10-05 — Google OAuth + PKCE):
+ * Forward-compat (plan 10-05 â€” Google OAuth + PKCE):
  *   Plan 05 uses the same callback path. To avoid forcing 10-05 to
  *   re-implement this module, the dispatcher below routes on the inbound
  *   `state` query parameter (or absence thereof):
- *     - No `state` and a `code`  → email-verification (current plan 10-04)
- *     - With a `state` parameter → Google OAuth (plan 10-05 will wire its
+ *     - No `state` and a `code`  â†’ email-verification (current plan 10-04)
+ *     - With a `state` parameter â†’ Google OAuth (plan 10-05 will wire its
  *                                  PKCE handler via addPkceFlow below)
  *   That keeps the server stable; only one HTTP listener for both auth
  *   flows, port-allocation owned in one place.
@@ -39,13 +39,13 @@
  *   - Bound to 127.0.0.1 only (NEVER 0.0.0.0). Loopback codes are
  *     short-lived (10 min default for Supabase) but binding to all
  *     interfaces would let a same-LAN attacker intercept the OTP.
- *   - We do NOT log the inbound `code` — it's a one-shot OTP that grants
+ *   - We do NOT log the inbound `code` â€” it's a one-shot OTP that grants
  *     a session to whoever exchanges it.
  *   - The response HTML is static; no user-controlled values are
  *     interpolated, so no XSS even though Electron's main process renders
  *     no DOM.
  *
- * Source: 260519 UAT fix #5 — verification-link OTP previously consumed
+ * Source: 260519 UAT fix #5 â€” verification-link OTP previously consumed
  * by localhost:3000 (Supabase's default Site URL) where nothing listens.
  */
 import http from 'node:http';
@@ -60,15 +60,15 @@ import { IpcChannel } from '../../shared/ipc';
 export const LOOPBACK_PORT = 54321;
 
 /**
- * Full URL the verification email points at — mirrors authHandlers.ts.
+ * Full URL the verification email points at â€” mirrors authHandlers.ts.
  *
  * WR-04: must use the IPv4 literal `127.0.0.1`, NOT `localhost`. The server
  * binds 127.0.0.1 (T-10-05-05 forbids 0.0.0.0); on Linux + some macOS
  * configs `localhost` resolves to `::1` first, so a browser fetching
- * `http://localhost:54321/...` would hit `[::1]:54321` → ECONNREFUSED and
+ * `http://localhost:54321/...` would hit `[::1]:54321` â†’ ECONNREFUSED and
  * the verification flow appears broken with no diagnostic. The IP literal
  * sidesteps the IPv4/IPv6 dual-stack ambiguity at the cost of showing an
- * IP in the email body (acceptable — Supabase emails are functional, not
+ * IP in the email body (acceptable â€” Supabase emails are functional, not
  * marketing). The Supabase dashboard Site URL / Additional Redirect URLs
  * must mirror this value; see deferred-items.md.
  */
@@ -135,7 +135,7 @@ export interface LoopbackCallbackServer {
  * Start the loopback callback server. Returns a handle whose stop() the
  * before-quit hook should await so the TCP listener is freed promptly.
  *
- * Throws if the port is already taken — but per CLAUDE.md "every external
+ * Throws if the port is already taken â€” but per CLAUDE.md "every external
  * call has a timeout" we never block bootstrap on it; main/index.ts wraps
  * the start call in try/catch and continues with a warn-log if it fails.
  * The user can fall back to the Supabase Site URL = localhost:54321 dance
@@ -162,7 +162,7 @@ export async function startLoopbackCallback(opts: {
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    // Bind to loopback only (127.0.0.1) — never 0.0.0.0.
+    // Bind to loopback only (127.0.0.1) â€” never 0.0.0.0.
     server.listen(LOOPBACK_PORT, '127.0.0.1', () => {
       server.off('error', reject);
       resolve();
@@ -198,7 +198,7 @@ async function handleRequest(
   const query = parsed.searchParams;
 
   // Supabase puts errors in the query string for failures (e.g.
-  // ?error=access_denied&error_code=otp_expired&error_description=…).
+  // ?error=access_denied&error_code=otp_expired&error_description=â€¦).
   const errCode = query.get('error_code') ?? query.get('error');
   if (errCode) {
     logger.warn(`loopback callback: supabase returned error=${errCode}`);
@@ -213,7 +213,7 @@ async function handleRequest(
   // email-verification (which has `code` but no `state`).
   //
   // WR-01: if `state` IS present but no PKCE handler is registered, we used
-  // to fall through to the email-verification exchange — wrong path for an
+  // to fall through to the email-verification exchange â€” wrong path for an
   // OAuth callback, and silently so. Reject explicitly with a logged
   // warning instead. This protects future refactors (e.g. if plan 10-05's
   // ephemeral-port server is ever removed in favor of this fixed server)
@@ -222,7 +222,7 @@ async function handleRequest(
   if (state) {
     if (!pkceHandler) {
       logger.warn(
-        `loopback callback: state=${state.slice(0, 8)}… present but no PKCE handler registered; rejecting`,
+        `loopback callback: state=${state.slice(0, 8)}â€¦ present but no PKCE handler registered; rejecting`,
       );
       res.statusCode = 400;
       res.setHeader('content-type', 'text/html; charset=utf-8');
@@ -248,7 +248,7 @@ async function handleRequest(
   // bootstrap persists the session, and authState.ts's onAuthStateChange
   // listener fires SIGNED_IN which broadcasts the new AuthState to renderer.
   //
-  // Phase 11 plan 12 (D-26) — Google OAuth defers ToS acceptance to the
+  // Phase 11 plan 12 (D-26) â€” Google OAuth defers ToS acceptance to the
   // next-launch blocking modal (Plan 11-13). The loopback callback page
   // (HTML served by THIS server) is not the right surface for a checkbox:
   // it would interrupt the browser-handoff UX awkwardly, and a renderer-side
@@ -263,7 +263,7 @@ async function handleRequest(
     const supabase = getClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      // Don't echo the error message into the HTML — Supabase error text
+      // Don't echo the error message into the HTML â€” Supabase error text
       // may contain incidental detail we'd rather not leak in the URL bar
       // log.
       logger.warn(`loopback callback: exchangeCodeForSession failed (${error.message})`);
@@ -277,7 +277,7 @@ async function handleRequest(
     // verification. Both arrive here with a bare `code` (no `state`) and both
     // exchange into a session; the ONLY signal is the recovery flag set by
     // authHandlers.sendPasswordReset just before it emailed the link. Consume
-    // it once: a fresh reset request → recovery; anything else → verification.
+    // it once: a fresh reset request â†’ recovery; anything else â†’ verification.
     const isRecovery = consumeRecoveryRequested();
     res.statusCode = 200;
     res.setHeader('content-type', 'text/html; charset=utf-8');
@@ -304,3 +304,7 @@ async function handleRequest(
     res.end(ERROR_HTML);
   }
 }
+
+
+
+

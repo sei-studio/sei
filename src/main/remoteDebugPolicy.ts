@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Remote-debugging policy for packaged builds (pure, no Electron import).
  *
  * The Electron fuses (electron-builder.yml `electronFuses`) turn off RunAsNode,
@@ -117,3 +117,7 @@ export function remoteDebuggingVerdict(input: RemoteDebuggingInput): RemoteDebug
   const block = found.length > 0 && input.isPackaged && isStableVersion(input.version);
   return { block, found };
 }
+
+
+
+

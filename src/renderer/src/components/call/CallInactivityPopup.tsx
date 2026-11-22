@@ -1,13 +1,13 @@
-/**
- * CallInactivityPopup (260810) — "Are you still there?" for unattended calls.
+﻿/**
+ * CallInactivityPopup (260810) â€” "Are you still there?" for unattended calls.
  *
  * After 10 minutes with zero player activity on a live call (no dispatched
- * utterance, no typed message, no live screenshare — companion speech does
+ * utterance, no typed message, no live screenshare â€” companion speech does
  * not count), useVoiceStore's inactivity watchdog raises this popup with a
  * 10-second countdown; at zero it hangs up through the normal endCall path.
  * The store owns every timer; this component only renders the state.
  *
- * Mounted by CallMiniBar, which lives in the App shell on EVERY view — so the
+ * Mounted by CallMiniBar, which lives in the App shell on EVERY view â€” so the
  * popup is visible and clickable no matter where the call UI is: the
  * fullscreen call view, a chess/Draw! surface, a backdrop scene, or a
  * different screen entirely. ModalShell's 'stacked' tier (1100) keeps it
@@ -48,3 +48,7 @@ export function CallInactivityPopup(): React.ReactElement | null {
     </ModalShell>
   );
 }
+
+
+
+

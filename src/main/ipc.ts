@@ -1,11 +1,11 @@
-/**
+﻿/**
  * IPC handler registrations. Wires every IpcChannel.<request-response> to
  * its main-process module. Push channels (status / log / lan) are emitted
  * directly by main/index.ts via webContents.send.
  *
  * Sources:
  *   - shared/ipc.ts (IpcChannel, RendererApi)
- *   - PATTERNS §"Zod validation at every external boundary"
+ *   - PATTERNS Â§"Zod validation at every external boundary"
  */
 import { ipcMain, BrowserWindow, app } from 'electron';
 import { z } from 'zod';
@@ -100,7 +100,7 @@ import { setSupervisor as setAuthSupervisor } from './auth/authHandlers';
 import type { BotSupervisor } from './botSupervisor';
 import { noteSeilinkAvatarChanged } from './seilink/host/hostSignals';
 
-// ── Moderation kill-switch ─────────────────────────────────────────────────
+// â”€â”€ Moderation kill-switch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // When false, publishing a shared character SKIPS the image/prompt moderation
 // gate entirely: runModerationGate marks the row clean directly instead of
 // calling the moderate-character-images / moderate-character-prompt Edge
@@ -108,19 +108,19 @@ import { noteSeilinkAvatarChanged } from './seilink/host/hostSignals';
 // false-positive-rejecting legitimate combat-flavored personas (e.g. the
 // bundled Sui), blocking users from publishing valid characters to World.
 // Re-enable (set true) once the proxy's moderation thresholds are tuned.
-// NOTE: client-side, so it reaches users on their next app update — it does not
+// NOTE: client-side, so it reaches users on their next app update â€” it does not
 // retroactively change already-installed apps (those still moderate until they
 // update). To disable moderation for existing installs immediately you'd neuter
 // the Edge Functions in the private proxy instead.
 const MODERATION_ENABLED = false;
 
-// ── Auto-remoderate-on-reset (260707) ──────────────────────────────────────
+// â”€â”€ Auto-remoderate-on-reset (260707) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // When moderation is ENABLED, the reset_moderation_on_portrait_change DB
 // trigger nulls moderation_status whenever a shared character's portrait bytes
 // change. The user-initiated share/save paths re-run the gate immediately, but
 // a background portrait re-upload (sync queue), an owner-change storage
 // relocation, or a fresh-device first-save can null a shared character WITHOUT
-// a following moderation pass — leaving it stuck out of World
+// a following moderation pass â€” leaving it stuck out of World
 // (search_public_characters requires moderation_status='clean').
 //
 // This sweep re-runs the gate for the signed-in user's OWN shared characters
@@ -172,7 +172,7 @@ export interface IpcHandlerDeps {
    */
   sendExpansionProgress: (ev: ExpansionProgressEvent) => void;
   /**
-   * 260703 procgen — stage-progress sink for the unique-companion generation
+   * 260703 procgen â€” stage-progress sink for the unique-companion generation
    * pipeline (gen:start). The generateUnique `emit` callback funnels through
    * here so the IPC handler can push each GenProgressEvent tick onto the
    * gen:progress channel; the renderer filters by requestId. Injected from
@@ -182,7 +182,7 @@ export interface IpcHandlerDeps {
   /**
    * Returns the current LAN state snapshot. The `lan:state` channel only
    * PUSHES on change, so a freshly-(re)loaded renderer pulls this on mount to
-   * seed its store — otherwise a reload while a world is open shows
+   * seed its store â€” otherwise a reload while a world is open shows
    * "not connected" until the LAN state next happens to change. Closure-via-
    * getter so it always reflects main's latest `latestLanState`.
    */
@@ -192,12 +192,12 @@ export interface IpcHandlerDeps {
    * getLanState reads. Awaited at the top of chat:send so the companion's
    * world-open answer reflects live truth instead of an up-to-2s-stale poll
    * (the player often messages seconds after clicking "Open to LAN").
-   * Optional — absent means chat answers from the cached poll.
+   * Optional â€” absent means chat answers from the cached poll.
    */
   refreshLanState?: () => Promise<void>;
   /**
    * 260703: like {@link refreshLanState} but RETURNS the fresh LanState. Backs
-   * the `lan:check-now` invoke channel — the renderer's summon click awaits it
+   * the `lan:check-now` invoke channel â€” the renderer's summon click awaits it
    * so it gates on live ground truth rather than the possibly-damped snapshot
    * (a world that just closed must not summon into a dead port). Falls back to
    * the cached `getLanState()` on any error. Optional for older wiring.
@@ -213,7 +213,7 @@ export interface IpcHandlerDeps {
   /**
    * Current per-character bot statuses (snapshot). The `bot:status` channel
    * only PUSHES on transitions, so a freshly-(re)subscribed renderer pulls
-   * this to seed its summons map — otherwise a session that went online
+   * this to seed its summons map â€” otherwise a session that went online
    * before the subscription attached stays invisible (no popup, profile stuck
    * on "Play together"). Wired in index.ts to the currentStatuses map.
    */
@@ -224,7 +224,7 @@ export interface IpcHandlerDeps {
    * with the companion's "hopping in" and then silence. Wired in index.ts.
    */
   notifyLaunchFailed: (characterId: string, reason: string) => void;
-  /** Task 4 — true only when the character's bot is fully spawned in-world. */
+  /** Task 4 â€” true only when the character's bot is fully spawned in-world. */
   isSessionOnline: (characterId: string) => boolean;
   /** 261020: the game of the character's live play session, or null (chat quit_game plan label). */
   sessionGame?: (characterId: string) => GameId | null;
@@ -246,8 +246,8 @@ export interface IpcHandlerDeps {
     interrupts?: CallInterruptCounts,
   ) => void;
   /**
-   * Voice calls (260705): the call pipeline went live — make the companion
-   * speak first. In-game → supervisor.greetVoiceCall port event; idle → a
+   * Voice calls (260705): the call pipeline went live â€” make the companion
+   * speak first. In-game â†’ supervisor.greetVoiceCall port event; idle â†’ a
    * standalone chat-brain greeting turn (replies pushed + spoken). Wired in
    * index.ts.
    */
@@ -256,9 +256,9 @@ export interface IpcHandlerDeps {
 
 /**
  * Canonical persona-id validator. Used by every IPC handler that accepts a
- * characterId — chars.* AND skin.*.
+ * characterId â€” chars.* AND skin.*.
  *
- * Phase 11 D-23 — UUID v4 is canonical id. The previous kebab-case slug
+ * Phase 11 D-23 â€” UUID v4 is canonical id. The previous kebab-case slug
  * regex was retired after runUuidRenameMigration rewrote any pre-existing
  * slug-keyed files (characters/<slug>.json, skins/<slug>.png, memory/<slug>/)
  * to UUID-keyed paths. The IdSchema is the defense-in-depth gate at the IPC
@@ -280,7 +280,7 @@ const BackseatGameSelectionSchema = z.object({
 });
 
 /**
- * 260703 procgen — thrown when a CREATE (chars:save of a new id) or a
+ * 260703 procgen â€” thrown when a CREATE (chars:save of a new id) or a
  * library-add (chars:add-to-library / chars:restore-default) would push the
  * Home companion count past MAX_COMPANION_SLOTS. Plain human-readable text:
  * these handlers surface failures via `err.message` directly (the renderer
@@ -290,10 +290,10 @@ const SLOT_LIMIT_REACHED_MESSAGE =
   `You can only have ${MAX_COMPANION_SLOTS} companions. Remove one to make room.`;
 
 
-/** Current Home companion count ≥ the slot cap (see libraryCharacterCount). */
+/** Current Home companion count â‰¥ the slot cap (see libraryCharacterCount). */
 async function libraryIsFull(): Promise<boolean> {
   const [cfg, chars] = await Promise.all([loadConfig(), listCharacters()]);
-  // Foreign World characters cached by mere browsing must not count — mirror
+  // Foreign World characters cached by mere browsing must not count â€” mirror
   // the renderer's library filter (libraryCharacterCount does the same).
   const { getCurrentAuthState } = await import('./auth/authState');
   const auth = getCurrentAuthState();
@@ -315,7 +315,7 @@ const SendPasswordResetSchema = z.object({
   email: z.string().email(),
 });
 /**
- * 260804 — 6-digit email code redemption. Length is a RANGE, not 6: Supabase's
+ * 260804 â€” 6-digit email code redemption. Length is a RANGE, not 6: Supabase's
  * token length is a dashboard setting (6-10 digits) that can be raised without
  * a client release, and the renderer strips separators before sending, so
  * pinning 6 here would turn a config change into a validation failure. The
@@ -334,10 +334,10 @@ const UpdatePasswordSchema = z.object({
 /**
  * Signup schema includes the COPPA DOB triple (F-10, quick/260525-usc).
  *
- * Year range: 1900 .. (new Date().getFullYear()) — anything outside this
+ * Year range: 1900 .. (new Date().getFullYear()) â€” anything outside this
  * window is rejected as a malformed dropdown selection. Month 1..12, day
  * 1..31. We deliberately do NOT validate "day is valid for month/year"
- * here (Feb 30, Apr 31, etc.) — age comparison via the wall-clock
+ * here (Feb 30, Apr 31, etc.) â€” age comparison via the wall-clock
  * derivation in signUpWithPassword is the load-bearing check; an
  * impossible date that happens to clear the 13-year threshold just lets
  * the user proceed, and an impossible date that fails it correctly
@@ -358,13 +358,13 @@ const SignUpPasswordSchema = z.object({
 /**
  * skin:apply request shape.
  *
- * `characterId` MUST go through IdSchema — the persona id becomes a
+ * `characterId` MUST go through IdSchema â€” the persona id becomes a
  * filesystem path component inside skinStore.applyPng. The renderer's
  * preload bindings never validate; main is the trust boundary.
  *
  * `username` is the per-persona MC in-game name (atomic skin+username
  * write). Validation is delegated to CharacterSchema.parse()
- * inside saveCharacter — that's where the `^[A-Za-z0-9_]+$` length 1-16
+ * inside saveCharacter â€” that's where the `^[A-Za-z0-9_]+$` length 1-16
  * regex lives. Empty string after trim = clear (null). Undefined/null = no change.
  */
 const ApplySkinArgsSchema = z.object({
@@ -401,14 +401,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
    * Function's ownership-check SELECT (moderate-character-images line 124)
    * returns 404 (`character_not_found`) and our callEdgeFunction wrapper
    * throws, which publishWithModeration catches and surfaces as the generic
-   * "Moderation service is temporarily unavailable" copy — confusing because
+   * "Moderation service is temporarily unavailable" copy â€” confusing because
    * the provider was never actually called.
    *
    * Race in plain terms: saveCharacter enqueues a cloud-mirror upsert
    * fire-and-forget (characterStore.ts ~130); chars:save's willShare branch
    * and chars:set-shared(true) then immediately invoke runModerationGate,
    * which hits the Edge Function before the queue drained. Solution: do the
-   * upsert synchronously here (shared = whatever the local row says — likely
+   * upsert synchronously here (shared = whatever the local row says â€” likely
    * false; the gate's own upsertCharacter call later flips to shared=true on
    * a clean verdict).
    *
@@ -417,7 +417,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
    * to a 'no-portrait' clean verdict inside the Edge Function (lines 156-158
    * + 205-207), so we can skip the upload in that case.
    *
-   * Skin is best-effort — the gate doesn't read skin bytes, so async sync
+   * Skin is best-effort â€” the gate doesn't read skin bytes, so async sync
    * via the regular queue is fine.
    */
   async function ensureCloudRowForModeration(
@@ -433,14 +433,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       `[sei] ensureCloudRowForModeration: upserting ${characterId} (owner=${ownerUuid}, local.owner=${char.owner ?? 'null'}, shared=${char.shared}, portrait=${char.portrait_image ?? 'null'})`,
     );
 
-    // Use an explicitly JWT-authed client for EVERY call below — upsert, verify
+    // Use an explicitly JWT-authed client for EVERY call below â€” upsert, verify
     // SELECT, and the portrait Storage upload. The singleton getClient()'s
     // ambient session is not reliably applied to outgoing requests in the main
     // process (see supabaseClient.ts getAuthedClient): when auth.getSession()
     // doesn't resolve, supabase-js's fetchWithAuth falls back to the anon key,
     // so RLS sees auth.uid()=null. PostgREST tolerates this intermittently, but
     // the Storage INSERT then trips "portraits new row violates row-level
-    // security policy" → the moderation Edge Function 502s → the user sees the
+    // security policy" â†’ the moderation Edge Function 502s â†’ the user sees the
     // misleading "Moderation service is temporarily unavailable." Passing the
     // JWT in global.headers.Authorization makes auth.uid() deterministic.
     const { getAuthedClient } = await import('./auth/supabaseClient');
@@ -452,7 +452,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Verify the row landed before handing off to the moderation gate. The
     // Edge Function uses adminClient (service_role, RLS-bypassing) for its
     // SELECT, so if a row visible to service_role doesn't exist, the upsert
-    // silently no-op'd — usually because the JWT didn't carry auth.uid()
+    // silently no-op'd â€” usually because the JWT didn't carry auth.uid()
     // through to the INSERT's WITH CHECK clause. Surfacing this explicitly
     // beats the misleading "Moderation service is temporarily unavailable"
     // copy downstream.
@@ -467,7 +467,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       );
     } else if (!verifyRow) {
       console.warn(
-        `[sei] ensureCloudRowForModeration: row ${characterId} NOT visible after upsert — RLS likely rejected INSERT (auth.uid() vs ${ownerUuid})`,
+        `[sei] ensureCloudRowForModeration: row ${characterId} NOT visible after upsert â€” RLS likely rejected INSERT (auth.uid() vs ${ownerUuid})`,
       );
     } else {
       console.log(
@@ -482,7 +482,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // Server-side signed-URL upload (asymmetric-JWT bridge): storage-api
         // can't verify our ES256 token, so uploadPortrait routes through the
         // sign-character-asset-upload Edge Function. Pass the access token, not
-        // the authed client — the client no longer touches storage directly.
+        // the authed client â€” the client no longer touches storage directly.
         await uploadPortrait(characterId, bytes, 'png', accessToken);
         console.log(
           `[sei] ensureCloudRowForModeration: uploaded portrait for ${characterId} (${bytes.byteLength} bytes)`,
@@ -490,7 +490,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       } catch (err) {
         // Non-fatal: if the portrait file is missing on disk (legacy install,
         // partial write), the Edge Function will still find row.portrait_image
-        // set and SightEngine will 404 → 502. The user retries; meanwhile the
+        // set and SightEngine will 404 â†’ 502. The user retries; meanwhile the
         // upsert above succeeded so the moderation gate doesn't hit the row-
         // missing 404 path. Logging only.
         console.warn(
@@ -500,13 +500,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   }
 
-  // 260525-qy0 Task 4 — moderation gate runner shared by:
+  // 260525-qy0 Task 4 â€” moderation gate runner shared by:
   //   - the new chars.save shared=true branch
   //   - the new chars.setShared(true) branch
   //
   // Returns the PublishResult tagged union from moderationGate. Caller decides
   // how to surface ok:false to the renderer (chars.save throws with friendlyMessage;
-  // chars.setShared throws with friendlyMessage — same shape as the existing
+  // chars.setShared throws with friendlyMessage â€” same shape as the existing
   // CharacterPage.tsx catch).
   //
   // All adapter logic lifted verbatim from the previous browse.publishWithModeration
@@ -550,8 +550,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
     // Moderation bypass. Two reasons to skip the image/prompt Edge Functions and
     // mark the row clean directly:
-    //   1. MODERATION_ENABLED === false — the global kill-switch (see above).
-    //   2. First-party defaults (sui/lyra/marv) — curated dev content, always
+    //   1. MODERATION_ENABLED === false â€” the global kill-switch (see above).
+    //   2. First-party defaults (sui/lyra/marv) â€” curated dev content, always
     //      exempt even when moderation is re-enabled. Re-running the gate on
     //      every edit was landing moderation_status=null on these rows and
     //      silently dropping them out of World (search_public_characters only
@@ -560,7 +560,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // that could clobber the uploaded portrait_image with a bundle path). It runs
     // AFTER ensureCloudRowForModeration's portrait upload in both chars.save and
     // chars.setShared, so it overrides the reset_moderation_on_portrait_change
-    // trigger's null. Best-effort — publishing must never be blocked by it.
+    // trigger's null. Best-effort â€” publishing must never be blocked by it.
     const isFirstPartyDefault = (Object.values(DEFAULT_CHARACTER_UUIDS) as string[]).includes(characterId);
     if (!MODERATION_ENABLED || isFirstPartyDefault) {
       const provider = MODERATION_ENABLED ? 'first-party-exempt' : 'moderation-disabled';
@@ -645,7 +645,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       getCharacter: async (id) => {
         // Read from the LOCAL store, not cloud. The chars.save (and
         // chars.setShared) flow writes the row locally BEFORE invoking the
-        // moderation gate, and the cloud mirror is fire-and-forget — so the
+        // moderation gate, and the cloud mirror is fire-and-forget â€” so the
         // cloud row may not yet exist when this runs. Previously this called
         // downloadCharacter(id) and threw "character X not found in cloud",
         // surfacing as the chars:save error users saw on new-character save.
@@ -674,12 +674,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           username: c.username,
           // Fold the human-facing description into metadata.description. The
           // local Character keeps it as a TOP-LEVEL field, but the cloud row
-          // (and every cloud upsert path — see cloudCharacterClient.upsertCharacter
+          // (and every cloud upsert path â€” see cloudCharacterClient.upsertCharacter
           // / rowToCharacter) carries it inside metadata.description. Without
           // this fold, publishWithModeration spreads this row straight into its
           // final upsertCharacter call with metadata:{}, CLOBBERING the
           // description that the earlier ensureCloudRowForModeration / sync-queue
-          // upserts wrote — so every character published through the gate lost
+          // upserts wrote â€” so every character published through the gate lost
           // its description in cloud and other users saw "No description provided".
           metadata:
             c.description != null
@@ -724,7 +724,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         return;
       }
       const ids = (data ?? []).map((r) => (r as { id: string }).id);
-      if (ids.length === 0) return; // no reset rows — dormant under all-green
+      if (ids.length === 0) return; // no reset rows â€” dormant under all-green
 
       console.log(
         `[sei] remoderate-on-reset: re-running gate for ${ids.length} reset shared character(s)`,
@@ -733,7 +733,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         try {
           const res = await runModerationGate(id);
           console.log(
-            `[sei] remoderate-on-reset: ${id} → ${
+            `[sei] remoderate-on-reset: ${id} â†’ ${
               res.ok ? `restored (${res.moderationProvider})` : `left hidden (${res.code})`
             }`,
           );
@@ -759,7 +759,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const game: GameId = typeof arg === 'string' ? 'minecraft' : (arg.game ?? 'minecraft');
     // 260828: this handler is the USER-ACTION summon path (the renderer's
     // Summon button and every popup retry go through it). A manual attempt is
-    // never blocked — it clears any pre-gate auto-retry block so the automatic
+    // never blocked â€” it clears any pre-gate auto-retry block so the automatic
     // paths (launch() tool, voice launch honors) get a fresh chance too.
     clearSummonBlock(id);
     await deps.supervisor.summon(id, game);
@@ -834,7 +834,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // 260517-frz: when the renderer passes `{ skipExpansion: true }`, main
   // writes `character.persona.expanded` verbatim and skips the LLM call.
   // This is how the Edit modal supports manual editing of the long-form
-  // prompt — the user's edits win, no regeneration is triggered.
+  // prompt â€” the user's edits win, no regeneration is triggered.
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
 
@@ -862,17 +862,17 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       });
     }
 
-    // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
+    // 260703 procgen slot backstop â€” a CREATE (id not yet on disk) may not push
     // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
     // character are always allowed (they don't add a slot). Defaults are never
     // saved through this path. This is defense-in-depth behind the renderer's
     // pre-check and the generateUnique guard.
     //
     // 260705: a CREATE is also subject to the daily creation cap
-    // (MAX_CREATIONS_PER_DAY, rolling 24h — checkCreateQuota). The renderer
+    // (MAX_CREATIONS_PER_DAY, rolling 24h â€” checkCreateQuota). The renderer
     // pre-checks and shows CreationLimitModal before entering the wizard;
     // this is the backstop for the mid-flow race, and the thrown sentinel
-    // contains 'daily_limit_reached' — the string AddCharacterScreen already
+    // contains 'daily_limit_reached' â€” the string AddCharacterScreen already
     // pattern-matches to land on the same modal.
     const isCreate = (await getCharacter(parsedCharacter.id).catch(() => null)) === null;
     if (isCreate) {
@@ -893,7 +893,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Streaming-progress routing key. When present, build an onProgress bridge
     // that stamps each expansion tick with this id and pushes it onto the
     // chars:expansion-progress channel; the renderer filters by the same id.
-    // Absent → expansion still streams internally, it just emits no ticks.
+    // Absent â†’ expansion still streams internally, it just emits no ticks.
     const expansionRequestId =
       optsArg != null &&
       typeof optsArg === 'object' &&
@@ -908,7 +908,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Stamp owner on local-only characters at save time so the renderer can
     // filter by current account on sign-in. Without this, characters created
     // while signed in as A had a null owner and would later leak into B's
-    // Home grid (the legacy `c.owner == null → show` fallback). Defaults are
+    // Home grid (the legacy `c.owner == null â†’ show` fallback). Defaults are
     // never owned (D-22). For everything else, copy from the live session.
     let character = parsedCharacter;
     if (!parsedCharacter.is_default) {
@@ -924,7 +924,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     }
 
-    // 260525-qy0 Task 4 — gate every shared=true transition through the
+    // 260525-qy0 Task 4 â€” gate every shared=true transition through the
     // moderation pipeline BEFORE the cloud upsert. Defaults (D-22) can never
     // be shared, so willShare implicitly excludes them.
     const willShare = character.shared === true && !character.is_default;
@@ -940,7 +940,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
 
     if (!willShare) {
-      // Fast path — private save (or default-with-shared=false). Existing
+      // Fast path â€” private save (or default-with-shared=false). Existing
       // behavior preserved exactly.
       if (skipExpansion) {
         await saveCharacter(character);
@@ -952,7 +952,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       return persisted;
     }
 
-    // Phase 1 — local persist as PRIVATE first. This defuses the sync-queue
+    // Phase 1 â€” local persist as PRIVATE first. This defuses the sync-queue
     // race where saveCharacter's fire-and-forget mirror could enqueue
     // shared=true to cloud BEFORE moderation runs. The cloud row lands as
     // private; moderation's own upsertCharacter adapter does the shared=true
@@ -965,11 +965,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     } else {
       persistedPrivate = await expandAndSaveCharacter({ character: draftPrivate, onProgress });
     }
-    // The character is on disk from here on — count the creation now, before
+    // The character is on disk from here on â€” count the creation now, before
     // the (long, failure-prone) moderation + cloud-sync tail.
     if (isCreate) await recordCreation();
 
-    // Phase 2 — run moderation gate. On clean, the gate's upsertCharacter
+    // Phase 2 â€” run moderation gate. On clean, the gate's upsertCharacter
     // adapter has already written shared=true to cloud; re-sync the local
     // row via saveCharacterRaw (no mirror) so we don't double-queue.
     //
@@ -1001,12 +1001,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const char = await getCharacter(id);
     if (!char) throw new Error('Character not found.');
-    // Refuse to delete the active character — UI should never request this.
+    // Refuse to delete the active character â€” UI should never request this.
     if (deps.supervisor.isActive(id)) {
       throw new Error('Cannot delete the currently summoned character. Stop first.');
     }
     if (char.is_default) {
-      // Defaults are bundled (D-22) and never actually leave the disk —
+      // Defaults are bundled (D-22) and never actually leave the disk â€”
       // 260703 procgen: Home visibility for defaults is OPT-IN via
       // UserConfig.added_default_ids (they live in the World tab otherwise),
       // so "remove from library" strips the id from that list. The legacy
@@ -1034,14 +1034,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const { loadConfig, updateConfig } = await import('./configStore');
     const cfg = await loadConfig();
-    // 260703 procgen slot backstop — re-adding a default to Home occupies a
+    // 260703 procgen slot backstop â€” re-adding a default to Home occupies a
     // slot; refuse when the library is already full UNLESS this default is
     // already counted (a no-op re-add must not falsely block).
     const alreadyOnHome = (cfg.added_default_ids ?? []).includes(id);
     if (!alreadyOnHome && (await libraryIsFull())) {
       throw new Error(SLOT_LIMIT_REACHED_MESSAGE);
     }
-    // 260703 procgen: Home visibility for defaults is OPT-IN — inviting a
+    // 260703 procgen: Home visibility for defaults is OPT-IN â€” inviting a
     // default writes it into added_default_ids (the set HomeGrid/IconRail and
     // the slot guard above actually read).
     if (!alreadyOnHome) {
@@ -1064,13 +1064,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const { getActiveScope } = await import('./paths');
     const scope = getActiveScope();
-    // 260703 procgen slot backstop — adding a World character occupies a Home
+    // 260703 procgen slot backstop â€” adding a World character occupies a Home
     // slot; refuse when the library is already full UNLESS it ALREADY occupies a
     // slot. "Already counted" must mirror the exact membership rule
     // libraryCharacterCount uses, NOT merely "cached locally and not default":
-    // opening/hovering a World card runs charsOpenPrepare → ensureLocallyCached,
+    // opening/hovering a World card runs charsOpenPrepare â†’ ensureLocallyCached,
     // which caches the foreign row on disk, so a bare `!is_default` check treats
-    // every browsed-but-not-invited character as counted and skips the backstop —
+    // every browsed-but-not-invited character as counted and skips the backstop â€”
     // letting a full 4/4 user invite a 5th and silently drop an existing one. A
     // foreign row occupies a slot ONLY when it is actually invited
     // (config.added_world_ids); a merely-cached row does not.
@@ -1083,7 +1083,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const localExisting = await getCharacter(id).catch(() => null);
       let alreadyCounted: boolean;
       if (localExisting?.is_default) {
-        // Bundled default → occupies a slot only when invited to Home.
+        // Bundled default â†’ occupies a slot only when invited to Home.
         alreadyCounted = (preCfg.added_default_ids ?? []).includes(id);
       } else if (
         localExisting != null &&
@@ -1091,14 +1091,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         localExisting.owner != null &&
         localExisting.owner !== currentUserId
       ) {
-        // Foreign-owned (World) row → counts only when explicitly invited;
+        // Foreign-owned (World) row â†’ counts only when explicitly invited;
         // merely cached by browsing does NOT count.
         alreadyCounted = (preCfg.added_world_ids ?? []).includes(id);
       } else if (localExisting != null) {
-        // Own or legacy null-owner local char → always occupies a slot.
+        // Own or legacy null-owner local char â†’ always occupies a slot.
         alreadyCounted = true;
       } else {
-        // Not cached locally yet → count it only if already invited.
+        // Not cached locally yet â†’ count it only if already invited.
         alreadyCounted = (preCfg.added_world_ids ?? []).includes(id);
       }
       if (!alreadyCounted && (await libraryIsFull())) {
@@ -1131,7 +1131,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // Remove a foreign-owned World character from the user's library. Two
   // steps: strip the id from UserConfig.added_world_ids so HomeGrid +
   // IconRail re-filter, then wipe the local cache files (JSON + portrait +
-  // skin + memory). DOES NOT enqueue any cloud delete — the user doesn't own
+  // skin + memory). DOES NOT enqueue any cloud delete â€” the user doesn't own
   // the row, RLS would reject it, and we'd burn a sync-queue retry slot.
   // Refuses to act while the character is summoned.
   ipcMain.handle(IpcChannel.chars.removeFromLibrary, async (_event, idArg: unknown): Promise<void> => {
@@ -1217,11 +1217,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await resetMemoryForCharacter(id);
   });
 
-  // ── 260725 Knowledge — per-character user-provided reference files ────────
+  // â”€â”€ 260725 Knowledge â€” per-character user-provided reference files â”€â”€â”€â”€â”€â”€â”€â”€
   // All parsing/sanitizing lives in main (knowledge/extractText.ts); character
   // and entry ids are UUID-gated because both become path components under
   // paths.knowledgeDir. Uploads arrive as base64 with a pre-decode length cap
-  // (512 KB raw ≈ 700 KB base64) so a hostile renderer can't balloon memory.
+  // (512 KB raw â‰ˆ 700 KB base64) so a hostile renderer can't balloon memory.
   const KnowledgeCharId = z.string().uuid();
   const KnowledgeEntryId = z.string().uuid();
   ipcMain.handle(IpcChannel.knowledge.extract, async (_event, argsRaw: unknown) => {
@@ -1267,7 +1267,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return compactKnowledge(KnowledgeCharId.parse(idArg));
   });
 
-  // ── 260810 Phantom-call recovery ──────────────────────────────────────────
+  // â”€â”€ 260810 Phantom-call recovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // scan is read-only + shape-only; repair quarantines (backup + sidecars
   // before any original is touched, see recovery/recoveryService.ts). The
   // characterId becomes a path component under paths.memoryDir, so it is
@@ -1284,7 +1284,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         .min(1)
         .max(50)
         .parse(windowsRaw);
-      // Refuse while the bot holds this character's memory dir at runtime —
+      // Refuse while the bot holds this character's memory dir at runtime â€”
       // same guard as chars:reset-memory. (Voice/backseat sessions are ended
       // renderer-side before the modal offers a repair.)
       if (deps.supervisor.isActive(id)) {
@@ -1298,11 +1298,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await dismissRecovery(keys);
   });
 
-  // Phase 11 D-28 — portrait pipeline. Renderer canvas-resizes + re-encodes
-  // bytes (≤1024², ≤500KB) and hands them here as base64. We re-validate
+  // Phase 11 D-28 â€” portrait pipeline. Renderer canvas-resizes + re-encodes
+  // bytes (â‰¤1024Â², â‰¤500KB) and hands them here as base64. We re-validate
   // (magic + size + PNG dim) in portraitStore.applyPortrait before writing.
   //
-  // characterId is gated through z.string().uuid() — the post-11-03 schema
+  // characterId is gated through z.string().uuid() â€” the post-11-03 schema
   // requires UUID v4 for `Character.id`, and `paths.portraitPath(uuid)` builds
   // a filesystem path component, so UUID format is the path-traversal defense.
   // The kebab-case IdSchema above is for legacy slug callers; portrait IPC
@@ -1324,7 +1324,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await removePortrait(id);
   });
 
-  // 260909 — card-image versions + regeneration. characterId is UUID-gated
+  // 260909 â€” card-image versions + regeneration. characterId is UUID-gated
   // (path-traversal defense, same as applyPortrait); the version `file` is
   // additionally pinned to `<that uuid>-v<n>.png` before it touches a path.
   ipcMain.handle(IpcChannel.chars.portraitVersions, async (_event, idArg: unknown): Promise<PortraitVersionsState> => {
@@ -1332,7 +1332,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { getPortraitVersions } = await import('./portraitStore');
     return await getPortraitVersions(id);
   });
-  // 261110 — the profile Overview's cloud facts. Never throws past parsing.
+  // 261110 â€” the profile Overview's cloud facts. Never throws past parsing.
   ipcMain.handle(IpcChannel.chars.overviewInfo, async (_event, idArg: unknown): Promise<CharacterOverviewInfo> => {
     const id = z.string().uuid().parse(idArg);
     const { characterOverviewInfo } = await import('./cloud/characterOverview');
@@ -1394,8 +1394,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return promise;
   });
 
-  // ── In-app chat (Phase 18/19) ─────────────────────────────────────────────
-  // The chat LLM call runs entirely in main (mirrors personaExpansion) — no
+  // â”€â”€ In-app chat (Phase 18/19) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // The chat LLM call runs entirely in main (mirrors personaExpansion) â€” no
   // forked bot. `chat:send` may run the launch tool, which consults the live
   // LAN state and summons the bot when a world is open.
   // On-disk the transcript is append-only and never trimmed (260705), but the
@@ -1434,7 +1434,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .object({
         characterId: IdSchema,
         text: z.string().min(1).max(CHAT_TEXT_MAX),
-        // Quoted-reply reference (chat #1) — was previously dropped here, so the
+        // Quoted-reply reference (chat #1) â€” was previously dropped here, so the
         // companion never saw what the user was replying to.
         replyTo: z
           .object({ role: z.enum(['user', 'companion']), text: z.string() })
@@ -1448,12 +1448,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { sendChatMessage } = await import('./chat/chatService');
     const { isCallActive } = await import('./voice/callState');
     const inCall = isCallActive(args.characterId);
-    // 260724 latency: a mid-call send means a spoken reply is coming — warm
+    // 260724 latency: a mid-call send means a spoken reply is coming â€” warm
     // the TTS connection now so its handshake overlaps the LLM turn (chess
     // replies in a call speak too, so this runs before the chess branch).
     if (inCall) void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
     // Chess (260710): while a game is open, chat goes through the chess turn
-    // runner instead — the reply knows the board, and a message during the
+    // runner instead â€” the reply knows the board, and a message during the
     // character's turn interrupts it (the turn reruns with an [interrupted]
     // memo). Returns null when no active game, falling through as usual.
     {
@@ -1468,7 +1468,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         if (handled) return handled;
       }
     }
-    // Draw! (260729): same routing while a Draw! game is live — a chat-screen
+    // Draw! (260729): same routing while a Draw! game is live â€” a chat-screen
     // message or a line dictated on a live voice call lands in the game as a
     // guess/table talk. The character's side comes back over the draw:state
     // push (and as spoken voice pushes on a call), so `replies` stays empty.
@@ -1482,15 +1482,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
-    // Skipped mid-call — a live voice call cannot be opening a world, and this
+    // Skipped mid-call â€” a live voice call cannot be opening a world, and this
     // ran on the latency-critical path before every spoken reply (260706).
     if (!inCall) {
       try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
     }
     // Analytics (260801): the ONLY chat-session choke point. Everything routed
     // above this line belongs to another surface that emits its own timed
-    // event — chess and Draw! have already declined, and a mid-call line is
-    // covered by voice_call_ended — so counting here can never double-bill
+    // event â€” chess and Draw! have already declined, and a mid-call line is
+    // covered by voice_call_ended â€” so counting here can never double-bill
     // playtime. See chat/chatSession.ts for the session model.
     // 261106: same choke point for reply_latency (surface chat): a mid-call
     // line is timed by the renderer's voice clock instead.
@@ -1518,13 +1518,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // 260828 retry-loop guard: launch() refuses (and tells the model not
         // to retry) while a summon pre-gate refusal is still standing.
         blockedAutoLaunch: (id) => blockedAutoSummon(id),
-        // Task 4 — when the character is already in-game (spawned), route this
+        // Task 4 â€” when the character is already in-game (spawned), route this
         // message into that live session instead of the standalone chat brain.
         isInGame: (id) => deps.isSessionOnline(id),
         liveGame: (id) => deps.sessionGame?.(id) ?? null,
         routeToBot: (id, payload) => deps.supervisor.sendSeiChat(id, payload),
         onLaunchFailed: (id, reason) => deps.notifyLaunchFailed(id, reason),
-        // Task 5 — the companion called quit() from chat: end the live session.
+        // Task 5 â€” the companion called quit() from chat: end the live session.
         leaveGame: (id) => {
           void deps.supervisor.stop(id, 'companion_quit');
         },
@@ -1547,7 +1547,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await turnPromise;
   });
 
-  // ── Chess minigame (260710) ──────────────────────────────────────────────
+  // â”€â”€ Chess minigame (260710) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Thin wrappers over src/main/chess/chessService (module state initialized
   // from index.ts via initChessService). All character-scoped.
   ipcMain.handle(IpcChannel.chess.start, async (_event, argsRaw: unknown) => {
@@ -1603,7 +1603,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await chess.ackReveal(args.characterId, args.uci);
   });
 
-  // ── Draw! minigame (260727) ───────────────────────────────────────────────
+  // â”€â”€ Draw! minigame (260727) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Thin wrappers over src/main/draw/drawService (module state initialized
   // from index.ts via initDrawService). All character-scoped except `snapshot`,
   // which is keyed by the requestId main handed out.
@@ -1698,12 +1698,93 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await draw.endDraw(id);
   });
 
-  // ── OS permission flows (260929) ──────────────────────────────────────────
+  // â”€â”€ Forza 4 minigame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Thin wrappers over src/main/connect4/connect4Service (module state initialized
+  // in main/index.ts). All character-scoped.
+  const CONNECT4MoveArgsSchema = z.object({
+    characterId: IdSchema,
+    column: z.number().int().min(0).max(6),
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, playerColor: z.enum(['r', 'y', 'random']).optional() })
+      .parse(argsRaw);
+    const { startCONNECT4 } = await import('./connect4/connect4Service');
+    return await startCONNECT4(args.characterId, { playerColor: args.playerColor });
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getCONNECT4State } = await import('./connect4/connect4Service');
+    return getCONNECT4State(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.move, async (_event, argsRaw: unknown) => {
+    const args = CONNECT4MoveArgsSchema.parse(argsRaw);
+    const { playerMove } = await import('./connect4/connect4Service');
+    return await playerMove(args.characterId, args.column);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.resign, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { resign } = await import('./connect4/connect4Service');
+    return await resign(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.rematch, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { rematch } = await import('./connect4/connect4Service');
+    return await rematch(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { endCONNECT4 } = await import('./connect4/connect4Service');
+    await endCONNECT4(id);
+  });
+
+  // â”€â”€ Battleship minigame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  ipcMain.handle(IpcChannel.BATTLESHIP.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        playerStarts: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { startBATTLESHIP } = await import('./battleship/battleshipService');
+    return await startBATTLESHIP(args.characterId, {
+      playerStarts: args.playerStarts,
+    });
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getBATTLESHIPState } = await import('./battleship/battleshipService');
+    return getBATTLESHIPState(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.move, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, row: z.number().int().min(0).max(9), col: z.number().int().min(0).max(9) })
+      .parse(argsRaw);
+    const { playerMove } = await import('./battleship/battleshipService');
+    return await playerMove(args.characterId, args.row, args.col);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.resign, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { resign } = await import('./battleship/battleshipService');
+    return await resign(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.rematch, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { rematch } = await import('./battleship/battleshipService');
+    return await rematch(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { endBATTLESHIP } = await import('./battleship/battleshipService');
+    await endBATTLESHIP(id);
+  });
+
+  // â”€â”€ OS permission flows (260929) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Mic on first Call press, macOS Screen Recording before the share picker,
   // Settings deep links from a fixed allowlist. See permissions/*.
   registerPermissionHandlers();
 
-  // ── Backseat (260728) ─────────────────────────────────────────────────────
+  // â”€â”€ Backseat (260728) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Thin wrappers over src/main/backseat/backseatService (module state
   // initialized in main/index.ts). The grid payloads are large but bounded:
   // a 1204x1008 JPEG is ~150 KB, ~200 KB as a base64 data URL.
@@ -1721,7 +1802,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return sources
       // Sei's own windows are never useful to share and sharing the picker
       // itself produces an infinite hall of mirrors.
-      .filter((s) => !/^Sei($| [-—|])/.test(s.name))
+      .filter((s) => !/^Sei($| [-â€”|])/.test(s.name))
       .map((s) => ({
         id: s.id,
         name: s.name,
@@ -1791,7 +1872,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         kind: z.enum(['user', 'start', 'jolt', 'idle']),
         grid: z.string().max(8_000_000),
         // 260804: this was MISSING, and zod strips what it does not declare, so
-        // the previous-grid memory added on 260802 never reached the service —
+        // the previous-grid memory added on 260802 never reached the service â€”
         // every look was the companion's first. The absence was invisible
         // because a null prevGrid is a legal state (the first tick of every
         // session). Anything the service reads off a tick must be declared here.
@@ -1897,23 +1978,23 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await backseat.endBackseat(id, reason, { playerEnded: isPlayerEndedReason(reason) });
   });
 
-  // ── Minecraft dashboard (260721) ──────────────────────────────────────────
+  // â”€â”€ Minecraft dashboard (260721) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Thin wrappers over src/main/mcDashboard/mcDashboardService (module state
   // initialized in main/index.ts) + the supervisor's watch-flag port message.
   ipcMain.handle(IpcChannel.mcdash.get, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
-    // No live session → null, even if a stale cache entry survived teardown.
+    // No live session â†’ null, even if a stale cache entry survived teardown.
     if (!deps.supervisor.isActive(id)) return null;
     const { getMcDashboardSnapshot } = await import('./mcDashboard/mcDashboardService');
     return getMcDashboardSnapshot(id);
   });
   ipcMain.handle(IpcChannel.mcdash.setWatching, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, watching: z.boolean() }).parse(argsRaw);
-    // No-op (false) when the character has no live session — the tile only
+    // No-op (false) when the character has no live session â€” the tile only
     // renders while summoned, but a stop can race the unmount cleanup call.
     deps.supervisor.setDashboardWatch(args.characterId, args.watching);
   });
-  // 260725 play/pause + runtime game mode — both runtime-only, never persisted.
+  // 260725 play/pause + runtime game mode â€” both runtime-only, never persisted.
   ipcMain.handle(IpcChannel.mcdash.setPaused, async (_event, argsRaw: unknown) => {
     const args = z.object({ characterId: IdSchema, paused: z.boolean() }).parse(argsRaw);
     return deps.supervisor.setGamePaused(args.characterId, args.paused);
@@ -1925,7 +2006,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.supervisor.setGameMode(args.characterId, args.mode);
   });
 
-  // ── Generic game dashboard (game adapters M0, 260908) ─────────────────────
+  // â”€â”€ Generic game dashboard (game adapters M0, 260908) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The gamedash:* set the two new games use. Same supervisor port messages
   // as mcdash:* (dashboard-watch / game-pause / game-mode are game-agnostic);
   // only the snapshot store differs (src/main/games/gameDashboardService).
@@ -1950,7 +2031,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return deps.supervisor.setGameMode(args.characterId, args.mode);
   });
 
-  // ── Voice calls (260705) ──────────────────────────────────────────────────
+  // â”€â”€ Voice calls (260705) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // TTS synthesis (proxy passthrough; the ElevenLabs key never reaches the
   // renderer or the repo) + the call open/hang-up toggle. The toggle records
   // main-side state (idle-chat prompts read it) and forwards the mode into a
@@ -2010,7 +2091,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // this against the local Whisper worker and falls back to local on any
   // rejection, so failures here cost accuracy, never an utterance. Scribe's
   // per-utterance language detection feeds the auto-switch (260725,
-  // voice/languageAutoSwitch.ts) — the renderer only ever sees the text.
+  // voice/languageAutoSwitch.ts) â€” the renderer only ever sees the text.
   ipcMain.handle(
     IpcChannel.voice.stt,
     async (
@@ -2021,7 +2102,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     > => {
       const args = z
         .object({
-          // 16kHz mono Float32 PCM; 15s max utterance ≈ 960KB, 2MB is headroom.
+          // 16kHz mono Float32 PCM; 15s max utterance â‰ˆ 960KB, 2MB is headroom.
           pcm: z.instanceof(ArrayBuffer).refine((b) => b.byteLength > 0 && b.byteLength <= 2_000_000),
         })
         .parse(argsRaw);
@@ -2048,7 +2129,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     prewarmTts();
   });
 
-  // ── Game packs (260908) ───────────────────────────────────────────────────
+  // â”€â”€ Game packs (260908) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // A game adapter's runtime node_modules, downloaded on first use into
   // <userData>/game-packs/<game>/. Contract: src/shared/gamePacks.ts; store:
   // src/main/games/packs.ts. The push carries the whole state object, and the
@@ -2088,7 +2169,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // ── Don't Starve Together (game-adapters M2, 260908) ─────────────────────
+  // â”€â”€ Don't Starve Together (game-adapters M2, 260908) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Install detection + the mod copy, the Steam launch, the per-character
   // survivor pick, and the discovery port. Everything goes through the
   // registered DST GameModule (src/main/games/dontstarve); the renderer
@@ -2150,7 +2231,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return setSurvivor(args.characterId, args.prefab);
   });
 
-  // ── Stardew Valley install / launch (game-adapters M1, 260908) ───────────
+  // â”€â”€ Stardew Valley install / launch (game-adapters M1, 260908) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // src/main/games/stardew: detection is a fresh pass each call (cheap: a
   // few stats); the install is single-flight and streams its stages on the
   // stardew:install-progress push; a failure rejects with the ErrorClass
@@ -2205,10 +2286,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return stardewGameRunning();
   });
 
-  // ── Local speech (260816, china-compat W3+W4) ─────────────────────────────
+  // â”€â”€ Local speech (260816, china-compat W3+W4) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // sherpa-onnx model packs (local TTS voices + SenseVoice STT), downloaded
   // on demand into <userData>/speech-models/. Contract: src/main/speech/index.ts.
-  // Everything the renderer reads is named in the schemas here — zod strips
+  // Everything the renderer reads is named in the schemas here â€” zod strips
   // undeclared keys silently (the backseat gridSmall lesson).
   const SpeechPackIdSchema = z.enum(['tts-en', 'tts-zh', 'tts-kokoro', 'stt-sensevoice']);
   let speechPushWired = false;
@@ -2241,7 +2322,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (args.packId === 'tts-kokoro') releaseKokoroEngines('pack removed');
     await removePack(args.packId);
   });
-  // SenseVoice dictation transcription (renderer VAD-cut utterance → text).
+  // SenseVoice dictation transcription (renderer VAD-cut utterance â†’ text).
   // Same PCM bound as voice:stt; language rides back for the auto-switch the
   // renderer's caller feeds (main-side noteDetectedLanguage stays Scribe-only:
   // SenseVoice's tag is per-model, not a calibrated probability).
@@ -2258,7 +2339,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const { normalizeSttText } = await import('./voice/stt');
       // Constrain SenseVoice's decode language to the conversation language
       // (260907): full auto-detect on this build drifts English speech into
-      // Chinese. Best-effort — a failed config read falls back to auto-detect
+      // Chinese. Best-effort â€” a failed config read falls back to auto-detect
       // rather than blocking the transcription.
       let chatLanguage: string | undefined;
       try {
@@ -2279,8 +2360,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       .object({
         characterId: IdSchema,
         active: z.boolean(),
-        // Hang-up only: how long the call was actually LIVE. Present → post
-        // the "You and X called for Y" row. Absent → the call never connected
+        // Hang-up only: how long the call was actually LIVE. Present â†’ post
+        // the "You and X called for Y" row. Absent â†’ the call never connected
         // (dial error), so nothing is logged.
         connectedMs: z.number().int().nonnegative().optional(),
         // Connect report (260926): the call went live. See markCallLive.
@@ -2315,7 +2396,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Presence (260707): a call is a real interaction, so stamp last_chatted at
     // BOTH edges. Game sessions and text chat already drive the "online" dot;
     // a call previously only did when the player happened to speak a turn (that
-    // path reuses sendChatMessage) — a greeting-only or listen-only call left
+    // path reuses sendChatMessage) â€” a greeting-only or listen-only call left
     // the character looking idle. Best-effort, like the chat-turn stamp.
     try {
       const { patchCharacter } = await import('./characterStore');
@@ -2343,7 +2424,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // voice.companionTurn handler below for the full story).
     const idleWorldOpen = deps.getLanState().kind === 'open';
     // 260828 retry-loop guard: after a pre-gate refusal, this automatic launch
-    // honor stays off until the user acts (or the block ages out) — otherwise
+    // honor stays off until the user acts (or the block ages out) â€” otherwise
     // each nudge re-runs the doomed summon and re-fails (see summonGuard.ts).
     const idleLaunchable = idleWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendVoiceIdleTurn(args.characterId, args.quietSeconds, args.peers, {
@@ -2359,7 +2440,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     });
   });
 
-  // Voice calls (260705): the renderer's call pipeline just went live — ask the
+  // Voice calls (260705): the renderer's call pipeline just went live â€” ask the
   // companion to speak first (like answering the phone). 260706: `peers` names
   // any other companions already on the call so a joiner greets the group.
   ipcMain.handle(IpcChannel.voice.greet, async (_event, argRaw: unknown): Promise<void> => {
@@ -2368,7 +2449,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       typeof argRaw === 'string'
         ? { characterId: IdSchema.parse(argRaw), peers: [] as string[] }
         : z.object({ characterId: IdSchema, peers: z.array(z.string()).default([]) }).parse(argRaw);
-    // 260724 latency: the greeting's TTS follows shortly — warm the connection.
+    // 260724 latency: the greeting's TTS follows shortly â€” warm the connection.
     void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
     deps.greetVoiceCall?.(parsed.characterId, parsed.peers);
   });
@@ -2387,16 +2468,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       })
       .parse(argsRaw);
     const { sendCompanionVoiceTurn } = await import('./chat/chatService');
-    // 260724 latency: a reaction line's TTS follows — warm the connection.
+    // 260724 latency: a reaction line's TTS follows â€” warm the connection.
     void import('./voice/tts').then((m) => m.prewarmTts()).catch(() => {});
-    // 260708: this turn used to hardcode "no world open" — so while one
+    // 260708: this turn used to hardcode "no world open" â€” so while one
     // companion was IN the player's world, a call-only companion reacting on
     // the call was told no world existed (and repeated the open-to-LAN
     // instructions), and any launch() it called was silently dropped (this is
     // a single-shot turn with no tool loop). Pass live LAN truth and honor
     // launch() the way chat:send does, gated on the world actually being open.
     const reactWorldOpen = deps.getLanState().kind === 'open';
-    // 260828 retry-loop guard — same as the idle-nudge honor above.
+    // 260828 retry-loop guard â€” same as the idle-nudge honor above.
     const reactLaunchable = reactWorldOpen && blockedAutoSummon(args.characterId) === null;
     return await sendCompanionVoiceTurn(args.characterId, {
       speakerName: args.speakerName,
@@ -2476,14 +2557,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     updateCallOverlay(state);
   });
 
-  // Overlay window pulls the current state on mount — the seed push can race
+  // Overlay window pulls the current state on mount â€” the seed push can race
   // its subscription (see getCallOverlayState).
   ipcMain.handle(IpcChannel.voice.overlayGet, async () => {
     const { getCallOverlayState } = await import('./callOverlay');
     return getCallOverlayState();
   });
 
-  // ── Live2D avatar store + overlay window controls (260804) ─────────────
+  // â”€â”€ Live2D avatar store + overlay window controls (260804) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   ipcMain.handle(IpcChannel.avatar.import, async (_event, idArg: unknown, zipArg: unknown) => {
     const id = IdSchema.parse(idArg);
@@ -2503,7 +2584,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Cloud avatar download (260819): main resolves the URL from the character
-  // row's metadata.avatar itself — the renderer only names the character, so
+  // row's metadata.avatar itself â€” the renderer only names the character, so
   // this handler can never be pointed at an arbitrary URL. The fetched zip
   // rides the exact same import/normalization pipeline as a local upload.
   ipcMain.handle(IpcChannel.avatar.download, async (_event, idArg: unknown) => {
@@ -2544,7 +2625,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // ── Avatar library (261106, docs/agents/avatar-library.md) ─────────────
+  // â”€â”€ Avatar library (261106, docs/agents/avatar-library.md) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Main owns every URL and upload: the renderer names a character and an
   // avatar id, never a storage path. Writes answer AvatarLibraryResult.
   const AvatarIdSchema = z.string().uuid();
@@ -2612,7 +2693,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Persistent accessory toggle (260806): update the stored manifest, then
-  // broadcast it to EVERY window — the profile preview and an already-open
+  // broadcast it to EVERY window â€” the profile preview and an already-open
   // overlay tile both re-apply the toggles live without reloading the model.
   ipcMain.handle(IpcChannel.avatar.setAccessory, async (_event, argsRaw: unknown) => {
     const args = z
@@ -2632,7 +2713,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return manifest;
   });
 
-  // Mouth-level relay (main window → overlay window). ~25 Hz while a Live2D
+  // Mouth-level relay (main window â†’ overlay window). ~25 Hz while a Live2D
   // participant is audible; deliberately NOT persisted or validated beyond
   // shape (it is a per-frame animation sample from our own renderer).
   ipcMain.handle(IpcChannel.avatar.overlayLevel, async (_event, argsRaw: unknown) => {
@@ -2653,7 +2734,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Resize stream from the overlay renderer ({size, width?, anchor,
-  // commit?}) — corner drags anchor the opposite corner and stream BOTH tile
+  // commit?}) â€” corner drags anchor the opposite corner and stream BOTH tile
   // axes (free-form since 260807); 'center' is kept for programmatic use.
   ipcMain.handle(IpcChannel.avatar.overlayResize, async (_event, argsRaw: unknown) => {
     const args = z
@@ -2669,7 +2750,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Hold-to-drag window move stream from the overlay renderer ({phase, dx,
-  // dy}), mirroring captionMove — the drag button is ordinary chrome now, not
+  // dy}), mirroring captionMove â€” the drag button is ordinary chrome now, not
   // an app-region (available in view mode too).
   ipcMain.handle(IpcChannel.avatar.overlayMove, async (_event, argsRaw: unknown) => {
     const args = z
@@ -2684,7 +2765,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Per-character tile camera stream (260806): edit-mode wheel/drag over a
-  // Live2D tile — zoom + pan the character WITHIN the tile.
+  // Live2D tile â€” zoom + pan the character WITHIN the tile.
   ipcMain.handle(IpcChannel.avatar.overlayCamera, async (_event, argsRaw: unknown) => {
     const args = z
       .object({
@@ -2699,7 +2780,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     setOverlayCamera(args.id, { zoom: args.zoom, x: args.x, y: args.y }, args.commit === true);
   });
 
-  // The avatar overlay's pencil toggled edit mode — the caption window's edit
+  // The avatar overlay's pencil toggled edit mode â€” the caption window's edit
   // chrome (and interactivity) follows it.
   ipcMain.handle(IpcChannel.avatar.overlayEditing, async (_event, onRaw: unknown) => {
     const on = z.boolean().parse(onRaw);
@@ -2707,7 +2788,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     setCaptionEditing(on);
   });
 
-  // Overlay mute button → relay to the main window, which owns the mic state
+  // Overlay mute button â†’ relay to the main window, which owns the mic state
   // (useUiStore.callMuted; the overlay's icon updates via the state re-push).
   ipcMain.handle(IpcChannel.avatar.overlayMute, async () => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -2715,7 +2796,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // Overlay interrupt button (261030) → relay to the main window, which owns
+  // Overlay interrupt button (261030) â†’ relay to the main window, which owns
   // the call (useVoiceStore.interrupt runs the barge-in cut).
   ipcMain.handle(IpcChannel.avatar.overlayInterrupt, async () => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -2723,7 +2804,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // Overlay captions button → toggle the caption window, then re-push the
+  // Overlay captions button â†’ toggle the caption window, then re-push the
   // enriched state so the button lights correctly.
   ipcMain.handle(IpcChannel.avatar.overlayCaptions, async (): Promise<boolean> => {
     const { toggleCaptionOverlay } = await import('./captionOverlay');
@@ -2760,7 +2841,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     moveCaptionOverlay(args.phase, args.dx ?? 0, args.dy ?? 0);
   });
 
-  // Caption window: fixed-font-size bump → the new px.
+  // Caption window: fixed-font-size bump â†’ the new px.
   ipcMain.handle(IpcChannel.avatar.captionFont, async (_event, deltaRaw: unknown) => {
     const delta = z.union([z.literal(1), z.literal(-1)]).parse(deltaRaw);
     const { bumpCaptionFont } = await import('./captionOverlay');
@@ -2954,7 +3035,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.chat.previews, async (): Promise<Record<string, ChatPreview>> => {
-    // Roster last-line previews (Party redesign §2). Enumerate the library and
+    // Roster last-line previews (Party redesign Â§2). Enumerate the library and
     // read each character's last chat line. Per-character failures are skipped
     // so one unreadable transcript never sinks the whole call; characters with
     // no messages are omitted from the map (renderer treats a missing key as
@@ -2968,7 +3049,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           const last = await readLast(c.id);
           if (last) out[c.id] = { role: last.role, text: last.text, ts: last.ts };
         } catch {
-          /* per-character read failure — skip this id, never throw the batch */
+          /* per-character read failure â€” skip this id, never throw the batch */
         }
       }),
     );
@@ -2994,11 +3075,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return out;
   });
 
-  // 260705: chat:clear removed — no UI ever invoked it, and the product wipe
+  // 260705: chat:clear removed â€” no UI ever invoked it, and the product wipe
   // surface is Reset memory (chars:reset-memory), which clears the transcript
   // + summary as part of the memory-dir wipe (see resetMemoryForCharacter).
 
-  // ── User profile (Phase 19) ───────────────────────────────────────────────
+  // â”€â”€ User profile (Phase 19) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   ipcMain.handle(IpcChannel.user.getProfile, async () => {
     const { getUserProfile } = await import('./userProfile');
     return await getUserProfile();
@@ -3016,7 +3097,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await removeUserProfilePicture();
   });
 
-  // 260724: custom app background — same bytes-over-IPC + _-slot pattern as
+  // 260724: custom app background â€” same bytes-over-IPC + _-slot pattern as
   // the profile picture, with background-sized validation limits.
   ipcMain.handle(IpcChannel.user.applyBackground, async (_event, argsRaw: unknown): Promise<string> => {
     const args = z.object({ bytesBase64: z.string().min(1), format: z.enum(['png', 'jpeg', 'webp']) }).parse(argsRaw);
@@ -3030,7 +3111,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await removeBackgroundImage();
   });
 
-  // Phase 11 D-16 — toggle public/private visibility on a character. Defaults
+  // Phase 11 D-16 â€” toggle public/private visibility on a character. Defaults
   // are bundle-supplied (D-22) and never appear in the cloud library, so we
   // refuse to flip `shared` on them at the IPC boundary. saveCharacter will
   // run the standard cloud-mirror upsert if the user is signed-in.
@@ -3043,7 +3124,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // Foreign-owned guard: a leaked local copy of someone else's cloud char
     // would otherwise fall through to runModerationGate, where the gate's
     // adapter overrides owner to session.user.id and the cloud upsert is
-    // denied by RLS — surfaced to the user as the misleading "Moderation
+    // denied by RLS â€” surfaced to the user as the misleading "Moderation
     // service is temporarily unavailable." copy. Stop early with a clear
     // message instead.
     try {
@@ -3059,14 +3140,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       }
     } catch (err) {
       // Re-throw our own error; swallow Supabase init failures (no session
-      // → setShared(true) falls through to the moderation gate which will
+      // â†’ setShared(true) falls through to the moderation gate which will
       // reject with "please sign in").
       if ((err as Error).message === 'You can only share characters you own.') {
         throw err;
       }
     }
 
-    // 260525-qy0 Task 4 — un-sharing is always allowed; only the share=true
+    // 260525-qy0 Task 4 â€” un-sharing is always allowed; only the share=true
     // transition is gated by the moderation pipeline.
     if (args.shared === false) {
       await saveCharacter({ ...char, shared: false });
@@ -3074,7 +3155,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       return;
     }
 
-    // shared=true path — moderation gate, then local mirror via saveCharacterRaw
+    // shared=true path â€” moderation gate, then local mirror via saveCharacterRaw
     // (the gate's upsertCharacter adapter already wrote shared=true to cloud).
     //
     // Sync-upsert the cloud row + portrait FIRST. setShared can be called on
@@ -3100,7 +3181,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     trackAnalytics('character_shared', { character_id: char.id });
   });
 
-  // 260729 — save a copy of the character's full portrait art to disk (the
+  // 260729 â€” save a copy of the character's full portrait art to disk (the
   // profile page's expand-art popup). Resolves the portrait ref the same way
   // the renderer's portraitSrc does: https URL (cloud), renderer-relative
   // bundled asset, or a bare '<uuid>.png' in the profile's portraits dir.
@@ -3150,7 +3231,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     },
   );
 
-  // Phase 11 plan 17 — list the UUIDs of the signed-in user's cloud characters.
+  // Phase 11 plan 17 â€” list the UUIDs of the signed-in user's cloud characters.
   // Drives the renderer's "LOCAL ONLY" chip: a character is "local only" when
   // signed_in AND !is_default AND its id is NOT in this set.
   //
@@ -3174,7 +3255,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // Phase 11 plan 19 (D-19, LIB-04) — cache-on-demand sync surface.
+  // Phase 11 plan 19 (D-19, LIB-04) â€” cache-on-demand sync surface.
   //
   // chars:open-prepare ensures the requested character is hydrated to local
   // disk BEFORE the renderer navigates into it. For a cloud-only char on a
@@ -3200,7 +3281,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await listMerged();
   });
 
-  // Phase 11 — sync queue status + retry. The renderer drives the per-card
+  // Phase 11 â€” sync queue status + retry. The renderer drives the per-card
   // pill (syncing / failed) from these; updates flow as one-way pushes over
   // IpcChannel.sync.statusUpdate (wired in the subscribe block below).
   ipcMain.handle(IpcChannel.sync.status, async () => {
@@ -3214,7 +3295,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await retry(id);
   });
 
-  // Phase 11 (Plan 11-14) — TOS cache invalidation hook.
+  // Phase 11 (Plan 11-14) â€” TOS cache invalidation hook.
   //
   // Plan 11-12 lands the `tos:accept` IPC handler in this file (parallel wave 5).
   // Inside that handler, after `recordAcceptance(userId)` succeeds, the handler
@@ -3231,12 +3312,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // See: src/main/auth/authState.ts:invalidateTosCache.
 
   // Skin pipeline. Lazy-import the skinStore module inside the handler
-  // bodies so a future cyclic import (skinStore → characterStore → ipc →
+  // bodies so a future cyclic import (skinStore â†’ characterStore â†’ ipc â†’
   // skinStore) cannot deadlock at module-init time.
   ipcMain.handle(IpcChannel.skin.apply, async (_event, argsRaw: unknown) => {
     const args = ApplySkinArgsSchema.parse(argsRaw);
     const pngBytes = Buffer.from(args.pngBase64, 'base64');
-    // Refuse while bot is connected — bot would keep serving the OLD skin
+    // Refuse while bot is connected â€” bot would keep serving the OLD skin
     // until disconnect, and the user's intuition is "skin shows up on next
     // summon". UI also gates this; defense-in-depth.
     if (deps.supervisor.isActive(args.characterId)) {
@@ -3286,7 +3367,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const baseUrl = deps.getSkinServerBaseUrl();
     if (!baseUrl) {
       // Skin server failed to bind on boot (SKIN_SERVER_PORT_TAKEN). Surface
-      // as a rejected promise — the renderer's SkinEditor maps the throw to
+      // as a rejected promise â€” the renderer's SkinEditor maps the throw to
       // ERROR_COPY[SKIN_SERVER_PORT_TAKEN] so the UI shows the relevant copy.
       throw new Error("Sei couldn't reserve a local port for serving skins. Restart Sei and try again.");
     }
@@ -3304,10 +3385,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.skin.searchMojang, async (_event, usernameArg: unknown) => {
-    // Zod gate at the IPC boundary — defense-in-depth even though
+    // Zod gate at the IPC boundary â€” defense-in-depth even though
     // lookupMojangSkin re-validates with its own regex. Length 1..32 mirrors
     // Mojang's allowed username range (modern names cap at 16; pre-2014
-    // legacy accounts can be longer — accept up to 32 here, let Mojang's
+    // legacy accounts can be longer â€” accept up to 32 here, let Mojang's
     // 204 path handle the "no such user" tail).
     const username = z.string().min(1).max(32).parse(usernameArg);
     const { lookupMojangSkin } = await import('./mojangSkinLookup');
@@ -3320,8 +3401,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // Wizard install pipeline. Same lazy-import discipline as the skin
-  // handlers — keeps the orchestrator + install modules out of module-init
-  // time so a cyclic import (wizard → ... → ipc) can't deadlock.
+  // handlers â€” keeps the orchestrator + install modules out of module-init
+  // time so a cyclic import (wizard â†’ ... â†’ ipc) can't deadlock.
   //
   // wizard:detect-installs is read-only (scan) so no zod gate needed.
   // wizard:install / wizard:cancel are zod-gated; wizard:cancel's sessionId
@@ -3342,10 +3423,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   ipcMain.handle(IpcChannel.wizard.install, async (_event, argsRaw: unknown) => {
-    // sessionId is REQUIRED — without it, wizard:cancel has no
+    // sessionId is REQUIRED â€” without it, wizard:cancel has no
     // routing key. installIds must be non-empty; the renderer should also
     // gate this but defense-in-depth at the IPC boundary. skinServerBaseUrl
-    // is the loopback URL captured from skin:get-server-url — must be a
+    // is the loopback URL captured from skin:get-server-url â€” must be a
     // valid URL because the orchestrator parses .port off it for the
     // port-drift state update.
     const args = z.object({
@@ -3367,7 +3448,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // The IPC-crossing abort. Resolves immediately after firing
     // .abort() on the matching controller; the in-flight runWizardInstall
     // promise then rejects (or emits a `cancelled` stage event) through
-    // signal-aware install modules. Fire-and-forget — we don't surface the
+    // signal-aware install modules. Fire-and-forget â€” we don't surface the
     // boolean return of abortWizardSession to the renderer because the user
     // doesn't care whether the cancel raced against a completed install;
     // either way the UI flips to "cancelled" via the progress channel.
@@ -3416,7 +3497,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.config.save, async (_event, cfgArg: unknown): Promise<void> => {
     const cfg = UserConfigSchema.parse(cfgArg);
     // 260725: renderer saves are wholesale (stale-copy hazard) and must never
-    // carry ai_backend_kind — the persisted value wins. See
+    // carry ai_backend_kind â€” the persisted value wins. See
     // configStore.saveConfigFromRenderer.
     const { saveConfigFromRenderer } = await import('./configStore');
     await saveConfigFromRenderer(cfg);
@@ -3430,7 +3511,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         /* freeing memory early is never load-bearing (idle release covers it) */
       }
     }
-    // Keep the analytics ui_language property current — both surfaces that
+    // Keep the analytics ui_language property current â€” both surfaces that
     // write it (Settings and the onboarding Sui stage) save through here.
     if ('ui_language' in (cfgArg as Record<string, unknown>)) {
       const { setUiLanguage } = await import('./analytics');
@@ -3483,7 +3564,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   ipcMain.handle(IpcChannel.config.saveApiKey, async (_event, plaintextArg: unknown): Promise<void> => {
     // '' means CLEAR (260817, china-compat W10). SettingsScreen has always
     // called saveApiKey('') on a provider switch, but the old min(1) schema
-    // rejected it and the renderer's best-effort catch swallowed the throw —
+    // rejected it and the renderer's best-effort catch swallowed the throw â€”
     // so the previous vendor's key silently stayed on disk and was sent to
     // the new provider. Clearing must UNLINK, not store an encrypted empty
     // string: hasApiKey() is file-existence based.
@@ -3582,9 +3663,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // === Product analytics (260707) ===
-  // Fire-and-forget renderer→main event. Zod-gated at the trust boundary like
+  // Fire-and-forget rendererâ†’main event. Zod-gated at the trust boundary like
   // every inbound arg; capture() itself is a no-op under opt-out / no key. Props
-  // are scalar-only — the analytics module further sanitizes so no free-form
+  // are scalar-only â€” the analytics module further sanitizes so no free-form
   // content can ride along.
   const TrackArgsSchema = z.object({
     event: z.string().min(1).max(80),
@@ -3617,7 +3698,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       // 261005: remember where onboarding is, so a quit can report it.
       observeOnboardingEvent(event, props);
     } catch {
-      /* malformed track payload — drop silently, analytics must never disrupt */
+      /* malformed track payload â€” drop silently, analytics must never disrupt */
     }
   });
   ipcMain.handle(IpcChannel.analytics.getOptOut, async (): Promise<boolean> => {
@@ -3628,10 +3709,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await setAnalyticsOptOut(optOut);
   });
 
-  // === 260703 procgen — unique-companion generation + questionnaire prefs ===
+  // === 260703 procgen â€” unique-companion generation + questionnaire prefs ===
   //
-  // gen:start runs the full pipeline (soulcaster sheet → parallel portrait/skin
-  // + persona expansion → save). It NEVER throws for expected failures — it
+  // gen:start runs the full pipeline (soulcaster sheet â†’ parallel portrait/skin
+  // + persona expansion â†’ save). It NEVER throws for expected failures â€” it
   // returns the discriminated GenerateUniqueResult. Stage ticks push over
   // gen:progress, tagged with the caller's requestId (same routing pattern as
   // chars:expansion-progress).
@@ -3640,7 +3721,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     gender: z.enum(['male', 'female', 'other']),
   });
   // SINGLE-FLIGHT: React StrictMode (dev) double-invokes the casting screen's
-  // mount effect, firing two gen:start calls milliseconds apart — each ran a
+  // mount effect, firing two gen:start calls milliseconds apart â€” each ran a
   // full pipeline and saved a DUPLICATE companion. A second call now joins the
   // in-flight run and shares its result. Progress is re-tagged to the latest
   // requestId because StrictMode keeps the SECOND mount alive: it subscribes
@@ -3664,7 +3745,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         return await generateUnique(args, {
           emit: (stage, status, message) => {
             // Stage errors are non-fatal for portrait/skin and the renderer
-            // only shows a summary line — log the detail here or it's lost.
+            // only shows a summary line â€” log the detail here or it's lost.
             if (status === 'error') {
               console.warn(`[sei] gen:${stage} error: ${message ?? 'unknown'}`);
             }
@@ -3686,7 +3767,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return promise;
   });
 
-  // prefs:get — local config.user_profile merged with the cloud user_preferences
+  // prefs:get â€” local config.user_profile merged with the cloud user_preferences
   // row (cloud wins when it has a newer completed_at). `needed` drives the
   // first-sign-in questionnaire gate: signed-in AND no completed_at anywhere.
   ipcMain.handle(IpcChannel.prefs.get, async (): Promise<PrefsGetResult> => {
@@ -3697,7 +3778,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const session = (await getClient().auth.getSession()).data.session;
     const { missingPrefQuestions } = await import('../shared/characterSchema');
     if (!session?.user?.id || !session.access_token) {
-      // Signed out — no cloud row, questionnaire never forced.
+      // Signed out â€” no cloud row, questionnaire never forced.
       return { profile: localProfile, needed: false, missing: missingPrefQuestions(localProfile) };
     }
 
@@ -3723,7 +3804,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { profile, cloudIsNewer, hasCompleted } = resolvePrefs(localProfile, cloudProfile);
     // `needed` drives the first-sign-in Home gate. Report it true not only when
     // NO copy has a completed_at, but also when the effective profile still has
-    // UNFILLED answer fields — a brand-new account (empty profile), a run
+    // UNFILLED answer fields â€” a brand-new account (empty profile), a run
     // abandoned partway, or a profile completed before a newer question shipped
     // all have gaps to walk the user through. Keying on completed_at alone let a
     // partially-filled account slip past the gate (the reported flash-skip).
@@ -3745,14 +3826,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { profile, needed: !hasCompleted || missing.length > 0, missing };
   });
 
-  // prefs:save — 260706: accepts a PARTIAL patch (only the answers the user
+  // prefs:save â€” 260706: accepts a PARTIAL patch (only the answers the user
   // was just asked). The merge over stored answers happens inside
-  // configStore.updateConfig, so the base is the freshly-locked config —
+  // configStore.updateConfig, so the base is the freshly-locked config â€”
   // never a renderer snapshot (TOCTOU: a retake must only update the fields
   // it carries, and must not clobber a concurrent writer's other fields).
   // completed_at is stamped on every save so the resolvePrefs device-vs-cloud
   // recency comparison adopts the latest answers. Cloud upsert stays
-  // best-effort (a later prefs:save retries — no queue needed).
+  // best-effort (a later prefs:save retries â€” no queue needed).
   ipcMain.handle(IpcChannel.prefs.save, async (_event, patchArg: unknown): Promise<void> => {
     const { UserPreferencesPatchSchema } = await import('../shared/characterSchema');
     const patch = UserPreferencesPatchSchema.parse(patchArg);
@@ -3792,12 +3873,12 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // === Auth (Phase 10) ===
   // Lazy-import authHandlers inside each handler body so a future cyclic
-  // import (authHandlers → ... → ipc → authHandlers) cannot deadlock at
+  // import (authHandlers â†’ ... â†’ ipc â†’ authHandlers) cannot deadlock at
   // module-init time. Plans 04/05/06/08/09 will fill the handler bodies.
   //
   // Plan 10-06: wire the supervisor handle into authHandlers so signOut can
   // call supervisor.stop() BEFORE auth.signOut() (D-09 + T-10-06-09). Must be
-  // SYNCHRONOUS — a fire-and-forget dynamic import leaves a window during
+  // SYNCHRONOUS â€” a fire-and-forget dynamic import leaves a window during
   // which auth IPC handlers are registered but supervisorRef is still null,
   // and a fast post-boot signOut would skip the bot-stop step that D-09 +
   // T-10-06-09 promise (BL-01). authHandlers is now imported statically at
@@ -3905,7 +3986,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // === Region gate (W7, 260816) ===
   // region:status {} -> { loc, blocked }: the renderer's pre-check so the
   // blocking popup on AuthPanel / SignInModal can appear before a failed
-  // submit. Advisory only — the authoritative gate is the check inside
+  // submit. Advisory only â€” the authoritative gate is the check inside
   // signInWithPassword / signUpWithPassword / signInWithGoogle. The reply is
   // parsed through RegionStatusZ so every field the renderer reads is
   // declared (the gridSmall lesson, applied outbound).
@@ -3918,7 +3999,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return RegionStatusZ.parse(await getRegionStatus());
   });
 
-  // 260603 anti-abuse — store a renderer-solved Turnstile/hCaptcha token for the
+  // 260603 anti-abuse â€” store a renderer-solved Turnstile/hCaptcha token for the
   // next signup. Inert until bot-protection is enabled (see auth/captcha.ts).
   ipcMain.handle(IpcChannel.auth.setCaptchaToken, async (_e, tokenRaw: unknown) => {
     const token = typeof tokenRaw === 'string' ? tokenRaw : null;
@@ -3938,7 +4019,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!session?.user?.id) {
       return { accepted: false, tosVersion: TOS_VERSION, privacyVersion: PRIVACY_VERSION };
     }
-    // 260610 — tri-state: a check that never reached the DB (offline/DNS/
+    // 260610 â€” tri-state: a check that never reached the DB (offline/DNS/
     // timeout) returns accepted:null so the renderer shows the offline-retry
     // notice instead of re-prompting an already-accepted user with the
     // blocking legal modal.
@@ -3958,7 +4039,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     try {
       const { recordAcceptance } = await import('./auth/tosGate');
       await recordAcceptance(session.user.id);
-      // Verifier nit (11-VERIFICATION.md Anti-Patterns) — invalidate the
+      // Verifier nit (11-VERIFICATION.md Anti-Patterns) â€” invalidate the
       // isCloudWriteAllowed 60s TTL cache so the next cloud-write attempt
       // re-queries instead of returning a stale `false` for up to a minute.
       // The coordination comment above this handler documented the
@@ -3969,14 +4050,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       invalidateTosCache();
       // Privacy re-consent (260720): accepting the current Privacy version
       // (which discloses analytics + crash diagnostics) re-baselines analytics
-      // consent — clear any prior opt-out in this profile's config. Only runs
+      // consent â€” clear any prior opt-out in this profile's config. Only runs
       // here, on an explicit acceptance click; a normal launch never reaches
       // this handler. Best-effort: a config-write failure must not fail the
       // legal acceptance itself.
       try {
         const { reenableAnalyticsOnConsent } = await import('./analytics');
         await reenableAnalyticsOnConsent();
-      } catch { /* non-fatal — the Settings toggle remains available */ }
+      } catch { /* non-fatal â€” the Settings toggle remains available */ }
       return { ok: true };
     } catch (err) {
       return { ok: false, message: (err as Error).message };
@@ -3984,7 +4065,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   });
 
   // === Migration prompt (Phase 11 plan 18, D-20) ===
-  // One-shot local→cloud upload prompt for users with pre-sign-up local-mode
+  // One-shot localâ†’cloud upload prompt for users with pre-sign-up local-mode
   // characters. listLocal computes the LOCAL ONLY set in main (chars present
   // on disk but absent from the user's cloud row set, defaults excluded);
   // upload sequentially mirrors them via cloudCharacterClient and returns a
@@ -4013,7 +4094,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       cloudListOk = false;
     }
     // Characters added from the World tab are foreign-owned imports, NOT the
-    // user's own local creations — they must never appear in the upload-to-cloud
+    // user's own local creations â€” they must never appear in the upload-to-cloud
     // prompt (the bug where adding a public char like "Beep" then re-launching
     // asked "Upload local characters? Beep"). Exclude both the explicit
     // added_world_ids set AND any character whose owner is someone else; the
@@ -4026,7 +4107,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       const cfgForMigration = await loadConfig();
       addedWorldIds = new Set(cfgForMigration.added_world_ids ?? []);
     } catch {
-      /* empty set — worst case we offer a world-added char, no data loss. */
+      /* empty set â€” worst case we offer a world-added char, no data loss. */
     }
     const localOnly = all
       .filter(
@@ -4058,7 +4139,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
     const owner = session.user.id;
     // Skin/portrait bytes upload through the sign-character-asset-upload Edge
-    // Function (asymmetric-JWT bridge — see cloudCharacterClient.uploadCharacterAsset);
+    // Function (asymmetric-JWT bridge â€” see cloudCharacterClient.uploadCharacterAsset);
     // the row upsert below still goes direct over PostgREST, which verifies ES256.
     const jwt = session.access_token;
 
@@ -4075,7 +4156,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           continue;
         }
         if (char.is_default) {
-          // Defense-in-depth — the LOCAL ONLY chip + listLocal filter both
+          // Defense-in-depth â€” the LOCAL ONLY chip + listLocal filter both
           // exclude defaults, but if a uuid somehow snuck through (manual
           // IPC call, race), upsertCharacter would throw CLOUD_SYNC_REFUSED_DEFAULT
           // anyway. Surface a clean message here.
@@ -4083,21 +4164,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
           continue;
         }
         // 1. character row first. If this fails the skin/portrait uploads
-        // are pointless — bail before touching Storage.
+        // are pointless â€” bail before touching Storage.
         await upsertCharacter(char, owner);
 
-        // 2. skin bytes — resolveSkinPng takes the full Character and honors
-        // its skin.source descriptor. Missing local PNG → null → skip.
+        // 2. skin bytes â€” resolveSkinPng takes the full Character and honors
+        // its skin.source descriptor. Missing local PNG â†’ null â†’ skip.
         try {
           const skinBytes = await resolveSkinPng(char);
           if (skinBytes) await uploadSkin(id, skinBytes, jwt);
         } catch (err) {
           console.warn(`[sei] migration: skin upload for ${id} failed: ${(err as Error).message}`);
-          // Skin failure does NOT fail the whole upload — the row landed and
+          // Skin failure does NOT fail the whole upload â€” the row landed and
           // the chip will drop. The user can re-upload skin via the editor.
         }
 
-        // 3. portrait bytes — file may not exist at all; ENOENT is fine.
+        // 3. portrait bytes â€” file may not exist at all; ENOENT is fine.
         try {
           const portraitBytes = await readFile(paths.portraitPath(id));
           if (portraitBytes.length > 0) await uploadPortrait(id, portraitBytes, 'png', jwt);
@@ -4113,7 +4194,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // MR-03: translate sentinel error strings to user-facing copy so the
         // per-row modal message doesn't surface raw CLOUD_SYNC_* prefixes.
         // The most common pre-Phase-11 case is a legacy character whose
-        // portrait still rides as an inline data URL — upsertCharacter
+        // portrait still rides as an inline data URL â€” upsertCharacter
         // refuses these with CLOUD_SYNC_REFUSED_DATA_URL, and the user can
         // fix it by re-saving the portrait through the editor (which now
         // routes through the portrait file pipeline).
@@ -4131,7 +4212,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   ipcMain.handle(IpcChannel.migration.shown, async (_event, actionArg: unknown): Promise<{ shown: boolean }> => {
     const action = z.enum(['get', 'set']).parse(actionArg);
-    // NR-02 — use async fs/promises to match the file's established pattern.
+    // NR-02 â€” use async fs/promises to match the file's established pattern.
     // The sync variants here were a minor inconsistency; the I/O is small so
     // it never blocked perceptibly, but async keeps the handler body uniform
     // with surrounding code (which all uses atomicWrite / async mkdir).
@@ -4155,7 +4236,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // wizard:prompt-shown — one-time "run skin setup" nudge flag, shown when a
+  // wizard:prompt-shown â€” one-time "run skin setup" nudge flag, shown when a
   // user first tries to summon a character. Same get/set + file-existence
   // pattern as migration.shown above; profile-scoped via
   // paths.skinSetupPromptShownPath so each account is nudged at most once.
@@ -4181,7 +4262,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     }
   });
 
-  // 260603 per-profile partitioning — anonymous(local)→account on-device import.
+  // 260603 per-profile partitioning â€” anonymous(local)â†’account on-device import.
   ipcMain.handle(IpcChannel.profile.peekLocal, async () => {
     const { peekLocalProfile, localImportPartyFit } = await import('./profile/localImport');
     const peek = await peekLocalProfile();
@@ -4202,7 +4283,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
     const scope = getActiveScope();
     // Only meaningful while signed in (active scope = the account). Signed-out
-    // (scope === 'local') has no account to import into — no-op.
+    // (scope === 'local') has no account to import into â€” no-op.
     if (scope === SCOPE_LOCAL) {
       return { imported: [], failed: [], copiedOnboarding: false };
     }
@@ -4229,16 +4310,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { offered: await wasLocalImportOffered(scope) };
   });
 
-  // === Phase 12 — Browse + moderation + reports + capabilities ===
+  // === Phase 12 â€” Browse + moderation + reports + capabilities ===
   //
   // Three-layer contract: channel strings in src/shared/ipc.ts (already
   // declared), handlers here, preload bindings in src/preload/index.ts.
   // Lazy-import discipline + Zod validation at boundary mirror the migration
   // and tos handlers above.
 
-  // --- Phase 12 — Browse listing (signed-in OR signed-out — LIB-04) ---
+  // --- Phase 12 â€” Browse listing (signed-in OR signed-out â€” LIB-04) ---
   //
-  // NOT gated on isCloudWriteAllowed — Browse is read-public. Calls the
+  // NOT gated on isCloudWriteAllowed â€” Browse is read-public. Calls the
   // search_public_characters RPC (12-01) which has security invoker so the
   // characters_select_own_or_shared RLS policy filters to shared=true rows
   // for anon callers. Main pre-joins each row with the public Storage URL
@@ -4303,7 +4384,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         if (c.owner == null && !c.is_default) localIds.add(c.id);
       }
     }
-    // Explicit World adds always count as in-library — even if the cached
+    // Explicit World adds always count as in-library â€” even if the cached
     // file is briefly absent (mid-add) the World tab must not re-prompt.
     for (const id of addedWorldIds) localIds.add(id);
 
@@ -4324,7 +4405,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const entries: BrowseEntry[] = rowsArr.map((row: Record<string, unknown>) => {
       const personaSource = typeof row.persona_source === 'string' ? row.persona_source : '';
       const personaSnippet = personaSource.length > 120
-        ? personaSource.slice(0, 120).trimEnd() + '…'
+        ? personaSource.slice(0, 120).trimEnd() + 'â€¦'
         : personaSource;
       const ownerStr = typeof row.owner === 'string' ? row.owner : '';
       const id = String(row.id);
@@ -4373,7 +4454,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { entries, hasMore: entries.length === parsed.limit, sorted: listing.sorted };
   });
 
-  // --- Phase 12 — Publish-with-moderation: TOMBSTONE (260525-qy0 Task 4) ---
+  // --- Phase 12 â€” Publish-with-moderation: TOMBSTONE (260525-qy0 Task 4) ---
   //
   // Was the dead-code orchestrator handler bound to the now-removed
   // IpcChannel.browse.publishWithModeration channel. The renderer never
@@ -4381,21 +4462,21 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // chars.setShared bypassed it entirely.
   //
   // Cluster C (260525-qy0) moved the moderation gate call site inline into
-  // chars.save and chars.setShared — see the runModerationGate helper at the
+  // chars.save and chars.setShared â€” see the runModerationGate helper at the
   // top of registerIpcHandlers. The IPC channel + RendererApi method +
   // preload binding for the old publish-with-moderation surface have been
   // deleted.
 
-  // app:open-external — T-11-12-01 / T-12-17-01 / T-13-21-01. The renderer
+  // app:open-external â€” T-11-12-01 / T-12-17-01 / T-13-21-01. The renderer
   // can't call shell.openExternal directly (contextIsolation); we don't want
   // to blindly forward an arbitrary URI either, because a compromised renderer
   // or an XSS hole in our own strings could pass `javascript:` / `file:///`
   // URIs that the OS would happily resolve. The handler URL-parses + gates the
-  // PROTOCOL to https (plus mailto for contact links). Anything else throws —
+  // PROTOCOL to https (plus mailto for contact links). Anything else throws â€”
   // the renderer treats throws as silent no-ops.
   //
   // 260725: the HOST allowlist (sei.gg / dmca.copyright.gov / polar.sh) was
-  // removed — any https site is linkable now, so operator content can point
+  // removed â€” any https site is linkable now, so operator content can point
   // anywhere without a client release. See externalUrlValidator.ts for the
   // rationale and for what the surviving protocol gate still buys.
   ipcMain.handle(IpcChannel.app.openExternal, async (_event, urlArg: unknown): Promise<void> => {
@@ -4412,7 +4493,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // === In-app updater (quick/260604-uoy) ===
   //
-  // Renderer → main invoke surface for the electron-updater flows. The actual
+  // Renderer â†’ main invoke surface for the electron-updater flows. The actual
   // autoUpdater wiring + push-channel emissions live in ./updater (lazy import
   // keeps electron-updater out of the pre-handler startup graph and lets the
   // module guard itself on app.isPackaged). getVersion needs no updater module.
@@ -4517,7 +4598,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     win?.setWindowButtonVisibility(visible === true);
   });
 
-  // === App quit (260730) — onboarding's X ===
+  // === App quit (260730) â€” onboarding's X ===
   // A plain window close on macOS leaves the app alive in the dock with no
   // window, which reads as a broken exit during first-run. app.quit() runs the
   // normal before-quit shutdown chain.
@@ -4525,7 +4606,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     app.quit();
   });
 
-  // === Factory reset (260728) — Settings danger zone ===
+  // === Factory reset (260728) â€” Settings danger zone ===
   ipcMain.handle(IpcChannel.app.factoryReset, async (): Promise<void> => {
     const { runFactoryReset } = await import('./factoryReset');
     await runFactoryReset({
@@ -4546,9 +4627,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     });
   });
 
-  // === Phase 13 — Proxy + billing + credits (PROXY-11 + D-57) ===
+  // === Phase 13 â€” Proxy + billing + credits (PROXY-11 + D-57) ===
   //
-  // STUB SURFACE — every handler validates args with Zod and returns a
+  // STUB SURFACE â€” every handler validates args with Zod and returns a
   // placeholder shape that matches the renderer-facing TypeScript types.
   // Wave 2/3 plans swap each lazy import (apiKeyStore today; proxyClient /
   // edgeFunctionClient / shell.openExternal in Wave 3) without changing the
@@ -4556,10 +4637,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // pre-Phase-13 startup graph unchanged.
   //
   // T-13-02-01..T-13-02-03 mitigations: the Zod schemas are the trust
-  // boundary — any deviation (bad mc_username, non-enum kind) 400s at .parse
+  // boundary â€” any deviation (bad mc_username, non-enum kind) 400s at .parse
   // before the lazy import even resolves.
 
-  // proxy:configure — flip aiBackendKind via apiKeyStore.setAiBackendKind.
+  // proxy:configure â€” flip aiBackendKind via apiKeyStore.setAiBackendKind.
   // Already wired (vs. the trial/credits stubs) because this is what unlocks
   // the credits UI surface; Wave 3 only adds the signed-in guard.
   ipcMain.handle(IpcChannel.proxy.configure, async (_e, argsRaw: unknown) => {
@@ -4583,7 +4664,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return { ok: true as const };
   });
 
-  // credits:get — proxyClient.creditsGet reads the `my_plan` view (plan, weekly
+  // credits:get â€” proxyClient.creditsGet reads the `my_plan` view (plan, weekly
   // usage_pct, over_limit, resets_at, the extra-credits bucket, billing dates)
   // alongside the local apiKeyStore backend kind.
   ipcMain.handle(IpcChannel.credits.get, async (): Promise<CreditsStatus> => {
@@ -4591,13 +4672,13 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return creditsGet();
   });
 
-  // usage:summary — 261110 Playtime: the profile's own off-cloud usage ledger
+  // usage:summary â€” 261110 Playtime: the profile's own off-cloud usage ledger
   // (ChatGPT plan replies, own-key tokens and spend estimate).
   ipcMain.handle(IpcChannel.usage.summary, async () => {
     const { readUsageSummary } = await import('./usage/llmUsageLedger');
     return readUsageSummary();
   });
-  // usage:spend-alert — the ledger checks the "Alert me at $N a month" setting
+  // usage:spend-alert â€” the ledger checks the "Alert me at $N a month" setting
   // after each own-key request; the notice goes to every window.
   void import('./usage/llmUsageLedger')
     .then(({ onSpendAlert }) =>
@@ -4620,7 +4701,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     ackPendingHardStop();
   });
 
-  // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
+  // credits:catalog â€” 260725 server-driven pricing catalog. Reads the proxy's
   // world-readable plan_config/topup_config tables (cached in
   // cloud/pricingCatalog); null lets the renderer keep its bundled fallback.
   ipcMain.handle(IpcChannel.credits.catalog, async () => {
@@ -4628,16 +4709,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return pricingCatalogGet();
   });
 
-  // credits:openCheckout — asks the proxy to mint a Polar checkout session
+  // credits:openCheckout â€” asks the proxy to mint a Polar checkout session
   // (user_id stamped into metadata server-side), then opens the validated URL
   // in the user's SYSTEM BROWSER via shell.openExternal.
   //
   // 260603: reverted the 260602-uv9 in-app popup BrowserWindow back to the
   // system browser (user request). The system browser is the safer host for a
-  // third-party payment page — it has the user's saved payment methods, its own
+  // third-party payment page â€” it has the user's saved payment methods, its own
   // phishing/cert UI, and zero Node/IPC surface by construction. The URL is
   // protocol-validated in proxyClient AND re-asserted here before the handoff.
-  // Balance refresh still flows through the webhook → onCreditsStatusUpdate
+  // Balance refresh still flows through the webhook â†’ onCreditsStatusUpdate
   // push (no success-detection wiring needed).
   ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
     const parsed = CreditsCheckoutArgsSchema.parse(argsRaw);
@@ -4687,11 +4768,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     });
     // Return the {ok}/{ok:false,code} contract the renderer expects (the
     // renderer's useCreditsStore.openCheckout is Promise<void> and ignores the
-    // body, so dropping the URL here is fine — it stays in the main process).
+    // body, so dropping the URL here is fine â€” it stays in the main process).
     return { ok: true as const };
   });
 
-  // credits:change-plan — 260724. Upgrade or downgrade an EXISTING subscription
+  // credits:change-plan â€” 260724. Upgrade or downgrade an EXISTING subscription
   // (a Polar subscription update, not a fresh checkout). The proxy owns the
   // product mapping and the upgrade usage-reset (guarded by max_tier_rank).
   ipcMain.handle(IpcChannel.credits.changePlan, async (_e, argsRaw: unknown) => {
@@ -4704,14 +4785,14 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return res;
   });
 
-  // subscription:status — Plan 13-13 wired path. Reads subscription_status
+  // subscription:status â€” Plan 13-13 wired path. Reads subscription_status
   // via supabase-js (RLS scopes to current user).
   ipcMain.handle(IpcChannel.subscription.status, async (): Promise<SubscriptionStatusInfo> => {
     const { subscriptionStatus } = await import('./cloud/proxyClient');
     return subscriptionStatus();
   });
 
-  // subscription:cancel — Plan 13-13 wired path. Opens the LS customer portal
+  // subscription:cancel â€” Plan 13-13 wired path. Opens the LS customer portal
   // externally (open-question resolution #5; Sei does not implement a cancel
   // endpoint).
   ipcMain.handle(IpcChannel.subscription.cancel, async () => {
@@ -4719,10 +4800,10 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return cancelSubscription();
   });
 
-  // subscription:record-consent — quick/260525-sbo Task 3 — record an
+  // subscription:record-consent â€” quick/260525-sbo Task 3 â€” record an
   // immutable affirmative auto-renewal consent before the renderer opens
-  // the LS subscription checkout. Required by CA Bus & Prof Code §17602(b).
-  // Zod-validates consent_version is a non-empty string ≤64 chars at the IPC
+  // the LS subscription checkout. Required by CA Bus & Prof Code Â§17602(b).
+  // Zod-validates consent_version is a non-empty string â‰¤64 chars at the IPC
   // trust boundary (defense in depth alongside the Edge Function's own
   // shape gate).
   ipcMain.handle(IpcChannel.subscription.recordConsent, async (_e, argsRaw: unknown) => {
@@ -4731,7 +4812,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return recordSubscriptionConsent({ consent_version: parsed.consent_version });
   });
 
-  // feedback:submit — 260706. Proxy POST /feedback (20/day per user; optional
+  // feedback:submit â€” 260706. Proxy POST /feedback (20/day per user; optional
   // once-per-account reward claim). Zod-validated at the IPC trust boundary;
   // the proxy re-validates everything server-side.
   ipcMain.handle(IpcChannel.feedback.submit, async (_e, argsRaw: unknown) => {
@@ -4743,7 +4824,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return submitFeedbackTracked(parsed, { submit: feedbackSubmit, track: trackAnalytics });
   });
 
-  // feedback:report — 260706. Proxy POST /report (20/day per user).
+  // feedback:report â€” 260706. Proxy POST /report (20/day per user).
   ipcMain.handle(IpcChannel.feedback.report, async (_e, argsRaw: unknown) => {
     const parsed = ReportSubmitArgsSchema.parse(argsRaw);
     const { reportSubmit } = await import('./cloud/proxyClient');
@@ -4752,7 +4833,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return res;
   });
 
-  // Phase 11 — push sync-queue status updates to all renderer windows whenever
+  // Phase 11 â€” push sync-queue status updates to all renderer windows whenever
   // the queue mutates (enqueue / processNext / retry). notifyStatusChange in
   // syncQueue.ts fans out to subscribers; we wire one here that broadcasts
   // the slim push payload over IpcChannel.sync.statusUpdate.
@@ -4822,7 +4903,7 @@ export function emitCreditsHardStop(info: CreditsHardStopEvent, ctx?: CreditWall
  * Called from the apiKeyStore change listener (wired in registerIpcHandlers)
  * for every persisted flip, and from profileScope at the end of every scope
  * switch (a scope switch changes the effective kind without a config write).
- * This is the live feed the renderer's mode display tracks — the display
+ * This is the live feed the renderer's mode display tracks â€” the display
  * starts as UNKNOWN and only ever shows a kind main has actually reported,
  * so it can no longer claim BYOK while main routes calls through the cloud
  * proxy (the recurring local-UI-cloud-billing incident).
@@ -4832,3 +4913,7 @@ export function emitAiBackendKindChanged(kind: CreditsStatus['ai_backend_kind'])
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.proxy.kindChanged, { kind });
   }
 }
+
+
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Don't Starve Together game module (game-adapters M2, 260908): the main
  * process side of the DST adapter, registered from src/main/index.ts beside
  * the Minecraft module. Owns the discovery watcher (the fixed-port heartbeat
@@ -307,3 +307,7 @@ export function createDontStarveGameModule(overrides: Partial<DstModuleDeps> = {
   };
   return mod;
 }
+
+
+
+

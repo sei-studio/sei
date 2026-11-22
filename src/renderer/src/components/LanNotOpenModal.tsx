@@ -1,5 +1,5 @@
-/**
- * LanNotOpenModal — a summon failed with error class LAN_NOT_OPEN: the world
+﻿/**
+ * LanNotOpenModal â€” a summon failed with error class LAN_NOT_OPEN: the world
  * closed, kicked the bot, or was never reachable. 45-day prod data showed
  * users hitting this repeatedly (one churned after 8 hits in a day) with only
  * a one-line status for guidance, so the failure now opens this popup with
@@ -113,3 +113,7 @@ export function LanNotOpenModal({ characterId }: LanNotOpenModalProps): React.Re
     </ModalShell>
   );
 }
+
+
+
+

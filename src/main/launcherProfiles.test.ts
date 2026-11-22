@@ -1,4 +1,4 @@
-/**
+﻿/**
  * launcher_profiles*.json handling (260929 review): profiles misfiled by the
  * pre-260929 setup bug, BOM tolerance, and the Windows rename retry.
  *
@@ -92,7 +92,7 @@ describe('profile file IO', () => {
 
   it('reads a file that starts with a UTF-8 BOM', async () => {
     const file = path.join(dir, 'launcher_profiles.json');
-    await fs.writeFile(file, '﻿{"profiles":{},"version":3}');
+    await fs.writeFile(file, 'ï»¿{"profiles":{},"version":3}');
     expect(await readProfilesFile(file)).toEqual({ profiles: {}, version: 3 });
   });
 
@@ -114,3 +114,7 @@ describe('profile file IO', () => {
     expect(calls).toBe(1);
   });
 });
+
+
+
+

@@ -1,6 +1,6 @@
-// src/bot/adapter/minecraft/registry.vision.test.js
+﻿// src/bot/adapter/minecraft/registry.vision.test.js
 //
-// D-10 / VIS-03 — proves `look` is registered in the closed registry ONLY
+// D-10 / VIS-03 â€” proves `look` is registered in the closed registry ONLY
 // when visionEnabled is true.
 //
 // Warning 5 (15-04 plan): the repo is ESM AND registry.js statically imports
@@ -10,7 +10,7 @@
 //   2. this test MUST mock the visualize behavior module so povRenderer.js (and
 //      its native chain) is never imported when registry.js pulls it in.
 //
-// We mock './behaviors/visualize.js' — the specifier registry.js imports — with
+// We mock './behaviors/visualize.js' â€” the specifier registry.js imports â€” with
 // a trivial fake handler. That keeps the registry's import graph native-free
 // while still exercising the real conditional-registration logic.
 
@@ -36,7 +36,7 @@ vi.mock('./behaviors/visualize.js', () => ({
 // the native render chain is never loaded).
 const { createDefaultRegistry } = await import('./registry.js')
 
-describe('createDefaultRegistry — look gating (D-10 / VIS-03)', () => {
+describe('createDefaultRegistry â€” look gating (D-10 / VIS-03)', () => {
   it('registers `look` when visionEnabled is true', () => {
     const registry = createDefaultRegistry({ visionEnabled: true })
     expect(registry.list()).toContain('look')
@@ -47,13 +47,13 @@ describe('createDefaultRegistry — look gating (D-10 / VIS-03)', () => {
     expect(registry.list()).not.toContain('look')
   })
 
-  it('does NOT register `look` by default (no opts) — fail-closed', () => {
+  it('does NOT register `look` by default (no opts) â€” fail-closed', () => {
     const registry = createDefaultRegistry()
     expect(registry.list()).not.toContain('look')
   })
 
   it('registers the full non-vision action set regardless of the gate', () => {
-    // The gate must ONLY add/remove look — never disturb the base set.
+    // The gate must ONLY add/remove look â€” never disturb the base set.
     const off = createDefaultRegistry({ visionEnabled: false }).list()
     const on = createDefaultRegistry({ visionEnabled: true }).list()
     expect(off).toContain('goTo')
@@ -64,3 +64,7 @@ describe('createDefaultRegistry — look gating (D-10 / VIS-03)', () => {
     expect(new Set(on)).toEqual(new Set([...off, 'look']))
   })
 })
+
+
+
+
