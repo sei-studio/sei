@@ -10,7 +10,7 @@
  * testProvider: a 1-token "hi" completion through the layer itself, so what
  * the test exercises is exactly what every surface will run.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import {
   DEFAULT_MODELS,
   OPENAI_COMPAT_BASE_URLS,
@@ -170,7 +170,8 @@ export async function testProvider(provider: ProviderKind, model: string): Promi
       // Direct 1-token probe with the BYOK key (maxRetries 0 so a bad key
       // answers fast). The chat path proper still rides buildChatSdk.
       if (!(await hasApiKey())) return { ok: false, error: 'no_api_key' };
-      const client = new Anthropic({ apiKey: await loadApiKey(), maxRetries: 0 });
+      const { default: AnthropicSdk } = await import('@anthropic-ai/sdk');
+      const client = new AnthropicSdk({ apiKey: await loadApiKey(), maxRetries: 0 });
       const t0 = Date.now();
       // Same request rules as every surface (Haiku 5: thinking disabled), so
       // the 1-token probe tests what the app will actually send.

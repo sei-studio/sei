@@ -7,7 +7,7 @@
  * — a renderer-local AbortController can't reach the child process running
  * fabric-installer.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer as rawIpcRenderer } from 'electron';
 import type { FaceCue } from '../shared/facepack';
 import {
   IpcChannel,
@@ -46,6 +46,10 @@ import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 import type { AvatarLibraryView } from '../shared/avatarLibrary';
 import { unwrapIpcRejection } from '../shared/ipcError';
+import { createGatedIpc } from './mainReadyGate';
+
+// 261123: calls wait until main has registered its handlers (mainReadyGate.ts).
+const ipcRenderer = createGatedIpc(rawIpcRenderer, IpcChannel.app.ipcReady);
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).

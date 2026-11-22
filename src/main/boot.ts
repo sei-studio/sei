@@ -28,6 +28,7 @@
  * list short and keep heavy modules (games, auth, native addons) behind the
  * app import.
  */
+import { markStartup } from './startupMarks';
 import './remoteDebugGuard';
 import './velopackBoot';
 import './velopackMigration';
@@ -65,6 +66,8 @@ import { handOffRepairAtLaunch, initVelopackRepair, scheduleVelopackRepair } fro
 import { openSafeModeWindow, safeModeWindow } from './safeMode/safeModeWindow';
 import { IpcChannel } from '../shared/ipc';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+
+markStartup('boot_entry');
 
 // A SeiLink room host launch (main spawns this same binary with --seilink-host to draw the
 // companion's room as wallpaper, seilink/host/) is its own small program: no app name or
@@ -162,6 +165,7 @@ async function start(): Promise<void> {
   // The updater goes first on ready; the app's own ready handler (registered
   // by the import below) runs after it.
   void app.whenReady().then(() => {
+    markStartup('ready');
     try {
       initUpdater({
         getMainWindow: updaterWindow,
@@ -173,9 +177,12 @@ async function start(): Promise<void> {
       log(`updater init failed (${(err as Error)?.name ?? 'Error'})`);
     }
     scheduleRepair();
+    markStartup('updater_started');
   });
+  markStartup('app_import_start');
   try {
     await import('./index');
+    markStartup('app_imported');
   } catch (err) {
     log(`app failed to load (${(err as Error)?.name ?? 'Error'})`);
     // Nothing else will open a window: count it and start again (packaged),

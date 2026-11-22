@@ -4362,6 +4362,10 @@ export const IpcChannel = {
     // 261031 (T277): the main window's React tree mounted (send, renderer →
     // main). The boot guard counts a start as good a few seconds after it.
     rendererReady: 'app:renderer-ready',
+    // 261123 launch speed: invoke, renderer → main. Answers once main has
+    // registered its IPC handlers; the preload holds every call until then
+    // (src/preload/mainReadyGate.ts), so the window can load before they exist.
+    ipcReady: 'app:ipc-ready',
     // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
     // Push (main → renderer):
     updateAvailable: 'app:update-available',       // optional update detected

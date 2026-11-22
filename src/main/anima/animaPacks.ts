@@ -22,7 +22,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../lazyJszip';
 import type { FacepackManifest } from '../../shared/facepack';
 import { isSafePackPath } from '../../shared/facepack';
 import { ANIMA_PACK_ID_RE, animaPackId, isAnimaPackId } from '../../shared/anima';
@@ -278,9 +279,10 @@ export class AnimaPackStore {
     const id = animaPackId(sha);
     const dir = this.packDir(id)!;
     if (await this.hasPack(id)) return { id, bytes: 0, files: 0 };
+    const Zip = await loadJSZip();
     let archive: JSZip;
     try {
-      archive = await JSZip.loadAsync(zip);
+      archive = await Zip.loadAsync(zip);
     } catch {
       throw new AnimaPackError('bad_archive');
     }

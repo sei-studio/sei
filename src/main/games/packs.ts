@@ -42,7 +42,8 @@ import { createWriteStream } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../lazyJszip';
 import { app } from 'electron';
 import { paths } from '../paths';
 import {
@@ -514,7 +515,7 @@ async function extractZip(
   await rm(stagingRoot, { recursive: true, force: true });
   await mkdir(stagingRoot, { recursive: true });
 
-  const zip = await JSZip.loadAsync(await readFile(zipPath));
+  const zip = await (await loadJSZip()).loadAsync(await readFile(zipPath));
   const names = Object.keys(zip.files).sort();
   for (const name of names) {
     const file = zip.files[name];

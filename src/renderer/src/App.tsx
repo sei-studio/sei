@@ -114,6 +114,7 @@ import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
 import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
 import { waitForAuthScope } from './lib/authBoot';
 import { resolveBootRoute } from './lib/bootRoute';
+import { reportFirstView, timeAuthWait } from './lib/firstView';
 import { BootSplash } from './components/BootSplash';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
@@ -152,6 +153,11 @@ export function App(): React.ReactElement {
   useEffect(() => {
     try { sei.rendererReady?.(); } catch { /* older bridge */ }
   }, []);
+  // 261123: launch timing, the first view after the boot splash (lib/firstView.ts).
+  useEffect(() => {
+    if (view.kind === 'loading') return;
+    reportFirstView(view.kind, { signin: view.kind === 'onboard' && 'signin' in view && view.signin === true });
+  }, [view]);
   // 261104 SeiLink desktop host: she was clicked on the desktop wallpaper
   // (main focused this window first; src/main/seilink/host/seilinkHost.ts).
   useEffect(
@@ -1043,7 +1049,7 @@ export function App(): React.ReactElement {
       // and for a scope switch already under way, then reads the profile
       // again if it may have moved. The splash stays up meanwhile.
       const dest = await resolveBootRoute({
-        waitForScope: () => waitForAuthScope({ isCancelled: () => cancelled }),
+        waitForScope: () => timeAuthWait(() => waitForAuthScope({ isCancelled: () => cancelled })),
         applyAuthState: authStore.applyAuthState,
         currentAuth: () => useAuthStore.getState().state,
         rehydrate: hydrate,

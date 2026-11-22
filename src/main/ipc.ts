@@ -71,6 +71,7 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import { FIRST_VIEW_EVENT, firstViewProps } from './startupMarks';
 import {
   REPLY_LATENCY_EVENT,
   recordReplyLatency,
@@ -3590,7 +3591,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     event: z.string().min(1).max(80),
     props: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   });
-  ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
+  ipcMain.on(IpcChannel.analytics.track, (event_, raw: unknown) => {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
       // 261106: the renderer's voice reply clock. Rebuilt from closed enums
@@ -3598,6 +3599,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (event === REPLY_LATENCY_EVENT) {
         const sample = sanitizeRendererReplyLatency(props);
         if (sample) recordReplyLatency(sample);
+        return;
+      }
+      // 261123: launch timing (startupMarks.ts). Main stamps the time on arrival.
+      if (event === FIRST_VIEW_EVENT) {
+        const fv = firstViewProps(props);
+        // A hidden login launch loads its view long before anyone sees it.
+        try {
+          fv.window_visible = BrowserWindow.fromWebContents(event_.sender)?.isVisible() ?? false;
+        } catch {
+          /* shape only; leave it out */
+        }
+        console.log(`[sei] startup: first_view ${String(fv.view_kind)} +${String(fv.ms_since_process_start)}ms (auth wait ${String(fv.waited_auth_ms ?? 0)}ms)`);
+        trackAnalytics(event, fv);
         return;
       }
       // 261104: setup steps are rebuilt from closed enums (shape only).
