@@ -13,12 +13,12 @@ import { BootSplash } from './BootSplash';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe('BootSplash', () => {
-  it('renders a visible loading state with the Sei mark', () => {
+  it('renders a plain loading state with no logo (product call 261123)', () => {
     const html = renderToStaticMarkup(React.createElement(BootSplash));
     expect(html).toContain('data-boot-splash');
     expect(html).toContain('role="status"');
-    expect(html).toContain('role="img"');
-    expect(html).toContain('sei-text.png');
+    expect(html).not.toContain('role="img"');
+    expect(html).not.toContain('sei-text.png');
   });
   it("is what App renders for the 'loading' view", () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf-8');
