@@ -2598,4 +2598,21 @@ export const JA: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "決済ページを開けませんでした",
   "Nothing was charged. Check your connection and try again.": "料金は発生していません。接続を確認して、もう一度お試しください。",
+  // 261122 minigames (Forza 4, Battleship)
+  "Forza 4": "Forza 4",
+  "Forza 4 with {name}": "{name}とForza 4",
+  "Forza 4 is not available in this build yet.": "Forza 4 はこのバージョンではまだ利用できません。",
+  "Red piece": "赤のコマ",
+  "Yellow piece": "黄のコマ",
+  "Empty cell, row {r}, column {c}": "空きマス、{r}行目、{c}列目",
+  "It's your turn, {name}": "{name}、あなたの番です",
+  "{name}'s turn": "{name}の番",
+  "Four in a row.": "四つ並びました。",
+  "The board is full.": "盤面がいっぱいです。",
+  "Battleship": "バトルシップ",
+  "Battleship with {name}": "{name}とバトルシップ",
+  "Battleship is not available in this build yet.": "バトルシップはこのバージョンではまだ利用できません。",
+  "Your ships": "自分の艦隊",
+  "Enemy grid": "敵のグリッド",
+  "All ships sunk.": "全艦沈没。",
 };

@@ -1,0 +1,211 @@
+/* BattleshipPanel.module.css — Battaglia navale board surface.
+   Tokens only; px kept to control heights (the documented exception),
+   never literal hex. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.launch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: var(--gap-section);
+  text-align: center;
+  background: var(--surface-2);
+}
+
+.launchTitle {
+  font-family: var(--display);
+  font-size: 28px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  margin: 0 0 var(--gap-group) 0;
+}
+
+.launchError {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0 0 var(--gap-stack) 0;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.grids {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-section);
+  background: var(--surface);
+  padding: var(--gap-section);
+  overflow: auto;
+}
+
+.gridWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.gridTitle {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--border-strong);
+  max-width: 320px;
+  width: 100%;
+  touch-action: manipulation;
+}
+
+.cell {
+  position: relative;
+  height: 28px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+
+.cell:hover:not(.disabled) {
+  background: var(--accent-soft);
+}
+
+.cell.ship {
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.cell.hit {
+  background: var(--red);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.cell.miss {
+  background: var(--bg4);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.cell.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-group);
+  padding: var(--gap-control) var(--gap-section);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.turnLabel {
+  font-family: var(--display);
+  font-size: 16px;
+  color: var(--text);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.ctrlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.ctrlBtn:hover {
+  border-color: var(--border-strong);
+}
+
+.ctrlDanger {
+  color: var(--red);
+}
+
+.ctrlDanger:hover {
+  background: rgba(217, 79, 58, 0.08);
+  border-color: var(--red-strong);
+}
+
+.resignConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.resignLabel {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.resultWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-stack);
+  padding: var(--gap-section);
+  text-align: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.resultTitle {
+  font-family: var(--display);
+  font-size: 26px;
+  color: var(--text);
+  margin: 0;
+}
+
+.resultDetail {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--gap-control);
+  margin-top: var(--gap-group);
+}

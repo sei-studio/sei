@@ -1603,6 +1603,37 @@ async function bootstrap(): Promise<void> {
     });
   }
 
+  // Forza 4 minigame: module-state deps for src/main/connect4/connect4Service.
+  // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
+  {
+    const { initCONNECT4Service } = await import('./connect4/connect4Service');
+    initCONNECT4Service({
+      pushState: (state) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IpcChannel.CONNECT4.state, state);
+        }
+      },
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+    });
+  }
+
+  // Battleship minigame: module-state deps for src/main/battleship/battleshipService.
+  // Mutually exclusive with Minecraft (isSummoned gate), same as chess and Draw!.
+  {
+    const { initBATTLESHIPService } = await import('./battleship/battleshipService');
+    const send = (channel: string, payload: unknown): void => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
+    };
+    initBATTLESHIPService({
+      pushState: (state) => send(IpcChannel.BATTLESHIP.state, state),
+      pushChatMessage,
+      isSummoned: (id) => supervisor?.isActive(id) ?? false,
+    });
+  }
+
   // Minecraft dashboard (260721): push deps for src/main/mcDashboard.
   initMcDashboardService({
     pushSnapshot: (s) => {

@@ -2598,4 +2598,21 @@ export const PT_BR: Record<string, string> = {
   // 261122 checkout clarity
   "Couldn't open checkout": "Não foi possível abrir o pagamento",
   "Nothing was charged. Check your connection and try again.": "Nada foi cobrado. Verifique sua conexão e tente de novo.",
+  // 261122 minigames (Forza 4, Battleship)
+  "Forza 4": "Forza 4",
+  "Forza 4 with {name}": "Forza 4 com {name}",
+  "Forza 4 is not available in this build yet.": "Forza 4 ainda não está disponível nesta versão.",
+  "Red piece": "Peça vermelha",
+  "Yellow piece": "Peça amarela",
+  "Empty cell, row {r}, column {c}": "Célula vazia, linha {r}, coluna {c}",
+  "It's your turn, {name}": "É a sua vez, {name}",
+  "{name}'s turn": "Vez de {name}",
+  "Four in a row.": "Quatro em linha.",
+  "The board is full.": "O tabuleiro está cheio.",
+  "Battleship": "Batalha Naval",
+  "Battleship with {name}": "Batalha Naval com {name}",
+  "Battleship is not available in this build yet.": "Batalha Naval ainda não está disponível nesta versão.",
+  "Your ships": "Seus navios",
+  "Enemy grid": "Grade inimiga",
+  "All ships sunk.": "Todos os navios afundados.",
 };

@@ -61,6 +61,21 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   },
   { id: 'chess', name: 'Chess', available: true, aliases: ['国际象棋', 'チェス', 'Шахматы', 'Xadrez', 'Ajedrez'] },
   { id: 'draw', name: 'Draw!', available: true },
+  // Main-side minigames (261122): no engine, no downloadable pack. The
+  // companion plays through a tool (play(column) / fire(row, col)); the
+  // services live in src/main/connect4 and src/main/battleship.
+  {
+    id: 'CONNECT4',
+    name: 'Forza 4',
+    available: true,
+    aliases: ['Connect Four', 'Connect4', 'Quattro in fila', '四目並べ', 'Четыре в ряд', 'Cuatro en línea'],
+  },
+  {
+    id: 'BATTLESHIP',
+    name: 'Battleship',
+    available: true,
+    aliases: ['Battaglia navale', '海战', '海戦', 'Битва кораблей', 'Batalha Naval', 'Hundir la flota'],
+  },
   // 260803: no "Backseat" entry. Sharing your screen is not a game and it does
   // not belong in a grid beside chess, so it lives on the call controls' share
   // button instead. The companion still knows it can be shown a screen: that is

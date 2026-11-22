@@ -72,6 +72,8 @@ export const PLAN_GAMES = Object.freeze({
   minecraft: 'Minecraft',
   stardew: 'Stardew Valley',
   dontstarve: "Don't Starve Together",
+  CONNECT4: 'Forza 4',
+  BATTLESHIP: 'Battleship',
 })
 
 // Whole answers that name one game: its id, its name, a leading part of the
@@ -81,6 +83,8 @@ const PLAN_GAME_ALIASES = Object.freeze({
   minecraft: ['minecraft', 'mc'],
   stardew: ['stardew valley', 'stardew', 'sdv'],
   dontstarve: ['dont starve together', 'dont starve', 'dontstarve', 'dst'],
+  CONNECT4: ['forza 4', 'forza4', 'connect four', 'connect4'],
+  BATTLESHIP: ['battleship', 'battleships', 'battaglia navale'],
 })
 
 /** Lowercase words, apostrophes dropped ("Don't" -> "dont"), no leading "the". */

@@ -47,6 +47,10 @@ import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './f
 export type { ErrorClass } from './errorClasses';
 import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
+import type { CONNECT4GameState } from './connect4Ipc';
+export type { CONNECT4GameState } from './connect4Ipc';
+import type { BATTLESHIPGameState } from './battleshipIpc';
+export type { BATTLESHIPGameState } from './battleshipIpc';
 import type {
   DrawAiStroke,
   DrawGameState,
@@ -2619,6 +2623,24 @@ export interface RendererApi {
   onDrawAiStroke(cb: (s: DrawAiStroke) => void): Unsubscribe;
   onDrawSnapshotRequest(cb: (r: DrawSnapshotRequest) => void): Unsubscribe;
 
+  // --- Forza 4 minigame --- see src/shared/connect4Ipc.ts.
+  CONNECT4Start(characterId: string, opts?: { playerColor?: 'r' | 'y' | 'random' }): Promise<CONNECT4GameState>;
+  CONNECT4GetState(characterId: string): Promise<CONNECT4GameState | null>;
+  CONNECT4Move(characterId: string, column: number): Promise<{ ok: boolean; error?: string; state: CONNECT4GameState }>;
+  CONNECT4Resign(characterId: string): Promise<CONNECT4GameState>;
+  CONNECT4Rematch(characterId: string): Promise<CONNECT4GameState>;
+  CONNECT4End(characterId: string): Promise<void>;
+  onCONNECT4State(cb: (state: CONNECT4GameState) => void): Unsubscribe;
+
+  // --- Battleship minigame --- see src/shared/battleshipIpc.ts.
+  BATTLESHIPStart(characterId: string, opts?: { playerStarts?: boolean }): Promise<BATTLESHIPGameState>;
+  BATTLESHIPGetState(characterId: string): Promise<BATTLESHIPGameState | null>;
+  BATTLESHIPMove(characterId: string, row: number, col: number): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }>;
+  BATTLESHIPResign(characterId: string): Promise<BATTLESHIPGameState>;
+  BATTLESHIPRematch(characterId: string): Promise<BATTLESHIPGameState>;
+  BATTLESHIPEnd(characterId: string): Promise<void>;
+  onBATTLESHIPState(cb: (state: BATTLESHIPGameState) => void): Unsubscribe;
+
   // --- OS permission flows (260929) --- see src/shared/permissionsIpc.ts.
   /** Current OS access status for the microphone or (macOS) Screen Recording. */
   permissionsStatus(kind: OsPermissionKind): Promise<OsPermissionStatus>;
@@ -4110,6 +4132,28 @@ export const IpcChannel = {
     aiStroke: 'draw:ai-stroke',
     /** Push: DrawSnapshotRequest — rasterize the canvas and answer. */
     snapshotRequest: 'draw:snapshot-request',
+  },
+  // Forza 4 (Connect Four) minigame — protocol details in src/shared/connect4Ipc.ts.
+  CONNECT4: {
+    start: 'CONNECT4:start',
+    getState: 'CONNECT4:get-state',
+    move: 'CONNECT4:move',
+    resign: 'CONNECT4:resign',
+    rematch: 'CONNECT4:rematch',
+    end: 'CONNECT4:end',
+    /** Push: full CONNECT4GameState on every change. */
+    state: 'CONNECT4:state',
+  },
+  // Battleship minigame: protocol details in src/shared/battleshipIpc.ts.
+  BATTLESHIP: {
+    start: 'battleship:start',
+    getState: 'battleship:get-state',
+    move: 'battleship:move',
+    resign: 'battleship:resign',
+    rematch: 'battleship:rematch',
+    end: 'battleship:end',
+    /** Push: full BATTLESHIPGameState on every change. */
+    state: 'battleship:state',
   },
   // Backseat (260728) — the companion watches a shared window and comments.
   // Protocol details in src/shared/backseatIpc.ts. `tick`, `gate` and
