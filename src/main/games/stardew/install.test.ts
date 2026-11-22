@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, chmod, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -453,6 +453,10 @@ describe('game folder finding and version (261104)', () => {
     expect(await readGameVersion(root)).toBe('1.6.9');
     // A placeholder 1.0.0 resource reads as unknown, never as "too old".
     await writeFile(path.join(root, 'Stardew Valley.dll'), fakePe(1, 0, 0, 0));
+    // readGameVersion caches on size:mtime; a same-size rewrite inside one
+    // mtime tick (a loaded test box) would hit the cache, so move mtime on.
+    const later = new Date(Date.now() + 5_000);
+    await utimes(path.join(root, 'Stardew Valley.dll'), later, later);
     expect(await readGameVersion(root)).toBeNull();
     expect(await readGameVersion(path.join(root, 'nope'))).toBeNull();
   });
