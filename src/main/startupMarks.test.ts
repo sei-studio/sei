@@ -60,3 +60,19 @@ describe('firstViewProps', () => {
     expect(firstViewProps(null, 5)).toMatchObject({ view_kind: 'other', ms_since_process_start: 5 });
   });
 });
+
+describe('ipc_ready watchdog props (261123 review)', () => {
+  it('names the last phase reached while ipc_ready is missing, and nothing once it happened', async () => {
+    const m = await import('./startupMarks');
+    m.resetStartupMarksForTest();
+    expect(m.lastStartupPhase()).toBe('none');
+    m.markStartup('bootstrap_start');
+    m.markStartup('window_created');
+    const props = m.ipcReadySlowProps(61_000);
+    expect(props).toMatchObject({ ms_since_process_start: 61_000, last_phase: 'window_created' });
+    expect(Object.keys(props ?? {}).every((k) => !/user|email|path/i.test(k))).toBe(true);
+    m.markStartup('ipc_ready');
+    expect(m.ipcReadySlowProps(62_000)).toBeNull();
+    m.resetStartupMarksForTest();
+  });
+});

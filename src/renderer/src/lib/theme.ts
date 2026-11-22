@@ -71,6 +71,23 @@ export function rememberBootTheme(mode: ThemeMode): void {
 }
 
 /**
+ * 261123: the theme mode the main window starts with, before config has been
+ * read (that read waits for main's IPC handlers, which can take seconds on a
+ * slow launch). The last remembered mode keeps the boot splash in the theme
+ * index.html painted it in, instead of 'system' flipping it in between.
+ * Other windows (they load with a query string) keep 'system', as before.
+ */
+export function rememberedBootTheme(): ThemeMode {
+  try {
+    if (typeof location !== 'undefined' && location.search) return 'system';
+    if (typeof localStorage === 'undefined') return 'system';
+    return clampThemeMode(localStorage.getItem(BOOT_THEME_KEY));
+  } catch {
+    return 'system';
+  }
+}
+
+/**
  * The currently-applied scheme ('light' | 'dark'), read off <html>. The
  * replacement for the old `getAttribute('data-theme') as 'light'|'dark'`
  * pattern now that data-theme carries a theme NAME.

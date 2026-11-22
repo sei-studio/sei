@@ -461,8 +461,12 @@ export async function getAuthSnapshot(waitMs = 30_000): Promise<AuthSnapshot> {
  * Wire up the Supabase auth-event subscription and replay current state on
  * window refresh. Called ONCE from main/index.ts bootstrap, after the
  * BrowserWindow exists.
+ *
+ * 261123: the window is made early and the user can close it while bootstrap
+ * runs (macOS keeps the app running), so `window` may be null or destroyed.
+ * Everything else still runs; the next window binds via rebindAuthWindow().
  */
-export async function initAuthState(window: BrowserWindow): Promise<void> {
+export async function initAuthState(window: BrowserWindow | null): Promise<void> {
   try {
     await initAuthStateInner(window);
   } finally {
@@ -472,7 +476,7 @@ export async function initAuthState(window: BrowserWindow): Promise<void> {
   }
 }
 
-async function initAuthStateInner(window: BrowserWindow): Promise<void> {
+async function initAuthStateInner(window: BrowserWindow | null): Promise<void> {
   // BL-02: bootstrap() can run more than once on macOS — app.on('activate')
   // calls it again when all windows have been closed and the dock icon is
   // clicked. Drop any prior subscription + did-finish-load listener before
@@ -482,7 +486,9 @@ async function initAuthStateInner(window: BrowserWindow): Promise<void> {
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
     mainWindowRef.webContents.removeListener('did-finish-load', broadcastOnDidFinishLoad);
   }
-  mainWindowRef = window;
+  // A window closed during startup (261123) is not bound; the reopen rebinds.
+  const live = window && !window.isDestroyed() ? window : null;
+  if (live || !mainWindowRef || mainWindowRef.isDestroyed()) mainWindowRef = live;
 
   const supabase = getClient();
 
@@ -512,10 +518,10 @@ async function initAuthStateInner(window: BrowserWindow): Promise<void> {
 
   // Replay on renderer reload (same pattern as latestLanState in src/main/index.ts).
   // Use a named handler so we can removeListener() on re-bootstrap (BL-02).
-  window.webContents.on('did-finish-load', broadcastOnDidFinishLoad);
+  if (mainWindowRef) mainWindowRef.webContents.on('did-finish-load', broadcastOnDidFinishLoad);
 
   // Initial broadcast so renderer's first onAuthState subscription receives state immediately.
-  broadcastAuthState(window);
+  broadcastAuthState(mainWindowRef);
 
   // Item 3: begin polling for a cross-device email confirmation if this cold
   // start restored a signed-in-but-unverified session.

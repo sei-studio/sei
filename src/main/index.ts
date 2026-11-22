@@ -28,7 +28,13 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { launchSplashStatus, msSinceProcessStart } from './splashPage';
-import { markStartup, startupMarkProps } from './startupMarks';
+import {
+  IPC_READY_SLOW_EVENT,
+  IPC_READY_SLOW_MS,
+  ipcReadySlowProps,
+  markStartup,
+  startupMarkProps,
+} from './startupMarks';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { installCapNotices } from './capNotices';
 import { registerFacepackIpc } from './facepack/facepackIpc';
@@ -331,6 +337,24 @@ function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopen
 }
 
 /**
+ * A bootstrap() that threw, from the launch or from a Dock reopen before it
+ * ran (261123 review: the reopen used to only log, which left the early
+ * window on its splash with every IPC call queued for good).
+ */
+function onBootstrapFailed(err: unknown): void {
+  logger.error(`bootstrap failed: ${(err as Error)?.message ?? String(err)}`);
+  openIpcGate();
+  markProfileScopeReady();
+  // A failed start, not a clean quit (crashReporting.ts). Before the
+  // boot guard: in a packaged build it relaunches Sei at once.
+  markStartFailed();
+  // Packaged: counted, and Sei starts again (safe mode after two in a
+  // row). Dev: logged only, then exit as before.
+  reportStartupFailure('bootstrap', err);
+  app.exit(1);
+}
+
+/**
  * macOS: the last window was closed and Sei kept running; the Dock icon or a
  * click on her desktop room asks for a window again. Before the first
  * bootstrap that is bootstrap(). After it, ONLY the window is made again:
@@ -342,7 +366,7 @@ function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopen
  */
 function openMainWindowAgain(): void {
   if (!bootstrapStarted) {
-    bootstrap().catch((err) => logger.error(`bootstrap failed: ${(err as Error).message}`));
+    bootstrap().catch(onBootstrapFailed);
     return;
   }
   // Still booting: bootstrap makes the window (and the pending SeiLink open waits for it).
@@ -1062,6 +1086,26 @@ function noteStartupWindowShown(win: BrowserWindow): void {
   });
 }
 
+/**
+ * 261123 review: the window shows while bootstrap runs, with every renderer
+ * IPC call held until ipc_ready. A launch still without it a minute after the
+ * window showed is hung behind the splash: say so in the log and send one
+ * shape-only event (held in analytics' pre-init queue until init runs).
+ */
+function watchIpcReadyAfterShow(win: BrowserWindow): void {
+  win.once('show', () => {
+    const timer = setTimeout(() => {
+      const props = ipcReadySlowProps();
+      if (!props) return;
+      logger.warn(
+        `startup: IPC handlers still not ready ${Math.round(IPC_READY_SLOW_MS / 1000)}s after the window showed (last phase: ${String(props.last_phase)})`,
+      );
+      capture(IPC_READY_SLOW_EVENT, props);
+    }, IPC_READY_SLOW_MS);
+    timer.unref?.();
+  });
+}
+
 async function bootstrap(): Promise<void> {
   bootstrapStarted = true;
   markStartup('bootstrap_start');
@@ -1178,6 +1222,7 @@ async function bootstrap(): Promise<void> {
   wireMainWindowEvents(mainWindow);
   watchMainWindowShow(mainWindow);
   noteStartupWindowShown(mainWindow);
+  watchIpcReadyAfterShow(mainWindow);
   firstWindowMade = true;
   // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
   // send its links (and any window.open) to the default browser, and let it
@@ -2112,18 +2157,7 @@ async function bootstrap(): Promise<void> {
           noteNeutralExit();
           return;
         }
-        bootstrap().then(() => settleLoginLaunch()).catch((err) => {
-          logger.error(`bootstrap failed: ${(err as Error).message}`);
-          openIpcGate();
-          markProfileScopeReady();
-          // A failed start, not a clean quit (crashReporting.ts). Before the
-          // boot guard: in a packaged build it relaunches Sei at once.
-          markStartFailed();
-          // Packaged: counted, and Sei starts again (safe mode after two in a
-          // row). Dev: logged only, then exit as before.
-          reportStartupFailure('bootstrap', err);
-          app.exit(1);
-        });
+        bootstrap().then(() => settleLoginLaunch()).catch(onBootstrapFailed);
       });
 
     app.on('activate', () => {

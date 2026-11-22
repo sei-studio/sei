@@ -28,10 +28,10 @@
  * list short and keep heavy modules (games, auth, native addons) behind the
  * app import.
  */
-import { markStartup } from './startupMarks';
 import './remoteDebugGuard';
 import './velopackBoot';
 import './velopackMigration';
+import { markStartup } from './startupMarks';
 import { app, ipcMain } from 'electron';
 import path from 'node:path';
 import {

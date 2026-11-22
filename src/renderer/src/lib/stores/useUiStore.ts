@@ -10,7 +10,7 @@
  */
 
 import { create } from 'zustand';
-import type { ThemeMode } from '../theme';
+import { rememberedBootTheme, type ThemeMode } from '../theme';
 import type { CheckoutSource, LanHost, LanHostWarning } from '@shared/ipc';
 import type { GameId } from '@shared/gameIpc';
 import type { BackseatGameSelection } from '@shared/backseatGames';
@@ -413,7 +413,9 @@ interface UiState {
 export const useUiStore = create<UiState>((set) => ({
   view: { kind: 'loading' },
   modal: null,
-  themeMode: 'system',
+  // 261123: the remembered mode, so the boot splash keeps its theme until
+  // config is read (lib/theme.ts rememberedBootTheme).
+  themeMode: rememberedBootTheme(),
   pendingSummonId: null,
   pendingSummonReturnToChat: false,
   pendingSummonGame: 'minecraft',

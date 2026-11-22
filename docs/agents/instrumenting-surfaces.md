@@ -497,6 +497,10 @@ snapshot). It is sent on every renderer load; `first_of_process` marks the
 launch's own; `window_visible` is false when the window was still hidden
 (a login launch loads its view before anyone opens Sei), so filter
 `first_of_process = true AND window_visible = true` for launch time.
+`app_ipc_ready_slow {ms_since_process_start, last_phase, <phase>_ms...}` fires
+once when the IPC handlers are still not registered 60 s after the window
+showed (a launch hung behind the splash; `last_phase` = the last mark reached).
+It waits in analytics' pre-init queue, so it only arrives if init runs later.
 
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:

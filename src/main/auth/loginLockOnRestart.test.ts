@@ -44,13 +44,14 @@ vi.mock('./supabaseClient', async (importOriginal) => ({
 }));
 
 import { setActiveScope, getActiveScope } from '../paths';
-import { capture } from '../analytics';
+import { capture, identifyUser } from '../analytics';
 import { applyCloudDefaultForSignIn } from '../apiKeyStore';
 import { reconcileLocalOwnershipOnSignIn } from '../cloud/reconcileLocalOwnership';
 import {
   initAuthState,
   getCurrentAuthState,
   getAuthSnapshot,
+  rebindAuthWindow,
   transitionToLocal,
   _disposeForTests,
   _scopeSwitchSettledForTests,
@@ -372,6 +373,49 @@ describe('restart with an expired access token', () => {
     release();
     await _scopeSwitchSettledForTests();
     expect(await getAuthSnapshot()).toMatchObject({ scopeReady: true, scope: USER_ID });
+  });
+});
+
+describe('window closed while bootstrap runs (macOS, 261123)', () => {
+  it('still restores the session and its follow-ups, and the reopened window gets the state', async () => {
+    const server = fakeServer();
+    client = makeClient(server);
+    await applyBootScope({ client });
+    vi.mocked(identifyUser).mockClear();
+    vi.mocked(reconcileLocalOwnershipOnSignIn).mockClear();
+    const closed = {
+      isDestroyed: () => true,
+      webContents: {
+        send: () => {
+          throw new Error('destroyed');
+        },
+        on: () => {
+          throw new Error('destroyed');
+        },
+        removeListener: () => {},
+      },
+    } as unknown as Electron.BrowserWindow;
+    await initAuthState(closed);
+    expect(getCurrentAuthState().kind).toBe('signed_in');
+    expect(await getAuthSnapshot()).toMatchObject({ loaded: true, scope: USER_ID });
+    await vi.waitFor(() => expect(identifyUser).toHaveBeenCalledWith(USER_ID));
+    await vi.waitFor(() => expect(reconcileLocalOwnershipOnSignIn).toHaveBeenCalledWith(USER_ID));
+
+    // mainWindow was already null: same result.
+    _disposeForTests();
+    client = makeClient(server);
+    await initAuthState(null);
+    expect(getCurrentAuthState().kind).toBe('signed_in');
+
+    // The Dock reopen binds the new window; a reload replays the state to it.
+    let onLoad: (() => void) | undefined;
+    const { win, sent } = fakeWindow();
+    (win.webContents as unknown as { on: (ev: string, fn: () => void) => void }).on = (ev, fn) => {
+      if (ev === 'did-finish-load') onLoad = fn;
+    };
+    rebindAuthWindow(win);
+    onLoad?.();
+    expect(authPushes(sent)).toEqual(['signed_in']);
   });
 });
 

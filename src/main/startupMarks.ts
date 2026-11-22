@@ -64,6 +64,38 @@ export function startupMarkProps(): Record<string, number> {
   return out;
 }
 
+/** The phase stamped last so far (where a stalled launch is stuck after), or 'none'. */
+export function lastStartupPhase(): StartupPhase | 'none' {
+  let last: StartupPhase | 'none' = 'none';
+  let at = -1;
+  for (const [phase, ms] of marks) {
+    if (ms >= at) {
+      last = phase;
+      at = ms;
+    }
+  }
+  return last;
+}
+
+/**
+ * 261123 review: the window shows before the IPC handlers exist, and the
+ * renderer's calls wait for them. If they are still missing this long after
+ * the window showed, the launch is hung behind the splash: log it and send
+ * one shape-only event (index.ts watchIpcReadyAfterShow).
+ */
+export const IPC_READY_SLOW_MS = 60_000;
+export const IPC_READY_SLOW_EVENT = 'app_ipc_ready_slow';
+
+/** Props for IPC_READY_SLOW_EVENT, or null when ipc_ready already happened. Shape only. */
+export function ipcReadySlowProps(nowMs: number = performance.now()): Record<string, unknown> | null {
+  if (marks.has('ipc_ready')) return null;
+  return {
+    ms_since_process_start: Math.round(nowMs),
+    last_phase: lastStartupPhase(),
+    ...startupMarkProps(),
+  };
+}
+
 /** The renderer's first-view event (renderer lib/firstView.ts). */
 export const FIRST_VIEW_EVENT = 'app_first_view';
 
