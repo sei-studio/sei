@@ -74,6 +74,18 @@ at the end of a mid-loop line's tail. Inside the own-lines note, several
 blocks above the line, it moved the probe half as much
 (`scripts/quality-eval/pass60-probe.mjs`: base 23/24 loop replies, in the
 note 11/24, under the line 5/24). Zero tokens unless it fires.
+Pass 60b (261122): that probe judged a "loop" with a word list, and live
+the replies it passed were the same reassurance in new words ("i'm watching
+the dark for you") or made up to be new (a creeper no sensor showed,
+"bread's almost gone" with 7, "walls going up" with no build). Asking for
+"something new" or "something you can do" invites invention when nothing
+has changed. The note now says advice already given is a repeat too, the
+new thing has to be true right now (what the snapshot shows that she has
+not said, how she feels, a question for them), and a claimed action needs
+its call. Probe live cases (`pass60-probe.mjs` behind/heal/follow5, judged
+blind by Opus with `pass60b-judge.mjs`, 35 replies an arm): ok 2 (no note),
+12 (first wording), 21 (now); invented 0, 13, 2. Judge probe replies with
+an LLM, not a word regex.
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:

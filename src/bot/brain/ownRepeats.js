@@ -533,11 +533,20 @@ function askNote(ask) {
   const n = TIMES[ask.times] ?? `${ask.times} times`
   const when = ask.seconds == null ? 'recently' : ask.seconds < 90 ? `in the last ${ask.seconds} seconds` : `in the last ${Math.round(ask.seconds / 60)} minutes`
   return `They have now said much the same thing ${n} ${when} (before this: "${clip(ask.earlier, 100)}"), and you answered each time. ` +
-    'They know your answer, so saying it again in other words still sounds like a loop. ' +
-    'If you are already doing what they ask, give them something they have not heard yet: something you notice around you, how you feel, or something you can do about it. ' +
-    'If you are not doing it yet, do it now.'
+    'They know your answer, so saying it again in other words is still a repeat, and so is advice you already gave them. ' +
+    'If you are already doing what they ask, say something else that is true right now: something your snapshot shows that you have not told them, how you feel, or a question for them. ' +
+    'Say you are doing something only if you call its action in this turn. If you are not doing it yet, do it now.'
 }
 
+// 261122 (pass 60b): the first wording asked for "something they have not
+// heard yet: something you notice around you, how you feel, or something you
+// can do about it". Live (11-21 compare) she met it by rewording the same
+// reassurance ("i'm watching the dark for you") or by inventing the new
+// thing: a creeper no sensor showed, "bread's almost gone" with 7, "walls
+// going up" with no build. The new thing now has to be true right now (the
+// snapshot, her feeling, a question), advice already given counts as a
+// repeat, and a claimed action needs its call. Probe (pass60-probe.mjs live
+// cases, Opus labels): ok 12/35 -> 21/35, invented 13 -> 2.
 /**
  * 261121 (pass 60): the note for a reply to a line the player keeps saying
  * (repeatedPlayerAsk), or null. It goes right under their line, not into the

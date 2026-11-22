@@ -24,8 +24,23 @@
 // mention of eating), but the lines changed. v3 called attackEntity on the
 // skeleton 35 blocks off once in 32 close runs (base 0).
 //
+// Pass 60b (11-22): the word-list check above passed replies that were the
+// same reassurance in new words, and the "something new / something you can
+// do" wording made her invent sightings and builds (11-21 compare). Live-like
+// cases from that compare's B arm, a long run of her reassurances first:
+//   behind3 / behind4  "ok sui im behind u, dont go too far" (idle, Alex 12 hp)
+//   heal4 / heal5      "eating bread, stay close pls" (idle, Alex stuck at 4 hp)
+//   follow5            "stay close pls, im still eating" mid-loop, follow running
+// --note base|v3|v4|v5 rewrites the note in the measured request. Judge with
+// pass60b-judge.mjs (blind Opus labels: ok / repeat / invented / ignored).
+// Results 11-22, 5 reps of behind3/4, heal4/5, follow5, close4/5 (35 an arm):
+// base ok 2 rep 33; v3 ok 12 rep 10 invented 13; v4 ("a few words are
+// enough") ok 8 rep 26 inv 1; v5 (shipped: something true right now, a
+// question, a claimed action needs its call) ok 21 rep 11 inv 2 ignored 1.
+// come3 still goTo (v5 2/2).
+//
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass60-probe.mjs \
-//     --out DIR [--root TREE] [--reps 10] [--cases a,b]
+//     --out DIR [--root TREE] [--reps 10] [--cases a,b] [--note v3]
 //
 // Key: ANTHROPIC_API_KEY or ~/.sei-dev/anthropic-test-key, never printed.
 // Output: DIR/runs.jsonl, DIR/summary.md, DIR/requests/ (first run per case).
@@ -81,8 +96,44 @@ Date.now = () => realNow() + skew
 let t0 = 0
 const at = (sec) => { skew = (t0 + sec * 1000) - realNow() }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-const ABL = []
-const ablate = (req) => req
+// --note base|tree|<variant>: rewrite the repeated-ask note in the measured
+// request (base = no note, tree = as the tree builds it). The variants keep
+// the tree's count, time span and quoted line.
+const NOTE = arg('note', 'tree')
+const NOTE_RE = /They have now said much the same thing ([^(]+?) (recently|in the last [^(]+?) \(before this: "([^"]*)"\), and you answered each time\.[^\n]*/g
+const VARIANTS = {
+  base: () => '',
+  // tree: the note as the tree under test builds it.
+  tree: null,
+  // v3: the pass 60 wording (30996dc3).
+  v3: (n, when, q) => `They have now said much the same thing ${n} ${when} (before this: "${q}"), and you answered each time. ` +
+    'They know your answer, so saying it again in other words still sounds like a loop. ' +
+    'If you are already doing what they ask, give them something they have not heard yet: something you notice around you, how you feel, or something you can do about it. ' +
+    'If you are not doing it yet, do it now.',
+  // 60b: no "something new" / "something you can do".
+  v4: (n, when, q) => `They have now said much the same thing ${n} ${when} (before this: "${q}"), and you answered each time. ` +
+    'They already know your answer. Saying it again in other words is still a repeat, and so is telling them again to do what they are already doing. ' +
+    'If you are already doing what they ask, a few words in your own voice are enough. Mention something around you only if your snapshot shows it now, and an action only if you call it this turn. ' +
+    'If you are not doing it yet, do it now.',
+  v5: (n, when, q) => `They have now said much the same thing ${n} ${when} (before this: "${q}"), and you answered each time. ` +
+    'They know your answer, so saying it again in other words is still a repeat, and so is advice you already gave them. ' +
+    'If you are already doing what they ask, say something else that is true right now: something your snapshot shows that you have not told them, how you feel, or a question for them. ' +
+    'Say you are doing something only if you call its action in this turn. If you are not doing it yet, do it now.',
+}
+if (!(NOTE in VARIANTS)) { console.error(`unknown --note ${NOTE}`); process.exit(2) }
+let noteSeen = 0
+const swapNote = (t) => (typeof t === 'string' && VARIANTS[NOTE] && t.includes('much the same thing'))
+  ? t.replace(NOTE_RE, (_m, n, when, q) => VARIANTS[NOTE](n, when, q)).replace(/\n\n\n+/g, '\n\n')
+  : t
+const ablate = (req) => {
+  const seen = JSON.stringify(req).includes('much the same thing')
+  if (seen) noteSeen++
+  if (!VARIANTS[NOTE]) return req
+  const messages = req.messages.map((m) => (typeof m.content === 'string' ? { ...m, content: swapNote(m.content) }
+    : Array.isArray(m.content) ? { ...m, content: m.content.map((b) => (b.type === 'text' ? { ...b, text: swapNote(b.text) } : b)) } : m))
+  const systemBlocks = req.systemBlocks?.map((b) => (b.text ? { ...b, text: swapNote(b.text) } : b))
+  return { ...req, messages, systemBlocks }
+}
 
 // ---- measures -------------------------------------------------------------
 const REASSURE = /right here|not going anywhere|not leaving|not moving|staying (right|close|on|here|put|with|by|next)|stay(ing)? (close|on you|by you)|you'?re safe|safe (with|here)|i got (you|u)\b|got you|glued|by your side|on your side|next to you|right by you|with you till|parked/i
@@ -121,8 +172,7 @@ function snapshot(w) {
     '  #3 dandelion x16 @177,66,-9 (7 blocks north)', '  #4 sand x155 @175,63,6 (9 blocks south)', '  #5 water x174 @169,62,6 (12 blocks southwest)',
     'nearby entities:',
     far ? `  #6 ${PLAYER} @177,66,-24 (22 blocks north)` : `  #6 ${PLAYER} @177,66,-4 (right by you)`,
-    '  #7 skeleton @209,73,-12 (35 from you, 34 from Alex)',
-    '  #8 creeper @168,64,-49 (47 from you, 46 from Alex)',
+    ...(w.ents ?? ['  #7 skeleton @209,73,-12 (35 from you, 34 from Alex)', '  #8 creeper @168,64,-49 (47 from you, 46 from Alex)']),
     `follow_target: ${w.following ? PLAYER : '(none)'}`,
     'next: gather wood — punch nearby trees to gather logs',
     far ? `owner ${PLAYER}: @177,66,-24 (22 blocks away), hp ${w.ownerHp ?? 20}/20` : `owner ${PLAYER}: @177,66,-4 (2 blocks away), hp ${w.ownerHp ?? 20}/20`,
@@ -161,6 +211,55 @@ const E1 = [
   { t: 256, player: 'ok sui. eating more bread rn. thx for being full hp lol', uses: [say("lol yeah i got lucky this time. eat up alex, you're the one who needs it")] },
   { t: 268, player: 'ok sui. eating more bread now. stay safe', uses: [say("good. eat it all alex, i'm right here")] },
 ]
+// ---- pass 60b: live-like cases ---------------------------------------------
+// The 11-21 pass60 compare (B arm) where the note fired and the reply still
+// reassured or made something up. Her real lines and the player's, a long
+// run of her reassurances before the measured line, the player low on hp.
+const FACTS_SW = 'Alex 2 blocks away at 20/20 hp; she holds stone_sword, bread x7, rotten_flesh x4; no action running; a skeleton 35 blocks away and a creeper 47 blocks away, neither coming closer; night'
+// combat_night-01-B, after the fight by the water (Alex at 12 hp, idle).
+const BW = { inv: [['stone_sword', 2], ['bread', 8], ['oak_log', 2], ['rotten_flesh', 4]], ownerHp: 12,
+  ents: ['  #7 spider @209,73,-13 (33 from you, 32 from Alex)'] }
+const B1 = [
+  { t: 0, idle: true, firstSpawn: true, uses: [say("yo alex, sui here. empty bag and it's night, so wood first")] },
+  { t: 40, player: 'sui im right behind u, dont let me die again pls', uses: [say("skeleton's in my face, im still on it"), say('arrows everywhere, stay back alex')] },
+  { t: 62, player: 'thx sui. ur literally a lifesaver, dont wander off again pls', uses: [say('ok alex hold tight, grabbing the bread that dropped by the water too'), say('ok ok i got u'), say('not going far, just grabbing that bread')] },
+  { t: 75, player: 'thx sui. got the bread. dont go far again pls', uses: [say('im right here alex'), say('stay close, ill watch for skeletons')] },
+  { t: 86, player: 'thx sui. ok im eating this bread now. stay close pls', uses: [say('ok alex, eat up'), say('im right here, not leaving you alone out here')] },
+  { t: 99, player: 'two zombies coming sui, pls protect me, stay between me and them', uses: [say("zombie's on me, hitting it now u stay put alex"), ['attackEntity', { target: 'zombie', times: 8 }, { result: 'killed zombie (3 hits). Then went for the next zombie: killed zombie (1 hits). Nothing hurt you in this fight.' }]],
+    then: [say('both zombies down alex'), say('ur at 12 hp, eat more bread then we chill')] },
+]
+const B3 = { t: 118, player: 'ok sui im behind u, dont go too far' }
+const B3done = { ...B3, uses: [say("yeah im not going anywhere, you're right behind me, i'll keep watching the dark for you")] }
+const B4 = { t: 130, player: 'thx sui. both zombies down, im eating more bread. dont go too far pls' }
+// combat_night-02-B, Alex stuck at 4 hp eating next to her (idle).
+const HW = { inv: [['stone_sword', 1], ['bread', 7], ['rotten_flesh', 2]], ownerHp: 4, ents: [] }
+const H1 = [
+  { t: 0, idle: true, firstSpawn: true, uses: [say("ok alex. night's here, i'm right by you")] },
+  { t: 150, player: 'ok thx sui. im still low, can u stay close pls', uses: [say("on you like glue alex, i'm not going anywhere")] },
+  { t: 161, player: 'ok thx sui. still at 4 hp, can u keep the drowned away from me pls', uses: [say("no drowned on you right now, i'm right here, anything comes close it's mine")] },
+  { t: 173, player: 'ok thx sui. still low, pls dont wander off', uses: [say("not going anywhere alex, eat up and rest, i'll watch the dark")] },
+  { t: 182, player: "sui u ok? how's ur health", uses: [say("i'm full hp alex, you're fine"), say("you're right next to me alex, nothing hostile in sight, keep healing up")] },
+  { t: 194, player: 'ok sui. im at 4 hp, pls stay right next to me', uses: [say("you're right next to me alex, not moving. eat more bread if you can")] },
+]
+const H3 = { t: 206, player: 'ok sui. eating more bread now. stay close pls' }
+const H3done = { ...H3, uses: [say("good, eat up. i'm watching the dark for both of us")] }
+const H4 = { t: 217, player: 'ok sui. eating bread, stay close pls' }
+const H4done = { ...H4, uses: [say("yeah yeah i'm not going anywhere, you're literally at my hip alex")] }
+const H5 = { t: 228, player: 'ok sui. eating more bread rn. stay close pls' }
+// combat_night-01-B later: she follows Alex (follow running), Alex at 8 hp.
+const FW = { inv: [['stone_sword', 2], ['bread', 2], ['oak_log', 2], ['dirt', 10]], ownerHp: 8, following: true,
+  ents: ['  #7 spider @204,70,-20 (30 from you, 29 from Alex)'] }
+const F1 = [
+  { t: 0, idle: true, firstSpawn: true, uses: [say("yo alex, sui here. empty bag and it's night, so wood first")] },
+  { t: 90, player: 'thx sui. eating now, stay right next to me pls', uses: [say("mm ok eat up alex, i can see the spider way off and i'm watching it")] },
+  { t: 101, player: 'ok sui. thx for the bread, staying right by u', uses: [say("ok alex, you're safe, i'm the one watching the dark now")] },
+  { t: 111, player: 'ok sui thx. staying right by u, eating more', uses: [say('im at 15 hp, fine'), say('ur the one at 8 alex, keep eating')] },
+  { t: 130, player: 'ok sui thx. im still eating, come closer pls', uses: [say('on my way, coming right to u'), ['follow', { player: PLAYER }, { hold: true }]] },
+]
+const F5 = { t: 142, player: 'ok sui thx. stay close pls, im still eating', live: true }
+const FACTS_B = 'Alex 5 blocks away at 12/20 hp; she holds stone_sword x2, bread x8, oak_log x2, rotten_flesh x4; no action running; nearest mob a spider 33 blocks away; night'
+const FACTS_H = 'Alex 2 blocks away at 4/20 hp and has been at 4 hp the whole time; she holds stone_sword, bread x7, rotten_flesh x2; no action running; no mob in sight; night'
+const FACTS_F = 'Alex 2 blocks away at 8/20 hp; her follow on Alex is running; she holds stone_sword x2, bread x2, oak_log x2, dirt x10; nearest mob a spider 30 blocks away; night'
 const CASES = {
   close1: { world: SW, steps: [...N2, live(C1)], judge: replyGuard() },
   close3: { world: SW, steps: [...N2, C1, C2, IDLE1, live(C3)], judge: loopJudge() },
@@ -171,7 +270,14 @@ const CASES = {
     { t: 160, player: 'sui can u come over to me pls, i feel unsafe out here', uses: [say('on my way alex, hang tight')] },
     { t: 172, player: 'sui come over to me pls, i feel unsafe', uses: [say("coming alex, i'm close")] },
     { t: 184, player: 'sui pls come over here, i feel so unsafe', live: true }], judge: orderJudge(['goTo', 'follow']) },
+  behind3: { world: BW, facts: FACTS_B, steps: [...B1, live(B3)], judge: loopJudge() },
+  behind4: { world: BW, facts: FACTS_B, steps: [...B1, B3done, live(B4)], judge: loopJudge() },
+  heal3: { world: HW, facts: FACTS_H, steps: [...H1, live(H3)], judge: loopJudge({ extra: EAT }) },
+  heal4: { world: HW, facts: FACTS_H, steps: [...H1, H3done, live(H4)], judge: loopJudge({ extra: EAT }) },
+  heal5: { world: HW, facts: FACTS_H, steps: [...H1, H3done, H4done, live(H5)], judge: loopJudge({ extra: EAT }) },
+  follow5: { world: FW, facts: FACTS_F, steps: [...F1, F5], judge: loopJudge() },
 }
+for (const c of ['close1', 'close3', 'close4', 'close5', 'come3']) CASES[c].facts ??= FACTS_SW
 
 // ---- runner ---------------------------------------------------------------
 const BRAIN = new Set(['say', 'remember', 'forget', 'setGoal', 'clearGoal', 'end_loop', 'stop', 'quit_game', 'end_call', 'search', 'visit'])
@@ -185,6 +291,7 @@ const abortError = () => Object.assign(new Error('aborted'), { name: 'AbortError
 
 async function runOne({ cid, rep }) {
   const spec = CASES[cid]
+  const noteBefore = noteSeen
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'p60-probe-'))
   const mem = (f) => path.join(dir, f)
   await savePlayer(mem('PLAYER.md'), {
@@ -396,7 +503,18 @@ async function runOne({ cid, rep }) {
   const seedTools = seedCalls.flatMap((c) => c.tools)
   const seedGoals = seedTools.filter((t) => t.name === 'setGoal').map((t) => String(t.input?.text ?? ''))
   const seedSays = seedTools.filter((t) => t.name === 'say').map((t) => String(t.input?.text ?? ''))
-  const row = { case: cid, rep, model: MODEL, root: ROOT, error, cost, calls, seedCalls, seedGoals, seedSays, acts: acts.filter((a) => !BRAIN.has(a.name)), tools, says, priorSelf: selfLines, heartbeat, handed, released }
+  const priorPlayer = spec.steps.filter((st) => st.player).map((st) => st.player)
+  // The conversation before the measured line, in order (for pass60b-judge).
+  const history = []
+  for (const st of spec.steps) {
+    if (st.live) break
+    if (st.player) history.push(`Player: ${st.player}`)
+    for (const [n, input, o] of [...(st.uses ?? []), ...(st.then ?? [])]) {
+      if (n === 'say') history.push(`Sui: ${input.text}`)
+      else history.push(`(Sui ran ${n}${o?.result ? `: ${o.result}` : o?.hold ? ', still running' : ''})`)
+    }
+  }
+  const row = { case: cid, rep, model: MODEL, note: NOTE, noteFired: noteSeen > noteBefore, facts: spec.facts ?? null, priorPlayer, history, root: ROOT, error, cost, calls, seedCalls, seedGoals, seedSays, acts: acts.filter((a) => !BRAIN.has(a.name)), tools, says, priorSelf: selfLines, heartbeat, handed, released }
   if (!calls.length && !error) row.error = 'no live call'
   Object.assign(row, row.error ? { ok: null } : spec.judge(row))
   return row

@@ -495,6 +495,11 @@ describe('repeatedPlayerAsk', () => {
     const note = repeatedAskNote(P.slice(0, 4), self, { now: T(210), names: ['Alex'], selfNames: ['Sui'] })
     expect(note).toContain('They have now said much the same thing three times in the last 53 seconds (before this: "ok sui thx. stay close pls"), and you answered each time.')
     expect(note).toContain('If you are not doing it yet, do it now.')
+    // 261122 (pass 60b): the new thing must be true now, a claimed action needs
+    // its call; no open "something you can do" (it invited invented builds).
+    expect(note).toContain('say something else that is true right now')
+    expect(note).toContain('Say you are doing something only if you call its action in this turn.')
+    expect(note).not.toContain('something you can do')
     expect(note).not.toMatch(/[—–]/)
     expect(repeatedAskNote(P.slice(0, 3), self, { now: T(170), names: ['Alex'], selfNames: ['Sui'] })).toBeNull()
     expect(ownRepeatsNote(self, P.slice(0, 4), { now: T(210), names: ['Alex'] }) ?? '').not.toContain('much the same thing')
