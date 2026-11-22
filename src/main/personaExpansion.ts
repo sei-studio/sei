@@ -37,7 +37,7 @@
  * Anthropic client without monkey-patching the SDK module. Production path
  * uses `new Anthropic({ apiKey })` directly inside this module.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 // Persona-expansion prompt text lives in the single editable prompt document
 // (src/bot/brain/promptLibrary.js). main bundles it at build time; re-exported
 // below so existing importers of `./personaExpansion` keep working.
@@ -388,7 +388,7 @@ export async function expandPersona(input: ExpandPersonaInput): Promise<ExpandPe
     // layer path (no Anthropic key to construct with).
     : layerProvider
       ? null
-      : (new Anthropic(sdkOpts as unknown as ConstructorParameters<typeof Anthropic>[0]) as unknown as {
+      : (new (await import('@anthropic-ai/sdk')).default(sdkOpts as unknown as ConstructorParameters<typeof Anthropic>[0]) as unknown as {
           messages: { create: (req: unknown, opts?: unknown) => Promise<unknown> };
         });
 

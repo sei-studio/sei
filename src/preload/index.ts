@@ -7,7 +7,7 @@
  * — a renderer-local AbortController can't reach the child process running
  * fabric-installer.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer as rawIpcRenderer } from 'electron';
 import type { FaceCue } from '../shared/facepack';
 import {
   IpcChannel,
@@ -46,6 +46,17 @@ import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 import type { AvatarLibraryView } from '../shared/avatarLibrary';
 import { unwrapIpcRejection } from '../shared/ipcError';
+import { createGatedIpc } from './mainReadyGate';
+
+// 261123: calls wait until main has registered its handlers (mainReadyGate.ts).
+const ipcRenderer = createGatedIpc(rawIpcRenderer, IpcChannel.app.ipcReady);
+
+/** 261123: main's process start (epoch ms) for the boot splash, from `--sei-process-start=` (windowChrome.ts). */
+function launchStartedAtFromArgv(argv: readonly string[]): number | undefined {
+  const arg = argv.find((a) => a.startsWith('--sei-process-start='));
+  const n = arg ? Number(arg.slice('--sei-process-start='.length)) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -803,6 +814,7 @@ const api: RendererApi = {
 
   // --- Window chrome (frameless custom titlebar on Windows/Linux) ---
   platform: process.platform,
+  launchStartedAt: launchStartedAtFromArgv(process.argv),
   windowMinimize: () => ipcRenderer.invoke(IpcChannel.window.minimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
   windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),

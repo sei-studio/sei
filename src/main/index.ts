@@ -28,6 +28,13 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { closeSplashWindow, createMainWindow, createSplashWindow } from './windowChrome';
 import { launchSplashStatus, msSinceProcessStart } from './splashPage';
+import {
+  IPC_READY_SLOW_EVENT,
+  IPC_READY_SLOW_MS,
+  ipcReadySlowProps,
+  markStartup,
+  startupMarkProps,
+} from './startupMarks';
 import { registerIpcHandlers, emitCreditsHardStop } from './ipc';
 import { installCapNotices } from './capNotices';
 import { registerFacepackIpc } from './facepack/facepackIpc';
@@ -204,6 +211,15 @@ let loopbackAuthServer: { url: string; stop: () => Promise<void> } | null = null
 /** How long after the page loads held updater pushes wait for the ready ping. */
 const UPDATE_PUSH_FALLBACK_MS = 15_000;
 
+// 261123 launch speed: the main window is created before the IPC handlers are
+// registered, and its preload holds every renderer call until this answers
+// (preload/mainReadyGate.ts). Opened right after registerIpcHandlers.
+let openIpcGate: () => void = () => {};
+const ipcGate = new Promise<void>((resolve) => {
+  openIpcGate = resolve;
+});
+ipcMain.handle(IpcChannel.app.ipcReady, () => ipcGate);
+
 function preloadPath(): string {
   // electron-vite outputs preload to dist/preload/index.cjs relative to dist/main/index.js.
   // .cjs extension is required because package.json sets "type": "module", which would
@@ -321,6 +337,24 @@ function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopen
 }
 
 /**
+ * A bootstrap() that threw, from the launch or from a Dock reopen before it
+ * ran (261123 review: the reopen used to only log, which left the early
+ * window on its splash with every IPC call queued for good).
+ */
+function onBootstrapFailed(err: unknown): void {
+  logger.error(`bootstrap failed: ${(err as Error)?.message ?? String(err)}`);
+  openIpcGate();
+  markProfileScopeReady();
+  // A failed start, not a clean quit (crashReporting.ts). Before the
+  // boot guard: in a packaged build it relaunches Sei at once.
+  markStartFailed();
+  // Packaged: counted, and Sei starts again (safe mode after two in a
+  // row). Dev: logged only, then exit as before.
+  reportStartupFailure('bootstrap', err);
+  app.exit(1);
+}
+
+/**
  * macOS: the last window was closed and Sei kept running; the Dock icon or a
  * click on her desktop room asks for a window again. Before the first
  * bootstrap that is bootstrap(). After it, ONLY the window is made again:
@@ -332,7 +366,7 @@ function openFromSeilink(channel: string, payload: unknown): 'focused' | 'reopen
  */
 function openMainWindowAgain(): void {
   if (!bootstrapStarted) {
-    bootstrap().catch((err) => logger.error(`bootstrap failed: ${(err as Error).message}`));
+    bootstrap().catch(onBootstrapFailed);
     return;
   }
   // Still booting: bootstrap makes the window (and the pending SeiLink open waits for it).
@@ -471,12 +505,7 @@ function wireMainWindowEvents(win: BrowserWindow): void {
   });
   // Replay latest LAN state on did-finish-load so freshly-loaded renderer is in sync.
   win.webContents.on('did-finish-load', () => {
-    if (!win.isDestroyed()) {
-      win.webContents.send(IpcChannel.lan.state, latestLanState);
-      for (const mod of listGameModules()) {
-        win.webContents.send(IpcChannel.world.state, mod.getWorldState());
-      }
-    }
+    replayWorldStates(win);
     // Updater pushes are held until the app UI says it is listening
     // (app:renderer-ready, boot.ts). Deliver them anyway if it never does.
     setTimeout(() => flushUpdatePushes(), UPDATE_PUSH_FALLBACK_MS).unref?.();
@@ -494,6 +523,15 @@ function wireMainWindowEvents(win: BrowserWindow): void {
     // -3 = ERR_ABORTED (a navigation replaced by another), not a failure.
     if (isMainFrame && errorCode !== -3) reportStartupFailure('renderer_load_failed');
   });
+}
+
+/** The latest LAN and world states, to a renderer that may have missed their pushes. */
+function replayWorldStates(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  win.webContents.send(IpcChannel.lan.state, latestLanState);
+  for (const mod of listGameModules()) {
+    win.webContents.send(IpcChannel.world.state, mod.getWorldState());
+  }
 }
 
 function broadcastLan(state: LanState): void {
@@ -1042,12 +1080,35 @@ function noteStartupWindowShown(win: BrowserWindow): void {
     capture('app_window_shown', {
       startup_ms: msSinceProcessStart(Date.now(), creationTime, process.uptime()),
       update_screen: updateScreen,
+      // 261123: per-phase marks, ms since process start (startupMarks.ts).
+      ...startupMarkProps(),
     });
+  });
+}
+
+/**
+ * 261123 review: the window shows while bootstrap runs, with every renderer
+ * IPC call held until ipc_ready. A launch still without it a minute after the
+ * window showed is hung behind the splash: say so in the log and send one
+ * shape-only event (held in analytics' pre-init queue until init runs).
+ */
+function watchIpcReadyAfterShow(win: BrowserWindow): void {
+  win.once('show', () => {
+    const timer = setTimeout(() => {
+      const props = ipcReadySlowProps();
+      if (!props) return;
+      logger.warn(
+        `startup: IPC handlers still not ready ${Math.round(IPC_READY_SLOW_MS / 1000)}s after the window showed (last phase: ${String(props.last_phase)})`,
+      );
+      capture(IPC_READY_SLOW_EVENT, props);
+    }, IPC_READY_SLOW_MS);
+    timer.unref?.();
   });
 }
 
 async function bootstrap(): Promise<void> {
   bootstrapStarted = true;
+  markStartup('bootstrap_start');
   // 0-pre. Install marker (260926). MUST be the first thing bootstrap does:
   //        it tells a fresh install from an existing one by probing for Sei
   //        state under userData, which every later step starts creating. The
@@ -1076,6 +1137,103 @@ async function bootstrap(): Promise<void> {
     setStorageAdapter(createSessionStorageAdapter());
   }
 
+  // 261123 launch speed: the window is made here, before the scope, the
+  // migrations and the services below, so the renderer bundle loads while
+  // they run (it used to start only after them). The preload holds every
+  // renderer call until registerIpcHandlers has run (app:ipc-ready,
+  // preload/mainReadyGate.ts), so nothing reads data before the migrations
+  // or calls a handler that does not exist yet. Nothing in this block reads
+  // per-profile data.
+  // 1c. Microphone permission (voice calls, 260707). Electron's default
+  //     permission handler DENIES `media` requests in a packaged app, so
+  //     getUserMedia in the renderer would reject before macOS TCC is ever
+  //     consulted. Grant mic (and the check) for our own renderer content.
+  //     Pairs with the NSMicrophoneUsageDescription + audio-input entitlement
+  //     in the packaged build (see electron-builder.yml /
+  //     build/entitlements.mac.plist).
+  //     260929: the macOS "allow microphone" prompt is no longer raised here at
+  //     boot, where it arrived before the player knew why Sei wanted a mic. It
+  //     is asked on the first Call press instead (permissions/permissionsService
+  //     requestMic, called from the voice store's startCall), and a denial gets
+  //     a card with an Open Settings button (MicAccessCard).
+  //     `clipboard-sanitized-write` must stay in the allowlist: installing these
+  //     handlers replaces Electron's grant-all default, so without it every
+  //     navigator.clipboard.writeText (all copy buttons) rejects with
+  //     NotAllowedError. Clipboard *read* stays denied.
+  {
+    const allowMedia = (permission: string): boolean =>
+      permission === 'media' ||
+      permission === 'audioCapture' ||
+      permission === 'microphone' ||
+      permission === 'clipboard-sanitized-write';
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
+      cb(allowMedia(permission));
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
+    if (process.platform === 'win32') {
+      // 260709 — Windows never shows a per-app mic prompt for desktop apps:
+      // getUserMedia either works silently or fails because the OS privacy
+      // toggle ("Let desktop apps access your microphone") is off. There is
+      // no askForMediaAccess on Windows, so we can only read the status and
+      // leave a loud diagnostic; the renderer's MicAccessCard opens the
+      // Settings page that fixes it.
+      try {
+        const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+        if (micStatus !== 'granted') {
+          logger.warn(
+            `microphone access status: ${micStatus}. Voice calls will fail until ` +
+              `"Let desktop apps access your microphone" is enabled in Windows ` +
+              `Settings (Privacy & security > Microphone).`,
+          );
+        }
+      } catch {
+        /* older Electron — getMediaAccessStatus unavailable; nothing to log */
+      }
+    }
+  }
+
+  // 2. Create main window
+  //    Attach the sei-portrait:// request handler first so the renderer can
+  //    resolve <img src="sei-portrait://…"> the moment it loads.
+  registerPortraitProtocol();
+  registerSeilinkProtocol();
+  // 261120: cap notices outside the window (OS notification, replay).
+  installCapNoticeDeps();
+  mainWindow = createMainWindow({
+    preloadPath: preloadPath(),
+    indexHtmlUrlOrPath: rendererTarget(),
+    // 261107: a login launch loads the window hidden (seilink/loginLaunch.ts);
+    // her room, the Dock or a second launch of Sei shows it.
+    startHidden: loginLaunch().isHidden(),
+    // Update splash: once the main window is ready, close the splash
+    // immediately (no fade, 260729) before the first show, so the two never
+    // overlap. The failsafe timer in whenReady covers a bootstrap that never
+    // gets here.
+    beforeFirstShow: async () => {
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        const s = splashWindow;
+        splashWindow = null;
+        await closeSplashWindow(s);
+      }
+    },
+  });
+  markStartup('window_created');
+  mainWindow.once('ready-to-show', () => markStartup('ready_to_show'));
+  wireMainWindowEvents(mainWindow);
+  watchMainWindowShow(mainWindow);
+  noteStartupWindowShown(mainWindow);
+  watchIpcReadyAfterShow(mainWindow);
+  firstWindowMade = true;
+  // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
+  // send its links (and any window.open) to the default browser, and let it
+  // be framed despite sei.gg's X-Frame-Options. See popupFrameGuards.ts.
+  installPopupFrameGuards(mainWindow);
+
+  // Always-on-top call overlay (260706): a second frameless window driven by the
+  // renderer's voice:overlay-set pushes. Init with the same preload + renderer
+  // target so it can load the overlay-mode bundle.
+  initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
+
   // 0a. Per-profile partitioning (260603) — determine the active scope from
   //     the persisted Supabase session BEFORE any per-account store is read or
   //     written. Signed in at boot → the account's UUID profile owns the
@@ -1092,6 +1250,7 @@ async function bootstrap(): Promise<void> {
     const { applyBootScope } = await import('./auth/bootScope');
     const bootScope = await applyBootScope({ warn: (m) => logger.warn(m) });
     logger.info(`active profile scope: ${bootScope ?? 'local'}`);
+    markStartup('scope');
   } finally {
     // The updater (started before bootstrap, boot.ts) reads the beta-channel
     // preference once the scope is known.
@@ -1282,92 +1441,7 @@ async function bootstrap(): Promise<void> {
     }
   }
 
-  // 1c. Microphone permission (voice calls, 260707). Electron's default
-  //     permission handler DENIES `media` requests in a packaged app, so
-  //     getUserMedia in the renderer would reject before macOS TCC is ever
-  //     consulted. Grant mic (and the check) for our own renderer content.
-  //     Pairs with the NSMicrophoneUsageDescription + audio-input entitlement
-  //     in the packaged build (see electron-builder.yml /
-  //     build/entitlements.mac.plist).
-  //     260929: the macOS "allow microphone" prompt is no longer raised here at
-  //     boot, where it arrived before the player knew why Sei wanted a mic. It
-  //     is asked on the first Call press instead (permissions/permissionsService
-  //     requestMic, called from the voice store's startCall), and a denial gets
-  //     a card with an Open Settings button (MicAccessCard).
-  //     `clipboard-sanitized-write` must stay in the allowlist: installing these
-  //     handlers replaces Electron's grant-all default, so without it every
-  //     navigator.clipboard.writeText (all copy buttons) rejects with
-  //     NotAllowedError. Clipboard *read* stays denied.
-  {
-    const allowMedia = (permission: string): boolean =>
-      permission === 'media' ||
-      permission === 'audioCapture' ||
-      permission === 'microphone' ||
-      permission === 'clipboard-sanitized-write';
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => {
-      cb(allowMedia(permission));
-    });
-    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
-    if (process.platform === 'win32') {
-      // 260709 — Windows never shows a per-app mic prompt for desktop apps:
-      // getUserMedia either works silently or fails because the OS privacy
-      // toggle ("Let desktop apps access your microphone") is off. There is
-      // no askForMediaAccess on Windows, so we can only read the status and
-      // leave a loud diagnostic; the renderer's MicAccessCard opens the
-      // Settings page that fixes it.
-      try {
-        const micStatus = systemPreferences.getMediaAccessStatus('microphone');
-        if (micStatus !== 'granted') {
-          logger.warn(
-            `microphone access status: ${micStatus}. Voice calls will fail until ` +
-              `"Let desktop apps access your microphone" is enabled in Windows ` +
-              `Settings (Privacy & security > Microphone).`,
-          );
-        }
-      } catch {
-        /* older Electron — getMediaAccessStatus unavailable; nothing to log */
-      }
-    }
-  }
-
-  // 2. Create main window
-  //    Attach the sei-portrait:// request handler first so the renderer can
-  //    resolve <img src="sei-portrait://…"> the moment it loads.
-  registerPortraitProtocol();
-  registerSeilinkProtocol();
-  // 261120: cap notices outside the window (OS notification, replay).
-  installCapNoticeDeps();
-  mainWindow = createMainWindow({
-    preloadPath: preloadPath(),
-    indexHtmlUrlOrPath: rendererTarget(),
-    // 261107: a login launch loads the window hidden (seilink/loginLaunch.ts);
-    // her room, the Dock or a second launch of Sei shows it.
-    startHidden: loginLaunch().isHidden(),
-    // Update splash: once the main window is ready, close the splash
-    // immediately (no fade, 260729) before the first show, so the two never
-    // overlap. The failsafe timer in whenReady covers a bootstrap that never
-    // gets here.
-    beforeFirstShow: async () => {
-      if (splashWindow && !splashWindow.isDestroyed()) {
-        const s = splashWindow;
-        splashWindow = null;
-        await closeSplashWindow(s);
-      }
-    },
-  });
-  wireMainWindowEvents(mainWindow);
-  watchMainWindowShow(mainWindow);
-  noteStartupWindowShown(mainWindow);
-  firstWindowMade = true;
-  // Startup popup (261027): lock the operator page's iframe to sei.gg/popup/,
-  // send its links (and any window.open) to the default browser, and let it
-  // be framed despite sei.gg's X-Frame-Options. See popupFrameGuards.ts.
-  installPopupFrameGuards(mainWindow);
-
-  // Always-on-top call overlay (260706): a second frameless window driven by the
-  // renderer's voice:overlay-set pushes. Init with the same preload + renderer
-  // target so it can load the overlay-mode bundle.
-  initCallOverlay({ preloadPath: preloadPath(), rendererUrlOrPath: rendererTarget() });
+  markStartup('migrations');
 
   // 3. World watchers (D-21 — single instance per game for the whole app
   // session). Minecraft's is the LAN watcher behind its GameModule.
@@ -1852,6 +1926,14 @@ async function bootstrap(): Promise<void> {
       })();
     },
   });
+  markStartup('ipc_ready');
+  openIpcGate();
+  // 261123: the window now loads while bootstrap runs, so its did-finish-load
+  // replay may have gone out before the watchers started. Send the states
+  // again once (as the replay did when the window was made after them).
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+    replayWorldStates(mainWindow);
+  }
 
   // 5b. Auth state broadcast (initial replay + Supabase auth-event
   //     subscription). Runs AFTER registerIpcHandlers so the auth IPC surface
@@ -1860,6 +1942,7 @@ async function bootstrap(): Promise<void> {
     const { initAuthState } = await import('./auth/authState');
     try { await initAuthState(mainWindow); }
     catch (err) { logger.warn(`auth state init failed: ${(err as Error).message}`); }
+    markStartup('auth_ready');
   }
 
   // 5b-ii. Product analytics (260707). Init AFTER initAuthState so the backend
@@ -1973,6 +2056,7 @@ async function bootstrap(): Promise<void> {
       'Renderer will surface KEYCHAIN_FALLBACK_PLAINTEXT warning to the user.',
     );
   }
+  markStartup('bootstrap_done');
 }
 
 // SharedArrayBuffer for voice dictation is enabled in the single enable-features
@@ -2073,17 +2157,7 @@ async function bootstrap(): Promise<void> {
           noteNeutralExit();
           return;
         }
-        bootstrap().then(() => settleLoginLaunch()).catch((err) => {
-          logger.error(`bootstrap failed: ${(err as Error).message}`);
-          markProfileScopeReady();
-          // A failed start, not a clean quit (crashReporting.ts). Before the
-          // boot guard: in a packaged build it relaunches Sei at once.
-          markStartFailed();
-          // Packaged: counted, and Sei starts again (safe mode after two in a
-          // row). Dev: logged only, then exit as before.
-          reportStartupFailure('bootstrap', err);
-          app.exit(1);
-        });
+        bootstrap().then(() => settleLoginLaunch()).catch(onBootstrapFailed);
       });
 
     app.on('activate', () => {

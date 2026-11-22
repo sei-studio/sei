@@ -393,6 +393,20 @@ range (`A–Z`), never as prose punctuation.
   as `signed_out` with `reason: 'session_rejected'` (`noteUserSignOut`
   marks the user's own). Auth requests have a 15 s fetch timeout
   (`withAuthRequestTimeout`), the profile move's network steps 15 s each.
+- **The main window loads before the IPC handlers exist (261123, launch
+  speed)** → `bootstrap()` creates the window right after the auth storage
+  adapter, before the scope, migrations and services, so the renderer bundle
+  loads in parallel. The preload wraps `ipcRenderer` (`mainReadyGate.ts`):
+  every invoke/send waits for `app:ipc-ready`, which main answers right after
+  `registerIpcHandlers`. Pushes (`on`) are not delayed, so a push sent before
+  the renderer listens is lost as before; the LAN/world replay runs again at
+  ipc-ready. Keep pre-window steps free of network awaits and heavy imports
+  (`@anthropic-ai/sdk` and `jszip` load on first use: `lazyJszip.ts`).
+  `startupMarks.ts` stamps each phase; `app_window_shown` and the renderer's
+  `app_first_view` carry them as `<phase>_ms` props. The window's first
+  paint is a static copy of `BootSplash` in `src/renderer/index.html` (theme
+  from localStorage `sei.bootTheme`, mark fade on the process-start clock via
+  `--sei-process-start`, `lib/bootMark.ts`); change both together.
 - **Renderer caches outlive an account switch** → main re-points every
   per-profile store on `app:scope-changed`, but a Zustand store keeps what it
   already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs

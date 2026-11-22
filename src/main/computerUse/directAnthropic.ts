@@ -6,15 +6,21 @@
  * models and thinking settings freely. Production traffic goes through the
  * normal LLM layer (buildLlmProvider) and never through this file.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import type { LlmCallParams, LlmResult, LlmToolUse } from '../llm/types';
 import type { LlmCall } from './visionChooser';
 import { applyAnthropicModelDefaults } from '../../bot/brain/llm/anthropicModelDefaults.js';
 import { applyPromptBudget, describeBudgetReport } from '../../bot/brain/llm/promptBudget.js';
 
 export function createDirectAnthropicCall(apiKey: string, opts: { baseURL?: string } = {}): LlmCall {
-  const client = new Anthropic({ apiKey, maxRetries: 0, ...(opts.baseURL ? { baseURL: opts.baseURL } : {}) });
+  // The SDK loads on the first call (261123: kept off the launch path).
+  let clientP: Promise<Anthropic> | null = null;
+  const getClient = (): Promise<Anthropic> =>
+    (clientP ??= import('@anthropic-ai/sdk').then(
+      (m) => new m.default({ apiKey, maxRetries: 0, ...(opts.baseURL ? { baseURL: opts.baseURL } : {}) }),
+    ));
   return async (p: LlmCallParams): Promise<LlmResult> => {
+    const client = await getClient();
     const body: Record<string, unknown> = {
       model: p.model ?? 'claude-sonnet-5',
       max_tokens: p.maxTokens,
