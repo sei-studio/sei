@@ -25,7 +25,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { applyTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
+import { applyTheme, rememberBootTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
 import { Button } from '../components/Button';
 import { Seg } from '../components/Seg';
 import { Toggle } from '../components/Toggle';
@@ -266,6 +266,7 @@ export function SettingsScreen(): React.ReactElement {
     if (mode === themeMode) return;
     setThemeMode(mode);
     applyTheme(mode);
+    rememberBootTheme(mode);
     if (cfg) {
       const updated: UserConfig = { ...cfg, theme_mode: mode };
       try {

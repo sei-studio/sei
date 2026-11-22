@@ -65,6 +65,9 @@ export function createMainWindow(opts: CreateMainWindowOptions): BrowserWindow {
       // pump itself is already immune (it runs in a worker off
       // MediaStreamTrackProcessor), but its companions are not.
       backgroundThrottling: false,
+      // 261123: the launch clock for the boot splash's mark (renderer
+      // lib/bootMark.ts). Node's timeOrigin is when this process started.
+      additionalArguments: [`--sei-process-start=${Math.round(performance.timeOrigin)}`],
     },
     ...platformChrome,
   });
@@ -157,7 +160,8 @@ export function createSplashWindow(status: string): BrowserWindow | null {
     maximizable: false,
     minimizable: false,
     fullscreenable: false,
-    alwaysOnTop: true,
+    // Product call (261123): not always on top; it no longer covers other apps.
+    alwaysOnTop: false,
     skipTaskbar: true,
     hasShadow: false,
     show: false,

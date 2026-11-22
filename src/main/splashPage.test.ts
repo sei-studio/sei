@@ -199,3 +199,12 @@ describe.skipIf(!CHROME)('update overlay frames, rendered in Chrome', () => {
     expect(problems).toEqual([]);
   }, 120_000);
 });
+
+describe('update splash window (product call 261123)', () => {
+  it('is not always on top', () => {
+    const src = readFileSync(resolve(ROOT, 'src/main/windowChrome.ts'), 'utf-8');
+    const block = src.slice(src.indexOf('export function createSplashWindow'), src.indexOf('export async function renderSplashFrames'));
+    expect(block).toContain('alwaysOnTop: false');
+    expect(block).not.toContain('alwaysOnTop: true');
+  });
+});

@@ -6,13 +6,92 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sei</title>
+    <script>
+      // 261123 boot splash: its theme, and when the mark fades in, on the launch clock.
+      // Same rule as src/lib/bootMark.ts (bootMark.test.ts runs this script).
+      // Only the main window (no query) shows the static splash below.
+      (function () {
+        try {
+          var root = document.documentElement;
+          if (location.search) {
+            root.classList.add('sei-no-boot');
+            return;
+          }
+          // The last theme the app applied (lib/theme.ts rememberBootTheme),
+          // so a light-theme user's splash is not the dark default.
+          try {
+            var t = localStorage.getItem('sei.bootTheme');
+            if (t === 'system') {
+              t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'midnight' : 'ice';
+            }
+            if (t === 'midnight' || t === 'ice' || t === 'acorn' || t === 'mint') {
+              root.setAttribute('data-theme', t);
+              root.setAttribute('data-scheme', t === 'midnight' ? 'dark' : 'light');
+            }
+          } catch (err) {
+            /* the html default theme stands */
+          }
+          var s = window.sei && window.sei.launchStartedAt;
+          if (typeof s !== 'number' || !isFinite(s)) return;
+          var e = Date.now() - s;
+          if (e < 0 || e > 600000) return;
+          var d = Math.max(-800, Math.min(1200, Math.round(1200 - e)));
+          root.style.setProperty('--sei-boot-mark-delay', d + 'ms');
+        } catch (err) {
+          /* the CSS default (1200ms) stands */
+        }
+      })();
+    </script>
+    <style>
+      /* 261123: a static copy of BootSplash (components/BootSplash.tsx), so the
+         window's first paint is the splash and the window can show before the
+         bundle has run. React replaces it on mount. The mark is an <img> on
+         purpose: Chromium counts a loaded image as a non-empty first paint
+         (ready-to-show), a masked span does not. Its own pixels are moved out
+         of view; the tinted mask paints the mark, as SeiPixelMark does. */
+      .sei-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--desktop);
+        color: var(--text);
+        -webkit-app-region: drag;
+      }
+      .sei-no-boot .sei-boot {
+        display: none;
+      }
+      .sei-boot-mark {
+        display: block;
+        height: 92px;
+        width: calc(92px * 928 / 300);
+        object-fit: none;
+        object-position: -10000px 0;
+        background-color: currentColor;
+        -webkit-mask: url('/img/sei-text.png') center / contain no-repeat;
+        mask: url('/img/sei-text.png') center / contain no-repeat;
+        opacity: 0;
+        animation: seiBootMarkIn 800ms ease var(--sei-boot-mark-delay, 1200ms) forwards;
+      }
+      @keyframes seiBootMarkIn {
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .sei-boot-mark {
+          animation-duration: 1ms;
+        }
+      }
+    </style>
     <link rel="stylesheet" href="/src/styles/fonts.css" />
     <link rel="stylesheet" href="/src/styles/tokens.css" />
     <link rel="stylesheet" href="/src/styles/animations.css" />
     <link rel="stylesheet" href="/src/styles/global.css" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="sei-boot" role="status" aria-label="Loading Sei"><img class="sei-boot-mark" src="/img/sei-text.png" alt="" /></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -24,7 +24,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
 import { profileSetUp } from './lib/profileSetUp';
 import { effectiveAvatarMode } from '@shared/characterSchema';
-import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
+import { applyTheme, clampThemeMode, rememberBootTheme, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
 import { movedInId, useSeilinkStore } from './lib/stores/useSeilinkStore';
@@ -707,6 +707,7 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          rememberBootTheme(mode);
           // App UI language follows the incoming profile's config (260730).
           useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
@@ -959,6 +960,7 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          rememberBootTheme(mode);
           // App UI language (260730): hydrate before the first localized render.
           useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           // ui-A7: seed the developer-console visibility from persisted config

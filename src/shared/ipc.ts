@@ -3577,6 +3577,12 @@ export interface RendererApi {
    * renderer only ever compares it against `'darwin'`.
    */
   platform: string;
+  /**
+   * 261123: when main's process started (epoch ms), passed to the main window
+   * as `--sei-process-start=` (windowChrome.ts). The boot splash fades its mark
+   * in on that clock (renderer lib/bootMark.ts). Absent in other windows.
+   */
+  launchStartedAt?: number;
   /** Frameless window controls (Windows/Linux custom titlebar). */
   windowMinimize(): Promise<void>;
   /** Toggle maximize/restore for the focused window. */

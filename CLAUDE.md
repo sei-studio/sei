@@ -403,7 +403,10 @@ range (`A–Z`), never as prose punctuation.
   ipc-ready. Keep pre-window steps free of network awaits and heavy imports
   (`@anthropic-ai/sdk` and `jszip` load on first use: `lazyJszip.ts`).
   `startupMarks.ts` stamps each phase; `app_window_shown` and the renderer's
-  `app_first_view` carry them as `<phase>_ms` props.
+  `app_first_view` carry them as `<phase>_ms` props. The window's first
+  paint is a static copy of `BootSplash` in `src/renderer/index.html` (theme
+  from localStorage `sei.bootTheme`, mark fade on the process-start clock via
+  `--sei-process-start`, `lib/bootMark.ts`); change both together.
 - **Renderer caches outlive an account switch** → main re-points every
   per-profile store on `app:scope-changed`, but a Zustand store keeps what it
   already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
