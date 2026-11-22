@@ -273,6 +273,7 @@ export async function playerMove(
   }
   applyPlayerShot(s, row, col);
   s.lastActivityAt = Date.now();
+  s.turn = nextTurn(s);
   const state = push(s);
   if (checkGameOver(s)) return { ok: true, state: snapshot(s) };
   enqueueAiMove(s);
