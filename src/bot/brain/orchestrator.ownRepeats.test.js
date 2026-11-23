@@ -28,7 +28,7 @@ function makeProvider(script) {
   }
 }
 
-function makeOrch(script, executeAction = () => Promise.resolve('done')) {
+function makeOrch(script, executeAction = () => Promise.resolve('done'), extraAdapter = {}) {
   const provider = makeProvider(script)
   const adapter = {
     gameName: 'Minecraft',
@@ -44,6 +44,7 @@ function makeOrch(script, executeAction = () => Promise.resolve('done')) {
     closeAnySessions: async () => {},
     executeAction,
     gameVocabulary: () => ['oak_log'],
+    ...extraAdapter,
   }
   const config = {
     player_username: 'newb',
@@ -163,5 +164,80 @@ describe('own_repeats on the reply to a hello that crossed hers', () => {
     orch.recordIncomingChat('newb', 'wanna get wood')
     await orch.handleDispatch('sei:chat_received', chat('wanna get wood'))
     expect(blockText(provider.calls[2], 'own_repeats')).toContain(REPLY_ASK)
+  })
+})
+
+// 261121 (pass 60): the player's third "stay close pls" gets the note right
+// under their line; the first two do not.
+describe('repeated player ask', () => {
+  it('goes under their line from the third time on', async () => {
+    _setTickIntervalForTests(10_000_000)
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { orch, provider } = makeOrch([
+      { text: '', toolUses: [say('t1', 'staying right here')] },
+      { text: '', toolUses: [say('t2', 'yeah i got you')] },
+      { text: '', toolUses: [say('t3', 'skeletons are far')] },
+    ])
+    const lines = ['ok sui thx. stay close pls', 'ok sui. stay close pls, im scared', 'ok thx sui. stay close pls']
+    for (const line of lines) {
+      now += 11_000
+      orch.recordIncomingChat('newb', line)
+      await orch.handleDispatch('sei:chat_received', chat(line))
+    }
+    const payload = (i) => JSON.stringify(provider.calls[i].blocks)
+    expect(payload(0)).not.toContain('much the same thing')
+    expect(payload(1)).not.toContain('much the same thing')
+    const third = payload(2)
+    const at = third.indexOf('Their line, player (newb): ok thx sui. stay close pls')
+    expect(at).toBeGreaterThan(-1)
+    expect(third.indexOf('They have now said much the same thing three times in the last 22 seconds')).toBeGreaterThan(at)
+  })
+})
+
+// 261123 (pass 61): the same ask while she is already by their side (adapter
+// playerNearby) owes no reply: no mandate, the near note under the line, and
+// no unanswered-line retry when she stays quiet.
+describe('repeated player ask while she is by their side', () => {
+  const run = async (near) => {
+    _setTickIntervalForTests(10_000_000)
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { orch, provider } = makeOrch([
+      { text: '', toolUses: [say('t1', 'staying right here')] },
+      { text: '', toolUses: [say('t2', 'yeah i got you')] },
+      { text: '', toolUses: [] },
+      { text: '', toolUses: [say('t4', 'here')] },
+    ], undefined, { playerNearby: (name) => (name === 'newb' ? near : null) })
+    const lines = ['ok sui thx. stay close pls', 'ok sui. stay close pls, im scared', 'ok thx sui. stay close pls']
+    for (const line of lines) {
+      now += 11_000
+      orch.recordIncomingChat('newb', line)
+      await orch.handleDispatch('sei:chat_received', chat(line))
+    }
+    return provider
+  }
+
+  it('drops the reply mandate and the retry when she is 2 blocks away', async () => {
+    const provider = await run({ distance: 2, following: false })
+    expect(provider.calls).toHaveLength(3)
+    const third = JSON.stringify(provider.calls[2].blocks)
+    const at = third.indexOf('Their line, player (newb): ok thx sui. stay close pls')
+    expect(at).toBeGreaterThan(-1)
+    expect(third.indexOf('You are 2 blocks from them. If what they keep asking for is already happening, this line needs no answer')).toBeGreaterThan(at)
+    expect(third).not.toContain('Answer it with say().')
+    expect(third).not.toContain('a direct message never gets silence')
+    expect(third).not.toContain('but say something')
+    // The first two lines are no repeat yet: the mandate stands.
+    expect(JSON.stringify(provider.calls[1].blocks)).toContain('Answer it with say().')
+  })
+
+  it('keeps the mandate and the retry when she is far off', async () => {
+    const provider = await run({ distance: 15, following: false })
+    expect(provider.calls).toHaveLength(4)
+    const third = JSON.stringify(provider.calls[2].blocks)
+    expect(third).toContain('Answer it with say().')
+    expect(third).toContain('They have now said much the same thing three times')
+    expect(third).not.toContain('this line needs no answer')
   })
 })

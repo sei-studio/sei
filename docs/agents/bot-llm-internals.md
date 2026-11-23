@@ -57,6 +57,50 @@ give.js `TOSS_RANGE`) and the line reads "still walking over to X to hand
 them N item. Nothing is tossed until you get there": delivered claims 9/30
 to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
 
+**The player saying the same thing again (261121, pass 60).** In free-play
+combat_night the nervous scripted player says "ok sui thx. stay close pls"
+every 10 s, and each reply was another "staying right here, you're safe" in
+new words (11-20 scorecard: 14 of 42 combat_night off labels; replies to a
+line the player had nearly said before were off 50 of 73 times over
+11-11..11-20). The own-lines note could not name it: stay/here/close are
+answer words (`PLAIN_WORDS`, `STOP` in `ownRepeats.js`) and the wording
+changed every time. `repeatedPlayerAsk` looks at the player's side instead:
+their newest line shares two or more content words with at least two of
+their own lines in the last 150 s, at most a third of its words are new, it
+is not a question, and she spoke after each. Then `repeatedAskNote` (says it
+is the Nth time, they know her answer, give them something new or do it if
+she is not doing it yet) goes right under "Their line" on a plain reply, and
+at the end of a mid-loop line's tail. Inside the own-lines note, several
+blocks above the line, it moved the probe half as much
+(`scripts/quality-eval/pass60-probe.mjs`: base 23/24 loop replies, in the
+note 11/24, under the line 5/24). Zero tokens unless it fires.
+Pass 60b (261122): that probe judged a "loop" with a word list, and live
+the replies it passed were the same reassurance in new words ("i'm watching
+the dark for you") or made up to be new (a creeper no sensor showed,
+"bread's almost gone" with 7, "walls going up" with no build). Asking for
+"something new" or "something you can do" invites invention when nothing
+has changed. The note now says advice already given is a repeat too, the
+new thing has to be true right now (what the snapshot shows that she has
+not said, how she feels, a question for them), and a claimed action needs
+its call. Probe live cases (`pass60-probe.mjs` behind/heal/follow5, judged
+blind by Opus with `pass60b-judge.mjs`, 35 replies an arm): ok 2 (no note),
+12 (first wording), 21 (now); invented 0, 13, 2. Judge probe replies with
+an LLM, not a word regex.
+Pass 61 (261123): live the note still left her owing a reply, and every
+reassurance loop ran with her one or two blocks from the player: the ask
+was already being done. `repeatedAskTurn` now also takes where she is
+(adapter `playerNearby(name)`: distance from the entities, and whether her
+follow is on them; `observers/nearPlayer.js`). Within `ASK_NEAR_BLOCKS` (4),
+or following with no distance known, the turn owes no reply: the plain
+reply drops `ACK_LINE`, the "answer them" hint and "Answer it with say()",
+the mid-loop turn takes `actionTurn({ replyOptional })`, `_noReplyOwed`
+stops the unanswered-line retry, and the note under their line says where
+she is and that the line needs no answer if it is already happening. Farther
+off the pass 60b note and the mandate stay. State only, no phrase list.
+Probe (`pass60-probe.mjs`, 4 reps of 8 repeat cases): replies its word
+check calls the loop dev 31/32, pass 60b 12/32, pass 61 0/32 (silent end_loop, a few follow or
+goTo); first ask (close1) still answered 3/3, far come3 still goTo 3/3.
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 

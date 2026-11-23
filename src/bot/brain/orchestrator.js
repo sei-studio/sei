@@ -55,7 +55,7 @@ import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGa
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
-import { ownRepeatsNote, recentOwnTurns } from './ownRepeats.js'
+import { ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import {
   describeActionEvent, describeAttackEvent, describeDeathEvent, actionEventKey,
@@ -1666,6 +1666,25 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     } catch { return null }
   }
   const ownRepeatsTail = (mode) => { const t = ownRepeatsText(mode); return t ? `\n\n${t}` : '' }
+  // 261121 (pass 60): the player saying much the same line for the third
+  // time or more, after she answered each one (ownRepeats.js
+  // repeatedPlayerAsk). Placed right under their line. Never throws.
+  // 261123 (pass 61): with where she is relative to the speaker (adapter
+  // playerNearby: distance, her follow on them). Already by their side, the
+  // turn owes no reply ({ replyOptional: true }); the callers drop the reply
+  // mandate and the unanswered-line retry for it.
+  function repeatedAskFor(speaker) {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      let near = null
+      try { near = (speaker && typeof adapter.playerNearby === 'function') ? adapter.playerNearby(String(speaker)) : null } catch { near = null }
+      return repeatedAskTurn(playerLines, selfLines, {
+        names: [config?.player_display_name, config?.player_username, ...companions],
+        selfNames: [config?.persona?.name, ownUsername()],
+        near,
+      })
+    } catch { return null }
+  }
   // 261020 (pass 20): the turn after one of her actions finished carried no
   // line of hers, so a line she had just said went out again: "hey alex"
   // twice when a dig came back out of range, "you're welcome" on the "thanks"
@@ -2984,6 +3003,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const crossedTail = crossed
       ? `\n\n${NUDGES.greetCrossed}`
       : humanLine ? `\n\n${NUDGES.replyNoRestate}` : ''
+    // 261123 (pass 61): a line they keep saying while she is already by
+    // their side owes no reply (repeatedAskFor).
+    const repeatAsk = (humanLine && !crossed && !voiceCallActive) ? repeatedAskFor(who) : null
+    const replyOptional = repeatAsk?.replyOptional === true
+    if (replyOptional) loop._noReplyOwed = true
     return convoLead + unansweredLead + withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
@@ -3000,7 +3024,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       peers: companions,
       fromTeammate: teammate === true,
       ownAction,
+      replyOptional,
     })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '') +
+      (repeatAsk ? `\n\n${repeatAsk.note}` : '') +
       // 261112: their line cut her off mid-line (see cutInOf).
       (humanLine && cutIn && !unanswered ? `\n\n${NUDGES.cutOff(cutIn.line)}` : '')
   }
@@ -3732,12 +3758,19 @@ function maybeWarnByteCap(loop, warned) {
         loop._groupVoiceLine = isVoiceLine && (companions.length > 0 || fromTeammate)
         const crossed = !groupVoice && !teammateVoice && !fromTeammate && greetCrossed(loop)
         greetedTurn = crossed
-        eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice
-          : crossed ? NUDGES.playerInterruptHintGreetCrossed
-          : NUDGES.playerInterruptHint
         // 261014: say whether anything is running, rather than tell every reply
         // that its say() keeps "the current action" going.
         const plainReply = !groupVoice && !teammateVoice && !crossed
+        // 261123 (pass 61): a line they keep saying while she is already by
+        // their side owes no reply (repeatedAskFor): the hint without the
+        // reply sentence (the one a crossed hello takes), no ACK_LINE, no
+        // "Answer it with say()", and no unanswered-line retry.
+        const repeatAsk = (plainReply && !fromTeammate) ? repeatedAskFor(speakerName) : null
+        const replyOptional = repeatAsk?.replyOptional === true
+        if (replyOptional) loop._noReplyOwed = true
+        eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice
+          : (crossed || replyOptional) ? NUDGES.playerInterruptHintGreetCrossed
+          : NUDGES.playerInterruptHint
         const idleNow = !inflight.current()
         // 261029 (pass 30): on a plain reply the idle sentence moves to the
         // end of the turn, right after "Answer it with say()." Up in the
@@ -3776,7 +3809,7 @@ function maybeWarnByteCap(loop, warned) {
             ? NUDGES.greetCrossed
             // 261101 (pass 34): the reply mandate, with an acknowledgement
             // let off (ACK_LINE).
-            : `${ACK_LINE} ` +
+            : `${replyOptional ? '' : `${ACK_LINE} `}` +
               NUDGES.replyNoRestate +
               // 261013 (pass 6b): the mid-action variants already end on this
               // check; a line that starts a fresh loop did not, and errands
@@ -3786,11 +3819,13 @@ function maybeWarnByteCap(loop, warned) {
           (fromTeammate ? '' : goodbyeNotStartedTail()) +
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
           (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
+          (repeatAsk ? `\n${repeatAsk.note}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
           // 150 player-line samples silent that way, 0 with this sentence).
-          (plainReply ? `\nAnswer it with say().${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '')
+          (plainReply && !replyOptional ? `\nAnswer it with say().${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '') +
+          (replyOptional && idleNow ? `\n${NUDGES.replyWhileIdle}` : '')
         eventText = `Event: ${event}${eventAddendum}`
       } else {
         eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`

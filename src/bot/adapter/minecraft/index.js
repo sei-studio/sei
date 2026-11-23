@@ -28,6 +28,7 @@ import { closeFurnaceSession } from './behaviors/furnace.js'
 import { wireBotEvents } from './fsmWires.js'
 import { visualizeAction } from './behaviors/visualize.js'
 import { workItemsFor, carriedCounts, itemsNamedIn } from './observers/workItems.js'
+import { playerNearby } from './observers/nearPlayer.js'
 import {
   WORLD_PRIMER as MINECRAFT_PRIMER,
   describeAction,
@@ -291,6 +292,10 @@ export function createMinecraftAdapter({ bot, config, visionEnabled = false, act
     // written is not run (observers/staleAttacker.js).
     sameFight: (prevMobId, data) => sameFight(bot, prevMobId, data),
     staleTurn: (toolUses, sinceMs) => staleFightTurn(bot, toolUses, sinceMs),
+    // 261123 (pass 61): distance to a player and whether her follow is on
+    // them, for a line they keep saying while she is already by their side
+    // (brain ownRepeats.js repeatedAskTurn).
+    playerNearby: (name) => playerNearby(bot, name),
     fightActions: ['attackEntity'],
     postProcessToolBatch: (toolUses, results, loopState) =>
       postProcessToolBatch(toolUses, results, loopState, cantReachNudge),
