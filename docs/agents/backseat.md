@@ -225,10 +225,37 @@ The design and its measurements are committed at
   offline sim run the SAME code rather than a re-implementation.
 - **TWO buffers, not one (260728).** The frame ring needs one grid plus latency
   slack, so `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture
-  (`CLIP_MS`, MediaRecorder). Clipping is the most expensive thing in the
-  pipeline (two recorders encoding 720p60 all session for a rare `save_clip`),
-  so it sits behind `CLIPS_ENABLED` and vanishes when off. First dial to turn if
-  capture costs too much.
+  (`CLIP_MS`, MediaRecorder).
+- **Clip That is opt-in, capture runs at 30 fps (261123).** Windows players
+  reported the whole PC lagging while sharing. The two staggered VP9
+  recorders were the most expensive thing in a share, encoding 720p60 all
+  session for a rare `save_clip`. Now `UserConfig.clip_that` (Settings, OFF by
+  default for everyone) gates them: off, no MediaRecorder or audio tap runs
+  and `save_clip` is not in the tool list (`sessionTools`). On, the player
+  picks `clip_fps` 30/60/120 (`clipBitrate`; the request is a ceiling, a
+  source that gives less is recorded at what it gives). The info tip
+  (`CLIP_THAT_TIP`) sits next to the Settings row and on every `ClipCard`.
+  The stream asks for `streamFps()`: 30 (`CAPTURE_FPS`, was 60), or the clip
+  rate when Clip That needs more, and the worker analyses at most
+  `ANALYSIS_FPS` (30) and closes faster frames on arrival. The ring samples
+  at 10 Hz and the jolt arms are time-based, so nothing the companion
+  notices changes. The grid cell is drawn only when a sample is due (it used
+  to be drawn on every frame). Analytics: `backseat_started/_ended` carry
+  `clip_that` and `clip_fps`, `_ended` also `clips_saved`; `backseat_perf`
+  (`shared/backseatPerf.ts`, `main/backseat/perfSample.ts`) is sent at the
+  first minute and at the end with renderer / GPU / all-of-Sei CPU (percent
+  of one core, from `app.getAppMetrics()` cumulative CPU seconds), memory,
+  source / analysed / skipped frames and samples per minute, the track's
+  real rate and height, and the clip settings. Measured headless on Linux
+  (fake 720p60 camera, software rendering, so absolute numbers are not a
+  Windows machine's): the old default
+  (60 fps, two recorders) took a median 159% of one core for the browser
+  tree, the new default (30 fps, no recorders) 66%, Clip That on at 30 fps
+  135% and at 60 fps 129% (3 interleaved runs each on a loaded box, spread
+  about +-40 points). The recorders are nearly all of the difference; the
+  frame-rate and worker changes did not separate from noise there, because
+  the starved box delivered and analysed fewer frames than requested. Read
+  `backseat_perf` on Windows for the real numbers.
 - **THE COMPANION ALWAYS SPEAKS, and the reason is three failed attempts
   (260802).** The contract has been through three positions on silence. 260728
   sanctioned it as "the normal outcome" and produced a mute companion (five

@@ -162,6 +162,8 @@ export function OnboardingScreen({ isReonboard, signedIn = false }: OnboardingSc
         realistic_typing: true,
         // Appearance & feel: live call captions default off (260705).
         call_captions: false,
+        clip_that: false,
+        clip_fps: 30 as const,
         removed_default_ids: [],
         added_default_ids: [],
         added_world_ids: [],

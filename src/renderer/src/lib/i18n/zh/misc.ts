@@ -183,6 +183,10 @@ export const ZH_MISC: Record<string, string> = {
   'Could not start sharing. Try picking a different window.':
     '无法开始共享。试试选择其他窗口。',
   'Could not read that window.': '无法读取那个窗口。',
+  'Clip That': 'Clip That',
+  'About Clip That': '关于 Clip That',
+  'Clip frame rate': '片段帧率',
+  'Saves the last 15 seconds of your screen share as a clip in chat. Say "clip that" while sharing, or your companion clips great moments on their own.': '把屏幕共享的最后15秒保存成片段发到聊天里。共享时说"clip that"，或者让你的伙伴自己保存精彩时刻。',
   'Could not capture that window. Un-minimize the game, or share your whole screen.': '无法捕获那个窗口。请把游戏从最小化恢复，或者共享整个屏幕。',
   'Could not capture your screen. Try again, or share a single window.': '无法捕获你的屏幕。请重试，或者只共享一个窗口。',
   'Voice service is not available right now.': '语音服务暂时不可用。',

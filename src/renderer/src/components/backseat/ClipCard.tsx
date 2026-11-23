@@ -15,6 +15,8 @@
 import React from 'react';
 import { useT } from '../../lib/i18n';
 import { sei } from '../../lib/ipcClient';
+import { InfoTip } from '../InfoTip';
+import { CLIP_THAT_TIP } from '../settings/ClipThatRow';
 import styles from './ClipCard.module.css';
 
 export interface ClipCardProps {
@@ -35,6 +37,8 @@ export function ClipCard({ clip }: ClipCardProps): React.ReactElement {
       />
       <div className={styles.footer}>
         <span className={styles.reason}>{clip.reason}</span>
+        {/* 261123: what Clip That is and how to get one (also in Settings). */}
+        <InfoTip label={t('About Clip That')} text={t(CLIP_THAT_TIP)} />
         <button
           type="button"
           className={styles.reveal}

@@ -23,8 +23,12 @@ import { sei } from '../ipcClient';
 import {
   BUFFER_MS,
   CLIP_MS,
-  CLIPS_ENABLED,
+  ANALYSIS_FPS,
   CAPTURE_FPS,
+  clipBitrate,
+  clipFpsOf,
+  streamFps,
+  type ClipFps,
   CAPTURE_H,
   CAPTURE_W,
   JOLT_GAIN_DB,
@@ -56,6 +60,7 @@ import {
 } from './captureOpen';
 import type { CaptureFailDetail } from '../../../../shared/callEndReasons';
 import { userChatLanguage } from '@shared/chatLanguage';
+import { BACKSEAT_PERF_EVENT, type BackseatPerfPhase } from '../../../../shared/backseatPerf';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -322,6 +327,7 @@ async function openStream(
 function startAudioPipeline(
   source: AudioSource,
   stream: MediaStream,
+  clipsOn: boolean,
   onPcm16k: (pcm: Float32Array) => void,
 ): { stop: () => void } {
   if (source.kind === 'none') return { stop: () => {} };
@@ -388,7 +394,7 @@ function startAudioPipeline(
       writable: WritableStream;
     };
   }).MediaStreamTrackGenerator;
-  if (CLIPS_ENABLED && Gen) {
+  if (clipsOn && Gen) {
     try {
       const gen = new Gen({ kind: 'audio' });
       writer = gen.writable.getWriter();
@@ -474,6 +480,25 @@ export async function startCapture(
   } = {},
 ): Promise<CaptureHandle> {
   stopCapture();
+  // The session's settings, read once: the STT language, and Clip That
+  // (261123: off by default; when on, the stream runs at the clip rate).
+  let language = 'en';
+  let clipThat = false;
+  let clipFps: ClipFps = clipFpsOf(undefined);
+  try {
+    const cfg = (await sei.getConfig()) as {
+      chat_language?: string;
+      ui_language?: string;
+      clip_that?: boolean;
+      clip_fps?: number;
+    } | null;
+    language = userChatLanguage(cfg);
+    clipThat = cfg?.clip_that === true;
+    clipFps = clipFpsOf(cfg?.clip_fps);
+  } catch {
+    /* English, no clips: the right defaults */
+  }
+  const fps = streamFps(clipThat, clipFps);
   // 261123: one relaxed retry, then (window only) the whole screen. See
   // captureOpen.ts for the busy telemetry this answers.
   // A holder, not a `let`: it is set inside a callback, which TS's flow
@@ -483,7 +508,7 @@ export async function startCapture(
   try {
     opened = await openWithRetry(
       { id: requestedId, name: requestedName },
-      (id, relaxed) => openStream(id, relaxed),
+      (id, relaxed) => openStream(id, relaxed, fps),
       async () => pickScreenSource(await sei.backseatSources({ thumbnails: false })),
       () => {
         probe.minimized = probeMinimized(requestedId);
@@ -535,14 +560,6 @@ export async function startCapture(
   }
 
   const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
-
-  // The session's language, read once, for the STT ring.
-  let language = 'en';
-  try {
-    language = userChatLanguage((await sei.getConfig()) as { chat_language?: string; ui_language?: string } | null);
-  } catch {
-    /* English is the right default */
-  }
 
   // ── The switch dwell (260806) ───────────────────────────────────────────
   // Content switches (a colour discontinuity, a changed share label) no longer
@@ -642,7 +659,7 @@ export async function startCapture(
       readable: ReadableStream<VideoFrame>;
     };
   }).MediaStreamTrackProcessor({ track: videoTrack });
-  worker.postMessage({ type: 'start', readable: processor.readable }, [
+  worker.postMessage({ type: 'start', readable: processor.readable, analysisFps: ANALYSIS_FPS }, [
     processor.readable as unknown as Transferable,
   ]);
 
@@ -657,7 +674,7 @@ export async function startCapture(
   // its windows are stamped back across it.
   const echoEnv: EnvSample[] = [];
   const ECHO_ENV_KEEP_MS = 20_000;
-  const pipeline = startAudioPipeline(audioSource, stream, (pcm) => {
+  const pipeline = startAudioPipeline(audioSource, stream, clipThat, (pcm) => {
     stt.push(pcm);
     const endT = Date.now();
     const chunkMs = (pcm.length / STT_SAMPLE_RATE) * 1000;
@@ -690,7 +707,7 @@ export async function startCapture(
     if (prev && prev.recorder.state !== 'inactive') prev.recorder.stop();
     let rec: MediaRecorder;
     try {
-      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: clipBitrate(clipFps) });
     } catch {
       rollers[slot] = null;
       return;
@@ -704,10 +721,11 @@ export async function startCapture(
   };
   const cycleTimers: number[] = [];
   let staggerTimer = 0;
-  // Continuously encoding 720p60 for a whole session is by far the most
+  // Continuously encoding the stream for a whole session is by far the most
   // expensive thing here, and it exists only so a rare save_clip has something
-  // to harvest. With clipping off, none of it runs.
-  if (CLIPS_ENABLED) {
+  // to harvest. 261123: only for a player who turned Clip That on (Settings);
+  // off, no MediaRecorder is ever created.
+  if (clipThat) {
     cycle(0);
     cycleTimers.push(window.setInterval(() => cycle(0), CLIP_PERIOD_MS));
     staggerTimer = window.setTimeout(() => {
@@ -718,7 +736,7 @@ export async function startCapture(
 
   /** The complete segment that best covers the last BUFFER_MS. */
   const harvestClip = async (): Promise<string | null> => {
-    if (!CLIPS_ENABLED) return null;
+    if (!clipThat) return null;
     const candidates = rollers.filter((r): r is Rolling => !!r && r.chunks.length > 0);
     if (!candidates.length) return null;
     // Longest-running recorder = the one whose segment reaches furthest back.
@@ -838,6 +856,41 @@ export async function startCapture(
     return blockMaxDelta(best.thumb, newest.thumb);
   };
 
+  // ── backseat_perf (261123, shared/backseatPerf.ts) ─────────────────────
+  // The worker's cumulative counters arrive with its 10 s stats; the sample
+  // rates them over the time since capture began. Main adds CPU and memory.
+  const perfStartedAt = Date.now();
+  let perfTotals: { at: number; analysed: number; skipped: number; encodes: number; sampleBusy: number } | null =
+    null;
+  const sendPerf = (phase: BackseatPerfPhase): void => {
+    try {
+      const t = perfTotals;
+      const windowS = t ? (t.at - perfStartedAt) / 1000 : 0;
+      const perMin = (n: number): number => (windowS > 0 ? Math.round((n / windowS) * 60) : 0);
+      const settings = videoTrack.getSettings();
+      sei.track(BACKSEAT_PERF_EVENT, {
+        phase,
+        window_s: Math.round(windowS),
+        source_frames_per_min: t ? perMin(t.analysed + t.skipped) : 0,
+        analysed_per_min: t ? perMin(t.analysed) : 0,
+        skipped_per_min: t ? perMin(t.skipped) : 0,
+        samples_per_min: t ? perMin(t.encodes) : 0,
+        sample_busy_per_min: t ? perMin(t.sampleBusy) : 0,
+        stream_fps: fps,
+        track_fps: typeof settings.frameRate === 'number' ? Math.round(settings.frameRate) : null,
+        track_height: typeof settings.height === 'number' ? settings.height : null,
+        clip_that: clipThat,
+        clip_fps: clipThat ? clipFps : null,
+        clip_recorders: rollers.filter((r) => r && r.recorder.state === 'recording').length,
+        audio_source: audioSource.kind,
+      });
+    } catch {
+      /* analytics is never load-bearing */
+    }
+  };
+  sendPerf('start');
+  const perfMinuteTimer = window.setTimeout(() => sendPerf('first_minute'), 65_000);
+
   worker.onmessage = (e: MessageEvent): void => {
     const msg = e.data as
       | { type: 'thumb'; at: number; thumb: Uint8ClampedArray }
@@ -860,6 +913,7 @@ export async function startCapture(
           colorDelta: number | null;
           colorThr: number | null;
           samples: number;
+          totals?: { analysed: number; skipped: number; encodes: number; sampleBusy: number };
         };
     if (msg.type === 'thumb') {
       sceneThumbs.push({ at: msg.at, thumb: msg.thumb });
@@ -875,6 +929,7 @@ export async function startCapture(
       return;
     }
     if (msg.type === 'stats') {
+      if (msg.totals) perfTotals = { at: Date.now(), ...msg.totals };
       // Every 10 s, so "are the signals alive" is answerable from the devtools
       // console of the main window (260803: capture runs here now, so these are
       // reachable without the overlay's console relay). gain vs base is what the
@@ -1044,6 +1099,8 @@ export async function startCapture(
     stop: () => {
       if (stopped) return;
       stopped = true;
+      window.clearTimeout(perfMinuteTimer);
+      sendPerf('end');
       switchDwell.cancel();
       window.clearTimeout(switchDeferTimer);
       window.clearTimeout(idleTimer);

@@ -79,6 +79,7 @@ import {
   startChatReplyClock,
   type ChatReplyClock,
 } from './replyLatency';
+import { BACKSEAT_PERF_EVENT } from '../shared/backseatPerf';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import {
@@ -3610,6 +3611,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (event === REPLY_LATENCY_EVENT) {
         const sample = sanitizeRendererReplyLatency(props);
         if (sample) recordReplyLatency(sample);
+        return;
+      }
+      // 261123: Backseat capture cost. Main adds CPU/memory for the sending
+      // renderer (backseat/perfSample.ts); the 'start' marker only sets the
+      // baseline and is never sent.
+      if (event === BACKSEAT_PERF_EVENT) {
+        const sender = event_.sender;
+        void import('./backseat/perfSample')
+          .then(({ handleBackseatPerf }) => {
+            const perf = handleBackseatPerf(sender, props);
+            if (perf) trackAnalytics(event, perf);
+          })
+          .catch(() => {});
         return;
       }
       // 261123: launch timing (startupMarks.ts). Main stamps the time on arrival.
