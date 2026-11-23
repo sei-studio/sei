@@ -623,6 +623,25 @@ The design and its measurements are committed at
     gap_ms}`). On macOS a same-id end with the window still listed is the
     system "Stop sharing" control and ends the share
     (`capture_stopped_by_os`). Unverified on a Mac or Windows machine.
+  - **Capture start retry (261123).** `capture_failed:busy`
+    (NotReadableError) hit 18 Windows users in 30 days, 92 failed starts.
+    Every one was refused within a second of the start and the same player
+    then failed over and over (up to 22 times in two minutes); 78% were
+    WINDOW sources. Chromium's Windows window capturer refuses a window it
+    cannot capture right now, most often a fullscreen game that minimized
+    itself when the player alt-tabbed to Sei to press Share. `captureOpen.ts`
+    (pure + tested) now retries a busy start once with RELAXED constraints
+    (no max size or rate in the request, the cap re-applied on the track),
+    then for a window falls back to the first whole screen; the call window
+    then says "Sharing <screen>". The player sees one hint line instead of
+    the browser's English (`captureFailureCopy`). Analytics:
+    `backseat_capture_retried {source_kind, first_class, minimized, outcome}`
+    on every retry, and a final failure's `backseat_ended` carries
+    `capture_source_kind / capture_first_class / capture_retry /
+    capture_minimized`. `minimized` comes from `main/backseat/windowState.ts`
+    (IsIconic via PowerShell, Windows only, asked only after a refusal).
+    Unverified on Windows: watch the busy share and `capture_minimized` on
+    the next beta.
   - **Resume note.** A share that starts under `RESUME_WINDOW_MS` (2 min)
     after one where she spoke (`resumedAfterMs`) gets the resume start note
     (`tickNote` `resumedAfterS`): no second hello, one thought about the

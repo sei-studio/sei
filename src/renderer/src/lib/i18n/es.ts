@@ -1643,6 +1643,8 @@ export const ES: Record<string, string> = {
   "{name} is in your Minecraft world right now. End that session first.": "{name} está en tu mundo de Minecraft ahora mismo. Termina esa sesión primero.",
   "Could not start sharing. Try picking a different window.": "No se pudo empezar a compartir. Prueba a elegir otra ventana.",
   "Could not read that window.": "No se pudo leer esa ventana.",
+  "Could not capture that window. Un-minimize the game, or share your whole screen.": "No se pudo capturar esa ventana. Restaura el juego si está minimizado, o comparte toda la pantalla.",
+  "Could not capture your screen. Try again, or share a single window.": "No se pudo capturar tu pantalla. Inténtalo de nuevo, o comparte una sola ventana.",
   "Voice service is not available right now.": "El servicio de voz no está disponible ahora mismo.",
   "This voice is not in your ElevenLabs library. Add it there, or pick a different voice.": "Esta voz no está en tu biblioteca de ElevenLabs. Agrégala ahí o elige otra voz.",
   "No microphone was found. Connect one and try again.": "No se encontró ningún micrófono. Conecta uno y reinténtalo.",

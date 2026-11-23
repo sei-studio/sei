@@ -1643,6 +1643,8 @@ export const JA: Record<string, string> = {
   "{name} is in your Minecraft world right now. End that session first.": "{name}は今Minecraftのワールドにいます。先にそのセッションを終了してください。",
   "Could not start sharing. Try picking a different window.": "共有を開始できませんでした。別のウィンドウを選んでみてください。",
   "Could not read that window.": "そのウィンドウを読み取れませんでした。",
+  "Could not capture that window. Un-minimize the game, or share your whole screen.": "そのウィンドウをキャプチャできませんでした。ゲームの最小化を解除するか、画面全体を共有してください。",
+  "Could not capture your screen. Try again, or share a single window.": "画面をキャプチャできませんでした。もう一度試すか、ウィンドウを1つだけ共有してください。",
   "Voice service is not available right now.": "ボイスサービスは今使えません。",
   "This voice is not in your ElevenLabs library. Add it there, or pick a different voice.": "このボイスはElevenLabsライブラリにありません。そちらに追加するか、別のボイスを選んでください。",
   "No microphone was found. Connect one and try again.": "マイクが見つかりませんでした。接続してからもう一度お試しください。",

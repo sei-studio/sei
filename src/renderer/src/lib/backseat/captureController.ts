@@ -44,6 +44,17 @@ import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
 import { blockMaxDelta } from './signals';
 import { createSwitchDwell } from './switchDwell';
+import {
+  captureSourceKind,
+  CaptureStartError,
+  desktopVideoConstraints,
+  openWithRetry,
+  pickScreenSource,
+  type CaptureRetryOutcome,
+  type CaptureSourceRef,
+  type OpenedCapture,
+} from './captureOpen';
+import type { CaptureFailDetail } from '../../../../shared/callEndReasons';
 import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
@@ -94,6 +105,11 @@ export interface CaptureHandle {
    * coexist. The preview is a consumer, never the source of anything.
    */
   stream: MediaStream;
+  /** 261123: the source actually captured. After a window refused capture
+   *  this is the whole screen (captureOpen.ts), and the call window names it. */
+  source: CaptureSourceRef;
+  /** How the start went (captureOpen.ts). */
+  retry: CaptureRetryOutcome;
   stop: () => void;
   setPaused: (paused: boolean) => void;
   /** Latch a grid ending now, to ride along with the message being composed. */
@@ -190,6 +206,22 @@ async function findLoopbackDevice(): Promise<string | null> {
 }
 
 /**
+ * After a relaxed open, ask for the usual cap on the track itself. Chromium
+ * scales and drops frames per track, so this normally lands the same shape the
+ * strict request would have. Best effort: a refusal keeps the source's shape,
+ * which still works (cells are downscaled anyway), it just costs more.
+ */
+async function capRelaxedTrack(stream: MediaStream, fps: number): Promise<void> {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    await track.applyConstraints({ width: { max: CAPTURE_W }, height: { max: CAPTURE_H }, frameRate: { max: fps } });
+  } catch {
+    /* keep whatever the capturer gives */
+  }
+}
+
+/**
  * Open the shared stream. Audio is wanted but NEVER required.
  *
  * 260728, measured on macOS 26.4 / Electron 42 / Chromium 148: system-audio
@@ -217,16 +249,14 @@ async function findLoopbackDevice(): Promise<string | null> {
  */
 async function openStream(
   sourceId: string,
+  relaxed = false,
+  fps: number = CAPTURE_FPS,
 ): Promise<{ stream: MediaStream; audioSource: AudioSource }> {
-  const video = {
-    mandatory: {
-      chromeMediaSource: 'desktop',
-      chromeMediaSourceId: sourceId,
-      maxWidth: CAPTURE_W,
-      maxHeight: CAPTURE_H,
-      maxFrameRate: CAPTURE_FPS,
-    },
-  } as unknown as MediaTrackConstraints;
+  // 261123: `relaxed` is the retry after a busy refusal (captureOpen.ts): no
+  // max size or rate in the request. The cap is put back on the track
+  // afterwards (capRelaxedTrack), where a capturer that cannot honour it just
+  // keeps its own shape instead of refusing to start.
+  const video = desktopVideoConstraints(sourceId, relaxed, { width: CAPTURE_W, height: CAPTURE_H, fps });
   // Windows: desktop loopback works, so ask for it inline.
   if (navigator.userAgent.includes('Windows')) {
     try {
@@ -235,7 +265,10 @@ async function openStream(
         video,
       });
       const track = stream.getAudioTracks()[0];
-      if (track) return { stream, audioSource: { kind: 'track', track } };
+      if (track) {
+        if (relaxed) await capRelaxedTrack(stream, fps);
+        return { stream, audioSource: { kind: 'track', track } };
+      }
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       /* fall through to video-only */
@@ -243,6 +276,7 @@ async function openStream(
   }
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+  if (relaxed) await capRelaxedTrack(stream, fps);
 
   // macOS: the bundled tap. Main answers null anywhere it cannot run (not
   // macOS, binary missing, pre-13, TCC refused), which just falls through.
@@ -400,10 +434,34 @@ function startAudioPipeline(
   };
 }
 
+/** Whether the shared window was minimized when capture refused it. */
+export type MinimizedState = 'yes' | 'no' | 'unknown';
+/** How long a failed start waits on the minimized probe before reporting. */
+const MINIMIZED_PROBE_WAIT_MS = 4_000;
+
+/**
+ * Ask main whether a window source is minimized (Windows only; anything else,
+ * a screen, or a probe that does not answer in time is 'unknown').
+ */
+function probeMinimized(sourceId: string): Promise<MinimizedState> {
+  if (captureSourceKind(sourceId) !== 'window' || !sei.backseatWindowMinimized) return Promise.resolve('unknown');
+  const probe = sei
+    .backseatWindowMinimized(sourceId)
+    .then((m): MinimizedState => (m === true ? 'yes' : m === false ? 'no' : 'unknown'))
+    .catch((): MinimizedState => 'unknown');
+  const late = new Promise<MinimizedState>((r) => window.setTimeout(() => r('unknown'), MINIMIZED_PROBE_WAIT_MS));
+  return Promise.race([probe, late]);
+}
+
+/** Read the failure detail startCapture attached to its error, if any. */
+export function captureFailDetail(err: unknown): CaptureFailDetail | null {
+  return (err as { captureDetail?: CaptureFailDetail } | null)?.captureDetail ?? null;
+}
+
 export async function startCapture(
   characterId: string,
-  sourceId: string,
-  sourceName: string,
+  requestedId: string,
+  requestedName: string,
   opts: {
     /** 261004: the shared window went away (the OS ended the track), after
      *  capture was torn down. 261023: the owner decides what that means
@@ -416,7 +474,59 @@ export async function startCapture(
   } = {},
 ): Promise<CaptureHandle> {
   stopCapture();
-  const { stream, audioSource } = await openStream(sourceId);
+  // 261123: one relaxed retry, then (window only) the whole screen. See
+  // captureOpen.ts for the busy telemetry this answers.
+  // A holder, not a `let`: it is set inside a callback, which TS's flow
+  // narrowing cannot see.
+  const probe: { minimized: Promise<MinimizedState> | null } = { minimized: null };
+  let opened: OpenedCapture<{ stream: MediaStream; audioSource: AudioSource }>;
+  try {
+    opened = await openWithRetry(
+      { id: requestedId, name: requestedName },
+      (id, relaxed) => openStream(id, relaxed),
+      async () => pickScreenSource(await sei.backseatSources({ thumbnails: false })),
+      () => {
+        probe.minimized = probeMinimized(requestedId);
+      },
+    );
+  } catch (err) {
+    if (err instanceof CaptureStartError && err.retry !== 'none') {
+      const detail: CaptureFailDetail = {
+        source_kind: err.sourceKind,
+        first_class: err.firstClass,
+        retry: err.retry,
+        minimized: probe.minimized ? await probe.minimized : 'unknown',
+      };
+      (err as unknown as { captureDetail: CaptureFailDetail }).captureDetail = detail;
+      sei.track('backseat_capture_retried', { character_id: characterId, ...detail, outcome: 'failed' });
+    } else if (err instanceof CaptureStartError) {
+      (err as unknown as { captureDetail: CaptureFailDetail }).captureDetail = {
+        source_kind: err.sourceKind,
+        first_class: err.firstClass,
+        retry: 'none',
+        minimized: 'unknown',
+      };
+    }
+    throw err;
+  }
+  const { stream, audioSource } = opened.value;
+  const sourceId = opened.source.id;
+  const sourceName = opened.source.name;
+  if (opened.retry !== 'none') {
+    const retry = opened.retry;
+    const firstClass = opened.firstClass;
+    console.log(`[backseat] capture started after a retry (${retry})`);
+    void (probe.minimized ?? Promise.resolve<MinimizedState>('unknown')).then((m) =>
+      sei.track('backseat_capture_retried', {
+        character_id: characterId,
+        source_kind: captureSourceKind(requestedId),
+        ...(firstClass ? { first_class: firstClass } : {}),
+        retry,
+        minimized: m,
+        outcome: retry,
+      }),
+    );
+  }
   const videoTrack = stream.getVideoTracks()[0];
   if (!videoTrack) {
     stream.getTracks().forEach((t) => t.stop());
@@ -928,6 +1038,8 @@ export async function startCapture(
 
   const handle: CaptureHandle = {
     stream,
+    source: opened.source,
+    retry: opened.retry,
     sceneChangeSince,
     stop: () => {
       if (stopped) return;

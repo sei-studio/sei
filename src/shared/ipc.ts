@@ -41,7 +41,7 @@ import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from '.
 import type { RegionStatus } from './regionGate';
 import type { UsageSummary } from './llmUsage';
 import type { PopupAction } from './popupActions';
-import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
+import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason, CaptureFailDetail } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
 import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
@@ -2679,6 +2679,9 @@ export interface RendererApi {
    *  the window's current title, or for a whole-screen share the title of
    *  whatever is frontmost. Null when it cannot be read. */
   backseatShareLabel(sourceId: string): Promise<string | null>;
+  /** 261123: whether a window source is minimized right now (Windows only;
+   *  null anywhere it cannot be read). Asked only after capture refused it. */
+  backseatWindowMinimized(sourceId: string): Promise<boolean | null>;
   /** Abort the in-flight backseat turn (the player barged in over it). */
   backseatInterrupt(characterId: string): Promise<void>;
   /** 260925 act: whether the line pushed with SpokenLineContext.confirmId played to its end. */
@@ -2690,7 +2693,7 @@ export interface RendererApi {
   backseatRevealClip(clipPath: string): Promise<void>;
   /** `reason` (261023): why the share ended, for backseat_ended. Main
    *  validates it (callEndReasons.ts); a missing one is 'unspecified'. */
-  backseatEnd(characterId: string, reason?: BackseatEndReasonArg): Promise<void>;
+  backseatEnd(characterId: string, reason?: BackseatEndReasonArg, captureDetail?: CaptureFailDetail): Promise<void>;
   onBackseatState(cb: (state: BackseatState) => void): Unsubscribe;
   onBackseatLine(cb: (l: BackseatLine & { characterId: string }) => void): Unsubscribe;
   onBackseatClipRequest(cb: (r: { characterId: string; requestId: string }) => void): Unsubscribe;
@@ -4135,6 +4138,8 @@ export const IpcChannel = {
     audioStop: 'backseat:audio-stop',
     /** What is on the shared surface right now, as one short line (260804). */
     shareLabel: 'backseat:share-label',
+    /** 261123: is this window source minimized (Windows, after a busy refusal). */
+    windowMinimized: 'backseat:window-minimized',
     /** Abort the in-flight turn: the player started talking over it. */
     interrupt: 'backseat:interrupt',
     /** 260925 act: a confirmId line finished playing (or was cut off). */

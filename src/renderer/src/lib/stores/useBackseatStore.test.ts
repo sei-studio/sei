@@ -34,6 +34,7 @@ const stopCaptureMock = vi.fn();
 vi.mock('../backseat/captureController', () => ({
   startCapture: (...args: unknown[]) => startCaptureMock(...args),
   stopCapture: (...args: unknown[]) => stopCaptureMock(...args),
+  captureFailDetail: (err: unknown) => (err as { captureDetail?: unknown } | null)?.captureDetail ?? null,
 }));
 
 let backseatStartMock: ReturnType<typeof vi.fn>;
@@ -520,6 +521,39 @@ describe('useBackseatStore capture recovery', () => {
     startCaptureMock.mockRejectedValueOnce(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
     await expect(useBackseatStore.getState().share('char-a', win('window:1:0', 'Roblox'))).resolves.toBe(false);
     expect(backseatEndMock).toHaveBeenCalledWith('char-a', 'capture_failed:permission');
+  });
+
+  it('a busy refusal reports its shape and shows the hint line, not the browser text', async () => {
+    const { useBackseatStore } = await loadStore();
+    const detail = { source_kind: 'window', first_class: 'busy', retry: 'failed', minimized: 'yes' };
+    startCaptureMock.mockRejectedValueOnce(
+      Object.assign(new Error('Could not start video source'), { name: 'NotReadableError', captureDetail: detail }),
+    );
+    await expect(useBackseatStore.getState().share('char-a', win('window:1:0', 'Roblox'))).resolves.toBe(false);
+    expect(backseatEndMock).toHaveBeenCalledWith('char-a', 'capture_failed:busy', detail);
+    expect(useBackseatStore.getState().error).toBe(
+      'Could not capture that window. Un-minimize the game, or share your whole screen.',
+    );
+  });
+
+  it('a screen that refuses capture gets the screen hint', async () => {
+    const { captureFailureCopy } = await loadStore();
+    const err = Object.assign(new Error('Could not start video source'), { name: 'NotReadableError' });
+    expect(captureFailureCopy(err, 'busy', 'screen:0:0')).toBe(
+      'Could not capture your screen. Try again, or share a single window.',
+    );
+  });
+
+  it('a window that fell back to the whole screen is named as the screen', async () => {
+    const { useBackseatStore } = await loadStore();
+    startCaptureMock.mockResolvedValueOnce({
+      stream: { id: 'stream' },
+      noteSpoke: () => {},
+      source: { id: 'screen:0:0', name: 'Entire screen' },
+      retry: 'screen_ok',
+    });
+    await expect(useBackseatStore.getState().share('char-a', win('window:1:0', 'Roblox'))).resolves.toBe(true);
+    expect(useBackseatStore.getState().sourceName).toBe('Entire screen');
   });
 
   it('the cross-launch gate ends a share as game_launch', async () => {

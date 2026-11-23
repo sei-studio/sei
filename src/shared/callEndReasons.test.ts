@@ -4,6 +4,7 @@ import {
   CALL_END_REASONS,
   backseatReasonForCallEnd,
   captureErrorClass,
+  normalizeCaptureFailDetail,
   isCallEndReason,
   isPlayerEndedReason,
   normalizeBackseatEndReason,
@@ -74,6 +75,27 @@ describe('captureErrorClass', () => {
     expect(captureErrorClass(new Error('The shared window produced no video.'))).toBe('no_video');
     expect(captureErrorClass(new Error('anything'))).toBe('other');
     expect(captureErrorClass(null)).toBe('other');
+  });
+});
+
+describe('normalizeCaptureFailDetail', () => {
+  it('keeps known shape values as capture_* props', () => {
+    expect(
+      normalizeCaptureFailDetail({ source_kind: 'window', first_class: 'busy', retry: 'failed', minimized: 'yes' }),
+    ).toEqual({
+      capture_source_kind: 'window',
+      capture_first_class: 'busy',
+      capture_retry: 'failed',
+      capture_minimized: 'yes',
+    });
+  });
+
+  it('drops unknown keys, unknown values and free text', () => {
+    expect(
+      normalizeCaptureFailDetail({ source_kind: 'Roblox', first_class: 'busy', title: 'My secret window', retry: 3 }),
+    ).toEqual({ capture_first_class: 'busy' });
+    expect(normalizeCaptureFailDetail(null)).toEqual({});
+    expect(normalizeCaptureFailDetail('busy')).toEqual({});
   });
 });
 

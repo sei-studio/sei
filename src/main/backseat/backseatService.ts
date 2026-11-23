@@ -509,7 +509,9 @@ export function setBackseatPaused(characterId: string, paused: boolean): void {
 export function endBackseat(
   characterId: string,
   reason = 'unspecified',
-  opts: { playerEnded?: boolean } = {},
+  /** `extraProps` (261123): validated shape-only props for backseat_ended,
+   *  e.g. how a capture start failed (normalizeCaptureFailDetail). */
+  opts: { playerEnded?: boolean; extraProps?: Record<string, string> } = {},
 ): Promise<void> {
   return trackScopedWrite(endBackseatSession(characterId, reason, opts));
 }
@@ -517,7 +519,7 @@ export function endBackseat(
 async function endBackseatSession(
   characterId: string,
   reason: string,
-  opts: { playerEnded?: boolean } = {},
+  opts: { playerEnded?: boolean; extraProps?: Record<string, string> } = {},
 ): Promise<void> {
   const s = sessions.get(characterId);
   if (!s || s.state.phase === 'ended') return;
@@ -570,6 +572,7 @@ async function endBackseatSession(
         ...(s.firstLineAt !== null ? { first_line_ms: s.firstLineAt - s.state.startedAt } : {}),
         failed_turns: s.failedTurns,
         ...(s.lastErrorClass ? { last_error_class: s.lastErrorClass } : {}),
+        ...(opts.extraProps ?? {}),
       });
     } catch {
       /* analytics is never load-bearing */

@@ -1643,6 +1643,8 @@ export const RU: Record<string, string> = {
   "{name} is in your Minecraft world right now. End that session first.": "{name} сейчас в твоём мире Minecraft. Сначала заверши эту сессию.",
   "Could not start sharing. Try picking a different window.": "Не удалось начать показ. Попробуй выбрать другое окно.",
   "Could not read that window.": "Не удалось получить изображение этого окна.",
+  "Could not capture that window. Un-minimize the game, or share your whole screen.": "Не удалось захватить это окно. Разверните игру или покажите весь экран.",
+  "Could not capture your screen. Try again, or share a single window.": "Не удалось захватить экран. Попробуйте ещё раз или покажите одно окно.",
   "Voice service is not available right now.": "Голосовой сервис сейчас недоступен.",
   "This voice is not in your ElevenLabs library. Add it there, or pick a different voice.": "Этого голоса нет в твоей библиотеке ElevenLabs. Добавь его там или выбери другой голос.",
   "No microphone was found. Connect one and try again.": "Микрофон не найден. Подключи его и попробуй ещё раз.",

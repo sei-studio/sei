@@ -143,3 +143,39 @@ export function captureErrorClass(err: unknown): CaptureErrorClass {
   if (/produced no video/i.test(msg)) return 'no_video';
   return 'other';
 }
+
+/**
+ * 261123: the shape of a capture start that failed, for backseat_ended. The
+ * renderer reports it next to a `capture_failed:<class>` reason; main keeps
+ * only known values (normalizeCaptureFailDetail), so nothing free-form ever
+ * reaches analytics.
+ *   source_kind  what the player picked
+ *   first_class  why the FIRST attempt failed (the later ones are retries)
+ *   retry        'none' (not retried: not a busy failure) or 'failed'
+ *   minimized    whether the picked window was minimized (Windows only)
+ */
+export interface CaptureFailDetail {
+  source_kind: 'window' | 'screen';
+  first_class: CaptureErrorClass;
+  retry: 'none' | 'relaxed_ok' | 'screen_ok' | 'failed';
+  minimized: 'yes' | 'no' | 'unknown';
+}
+
+const FAIL_DETAIL_VALUES: Record<keyof CaptureFailDetail, ReadonlySet<string>> = {
+  source_kind: new Set(['window', 'screen']),
+  first_class: CAPTURE_CLASSES,
+  retry: new Set(['none', 'relaxed_ok', 'screen_ok', 'failed']),
+  minimized: new Set(['yes', 'no', 'unknown']),
+};
+
+/** Validate a failure detail from the renderer into backseat_ended props
+ *  (`capture_<key>`). Unknown keys and values are dropped. */
+export function normalizeCaptureFailDetail(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, allowed] of Object.entries(FAIL_DETAIL_VALUES)) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v === 'string' && allowed.has(v)) out[`capture_${k}`] = v;
+  }
+  return out;
+}
