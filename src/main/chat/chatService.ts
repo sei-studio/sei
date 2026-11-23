@@ -1078,6 +1078,14 @@ async function sendChatMessageImpl(
      * context at all and each sentence opened as a fresh utterance.
      */
     let prevSpoken: string | undefined;
+    /**
+     * 261123 (O5): wall-clock stamps for reply_latency's voice phases, sent
+     * once on the first streamed line (SpokenLineContext.replyTiming): the
+     * first LLM request, and the first reply text token of the turn (any hop).
+     */
+    let llmStartAt: number | undefined;
+    let firstTokenAt: number | undefined;
+    let replyTimingSent = false;
     /** `moreAfter`: text of this same reply is ALREADY known to follow. */
     const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
       // The silence-filler and peer-impersonation drops stay VOICE-scoped
@@ -1105,7 +1113,12 @@ async function sendChatMessageImpl(
         await appendTurnRow(args.characterId, msg);
         // Facepack pilot: the cue lands before the bubble it belongs to.
         if (facesEnabled()) emitReplyFaces(args.characterId, msg, parts[i].face);
-        deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
+        const speech: SpokenLineContext = { prev: prevSpoken, more: i < parts.length - 1 || moreAfter };
+        if (!replyTimingSent) {
+          replyTimingSent = true;
+          speech.replyTiming = { llmStartAt, firstTokenAt };
+        }
+        deps.emitReply?.(args.characterId, msg, speech);
         prevSpoken = b;
       }
     };
@@ -1164,6 +1177,7 @@ async function sendChatMessageImpl(
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
       const t0 = Date.now();
+      llmStartAt ??= t0;
       // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
       // stream, byte-identical to the old messages.stream path; non-Anthropic:
       // SSE deltas, or one whole-text call for non-streaming providers).
@@ -1179,6 +1193,7 @@ async function sendChatMessageImpl(
       // `prev` so its own opening still continues cleanly.
       const onTextDelta = isStreaming
         ? async (delta: string): Promise<void> => {
+            if (firstTokenAt === undefined && delta) firstTokenAt = Date.now();
             streamBuf += delta;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;

@@ -10,6 +10,8 @@ import {
 } from './replyClock';
 
 let t = 0;
+/** Wall clock (Date.now stand-in), kept at a fixed offset from `t`. */
+const WALL_OFFSET = 1_700_000_000_000;
 let timers: { at: number; fn: () => void; id: number }[] = [];
 let nextId = 1;
 let samples: VoiceReplySample[] = [];
@@ -30,6 +32,7 @@ function advance(ms: number): void {
 function make() {
   return createVoiceReplyClock({
     now: () => t,
+    wallNow: () => t + WALL_OFFSET,
     report: (s) => samples.push(s),
     setTimer: (fn, ms) => {
       const id = nextId++;
@@ -62,7 +65,7 @@ describe('voice reply clock', () => {
     advance(1000);
     c.audible();
     expect(samples).toEqual([
-      { surface: 'voice', path: 'app', turn: 1, ms: 2400, outcome: 'replied' },
+      { surface: 'voice', path: 'app', turn: 1, ms: 2400, outcome: 'replied', line_queued_ms: 1800 },
       { surface: 'voice', path: 'app', turn: 2, ms: 1000, outcome: 'replied' },
     ]);
     expect(timers).toHaveLength(0);
@@ -153,5 +156,83 @@ describe('voice reply clock', () => {
     c.audible();
     c.end();
     expect(samples).toEqual([]);
+  });
+
+  // 261123 (O5): where the wait went.
+  describe('phases', () => {
+    it('stamps every phase of a cloud turn, from the same dispatch', () => {
+      const c = make();
+      const wall = (): number => t + WALL_OFFSET;
+      const spokeUntil = wall() - 300; // the player stopped talking 300ms ago...
+      advance(0);
+      c.utterance(1, 'app', spokeUntil - 650); // ...plus the 650ms the mic + STT took
+      const dispatched = wall();
+      advance(1600);
+      const firstAudio = c.lineQueued({ llmStartAt: dispatched + 12, firstTokenAt: dispatched + 1100 });
+      expect(firstAudio).toBeTypeOf('function');
+      advance(500);
+      firstAudio!();
+      advance(150);
+      firstAudio!(); // once only
+      c.audible();
+      expect(samples).toEqual([
+        {
+          surface: 'voice',
+          path: 'app',
+          turn: 1,
+          ms: 2250,
+          outcome: 'replied',
+          speech_end_to_final_ms: 950,
+          llm_request_ms: 12,
+          llm_first_token_ms: 1100,
+          line_queued_ms: 1600,
+          tts_first_chunk_ms: 2100,
+        },
+      ]);
+    });
+
+    it('only the first line of a turn is timed', () => {
+      const c = make();
+      c.utterance(1, 'app');
+      advance(1000);
+      expect(c.lineQueued()).toBeTypeOf('function');
+      advance(200);
+      expect(c.lineQueued({ llmStartAt: t + WALL_OFFSET, firstTokenAt: t + WALL_OFFSET })).toBeNull();
+      c.audible();
+      expect(samples[0]).toEqual({ surface: 'voice', path: 'app', turn: 1, ms: 1200, outcome: 'replied', line_queued_ms: 1000 });
+    });
+
+    it('stamps from before the dispatch (a stale line, a stepped clock) are dropped, not zeroed', () => {
+      const c = make();
+      const before = t + WALL_OFFSET - 50;
+      c.utterance(1, 'app', t + WALL_OFFSET + 10); // "speech ended" after the dispatch: clock stepped
+      advance(400);
+      c.lineQueued({ llmStartAt: before, firstTokenAt: Number.NaN });
+      c.audible();
+      expect(samples[0]).toEqual({ surface: 'voice', path: 'app', turn: 1, ms: 400, outcome: 'replied', line_queued_ms: 400 });
+    });
+
+    it('an aborted turn keeps the phases it reached', () => {
+      const c = make();
+      c.utterance(1, 'app', t + WALL_OFFSET - 700);
+      advance(1500);
+      const firstAudio = c.lineQueued({ llmStartAt: t + WALL_OFFSET - 1490, firstTokenAt: t + WALL_OFFSET - 300 });
+      advance(300);
+      c.utterance(2, 'app'); // barge-in before anything played
+      firstAudio!(); // the superseded line's bytes landing late stamp nothing
+      expect(samples[0]).toEqual({
+        surface: 'voice',
+        path: 'app',
+        turn: 1,
+        ms: 1800,
+        outcome: 'aborted',
+        speech_end_to_final_ms: 700,
+        llm_request_ms: 10,
+        llm_first_token_ms: 1200,
+        line_queued_ms: 1500,
+      });
+      c.audible();
+      expect(samples[1]).toEqual({ surface: 'voice', path: 'app', turn: 2, ms: 0, outcome: 'replied' });
+    });
   });
 });

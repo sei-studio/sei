@@ -61,7 +61,7 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import type { LanHost } from '../../shared/ipc';
+import type { LanHost, SpokenLineContext } from '../../shared/ipc';
 import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, sendVoiceGreetingTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead, appendMessage } from './chatStore';
@@ -980,10 +980,28 @@ describe('streamed voice turn: spoken text keeps its punctuation and carries rep
     expect(emitted).toEqual([
       // The trailing period SURVIVES on a call (splitReply `spoken`): it is the
       // terminal intonation, not texting formality.
-      ['thanks for that.', { prev: undefined, more: true }],
+      // 261123: the reply's first line also carries the turn's LLM stamps.
+      ['thanks for that.', { prev: undefined, more: true, replyTiming: { llmStartAt: expect.any(Number), firstTokenAt: expect.any(Number) } }],
       ['i got the iron.', { prev: 'thanks for that.', more: false }],
       ['want me to smelt it?', { prev: 'i got the iron.', more: false }],
     ]);
+  });
+
+  // 261123 (O5): reply_latency's llm_* phases come from these stamps.
+  it('stamps the LLM request and first text token on the first line only', async () => {
+    setCallActive(CHAR, true);
+    streamSpy.mockReturnValue(fakeStream(['sure thing man. ', 'give me a sec. ']));
+    const emitReply = vi.fn();
+    const before = Date.now();
+
+    await sendChatMessage({ characterId: CHAR, text: 'can you help', voiceCall: true }, { ...deps(), emitReply });
+
+    const speeches = emitReply.mock.calls.map(([, , speech]) => speech as SpokenLineContext);
+    expect(speeches).toHaveLength(2);
+    const timing = speeches[0].replyTiming!;
+    expect(timing.llmStartAt).toBeGreaterThanOrEqual(before);
+    expect(timing.firstTokenAt).toBeGreaterThanOrEqual(timing.llmStartAt!);
+    expect(speeches[1]).not.toHaveProperty('replyTiming');
   });
 
   it('merges a short lead-in into the sentence it introduces, in one clip', async () => {
