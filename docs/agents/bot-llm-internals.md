@@ -184,6 +184,26 @@ session was `setGoal("Reach iron tier")`) and gained shared-activity framing.
 the model stops working and the world goes still, which is worse company than a
 grinder. The project is the SETTING; both halves are the job.
 
+**Quiet personas and how often she talks (261123).** The persona decides how
+OFTEN a character speaks, not only how. Before this, an explicitly quiet card
+("speaks only when it's worth it", "says very little") still spoke on 85-100%
+of quiet in-game ticks: the agentic directive's looping-in, `IDLE_TICK_TEXT`'s
+invitation plus question-about-them, and the curiosity clause each push a line,
+and Haiku reads "quiet" as "short line", not "rare line" (its scratchpad says
+"quiet tick, one short line is fine" and then speaks). The fix is a clause in
+the agentic directive next to the initiative persona-wins clause, with a
+concrete rate ("three in four of your turns or more are just the work", "a
+short line still counts as speaking"); vague wording ("as often as your
+persona would talk") measured as no change. Token-neutral: paid for by cutting
+the curiosity clause's closing rhetoric. The persona expander (sei-proxy
+`expansionPrompt.ts`, bundled fallback `EXPANSION_SYSTEM`) now writes a plain
+how-much-they-talk line into VOICE, because a card that says so concretely is
+what actually moves the rate; the expander's PROACTIVENESS word never reaches
+the character. Harness: `scripts/talkativeness-probe.ts` (calls, Backseat) and
+`persona/run.mjs --situations-file persona/talkativeness-situations.mjs`
+(in-game; `PROBE_STRIP` ablates prompt text, `prelude` adds mid-session
+context). Backseat cadence is mechanical by design; only length follows the card.
+
 **Say-suppression (260731).** `IDLE_SAY_GAP_MS` is now **0 = disabled**. The
 45s floor compared TIMESTAMPS only, so it could not tell a reworded repeat from
 a new thought and killed both: inside one session it swallowed an answer to

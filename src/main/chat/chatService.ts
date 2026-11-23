@@ -38,7 +38,7 @@ import type { UserConfig } from '../../shared/characterSchema';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from '../../bot/brain/nextStep.js';
-import { callGreetingNote } from '../../bot/brain/promptLibrary.js';
+import { callGreetingNote, voiceIdleNote } from '../../bot/brain/promptLibrary.js';
 import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
@@ -2013,22 +2013,8 @@ async function sendVoiceIdleTurnImpl(
     const { system, messages } = prep;
     // 260725: proactiveness is no longer a per-character dial, so every
     // companion gets the take-it-or-leave-it nudge with silence sanctioned.
-    const quiet = Math.max(1, Math.round(quietSeconds));
-    // 260730: two nudges, not one. The generic "start a topic" note read wrong
-    // after the companion had just ASKED something — the reply that follows a
-    // question is an answer, and a fresh topic on top of the unanswered one
-    // drops it. The follow-up note is deliberately unpressured: no "still
-    // there?", no repeating the question at them, and silence is still a fine
-    // answer. Fires at most once per question (see the renderer's idle clock).
-    const note = opts.awaitingAnswer
-      ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
-        'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
-        'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
-        'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
-      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    // The text (and the 260730 follow-up variant) lives in promptLibrary.
+    const note = voiceIdleNote({ quietSeconds, awaitingAnswer: opts.awaitingAnswer === true });
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);
