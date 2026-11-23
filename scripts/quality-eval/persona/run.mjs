@@ -106,6 +106,8 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
     last_seen: '2026-10-10T19:30:00Z', total_sessions: 3, preferred_name: PLAYER_NAME, pronouns: null,
   })
   fs.writeFileSync(mem('MEMORY.md'), MEMORY_MD)
+  // A situation may start with goals already set (HEARTBEAT.md lines).
+  if (sit.heartbeat) fs.writeFileSync(mem('HEARTBEAT.md'), sit.heartbeat)
   const config = ConfigSchema.parse({
     chat_mode: 'chat', realistic_typing: false, player_username: PLAYER_NAME, player_display_name: PLAYER_NAME,
     persona: { name: ch.botName, expanded: ch.expanded, proactiveness: 2, ...(ch.punctuation ? { punctuation: ch.punctuation } : {}) },
@@ -148,6 +150,15 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
       if (mode === 'primed') return endLoop()
       calls++
       if (calls > 1) return endLoop()
+      // Ablation: PROBE_STRIP='a||b' cuts those substrings from the prompt.
+      for (const cut of (process.env.PROBE_STRIP ?? '').split('||').filter(Boolean)) {
+        const hit = (t) => { if (!t.includes(cut)) return t; stripHits.add(cut); return t.split(cut).join('').trim() || '.' }
+        for (const b of req.systemBlocks ?? []) if (typeof b.text === 'string') b.text = hit(b.text)
+        for (const m of req.messages ?? []) {
+          if (typeof m.content === 'string') m.content = hit(m.content)
+          else for (const b of m.content ?? []) if (typeof b.text === 'string') b.text = hit(b.text)
+        }
+      }
       const t0 = Date.now()
       const resp = await real.call(req)
       const says = resp.toolUses.filter((t) => t.name === 'say').map((t) => String(t.input?.text ?? t.input?.message ?? ''))
@@ -191,7 +202,17 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
       mode = 'prime'
       await orch.handleDispatch('sei:idle', { quietMs: 20000 }, new AbortController().signal)
     }
-    if (history.length) await new Promise((r) => setTimeout(r, 300))
+    // A situation's own prelude: what the player said after the greeting
+    // (and the character's short answer, or nothing), so a quiet tick does
+    // not read as the first minute of the session.
+    for (const p of sit.prelude ?? []) {
+      await new Promise((r) => setTimeout(r, 300))
+      orch.recordIncomingChat(PLAYER_NAME, p.player)
+      if (p.say) { pendingPrime = p.say; mode = 'prime' }
+      await orch.handleDispatch('sei:idle', { quietMs: 20000 }, new AbortController().signal)
+      mode = 'primed'
+    }
+    if (history.length || sit.prelude) await new Promise((r) => setTimeout(r, 300))
     mode = 'live'
   }
   const data = JSON.parse(JSON.stringify(sit.dispatch.data).replaceAll('{NAME}', ch.name))
@@ -210,6 +231,7 @@ async function runOne({ ch, sit, rep, primeLine, history = [] }) {
 }
 
 const captured = new Set()
+const stripHits = new Set()
 
 async function pool(items, n, fn) {
   const out = []
@@ -272,5 +294,6 @@ for (const sit of rest) for (const ch of chars) for (let rep = 0; rep < REPS; re
 await pool(jobs, CONC, async (j) => { const r = await runOne(j); write(r); return r })
 out.end()
 await new Promise((r) => out.on('finish', r))
+if (process.env.PROBE_STRIP) console.log(`strip hits ${stripHits.size}/${process.env.PROBE_STRIP.split("||").filter(Boolean).length}`)
 console.log(`done -> ${samplesPath}`)
 process.exit(0)
