@@ -513,6 +513,20 @@ describe('chatgptAccountLogin.connectPlan (plan sign-in that also links)', () =>
     expect(h.plainSignIns).toEqual([{ enablePlan: true }]);
   });
 
+  it('261123: a refused code after the issued-client retry passes through with its detail and retry flag', async () => {
+    const h = harness({
+      current: ME,
+      signIns: [{ ok: false, reason: 'exchange_failed', message: 'invalid_grant', retriedIssuedClient: true }],
+    });
+    expect(await h.login.connectPlan()).toEqual({
+      ok: false,
+      reason: 'exchange_failed',
+      message: 'invalid_grant',
+      retriedIssuedClient: true,
+    });
+    expect(h.plainSignIns).toHaveLength(0);
+  });
+
   it('a browser failure is reported as is, with no second browser trip', async () => {
     const h = harness({ current: ME, signIns: [{ ok: false, reason: 'denied' }] });
     expect(await h.login.connectPlan()).toEqual({ ok: false, reason: 'denied' });

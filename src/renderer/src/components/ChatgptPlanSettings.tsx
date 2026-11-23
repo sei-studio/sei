@@ -42,8 +42,15 @@ import { InfoTip } from './InfoTip';
 import settings from '../screens/SettingsScreen.module.css';
 import styles from './ChatgptPlanSettings.module.css';
 
-/** User-facing line for a failed sign-in ('cancelled' says nothing). */
-export function signInFailureText(reason: ChatgptSignInFailure, t: (s: string) => string): string | null {
+/**
+ * User-facing line for a failed sign-in ('cancelled' says nothing). `detail`
+ * is the failure's shape-only code (useChatgptStore.signInErrorDetail).
+ */
+export function signInFailureText(
+  reason: ChatgptSignInFailure,
+  t: (s: string) => string,
+  detail: string | null = null,
+): string | null {
   switch (reason) {
     case 'cancelled':
       return null;
@@ -63,6 +70,15 @@ export function signInFailureText(reason: ChatgptSignInFailure, t: (s: string) =
       return t('Sei could not start its sign-in listener. Try again.');
     case 'region_unsupported':
       return t('OpenAI does not support your region.');
+    case 'exchange_failed':
+      // 261123 (T-A): ChatGPT refused the sign-in code even after the retry
+      // with the issued client. Tell the user what to do next.
+      if (detail === 'invalid_grant') {
+        return t(
+          'ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.',
+        );
+      }
+      return t('Sign-in did not finish. Try again.');
     default:
       return t('Sign-in did not finish. Try again.');
   }
@@ -132,6 +148,7 @@ function ChatgptPlanRows({ active, onUsePlan, compact = false }: ChatgptPlanSett
   const t = useT();
   const status = useChatgptStore((s) => s.status);
   const signInError = useChatgptStore((s) => s.signInError);
+  const signInErrorDetail = useChatgptStore((s) => s.signInErrorDetail);
   const signOutUnconfirmed = useChatgptStore((s) => s.signOutUnconfirmed);
   const signIn = useChatgptStore((s) => s.signIn);
   const cancelSignIn = useChatgptStore((s) => s.cancelSignIn);
@@ -143,7 +160,7 @@ function ChatgptPlanRows({ active, onUsePlan, compact = false }: ChatgptPlanSett
   const activeAcc = accounts.find((a) => a.id === status?.activeId) ?? null;
   const ready = chatgptReady(status);
   const signingIn = status?.signingIn === true;
-  const errorLine = signInError ? signInFailureText(signInError, t) : null;
+  const errorLine = signInError ? signInFailureText(signInError, t, signInErrorDetail) : null;
   const openUsage = (): void => void sei.openExternal(CHATGPT_USAGE_URL);
 
   const startSignIn = async (opts?: { accountId?: string | null; enablePlan?: boolean }): Promise<void> => {

@@ -666,6 +666,7 @@ export const RU: Record<string, string> = {
   "Could not open your browser. Try again.": "Не удалось открыть браузер. Попробуй ещё раз.",
   "Sei could not start its sign-in listener. Try again.": "Sei не удалось запустить обработчик входа. Попробуй ещё раз.",
   "Sign-in did not finish. Try again.": "Вход не завершился. Попробуй ещё раз.",
+  "ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.": "ChatGPT не принял этот вход. Попробуй ещё раз и заверши вход в самой новой вкладке браузера. Если снова не выйдет, сначала выйди из ChatGPT в браузере.",
   "Sign in with ChatGPT first.": "Сначала войди через ChatGPT.",
   "Turn on ChatGPT plan use first.": "Сначала включи использование тарифа ChatGPT.",
   "You've reached your ChatGPT plan's usage limit.": "Лимит использования тарифа ChatGPT исчерпан.",

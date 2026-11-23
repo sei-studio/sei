@@ -26,6 +26,15 @@ stays in Settings > Account because it is an account setting).
   `'mykeys'`; the plan offer, the startup popup action and the usage-limit
   popup go to `tab: 'chatgpt', useChatgptPlan: true` (the one-shot intent,
   `chatgptPlanIntentStep`); the spend alert goes to `'mykeys'`.
+- ChatGPT connect and `invalid_grant` (261123, T-A): when the token endpoint
+  refuses a NEW registration's code, `authorize()` in
+  `main/chatgptPlan/session.ts` reauthorizes once with the client id that
+  callback issued (SIWC docs, sign-in step 3), so a second browser tab opens
+  with the account selector. Dropping that id made every retry register again
+  and fail the same way. If the retry also fails, the inline line tells the
+  user to finish in the newest tab or sign out of ChatGPT in the browser
+  (`signInFailureText` with `signInErrorDetail`). Tests: `invalidGrant.test.ts`
+  (real loopback listener, fake token endpoint on 127.0.0.1, never OpenAI).
 - No percent meter and no reset time for the ChatGPT plan: OpenAI does not
   tell us the plan's remaining usage. The reply count is ours.
 
@@ -130,6 +139,8 @@ All through `sei.track`; `main/analytics.ts` files them under the `credits` surf
 | `playtime_tab_viewed` | `tab`, `is_active_setup` | a tab is shown (once per tab and setup) |
 | `playtime_backend_switch` | `from`, `to`, `result` (`ok` / `failed` / `cancelled`) | a switch finishes or the confirm is cancelled |
 | `chatgpt_usage_link_clicked` | | Manage usage on the ChatGPT tab |
+| `chatgpt_plan_connected` | `renewal`, `enable_plan`, `plan_enabled`, `prior_failures` (0-5, this run), `retried_issued_client` | main: a plan connect (`chatgpt:sign-in`) succeeded |
+| `chatgpt_plan_sign_in_failed` | `reason`, `detail` (shape-only code), `failure_class` (`signInFailureClass`), same funnel props | main: a plan connect failed (not on cancel). Success rate = connected / (connected + failed) |
 | `voice_trial_state` | `state` (`shown` + `left_pct`; `used_up` / `fallback` + `reason`) | the free Sei-voices meter is shown; a call falls back to device voices (both only with the flag on) |
 | `spend_alert_toggled` | `enabled`, `limit_usd` | the alert toggle or amount changes |
 | `spend_alert_fired` | `limit_usd`, `provider_kind` | main fires the monthly alert |

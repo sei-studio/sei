@@ -666,6 +666,7 @@ export const JA: Record<string, string> = {
   "Could not open your browser. Try again.": "ブラウザを開けませんでした。もう一度お試しください。",
   "Sei could not start its sign-in listener. Try again.": "Seiはログインの待ち受けを開始できませんでした。もう一度お試しください。",
   "Sign-in did not finish. Try again.": "ログインが完了しませんでした。もう一度お試しください。",
+  "ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.": "ChatGPTがこのログインを受け付けませんでした。もう一度試して、ブラウザの一番新しいタブで完了してください。それでも失敗する場合は、先にブラウザでChatGPTからログアウトしてください。",
   "Sign in with ChatGPT first.": "先にChatGPTにログインしてください。",
   "Turn on ChatGPT plan use first.": "先にChatGPTプランの利用をオンにしてください。",
   "You've reached your ChatGPT plan's usage limit.": "ChatGPTプランの使用量の上限に達しました。",

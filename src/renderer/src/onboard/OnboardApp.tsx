@@ -2361,6 +2361,7 @@ function ChatgptKeyStep(props: {
   const tt = useT();
   const status = useChatgptStore((s) => s.status);
   const signInError = useChatgptStore((s) => s.signInError);
+  const signInErrorDetail = useChatgptStore((s) => s.signInErrorDetail);
   const [busy, setBusy] = useState(false);
   const [planOff, setPlanOff] = useState(false);
   useEffect(() => {
@@ -2389,7 +2390,7 @@ function ChatgptKeyStep(props: {
   };
   const ready = chatgptReady(status);
   const active = status?.accounts.find((a) => a.id === status.activeId);
-  const errorLine = signInError ? signInFailureText(signInError, tt) : null;
+  const errorLine = signInError ? signInFailureText(signInError, tt, signInErrorDetail) : null;
   return (
     <div className={styles.panel}>
       <p className={styles.panelText}>{tt('Pick your model provider.')}</p>
