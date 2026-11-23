@@ -540,6 +540,7 @@ export const IT: Record<string, string> = {
   "Could not open your browser. Try again.": "Impossibile aprire il browser. Riprova.",
   "Sei could not start its sign-in listener. Try again.": "Sei non ha potuto avviare il servizio di ascolto per l’accesso. Riprova.",
   "Sign-in did not finish. Try again.": "Accesso non completato. Riprova.",
+  "ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.": "ChatGPT non ha accettato questo accesso. Riprova e completa nella scheda più recente del browser. Se non funziona ancora, esci prima da ChatGPT nel browser.",
   "Sign in with ChatGPT first.": "Prima accedi a ChatGPT.",
   "Turn on ChatGPT plan use first.": "Prima attiva l’uso del piano ChatGPT.",
   "You've reached your ChatGPT plan's usage limit.": "Hai raggiunto il limite di utilizzo del tuo piano ChatGPT.",

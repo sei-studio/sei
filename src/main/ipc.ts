@@ -3525,6 +3525,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     .object({ accountId: z.string().max(400).nullable().optional(), enablePlan: z.boolean().optional() })
     .default({});
   const ChatgptAccountArg = z.object({ accountId: z.string().max(400) });
+  /** Failed plan connects since the last success, this app run (analytics). */
+  let chatgptConnectFailures = 0;
   ipcMain.handle(IpcChannel.chatgpt.status, async () => {
     const { chatgptSession } = await import('./chatgptPlan');
     return await chatgptSession().status();
@@ -3536,19 +3538,32 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // without one, or when the link cannot run, it is the plain sign-in.
     const { chatgptAccountLogin } = await import('./auth/chatgptAccountLogin');
     const r = await chatgptAccountLogin().connectPlan(args);
+    // 261123 (T-A): the connect funnel. Shape only: success rate =
+    // connected / (connected + failed), and prior_failures says whether a
+    // connect came after failed tries in this app run.
+    const funnel = {
+      renewal: typeof args.accountId === 'string',
+      enable_plan: args.enablePlan === true,
+      prior_failures: Math.min(chatgptConnectFailures, 5),
+      retried_issued_client: r.retriedIssuedClient === true,
+    };
     // A new account brings a new model catalog (default model + vision).
-    if (r.ok) void import('./llm/capability').then((m) => m.pushLlmCapability());
-    else if (r.reason !== 'cancelled') {
+    if (r.ok) {
+      chatgptConnectFailures = 0;
+      void import('./llm/capability').then((m) => m.pushLlmCapability());
+      trackAnalytics('chatgpt_plan_connected', { ...funnel, plan_enabled: r.planEnabled });
+    } else if (r.reason !== 'cancelled') {
       // 261107 (T363): failures after the browser step were invisible (the
       // renderer shows one generic line, nothing was logged or counted).
-      const { signInFailureDetail } = await import('./chatgptPlan/session');
+      const { signInFailureClass, signInFailureDetail } = await import('./chatgptPlan/session');
       const detail = signInFailureDetail(r.message);
       console.warn(`[chatgpt] plan sign-in failed: ${r.reason}${detail ? ` (${detail})` : ''}`);
+      chatgptConnectFailures += 1;
       trackAnalytics('chatgpt_plan_sign_in_failed', {
         reason: r.reason,
         detail: detail ?? 'none',
-        renewal: typeof args.accountId === 'string',
-        enable_plan: args.enablePlan === true,
+        failure_class: signInFailureClass(r.reason, detail),
+        ...funnel,
       });
     }
     return r;

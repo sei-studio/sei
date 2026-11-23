@@ -666,6 +666,7 @@ export const ES: Record<string, string> = {
   "Could not open your browser. Try again.": "No se pudo abrir tu navegador. Reintenta.",
   "Sei could not start its sign-in listener. Try again.": "Sei no pudo iniciar el servicio de inicio de sesión. Inténtalo de nuevo.",
   "Sign-in did not finish. Try again.": "El inicio de sesión no se completó. Reintenta.",
+  "ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.": "ChatGPT no aceptó este inicio de sesión. Reintenta y termina en la pestaña más reciente del navegador. Si sigue fallando, cierra primero la sesión de ChatGPT en tu navegador.",
   "Sign in with ChatGPT first.": "Inicia sesión con ChatGPT primero.",
   "Turn on ChatGPT plan use first.": "Activa primero el uso del plan de ChatGPT.",
   "You've reached your ChatGPT plan's usage limit.": "Has alcanzado el límite de uso de tu plan de ChatGPT.",
