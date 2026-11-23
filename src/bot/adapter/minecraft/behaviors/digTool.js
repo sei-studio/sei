@@ -20,7 +20,8 @@ import { Vec3 } from 'vec3'
 import mcDataLib from 'minecraft-data'
 import { digAction as realDigAction, digReachDistance, DIG_REACH, closeInForDig } from './dig.js'
 import { goTo as realGoTo, dropWalkOpts } from './pathfind.js'
-import { isUnreachable, noteUnreachable, isUnreachableResult } from './unreachable.js'
+import { isUnreachable, noteUnreachable, isUnreachableResult, unreachableDetail, knownUnreachableLine } from './unreachable.js'
+import { whereFromYou } from '../observers/whereFromYou.js'
 import { inventoryCounts } from './pickup.js'
 import { dropItemsFor } from './mineVein.js'
 import { droppedItemName } from '../observers/entities.js'
@@ -109,13 +110,30 @@ function findNamedBlock(bot, name, maxDistance) {
     const b = bot.findBlock({ matching: ids.length ? ids : (x) => x?.name === name, maxDistance })
     return b ? { block: b } : { reason: `no ${name} within ${maxDistance}m` }
   }
-  if (!hits.length) return { reason: `no ${name} within ${maxDistance}m` }
+  if (!hits.length) return { reason: nothingWithin(bot, name, ids, maxDistance, point) }
   const fresh = hits.find((h) => !isUnreachable(bot, h))
   if (!fresh) {
     return { reason: `every ${name} nearby (${hits.length}) is one you could not reach in the last few minutes. Explore to find others, or build or dig your way to one` }
   }
   const block = bot.blockAt?.(new Vec3(fresh.x, fresh.y, fresh.z))
   return block ? { block } : { reason: `no ${name} within ${maxDistance}m` }
+}
+
+// 261123 (pass 62): when nothing is within the asked distance, how far the
+// nearest one is. In gather_craft-02 she asked for stone within 6m while
+// swimming up: the stone her last snapshot put 4 blocks below her was 7
+// below by the time the dig ran, and a bare "no stone within 6m" read as the
+// tool being wrong about stone she could see.
+const FARTHER_LOOK_M = 24
+function nothingWithin(bot, name, ids, maxDistance, point) {
+  const base = `no ${name} within ${maxDistance}m`
+  if (!point || maxDistance >= FARTHER_LOOK_M || typeof bot.findBlocks !== 'function') return base
+  try {
+    const far = bot.findBlocks({ matching: ids.length ? ids : (b) => b?.name === name, maxDistance: FARTHER_LOOK_M, count: 1, point }) ?? []
+    if (!far.length) return base
+    const where = whereFromYou({ x: far[0].x + 0.5, y: far[0].y, z: far[0].z + 0.5 }, point)
+    return where ? `${base} of where you are now; the nearest is ${where}` : base
+  } catch { return base }
 }
 
 async function resolveTarget(args, bot) {
@@ -197,6 +215,14 @@ export async function digToolAction(args, bot, config, _deps) {
   }
   const items = dropItemsFor(bot, name)
 
+  // 261123 (pass 62): out of reach and already failed to reach a moment ago:
+  // the walk would fail the same way (gather_craft-02 A38 walked at the same
+  // buried iron a fourth time, from 17 blocks off, and ended in the river).
+  if (digReachDistance(bot, pos) > DIG_REACH) {
+    const known = knownUnreachableLine(bot, pos, 'digging')
+    if (known) return known
+  }
+
   // Walk into reach first, measured the way the dig measures it.
   let walk = null
   // Never scaffold with what she came to dig.
@@ -237,7 +263,7 @@ export async function digToolAction(args, bot, config, _deps) {
   if (typeof r === 'string' && r.startsWith('out of range')) {
     // She ended up near it and still could not reach it: the next find,
     // gather or dig should pick another block.
-    if (shouldMarkUnreachable(bot, pos, walk)) noteUnreachable(bot, pos, 'out of reach')
+    if (shouldMarkUnreachable(bot, pos, walk)) noteUnreachable(bot, pos, 'out of reach', Date.now(), unreachableDetail(walk != null && walk !== 'reached' ? walk : r))
     if (walk != null) {
       // Say the vertical hint once.
       const w = VERTICAL_HINT.test(r) ? String(walk).replace(VERTICAL_HINT, '') : walk

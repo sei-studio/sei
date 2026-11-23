@@ -11,7 +11,8 @@ import { Vec3 } from 'vec3'
 import { createRegistry } from '../../registry.js'
 import { goTo, waitForBodyFree, PROGRESS_LEGS, PROGRESS_MIN_M, timedOutClosingIn } from './behaviors/pathfind.js'
 import { climbOut, escapeUp, findOpenColumn, isPassable, MIN_PIT_DEPTH } from './behaviors/climbOut.js'
-import { noteUnreachable, isUnreachable, isUnreachableResult } from './behaviors/unreachable.js'
+import { noteUnreachable, isUnreachable, isUnreachableResult, nearestUnreachable, unreachableDetail, knownUnreachableLine } from './behaviors/unreachable.js'
+import { swimToShore, inDeepWater, targetInWater } from './behaviors/swimOut.js'
 import { resolveTerm } from './loose-terms.js'
 import { gatherAction } from './behaviors/mineVein.js'
 import { getHealedPos } from './observers/posHealer.js'
@@ -183,6 +184,10 @@ const DEPTH_PENALTY_PER_M = 1.5
 // A walk that timed out farther than this from its target says nothing about
 // whether the target can be reached.
 const UNREACHABLE_NEAR_M = 8
+// 261123 (pass 62): a find candidate this close (each axis) to a block she
+// could not reach counts this much farther.
+const NEAR_FAILED_M = 3
+const NEAR_FAILED_PENALTY_M = 16
 
 const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
 function isExposed(bot, p) {
@@ -252,8 +257,16 @@ function noteUnreachableTarget(bot, args, result) {
     const p = bot.entity?.position
     const far = p ? Math.hypot(p.x - args.x, p.y - args.y, p.z - args.z) : Infinity
     if (String(result).startsWith('timeout') && far > UNREACHABLE_NEAR_M) return
-    noteUnreachable(bot, args, String(result).split(' ')[0])
+    noteUnreachable(bot, args, String(result).split(' ')[0], Date.now(), unreachableDetail(result))
   } catch {}
+}
+
+/** What swimToShore did, for the goTo result (null when it did nothing). */
+function swimNote(swim) {
+  if (!swim || swim.status === 'not_needed') return null
+  if (swim.status === 'ashore') return swim.landing ? `you swam out of the deep water onto the shore at ${fmtPos(swim.landing)} first` : null
+  if (swim.status === 'no_shore') return 'you are in deep water and there is no shore you can climb out on within 16 blocks'
+  return `you are in deep water and the swim to the shore${swim.landing ? ` at ${fmtPos(swim.landing)}` : ''} did not get you out`
 }
 
 /**
@@ -261,6 +274,22 @@ function noteUnreachableTarget(bot, args, result) {
  * climb-and-retry when the walk failed far below the target.
  */
 async function goToCoords(bot, target, range, timeoutMs, signal) {
+  // 261123 (pass 62): out of deep water first. The pathfinder has no move
+  // up through water (see swimOut.js), so from a river bed every walk to the
+  // bank came back stuck, cant_reach or timeout. Not when she is going to a
+  // spot in the water itself.
+  let swim = null
+  if (inDeepWater(bot) && !targetInWater(bot, target)) {
+    swim = await swimToShore(bot, target, { signal })
+    if (swim.status === 'aborted') return 'aborted'
+  }
+  const r = await goToCoordsFromHere(bot, target, range, timeoutMs, signal)
+  const note = swimNote(swim)
+  if (!note || r === 'reached' || String(r).startsWith('aborted')) return r
+  return `${r} (${note})`
+}
+
+async function goToCoordsFromHere(bot, target, range, timeoutMs, signal) {
   // 261015: out of a self-dug shaft first. The pathfinder's tower climbs
   // about a block per 5s (see climbOut.js), so from a 1x1 shaft a 12s
   // walk to the surface timed out every time.
@@ -487,6 +516,8 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       if (range <= 1 && isCoordsAtKnownPlayer(bot, args.x, args.y, args.z)) {
         range = 2
       }
+      const known = knownUnreachableLine(bot, args)
+      if (known) return known
       return goToCoordsWalkingOn(bot, { x: args.x, y: args.y, z: args.z }, range, timeoutMs, config?.signal)
     }
   )
@@ -524,7 +555,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // touch the follow target.
       if (args?.orientation === 'up') {
         return bot?.entity?.isInWater
-          ? "you're in water — swimming up is automatic; stay put or dig up to break out"
+          ? "you're in water — swimming up is automatic. To get out of the water, goTo a spot on land: the walk swims you to the shore first"
           : "can't fly up — build up with scaffold/build, or dig up to break through the ceiling"
       }
       if (args?.orientation === 'down') {
@@ -593,7 +624,13 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // wall the walk cannot reach without digging (pass 10 compare,
       // errands-02-B: coal at y54 beat the surface coal 3 blocks farther).
       const depthOf = (h) => (point ? Math.max(0, point.y - h.y - DEPTH_FREE_M) : 0)
-      const scoreOf = (c) => distOf(c) + (isExposed(bot, c) ? 0 : BURIED_PENALTY_M) + DEPTH_PENALTY_PER_M * depthOf(c)
+      // 261123 (pass 62): a block a few steps from one she could not reach
+      // counts as farther too (gather_craft-02: find skipped the noted iron
+      // and answered the next ore of the same vein, 2 blocks over, under the
+      // same river; the walk failed the same way).
+      const nearFailed = (c) => (skipped ? nearestUnreachable(bot, c, NEAR_FAILED_M) : null)
+      const scoreOf = (c) => distOf(c) + (isExposed(bot, c) ? 0 : BURIED_PENALTY_M) + DEPTH_PENALTY_PER_M * depthOf(c) +
+        (nearFailed(c) ? NEAR_FAILED_PENALTY_M : 0)
       let h = fresh[0]
       let best = Infinity
       for (const c of fresh) {
@@ -631,7 +668,12 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
         pos: { x: h.x, y: h.y, z: h.z },
         distance: d,
       }
-      if (skipped) out.note = `skipped ${skipped} you could not reach recently`
+      if (skipped) {
+        const near = nearFailed(h)
+        out.note = near
+          ? `skipped ${skipped} you could not reach recently. This one is only ${Math.max(1, Math.round(near.d))} blocks from one of them, so the way to it is probably blocked the same way`
+          : `skipped ${skipped} you could not reach recently`
+      }
       return out
     }
   )

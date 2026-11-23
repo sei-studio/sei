@@ -273,3 +273,75 @@ describe('gather skips blocks it could not reach recently (261015)', () => {
     expect(isUnreachable(bot, { x: 2, y: 70, z: 0 })).toBe(true)
   })
 })
+
+// 261123 (quality pass 62): gather_craft-02 walked at the same buried iron
+// five times (cant_reach, "stuck at" the shore x3, a dig whose walk stuck);
+// each walk ended at the water's edge and the last ones in the river.
+describe('a block she just failed to reach is not walked at again (261123)', () => {
+  it('goTo refuses at once and says when and how the last walk failed', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[14, 50, -9, 'iron_ore']], new Vec3(1.5, 65, 0.5))
+    goToMock.mockClear()
+    goToMock.mockResolvedValueOnce('stuck at 5,65,-3, 16.2m from 14,50,-9: the path kept failing at the same spot. Try a different spot nearby, or dig or build through')
+    const first = await reg.execute('goTo', { x: 14, y: 50, z: -9, range: 3 }, bot, {})
+    expect(first).toMatch(/^stuck at/)
+    const calls = goToMock.mock.calls.length
+    const again = await reg.execute('goTo', { x: 14, y: 50, z: -9, range: 3 }, bot, {})
+    expect(goToMock.mock.calls.length).toBe(calls)
+    expect(again).toMatch(/^not walking there: you already failed to reach the iron_ore at 14,50,-9 \d+s ago \(the path kept failing at 5,65,-3\)/)
+    expect(again).toMatch(/Pick a different iron_ore \(find skips this one\) or leave it for now$/)
+  })
+
+  it('dig at that block from out of reach refuses too; within reach it digs', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[14, 50, -9, 'iron_ore'], [2, 64, 0, 'iron_ore']], new Vec3(1.5, 65, 0.5))
+    noteUnreachable(bot, { x: 14, y: 50, z: -9 }, 'cant_reach', Date.now(), 'there was no path there')
+    goToMock.mockClear()
+    const r = await reg.execute('dig', { x: 14, y: 50, z: -9 }, bot, {})
+    expect(goToMock).not.toHaveBeenCalled()
+    expect(r).toMatch(/^not digging: you already failed to reach the iron_ore at 14,50,-9 \d+s ago \(there was no path there\)/)
+    // A noted block she now stands next to is dug as usual.
+    noteUnreachable(bot, { x: 2, y: 64, z: 0 }, 'cant_reach')
+    digMock.mockResolvedValueOnce('dug iron_ore')
+    const near = await reg.execute('dig', { x: 2, y: 64, z: 0 }, bot, {})
+    expect(near).toMatch(/^dug iron_ore/)
+  })
+
+  it('a goTo at a spot (not a block) or a block that is gone now still walks', async () => {
+    const reg = createDefaultRegistry()
+    const { bot, blocks } = makeBot([[14, 50, -9, 'iron_ore']], new Vec3(1.5, 65, 0.5))
+    noteUnreachable(bot, { x: 14, y: 50, z: -9 }, 'cant_reach')
+    blocks.set('14,50,-9', 'air')
+    goToMock.mockClear()
+    goToMock.mockResolvedValueOnce('reached')
+    const r = await reg.execute('goTo', { x: 14, y: 50, z: -9, range: 3 }, bot, {})
+    expect(r).toBe('reached')
+    expect(goToMock).toHaveBeenCalled()
+  })
+
+  it('find counts an ore a few blocks from one she could not reach as farther, and says so when it is still the pick', async () => {
+    const reg = createDefaultRegistry()
+    // Same vein: noted ore at 10,60,0, its neighbour 2 over; another ore 9 blocks farther.
+    const { bot } = makeBot([[10, 60, 0, 'iron_ore'], [10, 60, 2, 'iron_ore'], [-17, 60, 0, 'iron_ore'], [10, 61, 2, 'air'], [-17, 61, 0, 'air']])
+    noteUnreachable(bot, { x: 10, y: 60, z: 0 }, 'stuck')
+    const r = await reg.execute('find', { name: 'iron_ore' }, bot, {})
+    expect(r.pos).toEqual({ x: -17, y: 60, z: 0 })
+    expect(r.note).toBe('skipped 1 you could not reach recently')
+    // Only the vein left: it is still found, with the warning.
+    const { bot: bot2 } = makeBot([[10, 60, 0, 'iron_ore'], [10, 60, 2, 'iron_ore'], [10, 61, 2, 'air']])
+    noteUnreachable(bot2, { x: 10, y: 60, z: 0 }, 'stuck')
+    const r2 = await reg.execute('find', { name: 'iron_ore' }, bot2, {})
+    expect(r2.pos).toEqual({ x: 10, y: 60, z: 2 })
+    expect(r2.note).toMatch(/only 2 blocks from one of them, so the way to it is probably blocked the same way$/)
+  })
+
+  it('a dig by name with nothing in range says how far the nearest one is', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[0, 57, 0, 'granite']], new Vec3(0.5, 65, 0.5))
+    // The mock ignores maxDistance; emulate mineflayer's radius.
+    const all = bot.findBlocks
+    bot.findBlocks = (o) => all(o).filter((h) => h.distanceTo(bot.entity.position.floored()) <= o.maxDistance)
+    const r = await reg.execute('dig', { block: 'granite', maxDistance: 6 }, bot, {})
+    expect(r).toBe('no granite within 6m of where you are now; the nearest is 8 blocks below you')
+  })
+})
