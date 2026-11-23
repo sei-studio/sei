@@ -66,6 +66,7 @@ import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanion
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead, appendMessage } from './chatStore';
 import { consumeGoodbye, _resetGoodbyeNotes } from '../sessionGoodbye';
+import { buildChatSdk } from './sdk';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -1268,5 +1269,22 @@ describe('in-game route carries the barge-in mark (261112)', () => {
     await sendChatMessage({ characterId: CHAR, text: 'stop', interrupted: { line: 'x' } }, d);
     expect(routeToBot).toHaveBeenNthCalledWith(1, CHAR, { from: 'Player', text: 'stop', voice: true });
     expect(routeToBot).toHaveBeenNthCalledWith(2, CHAR, { from: 'Player', text: 'stop', voice: false });
+  });
+});
+
+describe('provider build runs alongside the prompt build (261123)', () => {
+  it('a provider build failure still fails the turn with its own error, before any LLM call', async () => {
+    vi.mocked(buildChatSdk).mockRejectedValueOnce(new Error('LOCAL_NO_API_KEY'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      await expect(sendChatMessage({ characterId: CHAR, text: 'hey' }, deps())).rejects.toThrow('LOCAL_NO_API_KEY');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(streamSpy).not.toHaveBeenCalled();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });
