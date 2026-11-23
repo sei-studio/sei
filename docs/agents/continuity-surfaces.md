@@ -67,6 +67,12 @@ MEMORY.md at the session end (`recapMemoryLine`, deduped through `saveFacts`,
 filed like the plan line), because the eval showed the fold drops game events
 from the summary. An app quit ends every recap wait (`releaseRecapWaitsForQuit`)
 and drains tracked writes for up to 1.5 s before the analytics flush.
+With the recap in memory, game questions get answered instead of abstained,
+and the answers pick up small made-up details ("she sat by the village like
+she owned the place"), which the judge counts as invented. Adding "do not add
+details they do not have" to the chat memory header and the bot's memory
+preamble did not help (C/F probe, 4 reps: invented 2% to 6%, C 97% to 93%),
+so it was not kept.
 
 **Facts before the summary (261113, v0.7 consistency D2).** The fold is
 shown the memory notes (the chat's 12000-byte tail) and returns, next to its
