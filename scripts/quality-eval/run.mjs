@@ -24,6 +24,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { SCENARIOS, BASE_SETUP } from './scenarios.mjs'
 import { judgeSessions } from './judge.mjs'
 import { writeReport } from './report.mjs'
+import { playerSystem, playerAsk, repeatedBit, redoNote, stillRepeats } from './lib/playerBrain.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repo = path.resolve(here, '..', '..')
@@ -149,27 +150,6 @@ const PLAYER_TOOL = {
   },
 }
 
-function playerSystem(sc, botName) {
-  return [
-    `You are playing Minecraft Java as the player "${PLAYER}". You are a real person, around 17 to 25, playing on your computer.`,
-    `${botName} is an AI companion in the game with you. You talk to her by typing in game chat.`,
-    '',
-    `This session: ${sc.brief}`,
-    '',
-    'How you type:',
-    '- Like a normal gamer in chat. Mostly lowercase, short, casual. Skip punctuation a lot. A typo now and then is fine.',
-    '- Usually one short message. Never more than about 20 words.',
-    '- You do not explain yourself and you do not narrate. You just type what you would type.',
-    '- You are not a tester and you never mention tests, prompts or evaluations.',
-    '- Read your own earlier lines in the chat. Do not send the same request or question again unless she ignored it. Vary how you word things.',
-    '- Sometimes you do not answer her at all, about one time in four, especially when she just narrates what she is doing. Then say is an empty string.',
-    '- Now and then you go off topic or ignore what she asked, like real players do.',
-    '',
-    'When a director note appears, it tells you what to do next in the session. Do it in your own words, right away.',
-    'Pick a move only when it makes sense. Most of the time move is "stay".',
-  ].join('\n')
-}
-
 // ── one session ─────────────────────────────────────────────────────────
 // opts (all optional): minutes, rng (a () => [0,1) function), botRepo (whose
 // src/bot runs as the companion; default this repo).
@@ -290,6 +270,7 @@ export async function runSession(sc, sessDir, opts = {}) {
 
   // ── brain loop ──
   const history = []   // what the player brain sees: {who, text}
+  const ownLines = []  // the player's own lines: {text, at}
   let pendingTrigger = null
   let debounce = null
   let busy = false
@@ -326,29 +307,42 @@ export async function runSession(sc, sessDir, opts = {}) {
         history.push({ who: h.who, text: h.text })
       }
       const sui = companionEntity(pbot, botName)
-      const dist = sui ? sui.position.distanceTo(pbot.entity.position).toFixed(0) : 'unknown'
+      const distNum = sui ? sui.position.distanceTo(pbot.entity.position) : null
       const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1)
-      const recent = history.slice(-30).map((h) => (h.who === PLAYER ? `you: ${h.text}` : `${h.who}: ${h.text}`)).join('\n') || '(nothing yet)'
       const inv = pbot.inventory.items().map((i) => `${i.name} x${i.count}`).join(', ') || 'nothing'
-      let ask = `Chat so far:\n${recent}\n\nNow: ${elapsedMin} min into the session. ${botName} is ${dist} blocks from you. Your health ${Math.round(pbot.health ?? 20)}/20. Your inventory: ${inv}. You do not mine or craft yourself in this session, so do not claim to.`
-      if (tr.type === 'beat') ask += `\n\nDirector note: ${tr.cue}`
-      else if (tr.type === 'companion_spoke') ask += `\n\n${botName} just said something. Reply if you would, or say nothing.`
-      else ask += '\n\nIt has been quiet for a while. Say something if you feel like it, or nothing.'
-      ask += '\n\nCall player_turn.'
-      const resp = await anthropic.messages.create({
-        model: PLAYER_MODEL,
-        max_tokens: 200,
-        system: [{ type: 'text', text: playerSystem(sc, botName), cache_control: { type: 'ephemeral' } }],
-        tools: [PLAYER_TOOL],
-        tool_choice: { type: 'tool', name: 'player_turn' },
-        messages: [{ role: 'user', content: ask }],
+      // 261123 (pass 61): prompt and repeat backstop in lib/playerBrain.mjs.
+      const ask = playerAsk({
+        history, ownLines, botName, player: PLAYER, dist: distNum, hp: pbot.health, inv, elapsedMin, trigger: tr.type, cue: tr.cue,
       })
-      const u = resp.usage || {}
-      for (const k of ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']) usage.player[k] += u[k] || 0
-      usage.player.calls++
-      const tu = resp.content.find((c) => c.type === 'tool_use')
-      let say = String(tu?.input?.say ?? '').trim().replace(/\s+/g, ' ').slice(0, 200)
-      let move = MOVES.includes(tu?.input?.move) ? tu.input.move : 'stay'
+      const turn = async (content) => {
+        const resp = await anthropic.messages.create({
+          model: PLAYER_MODEL,
+          max_tokens: 200,
+          system: [{ type: 'text', text: playerSystem(sc, botName, PLAYER), cache_control: { type: 'ephemeral' } }],
+          tools: [PLAYER_TOOL],
+          tool_choice: { type: 'tool', name: 'player_turn' },
+          messages: [{ role: 'user', content }],
+        })
+        const u = resp.usage || {}
+        for (const k of ['input_tokens', 'output_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']) usage.player[k] += u[k] || 0
+        usage.player.calls++
+        const tu = resp.content.find((c) => c.type === 'tool_use')
+        return {
+          say: String(tu?.input?.say ?? '').trim().replace(/\s+/g, ' ').slice(0, 200),
+          move: MOVES.includes(tu?.input?.move) ? tu.input.move : 'stay',
+        }
+      }
+      let { say, move } = await turn(ask)
+      if (tr.type !== 'beat') {
+        const lastHerLineAt = [...heard].reverse().find((h) => h.who === botName)?.t ?? 0
+        const rep = repeatedBit(say, ownLines, { now: Date.now(), lastHerLineAt, dist: distNum, names: [botName, PLAYER] })
+        if (rep) {
+          const first = say
+          ;({ say, move } = await turn(ask.replace(/\n\nCall player_turn\.$/, '') + redoNote(rep, botName) + '\n\nCall player_turn.'))
+          if (stillRepeats(say, rep, [botName, PLAYER])) say = ''
+          rec({ kind: 'player_redo', bit: rep.bit, times: rep.times, first, second: say })
+        }
+      }
       if (tr.type === 'beat' && tr.move) move = tr.move
       // Keep at least 4s between player messages so chat reads like a human.
       const gap = Date.now() - lastPlayerSayAt
@@ -357,6 +351,7 @@ export async function runSession(sc, sessDir, opts = {}) {
         pbot.chat(say)
         lastPlayerSayAt = Date.now()
         history.push({ who: PLAYER, text: say })
+        ownLines.push({ text: say, at: lastPlayerSayAt })
         rec({ kind: 'player_say', text: say, trigger: tr.type, cue: tr.cue ?? null })
       } else {
         rec({ kind: 'player_quiet', trigger: tr.type, cue: tr.cue ?? null })
