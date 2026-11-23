@@ -172,6 +172,9 @@ export function knownUnreachableLine(bot, pos, verb = 'walking there') {
     if (!pos || ![pos.x, pos.y, pos.z].every(Number.isFinite)) return null
     const e = unreachableEntry(bot, pos)
     if (!e) return null
+    // A block she once stood beside and could not dig (a log high up a
+    // trunk) may still be walked to; a failed walk there is what counts.
+    if (verb === 'walking there' && e.why === 'out of reach' && (e.tries ?? 1) < 2) return null
     const blk = bot.blockAt?.(new Vec3(Math.floor(pos.x), Math.floor(pos.y), Math.floor(pos.z)))
     if (!blk || isOpen(blk)) return null
     const ago = agoWords(Date.now() - (e.last ?? e.first ?? Date.now()))

@@ -259,7 +259,7 @@ function qeProbe(msg) {
   const inv = {}
   try { for (const it of b?.inventory?.items?.() ?? []) inv[it.name] = (inv[it.name] || 0) + it.count } catch {}
   const p = b?.entity?.position
-  emit({ kind: 'qe_probe', id: msg.id ?? null, pos: p ? { x: p.x, y: p.y, z: p.z } : null, hp: b?.health ?? null, food: b?.food ?? null, oxy: b?.oxygenLevel ?? null, yaw: b?.entity?.yaw ?? null, held: b?.heldItem?.name ?? null, inv })
+  emit({ kind: 'qe_probe', id: msg.id ?? null, pos: p ? { x: p.x, y: p.y, z: p.z } : null, hp: b?.health ?? null, food: b?.food ?? null, oxy: b?.oxygenLevel ?? null, wet: b?.entity?.isInWater ?? null, yaw: b?.entity?.yaw ?? null, held: b?.heldItem?.name ?? null, inv })
 }
 
 // ── direct mode: actions called by the orchestrator ────────────────────

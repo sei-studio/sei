@@ -283,13 +283,16 @@ async function goToCoords(bot, target, range, timeoutMs, signal) {
     swim = await swimToShore(bot, target, { signal })
     if (swim.status === 'aborted') return 'aborted'
   }
-  const r = await goToCoordsFromHere(bot, target, range, timeoutMs, signal)
+  // A walk that starts in the water after a failed swim says nothing about
+  // the target, so it is not noted as unreachable.
+  const stillWet = swim != null && swim.status !== 'ashore' && swim.status !== 'not_needed'
+  const r = await goToCoordsFromHere(bot, target, range, timeoutMs, signal, stillWet)
   const note = swimNote(swim)
   if (!note || r === 'reached' || String(r).startsWith('aborted')) return r
   return `${r} (${note})`
 }
 
-async function goToCoordsFromHere(bot, target, range, timeoutMs, signal) {
+async function goToCoordsFromHere(bot, target, range, timeoutMs, signal, noNote = false) {
   // 261015: out of a self-dug shaft first. The pathfinder's tower climbs
   // about a block per 5s (see climbOut.js), so from a 1x1 shaft a 12s
   // walk to the surface timed out every time.
@@ -329,7 +332,7 @@ async function goToCoordsFromHere(bot, target, range, timeoutMs, signal) {
       r = await goTo(bot, target.x, target.y, target.z, range, timeoutMs, signal, walkOpts)
     }
   }
-  noteUnreachableTarget(bot, target, r)
+  if (!noNote) noteUnreachableTarget(bot, target, r)
   // 261017: say plainly when she is still down in the hole. The old line
   // was "timeout — unreachable — try build to Y=71 (first pillared out of
   // the 2-deep hole you were in)" while she stood 13 blocks underground,
@@ -628,7 +631,7 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
       // counts as farther too (gather_craft-02: find skipped the noted iron
       // and answered the next ore of the same vein, 2 blocks over, under the
       // same river; the walk failed the same way).
-      const nearFailed = (c) => (skipped ? nearestUnreachable(bot, c, NEAR_FAILED_M) : null)
+      const nearFailed = (c) => nearestUnreachable(bot, c, NEAR_FAILED_M)
       const scoreOf = (c) => distOf(c) + (isExposed(bot, c) ? 0 : BURIED_PENALTY_M) + DEPTH_PENALTY_PER_M * depthOf(c) +
         (nearFailed(c) ? NEAR_FAILED_PENALTY_M : 0)
       let h = fresh[0]
@@ -668,12 +671,11 @@ export function createDefaultRegistry({ visionEnabled = false } = {}) {
         pos: { x: h.x, y: h.y, z: h.z },
         distance: d,
       }
-      if (skipped) {
-        const near = nearFailed(h)
-        out.note = near
-          ? `skipped ${skipped} you could not reach recently. This one is only ${Math.max(1, Math.round(near.d))} blocks from one of them, so the way to it is probably blocked the same way`
-          : `skipped ${skipped} you could not reach recently`
-      }
+      const near = nearFailed(h)
+      const notes = []
+      if (skipped) notes.push(`skipped ${skipped} you could not reach recently`)
+      if (near) notes.push(`This one is only ${Math.max(1, Math.round(near.d))} blocks from one you could not reach, so the way to it is probably blocked the same way`)
+      if (notes.length) out.note = notes.join('. ')
       return out
     }
   )

@@ -307,6 +307,16 @@ describe('a block she just failed to reach is not walked at again (261123)', () 
     expect(near).toMatch(/^dug iron_ore/)
   })
 
+  it('a block only noted as out of reach from beside it (a log up a trunk) can still be walked to once', async () => {
+    const reg = createDefaultRegistry()
+    const { bot } = makeBot([[4, 71, 0, 'oak_log']], new Vec3(1.5, 65, 0.5))
+    noteUnreachable(bot, { x: 4, y: 71, z: 0 }, 'out of reach')
+    goToMock.mockClear()
+    goToMock.mockResolvedValueOnce('reached')
+    expect(await reg.execute('goTo', { x: 4, y: 71, z: 0, range: 3 }, bot, {})).toBe('reached')
+    expect(goToMock).toHaveBeenCalled()
+  })
+
   it('a goTo at a spot (not a block) or a block that is gone now still walks', async () => {
     const reg = createDefaultRegistry()
     const { bot, blocks } = makeBot([[14, 50, -9, 'iron_ore']], new Vec3(1.5, 65, 0.5))
@@ -332,7 +342,7 @@ describe('a block she just failed to reach is not walked at again (261123)', () 
     noteUnreachable(bot2, { x: 10, y: 60, z: 0 }, 'stuck')
     const r2 = await reg.execute('find', { name: 'iron_ore' }, bot2, {})
     expect(r2.pos).toEqual({ x: 10, y: 60, z: 2 })
-    expect(r2.note).toMatch(/only 2 blocks from one of them, so the way to it is probably blocked the same way$/)
+    expect(r2.note).toBe('skipped 1 you could not reach recently. This one is only 2 blocks from one you could not reach, so the way to it is probably blocked the same way')
   })
 
   it('a dig by name with nothing in range says how far the nearest one is', async () => {
