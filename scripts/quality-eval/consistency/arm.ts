@@ -48,7 +48,7 @@ type Row = {
   voice?: boolean;
   event?: Record<string, unknown>;
 };
-type Bridge = { summary: string; summarizedCount: number };
+type Bridge = { summary: string; summarizedCount: number; playFoldedTs?: number };
 type Usage = { model: string; input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; what: string };
 
 const argv = process.argv.slice(2);
@@ -236,11 +236,17 @@ async function maybeFold(rows: Row[], bridge: Bridge, now: number): Promise<Brid
         const r = await bondStore.saveBondFor(memDir, res.bond ?? null, { now: lastTs || undefined });
         bondLog.push({ source: 'fold', ...r });
       }
-      next = res.status === 'ok' ? { summary: res.summary, summarizedCount: batch.bridge.summarizedCount + batch.counted } : batch.bridge;
+      next =
+        res.status !== 'ok'
+          ? batch.bridge
+          : core.bridgeAfterFold
+            ? core.bridgeAfterFold(batch, res.summary)
+            : { summary: res.summary, summarizedCount: batch.bridge.summarizedCount + batch.counted };
     } else {
       next = await devFold(rows, bridge, ch.expanded);
     }
-    if (!next || next.summarizedCount === bridge.summarizedCount) return next ?? bridge;
+    // 261123: a play-only fold moves playFoldedTs, not the watermark.
+    if (!next || (next.summarizedCount === bridge.summarizedCount && next.playFoldedTs === bridge.playFoldedTs)) return next ?? bridge;
     foldStats.folds++;
     bridge = next;
   }
@@ -300,7 +306,7 @@ async function sessionEnd(
     log: () => {},
   };
   const r = playerEnd.runSessionEnd ? await playerEnd.runSessionEnd(input, deps) : { outcome: await playerEnd.runPlayerEndNextStep(input, deps) };
-  sessionEnds.push({ surface, outcome: r.outcome, recap: r.recap ?? null, facts: r.facts ?? null });
+  sessionEnds.push({ surface, outcome: r.outcome, recap: r.recap ?? null, facts: r.facts ?? null, recapSaved: r.recapSaved ?? null });
   return r;
 }
 

@@ -10,6 +10,10 @@
 // Filler must never touch a probed topic (life.mjs): no pets, family, jobs,
 // school, food, colours, birthdays, cars, and none of the game events, or a
 // probe could be answered (or contradicted) by small talk.
+// 261123: nor plans for the shared world. Sui's first filler planned a cloud
+// tower and a deck and flooded the porch, so "what are we building next time"
+// and "what happened to our cabin" had a newer competing answer; those
+// exchanges were rewritten by hand in filler-sui.json.
 // Key: ANTHROPIC_API_KEY, else ~/.sei-dev/anthropic-test-key. Never printed.
 import fs from 'node:fs'
 import os from 'node:os'
@@ -32,7 +36,7 @@ const SHAPE = {
   current: { n: 40, how: 'another casual text chat on a new day (typed), drifting through light topics' },
   ingame: { n: 30, how: 'in-game chatter while playing Minecraft together: short lines about gathering wood or stone, a sunset, a funny jump, where to go, nothing dramatic' },
 }
-const BANNED = 'pets or animals of any kind, siblings or any family member, roommates, jobs or work, school, studying or courses, food or drinks, favourite colours, birthdays or presents, cars, music bands, climbing or sports, creepers, zombies, wolves, cats, dogs, diamonds, the cabin roof, fences, villages'
+const BANNED = 'pets or animals of any kind, siblings or any family member, roommates, jobs or work, school, studying or courses, food or drinks, favourite colours, birthdays or presents, cars, music bands, climbing or sports, creepers, zombies, wolves, cats, dogs, diamonds, the cabin roof, fences, villages, anything that happened to the cabin or the farm, and any building project or plan for the world (towers, decks, bridges, paths, porches)'
 
 function key() {
   return (process.env.ANTHROPIC_API_KEY ?? fs.readFileSync(path.join(os.homedir(), '.sei-dev/anthropic-test-key'), 'utf8')).trim()
