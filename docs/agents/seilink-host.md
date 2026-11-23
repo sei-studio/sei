@@ -478,6 +478,23 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `seilink:anima-prepare|status`, push `seilink:anima-changed`) drives the
   quiet "Preparing {name}'s look…" line in the move-in sheet and the
   editor's avatar panel. Account switch: `anima.reset()` stops every poll.
+- **Download only what is needed (261124, storage egress, product call
+  261124).** The move-in sheet is bake only: it starts her bake so it is
+  done by the time she moves in, but a ready look is downloaded only for a
+  fetch trigger (`editor`, `host_start`, `host_restore`) or when she already
+  has a look on disk (an update of a look in use). A bake-only run that finds
+  her ready sends `seilink_anima` phase `held` and leaves the stage at none.
+  Two runs for the same pack share one download (`fetchOnce`). Packs that no
+  character points at any more are kept as spares (newest 4, 30 days, 200 MB;
+  `SPARE_PACKS` in animaPacks.ts), so switching her avatar or portrait back
+  installs from disk instead of downloading again. Pack format 2: the app
+  sends `pack_format: 2` (request body and status query); the proxy then
+  offers `pack2-<sha>.zip` when one exists (frames in AVIF, about half the
+  bytes, same manifest otherwise) with `format: 2` and `alt_sha256` (the
+  format 1 pack.zip of the same bake, kept when it is already on disk).
+  `isSafePackPath` accepts `.avif`; the renderer serves it as `image/avif`
+  (Chromium decodes it). 0.7.0 and older never send pack_format and keep
+  getting pack.zip.
 
 ### Uploaded pictures (261116, product call 261116)
 

@@ -20,7 +20,7 @@
  * rewrites index.json without it, which only costs a re-download.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type JSZip from 'jszip';
 import { loadJSZip } from '../lazyJszip';
@@ -35,6 +35,22 @@ export const ANIMA_PACK_MAX_BYTES = 80 * 1024 * 1024;
 export const ANIMA_PACK_MAX_FILES = 4000;
 /** One cut-out PNG (the cloud trims it to 1280 px: ~1-3 MB). */
 export const ANIMA_CUTOUT_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Spare packs (261124, storage egress): a pack no character points at any
+ * more (her avatar or portrait switched away from it) stays on disk for a
+ * while, so switching back does not download it again. Measured 261124: one
+ * person flipping between two library avatars downloaded the same 38 MB pack
+ * three times in four hours, because it was pruned 2 min after each switch.
+ * The most recently released ones are kept, within these limits.
+ */
+export interface SparePolicy {
+  count: number;
+  maxAgeMs: number;
+  maxBytes: number;
+}
+export const SPARE_PACKS: SparePolicy = { count: 4, maxAgeMs: 30 * 24 * 60 * 60 * 1000, maxBytes: 200 * 1024 * 1024 };
+/** A pack whose manifest does not say its size counts as this much against maxBytes. */
+const SPARE_GUESS_BYTES = 20 * 1024 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const CUTOUT_FILE_RE = /^[0-9a-f]{64}\.png$/;
 
@@ -173,6 +189,9 @@ export class AnimaPackStore {
   async setEntry(characterId: string, e: AnimaIndexEntry | null): Promise<void> {
     if (!CHAR_ID_RE.test(characterId)) return;
     const idx = await this.loadIndex();
+    const was = idx.characters[characterId]?.pack_sha256;
+    // The pack she leaves becomes a spare: its dir time says when (prune keeps the newest).
+    if (was && was !== e?.pack_sha256) await this.touch(animaPackId(was));
     if (e) idx.characters[characterId] = e;
     else delete idx.characters[characterId];
     await this.saveIndex();
@@ -233,6 +252,14 @@ export class AnimaPackStore {
     if (!e) return null;
     const id = animaPackId(e.pack_sha256);
     return (await this.hasPack(id)) ? id : null;
+  }
+
+  /** Mark a pack as just used (its dir mtime orders the spares). Best effort. */
+  async touch(id: string): Promise<void> {
+    const dir = this.packDir(id);
+    if (!dir) return;
+    const now = new Date();
+    await utimes(dir, now, now).catch(() => {});
   }
 
   async hasPack(id: string): Promise<boolean> {
@@ -328,11 +355,12 @@ export class AnimaPackStore {
   }
 
   /**
-   * Remove packs no character points at any more, and (`temps`, only before
-   * any install can be running) leftover temp dirs. Best effort. Cut-outs
-   * nobody points at go the same way.
+   * Remove packs no character points at any more, except the newest spares
+   * (`spare`, SPARE_PACKS: a switch back to one needs no download), and
+   * (`temps`, only before any install can be running) leftover temp dirs.
+   * Best effort. Cut-outs nobody points at go the same way.
    */
-  async prune(temps = false): Promise<number> {
+  async prune(temps = false, spare: SparePolicy = SPARE_PACKS, now = Date.now()): Promise<number> {
     const idx = await this.loadIndex();
     const keep = new Set(Object.values(idx.characters).map((e) => animaPackId(e.pack_sha256)));
     let names: string[] = [];
@@ -341,11 +369,36 @@ export class AnimaPackStore {
     } catch {
       names = [];
     }
+    const unused: Array<{ name: string; at: number }> = [];
     let removed = 0;
     for (const name of names) {
       if (keep.has(name)) continue;
-      if (!ANIMA_PACK_ID_RE.test(name) && !(temps && name.startsWith('.tmp-an-'))) continue;
+      if (ANIMA_PACK_ID_RE.test(name)) {
+        const at = await stat(path.join(this.packsDir(), name)).then(
+          (s) => s.mtimeMs,
+          () => 0,
+        );
+        unused.push({ name, at });
+        continue;
+      }
+      if (!(temps && name.startsWith('.tmp-an-'))) continue;
       await rm(path.join(this.packsDir(), name), { recursive: true, force: true }).catch(() => {});
+      removed++;
+    }
+    unused.sort((a, b) => b.at - a.at);
+    let kept = 0;
+    let keptBytes = 0;
+    for (const u of unused) {
+      if (kept < spare.count && now - u.at <= spare.maxAgeMs) {
+        const bytes = (await this.manifest(u.name))?.bytes;
+        const size = typeof bytes === 'number' && bytes > 0 ? bytes : SPARE_GUESS_BYTES;
+        if (keptBytes + size <= spare.maxBytes) {
+          kept++;
+          keptBytes += size;
+          continue;
+        }
+      }
+      await rm(path.join(this.packsDir(), u.name), { recursive: true, force: true }).catch(() => {});
       removed++;
     }
     return removed + (await this.pruneCutouts(temps));
