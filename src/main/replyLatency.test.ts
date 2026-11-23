@@ -91,6 +91,43 @@ describe('replyLatencyProps', () => {
     expect(replyLatencyProps({ ...base, surface: 'minecraft', path: 'in_game', via: 'action' })?.via).toBe('action');
     expect(replyLatencyProps({ ...base, via: 'say' })).not.toHaveProperty('via');
   });
+
+  // 261123 (O5): where a voice turn's wait went.
+  it('voice phases ride flat, rounded and clamped; voice only', () => {
+    const phases = {
+      speech_end_to_final_ms: 812.4,
+      llm_request_ms: 14,
+      llm_first_token_ms: 1190.5,
+      line_queued_ms: 1620,
+      tts_first_chunk_ms: 1e12,
+    };
+    expect(replyLatencyProps({ ...base, surface: 'voice', ms: 2400, phases })).toEqual({
+      surface: 'voice',
+      path: 'app',
+      ms: 2400,
+      outcome: 'replied',
+      turn_index_bucket: 'first',
+      sample_rate: 1,
+      speech_end_to_final_ms: 812,
+      llm_request_ms: 14,
+      llm_first_token_ms: 1191,
+      line_queued_ms: 1620,
+      tts_first_chunk_ms: REPLY_MS_MAX,
+    });
+    expect(replyLatencyProps({ ...base, phases })).not.toHaveProperty('llm_first_token_ms');
+  });
+
+  it('a missing or junk phase is left out, never sent as 0', () => {
+    const props = replyLatencyProps({
+      ...base,
+      surface: 'voice',
+      phases: { line_queued_ms: Number.NaN, llm_request_ms: -3, tts_first_chunk_ms: 900 },
+    });
+    expect(props).not.toHaveProperty('line_queued_ms');
+    expect(props).not.toHaveProperty('llm_request_ms');
+    expect(props).not.toHaveProperty('llm_first_token_ms');
+    expect(props?.tts_first_chunk_ms).toBe(900);
+  });
 });
 
 describe('recordReplyLatency', () => {
@@ -129,6 +166,40 @@ describe('sanitizeRendererReplyLatency', () => {
     expect(sanitizeRendererReplyLatency(undefined)).toBeNull();
     const extra = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied', text: 'hi there' });
     expect(extra).not.toHaveProperty('text');
+  });
+
+  it('keeps the voice phases; a bad phase drops only itself', () => {
+    expect(
+      sanitizeRendererReplyLatency({
+        surface: 'voice',
+        path: 'app',
+        turn: 2,
+        ms: 2600,
+        outcome: 'replied',
+        speech_end_to_final_ms: 900,
+        llm_request_ms: 12,
+        llm_first_token_ms: 1300,
+        line_queued_ms: 1700,
+        tts_first_chunk_ms: 'soon',
+        llm_text: 'nope',
+      }),
+    ).toEqual({
+      surface: 'voice',
+      path: 'app',
+      turn: 2,
+      ms: 2600,
+      outcome: 'replied',
+      phases: { speech_end_to_final_ms: 900, llm_request_ms: 12, llm_first_token_ms: 1300, line_queued_ms: 1700 },
+    });
+    const neg = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied', line_queued_ms: -1 });
+    expect(neg).toEqual({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied' });
+  });
+
+  it('a sanitized sample with phases reaches capture flat', () => {
+    const capture = vi.fn();
+    const s = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', line_queued_ms: 1500 });
+    recordReplyLatency(s!, capture);
+    expect(capture).toHaveBeenCalledWith(REPLY_LATENCY_EVENT, expect.objectContaining({ ms: 2000, line_queued_ms: 1500 }));
   });
 });
 

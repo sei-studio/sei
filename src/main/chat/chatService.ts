@@ -1007,6 +1007,16 @@ async function sendChatMessageImpl(
       }
     }
 
+    // 261123 (O5 voice latency): the provider is built WHILE the prompt is.
+    // Neither reads what the other produces (the provider is config + the
+    // credential: the session read, an SDK client, on the ChatGPT plan the
+    // model catalog), and both used to run back to back before every LLM
+    // request. It is still awaited at the same point below, so its errors
+    // (LOCAL_NO_API_KEY, ...) surface exactly where they did; the guard only
+    // keeps it from being an unhandled rejection when the prompt build throws
+    // first. Measured with src/main/chat/voiceLatency.harness.test.ts.
+    const llmReady = buildLlmProvider();
+    llmReady.catch(() => {});
     // Build the prompt AFTER the user message is appended above, so the turn's
     // context includes it. Per-turn truth passed in:
     //   openWorldDetected — is an open-to-LAN world detected right now? Lets the
@@ -1040,7 +1050,7 @@ async function sendChatMessageImpl(
     // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
     const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
     appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
-    const llm = await buildLlmProvider();
+    const llm = await llmReady;
     if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
@@ -1078,6 +1088,14 @@ async function sendChatMessageImpl(
      * context at all and each sentence opened as a fresh utterance.
      */
     let prevSpoken: string | undefined;
+    /**
+     * 261123 (O5): wall-clock stamps for reply_latency's voice phases, sent
+     * once on the first streamed line (SpokenLineContext.replyTiming): the
+     * first LLM request, and the first reply text token of the turn (any hop).
+     */
+    let llmStartAt: number | undefined;
+    let firstTokenAt: number | undefined;
+    let replyTimingSent = false;
     /** `moreAfter`: text of this same reply is ALREADY known to follow. */
     const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
       // The silence-filler and peer-impersonation drops stay VOICE-scoped
@@ -1105,7 +1123,12 @@ async function sendChatMessageImpl(
         await appendTurnRow(args.characterId, msg);
         // Facepack pilot: the cue lands before the bubble it belongs to.
         if (facesEnabled()) emitReplyFaces(args.characterId, msg, parts[i].face);
-        deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
+        const speech: SpokenLineContext = { prev: prevSpoken, more: i < parts.length - 1 || moreAfter };
+        if (!replyTimingSent) {
+          replyTimingSent = true;
+          speech.replyTiming = { llmStartAt, firstTokenAt };
+        }
+        deps.emitReply?.(args.characterId, msg, speech);
         prevSpoken = b;
       }
     };
@@ -1164,6 +1187,7 @@ async function sendChatMessageImpl(
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
       const t0 = Date.now();
+      llmStartAt ??= t0;
       // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
       // stream, byte-identical to the old messages.stream path; non-Anthropic:
       // SSE deltas, or one whole-text call for non-streaming providers).
@@ -1179,6 +1203,7 @@ async function sendChatMessageImpl(
       // `prev` so its own opening still continues cleanly.
       const onTextDelta = isStreaming
         ? async (delta: string): Promise<void> => {
+            if (firstTokenAt === undefined && delta) firstTokenAt = Date.now();
             streamBuf += delta;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;

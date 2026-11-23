@@ -605,8 +605,11 @@ registerProcessor('sei-vad-capture', SeiVadCapture);
 `;
 
 export async function createDictation(opts: {
-  /** `span` (260925): wall-clock bounds of the utterance's audio, when known. */
-  onUtterance: (text: string, span?: { t0: number; t1: number }) => void;
+  /** `span` (260925): wall-clock bounds of the utterance's audio, when known.
+   * `speechEnd` (261123, reply_latency): wall-clock end of the last voiced
+   * frame, on an utterance closed by end-of-speech silence (absent on a
+   * barge's early delivery). Telemetry only. */
+  onUtterance: (text: string, span?: { t0: number; t1: number; speechEnd?: number }) => void;
   onStatus: (status: DictationStatus, detail?: string) => void;
   /** CONFIRMED barge-in: a word was transcribed from speech that opened during
    * hold. The owner should stop companion playback — which releases the hold —
@@ -1081,6 +1084,7 @@ export async function createDictation(opts: {
     env: EnvSample[],
     barge: BargeVerdict | null,
     echoCleared = false,
+    speechEnd?: number,
   ): void {
     const finish = (echo: boolean): void => {
       // A barge whose wait ran out (or whose duck a newer barge took over) is
@@ -1121,7 +1125,7 @@ export async function createDictation(opts: {
         console.log(`[sei/voice] barge: late transcript dropped, not a word — "${text.slice(0, 80)}"`);
         return;
       }
-      opts.onUtterance(text, { t0, t1 });
+      opts.onUtterance(text, { t0, t1, ...(speechEnd !== undefined ? { speechEnd } : {}) });
     };
     const check = opts.echoCheck;
     // echoCleared: the echo gate already judged this exact text and window
@@ -1158,9 +1162,12 @@ export async function createDictation(opts: {
     const t1 = Date.now();
     const t0 = t1 - speechMsOf(frames) - 150;
     const env = envWindow(t0, t1);
+    // The voice ended where the closing silence run began (reply_latency).
+    const speechEnd = t1 - silenceMs;
     const fallback = s ? null : committedWord;
     committedWord = null;
-    const deliver = (text: string): void => settleDelivery(orCommitted(text, fallback), t0, t1, env, barge);
+    const deliver = (text: string): void =>
+      settleDelivery(orCommitted(text, fallback), t0, t1, env, barge, false, speechEnd);
     inSpeech = false;
     silenceMs = 0;
     speechMs = 0;
@@ -1661,6 +1668,7 @@ export async function createDictation(opts: {
             const t1 = Date.now();
             const t0 = t1 - speechMsOf(utterance) - 150;
             const env = envWindow(t0, t1);
+            const speechEnd = t1 - silenceMs; // the unbroken silence run so far
             // Still provisional: this transcript is the best evidence there
             // is, so the echo-gated delivery decides the barge on it. Suspect
             // is taken over BEFORE resetUtterance so its abort doesn't un-duck
@@ -1669,7 +1677,7 @@ export async function createDictation(opts: {
             const fallback = suspect ? null : committedWord;
             suspect = null;
             resetUtterance();
-            settleDelivery(orCommitted(text, fallback), t0, t1, env, barge);
+            settleDelivery(orCommitted(text, fallback), t0, t1, env, barge, false, speechEnd);
           }
         });
         eager = e;

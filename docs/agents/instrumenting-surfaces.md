@@ -406,6 +406,19 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   silent. Sent via `sei.track('reply_latency', ...)`; main's analytics:track
   handler rebuilds it from closed enums (`sanitizeRendererReplyLatency`) and
   samples it. Typed mid-call messages are not timed on any surface.
+  Voice phases (261123, O5): the voice sample also carries where the wait
+  went, integer ms from the same dispatch, each absent when the turn never
+  got there: `speech_end_to_final_ms` (the player's last voiced mic frame to
+  the dispatch: end-of-speech silence + STT + echo gate, the wait BEFORE
+  `ms` starts; from the dictation span's `speechEnd`), `llm_request_ms` and
+  `llm_first_token_ms` (main's wall-clock stamps, sent once on the first
+  streamed line as `SpokenLineContext.replyTiming`), `line_queued_ms` (first
+  line handed to TTS) and `tts_first_chunk_ms` (its first audio bytes in the
+  renderer; not on Kokoro). `ms - tts_first_chunk_ms` is decode and playback
+  start. In-game turns have no llm_* phases. A bad phase is dropped alone,
+  never the sample. The client's own share can be measured offline with
+  `SEI_LATENCY_HARNESS=1 npx vitest run src/main/chat/voiceLatency.harness.test.ts`
+  (real main pipeline, local proxy stand-in with fixed delays).
 - minecraft (bot, `brain/actionStats.js`, minecraft sessions only): a timed
   player line (`notePlayerChat`) to the say() or started world action that
   answers it (same events as the existing `reply_ms_total`, decision time,

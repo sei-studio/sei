@@ -61,11 +61,12 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import type { LanHost } from '../../shared/ipc';
+import type { LanHost, SpokenLineContext } from '../../shared/ipc';
 import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, sendVoiceGreetingTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead, appendMessage } from './chatStore';
 import { consumeGoodbye, _resetGoodbyeNotes } from '../sessionGoodbye';
+import { buildChatSdk } from './sdk';
 
 const CHAR = '55555555-5555-4555-8555-555555555555';
 let dir: string;
@@ -980,10 +981,28 @@ describe('streamed voice turn: spoken text keeps its punctuation and carries rep
     expect(emitted).toEqual([
       // The trailing period SURVIVES on a call (splitReply `spoken`): it is the
       // terminal intonation, not texting formality.
-      ['thanks for that.', { prev: undefined, more: true }],
+      // 261123: the reply's first line also carries the turn's LLM stamps.
+      ['thanks for that.', { prev: undefined, more: true, replyTiming: { llmStartAt: expect.any(Number), firstTokenAt: expect.any(Number) } }],
       ['i got the iron.', { prev: 'thanks for that.', more: false }],
       ['want me to smelt it?', { prev: 'i got the iron.', more: false }],
     ]);
+  });
+
+  // 261123 (O5): reply_latency's llm_* phases come from these stamps.
+  it('stamps the LLM request and first text token on the first line only', async () => {
+    setCallActive(CHAR, true);
+    streamSpy.mockReturnValue(fakeStream(['sure thing man. ', 'give me a sec. ']));
+    const emitReply = vi.fn();
+    const before = Date.now();
+
+    await sendChatMessage({ characterId: CHAR, text: 'can you help', voiceCall: true }, { ...deps(), emitReply });
+
+    const speeches = emitReply.mock.calls.map(([, , speech]) => speech as SpokenLineContext);
+    expect(speeches).toHaveLength(2);
+    const timing = speeches[0].replyTiming!;
+    expect(timing.llmStartAt).toBeGreaterThanOrEqual(before);
+    expect(timing.firstTokenAt).toBeGreaterThanOrEqual(timing.llmStartAt!);
+    expect(speeches[1]).not.toHaveProperty('replyTiming');
   });
 
   it('merges a short lead-in into the sentence it introduces, in one clip', async () => {
@@ -1250,5 +1269,22 @@ describe('in-game route carries the barge-in mark (261112)', () => {
     await sendChatMessage({ characterId: CHAR, text: 'stop', interrupted: { line: 'x' } }, d);
     expect(routeToBot).toHaveBeenNthCalledWith(1, CHAR, { from: 'Player', text: 'stop', voice: true });
     expect(routeToBot).toHaveBeenNthCalledWith(2, CHAR, { from: 'Player', text: 'stop', voice: false });
+  });
+});
+
+describe('provider build runs alongside the prompt build (261123)', () => {
+  it('a provider build failure still fails the turn with its own error, before any LLM call', async () => {
+    vi.mocked(buildChatSdk).mockRejectedValueOnce(new Error('LOCAL_NO_API_KEY'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      await expect(sendChatMessage({ characterId: CHAR, text: 'hey' }, deps())).rejects.toThrow('LOCAL_NO_API_KEY');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(createSpy).not.toHaveBeenCalled();
+      expect(streamSpy).not.toHaveBeenCalled();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });

@@ -1044,6 +1044,14 @@ export interface SpokenLineContext {
    * to TTS.
    */
   ambientCapturedAt?: number;
+  /**
+   * 261123 (O5 voice latency): main's wall-clock (Date.now) stamps for the
+   * send that produced this line, set on the FIRST streamed line of a voice
+   * reply only: when the LLM request went out and when its first reply text
+   * token arrived. The renderer's reply clock turns them into the
+   * reply_latency phases (lib/voice/replyClock.ts). Never sent to TTS.
+   */
+  replyTiming?: { llmStartAt?: number; firstTokenAt?: number };
 }
 
 /**

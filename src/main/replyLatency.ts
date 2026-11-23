@@ -15,6 +15,14 @@
  *   - `turn_index_bucket`  first | 2-5 | 6+ (turn number within the session)
  *   - `sample_rate` 1 or 10: how many turns this event stands for
  *   - `via`      minecraft only: say | action (what answered the line)
+ *   - voice only (261123, O5), integer ms from the dispatched utterance, each
+ *     absent when the turn never got there (see lib/voice/replyClock.ts):
+ *     `speech_end_to_final_ms` (player's last voiced frame -> dispatch, i.e.
+ *     end-of-speech wait + STT + echo gate; BEFORE `ms` starts),
+ *     `llm_request_ms` (LLM request sent), `llm_first_token_ms` (first reply
+ *     text token), `line_queued_ms` (first line handed to TTS),
+ *     `tts_first_chunk_ms` (its first audio bytes in the renderer). `ms`
+ *     minus tts_first_chunk_ms is decode and playback start.
  * `backend` / `ai_provider` / `model_family` ride on every event already
  * (commonProps). No text, no character id.
  *
@@ -68,6 +76,17 @@ export const FULL_SAMPLE_TURNS = 5;
 /** After that, one turn in this many. */
 export const LATE_SAMPLE_EVERY = 10;
 
+/** Voice-turn phase offsets (261123), ms from the dispatched utterance. */
+export const VOICE_PHASE_KEYS = [
+  'speech_end_to_final_ms',
+  'llm_request_ms',
+  'llm_first_token_ms',
+  'line_queued_ms',
+  'tts_first_chunk_ms',
+] as const;
+export type VoicePhaseKey = (typeof VOICE_PHASE_KEYS)[number];
+export type VoicePhases = Partial<Record<VoicePhaseKey, number>>;
+
 export interface ReplyLatencySample {
   surface: ReplySurface;
   path: ReplyPath;
@@ -76,6 +95,12 @@ export interface ReplyLatencySample {
   ms: number;
   outcome: ReplyOutcome;
   via?: ReplyVia;
+  /** Voice only: where the turn's time went (see VOICE_PHASE_KEYS). */
+  phases?: VoicePhases;
+}
+
+function clampMs(v: number): number {
+  return Math.min(REPLY_MS_MAX, Math.max(0, Math.round(Number.isFinite(v) ? v : 0)));
 }
 
 export function turnIndexBucket(turn: number): TurnIndexBucket {
@@ -95,16 +120,22 @@ export function sampleRate(turn: number): 0 | 1 | 10 {
 export function replyLatencyProps(s: ReplyLatencySample): Record<string, string | number> | null {
   const rate = sampleRate(s.turn);
   if (rate === 0) return null;
-  const ms = Math.min(REPLY_MS_MAX, Math.max(0, Math.round(Number.isFinite(s.ms) ? s.ms : 0)));
-  return {
+  const props: Record<string, string | number> = {
     surface: s.surface,
     path: s.path,
-    ms,
+    ms: clampMs(s.ms),
     outcome: s.outcome,
     turn_index_bucket: turnIndexBucket(s.turn),
     sample_rate: rate,
     ...(s.surface === 'minecraft' && s.via ? { via: s.via } : {}),
   };
+  if (s.surface === 'voice' && s.phases) {
+    for (const k of VOICE_PHASE_KEYS) {
+      const v = s.phases[k];
+      if (typeof v === 'number' && Number.isFinite(v) && v >= 0) props[k] = clampMs(v);
+    }
+  }
+  return props;
 }
 
 type CaptureFn = (event: string, props: Record<string, unknown>) => void;
@@ -137,17 +168,39 @@ const MsSchema = z.number().finite().min(0);
  * the voice surface is measured there, so anything else is dropped; the props
  * are rebuilt from closed enums so nothing free-form can ride along.
  */
+/** A bad phase drops only that phase, never the sample it rides on. */
+const PhaseSchema = z.number().finite().min(0).optional().catch(undefined);
+
 const RendererSampleSchema = z.object({
   surface: z.literal('voice'),
   path: z.enum(REPLY_PATHS),
   turn: TurnSchema,
   ms: MsSchema,
   outcome: z.enum(REPLY_OUTCOMES),
+  speech_end_to_final_ms: PhaseSchema,
+  llm_request_ms: PhaseSchema,
+  llm_first_token_ms: PhaseSchema,
+  line_queued_ms: PhaseSchema,
+  tts_first_chunk_ms: PhaseSchema,
 });
 
 export function sanitizeRendererReplyLatency(raw: unknown): ReplyLatencySample | null {
   const r = RendererSampleSchema.safeParse(raw);
-  return r.success ? { ...r.data } : null;
+  if (!r.success) return null;
+  const d = r.data;
+  const phases: VoicePhases = {};
+  for (const k of VOICE_PHASE_KEYS) {
+    const v = d[k];
+    if (v !== undefined) phases[k] = v;
+  }
+  return {
+    surface: d.surface,
+    path: d.path,
+    turn: d.turn,
+    ms: d.ms,
+    outcome: d.outcome,
+    ...(Object.keys(phases).length ? { phases } : {}),
+  };
 }
 
 /** The bot's {type:'reply-latency'} port message (a separate process: re-validated). */
