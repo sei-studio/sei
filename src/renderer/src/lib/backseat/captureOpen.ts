@@ -1,6 +1,6 @@
 /**
- * Opening the shared stream, with one retry and a whole-screen fallback
- * (261123). Pure orchestration over injected openers so it runs in vitest.
+ * Opening the shared stream, with one relaxed retry (261123). Pure
+ * orchestration over an injected opener so it runs in vitest.
  *
  * Why: `capture_failed:busy` (a NotReadableError from getUserMedia, "Could not
  * start video source") hit 18 Windows users in 30 days, 92 failed starts. The
@@ -18,17 +18,19 @@
  *   1. the normal request (720p cap, CAPTURE_FPS cap);
  *   2. the same source with RELAXED constraints: no max size or rate in the
  *      request, so the capturer starts in whatever shape it can, and the size
- *      and rate are capped afterwards on the track where that is allowed;
- *   3. for a window only: the whole screen, relaxed. A minimized game is
- *      captured as soon as the player switches back to it, and the call
- *      window says "Sharing <screen>" so the wider share is visible.
+ *      and rate are capped afterwards on the track where that is allowed.
+ * If that fails too, the player gets one hint line (un-minimize the game, or
+ * share the whole screen) and decides. There is deliberately NO automatic
+ * whole-screen fallback: the player chose one window, and widening the share
+ * on their behalf would send everything else on the screen (other apps,
+ * notifications, DMs) to the vision model (product call 261123).
  */
 
 import { captureErrorClass, type CaptureErrorClass } from '../../../../shared/callEndReasons';
 
 export type CaptureSourceKind = 'window' | 'screen';
-/** How the start went: no retry needed, recovered by one of the two steps, or not. */
-export type CaptureRetryOutcome = 'none' | 'relaxed_ok' | 'screen_ok' | 'failed';
+/** How the start went: no retry needed, recovered by the relaxed retry, or not. */
+export type CaptureRetryOutcome = 'none' | 'relaxed_ok' | 'failed';
 
 export interface CaptureSourceRef {
   id: string;
@@ -78,28 +80,26 @@ export class CaptureStartError extends Error {
 
 export interface OpenedCapture<T> {
   value: T;
-  /** The source actually captured (the screen, after a fallback). */
-  source: CaptureSourceRef;
   retry: CaptureRetryOutcome;
   /** Set when a retry happened: the class of the first failure. */
   firstClass?: CaptureErrorClass;
 }
 
 /**
- * Open `source`, retrying once relaxed and then (window only) falling back to
- * a screen. `onRetry` fires once, at the first busy failure, so the caller can
- * start looking at the window (is it minimized?) in parallel.
+ * Open `source`, retrying a busy refusal once with relaxed constraints. Only
+ * ever the source the player picked. `onRetry` fires once, at the first busy
+ * failure, so the caller can start looking at the window (is it minimized?)
+ * in parallel.
  */
 export async function openWithRetry<T>(
   source: CaptureSourceRef,
   open: (sourceId: string, relaxed: boolean) => Promise<T>,
-  findScreen: () => Promise<CaptureSourceRef | null>,
   onRetry?: (firstClass: CaptureErrorClass) => void,
 ): Promise<OpenedCapture<T>> {
   const kind = captureSourceKind(source.id);
   let firstErr: unknown;
   try {
-    return { value: await open(source.id, false), source, retry: 'none' };
+    return { value: await open(source.id, false), retry: 'none' };
   } catch (err) {
     firstErr = err;
   }
@@ -107,26 +107,9 @@ export async function openWithRetry<T>(
   if (firstClass !== 'busy') throw new CaptureStartError(firstErr, kind, firstClass, 'none');
   onRetry?.(firstClass);
 
-  let lastErr: unknown = firstErr;
   try {
-    return { value: await open(source.id, true), source, retry: 'relaxed_ok', firstClass };
+    return { value: await open(source.id, true), retry: 'relaxed_ok', firstClass };
   } catch (err) {
-    lastErr = err;
+    throw new CaptureStartError(err, kind, firstClass, 'failed');
   }
-  if (kind === 'window' && captureErrorClass(lastErr) === 'busy') {
-    const screen = await findScreen().catch(() => null);
-    if (screen) {
-      try {
-        return { value: await open(screen.id, true), source: screen, retry: 'screen_ok', firstClass };
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-  }
-  throw new CaptureStartError(lastErr, kind, firstClass, 'failed');
-}
-
-/** The first whole-screen source in a list (the primary display comes first). */
-export function pickScreenSource<S extends CaptureSourceRef>(list: S[]): S | null {
-  return list.find((s) => s.id.startsWith('screen:')) ?? null;
 }

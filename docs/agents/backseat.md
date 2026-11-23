@@ -659,9 +659,13 @@ The design and its measurements are committed at
     itself when the player alt-tabbed to Sei to press Share. `captureOpen.ts`
     (pure + tested) now retries a busy start once with RELAXED constraints
     (no max size or rate in the request, the cap re-applied on the track),
-    then for a window falls back to the first whole screen; the call window
-    then says "Sharing <screen>". The player sees one hint line instead of
-    the browser's English (`captureFailureCopy`). Analytics:
+    on the same source only. If that fails the player sees one hint line
+    instead of the browser's English (`captureFailureCopy`: un-minimize the
+    game, or share the whole screen) and decides. Never widen a window share
+    to the screen automatically: the player picked one window, and the screen
+    would send other apps, notifications and DMs to the vision model (product
+    call 261123). Analytics (`outcome` / `capture_retry`: none, relaxed_ok,
+    failed):
     `backseat_capture_retried {source_kind, first_class, minimized, outcome}`
     on every retry, and a final failure's `backseat_ended` carries
     `capture_source_kind / capture_first_class / capture_retry /

@@ -137,18 +137,11 @@ export function pickReacquireSource(
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** The source a live capture is actually reading (the screen after a
- *  window fallback), in the shape recovery looks for. */
-function capturedSource(picked: BackseatSource, handle: CaptureHandle | null): BackseatSource {
-  const got = handle?.source;
-  if (!got || got.id === picked.id) return picked;
-  return { ...picked, id: got.id, name: got.name, kind: got.id.startsWith('screen:') ? 'screen' : 'window' };
-}
-
 /**
  * What the player reads when capture would not start. Never the browser's
- * own English text. A busy refusal (261123) has already been retried, and for
- * a window the whole screen was tried too, so the line says what to change.
+ * own English text. A busy refusal (261123) has already been retried once,
+ * so the line says what the player can change. Sharing the whole screen
+ * instead is their call, never made for them (captureOpen.ts).
  */
 export function captureFailureCopy(err: unknown, cls: CaptureErrorClass, sourceId: string): string {
   if (cls === 'busy') {
@@ -351,9 +344,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
   ): Promise<CaptureHandle> => {
     let mine: CaptureHandle | null = null;
     const started = await startCapture(characterId, source.id, source.name, {
-      // The source actually captured: after a window refused capture that is
-      // the whole screen (captureOpen.ts), and recovery looks for that.
-      onEnded: () => onCaptureEnded(characterId, () => mine, capturedSource(source, mine)),
+      onEnded: () => onCaptureEnded(characterId, () => mine, source),
       ...(skipOpening ? { skipOpening: true } : {}),
     });
     mine = started;
@@ -413,7 +404,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
             return;
           }
           capture = started;
-          set({ stream: started.stream, sourceName: started.source?.name ?? pick.source.name });
+          set({ stream: started.stream, sourceName: pick.source.name });
           console.log(`[backseat] capture recovered (${pick.match}) after ${Date.now() - lostAt}ms`);
           sei.track('backseat_capture_recovered', {
             character_id: characterId,
@@ -530,7 +521,7 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       set({
         sharingFor: characterId,
         stream: capture.stream,
-        sourceName: capture.source?.name ?? source.name,
+        sourceName: source.name,
         starting: false,
         error: null,
         active: { ...get().active, [characterId]: true },

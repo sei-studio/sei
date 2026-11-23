@@ -3,7 +3,6 @@ import {
   CaptureStartError,
   desktopVideoConstraints,
   openWithRetry,
-  pickScreenSource,
 } from './captureOpen';
 import { captureErrorClass } from '../../../../shared/callEndReasons';
 
@@ -33,8 +32,8 @@ describe('desktopVideoConstraints', () => {
 describe('openWithRetry', () => {
   it('a clean start does not retry', async () => {
     const open = vi.fn().mockResolvedValue('stream');
-    const r = await openWithRetry(WIN, open, async () => SCREEN);
-    expect(r).toEqual({ value: 'stream', source: WIN, retry: 'none' });
+    const r = await openWithRetry(WIN, open);
+    expect(r).toEqual({ value: 'stream', retry: 'none' });
     expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith(WIN.id, false);
   });
@@ -42,8 +41,8 @@ describe('openWithRetry', () => {
   it('a busy window recovers on the relaxed retry', async () => {
     const open = vi.fn().mockRejectedValueOnce(busy()).mockResolvedValue('stream');
     const onRetry = vi.fn();
-    const r = await openWithRetry(WIN, open, async () => SCREEN, onRetry);
-    expect(r).toMatchObject({ source: WIN, retry: 'relaxed_ok', firstClass: 'busy' });
+    const r = await openWithRetry(WIN, open, onRetry);
+    expect(r).toMatchObject({ value: 'stream', retry: 'relaxed_ok', firstClass: 'busy' });
     expect(open.mock.calls).toEqual([
       [WIN.id, false],
       [WIN.id, true],
@@ -51,52 +50,40 @@ describe('openWithRetry', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('a window still busy falls back to the whole screen', async () => {
+  it('a window still busy fails and is NEVER widened to the whole screen (261123)', async () => {
     const open = vi.fn().mockRejectedValueOnce(busy()).mockRejectedValueOnce(busy()).mockResolvedValue('stream');
-    const r = await openWithRetry(WIN, open, async () => SCREEN);
-    expect(r).toMatchObject({ value: 'stream', source: SCREEN, retry: 'screen_ok' });
-    expect(open.mock.calls[2]).toEqual([SCREEN.id, true]);
-  });
-
-  it('a busy SCREEN is retried once and never "falls back" to another screen', async () => {
-    const open = vi.fn().mockRejectedValue(busy());
-    const findScreen = vi.fn().mockResolvedValue(SCREEN);
-    const err = await openWithRetry(SCREEN, open, findScreen).catch((e: unknown) => e);
+    const err = await openWithRetry(WIN, open).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CaptureStartError);
-    expect(err).toMatchObject({ sourceKind: 'screen', firstClass: 'busy', retry: 'failed' });
-    expect(open).toHaveBeenCalledTimes(2);
-    expect(findScreen).not.toHaveBeenCalled();
-  });
-
-  it('when everything fails the error keeps the DOMException name', async () => {
-    const open = vi.fn().mockRejectedValue(busy());
-    const err = await openWithRetry(WIN, open, async () => SCREEN).catch((e: unknown) => e);
-    expect(err).toMatchObject({ sourceKind: 'window', retry: 'failed', name: 'NotReadableError' });
+    expect(err).toMatchObject({ sourceKind: 'window', firstClass: 'busy', retry: 'failed', name: 'NotReadableError' });
     expect(captureErrorClass(err)).toBe('busy');
-    expect(open).toHaveBeenCalledTimes(3);
+    expect(open).toHaveBeenCalledTimes(2);
+    // Every attempt was the window the player picked.
+    for (const [id] of open.mock.calls) expect(id).toBe(WIN.id);
   });
 
-  it('no screen to fall back to: fails after the relaxed retry', async () => {
+  it('a busy screen is retried once on the same screen', async () => {
     const open = vi.fn().mockRejectedValue(busy());
-    const err = await openWithRetry(WIN, open, async () => null).catch((e: unknown) => e);
-    expect(err).toMatchObject({ retry: 'failed' });
-    expect(open).toHaveBeenCalledTimes(2);
+    const err = await openWithRetry(SCREEN, open).catch((e: unknown) => e);
+    expect(err).toMatchObject({ sourceKind: 'screen', firstClass: 'busy', retry: 'failed' });
+    expect(open.mock.calls).toEqual([
+      [SCREEN.id, false],
+      [SCREEN.id, true],
+    ]);
+  });
+
+  it('the relaxed retry failing differently keeps the first class', async () => {
+    const open = vi.fn().mockRejectedValueOnce(busy()).mockRejectedValueOnce(named('NotFoundError'));
+    const err = await openWithRetry(WIN, open).catch((e: unknown) => e);
+    expect(err).toMatchObject({ firstClass: 'busy', retry: 'failed', name: 'NotFoundError' });
   });
 
   it('a permission refusal is not retried', async () => {
     const open = vi.fn().mockRejectedValue(named('NotAllowedError'));
     const onRetry = vi.fn();
-    const err = await openWithRetry(WIN, open, async () => SCREEN, onRetry).catch((e: unknown) => e);
+    const err = await openWithRetry(WIN, open, onRetry).catch((e: unknown) => e);
     expect(err).toMatchObject({ firstClass: 'permission', retry: 'none' });
     expect(captureErrorClass(err)).toBe('permission');
     expect(open).toHaveBeenCalledTimes(1);
     expect(onRetry).not.toHaveBeenCalled();
-  });
-});
-
-describe('pickScreenSource', () => {
-  it('takes the first screen', () => {
-    expect(pickScreenSource([WIN, SCREEN, { id: 'screen:1:0', name: 'Screen 2' }])).toBe(SCREEN);
-    expect(pickScreenSource([WIN])).toBeNull();
   });
 });

@@ -544,16 +544,16 @@ describe('useBackseatStore capture recovery', () => {
     );
   });
 
-  it('a window that fell back to the whole screen is named as the screen', async () => {
+  it('a window that recovered on the relaxed retry keeps its own name (no wider share)', async () => {
     const { useBackseatStore } = await loadStore();
     startCaptureMock.mockResolvedValueOnce({
       stream: { id: 'stream' },
       noteSpoke: () => {},
-      source: { id: 'screen:0:0', name: 'Entire screen' },
-      retry: 'screen_ok',
+      retry: 'relaxed_ok',
     });
     await expect(useBackseatStore.getState().share('char-a', win('window:1:0', 'Roblox'))).resolves.toBe(true);
-    expect(useBackseatStore.getState().sourceName).toBe('Entire screen');
+    expect(useBackseatStore.getState().sourceName).toBe('Roblox');
+    expect(startCaptureMock).toHaveBeenCalledWith('char-a', 'window:1:0', 'Roblox', expect.anything());
   });
 
   it('the cross-launch gate ends a share as game_launch', async () => {

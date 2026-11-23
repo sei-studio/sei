@@ -157,14 +157,14 @@ export function captureErrorClass(err: unknown): CaptureErrorClass {
 export interface CaptureFailDetail {
   source_kind: 'window' | 'screen';
   first_class: CaptureErrorClass;
-  retry: 'none' | 'relaxed_ok' | 'screen_ok' | 'failed';
+  retry: 'none' | 'relaxed_ok' | 'failed';
   minimized: 'yes' | 'no' | 'unknown';
 }
 
 const FAIL_DETAIL_VALUES: Record<keyof CaptureFailDetail, ReadonlySet<string>> = {
   source_kind: new Set(['window', 'screen']),
   first_class: CAPTURE_CLASSES,
-  retry: new Set(['none', 'relaxed_ok', 'screen_ok', 'failed']),
+  retry: new Set(['none', 'relaxed_ok', 'failed']),
   minimized: new Set(['yes', 'no', 'unknown']),
 };
 

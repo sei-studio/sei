@@ -53,9 +53,7 @@ import {
   CaptureStartError,
   desktopVideoConstraints,
   openWithRetry,
-  pickScreenSource,
   type CaptureRetryOutcome,
-  type CaptureSourceRef,
   type OpenedCapture,
 } from './captureOpen';
 import type { CaptureFailDetail } from '../../../../shared/callEndReasons';
@@ -110,9 +108,6 @@ export interface CaptureHandle {
    * coexist. The preview is a consumer, never the source of anything.
    */
   stream: MediaStream;
-  /** 261123: the source actually captured. After a window refused capture
-   *  this is the whole screen (captureOpen.ts), and the call window names it. */
-  source: CaptureSourceRef;
   /** How the start went (captureOpen.ts). */
   retry: CaptureRetryOutcome;
   stop: () => void;
@@ -499,7 +494,7 @@ export async function startCapture(
     /* English, no clips: the right defaults */
   }
   const fps = streamFps(clipThat, clipFps);
-  // 261123: one relaxed retry, then (window only) the whole screen. See
+  // 261123: one relaxed retry of the same source, never a wider one. See
   // captureOpen.ts for the busy telemetry this answers.
   // A holder, not a `let`: it is set inside a callback, which TS's flow
   // narrowing cannot see.
@@ -509,7 +504,6 @@ export async function startCapture(
     opened = await openWithRetry(
       { id: requestedId, name: requestedName },
       (id, relaxed) => openStream(id, relaxed, fps),
-      async () => pickScreenSource(await sei.backseatSources({ thumbnails: false })),
       () => {
         probe.minimized = probeMinimized(requestedId);
       },
@@ -535,8 +529,8 @@ export async function startCapture(
     throw err;
   }
   const { stream, audioSource } = opened.value;
-  const sourceId = opened.source.id;
-  const sourceName = opened.source.name;
+  const sourceId = requestedId;
+  const sourceName = requestedName;
   if (opened.retry !== 'none') {
     const retry = opened.retry;
     const firstClass = opened.firstClass;
@@ -1093,7 +1087,6 @@ export async function startCapture(
 
   const handle: CaptureHandle = {
     stream,
-    source: opened.source,
     retry: opened.retry,
     sceneChangeSince,
     stop: () => {
