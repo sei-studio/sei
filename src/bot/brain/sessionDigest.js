@@ -7,6 +7,9 @@
 // (src/main/playerEndNextStep.ts), and it needs a compact view of what was
 // said. This module keeps that view: the last MAX_LINES lines of the
 // conversation (both sides, truncated), plus how many lines each side spoke.
+// 261113 (v0.7 D1): the same call now also writes the session's recap into
+// the app's shared story, so the window grew from 16 lines to 40: 16 held
+// little more than the goodbye at the end of a session.
 // The bot posts it up the port as {type:'session-digest'} next to the
 // action-stats snapshot (on a timer while it changes, and right before any
 // terminal lifecycle).
@@ -17,7 +20,7 @@
 // Process-level singleton (`sessionDigest`): the runtime may rebuild the brain
 // (and its convoMemory) per connection, but the session is the process.
 
-export const DIGEST_MAX_LINES = 16
+export const DIGEST_MAX_LINES = 40
 export const DIGEST_LINE_CHARS = 200
 
 export function createSessionDigest() {

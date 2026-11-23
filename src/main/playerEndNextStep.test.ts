@@ -4,6 +4,7 @@ import {
   DEDUPE_WINDOW_MS,
   PLAYER_END_MAX_TOKENS,
   PLAYER_END_MIN_MS,
+  PLAYER_END_RECAP_MAX_TOKENS,
   _resetPlayerEndNextStep,
   buildPlayerEndPrompt,
   isFreeCloudPlan,
@@ -14,11 +15,16 @@ import {
   parseNextStepReply,
   parseGameAnswer,
   parsePlayerEndReply,
+  parseSessionEndReply,
+  recapMemoryLine,
+  RECAP_MEMORY_MAX_CHARS,
   reportGoodbyePlanSaved,
   reportNextStepNotRun,
   resolvePlanPlace,
   runPlayerEndNextStep,
+  runSessionEnd,
   startPlayerEndNextStep,
+  startSessionEnd,
   takeSessionDigest,
   worthChecking,
   yieldToNewSession,
@@ -525,7 +531,9 @@ describe('prompt', () => {
       goals: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
       memories,
     });
-    expect(user.length).toBeLessThan(6_000);
+    // 261113: 40 digest lines (was 16) so the recap sees the whole session;
+    // worst case is 40 x 200 chars of lines plus 8 x 200 of memories.
+    expect(user.length).toBeLessThan(11_000);
     expect(user).not.toContain('- a\n');
     expect(user).toContain('about 10 minutes');
   });
@@ -776,5 +784,162 @@ describe('session ends that run no check (261107)', () => {
     };
     expect(() => reportNextStepNotRun({ characterId: 'c', surface: 'chat', outcome: 'not_covered' }, boom)).not.toThrow();
     expect(() => reportGoodbyePlanSaved({ characterId: 'c', surface: 'call' }, boom)).not.toThrow();
+  });
+});
+
+// 261113 (v0.7 consistency D1): the game session's recap from the same call.
+describe('session-end recap', () => {
+  it('parses the recap line ahead of the plan lines', () => {
+    const r = parseSessionEndReply(
+      'recap: we tamed a wolf named Turnip and a creeper blew a hole in the cabin roof\nnote: rebuild the cabin roof in dark oak\nplayer: Rebuild the roof in dark oak\ngame: Minecraft',
+    );
+    expect(r.recap).toBe('we tamed a wolf named Turnip and a creeper blew a hole in the cabin roof');
+    expect(r.plan).toEqual({ step: 'rebuild the cabin roof in dark oak', line: 'Rebuild the roof in dark oak', game: 'minecraft' });
+  });
+
+  it('keeps the recap with no plan, and never reads a recap as the plan note', () => {
+    expect(parseSessionEndReply('recap: we mined iron and talked about her exams\nnone')).toEqual({
+      recap: 'we mined iron and talked about her exams',
+      plan: null,
+      facts: [],
+    });
+    // A recap wrapped over two lines stays one recap; the bare none is the plan answer.
+    expect(parseSessionEndReply('Recap: we built a bridge\nover the river together.\n\nnone')).toEqual({
+      recap: 'we built a bridge over the river together.',
+      plan: null,
+      facts: [],
+    });
+  });
+
+  it('splits a recap and a note written on one line, and handles markdown', () => {
+    const r = parseSessionEndReply('**recap:** we fished all evening note: catch a salmon');
+    expect(r.recap).toBe('we fished all evening');
+    expect(r.plan?.step).toBe('catch a salmon');
+  });
+
+  it('without a recap label, the whole reply is the plan as before', () => {
+    expect(parseSessionEndReply('finish the cabin roof')).toEqual({ recap: null, plan: parsePlayerEndReply('finish the cabin roof'), facts: [] });
+    expect(parseSessionEndReply('recap: none\nnone')).toEqual({ recap: null, plan: null, facts: [] });
+  });
+
+  it('asks for the recap only when the input wants one', () => {
+    const plain = buildPlayerEndPrompt({ name: 'Sui', activity: 'a voice call', durationMs: 600_000, lines: [], goals: [], memories: [] });
+    const withRecap = buildPlayerEndPrompt({ name: 'Sui', activity: 'playing Minecraft', durationMs: 600_000, lines: [], goals: [], memories: [], recap: true });
+    expect(plain.system).not.toContain('recap:');
+    expect(withRecap.system).toContain('recap:');
+    expect(withRecap.system.startsWith(plain.system)).toBe(true);
+    expect(withRecap.system).not.toContain('—');
+    expect(withRecap.user).toContain('recap: line first');
+  });
+
+  it('runSessionEnd returns the recap with the plan, and with none', async () => {
+    const llm = provider('recap: we finished the walls and named the cat Mochi\nnote: put the roof on\nplayer: Put the roof on\ngame: Minecraft');
+    const { d, saved } = deps({}, llm);
+    const r = await runSessionEnd(input({ recap: true }), d);
+    expect(r).toEqual({ outcome: 'saved', recap: 'we finished the walls and named the cat Mochi', facts: null });
+    expect(saved[0][1]).toContain('put the roof on');
+    expect(llm.calls[0].maxTokens).toBe(PLAYER_END_RECAP_MAX_TOKENS);
+    expect(String(llm.calls[0].system)).toContain('recap:');
+
+    const none = await runSessionEnd(input({ recap: true }), deps({}, provider('recap: we just chatted by the river\nnone')).d);
+    expect(none).toEqual({ outcome: 'none', recap: 'we just chatted by the river', facts: null });
+  });
+
+  it('runSessionEnd has no recap when the call is skipped or fails, and a plain check is unchanged', async () => {
+    expect(await runSessionEnd(input({ recap: true, durationMs: 30_000 }), deps().d)).toEqual({ outcome: 'trivial', recap: null, facts: null });
+    const failing = provider(async () => {
+      throw new Error('boom');
+    });
+    expect(await runSessionEnd(input({ recap: true }), deps({}, failing).d)).toEqual({ outcome: 'error', recap: null, facts: null });
+    const llm = provider('finish the cabin roof');
+    expect(await runPlayerEndNextStep(input(), deps({}, llm).d)).toBe('saved');
+    expect(llm.calls[0].maxTokens).toBe(PLAYER_END_MAX_TOKENS);
+    expect(String(llm.calls[0].system)).not.toContain('recap:');
+  });
+
+  it('startSessionEnd resolves the recap, and busy when one is running', async () => {
+    const { d } = deps({}, provider('recap: we explored a cave\nnone'));
+    const [a, b] = await Promise.all([startSessionEnd(input({ recap: true }), d), startSessionEnd(input({ recap: true }), d)]);
+    expect(a).toEqual({ outcome: 'none', recap: 'we explored a cave', facts: null });
+    expect(b).toEqual({ outcome: 'busy', recap: null });
+  });
+});
+
+// 261113 (v0.7 consistency D2): the session end also saves durable facts.
+describe('session-end facts', () => {
+  it('reads remember: lines anywhere, out of the recap and the plan, at most three', () => {
+    const r = parseSessionEndReply(
+      'recap: we built the farm fence\nremember: Alex now studies computer science, not architecture\n**Remember:** "Alex has a dog named Pepper"\nremember: none\nnote: finish the fence posts\nplayer: Finish the fence posts\ngame: Minecraft',
+    );
+    expect(r.recap).toBe('we built the farm fence');
+    expect(r.facts).toEqual(['Alex now studies computer science, not architecture', 'Alex has a dog named Pepper']);
+    expect(r.plan?.step).toBe('finish the fence posts');
+    expect(
+      parseSessionEndReply('recap: a\nremember: first fact here\nremember: second fact here\nremember: third fact here\nremember: fourth fact here\nnone').facts,
+    ).toEqual(['first fact here', 'second fact here', 'third fact here']);
+  });
+
+  it('drops nothing-lines (261123 review): "remember: nothing new" saves nothing', () => {
+    const r = parseSessionEndReply(
+      'recap: we fished\nremember: nothing new\nremember: (none)\nremember: Nothing worth saving.\nremember: ok\nremember: Alex has a dog named Pepper\nnone',
+    );
+    expect(r.recap).toBe('we fished');
+    expect(r.facts).toEqual(['Alex has a dog named Pepper']);
+  });
+
+  // 261123 (game events): the recap survives the fold as a memory line.
+  it('recapMemoryLine names the game when the recap does not, and cuts a long recap at a sentence or word', () => {
+    expect(recapMemoryLine('we fished all evening', 'minecraft')).toBe('Minecraft session recap: we fished all evening');
+    expect(recapMemoryLine('Alex and I played Minecraft: a creeper took the roof', 'minecraft')).toBe('Alex and I played Minecraft: a creeper took the roof');
+    expect(recapMemoryLine('we fished', undefined)).toBe('we fished');
+    const long = `${'We built a long wall by the river. '.repeat(12)}Then a creeper took the roof and we`;
+    const line = recapMemoryLine(long, 'minecraft');
+    expect(line.length).toBeLessThanOrEqual(RECAP_MEMORY_MAX_CHARS + 'Minecraft session recap: '.length);
+    expect(line).toMatch(/river\.$/);
+    const words = recapMemoryLine('word '.repeat(200), 'minecraft');
+    expect(words).toMatch(/word\.\.\.$/);
+  });
+
+  it('no recap, or a duplicate recap, is reported as not saved', async () => {
+    const none = deps({ saveFacts: async (_id, f) => ({ returned: f.length, saved: 0, dupes: f.length }) }, provider('recap: none\nnone'));
+    expect((await runSessionEnd(input({ recap: true }), none.d)).recapSaved).toBeUndefined();
+    const dup = deps({ saveFacts: async (_id, f) => ({ returned: f.length, saved: 0, dupes: f.length }) }, provider('recap: we fished\nnone'));
+    expect((await runSessionEnd(input({ recap: true }), dup.d)).recapSaved).toBe(false);
+  });
+
+  it('asks for them with the recap and shows more memories', () => {
+    const memories = Array.from({ length: 40 }, (_, i) => `memory ${i}`);
+    const plain = buildPlayerEndPrompt({ name: 'Sui', activity: 'a voice call', durationMs: 600_000, lines: [], goals: [], memories });
+    const recap = buildPlayerEndPrompt({ name: 'Sui', activity: 'playing Minecraft', durationMs: 600_000, lines: [], goals: [], memories, recap: true });
+    expect(plain.system).not.toContain('remember:');
+    expect(recap.system).toContain('remember:');
+    expect(plain.user).not.toContain('memory 31');
+    expect(recap.user).toContain('memory 10');
+    expect(recap.user).not.toContain('memory 9\n');
+  });
+
+  it('runSessionEnd saves them through saveFacts, filed with the session', async () => {
+    const calls: Array<[string, string[], unknown]> = [];
+    const { d } = deps(
+      {
+        saveFacts: async (id, facts, opts) => {
+          calls.push([id, facts, opts]);
+          return { returned: facts.length, saved: 1, dupes: facts.length - 1 };
+        },
+      },
+      provider('recap: we fished\nremember: Alex likes trout\nremember: Alex has a cat named Mochi\nnone'),
+    );
+    const r = await runSessionEnd(input({ recap: true }), d);
+    // 261123: the recap is saved first, as its own memory line (the mock saves 1 of each call).
+    expect(r).toEqual({ outcome: 'none', recap: 'we fished', facts: { returned: 2, saved: 1, dupes: 1 }, recapSaved: true });
+    expect(calls).toEqual([
+      ['char-1', ['Minecraft session recap: we fished'], { inGame: true }],
+      ['char-1', ['Alex likes trout', 'Alex has a cat named Mochi'], { inGame: true }],
+    ]);
+    // Without the recap the reply is never read for facts.
+    let factCalls = 0;
+    const plain = deps({ saveFacts: async () => ({ returned: ++factCalls, saved: 0, dupes: 0 }) }, provider('remember: x\nnone'));
+    await runPlayerEndNextStep(input(), plain.d);
+    expect(factCalls).toBe(0);
   });
 });

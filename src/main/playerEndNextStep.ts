@@ -49,11 +49,13 @@
  * keeps `next_step_hook` and gains `next_step_source: 'companion'` on the
  * `_ended` event itself (sessionGoodbye.ts).
  */
+import type { FactSave } from './chat/memoryFacts';
+import { isNothingFact } from './chat/foldPrompt';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { LlmProvider } from './llm/types';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine } from '../bot/brain/nextStep.js';
-import { PLAYER_END_NEXT_STEP_SYSTEM } from '../bot/brain/promptLibrary.js';
+import { PLAYER_END_NEXT_STEP_SYSTEM, PLAYER_END_RECAP_ADDENDUM } from '../bot/brain/promptLibrary.js';
 import { gameDisplayName, gameIdFromName, nameInSentence } from '../shared/homeNextStep';
 import { GAME_IDS, isGameId, type GameId } from '../shared/gameIpc';
 
@@ -79,13 +81,29 @@ export const PLAYER_END_MIN_MS = 2 * 60_000;
 export const PLAYER_END_TIMEOUT_MS = 15_000;
 /** The plan is a few words; this caps a runaway reply. */
 export const PLAYER_END_MAX_TOKENS = 150;
+/**
+ * 261113 (v0.7 D1): a game session's check also writes the session's recap
+ * (50 words or less, about 80 tokens) ahead of the plan lines.
+ */
+export const PLAYER_END_RECAP_MAX_TOKENS = 400;
 /** A second end for the same character inside this window is skipped. */
 export const DEDUPE_WINDOW_MS = 60_000;
 
-const MAX_LINES = 16;
+/**
+ * Digest lines the check reads (and keeps from the bot's report). 261113:
+ * 16 -> 40 with the bot's DIGEST_MAX_LINES, so a recap covers more than the
+ * goodbye at the end of a session.
+ */
+const MAX_LINES = 40;
 const LINE_CHARS = 200;
 const MAX_GOALS = 5;
 const MAX_MEMORIES = 8;
+/**
+ * 261113 (v0.7 D2): memories the recap call is shown. It also writes the
+ * session's new facts, and leaving out what memory already has needs more
+ * than the last few entries (about 1.5k tokens, once per session end).
+ */
+const RECAP_MAX_MEMORIES = 30;
 const MEMORY_CHARS = 200;
 
 /** Game end reasons that mean the player ended it. */
@@ -185,8 +203,8 @@ export function memoryEntries(body: string): MemoryEntry[] {
 }
 
 /** The memories block: entries grouped under the place they are from, in order. */
-function renderMemories(memories: Array<string | MemoryEntry>): string {
-  const items = memories.slice(-MAX_MEMORIES).map((m) => (typeof m === 'string' ? { text: m, place: null } : m));
+function renderMemories(memories: Array<string | MemoryEntry>, max = MAX_MEMORIES): string {
+  const items = memories.slice(-max).map((m) => (typeof m === 'string' ? { text: m, place: null } : m));
   if (!items.length) return '';
   const hasPlaces = items.some((m) => m.place);
   const out: string[] = [hasPlaces ? 'Some of your recent memories, under the heading of where each is from:' : 'Some of your recent memories:'];
@@ -219,9 +237,12 @@ export function buildPlayerEndPrompt(p: {
   lines: DigestLine[];
   goals: string[];
   memories: Array<string | MemoryEntry>;
+  /** 261113: also ask for the session's recap (game sessions, see runSessionEnd). */
+  recap?: boolean;
 }): { system: string; user: string } {
   // {card_name}: the name as the Home card shows it ("red" reads "Red").
-  const system = PLAYER_END_NEXT_STEP_SYSTEM.split('{card_name}')
+  const base = p.recap ? `${PLAYER_END_NEXT_STEP_SYSTEM}\n\n${PLAYER_END_RECAP_ADDENDUM}` : PLAYER_END_NEXT_STEP_SYSTEM;
+  const system = base.split('{card_name}')
     .join(nameInSentence(p.name))
     .split('{name}')
     .join(p.name)
@@ -236,9 +257,13 @@ export function buildPlayerEndPrompt(p: {
       ? `The end of the conversation, oldest first:\n${lines.map((l) => `${speaker(l)}: ${l.text}`).join('\n')}`
       : 'Nobody said anything near the end.',
   );
-  const memories = renderMemories(p.memories);
+  const memories = renderMemories(p.memories, p.recap ? RECAP_MAX_MEMORIES : MAX_MEMORIES);
   if (memories) parts.push(memories);
-  parts.push('Reply with the three lines (note:, player: and game:), or with none.');
+  parts.push(
+    p.recap
+      ? 'Reply with the recap: line first, then any remember: lines, then the three lines (note:, player: and game:) or the word none.'
+      : 'Reply with the three lines (note:, player: and game:), or with none.',
+  );
   return { system, user: parts.join('\n\n') };
 }
 
@@ -405,6 +430,73 @@ export function parsePlayerEndReply(text: string): PlayerEndPlan | null {
   return { step, line, game: parseGameAnswer(game) };
 }
 
+const RECAP_LABEL = /^\s*[*_-]*\s*recap\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+/** 261113 (v0.7 D2): a durable fact line of the session-end reply. */
+const REMEMBER_LABEL = /^\s*[*_-]*\s*remember\s*[*_]*\s*[:：]\s*[*_]*\s*(.*)$/i;
+/** Most remember: lines one session end saves. */
+export const SESSION_END_MAX_FACTS = 3;
+/** A plan label opening later on the recap's own line ("recap: ... note: ..."). */
+const INLINE_NOTE = /\s+(?=[*_]*\s*note\s*[*_]*\s*[:：])/i;
+const BARE_NONE = /^[\s*_"'“”‘’`]*(none|nothing|no|n\/a|无|没有|なし|없음)[\s*_"'“”‘’`.。]*$/i;
+
+/**
+ * 261113 (v0.7 D1): a reply that leads with `recap: ...` (game sessions,
+ * buildPlayerEndPrompt `recap`), split into the recap and the plan. The recap
+ * runs from its label to the next labeled line, a bare "none" or a blank line
+ * (a model that wraps it over two lines keeps both), and what is left is read
+ * by parsePlayerEndReply exactly as before, so a recap line is never taken as
+ * the plan note. No recap label: recap null, the whole reply is the plan.
+ * This parses the labeled format the prompt asks for, not speech.
+ */
+export function parseSessionEndReply(text: string): { recap: string | null; plan: PlayerEndPlan | null; facts: string[] } {
+  // 261113 (D2): remember: lines are the session's durable facts; they are
+  // taken out first, so neither the recap nor the plan reads them.
+  const facts: string[] = [];
+  const lines = String(text ?? '')
+    .split('\n')
+    .filter((l) => {
+      const m = REMEMBER_LABEL.exec(l);
+      if (!m) return true;
+      const f = m[1].replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`]+$/g, '').replace(/\s+/g, ' ').trim();
+      // 261123 (review): "remember: nothing new" and other nothing-lines are not facts (foldPrompt isNothingFact).
+      if (f && !BARE_NONE.test(f) && !isNothingFact(f) && facts.length < SESSION_END_MAX_FACTS) facts.push(f.slice(0, 300));
+      return false;
+    });
+  const at = lines.findIndex((l) => RECAP_LABEL.test(l));
+  if (at < 0) return { recap: null, plan: parsePlayerEndReply(lines.join('\n')), facts };
+  let first = RECAP_LABEL.exec(lines[at])![1];
+  const rest: string[] = [...lines.slice(0, at)];
+  const split = first.search(INLINE_NOTE);
+  if (split > 0) {
+    rest.push(first.slice(split).trim());
+    first = first.slice(0, split);
+  }
+  const parts = [first];
+  let i = at + 1;
+  if (split <= 0) {
+    for (; i < lines.length; i++) {
+      const l = lines[i];
+      if (!l.trim()) {
+        if (parts.join('').trim()) break;
+        continue;
+      }
+      if (LABELED.test(l) || BARE_NONE.test(l)) break;
+      parts.push(l);
+    }
+  }
+  rest.push(...lines.slice(i));
+  const recap = parts
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`]+$/g, '')
+    .trim();
+  return {
+    recap: recap && !BARE_NONE.test(recap) ? recap : null,
+    plan: parsePlayerEndReply(rest.join('\n')),
+    facts,
+  };
+}
+
 /** The plan note alone (see parsePlayerEndReply), or null for "none". */
 export function parseNextStepReply(text: string): string | null {
   return parsePlayerEndReply(text)?.step ?? null;
@@ -439,6 +531,45 @@ export interface PlayerEndInput {
    * with `skip_reason: 'free_cloud'`.
    */
   skipOnFreeCloud?: boolean;
+  /**
+   * 261113 (v0.7 D1): also write the session's recap (runSessionEnd). Game
+   * sessions only: their lines never reach the transcript, while a call's or
+   * a chat's already do (and fold from there).
+   */
+  recap?: boolean;
+}
+
+/** runSessionEnd's answer: the check's outcome, plus the recap when one was asked for and given. */
+export interface SessionEndResult {
+  outcome: PlayerEndOutcome;
+  recap: string | null;
+  /** 261113 (D2): the session's remember: lines and what was saved; null when none came back. */
+  facts?: FactSave | null;
+  /** 261123: the recap was written to MEMORY.md (recapMemoryLine); absent when it was not tried. */
+  recapSaved?: boolean;
+}
+
+/** Longest recap line saved to MEMORY.md (characters); the prompt asks for 50 words. */
+export const RECAP_MEMORY_MAX_CHARS = 400;
+
+/**
+ * 261123 (v0.7 consistency, game events): the recap as a memory line. The
+ * eval showed the recap reached the play row (the creeper, the cat's name)
+ * and was then lost at the next fold, which squeezes the row into a
+ * 150-word summary and saves player facts, not game events. Written once at
+ * the session end, deduped like remember(), it stays in MEMORY.md, which every
+ * surface reads, until compaction merges it with older lines. Named for its
+ * game when the recap does not say it. Cut at a word, never mid-word.
+ */
+export function recapMemoryLine(recap: string, game?: string): string {
+  let text = String(recap ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length > RECAP_MEMORY_MAX_CHARS) {
+    const cut = text.slice(0, RECAP_MEMORY_MAX_CHARS);
+    const end = cut.search(/[.!?。！？][^.!?。！？]*$/);
+    text = end > RECAP_MEMORY_MAX_CHARS / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' ')).trim()}...`;
+  }
+  const name = game && isGameId(game) ? gameDisplayName(game) : game;
+  return name && !text.toLowerCase().includes(name.toLowerCase()) ? `${name} session recap: ${text}` : text;
 }
 
 export type PlayerEndOutcome =
@@ -477,6 +608,11 @@ export interface PlayerEndDeps {
    * is filed under the app section (memoryLog APP_SECTION_HEADER).
    */
   save(characterId: string, line: string, opts?: { inGame?: boolean }): Promise<boolean>;
+  /**
+   * 261113 (v0.7 D2): save the session's durable facts (chat/memoryFacts.ts
+   * saveFacts), filed like the plan line. Optional: without it they are dropped.
+   */
+  saveFacts?(characterId: string, facts: string[], opts?: { inGame?: boolean }): Promise<FactSave>;
   /**
    * 261013 (T119): record where a just-saved plan came from, for the Home
    * "up next" card (homeNextStep.ts). Optional; best-effort. 261014: plus
@@ -529,6 +665,25 @@ export async function runPlayerEndNextStep(
   deps: PlayerEndDeps,
   ctrl: AbortController = new AbortController(),
 ): Promise<PlayerEndOutcome> {
+  return (await runSessionEnd(input, deps, ctrl)).outcome;
+}
+
+/**
+ * The session-end call (261113, v0.7 D1): the "next time" check, plus, for an
+ * input with `recap`, the session's short first-person recap from the same
+ * call (no second call; PLAYER_END_RECAP_MAX_TOKENS instead of 150). The
+ * recap comes back even when there is no plan; it is null when the call was
+ * skipped, failed, timed out or was cancelled, and the caller falls back to
+ * the digest lines (playSummary.ts playStory). Never throws.
+ */
+export async function runSessionEnd(
+  input: PlayerEndInput,
+  deps: PlayerEndDeps,
+  ctrl: AbortController = new AbortController(),
+): Promise<SessionEndResult> {
+  let recap: string | null = null;
+  let facts: FactSave | null = null;
+  let recapSaved: boolean | undefined;
   const { characterId } = input;
   const short = characterId.slice(0, 8);
   let provider: LlmProvider | null = null;
@@ -569,21 +724,37 @@ export async function runPlayerEndNextStep(
             lines: input.lines,
             goals,
             memories,
+            recap: input.recap === true,
           });
           reachedModel = true;
           const res = await provider!.call({
-            maxTokens: PLAYER_END_MAX_TOKENS,
+            maxTokens: input.recap ? PLAYER_END_RECAP_MAX_TOKENS : PLAYER_END_MAX_TOKENS,
             system: prompt.system,
             messages: [{ role: 'user', content: prompt.user }],
             timeoutMs: budget,
             signal: ctrl.signal,
           });
           if (ctrl.signal.aborted) return 'cancelled';
-          const plan = parsePlayerEndReply(res.text);
+          const parsed = input.recap
+            ? parseSessionEndReply(res.text)
+            : { recap: null, plan: parsePlayerEndReply(res.text), facts: [] as string[] };
+          const plan = parsed.plan;
+          recap = parsed.recap;
+          // 261123: the recap itself goes to memory too (recapMemoryLine),
+          // filed like the facts, before them.
+          if (recap && deps.saveFacts) {
+            const r = await deps.saveFacts(characterId, [recapMemoryLine(recap, input.game)], { inGame: input.surface === 'game' });
+            recapSaved = r.saved > 0;
+          }
+          if (parsed.facts.length && deps.saveFacts) {
+            facts = await deps.saveFacts(characterId, parsed.facts, { inGame: input.surface === 'game' });
+          }
           const step = plan?.step ?? null;
           const u = res.usage ?? {};
           deps.log(
-            `[sei/next-step] ${short} player-end check: ${step ? `plan (${step.length} chars${plan?.line ? `, line ${plan.line.length}` : ', no line'})` : 'none'}, ` +
+            `[sei/next-step] ${short} player-end check: ${step ? `plan (${step.length} chars${plan?.line ? `, line ${plan.line.length}` : ', no line'})` : 'none'}` +
+              `${input.recap ? `, recap ${recap ? `${recap.length} chars` : 'none'}` : ''}` +
+              `${facts ? `, facts ${facts.saved}/${facts.returned} saved (${facts.dupes} known)` : ''}, ` +
               `in ${u.input_tokens ?? 0} / out ${u.output_tokens ?? 0} tokens`,
           );
           if (!step) return 'none';
@@ -613,7 +784,14 @@ export async function runPlayerEndNextStep(
   // A cancelled check (a new session, or an account switch that may already
   // have re-identified analytics) sends nothing, as before.
   if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
-  return outcome;
+  // A recap read before a timeout or cancel is not used: the row may already
+  // have been written without it, and a cancelled turn must not write.
+  return {
+    outcome,
+    recap: outcome === 'saved' || outcome === 'none' ? recap : null,
+    facts,
+    ...(recapSaved !== undefined ? { recapSaved } : {}),
+  };
 }
 
 /**
@@ -745,6 +923,15 @@ export function startPlayerEndNextStep(
   deps?: PlayerEndDeps,
   opts: { yieldAlways?: boolean } = {},
 ): Promise<PlayerEndOutcome> {
+  return startSessionEnd(input, deps, opts).then((r) => r.outcome);
+}
+
+/** startPlayerEndNextStep with the recap (261113): what closePlaySession waits on. Never rejects. */
+export function startSessionEnd(
+  input: PlayerEndInput,
+  deps?: PlayerEndDeps,
+  opts: { yieldAlways?: boolean } = {},
+): Promise<SessionEndResult> {
   const { characterId } = input;
   const d = deps ?? defaultDeps();
   const now = d.now();
@@ -752,7 +939,7 @@ export function startPlayerEndNextStep(
   if (inflight.has(characterId) || (prev !== undefined && now - prev < DEDUPE_WINDOW_MS)) {
     // 261107: visible too (a backseat share ending with its call lands here).
     reportCheckOutcome(d.capture, input, 'busy', false);
-    return Promise.resolve('busy');
+    return Promise.resolve({ outcome: 'busy', recap: null });
   }
   lastRun.set(characterId, now);
   const ctrl = new AbortController();
@@ -767,8 +954,8 @@ export function startPlayerEndNextStep(
     },
   };
   return d
-    .scoped(() => runPlayerEndNextStep(input, tracked, ctrl))
-    .catch((): PlayerEndOutcome => 'cancelled')
+    .scoped(() => runSessionEnd(input, tracked, ctrl))
+    .catch((): SessionEndResult => ({ outcome: 'cancelled', recap: null }))
     .finally(() => {
       if (inflight.get(characterId) === entry) inflight.delete(characterId);
     });
@@ -837,6 +1024,14 @@ function defaultDeps(): PlayerEndDeps {
         }
       }
       return written > 0;
+    },
+    async saveFacts(characterId, facts, opts) {
+      const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');
+      if (!scopedTurnCurrent()) return { returned: facts.length, saved: 0, dupes: 0 };
+      const { saveFacts } = await import('./chat/memoryFacts');
+      return trackScopedWrite(
+        saveFacts(path.join(memoryDirOf(characterId), 'MEMORY.md'), facts, opts?.inGame ? {} : { section: 'app' }),
+      );
     },
     async tagPlan(characterId, surface, game, line) {
       const { scopedTurnCurrent, trackScopedWrite } = await import('./profile/scopeBarrier');

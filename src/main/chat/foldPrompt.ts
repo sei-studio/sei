@@ -15,7 +15,12 @@
  */
 
 export interface FoldMsg {
-  role: 'user' | 'companion';
+  /**
+   * 261113: 'session' is a finished game session (a play row), folded with
+   * the conversation around it. Its text is the row's line plus its story
+   * (playSummary.ts playStoryText): the recap, or the last lines said.
+   */
+  role: 'user' | 'companion' | 'session';
   text: string;
   ts?: number;
 }
@@ -63,7 +68,7 @@ const PEER_LINE_RE = /^\(\s*([^()\n]{1,60}?),\s*on the call\s*\)\s*:\s*/i;
 export function buildFoldTranscript(msgs: FoldMsg[]): string {
   return msgs
     .map((m) => {
-      let who = m.role === 'user' ? 'Player' : 'You';
+      let who = m.role === 'user' ? 'Player' : m.role === 'session' ? 'Game session' : 'You';
       let text = m.text;
       if (m.role === 'user') {
         const peer = PEER_LINE_RE.exec(text);
@@ -112,12 +117,71 @@ export function buildFoldCalendar(msgs: FoldMsg[]): string {
  * calendar line. Shared by continuity.ts and the offline evals so both send
  * the same text.
  */
-export function buildFoldUserText(summary: string, msgs: FoldMsg[]): string {
+export function buildFoldUserText(summary: string, msgs: FoldMsg[], memory?: string): string {
   const calendar = buildFoldCalendar(msgs);
+  // 261113 (v0.7 D2): the memory notes, so the fold's <remember> lines skip
+  // what is already saved. Omitted (undefined) by callers that predate it.
+  const notes = memory === undefined ? '' : `Your memory notes, already saved:\n${memory.trim() || '(none yet)'}\n\n`;
   return (
-    `Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
+    `${notes}Existing summary:\n${summary || '(none yet)'}\n\nNew messages:\n${buildFoldTranscript(msgs)}` +
     (calendar ? `\n\n${calendar}` : '')
   );
+}
+
+/** Most lines one fold's <remember> block may save. */
+export const FOLD_MAX_FACTS = 8;
+/** Longest saved fact line (characters). */
+export const FACT_MAX_CHARS = 300;
+
+/**
+ * The lines of the fold's <remember> block (261113, v0.7 D2): one fact per
+ * line, list bullets dropped, at most FOLD_MAX_FACTS. [] when the block is
+ * missing or empty. Only the tag is read, like extractSummaryTag.
+ */
+export function extractRememberTag(text: string, max = FOLD_MAX_FACTS): string[] {
+  const m = /<remember>([\s\S]*?)<\/remember>/i.exec(text);
+  if (!m) return [];
+  return m[1]
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s+/, '').replace(/\s+/g, ' ').trim().slice(0, FACT_MAX_CHARS))
+    .filter((l) => l && !isNothingFact(l))
+    .slice(0, max);
+}
+
+/** A saved fact shorter than this is not a fact ("ok", "n/a", a stray name). */
+export const FACT_MIN_CHARS = 8;
+
+/** Words that may follow "none"/"nothing"/"no" in a line that only says there is nothing to save. */
+const NOTHING_TAIL = new Set(
+  (
+    'new else more further other durable important notable relevant yet here today now this time at all to add save ' +
+    'remember note record keep worth saving remembering noting recording keeping fact facts thing things line lines ' +
+    'note notes memory memories info information detail details i can see that is are was were in the from of it ' +
+    'for since last session messages batch conversation already saved there here'
+  ).split(' '),
+);
+
+/**
+ * 261123 (review): a fact line that only says there is nothing to save
+ * ("None", "(none)", "Nothing new to add.", "no new facts"), or one too short
+ * to be a fact. Both parsers of labeled model output use it (the fold's
+ * <remember> block and the session end's remember: lines), so such a line is
+ * never written to MEMORY.md. It reads the model's labeled reply, not anything
+ * the player typed. A real fact that starts with "nothing" ("Nothing scares
+ * Alex more than spiders") has other words in it and is kept.
+ */
+export function isNothingFact(line: string): boolean {
+  const flat = String(line ?? '').trim();
+  if (/^[\s\p{P}\p{S}]*(无|没有|没有新的|なし|特になし|없음)[\s\p{P}\p{S}]*$/u.test(flat)) return true;
+  if (flat.replace(/[\s\p{P}\p{S}]/gu, '').length < FACT_MIN_CHARS) return true;
+  const words = flat
+    .toLowerCase()
+    .replace(/n\/a/g, 'none')
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter(Boolean);
+  if (!words.length) return true;
+  if (!['none', 'nothing', 'no', 'nil', 'null', 'na'].includes(words[0])) return false;
+  return words.slice(1).every((w) => NOTHING_TAIL.has(w));
 }
 
 /**
@@ -147,6 +211,8 @@ export function buildFoldSystem(personaExpanded?: string): string {
     'Each stamp has the weekday, and a calendar of the days around the messages follows them. When someone says yesterday, last night, tomorrow, a weekday, or next week, find the date on that calendar, counting from the stamp of that message. ' +
     'If you cannot tell the date for sure, keep the words they used instead of a date. ' +
     'Each line starts with who said it: Player is the player, You is you, and any other name is another companion on the call. ' +
+    // 261113 (D1): a game session's play row, with its recap or last lines.
+    'A line starting with Game session is a game the two of you played together, with your own recap of it or the last things said in it; keep what happened in it the same way. ' +
     'Keep track of who said what, and never give another companion\'s facts, likes, or lines to the player or to yourself. ' +
     'Keep the certainty the speaker had: a maybe stays a maybe, a joke or a bit stays a joke, an offer stays an offer until it is accepted, ' +
     'a plan that changed keeps only its latest version, and something that happened once is not a habit. ' +
@@ -161,7 +227,20 @@ export function buildFoldSystem(personaExpanded?: string): string {
     'crowd out established facts about the player; if a new message seems to contradict an established fact but reads like ' +
     'screen narration or background media, keep the established fact. ' +
     'Wrap the updated summary in <summary> and </summary> tags. Only what is inside the tags is stored and re-read by ' +
-    'every future prompt; anything outside the tags is discarded, so never put summary content outside them.' +
+    'every future prompt; anything outside the tags is discarded, so never put summary content outside them. ' +
+    // 261113 (v0.7 D2): durable facts go to memory before the summary
+    // compresses them away. Measured with the consistency eval (A, B, D) and
+    // scripts/remember-eval.ts --fold.
+    'The summary gets shorter as it is folded again, so a fact that lives only in the summary can be lost. After the summary, ' +
+    'pick out the durable facts in the new messages that your memory notes do not have yet: things about the player (names, ' +
+    'the people and pets in their life, their job or school, dates and plans they told you, what they like or dislike, rules ' +
+    'they asked you to keep) and plans or promises the two of you made. Write each as one short line in the first person, ' +
+    'like your own memory notes, with its date in the sentence when it is tied to one (not a stamp in brackets: each note is ' +
+    'stamped when it is saved). When a new message changes something in your notes ' +
+    '(a new job, a new favourite, a plan that moved), write the new fact and say that it is now different, so it reads as the ' +
+    'newer one. Leave out anything your notes already say, small talk, passing moods, game state, anything from low-signal ' +
+    `material, and anything nobody actually said. Put the lines inside <remember> and </remember> tags, one per line, at most ${FOLD_MAX_FACTS}, and leave the tags ` +
+    'empty when there is nothing new.' +
     personaBlock
   );
 }
@@ -178,5 +257,6 @@ export function buildFoldSystem(personaExpanded?: string): string {
  */
 export function extractSummaryTag(text: string): string {
   const m = /<summary>([\s\S]*?)<\/summary>/i.exec(text);
-  return (m ? m[1] : text).trim();
+  // 261113: the untagged fallback must not store the <remember> block (D2).
+  return (m ? m[1] : text.replace(/<remember>[\s\S]*?(?:<\/remember>|$)/gi, '')).trim();
 }

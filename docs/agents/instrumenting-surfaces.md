@@ -109,6 +109,17 @@ game?, saved, outcome}` and `next_step_saved {source:'player_end', surface,
 game?}` as follow-ups (the `_ended` event has already gone out). Live check:
 `npx tsx scripts/player-end-next-step-probe.ts --reps 3`.
 
+**Game session recaps and saved facts (261113, v0.7 consistency).** A bot
+game's play row carries the session-end call's recap (D1), and that call and
+every fold also save the durable facts memory does not have yet (D2,
+`chat/memoryFacts.ts`). Shape only, never text: `play_recap {character_id,
+game, saved, source: 'recap'|'lines'|'none', recap_chars, recap_words, lines,
+check_outcome, facts_returned, facts_saved, fact_dupes}` once per bot-game
+play row (`playRecap.ts playRecapProps`), and `fold_facts {character_id,
+batch, session_rows, returned, saved, dupes}` once per successful fold
+(`continuity.ts foldIntoSummary`). `dupes` counts lines memory already had
+(normalized text against every entry).
+
 **The Home "up next" strip reads those plans back (261013, T119).** One
 strip above the party wall: the first Home companion (wall order) with an
 unconsumed `Plan for next time:` under 7 days old, else the first with an

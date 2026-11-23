@@ -720,6 +720,10 @@ export const COMPACTION_SYSTEM = [
   "- Generic Minecraft facts.",
   "- Routine state: inventory counts, biome, time of day, whether the player was nearby.",
   "- Duplicates and near-duplicates of other entries.",
+  // 261113 (v0.7 D2): the supersede pattern. A fact that changed is written
+  // with "now" wording (the fold and the session end are told to), and the
+  // compactor keeps only the newest version.
+  "- Older versions of something that changed. When entries disagree about the same thing (a job, a favourite, where someone lives, a plan that moved), keep only the newest entry, and keep its now wording when it says what changed. The older entry is out of date, not a second fact.",
   "",
   "Output format: one entry per line. Each line is `- [YYYY-MM-DD] <text>`. Use the date from the original entry where present; if multiple entries collapse into one, use the most recent date among them. Target roughly one third of the input size. Output the lines only with no headers, no commentary, no markdown other than the list bullets.",
 ].join('\n')
@@ -975,6 +979,30 @@ export const PLAYER_END_NEXT_STEP_SYSTEM =
   'Keep the labels note:, player: and game: as they are, and write the note and player lines in the language you and the player talk in.\n\n' +
   'If nothing was left open, or the session was only small talk, reply with only the word none. ' +
   'Do not make one up, and do not pick something that is already done.'
+
+// 261113 (v0.7 consistency D1): a game session's lines never reach the app's
+// transcript, so chat and calls afterwards knew nothing of what happened in
+// it. The same session-end call now also writes a short recap of the session
+// in the companion's own words, stored on the play row (playSummary.ts) and
+// read by the fold, the chat transcript and the next game's handoff. The
+// accuracy rules are the fold's (foldPrompt.ts, 261024).
+export const PLAYER_END_RECAP_ADDENDUM =
+  'Before that, write a short recap of this session for your own memory, on one line that starts with recap:. ' +
+  'Write it as yourself, in the first person and in your own voice, in 50 words or less: what the two of you did, what happened, ' +
+  'and anything the player told you about themselves or their life. Use the names things were given (a pet, a place, a build). ' +
+  'Write only what the conversation shows, without adding details or reasons nobody gave. A maybe stays a maybe, a joke stays a joke, ' +
+  'and a plan is a plan, not something that already happened. ' +
+  'Write the recap in the language you and the player talk in, and keep the label recap: as it is.\n\n' +
+  // 261113 (v0.7 D2): durable facts from the session go to memory too.
+  'Then check your memories below for lasting facts about the player that came up in this session and are still missing: ' +
+  'a name, a person or pet in their life, their job or school, a date, something they like or dislike, a rule they asked you ' +
+  'to keep. Usually nothing is missing, because what mattered you saved during the session, and those notes are in your ' +
+  'memories below even when they are worded differently. For each fact that is really missing, add a line that starts with ' +
+  'remember: and holds that one fact as your own short note. When it changes something in your memories, say what it is now. ' +
+  'What happened in the session belongs in the recap, not here, and so do plans for tonight or tomorrow. At most three ' +
+  'remember: lines, and most sessions have none.\n\n' +
+  'So your reply is the recap line first, then any remember: lines, then either the three lines above or the word none on a ' +
+  'line of its own. Always write the recap line, even when the answer for next time is none.'
 
 // 261020: memories and the app chat are shared by every game a character
 // plays, and nothing in a game's seed said so. In a Stardew session she read

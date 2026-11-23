@@ -1,0 +1,153 @@
+{
+ "game": "minecraft",
+ "durationMs": 2100000,
+ "lines": [
+  {
+   "who": "player",
+   "text": "ok roger let's go check on the farm"
+  },
+  {
+   "who": "you",
+   "text": "Okay big brother! Lead the way, I'm right behind you"
+  },
+  {
+   "who": "player",
+   "text": "Okay, we need wood first. See that oak tree over there?"
+  },
+  {
+   "who": "you",
+   "text": "I see it! Can I punch the first block? I want to try."
+  },
+  {
+   "who": "player",
+   "text": "Go for it. Just hold the button down."
+  },
+  {
+   "who": "you",
+   "text": "It's cracking... it's cracking... oh! It popped out! That's so satisfying."
+  },
+  {
+   "who": "player",
+   "text": "sorry, my dog pepper is barking at the door, one sec"
+  },
+  {
+   "who": "you",
+   "text": "aww pepper! take your time big brother, i'll wait here"
+  },
+  {
+   "who": "player",
+   "text": "Nice. Grab a few more logs and we can make planks."
+  },
+  {
+   "who": "you",
+   "text": "Okay. I'll get the ones near the bottom so we don't leave floating leaves everywhere."
+  },
+  {
+   "who": "player",
+   "text": "Eh, floating leaves are basically tradition at this point."
+  },
+  {
+   "who": "you",
+   "text": "Really? Then I'll leave a little one. For tradition."
+  },
+  {
+   "who": "player",
+   "text": "ugh a zombie got into the farm and trampled half the wheat"
+  },
+  {
+   "who": "you",
+   "text": "oh no, the wheat! i'm going after it"
+  },
+  {
+   "who": "player",
+   "text": "Planks done. Now a crafting table."
+  },
+  {
+   "who": "you",
+   "text": "Four planks in a square, right? I think I remember that one."
+  },
+  {
+   "who": "player",
+   "text": "Exactly right."
+  },
+  {
+   "who": "you",
+   "text": "Oh! I got it right! Okay, placing it here, next to this flower."
+  },
+  {
+   "who": "player",
+   "text": "oh hey a village. and there's a cat, i'm calling it noodle"
+  },
+  {
+   "who": "you",
+   "text": "noodle! that's a good name for a cat, big brother"
+  },
+  {
+   "who": "player",
+   "text": "Now some wooden pickaxes so we can mine stone."
+  },
+  {
+   "who": "you",
+   "text": "Wooden ones first. They look kind of fragile, though."
+  },
+  {
+   "who": "player",
+   "text": "They are. They just need to get us to stone."
+  },
+  {
+   "who": "you",
+   "text": "Then they have a very important job. Little brave pickaxes."
+  },
+  {
+   "who": "player",
+   "text": "next time we're building a fence around the whole farm so this never happens again"
+  },
+  {
+   "who": "you",
+   "text": "a fence sounds good! i can gather the wood for the posts, big brother"
+  },
+  {
+   "who": "player",
+   "text": "There's gray stone showing on that hillside."
+  },
+  {
+   "who": "you",
+   "text": "I see it. Should we walk around, or go straight over the hill?"
+  },
+  {
+   "who": "player",
+   "text": "Straight over. Watch this jump."
+  },
+  {
+   "who": "you",
+   "text": "Wait, there's a gap right th... oh no. You went straight into it."
+  },
+  {
+   "who": "player",
+   "text": "That was totally on purpose."
+  },
+  {
+   "who": "you",
+   "text": "That was a very confident jump into absolutely nothing."
+  },
+  {
+   "who": "player",
+   "text": "Okay, okay. Help me out of this hole."
+  },
+  {
+   "who": "you",
+   "text": "I'll dig a little step for you. There! Now you can hop up."
+  },
+  {
+   "who": "player",
+   "text": "ok gotta go, bye roger"
+  },
+  {
+   "who": "you",
+   "text": "Okay, bye big brother! Thanks for the help with the hole, I'll keep the wood safe for the fence."
+  }
+ ],
+ "remembers": [
+  "Alex and I wanted a fence around the farm after a zombie trampled the wheat. Alex laughed at my hole-digging step, and I like being useful to them."
+ ]
+}

@@ -23,6 +23,21 @@ vi.mock('./sdk', () => ({
   buildChatSdk: vi.fn(async () => ({ client: { messages: { create: createSpy } }, model: 'test-model' })),
 }));
 
+// 261123 (review): a hook inside saveFacts, to land a switch or a clear in
+// the gap between the facts and the bridge write.
+const { factsHook } = vi.hoisted(() => ({ factsHook: { fn: null as null | (() => void) } }));
+vi.mock('./memoryFacts', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('./memoryFacts')>();
+  return {
+    ...orig,
+    saveFacts: vi.fn(async (...a: Parameters<typeof orig.saveFacts>) => {
+      const out = await orig.saveFacts(...a);
+      factsHook.fn?.();
+      return out;
+    }),
+  };
+});
+
 import * as chatStore from './chatStore';
 import { foldIfDue } from './continuity';
 import { drainScopedWrites, withAccountTeardown, _resetScopeBarrierForTests } from '../profile/scopeBarrier';
@@ -38,6 +53,7 @@ beforeEach(async () => {
   _resetScopeBarrierForTests();
   setActiveScope(UUID_A);
   createSpy.mockClear();
+  factsHook.fn = null;
 });
 afterEach(async () => {
   // A finished LLM call records its tokens in the profile's usage ledger
@@ -110,5 +126,36 @@ describe('fold across an account switch (260926)', () => {
     setActiveScope(UUID_A);
     await foldIfDue(CHAR);
     expect(await bridgeIn(UUID_A)).toMatchObject({ summary: 'ROLLED SUMMARY', summarizedCount: 50 });
+  });
+
+  it('a switch landing while the facts are saved writes no bridge in either account (261123)', async () => {
+    await seed(100);
+    factsHook.fn = () => setActiveScope(UUID_B);
+    await foldIfDue(CHAR);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(await bridgeIn(UUID_B)).toBeNull();
+    expect(await bridgeIn(UUID_A)).toBeNull();
+    factsHook.fn = null;
+    setActiveScope(UUID_A);
+    await foldIfDue(CHAR);
+    expect(await bridgeIn(UUID_A)).toMatchObject({ summary: 'ROLLED SUMMARY', summarizedCount: 50 });
+  });
+
+  it('a play-only fold writes playFoldedTs and keeps the watermark (261123)', async () => {
+    await seed(10);
+    for (let i = 0; i < 8; i++) {
+      await chatStore.appendMessage(CHAR, {
+        id: `p${i}`,
+        role: 'system',
+        text: 'You and Sui played Minecraft for 30 minutes.',
+        ts: 5000 + i,
+        event: { kind: 'play', game: 'minecraft', durationMs: 1_800_000, recap: `recap ${i}` },
+      });
+    }
+    await foldIfDue(CHAR);
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(await bridgeIn(UUID_A)).toEqual({ summary: 'ROLLED SUMMARY', summarizedCount: 0, playFoldedTs: 5003 });
+    await foldIfDue(CHAR);
+    expect(createSpy).toHaveBeenCalledTimes(1);
   });
 });
