@@ -578,6 +578,8 @@ export function OnboardApp({
       advanced_updates: false,
       realistic_typing: true,
       call_captions: false,
+      clip_that: false,
+      clip_fps: 30 as const,
       removed_default_ids: [],
       added_default_ids: [],
       added_world_ids: [],

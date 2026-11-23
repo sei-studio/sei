@@ -64,9 +64,16 @@ import {
   pickHintedSource,
   type BackseatGameSelection,
 } from '../../../../shared/backseatGames';
-import { startCapture, stopCapture, type CaptureHandle } from '../backseat/captureController';
+import {
+  captureFailDetail,
+  startCapture,
+  stopCapture,
+  type CaptureHandle,
+} from '../backseat/captureController';
+import { CaptureStartError } from '../backseat/captureOpen';
 import {
   captureErrorClass,
+  type CaptureErrorClass,
   type BackseatEndReasonArg,
   type BackseatStartTrigger,
 } from '../../../../shared/callEndReasons';
@@ -129,6 +136,24 @@ export function pickReacquireSource(
 }
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * What the player reads when capture would not start. Never the browser's
+ * own English text. A busy refusal (261123) has already been retried once,
+ * so the line says what the player can change. Sharing the whole screen
+ * instead is their call, never made for them (captureOpen.ts).
+ */
+export function captureFailureCopy(err: unknown, cls: CaptureErrorClass, sourceId: string): string {
+  if (cls === 'busy') {
+    return sourceId.startsWith('screen:')
+      ? t('Could not capture your screen. Try again, or share a single window.')
+      : t('Could not capture that window. Un-minimize the game, or share your whole screen.');
+  }
+  const raw = err instanceof CaptureStartError ? err.cause : err;
+  return err instanceof CaptureStartError || (typeof DOMException !== 'undefined' && raw instanceof DOMException)
+    ? t('Could not read that window.')
+    : userFacingError(err, t('Could not read that window.'));
+}
 
 /** A share the player asked for before there was a call to put it on. */
 export interface PendingShare {
@@ -478,15 +503,18 @@ export const useBackseatStore = create<BackseatStore>((set, get) => {
       } catch (err) {
         // Capture failed after main accepted the session, so unwind it rather
         // than leaving a session with no pictures.
-        void sei.backseatEnd(characterId, `capture_failed:${captureErrorClass(err)}`).catch(() => {});
+        const cls = captureErrorClass(err);
+        const detail = captureFailDetail(err);
+        void sei
+          .backseatEnd(characterId, `capture_failed:${cls}`, ...(detail ? [detail] : []))
+          .catch(() => {});
         set({
           starting: false,
           // A capture DOMException's text is the browser's own English
-          // ("Could not start video source"), never Sei copy.
-          error:
-            typeof DOMException !== 'undefined' && err instanceof DOMException
-              ? t('Could not read that window.')
-              : userFacingError(err, t('Could not read that window.')),
+          // ("Could not start video source"), never Sei copy. 261123: a busy
+          // refusal (retried already, see captureOpen.ts) gets one line on
+          // what to do instead.
+          error: captureFailureCopy(err, cls, source.id),
         });
         return false;
       }

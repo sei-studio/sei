@@ -51,6 +51,8 @@ import { ChatgptLinkRow } from '../components/settings/ChatgptLinkRow';
 import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
+import { ClipThatRow } from '../components/settings/ClipThatRow';
+import { clipFpsOf, DEFAULT_CLIP_FPS, type ClipFps } from '@shared/backseatIpc';
 import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
 import { userFacingError } from '../lib/errors';
 
@@ -383,6 +385,24 @@ export function SettingsScreen(): React.ReactElement {
       // eslint-disable-next-line no-console
       console.error('[SettingsScreen] saveConfig (call_captions) failed', err);
       setCallCaptions(!next);
+    }
+  };
+
+  // Clip That (261123, default OFF): the rolling clip recorders while sharing.
+  // Read from cfg at the next share start (captureController / backseatService),
+  // so there is no live store to update. Turning it on picks the default rate
+  // unless one was chosen before.
+  const onSaveClipThat = async (patch: { clip_that?: boolean; clip_fps?: ClipFps }): Promise<void> => {
+    if (!cfg) return;
+    const prev = cfg;
+    const updated: UserConfig = { ...cfg, ...patch };
+    setCfg(updated);
+    try {
+      await sei.saveConfig(updated);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[SettingsScreen] saveConfig (clip_that) failed', err);
+      setCfg(prev);
     }
   };
 
@@ -933,6 +953,13 @@ export function SettingsScreen(): React.ReactElement {
               onChange={() => void onToggleConvoStarters()}
             />
           </div>
+          {/* Clip That (261123): off by default; see ClipThatRow. */}
+          <ClipThatRow
+            on={cfg?.clip_that === true}
+            fps={cfg ? clipFpsOf(cfg.clip_fps) : DEFAULT_CLIP_FPS}
+            onToggle={(next) => void onSaveClipThat({ clip_that: next })}
+            onFps={(next) => void onSaveClipThat({ clip_fps: next })}
+          />
         </div>
 
         {/* ── About ───────────────────────────────────────────── */}

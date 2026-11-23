@@ -38,6 +38,7 @@ import path from 'node:path';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { ChatMessage, SpokenLineContext } from '../../shared/ipc';
 import {
+  clipFpsOf,
   MIN_SPEAK_GAP_MS,
   quietExtraMs,
   PREV_GRID_MAX_AGE_MS,
@@ -117,8 +118,14 @@ const BACKSEAT_PROACTIVENESS = 1;
  * cannot change inside a session, so one decision at start holds for every
  * tick kind; whether a call RUNS is decided later, per call (ControlGate).
  */
-const TOOLS_BASE = [SAVE_CLIP_TOOL, REMEMBER_TOOL];
-const TOOLS_WITH_CONTROL = [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL];
+// 261123: save_clip is on the array only when the player turned Clip That on
+// (UserConfig.clip_that, off by default). With it off there is nothing to
+// harvest, and a companion offered the tool would promise clips that never
+// arrive. Fixed arrays so a session's tool array keeps one identity.
+const TOOLS_BASE = [REMEMBER_TOOL];
+const TOOLS_WITH_CONTROL = [REMEMBER_TOOL, CONTROL_TOOL];
+const TOOLS_BASE_CLIPS = [SAVE_CLIP_TOOL, REMEMBER_TOOL];
+const TOOLS_WITH_CONTROL_CLIPS = [SAVE_CLIP_TOOL, REMEMBER_TOOL, CONTROL_TOOL];
 
 /**
  * 260929: a session started from a backseat GAME tile (Roblox) also offers
@@ -135,10 +142,18 @@ export const GAME_SESSION_WEB_SEARCH = true;
 /** The tool array for one turn of a session. Stable for the session: the
  *  provider kind only changes if the player switches backends mid-share. */
 export function sessionTools(
-  s: Pick<Session, 'controlOffered' | 'game'>,
+  s: Pick<Session, 'controlOffered' | 'game'> & { clipsOffered?: boolean },
   llmKind: string,
 ): LlmToolDef[] {
-  const base = (s.controlOffered ? TOOLS_WITH_CONTROL : TOOLS_BASE) as LlmToolDef[];
+  const base = (
+    s.clipsOffered
+      ? s.controlOffered
+        ? TOOLS_WITH_CONTROL_CLIPS
+        : TOOLS_BASE_CLIPS
+      : s.controlOffered
+        ? TOOLS_WITH_CONTROL
+        : TOOLS_BASE
+  ) as LlmToolDef[];
   if (!s.game || !GAME_SESSION_WEB_SEARCH) return base;
   return [...base, ...(webToolsFor({ serverWebSearch: llmKind === 'anthropic' }) as LlmToolDef[])];
 }
@@ -228,6 +243,12 @@ interface Session {
   log: BackseatLog;
   /** 260925 act: control() is on this session's tool array (see TOOLS_WITH_CONTROL). */
   controlOffered: boolean;
+  /** 261123: Clip That was on when the session started (save_clip offered). */
+  clipsOffered: boolean;
+  /** 261123: the clip rate the player picked, for analytics (null when off). */
+  clipFps: number | null;
+  /** 261123: clips actually written this session (backseat_ended clips_saved). */
+  clipsSaved: number;
   /** 260925 act: the pending "want me to ...?" offer, settled by the player's next line. */
   control: ControlGate;
   /**
@@ -376,6 +397,17 @@ export async function startBackseat(
   const control = actFlagFromEnv()
     ? (await import('../computerUse/actSession')).controlAvailability(sourceId)
     : ({ ok: false, why: 'flag_off' } as const);
+  // 261123: Clip That (Settings, off by default). Read once: the tool array is
+  // fixed for the session, and the renderer reads the same keys at capture.
+  let clipThat = false;
+  let clipFps: number | null = null;
+  try {
+    const cfg = await loadConfig();
+    clipThat = cfg.clip_that === true;
+    clipFps = clipThat ? clipFpsOf(cfg.clip_fps) : null;
+  } catch {
+    /* off */
+  }
   const s: Session = {
     characterId,
     sourceId,
@@ -398,6 +430,9 @@ export async function startBackseat(
     prevGrid: null,
     log,
     controlOffered: control.ok,
+    clipsOffered: clipThat,
+    clipFps,
+    clipsSaved: 0,
     control: new ControlGate(),
     creditWallUntil: 0,
     creditWallReported: false,
@@ -461,6 +496,9 @@ export async function startBackseat(
         replaced_live: replaced,
         ...restart,
         source_kind: sourceId.startsWith('screen:') ? 'screen' : 'window',
+        // 261123: Clip That setting, shape only.
+        clip_that: s.clipsOffered,
+        ...(s.clipFps !== null ? { clip_fps: s.clipFps } : {}),
         // 260929: which backseat game tile started it, if any. Shape only:
         // the id, never the game's name. 261031: otherwise the game the
         // shared window's title names, from a closed list (watchedGame.ts).
@@ -509,7 +547,9 @@ export function setBackseatPaused(characterId: string, paused: boolean): void {
 export function endBackseat(
   characterId: string,
   reason = 'unspecified',
-  opts: { playerEnded?: boolean } = {},
+  /** `extraProps` (261123): validated shape-only props for backseat_ended,
+   *  e.g. how a capture start failed (normalizeCaptureFailDetail). */
+  opts: { playerEnded?: boolean; extraProps?: Record<string, string> } = {},
 ): Promise<void> {
   return trackScopedWrite(endBackseatSession(characterId, reason, opts));
 }
@@ -517,7 +557,7 @@ export function endBackseat(
 async function endBackseatSession(
   characterId: string,
   reason: string,
-  opts: { playerEnded?: boolean } = {},
+  opts: { playerEnded?: boolean; extraProps?: Record<string, string> } = {},
 ): Promise<void> {
   const s = sessions.get(characterId);
   if (!s || s.state.phase === 'ended') return;
@@ -569,7 +609,11 @@ async function endBackseatSession(
         // line took (absent when there was none) and how many turns failed.
         ...(s.firstLineAt !== null ? { first_line_ms: s.firstLineAt - s.state.startedAt } : {}),
         failed_turns: s.failedTurns,
+        clip_that: s.clipsOffered,
+        ...(s.clipFps !== null ? { clip_fps: s.clipFps } : {}),
+        clips_saved: s.clipsSaved,
         ...(s.lastErrorClass ? { last_error_class: s.lastErrorClass } : {}),
+        ...(opts.extraProps ?? {}),
       });
     } catch {
       /* analytics is never load-bearing */
@@ -1420,6 +1464,7 @@ async function runTurn(
     s.clipCooldownUntil = Date.now() + 30_000;
     const file = await harvestClip(s);
     if (file) {
+      s.clipsSaved += 1;
       clip = {
         path: file,
         reason: String((clipCall.input as { reason?: string })?.reason ?? '').trim() || 'that bit',
