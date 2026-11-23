@@ -23,7 +23,7 @@ export interface FacepackSource {
   file(path: string): Promise<Blob | null>;
 }
 
-const MIME: Record<string, string> = { webp: 'image/webp', png: 'image/png', json: 'application/json' };
+const MIME: Record<string, string> = { webp: 'image/webp', avif: 'image/avif', png: 'image/png', json: 'application/json' };
 
 function mimeOf(path: string): string {
   return MIME[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? 'application/octet-stream';

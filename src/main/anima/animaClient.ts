@@ -40,8 +40,26 @@
  * queued, running, downloading, ready, or how it ended) through onProgress,
  * so the intro can pace its status lines on the real pipeline.
  *
+ * Download only what is needed (261124, product call 261124, storage egress):
+ *   - The move-in sheet starts her bake but downloads nothing (`fetch` false):
+ *     half the sheets were dismissed, and a third of the people who saw one
+ *     never moved anyone in, yet each open downloaded a 5-45 MB pack. The
+ *     pack (or cut-out) is downloaded once she really needs it: her desktop
+ *     host starts or is restored, or the room editor opens. A sheet run still
+ *     polling when the host starts is upgraded in place. A character that
+ *     already has a look on disk keeps it current from any trigger.
+ *   - One download per archive at a time: a second run for the same pack (a
+ *     portrait or avatar change restarting her run mid-download) waits for
+ *     the first instead of downloading it again.
+ *   - The proxy may offer a smaller encoding of the same pack (`pack_format`
+ *     2: AVIF frames, see shared/facepack.ts) with the older encoding's sha in
+ *     `alt_sha256`; a pack on disk in either encoding is used as is.
+ *   - Packs she switched away from stay a while as spares (animaPacks.ts
+ *     SPARE_PACKS), so switching back costs no download.
+ *
  * Analytics: `seilink_anima` with `phase` (shape only, never the portrait or
- * a URL), see docs/agents/seilink-analytics.md.
+ * a URL), see docs/agents/seilink-analytics.md. Every phase that downloaded
+ * something carries `bytes` (what came over the network).
  */
 import type { AnimaFailure, AnimaShownKind, AnimaStage, AnimaStatus, AnimaTrigger, AnimaUiState } from '../../shared/anima';
 import { animaPackId } from '../../shared/anima';
@@ -54,6 +72,10 @@ export const DOWNLOAD_MAX_BYTES = 60 * 1024 * 1024;
 export const PRUNE_DELAY_MS = 120_000;
 /** After a portrait edit the cloud row may lag the local save: look again at these delays. */
 export const PORTRAIT_RECHECK_MS = [20_000, 90_000, 240_000] as const;
+/** The newest pack encoding this build reads (261124: 2 = AVIF frames). Sent on request and status. */
+export const ANIMA_PACK_FORMAT = 2;
+/** Triggers that mean she is on screen now and needs her look on disk. */
+const FETCH_TRIGGERS: ReadonlySet<AnimaTrigger> = new Set<AnimaTrigger>(['editor', 'host_start', 'host_restore']);
 
 export type ProxyState = 'none' | 'queued' | 'running' | 'ready' | 'no_pack' | 'failed' | 'deferred' | 'unavailable';
 
@@ -61,7 +83,16 @@ export interface ProxyReply {
   state: ProxyState;
   reason?: string;
   portrait_hash?: string;
-  pack?: { url: string; sha256: string; bytes: number | null; expires_in: number };
+  pack?: {
+    url: string;
+    sha256: string;
+    bytes: number | null;
+    expires_in: number;
+    /** 261124: the encoding (1 WebP, 2 AVIF); absent = 1. */
+    format?: number;
+    /** 261124: the same pack in other encodings; one of these on disk is used instead of downloading. */
+    alt_sha256?: string[];
+  };
   /** no_pack only (261118): a clean cut-out of her figure, a PNG. */
   cutout?: { url: string; sha256: string; bytes: number | null; expires_in: number };
   created?: boolean;
@@ -116,6 +147,8 @@ interface Run {
   recheck: number;
   /** The library avatar this run bakes (avatar_id), or null for the card image. */
   avatarId: string | null;
+  /** 261124: download the pack when it is ready. False: bake only (the move-in sheet), until a fetch trigger upgrades the run. */
+  fetch: boolean;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -140,6 +173,10 @@ export class AnimaClient {
   private readonly stages = new Map<string, { stage: AnimaStage; failure?: AnimaFailure }>();
   /** Once per app run: (phase|character|...) keys already sent. */
   private readonly sent = new Set<string>();
+  /** 261124: characters a fetch trigger asked for this run (their look is needed on disk). */
+  private readonly wanted = new Set<string>();
+  /** 261124: archive downloads in flight, by sha256 (a second run for the same pack waits for the first). */
+  private readonly downloads = new Map<string, Promise<number>>();
   private pruned: Promise<number> | null = null;
 
   constructor(private readonly d: AnimaClientDeps) {}
@@ -162,8 +199,13 @@ export class AnimaClient {
   /** SeiLink opened for her. Never throws; resolves once the first answer is handled. */
   async prepare(characterId: string, trigger: AnimaTrigger): Promise<AnimaStatus> {
     if (!UUID_RE.test(characterId)) return this.status(characterId);
+    if (FETCH_TRIGGERS.has(trigger)) this.wanted.add(characterId);
     const live = this.runs.get(characterId);
-    if (live) return this.status(characterId);
+    if (live) {
+      // A sheet run still baking: she is needed now, so it downloads when ready.
+      if (this.wanted.has(characterId)) live.fetch = true;
+      return this.status(characterId);
+    }
     // Synchronously, before the first await: a caller that reads status() right after sees this run, not the last one's end.
     this.setStage(characterId, 'checking');
     try {
@@ -204,6 +246,8 @@ export class AnimaClient {
         oldPortraitHash: trigger === 'portrait_changed' ? (entry?.portrait_hash ?? cut?.portrait_hash ?? null) : null,
         recheck: 0,
         avatarId,
+        // A look already on disk is kept current from any trigger; else only a fetch trigger downloads.
+        fetch: this.wanted.has(characterId) || !!entry || !!cut,
       };
       this.runs.set(characterId, run);
       this.setStage(characterId, 'requesting');
@@ -299,6 +343,7 @@ export class AnimaClient {
     for (const id of [...this.runs.keys()]) this.stop(id);
     this.ui.clear();
     this.stages.clear();
+    this.wanted.clear();
   }
 
   private stop(characterId: string): void {
@@ -367,10 +412,11 @@ export class AnimaClient {
           ? await this.d.api('POST', '/anima/v1/request', {
               character_id: characterId,
               ...(run.avatarId ? { avatar_id: run.avatarId } : {}),
+              pack_format: ANIMA_PACK_FORMAT,
             })
           : await this.d.api(
               'GET',
-              `/anima/v1/status/${encodeURIComponent(characterId)}${run.avatarId ? `?avatar_id=${encodeURIComponent(run.avatarId)}` : ''}`,
+              `/anima/v1/status/${encodeURIComponent(characterId)}?${run.avatarId ? `avatar_id=${encodeURIComponent(run.avatarId)}&` : ''}pack_format=${ANIMA_PACK_FORMAT}`,
             );
     } catch (err) {
       run.busy = false;
@@ -416,6 +462,7 @@ export class AnimaClient {
         trigger: run.trigger,
         state: reply.state,
         created: reply.created === true,
+        fetch: run.fetch,
       });
     }
 
@@ -443,6 +490,7 @@ export class AnimaClient {
           this.schedule(characterId, run, PORTRAIT_RECHECK_MS[run.recheck], ref);
           return;
         }
+        if (!run.fetch) return this.hold(characterId, run, reply.pack?.bytes ?? null);
         await this.install(characterId, run, reply, ref);
         return;
       }
@@ -457,6 +505,7 @@ export class AnimaClient {
           return;
         }
         if (reply.state === 'no_pack' && reply.cutout) {
+          if (!run.fetch) return this.hold(characterId, run, reply.cutout.bytes ?? null);
           await this.installCutout(characterId, run, reply, ref);
           return;
         }
@@ -489,6 +538,45 @@ export class AnimaClient {
     this.finish(characterId, run);
   }
 
+  /**
+   * 261124: a bake-only run (the move-in sheet) found her look ready in the
+   * cloud. Nothing is downloaded; a fetch trigger (her host starting, the
+   * editor) asks again and downloads it. The stage goes back to none, as if
+   * never asked: nothing is on its way.
+   */
+  private hold(characterId: string, run: Run, bytes: number | null): void {
+    this.once(`held|${characterId}`, {
+      phase: 'held',
+      trigger: run.trigger,
+      wait_ms: this.d.now() - run.startedAt,
+      ...(typeof bytes === 'number' && bytes > 0 ? { skipped_bytes: bytes } : {}),
+    });
+    if (this.stages.delete(characterId)) {
+      try {
+        this.d.onProgress?.(this.status(characterId));
+      } catch {
+        /* a closed window */
+      }
+    }
+    this.settleUi(characterId, run);
+    this.finish(characterId, run);
+  }
+
+  /**
+   * Download and install one archive, once at a time per sha256: a run that
+   * finds the same download in flight waits for it. Resolves to the bytes
+   * THIS call downloaded (0 when it joined another or the pack was there).
+   */
+  private fetchOnce(sha: string, start: () => Promise<number>): Promise<number> {
+    const inflight = this.downloads.get(sha);
+    if (inflight) return inflight.then(() => 0);
+    const p = start().finally(() => {
+      if (this.downloads.get(sha) === p) this.downloads.delete(sha);
+    });
+    this.downloads.set(sha, p);
+    return p;
+  }
+
   /** Back to ready if her pack is on disk, else idle. */
   private settleUi(characterId: string, run: Run): void {
     void this.d.store
@@ -516,32 +604,44 @@ export class AnimaClient {
       this.finish(characterId, run);
       return;
     }
-    const id = animaPackId(pack.sha256);
+    // 261124: the same pack in another encoding already on disk (an older app's download) is used as is.
+    const alts = (Array.isArray(pack.alt_sha256) ? pack.alt_sha256 : []).filter((s) => typeof s === 'string' && /^[0-9a-f]{64}$/.test(s));
+    let sha = pack.sha256;
+    for (const alt of alts) {
+      if (!(await this.d.store.hasPack(animaPackId(sha))) && (await this.d.store.hasPack(animaPackId(alt)))) sha = alt;
+    }
+    const id = animaPackId(sha);
     const before = await this.d.store.entry(characterId).catch(() => null);
     const had = await this.d.store.hasPack(id);
+    const format = sha !== pack.sha256 ? 'alt' : pack.format === ANIMA_PACK_FORMAT ? ANIMA_PACK_FORMAT : 1;
     let bytes = 0;
     if (!had) {
       if (this.ui.get(characterId) !== 'ready') this.setUi(characterId, 'preparing');
       this.setStage(characterId, 'downloading');
       const t0 = this.d.now();
+      let got = 0;
       try {
-        const zip = await this.d.download(pack.url, DOWNLOAD_MAX_BYTES);
-        bytes = zip.byteLength;
-        await this.d.store.install(zip, pack.sha256);
+        bytes = await this.fetchOnce(sha, async () => {
+          const zip = await this.d.download(pack.url, DOWNLOAD_MAX_BYTES);
+          got = zip.byteLength;
+          await this.d.store.install(zip, sha);
+          return zip.byteLength;
+        });
       } catch (err) {
         const reason = err instanceof AnimaPackError ? err.code : 'download';
-        this.once(`failed|${reason}|${characterId}`, { phase: 'failed', reason, trigger: run.trigger });
+        // Bytes that came over the network and were then refused still cost egress.
+        this.once(`failed|${reason}|${characterId}`, { phase: 'failed', reason, trigger: run.trigger, ...(got ? { bytes: got } : {}) });
         this.d.log?.(`[anima] install failed (${reason})`);
         this.setStage(characterId, 'failed', 'install');
         this.settleUi(characterId, run);
         this.finish(characterId, run);
         return;
       }
-      this.d.log?.(`[anima] pack ${id} installed (${(bytes / 1e6).toFixed(1)} MB, ${this.d.now() - t0} ms)`);
+      if (bytes) this.d.log?.(`[anima] pack ${id} installed (${(bytes / 1e6).toFixed(1)} MB, format ${format}, ${this.d.now() - t0} ms)`);
     }
     if (run.gen !== this.gen) return;
     const entry: AnimaIndexEntry = {
-      pack_sha256: pack.sha256,
+      pack_sha256: sha,
       portrait_hash: reply.portrait_hash ?? null,
       portrait_ref: ref,
       checked_at: this.d.now(),
@@ -550,15 +650,18 @@ export class AnimaClient {
     // A face set replaces her cut-out (RoomAvatar prefers it anyway); the file goes at the next prune.
     const hadCut = !!(await this.d.store.cutoutEntry(characterId).catch(() => null));
     if (hadCut) await this.d.store.setCutoutEntry(characterId, null).catch(() => {});
-    const changed = before?.pack_sha256 !== pack.sha256 || hadCut;
+    const changed = before?.pack_sha256 !== sha || hadCut;
     this.setUi(characterId, 'ready');
     this.setStage(characterId, 'ready');
-    this.once(`ready|${characterId}|${pack.sha256}`, {
+    this.once(`ready|${characterId}|${sha}`, {
       phase: 'ready',
       trigger: run.trigger,
       from_cache: !run.waited,
-      source: had ? 'disk' : run.waited ? 'baked' : 'cloud_cache',
+      source: had || !bytes ? 'disk' : run.waited ? 'baked' : 'cloud_cache',
       wait_ms: this.d.now() - run.startedAt,
+      // 261124: what came over the network for this look (0: it was on disk, or another run's download), and its encoding.
+      bytes,
+      pack_format: format,
       ...(bytes ? { pack_mb: Math.round(bytes / 1e5) / 10 } : {}),
     });
     this.finish(characterId, run);
@@ -589,9 +692,11 @@ export class AnimaClient {
     let bytes = 0;
     if (!had) {
       try {
-        const png = await this.d.download(cut.url, ANIMA_CUTOUT_MAX_BYTES);
-        bytes = png.byteLength;
-        await this.d.store.installCutout(png, cut.sha256);
+        bytes = await this.fetchOnce(`cutout:${cut.sha256}`, async () => {
+          const png = await this.d.download(cut.url, ANIMA_CUTOUT_MAX_BYTES);
+          await this.d.store.installCutout(png, cut.sha256);
+          return png.byteLength;
+        });
       } catch (err) {
         return fail(err instanceof AnimaPackError ? err.code : 'download');
       }
@@ -611,8 +716,9 @@ export class AnimaClient {
     this.once(`cutout|${characterId}|${cut.sha256}`, {
       phase: 'cutout',
       trigger: run.trigger,
-      source: had ? 'disk' : run.waited ? 'baked' : 'cloud_cache',
+      source: had || !bytes ? 'disk' : run.waited ? 'baked' : 'cloud_cache',
       wait_ms: this.d.now() - run.startedAt,
+      bytes,
       ...(bytes ? { cutout_kb: Math.round(bytes / 1024) } : {}),
     });
     this.settleUi(characterId, run);

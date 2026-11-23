@@ -9,6 +9,11 @@
  * mouth[viseme] patch at mouth.box[0..1]; then each name in
  * expression.overlays from overlays[name][p] (or [c]) at its box. All layers
  * source-over. Missing pose falls back to c, missing viseme to rest.
+ *
+ * Pack format 2 (261124, storage egress): the same manifest and layout with
+ * AVIF frames (`.avif` paths) where they are smaller than WebP. Only the
+ * frame files' encoding differs; anima packs of format 2 come from the proxy
+ * only to builds that ask for it (main/anima/animaClient.ts).
  */
 
 import { FACE_ALL_EXPRESSIONS, normalizePalette, type FacePalette } from '../bot/brain/faceExpressions.js';
@@ -163,10 +168,15 @@ export interface FaceCue {
   messageId?: string;
 }
 
-/** A pack file path is plain relative posix: no traversal, no absolute, image or json only. */
+/**
+ * A pack file path is plain relative posix: no traversal, no absolute, image or json only.
+ * `.avif` since 261124 (pack format 2, the smaller download): builds before it
+ * refuse an AVIF pack at install (bad_entry), so the proxy only offers format 2
+ * to clients that send `pack_format: 2`.
+ */
 export function isSafePackPath(rel: string): boolean {
   if (typeof rel !== 'string' || !rel || rel.length > 300) return false;
   if (rel.startsWith('/') || rel.includes('\\') || rel.includes('\0')) return false;
   if (rel.split('/').some((seg) => seg === '..' || seg === '.' || seg === '')) return false;
-  return /\.(webp|png|json)$/i.test(rel);
+  return /\.(webp|avif|png|json)$/i.test(rel);
 }
