@@ -528,14 +528,37 @@ export function repeatedPlayerAsk(playerLines, selfLines, {
 }
 
 const TIMES = ['', 'once', 'twice', 'three times', 'four times', 'five times', 'six times']
-function askNote(ask) {
-  if (!ask) return null
+// 261123 (pass 61): within this many blocks of them she is already by their
+// side, and a line they keep saying about that needs no fresh answer.
+export const ASK_NEAR_BLOCKS = 4
+
+function askLead(ask) {
   const n = TIMES[ask.times] ?? `${ask.times} times`
   const when = ask.seconds == null ? 'recently' : ask.seconds < 90 ? `in the last ${ask.seconds} seconds` : `in the last ${Math.round(ask.seconds / 60)} minutes`
-  return `They have now said much the same thing ${n} ${when} (before this: "${clip(ask.earlier, 100)}"), and you answered each time. ` +
+  return `They have now said much the same thing ${n} ${when} (before this: "${clip(ask.earlier, 100)}"), and you answered each time.`
+}
+
+function askNote(ask) {
+  if (!ask) return null
+  return `${askLead(ask)} ` +
     'They know your answer, so saying it again in other words is still a repeat, and so is advice you already gave them. ' +
     'If you are already doing what they ask, say something else that is true right now: something your snapshot shows that you have not told them, how you feel, or a question for them. ' +
     'Say you are doing something only if you call its action in this turn. If you are not doing it yet, do it now.'
+}
+
+// 261123 (pass 61): the same line said again while she is already right by
+// them (or following them). Every combat_night reassurance loop ran with her
+// one or two blocks away: the ask was already being done, and the reply
+// mandate still made her answer it a fourth time in new words. Here the
+// mandate is lifted (the caller drops "answer it with say()" and the
+// unanswered-line retry), and the note says where she is, from state.
+function askNoteNear(ask, near) {
+  const where = near.following
+    ? `You are following them${Number.isFinite(near.distance) ? ` and ${near.distance <= 1 ? 'right next to them' : `${near.distance} blocks away`}` : ''}.`
+    : `You are ${near.distance <= 1 ? 'right next to them' : `${near.distance} blocks from them`}.`
+  return `${askLead(ask)} ${where} ` +
+    'If what they keep asking for is already happening, this line needs no answer: you can end the turn without say() and carry on with what you are doing. ' +
+    'Speak only if something changed that they should hear about now. If it is not happening yet, do it now.'
 }
 
 // 261122 (pass 60b): the first wording asked for "something they have not
@@ -557,6 +580,25 @@ function askNote(ask) {
  */
 export function repeatedAskNote(playerLines, selfLines, { now, names = [], selfNames = [] } = {}) {
   return askNote(repeatedPlayerAsk(playerLines, selfLines, { now, names: [...(names ?? []), ...(selfNames ?? [])] }))
+}
+
+/**
+ * 261123 (pass 61): repeatedAskNote plus whether the reply can be skipped.
+ * `near` is where she is relative to the speaker ({ distance, following },
+ * from the adapter; null when unknown). Within ASK_NEAR_BLOCKS (or, with no
+ * distance known, while her follow on them runs) the note is the near
+ * variant and `replyOptional` is true. Returns null when the player's line
+ * is no repeat.
+ *
+ * @returns {{ note: string, replyOptional: boolean } | null}
+ */
+export function repeatedAskTurn(playerLines, selfLines, { now, names = [], selfNames = [], near = null } = {}) {
+  const ask = repeatedPlayerAsk(playerLines, selfLines, { now, names: [...(names ?? []), ...(selfNames ?? [])] })
+  if (!ask) return null
+  // A follow that has fallen behind is not by their side: the distance,
+  // when known, decides; following counts only when it is not.
+  const close = !!near && (Number.isFinite(near.distance) ? near.distance <= ASK_NEAR_BLOCKS : near.following === true)
+  return close ? { note: askNoteNear(ask, near), replyOptional: true } : { note: askNote(ask), replyOptional: false }
 }
 
 function linesNote(selfLines, playerLines, opts = {}) {

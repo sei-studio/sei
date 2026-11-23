@@ -253,6 +253,11 @@
  *   written (`sinceMs` = when its snapshot was taken); the brain then runs
  *   none of the turn and asks again with the new state. Minecraft: an
  *   attackEntity whose mob died during the call. Default: never.
+ * @property {(name: string) => ({ distance: number|null, following: boolean } | null)} [playerNearby]
+ *   261123 (pass 61): how far she is from the named player (blocks, null
+ *   when not loaded) and whether her follow is on them. A line they keep
+ *   saying while she is already by their side owes no reply (ownRepeats.js
+ *   repeatedAskTurn). Default: unknown (the reply stays owed).
  * @property {(running: {name: string, input?: any}, use: {id: string, name: string, input?: any}) => string | null} [continueRunningAction]
  *   Asked for each world tool in a batch while an action is running (not
  *   when the batch calls stop). A string means the call is the SAME work as

@@ -213,3 +213,22 @@ describe('MEMORY_GOAL_CUE — memory/goal capture (260708)', () => {
     expect(silent).not.toContain('setGoal in the same turn')
   })
 })
+
+// 261123 (pass 61): a line the player keeps saying while she is already by
+// their side (orchestrator repeatedAskFor) takes actionTurn without the
+// reply mandate; the default keeps it.
+describe('NUDGES.actionTurn replyOptional', () => {
+  const MANDATE = /also answer with one short say\(\)|also call say\(\) this turn|That say\(\) is required/
+  it('drops the say() mandate mid-action and when idle', () => {
+    const running = NUDGES.actionTurn({ action: 'follow Alex', stopTool: 'unfollow', playerLine: 'stay close pls', who: 'player (Alex)', replyOptional: true })
+    expect(running).not.toMatch(MANDATE)
+    expect(running).toContain('A line you only put in your text is not sent to the player.')
+    const idle = NUDGES.actionTurn({ action: null, stopTool: 'stop', playerLine: 'stay close pls', who: 'player (Alex)', replyOptional: true })
+    expect(idle).not.toMatch(MANDATE)
+    expect(idle).toContain('You are not in the middle of anything.')
+  })
+  it('keeps it by default', () => {
+    expect(NUDGES.actionTurn({ action: 'follow Alex', stopTool: 'unfollow', playerLine: 'stay close pls', who: 'player (Alex)' })).toMatch(MANDATE)
+    expect(NUDGES.actionTurn({ action: null, stopTool: 'stop', playerLine: 'stay close pls', who: 'player (Alex)' })).toMatch(MANDATE)
+  })
+})

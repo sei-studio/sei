@@ -1377,7 +1377,7 @@ export const NUDGES = {
   //   playerLine — the player's words (interrupt) or null (silent monitor)
   //   who       — speaker username, for the interrupt variant
   //   elapsedSec — seconds the action has run, shown only on the silent monitor
-  actionTurn: ({ action, stopTool, playerLine = null, who = null, elapsedSec = null, visionOff = false, proactiveness = 1, voice = false, peers = [], fromTeammate = false, sessionEndClause = SESSION_END_CLAUSE, stuckNudges = null, ownAction = false, waitingAsk = null }) => {
+  actionTurn: ({ action, stopTool, playerLine = null, who = null, elapsedSec = null, visionOff = false, proactiveness = 1, voice = false, peers = [], fromTeammate = false, sessionEndClause = SESSION_END_CLAUSE, stuckNudges = null, ownAction = false, waitingAsk = null, replyOptional = false }) => {
     // Game-adapters M0 (260908): the session-end clause and the stuck hint
     // are adapter-declared (contract v2 sessionEndClause() / stuckNudges());
     // the defaults are the Minecraft text so every existing caller renders
@@ -1418,6 +1418,12 @@ export const NUDGES = {
       if (groupVoice) {
         return `${speaker}${saidLabel}: "${playerLine}". You are not in the middle of anything.${yieldGuidance} If they told you to stop, call ${stopTool} and say one short line. ${SESSION_END} ${MEMORY_GOAL_CUE} ${WAIT_FOR_THEM} Keep any reply short and in character.${MEMORY_GOAL_TAIL}`
       }
+      // 261123 (pass 61): a line they keep saying while she is already by
+      // their side (orchestrator repeatedAskFor) owes no reply; the note that
+      // says so follows the turn.
+      if (replyOptional) {
+        return `${speaker}${saidLabel}: "${playerLine}". You are not in the middle of anything. If they told you to stop, call ${stopTool}. ${SESSION_END} ${MEMORY_GOAL_CUE} ${WAIT_FOR_THEM} Keep any reply short and in character.${MEMORY_GOAL_TAIL}`
+      }
       return `${speaker}${saidLabel}: "${playerLine}". The player is talking TO you and you are NOT in the middle of anything — so REPLY with one short say(). That say() is required; taking an action never replaces it. A greeting, a question, a command, or a tease deserves an answer; only stay silent if it genuinely calls for none. If they asked you to DO something, call that action in the SAME turn as your say(). If they told you to stop, call ${stopTool} and still call say() with one short line. ${SESSION_END} ${MEMORY_GOAL_CUE} ${WAIT_FOR_THEM} Keep your reply short and in character.${MEMORY_GOAL_TAIL}`
     }
     const head = `You're currently: ${label}${elapsed}.`
@@ -1429,7 +1435,7 @@ export const NUDGES = {
       : (playerLine != null && groupVoice)
       ? groupVoiceMidAction
       : (playerLine != null)
-      ? ` ${speaker}${saidLabel}: "${playerLine}". Your current action is still running. Decide whether their line changes what you should be doing. ${midActionChoice(stopTool)} remember() and setGoal also fit in this same turn without touching the action, when their line calls for one. If you agree to do something now that they proposed, call the matching action in this same turn; saying "let's go" or "on it" while your old action keeps running reads as ignoring them. ${SESSION_END} ${MEMORY_GOAL_CUE} Whatever you decide, whether you keep going, switch to a different action, or ${stopTool}, also answer with one short say(). The action is not the reply, and a line you only put in your text is not sent to the player. ${WAIT_FOR_THEM}`
+      ? ` ${speaker}${saidLabel}: "${playerLine}". Your current action is still running. Decide whether their line changes what you should be doing. ${midActionChoice(stopTool)} remember() and setGoal also fit in this same turn without touching the action, when their line calls for one. If you agree to do something now that they proposed, call the matching action in this same turn; saying "let's go" or "on it" while your old action keeps running reads as ignoring them. ${SESSION_END} ${MEMORY_GOAL_CUE} ${replyOptional ? 'A line you only put in your text is not sent to the player.' : `Whatever you decide, whether you keep going, switch to a different action, or ${stopTool}, also answer with one short say(). The action is not the reply, and a line you only put in your text is not sent to the player.`} ${WAIT_FOR_THEM}`
       : ` DEFAULT THIS TICK: call NO say() and let your action speak. This is a CHECK-IN on your OWN routine action while it runs — NOT a chance to re-issue or swap actions. Think in your scratchpad all you want, but call no say(): if you catch yourself about to say() "i'm in the middle of...", "i'm already mid-...", "i'll let this finish", "no announcement needed", or "staying silent", that thought stays in the scratchpad — no say(). Banned inside say() here: progress counts, coordinates, "let me get more logs", "almost there", "still chopping", "i wandered off", "ouen's right here". If you are weighing whether to say() anything, the answer is no. say() ONLY if a genuine milestone or discovery JUST happened (the build finished, you struck diamonds, the player walked into danger) — and then one short line, never a paragraph. FIGHTING AND GETTING HURT ALWAYS COUNT: if something is attacking you, or your health has dropped, the player does not know unless you tell them, so say one short line about it. Going quiet through a fight and only mentioning it afterwards when asked is a real failure, not restraint. Your running action will FINISH on its own and you will pick what comes next THEN — do NOT call another action now, and do NOT re-issue the SAME gather/dig on a nearby block, that just throws away its progress and restarts it. The only action allowed this tick is ${stopTool}, and only if this is genuinely the wrong thing to be doing. EXCEPTION — if the snapshot shows this action is STUCK / making no progress / unreachable (e.g. a follow that hasn't moved, a goal you can't path to), that OVERRIDES the default: do NOT keep waiting on it — react THIS tick by switching to a different action (or ${stopTool}), and optionally one short in-character line. In particular, if you are moving toward a place and your position has not changed since the last tick, the path is not working: ${stuckHint}.`
     const tail = agenticFollowReview
       ? ` To break off and act, call ${stopTool} then your next action this turn; to keep escorting, call nothing.`
@@ -1438,7 +1444,7 @@ export const NUDGES = {
         ? ` To stop, call ${stopTool}. To do something else, call that action. Reply with say() only if the line needs an answer from you; otherwise end the turn silently and let your action carry on.${MEMORY_GOAL_TAIL}`
         : ` To stop, call ${stopTool}. To do something else, call that action. Reply with say() if the line is yours to answer; end the turn silently if it belongs to a teammate.${MEMORY_GOAL_TAIL}`)
       : (playerLine != null)
-      ? ` To stop, call ${stopTool}. To do something else, call that action. Either way, also call say() this turn, since the player spoke to you.${MEMORY_GOAL_TAIL}`
+      ? ` To stop, call ${stopTool}. To do something else, call that action.${replyOptional ? '' : ' Either way, also call say() this turn, since the player spoke to you.'}${MEMORY_GOAL_TAIL}`
       : ` To cancel this action, call ${stopTool}. Otherwise let it run — do not call another action this tick.`
     // 261012: the running action is her own idea, and the player's line may
     // be an order. Their order comes first.

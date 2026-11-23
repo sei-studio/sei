@@ -86,6 +86,20 @@ its call. Probe live cases (`pass60-probe.mjs` behind/heal/follow5, judged
 blind by Opus with `pass60b-judge.mjs`, 35 replies an arm): ok 2 (no note),
 12 (first wording), 21 (now); invented 0, 13, 2. Judge probe replies with
 an LLM, not a word regex.
+Pass 61 (261123): live the note still left her owing a reply, and every
+reassurance loop ran with her one or two blocks from the player: the ask
+was already being done. `repeatedAskTurn` now also takes where she is
+(adapter `playerNearby(name)`: distance from the entities, and whether her
+follow is on them; `observers/nearPlayer.js`). Within `ASK_NEAR_BLOCKS` (4),
+or following with no distance known, the turn owes no reply: the plain
+reply drops `ACK_LINE`, the "answer them" hint and "Answer it with say()",
+the mid-loop turn takes `actionTurn({ replyOptional })`, `_noReplyOwed`
+stops the unanswered-line retry, and the note under their line says where
+she is and that the line needs no answer if it is already happening. Farther
+off the pass 60b note and the mandate stay. State only, no phrase list.
+Probe (`pass60-probe.mjs`, 4 reps of 8 repeat cases): replies its word
+check calls the loop dev 31/32, pass 60b 12/32, pass 61 0/32 (silent end_loop, a few follow or
+goTo); first ask (close1) still answered 3/3, far come3 still goTo 3/3.
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:

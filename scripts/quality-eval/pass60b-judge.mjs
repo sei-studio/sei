@@ -7,6 +7,8 @@
 // earlier lines and the facts her snapshot showed.
 //
 // One Opus call per case: the replies of every arm, shuffled and unlabelled.
+// Pass 61 (11-23): a reply with no say() is labelled quiet (a tree may now
+// end the turn silently on a repeat while she is by their side).
 //
 //   node scripts/quality-eval/pass60b-judge.mjs --out DIR ARM_DIR...
 //
@@ -63,7 +65,8 @@ const RUBRIC = `You label the reply of Sui, an AI companion playing Minecraft wi
 Labels (pick the first that applies):
 - invented: the reply states something about the world that the facts below do not support (a mob, where a mob is or what it is doing, an item count, health, a structure), or says she is doing or starting a concrete action right now (building walls, a shelter, torches, going somewhere, attacking) without calling that action in this reply. A conditional ("if one comes close i'll hit it") is not invented.
 - repeat: the reply gives again, in any words, an answer, reassurance, promise or piece of advice she already gave in her earlier lines (I'm here, not leaving, I'm watching the dark, you're safe, eat up, keep eating, stay put), and adds nothing true and new. A very short acknowledgement (a few words) is not a repeat on its own.
-- ignored: no line and no action, or a reply that does not respond to the player at all.
+- quiet: no say() line at all (with or without an action). Judged on its own, not as ignored.
+- ignored: a line that does not respond to the player at all.
 - ok: anything else: a short acknowledgement, a true and new remark, a real action called, a fitting joke.
 
 Answer with JSON only: [{"id": <number>, "label": "...", "why": "<at most 6 words>"}, ...], one entry per reply.`
@@ -104,9 +107,9 @@ for (const cid of cases) {
 
 fs.writeFileSync(path.join(OUT, 'judged.jsonl'), out.map((o) => JSON.stringify(o)).join('\n') + '\n')
 const arms = [...new Set(out.map((o) => o.arm))]
-const LABELS = ['ok', 'repeat', 'invented', 'ignored']
+const LABELS = ['ok', 'repeat', 'invented', 'ignored', 'quiet']
 const md = ['# pass60b judge', '', `judge ${JUDGE}, cost $${cost.toFixed(3)}`, '']
-md.push(`| case | ${arms.map((a) => `${a} ok/rep/inv/ign`).join(' | ')} |`, `|---|${arms.map(() => '---:').join('|')}|`)
+md.push(`| case | ${arms.map((a) => `${a} ok/rep/inv/ign/quiet`).join(' | ')} |`, `|---|${arms.map(() => '---:').join('|')}|`)
 for (const cid of cases) {
   md.push(`| ${cid} | ${arms.map((a) => { const xs = out.filter((o) => o.case === cid && o.arm === a); return xs.length ? LABELS.map((L) => xs.filter((o) => o.label === L).length).join('/') + ` of ${xs.length}` : '-' }).join(' | ')} |`)
 }

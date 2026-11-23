@@ -42,6 +42,12 @@
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass60-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b] [--note v3]
 //
+// Pass 61 (11-23): the probe adapter answers playerNearby from the world (2
+// blocks, or 22 when far; her follow when FW), so a tree with the pass 61
+// near variant drops the reply mandate on close3-5, behind3/4, heal4/5 and
+// follow5, and keeps it on come3 (far). Judge silence as "quiet"
+// (pass60b-judge.mjs).
+//
 // Key: ANTHROPIC_API_KEY or ~/.sei-dev/anthropic-test-key, never printed.
 // Output: DIR/runs.jsonl, DIR/summary.md, DIR/requests/ (first run per case).
 import fs from 'node:fs'
@@ -323,6 +329,10 @@ async function runOne({ cid, rep }) {
   const pendingActs = [] // scripted world actions, in call order: { name, o }
   const overrides = {
     createSnapshotComposer: () => ({ next: () => snapshot(world) }),
+    // Pass 61: where she is relative to the speaker, as the snapshot's owner
+    // line shows it (a tree without playerNearby never asks).
+    playerNearby: (name) => (String(name).toLowerCase() === PLAYER.toLowerCase()
+      ? { distance: world.far ? 22 : 2, following: !!world.following } : null),
     closeAnySessions: async () => {},
     executeAction: async (name, args, opts) => {
       const k = pendingActs.findIndex((p) => p.name === name)

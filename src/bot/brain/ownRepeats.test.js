@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote } from './ownRepeats.js'
+import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS } from './ownRepeats.js'
 
 // One say() line is recorded as several chat messages within a few ms; turns
 // are seconds apart.
@@ -503,5 +503,50 @@ describe('repeatedPlayerAsk', () => {
     expect(note).not.toMatch(/[—–]/)
     expect(repeatedAskNote(P.slice(0, 3), self, { now: T(170), names: ['Alex'], selfNames: ['Sui'] })).toBeNull()
     expect(ownRepeatsNote(self, P.slice(0, 4), { now: T(210), names: ['Alex'] }) ?? '').not.toContain('much the same thing')
+  })
+})
+
+// 261123 (pass 61): the same ask while she is already by their side owes no
+// reply; the distance comes from state, never from their words.
+describe('repeatedAskTurn', () => {
+  const T = (s) => 1_000_000 + s * 1000
+  const P = [
+    [156, 'ok thx sui. stay close pls, skeletons scare me'],
+    [169, 'ok sui thx. stay close pls'],
+    [209, 'ok sui. stay close pls, im scared of skeletons'],
+  ].map(([t, text]) => ({ at: T(t), who: 'Alex', text }))
+  const self = [[157, 'staying on you alex'], [171, 'yeah yeah i got you alex'], [199, 'skeletons are far']]
+    .map(([t, text]) => ({ at: T(t), text }))
+  const turn = (near, p = P) => repeatedAskTurn(p, self, { now: T(210), names: ['Alex'], selfNames: ['Sui'], near })
+
+  it('lifts the reply when she is within a few blocks, and says where she is', () => {
+    const r = turn({ distance: 2, following: false })
+    expect(r.replyOptional).toBe(true)
+    expect(r.note).toContain('They have now said much the same thing three times')
+    expect(r.note).toContain('You are 2 blocks from them.')
+    expect(r.note).toContain('this line needs no answer: you can end the turn without say()')
+    expect(r.note).toContain('If it is not happening yet, do it now.')
+    expect(r.note).not.toMatch(/[—–]/)
+    expect(turn({ distance: 1, following: true }).note).toContain('You are following them and right next to them.')
+    expect(turn({ distance: ASK_NEAR_BLOCKS, following: false }).replyOptional).toBe(true)
+  })
+
+  it('keeps the reply owed when she is farther off, or where she is is unknown', () => {
+    for (const near of [{ distance: ASK_NEAR_BLOCKS + 1, following: false }, { distance: 12, following: true }, null]) {
+      const r = turn(near)
+      expect(r.replyOptional).toBe(false)
+      expect(r.note).toBe(repeatedAskNote(P, self, { now: T(210), names: ['Alex'], selfNames: ['Sui'] }))
+    }
+  })
+
+  it('takes a running follow as by their side only when no distance is known', () => {
+    const r = turn({ distance: null, following: true })
+    expect(r.replyOptional).toBe(true)
+    expect(r.note).toContain('You are following them.')
+    expect(turn({ distance: null, following: false }).replyOptional).toBe(false)
+  })
+
+  it('is null when the line is no repeat', () => {
+    expect(turn({ distance: 1, following: false }, P.slice(0, 2))).toBeNull()
   })
 })
