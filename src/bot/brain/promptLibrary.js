@@ -904,6 +904,29 @@ export function callGreetingNote({ peers = [], plan } = {}) {
     `ask why they called or what is up. ${cue} This greeting is always a spoken line, never (silence). Do not mention this note.]`
 }
 
+// The voice-call idle conversation starter (chatService sendVoiceIdleTurnImpl),
+// appended after the last cache breakpoint when a live call has been quiet for
+// a stretch. Lives here, next to callGreetingNote, so probes send the exact
+// text. 260730: two notes. The generic "start a topic" note read wrong after
+// the companion had just ASKED something: the reply that follows a question is
+// an answer, and a fresh topic on top of the unanswered one drops it. The
+// follow-up note is deliberately unpressured: no "still there?", no repeating
+// the question at them, and silence is still a fine answer. The renderer fires
+// it at most once per question.
+/** @param {{ quietSeconds: number, awaitingAnswer?: boolean }} args */
+export function voiceIdleNote({ quietSeconds, awaitingAnswer = false }) {
+  const quiet = Math.max(1, Math.round(Number(quietSeconds) || 0))
+  return awaitingAnswer
+    ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
+      'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
+      'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
+      'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
+    : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
+      'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
+      'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
+      'Do not greet them again and do not ask if they are still there. Do not mention this note.]'
+}
+
 // The first-spawn greeting (orchestrator, reason just_connected_first_spawn).
 // 261011: two variants. `known` (a memory entry or the in-app chat it came
 // from) keeps the returning-friend wording; a first-ever session greets the

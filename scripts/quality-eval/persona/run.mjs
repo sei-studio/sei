@@ -48,7 +48,7 @@ import { createOrchestrator } from '../../../src/bot/brain/orchestrator.js'
 import { createSessionState } from '../../../src/bot/brain/sessionState.js'
 import { createAnthropicProvider } from '../../../src/bot/brain/llm/anthropicProvider.js'
 import { loadPlayer, savePlayer, formatPlayerSeedBlock } from '../../../src/bot/brain/memory/player.js'
-import { SITUATIONS, PLAYER_NAME } from './situations.mjs'
+import { SITUATIONS as DEFAULT_SITUATIONS, PLAYER_NAME } from './situations.mjs'
 import { loadCharacters } from './characters.mjs'
 
 function arg(name, def) {
@@ -64,6 +64,12 @@ const SITS = arg('situations')?.split(',')
 const MODEL = arg('model', 'claude-haiku-5-5')
 const HISTORY = arg('history')
 const HISTORY_N = Number(arg('history-n', 3))
+// --situations-file: a module exporting SITUATIONS in the same shape, run
+// instead of the default set (for example talkativeness-situations.mjs).
+const SITUATIONS_FILE = arg('situations-file')
+const SITUATIONS = SITUATIONS_FILE
+  ? (await import(path.resolve(SITUATIONS_FILE))).SITUATIONS
+  : DEFAULT_SITUATIONS
 if (!OUT) { console.error('--out required'); process.exit(2) }
 fs.mkdirSync(path.join(OUT, 'requests'), { recursive: true })
 
@@ -218,7 +224,8 @@ async function pool(items, n, fn) {
   return out
 }
 
-const chars = loadCharacters(CHARS_DIR).filter((c) => !ONLY || ONLY.includes(c.key))
+// --only also names fixtures outside the default five (a test card).
+const chars = loadCharacters(CHARS_DIR, ONLY ?? undefined)
 const sits = SITUATIONS.filter((s) => !SITS || SITS.includes(s.id) || s.id === 'greeting')
 const samplesPath = path.join(OUT, 'samples.jsonl')
 const out = fs.createWriteStream(samplesPath, { flags: 'a' })
