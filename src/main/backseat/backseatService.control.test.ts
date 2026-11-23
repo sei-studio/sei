@@ -20,7 +20,9 @@ const h = vi.hoisted(() => ({
 vi.mock('electron', () => ({ app: { isPackaged: true, getPath: () => '/tmp' } }));
 vi.mock('../analytics', () => ({ capture: () => {}, captureSurfaceError: () => {}, surfaceErrorClass: () => 'x' }));
 vi.mock('../paths', () => ({ paths: { memoryDir: () => '/nonexistent/sei-test-memory' } }));
-vi.mock('../configStore', () => ({ loadConfig: async () => ({}) }));
+// 261123: Clip That is off unless a test turns it on.
+const cfgMock: { clip_that?: boolean; clip_fps?: number } = {};
+vi.mock('../configStore', () => ({ loadConfig: async () => ({ ...cfgMock }) }));
 vi.mock('../characterStore', () => ({
   getCharacter: async () => ({ name: 'Sui', persona: { expanded: 'Sui persona' }, metadata: {} }),
 }));
@@ -210,8 +212,21 @@ describe('backseat control() wiring', () => {
     await tick('jolt');
     await tick('idle');
     expect(h.requests).toHaveLength(4);
-    for (let i = 0; i < 4; i++) expect(toolNames(i)).toEqual(['save_clip', 'remember', 'control']);
+    for (let i = 0; i < 4; i++) expect(toolNames(i)).toEqual(['remember', 'control']);
     expect(h.requests[1]!.tools).toBe(h.requests[0]!.tools);
+  });
+
+  it('offers save_clip only when Clip That is on (261123)', async () => {
+    cfgMock.clip_that = true;
+    try {
+      await startBackseat(CH, 'window:77:0', 'Safari', 'text' as never);
+      await tick('start');
+      await tick('user', 'hi');
+      expect(toolNames(0)).toEqual(['save_clip', 'remember', 'control']);
+      expect(h.requests[1]!.tools).toBe(h.requests[0]!.tools);
+    } finally {
+      delete cfgMock.clip_that;
+    }
   });
 
   it('does not offer control() on a whole-screen share, and ignores a stray call', async () => {
@@ -219,8 +234,8 @@ describe('backseat control() wiring', () => {
     h.replies.push({ text: 'ok', control: { goal: 'turn on dark mode', request: 'turn on dark mode' } });
     await tick('user', 'turn on dark mode');
     await tick('jolt');
-    expect(toolNames(0)).toEqual(['save_clip', 'remember']);
-    expect(toolNames(1)).toEqual(['save_clip', 'remember']);
+    expect(toolNames(0)).toEqual(['remember']);
+    expect(toolNames(1)).toEqual(['remember']);
     expect(h.starts).toHaveLength(0);
     expect(h.said).toEqual(['ok', 'ok']);
   });

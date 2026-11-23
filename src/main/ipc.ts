@@ -79,6 +79,7 @@ import {
   startChatReplyClock,
   type ChatReplyClock,
 } from './replyLatency';
+import { BACKSEAT_PERF_EVENT } from '../shared/backseatPerf';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
 import {
@@ -1886,16 +1887,27 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (!resolved.startsWith(nodePath.resolve(root) + nodePath.sep)) return;
     shell.showItemInFolder(resolved);
   });
-  ipcMain.handle(IpcChannel.backseat.end, async (_event, idArg: unknown, reasonArg: unknown) => {
+  // 261123: after a busy capture refusal, is the picked window minimized?
+  // Shape only (a boolean), Windows only; see backseat/windowState.ts.
+  ipcMain.handle(IpcChannel.backseat.windowMinimized, async (_event, idRaw: unknown) => {
+    const sourceId = z.string().max(300).parse(idRaw);
+    const { isWindowSourceMinimized } = await import('./backseat/windowState');
+    return await isWindowSourceMinimized(sourceId);
+  });
+  ipcMain.handle(IpcChannel.backseat.end, async (_event, idArg: unknown, reasonArg: unknown, detailArg?: unknown) => {
     const id = IdSchema.parse(idArg);
     // 261023: why it ended, validated against a fixed vocabulary (an unknown
     // or missing reason becomes 'unspecified'). Only a stop the player chose
     // runs the player-end "next time" check; a lost window or a failed
     // capture is not the player leaving.
-    const { normalizeBackseatEndReason, isPlayerEndedReason } = await import('../shared/callEndReasons');
+    const { normalizeBackseatEndReason, isPlayerEndedReason, normalizeCaptureFailDetail } = await import(
+      '../shared/callEndReasons'
+    );
     const reason = normalizeBackseatEndReason(reasonArg);
+    // A failed capture start also says how it failed (shape only, validated).
+    const extraProps = reason.startsWith('capture_failed:') ? normalizeCaptureFailDetail(detailArg) : {};
     const backseat = await import('./backseat/backseatService');
-    await backseat.endBackseat(id, reason, { playerEnded: isPlayerEndedReason(reason) });
+    await backseat.endBackseat(id, reason, { playerEnded: isPlayerEndedReason(reason), extraProps });
   });
 
   // ── Minecraft dashboard (260721) ──────────────────────────────────────────
@@ -3525,6 +3537,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     .object({ accountId: z.string().max(400).nullable().optional(), enablePlan: z.boolean().optional() })
     .default({});
   const ChatgptAccountArg = z.object({ accountId: z.string().max(400) });
+  /** Failed plan connects since the last success, this app run (analytics). */
+  let chatgptConnectFailures = 0;
   ipcMain.handle(IpcChannel.chatgpt.status, async () => {
     const { chatgptSession } = await import('./chatgptPlan');
     return await chatgptSession().status();
@@ -3536,19 +3550,32 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // without one, or when the link cannot run, it is the plain sign-in.
     const { chatgptAccountLogin } = await import('./auth/chatgptAccountLogin');
     const r = await chatgptAccountLogin().connectPlan(args);
+    // 261123 (T-A): the connect funnel. Shape only: success rate =
+    // connected / (connected + failed), and prior_failures says whether a
+    // connect came after failed tries in this app run.
+    const funnel = {
+      renewal: typeof args.accountId === 'string',
+      enable_plan: args.enablePlan === true,
+      prior_failures: Math.min(chatgptConnectFailures, 5),
+      retried_issued_client: r.retriedIssuedClient === true,
+    };
     // A new account brings a new model catalog (default model + vision).
-    if (r.ok) void import('./llm/capability').then((m) => m.pushLlmCapability());
-    else if (r.reason !== 'cancelled') {
+    if (r.ok) {
+      chatgptConnectFailures = 0;
+      void import('./llm/capability').then((m) => m.pushLlmCapability());
+      trackAnalytics('chatgpt_plan_connected', { ...funnel, plan_enabled: r.planEnabled });
+    } else if (r.reason !== 'cancelled') {
       // 261107 (T363): failures after the browser step were invisible (the
       // renderer shows one generic line, nothing was logged or counted).
-      const { signInFailureDetail } = await import('./chatgptPlan/session');
+      const { signInFailureClass, signInFailureDetail } = await import('./chatgptPlan/session');
       const detail = signInFailureDetail(r.message);
       console.warn(`[chatgpt] plan sign-in failed: ${r.reason}${detail ? ` (${detail})` : ''}`);
+      chatgptConnectFailures += 1;
       trackAnalytics('chatgpt_plan_sign_in_failed', {
         reason: r.reason,
         detail: detail ?? 'none',
-        renewal: typeof args.accountId === 'string',
-        enable_plan: args.enablePlan === true,
+        failure_class: signInFailureClass(r.reason, detail),
+        ...funnel,
       });
     }
     return r;
@@ -3599,6 +3626,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (event === REPLY_LATENCY_EVENT) {
         const sample = sanitizeRendererReplyLatency(props);
         if (sample) recordReplyLatency(sample);
+        return;
+      }
+      // 261123: Backseat capture cost. Main adds CPU/memory for the sending
+      // renderer (backseat/perfSample.ts); the 'start' marker only sets the
+      // baseline and is never sent.
+      if (event === BACKSEAT_PERF_EVENT) {
+        const sender = event_.sender;
+        void import('./backseat/perfSample')
+          .then(({ handleBackseatPerf }) => {
+            const perf = handleBackseatPerf(sender, props);
+            if (perf) trackAnalytics(event, perf);
+          })
+          .catch(() => {});
         return;
       }
       // 261123: launch timing (startupMarks.ts). Main stamps the time on arrival.

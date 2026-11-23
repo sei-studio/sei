@@ -401,6 +401,8 @@ export const ZH_SCREENS_B: Record<string, string> = {
   'Could not open your browser. Try again.': '无法打开浏览器，请重试。',
   'Sei could not start its sign-in listener. Try again.': 'Sei 无法启动登录监听，请重试。',
   'Sign-in did not finish. Try again.': '登录未完成，请重试。',
+  'ChatGPT did not accept this sign-in. Try again and finish in the newest browser tab. If it still fails, sign out of ChatGPT in your browser first.':
+    'ChatGPT 未接受此次登录。请重试，并在浏览器最新打开的标签页中完成。如果仍然失败，请先在浏览器中退出 ChatGPT。',
   'Sign in with ChatGPT first.': '请先登录 ChatGPT。',
   'Turn on ChatGPT plan use first.': '请先开启 ChatGPT 套餐使用权限。',
   "You've reached your ChatGPT plan's usage limit.": '你已达到 ChatGPT 套餐的用量上限。',

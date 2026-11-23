@@ -251,7 +251,9 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.backseat.saveClip, { characterId, requestId, webmBase64 }),
   backseatRevealClip: (clipPath) =>
     ipcRenderer.invoke(IpcChannel.backseat.revealClip, clipPath),
-  backseatEnd: (characterId, reason) => ipcRenderer.invoke(IpcChannel.backseat.end, characterId, reason),
+  backseatWindowMinimized: (sourceId) => ipcRenderer.invoke(IpcChannel.backseat.windowMinimized, sourceId),
+  backseatEnd: (characterId, reason, captureDetail) =>
+    ipcRenderer.invoke(IpcChannel.backseat.end, characterId, reason, captureDetail),
   onBackseatState(cb) {
     const handler = (_e: Electron.IpcRendererEvent, s: Parameters<typeof cb>[0]) => cb(s);
     ipcRenderer.on(IpcChannel.backseat.state, handler);

@@ -39,6 +39,7 @@ import {
   chatgptAccountLabels,
   parseChatgptModels,
   type ChatgptModel,
+  type ChatgptSignInFailed,
   type ChatgptSignInFailure,
   type ChatgptSignInResult,
   type ChatgptSignOutResult,
@@ -155,6 +156,57 @@ export function signInFailureDetail(message: string | undefined): string | null 
   return /^[A-Za-z0-9_.-]{1,48}$/.test(m) ? m : 'other';
 }
 
+/**
+ * 261123 (T-A): the shape-only failure class for the connect funnel
+ * (`chatgpt_plan_sign_in_failed.failure_class`). Coarse on purpose: the
+ * reason and detail props keep the exact codes.
+ */
+export type SignInFailureClass =
+  | 'code_refused'
+  | 'token_endpoint'
+  | 'incomplete_tokens'
+  | 'storage'
+  | 'callback'
+  | 'id_token'
+  | 'user'
+  | 'network'
+  | 'region'
+  | 'local'
+  | 'other';
+
+export function signInFailureClass(reason: ChatgptSignInFailure, detail: string | null): SignInFailureClass {
+  switch (reason) {
+    case 'exchange_failed':
+      if (detail === 'invalid_grant') return 'code_refused';
+      if (detail === 'no_id_token' || detail === 'no_refresh_token') return 'incomplete_tokens';
+      if (detail?.startsWith('vault_')) return 'storage';
+      if (detail === 'no_code') return 'callback';
+      return detail && detail !== 'other' && detail !== 'unknown_account' ? 'token_endpoint' : 'other';
+    case 'state_mismatch':
+    case 'registration_incomplete':
+    case 'client_mismatch':
+      return 'callback';
+    case 'id_token_invalid':
+      return 'id_token';
+    case 'cancelled':
+    case 'denied':
+    case 'timeout':
+    case 'account_mismatch':
+      return 'user';
+    case 'network':
+      return 'network';
+    case 'region_unsupported':
+      return 'region';
+    case 'keychain_unavailable':
+      return 'storage';
+    case 'port_unavailable':
+    case 'browser_failed':
+      return 'local';
+    default:
+      return 'other';
+  }
+}
+
 export function accountIdOf(clientId: string, subject: string): string {
   return `${clientId}:${subject}`;
 }
@@ -242,11 +294,11 @@ export interface PendingLoginAccount {
   /** Epoch ms the token response arrived (expiry is relative to it). */
   receivedAt: number;
   planEnabled: boolean;
+  /** 261123: the first code was refused and the issued-client retry got this one. */
+  retriedIssuedClient?: true;
 }
 
-export type LoginSignInResult =
-  | { ok: true; pending: PendingLoginAccount }
-  | { ok: false; reason: ChatgptSignInFailure; message?: string };
+export type LoginSignInResult = { ok: true; pending: PendingLoginAccount } | ChatgptSignInFailed;
 
 export interface ChatgptSession {
   status(): Promise<ChatgptStatus>;
@@ -418,7 +470,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
 
   // ── Sign-in ────────────────────────────────────────────────────────────
 
-  function fail(reason: ChatgptSignInFailure, message?: string): ChatgptSignInResult {
+  function fail(reason: ChatgptSignInFailure, message?: string): ChatgptSignInFailed {
     return { ok: false, reason, ...(message ? { message } : {}) };
   }
 
@@ -436,20 +488,65 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
         tokens: TokenResponse & { id_token: string; refresh_token: string };
         claims: Awaited<ReturnType<typeof verifyIdToken>>;
         receivedAt: number;
+        /** The new registration's code was refused and the issued-client retry ran. */
+        retried: boolean;
       }
-    | { ok: false; result: ChatgptSignInResult };
+    | { ok: false; result: ChatgptSignInFailed; retried: boolean };
+
+  /** One round's outcome; `issuedClientId` set = invalid_grant on a new registration. */
+  type Round =
+    | Omit<Extract<Authorized, { ok: true }>, 'retried'>
+    | { ok: false; result: ChatgptSignInFailed; issuedClientId?: string };
 
   /**
-   * One browser round trip: authorize, callback, code exchange, ID-token
-   * verification. Touches no stored state. `attempt` must already be this
-   * call's controller.
+   * One sign-in: a browser round trip (authorizeRound), plus the SIWC
+   * recovery for a refused code. 261123 (T-A): "If code exchange returns
+   * invalid_grant, discard that code and start a fresh authorization with the
+   * issued client ID retained for this attempt" (SIWC docs, sign-in step 3).
+   * Before this, the issued client id was dropped with the code, so every
+   * retry (ours or the user's) registered a NEW client through
+   * dynamic_agent_client and got the same refusal, so users who hit it
+   * never got through however often they tried. Now a new registration whose
+   * code is refused reauthorizes once with the client it was just issued
+   * (account selector, no consent screen). Same nonce: the refused code
+   * minted no ID token, so the nonce still binds exactly one, and the account
+   * login's nonce comes from Sei's proxy, which checks it.
    */
   async function authorize(
     ctrl: AbortController,
     p: { target: AuthorizeTarget | null; nonce: string; forceConsent: boolean; label: string },
     onListener: (l: CallbackListener) => void,
   ): Promise<Authorized> {
-    const no = (reason: ChatgptSignInFailure, message?: string): Authorized => ({ ok: false, result: fail(reason, message) });
+    let current: CallbackListener | null = null;
+    const track = (l: CallbackListener): void => {
+      current = l;
+      onListener(l);
+    };
+    const first = await authorizeRound(ctrl, p, track);
+    if (first.ok) return { ...first, retried: false };
+    if (!first.issuedClientId || ctrl.signal.aborted) return { ok: false, result: first.result, retried: false };
+    log(`[chatgpt] ${p.label}: the new registration's code was refused (invalid_grant); retrying with the issued client`);
+    // The first round's tab is done; free its port before the next listener.
+    (current as CallbackListener | null)?.close();
+    const second = await authorizeRound(
+      ctrl,
+      { ...p, target: { client_id: first.issuedClientId, id_token: null, email: null } },
+      track,
+    );
+    return second.ok ? { ...second, retried: true } : { ok: false, result: second.result, retried: true };
+  }
+
+  /**
+   * One browser round trip: authorize, callback, code exchange, ID-token
+   * verification. Touches no stored state. `attempt` must already be this
+   * call's controller.
+   */
+  async function authorizeRound(
+    ctrl: AbortController,
+    p: { target: AuthorizeTarget | null; nonce: string; forceConsent: boolean; label: string },
+    onListener: (l: CallbackListener) => void,
+  ): Promise<Round> {
+    const no = (reason: ChatgptSignInFailure, message?: string): Round => ({ ok: false, result: fail(reason, message) });
     const hostId = await deps.hostId();
     const endpoints = await discover();
     const state = randomToken();
@@ -514,13 +611,19 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
       // 261103 (T303): OpenAI refuses the token exchange from an unsupported
       // region (403 unsupported_country_region_territory).
       if (isProviderRegionRefusal(err)) return no('region_unsupported');
-      // invalid_grant: the code is discarded; the user starts a fresh attempt.
+      // invalid_grant: the code is discarded. On a new registration the
+      // issued client id is kept for authorize()'s retry (SIWC docs).
       // The detail is the OAuth error code, or the HTTP status when the body
       // had none (a firewall or CDN page), for the failure log and event.
-      return no(
+      const result = fail(
         'exchange_failed',
         err instanceof OAuthError ? (err.oauthError ?? (err.httpStatus ? `http_${err.httpStatus}` : undefined)) : undefined,
       );
+      const newRegistration = !pending.issuedClientId;
+      if (newRegistration && err instanceof OAuthError && err.oauthError === 'invalid_grant') {
+        return { ok: false, result, issuedClientId: outcome.clientId };
+      }
+      return { ok: false, result };
     }
     const receivedAt = now();
     if (!tokens.id_token || !tokens.refresh_token) {
@@ -552,7 +655,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     hostId: string;
     tokens: TokenResponse;
     receivedAt: number;
-  }): Promise<{ ok: true; enabled: boolean } | { ok: false; result: ChatgptSignInResult }> {
+  }): Promise<{ ok: true; enabled: boolean } | { ok: false; result: ChatgptSignInFailed }> {
     let enabled = false;
     // A refresh still in flight for this account must not overwrite the
     // tokens this sign-in is about to store.
@@ -626,7 +729,8 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
         { target, nonce, forceConsent: opts.enablePlan === true, label: 'sign-in' },
         (l) => (listener = l),
       );
-      if (!got.ok) return got.result;
+      const retried = got.retried ? ({ retriedIssuedClient: true } as const) : {};
+      if (!got.ok) return { ...got.result, ...retried };
       const { claims } = got;
       if (target && claims.sub !== target.subject) {
         // A different ChatGPT account answered a reauth: never overwrite.
@@ -645,8 +749,8 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
         tokens: got.tokens,
         receivedAt: got.receivedAt,
       });
-      if (!saved.ok) return saved.result;
-      return { ok: true, status: await status(), planEnabled: saved.enabled };
+      if (!saved.ok) return { ...saved.result, ...retried };
+      return { ok: true, status: await status(), planEnabled: saved.enabled, ...retried };
     } finally {
       (listener as CallbackListener | null)?.close();
       if (attempt === ctrl) attempt = null;
@@ -675,7 +779,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
         { target: opts.target ?? null, nonce: opts.nonce, forceConsent: opts.forceConsent === true, label: 'account login' },
         (l) => (listener = l),
       );
-      if (!got.ok) return got.result as LoginSignInResult;
+      if (!got.ok) return { ...got.result, ...(got.retried ? { retriedIssuedClient: true } : {}) };
       if (ctrl.signal.aborted) return { ok: false, reason: 'cancelled' };
       const { claims } = got;
       // Diagnostics for the account policy: claim NAMES and the
@@ -697,6 +801,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
           tokens: got.tokens,
           receivedAt: got.receivedAt,
           planEnabled: got.tokens.scopes.includes(CHATGPT_PLAN_SCOPE),
+          ...(got.retried ? { retriedIssuedClient: true } : {}),
         },
       };
     } finally {
@@ -726,7 +831,7 @@ export function createChatgptSession(deps: ChatgptSessionDeps): ChatgptSession {
     });
     if (!saved.ok) return saved.result;
     void emitStatus();
-    return { ok: true, status: await status(), planEnabled: saved.enabled };
+    return { ok: true, status: await status(), planEnabled: saved.enabled, ...(p.retriedIssuedClient ? { retriedIssuedClient: true } : {}) };
   }
 
   /** Drop a login's tokens that will never be stored (cancelled or refused). */

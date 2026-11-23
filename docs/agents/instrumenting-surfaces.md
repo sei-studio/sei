@@ -480,6 +480,9 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
   game matched from the shared window title against the closed list in
   `backseat/watchedGame.ts`, `game_source: tile|title`) and `watched_kind`
   (`game`/`video`/`browser`/`other`/`unknown`). The title never ships.
+  They also carry `clip_that` / `clip_fps` (the Clip That setting), `_ended`
+  `clips_saved`; `backseat_perf` (phase `first_minute` / `end`) is the
+  share's CPU, memory and frame-rate health (`shared/backseatPerf.ts`).
 - `summon_failed` carries `game`, and redact() also scrubs the player's own
   `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
 

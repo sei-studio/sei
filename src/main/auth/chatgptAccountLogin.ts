@@ -200,7 +200,7 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
         ok: false;
         result: ChatgptLoginResult;
         /** The browser flow's own failure, when it got that far. */
-        signIn?: { reason: ChatgptSignInFailure; message?: string };
+        signIn?: { reason: ChatgptSignInFailure; message?: string; retriedIssuedClient?: true };
         /** False when it stopped before any browser sign-in (nonce step). */
         browserOpened: boolean;
       };
@@ -236,7 +236,12 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
         await deps.registration.clear().catch(() => undefined);
         continue;
       }
-      return { ok: false, result: mapSignInFailure(r.reason, r.message), signIn: { reason: r.reason, message: r.message }, browserOpened };
+      return {
+        ok: false,
+        result: mapSignInFailure(r.reason, r.message),
+        signIn: { reason: r.reason, message: r.message, ...(r.retriedIssuedClient ? { retriedIssuedClient: true } : {}) },
+        browserOpened,
+      };
     }
     return { ok: false, result: fail('sign_in_failed', 'ChatGPT sign-in failed'), browserOpened };
   }
@@ -466,7 +471,10 @@ export function createChatgptAccountLogin(deps: ChatgptAccountLoginDeps) {
         // Nothing reached the browser (the proxy is unreachable or refused
         // the nonce): the plain sign-in needs no proxy.
         if (!signed.browserOpened) return plain(signed.result.ok ? 'nonce' : signed.result.reason);
-        if (signed.signIn) return { ok: false, reason: signed.signIn.reason, ...(signed.signIn.message ? { message: signed.signIn.message } : {}) };
+        if (signed.signIn) {
+          const { reason, message, retriedIssuedClient } = signed.signIn;
+          return { ok: false, reason, ...(message ? { message } : {}), ...(retriedIssuedClient ? { retriedIssuedClient } : {}) };
+        }
         return { ok: false, reason: 'exchange_failed' };
       }
       if (gen !== generation) {

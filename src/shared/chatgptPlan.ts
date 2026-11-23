@@ -228,8 +228,22 @@ export type ChatgptSignInFailure =
   | 'region_unsupported';
 
 export type ChatgptSignInResult =
-  | { ok: true; status: ChatgptStatus; planEnabled: boolean }
-  | { ok: false; reason: ChatgptSignInFailure; message?: string };
+  | {
+      ok: true;
+      status: ChatgptStatus;
+      planEnabled: boolean;
+      /** 261123: connected only after the issued-client retry (first code refused). */
+      retriedIssuedClient?: true;
+    }
+  | {
+      ok: false;
+      reason: ChatgptSignInFailure;
+      message?: string;
+      /** 261123: the issued-client retry ran and this is its failure. */
+      retriedIssuedClient?: true;
+    };
+
+export type ChatgptSignInFailed = Extract<ChatgptSignInResult, { ok: false }>;
 
 export interface ChatgptSignOutResult {
   ok: true;

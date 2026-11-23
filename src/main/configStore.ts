@@ -862,6 +862,8 @@ export const RENDERER_SETTABLE_KEYS: readonly (keyof UserConfig)[] = [
   'advanced_updates',
   'realistic_typing',
   'call_captions',
+  'clip_that',
+  'clip_fps',
   'call_overlay_enabled',
   'avatar_mode',
   'avatar_prefs',

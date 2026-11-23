@@ -278,3 +278,30 @@ describe('quietExtraMs', () => {
     expect(after / 200).toBeGreaterThan(8);
   });
 });
+
+describe('Clip That rates (261123)', () => {
+  it('reads only 30, 60 or 120 from config, else 30', async () => {
+    const { clipFpsOf } = await import('./backseatIpc');
+    expect(clipFpsOf(60)).toBe(60);
+    expect(clipFpsOf(120)).toBe(120);
+    expect(clipFpsOf(90)).toBe(30);
+    expect(clipFpsOf('60')).toBe(30);
+    expect(clipFpsOf(undefined)).toBe(30);
+  });
+  it('the stream runs at 30 unless clips need more', async () => {
+    const { streamFps, CAPTURE_FPS, ANALYSIS_FPS } = await import('./backseatIpc');
+    expect(CAPTURE_FPS).toBe(30);
+    expect(ANALYSIS_FPS).toBeLessThanOrEqual(CAPTURE_FPS);
+    // The analysis still samples the grid at its own 10 Hz.
+    expect(1000 / SAMPLE_INTERVAL_MS).toBeLessThan(ANALYSIS_FPS);
+    expect(streamFps(false, 120)).toBe(30);
+    expect(streamFps(true, 30)).toBe(30);
+    expect(streamFps(true, 60)).toBe(60);
+    expect(streamFps(true, 120)).toBe(120);
+  });
+  it('clip bitrate grows with the rate', async () => {
+    const { clipBitrate } = await import('./backseatIpc');
+    expect(clipBitrate(30)).toBeLessThan(clipBitrate(60));
+    expect(clipBitrate(60)).toBeLessThan(clipBitrate(120));
+  });
+});

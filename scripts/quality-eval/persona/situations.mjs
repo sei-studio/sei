@@ -13,7 +13,7 @@
 
 const PLAYER = 'Alex'
 
-function snapshot(o = {}) {
+export function snapshot(o = {}) {
   const pos = o.pos ?? '112,71,-40'
   const lines = [
     'world: #1 Meadow',

@@ -711,6 +711,18 @@ export const UserConfigSchema = z.object({
    */
   call_captions: z.boolean().optional().default(false),
   /**
+   * Clip That (261123, product call 261123): while sharing a screen, keep a
+   * rolling recording so the companion can save the last 15 seconds as a clip
+   * in chat (the player asks "clip that", or it saves a great moment itself).
+   * OFF by default for new and existing players: the rolling recorders were
+   * the most expensive part of a share. Off, no MediaRecorder runs and
+   * save_clip is not offered (backseatService TOOLS_*).
+   */
+  clip_that: z.boolean().optional().default(false),
+  /** The Clip That frame rate: 30, 60 or 120 (CLIP_FPS_OPTIONS). The stream
+   *  is capped at what the source delivers, so 120 is a ceiling, not a promise. */
+  clip_fps: z.union([z.literal(30), z.literal(60), z.literal(120)]).optional().default(30),
+  /**
    * DEPRECATED (260804) — the old boolean "Call overlay" toggle, superseded by
    * `avatar_mode`. Kept so existing config.json files still parse and so
    * `effectiveAvatarMode` can map an old `true` onto `'activity'`. Never

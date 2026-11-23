@@ -23,6 +23,8 @@ interface ChatgptState {
   status: ChatgptStatus | null;
   /** The last sign-in attempt's failure, for the inline error line. */
   signInError: ChatgptSignInFailure | null;
+  /** Its shape-only detail (an OAuth error code such as invalid_grant), or null. */
+  signInErrorDetail: string | null;
   /** The last sign-out could not confirm remote revocation. */
   signOutUnconfirmed: boolean;
   /** The usage-limit dialog is open (opened when a latch turns on). */
@@ -74,6 +76,7 @@ export const useChatgptStore = create<ChatgptState>((set, get) => {
   return {
     status: null,
     signInError: null,
+    signInErrorDetail: null,
     signOutUnconfirmed: false,
     limitDialog: false,
     blockDialog: null,
@@ -89,14 +92,14 @@ export const useChatgptStore = create<ChatgptState>((set, get) => {
     },
     subscribe: () => sei.onChatgptStatus((s) => apply(s)),
     signIn: async (opts) => {
-      set({ signInError: null, signOutUnconfirmed: false });
+      set({ signInError: null, signInErrorDetail: null, signOutUnconfirmed: false });
       try {
         const r = await sei.chatgptSignIn(opts);
         if (r.ok) apply(r.status);
-        else set({ signInError: r.reason });
+        else set({ signInError: r.reason, signInErrorDetail: r.message ?? null });
         return r;
       } catch {
-        set({ signInError: 'network' });
+        set({ signInError: 'network', signInErrorDetail: null });
         return null;
       }
     },
@@ -143,6 +146,7 @@ export const useChatgptStore = create<ChatgptState>((set, get) => {
       set((s) => ({
         status: null,
         signInError: null,
+        signInErrorDetail: null,
         signOutUnconfirmed: false,
         limitDialog: false,
         blockDialog: null,
