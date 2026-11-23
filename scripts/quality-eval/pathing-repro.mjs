@@ -70,6 +70,11 @@
 //   beach_hole_a/b/c the combat_night holes on the natural beach: goTo from
 //                   where she was stuck. natural: no arena, so run these
 //                   alone right after the reset (--cases beach_hole_a,...)
+//   river62_player / river62_land / river62_pillar / river62_iron  261123
+//                   (pass 62), natural: the gather_craft-02 beach river. From
+//                   the bed, goTo the player / a grass spot on the bank (up to
+//                   2 calls), pillar up 3; and the buried iron under the river:
+//                   goTo it twice, dig it, find iron again
 //
 // Shaft and follow cases only count as success on the SURFACE next to the
 // player: tunnelling along under the player's feet is not "reached".
@@ -749,6 +754,81 @@ CASES.river_dig_stone = riverCase(RIVER, async (ctx) => {
   }
   return out
 })
+
+// ── 261123 (quality pass 62): the gather_craft-02 river, natural world ──
+// She ended up on the bed of the beach river by 162,57,-12 and never got out
+// (goTo the bank stuck / cant_reach / timeout, pillar "no solid floor"), and
+// before that walked at the same buried iron (150,47,-16) five times.
+// success = out of the water and near where she was going.
+function riverBed62(goal, { player = { x: 165, z: 2 } } = {}) {
+  return {
+    natural: true,
+    give: ['stone_pickaxe', 'cobblestone 1'],
+    async run(ctx) {
+      await placeOnSurface(ctx, PLAYER, player.x, player.z)
+      await cmds([`tp ${ctx.bot} 162.5 58 -11.5`])
+      await sleep(2500)
+      const start = await ctx.comp.probe()
+      const t0 = Date.now()
+      const out = []
+      let r = null
+      for (let i = 0; i < 2; i++) {
+        r = await ctx.exec('goTo', goal(ctx), { timeoutMs: 90000 })
+        out.push(String(r.result ?? r.error).slice(0, 220))
+        const pr = await ctx.comp.probe()
+        if (pr && pr.wet === false && Number(pr.pos?.y) >= 62.5) break
+      }
+      const ms = Date.now() - t0
+      const pr = await ctx.comp.probe()
+      const g = goal(ctx)
+      const to = g.player ? entityOf(ctx.pbot, PLAYER)?.position ?? ctx.pbot.entity.position : g
+      const d = Math.hypot(pr.pos.x - to.x, pr.pos.z - to.z)
+      return { results: out, calls: out.length, ms, start: hpos(start?.pos), pos: hpos(pr?.pos), wet: pr?.wet, oxy: pr?.oxy, dist: Number(d.toFixed(1)), success: pr?.wet === false && Number(pr?.pos?.y) >= 62.5 && d <= 4.5 }
+    },
+  }
+}
+CASES.river62_player = riverBed62(() => ({ player: PLAYER, range: 3 }))
+CASES.river62_land = riverBed62(() => ({ x: 168, y: 63, z: -14, range: 2 }))
+// Pillar up from the bed: wants a quick answer that says what works.
+CASES.river62_pillar = {
+  natural: true,
+  give: ['cobblestone 8'],
+  async run(ctx) {
+    await placeOnSurface(ctx, PLAYER, 165, 2)
+    await cmds([`tp ${ctx.bot} 162.5 58 -11.5`])
+    await sleep(2500)
+    const t0 = Date.now()
+    const r = await ctx.exec('build', { direction: 'below', count: 3, block: 'cobblestone' }, { timeoutMs: 60000 })
+    const pr = await ctx.comp.probe()
+    return { result: String(r.result ?? r.error).slice(0, 240), ms: Date.now() - t0, pos: hpos(pr?.pos), wet: pr?.wet, success: /goTo a spot on land/.test(String(r.result)) }
+  },
+}
+// The buried iron under the river: find + goTo it, then the same goTo and a
+// dig at it again (A26, A32, A38). success = she is not in the water at the
+// end and the repeats did not walk (each under 2s).
+CASES.river62_iron = {
+  natural: true,
+  give: ['stone_pickaxe'],
+  async run(ctx) {
+    await placeOnSurface(ctx, PLAYER, 165, 2)
+    await placeOnSurface(ctx, ctx.bot, 163, -3)
+    await sleep(2500)
+    const target = { x: 150, y: 47, z: -16 }
+    const steps = []
+    const t = async (name, args) => {
+      const t0 = Date.now()
+      const r = await ctx.exec(name, args, { timeoutMs: 90000 })
+      const pr = await ctx.comp.probe()
+      steps.push({ name, ms: Date.now() - t0, result: String(typeof r.result === 'object' ? JSON.stringify(r.result) : (r.result ?? r.error)).slice(0, 200), pos: hpos(pr?.pos), wet: pr?.wet })
+    }
+    await t('goTo', { ...target, range: 3 })
+    await t('goTo', { ...target, range: 3 })
+    await t('dig', target)
+    await t('find', { name: 'iron_ore', maxDistance: 32 })
+    const repeatsMs = steps.slice(1, 3).map((s) => s.ms)
+    return { steps, success: steps.slice(1).every((s) => s.wet === false) && repeatsMs.every((m) => m < 2000) }
+  },
+}
 
 async function main() {
   const which = (opt('cases', null) || Object.keys(CASES).join(',')).split(',').filter(Boolean)

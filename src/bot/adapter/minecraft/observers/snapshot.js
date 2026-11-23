@@ -4,6 +4,7 @@ import { vitals } from './vitals.js'
 import { world } from './world.js'
 import { facingLine } from '../facing.js'
 import { airLine } from '../behaviors/air.js'
+import { deepWaterLine } from '../behaviors/swimOut.js'
 import { inventory, heldItem } from './inventory.js'
 import { wornArmor, offHandItem, wornCounts } from '../behaviors/armor.js'
 import { aroundFeet } from './blocks.js'
@@ -326,6 +327,10 @@ export function composeSnapshot(bot, opts = {}) {
   try {
     const air = airLine(bot)
     if (air) lines.push(air)
+    // 261123 (pass 62): deep water, and what gets her out (swimOut.js). Only
+    // while she is in it.
+    const deep = deepWaterLine(bot)
+    if (deep) lines.push(deep)
   } catch { /* best-effort */ }
   // 261019 (pass 18): the attackEntity refusal line before she tries it. In
   // the combat_night eval she called attackEntity again right after it refused
