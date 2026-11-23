@@ -16,6 +16,8 @@ import {
   parseGameAnswer,
   parsePlayerEndReply,
   parseSessionEndReply,
+  recapMemoryLine,
+  RECAP_MEMORY_MAX_CHARS,
   reportGoodbyePlanSaved,
   reportNextStepNotRun,
   resolvePlanPlace,
@@ -872,7 +874,37 @@ describe('session-end facts', () => {
     expect(r.recap).toBe('we built the farm fence');
     expect(r.facts).toEqual(['Alex now studies computer science, not architecture', 'Alex has a dog named Pepper']);
     expect(r.plan?.step).toBe('finish the fence posts');
-    expect(parseSessionEndReply('recap: a\nremember: 1\nremember: 2\nremember: 3\nremember: 4\nnone').facts).toEqual(['1', '2', '3']);
+    expect(
+      parseSessionEndReply('recap: a\nremember: first fact here\nremember: second fact here\nremember: third fact here\nremember: fourth fact here\nnone').facts,
+    ).toEqual(['first fact here', 'second fact here', 'third fact here']);
+  });
+
+  it('drops nothing-lines (261123 review): "remember: nothing new" saves nothing', () => {
+    const r = parseSessionEndReply(
+      'recap: we fished\nremember: nothing new\nremember: (none)\nremember: Nothing worth saving.\nremember: ok\nremember: Alex has a dog named Pepper\nnone',
+    );
+    expect(r.recap).toBe('we fished');
+    expect(r.facts).toEqual(['Alex has a dog named Pepper']);
+  });
+
+  // 261123 (game events): the recap survives the fold as a memory line.
+  it('recapMemoryLine names the game when the recap does not, and cuts a long recap at a sentence or word', () => {
+    expect(recapMemoryLine('we fished all evening', 'minecraft')).toBe('Minecraft session recap: we fished all evening');
+    expect(recapMemoryLine('Alex and I played Minecraft: a creeper took the roof', 'minecraft')).toBe('Alex and I played Minecraft: a creeper took the roof');
+    expect(recapMemoryLine('we fished', undefined)).toBe('we fished');
+    const long = `${'We built a long wall by the river. '.repeat(12)}Then a creeper took the roof and we`;
+    const line = recapMemoryLine(long, 'minecraft');
+    expect(line.length).toBeLessThanOrEqual(RECAP_MEMORY_MAX_CHARS + 'Minecraft session recap: '.length);
+    expect(line).toMatch(/river\.$/);
+    const words = recapMemoryLine('word '.repeat(200), 'minecraft');
+    expect(words).toMatch(/word\.\.\.$/);
+  });
+
+  it('no recap, or a duplicate recap, is reported as not saved', async () => {
+    const none = deps({ saveFacts: async (_id, f) => ({ returned: f.length, saved: 0, dupes: f.length }) }, provider('recap: none\nnone'));
+    expect((await runSessionEnd(input({ recap: true }), none.d)).recapSaved).toBeUndefined();
+    const dup = deps({ saveFacts: async (_id, f) => ({ returned: f.length, saved: 0, dupes: f.length }) }, provider('recap: we fished\nnone'));
+    expect((await runSessionEnd(input({ recap: true }), dup.d)).recapSaved).toBe(false);
   });
 
   it('asks for them with the recap and shows more memories', () => {
@@ -898,8 +930,12 @@ describe('session-end facts', () => {
       provider('recap: we fished\nremember: Alex likes trout\nremember: Alex has a cat named Mochi\nnone'),
     );
     const r = await runSessionEnd(input({ recap: true }), d);
-    expect(r).toEqual({ outcome: 'none', recap: 'we fished', facts: { returned: 2, saved: 1, dupes: 1 } });
-    expect(calls).toEqual([['char-1', ['Alex likes trout', 'Alex has a cat named Mochi'], { inGame: true }]]);
+    // 261123: the recap is saved first, as its own memory line (the mock saves 1 of each call).
+    expect(r).toEqual({ outcome: 'none', recap: 'we fished', facts: { returned: 2, saved: 1, dupes: 1 }, recapSaved: true });
+    expect(calls).toEqual([
+      ['char-1', ['Minecraft session recap: we fished'], { inGame: true }],
+      ['char-1', ['Alex likes trout', 'Alex has a cat named Mochi'], { inGame: true }],
+    ]);
     // Without the recap the reply is never read for facts.
     let factCalls = 0;
     const plain = deps({ saveFacts: async () => ({ returned: ++factCalls, saved: 0, dupes: 0 }) }, provider('remember: x\nnone'));

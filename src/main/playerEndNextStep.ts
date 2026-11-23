@@ -50,6 +50,7 @@
  * `_ended` event itself (sessionGoodbye.ts).
  */
 import type { FactSave } from './chat/memoryFacts';
+import { isNothingFact } from './chat/foldPrompt';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { LlmProvider } from './llm/types';
@@ -457,7 +458,8 @@ export function parseSessionEndReply(text: string): { recap: string | null; plan
       const m = REMEMBER_LABEL.exec(l);
       if (!m) return true;
       const f = m[1].replace(/^[\s*_"'“”‘’`]+|[\s*_"'“”‘’`]+$/g, '').replace(/\s+/g, ' ').trim();
-      if (f && !BARE_NONE.test(f) && facts.length < SESSION_END_MAX_FACTS) facts.push(f.slice(0, 300));
+      // 261123 (review): "remember: nothing new" and other nothing-lines are not facts (foldPrompt isNothingFact).
+      if (f && !BARE_NONE.test(f) && !isNothingFact(f) && facts.length < SESSION_END_MAX_FACTS) facts.push(f.slice(0, 300));
       return false;
     });
   const at = lines.findIndex((l) => RECAP_LABEL.test(l));
@@ -543,6 +545,31 @@ export interface SessionEndResult {
   recap: string | null;
   /** 261113 (D2): the session's remember: lines and what was saved; null when none came back. */
   facts?: FactSave | null;
+  /** 261123: the recap was written to MEMORY.md (recapMemoryLine); absent when it was not tried. */
+  recapSaved?: boolean;
+}
+
+/** Longest recap line saved to MEMORY.md (characters); the prompt asks for 50 words. */
+export const RECAP_MEMORY_MAX_CHARS = 400;
+
+/**
+ * 261123 (v0.7 consistency, game events): the recap as a memory line. The
+ * eval showed the recap reached the play row (the creeper, the cat's name)
+ * and was then lost at the next fold, which squeezes the row into a
+ * 150-word summary and saves player facts, not game events. Written once at
+ * the session end, deduped like remember(), it stays in MEMORY.md, which every
+ * surface reads, until compaction merges it with older lines. Named for its
+ * game when the recap does not say it. Cut at a word, never mid-word.
+ */
+export function recapMemoryLine(recap: string, game?: string): string {
+  let text = String(recap ?? '').replace(/\s+/g, ' ').trim();
+  if (text.length > RECAP_MEMORY_MAX_CHARS) {
+    const cut = text.slice(0, RECAP_MEMORY_MAX_CHARS);
+    const end = cut.search(/[.!?。！？][^.!?。！？]*$/);
+    text = end > RECAP_MEMORY_MAX_CHARS / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' ')).trim()}...`;
+  }
+  const name = game && isGameId(game) ? gameDisplayName(game) : game;
+  return name && !text.toLowerCase().includes(name.toLowerCase()) ? `${name} session recap: ${text}` : text;
 }
 
 export type PlayerEndOutcome =
@@ -656,6 +683,7 @@ export async function runSessionEnd(
 ): Promise<SessionEndResult> {
   let recap: string | null = null;
   let facts: FactSave | null = null;
+  let recapSaved: boolean | undefined;
   const { characterId } = input;
   const short = characterId.slice(0, 8);
   let provider: LlmProvider | null = null;
@@ -712,6 +740,12 @@ export async function runSessionEnd(
             : { recap: null, plan: parsePlayerEndReply(res.text), facts: [] as string[] };
           const plan = parsed.plan;
           recap = parsed.recap;
+          // 261123: the recap itself goes to memory too (recapMemoryLine),
+          // filed like the facts, before them.
+          if (recap && deps.saveFacts) {
+            const r = await deps.saveFacts(characterId, [recapMemoryLine(recap, input.game)], { inGame: input.surface === 'game' });
+            recapSaved = r.saved > 0;
+          }
           if (parsed.facts.length && deps.saveFacts) {
             facts = await deps.saveFacts(characterId, parsed.facts, { inGame: input.surface === 'game' });
           }
@@ -752,7 +786,12 @@ export async function runSessionEnd(
   if (outcome !== 'cancelled') reportCheckOutcome(deps.capture, input, outcome, reachedModel);
   // A recap read before a timeout or cancel is not used: the row may already
   // have been written without it, and a cancelled turn must not write.
-  return { outcome, recap: outcome === 'saved' || outcome === 'none' ? recap : null, facts };
+  return {
+    outcome,
+    recap: outcome === 'saved' || outcome === 'none' ? recap : null,
+    facts,
+    ...(recapSaved !== undefined ? { recapSaved } : {}),
+  };
 }
 
 /**

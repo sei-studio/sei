@@ -48,6 +48,7 @@ import { COMPANION_MODEL } from '../../shared/llmCatalog';
 import { buildLlmProvider } from '../llm';
 import { formatChatTimestamp, type FoldMsg } from './foldPrompt';
 import {
+  bridgeAfterFold,
   chatContextFrom,
   launchContinuityFrom,
   runFold,
@@ -109,7 +110,13 @@ function prevBridgePath(id: string): string {
 async function readBridge(id: string): Promise<BridgeState> {
   try {
     const parsed = JSON.parse(await readFile(bridgePath(id), 'utf8'));
-    return { summary: String(parsed.summary ?? ''), summarizedCount: Number(parsed.summarizedCount ?? 0) };
+    const playFoldedTs = Number(parsed.playFoldedTs);
+    return {
+      summary: String(parsed.summary ?? ''),
+      summarizedCount: Number(parsed.summarizedCount ?? 0),
+      // 261123: the newest play row a fold took (continuityCore.ts selectFold).
+      ...(Number.isFinite(playFoldedTs) ? { playFoldedTs } : {}),
+    };
   } catch {
     return { summary: '', summarizedCount: 0 };
   }
@@ -126,11 +133,10 @@ async function readBridge(id: string): Promise<BridgeState> {
  *      good summary) had NO recovery path because each fold overwrote the only
  *      copy. prev.json is not read by the app; it exists for manual recovery.
  */
-async function writeBridge(id: string, s: BridgeState): Promise<void> {
-  const dest = bridgePath(id);
+async function writeBridge(id: string, s: BridgeState, dest: string = bridgePath(id)): Promise<void> {
   await mkdir(path.dirname(dest), { recursive: true });
   try {
-    await copyFile(dest, prevBridgePath(id));
+    await copyFile(dest, path.join(path.dirname(dest), 'bridge.prev.json'));
   } catch {
     /* first write — nothing to back up */
   }
@@ -247,7 +253,7 @@ export async function foldIfDue(characterId: string, personaExpanded?: string): 
     // 261013: card {{user}}/{{char}} placeholders, filled (no lookup when absent).
     const persona = await resolvePersonaText(characterId, personaExpanded);
     if (getActiveScope() !== scope) return;
-    await foldIntoSummary(characterId, batch.bridge, batch.msgs, batch.counted, epoch, persona, scope);
+    await foldIntoSummary(characterId, batch, epoch, persona, scope);
   } finally {
     foldInFlight.delete(characterId);
   }
@@ -285,11 +291,10 @@ export async function buildLaunchContinuity(
 
 async function foldIntoSummary(
   id: string,
-  bridge: BridgeState,
-  newMsgs: FoldMsg[],
-  // 261113: how many user/companion rows the batch holds (the watermark's
-  // step); its play rows never count.
-  counted: number,
+  // continuityCore.ts selectFold: the bridge it read, the messages, how many
+  // user/companion rows the batch holds (the watermark's step; its play rows
+  // never count) and, 261123, the newest play row it took.
+  batch: { bridge: BridgeState; msgs: FoldMsg[]; counted: number; playFoldedTs?: number },
   // 260705: the clear epoch foldIfDue captured BEFORE snapshotting the
   // transcript; compared before writeBridge.
   epoch: number,
@@ -297,6 +302,10 @@ async function foldIntoSummary(
   // 260926: the profile scope foldIfDue started in (see the check below).
   scope: string = getActiveScope(),
 ): Promise<BridgeState> {
+  const { bridge, msgs: newMsgs, counted } = batch;
+  // 261123 (review): both files resolved now, in the scope the fold began, so
+  // nothing the fold writes can land in another account's directory.
+  const bridgeFile = bridgePath(id);
   try {
     const llm = await buildLlmProvider();
     // 261113 (v0.7 D2): the fold also returns the durable facts of the batch
@@ -378,15 +387,22 @@ async function foldIntoSummary(
       character_id: id,
       batch: counted,
       session_rows: newMsgs.length - counted,
+      // 261123: a fold of play rows alone (the play trigger, no chat rows).
+      play_only: counted === 0,
       returned: facts.returned,
       saved: facts.saved,
       dupes: facts.dupes,
     });
-    const next: BridgeState = {
-      summary: res.summary,
-      summarizedCount: bridge.summarizedCount + counted,
-    };
-    await writeBridge(id, next);
+    // 261123 (review): saveFacts awaited disk; a clear or an account switch
+    // landing in that gap drops the bridge write like the checks above (the
+    // facts already went to this account's MEMORY.md; the next fold redoes
+    // the batch and its facts dedupe).
+    if (clearEpoch(id) !== epoch || getActiveScope() !== scope) {
+      console.warn(`[sei] chat summary fold for ${id} superseded while saving facts — dropping`);
+      return bridge;
+    }
+    const next: BridgeState = bridgeAfterFold(batch, res.summary);
+    await writeBridge(id, next, bridgeFile);
     return next;
   } catch (err) {
     // Keep old summary + watermark so the next fold retries. Warn (was 100%

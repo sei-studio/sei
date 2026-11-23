@@ -14,6 +14,17 @@
  * watermark passed it and then gone for good; the launch handoff skipped them
  * entirely. Now a play row folds with the conversation around it (a 'session'
  * line in the fold transcript) and rides in the launch handoff's `recent`.
+ *
+ * Bounded (261123, review): a play row never moves the watermark, so a player
+ * who only plays and never texts used to carry every session row in every
+ * chat turn and launch (60 sessions came to about 17k tokens a turn). Now:
+ *   - a read shows only the newest MAX_SESSION_ROWS play rows;
+ *   - PLAY_FOLD_TRIGGER open play rows make a fold due with no chat at all,
+ *     and that fold takes all but the newest MAX_SESSION_ROWS of them;
+ *   - one fold takes at most FOLD_MAX_PLAY_ROWS play rows (the batch's chat
+ *     rows stop before the first one it leaves), so a batch stays bounded;
+ *   - the bridge's `playFoldedTs` marks the play rows a fold has taken, so a
+ *     play-only fold is remembered without moving the watermark.
  */
 import type { ChatMessage } from '../../shared/ipc';
 import { buildFoldSystem, buildFoldUserText, extractRememberTag, extractSummaryTag, type FoldMsg } from './foldPrompt';
@@ -39,11 +50,23 @@ export const MAX_UNSUMMARIZED = 150;
 /** Most messages one fold takes (260810: a long backlog drains over several folds, see continuity.ts). */
 export const FOLD_MAX_MESSAGES = 300;
 export const SUMMARY_MAX_TOKENS = 4000;
+/** Most game sessions (play rows) the chat context and the launch handoff show (261123). */
+export const MAX_SESSION_ROWS = 4;
+/** Open play rows at which a fold is due even with no chat (a player who only plays). */
+export const PLAY_FOLD_TRIGGER = 8;
+/** Most play rows one fold takes. */
+export const FOLD_MAX_PLAY_ROWS = 12;
 
 export interface BridgeState {
   summary: string;
   /** How many user/companion rows the summary covers (the watermark). */
   summarizedCount: number;
+  /**
+   * 261123: the newest play row a fold has taken (its ts). Play rows at or
+   * before it are in the summary, wherever the watermark is. Absent on older
+   * bridges and before the first fold that took a play row.
+   */
+  playFoldedTs?: number;
 }
 
 /** A row of the launch handoff. 'session' is a finished game session (its play row). */
@@ -62,6 +85,18 @@ export const isCounted = (m: ChatMessage): boolean => m.role === 'user' || m.rol
 
 /** A play row that a fold or the launch handoff carries (every game surface writes one). */
 export const isPlayRow = (m: ChatMessage): boolean => m.role === 'system' && m.event?.kind === 'play';
+
+/** A play row a fold already took (BridgeState.playFoldedTs). */
+export function isFoldedPlay(m: ChatMessage, bridge: BridgeState): boolean {
+  return typeof bridge.playFoldedTs === 'number' && typeof m.ts === 'number' && m.ts <= bridge.playFoldedTs;
+}
+
+/** Keep only the newest `max` items that `isSession` picks; every other item stays. Order is kept. */
+export function capSessionRows<T>(items: readonly T[], isSession: (t: T) => boolean, max = MAX_SESSION_ROWS): T[] {
+  let left = items.reduce((n, t) => (isSession(t) ? n + 1 : n), 0) - max;
+  if (left <= 0) return [...items];
+  return items.filter((t) => !(isSession(t) && left-- > 0));
+}
 
 /** A play row as one line: its sentence, plus what happened in it when known. */
 export function sessionText(m: ChatMessage): string {
@@ -102,13 +137,14 @@ export function chatContextFrom(
     if (isCounted(m)) {
       seen++;
       if (seen > watermark) history.push(m);
-    } else if (seen >= watermark) {
+    } else if (seen >= watermark && !(isPlayRow(m) && isFoldedPlay(m, bridge))) {
       // System rows (play sessions, call rows) ride along with the era they
       // belong to; rows older than the watermark are already covered by the fold.
       history.push(m);
     }
   }
-  return { summary: bridge.summary, history, base: watermark };
+  // 261123: the newest MAX_SESSION_ROWS game sessions only (see the header).
+  return { summary: bridge.summary, history: capSessionRows(history, isPlayRow), base: watermark };
 }
 
 /**
@@ -123,47 +159,89 @@ export function launchContinuityFrom(raw: readonly ChatMessage[], stored: Bridge
     if (isCounted(m)) {
       seen++;
       if (seen > watermark) recent.push({ role: m.role as 'user' | 'companion', text: m.text, ts: m.ts });
-    } else if (seen >= watermark && isPlayRow(m)) {
+    } else if (seen >= watermark && isPlayRow(m) && !isFoldedPlay(m, bridge)) {
       recent.push({ role: 'session', text: sessionText(m), ts: m.ts });
     }
   }
   if (!recent.length && !bridge.summary) return null;
-  return { summary: bridge.summary, recent };
+  return { summary: bridge.summary, recent: capSessionRows(recent, (r) => r.role === 'session') };
 }
 
 /**
- * The batch the next fold takes, or null when none is due: the oldest
- * user/companion rows beyond the recent window (FOLD_BATCH at least, up to
- * FOLD_MAX_MESSAGES), plus the play rows among them. `counted` is how far the
- * watermark moves; play rows never count, like the watermark itself. A play
- * row belongs to the batch when it sits before the batch's last row (its
- * position, the user/companion rows before it, is inside [from, to)), so
- * every play row is folded exactly once and leaves the chat history in the
- * same fold that its neighbours do (chatContextFrom keeps seen >= watermark).
+ * The batch the next fold takes, or null when none is due.
+ *
+ * Due when the user/companion rows beyond the recent window reach FOLD_BATCH
+ * (the chat trigger), or when PLAY_FOLD_TRIGGER play rows are open (261123,
+ * the play trigger: a player who only plays). The chat trigger takes the
+ * oldest user/companion rows beyond the window (up to FOLD_MAX_MESSAGES);
+ * `counted` is how far the watermark moves, and play rows never count.
+ *
+ * The play rows a batch takes, oldest first, at most FOLD_MAX_PLAY_ROWS:
+ *   - every open play row inside the chat rows' range (its position, the
+ *     user/companion rows before it, is before the range's end), so it leaves
+ *     the chat history in the same fold its neighbours do (chatContextFrom
+ *     keeps seen >= watermark);
+ *   - on the play trigger, every open play row but the newest MAX_SESSION_ROWS.
+ * When the cap leaves a play row inside the range, the range ends before it,
+ * so no play row is passed by the watermark unfolded. `playFoldedTs` is the
+ * newest taken play row's ts, for the bridge.
  */
 export function selectFold(
   raw: readonly ChatMessage[],
   stored: BridgeState,
-): { bridge: BridgeState; msgs: FoldMsg[]; counted: number } | null {
+): { bridge: BridgeState; msgs: FoldMsg[]; counted: number; playFoldedTs?: number } | null {
   const total = raw.filter(isCounted).length;
   const bridge = effectiveBridge(total, stored);
-  const unsummarized = total - bridge.summarizedCount;
-  if (unsummarized < RECENT_WINDOW + FOLD_BATCH) return null;
-  const counted = Math.min(unsummarized - RECENT_WINDOW, FOLD_MAX_MESSAGES);
   const from = bridge.summarizedCount;
-  const to = from + counted;
-  const msgs: FoldMsg[] = [];
+  const unsummarized = total - from;
+  // Open play rows: not passed by the watermark, not taken by a fold yet.
+  const open: Array<{ m: ChatMessage; pos: number }> = [];
   let seen = 0;
+  for (const m of raw) {
+    if (isCounted(m)) seen++;
+    else if (isPlayRow(m) && seen >= from && !isFoldedPlay(m, bridge)) open.push({ m, pos: seen });
+  }
+  const chatDue = unsummarized >= RECENT_WINDOW + FOLD_BATCH;
+  const playDue = open.length >= PLAY_FOLD_TRIGGER;
+  if (!chatDue && !playDue) return null;
+  let to = from + (chatDue ? Math.min(unsummarized - RECENT_WINDOW, FOLD_MAX_MESSAGES) : 0);
+  const newest = new Set(playDue ? open.slice(-MAX_SESSION_ROWS).map((o) => o.m) : []);
+  const wanted = open.filter((o) => o.pos < to || (playDue && !newest.has(o.m)));
+  const taken = wanted.slice(0, FOLD_MAX_PLAY_ROWS);
+  const left = wanted[FOLD_MAX_PLAY_ROWS];
+  if (left && left.pos < to) to = left.pos;
+  const takenSet = new Set(taken.map((o) => o.m));
+  const msgs: FoldMsg[] = [];
+  seen = 0;
   for (const m of raw) {
     if (isCounted(m)) {
       if (seen >= from && seen < to) msgs.push({ role: m.role as 'user' | 'companion', text: m.text, ts: m.ts });
       seen++;
-      if (seen >= to) break;
-    } else if (isPlayRow(m) && seen >= from && seen < to) {
+    } else if (takenSet.has(m)) {
       msgs.push({ role: 'session', text: sessionText(m), ts: m.ts });
     }
   }
-  return { bridge, msgs, counted };
+  if (!msgs.length) return null;
+  const playTs = taken.reduce((t, o) => (typeof o.m.ts === 'number' && o.m.ts > t ? o.m.ts : t), -Infinity);
+  return {
+    bridge,
+    msgs,
+    counted: to - from,
+    ...(Number.isFinite(playTs) ? { playFoldedTs: playTs } : {}),
+  };
+}
+
+/** The bridge after a fold of `batch` that wrote `summary` (continuity.ts, the eval). */
+export function bridgeAfterFold(
+  batch: { bridge: BridgeState; counted: number; playFoldedTs?: number },
+  summary: string,
+): BridgeState {
+  const playFoldedTs = Math.max(batch.playFoldedTs ?? -Infinity, batch.bridge.playFoldedTs ?? -Infinity);
+  return {
+    summary,
+    summarizedCount: batch.bridge.summarizedCount + batch.counted,
+    ...(Number.isFinite(playFoldedTs) ? { playFoldedTs } : {}),
+  };
 }
 
 /** The slice of an LLM provider a fold needs (llm/types LlmProvider.call). */

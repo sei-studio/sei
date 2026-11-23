@@ -53,6 +53,21 @@ fallback, no LLM. Analytics: `play_recap` (shape only, `playRecapProps`). A
 new game surface whose end call could write a recap should pass it to
 `buildPlayRow` the same way.
 
+**Bounds and the recap in memory (261123, review).** Play rows never move the
+watermark, so a player who only plays would carry every session in every turn.
+Reads (`chatContextFrom`, `launchContinuityFrom`, and the bot seed via
+`SEED_MAX_SESSION_ROWS`) show only the newest `MAX_SESSION_ROWS` (4) play rows.
+`PLAY_FOLD_TRIGGER` (8) open play rows make a fold due with no chat; it takes
+all but the newest 4, and any fold takes at most `FOLD_MAX_PLAY_ROWS` (12),
+ending its chat rows before the first play row it leaves. The bridge's
+`playFoldedTs` marks the play rows a fold took, so play rows must be stamped
+when they are written (file order = ts order; the bot row is stamped at append,
+after any chat sent during the recap wait). The recap is also written once to
+MEMORY.md at the session end (`recapMemoryLine`, deduped through `saveFacts`,
+filed like the plan line), because the eval showed the fold drops game events
+from the summary. An app quit ends every recap wait (`releaseRecapWaitsForQuit`)
+and drains tracked writes for up to 1.5 s before the analytics flush.
+
 **Facts before the summary (261113, v0.7 consistency D2).** The fold is
 shown the memory notes (the chat's 12000-byte tail) and returns, next to its
 `<summary>`, a `<remember>` block of durable facts memory does not have yet

@@ -59,7 +59,7 @@ import { createStardewGameModule } from './games/stardew';
 import type { GameId, WorldState, WorldStates } from '../shared/gameIpc';
 import { isCallActive, wasCallRecentlyActive, activeCallIds, clearAllCalls, liveCallsNow } from './voice/callState';
 import { initCallOverlay, closeCallOverlay } from './callOverlay';
-import { trackScopedWrite, isAccountTeardownActive, isScopeSwitchPending, onScopeSwitchStart } from './profile/scopeBarrier';
+import { trackScopedWrite, drainScopedWrites, isAccountTeardownActive, isScopeSwitchPending, onScopeSwitchStart } from './profile/scopeBarrier';
 import { sessionEndProps, isSessionFailure, type SessionEndProps } from './sessionEnd';
 import { consumeGoodbye, gameEndHookProps, callEndHookProps, goodbyePlanPlace } from './sessionGoodbye';
 import { callInterruptProps } from '../shared/callInterrupts';
@@ -78,7 +78,7 @@ import {
   yieldToNewSession,
   type SessionDigest,
 } from './playerEndNextStep';
-import { awaitRecap, playRecapProps, type RecapWait } from './playRecap';
+import { awaitRecap, playRecapProps, releaseRecapWaitsForQuit, type RecapWait } from './playRecap';
 import { bindHomeNextStepNotifier, consumeNextStep, noteHomeNextStepChanged, readPendingPlan, tagLatestPlan } from './homeNextStep';
 import { readPlayerLineNames } from './playerLineNames';
 import {
@@ -650,7 +650,6 @@ async function emitPlaySession(
   // digest's last lines (playSummary.ts playStory).
   story: { digest?: SessionDigest | null; recap?: Promise<RecapWait> } = {},
 ): Promise<void> {
-  const endedAt = Date.now();
   const wait: RecapWait = story.recap ? await story.recap : { recap: null, outcome: 'not_run' };
   let name = 'your companion';
   let rowLanguage: 'zh' | undefined;
@@ -679,8 +678,14 @@ async function emitPlaySession(
     recap: wait.recap,
     lines: story.digest?.lines ?? null,
   });
-  await appendChatMessage(characterId, { id: randomUUID(), ...row, ts: endedAt });
-  capture('play_recap', playRecapProps({ characterId, game, event: row.event, checkOutcome: wait.outcome, facts: wait.facts }));
+  // Stamped when it is written, not when the session ended (261123, review):
+  // a chat line sent during the recap wait is already in the file, and the
+  // transcript is append-only, so the row goes after it with a later ts. The
+  // file order and the ts order then agree, which the fold's play-row marker
+  // relies on (continuityCore.ts playFoldedTs). The row can read up to
+  // RECAP_WAIT_MS after a line the player sent once the game had closed.
+  await appendChatMessage(characterId, { id: randomUUID(), ...row, ts: Date.now() });
+  capture('play_recap', playRecapProps({ characterId, game, event: row.event, checkOutcome: wait.outcome, facts: wait.facts, recapSaved: wait.recapSaved }));
   // Continuity OUT (CLAUDE.md contract): chess/draw/backseat fold after their
   // play row; the bot session was the one surface that never did, so its rows
   // only reached the rolling summary on the chat surface's next fold.
@@ -1068,6 +1073,11 @@ function getLanMotd(): string | null {
 
 /** Upper bound on ending the game surfaces at quit (their rows hit the disk). */
 const QUIT_SURFACE_END_TIMEOUT_MS = 1500;
+/**
+ * 261123 (review): how long a quit waits for tracked writes (a game's play
+ * row, released from its recap wait first) before the analytics flush.
+ */
+const QUIT_WRITE_DRAIN_MS = 1500;
 
 /**
  * End chess, Draw! and backseat for a quit so each sends its `_ended` event
@@ -2258,6 +2268,13 @@ async function bootstrap(): Promise<void> {
     // be shut down after it (and backseat not at all), so their *_ended events
     // were lost on every quit. Bounded: their closing rows write to disk.
     await endGameSurfacesForQuit();
+    // 261123 (review): a play row still waiting for its session's recap is
+    // written now, with the session's last lines, and every tracked write
+    // (play rows, memory lines) gets a bounded moment to land before the
+    // flush and app.exit. Before, quitting inside the 20 s recap wait lost
+    // the row.
+    try { releaseRecapWaitsForQuit(); } catch { /* best-effort */ }
+    try { await drainScopedWrites(QUIT_WRITE_DRAIN_MS); } catch { /* best-effort */ }
     // 261104 SeiLink: take her off the desktop (seilink_ended app_quit before the flush; the
     // move-in is kept, so she is back on the next start).
     try { stopSeilinkHostForQuit(); } catch { /* best-effort */ }

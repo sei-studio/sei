@@ -3,10 +3,15 @@
  * session-end recap, and the shape-only analytics of the written row.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { awaitRecap, playRecapProps } from './playRecap';
+import { _resetPlayRecapForTests, awaitRecap, playRecapProps, releaseRecapWaitsForQuit } from './playRecap';
 import type { SessionEndResult } from './playerEndNextStep';
+import { _resetScopeBarrierForTests, drainScopedWrites, pendingScopedWrites, trackScopedWrite } from './profile/scopeBarrier';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  _resetPlayRecapForTests();
+  _resetScopeBarrierForTests();
+});
 
 function switches() {
   const fns = new Set<() => void>();
@@ -56,10 +61,49 @@ describe('playRecapProps', () => {
   it('reports the shape of the row, never its text', () => {
     const recap = 'we tamed a wolf named Turnip';
     const p = playRecapProps({ characterId: 'c', game: 'minecraft', event: { recap }, checkOutcome: 'saved' });
-    expect(p).toEqual({ character_id: 'c', game: 'minecraft', saved: true, source: 'recap', recap_chars: recap.length, recap_words: 6, lines: 0, check_outcome: 'saved', facts_returned: 0, facts_saved: 0, fact_dupes: 0 });
+    expect(p).toEqual({ character_id: 'c', game: 'minecraft', saved: true, source: 'recap', recap_chars: recap.length, recap_words: 6, lines: 0, check_outcome: 'saved', facts_returned: 0, facts_saved: 0, fact_dupes: 0, recap_memory_saved: false });
     expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: { recap }, checkOutcome: 'saved', facts: { returned: 3, saved: 2, dupes: 1 } })).toMatchObject({ facts_returned: 3, facts_saved: 2, fact_dupes: 1 });
+    expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: { recap }, checkOutcome: 'saved', recapSaved: true }).recap_memory_saved).toBe(true);
     expect(Object.values(p)).not.toContain(recap);
     expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: { lines: [1, 2] }, checkOutcome: 'waited_out' })).toMatchObject({ saved: false, source: 'lines', lines: 2 });
     expect(playRecapProps({ characterId: 'c', game: 'minecraft', event: {}, checkOutcome: 'not_run' })).toMatchObject({ source: 'none', recap_words: 0 });
+  });
+});
+
+// 261123 (review): quitting inside the recap wait used to lose the play row.
+describe('app quit during the recap wait', () => {
+  it('ends every open wait at once, and the row write is drained before the quit goes on', async () => {
+    const s = switches();
+    const written: string[] = [];
+    // index.ts closePlaySession: the row write waits on the recap, tracked.
+    const wait = awaitRecap(new Promise<SessionEndResult>(() => {}), { onSwitch: s.onSwitch, switchPending: () => false });
+    void trackScopedWrite(
+      wait.then(async (w) => {
+        await new Promise((r) => setTimeout(r, 5));
+        written.push(`row (${w.outcome}, recap ${w.recap ?? 'none'})`);
+      }),
+    );
+    expect(pendingScopedWrites()).toBe(1);
+    // before-quit: release, then the bounded drain.
+    expect(releaseRecapWaitsForQuit()).toBe(1);
+    expect(await drainScopedWrites(1500)).toBe(true);
+    expect(written).toEqual(['row (app_quit, recap none)']);
+    expect(s.size()).toBe(0);
+  });
+
+  it('a wait that starts after the quit began ends at once', async () => {
+    const s = switches();
+    releaseRecapWaitsForQuit();
+    expect(await awaitRecap(new Promise<SessionEndResult>(() => {}), { onSwitch: s.onSwitch, switchPending: () => false })).toEqual({
+      recap: null,
+      outcome: 'app_quit',
+    });
+  });
+
+  it('a finished wait is not ended again by the quit', async () => {
+    const s = switches();
+    const r = await awaitRecap(Promise.resolve<SessionEndResult>({ outcome: 'none', recap: 'we fished' }), { onSwitch: s.onSwitch, switchPending: () => false });
+    expect(r.recap).toBe('we fished');
+    expect(releaseRecapWaitsForQuit()).toBe(0);
   });
 });

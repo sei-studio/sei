@@ -5,8 +5,12 @@
 import { describe, it, expect } from 'vitest';
 import type { ChatMessage } from '../../shared/ipc';
 import {
+  bridgeAfterFold,
   chatContextFrom,
   FOLD_BATCH,
+  FOLD_MAX_PLAY_ROWS,
+  MAX_SESSION_ROWS,
+  PLAY_FOLD_TRIGGER,
   launchContinuityFrom,
   MAX_UNSUMMARIZED,
   RECENT_WINDOW,
@@ -140,5 +144,77 @@ describe('runFold', () => {
     expect(l.calls[1].anthropicExtra).toBeUndefined();
     expect(seen).toEqual(['model not allowed']);
     await expect(runFold({ llm: llm(new Error('500')), summary: '', msgs, model: 'big', fallbackModel: () => 'small', isRejection: () => false })).rejects.toThrow('500');
+  });
+});
+
+// 261123 (review): play rows never move the watermark, so a player who only
+// plays used to carry every session in every turn. Reads cap them, and the
+// play trigger folds them with no chat at all.
+describe('session rows are bounded', () => {
+  const plays = (n: number, t0 = T0 + 10_000_000) =>
+    Array.from({ length: n }, (_, i) => ({ ...play(`p${i}`, { recap: `session ${i} recap` }), ts: t0 + i * 60_000 }) as ChatMessage);
+  const sessions = (h: ChatMessage[]) => h.filter((m) => m.event?.kind === 'play');
+
+  it('chat context and the launch handoff show only the newest MAX_SESSION_ROWS', () => {
+    const raw = [...rows(20), ...plays(60)];
+    const ctx = chatContextFrom(raw, empty);
+    expect(sessions(ctx.history).map((m) => m.id)).toEqual(['p56', 'p57', 'p58', 'p59'].slice(-MAX_SESSION_ROWS));
+    expect(ctx.history.filter((m) => m.role !== 'system')).toHaveLength(20);
+    const launch = launchContinuityFrom(raw, empty)!;
+    expect(launch.recent.filter((r) => r.role === 'session')).toHaveLength(MAX_SESSION_ROWS);
+    expect(launch.recent.at(-1)!.text).toContain('session 59 recap');
+    expect(launch.recent.filter((r) => r.role !== 'session')).toHaveLength(20);
+  });
+
+  it('30 sessions and no chat: a read does not grow with more sessions', () => {
+    const read = (n: number) => chatContextFrom([...rows(4), ...plays(n)], empty).history;
+    expect(sessions(read(30))).toHaveLength(MAX_SESSION_ROWS);
+    // Same digit count in the newest ids and recaps, so the same bytes.
+    expect(JSON.stringify(read(60)).length).toBe(JSON.stringify(read(30)).length);
+  });
+
+  it('the play trigger folds all but the newest sessions with no chat, without moving the watermark', () => {
+    expect(selectFold([...rows(10), ...plays(PLAY_FOLD_TRIGGER - 1)], empty)).toBeNull();
+    const raw = [...rows(10), ...plays(PLAY_FOLD_TRIGGER)];
+    const sel = selectFold(raw, empty)!;
+    expect(sel.counted).toBe(0);
+    expect(sel.msgs.map((m) => m.role)).toEqual(Array(PLAY_FOLD_TRIGGER - MAX_SESSION_ROWS).fill('session'));
+    const next = bridgeAfterFold(sel, 'S');
+    expect(next).toEqual({ summary: 'S', summarizedCount: 0, playFoldedTs: raw[10 + PLAY_FOLD_TRIGGER - MAX_SESSION_ROWS - 1].ts });
+    // Folded once: the next selection is not due, and reads drop the folded rows.
+    expect(selectFold(raw, next)).toBeNull();
+    expect(sessions(chatContextFrom(raw, next).history)).toHaveLength(MAX_SESSION_ROWS);
+    // Four more sessions make it due again, and only the new open rows are taken.
+    const more = [...raw, ...plays(MAX_SESSION_ROWS, T0 + 99_000_000)];
+    const again = selectFold(more, next)!;
+    expect(again.msgs).toHaveLength(MAX_SESSION_ROWS);
+    expect(again.msgs[0].text).toContain(`session ${PLAY_FOLD_TRIGGER - MAX_SESSION_ROWS} recap`);
+  });
+
+  it('one fold takes at most FOLD_MAX_PLAY_ROWS, and its chat rows stop before the first one it leaves', () => {
+    // 200 chat rows with a session after every 4th: 37 sessions inside the 150-row batch range.
+    const raw: ChatMessage[] = [];
+    let t = T0;
+    for (let i = 0; i < 200; i++) {
+      raw.push({ ...rows(1, i)[0], ts: (t += 1000) });
+      if (i % 4 === 3) raw.push({ ...play(`s${i}`), ts: (t += 1000) } as ChatMessage);
+    }
+    const sel = selectFold(raw, empty)!;
+    const taken = sel.msgs.filter((m) => m.role === 'session');
+    expect(taken).toHaveLength(FOLD_MAX_PLAY_ROWS);
+    // The 13th session sits after chat row 52 (4 * 13): the batch ends there.
+    expect(sel.counted).toBe(4 * (FOLD_MAX_PLAY_ROWS + 1));
+    const next = bridgeAfterFold(sel, 'S');
+    // Nothing is passed by the watermark unfolded: the next fold starts at that session.
+    const ctx = chatContextFrom(raw, next);
+    expect(sessions(ctx.history)[0].ts).toBeGreaterThan(next.playFoldedTs!);
+    const second = selectFold(raw, next)!;
+    expect(second.msgs[0].role).toBe('session');
+  });
+
+  it('the bridge keeps the newest playFoldedTs across a chat-only fold', () => {
+    const before = { summary: 's', summarizedCount: 10, playFoldedTs: 5 };
+    expect(bridgeAfterFold({ bridge: before, counted: 50 }, 'n')).toEqual({ summary: 'n', summarizedCount: 60, playFoldedTs: 5 });
+    expect(bridgeAfterFold({ bridge: empty, counted: 50 }, 'n')).toEqual({ summary: 'n', summarizedCount: 50 });
   });
 });

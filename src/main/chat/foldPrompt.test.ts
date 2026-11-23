@@ -6,7 +6,15 @@
  * transcript formatting the fold and the offline eval share.
  */
 import { describe, it, expect } from 'vitest';
-import { buildFoldCalendar, buildFoldSystem, buildFoldTranscript, buildFoldUserText, extractSummaryTag } from './foldPrompt';
+import {
+  buildFoldCalendar,
+  buildFoldSystem,
+  buildFoldTranscript,
+  buildFoldUserText,
+  extractRememberTag,
+  extractSummaryTag,
+  isNothingFact,
+} from './foldPrompt';
 
 describe('extractSummaryTag', () => {
   it('strips a preamble outside the tags (the measured Sonnet failure)', () => {
@@ -94,5 +102,32 @@ describe('buildFoldCalendar / buildFoldUserText', () => {
   it('is empty without stamps, and the user text then matches the old shape', () => {
     expect(buildFoldCalendar([{ role: 'user', text: 'a' }])).toBe('');
     expect(buildFoldUserText('', [{ role: 'user', text: 'a' }])).toBe('Existing summary:\n(none yet)\n\nNew messages:\nPlayer: a');
+  });
+});
+
+// 261123 (review): a <remember> block that only says "nothing" saves nothing.
+describe('nothing-lines in the fold facts', () => {
+  it('drops None, (none), "Nothing new to add." and too-short lines', () => {
+    expect(extractRememberTag('<summary>s</summary><remember>None</remember>')).toEqual([]);
+    expect(extractRememberTag('<remember>\n(none)\n</remember>')).toEqual([]);
+    expect(extractRememberTag('<remember>\n- Nothing new to add.\n- No new facts this time.\n- n/a\n- ok\n</remember>')).toEqual([]);
+    expect(extractRememberTag('<remember>没有</remember>')).toEqual([]);
+  });
+
+  it('keeps real facts, including one that starts with "nothing" or "no"', () => {
+    expect(
+      extractRememberTag(
+        '<remember>\n- None\n- Alex has a dog named Pepper\n- Nothing scares Alex more than spiders\n- No sushi for Alex anymore, ramen now\n</remember>',
+      ),
+    ).toEqual(['Alex has a dog named Pepper', 'Nothing scares Alex more than spiders', 'No sushi for Alex anymore, ramen now']);
+  });
+
+  it('isNothingFact on its own', () => {
+    for (const l of ['None', 'none.', '**Nothing**', 'nothing new', 'Nothing worth saving from this session.', 'N/A', 'no', 'Jo']) {
+      expect(isNothingFact(l)).toBe(true);
+    }
+    for (const l of ['Alex works at the city library now', 'No longer at the bakery: Alex works at the library']) {
+      expect(isNothingFact(l)).toBe(false);
+    }
   });
 });

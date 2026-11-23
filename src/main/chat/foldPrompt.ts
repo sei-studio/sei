@@ -144,8 +144,44 @@ export function extractRememberTag(text: string, max = FOLD_MAX_FACTS): string[]
   return m[1]
     .split('\n')
     .map((l) => l.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s+/, '').replace(/\s+/g, ' ').trim().slice(0, FACT_MAX_CHARS))
-    .filter(Boolean)
+    .filter((l) => l && !isNothingFact(l))
     .slice(0, max);
+}
+
+/** A saved fact shorter than this is not a fact ("ok", "n/a", a stray name). */
+export const FACT_MIN_CHARS = 8;
+
+/** Words that may follow "none"/"nothing"/"no" in a line that only says there is nothing to save. */
+const NOTHING_TAIL = new Set(
+  (
+    'new else more further other durable important notable relevant yet here today now this time at all to add save ' +
+    'remember note record keep worth saving remembering noting recording keeping fact facts thing things line lines ' +
+    'note notes memory memories info information detail details i can see that is are was were in the from of it ' +
+    'for since last session messages batch conversation already saved there here'
+  ).split(' '),
+);
+
+/**
+ * 261123 (review): a fact line that only says there is nothing to save
+ * ("None", "(none)", "Nothing new to add.", "no new facts"), or one too short
+ * to be a fact. Both parsers of labeled model output use it (the fold's
+ * <remember> block and the session end's remember: lines), so such a line is
+ * never written to MEMORY.md. It reads the model's labeled reply, not anything
+ * the player typed. A real fact that starts with "nothing" ("Nothing scares
+ * Alex more than spiders") has other words in it and is kept.
+ */
+export function isNothingFact(line: string): boolean {
+  const flat = String(line ?? '').trim();
+  if (/^[\s\p{P}\p{S}]*(无|没有|没有新的|なし|特になし|없음)[\s\p{P}\p{S}]*$/u.test(flat)) return true;
+  if (flat.replace(/[\s\p{P}\p{S}]/gu, '').length < FACT_MIN_CHARS) return true;
+  const words = flat
+    .toLowerCase()
+    .replace(/n\/a/g, 'none')
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter(Boolean);
+  if (!words.length) return true;
+  if (!['none', 'nothing', 'no', 'nil', 'null', 'na'].includes(words[0])) return false;
+  return words.slice(1).every((w) => NOTHING_TAIL.has(w));
 }
 
 /**

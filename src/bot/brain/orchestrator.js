@@ -101,6 +101,8 @@ import { linkGoalToSpine, linkFinished } from './goalLink.js'
 // it mirrors the clip the TTS proxy route applies anyway (MAX_TTS_CHARS in
 // src/main/voice/tts.ts).
 const APP_LINE_MAX_CHARS = 2500
+/** 261123: most game-session rows the seed's chat_continuity shows (main: continuityCore MAX_SESSION_ROWS). */
+export const SEED_MAX_SESSION_ROWS = 4
 
 /**
  * Hard clip that never splits a surrogate pair. `slice(0, n)` counts UTF-16
@@ -844,7 +846,13 @@ export async function composeSeedBlocks({
         // 261113: a 'session' row is a finished game session with what
         // happened in it (main chat/continuityCore.ts launchContinuityFrom).
         const who = (role) => (role === 'user' ? 'Player' : role === 'session' ? 'Game session' : 'You')
-        const rows = cont.recent.filter((m) => m && typeof m.text === 'string')
+        // 261123 (review): at most SEED_MAX_SESSION_ROWS game sessions, the
+        // newest, however many the handoff carries (main caps it the same way,
+        // continuityCore.ts MAX_SESSION_ROWS); every chat line stays.
+        let extraSessions = cont.recent.filter((m) => m && m.role === 'session').length - SEED_MAX_SESSION_ROWS
+        const rows = cont.recent.filter(
+          (m) => m && typeof m.text === 'string' && !(m.role === 'session' && extraSessions-- > 0),
+        )
         const lines = rows.map((m) => `${who(m.role)}${stamp(m.ts)}: ${m.text}`).join('\n')
         if (lines) {
           parts.push(
