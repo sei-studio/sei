@@ -11,6 +11,14 @@
  *    event per frame.
  *  - seilink_editor_error {kind}: the editor could not load, save or import.
  *  - seilink_movein_sheet {action: shown|confirmed|dismissed|failed, ...}.
+ *  - worldlink_custom_image_notice_shown {character_id} (261118): the sheet
+ *    showed the custom-image line (once per sheet).
+ *
+ *  - seilink_widget {action: added|removed|edited, kind, changed} and
+ *    seilink_lighting {brightness, dim, warmth (to the nearest 10), character}
+ *    (261119): what a SAVE changed in the wallpaper widgets and the lighting,
+ *    a diff of the saved states (desktopSaveEvents). Setting names, never
+ *    their values (no text, no colours).
  *
  * Classification is a diff of two room states (classifyEdit), so the editor
  * needs no per-control tracking. Event table: docs/agents/seilink-analytics.md.
@@ -18,6 +26,7 @@
 import { ROOM_PRESET_IDS, resolvePattern, resolveSlots, type RoomComponent, type RoomPresetManifest, type RoomSlotId, type RoomState } from './seilinkRoom';
 import { isPresetColour, swatchesFor } from './seilinkEdit';
 import { CODE_PATTERNS } from './seilinkPatterns';
+import { WIDGET_KINDS, WIDGET_SETTING_KEYS, isNeutralLighting, lightingBucket, widgetChanges, type RoomLighting, type WidgetSettingKey } from './seilinkWidgets';
 import { ENTRY_SOURCES } from './seilinkIntroTelemetry';
 import {
   ALL_TOGETHER_COUNTS,
@@ -31,6 +40,12 @@ import {
 export const SEILINK_EDITOR_SESSION_EVENT = 'seilink_editor_session';
 export const SEILINK_EDITOR_ERROR_EVENT = 'seilink_editor_error';
 export const SEILINK_MOVEIN_SHEET_EVENT = 'seilink_movein_sheet';
+/** 261118: the move-in sheet showed the custom-image line (her look is an uploaded picture). */
+export const WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT = 'worldlink_custom_image_notice_shown';
+/** 261119: a save added, removed or edited a wallpaper widget (one event per widget changed). */
+export const SEILINK_WIDGET_EVENT = 'seilink_widget';
+/** 261119: a save changed the room lighting. */
+export const SEILINK_LIGHTING_EVENT = 'seilink_lighting';
 
 /**
  * 261105 (T337): 'button' = the chat top bar's SeiLink button, 'tour' = the guide's SeiLink tour.
@@ -44,7 +59,7 @@ export const EDITOR_SURFACES = ['desktop', 'app'] as const;
 export type EditorSurface = (typeof EDITOR_SURFACES)[number];
 
 /** The rail's panels (renderer lib/seilink/roomGroups.ts plus avatar and items). */
-export const EDITOR_PANELS = ['avatar', 'room', 'fabrics', 'furniture', 'items'] as const;
+export const EDITOR_PANELS = ['avatar', 'room', 'fabrics', 'furniture', 'items', 'misc', 'lighting'] as const;
 export type EditorPanel = (typeof EDITOR_PANELS)[number];
 
 /** How a colour was chosen in the editor (261105 colour pass): a preset swatch, the custom picker, its recent row. */
@@ -71,6 +86,12 @@ export const EDIT_TYPES = [
   'accent_change',
   'light_colour',
   'light_cycle',
+  // 261119 wallpaper widgets and lighting:
+  'widget_add',
+  'widget_remove',
+  'widget_edit',
+  'widget_move',
+  'lighting',
 ] as const;
 export type EditType = (typeof EDIT_TYPES)[number];
 
@@ -85,10 +106,16 @@ export type EditorOutcome = (typeof EDITOR_OUTCOMES)[number];
 
 export const MOVEIN_ACTIONS = ['shown', 'confirmed', 'dismissed', 'failed'] as const;
 export type MoveInAction = (typeof MOVEIN_ACTIONS)[number];
-export const MOVEIN_REASONS = ['first_room', 'swap', 'retry'] as const;
+// 261116: 'look' = WORLDLINK_UPLOADED_LOOKS kept her out (lib/seilink/uploadedLooks.ts).
+export const MOVEIN_REASONS = ['first_room', 'swap', 'retry', 'look'] as const;
 export const MOVEIN_FAILS = ['start_failed', 'save_failed', 'unsupported', 'error'] as const;
 export type MoveInReason = (typeof MOVEIN_REASONS)[number];
 export type MoveInFail = (typeof MOVEIN_FAILS)[number];
+/** 261116: why her look kept her out of WorldLink (the sheet's one line, Move in off). */
+export const MOVEIN_LOOK_BLOCKS = ['busy_background', 'uploaded'] as const;
+export type MoveInLookBlock = (typeof MOVEIN_LOOK_BLOCKS)[number];
+/** 261116: where her card picture came from (shared/characterSchema.ts cardImageOrigin). */
+export const MOVEIN_LOOK_ORIGINS = ['generated', 'uploaded', 'none'] as const;
 
 const PRESETS = ROOM_PRESET_IDS;
 
@@ -133,7 +160,7 @@ export function roomShapeOf(manifest: RoomPresetManifest, state: RoomState, last
     }
     if (Object.values(c.frames).some((f) => f?.particles?.length)) particles++;
   }
-  return { patterned, accents, cycling, particles, lastPattern, customColors };
+  return { patterned, accents, cycling, particles, lastPattern, customColors, widgets: state.widgets?.length ?? 0, lit: !isNeutralLighting(state.lighting) };
 }
 
 /** What the room looks like at close (counts the editor works out with the manifest). */
@@ -150,6 +177,10 @@ export interface RoomShapeAtClose {
   lastPattern?: string | null;
   /** 261105 colour pass: tinted parts (slots and items) whose main colour is not one of their presets. */
   customColors?: number;
+  /** 261119: wallpaper widgets in the room. */
+  widgets?: number;
+  /** 261119: the room has lighting set (not as painted). */
+  lit?: boolean;
 }
 const ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -206,6 +237,16 @@ export function classifyEdit(prev: RoomState, next: RoomState, lightSlots?: Read
       if ((a.z ?? null) !== (b.z ?? null)) out.add('layer_item');
     }
   }
+  // 261119: the wallpaper widgets (by id) and the lighting.
+  for (const c of widgetChanges(prev.widgets, next.widgets)) {
+    if (c.action === 'added') out.add('widget_add');
+    else if (c.action === 'removed') out.add('widget_remove');
+    else {
+      if (c.changed?.includes('position')) out.add('widget_move');
+      if (c.changed?.some((k) => k !== 'position')) out.add('widget_edit');
+    }
+  }
+  if (!same(prev.lighting, next.lighting)) out.add('lighting');
   return [...out];
 }
 
@@ -388,6 +429,8 @@ export class EditorSessionTracker {
       out.particle_parts_at_close = shape.particles;
       out.particles_on = shape.particles > 0;
       if (shape.customColors !== undefined) out.custom_colors_at_close = shape.customColors;
+      if (shape.widgets !== undefined) out.widgets_at_close = shape.widgets;
+      if (shape.lit !== undefined) out.lighting_at_close = shape.lit;
       if (shape.lastPattern) out.last_pattern = KNOWN_PATTERNS.includes(shape.lastPattern) ? shape.lastPattern : 'other';
     }
     return out;
@@ -431,6 +474,7 @@ const SESSION_COUNTS = [
   'recent_color_picks',
   'picker_opens',
   'custom_colors_at_close',
+  'widgets_at_close',
   ...EDITOR_PANELS.map((p) => `panel_${p}`),
   ...EDIT_TYPES.map((t) => `edit_${t}`),
   ...AVATAR_UPLOAD_FAILS.map((r) => `avatar_fail_${r}`),
@@ -449,6 +493,7 @@ function editorSessionProps(p: Record<string, unknown>): Record<string, Scalar> 
     outcome: oneOf(EDITOR_OUTCOMES, p.outcome) ?? 'no_changes',
   };
   if (typeof p.particles_on === 'boolean') out.particles_on = p.particles_on;
+  if (typeof p.lighting_at_close === 'boolean') out.lighting_at_close = p.lighting_at_close;
   if (p.together === true) {
     out.together = true;
     out.on_call_at_open = p.on_call_at_open === true;
@@ -487,6 +532,14 @@ function moveInProps(p: Record<string, unknown>): Record<string, Scalar> {
   if (entry) out.entry = entry;
   // 261110: which notice the sheet showed (the one-line beta notice replaced the bulleted one).
   if (p.notice === 'beta_v1') out.notice = 'beta_v1';
+  // 261116: her picture's origin (how many uploaded looks move in) and, when
+  // WORLDLINK_UPLOADED_LOOKS kept her out, why.
+  const origin = oneOf(MOVEIN_LOOK_ORIGINS, p.look_origin);
+  if (origin) out.look_origin = origin;
+  const blocked = oneOf(MOVEIN_LOOK_BLOCKS, p.look_blocked);
+  if (blocked) out.look_blocked = blocked;
+  // 261118: the sheet showed the custom-image line (shown/confirmed = how often people move her in anyway).
+  if (p.custom_image_notice === true) out.custom_image_notice = true;
   return out;
 }
 
@@ -496,8 +549,11 @@ export function isSeilinkRendererEvent(event: string): boolean {
     event === SEILINK_EDITOR_SESSION_EVENT ||
     event === SEILINK_EDITOR_ERROR_EVENT ||
     event === SEILINK_MOVEIN_SHEET_EVENT ||
+    event === WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT ||
     event === SEILINK_EDITOR_TALK_EVENT ||
-    event === SEILINK_HER_EDIT_EVENT
+    event === SEILINK_HER_EDIT_EVENT ||
+    event === SEILINK_WIDGET_EVENT ||
+    event === SEILINK_LIGHTING_EVENT
   );
 }
 
@@ -506,6 +562,7 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
   const p = raw ?? {};
   if (event === SEILINK_EDITOR_SESSION_EVENT) return editorSessionProps(p);
   if (event === SEILINK_MOVEIN_SHEET_EVENT) return moveInProps(p);
+  if (event === WORLDLINK_CUSTOM_IMAGE_NOTICE_EVENT) return { character_id: charId(p.character_id) };
   if (event === SEILINK_EDITOR_TALK_EVENT) {
     return { character_id: charId(p.character_id), outcome: oneOf(EDITOR_TALK_OUTCOMES, p.outcome) ?? 'error' };
   }
@@ -518,6 +575,8 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
       surface: 'editor',
     };
   }
+  if (event === SEILINK_WIDGET_EVENT) return widgetEventProps(p);
+  if (event === SEILINK_LIGHTING_EVENT) return lightingEventProps(p);
   if (event === SEILINK_EDITOR_ERROR_EVENT) {
     return {
       character_id: charId(p.character_id),
@@ -526,4 +585,80 @@ export function sanitizeSeilinkTrack(event: string, raw: Record<string, unknown>
     };
   }
   return {};
+}
+
+// ── 261119: wallpaper widgets and lighting, per save ────────────────────────
+
+const WIDGET_ACTIONS = ['added', 'removed', 'edited'] as const;
+
+function lightingValue(v: unknown, lo: number, hi: number): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, lightingBucket(n))) : 0;
+}
+
+function widgetEventProps(p: Record<string, unknown>): Record<string, Scalar> {
+  const changed =
+    typeof p.changed === 'string'
+      ? p.changed
+          .split(',')
+          .filter((k): k is WidgetSettingKey => (WIDGET_SETTING_KEYS as readonly string[]).includes(k))
+          .sort()
+          .join(',')
+      : '';
+  const out: Record<string, Scalar> = {
+    character_id: charId(p.character_id),
+    action: oneOf(WIDGET_ACTIONS, p.action) ?? 'edited',
+    kind: oneOf(WIDGET_KINDS, p.kind) ?? 'clock',
+    surface: oneOf(EDITOR_SURFACES, p.surface) ?? 'app',
+  };
+  if (changed) out.changed = changed;
+  const n = count(p.widgets);
+  if (n !== undefined) out.widgets = Math.min(n, 99);
+  return out;
+}
+
+function lightingEventProps(p: Record<string, unknown>): Record<string, Scalar> {
+  return {
+    character_id: charId(p.character_id),
+    surface: oneOf(EDITOR_SURFACES, p.surface) ?? 'app',
+    brightness: lightingValue(p.brightness, -50, 50),
+    dim: lightingValue(p.dim, 0, 90),
+    warmth: lightingValue(p.warmth, -50, 50),
+    character: p.character === true,
+    reset: p.reset === true,
+  };
+}
+
+/**
+ * The widget and lighting events one save owes: `before` is what was on disk
+ * (null: nothing), `after` what was saved. Pure (the editor sends them).
+ */
+export function desktopSaveEvents(
+  before: Pick<RoomState, 'widgets' | 'lighting'> | null,
+  after: Pick<RoomState, 'widgets' | 'lighting'>,
+  ctx: { characterId: string | null; surface: EditorSurface },
+): Array<{ event: string; props: Record<string, Scalar> }> {
+  const out: Array<{ event: string; props: Record<string, Scalar> }> = [];
+  const n = after.widgets?.length ?? 0;
+  for (const c of widgetChanges(before?.widgets, after.widgets)) {
+    const props: Record<string, Scalar> = { character_id: ctx.characterId, action: c.action, kind: c.kind, surface: ctx.surface, widgets: n };
+    if (c.changed?.length) props.changed = [...c.changed].sort().join(',');
+    out.push({ event: SEILINK_WIDGET_EVENT, props });
+  }
+  if (!same(before?.lighting, after.lighting)) {
+    const l: RoomLighting = after.lighting ?? { brightness: 0, dim: 0, warmth: 0, character: false };
+    out.push({
+      event: SEILINK_LIGHTING_EVENT,
+      props: {
+        character_id: ctx.characterId,
+        surface: ctx.surface,
+        brightness: lightingBucket(l.brightness),
+        dim: lightingBucket(l.dim),
+        warmth: lightingBucket(l.warmth),
+        character: l.character,
+        reset: !after.lighting,
+      },
+    });
+  }
+  return out;
 }

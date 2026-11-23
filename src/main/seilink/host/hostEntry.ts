@@ -49,8 +49,9 @@ import {
   type SeilinkPokeKind,
 } from '../../../shared/seilinkHost';
 import { AvatarRelay } from './avatarRelay';
-import { dockHover, dragSlopPhysical, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
+import { dockHover, dragSlopPhysical, gazeMoved, gazeSample, HER_SLOP_PX, hitAreas, isNearMiss, pressTarget, toPagePoint, unionBox, type PressTarget } from './dock';
 import type { SeilinkHostCountKey } from './protocol';
+import { sanitizeArrival, type SeilinkArrival } from '../../../shared/seilinkEntrance';
 
 /** Dev/CI smoke without a desktop layer (native.ts fakeDesktopEnabled): a plain window on any OS. */
 const FAKE = fakeDesktopEnabled(app.isPackaged);
@@ -169,6 +170,8 @@ let shellLost = false;
 let room: SeilinkHostRoom | null = null;
 /** The player is chatting with her or just clicked her (main decides; RoomAvatar holds her seated). */
 let busy = false;
+/** 261119: her arrival as main last said it (replayed to the page on ready, before her room). */
+let arrival: SeilinkArrival | null = null;
 /** `<packId>/<rel>` -> realpath, from main's room message. */
 let allow = new Map<string, string>();
 let box: SeilinkBox | null = null;
@@ -312,6 +315,14 @@ function onCommand(m: ToHost): void {
       toPage(CH.level, Number.isFinite(level) ? Math.max(0, Math.min(1, level)) : 0);
       break;
     }
+    case 'arrival': {
+      const a = sanitizeArrival(m.arrival);
+      if (!a) break;
+      arrival = a;
+      log(`arrival ${a.mode} (${a.trigger}${a.quiet ? ', quiet' : ''})`);
+      toPage(CH.arrival, a);
+      break;
+    }
     case 'set-paused':
       held = m.paused === true;
       activity.set({ held });
@@ -322,6 +333,9 @@ function onCommand(m: ToHost): void {
     case 'ping':
       // Answered straight from the pipe read (main's liveness check), not from a timer.
       send({ type: 'pong', seq: Number(m.seq) || 0 });
+      break;
+    case 'test-probe':
+      if (ARGS.test) void testProbe(Number(m.id) || 0);
       break;
     case 'test-hang': {
       if (!ARGS.test) break;
@@ -486,7 +500,14 @@ ipcMain.on(CH.ready, (e) => {
   e.sender.send(CH.busy, busy);
   e.sender.send(CH.layout, layoutNow());
   e.sender.send(CH.dockState, { deafened, offer });
+  if (arrival) e.sender.send(CH.arrival, arrival);
   if (room) e.sender.send(CH.room, room);
+});
+
+ipcMain.on(CH.arrived, (e, raw: unknown) => {
+  if (!fromOurPage(e.sender)) return;
+  const r = (raw ?? {}) as { played?: unknown; reduced?: unknown; kind?: unknown };
+  send({ type: 'arrived', played: r.played === true, reduced: r.reduced === true, kind: typeof r.kind === 'string' ? r.kind.slice(0, 24) : null });
 });
 
 // RoomAvatar's avatar calls (window.sei in the host preload), relayed to main.
@@ -678,26 +699,92 @@ function applyHitRect(): void {
   }
 }
 
-// ── Dock hover (261110) ─────────────────────────────────────────────────────
+// ── Dock hover (261110) and her gaze (261116) ───────────────────────────────
 
-/** How often the cursor is checked against the dock while the room draws. */
+/** How often the cursor is checked against the dock and her face. */
 const HOVER_POLL_MS = 150;
+/**
+ * Product call (261116): the dock stayed lit after a click and she stopped following the cursor.
+ * The page only hears changes, so one lost or early message (a press, Sei's window coming up
+ * over her) left it in the wrong state until the cursor crossed the dock again. The host now
+ * says the hover state again every HOVER_REASSERT_MS (a boolean, cheap), and keeps checking
+ * while the room is covered (macOS: Sei's window over her box stops her frames but the dock in
+ * the corner can still be seen), only not while the screen is locked or asleep.
+ */
+const HOVER_REASSERT_MS = 1000;
+/** The gaze feed is sent again at least this often while she draws (the views drop it after 2 s). */
+const GAZE_KEEPALIVE_MS = 700;
 let hovering = false;
+let hoverSentAt = 0;
+let lastGaze: { x: number; y: number } | null = null;
+let gazeSentAt = 0;
+
+/** CI probe (--seilink-test): the longest gap between two cursor polls since the last probe. */
+let lastPollAt = 0;
+let maxPollGap = 0;
+/** CI probe: gaze samples sent to the page since the last probe. */
+let gazeSamples = 0;
 
 function pollHover(): void {
-  let next = false;
+  const now = Date.now();
+  if (lastPollAt) maxPollGap = Math.max(maxPollGap, now - lastPollAt);
+  lastPollAt = now;
+  if (!attached || !pageReady) return;
+  const a = activity.current;
+  let cursor: { x: number; y: number } | null = null;
   try {
-    if (dock && attached && pageReady && activity.current.fps > 0) {
+    if (!a.paused) {
       const c = screen.getCursorScreenPoint();
       const b = primaryDisplay().bounds;
-      next = dockHover({ x: c.x - b.x, y: c.y - b.y }, dock);
+      cursor = { x: c.x - b.x, y: c.y - b.y };
     }
   } catch {
-    next = false;
+    cursor = null;
   }
-  if (next === hovering) return;
-  hovering = next;
-  toPage(CH.hover, next);
+  const next = !!cursor && !!dock && dockHover(cursor, dock);
+  if (next !== hovering || now - hoverSentAt >= HOVER_REASSERT_MS) {
+    hovering = next;
+    hoverSentAt = now;
+    toPage(CH.hover, next);
+  }
+  // Her gaze: only while she draws (a still picture cannot look anywhere).
+  if (cursor && a.fps > 0) {
+    const b = primaryDisplay().bounds;
+    const g = gazeSample(cursor, box, { w: b.width, h: b.height });
+    if (g && (gazeMoved(lastGaze, g) || now - gazeSentAt >= GAZE_KEEPALIVE_MS)) {
+      lastGaze = g;
+      gazeSentAt = now;
+      gazeSamples++;
+      toPage(CH.cursor, g);
+    }
+  }
+}
+
+/** CI self-test only: what the dock and the cursor feed look like right now (test-probe). */
+async function testProbe(id: number): Promise<void> {
+  let page: { awake: boolean; pressed: boolean } | null = null;
+  try {
+    if (pageWin && !pageWin.isDestroyed())
+      page = (await pageWin.webContents.executeJavaScript(
+        `(() => { const d = document.querySelector('[data-dock-awake]'); return d ? { awake: d.getAttribute('data-dock-awake') === '1', pressed: !!d.querySelector('[data-dock-pressed]') } : null })()`,
+      )) as { awake: boolean; pressed: boolean } | null;
+  } catch {
+    page = null;
+  }
+  const a = activity.current;
+  send({
+    type: 'test-probe',
+    id,
+    hover: hovering,
+    fps: a.fps,
+    reason: a.reason,
+    pageAwake: page ? page.awake : null,
+    pagePressed: page ? page.pressed : null,
+    cursorSamples: gazeSamples,
+    maxPollGapMs: maxPollGap,
+  });
+  maxPollGap = 0;
+  gazeSamples = 0;
 }
 
 // ── Attach ──────────────────────────────────────────────────────────────────

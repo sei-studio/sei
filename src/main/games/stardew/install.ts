@@ -34,7 +34,8 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../../lazyJszip';
 import {
   SMAPI_INSTALLER_ASSET,
   SMAPI_INSTALLER_ORIGIN_URL,
@@ -608,7 +609,7 @@ export async function downloadSmapiInstaller(
 
 /** Extract the installer zip into `dir`; returns the installer executable path for this platform. */
 export async function extractSmapiInstaller(zipBytes: Buffer, dir: string, platform: StardewInstallEnv['platform']): Promise<string> {
-  const zip = await JSZip.loadAsync(zipBytes);
+  const zip = await (await loadJSZip()).loadAsync(zipBytes);
   await fs.mkdir(dir, { recursive: true });
   const entries = Object.values(zip.files);
   for (const entry of entries) {

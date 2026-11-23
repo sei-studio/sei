@@ -11,6 +11,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+
+# onnxruntime-node's postinstall tries to fetch Linux CUDA binaries from GitHub; the v1.21.0 asset
+# now 404s and Sei never uses the CUDA provider, so skip it.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -48,6 +54,14 @@ jobs:
         env:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
+
+      # 261116: src/bot/** and the vendored file: deps run UNBUNDLED under plain
+      # Node ESM in the packaged app, where a named import the target does not
+      # export is a link-time SyntaxError that kills the process at load.
+      # Vitest tolerates it (v0.7.0-beta.5 shipped a bot that never loaded).
+      # Static, no code executed, ~2s. Also runs inside `npm test`.
+      - name: ESM link check (unbundled runtime code)
+        run: npm run check:esm
 
       - name: Typecheck
         run: npm run typecheck

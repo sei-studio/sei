@@ -43,8 +43,7 @@ import {
 } from './icons';
 import { PixelPortrait } from './PixelPortrait';
 import { UpdateRailButton } from './UpdateRailButton';
-import { lastInteractionAt } from '../lib/lastInteraction';
-import { isHomeCharacter } from '../lib/homeLibrary';
+import { isHomeCharacter, railParty } from '../lib/homeLibrary';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
@@ -359,26 +358,11 @@ export function IconRail(): React.ReactElement {
     );
   }, [characters, currentUserId, addedDefaultIds, addedWorldIds]);
 
-  // Stable sort: last interaction desc (summon OR chat; nulls last), then created
-  // desc — then capped at MAX_COMPANION_SLOTS so the rail mirrors the home party
-  // wall's fixed 4 slots (same set, same order), never a longer list.
-  const sortedCharacters = useMemo(() => {
-    const copy = homeCharacters.slice();
-    copy.sort((a, b) => {
-      const aLast = lastInteractionAt(a) ?? '';
-      const bLast = lastInteractionAt(b) ?? '';
-      if (aLast !== bLast) {
-        // Most-recently-active first; empty strings (no activity) sort last.
-        if (!aLast) return 1;
-        if (!bLast) return -1;
-        return bLast.localeCompare(aLast);
-      }
-      const aCreated = a.created ?? '';
-      const bCreated = b.created ?? '';
-      return bCreated.localeCompare(aCreated);
-    });
-    return copy.slice(0, MAX_COMPANION_SLOTS);
-  }, [homeCharacters]);
+  // Every party member, most recently active first (lib/homeLibrary.ts
+  // railParty). Not capped at the slot count (261116): the Home wall shows
+  // four panels, so a party over the cap had members reachable nowhere; the
+  // rail is where they stay reachable (the column scrolls).
+  const sortedCharacters = useMemo(() => railParty(homeCharacters), [homeCharacters]);
 
   const handleCompassClick = (): void => {
     setHomeTab('world');
@@ -459,9 +443,9 @@ export function IconRail(): React.ReactElement {
               paid for discoverability with a dead-end click and a dialog.
 
               The two sets cannot disagree here: sortedCharacters IS
-              homeCharacters capped at MAX_COMPANION_SLOTS, so the moment the
-              count reaches the cap the rail is showing exactly that many
-              circles. A full rail with no + is then self-explanatory, which the
+              homeCharacters (every member, never capped since 261116), so
+              the moment the count reaches the cap the rail is showing at
+              least that many circles. A full rail with no + is then self-explanatory, which the
               button plus an apology never was. chars:save remains the
               authoritative backstop, and the World tab's slots indicator still
               spells out "Party full" in words. */}
@@ -490,7 +474,7 @@ export function IconRail(): React.ReactElement {
           {aiBackendKind === 'cloud-proxy' || aiBackendKind === 'local' ? (
             <RailButton
               active={view.kind === 'credits'}
-              onClick={() => navigate({ kind: 'credits' })}
+              onClick={() => navigate({ kind: 'credits', from: 'nav' })}
               title={
                 aiBackendKind === 'cloud-proxy' && usageKnown
                   ? t('Usage: {pct}%', { pct: Math.max(0, Math.min(100, Math.round(usagePct))) })

@@ -191,10 +191,12 @@ artifactName: Sei-${os}-${arch}.${ext}
 asar: true
 
 # 261031 (T281): keep only the Chromium locales of the languages Sei speaks
-# (UI: en, zh; conversation: en, zh, ja, ko, fr, es). A bare tag keeps every
-# region variant (en -> en-US + en-GB, zh -> zh-CN + zh-TW, es -> es +
-# es-419). 55 -> 9 .pak files on Windows (48MB -> ~5MB on disk, ~7MB off the
-# installer); the mac build drops the same .lproj folders. A system language
+# (UI: src/shared/uiLanguage.ts UI_LANGUAGES = en, zh, ja, ru, pt-BR, es, it;
+# conversation adds ko, fr). A bare tag keeps every region variant (en ->
+# en-US + en-GB, zh -> zh-CN + zh-TW, es -> es + es-419); pt-BR keeps only
+# pt-BR.pak / pt_BR.lproj (electron-builder treats - and _ alike). 55 -> 12
+# .pak files on Windows; the mac build drops the same .lproj folders. A new
+# UI language needs its Chromium locale added here. A system language
 # outside the list makes Chromium fall back to en-US for its own strings and
 # app.getLocale() (localeDetect.ts reads getPreferredSystemLanguages() first,
 # which is OS-level and unaffected; safe mode's page only distinguishes zh).
@@ -205,6 +207,9 @@ electronLanguages:
   - ko
   - fr
   - es
+  - ru
+  - pt-BR
+  - it
 
 # 260925 Electron fuses (flipped in the packaged Electron binary right before
 # signing, by app-builder-lib's doAddElectronFuses via @electron/fuses). Until

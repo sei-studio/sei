@@ -123,12 +123,15 @@ export function segmentIntersectsEntityAABB(from, to, e) {
  * ray, a solid/partial block on the ray, or an intervening entity AABB all
  * return false. Only a fully clear ray within 16 blocks returns true.
  *
+ * `entitiesOcclude: false` skips step (c): only terrain and fluids block the
+ * ray (the snapshot's entity list, see entities.js nearbyEntities).
+ *
  * @param {import('mineflayer').Bot} bot
  * @param {import('prismarine-entity').Entity} targetEntity
- * @param {{ stepsPerBlock?: number, maxRange?: number }} [opts]
+ * @param {{ stepsPerBlock?: number, maxRange?: number, entitiesOcclude?: boolean }} [opts]
  * @returns {boolean}
  */
-export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4, maxRange = MAX_RANGE_BLOCKS } = {}) {
+export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4, maxRange = MAX_RANGE_BLOCKS, entitiesOcclude = true } = {}) {
   const me = bot?.entity
   if (!me?.position || !targetEntity?.position) return false
 
@@ -162,6 +165,7 @@ export function hasClearLineOfSight(bot, targetEntity, { stepsPerBlock = 4, maxR
 
   // (c): any OTHER entity whose AABB the ray crosses blocks sight. Skip the bot
   // itself, the target, and any null/positionless entry.
+  if (!entitiesOcclude) return true
   const entities = bot.entities ?? {}
   for (const id in entities) {
     const e = entities[id]

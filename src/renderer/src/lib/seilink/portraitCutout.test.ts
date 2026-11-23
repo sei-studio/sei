@@ -57,6 +57,48 @@ describe('keyAlpha', () => {
     expect(r!.alpha[50 * W + 40]).toBe(255);
   });
 
+  // 261116: a transparent PNG whose figure touches the edge (a bust cut at
+  // the sides) with near-black outlines and hair. The key used to fall to
+  // black, or to whatever colour touched the border, and flood into her.
+  it('uses a transparent picture\'s own alpha, keeping black hair at the edge', () => {
+    const HAIR: [number, number, number, number] = [8, 8, 10, 255];
+    const d = img(W, H, (x, y) => {
+      if (y > 70) return Math.abs(x - 40) <= 40 ? [200, 60, 60, 255] : [0, 0, 0, 0]; // shoulders off both sides
+      if (Math.hypot(x - 40, y - 40) < 22) return y < 35 ? HAIR : [250, 220, 200, 255];
+      return [0, 0, 0, 0];
+    });
+    const r = keyAlpha(d, W, H);
+    expect(r).not.toBeNull();
+    expect(r!.alphaOnly).toBe(true);
+    expect(r!.alpha[0]).toBe(0);
+    expect(r!.alpha[25 * W + 40]).toBe(255); // black hair
+    expect(r!.alpha[90 * W]).toBe(255); // shoulder touching the left edge
+    expect(r!.alpha[90 * W + W - 1]).toBe(255);
+  });
+
+  // 261116: E2LS, a thin white frame round a flat pink backdrop. The white
+  // flood took only the frame (kept 96%, refused as no cut-out).
+  it('peels a thin frame and keys the flat backdrop inside it', () => {
+    const PINK: [number, number, number, number] = [240, 205, 212, 255];
+    const d = img(W, H, (x, y) => {
+      if (x < 1 || x >= W - 1 || y < 1) return [250, 250, 250, 255];
+      return bust(x, y)[0] === CARD[0] && bust(x, y)[1] === CARD[1] ? PINK : bust(x, y);
+    });
+    const r = keyAlpha(d, W, H);
+    expect(r).not.toBeNull();
+    const a = (x: number, y: number): number => r!.alpha[y * W + x];
+    expect(a(0, 0)).toBe(0); // frame
+    expect(a(10, 10)).toBe(0); // pink backdrop
+    expect(a(40, 35)).toBe(255); // face
+    expect(a(40, 85)).toBe(255); // dress
+    expect(r!.key).toEqual([240, 205, 212]);
+  });
+
+  it('does not peel a normal key', () => {
+    const d = img(W, H, bust);
+    expect(keyAlpha(d, W, H)!.key).toEqual([248, 250, 255]);
+  });
+
   it('gives edge pixels partial alpha and unmixes the card colour from them', () => {
     // Head edge antialiased half-way into the card.
     const d = img(W, H, (x, y) => {

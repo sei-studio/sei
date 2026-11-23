@@ -20,8 +20,9 @@ import type { RoomState } from './seilinkRoom';
 import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOfferVia, SeilinkOpenEditor, SeilinkStageRequest, SeilinkStageResult } from './seilinkHost';
 import type { SeilinkEditorEvent, SeilinkEditorSync } from './seilinkTogether';
 import type { OpenAtLoginState, OpenAtLoginUiSurface } from './openAtLogin';
-import type { AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
+import type { AnimaCutout, AnimaShownKind, AnimaStatus, AnimaTrigger } from './anima';
 import type { AvatarLibraryResult, AvatarLibraryView } from './avatarLibrary';
+import type { Live2DParamMap, Live2DParamOverrides } from './live2dParams';
 import { z } from 'zod';
 import type {
   Character,
@@ -550,6 +551,13 @@ export interface ChatMessage {
    */
   voice?: boolean;
   /**
+   * WorldLink (product call (261116)): a line she said on the desktop as a
+   * speech bubble (a click on her, an idle line, a reaction to her room).
+   * Persisted so she remembers saying it, but HIDDEN in the chat UI like a
+   * voice row: desktop lines stay desktop bubbles.
+   */
+  desktop?: boolean;
+  /**
    * Backseat (260728): a clip the companion saved off the screen share while
    * watching the player. `path` is an absolute path to the .webm under
    * <profileRoot>/clips/<characterId>/; `reason` is the companion's own short
@@ -643,6 +651,53 @@ export interface VoiceInfo {
 }
 
 /**
+ * Voice Library voices on Sei cloud (261119, main/voice/libraryVoices.ts):
+ * why a pasted voice cannot be used. The first twelve come from the proxy;
+ * `no_session` and `rate_limited` are the client's own.
+ */
+export type LibraryVoiceReason =
+  | 'invalid_input'
+  | 'not_found'
+  | 'pool_voice'
+  | 'custom_rate'
+  | 'live_moderation'
+  | 'short_notice'
+  | 'delisted'
+  | 'restricted_category'
+  | 'daily_limit'
+  | 'voice_limit'
+  | 'capacity'
+  | 'unavailable'
+  | 'no_session'
+  | 'rate_limited';
+
+/** A Voice Library voice as the picker shows it (no owner id, no URL). */
+export interface LibraryVoiceInfo {
+  /** Persisted as metadata.voiceId when picked. */
+  voiceId: string;
+  name: string;
+  gender: string | null;
+  age: string | null;
+  accent: string | null;
+  description: string | null;
+  /** ElevenLabs has a preview clip (voiceLibraryPreview plays it). */
+  hasPreview: boolean;
+}
+
+export type LibraryVoiceLookupResult =
+  | { ok: true; voice: LibraryVoiceInfo }
+  | { ok: false; reason: LibraryVoiceReason };
+
+export type LibraryVoiceAddResult =
+  | { ok: true; voice: LibraryVoiceInfo; already: boolean }
+  | { ok: false; reason: LibraryVoiceReason };
+
+/** Whether a stored library voice still plays; 'error' = could not ask. */
+export type LibraryVoiceStatusResult =
+  | { status: 'active' | 'removed'; name: string; gender: string | null }
+  | { status: 'pool' | 'unknown' | 'error' };
+
+/**
  * One voice from the user's OWN ElevenLabs account (261019), listed by main
  * with the stored BYOK key (GET /v2/voices). Renderer-safe: no key, no
  * preview URL (main fetches preview bytes itself, see voiceOwnPreview).
@@ -729,6 +784,13 @@ export type VoiceTtsNoticePush =
       reason: FishFailureReason;
     }
   | {
+      /** 261120: Fish Audio is the chosen cloud voice (Playtime > Sei >
+       * Advanced) but could not speak this line, so Sei's voices spoke it. */
+      kind: 'fish-cloud-fallback';
+      characterId: string;
+      reason: FishFailureReason;
+    }
+  | {
       /** 261102: Kokoro is the chosen local model but could not speak this
        * line (pack not downloaded, or it would not load), so the Fast voices
        * spoke it. The line still plays; the call UI shows a system notice. */
@@ -742,6 +804,12 @@ export type VoiceTtsNoticePush =
       kind: 'sei-voices-fallback';
       characterId: string;
       reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed';
+    }
+  | {
+      /** 261119: the character's Voice Library voice is no longer available
+       * on Sei cloud, so a close Sei voice spoke the line. */
+      kind: 'library-voice-unavailable';
+      characterId: string;
     };
 
 /**
@@ -814,6 +882,19 @@ export interface AvatarManifest {
    * it). A new import replaces the manifest, which drops the link.
    */
   library?: { avatarId: string; rev: string };
+  /**
+   * Which of the model's parameters the views drive (261122,
+   * shared/live2dParams.ts): mouth, eyes, head, blink. Resolved once by main
+   * at import (and on the first read of an older store). Absent on a rig.
+   */
+  params?: Live2DParamMap;
+  /** Per-role corrections that win over `params` (null = the role is off). Nothing writes it yet. */
+  paramOverrides?: Live2DParamOverrides;
+  /**
+   * Expressions that change nothing (no parameters, or none the model has),
+   * left out of `expressions` and `emotions` so no face is a no-op (261122).
+   */
+  unusableExpressions?: string[];
 }
 
 /** One file of a Live2D model bundle, shipped renderer-ward over IPC so the
@@ -1959,7 +2040,20 @@ export const ProxyConfigureArgsSchema = z.object({
  */
 export const CreditsCheckoutArgsSchema = z.object({
   kind: z.string().min(1).max(64),
+  /**
+   * 261122: the app surface the purchase started from (CheckoutSource), sent
+   * to the proxy (Polar checkout metadata) and on checkout_opened /
+   * checkout_open_failed. A short slug; optional so older callers still parse.
+   */
+  source: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/).optional(),
 });
+
+/**
+ * 261122: where a checkout started, i.e. how the user reached the plan page
+ * (or its top up packages): the usage-limit popup, Settings, the rail, or
+ * anything else ('pricing_page').
+ */
+export type CheckoutSource = 'cap_popup' | 'settings' | 'nav' | 'pricing_page';
 /**
  * 260724: change the tier of an EXISTING subscription (a Polar subscription
  * update, not a fresh checkout). Upgrades additionally reset weekly usage
@@ -2065,9 +2159,11 @@ export interface RendererApi {
   // that tags the streaming ExpansionProgressEvent ticks so the caller can
   // filter progress for THIS save. Ignored when skipExpansion is true (no LLM
   // call runs). When omitted, expansion still runs/streams but emits no ticks.
+  // `expandOnly` (261120): expand and return the result WITHOUT saving it (the
+  // caller writes the persona onto the then-current row itself).
   saveCharacter(
     character: Character,
-    options?: { skipExpansion?: boolean; expansionRequestId?: string },
+    options?: { skipExpansion?: boolean; expansionRequestId?: string; expandOnly?: boolean },
   ): Promise<Character>;
   deleteCharacter(id: string): Promise<void>;
   resetMemory(id: string): Promise<void>;
@@ -2363,7 +2459,8 @@ export interface RendererApi {
   seilinkOpenPreview?(): Promise<boolean>;
   /** Desktop host: she moves in, her room becomes the wallpaper (SeiLink available: a supported install or the dev flag). */
   /** M4: `firstRoom` = the move-in sheet just set up her first room (analytics only). */
-  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean }): Promise<SeilinkHostStatus>;
+  /** 261119: `entrance: 'first_link'` when the first-link intro plays with this start (it shows her coming in). */
+  seilinkHostStart?(characterId: string, opts?: { firstRoom?: boolean; entrance?: 'first_link' }): Promise<SeilinkHostStatus>;
   seilinkHostStop?(opts?: { reason?: 'link_failed' }): Promise<SeilinkHostStatus>;
   seilinkHostStatus?(): Promise<SeilinkHostStatus>;
   /** 261107: the profile's Idle lines toggle; writes seilink_deafened (inverted). Resolves with the new state. */
@@ -2386,6 +2483,8 @@ export interface RendererApi {
   onSeilinkAnima?(cb: (status: AnimaStatus) => void): Unsubscribe;
   /** What a RoomAvatar ended up showing for her (analytics only). */
   seilinkAnimaShown?(characterId: string, kind: AnimaShownKind): void;
+  /** 261118: the cloud's clean cut-out of her picture (no face to animate), or null. Any build, like facepackForCharacter. */
+  seilinkAnimaCutout?(characterId: string): Promise<AnimaCutout | null>;
   /** 261110: a companion's voice (TTS) started or stopped here; main relays it to her desktop room when she is the one there. */
   seilinkVoice?(characterId: string, speaking: boolean): void;
   /** 261105: the companion room editor opened or closed (one token per session); she may react to the edits. */
@@ -2862,6 +2961,17 @@ export interface RendererApi {
    */
   voiceOwnPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
   /**
+   * Voice Library voices on Sei cloud (261119). Lookup resolves a pasted
+   * link or id through the proxy (no writes); add is the pick (the proxy
+   * validates again and adds it to Sei's ElevenLabs account); status says
+   * whether a stored one still plays; preview plays the ElevenLabs preview
+   * of a voice looked up this session. Lookup, add and status never throw.
+   */
+  voiceLibraryLookup(args: { input: string }): Promise<LibraryVoiceLookupResult>;
+  voiceLibraryAdd(args: { input: string }): Promise<LibraryVoiceAddResult>;
+  voiceLibraryStatus(args: { voiceId: string }): Promise<LibraryVoiceStatusResult>;
+  voiceLibraryPreview(args: { voiceId: string }): Promise<ArrayBuffer>;
+  /**
    * The close Sei pool voice that others hear for this character when its
    * voice is the author's own ElevenLabs voice and no voice for others was
    * chosen (261019, voiceAssign closeSharedVoiceId). Deterministic from the
@@ -3205,6 +3315,13 @@ export interface RendererApi {
   /** 261110: the "Alert me at $N a month" notice fired (once a month). */
   onSpendAlert?: (cb: (e: SpendAlertPush) => void) => Unsubscribe;
   /**
+   * 261120: the spend alert main still holds because no one dismissed it yet
+   * (it may have fired while no window was open). null when none.
+   */
+  usageSpendAlertPending?: () => Promise<SpendAlertPush | null>;
+  /** 261120: the banner was dismissed or clicked; main stops replaying it. */
+  usageSpendAlertAck?: () => Promise<void>;
+  /**
    * 260725 — read the server-driven pricing catalog (plan cards + top up
    * packages) from the proxy's world-readable config tables. Cached in main;
    * null when the read fails and no cached copy exists (the renderer then
@@ -3221,6 +3338,7 @@ export interface RendererApi {
    */
   creditsOpenCheckout: (
     kind: string,
+    source?: CheckoutSource,
   ) => Promise<{ ok: true } | { ok: false; code: string }>;
   /**
    * Change the tier of an EXISTING subscription (Polar subscription update, not
@@ -3292,6 +3410,13 @@ export interface RendererApi {
    * Returns the unsubscribe fn.
    */
   onCreditsHardStop: (cb: (info: CreditsHardStopEvent) => void) => Unsubscribe;
+  /**
+   * 261120: a depleted-credit wall main still holds because the modal was not
+   * closed yet (it may have hit while no window was open). null when none.
+   */
+  creditsHardStopPending?: () => Promise<CreditsHardStopEvent | null>;
+  /** 261120: the wall modal was closed (or lifted); main stops replaying it. */
+  creditsHardStopAck?: () => Promise<void>;
   /**
    * Subscribe to `proxy:kind-changed` pushes — the effective ai_backend_kind,
    * emitted by main on every persisted change and at the end of every
@@ -3463,6 +3588,12 @@ export interface RendererApi {
    * renderer only ever compares it against `'darwin'`.
    */
   platform: string;
+  /**
+   * 261123: when main's process started (epoch ms), passed to the main window
+   * as `--sei-process-start=` (windowChrome.ts). The boot splash fades its mark
+   * in on that clock (renderer lib/bootMark.ts). Absent in other windows.
+   */
+  launchStartedAt?: number;
   /** Frameless window controls (Windows/Linux custom titlebar). */
   windowMinimize(): Promise<void>;
   /** Toggle maximize/restore for the focused window. */
@@ -3603,6 +3734,25 @@ export interface PeekLocalProfileResult {
    * She alone does not earn the boot offer or the Settings row (261023).
    */
   untouchedSeedIds: string[];
+  /**
+   * 261116: whether bringing the local roster over fits the signed-in
+   * account's party (MAX_COMPANION_SLOTS). Absent when signed out (no account
+   * to fit into). `incoming` counts only companions the account's party does
+   * not already hold; memory-only companions take no slot.
+   */
+  party?: LocalImportPartyFit;
+}
+
+/** 261116: the party room an own-key import needs, in the signed-in account. */
+export interface LocalImportPartyFit {
+  /** Party members the account has now. */
+  count: number;
+  /** Local companions the import would add to the party. */
+  incoming: number;
+  /** The party limit (MAX_COMPANION_SLOTS). */
+  limit: number;
+  /** count + incoming stays within the limit (or nothing new comes in). */
+  fits: boolean;
 }
 
 /** Result of importing the `local` profile into the signed-in account (260603). */
@@ -3611,6 +3761,12 @@ export interface ImportLocalProfileResult {
   failed: string[];
   /** Whether mc_username / preferred_name were copied into the account profile. */
   copiedOnboarding: boolean;
+  /**
+   * 261116: 'party_full' = nothing was imported because the companions would
+   * not fit in the account's party; everything stays in the local profile,
+   * untouched, for a later import once a slot is free.
+   */
+  skipped?: 'party_full';
 }
 
 /** Payload pushed by main when an update is detected (quick/260604-uoy). */
@@ -4082,6 +4238,14 @@ export const IpcChannel = {
     ownList: 'voice:own-list',
     /** Invoke: sample bytes for one own voice ({voiceId}) → ArrayBuffer (261019). */
     ownPreview: 'voice:own-preview',
+    /** Invoke: Voice Library voice lookup ({input}) → LibraryVoiceLookupResult (261119). */
+    libraryLookup: 'voice:library-lookup',
+    /** Invoke: add a Voice Library voice ({input}) → LibraryVoiceAddResult (261119). */
+    libraryAdd: 'voice:library-add',
+    /** Invoke: does a stored library voice still play ({voiceId}) → LibraryVoiceStatusResult (261119). */
+    libraryStatus: 'voice:library-status',
+    /** Invoke: preview clip of a looked-up library voice ({voiceId}) → ArrayBuffer (261119). */
+    libraryPreview: 'voice:library-preview',
     /** Invoke: default voice for others on an own-voice character ({characterId, ownGender?}) → {voiceId} (261019). */
     sharedDefault: 'voice:shared-default',
     /** Invoke: preview an arbitrary pool voice ({voiceId}) → ArrayBuffer. */
@@ -4215,6 +4379,10 @@ export const IpcChannel = {
     // 261031 (T277): the main window's React tree mounted (send, renderer →
     // main). The boot guard counts a start as good a few seconds after it.
     rendererReady: 'app:renderer-ready',
+    // 261123 launch speed: invoke, renderer → main. Answers once main has
+    // registered its IPC handlers; the preload holds every call until then
+    // (src/preload/mainReadyGate.ts), so the window can load before they exist.
+    ipcReady: 'app:ipc-ready',
     // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
     // Push (main → renderer):
     updateAvailable: 'app:update-available',       // optional update detected
@@ -4436,11 +4604,15 @@ export const IpcChannel = {
     changePlan: 'credits:change-plan',
     statusUpdate: 'credits:status:update',
     hardStop: 'credits:hard-stop',
+    hardStopPending: 'credits:hard-stop-pending',
+    hardStopAck: 'credits:hard-stop-ack',
   },
   // 261110 Playtime: own-key / ChatGPT-plan usage ledger (main/usage/).
   usage: {
     summary: 'usage:summary',
     spendAlert: 'usage:spend-alert',
+    spendAlertPending: 'usage:spend-alert-pending',
+    spendAlertAck: 'usage:spend-alert-ack',
   },
   subscription: {
     status: 'subscription:status',
@@ -4522,6 +4694,8 @@ export const IpcChannel = {
     animaChanged: 'seilink:anima-changed',
     /** Send: what a RoomAvatar ended up showing ({characterId, kind}), analytics only. */
     animaShown: 'seilink:anima-shown',
+    /** Invoke (261118): characterId → AnimaCutout | null, her cloud cut-out PNG while it matches her picture. */
+    animaCutout: 'seilink:anima-cutout',
     /** Send (261110): a companion's voice started or stopped in this window ({characterId, speaking}); her mouth moves on the desktop. */
     voice: 'seilink:voice',
     /** Send: the companion editor opened or closed ({phase, token, characterId}); main diffs her room for her reaction line (roomReaction.ts). */

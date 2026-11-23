@@ -1,6 +1,6 @@
 /**
- * PortraitImagePicker — image-upload control used by EditCharacterModal and
- * AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
+ * PortraitImagePicker — image-upload control used by the card image popup
+ * (PortraitVersionsModal), Settings and AddCharacterScreen. As of Plan 11-06 (D-28) the picker no longer inlines
  * the image as a base64 data URL — instead it:
  *
  *   1. Loads the picked file into an HTMLImageElement
@@ -25,6 +25,7 @@ import { PortraitCropModal } from './PortraitCropModal';
 import { UserIcon } from './icons';
 import { Button } from './Button';
 import avatarStyles from './PortraitImagePicker.module.css';
+import { userFacingError } from '../lib/errors';
 
 /** D-28 size budget (mirrors PORTRAIT_MAX_BYTES in src/main/portraitImageUtil.ts). */
 const MAX_BYTES = 500 * 1024;
@@ -112,7 +113,7 @@ export function PortraitImagePicker({
       cropUrlRef.current = objectUrl;
       setCropImg(img);
     } catch (err) {
-      setError((err as Error).message ?? t('Could not open that image.'));
+      setError(userFacingError(err, t('Could not open that image.')));
     }
   };
 
@@ -136,7 +137,7 @@ export function PortraitImagePicker({
       setBust((b) => b + 1);
       onChange(ref);
     } catch (err) {
-      setError(prettifyError((err as Error).message ?? t('Failed to apply portrait.')));
+      setError(prettifyError(userFacingError(err, t('Failed to apply portrait.'))));
     } finally {
       setBusy(false);
       closeCrop();
@@ -152,7 +153,7 @@ export function PortraitImagePicker({
       else await sei.charsRemovePortrait(characterId as string);
       onChange(null);
     } catch (err) {
-      setError((err as Error).message ?? t('Failed to remove portrait.'));
+      setError(userFacingError(err, t('Failed to remove portrait.')));
     } finally {
       setBusy(false);
     }

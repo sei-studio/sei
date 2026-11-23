@@ -141,7 +141,11 @@ export function wireLinkEvents(link, handlers, opts) {
     })
   })
 
-  const onDying = safe('onDying', () => { handlers.onDying?.() })
+  // stillDying: the runtime's respawn can outlast the brain's 10 s hold.
+  const respawning = typeof opts?.respawning === 'function' ? opts.respawning : null
+  const onDying = safe('onDying', () => {
+    handlers.onDying?.(respawning ? { stillDying: respawning } : undefined)
+  })
 
   const onBodyDied = safe('onDeath', (p) => {
     const pos = p.pos && typeof p.pos.x === 'number' && typeof p.pos.z === 'number' ? { x: p.pos.x, y: 0, z: p.pos.z } : null

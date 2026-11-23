@@ -289,7 +289,18 @@ export async function cloudOverLimit(): Promise<boolean> {
  */
 export async function openCheckout(
   kind: string,
-): Promise<{ ok: true; url: string } | { ok: false; code: ProxyErrorCode }> {
+  /**
+   * 261122: `source` = the app surface the purchase started from (cap_popup,
+   * settings, ...), stamped into the Polar checkout metadata and the proxy's
+   * checkout funnel events. `locale` = the app UI language (BCP 47), which the
+   * proxy passes to Polar to localize the hosted page. Both optional: the
+   * proxy drops malformed values instead of failing.
+   */
+  opts: { source?: string; locale?: string } = {},
+): Promise<
+  | { ok: true; url: string; checkoutId?: string }
+  | { ok: false; code: ProxyErrorCode; status?: number }
+> {
   const session = await getSessionOrNull();
   if (!session) return { ok: false, code: PROXY_NO_SESSION };
 
@@ -304,7 +315,11 @@ export async function openCheckout(
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ kind }),
+      body: JSON.stringify({
+        kind,
+        ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.locale ? { locale: opts.locale } : {}),
+      }),
       signal: controller.signal,
     });
   } catch {
@@ -312,16 +327,23 @@ export async function openCheckout(
     return { ok: false, code: PROXY_NETWORK };
   }
   clearTimeout(handle);
-  if (!resp.ok) return { ok: false, code: PROXY_NETWORK };
+  // `status` rides along for the checkout_open_failed analytics event only.
+  if (!resp.ok) {
+    return { ok: false, code: resp.status === 429 ? PROXY_RATE_LIMITED : PROXY_NETWORK, status: resp.status };
+  }
 
-  let body: { ok: boolean; url?: string };
+  let body: { ok: boolean; url?: string; checkout_id?: unknown };
   try {
-    body = (await resp.json()) as { ok: boolean; url?: string };
+    body = (await resp.json()) as { ok: boolean; url?: string; checkout_id?: unknown };
   } catch {
-    return { ok: false, code: PROXY_NETWORK };
+    return { ok: false, code: PROXY_NETWORK, status: resp.status };
   }
   const url = body.url;
-  if (!url) return { ok: false, code: PROXY_NETWORK };
+  if (!url) return { ok: false, code: PROXY_NETWORK, status: resp.status };
+  // Polar's checkout session UUID (not the client secret in the URL), so the
+  // app's checkout_opened event joins the proxy's webhook funnel events.
+  const checkoutId =
+    typeof body.checkout_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.checkout_id) ? body.checkout_id : undefined;
 
   // Validate the proxy-supplied checkout URL through the same gate the portal
   // flow uses (260525-s09 H5 / T-uv9-01) BEFORE returning it to the opener.
@@ -334,7 +356,7 @@ export async function openCheckout(
 
   // Hand the validated URL back to the IPC handler, which opens it in the
   // system browser via shell.openExternal (260603). No window work here.
-  return { ok: true, url };
+  return checkoutId ? { ok: true, url, checkoutId } : { ok: true, url };
 }
 
 /**

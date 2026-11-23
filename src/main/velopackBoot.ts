@@ -93,6 +93,7 @@ export interface VelopackModule {
 
 let mod: VelopackModule | null = null;
 let installed = false;
+let loadError: string | null = null;
 let restartedVersion: string | null = null;
 let firstRunVersion: string | null = null;
 let paths: VelopackPaths | null = null;
@@ -207,6 +208,16 @@ function processImage(pid: number): string | null {
   }
 }
 
+/**
+ * Live AND running `image` (e.g. powershell.exe). False when Windows cannot
+ * say: after a reboot a recorded pid can belong to anything.
+ */
+export function pidRunsImage(pid: number, image: string): boolean {
+  if (!pidAlive(pid)) return false;
+  const name = processImage(pid);
+  return !!name && name.toLowerCase() === image.toLowerCase();
+}
+
 /** Live, and (when Windows can say) Update.exe. */
 function updaterAlive(pid: number): boolean {
   if (!pidAlive(pid)) return false;
@@ -298,16 +309,23 @@ if (process.platform === 'win32' && app.isPackaged && !isSeilinkHostLaunch(proce
     try {
       new mod.UpdateManager(new mod.FileSource(app.getPath('temp')));
       installed = true;
-    } catch {
+    } catch (err) {
       installed = false;
+      loadError = `UpdateManager: ${(err as Error)?.message ?? err}`;
     }
     paths = installed ? velopackPathsFor(process.execPath) : null;
     ciMark('boot', { velopackInstalled: installed, restartedVersion, firstRunVersion, argv: process.argv.slice(1) });
     if (paths && restartedVersion === null) leaveIfApplying(paths);
   } catch (err) {
     velopackLog(`velopack boot failed: ${(err as Error).message}`);
+    loadError = `module: ${(err as Error)?.message ?? err}`;
     mod = null;
   }
+}
+
+/** Why Velopack did not see this install (module load or UpdateManager), for the repair log. */
+export function velopackLoadError(): string | null {
+  return loadError;
 }
 
 /** The install layout (root, packages, Update.exe), when this is a Velopack install. */

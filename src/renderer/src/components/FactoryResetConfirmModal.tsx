@@ -14,6 +14,7 @@ import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import styles from './confirmModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface FactoryResetConfirmModalProps {
   onCancel: () => void;
@@ -35,7 +36,7 @@ export function FactoryResetConfirmModal({
       // Success never returns (the app restarts). Reaching here means the
       // handler threw before the relaunch.
     } catch (err) {
-      setError((err as Error).message || t('Factory reset failed.'));
+      setError(userFacingError(err, t('Factory reset failed.')));
       setSubmitting(false);
     }
   };

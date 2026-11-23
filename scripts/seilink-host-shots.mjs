@@ -10,6 +10,15 @@
  *                                       [--out seilink-host-shots] [--shots a,b,...]
  *                                       [--portrait <png>] [--name <her name>]
  *                                       [--facepacks <dir> --facepack-id <an-...>]
+ *                                       [--portraits <dir or a.png,b.jpg,...>]
+ *                                       [--cutouts <dir>]
+ *
+ * With --portraits (261116), every host shot is taken once per portrait (no
+ * face set, so the cut-out path), written as <portrait basename>-<shot>.png:
+ * a gallery of how uploaded images look in the room. With --cutouts (261118),
+ * a portrait whose basename has a <dir>/<basename>.png there gets that PNG as
+ * her cloud cut-out (anima no_pack + cutout, `&cutout=`), as the app would
+ * after the bake: the room shows it instead of cutting the picture itself.
  *
  * With --facepacks (a dir holding <facepack-id>/facepack.json, e.g. an anima
  * client's <userData>/anima/packs), the `host-crossfade` shot is a sequence:
@@ -73,6 +82,13 @@ const SHOTS = {
   'movein-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark', act: 'thumb' },
   'movein-swap-dark': { kind: 'app', q: 'screen=home&modal=movein&swap=1&theme=dark', act: 'thumb' },
   'movein-ru-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&lang=ru', act: 'thumb' },
+  // 261116: WORLDLINK_UPLOADED_LOOKS kept her uploaded look out (one line, Move in off).
+  'movein-look-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&look=busy_background&name=Aria', act: 'thumb' },
+  'movein-look-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark&look=uploaded&name=Aria', act: 'thumb' },
+  // 261118: a custom uploaded picture: the custom-image line, Move in on.
+  'movein-custom-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&custom=1&name=Aria', act: 'thumb' },
+  'movein-custom-dark': { kind: 'app', q: 'screen=home&modal=movein&theme=dark&custom=1&name=Aria', act: 'thumb' },
+  'movein-custom-ja-light': { kind: 'app', q: 'screen=home&modal=movein&theme=light&custom=1&name=Aria&lang=ja', act: 'thumb' },
   // 261107: "Open on login": the step after the guided room setup's Done (the room's own tone: day = light
   // glass, night = dark), its macOS approval and refusal lines, and the Settings > Appearance row.
   'setup-login-light': { kind: 'flow', q: 'phase=login&time=day', act: 'login-step' },
@@ -95,6 +111,16 @@ const FACEPACKS = arg('facepacks', null) ? path.resolve(arg('facepacks')) : null
 const FACEPACK_ID = arg('facepack-id', null);
 const PORTRAIT = arg('portrait', null) ? path.resolve(arg('portrait')) : null;
 const NAME = arg('name', null);
+const CUTOUTS = arg('cutouts', null) ? path.resolve(arg('cutouts')) : null;
+const PORTRAITS = (() => {
+  const v = arg('portraits', null);
+  if (!v) return null;
+  const abs = path.resolve(v);
+  if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) {
+    return fs.readdirSync(abs).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).sort().map((f) => path.join(abs, f));
+  }
+  return v.split(',').map((f) => path.resolve(f));
+})();
 const names = arg('shots', Object.keys(SHOTS).filter((n) => !['host-crossfade', 'host-expression', 'host-expression-surprised'].includes(n) || FACEPACKS).join(',')).split(',');
 
 function packServer(root) {
@@ -166,13 +192,18 @@ async function main() {
     await vite.listen();
     const viteUrl = vite.resolvedUrls.local[0].replace(/\/$/, '');
     const packUrl = `http://127.0.0.1:${packs.address().port}/${PRESET}/`;
-    const portrait = `${viteUrl}/@fs${PORTRAIT ?? `${REPO}/vendor/skin-gen/examples/sui-input.png`}`;
+    const runs = PORTRAITS ?? [PORTRAIT ?? `${REPO}/vendor/skin-gen/examples/sui-input.png`];
     const extra =
       (NAME ? `&name=${encodeURIComponent(NAME)}` : '') +
       (faces && FACEPACK_ID
         ? `&facepacks=${encodeURIComponent(`http://127.0.0.1:${faces.address().port}/`)}&facepackid=${encodeURIComponent(FACEPACK_ID)}&facepackat=1500`
         : '');
     browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH ?? '/usr/bin/google-chrome' });
+    for (const file of runs) {
+    const portrait = `${viteUrl}/@fs${file}`;
+    const prefix = PORTRAITS ? `${path.basename(file).replace(/\.[^.]+$/, '')}-` : '';
+    const cutFile = CUTOUTS ? path.join(CUTOUTS, `${path.basename(file).replace(/\.[^.]+$/, '')}.png`) : null;
+    const cutQ = cutFile && fs.existsSync(cutFile) ? `&cutout=${encodeURIComponent(`${viteUrl}/@fs${cutFile}`)}` : '';
     for (const name of names) {
       const shot = SHOTS[name];
       if (!shot) {
@@ -189,7 +220,7 @@ async function main() {
       });
       const url =
         shot.kind === 'host'
-          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}${extra}&${shot.q}`
+          ? `${viteUrl}/?seilinkhost=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}${extra}${cutQ}&${shot.q}`
           : shot.kind === 'flow'
             ? `${viteUrl}/?seilinkflow=1&pack=${encodeURIComponent(packUrl)}&portrait=${encodeURIComponent(portrait)}&name=${encodeURIComponent(NAME ?? 'Sui')}&${shot.q}`
             : `${viteUrl}/?dashshot=screen&pack=${encodeURIComponent(packUrl)}&${shot.q}`;
@@ -200,7 +231,7 @@ async function main() {
         const t0 = Date.now();
         for (const at of shot.seq) {
           await page.waitForTimeout(Math.max(0, at - (Date.now() - t0)));
-          const file = path.join(OUT, `${name}-${String(at).padStart(5, '0')}.png`);
+          const file = path.join(OUT, `${prefix}${name}-${String(at).padStart(5, '0')}.png`);
           await page.screenshot({ path: file });
           const face = await page.evaluate(() => document.querySelector('[data-avatar-face]')?.getAttribute('data-avatar-face') ?? '-');
           console.log(`${file} face=${face}`);
@@ -216,10 +247,12 @@ async function main() {
         await page.waitForTimeout(1500);
         await act(page, shot.act);
       }
-      const file = path.join(OUT, `${name}.png`);
-      await page.screenshot({ path: file });
-      console.log(file);
+      const out = path.join(OUT, `${prefix}${name}.png`);
+      await page.screenshot({ path: out });
+      const cut = await page.evaluate(() => document.querySelector('[data-cutout]')?.getAttribute('data-cutout') ?? '-');
+      console.log(`${out} cutout=${cut}`);
       await page.close();
+    }
     }
   } finally {
     await browser?.close().catch(() => {});

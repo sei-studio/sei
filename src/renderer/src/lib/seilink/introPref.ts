@@ -4,7 +4,7 @@
  * companion menu plays it again on demand.
  *
  * localStorage, per profile scope (the account UUID or 'local'), like the
- * other one-time renderer flags (gamesTipPref has the why: config.json's
+ * other one-time renderer flags (worldlinkTipPref has the why: config.json's
  * whole-config saves are not worth risking for a cosmetic flag). A lost flag
  * costs one more viewing of a skippable 11 s sequence.
  *

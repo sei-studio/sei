@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { sei } from './ipcClient';
 import type { GenStage, GenerateUniqueResult, UniqueGender } from '@shared/ipc';
+import { userFacingDetail } from './errors';
 
 export const STAGE_ORDER: GenStage[] = ['sheet', 'portrait', 'skin', 'persona', 'saving'];
 
@@ -142,13 +143,13 @@ export function useUniqueCasting(gender: UniqueGender | null): CastingState {
         if (res.ok) setCharacterId(res.characterId);
         else {
           setErrCode(res.code);
-          setErrDetail(res.message || null);
+          setErrDetail(userFacingDetail(res.message));
         }
       })
       .catch((err) => {
         if (cancelled) return;
         setErrCode('generation_failed');
-        setErrDetail(err instanceof Error ? err.message : null);
+        setErrDetail(userFacingDetail(err));
       });
 
     return () => {

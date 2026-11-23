@@ -359,6 +359,26 @@ describe('daily play limit (daily_dollar 429)', () => {
     expect(adapter.chat).not.toHaveBeenCalled()
   })
 
+  // 261120 release gate: the weekly allowance spent mid-session (proxy 402).
+  it('a 402 halts and signals CLOUD_CREDITS_DEPLETED once, leaving quietly', async () => {
+    const { adapter } = makeAdapter()
+    const onTerminalError = vi.fn()
+    const provider = makeProvider([
+      throwing(402, { error: 'payment_required' }),
+      { text: 'never reached', toolUses: [] },
+    ])
+    const orch = createOrchestrator({
+      adapter, config: makeConfig(), reenqueue: () => {}, onTerminalError, _anthropicOverride: provider,
+    })
+    await orch.handleDispatch('sei:chat_received', chat('hi'))
+    expect(onTerminalError).toHaveBeenCalledTimes(1)
+    expect(onTerminalError.mock.calls[0][0]).toMatchObject({ error: 'CLOUD_CREDITS_DEPLETED' })
+    expect(adapter.chat).not.toHaveBeenCalled()
+    // Latched: a later message makes no further (402-ing) model call.
+    await orch.handleDispatch('sei:chat_received', chat('hello?'))
+    expect(provider.calls.length).toBe(1)
+  })
+
   it('does NOT halt on a transient itpm 429 (that path redrives, not terminal)', async () => {
     const { adapter } = makeAdapter()
     const onTerminalError = vi.fn()

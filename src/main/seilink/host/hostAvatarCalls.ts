@@ -15,6 +15,7 @@ import type { SeilinkHostAvatarMethod } from '../../../shared/seilinkHost';
 import { SEILINK_PORTRAIT_HOST } from '../../../shared/seilinkHost';
 import { SEILINK_ROOM_SCHEME } from '../../../shared/seilinkPack';
 import { isAnimaShownKind, type AnimaShownKind } from '../../../shared/anima';
+import { live2dManifestShape } from '../../../shared/live2dParams';
 
 /** portraitProtocol.ts serves exactly these bare refs. */
 const BARE_PORTRAIT_RE = /^[0-9a-z_-]+\.png$/i;
@@ -65,7 +66,10 @@ export interface HostAvatarStores {
   facepackManifest(packId: string): Promise<unknown>;
   facepackFilePath(packId: string, rel: string): Promise<string | null>;
   /** What her RoomAvatar shows on the desktop (analytics). */
-  noteShown?(characterId: string, kind: AnimaShownKind): void;
+  /** `extra`: shape-only props for the kind (Live2D: live2dManifestShape, 261122). */
+  noteShown?(characterId: string, kind: AnimaShownKind, extra?: Record<string, unknown>): void;
+  /** 261118: her cloud cut-out PNG on disk, or null (none, or not of her current picture). */
+  animaCutoutFile?(characterId: string): Promise<{ sha256: string; path: string } | null>;
 }
 
 /**
@@ -97,8 +101,19 @@ export async function answerHostAvatarCall(
       return file ? { file } : null;
     }
     case 'avatarShown':
-      if (a === characterId && isAnimaShownKind(b)) stores.noteShown?.(characterId, b);
+      if (a === characterId && isAnimaShownKind(b)) {
+        const extra =
+          b === 'live2d'
+            ? live2dManifestShape((await stores.avatarManifest(characterId).catch(() => null)) as Parameters<typeof live2dManifestShape>[0])
+            : undefined;
+        stores.noteShown?.(characterId, b, extra);
+      }
       return null;
+    case 'animaCutout': {
+      if (a !== characterId) return null;
+      const found = (await stores.animaCutoutFile?.(characterId)) ?? null;
+      return found ? { file: found.path, sha256: found.sha256 } : null;
+    }
   }
   return null;
 }

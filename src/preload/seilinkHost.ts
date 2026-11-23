@@ -10,7 +10,10 @@
  * Exposes `window.seiRoomHost` (SeilinkHostBridge in src/shared/seilinkHost.ts),
  * and a small `window.sei` with only the avatar calls RoomAvatar's views make
  * (avatarGet, avatarModelFiles, onAvatarManifest, facepackForCharacter,
- * facepackManifest, facepackFile, and seilinkAnimaShown for analytics). The
+ * facepackManifest, facepackFile, seilinkAnimaCutout (261118), and
+ * seilinkAnimaShown for analytics), and
+ * onAvatarOverlayCursor (the host's cursor feed, so her gaze follows it).
+ * 261119: onArrival / arrived, her arrival on the desktop. The
  * host relays each one to main, which answers for the moved-in character only. Every other RendererApi method is
  * absent here; the views call these with `?.` or only after avatarGet /
  * facepackForCharacter found something.
@@ -38,6 +41,9 @@ export const SEILINK_HOST_PRELOAD_CHANNELS = {
   level: 'seilink-host:level',
   hover: 'seilink-host:hover',
   press: 'seilink-host:press',
+  cursor: 'seilink-host:cursor',
+  arrival: 'seilink-host:arrival',
+  arrived: 'seilink-host:arrived',
 } as const;
 
 const C = SEILINK_HOST_PRELOAD_CHANNELS;
@@ -81,17 +87,26 @@ if (process.contextIsolated) {
     onLevel: (cb: (level: number) => void) => listen<number>(C.level, (v) => cb(Math.max(0, Math.min(1, num(v))))),
     onHover: (cb: (hover: boolean) => void) => listen<boolean>(C.hover, (v) => cb(v === true)),
     onPress: (cb: () => void) => listen(C.press, () => cb()),
+    // 261119: her arrival (main decides; the page draws it and says when she is in).
+    onArrival: (cb: (arrival: unknown) => void) => listen(C.arrival, cb),
+    arrived: (r: { played?: unknown; reduced?: unknown; kind?: unknown }) =>
+      ipcRenderer.send(C.arrived, { played: r?.played === true, reduced: r?.reduced === true, kind: typeof r?.kind === 'string' ? r.kind.slice(0, 24) : null }),
   });
   const call = (method: string, ...args: unknown[]): Promise<unknown> => ipcRenderer.invoke(C.call, method, args);
   contextBridge.exposeInMainWorld('sei', {
     avatarGet: (characterId: string) => call('avatarGet', characterId),
     avatarModelFiles: (characterId: string) => call('avatarModelFiles', characterId),
     onAvatarManifest: (cb: (update: unknown) => void) => listen(C.avatarManifest, cb),
+    // Product call (261116): the cursor for her gaze, the same feed the call overlay gives its tiles.
+    onAvatarOverlayCursor: (cb: (pt: { x: number; y: number }) => void) =>
+      listen<{ x?: unknown; y?: unknown } | null>(C.cursor, (v) => cb({ x: num(v?.x), y: num(v?.y) })),
     facepackForCharacter: (characterId: string) => call('facepackForCharacter', characterId),
     facepackManifest: (id: string) => call('facepackManifest', id),
     facepackFile: (id: string, path: string) => call('facepackFile', id, path),
     seilinkAnimaShown: (characterId: string, kind: string) => {
       void call('avatarShown', characterId, kind).catch(() => {});
     },
+    // 261118: her cloud cut-out ({sha256, png} or null).
+    seilinkAnimaCutout: (characterId: string) => call('animaCutout', characterId),
   });
 }

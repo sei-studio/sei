@@ -23,9 +23,11 @@
  *   `visibility: hidden` (she walked out of the frame) counts as no area.
  * - `busy`: the player is chatting with her (main says so) or just clicked
  *   her. Hold her in her seat.
- * - `poke` changes on every click on her (`n` counts up). 'click' also opens
- *   her chat in Sei; 'dblclick' asks her for a short reply (M4,
- *   desktopLines.ts in main); 'drag' is a stroke across her (macOS only for
+ * - `poke` changes on every click on her (`n` counts up). Product call
+ *   (261116): 'click' is her reaction on the desktop (RoomAvatarHost reacts
+ *   once, unless the press already did; main may ask her for a short bubble,
+ *   desktopLines.ts); 'dblclick'
+ *   opens her chat in Sei; 'drag' is a stroke across her (macOS only for
  *   now).
  * - `speaking` (M4): one of her lines is on screen as a bubble. Move her
  *   mouth and hold her in her seat. No audio plays in the host, so there is
@@ -36,8 +38,9 @@
  *   level (under VOICE_LEVEL_FRESH_MS old, hostLook.ts) drives her mouth; else the
  *   syllable envelope does.
  * - `pressSeq` (261110): counts up the moment a button goes down on her,
- *   before the click is classified. RoomAvatarHost answers with a short
- *   squash so the tap feels seen.
+ *   before the click is classified. RoomAvatarHost answers with one slight
+ *   reaction (261119, clickReaction.ts) so the tap feels seen; the click that
+ *   follows does not react again.
  * - `emotion` / `face` / `faceSeq` (261105): her face for the line she is
  *   saying (hostLook.ts): `emotion` for an imported Live2D model while she
  *   says it, `face` (a face-set word, 'neutral' when it goes back) for her
@@ -53,6 +56,7 @@ import type { RoomAvatarSlot } from '../RoomCanvas';
 import type { SeilinkPokeKind } from '@shared/seilinkHost';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
 import { mouthLevel, type VoiceLevel } from './hostLook';
+import { CLICK_REACT_KEYFRAMES, CLICK_REACT_MS, ClickReaction } from './clickReaction';
 
 export type { VoiceLevel } from './hostLook';
 
@@ -120,24 +124,31 @@ export function RoomAvatarHost(props: HostAvatarProps): React.ReactElement {
     [syllable],
   );
 
-  // 261110: a short squash the moment a button goes down on her (feet stay put).
-  useEffect(() => {
-    if (pressSeq === 0 || slot.fps === 0) return;
+  // 261119 (product call 261119, "clicking her bounces too much, and twice"): the press and the
+  // click each had an animation (a 4-5% squash, then a hop of up to 18 px). Now one click is ONE
+  // slight reaction (clickReaction.ts): the press plays it, the click that follows does not, and a
+  // reaction that is playing is never restarted or cut short.
+  const reaction = useRef<ClickReaction | null>(null);
+  const playing = useRef<Animation | null>(null);
+  const react = (kind: 'press' | 'click'): void => {
+    if (slot.fps === 0) return;
+    const r = (reaction.current ??= new ClickReaction());
+    const now = performance.now();
+    if (!(kind === 'press' ? r.press(now) : r.click(now))) return;
     const fig = ref.current?.querySelector<HTMLElement>('[data-seilink-hit]');
     if (!fig || typeof fig.animate !== 'function') return;
-    const anim = fig.animate(
-      [
-        { transform: 'scale(1, 1)' },
-        { transform: 'scale(1.04, 0.95)', offset: 0.35 },
-        { transform: 'scale(0.99, 1.02)', offset: 0.7 },
-        { transform: 'scale(1, 1)' },
-      ],
-      { duration: 220, easing: 'ease-out', composite: 'add' },
-    );
     fig.style.transformOrigin = '50% 100%';
-    return () => anim.cancel();
+    playing.current = fig.animate(CLICK_REACT_KEYFRAMES, { duration: CLICK_REACT_MS, easing: 'ease-in-out', composite: 'add' });
+  };
+  useEffect(() => {
+    if (pressSeq !== 0) react('press');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pressSeq]);
+  useEffect(() => {
+    if (poke?.kind === 'click') react('click');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poke]);
+  useEffect(() => () => playing.current?.cancel(), []);
 
   useEffect(() => {
     if (!poke) return;

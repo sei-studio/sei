@@ -40,10 +40,10 @@ import { EDITOR_OPENED_FROM, type EditorOpenedFrom } from '../../shared/seilinkT
 import { loadAnalytics } from '../lazyAnalytics';
 import { enterDesktopStage, exitDesktopStage, isStaged, revealDesktop } from './desktopStage';
 import { minimizeOtherWindows } from './minimizeOthers';
-import { SEILINK_MINIMIZE_EVENT, sanitizeSeilinkSetupTrack } from '../../shared/seilinkSetupTelemetry';
+import { MINIMIZE_SURFACES, SEILINK_MINIMIZE_EVENT, sanitizeSeilinkSetupTrack, type MinimizeSurface } from '../../shared/seilinkSetupTelemetry';
 import { offerDecorateTogether } from './decorateOffer';
 import { seilinkEnabled } from './gate';
-import { seilinkLiveCharacter } from './host/seilinkHost';
+import { noteSeilinkRevealed, seilinkLiveCharacter } from './host/seilinkHost';
 import { isRoomCharacterId } from './roomStore';
 
 export const SEILINK_DESKTOP_STAGE_EVENT = 'seilink_desktop_stage';
@@ -161,6 +161,8 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
     onStage = null;
     if (!isStaged(win)) return { ok: false, error: 'failed' };
     const res = exitDesktopStage(win, reveal);
+    // 261119: the desktop shows: her entrance can play (main/seilink/host/arrival.ts).
+    if (res.ok && reveal) noteSeilinkRevealed();
     capture({
       action: 'exited',
       purpose: was?.purpose ?? 'editor',
@@ -177,20 +179,30 @@ export function handleStage(win: BrowserWindow, raw: unknown): SeilinkStageResul
     const characterId = isRoomCharacterId(r.characterId) ? r.characterId : null;
     if (!seilinkEnabled()) return { ok: false, error: 'disabled' };
     const ok = revealDesktop(win);
+    if (ok) noteSeilinkRevealed();
     capture({ action: ok ? 'revealed' : 'failed', purpose, character_id: characterId, ...(ok ? {} : { error_class: 'failed' }) });
     return ok ? { ok: true } : { ok: false, error: 'failed' };
   }
   return { ok: false, error: 'failed' };
 }
 
+function oneOfMinimizeSurface(v: unknown): MinimizeSurface {
+  return typeof v === 'string' && (MINIMIZE_SURFACES as readonly string[]).includes(v) ? (v as MinimizeSurface) : 'other';
+}
+
 function osName(): 'mac' | 'windows' | 'linux' {
   return process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux';
 }
 
-/** seilink:stage minimize_others (261110). Exported for tests. */
-export async function handleMinimizeOthers(raw: unknown): Promise<SeilinkStageResult> {
+/**
+ * seilink:stage minimize_others (261110). Exported for tests. 261116 (the
+ * desktop hint's "Hide windows"): with `reveal` and a window, Sei steps aside
+ * too once the others are minimized or hidden, so the desktop shows. Nothing
+ * is ever closed or quit (minimizeOthers.ts: minimize / Hide Others).
+ */
+export async function handleMinimizeOthers(raw: unknown, win: BrowserWindow | null = null): Promise<SeilinkStageResult> {
   const r = (raw ?? {}) as Record<string, unknown>;
-  const surface = r.surface === 'live_card' ? 'live_card' : 'other';
+  const surface = oneOfMinimizeSurface(r.surface);
   if (!seilinkEnabled()) return { ok: false, error: 'disabled' };
   const res = await minimizeOtherWindows().catch(() => ({ ok: false as const, error: 'failed' as const }));
   const props = sanitizeSeilinkSetupTrack(SEILINK_MINIMIZE_EVENT, {
@@ -203,6 +215,7 @@ export async function handleMinimizeOthers(raw: unknown): Promise<SeilinkStageRe
     .then((a) => a.capture(SEILINK_MINIMIZE_EVENT, props))
     .catch(() => {});
   if (!res.ok) return { ok: false, error: res.error };
+  if (r.reveal === true && win && !win.isDestroyed() && revealDesktop(win)) noteSeilinkRevealed();
   return res.minimized !== undefined ? { ok: true, minimized: res.minimized } : { ok: true };
 }
 
@@ -213,7 +226,7 @@ export function initStageFlow(d: StageFlowDeps): void {
   ipcMain.handle(IpcChannel.seilink.stage, async (e, raw: unknown): Promise<SeilinkStageResult> => {
     const win = deps?.getMainWindow() ?? null;
     if (!win || win.isDestroyed() || e.sender !== win.webContents) return { ok: false, error: 'no_window' };
-    if ((raw as { action?: unknown } | null)?.action === 'minimize_others') return handleMinimizeOthers(raw);
+    if ((raw as { action?: unknown } | null)?.action === 'minimize_others') return handleMinimizeOthers(raw, win);
     return handleStage(win, raw);
   });
   ipcMain.handle(IpcChannel.seilink.offer, async (_e, raw: unknown): Promise<{ shown: boolean }> => {

@@ -27,6 +27,10 @@
  * worldlink, danger) stay the unit rows belong to; a tab shows one or more
  * groups (`ProfileTab`).
  *
+ * Your own companion's voice, name and description, persona and chess are
+ * edited inline in their tab (components/profile/ProfileEditors.tsx,
+ * 261119); the Edit companion popup that repeated the tabs is gone.
+ *
  * Access rules (unchanged from the gear menu era):
  *  - Only user-made `kind: 'custom'` companions edit name, description,
  *    persona, voice, skin, username and chess; an Awakened one shows them
@@ -98,8 +102,6 @@ export interface ProfileAccessInput {
   movedInHere: boolean;
   /** The voice is the author's own ElevenLabs voice (shared/voiceIds ownVoiceOf). */
   ownVoice: boolean;
-  /** The voice is set to "No voice" (nothing to tune). */
-  noVoice: boolean;
 }
 
 /** Every row a profile can have. */
@@ -109,7 +111,6 @@ export type RowKey =
   | 'avatar'
   | 'floatingAvatar'
   | 'voice'
-  | 'pitch'
   | 'about'
   | 'persona'
   | 'knowledge'
@@ -162,8 +163,8 @@ export function profileAccess(input: ProfileAccessInput): ProfileAccess {
     avatar: own || inLibrary ? 'edit' : 'hidden',
     floatingAvatar: ifLibrary,
     // Voice
+    // 'edit' = the inline voice editor, pitch and calmness included (261119).
     voice: ownOnly(editOrLock),
-    pitch: editable && !input.noVoice ? 'edit' : 'hidden',
     // Personality
     about: ownOnly(editOrLock),
     persona: ownOnly(editOrLock),
@@ -186,10 +187,12 @@ export function profileAccess(input: ProfileAccessInput): ProfileAccess {
 }
 
 const SECTION_ROWS: Record<ProfileSection, readonly RowKey[]> = {
-  look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
-  voice: ['voice', 'pitch'],
+  look: ['cardImage', 'avatar', 'floatingAvatar'],
+  voice: ['voice'],
   personality: ['about', 'persona', 'knowledge'],
-  games: ['chess', 'dst'],
+  // The Minecraft skin is a game setting, not part of the look (product
+  // call 261116): it sits with the other games' rows, first.
+  games: ['skin', 'chess', 'dst'],
   sharing: ['publicToggle', 'othersHear'],
   worldlink: ['desktopRoom', 'room', 'idleLines', 'intro'],
   danger: ['resetMemory', 'unbind'],
@@ -341,13 +344,20 @@ export type ProfileAction =
   | 'change_avatar'
   | 'floating_avatar'
   | 'view_avatars'
+  // 261119: the inline editors report edit_* on the first change and save_*
+  // once the change is stored (the edit funnel; the popup's openers sent
+  // edit_* on the click that opened it). The pitch slider is in the voice
+  // editor now, so its own 'pitch' action is gone.
   | 'edit_voice'
+  | 'save_voice'
   | 'voice_sample'
-  | 'pitch'
   | 'edit_about'
+  | 'save_about'
   | 'edit_persona'
+  | 'save_persona'
   | 'knowledge'
   | 'edit_chess'
+  | 'save_chess'
   | 'dst_survivor'
   | 'toggle_public'
   | 'others_hear'

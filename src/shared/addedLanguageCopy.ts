@@ -379,3 +379,22 @@ export const DST_GRANT_ADDED = {
     button: "Instalar mod",
   },
 } as const satisfies Record<AddedUiLanguage, Record<string, string>>;
+
+/** The self-repair's failure line (src/main/velopackRepair.ts; en and zh inline there). */
+export const VELOPACK_REPAIR_ADDED = {
+  it: {
+    failed: 'Sei non è riuscito a riparare il suo programma di aggiornamento. Riproverà più tardi.',
+  },
+  ja: {
+    failed: 'Seiはアップデート機能を修復できませんでした。あとでもう一度試します。',
+  },
+  ru: {
+    failed: 'Sei не смог починить своё обновление. Попробует ещё раз позже.',
+  },
+  'pt-BR': {
+    failed: 'O Sei não conseguiu reparar o atualizador. Vai tentar de novo mais tarde.',
+  },
+  es: {
+    failed: 'Sei no pudo reparar su actualizador. Lo intentará de nuevo más tarde.',
+  },
+} as const satisfies Record<AddedUiLanguage, Record<string, string>>;

@@ -28,6 +28,7 @@ import { isPoolVoiceId } from '@shared/poolVoiceIds';
 import { ownVoiceOf } from '@shared/voiceIds';
 import { PlayIcon, StopIcon } from '../icons';
 import styles from './ProfileOverview.module.css';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 export type SampleSource = 'bundled' | 'synth';
 export type SampleResult = { source: SampleSource; outcome: 'played' | 'failed' };
@@ -55,7 +56,7 @@ export function useVoiceSample(character: Character, sampleVoiceId: string | nul
     void sei
       .getConfig()
       .then((c) => {
-        if (live) cfgRef.current = { lang: c.chat_language ?? 'en', localTts: c.tts_engine === 'local' };
+        if (live) cfgRef.current = { lang: userChatLanguage(c), localTts: c.tts_engine === 'local' };
       })
       .catch(() => {
         /* English clip, ElevenLabs path */

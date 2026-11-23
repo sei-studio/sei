@@ -29,7 +29,7 @@ const MODEL_MULTILINGUAL = 'onnx-community/whisper-base';
 /** Whisper decode-language pin. Codes mirror src/shared/chatLanguage.ts (a
  * worker cannot import main/shared modules across the bundle boundary,
  * keep in sync). */
-const KNOWN_LANGUAGES = new Set(['en', 'zh', 'ja', 'ko', 'fr', 'es']);
+const KNOWN_LANGUAGES = new Set(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it']);
 
 // Multi-threaded WASM when SharedArrayBuffer is available (main enables the
 // Chromium feature flag — see src/main/index.ts). Cuts utterance
@@ -160,6 +160,10 @@ const NOISE_TRANSCRIPTS = new Set([
   // Spanish
   'gracias', 'gracias por ver el video', 'subtítulos realizados por la comunidad de amara.org',
   '¡gracias!',
+  // Russian, Portuguese, Italian (261116)
+  'спасибо', 'спасибо за просмотр', 'продолжение следует...', 'субтитры сделал dimatorzok',
+  'obrigado', 'obrigado por assistir', 'legendas pela comunidade amara.org',
+  'grazie', 'grazie per la visione', 'sottotitoli creati dalla comunità amara.org',
 ]);
 
 function cleanTranscript(raw: string): string {

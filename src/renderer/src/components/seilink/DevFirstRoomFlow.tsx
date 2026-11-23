@@ -22,6 +22,8 @@
  *                   wallpaper (stage: as over the first link's last frame;
  *                   app: the dialog after a move-in without the intro);
  *                   os=windows|mac|linux picks the shortcut line
+ *   desktophint=1   261116: the "Your desktop was updated." line Sei shows in
+ *                   its window (os=linux drops the Hide windows action)
  *   phase=login     261107: the "Open on login" step the guided setup's Done
  *                   brings up (over the decorated room)
  *   loginitem=off|approval|fail  261107: the login item as a packaged mac/win
@@ -37,7 +39,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, plainRoomState, ROOM_PRESET_IDS, type RoomPresetManifest, type RoomState } from '@shared/seilinkRoom';
-import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostBridge } from '@shared/seilinkHost';
+import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostBridge, SeilinkPokeKind } from '@shared/seilinkHost';
 import { parseRoomManifest } from '@shared/seilinkValidate';
 import { desktopLineFace } from '@shared/seilinkExpression';
 import type { SeilinkPack } from '@shared/seilinkPack';
@@ -46,6 +48,7 @@ import { SeilinkHostView } from './host/SeilinkHostView';
 import { RoomEditor, type RoomTogetherCtx } from './RoomEditor';
 import { RoomTogether } from './RoomTogether';
 import { LiveCardView } from './LiveCard';
+import { DesktopHintView } from './DesktopHint';
 import { memoryRoomEditorSource, type RoomEditorSource } from './roomEditorSource';
 import { useLangStore, type UiLanguage } from '../../lib/i18n';
 import type { OpenAtLoginSource } from '../../lib/seilink/loginStep';
@@ -64,6 +67,16 @@ function fakeLoginSource(mode: string): OpenAtLoginSource {
 }
 
 type Cb<T> = (v: T) => void;
+
+/** Dev: `window.__seiDevPoke(kind?)` presses on her, then sends the poke, as the host does for a click. */
+const devPoke = { press: new Set<() => void>(), poke: new Set<(kind: SeilinkPokeKind) => void>() };
+if (typeof window !== 'undefined') {
+  (window as unknown as { __seiDevPoke?: (kind?: SeilinkPokeKind) => void }).__seiDevPoke = (kind = 'click') => {
+    devPoke.press.forEach((cb) => cb());
+    // The host sends the click once the double-click time (500 ms) has passed.
+    setTimeout(() => devPoke.poke.forEach((cb) => cb(kind)), 560);
+  };
+}
 const PHASES = ['desktop', 'offer', 'prompt', 'later', 'editor', 'decorated', 'closed', 'login'] as const;
 type Phase = (typeof PHASES)[number];
 
@@ -104,7 +117,15 @@ function fakeBridge(params: URLSearchParams, manifest: RoomPresetManifest, state
       later(() => cb(30), 0);
       return () => {};
     },
-    onPoke: () => () => {},
+    // 261119: a scripted click on her (window.__seiDevPoke(), the avatar demo): the press, then the click.
+    onPoke: (cb) => {
+      devPoke.poke.add(cb);
+      return () => devPoke.poke.delete(cb);
+    },
+    onPress: (cb) => {
+      devPoke.press.add(cb);
+      return () => devPoke.press.delete(cb);
+    },
     setBox: () => {},
     frames: () => {},
     firstFrame: () => {
@@ -364,6 +385,9 @@ export function DevFirstRoomFlow(): React.ReactElement {
           onMinimize={params.get('os') === 'linux' ? undefined : () => undefined}
           onDismiss={() => undefined}
         />
+      ) : null}
+      {params.has('desktophint') ? (
+        <DesktopHintView leaving={false} busy={false} onHide={params.get('os') === 'linux' ? undefined : () => undefined} />
       ) : null}
     </>
   );

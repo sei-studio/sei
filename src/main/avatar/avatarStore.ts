@@ -17,8 +17,15 @@
  *   1. `.exp3.json` expression files ship in the zip but are NOT referenced in
  *      `FileReferences.Expressions` — the renderer's loader only knows what
  *      the settings file names, so unreferenced expressions would not exist.
- *   2. The `EyeBlink` parameter group can be missing, which silently disables
- *      the SDK's automatic blink on a motionless model.
+ *   2. The `EyeBlink` parameter group can be missing, or present with no ids
+ *      (and LipSync likewise), which silently disables the SDK's automatic
+ *      blink on a motionless model. Since 261122 the groups are filled from
+ *      the model's resolved parameter roles (shared/live2dParams.ts, stored
+ *      as manifest.params: which ids are the mouth, eyes and head), and
+ *      expressions that change nothing are left out of the manifest
+ *      (`unusableExpressions`). A v2 store without `params` is healed on its
+ *      first read (`healLive2DParams`: reads only the settings, moc, cdi3 and
+ *      expression files).
  *   3. Filenames are Chinese with spaces ("【雪熊企划】雪熊少女.moc3",
  *      "1 帽.exp3.json"). pixi-live2d-display's FileLoader compares
  *      `encodeURI(webkitRelativePath)` against the RAW refs resolved from the
@@ -32,18 +39,29 @@
  * on a version-1 store (imported before the rename existed) so early imports
  * heal in place.
  */
-import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../lazyJszip';
 import { paths } from '../paths';
 import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
 import type {
   AvatarEmotion,
+  AvatarExpressionInfo,
   AvatarManifest,
   AvatarModelFile,
   AvatarRigLayer,
   AvatarRigSpec,
 } from '../../shared/ipc';
+import {
+  expressionDoesSomething,
+  live2dModelFacts,
+  live2dRefPath,
+  LIVE2D_RESOLVER_VERSION,
+  resolveLive2DParams,
+  type Live2DModelFacts,
+  type Live2DParamMap,
+} from '../../shared/live2dParams';
 
 /** Cap for the zip itself (a full VTuber model with 4k textures is ~20 MB).
  * The same as the avatar library proxy's zip cap, so every model this store
@@ -414,6 +432,41 @@ async function normalizeRigAndWrite(
   return replaceStore(characterId, byRel, safe, manifest);
 }
 
+
+/**
+ * Fill an EyeBlink or LipSync group that is missing or has no ids from the
+ * resolved roles (261122). A group the author filled is left alone. Returns
+ * whether the settings changed.
+ */
+function fillParamGroups(settings: ModelSettings, params: Live2DParamMap): boolean {
+  const groups = (settings.Groups ??= []);
+  let changed = false;
+  const fill = (name: string, ids: string[]): void => {
+    if (ids.length === 0) return;
+    const g = groups.find((x) => x?.Target === 'Parameter' && x?.Name === name);
+    if (!g) {
+      groups.push({ Target: 'Parameter', Name: name, Ids: [...ids] });
+      changed = true;
+    } else if (!Array.isArray(g.Ids) || g.Ids.length === 0) {
+      g.Ids = [...ids];
+      changed = true;
+    }
+  };
+  fill('EyeBlink', params.blink);
+  if (params.source !== 'none' && params.roles.mouthOpen) fill('LipSync', [params.roles.mouthOpen]);
+  return changed;
+}
+
+/** Whether an .exp3.json's bytes change anything on this model (261122). */
+function expressionUsable(bytes: Buffer | Uint8Array | undefined, facts: Live2DModelFacts | null): boolean {
+  if (!bytes) return false;
+  try {
+    const known = facts?.source === 'moc' && facts.params ? new Set(facts.params.map((p) => p.id)) : null;
+    return expressionDoesSomething(JSON.parse(Buffer.from(bytes).toString('utf8')), known);
+  } catch {
+    return false;
+  }
+}
 /**
  * Validate + normalize an extracted (or previously stored) file set and write
  * it as `characterId`'s avatar. Does NOT take the per-character lock — every
@@ -502,10 +555,17 @@ async function normalizeAndWrite(
     declared.set(f.rel, name);
   }
 
-  const groups = (settings.Groups ??= []);
-  if (!groups.some((g) => g?.Target === 'Parameter' && g?.Name === 'EyeBlink')) {
-    groups.push({ Target: 'Parameter', Name: 'EyeBlink', Ids: ['ParamEyeLOpen', 'ParamEyeROpen'] });
-  }
+  // ── Parameter roles (261122): fill empty EyeBlink / LipSync groups, and
+  // leave out expressions that change nothing ─────────────────────────────
+  const facts = live2dModelFacts(
+    stripped.map((f) => ({ path: f.rel, bytes: f.bytes })),
+    entryFile.rel,
+  );
+  const params = resolveLive2DParams(facts ?? { params: null });
+  fillParamGroups(settings, params);
+  const unusable = new Set(
+    [...declared.keys()].filter((rel) => !expressionUsable(byRel.get(rel)?.bytes, facts)),
+  );
 
   // ── Rename to ASCII-safe paths + rewrite every ref to match ─────────────
   const safeMap = buildSafePathMap([...byRel.keys()]);
@@ -555,7 +615,9 @@ async function normalizeAndWrite(
   const normalized = Buffer.from(JSON.stringify(settings, null, '\t'), 'utf8');
   byRel.get(entryFile.rel)!.bytes = normalized;
 
-  const expressions = [...declared.entries()].map(([rel, name]) => ({ name, file: safe(rel) }));
+  const expressions = [...declared.entries()]
+    .filter(([rel]) => !unusable.has(rel))
+    .map(([rel, name]) => ({ name, file: safe(rel) }));
   const manifest: AvatarManifest = {
     version: MANIFEST_VERSION,
     // Display name keeps the author's original (pretty) filename stem.
@@ -565,7 +627,9 @@ async function normalizeAndWrite(
     bytes: [...byRel.values()].reduce((n, f) => n + f.bytes.byteLength, 0),
     expressions,
     emotions: mapEmotions(expressions.map((e) => e.name)),
+    params,
   };
+  if (unusable.size > 0) manifest.unusableExpressions = [...unusable].map((rel) => declared.get(rel)!);
   if (keepAccessories) {
     // Keep only toggles whose expression still exists after renormalizing.
     const names = new Set(expressions.map((e) => e.name));
@@ -590,7 +654,7 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   if (zip.byteLength > AVATAR_ZIP_MAX_BYTES) {
     throw new Error(`avatar zip too large (${zip.byteLength} bytes)`);
   }
-  const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
+  const archive = await (await loadJSZip()).loadAsync(zip, { decodeFileName: decodeZipName });
 
   // ── Check every declared size BEFORE inflating anything (a 1 MB zip can
   // declare, and inflate to, a gigabyte) ────────────────────────────────────
@@ -709,7 +773,14 @@ export async function getAvatarManifest(characterId: string): Promise<AvatarMani
     return null;
   }
   if (typeof parsed?.entry !== 'string') return null;
-  if (parsed.version === MANIFEST_VERSION) return parsed;
+  if (parsed.version === MANIFEST_VERSION) {
+    if (parsed.kind === 'rig' || (parsed.params && parsed.params.v >= LIVE2D_RESOLVER_VERSION)) return parsed;
+    try {
+      return (await withLock(characterId, () => healLive2DParams(characterId))) ?? parsed;
+    } catch {
+      return parsed;
+    }
+  }
   if (parsed.version !== 1) return null;
   try {
     return await withLock(characterId, async () =>
@@ -719,6 +790,74 @@ export async function getAvatarManifest(characterId: string): Promise<AvatarMani
     // A store too broken to renormalize is a store that cannot render either.
     return null;
   }
+}
+
+/**
+ * Give a v2 Live2D store its parameter roles (261122): resolve them from the
+ * stored settings, moc3 and cdi3, fill an empty EyeBlink / LipSync group in
+ * the stored model3.json, and leave out expressions that change nothing.
+ * Reads only those files (never the textures). Runs inside the lock and
+ * re-reads the manifest there, so an import that landed meanwhile wins.
+ */
+async function healLive2DParams(characterId: string): Promise<AvatarManifest | null> {
+  const dir = paths.avatarsDir(characterId);
+  const manifestPath = path.join(dir, MANIFEST_NAME);
+  let manifest: AvatarManifest;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as AvatarManifest;
+  } catch {
+    return null;
+  }
+  if (typeof manifest?.entry !== 'string' || manifest.version !== MANIFEST_VERSION) return null;
+  if (manifest.kind === 'rig' || (manifest.params && manifest.params.v >= LIVE2D_RESOLVER_VERSION)) return manifest;
+  const read = async (rel: string): Promise<{ path: string; bytes: Buffer } | null> => {
+    if (!sanitizeEntryPath(rel)) return null;
+    try {
+      return { path: rel, bytes: await readFile(path.join(dir, ...rel.split('/'))) };
+    } catch {
+      return null;
+    }
+  };
+  const entry = await read(manifest.entry);
+  if (!entry) return manifest;
+  const settings = JSON.parse(entry.bytes.toString('utf8')) as ModelSettings;
+  const refs = settings.FileReferences ?? {};
+  const extra = await Promise.all(
+    [refs.Moc, refs.DisplayInfo]
+      .filter((r): r is string => typeof r === 'string' && r.length > 0)
+      .map((r) => read(live2dRefPath(manifest.entry, r))),
+  );
+  const files = [entry, ...extra].filter((f): f is { path: string; bytes: Buffer } => !!f);
+  const facts = live2dModelFacts(files, manifest.entry);
+  const params = resolveLive2DParams(facts ?? { params: null });
+
+  if (fillParamGroups(settings, params)) {
+    const target = path.join(dir, ...manifest.entry.split('/'));
+    const tmp = `${target}.tmp-${process.pid}`;
+    await writeFile(tmp, JSON.stringify(settings, null, '\t'), 'utf8');
+    await rename(tmp, target);
+  }
+
+  const usable: AvatarExpressionInfo[] = [];
+  const unusable: string[] = [...(manifest.unusableExpressions ?? [])];
+  for (const e of manifest.expressions ?? []) {
+    const f = await read(e.file);
+    if (expressionUsable(f?.bytes, facts)) usable.push(e);
+    else if (!unusable.includes(e.name)) unusable.push(e.name);
+  }
+  const next: AvatarManifest = { ...manifest, expressions: usable, params };
+  if (usable.length !== (manifest.expressions ?? []).length) {
+    next.emotions = mapEmotions(usable.map((e) => e.name));
+    if (manifest.accessories) {
+      const names = new Set(usable.map((e) => e.name));
+      const kept = Object.fromEntries(Object.entries(manifest.accessories).filter(([n, on]) => on && names.has(n)));
+      if (Object.keys(kept).length > 0) next.accessories = kept;
+      else delete next.accessories;
+    }
+  }
+  if (unusable.length > 0) next.unusableExpressions = unusable;
+  await writeFile(manifestPath, JSON.stringify(next, null, 2), 'utf8');
+  return next;
 }
 
 /**
@@ -797,7 +936,7 @@ export async function zipStoredAvatar(characterId: string): Promise<Buffer | nul
   const files = await withLock(characterId, () => readStoredFiles(characterId));
   if (files.length === 0) return null;
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-  const zip = new JSZip();
+  const zip = new (await loadJSZip())();
   for (const f of files) {
     zip.file(f.rel, f.bytes, {
       date: STABLE_ZIP_DATE,

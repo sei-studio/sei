@@ -31,6 +31,7 @@
 import './remoteDebugGuard';
 import './velopackBoot';
 import './velopackMigration';
+import { markStartup } from './startupMarks';
 import { app, ipcMain } from 'electron';
 import path from 'node:path';
 import {
@@ -52,11 +53,21 @@ import { safeModeForced, type SafeModeReason } from './bootGuard';
 import { bakedChannel, processSessionId, resolveChannel, uuidv7 } from './analyticsContext';
 import { recordFailedStart, SESSION_MARKER_FILE } from './sessionMarker';
 import { noteLaunch } from './firstLaunch';
-import { flushUpdatePushes, initUpdater } from './updater';
+import {
+  flushUpdatePushes,
+  handOffUpdatesToRepair,
+  initUpdater,
+  recheckAfterRepairHold,
+  sendRepairFailed,
+  sendRepairProgress,
+} from './updater';
 import { applyPendingAtLaunch } from './velopackUpdater';
+import { handOffRepairAtLaunch, initVelopackRepair, scheduleVelopackRepair } from './velopackRepair';
 import { openSafeModeWindow, safeModeWindow } from './safeMode/safeModeWindow';
 import { IpcChannel } from '../shared/ipc';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+
+markStartup('boot_entry');
 
 // A SeiLink room host launch (main spawns this same binary with --seilink-host to draw the
 // companion's room as wallpaper, seilink/host/) is its own small program: no app name or
@@ -116,6 +127,9 @@ async function start(): Promise<void> {
   });
 
   recordFailedStartsForCrashAnalytics(boot.unfinished);
+  // Windows Velopack self-repair (261120): read the last repair's result and
+  // count this launch's updater signals. Exits when a repair is installing.
+  initVelopackRepair({ safeMode: boot.mode === 'safe' });
 
   setSafeWindowGetter(safeModeWindow);
   // A failed start (bootstrap threw, the renderer died or never loaded)
@@ -151,6 +165,7 @@ async function start(): Promise<void> {
   // The updater goes first on ready; the app's own ready handler (registered
   // by the import below) runs after it.
   void app.whenReady().then(() => {
+    markStartup('ready');
     try {
       initUpdater({
         getMainWindow: updaterWindow,
@@ -161,9 +176,13 @@ async function start(): Promise<void> {
     } catch (err) {
       log(`updater init failed (${(err as Error)?.name ?? 'Error'})`);
     }
+    scheduleRepair();
+    markStartup('updater_started');
   });
+  markStartup('app_import_start');
   try {
     await import('./index');
+    markStartup('app_imported');
   } catch (err) {
     log(`app failed to load (${(err as Error)?.name ?? 'Error'})`);
     // Nothing else will open a window: count it and start again (packaged),
@@ -207,13 +226,28 @@ function recordFailedStartsForCrashAnalytics(unfinished: { at: number; appVersio
   });
 }
 
+/** The self-repair reports through the updater's own pushes (progress, ready, error). */
+function scheduleRepair(): void {
+  try {
+    scheduleVelopackRepair({
+      progress: sendRepairProgress,
+      failed: sendRepairFailed,
+      ready: handOffUpdatesToRepair,
+      released: recheckAfterRepairHold,
+    });
+  } catch (err) {
+    log(`repair schedule failed (${(err as Error)?.name ?? 'Error'})`);
+  }
+}
+
 function startSafeMode(reason: SafeModeReason): void {
   log(`safe mode (${reason})`);
   app.on('window-all-closed', () => app.quit());
   void app.whenReady().then(async () => {
     // Windows Velopack: a staged update that never got applied is applied
     // now instead, exactly as a normal start would.
-    const applying = await applyPendingAtLaunch(null).catch(() => false);
+    const applying =
+      (await handOffRepairAtLaunch().catch(() => false)) || (await applyPendingAtLaunch(null).catch(() => false));
     if (applying) {
       noteNeutralExit();
       return;
@@ -223,6 +257,7 @@ function startSafeMode(reason: SafeModeReason): void {
     } catch (err) {
       log(`updater init failed (${(err as Error)?.name ?? 'Error'})`);
     }
+    scheduleRepair();
     try {
       await openSafeModeWindow(reason);
     } catch (err) {

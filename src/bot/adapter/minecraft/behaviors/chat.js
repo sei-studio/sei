@@ -159,6 +159,15 @@ export function startChat(bot, config, orchestrator = null) {
     // it does wake a turn, because a companion that says nothing when its
     // player dies in front of it reads as not having noticed.
     const payload = { username: who, message: labeled, addressed: false, playerSpoke: false, suppressInterrupt: false }
+    // 261113 (quality pass 54): when a turn's snapshot first showed this death
+    // (observers/snapshot.js). The brain skips the wake when she has spoken
+    // since then: she already reacted, and a second turn made her say it
+    // twice ("oof alex. creeper got you" / "oof alex. you alright? the
+    // creeper got you fast", combat_night-01 11-12).
+    if (isOwner) {
+      const rec = bot._seiOwnerDeath
+      payload.noticeShownAt = () => (Number.isFinite(rec?.shownAt) ? rec.shownAt : null)
+    }
     if (bot._seiDebouncer) {
       bot._seiDebouncer.debounce(`death:${who}`, payload, (p) => bot.emit('sei:chat_received', p))
     } else {

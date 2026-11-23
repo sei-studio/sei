@@ -11,8 +11,11 @@ import {
   applySharedVoicePick,
   applyVoicePick,
   isWellFormedVoiceId,
+  LIBRARY_VOICE_KEY,
+  libraryVoiceOf,
   ownVoiceOf,
   sharedVoiceIdOf,
+  storedVoicePickOf,
 } from './voiceIds';
 
 const OWN_ID = 'aBcDeFgHiJkLmNoPqRsT';
@@ -142,5 +145,52 @@ describe('a pool voice is never an own voice', () => {
   it('applySharedVoicePick ignores a stale-tagged pool voice', () => {
     const stale = { voiceId: POOL_JOSH, [OWN_VOICE_KEY]: { name: 'Sei — Josh' } };
     expect(applySharedVoicePick(stale, 'SOYHLrjzK2X1ezoPC6cr')[SHARED_VOICE_KEY]).toBeUndefined();
+  });
+});
+
+describe('Voice Library marker (261119)', () => {
+  const LIB_ID = 'LibVoice0000000000aa';
+  const libPick = { name: 'Captain Wren', gender: 'female', source: 'library' as const };
+
+  it('a library pick stores voiceLibrary and drops the own and shared markers', () => {
+    const meta = applyVoicePick(
+      { voiceId: OWN_ID, voiceOwn: { name: 'Mine' }, [SHARED_VOICE_KEY]: POOL_JOSH },
+      LIB_ID,
+      libPick,
+    );
+    expect(meta).toEqual({ voiceId: LIB_ID, [LIBRARY_VOICE_KEY]: { name: 'Captain Wren', gender: 'female' } });
+    expect(libraryVoiceOf(meta)).toEqual({ name: 'Captain Wren', gender: 'female' });
+    expect(ownVoiceOf(meta)).toBeNull();
+    expect(storedVoicePickOf(meta)).toEqual(libPick);
+  });
+
+  it('an own pick or another voice drops the library marker', () => {
+    const lib = applyVoicePick({}, LIB_ID, libPick);
+    const own = applyVoicePick(lib, OWN_ID, { name: 'Mine' });
+    expect(own[LIBRARY_VOICE_KEY]).toBeUndefined();
+    expect(ownVoiceOf(own)).toEqual({ name: 'Mine' });
+    const pool = applyVoicePick(lib, POOL_JOSH, null);
+    expect(pool).toEqual({ voiceId: POOL_JOSH });
+    expect(applyVoicePick(lib, null, null)).toEqual({});
+  });
+
+  it('a save that keeps the same voice keeps the library marker', () => {
+    const lib = applyVoicePick({}, LIB_ID, libPick);
+    expect(applyVoicePick(lib, LIB_ID, null)).toEqual(lib);
+    expect(applyVoicePick(lib, LIB_ID, undefined)).toEqual(lib);
+  });
+
+  it('never on a pool id, and never without a well-formed voice id', () => {
+    expect(applyVoicePick({}, POOL_JOSH, libPick)).toEqual({ voiceId: POOL_JOSH });
+    expect(libraryVoiceOf({ voiceId: POOL_JOSH, [LIBRARY_VOICE_KEY]: { name: 'x' } })).toBeNull();
+    expect(libraryVoiceOf({ voiceId: 'bad id', [LIBRARY_VOICE_KEY]: { name: 'x' } })).toBeNull();
+    expect(libraryVoiceOf({ voiceId: LIB_ID, [LIBRARY_VOICE_KEY]: { name: '  ' } })).toBeNull();
+  });
+
+  it('storedVoicePickOf prefers the own marker', () => {
+    expect(storedVoicePickOf({ voiceId: OWN_ID, voiceOwn: { name: 'Mine' }, [LIBRARY_VOICE_KEY]: { name: 'L' } })).toEqual({
+      name: 'Mine',
+    });
+    expect(storedVoicePickOf({ voiceId: POOL_JOSH })).toBeNull();
   });
 });

@@ -10,6 +10,7 @@
  */
 import type { AvatarEmotion, AvatarManifest } from '../../../shared/ipc';
 import type { SeilinkDockAction, SeilinkDockOffer, SeilinkHostAvatarMethod, SeilinkHostFailure, SeilinkHostRoom } from '../../../shared/seilinkHost';
+import type { SeilinkArrival } from '../../../shared/seilinkEntrance';
 
 /** Main -> host. */
 export type ToHost =
@@ -42,6 +43,8 @@ export type ToHost =
   | { type: 'level'; level: number }
   /** Hold the room still (a future dock "pause"). */
   | { type: 'set-paused'; paused: boolean }
+  /** 261119: her arrival on the desktop (wait for her look / hold / come in / just there), main/seilink/host/arrival.ts. */
+  | { type: 'arrival'; arrival: SeilinkArrival }
   | { type: 'quit' }
   /**
    * Liveness probe, every second. The host answers `pong` from its main process as soon as the
@@ -50,7 +53,9 @@ export type ToHost =
    */
   | { type: 'ping'; seq: number }
   /** CI self-test hosts only (--seilink-test): wedge the main thread for `ms`. */
-  | { type: 'test-hang'; ms: number };
+  | { type: 'test-hang'; ms: number }
+  /** CI self-test hosts only (--seilink-test): report the dock hover and cursor feed state (test-probe). */
+  | { type: 'test-probe'; id: number };
 
 /**
  * 261110: counts the host adds to the session (taps on her, how presses went, GPU process
@@ -118,6 +123,8 @@ export type FromHost =
   | { type: 'verify-failed'; reasons: string[]; trigger: string }
   | { type: 'activity'; covered: boolean; paused: boolean; fps: number; reason: string }
   | { type: 'click'; kind: 'click' | 'dblclick' }
+  /** 261119: she is in (her entrance played, or she was shown as she is); checked by sanitizeArrivedReport. */
+  | { type: 'arrived'; played: boolean; reduced: boolean; kind: string | null }
   /** Her box and (M4) the dock buttons, in screen coordinates (top-left points). */
   | {
       type: 'box';
@@ -141,7 +148,23 @@ export type FromHost =
   | { type: 'pong'; seq: number }
   | { type: 'log'; level: 'info' | 'warn'; msg: string }
   /** An avatar bridge call from the page (see SEILINK_HOST_AVATAR_METHODS). */
-  | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] };
+  | { type: 'call'; id: number; method: SeilinkHostAvatarMethod; args: unknown[] }
+  /**
+   * 261116, CI self-test hosts only: answer to `test-probe`. `hover` is the host's dock hover,
+   * `pageAwake` / `pagePressed` what the page's dock shows, `cursorSamples` how many cursor
+   * samples went to her since the last probe, `maxPollGapMs` the longest gap between cursor polls.
+   */
+  | {
+      type: 'test-probe';
+      id: number;
+      hover: boolean;
+      fps: number;
+      reason: string;
+      pageAwake: boolean | null;
+      pagePressed: boolean | null;
+      cursorSamples: number;
+      maxPollGapMs: number;
+    };
 
 export function encodeLine(msg: ToHost | FromHost): string {
   return JSON.stringify(msg) + '\n';

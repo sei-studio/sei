@@ -206,11 +206,13 @@ function enqueueCloudMirror(character: Character): void {
   if (character.is_default) return;
   void (async () => {
     try {
-      const { enqueueUpsert, processNext } = await import('./cloud/syncQueue');
+      const { enqueueUpsert, kickDrain } = await import('./cloud/syncQueue');
       await enqueueUpsert(character.id);
       // Drain attempt; gated on isCloudWriteAllowed inside processNext so
-      // signed-out users just leave the op pending in the queue.
-      void processNext();
+      // signed-out users just leave the op pending in the queue. kickDrain,
+      // not `void processNext()`: this try/catch does not cover a promise it
+      // never awaits (261121).
+      kickDrain();
     } catch (err) {
       console.warn(`[sei] cloud mirror enqueue failed for ${character.id}: ${(err as Error).message}`);
     }
@@ -317,7 +319,12 @@ export async function patchCharacter(
  * IPC handler surfaces the thrown message to the renderer for display.
  */
 export async function expandAndSaveCharacter(
-  input: { character: Character; onProgress?: (p: ExpansionProgress) => void },
+  input: {
+    character: Character;
+    onProgress?: (p: ExpansionProgress) => void;
+    /** false = expand and return, write nothing (the profile Regenerate, 261120). */
+    persist?: boolean;
+  },
 ): Promise<Character> {
   const { character, onProgress } = input;
   const validated = CharacterSchema.parse(character);
@@ -407,7 +414,7 @@ export async function expandAndSaveCharacter(
       expanded,
     },
   };
-  await saveCharacter(merged);
+  if (input.persist !== false) await saveCharacter(merged);
   return merged;
 }
 
@@ -614,13 +621,13 @@ export async function deleteCharacter(id: string): Promise<void> {
         // attempt. Even if the deletion_queue insert failed, this can
         // still succeed; even if this fails, the cron has the queue row
         // and will sweep within 30 days.
-        const { enqueueDelete, processNext } = await import('./cloud/syncQueue');
+        const { enqueueDelete, kickDrain } = await import('./cloud/syncQueue');
         await enqueueDelete(id, [
           { bucket: 'skins',     name: `${owner}/${id}.png` },
           { bucket: 'portraits', name: `${owner}/${id}.png` },
           { bucket: 'portraits', name: `${owner}/${id}.thumb.webp` },
         ]);
-        void processNext();
+        kickDrain();
       } catch (err) {
         console.warn(`[sei] cloud delete enqueue failed for ${id}: ${(err as Error).message}`);
       }

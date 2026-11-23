@@ -32,6 +32,7 @@ import {
 import { settleItems } from './seilinkPlace';
 import { PATTERN_ID_RE, PATTERN_SURFACES, codePattern, type PatternQuad, type PatternSurface } from './seilinkPatterns';
 import { PARTICLE_KINDS, type RoomParticles } from './seilinkParticles';
+import { DEFAULT_LIGHTING, sanitizeLighting, sanitizeWidgets } from './seilinkWidgets';
 
 export const SLOT_IDS: readonly RoomSlotId[] = ['view', 'shell', 'curtains', 'bed', 'shelf', 'chair', 'lamp', 'rug', 'campfire', 'lights', 'tree'];
 const COMPONENT_ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -420,5 +421,11 @@ export function sanitizeRoomState(manifest: RoomPresetManifest, raw: unknown): R
   if (setup && typeof setup === 'object' && Array.isArray(setup.done)) {
     out.setup = { done: ROOM_SETUP_STEPS.filter((step) => (setup.done as unknown[]).includes(step)) };
   }
+  // 261119: the wallpaper widgets and the lighting (pack-independent).
+  const widgets = sanitizeWidgets(s.widgets);
+  if (widgets) out.widgets = widgets;
+  const lighting = sanitizeLighting(s.lighting);
+  if (lighting) out.lighting = lighting;
+  else if ((s.lighting as Record<string, unknown> | undefined)?.character === true) out.lighting = { ...DEFAULT_LIGHTING, character: true };
   return settleItems(manifest, out);
 }

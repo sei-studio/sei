@@ -32,6 +32,11 @@ const FULL = arg('full', '') === '1';
 const SHOTS = {
   sei: 'setup=cloud&plan=quest',
   'sei-free': 'setup=cloud',
+  // 261120: Sei > Voice > Advanced, opened (no Fish key; Fish key + Fish picked).
+  'sei-advanced': 'setup=cloud&plan=quest',
+  'sei-advanced-fish': 'setup=cloud&plan=quest&fishkey=1&cloudvoice=fish',
+  'sei-advanced-zh': 'setup=cloud&plan=quest&lang=zh',
+  'sei-advanced-ru': 'setup=cloud&plan=quest&lang=ru',
   'sei-inactive': 'setup=mykeys&tab=sei',
   chatgpt: 'setup=chatgpt',
   'chatgpt-device': 'setup=chatgpt&voice=device&engine=kokoro',
@@ -48,7 +53,13 @@ const SHOTS = {
   'mykeys-ru': 'setup=mykeys&alert=1&lang=ru',
   'chatgpt-ja': 'setup=chatgpt&lang=ja',
 };
-const CLICKS = {};
+const ADVANCED = '[data-testid="cloud-voice-advanced"]';
+const CLICKS = {
+  'sei-advanced': ADVANCED,
+  'sei-advanced-fish': ADVANCED,
+  'sei-advanced-zh': ADVANCED,
+  'sei-advanced-ru': ADVANCED,
+};
 const names = arg('shots', Object.keys(SHOTS).join(',')).split(',');
 
 async function main() {

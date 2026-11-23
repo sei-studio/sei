@@ -26,7 +26,7 @@
 import { describe, expect, it } from 'vitest';
 import { INTRO_END_ON } from '@shared/seilinkIntroTelemetry';
 import { CLIMAX, OPEN_MS, TEXT_OUT_MS, beatAt, introTimes, skipFrom, type IntroTimes } from '../../../lib/seilink/introTimeline';
-import { LAST_LINE_MS, instantLog, planLink, simulatedLog, type LinkLog } from '../../../lib/seilink/worldLink';
+import { LAST_LINE_MS, LINK_TIMEOUT_MS, instantLog, planLink, simulatedLog, type LinkLog } from '../../../lib/seilink/worldLink';
 import { INTRO_PALETTE, REDUCED_ENERGY, WAVES, captionTop, computeFrame, dayInk, revealMask, roomBehind, type IntroFrame } from './introFrame';
 
 const W = 1920;
@@ -109,10 +109,10 @@ describe('the timeline (v6)', () => {
     });
   }
 
-  it('the run lengths: about 50 s instant or a 20 s bake, a 75 s bake about 88 s', () => {
-    expect(timesFor(RUNS.instant, false).after!.end).toBeGreaterThan(45_000);
-    expect(timesFor(RUNS.instant, false).after!.end).toBeLessThan(55_000);
-    expect(timesFor(RUNS.fast, false).after!.end).toBeLessThan(55_000);
+  it('the run lengths: about 34 s instant or a 20 s bake (product call (261116): twice as fast), a 75 s bake about 92 s', () => {
+    expect(timesFor(RUNS.instant, false).after!.end).toBeGreaterThan(30_000);
+    expect(timesFor(RUNS.instant, false).after!.end).toBeLessThan(40_000);
+    expect(timesFor(RUNS.fast, false).after!.end).toBeLessThan(40_000);
     expect(timesFor(RUNS.slow, false).after!.end).toBeGreaterThan(80_000);
     expect(timesFor(RUNS.slow, false).after!.end).toBeLessThan(95_000);
   });
@@ -127,9 +127,13 @@ describe('the timeline (v6)', () => {
   });
 
   it('a link still waiting has no after yet (nothing of her can show)', () => {
-    const x = timesFor({ at: { sent: 100, answered: 900, host: 2000 }, failed: null }, false);
+    const x = timesFor({ at: { sent: 100, host: 2000 }, failed: null }, false);
     expect(x.after).toBeNull();
     expect(x.climax).toBeNull();
+    // 261119: once the proxy answered, a bake still running at LINK_TIMEOUT_MS is handed to the desktop: the after is only past it.
+    const y = timesFor({ at: { sent: 100, answered: 900, host: 2000 }, failed: null }, false);
+    expect(y.climax!.build).toBeGreaterThan(LINK_TIMEOUT_MS);
+    expect(y.after!.success).toBeGreaterThan(LINK_TIMEOUT_MS);
   });
 });
 
@@ -218,7 +222,8 @@ describe('the lines', () => {
 
 describe('the light builds with the lines', () => {
   it('each line adds a step of energy, eased, and the peak only comes under the last', () => {
-    const x = timesFor(RUNS.slow, false);
+    // 261119: a bake as long as expected (EXPECTED_LINK_MS), so 5 to 7 are spread over the curve.
+    const x = timesFor(simulatedLog({ doneMs: 240_000 }), false);
     const at = (t: number) => computeFrame(x, t, W, H, false, 'plain_dark');
     let e = 0;
     for (let t = 0; t < x.climax!.fill; t += 33) {

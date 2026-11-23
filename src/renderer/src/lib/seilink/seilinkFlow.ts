@@ -33,8 +33,13 @@ import { movedInId, useSeilinkStore } from '../stores/useSeilinkStore';
 import { moveInFailed, needsMoveInSheet } from './moveIn';
 import { introSeen, shouldPlayFirstLink } from './introPref';
 import { liveHintDismissed } from './liveHintPref';
+import { useDataStore } from '../stores/useDataStore';
+import { WORLDLINK_UPLOADED_LOOKS, worldlinkLookBlock } from './uploadedLooks';
+import { dismissWorldlinkTip } from '../worldlinkTipPref';
 
+/** Every WorldLink entry runs through here, so it also retires the chat header's one-time WorldLink tip (261119). */
 export function trackEntry(characterId: string, source: SeilinkEntrySource, action: EntryAction): void {
+  dismissWorldlinkTip();
   try {
     sei.track(SEILINK_ENTRY_EVENT, { character_id: characterId, source, action });
   } catch {
@@ -56,8 +61,11 @@ export function startSeilinkHost(
   opts: { firstRoom?: boolean; entry: SeilinkEntrySource; /** 261106: she just moved in fresh (a plain background, no room yet). */ fresh?: boolean },
 ): Promise<SeilinkHostStatus | null> {
   if (!sei.seilinkHostStart) return Promise.resolve(null);
-  const start = sei.seilinkHostStart(characterId, opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : undefined);
-  if (shouldPlayFirstLink({ seen: introSeen() })) {
+  const intro = shouldPlayFirstLink({ seen: introSeen() });
+  // 261119: main plays her entrance on the desktop for every move-in; with the intro it shows her coming in itself.
+  const hostOpts = { ...(opts.firstRoom !== undefined ? { firstRoom: opts.firstRoom } : {}), ...(intro ? { entrance: 'first_link' as const } : {}) };
+  const start = sei.seilinkHostStart(characterId, Object.keys(hostOpts).length ? hostOpts : undefined);
+  if (intro) {
     useSeilinkStore.getState().playIntro({
       characterId,
       trigger: 'first_link',
@@ -116,9 +124,12 @@ async function moveIn(characterId: string, source: SeilinkEntrySource): Promise<
   const store = useSeilinkStore.getState();
   const living = movedInId(store.status);
   const room = await sei.seilinkRoomGet?.(characterId).catch(() => null);
-  if (needsMoveInSheet({ saved: room?.saved === true, movedInId: living, characterId })) {
+  // 261116: her uploaded look may keep her out (WORLDLINK_UPLOADED_LOOKS, default 'all' = never, no reads).
+  const character = WORLDLINK_UPLOADED_LOOKS === 'all' ? undefined : useDataStore.getState().characters.find((c) => c.id === characterId);
+  const lookBlocked = character ? (await worldlinkLookBlock(character).catch(() => 'none' as const)) !== 'none' : false;
+  if (needsMoveInSheet({ saved: room?.saved === true, movedInId: living, characterId, lookBlocked })) {
     trackEntry(characterId, source, 'sheet');
-    store.openFlow({ kind: 'sheet', characterId, reason: room?.saved === true ? 'swap' : 'first_room', entry: source });
+    store.openFlow({ kind: 'sheet', characterId, reason: lookBlocked ? 'look' : room?.saved === true ? 'swap' : 'first_room', entry: source });
     return;
   }
   trackEntry(characterId, source, 'move_in');

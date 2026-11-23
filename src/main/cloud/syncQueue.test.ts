@@ -11,7 +11,7 @@
  * intercepts the dynamic import at module-resolution time.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, mkdir, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -79,6 +79,7 @@ import {
   enqueueUpsert,
   enqueueDelete,
   processNext,
+  kickDrain,
   getStatus,
   retry,
   subscribeStatusChange,
@@ -288,6 +289,47 @@ describe('syncQueue', () => {
     );
     expect(upsertCharacterMock).not.toHaveBeenCalled();
   });
+
+  // 261121: v0.7.0 shipped `void processNext()` from characterStore, and a
+  // failed queue write (Windows rename EPERM) became a main-process
+  // unhandledRejection on every affected voice turn. kickDrain must swallow it.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'kickDrain never leaks a rejection when the queue write fails',
+    async () => {
+      isCloudWriteAllowedMock.mockResolvedValue(false); // gate-blocked path rewrites the queue
+      await enqueueUpsert('abc');
+      await expect(
+        (async () => {
+          await chmod(paths.profileRoot(), 0o555);
+          try {
+            await processNext();
+          } finally {
+            await chmod(paths.profileRoot(), 0o755);
+          }
+        })(),
+      ).rejects.toBeTruthy();
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (r: unknown): void => {
+        unhandled.push(r);
+      };
+      process.on('unhandledRejection', onUnhandled);
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      await chmod(paths.profileRoot(), 0o555);
+      try {
+        kickDrain();
+        await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.stringContaining('sync queue drain failed')));
+        await new Promise((r) => setTimeout(r, 20));
+      } finally {
+        await chmod(paths.profileRoot(), 0o755);
+        process.off('unhandledRejection', onUnhandled);
+        warn.mockRestore();
+      }
+      expect(unhandled).toEqual([]);
+      // The op is still queued for the next drain.
+      expect(await readQueueFile()).toHaveLength(1);
+    },
+  );
 
   it('processNext on cloud failure increments attempts and schedules backoff', async () => {
     upsertCharacterMock.mockRejectedValueOnce(new Error('network down'));

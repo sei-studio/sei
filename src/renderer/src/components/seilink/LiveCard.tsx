@@ -3,8 +3,8 @@
  * room first goes live, one card says where she is and how to reach her:
  *  - she is part of the wallpaper, so open windows cover her;
  *  - the shortcut that shows the desktop (Win+D; F11 or fn+F11 on a Mac);
- *  - what a click and a double-click on her do (open the chat / a quick reply,
- *    the host's click classifier).
+ *  - what a click and a double-click on her do (product call (261116): a
+ *    quick reaction on the desktop / open the chat; the host's click classifier).
  * "Minimize other windows" (Windows) / "Hide other apps" (macOS) clears the
  * desktop in one go (main: seilink:stage minimize_others), "Got it" just goes
  * on. It stays until one of those, or until the desktop is shown some other
@@ -77,7 +77,7 @@ export function LiveCardView(p: LiveCardViewProps): React.ReactElement {
           <span className={styles.icon}>
             <PointerIcon />
           </span>
-          <p className={styles.rowText}>{t('Click {name} to open your chat. Double-click for a quick reply.', { name: p.name })}</p>
+          <p className={styles.rowText}>{t('Click {name} for a quick hello. Double-click to open your chat.', { name: p.name })}</p>
         </div>
       </div>
     </>

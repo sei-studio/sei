@@ -94,10 +94,16 @@ main (src/main/seilink/host/seilinkHost.ts)        host (hostEntry.ts, same bina
   Chromium's `CalculateNativeWinOcclusion` (the room always sits under the
   icon window, and coverage.ts already sets the rate).
 - `clicks.ts` `ClickClassifier`: a single click waits for the OS double-click
-  interval (clamped 200 to 900 ms). Click on her → main `openChat` (restore,
-  show and focus the main window, navigate to her chat). Double click → a
-  poke: `desktopLines.onSeilinkPoke` asks her for a short reply, shown as a
-  bubble (see Desktop lines). Drag = a stroke.
+  interval (clamped 200 to 900 ms). Product call (261116), the two swapped:
+  click on her → she reacts on the desktop: the page bounces her
+  (`hostAvatar.tsx`, on a `click` poke) and `deps.onClick` →
+  `desktopLines.onSeilinkPoke` may add a short bubble (see Desktop lines),
+  never pushed into the app's chat. Double click → main `openChat` (restore,
+  show and focus the main window, navigate to her chat, and focus the
+  composer: App.tsx's `seilink:open-chat` handler calls
+  `lib/composerFocus.ts requestComposerFocus`, ChatScreen takes it). Drag = a
+  stroke. macOS: `app.focus({steal: true})` is cooperative on macOS 14+, so
+  the front-most app may keep focus in rare cases (hand-test).
 - Click area: the page measures `[data-seilink-hit]` (RoomAvatarHost marks
   her figure) 4 times a second; none while she is `visibility: hidden`
   (walked out of the frame). Windows: the host's raw-input hit test
@@ -135,7 +141,18 @@ all the time; now it never moves. It is faint (opacity 0.42, a thin glass)
 until the cursor comes near: the host polls the cursor every 150 ms
 (`dock.ts` `dockHover`, 28 px around the buttons) and sends `CH.hover`; a
 press, the move-out confirm, a caption or the offer wake it too
-(`dockAwake`). The product
+(`dockAwake`). Product call (261116), it stayed lit after a click: the host
+now says the hover state again every second (`HOVER_REASSERT_MS`), keeps
+polling while her frames are stopped (macOS: Sei's window over her box) and
+stops only while locked or asleep; the page no longer resets it on its own.
+The same poll feeds her gaze: `CH.cursor` (`dock.ts` `gazeSample`, [-1, 1]
+around her face, y up, the frame of the call overlay's
+`avatar:overlay-cursor-state`) while she draws, on change and at least every
+0.7 s, exposed to the page as `window.sei.onAvatarOverlayCursor`, so the
+facepack, Live2D and rig views follow the cursor on the desktop as they do in
+the call overlay (it used to have no feed at all, so she only wandered). The
+CI self-test checks both (the `hover` step: `test-probe` after presses, a
+click and a double click on her, with Sei's window up and hidden). The product
 room-editor deck puts these shortcuts in "the bottom dock" of the room, so it
 lives on the wallpaper, not in the app or a tray.
 - Edit room → main `deps.openRoomEditor` → `stageFlow.openDesktopEditor`
@@ -162,7 +179,7 @@ Colours come from the room (`RoomCanvas onOverlay`), not the app theme.
 
 ## Desktop lines (M4, `seilink/desktopLines.ts`)
 
-- Poke (double click): one short reply, under the plan's own limits (a free
+- Poke (a click; a double click before 261116): one short reply, under the plan's own limits (a free
   account's weekly cap is the proxy's), at most 6 an hour, 20 s apart. The
   hourly counts live in main (one `LinePacer` per app session), so a host
   restart or a companion swap does not reset them.
@@ -301,6 +318,120 @@ face. Counted as `expressions` (seilink_health / seilink_ended) and
 app's chat do not change her desktop face (she is held still while you chat).
 Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
 
+### Her size and idle life (261116, product call 261116)
+
+- **Size.** The wallpaper is framed on her, not on the room:
+  `shared/seilinkDraw.ts` `stageViewport` (RoomCanvas `stage`, the host and
+  the first-link intro pass `DESKTOP_STAGE`) scales the room so her slot is
+  about 70% of the screen height (`height` 0.7), at least `cover`, at most
+  `maxHeight` 0.8 unless cover needs more, with the floor line on the bottom
+  edge and her centred (clamped so the room never leaves a gap). Any 16:9,
+  16:10, 3:2, 4:3 or 21:9 display covers; a 32:9 one hits the cap and
+  letterboxes. The plain first room (`FallbackRoom`) uses the same height.
+  Every placement number is in canvas px through the viewport, so
+  seilinkPlace regions, the bubble and the click mask follow. The room
+  editor keeps whole-room `cover` (everything stays editable), so opening it
+  from the desktop zooms out. On macOS the Dock may cover her lower chest.
+- **Motion** (`lib/motion/organic.ts`, pure, tested): critically damped
+  springs (`springStep`, exact for any dt), minimum-jerk saccades,
+  `Wander` (incommensurate sines), `Blinker` (65 ms close, 45 ms hold,
+  105 ms open, 1.8 to 9 s gaps, some doubles, a blink on some big
+  saccades), `GazeDriver` (log-normal fixations of about 0.75 s; home,
+  cursor, room objects or a look around; the head follows on a spring with
+  its own sway and tilt; eyes = gaze minus head; it pursues a moving cursor).
+  Nothing is a linear tween or a timed cut.
+- **Per avatar kind** (honest: only what the art can show):
+  - face set, WebGL (`FacepackView life`, `glFaceLoop.ts`,
+    `facepackGl.ts`, `faceRig.ts`): the composite is warped on the GPU:
+    head tilt about the neck (fading out over the neck band), turn and nod
+    by sliding the features inside the face ellipse, irises moved inside
+    the eye openings that `findEyes` finds from the open/closed difference
+    (only when `irisVisible`: the flat chibi Sui eyes have no iris, so her
+    gaze shows through a slightly bigger head motion). Big turns of a face with
+    no iris move to the baked l1/r1 (l2/r2) pose with hysteresis and a 2.5 s
+    hold (261119; a face with irises keeps the centre pose); the 600 ms
+    crossfade slides each picture's features toward the other (eye-centre
+    morph), so it glides. Lids swap patches on the lid curve (a dissolve of
+    the opaque patches showed the iris through the lid). No WebGL2, a failed
+    setup or a lost context falls back to the old 2D renderer.
+    `data-renderer="webgl"|"2d"` on the canvas says which.
+  - Live2D: `updateFocus` is replaced so eyes and head move apart. The
+    ids are the model's own, resolved per model (`shared/live2dParams.ts`,
+    261122): the model3 LipSync/EyeBlink groups first, then the standard
+    ids, then the moc3 parameter table and cdi3 display names scored with
+    multilingual words (ParamBocca, PARAM_EYE_BALL_X, 口 開閉, Auge offen).
+    Main stores the map in the manifest (`params`, computed at import, healed
+    once for older stores) and fills an empty EyeBlink/LipSync group, so a
+    VTube Studio export with empty groups blinks and lip-syncs. Writes are
+    scaled to each parameter's real range; the mouth closes to its rest
+    value. A model with no eye or head parameter leans the whole figure
+    toward her gaze (`LEAN_DEG`). Cubism 2 models get the gaze through the
+    focusController. `paramOverrides` on the manifest (role -> id or null)
+    wins over the resolver; nothing writes it yet. Note the SDK rolls focus
+    and blink writes back after each frame (`loadParameters` at the end of
+    update), so read them on `beforeModelUpdate`, not between frames.
+    Some VTube Studio models key their faces (and a background card) on one
+    stepped parameter set by VTS hotkeys and ship empty exp3 files; those
+    expressions are dropped (`unusableExpressions`) and the rest pose is
+    whatever the moc default is.
+  - rig: head translation from the GazeDriver's head, Blinker lids (no
+    separate irises).
+  - portrait cutout and silhouette: no eyes; breathing (now also widening
+    the shoulders, `BREATH_WIDTH`), sway, a weight shift at least 9 s apart (about every 35 s
+    on average), and a slight lean toward where she would look (`gazeLean`),
+    which follows the cursor feed while it is fresh (261122).
+- **Cursor.** The host's hover poll feeds her gaze (`CH.cursor`, see "The
+  dock" above; it used to have none). The harness makes the same feed from
+  the page's pointer with `&cursorfeed=1`.
+- **Cost.** The WebGL face draws one quad a frame at the cap (30, 15 on
+  battery, 0 covered); the composite uploads only on an expression or pose
+  change and the mouth box only on a viseme change. Measure with
+  `scripts/seilink-idle-capture.mjs` (video + CDP main-thread busy + per
+  process CPU; headless uses SwiftShader, so the GPU process number is not
+  what a real GPU costs).
+- **Polish (261119, product call 261119 on beta.6 with Sui's anima face set).**
+  - White box on every blink: the lid patches are ImageBitmaps, and whether
+    WebGL gets an ImageBitmap premultiplied is up to the browser and the
+    decoder (the UNPACK_PREMULTIPLY flag does not apply to it). The patches'
+    fully transparent border still holds a light colour (about rgb
+    190,191,207), so a straight upload under the shader's premultiplied
+    "over" drew a bright rectangle round the eye box. `FaceGl.patch` now
+    draws each patch through a 2D canvas first (premultiplied everywhere,
+    like the composite and the mouth box). The shader also reads every
+    texture in uniform control flow and masks after (no early return, no
+    per-pixel `if` round a read), so no GPU picks a far mip level along the
+    pack rect or the eye box edge.
+  - Gaze: the eyes travel on a critically damped spring (`gazeOmega` 17,
+    `maxSpeed` 4/s) instead of a 30-80 ms minimum-jerk snap, the drift no
+    longer switches on and off with each saccade, the stepped cursor feed
+    (150 ms polls) is glided by its own spring (`cursorOmega`), a soft dead
+    zone (`deadZone` 0.025) ignores a resting hand, and a cursor that moved
+    in the last 1.8 s gets her look (85% of fixations; a cursor that starts
+    moving catches her eye after 260 ms). Plot: the demo script's
+    `trace.json`.
+  - Baked turned poses (l1/r1) are whole-figure crossfades (every hair
+    strand moves), which read as the idle animation jumping. A face set
+    with irises now turns with the warp alone; only a face with no iris
+    still switches, for big turns (0.55 in, 0.3 out, 2.5 s hold, 600 ms
+    fade). The 2D fallback's idle pose fade is 420 ms (was 170).
+  - Sway: body lean 0.7 to 0.2 deg (it rotates about her bottom: a
+    pendulum at the head), seat shifts at most 0.014 heights (was 0.045,
+    about 28 px), head sway 0.12 to 0.05 and roll 0.55 to 0.22.
+  - Click: one slight reaction per click (`host/clickReaction.ts`: about 1%
+    toward her feet, 280 ms) on the press; the click that follows does not
+    animate again (it used to squash on the press and hop up to 18 px on
+    the click).
+  - Demo: `node scripts/seilink-avatar-demo.mjs --facepacks <packs dir>
+    --facepack-id <an-...> --out <dir>` (DevFirstRoomFlow desktop with
+    `&cursorfeed=1`, a drawn cursor, `window.__seiDevPoke()`, the page clock
+    stepped per frame, `trace.json` per frame, `demo.mp4` with a silent
+    AAC track).
+    `--scene host` records the real wallpaper page instead (DevHostPreview:
+    her room at `--time`, a clock and date widget, a slim menu bar, her
+    line after the click with `--line`, the lighting easing on at
+    `--dimat`); DevHostPreview's `__seiDevPoke`, `__seiDevLine` and
+    `__seiDevRoom` hooks drive it.
+
 ### What RoomAvatar can read in the host
 
 - **Portrait.** The host has no `sei-portrait://`. Main resolves
@@ -347,6 +478,41 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   `seilink:anima-prepare|status`, push `seilink:anima-changed`) drives the
   quiet "Preparing {name}'s look…" line in the move-in sheet and the
   editor's avatar panel. Account switch: `anima.reset()` stops every poll.
+
+### Uploaded pictures (261116, product call 261116)
+
+With no imported avatar and no face set (the anima bake can refuse a
+picture: Aria #M5IR came back `no_pack`), WorldLink draws her card picture
+through `lib/seilink/portraitCutout.ts`. `keyAlpha` gives a clean figure
+when the background is flat (one colour round the top and sides), already
+transparent (its own alpha is used as is, `alphaOnly`), or a flat backdrop
+inside a thin frame (the frame is peeled first). Anything else (a painted
+room, a photo) falls to the vignette: an oval fade with her backdrop still in
+it, the "failed terribly" look. 9 of 22 public uploaded pictures keyed and
+13 fell to the vignette on 261116; the frame peel took one more (E2LS).
+`RoomAvatar` exposes the result as `data-cutout`, and
+`seilink-host-shots.mjs --portraits <dir>` shoots a whole folder of them.
+
+`WORLDLINK_UPLOADED_LOOKS` (`lib/seilink/uploadedLooks.ts`, default `'all'`)
+limits who moves in: `'clean_cutout'` keeps out an uploaded picture (card
+image origin `uploaded`, no avatar, no face set) that would fall to the
+vignette, `'sei_looks'` keeps out every such uploaded picture. A kept-out
+companion always gets the move-in sheet (`needsMoveInSheet` `lookBlocked`,
+reason `look`) with one line saying why and Move in off; the sheet event
+carries `look_origin` always and `look_blocked` when kept out. Built-ins and
+Sei-generated art are never limited. A real matte for busy backgrounds needs
+a segmentation model (not shipped).
+
+261118 (product call 261118): under the default `'all'`, a companion the
+`'sei_looks'` rule would keep out (uploaded picture, no avatar, no face set;
+`worldlinkCustomImage`) still moves in, but the move-in sheet shows one line:
+"{name} uses a custom image, which may not look as good here. Characters made
+in Sei work best." (`data-custom-image-notice="v1"`). It only shows when the
+sheet opens (first room, swap, retry); a companion with a saved room and
+nobody else moved in skips the sheet as before. Analytics:
+`worldlink_custom_image_notice_shown {character_id}` once per sheet, and
+`custom_image_notice: true` on every `seilink_movein_sheet` action of that
+sheet (`confirmed` = moved in anyway).
 
 ## On/off, persistence, account switch
 
@@ -594,26 +760,27 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
 
   | # | Line | Waits for | Dwell |
   |---|---|---|---|
-  | 1 | Initializing WorldLink… | 0.7 s after the start | 4 s |
-  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 6 s |
-  | 3 | Waiting for a reply… | (same) | 12 s |
-  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 4 s |
-  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (75 s), cut short by the bake finishing | 2.8 s |
-  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 2.8 s |
-  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 2.8 s |
-  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 2.8 s |
+  | 1 | Initializing WorldLink… | 0.7 s after the start | 2 s |
+  | 2 | Sending signal to World N… | the Anima request is sent (`requesting`) | 3 s |
+  | 3 | Awaiting response… | (same) | 6 s |
+  | 4 | Signal received. | the proxy answered (`queued` / `running` / ready) | 2 s |
+  | 5 | Syncing world clocks… | answered, and 40% of `EXPECTED_LINK_MS` (240 s since 261119), cut short by the bake finishing | 1.7 s |
+  | 6 | Matching physics constants… | the bake is running, and 60% (same cut) | 1.7 s |
+  | 7 | Correcting for time dilation… | the bake is running, and 80% (same cut) | 1.7 s |
+  | 8 | Stabilizing the link… | the bake is done (`downloading`) | 1.7 s |
   | 9 | Inviting {name}… | her face set installed (`ready`) and the host start answered ok | 3.2 s (`LAST_LINE_MS`) |
   | | WorldLink established between World 0 and World N. | `LAST_LINE_MS` after line 9, on the full solid | |
 
   A line never shows sooner than the line before has had its dwell (its
-  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 2.8 s; the first four
+  `dwell` in `STATUS_LINES`, default `LINE_DWELL_MS` 1.7 s; the first four
   are longer, product feedback (261106): sending a signal and waiting for a
-  reply should take a while). The milestone gates apply on top: a slow
-  proxy holds "Waiting for a reply…" until it answers. Measured: a 75 s
-  bake shows the lines at 0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72 and 75 s,
-  success 78.2 s, end 88.2 s; a 20 s bake (and a cached look or a replay)
-  at 0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1 and 37.9 s, success
-  41.1 s, end 51.1 s. On a slow stage the current line holds (no filler lines) while
+  reply should take a while. Product call (261116): every dwell and the typing
+  halved, in place of the Skip button). The milestone gates apply on top: a slow
+  proxy holds "Awaiting response…" until it answers. Measured: a 240 s
+  bake shows the lines at 0.7, 2.7, 5.7, 11.7, 96, 144, 192, 237 and 240 s,
+  success 243.2 s; a 20 s bake at 0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4,
+  22.1 and 23.8 s, success 27 s; a cached look or a replay at 0.7, 2.7,
+  5.7, 11.7, 13.7, 15.4, 17.1, 18.8 and 20.5 s, success 23.7 s. On a slow stage the current line holds (no filler lines) while
   the light keeps moving. The proxy says nothing finer than queued, running
   and ready, so lines 5 to 7 spread over the expected-duration curve, and an
   early finish plays the rest at the minimum dwell (`planLink`; a start
@@ -631,15 +798,22 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
 
   Failure ("WorldLink failed. Lost contact with World N. Come back later.",
   at the soonest `FAIL_BEAT_MS` (2.8 s) after the current line came up, so
-  a failure during the 12 s "Waiting for a reply…" shows after a short
+  a failure during the 6 s "Awaiting response…" shows after a short
   beat): offline (stage or the window offline for
-  5 s), a request, bake or install error, no line 9 by `LINK_TIMEOUT_MS`
-  (3.5 min; the bake goes on in the background), or the host start failing.
-  The light calms and stays, no her; Skip turns into Close (Esc too), which
+  5 s), a request, bake or install error, no answer from the proxy by
+  `LINK_TIMEOUT_MS` (8 min), or the host start failing. 261119: a bake
+  still running at `LINK_TIMEOUT_MS` is NOT a failure: the intro hands her
+  arrival to the desktop (`planLink` `handoff`; seilink_intro_link
+  `handoff`): the lines finish as if her look landed then, the link is
+  established, the intro does not draw her, and the wallpaper keeps waiting
+  for her look and plays her entrance (see "Her entrance on the desktop"
+  below). Both constants live in `shared/seilinkEntrance.ts`.
+  The light calms and stays, no her; a Close button comes up (Esc too), which
   fades the overlay out as `aborted`. FirstLinkIntro then stops the host if
   it had started (`seilinkHostStop({reason: 'link_failed'})`, which also
   clears the move-in), gives the window back without a reveal, and leaves
-  the intro unseen, so the next WorldLink press plays it again. Skip before
+  the intro unseen, so the next WorldLink press plays it again. There is no
+  Skip button (product call (261116)); Esc before
   the success line (on the desktop stage) crossfades into the solid and
   plays her entrance, then rushes the settle. Reduced motion: the same
   lines, order and failure, calm (crossfades, no bloom). Once per account
@@ -652,13 +826,13 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
     success and failure lines too, types in letter by letter like a
     typewriter (`typeUnits`: grapheme clusters from Intl.Segmenter, so
     emoji and CJK stay whole; `Array.from` without it). Each letter takes
-    `TYPE_CHAR_MS` (34) give or take `TYPE_SPREAD_MS` (6), a fixed spread
-    hashed from the text so renders are stable, plus `TYPE_SPACE_MS` (12)
-    after a space and `TYPE_PUNCT_MS` (45) after punctuation
+    `TYPE_CHAR_MS` (17) give or take `TYPE_SPREAD_MS` (3), a fixed spread
+    hashed from the text so renders are stable, plus `TYPE_SPACE_MS` (6)
+    after a space and `TYPE_PUNCT_MS` (24) after punctuation
     (`typeDelays`), starting `TYPE_START_MS` (300) after the line's start
-    and capped at `TYPE_MAX_MS` (1.8 s, a long translation types faster),
+    and capped at `TYPE_MAX_MS` (0.9 s, a long translation types faster),
     so it always fits inside the shortest dwell and never moves line
-    timing. The newest letter comes up over `CHAR_IN_MS` (20). A trailing
+    timing. The newest letter comes up over `CHAR_IN_MS` (12). A trailing
     ellipsis ("…", "...", "。。。", "⋯", repeats) is not typed: once the
     letters are in it becomes dots cycling ".", "..", "..." every
     `DOT_STEP_MS` (400) until the next line (`splitEllipsis`; "。" dots
@@ -761,6 +935,54 @@ places. IPC `seilink:login-item-get|set` answers `OpenAtLoginState
   then the move-in sheet. Not now: asked once more 3 days later, then never.
   Not persisted in `tutorial_state` (a quit ends it).
 
+## Her entrance on the desktop (261119, product call 261119)
+
+Before, the only entrance was inside the one-time intro, and only the intro
+waited for her Anima face set: every later move-in put her straight onto the
+wallpaper, often as her picture with the oval fade (the bake was not done).
+Now the wallpaper brings her in on every move-in, apart from the intro and
+its tutorial copy (both still once per account).
+
+- Rules: `shared/seilinkEntrance.ts` (`arrivalMode`, pure, tested). Main
+  owns one `Arrival` per host session (`main/seilink/host/arrival.ts`), so a
+  host restart neither replays her entrance nor forgets she is waiting. The
+  page draws it (`components/seilink/host/HostArrival.tsx`). Wire: ToHost
+  `arrival` {mode, trigger, quiet?} (sent on hello before her room, and on
+  every change; hostEntry replays it on page ready), FromHost `arrived`
+  {played, reduced, kind}; host channels `arrival` / `arrived`.
+- Trigger (startSeilinkHost): `restore` (app start, account switch),
+  `first_link` (the renderer passes `entrance: 'first_link'` when the intro
+  plays), `switch` (someone else moved out for her), else `move_in`.
+- Modes: `wait` (her look is on its way: anima stage checking..downloading,
+  or `unavailable` while the cut-out still lands; `lookPending`), `hold`
+  (look ready, the app has not stepped aside yet), `enter` (the intro's
+  arrival, `lib/seilink/entrance.ts`: 2.8 s fade with a 2% rise and a
+  brightness/blur clearing; reduced motion a 1.2 s fade), `show` (just
+  there). Move-in / switch: hold until the app steps aside (stageFlow
+  reveal, an exit with reveal, minimize-others with reveal; or the desktop
+  uncovered after it was covered, e.g. Win+D; or `REVEAL_WAIT_MS` 12 s),
+  then enter. Restore: show, unless she had to wait (then enter when her
+  look lands). First link: show (the intro shows her coming in), or after a
+  handoff wait then enter. The page starts `enter` only once her avatar has
+  resolved what it shows and frames run (not while the desktop is covered).
+- Waiting: one line at her chest in the intro's status-line style ("Inviting
+  {name}…", typed in, cycling dots, room ink and halo, no box). It is her
+  click area: a click lets her in now with the look she has (skip; a click
+  is not a poke then). Past `LINK_TIMEOUT_MS` it turns dimmer (`quiet`) and
+  keeps waiting; there is no failure. Main re-reads her look on every anima
+  push (`onAnimaChange` in animaRuntime.ts) and every 2 s while she waits.
+  Her desktop lines (pokes, idle lines) are dropped until she is there, and
+  the decorate-together offer waits for her arrival (`whenSeilinkArrived`).
+- Her look: a face set on disk shows at once (a re-check runs behind it).
+  `unavailable` / no_pack uses the cloud cut-out (261118); the oval-fade
+  portrait remains only as the offline or signed-out last resort.
+- Product question left open: a move-in into a saved room (live card
+  dismissed) still leaves the app up; she comes in when the desktop next
+  shows, or after 12 s if it is already partly visible.
+- Dev: `?seilinkhost=1&arrival=sim&arriveat=<ms>&facepackat=<ms>` (also
+  `wait|hold|enter|show`, `quietat`, `reduced=1`); the page's report lands
+  on `body[data-arrived]`. `scripts/seilink-entrance-shots.mjs` records it.
+
 ## Analytics (shape only)
 
 The full event table (did it show, health, interaction, move-in, editor,
@@ -790,8 +1012,11 @@ errors) is in [`seilink-analytics.md`](seilink-analytics.md). The basics:
   page path.
 - Self-test (`selfTest.ts`, unpackaged + `SEI_SEILINK_SELFTEST=<outdir>`):
   attach, first frame, cover → 0 fps, uncover, click her / bare wallpaper /
-  double click, a press on the dock's deafen button (twice, so it ends where
-  it started; must not open her chat), kill → reattach, hang → detected and replaced, (Windows)
+  double click (261116: the click leaves Sei hidden, the double click brings
+  it up), a press on the dock's deafen button (twice, so it ends where
+  it started; must not open her chat), the dock's hover and her cursor feed
+  (`hover`: `test-probe` near and far after presses, a double click with
+  Sei's window up and hidden, and a click; `testMove` in the CI test addon), kill → reattach, hang → detected and replaced, (Windows)
   Explorer restart survived by the same host, stop. Writes `result.json`, `selftest.log` and
   screenshots, then exits 0 or 1. Moves Sui in when the profile has her.
 - Linux smoke:
@@ -1021,6 +1246,58 @@ without them render as before.
 - The host page preload may import only `electron` (sandboxed; a test
   checks), and spells its channel names out (`seilinkHostChannels.ts`).
 
+## Wallpaper widgets and lighting (261119)
+
+Two rail panels in the room editor after Items: **Utilities** (widgets over
+the wallpaper; panel id `misc` in code and analytics) and **Lighting**. Both are fields of `RoomState`, so they save,
+undo and persist with the room (`roomStore.ts`, per companion) and survive a
+room type switch, the guided bare room and a missing pack (`keepDesktop` in
+`seilinkRoom.ts`).
+
+- Pure logic in `src/shared/seilinkWidgets.ts`: kinds (clock, date, text,
+  progress), styles, presets, sanitizing (`sanitizeWidgets`,
+  `sanitizeLighting`, called from `sanitizeRoomState`), edits
+  (`addWidget`/`updateWidget`/`removeWidget`/`setLighting`), formatting
+  (Intl, so the day period and date order follow the locale; `ja` puts the
+  period first), snapping, the tick schedule, and the analytics diff.
+- Drawing: `RoomWidgets.tsx` renders DOM text inside RoomCanvas's scene,
+  over every room layer and her (a lamp never covers the clock), so text is crisp at any DPI and a
+  widget edit never redraws the room (`structureKey` in `roomRenderer.ts`
+  ignores `widgets` and `lighting`). Position is a 0..1 anchor on the room's
+  display box, size is thousandths of its height, so a widget keeps its
+  place and proportion across window and display sizes.
+- Ticking: one timeout at a time (`startWidgetTicker`), just past each
+  second boundary only while a clock shows seconds, otherwise each minute;
+  none for text alone, none while the wallpaper is covered or paused
+  (RoomCanvas `fps` 0).
+- Fonts: the faces the app already bundles (`src/styles/fonts.css`, now
+  linked from `seilink-host.html`) plus OS stacks (serif, mono). No network
+  fonts.
+- Lighting is one CSS filter on the room canvases: `brightness((1 + b/100)
+  * (1 - dim/100))`, plus an SVG `feColorMatrix` for warmth. Her avatar gets
+  the same filter only with "Include her"; widgets never dim. Neutral
+  lighting is dropped from the saved state.
+- Editor: widgets are hit-tested by their DOM boxes; a drag snaps within
+  10 px to the centre lines and to other widgets (guide lines show) and
+  commits one undo step on release. Arrows nudge (Shift: 10 px), Delete
+  removes, Escape deselects.
+- Utilities panel (simplified after product call 261120): one row per widget
+  (icon + name), then a quiet "Add" row that opens the four kinds inline
+  (picking one adds and selects it; with nothing placed the kinds show
+  straight away, no separate add tiles). Only the selected widget opens, its settings
+  inline under its row (accordion; picking it on the desktop opens it and
+  scrolls it into view). Clock format is switches only (24-hour, Seconds,
+  Leading zero, AM/PM, Date below; the old preset chips duplicated them), and
+  the date choice is a wrapped chip group shown only with Date below on.
+  Style rows carry small names (Font, Weight, Color, Size, Opacity); weight
+  and colour apply to the whole widget, the clock digits included. Lighting
+  sliders show name and value only.
+- Dev: DevRoomPreview takes `widgets=demo`, `widget=<id>`, `light.dim=`,
+  `light.brightness=`, `light.warmth=`, `light.char=1`; DevHostPreview's `state=<json>` carries both. Shots:
+  `node scripts/seilink-widgets-shots.mjs --out <dir>`.
+- Not done: the no-pack FallbackRoom does not draw widgets; a widget's
+  position is not per display (one anchor for every display size).
+
 ## Not done
 
 - More displays: everything goes through `primaryRect()`; attach takes a
@@ -1054,12 +1331,25 @@ without them render as before.
   `unsupported`. Hand-test only.
 - **LiveCard** (`components/seilink/LiveCard.tsx`, `lib/seilink/liveHintPref.ts`):
   "{name} lives on your desktop now", the show-desktop shortcut (Win+D;
-  F11 / fn+F11), click = chat, double-click = a quick reply, and Minimize /
+  F11 / fn+F11), click = a quick hello, double-click = her chat (261116), and Minimize /
   Got it. Over the first link's held last frame before the window steps
   aside (FirstLinkIntro waits on it), or in the app after a move-in without
   the intro (`useSeilinkStore.liveHint`, SeilinkFlowHost; a fresh move-in
   steps aside once it is dismissed). Once per account (localStorage). The
   window going hidden while it is up (Win+D) counts as dismissed.
+- **DesktopHint** (product call (261116); `components/seilink/DesktopHint.tsx`,
+  `lib/seilink/desktopHint.ts`, `useSeilinkStore.desktopHint`): when
+  WorldLink opens the desktop (the host comes up running for a companion: a
+  move-in or a swap; not the move-in restored at launch, a host restart, or
+  under the intro, the LiveCard or the desktop editor) or updates it (the
+  in-app editor closes after a save while she lives there), one brief line
+  at the bottom of the app, "Your desktop was updated.", with "Hide windows":
+  `seilink:stage minimize_others {surface: 'desktop_hint', reveal: true}`
+  minimizes (Windows, SW_SHOWMINNOACTIVE) or hides (macOS, Hide Others)
+  every other app's windows, then Sei steps aside (`revealDesktop`). Nothing
+  is closed or quit. Hides itself after 6 s (hover keeps it), drops when the
+  window is hidden, or when it waited over 15 s behind a sheet.
+  `seilink_desktop_hint` (seilink-analytics.md).
 - Room editor: outlined placement areas (PlacementGuide, `.placeGuide`, no
   blur), sharp DPR-sized thumbnails (`roomThumbs.thumbScale`), a compact
   room step (`.roomCompact`), the items panel moves right when it would

@@ -162,6 +162,10 @@ Fish Audio is the third Local voice next to Fast and Kokoro
   `fish-fallback` notice is sent only once that clip exists. The renderer shows
   it once per reason per call. With no Fast pack installed, the usual
   pack-missing error appears instead.
+- On a Sei (cloud) account Fish speaks ONLY when picked in Playtime > Sei >
+  Voice > Advanced (`cloud_tts_provider: 'fish'`, 261120). tts_engine and
+  local_tts_model never send a cloud line to Fish. A failed cloud Fish line is
+  spoken by Sei's voices with the `fish-cloud-fallback` notice.
 - Three table voices are pvc voices with retire dates. Replace them in
   `src/shared/fishVoices.ts` before these dates: ivish (en male) 2029-10-25,
   桃桃 (zh female) 2028-10-26, 温柔沉稳男声 (zh male) 2028-10-15.
@@ -267,9 +271,11 @@ languages from `src/shared/addedLanguageCopy.ts`.
   component every surface uses) is translated like the Google button, with
   "ChatGPT" verbatim. The spec width is a `min-width` (242px): a longer label
   (ru, pt-BR) widens the button instead of overflowing its 20px gutters.
-- Only zh changes companion behavior (language pin at creation, SenseVoice,
-  zh voices, Draw! and chess character-language paths); the 261104 languages
-  translate the interface only.
+- Companions speak the player's language (261116): `companionLanguage()` in
+  `shared/chatLanguage.ts` = own character's pin, else `chat_language` (heard
+  on calls), else the UI language. World characters never take their creator's
+  pin and get `renderAdoptedLanguageNote` so their description's language
+  loses. Only zh still has extra paths (pin at creation, SenseVoice, zh voices).
 - Check layout with any `?dashshot=` harness plus `&lang=<code>`.
 
 ### UI / design system
@@ -387,6 +393,20 @@ range (`A–Z`), never as prose punctuation.
   as `signed_out` with `reason: 'session_rejected'` (`noteUserSignOut`
   marks the user's own). Auth requests have a 15 s fetch timeout
   (`withAuthRequestTimeout`), the profile move's network steps 15 s each.
+- **The main window loads before the IPC handlers exist (261123, launch
+  speed)** → `bootstrap()` creates the window right after the auth storage
+  adapter, before the scope, migrations and services, so the renderer bundle
+  loads in parallel. The preload wraps `ipcRenderer` (`mainReadyGate.ts`):
+  every invoke/send waits for `app:ipc-ready`, which main answers right after
+  `registerIpcHandlers`. Pushes (`on`) are not delayed, so a push sent before
+  the renderer listens is lost as before; the LAN/world replay runs again at
+  ipc-ready. Keep pre-window steps free of network awaits and heavy imports
+  (`@anthropic-ai/sdk` and `jszip` load on first use: `lazyJszip.ts`).
+  `startupMarks.ts` stamps each phase; `app_window_shown` and the renderer's
+  `app_first_view` carry them as `<phase>_ms` props. The window's first
+  paint is a static copy of `BootSplash` in `src/renderer/index.html` (theme
+  from localStorage `sei.bootTheme`, mark fade on the process-start clock via
+  `--sei-process-start`, `lib/bootMark.ts`); change both together.
 - **Renderer caches outlive an account switch** → main re-points every
   per-profile store on `app:scope-changed`, but a Zustand store keeps what it
   already read, and the bundled defaults (Sui, Lyra, ...) share their UUIDs
@@ -490,8 +510,12 @@ range (`A–Z`), never as prose punctuation.
   without loading undici). DIRECT stays on Node's built-in Agent: the undici
   package fills the shared global slot with its own Agent when it LOADS, so
   never import `undici` or `proxyDispatcher.js` statically from main or the
-  bot entry. A proxy that refuses the connection is skipped for 60 s and the
-  request moves down the PAC list, always ending DIRECT; a failed or slow
+  bot entry. A request that fails before it started moves down the PAC list
+  (proxy refused/unresolvable/unreachable: also skipped for 60 s; 407/403
+  tunnel answer, proxy TLS failure, reset or timeout in the tunnel: that
+  request only). DIRECT only when the answer names it or its loopback
+  proxies are all gone (261120: a tunnel reset sent China VPN users DIRECT
+  into a region 403); a failed or slow
   (3 s) lookup is DIRECT for 30 s. `undici` is pinned exactly and must share
   its major with Electron's `process.versions.undici` (a test checks).
 - **Native ABI mismatch** → `@electron/rebuild` / `install-app-deps` runs in

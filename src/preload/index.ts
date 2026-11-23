@@ -7,7 +7,7 @@
  * — a renderer-local AbortController can't reach the child process running
  * fabric-installer.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer as rawIpcRenderer } from 'electron';
 import type { FaceCue } from '../shared/facepack';
 import {
   IpcChannel,
@@ -45,6 +45,18 @@ import type { SeilinkAvailability, SeilinkHostStatus, SeilinkOpenEditor } from '
 import type { SeilinkEditorEvent } from '../shared/seilinkTogether';
 import type { AnimaStatus } from '../shared/anima';
 import type { AvatarLibraryView } from '../shared/avatarLibrary';
+import { unwrapIpcRejection } from '../shared/ipcError';
+import { createGatedIpc } from './mainReadyGate';
+
+// 261123: calls wait until main has registered its handlers (mainReadyGate.ts).
+const ipcRenderer = createGatedIpc(rawIpcRenderer, IpcChannel.app.ipcReady);
+
+/** 261123: main's process start (epoch ms) for the boot splash, from `--sei-process-start=` (windowChrome.ts). */
+function launchStartedAtFromArgv(argv: readonly string[]): number | undefined {
+  const arg = argv.find((a) => a.startsWith('--sei-process-start='));
+  const n = arg ? Number(arg.slice('--sei-process-start='.length)) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 const api: RendererApi = {
   // Game adapters (M0): {characterId, game} (main also still accepts a bare id).
@@ -482,6 +494,7 @@ const api: RendererApi = {
     return () => ipcRenderer.off(IpcChannel.seilink.animaChanged, handler);
   },
   seilinkAnimaShown: (characterId, kind) => ipcRenderer.send(IpcChannel.seilink.animaShown, { characterId, kind }),
+  seilinkAnimaCutout: (characterId) => ipcRenderer.invoke(IpcChannel.seilink.animaCutout, characterId),
   seilinkVoice: (characterId, speaking) => ipcRenderer.send(IpcChannel.seilink.voice, { characterId, speaking: speaking === true }),
   seilinkEditorSession: (phase, token, characterId) => ipcRenderer.send(IpcChannel.seilink.editorSession, { phase, token, characterId }),
   seilinkEditorSync: (sync) => ipcRenderer.send(IpcChannel.seilink.editorSync, sync),
@@ -517,6 +530,10 @@ const api: RendererApi = {
   voiceListVoices: () => ipcRenderer.invoke(IpcChannel.voice.list),
   voiceListOwnVoices: (args) => ipcRenderer.invoke(IpcChannel.voice.ownList, args ?? {}),
   voiceOwnPreview: (args) => ipcRenderer.invoke(IpcChannel.voice.ownPreview, args),
+  voiceLibraryLookup: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryLookup, args),
+  voiceLibraryAdd: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryAdd, args),
+  voiceLibraryStatus: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryStatus, args),
+  voiceLibraryPreview: (args) => ipcRenderer.invoke(IpcChannel.voice.libraryPreview, args),
   voiceSharedDefault: (args) => ipcRenderer.invoke(IpcChannel.voice.sharedDefault, args),
   voicePreview: (args) => ipcRenderer.invoke(IpcChannel.voice.preview, args),
   voicePreviewAvailable: () => ipcRenderer.invoke(IpcChannel.voice.previewAvailable),
@@ -625,8 +642,11 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.usage.spendAlert, handler);
     return () => ipcRenderer.off(IpcChannel.usage.spendAlert, handler);
   },
+  usageSpendAlertPending: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertPending),
+  usageSpendAlertAck: () => ipcRenderer.invoke(IpcChannel.usage.spendAlertAck),
   creditsCatalog: () => ipcRenderer.invoke(IpcChannel.credits.catalog),
-  creditsOpenCheckout: (kind) => ipcRenderer.invoke(IpcChannel.credits.openCheckout, { kind }),
+  creditsOpenCheckout: (kind, source) =>
+    ipcRenderer.invoke(IpcChannel.credits.openCheckout, source ? { kind, source } : { kind }),
   creditsChangePlan: (tier) => ipcRenderer.invoke(IpcChannel.credits.changePlan, { tier }),
   subscriptionStatus: () => ipcRenderer.invoke(IpcChannel.subscription.status),
   subscriptionCancel: () => ipcRenderer.invoke(IpcChannel.subscription.cancel),
@@ -646,6 +666,8 @@ const api: RendererApi = {
     ipcRenderer.on(IpcChannel.credits.hardStop, handler);
     return () => ipcRenderer.off(IpcChannel.credits.hardStop, handler);
   },
+  creditsHardStopPending: () => ipcRenderer.invoke(IpcChannel.credits.hardStopPending),
+  creditsHardStopAck: () => ipcRenderer.invoke(IpcChannel.credits.hardStopAck),
   onAiBackendKindChanged(cb: (ev: { kind: CreditsStatus['ai_backend_kind'] }) => void) {
     const handler = (
       _e: Electron.IpcRendererEvent,
@@ -792,6 +814,7 @@ const api: RendererApi = {
 
   // --- Window chrome (frameless custom titlebar on Windows/Linux) ---
   platform: process.platform,
+  launchStartedAt: launchStartedAtFromArgv(process.argv),
   windowMinimize: () => ipcRenderer.invoke(IpcChannel.window.minimize),
   windowMaximizeToggle: () => ipcRenderer.invoke(IpcChannel.window.maximizeToggle),
   windowClose: () => ipcRenderer.invoke(IpcChannel.window.close),
@@ -823,4 +846,35 @@ const api: RendererApi = {
   factoryReset: () => ipcRenderer.invoke(IpcChannel.app.factoryReset),
 };
 
-contextBridge.exposeInMainWorld('sei', api);
+/**
+ * Every bridge method that returns a promise rejects with main's own message
+ * (261119). Electron rejects a failed `ipcRenderer.invoke` with "Error
+ * invoking remote method '<channel>': Error: <message>", and screens that
+ * showed `err.message` printed that wrapper to users ("... 'chars:add-to-
+ * library': Error: You can only have 4 companions ..."). Wrapping the api
+ * once here covers every invoke, including ones added later, without
+ * touching each method. Main's console still logs the full error ("Error
+ * occurred in handler for ..."), and the renderer turns technical messages
+ * into plain copy with `userFacingError` (lib/errors.ts).
+ */
+function withCleanRejections<T extends object>(target: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(target)) {
+    if (typeof value !== 'function') {
+      out[key] = value;
+      continue;
+    }
+    out[key] = (...args: unknown[]): unknown => {
+      const result: unknown = (value as (...a: unknown[]) => unknown).apply(target, args);
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        return Promise.resolve(result).catch((err: unknown) => {
+          throw unwrapIpcRejection(err);
+        });
+      }
+      return result;
+    };
+  }
+  return out as T;
+}
+
+contextBridge.exposeInMainWorld('sei', withCleanRejections(api));

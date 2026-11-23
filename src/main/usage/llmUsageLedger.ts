@@ -24,6 +24,7 @@ import {
   monthKey,
   normalizeUsage,
   parseLedger,
+  SPEND_ALERT_ENABLED,
   shouldFireSpendAlert,
   summarizeUsage,
   type UsageLedger,
@@ -67,6 +68,11 @@ export function onSpendAlert(fn: AlertSink | null): void {
   alertSink = fn;
 }
 
+/** Dev trigger (index.ts SEI_DEV_CAP_NOTICE, unpackaged only): fire the sink as the ledger would. */
+export function _emitSpendAlertForDev(e: SpendAlertEvent): void {
+  alertSink?.(e);
+}
+
 /** Test seams. */
 export function _resetUsageLedgerForTests(): void {
   cache.clear();
@@ -108,14 +114,18 @@ export function recordLlmUsage(entry: { provider: string; model: string; usage: 
 async function checkSpendAlert(scope: string, ledger: UsageLedger, now: Date): Promise<void> {
   // Members are read where used, not destructured up front: updateConfig is
   // only needed once the alert fires.
+  if (!SPEND_ALERT_ENABLED) return;
   const configStore = await import('../configStore');
   if (getActiveScope() !== scope) return;
   const cfg = await configStore.loadConfig();
   const spend = summarizeUsage(ledger, now).spendMonthUsd;
   if (!shouldFireSpendAlert(cfg, spend, now)) return;
   const month = monthKey(now);
-  await configStore.updateConfig((c) => ({ ...c, spend_alert_fired_month: month }), { scope });
   const limitUsd = cfg.spend_alert_usd ?? 0;
+  await configStore.updateConfig(
+    (c) => ({ ...c, spend_alert_fired_month: month, spend_alert_fired_usd: limitUsd }),
+    { scope },
+  );
   try {
     alertSink?.({ limitUsd, spendMonthUsd: spend });
   } catch {

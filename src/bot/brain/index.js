@@ -309,6 +309,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
         addressed: evt.addressed,
         playerSpoke: evt.playerSpoke,
         ...(evt.gameEvent ? { gameEvent: true } : {}),
+        ...(typeof evt.noticeShownAt === 'function' ? { noticeShownAt: evt.noticeShownAt } : {}),
       })
     },
     onAttacked: (evt) => {
@@ -348,8 +349,8 @@ export async function start({ config, adapter, logger = console, onTerminalError
     // turn (onDeath) comes after the respawn; until then the orchestrator
     // drops any turn the dead body was still writing. Optional: adapters that
     // only report the death itself skip it.
-    onDying: () => {
-      try { orchestrator.noteDeath?.() } catch {}
+    onDying: (info) => {
+      try { orchestrator.noteDeath?.(info) } catch {}
     },
     onDeath: (evt) => {
       // The player killed the bot (or it fell/burned/etc). Enqueue a real

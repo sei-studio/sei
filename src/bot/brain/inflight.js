@@ -112,8 +112,9 @@ export function describeArgs(name, args) {
  *
  * @param {{ id:number, name:string, args:any, startedAt:number, progress:any } | null} entry
  * @param {number} [now=Date.now()] — injected for deterministic tests.
- * @param {{ inventory?: Record<string, number> | null }} [opts] — the item
- *   counts the same snapshot shows on its inventory line.
+ * @param {{ inventory?: Record<string, number> | null, giveWalking?: boolean | null }} [opts]
+ *   inventory: the item counts the same snapshot shows on its inventory line.
+ *   giveWalking: true while a running give() is still walking to the player.
  * @returns {string} empty string when entry is null/undefined; otherwise the
  *   formatted line.
  */
@@ -153,7 +154,13 @@ export function getInFlightLineForSnapshot(entry, now = Date.now(), opts = {}) {
   if (!suffix && entry.name === 'give' && typeof entry.args?.item === 'string') {
     const n = Number.isFinite(entry.args.count) ? `${entry.args.count} ` : 'all your '
     const to = typeof entry.args.player === 'string' && entry.args.player.trim() ? entry.args.player.trim() : 'the player'
-    suffix = `, handing ${n}${entry.args.item} to ${to}. Nothing is handed over until the toss lands, so stopping it keeps them with you. They are meant for ${to}, so do not count them toward anything of yours`
+    // 261120 (pass 59): while the give is still walking over, say that.
+    // "handing" read as the toss itself and she told them it had landed.
+    // opts.giveWalking comes from the adapter (true while out of toss range).
+    const walking = opts?.giveWalking === true
+      ? `, still walking over to ${to} to hand them ${n}${entry.args.item}. Nothing is tossed until you get there`
+      : `, handing ${n}${entry.args.item} to ${to}. Nothing is handed over until the toss lands`
+    suffix = `${walking}, so stopping it keeps them with you. They are meant for ${to}, so do not count them toward anything of yours`
   }
   return `in_flight: ${entry.name}(${argblurb}) started=${elapsed}s ago${suffix}`
 }

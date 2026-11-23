@@ -28,6 +28,13 @@
  * done; Done saves it without, and the next open is the normal editor.
  * Analytics: seilink_setup and seilink_setup_step (shape only).
  *
+ * Utilities (code id `misc`) and Lighting (261119, product call 261119): two
+ * more rail tiles. Utilities adds wallpaper widgets (clock, date, text, progress; RoomDesktopPanels.tsx,
+ * drawn by RoomCanvas through RoomWidgets.tsx); a widget is selected and
+ * dragged on the stage like an item, snapping to the centre lines and to the
+ * other widgets. Lighting darkens, veils and warms the room. Both are part of
+ * the room state, so undo, save and the dirty check cover them.
+ *
  * After Done (261107, product call 261107): the "Open on login" step, once,
  * where the login item works and the user has not answered it yet
  * (lib/seilink/loginStep.ts, the `openAtLogin` prop). "Turn on" (the
@@ -43,6 +50,7 @@ import { createPortal } from 'react-dom';
 import {
   BLANK_FRAME,
   bareRoomState,
+  keepDesktop,
   defaultRoomState,
   PLAIN_PATTERN,
   patternsFor,
@@ -144,11 +152,20 @@ import {
   UndoIcon,
   UploadIcon,
 } from './roomEditorIcons';
+import { LightingPanel, LightIcon, WidgetsIcon, WidgetsPanel } from './RoomDesktopPanels';
+import {
+  DEFAULT_LIGHTING,
+  addWidget,
+  removeWidget,
+  setLighting,
+  snapWidget,
+  updateWidget,
+} from '@shared/seilinkWidgets';
 import styles from './RoomEditor.module.css';
 
 /** The rail's panels (261105). Room, Walls & fabrics and Furniture hold several slots as sections. */
-type Group = 'avatar' | SlotGroup | 'items';
-const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'items'];
+type Group = 'avatar' | SlotGroup | 'items' | 'misc' | 'lighting';
+const GROUPS: readonly Group[] = ['avatar', 'room', 'fabrics', 'furniture', 'items', 'misc', 'lighting'];
 /** The side panel's reach from the screen edge, CSS px (inset + rail + panel, or the guide's column). */
 const PANEL_ZONE = 410;
 /**
@@ -191,7 +208,7 @@ export interface RoomEditorProps {
   /** Effects frame cap (RoomCanvas fps). */
   fps?: number;
   /** Dev / screenshots: open with a panel or an item selected. */
-  initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState; loginStep?: boolean };
+  initial?: { panel?: PanelRequest | null; selected?: number | null; state?: RoomState; loginStep?: boolean; widget?: string | null };
   /** Render inline instead of in a portal over the whole window (dev preview). */
   inline?: boolean;
   /** 261110: on the desktop stage, where the display sits in the window (RoomCanvas `frame`). */
@@ -714,6 +731,17 @@ function PartLook({
   );
 }
 
+/** 261119: the snap lines while a widget is dragged (the centre line or another widget's line it snapped to). */
+function WidgetGuides({ drag, box, stage }: { drag: { guideX: number | null; guideY: number | null }; box: DOMRect | null; stage: DOMRect | null }): React.ReactElement | null {
+  if (!box || !stage) return null;
+  return (
+    <>
+      {drag.guideX !== null && <div className={styles.snapV} style={{ left: box.left - stage.left + drag.guideX * box.width, top: box.top - stage.top, height: box.height }} />}
+      {drag.guideY !== null && <div className={styles.snapH} style={{ top: box.top - stage.top + drag.guideY * box.height, left: box.left - stage.left, width: box.width }} />}
+    </>
+  );
+}
+
 // ── The editor ──────────────────────────────────────────────────────────────
 
 export function RoomEditor(props: RoomEditorProps): React.ReactElement {
@@ -729,6 +757,10 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const panelRef = useRef<HTMLElement>(null);
   const sectionEls = useRef(new Map<RoomSlotId, HTMLElement>());
   const [selected, setSelected] = useState<number | null>(initial?.selected ?? null);
+  // 261119: the selected wallpaper widget (Utilities), and one being dragged on the stage.
+  const [widgetSel, setWidgetSel] = useState<string | null>(initial?.widget ?? null);
+  const [widgetDrag, setWidgetDrag] = useState<{ id: string; x: number; y: number; guideX: number | null; guideY: number | null } | null>(null);
+  const widgetDragRef = useRef<{ id: string; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean } | null>(null);
   const [overlay, setOverlay] = useState<RoomOverlay | null>(null);
   const [vp, setVp] = useState<RoomViewport>({ scale: 0, left: 0, top: 0, width: 0, height: 0 });
   const [drag, setDrag] = useState<{ index: number; x: number; y: number; surface: number } | null>(null);
@@ -795,6 +827,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     lightSlots,
     shape: roomShape,
   });
+  const analyticsRef = useRef(analytics);
+  analyticsRef.current = analytics;
+  // 261119: a widget is only selected while Utilities is open.
+  useEffect(() => {
+    if (shownPanel !== 'misc') setWidgetSel(null);
+  }, [shownPanel]);
   const colorTelemetry = useMemo<ColorPickTelemetry>(() => ({ pickerOpened: analytics.pickerOpened, picked: analytics.colorPicked }), [analytics.pickerOpened, analytics.colorPicked]);
 
   // ── load ──
@@ -813,7 +851,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           ? start === saved
             ? savedClean!
             : withoutSetup(sanitizeRoomState(pack.manifest, start))
-          : { ...defaultRoomState(pack.id), time: start?.time ?? 'auto', avatar: start?.avatar ?? { kind: 'sei' as const } };
+          : keepDesktop(start ?? {}, { ...defaultRoomState(pack.id), time: start?.time ?? 'auto', avatar: start?.avatar ?? { kind: 'sei' as const } });
       setHistory(createHistory(state, savedClean));
       if (props.guided !== false && !initial?.panel && opensGuided(saved) && saved?.preset === pack.id) {
         const done = saved.setup?.done ?? [];
@@ -956,6 +994,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     setSaving('saving');
     try {
       const saved = withoutSetup(await source.save(done ? { ...sent, setup: { done } } : sent));
+      analyticsRef.current.desktopSaved(h.saved, saved);
       setHistory((cur) => (cur ? markSaved(cur, saved, sent) : cur));
       setSaving('saved');
       return true;
@@ -1194,8 +1233,62 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
     return viewportToCanvas(vp, e.clientX - r.left, e.clientY - r.top);
   };
 
+  // ── 261119: wallpaper widgets on the stage (DOM boxes drawn by RoomCanvas) ──
+  const widgetBox = (): DOMRect | null =>
+    (stageRef.current?.closest('[data-room-editor]')?.querySelector('[data-room-widgets]') as HTMLElement | null)?.getBoundingClientRect() ?? null;
+  const widgetAt = (clientX: number, clientY: number): string | null => {
+    const els = stageRef.current?.closest('[data-room-editor]')?.querySelectorAll<HTMLElement>('[data-widget-id]');
+    if (!els) return null;
+    // Topmost first (later in the list draws over earlier).
+    for (const el of [...els].reverse()) {
+      const r = el.getBoundingClientRect();
+      const slop = 6;
+      if (clientX >= r.left - slop && clientX <= r.right + slop && clientY >= r.top - slop && clientY <= r.bottom + slop) return el.dataset.widgetId ?? null;
+    }
+    return null;
+  };
+  const onWidgetDown = (e: React.PointerEvent<HTMLDivElement>): boolean => {
+    const id = widgetAt(e.clientX, e.clientY);
+    const w = id ? state?.widgets?.find((x) => x.id === id) : undefined;
+    const box = widgetBox();
+    if (!w || !box) return false;
+    setSelected(null);
+    setWidgetSel(w.id);
+    setPanel('misc');
+    widgetDragRef.current = { id: w.id, pointerId: e.pointerId, dx: e.clientX - (box.left + w.x * box.width), dy: e.clientY - (box.top + w.y * box.height), sx: e.clientX, sy: e.clientY, lifted: false };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    return true;
+  };
+  const onWidgetMove = (e: React.PointerEvent<HTMLDivElement>): boolean => {
+    const d = widgetDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return false;
+    if (!d.lifted && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return true;
+    d.lifted = true;
+    const box = widgetBox();
+    if (!box || box.width <= 0 || box.height <= 0) return true;
+    const others = (state?.widgets ?? []).filter((w) => w.id !== d.id);
+    const snap = snapWidget((e.clientX - d.dx - box.left) / box.width, (e.clientY - d.dy - box.top) / box.height, others, { w: box.width, h: box.height });
+    setWidgetDrag({ id: d.id, ...snap });
+    return true;
+  };
+  const onWidgetUp = (e: React.PointerEvent<HTMLDivElement>): boolean => {
+    const d = widgetDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return false;
+    widgetDragRef.current = null;
+    const pos = widgetDrag;
+    setWidgetDrag(null);
+    if (d.lifted && pos && pos.id === d.id) edit((s) => updateWidget(s, d.id, { x: pos.x, y: pos.y }));
+    return true;
+  };
+
   const onStageDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0 || !manifest || !state || !pack) return;
+    if (onWidgetDown(e)) return;
+    if (widgetSel !== null) {
+      // First click away only lets go of the widget.
+      setWidgetSel(null);
+      return;
+    }
     const [cx, cy] = pointerCanvas(e);
     const hit = pickerRef.current.pick(manifest, state, time, pack.resolve, cx, cy, slotSet);
     if (hit?.kind === 'item') {
@@ -1217,6 +1310,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   };
 
   const onStageMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (onWidgetMove(e)) return;
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId || !manifest || !state || !regions) return;
     if (!d.lifted && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
@@ -1233,6 +1327,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
 
   const guideSeen = useRef(new Set<string>());
   const onStageUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    if (onWidgetUp(e)) return;
     const d = dragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
     dragRef.current = null;
@@ -1273,9 +1368,31 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       }
       if (e.key === 'Escape') {
         if (confirmClose) setConfirmClose(false);
+        else if (widgetSel !== null) setWidgetSel(null);
         else if (selected !== null) setSelected(null);
         else if (panel && !guideRef.current) setPanel(null);
         else requestClose();
+        return;
+      }
+      // 261119: the selected widget: Delete removes it, arrows nudge it (a pixel; Shift, ten).
+      if (widgetSel !== null && selected === null) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          edit((s) => removeWidget(s, widgetSel));
+          setWidgetSel(null);
+          return;
+        }
+        const box = widgetBox();
+        const px = e.shiftKey ? 10 : 1;
+        const wdir: Record<string, [number, number]> = { ArrowLeft: [-px, 0], ArrowRight: [px, 0], ArrowUp: [0, -px], ArrowDown: [0, px] };
+        const wmv = wdir[e.key];
+        if (wmv && box && box.width > 0 && box.height > 0) {
+          e.preventDefault();
+          edit((s) => {
+            const w = s.widgets?.find((x) => x.id === widgetSel);
+            return w ? updateWidget(s, widgetSel, { x: w.x + wmv[0] / box.width, y: w.y + wmv[1] / box.height }) : s;
+          }, `nudge:widget:${widgetSel}`);
+        }
         return;
       }
       if (selected === null || !manifest) return;
@@ -1306,7 +1423,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [confirmClose, selected, panel, manifest, doUndo, doSave, requestClose, edit, endEditGesture]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmClose, selected, widgetSel, panel, manifest, doUndo, doSave, requestClose, edit, endEditGesture]);
 
   // ── overlay tint (the room's, not the theme's) ──
   const ov = overlay ?? { color: manifest?.overlay?.[time] ?? '#efe6da', light: true, ink: '#1d1b22' };
@@ -1363,6 +1481,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         setPanel(panel === key ? null : key);
         setFocus(null);
         if (key !== 'items') setSelected(null);
+        if (key !== 'misc') setWidgetSel(null);
       }}
     >
       {content}
@@ -1579,6 +1698,39 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         </section>
       );
     }
+    if (panel === 'misc') {
+      return (
+        <WidgetsPanel
+          widgets={state.widgets ?? []}
+          selected={widgetSel}
+          onSelect={setWidgetSel}
+          onAdd={(kind) => {
+            const r = addWidget(state, kind);
+            if (!r.id) return;
+            edit(() => r.state);
+            setSelected(null);
+            setWidgetSel(r.id);
+          }}
+          onChange={(id, patch, g) => edit((s) => updateWidget(s, id, patch), g ?? null)}
+          onRemove={(id) => {
+            edit((s) => removeWidget(s, id));
+            setWidgetSel(null);
+          }}
+          onGestureEnd={endEditGesture}
+        />
+      );
+    }
+    if (panel === 'lighting') {
+      return (
+        <LightingPanel
+          lighting={state.lighting}
+          name={props.name}
+          onChange={(patch, g) => edit((s) => setLighting(s, patch), g ?? null)}
+          onReset={() => edit((s) => setLighting(s, DEFAULT_LIGHTING))}
+          onGestureEnd={endEditGesture}
+        />
+      );
+    }
     if (panel === 'items') {
       return (
         <section key="items" className={styles.panel} aria-label={t('Items')}>
@@ -1697,6 +1849,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         onOverlay={setOverlay}
         onLayout={setVp}
         frame={props.frame}
+        widgetEdit={{ selected: widgetSel, moving: widgetDrag }}
         avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} portrait={props.portrait} name={props.name} />}
       >
         <div
@@ -1708,6 +1861,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
           onPointerCancel={onStageUp}
         >
           {cssRect && <div className={styles.selection} style={cssRect} />}
+          {widgetDrag && <WidgetGuides drag={widgetDrag} box={widgetBox()} stage={stageRef.current?.getBoundingClientRect() ?? null} />}
           {drag && regions && dragComp && (
             <PlacementGuide regions={regions} cls={placementOf(dragComp)} surface={drag.surface} vp={vp} canvas={manifest.canvas} />
           )}
@@ -1816,6 +1970,8 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
                 {sections.fabrics.length > 0 && tile('fabrics', t(GROUP_LABEL.fabrics), <RollerIcon size={RAIL_ICON} />)}
                 {sections.furniture.length > 0 && tile('furniture', t(GROUP_LABEL.furniture), <ChairIcon size={RAIL_ICON} />)}
                 {items.length > 0 && tile('items', t('Items'), <BagIcon size={RAIL_ICON} />)}
+                {tile('misc', t('Utilities'), <WidgetsIcon size={RAIL_ICON} />)}
+                {tile('lighting', t('Lighting'), <LightIcon size={RAIL_ICON} />)}
               </nav>
               {renderPanel()}
             </>

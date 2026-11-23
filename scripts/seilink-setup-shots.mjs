@@ -156,6 +156,9 @@ const SHOTS = {
   'live-card-mac-light': { flow: 'phase=desktop&livecard=stage&os=mac&time=day', run: async (p) => p.waitForTimeout(4500) },
   'live-card-app': { flow: 'phase=closed&livecard=app&os=windows', scheme: 'dark', run: async (p) => p.waitForTimeout(4500) },
   'live-card-ja': { flow: 'phase=closed&livecard=stage&os=windows&lang=ja', scheme: 'dark', run: async (p) => p.waitForTimeout(4500) },
+  'desktop-hint': { flow: 'phase=closed&desktophint=1&os=windows', scheme: 'dark', run: async (p) => p.waitForTimeout(4500) },
+  'desktop-hint-light': { flow: 'phase=desktop&desktophint=1&os=mac&time=day', run: async (p) => p.waitForTimeout(4500) },
+  'desktop-hint-ja': { flow: 'phase=closed&desktophint=1&os=windows&lang=ja', scheme: 'dark', run: async (p) => p.waitForTimeout(4500) },
   'drag-shelf-item': {
     flow: 'phase=decorated',
     scheme: 'dark',

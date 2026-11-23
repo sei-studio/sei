@@ -41,7 +41,6 @@ const base: Omit<Input, 'kind'> = {
   seilinkOn: false,
   movedInHere: false,
   ownVoice: false,
-  noVoice: false,
 };
 
 /** The owner page as section -> rows. */
@@ -83,7 +82,10 @@ describe('owner page (section menu, one tab at a time, product call 261110)', ()
     expect(OWNER_TABS).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
     expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
     expect(profileTabs(profileAccess({ ...base, kind: 'custom' }))).toEqual(['look', 'voice', 'personality', 'games', 'more']);
-    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'skin', 'avatar', 'floatingAvatar'] }]);
+    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'avatar', 'floatingAvatar'] }]);
+    // The Minecraft skin is a game setting (product call 261116).
+    expect(tabGroups(a, 'games')).toEqual([{ section: null, rows: ['skin', 'chess', 'dst'] }]);
+    expect(sectionOf('skin')).toBe('games');
     expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
     expect(tabGroups(a, 'more')).toEqual([
       { section: 'sharing', rows: ['publicToggle'] },
@@ -107,15 +109,15 @@ describe('owner page (section menu, one tab at a time, product call 261110)', ()
 describe('owner row groups (sections in use order)', () => {
   it('custom: Look, Voice, Personality, Games, Sharing, Danger zone, every row live', () => {
     expect(sections({ ...base, kind: 'custom' })).toEqual({
-      look: ['cardImage', 'skin', 'avatar', 'floatingAvatar'],
-      voice: ['voice', 'pitch'],
+      look: ['cardImage', 'avatar', 'floatingAvatar'],
+      voice: ['voice'],
       personality: ['about', 'persona', 'knowledge'],
-      games: ['chess', 'dst'],
+      games: ['skin', 'chess', 'dst'],
       sharing: ['publicToggle'],
       danger: ['resetMemory', 'unbind'],
     });
     const a = profileAccess({ ...base, kind: 'custom' });
-    for (const row of ['cardImage', 'skin', 'voice', 'pitch', 'about', 'persona', 'chess'] as const) {
+    for (const row of ['cardImage', 'skin', 'voice', 'about', 'persona', 'chess'] as const) {
       expect(a[row], row).toBe('edit');
     }
     expect(a.cardUpload).toBe(true);
@@ -159,7 +161,6 @@ describe('owner row groups (sections in use order)', () => {
     expect(a.publicToggle).toBe('edit');
     expect(a.about).toBe('locked');
     expect(a.voice).toBe('locked');
-    expect(a.pitch).toBe('hidden');
   });
 
   it('Others will hear: own ElevenLabs voice on an owned companion only', () => {
@@ -169,8 +170,9 @@ describe('owner row groups (sections in use order)', () => {
     expect(profileAccess({ ...base, kind: 'world', ownVoice: true }).othersHear).toBe('hidden');
   });
 
-  it('No voice: nothing to tune, so no Pitch row', () => {
-    expect(profileAccess({ ...base, kind: 'custom', noVoice: true }).pitch).toBe('hidden');
+  it('no separate Pitch row: pitch is tuned in the inline voice editor (261119)', () => {
+    const rows = ownerSections(profileAccess({ ...base, kind: 'custom' })).flatMap((s) => s.rows) as string[];
+    expect(rows).not.toContain('pitch');
   });
 
   it('sectionOf maps every row to its section', () => {
@@ -184,7 +186,7 @@ describe('foreign companions (Overview first, no owner rows)', () => {
   for (const kind of ['builtin', 'world'] as const) {
     it(`${kind}: no owner-only row exists at all, not even locked`, () => {
       const a = profileAccess({ ...base, kind, seilinkOn: true, ownVoice: true });
-      for (const row of ['cardImage', 'skin', 'voice', 'pitch', 'about', 'persona', 'chess', 'publicToggle', 'othersHear'] as const) {
+      for (const row of ['cardImage', 'skin', 'voice', 'about', 'persona', 'chess', 'publicToggle', 'othersHear'] as const) {
         expect(a[row], row).toBe('hidden');
       }
       expect(a.view).toBe('foreign');

@@ -10,7 +10,8 @@ import { seilinkAvailability, seilinkEnabled } from './gate';
 import { getRoomPayload, isRoomCharacterId, onRoomChange, setRoomState } from './roomStore';
 import { seilinkHostStatus, sendSeilinkVoice, setSeilinkIdleLines, startSeilinkHost, stopSeilinkHost } from './host/seilinkHost';
 import { ANIMA_TRIGGERS, isAnimaShownKind, type AnimaTrigger } from '../../shared/anima';
-import { anima } from '../anima/animaRuntime';
+import { live2dManifestShape } from '../../shared/live2dParams';
+import { anima, readAnimaCutout } from '../anima/animaRuntime';
 import { isEditorSessionToken, onRoomEditorClosed, onRoomEditorOpened } from './roomReaction';
 import { onTogetherClosed, onTogetherOpened, onTogetherSync } from './decorateTogether';
 import { setTogetherSink } from './editorTogether';
@@ -55,8 +56,8 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
   // Desktop host. Start throws SEILINK_DISABLED while SeiLink is off (gate.ts).
   ipcMain.handle(IpcChannel.seilink.hostStart, async (_e, characterId: unknown, opts: unknown) => {
     if (!isRoomCharacterId(characterId)) throw new Error('SEILINK_BAD_ID');
-    const firstRoom = typeof opts === 'object' && opts !== null && (opts as { firstRoom?: unknown }).firstRoom === true;
-    return startSeilinkHost(characterId, { firstRoom });
+    const o = typeof opts === 'object' && opts !== null ? (opts as { firstRoom?: unknown; entrance?: unknown }) : {};
+    return startSeilinkHost(characterId, { firstRoom: o.firstRoom === true, ...(o.entrance === 'first_link' ? { entrance: 'first_link' as const } : {}) });
   });
   // 261106: the WorldLink intro's failure path stops with `link_failed` (the move-in is cleared the same way).
   ipcMain.handle(IpcChannel.seilink.hostStop, async (_e, opts: unknown) =>
@@ -97,9 +98,25 @@ export function registerSeilinkIpc(opts: { preloadPath: string; rendererTarget: 
     const a = args as { characterId?: unknown; speaking?: unknown } | null;
     if (isRoomCharacterId(a?.characterId)) sendSeilinkVoice(a.characterId, a.speaking === true);
   });
+  // 261118: her cloud cut-out (no face to animate), while it is still of her current picture.
+  ipcMain.handle(IpcChannel.seilink.animaCutout, async (_e, characterId: unknown) => {
+    if (!isRoomCharacterId(characterId)) return null;
+    return readAnimaCutout(characterId);
+  });
   ipcMain.on(IpcChannel.seilink.animaShown, (_e, args: unknown) => {
     const a = args as { characterId?: unknown; kind?: unknown } | null;
-    if (isRoomCharacterId(a?.characterId) && isAnimaShownKind(a?.kind)) anima.noteShown(a.characterId, a.kind, 'editor');
+    if (!isRoomCharacterId(a?.characterId) || !isAnimaShownKind(a?.kind)) return;
+    const id = a.characterId;
+    const kind = a.kind;
+    if (kind !== 'live2d') {
+      anima.noteShown(id, kind, 'editor');
+      return;
+    }
+    // 261122: a Live2D model's resolved parameters (shape only).
+    void import('../avatar/avatarStore')
+      .then((m) => m.getAvatarManifest(id))
+      .catch(() => null)
+      .then((manifest) => anima.noteShown(id, kind, 'editor', live2dManifestShape(manifest)));
   });
 
   // 261105 (T335): the companion editor's session, for her one reaction line to the edits.

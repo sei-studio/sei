@@ -17,6 +17,33 @@ import { writeFile, rename, unlink } from 'node:fs/promises'
 import { dirname, basename, join } from 'node:path'
 
 /**
+ * Windows rename retry (261121). Replacing a file that another process holds
+ * open without FILE_SHARE_DELETE (Defender scanning the fresh file, the search
+ * indexer, a sync client) fails with EPERM/EACCES/EBUSY for a few ms to a few
+ * hundred ms. v0.7.0 shipped these straight to callers, and sync-queue.json,
+ * rewritten on every voice turn, surfaced them as a main-process
+ * unhandledRejection on two Windows machines. graceful-fs retries the same
+ * codes for the same reason. Waits total 770 ms before the error is thrown.
+ */
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_RETRY_MS = [20, 50, 100, 200, 400]
+
+/** @param {string} from @param {string} to */
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(from, to)
+      return
+    } catch (err) {
+      const code = /** @type {{ code?: string }} */ (err)?.code
+      const retryable = process.platform === 'win32' && !!code && RENAME_RETRY_CODES.has(code)
+      if (!retryable || attempt >= RENAME_RETRY_MS.length) throw err
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_MS[attempt]))
+    }
+  }
+}
+
+/**
  * @param {string} path  Target file path (will be atomically replaced).
  * @param {string | Uint8Array} contents  Contents to write. Strings go out as
  *   UTF-8 (legacy default for OWNER.md/DIARY.md callers); Uint8Array / Buffer
@@ -38,7 +65,7 @@ export async function atomicWrite(path, contents) {
     } else {
       await writeFile(tmp, contents)
     }
-    await rename(tmp, path)
+    await renameWithRetry(tmp, path)
   } catch (err) {
     // Best-effort cleanup if rename failed (writeFile succeeded but rename did not).
     try { await unlink(tmp) } catch {}

@@ -145,6 +145,8 @@ export const SEILINK_HOST_AVATAR_METHODS = [
   'facepackFile',
   // 261105: what RoomAvatar ended up showing (analytics only; answers null).
   'avatarShown',
+  // 261118: her cloud cut-out (no face to animate): main names the file, the host reads it.
+  'animaCutout',
 ] as const;
 export type SeilinkHostAvatarMethod = (typeof SEILINK_HOST_AVATAR_METHODS)[number];
 
@@ -191,6 +193,11 @@ export interface SeilinkHostBridge {
   onHover?(cb: (hover: boolean) => void): () => void;
   /** A press went down on her: a small reaction at once (the click itself waits for the double-click time). */
   onPress?(cb: () => void): () => void;
+  // ── 261119: her arrival (shared/seilinkEntrance.ts) ──
+  /** How she arrives now: wait for her look, hold, come in, or just be there. */
+  onArrival?(cb: (arrival: unknown) => void): () => void;
+  /** She is in: her entrance played (or she was shown as she is), with the avatar kind it showed. */
+  arrived?(report: { played: boolean; reduced: boolean; kind: string | null }): void;
 }
 
 export type SeilinkPokeKind = 'click' | 'dblclick' | 'drag';
@@ -268,7 +275,8 @@ export type SeilinkStageRequest =
   | { action: 'exit'; reveal: boolean }
   | { action: 'reveal'; purpose: SeilinkStagePurpose; characterId: string }
   // 261110: minimize (Windows) or hide (macOS) every other app's windows, so the desktop shows when Sei steps aside.
-  | { action: 'minimize_others'; surface?: 'live_card' | 'other' };
+  // 261116: `reveal` steps Sei aside too once they are (the desktop hint's "Hide windows").
+  | { action: 'minimize_others'; surface?: 'live_card' | 'desktop_hint' | 'other'; reveal?: boolean };
 
 /**
  * 261110: where the primary display (the wallpaper) sits in the staged window,

@@ -8,7 +8,9 @@
  *     background REACHABLE from the edge goes, so a white dress inside her
  *     outline stays. Edge pixels get partial alpha from their distance to
  *     the key colour and the key is unmixed from their colour, so no halo.
- *     The bottom border is not sampled: a bust is cut there.
+ *     The bottom border is not sampled: a bust is cut there. 261116: a
+ *     picture that is already transparent keeps its own alpha, and a thin
+ *     frame round a flat backdrop is peeled before the backdrop is keyed.
  *  2. Otherwise (a painted scene behind her, Lyra and Marv): a soft
  *     head-and-shoulders vignette, so the room shows round her instead of a
  *     hard rectangle, cut further by `edgeMatte` (261105): backdrop that
@@ -41,6 +43,11 @@ export interface KeyResult {
   key: [number, number, number];
   /** Fraction of the image kept. */
   fg: number;
+  /**
+   * 261116: the picture came with its own transparent background, so `alpha`
+   * is that alpha as it is and there is no key colour to unmix.
+   */
+  alphaOnly?: boolean;
 }
 
 const dist = (d: ArrayLike<number>, i: number, k: ArrayLike<number>): number => {
@@ -55,35 +62,18 @@ function median(values: number[]): number {
   return s[s.length >> 1] ?? 0;
 }
 
-/**
- * Background key by edge flood. Returns null when the border is not one flat
- * colour or the result is implausible (nothing kept, or nothing removed).
- * Already-transparent pixels count as background.
- */
-export function keyAlpha(data: Uint8ClampedArray, w: number, h: number, opts: Partial<KeyOptions> = {}): KeyResult | null {
-  const o = { ...DEFAULT_KEY, ...opts };
-  if (w < 8 || h < 8 || data.length < w * h * 4) return null;
+const medianColour = (data: Uint8ClampedArray, px: number[]): [number, number, number] => [
+  median(px.map((p) => data[p * 4])),
+  median(px.map((p) => data[p * 4 + 1])),
+  median(px.map((p) => data[p * 4 + 2])),
+];
 
-  // Border sample: top row and both sides, opaque pixels only.
-  const border: number[] = [];
-  for (let x = 0; x < w; x++) border.push(x);
-  for (let y = 1; y < h; y++) border.push(y * w, y * w + w - 1);
-  const opaque = border.filter((p) => data[p * 4 + 3] >= 200);
-  const transparent = border.length - opaque.length;
-  let key: [number, number, number] = [0, 0, 0];
-  if (opaque.length > 0) {
-    key = [median(opaque.map((p) => data[p * 4])), median(opaque.map((p) => data[p * 4 + 1])), median(opaque.map((p) => data[p * 4 + 2]))];
-    const match = opaque.filter((p) => dist(data, p * 4, key) < o.tolerance).length + transparent;
-    if (match / border.length < o.borderMatch) return null;
-  }
-
-  // Flood from the matching border pixels (4-connected).
-  const bg = new Uint8Array(w * h);
+/** 4-connected flood from `seeds` through pixels `isBg` accepts, marking `bg` in place. */
+function flood(w: number, h: number, seeds: number[], isBg: (p: number) => boolean, bg: Uint8Array): void {
   const queue = new Int32Array(w * h);
   let head = 0;
   let tail = 0;
-  const isBg = (p: number): boolean => data[p * 4 + 3] < 24 || dist(data, p * 4, key) < o.tolerance;
-  for (const p of border) {
+  for (const p of seeds) {
     if (!bg[p] && isBg(p)) {
       bg[p] = 1;
       queue[tail++] = p;
@@ -97,6 +87,91 @@ export function keyAlpha(data: Uint8ClampedArray, w: number, h: number, opts: Pa
     if (x < w - 1 && !bg[p + 1] && isBg(p + 1)) (bg[p + 1] = 1), (queue[tail++] = p + 1);
     if (y > 0 && !bg[p - w] && isBg(p - w)) (bg[p - w] = 1), (queue[tail++] = p - w);
     if (y < h - 1 && !bg[p + w] && isBg(p + w)) (bg[p + w] = 1), (queue[tail++] = p + w);
+  }
+}
+
+/** Kept (not flooded) pixels with a flooded 4-neighbour: the inner rim of the flood. */
+function floodRim(w: number, h: number, bg: Uint8Array): number[] {
+  const rim: number[] = [];
+  for (let p = 0; p < w * h; p++) {
+    if (bg[p]) continue;
+    const x = p % w;
+    if ((x > 0 && bg[p - 1]) || (x < w - 1 && bg[p + 1]) || (p >= w && bg[p - w]) || (p < w * (h - 1) && bg[p + w])) rim.push(p);
+  }
+  return rim;
+}
+
+/** Below this fraction of clearly transparent border pixels the picture is treated as opaque. */
+const ALPHA_BORDER = 0.5;
+
+/**
+ * Background key by edge flood. Returns null when the border is not one flat
+ * colour or the result is implausible (nothing kept, or nothing removed).
+ * Already-transparent pixels count as background.
+ *
+ * 261116 (product call 261116, uploaded looks):
+ *  - A picture whose border is mostly transparent already has its matte: its
+ *    own alpha is used as is (`alphaOnly`). Before, the key fell to black
+ *    (no opaque border pixel) or to the colour of whatever touched the edge
+ *    (a shoulder), and the flood ate dark outlines and hair connected to it.
+ *  - A thin flat frame round a flat backdrop (a white border round a pink
+ *    card) is peeled: when the first flood only takes the frame, the colour
+ *    just inside it is keyed in a second flood.
+ */
+export function keyAlpha(data: Uint8ClampedArray, w: number, h: number, opts: Partial<KeyOptions> = {}): KeyResult | null {
+  const o = { ...DEFAULT_KEY, ...opts };
+  if (w < 8 || h < 8 || data.length < w * h * 4) return null;
+
+  // Border sample: top row and both sides, opaque pixels only.
+  const border: number[] = [];
+  for (let x = 0; x < w; x++) border.push(x);
+  for (let y = 1; y < h; y++) border.push(y * w, y * w + w - 1);
+  const opaque = border.filter((p) => data[p * 4 + 3] >= 200);
+  const transparent = border.length - opaque.length;
+
+  // Clearly transparent, not a haze of partial alpha (a soft matte that kept
+  // some of her backdrop): those still go through the colour key below.
+  const clear = border.filter((p) => data[p * 4 + 3] < 24).length;
+  if (clear / border.length >= ALPHA_BORDER) {
+    const alpha = new Uint8ClampedArray(w * h);
+    let kept = 0;
+    for (let p = 0; p < w * h; p++) {
+      alpha[p] = data[p * 4 + 3];
+      kept += alpha[p] / 255;
+    }
+    const fg = kept / (w * h);
+    // A haze of partial alpha over the whole picture is no matte: key it as before.
+    if (fg >= o.minFg && fg <= o.maxFg) return { alpha, key: [0, 0, 0], fg, alphaOnly: true };
+  }
+
+  let key: [number, number, number] = [0, 0, 0];
+  if (opaque.length > 0) {
+    key = medianColour(data, opaque);
+    const match = opaque.filter((p) => dist(data, p * 4, key) < o.tolerance).length + transparent;
+    if (match / border.length < o.borderMatch) return null;
+  }
+
+  // Flood from the matching border pixels (4-connected).
+  const bg = new Uint8Array(w * h);
+  const near = (k: readonly number[]) => (p: number): boolean => data[p * 4 + 3] < 24 || dist(data, p * 4, k) < o.tolerance;
+  flood(w, h, border, near(key), bg);
+
+  let removed = 0;
+  for (let p = 0; p < w * h; p++) removed += bg[p];
+  // Only when the first flood kept too much to be a cut-out (it took a frame
+  // and stopped): a normal key never gets a second flood.
+  if (removed / (w * h) < 1 - o.maxFg) {
+    const rim = floodRim(w, h, bg);
+    if (rim.length > 0) {
+      const inner = medianColour(data, rim);
+      const matching = rim.filter((p) => dist(data, p * 4, inner) < o.tolerance);
+      // The colour inside the frame must be its own flat backdrop, not her
+      // outline: most of the rim matches it and it is not the frame colour.
+      if (matching.length / rim.length >= o.borderMatch && dist(inner, 0, key) >= o.tolerance) {
+        flood(w, h, matching, near(inner), bg);
+        key = inner;
+      }
+    }
   }
 
   const alpha = new Uint8ClampedArray(w * h);
@@ -746,7 +821,8 @@ export function portraitMatte(data: Uint8ClampedArray, w: number, h: number): Fl
 
 export interface Cutout {
   canvas: HTMLCanvasElement;
-  method: 'key' | 'vignette';
+  /** 'cloud' (261118): the anima cut-out, drawn as it came. */
+  method: 'key' | 'vignette' | 'cloud';
 }
 
 /** A finished cut-out as an image URL, for any number of <img> at once. */
@@ -783,8 +859,43 @@ export function loadCutout(url: string): Promise<CutoutImage | null> {
   return job;
 }
 
-/** Load a portrait and cut it out. Null when it cannot load. */
-export async function buildCutout(url: string, maxSide = 900): Promise<Cutout | null> {
+const serverCuts = new Map<string, Promise<CutoutImage | null>>();
+const serverDone = new Map<string, CutoutImage>();
+
+/** A cloud cut-out that has already finished loading (by its sha256), or null. */
+export function peekServerCutout(sha256: string): CutoutImage | null {
+  return serverDone.get(sha256) ?? null;
+}
+
+/**
+ * 261118: the cloud's cut-out of her picture (anima no_pack + cutout), a PNG
+ * whose alpha is the figure. Its alpha is used as it is (no colour key, no
+ * vignette: the edge of a figure the frame cut is opaque on purpose), only
+ * the transparent margin is trimmed so her lowest pixel sits on the floor
+ * line. Cached per sha256; null when it does not decode.
+ */
+export function loadServerCutout(sha256: string, png: Uint8Array): Promise<CutoutImage | null> {
+  const hit = serverCuts.get(sha256);
+  if (hit) return hit;
+  const raw = URL.createObjectURL(new Blob([png as BlobPart], { type: 'image/png' }));
+  const job = buildCutout(raw, 900, true)
+    .then(async (c) => {
+      if (!c) return null;
+      const blob = await new Promise<Blob | null>((res) => c.canvas.toBlob(res, 'image/png'));
+      if (!blob) return null;
+      return { src: URL.createObjectURL(blob), aspect: c.canvas.width / Math.max(1, c.canvas.height), method: c.method };
+    })
+    .finally(() => URL.revokeObjectURL(raw));
+  serverCuts.set(sha256, job);
+  void job.then((r) => {
+    if (!r) serverCuts.delete(sha256);
+    else serverDone.set(sha256, r);
+  });
+  return job;
+}
+
+/** Load a portrait and cut it out (`alpha`: its own alpha is the figure, as it is). Null when it cannot load. */
+export async function buildCutout(url: string, maxSide = 900, alpha = false): Promise<Cutout | null> {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
@@ -808,11 +919,13 @@ export async function buildCutout(url: string, maxSide = 900): Promise<Cutout | 
     frame = ctx.getImageData(0, 0, w, h);
   } catch {
     // A tainted canvas (no CORS): the vignette needs no readback.
-    return vignetteCanvas(canvas, ctx, w, h, null);
+    return alpha ? null : vignetteCanvas(canvas, ctx, w, h, null);
   }
+  if (alpha) return { canvas: trimToFigure(canvas, frame.data, w, h), method: 'cloud' };
   const keyed = keyAlpha(frame.data, w, h);
   if (keyed) {
-    unmixKey(frame.data, keyed.alpha, keyed.key);
+    // A picture with its own alpha is already cut out: nothing to unmix.
+    if (!keyed.alphaOnly) unmixKey(frame.data, keyed.alpha, keyed.key);
     ctx.putImageData(frame, 0, 0);
     return { canvas: trimToFigure(canvas, frame.data, w, h), method: 'key' };
   }

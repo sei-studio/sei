@@ -56,7 +56,7 @@ describe('the copy', () => {
     expect(STATUS_LINES.map((l) => l.key)).toEqual([
       'Initializing WorldLink…',
       'Sending signal to World {world}…',
-      'Waiting for a reply…',
+      'Awaiting response…',
       'Signal received.',
       'Syncing world clocks…',
       'Matching physics constants…',
@@ -80,8 +80,8 @@ const dwellsKept = (xs: number[]): void => gaps(xs).forEach((g, i) => expect(g).
 const secs = (xs: number[]): number[] => xs.map((x) => Math.round(x / 100) / 10);
 
 describe('the dwells (product feedback (261106): the first lines take a while)', () => {
-  it('the first four lines stay up 4, 6, 12 and 4 s; the rest LINE_DWELL_MS', () => {
-    expect(STATUS_LINES.map((_, i) => lineDwell(i))).toEqual([4000, 6000, 12_000, 4000, ...Array(5).fill(LINE_DWELL_MS)]);
+  it('the first four lines stay up 2, 3, 6 and 2 s; the rest LINE_DWELL_MS (sped up about 2x, product call (261116))', () => {
+    expect(STATUS_LINES.map((_, i) => lineDwell(i))).toEqual([2000, 3000, 6000, 2000, ...Array(5).fill(LINE_DWELL_MS)]);
     expect(STATUS_LINES.slice(4, 7).map((l) => l.curve)).toEqual([0.4, 0.6, 0.8]);
     expect(STATUS_LINES.slice(4, 7).map((l) => l.cut)).toEqual(['baked', 'baked', 'baked']);
   });
@@ -93,14 +93,14 @@ describe('planLink', () => {
     expect(p.lines).toHaveLength(9);
     expect(p.lines[0]).toBe(FIRST_LINE_MS);
     gaps(p.lines).forEach((g, i) => expect(g).toBe(lineDwell(i)));
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 13.7, 15.4, 17.1, 18.8, 20.5]);
     expect(p.success).toBe(p.lines[8] + LAST_LINE_MS);
-    expect(p.success).toBe(41_100);
+    expect(p.success).toBe(23_700);
     expect(p.fail).toBeNull();
   });
 
-  it('a 75 s bake: lines wait on their milestones and the curve, holding through the slow stage', () => {
-    const log = simulatedLog({ doneMs: 75_000 });
+  it('a 200 s bake (queued or slow GPU): lines wait on their milestones and the curve, holding through the slow stage', () => {
+    const log = simulatedLog({ doneMs: 200_000 });
     const p = planLink(log);
     expect(p.lines).toHaveLength(9);
     dwellsKept(p.lines);
@@ -108,10 +108,11 @@ describe('planLink', () => {
     expect(p.lines[4]).toBe(0.4 * EXPECTED_LINK_MS);
     expect(p.lines[5]).toBe(0.6 * EXPECTED_LINK_MS);
     expect(p.lines[6]).toBe(0.8 * EXPECTED_LINK_MS);
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 30, 45, 60, 72, 75]);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 30, 45, 60, 197, 200]);
     expect(p.lines[7]).toBe(log.at.baked);
     expect(p.lines[8]).toBe(log.at.installed);
-    expect(p.success).toBe(75_000 + LAST_LINE_MS);
+    expect(p.success).toBe(200_000 + LAST_LINE_MS);
+    expect(p.handoff).toBeUndefined();
   });
 
   it('a bake done in 20 s cuts the curve short: the rest play at the minimum dwell', () => {
@@ -123,8 +124,8 @@ describe('planLink', () => {
     const doneAt = log.at.baked!;
     const firstAfter = p.lines.findIndex((s) => s >= doneAt);
     for (let i = firstAfter + 1; i < 9; i++) expect(p.lines[i] - p.lines[i - 1]).toBe(lineDwell(i - 1));
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7, 22.7, 26.7, 29.5, 32.3, 35.1, 37.9]);
-    expect(p.success).toBe(41_100);
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7, 11.7, 17, 18.7, 20.4, 22.1, 23.8]);
+    expect(p.success).toBe(27_000);
   });
 
   it('a past start never moves when more of the log arrives', () => {
@@ -144,11 +145,12 @@ describe('planLink', () => {
   it('holds the current line while a stage is slow, with no extra lines', () => {
     const log: LinkLog = { at: { sent: 200, answered: 900, host: 2000 }, failed: null };
     const p = planLink(log);
-    // 1 to 5 can show (5 waits on the curve); 6 needs the bake to run.
-    expect(p.lines).toHaveLength(5);
-    expect(p.success).toBeNull();
-    // Still holding: the timeout is ahead as the failure.
-    expect(p.fail).toEqual({ at: LINK_TIMEOUT_MS, failure: 'timeout' });
+    // 1 to 5 show by the curve; 6 needs the bake to run, so it waits for it (or the handoff at the timeout).
+    expect(p.lines.filter((s) => s < LINK_TIMEOUT_MS)).toHaveLength(5);
+    expect(p.lines[5]).toBe(LINK_TIMEOUT_MS);
+    // 261119: still holding at the timeout is a handoff to the desktop, never a failure line.
+    expect(p.fail).toBeNull();
+    expect(p.handoff).toBe(true);
   });
 
   it('a failure shows the failure line a short beat after the current line came up, and no more lines', () => {
@@ -169,18 +171,18 @@ describe('planLink', () => {
     expect(p.fail).toEqual({ at: FIRST_LINE_MS + FAIL_BEAT_MS, failure: 'offline' });
   });
 
-  it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 12 s', () => {
-    // The request went out, no answer, then the network gave up 1 s into "Waiting for a reply…".
-    const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 11_700, failure: 'network' } };
+  it('a failure while waiting for a reply shows after a short beat, not the line\'s whole 6 s', () => {
+    // The request went out, no answer, then the network gave up 1 s into "Awaiting response…".
+    const log: LinkLog = { at: { sent: 250, host: 2500 }, failed: { at: 6700, failure: 'network' } };
     const p = planLink(log);
-    expect(secs(p.lines)).toEqual([0.7, 4.7, 10.7]);
-    expect(p.fail).toEqual({ at: 10_700 + FAIL_BEAT_MS, failure: 'network' });
+    expect(secs(p.lines)).toEqual([0.7, 2.7, 5.7]);
+    expect(p.fail).toEqual({ at: 5700 + FAIL_BEAT_MS, failure: 'network' });
     expect(p.fail!.at - p.lines[2]).toBeLessThan(lineDwell(2) / 2);
     // Late in the line: at once.
-    expect(planLink({ ...log, failed: { at: 18_000, failure: 'network' } }).fail!.at).toBe(18_000);
+    expect(planLink({ ...log, failed: { at: 10_000, failure: 'network' } }).fail!.at).toBe(10_000);
   });
 
-  it('a slow proxy holds "Waiting for a reply…" until it answers', () => {
+  it('a slow proxy holds "Awaiting response…" until it answers', () => {
     const p = planLink({ at: { sent: 250, answered: 40_000, host: 2500 }, failed: null });
     expect(p.lines[3]).toBe(40_000);
     expect(p.lines[3] - p.lines[2]).toBeGreaterThan(lineDwell(2));
@@ -194,11 +196,46 @@ describe('planLink', () => {
     expect(planLink(ok).lines).toHaveLength(9);
   });
 
-  it('no line 9 by the timeout fails it as timeout', () => {
+  it('261119: her look still baking at the timeout hands her arrival to the desktop: the link is established, no failure', () => {
     const log: LinkLog = { at: { sent: 100, answered: 800, running: 10_000, host: 2000 }, failed: null };
     const p = planLink(log);
+    expect(p.fail).toBeNull();
+    expect(p.handoff).toBe(true);
+    expect(p.lines).toHaveLength(9);
+    dwellsKept(p.lines);
+    // 5 to 7 on the curve as before; 8 and 9 once the timeout passed.
+    expect(p.lines.slice(4, 7)).toEqual([0.4, 0.6, 0.8].map((f) => f * EXPECTED_LINK_MS));
+    expect(p.lines[7]).toBe(LINK_TIMEOUT_MS);
+    expect(p.success).toBe(p.lines[8] + LAST_LINE_MS);
+    // Her look landing before then is the normal link (no handoff).
+    const landed = planLink({ ...log, at: { ...log.at, baked: 200_000, installed: 203_000 } });
+    expect(landed.handoff).toBeUndefined();
+    expect(landed.lines[8]).toBe(203_000);
+    // A bake failure before the timeout still fails it; one after the handoff is ignored.
+    expect(planLink({ ...log, failed: { at: 200_000, failure: 'bake_failed' } }).fail?.failure).toBe('bake_failed');
+    expect(planLink({ ...log, failed: { at: LINK_TIMEOUT_MS + 5000, failure: 'bake_failed' } }).fail).toBeNull();
+  });
+
+  it('a past start never moves when a long bake is handed over', () => {
+    const full: LinkLog = { at: { sent: 100, answered: 800, running: 10_000, host: 2000 }, failed: null };
+    const final = planLink(full);
+    const log = emptyLog();
+    const events = Object.entries(full.at).sort((a, b) => a[1] - b[1]);
+    for (let now = 0; now <= LINK_TIMEOUT_MS + 20_000; now += 1000) {
+      for (const [m, t] of events) if (t <= now) recordLink(log, { kind: 'milestone', milestone: m as never }, t);
+      const p = planLink(log);
+      p.lines.forEach((s, i) => {
+        if (s <= now) expect(s).toBe(final.lines[i]);
+      });
+    }
+  });
+
+  it('no answer from the proxy by the timeout fails it as timeout', () => {
+    const log: LinkLog = { at: { sent: 100, host: 2000 }, failed: null };
+    const p = planLink(log);
     expect(p.fail).toEqual({ at: LINK_TIMEOUT_MS, failure: 'timeout' });
-    expect(p.lines.length).toBe(7);
+    expect(p.handoff).toBeUndefined();
+    expect(p.lines.length).toBe(3);
   });
 
   it('records only the first arrival, nothing after a failure', () => {
@@ -212,6 +249,15 @@ describe('planLink', () => {
 });
 
 describe('linkReport', () => {
+  it('261119: marks a handoff once the success line was reached', () => {
+    const log: LinkLog = { at: { sent: 100, answered: 800, running: 10_000, host: 2000 }, failed: null };
+    const p = planLink(log);
+    expect(linkReport(log, p, p.success! + 1000, 'success').handoff).toBe(1);
+    expect(linkReport(log, p, 100_000, 'abandoned').handoff).toBeUndefined();
+    const ok = simulatedLog({ doneMs: 20_000 });
+    expect(linkReport(ok, planLink(ok), 40_000, 'success').handoff).toBeUndefined();
+  });
+
   it('per-line timing, the slowest milestone, the total and the outcome', () => {
     const log = simulatedLog({ doneMs: 75_000 });
     const p = planLink(log);

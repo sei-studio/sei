@@ -31,6 +31,7 @@ import { ContinueWithChatGPTButton } from './ContinueWithChatGPTButton';
 import { TextField } from './TextField';
 import { OAuthInterstitialModal } from './OAuthInterstitialModal';
 import styles from './SignInModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface SignInModalProps {
   /**
@@ -183,8 +184,8 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           // locally) rather than showing it as an inline field error.
           setRegionBlocked(true);
         } else {
-          setError(res.message);
-          setHintFor(res.code === 'invalid_credentials' ? res.message : null);
+          setError(userFacingError(res.message));
+          setHintFor(res.code === 'invalid_credentials' ? userFacingError(res.message) : null);
         }
       } else {
         // F-10 — DOB triple is required in signup mode. The submit button
@@ -223,9 +224,9 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
           // "Use Continue with Google"), and the Google button is right below.
           setMode('signin');
           setPassword('');
-          setError(res.message);
+          setError(userFacingError(res.message));
         } else {
-          setError(res.message);
+          setError(userFacingError(res.message));
         }
       }
     } finally {
@@ -262,7 +263,7 @@ export function SignInModal({ framingLabel, onClose }: SignInModalProps): React.
       } else {
         // rate_limited / network — surface the copy inline; the email field
         // stays filled so the user can retry.
-        setError(res.message);
+        setError(userFacingError(res.message));
       }
     } finally {
       setSubmitting(false);

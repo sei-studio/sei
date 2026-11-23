@@ -15,9 +15,11 @@
 import { rollVoice, mulberry32, VOICES } from 'soulcaster';
 import type { Character } from '../../shared/characterSchema';
 import {
+  LIBRARY_VOICE_KEY,
   NO_VOICE_ID,
   OWN_VOICE_KEY,
   SHARED_VOICE_KEY,
+  libraryVoiceOf,
   ownVoiceOf,
   sharedVoiceIdOf,
   type OwnVoicePick,
@@ -106,7 +108,26 @@ export function assignedVoiceId(character: Character): string | null {
   const v = character.metadata?.voiceId;
   if (typeof v !== 'string') return null;
   if (isPoolVoiceId(v)) return v;
+  // A Voice Library voice (261119) lives in Sei's ElevenLabs account, so it
+  // is everyone's to play, adopters included: no ownership check.
+  if (libraryVoiceOf(character.metadata)) return v;
   return ownVoiceOf(character.metadata) && ownVoiceHonored(character) ? v : null;
+}
+
+/** The Voice Library marker for the character's current voice (261119). */
+export function libraryVoicePickOf(character: Pick<Character, 'metadata'>): { name: string; gender?: string } | null {
+  return libraryVoiceOf(character.metadata);
+}
+
+/**
+ * The pool voice that speaks for a Voice Library voice the proxy no longer
+ * has (261119: retired after 30 idle days, or refused): the deterministic
+ * close match with the library voice's gender, the same on every device.
+ * Never persisted, so the pick (and the picker's "no longer available" line)
+ * survives until the user chooses again.
+ */
+export function libraryVoiceStandInId(character: Character): string {
+  return rollFallbackVoice(character, libraryVoiceOf(character.metadata)?.gender, []);
 }
 
 function currentUserId(): string | null {
@@ -311,6 +332,7 @@ export async function resolveVoiceId(character: Character): Promise<string> {
     const {
       [OWN_VOICE_KEY]: _staleOwn,
       [SHARED_VOICE_KEY]: _staleShared,
+      [LIBRARY_VOICE_KEY]: _staleLibrary,
       ...rest
     } = character.metadata ?? {};
     await saveCharacter({

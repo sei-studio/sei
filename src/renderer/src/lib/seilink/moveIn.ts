@@ -8,9 +8,13 @@ import type { RoomPresetId } from '@shared/seilinkRoom';
 /** Room preset names (the English i18n keys). */
 export const ROOM_PRESET_LABEL: Record<RoomPresetId, string> = { cozy: 'Cozy', gamer: 'Gamer', forest: 'Forest' };
 
-/** Does moving her in need the sheet? Her first room, or someone else moves out. */
-export function needsMoveInSheet(opts: { saved: boolean; movedInId: string | null; characterId: string }): boolean {
-  if (!opts.saved) return true;
+/**
+ * Does moving her in need the sheet? Her first room, someone else moves out,
+ * or (261116) her uploaded look keeps her out (lib/seilink/uploadedLooks.ts):
+ * the sheet then says why and Move in is off.
+ */
+export function needsMoveInSheet(opts: { saved: boolean; movedInId: string | null; characterId: string; lookBlocked?: boolean }): boolean {
+  if (!opts.saved || opts.lookBlocked) return true;
   return opts.movedInId !== null && opts.movedInId !== opts.characterId;
 }
 

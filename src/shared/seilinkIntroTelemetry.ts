@@ -17,7 +17,8 @@
  *  - seilink_intro_link (261106 v6, the WorldLink status lines) {outcome:
  *    success|failed|abandoned, failure, trigger, reduced_motion, lines_shown,
  *    line_1_ms .. line_9_ms, total_ms, slowest (milestone), slowest_ms,
- *    anima_start}. No character id, no text.
+ *    anima_start, handoff (261119: her look still baking at the timeout, the
+ *    desktop brings her in)}. No character id, no text.
  *
  * Event table: docs/agents/seilink-analytics.md.
  */
@@ -96,6 +97,19 @@ export type SeilinkEntrySource = (typeof ENTRY_SOURCES)[number];
 /** What the entry did: the move-in sheet, a direct move-in, the editor, a move-out, the intro replay. */
 export const ENTRY_ACTIONS = ['sheet', 'move_in', 'edit', 'move_out', 'replay_intro'] as const;
 export type EntryAction = (typeof ENTRY_ACTIONS)[number];
+
+/**
+ * The one-time "New" tip under the chat header's WorldLink button (261119;
+ * it pointed at the games button before, with no event). `target` names what
+ * it points at, so a later move of the tip stays a separate series.
+ * shown = it went up (once per account per app session); opened = the
+ * WorldLink button was clicked while it was up; dismissed = "Got it".
+ */
+export const FEATURE_TIP_EVENT = 'feature_tip';
+export const TIP_TARGETS = ['worldlink'] as const;
+export type TipTarget = (typeof TIP_TARGETS)[number];
+export const TIP_ACTIONS = ['shown', 'opened', 'dismissed'] as const;
+export type TipAction = (typeof TIP_ACTIONS)[number];
 
 type Scalar = string | number | boolean | null;
 
@@ -180,6 +194,7 @@ export function isSeilinkIntroEvent(event: string): boolean {
     event === SEILINK_INTRO_EVENT ||
     event === SEILINK_TOUR_EVENT ||
     event === SEILINK_ENTRY_EVENT ||
+    event === FEATURE_TIP_EVENT ||
     event === SEILINK_SETUP_EVENT ||
     event === SEILINK_SETUP_STEP_EVENT ||
     event === SEILINK_INTRO_LINK_EVENT
@@ -230,6 +245,7 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
     if (slowest && slowMs !== undefined) out.slowest_ms = slowMs;
     const start = oneOf(LINK_ANIMA_START, p.anima_start);
     if (start) out.anima_start = start;
+    if (p.handoff === 1 || p.handoff === true) out.handoff = true;
     return out;
   }
   if (event === SEILINK_TOUR_EVENT) {
@@ -287,6 +303,13 @@ export function sanitizeSeilinkIntroTrack(event: string, raw: Record<string, unk
       character_id: charId(p.character_id),
       source: oneOf(ENTRY_SOURCES, p.source) ?? 'button',
       action: oneOf(ENTRY_ACTIONS, p.action) ?? 'sheet',
+    };
+  }
+  if (event === FEATURE_TIP_EVENT) {
+    return {
+      character_id: charId(p.character_id),
+      target: oneOf(TIP_TARGETS, p.target) ?? 'worldlink',
+      action: oneOf(TIP_ACTIONS, p.action) ?? 'shown',
     };
   }
   return {};

@@ -38,6 +38,25 @@ chat with a `[think]` prefix for live debugging; default `'chat'` keeps it
 hidden. The prompt contract lives in `BASELINE_INSTRUCTIONS` and the tool
 description in `PERSONALITY_TOOL_DESCRIPTIONS.say` (`src/bot/brain/prompts.js`).
 
+**Claims ahead of the action (261120, pass 59).** A say() sent with a world
+action is heard before the action runs, but Haiku writes the action call
+first and the say() after it in the same generation, so the line often
+narrates the outcome ("table's down, grab it") before the result exists.
+`scripts/quality-eval/pass59-probe.mjs` measured this at 57-77% on a
+craft-then-place turn (n=30 per arm) under every prompt wording tried: a
+timing sentence in the loop description, in `SPEAK_REMINDER`, an explicit
+"call say() first", a reworded craft placeNote, and dropping the CORE
+"announces it adds nothing" line. None moved it beyond noise, and none
+changed the tool order (say-first 0/30). It is unfixed; the remaining
+levers are turn structure (what she has seen before she speaks), not more
+prompt text. What did work: the give() in_flight line said "handing N item
+to X" for the whole walk over, and asked "hows it going" 22 blocks out she
+said "coal's tossing your way now, check your feet". The adapter now passes
+`giveWalking` (`giveStillWalking` in `observers/snapshot.js`, out of
+give.js `TOSS_RANGE`) and the line reads "still walking over to X to hand
+them N item. Nothing is tossed until you get there": delivered claims 9/30
+to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 
@@ -134,6 +153,21 @@ backport points materials at pc/26.2, whose numeric item ids do not match 26.3
 (the pickaxe row named minecart and harness items, so every tool dug at hand
 speed), and minecraft-data 3.114 has every copper tool at speed 1 instead of 5.
 
+**Where things are, in words (261114, pass 55).** She used to read raw
+coordinates out in chat ("already got one down at 174,70,-2 lol", "found iron
+at 206,66,0"), because the numbers were the only location she had. Every
+`nearby blocks` line and non-hostile `nearby entities` line now ends with
+`whereFromYou` (`observers/whereFromYou.js`): "(14 blocks southwest, 6 down)",
+"(right by you)", plus ", by <player>" within 4 blocks of them. The
+coordinates stay on the line because goTo, dig, gather and build take x,y,z.
+The placeBlock success result no longer carries the coordinates of the block
+under it (the most quoted source); failures keep them for aiming a retry. Do
+not put relative words into tool results: they stay in the history after she
+moves and she repeats them ("the table's right by me" 14 blocks away), while
+the snapshot is rebuilt every turn. The chat rule in `ACTION_RULES` says to use
+those words or a landmark and keep the numbers for tools unless the player asks
+for coordinates. Probe: `scripts/quality-eval/pass55-probe.mjs`.
+
 **The curiosity mandate (260731).** `CURIOSITY_CLAUSE` in `promptLibrary.js` is
 appended to all three gameplay `PROACTIVENESS_DIRECTIVES`. Before it, the only
 "stay genuinely curious about the player" text in the repo lived in
@@ -203,7 +237,11 @@ that ran at the wrong time. The pieces, all in `src/bot/brain/` and pinned in
   is the information: a question followed by an unrelated line of hers looks
   identical to an answered one. The same block now rides every mid-loop player
   line (`interruptTurnText`); those turns used to carry the new line ALONE, with
-  the only transcript being the seed's, as old as the loop.
+  the only transcript being the seed's, as old as the loop. Once one does, the
+  seed's `recent_conversation` and `own_repeats` blocks leave the payload
+  (`loop.supersedeSeedConversation`, pass 58): with both copies a mid-loop
+  reply showed her recent lines twice over and reused a bit she had just made
+  far more often than a fresh loop did. The canonical messages keep them.
 - **"MID-ACTION, KEEP GOING" only when something is running.**
   `extractPriorTask` returns the last tool call whether or not it finished, so a
   line that landed between actions was told an action was still running. The

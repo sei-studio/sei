@@ -10,8 +10,11 @@
  *    or More (Reset memory, Unbind). Its look, voice and personality are
  *    on the Overview (ProfileOverview), not here.
  *
- * Every row is label + value + action(s). The actions open the existing
- * editors (the page owns those popups and passes openers in); which rows
+ * Every row is label + value + action(s). Your own companion's voice,
+ * name and description, persona and chess are edited right in their tab
+ * (ProfileEditors, 261119: the tabs replaced the Edit companion popup); the
+ * rest open a focused popup the page owns (card image versions, the skin
+ * editor, the avatar library, the floating avatar, Knowledge). Which rows
  * show, and whether they are live or locked, comes from lib/profileRows.ts.
  * Each row is its own component, so its read (voices, knowledge, the avatar
  * library, the room) runs only when the row is shown.
@@ -41,10 +44,9 @@ import type { Character, CardImageOrigin } from '@shared/characterSchema';
 import { cardImageOrigin, effectiveMcUsername, portraitVersionIndex } from '@shared/characterSchema';
 import type { AvatarLibraryView } from '@shared/avatarLibrary';
 import type { VoiceInfo } from '@shared/ipc';
-import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
-import { VOICE_PITCH_MAX, VOICE_PITCH_MIN, voicePitchRate } from '@shared/voicePitch';
+import { NO_VOICE_ID, libraryVoiceOf, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
+import { voicePitchRate } from '@shared/voicePitch';
 import { dstSurvivor } from '@shared/dstSurvivors';
-import type { EditSection } from '../EditCharacterModal';
 import { Button } from '../Button';
 import { Toggle } from '../Toggle';
 import { SparkleIcon } from '../icons';
@@ -53,6 +55,7 @@ import { HoverTip } from './HoverTip';
 import { ActionChip, ProfileRow, RowValue } from './ProfileRow';
 import { VoiceSampleButton, type SampleResult } from './VoiceSample';
 import { UserText } from './UserText';
+import { AboutEditor, ChessEditor, PersonaEditor, VoiceEditor } from './ProfileEditors';
 import styles from './Profile.module.css';
 
 export interface ProfileSettingsProps {
@@ -60,10 +63,23 @@ export interface ProfileSettingsProps {
   access: ProfileAccess;
   /** The section menu tab whose rows to show. */
   tab: ProfileTab;
+  /**
+   * This tab is the one showing (the page keeps every tab mounted). The
+   * voice editor mounts the first time its tab shows, then stays: the
+   * picker loads voice lists and warms the audio pitch bus, which a profile
+   * visit that never opens Voice should not pay for. Default true.
+   */
+  active?: boolean;
   /** A row's button was used (analytics; the page maps the row to its section or tab). */
   onAction: (action: ProfileAction, row: RowKey) => void;
   onTipOpen: (key: string) => void;
-  openEdit: (section: EditSection) => void;
+  /** Open another tab of the page (the Sharing row's voice lives on Voice). */
+  openTab: (tab: ProfileTab) => void;
+  /**
+   * Why the player was sent to the name and description editor (the publish
+   * step needs a description); null for a normal visit.
+   */
+  aboutNotice?: string | null;
   /** The card image popup; `regenerate` starts a regeneration at once. */
   openCardImage: (regenerate: boolean) => void;
   openKnowledge: () => void;
@@ -102,6 +118,11 @@ export const SECTION_LABEL: Record<ProfileSection, string> = {
 export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement {
   const t = useT();
   const groups = tabGroups(props.access, props.tab);
+  const active = props.active ?? true;
+  const [shown, setShown] = useState(active);
+  useEffect(() => {
+    if (active) setShown(true);
+  }, [active]);
   return (
     <div className={styles.sections} data-tab-body={props.tab}>
       {groups.map((g, i) => (
@@ -122,7 +143,7 @@ export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement
           ) : null}
           <div className={styles.rows}>
             {g.rows.map((row) => (
-              <Row key={row} row={row} {...props} />
+              <Row key={row} row={row} shown={shown} {...props} />
             ))}
           </div>
         </section>
@@ -131,7 +152,7 @@ export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement
   );
 }
 
-type RowProps = ProfileSettingsProps & { row: RowKey };
+type RowProps = ProfileSettingsProps & { row: RowKey; shown: boolean };
 
 function Row(p: RowProps): React.ReactElement | null {
   switch (p.row) {
@@ -144,17 +165,20 @@ function Row(p: RowProps): React.ReactElement | null {
     case 'floatingAvatar':
       return <FloatingAvatarRow {...p} />;
     case 'voice':
-      return <VoiceRow {...p} />;
-    case 'pitch':
-      return <PitchRow character={p.character} onAction={(a) => p.onAction(a, 'pitch')} />;
+      if (p.access.voice !== 'edit') return <VoiceRow {...p} />;
+      return p.shown ? <VoiceEditor {...editorProps(p)} /> : null;
     case 'about':
-      return <AboutRow {...p} />;
+      return p.access.about === 'edit' ? (
+        <AboutEditor {...editorProps(p)} notice={p.aboutNotice} />
+      ) : (
+        <AboutRow {...p} />
+      );
     case 'persona':
-      return <PersonaRow {...p} />;
+      return p.access.persona === 'edit' ? <PersonaEditor {...editorProps(p)} /> : <PersonaRow {...p} />;
     case 'knowledge':
       return <KnowledgeRow {...p} />;
     case 'chess':
-      return <ChessRow {...p} />;
+      return p.access.chess === 'edit' ? <ChessEditor {...editorProps(p)} /> : <ChessRow {...p} />;
     case 'dst':
       return <DstRow {...p} />;
     case 'publicToggle':
@@ -174,6 +198,11 @@ function Row(p: RowProps): React.ReactElement | null {
     case 'unbind':
       return <UnbindRow {...p} />;
   }
+}
+
+/** An inline editor's props: its analytics report as its own row. */
+function editorProps(p: RowProps): { character: Character; onAction: (a: ProfileAction) => void; onTipOpen: (key: string) => void } {
+  return { character: p.character, onAction: (a) => p.onAction(a, p.row), onTipOpen: p.onTipOpen };
 }
 
 /** The Locked marker's tooltip for this companion. */
@@ -510,8 +539,9 @@ function SkinHead({ character }: { character: Character }): React.ReactElement |
 // ── Voice ─────────────────────────────────────────────────────────────────
 
 /**
- * The voice's name as the player should read it. For someone else's own
- * ElevenLabs voice (`othersHear`), the Sei voice it is played with instead.
+ * The voice's name as the player should read it (the name only, no vibe
+ * tags). For someone else's own ElevenLabs voice (`othersHear`), the Sei
+ * voice it is played with instead.
  */
 export function useVoiceLabel(character: Character, opts: { borrowed?: boolean } = {}): string {
   const t = useT();
@@ -533,14 +563,20 @@ export function useVoiceLabel(character: Character, opts: { borrowed?: boolean }
   if (id === NO_VOICE_ID) return t('No voice');
   const lookup = (vid: string | null): string => {
     const v = vid ? pool?.find((x) => x.id === vid) : undefined;
-    return v ? (v.vibe ? t('{name}, {vibe}', { name: v.label, vibe: v.vibe }) : v.label) : t('A Sei voice');
+    // Name only (product call 261119): the long vibe tags ("casual, natural,
+    // girl-next-door, American accent") crowded the play button. The picker
+    // rows still carry them, where they help choose.
+    return v ? v.label : t('A Sei voice');
   };
   if (own && opts.borrowed) return lookup(sharedVoiceIdOf(character.metadata));
   if (!id) return t('Auto');
   if (own) return own.name;
+  const library = libraryVoiceOf(character.metadata);
+  if (library) return library.name;
   return lookup(id);
 }
 
+/** The voice, read-only: a companion whose voice stays as cast (yours is edited in VoiceEditor). */
 function VoiceRow(p: RowProps): React.ReactElement {
   const t = useT();
   const { character, access } = p;
@@ -570,86 +606,13 @@ function VoiceRow(p: RowProps): React.ReactElement {
         />
       }
       lockedTip={locked ? lockTip : null}
-      actions={
-        <RowButton p={p} action="edit_voice" run={() => p.openEdit('voice')}>
-          {t('Change')}
-        </RowButton>
-      }
-    />
-  );
-}
-
-/**
- * Pitch, inline. Saves when the slider is let go (or on a key change), with
- * the same neutral-value rule as the voice editor: a companion with a baked
- * non-neutral default (Sui) stores 1 explicitly, everyone else drops the key.
- */
-function PitchRow({
-  character,
-  onAction,
-}: {
-  character: Character;
-  onAction: (a: ProfileAction) => void;
-}): React.ReactElement {
-  const t = useT();
-  const rate = Math.round(voicePitchRate(character) * 100) / 100;
-  const refreshCharacter = useDataStore((s) => s.refreshCharacter);
-  const [draft, setDraft] = useState<number>(rate);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => setDraft(rate), [rate]);
-
-  const commit = async (value: number): Promise<void> => {
-    if (value === rate) return;
-    onAction('pitch');
-    setError(null);
-    try {
-      const latest = (await sei.getCharacter(character.id)) ?? character;
-      const metadata: Record<string, unknown> = { ...(latest.metadata ?? {}) };
-      const bakedNeutral = voicePitchRate({ id: character.id, metadata: {} }) === 1;
-      if (value === 1 && bakedNeutral) delete metadata.voicePitch;
-      else metadata.voicePitch = value;
-      await sei.saveCharacter({ ...latest, metadata }, { skipExpansion: true });
-      await refreshCharacter(character.id);
-    } catch (err) {
-      setError((err as Error)?.message ?? t('Failed to save voice settings.'));
-      setDraft(rate);
-    }
-  };
-
-  return (
-    <ProfileRow
-      rowId="pitch"
-      label={t('Pitch')}
-      value={
-        error ? (
-          <span className={styles.resultErr} role="alert">
-            {error}
-          </span>
-        ) : (
-          <span className={styles.slider}>
-            <input
-              type="range"
-              min={VOICE_PITCH_MIN}
-              max={VOICE_PITCH_MAX}
-              step={0.01}
-              value={draft}
-              aria-label={t('Pitch')}
-              onChange={(e) => setDraft(Number(e.currentTarget.value))}
-              onPointerUp={(e) => void commit(Number(e.currentTarget.value))}
-              onKeyUp={(e) => void commit(Number(e.currentTarget.value))}
-              onBlur={(e) => void commit(Number(e.currentTarget.value))}
-            />
-            <span className={styles.mono}>{draft.toFixed(2)}</span>
-          </span>
-        )
-      }
     />
   );
 }
 
 // ── Personality ───────────────────────────────────────────────────────────
 
-/** Name and description: one row, one editor (they were two rows into the same popup). */
+/** Name and description, read-only (yours is edited in AboutEditor). */
 function AboutRow(p: RowProps): React.ReactElement {
   const t = useT();
   const { character, access } = p;
@@ -672,29 +635,21 @@ function AboutRow(p: RowProps): React.ReactElement {
         </div>
       }
       lockedTip={access.about === 'locked' ? lockTip : null}
-      actions={
-        <RowButton p={p} action="edit_about" run={() => p.openEdit('basic')}>
-          {t('Edit')}
-        </RowButton>
-      }
     />
   );
 }
 
+/** The persona, read-only (yours is edited in PersonaEditor). */
 function PersonaRow(p: RowProps): React.ReactElement {
   const t = useT();
   const { character, access } = p;
   const lockTip = useLockTip(p);
   const personaText =
-    access.persona === 'edit'
-      ? character.metadata?.prompt_mode === 'advanced'
-        ? t('Advanced')
-        : t('Standard')
-      : access.kind === 'builtin'
-        ? t('Written by Sei')
-        : access.kind === 'awakened'
-          ? t('Cast by Sei')
-          : t('Written by their creator');
+    access.kind === 'builtin'
+      ? t('Written by Sei')
+      : access.kind === 'awakened'
+        ? t('Cast by Sei')
+        : t('Written by their creator');
   return (
     <ProfileRow
       rowId="persona"
@@ -704,11 +659,6 @@ function PersonaRow(p: RowProps): React.ReactElement {
       onTipOpen={p.onTipOpen}
       value={<RowValue text={personaText} />}
       lockedTip={access.persona === 'locked' ? lockTip : null}
-      actions={
-        <RowButton p={p} action="edit_persona" run={() => p.openEdit('persona')}>
-          {t('Edit')}
-        </RowButton>
-      }
     />
   );
 }
@@ -757,6 +707,7 @@ function KnowledgeRow(p: RowProps): React.ReactElement {
 
 const DST_NAME = "Don't Starve Together";
 
+/** Chess, read-only (yours is edited in ChessEditor). */
 function ChessRow(p: RowProps): React.ReactElement {
   const t = useT();
   const { character, access } = p;
@@ -772,11 +723,6 @@ function ChessRow(p: RowProps): React.ReactElement {
       onTipOpen={p.onTipOpen}
       value={<RowValue text={chessText} />}
       lockedTip={access.chess === 'locked' ? lockTip : null}
-      actions={
-        <RowButton p={p} action="edit_chess" run={() => p.openEdit('games')}>
-          {t('Change')}
-        </RowButton>
-      }
     />
   );
 }
@@ -882,7 +828,7 @@ function OthersHearRow(p: RowProps): React.ReactElement {
       value={<RowValue text={othersLabel ?? t('A Sei voice')} />}
       lockedTip={access.othersHear === 'locked' ? lockTip : null}
       actions={
-        <RowButton p={p} action="others_hear" run={() => p.openEdit('voice')}>
+        <RowButton p={p} action="others_hear" run={() => p.openTab('voice')}>
           {t('Change')}
         </RowButton>
       }

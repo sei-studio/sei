@@ -757,7 +757,7 @@ export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview |
   if (list && list.length > 0) {
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
-      if (m.voice === true) continue;
+      if (m.voice === true || m.desktop === true) continue;
       if (m.role === 'system' && m.event === undefined) continue;
       return { role: m.role, text: m.text, ts: m.ts };
     }

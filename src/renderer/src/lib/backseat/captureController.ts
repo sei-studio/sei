@@ -44,6 +44,7 @@ import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
 import { blockMaxDelta } from './signals';
 import { createSwitchDwell } from './switchDwell';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -428,8 +429,7 @@ export async function startCapture(
   // The session's language, read once, for the STT ring.
   let language = 'en';
   try {
-    const cfg = (await sei.getConfig()) as { chat_language?: string } | null;
-    if (cfg?.chat_language) language = cfg.chat_language;
+    language = userChatLanguage((await sei.getConfig()) as { chat_language?: string; ui_language?: string } | null);
   } catch {
     /* English is the right default */
   }

@@ -166,18 +166,33 @@ const GAIN_KINDS_MAX = 4
  * change was shown on one snapshot only, while her own line stayed in the
  * transcript. Written here, the arrival sits after that line in time order.
  *
- * @param {Array<{item:string, n:number}>} gains  positive counts
+ * @param {Array<{item:string, n:number, from?: {kind: string, name: string}}>} gains  positive counts
  * @returns {string|null}
  */
 export function describeInventoryGain(gains) {
   const list = (Array.isArray(gains) ? gains : [])
     .filter((g) => g && typeof g.item === 'string' && g.item && Number.isFinite(g.n) && g.n > 0)
   if (!list.length) return null
-  const named = list.slice(0, GAIN_KINDS_MAX).map((g) => `${g.n} ${g.item}`)
-  const more = list.length - named.length
-  if (more > 0) named.push(`${more} other kind${more === 1 ? '' : 's'} of item`)
-  const joined = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
-  return `${joined} came into your inventory`
+  // 261113 (pass 54): a gain whose source the game showed (itemSources.js)
+  // says it: her pickup of a mob's drops is not a gift ("thanks for the
+  // rotten flesh lol" after her own zombie kill), and a toss names who.
+  const groups = new Map()
+  for (const g of list) {
+    const k = g.from?.kind === 'mob' || g.from?.kind === 'player' ? `${g.from.kind}:${g.from.name}` : ''
+    if (!groups.has(k)) groups.set(k, { from: k ? g.from : null, items: [] })
+    groups.get(k).items.push(g)
+  }
+  const parts = []
+  for (const { from, items } of groups.values()) {
+    const named = items.slice(0, GAIN_KINDS_MAX).map((g) => `${g.n} ${g.item}`)
+    const more = items.length - named.length
+    if (more > 0) named.push(`${more} other kind${more === 1 ? '' : 's'} of item`)
+    const joined = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
+    if (from?.kind === 'mob') parts.push(`you picked up ${joined} the ${from.name} dropped when it died`)
+    else if (from?.kind === 'player') parts.push(`${from.name} tossed you ${joined}`)
+    else parts.push(`${joined} came into your inventory`)
+  }
+  return parts.join('; ')
 }
 
 /**
@@ -201,7 +216,7 @@ export function describeInventoryGain(gains) {
  * @returns {(gains: Array<{item:string, n:number}>) => void}
  */
 export function createInventoryGainRecorder({ record, spokeBetween, now = () => Date.now(), windowMs = ACTION_COALESCE_MS }) {
-  /** @type {{ id: number, startAt: number, lastAt: number, counts: Map<string, number> } | null} */
+  /** @type {{ id: number, startAt: number, lastAt: number, counts: Map<string, {item: string, n: number, from: {kind: string, name: string}|null}> } | null} */
   let run = null
   let seq = 0
   return (gains) => {
@@ -212,9 +227,14 @@ export function createInventoryGainRecorder({ record, spokeBetween, now = () => 
     let spoke = false
     if (run) { try { spoke = !!spokeBetween(run.startAt, t) } catch { spoke = true } }
     if (!run || spoke || t - run.lastAt > windowMs) run = { id: ++seq, startAt: t, lastAt: t, counts: new Map() }
-    for (const g of list) run.counts.set(g.item, (run.counts.get(g.item) ?? 0) + g.n)
+    for (const g of list) {
+      const from = g.from?.kind && g.from?.name ? { kind: g.from.kind, name: g.from.name } : null
+      const k = `${from ? `${from.kind}:${from.name}` : ''}|${g.item}`
+      const prev = run.counts.get(k)
+      run.counts.set(k, { item: g.item, from, n: (prev?.n ?? 0) + g.n })
+    }
     run.lastAt = t
-    const text = describeInventoryGain([...run.counts].map(([item, n]) => ({ item, n })))
+    const text = describeInventoryGain([...run.counts.values()].map(({ item, n, from }) => (from ? { item, n, from } : { item, n })))
     // `again` is the same text: a folded run reads as its added-up counts,
     // not "..., more than once".
     if (text) record(text, { key: `inv-gain:${run.id}`, windowMs, again: text })
@@ -338,6 +358,8 @@ export function createHandOverLedger() {
   /** @param {Array<{item: string, n: number}>} gains */
   function receivedItems(gains) {
     for (const g of Array.isArray(gains) ? gains : []) {
+      // 261113 (pass 54): a mob's drops she picked up are hers, like a gather.
+      if (g?.from?.kind === 'mob') continue
       if (g && typeof g.item === 'string' && g.item && Number.isFinite(g.n) && g.n > 0) addCount(received, g.item, g.n)
     }
   }

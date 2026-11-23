@@ -13,15 +13,21 @@
  *     room says to use the Sei avatar (`use: 'sei'`);
  *  2. the Sei avatar: her baked face set (facepack: blink, mouth, head
  *     turns), from `facepack` or main's dev pack dir;
- *  3. her portrait, cut out of its background (portraitCutout.ts);
- *  4. a soft silhouette.
+ *  3. (261118) the cloud's clean cut-out of her picture when it has no face
+ *     to animate (`cutout`, from the anima client: seilinkAnimaCutout);
+ *  4. her portrait, cut out of its background here (portraitCutout.ts: clean
+ *     on a flat or transparent background, else an oval fade, the last resort);
+ *  5. a soft silhouette.
  *
  * Motion (lib/seilink/idleMotion.ts): seated sway and breathing, small seat
  * shifts, and now and then a walk out of the frame and back. `busy` or
  * `speaking` holds her in her seat. The frame cap is the slot's `fps`: 0
  * stops every loop (hers and the view's) and leaves a still picture; she is
  * also still under prefers-reduced-motion. Blink, gaze and mouth belong to
- * the view (the portrait has none, so it only breathes and sways).
+ * the view (the face set's wander, turn and tilt: FacepackView `life`). A
+ * cut-out, a portrait or the silhouette has no eyes to move, so it breathes, sways and
+ * leans a little toward where she would be looking (`gazeLean`, 261116);
+ * nothing pretends to blink or glance.
  *
  * Geometry: the stage is the slot box (bottom centre = the anchor). Her
  * figure hangs `SINK` of her height below that line and is clipped there, so
@@ -30,7 +36,7 @@
  * her heights, so the anchor math holds at any room scale.
  *
  * Self-contained: props in, and only the bridge calls the avatar views
- * already make (avatarGet, facepackForCharacter, manifest broadcasts), all
+ * already make (avatarGet, facepackForCharacter, seilinkAnimaCutout, manifest broadcasts), all
  * optional so it also runs in a plain browser tab.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -41,8 +47,9 @@ import { AvatarView } from '../../lib/avatar/AvatarView';
 import { FacepackView } from '../../lib/facepack/FacepackView';
 import type { FacepackSource } from '../../lib/facepack/facepackSource';
 import { portraitSrc } from '../../lib/portraitSrc';
-import { loadCutout, peekCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
+import { loadCutout, loadServerCutout, peekCutout, peekServerCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
 import { FramePacer } from '../../lib/framePacer';
+import { GazeDriver, type GazeInput } from '../../lib/motion/organic';
 import {
   IdleScheduler,
   REST_POSE,
@@ -57,7 +64,12 @@ import {
 import type { RoomAvatarSlot } from './RoomCanvas';
 import styles from './RoomAvatar.module.css';
 
-export type RoomAvatarKind = 'live2d' | 'rig' | 'facepack' | 'portrait' | 'placeholder';
+export type RoomAvatarKind = 'live2d' | 'rig' | 'facepack' | 'cutout' | 'portrait' | 'placeholder';
+
+/** Kinds with no face to move: they bounce when she talks and lean toward her gaze. */
+function faceless(kind: RoomAvatarKind | null | undefined): boolean {
+  return kind === 'cutout' || kind === 'portrait' || kind === 'placeholder';
+}
 
 /** 'auto': her imported avatar when she has one; 'sei': the Sei avatar only; 'imported': her model (falls back like auto). */
 export type RoomAvatarUse = 'auto' | 'sei' | 'imported';
@@ -110,9 +122,14 @@ export const SINK = 0.07;
 const BUST_CAMERA: AvatarCamera = { zoom: 1.35, x: 0, y: 0.175 };
 /** Motion never draws faster than this, whatever the room runs at. */
 const MOTION_FPS_MAX = 30;
+/** Gaze lean for faceless figures: degrees and body heights at a full head turn. */
+const GAZE_LEAN_DEG = 0.9;
+const GAZE_LEAN_X = 0.004;
+/** The cursor feed (host poll, call overlay) is stale after this: she looks around instead (261122). */
+const CURSOR_FRESH_MS = 2_000;
 /** How often the frame edges are re-measured for a walk-off. */
 const EXIT_MEASURE_MS = 1_000;
-/** Portrait to face set: the fade, and how long the portrait waits for the face set to draw. */
+/** Portrait to face set (or cloud cut-out): the fade, and how long the old figure waits for the new one to draw. */
 const CROSSFADE_MS = 700;
 const CROSSFADE_WAIT_MS = 4_000;
 /** Time-of-day grade so a day-lit figure sits in a night room. */
@@ -124,7 +141,7 @@ const TIME_GRADE: Record<RoomTime, string> = {
 
 // ── kind resolution ─────────────────────────────────────────────────────────
 
-type Resolved = { kind: RoomAvatarKind; packId?: string };
+type Resolved = { kind: RoomAvatarKind; packId?: string; cut?: { sha256: string; png: Uint8Array } };
 
 async function resolveKind(
   characterId: string,
@@ -150,6 +167,14 @@ async function resolveKind(
       } catch {
         /* dev flag off */
       }
+    }
+  }
+  if (!failed.has('cutout')) {
+    try {
+      const c = await sei?.seilinkAnimaCutout?.(characterId);
+      if (c && typeof c.sha256 === 'string' && c.png?.byteLength) return { kind: 'cutout', cut: c };
+    } catch {
+      /* no bridge, or none */
     }
   }
   if (portrait && !failed.has('portrait')) return { kind: 'portrait' };
@@ -200,6 +225,11 @@ interface MotionOpts {
   config: Partial<IdleMotionConfig>;
   /** Talking bounce for figures without a mouth. */
   bounce: boolean;
+  /**
+   * Figures with no face to move (a portrait cutout, the silhouette): her gaze
+   * shows as a slight lean of the whole body toward where she looks (261116).
+   */
+  gazeLean: boolean;
   levelRef?: React.MutableRefObject<number>;
   speaking: boolean;
   onPhase(phase: IdlePhase): void;
@@ -245,6 +275,17 @@ function useIdleMotion(
     let lastMeasure = -Infinity;
     let phase: IdlePhase | null = null;
     let talk = 0;
+    const gaze = new GazeDriver(clock.current);
+    const gazeIn: GazeInput = {};
+    // 261122: the faceless lean follows the cursor too, as the face views do.
+    const cursor = { x: 0, y: 0, at: 0 };
+    const cursorPt = { x: 0, y: 0 };
+    const offCursor = sei?.onAvatarOverlayCursor?.((pt) => {
+      cursor.x = pt.x;
+      cursor.y = pt.y;
+      cursor.at = Date.now();
+    });
+    const held: IdlePose = { ...REST_POSE };
     // 261110: an even cadence, and up to 60 fps while she walks (motionFps).
     const pacer = new FramePacer();
     const tick = (t: number): void => {
@@ -262,10 +303,22 @@ function useIdleMotion(
       const p = s.update(clock.current, { busy: L.busy || L.speaking, exits: exits.current });
       pose.current = p;
       let out = p;
+      if (L.gazeLean && p.phase === 'seated') {
+        gazeIn.engaged = L.speaking;
+        const fresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
+        cursorPt.x = cursor.x;
+        cursorPt.y = -cursor.y;
+        gazeIn.cursor = fresh ? cursorPt : null;
+        const g = gaze.update(clock.current, gazeIn);
+        Object.assign(held, p);
+        held.lean = p.lean + g.headX * GAZE_LEAN_DEG;
+        held.x = p.x + g.headX * GAZE_LEAN_X;
+        out = held;
+      }
       if (L.bounce) {
         const level = L.speaking ? Math.min(1, L.levelRef?.current ?? 0.35) : 0;
         talk += (level - talk) * (level > talk ? 0.45 : 0.15);
-        if (talk > 0.002) out = { ...p, lift: p.lift + 0.006 * talk, breath: p.breath * (1 + 0.008 * talk) };
+        if (talk > 0.002) out = { ...out, lift: out.lift + 0.006 * talk, breath: out.breath * (1 + 0.008 * talk) };
       }
       body.style.transform = poseTransform(out, L.height);
       if (p.phase !== phase) {
@@ -274,7 +327,10 @@ function useIdleMotion(
       }
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      offCursor?.();
+    };
   }, [running, opts.enabled, configKey, stageRef, bodyRef]);
 
   // A slot resize while still: re-apply the held pose at the new height.
@@ -316,6 +372,48 @@ function PortraitFigure({ url, height, name, onError }: { url: string; height: n
   }, [url]);
   if (!cut) return null;
   return <img className={styles.sprite} src={cut.src} alt={name ?? ''} draggable={false} style={{ height, width: height * cut.aspect }} data-cutout={cut.method} />;
+}
+
+/** 261118: the cloud's cut-out of her picture, drawn as it came. */
+function CloudCutoutFigure({
+  cut,
+  height,
+  name,
+  onError,
+  onReady,
+}: {
+  cut: { sha256: string; png: Uint8Array };
+  height: number;
+  name?: string;
+  onError(): void;
+  onReady?(): void;
+}): React.ReactElement | null {
+  const [img, setImg] = useState<CutoutImage | null>(() => peekServerCutout(cut.sha256));
+  const cbs = useRef({ onError, onReady });
+  cbs.current = { onError, onReady };
+  useEffect(() => {
+    let dead = false;
+    const hit = peekServerCutout(cut.sha256);
+    setImg(hit);
+    if (hit) {
+      cbs.current.onReady?.();
+      return undefined;
+    }
+    void loadServerCutout(cut.sha256, cut.png).then((c) => {
+      if (dead) return;
+      if (c) {
+        setImg(c);
+        cbs.current.onReady?.();
+      } else cbs.current.onError();
+    });
+    return () => {
+      dead = true;
+    };
+    // The bytes of one sha256 never change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cut.sha256]);
+  if (!img) return null;
+  return <img className={styles.sprite} src={img.src} alt={name ?? ''} draggable={false} style={{ height, width: height * img.aspect }} data-cutout={img.method} />;
 }
 
 /** No art at all: a soft head-and-shoulders silhouette, tinted by the room's time (the editor's figure shape). */
@@ -363,7 +461,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     let dead = false;
     void resolveKind(characterId, use, facepack, portraitUrl, failed).then((r) => {
       if (dead) return;
-      setResolved((prev) => (prev && prev.kind === r.kind && prev.packId === r.packId ? prev : r));
+      setResolved((prev) => (prev && prev.kind === r.kind && prev.packId === r.packId && prev.cut?.sha256 === r.cut?.sha256 ? prev : r));
     });
     return () => {
       dead = true;
@@ -398,18 +496,24 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
 
   // 261105: her face set arriving while her portrait (or silhouette) shows
   // crossfades instead of popping: the old figure stays on top until the
-  // face set has drawn, then fades out.
-  const [outgoing, setOutgoing] = useState<{ kind: RoomAvatarKind; fading: boolean } | null>(null);
+  // face set has drawn, then fades out. 261118: the same for the cloud
+  // cut-out arriving over her portrait, and a face set over the cut-out.
+  const [outgoing, setOutgoing] = useState<{ kind: RoomAvatarKind; fading: boolean; cut?: Resolved['cut'] } | null>(null);
   const [incomingReady, setIncomingReady] = useState(true);
-  const lastKind = useRef<RoomAvatarKind | null>(null);
+  const last = useRef<Resolved | null>(null);
   useEffect(() => {
-    const prev = lastKind.current;
+    const prev = last.current;
     const next = resolved?.kind ?? null;
-    lastKind.current = next;
-    if (next === 'facepack' && (prev === 'portrait' || prev === 'placeholder') && !reduced) {
-      setOutgoing({ kind: prev, fading: false });
+    last.current = resolved;
+    const from = prev?.kind ?? null;
+    const fades =
+      !reduced &&
+      ((next === 'facepack' && (from === 'portrait' || from === 'placeholder' || from === 'cutout')) ||
+        (next === 'cutout' && (from === 'portrait' || from === 'placeholder')));
+    if (fades && prev) {
+      setOutgoing({ kind: prev.kind, fading: false, cut: prev.cut });
       setIncomingReady(false);
-    } else if (next !== prev) {
+    } else if (next !== from) {
       setOutgoing(null);
       setIncomingReady(true);
     }
@@ -452,7 +556,8 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     height: slot.height,
     enabled: motion !== false && !reduced,
     config: motion === false ? {} : motion,
-    bounce: kind === 'portrait' || kind === 'placeholder',
+    bounce: faceless(kind),
+    gazeLean: faceless(kind),
     levelRef,
     onPhase,
   });
@@ -502,11 +607,20 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
           expression={face !== undefined ? face : emotion}
           expressionSeq={faceSeq}
           fps={viewFps}
+          life={motion !== false && !reduced}
           className={styles.fill}
           onStatus={onViewStatus('facepack')}
         />
       </div>
     );
+  } else if (kind === 'cutout' && resolved?.cut) {
+    const hidden = !!outgoing && !outgoing.fading;
+    view = (
+      <div style={{ opacity: hidden ? 0 : 1, transition: outgoing ? `opacity ${CROSSFADE_MS}ms ease` : undefined }}>
+        <CloudCutoutFigure cut={resolved.cut} height={figH} name={name} onError={() => fail('cutout')} onReady={() => setIncomingReady(true)} />
+      </div>
+    );
+    figW = 0; // sized by the image
   } else if (kind === 'portrait' && portraitUrl) {
     view = <PortraitFigure url={portraitUrl} height={figH} name={name} onError={() => fail('portrait')} />;
     figW = 0; // sized by the image
@@ -516,9 +630,11 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
   }
 
   let ghost: React.ReactNode = null;
-  if (outgoing && kind === 'facepack') {
+  if (outgoing && (kind === 'facepack' || kind === 'cutout')) {
     const old =
-      outgoing.kind === 'portrait' && portraitUrl ? (
+      outgoing.kind === 'cutout' && outgoing.cut ? (
+        <CloudCutoutFigure cut={outgoing.cut} height={figH} name={name} onError={() => setOutgoing(null)} />
+      ) : outgoing.kind === 'portrait' && portraitUrl ? (
         <PortraitFigure url={portraitUrl} height={figH} name={name} onError={() => setOutgoing(null)} />
       ) : (
         <Silhouette height={figH} time={slot.time} />

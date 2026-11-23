@@ -501,7 +501,11 @@ async function bootstrapWithInit(initData) {
     // UserConfig.chat_language. Maps into config.chat_language below (drives
     // the # LANGUAGE directive in the cached system prefix). undefined (older
     // main / CLI standalone) → ConfigSchema default 'en'.
-    chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es' | undefined
+    chatLanguage,         // 'en'|'zh'|'ja'|'ko'|'fr'|'es'|'ru'|'pt'|'it' | undefined
+    // 261116: true when the companion is someone else's character (from the
+    // World). main already resolved chatLanguage without the creator's pin,
+    // so the pin below is skipped and the adopted-language note is appended.
+    languageAdopted,      // boolean | undefined
     // 260618: in-game usernames of the OTHER AI companions summoned into this
     // same world (multi-bot sessions). Seeds the roster so the bot knows its
     // teammates from the first tick; the supervisor re-broadcasts on every
@@ -632,7 +636,7 @@ async function bootstrapWithInit(initData) {
     // 260709: conversation language. Only spread a KNOWN code so junk from an
     // older/foreign supervisor falls to the ConfigSchema default ('en')
     // instead of failing the whole parse.
-    ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(chatLanguage)
+    ...(['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it'].includes(chatLanguage)
       ? { chat_language: chatLanguage }
       : {}),
     player_username: playerName,
@@ -663,9 +667,13 @@ async function bootstrapWithInit(initData) {
       // falls through to config.chat_language. MIRROR:
       // src/shared/chatLanguage.ts characterLanguage() for the main-process
       // surfaces — keep the two reads in sync.
-      ...(['en', 'zh', 'ja', 'ko', 'fr', 'es'].includes(character.metadata?.language)
-        ? { language: character.metadata.language }
-        : {}),
+      // 261116: never for an adopted (World) character: that pin is the
+      // creator's choice, not this player's.
+      ...(languageAdopted === true
+        ? { language_adopted: true }
+        : ['en', 'zh', 'ja', 'ko', 'fr', 'es', 'ru', 'pt', 'it'].includes(character.metadata?.language)
+          ? { language: character.metadata.language }
+          : {}),
     },
     // Phase 13-15: when cloudMode is provided, the SDK routes through the
     // proxy with Bearer auth (apiKey is unused — anthropicClient passes

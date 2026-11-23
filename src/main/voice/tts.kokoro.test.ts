@@ -12,6 +12,7 @@ vi.mock('./voiceAssign', () => ({
   resolveVoiceId: async () => 'voice123456789',
   ownVoicePickOf: () => m.own ? { gender: m.gender } : null,
   isPoolVoiceId: () => true, ownVoiceStandInId: () => 'voice123456789',
+  libraryVoicePickOf: () => null, libraryVoiceStandInId: () => 'voice123456789',
 }));
 vi.mock('../speech', async () => ({
   ...await import('../speech/localVoice'),

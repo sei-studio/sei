@@ -54,6 +54,12 @@ import type { VoiceTtsNoticePush } from '@shared/ipc';
 import type { FishFailureReason } from '@shared/fishVoices';
 import { createAudioQueue, type AudioQueue, type TtsStreamHandle } from '../voice/audioQueue';
 import { createSentenceTts } from '../voice/sentenceTts';
+import {
+  createVoiceFailNoticeGate,
+  genericTtsFailureKind,
+  nextUnvoicedRun,
+  type UnvoicedRun,
+} from '../voice/unvoicedLine';
 import { localTtsModel, seiVoicesActive } from '@shared/ttsEngine';
 import { t, uiLanguage } from '../i18n';
 import { joinSentences } from '@shared/uiLanguage';
@@ -97,6 +103,7 @@ import {
 import { warm as warmPitchBus } from '../voice/pitchBus';
 import { isPermissionRefusal, micPreflight } from '../permissions/permissionFlow';
 import { callSetupFailureProps } from '../voice/callSetupFailure';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /**
  * 260929: a call held up by microphone access. MicAccessCard (mounted in
@@ -158,6 +165,14 @@ interface VoiceState {
    * Empty = none; cleared on call start/end, replaced by newer notices.
    */
   callNotice: string;
+  /**
+   * 261121 (T507): a companion line just failed to voice (cloud TTS error
+   * before any audio, a failed whole-clip fetch, a stalled stream). The line
+   * is put in the caption anyway and the call screens show captions while
+   * this is true, even with captions turned off, so the player reads what
+   * was said instead of hearing nothing. Cleared when audio plays again.
+   */
+  voiceFailing: boolean;
   /** User-facing error copy when status === 'error'. */
   error: string | null;
   /** While connecting: model-download percentage ('43') or null. */
@@ -385,6 +400,13 @@ let fishOverrideIds = new Set<string>();
  * reason per call, not once per line (every queued line can fail the same
  * way). Cleared at call start. */
 const fishNoticeReasons = new Set<string>();
+/** 261121: the generic "voice could not load" notice (unvoicedLine.ts). */
+const voiceFailNotice = createVoiceFailNoticeGate();
+/** The copy that notice was shown with, so audio clears only IT (never a
+ * more specific notice that replaced it). */
+let voiceFailNoticeText = '';
+/** The unvoiced lines currently in the caption (see nextUnvoicedRun). */
+let unvoicedRun: UnvoicedRun | null = null;
 let sentenceTts: ReturnType<typeof createSentenceTts> | null = null;
 /** Companion lines that arrived while the (first) call was still 'connecting'.
  * `seq` is the line's ORIGIN sequence resolved at buffer time (see
@@ -418,7 +440,10 @@ let remoteEndTimers: number[] = [];
 let stopRing: StopFn | null = null;
 let stopAmbience: StopFn | null = null;
 /** Live TTS streams: streamId → queue slot. */
-const ttsStreams = new Map<string, TtsStreamHandle>();
+/** A line's stream slot plus `error`: the terminal failure, reported to the
+ * line (caption + notice) before the slot is failed. */
+type LineStreamHandle = TtsStreamHandle & { error(msg: string): void };
+const ttsStreams = new Map<string, LineStreamHandle>();
 const ttsOrphans = new Map<string, Array<{ chunk?: ArrayBuffer; done?: boolean; error?: string }>>();
 /** Module-level listener handles, torn down on HMR dispose (see module foot). */
 let unsubUiMirror: (() => void) | null = null;
@@ -781,6 +806,14 @@ export function fishFallbackNotice(reason: FishFailureReason): string {
   }
 }
 
+/** 261120: Fish Audio is the chosen cloud voice but Sei's voices spoke the
+ * line instead. */
+export function fishCloudFallbackNotice(reason: FishFailureReason): string {
+  return reason === 'no-key'
+    ? t('[spoken with a Sei voice, add your Fish Audio key in Playtime]')
+    : t('[spoken with a Sei voice, Fish Audio could not speak this line]');
+}
+
 /** The call notice for one voice:tts-notice push. */
 /** 261110: a "Sei voices" line spoken on-device instead (ChatGPT brain). */
 export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 'no-session' | 'failed'): string {
@@ -788,11 +821,19 @@ export function seiVoicesFallbackNotice(reason: 'no-credits' | 'rate-limited' | 
   return t('[Sei voices are unavailable right now, using voices on this device]');
 }
 
+/** 261119: a Voice Library voice the proxy no longer plays; the stand-in Sei
+ * voice spoke the line. */
+export function libraryVoiceUnavailableNotice(): string {
+  return t('[spoken with a similar Sei voice, their Voice Library voice is no longer available]');
+}
+
 function ttsNoticeText(push: VoiceTtsNoticePush): string {
+  if (push.kind === 'library-voice-unavailable') return libraryVoiceUnavailableNotice();
   if (push.kind === 'own-voice-stand-in') return ownVoiceStandInNotice(push.reason);
   if (push.kind === 'sei-voices-fallback') return seiVoicesFallbackNotice(push.reason);
   if (push.kind === 'kokoro-fallback') return kokoroFallbackNotice(push.reason);
   if (push.kind === 'fish-fallback') return fishFallbackNotice(push.reason);
+  if (push.kind === 'fish-cloud-fallback') return fishCloudFallbackNotice(push.reason);
   return substitutePackNotice(push);
 }
 
@@ -865,6 +906,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     remoteEndTimers.push(window.setTimeout(maybeFinishRemoteEnd, REMOTE_END_MAX_WAIT_MS + 50));
   }
 
+  /** 261121 (T507): a line that could not be voiced still reaches the
+   * player as text. It goes in the caption (joined with the rest of its
+   * reply, see nextUnvoicedRun) and `voiceFailing` makes the call screens
+   * show captions even when the player turned them off. The text already
+   * lands in the chat thread the way every call line does; only the voice
+   * was missing. */
+  function showUnvoicedLine(characterId: string, text: string): void {
+    if (!text.trim() || !get().participants.includes(characterId)) return;
+    unvoicedRun = nextUnvoicedRun(unvoicedRun, get().lastSpoken, characterId, text, Date.now());
+    set({ lastSpoken: unvoicedRun.caption, lastSpokenId: characterId, voiceFailing: true });
+  }
+
   /** Synthesize + display one companion line on the LIVE call, tagged with the
    * speaker so the queue can report per-companion speaking state. `ctx` places
    * the line inside its own reply (previous sibling / whether one follows),
@@ -923,7 +976,38 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // (e.g. a mac x64 build shipped without the platform package).
         // Without this branch the companion is silently mute on every line.
         set({ callNotice: t('[voice unavailable, local speech cannot run on this install]') });
+      } else {
+        // 261121 (T507): every other failure (a network error before any
+        // audio, a failed clip fetch, a stalled stream) used to set nothing,
+        // so a call whose TTS could not download looked silent. The line
+        // itself is shown as text (showUnvoicedLine); this says why.
+        const kind = genericTtsFailureKind(msg, localTtsCall && !fishTtsCall);
+        if (!kind || !voiceFailNotice.failed(Date.now())) return;
+        voiceFailNoticeText =
+          kind === 'local'
+            ? t('[voice could not play this line]')
+            : t('[voice could not load, check your connection]');
+        set({ callNotice: voiceFailNoticeText });
       }
+    };
+    // 261121 (T507): set BEFORE the queue slot is failed, so the slot's
+    // onDone(false) (lineDone below) knows the line failed rather than was
+    // cut off, superseded or found stale. A companion with no voice is not
+    // a failure.
+    let ttsFailed = false;
+    const failLine = (msg: string, failSlot?: () => void): void => {
+      if (!/VOICE_DISABLED/.test(msg)) ttsFailed = true;
+      failSlot?.();
+      surfaceTtsError(msg);
+    };
+    // Fires when the line's slot leaves the playhead, so an unvoiced line
+    // shows in the same order the voice would have spoken it. A stream that
+    // stalled part way is shown too: the caption already holds it (from its
+    // first audible sample), and the rest of it was never heard.
+    const lineDone = (completed: boolean): void => {
+      onDone?.(completed);
+      if (completed || !ttsFailed || session !== mySession) return;
+      showUnvoicedLine(characterId, text);
     };
     const settleTts = (): void => {
       if (session !== mySession) return;
@@ -979,22 +1063,30 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       void sentenceTts({ characterId, text, ...ttsCtx }, {
         rate: pitchRateOf(characterId),
         turn,
-        onDone,
+        onDone: lineDone,
         stale: stale ? () => stale('playhead') : undefined,
-        onError: (error) => surfaceTtsError(String((error as Error)?.message ?? '')),
+        onError: (error) => failLine(String((error as Error)?.message ?? '')),
       }).finally(settleTts);
       return;
     }
     const worthStreaming = text.length >= STREAM_MIN_CHARS;
     if (canStream && worthStreaming && queue) {
-      const handle = queue.enqueueStream(characterId, text, pitchRateOf(characterId), {
+      const slot = queue.enqueueStream(characterId, text, pitchRateOf(characterId), {
         turn,
-        onDone,
+        onDone: lineDone,
         ...(stale ? { stale: () => stale('playhead') } : {}),
         // A Fish line that falls back to the Fast voices arrives as one WAV,
         // and so does a "Sei voices" line spoken on-device (261110).
         ...(fishTtsCall || seiVoicesCall ? { sniff: true } : {}),
       });
+      // The stream's chunks and its terminal error arrive through
+      // applyTtsPush; this wrapper tells the line which happened.
+      const handle: LineStreamHandle = {
+        push: (chunk) => slot.push(chunk),
+        end: () => slot.end(),
+        fail: () => slot.fail(),
+        error: (msg) => failLine(msg, () => slot.fail()),
+      };
       void sei
         .voiceTtsStream({ characterId, text, ...ttsCtx })
         .then(({ streamId }) => {
@@ -1011,8 +1103,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           }
         })
         .catch((err) => {
-          handle.fail();
-          surfaceTtsError(String((err as Error)?.message ?? ''));
+          failLine(String((err as Error)?.message ?? ''), () => handle.fail());
           settleTts();
         });
       return;
@@ -1029,7 +1120,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     const slot = queue?.enqueueStream(characterId, text, pitchRateOf(characterId), {
       blob: true,
       turn,
-      onDone,
+      onDone: lineDone,
       ...(stale ? { stale: () => stale('playhead') } : {}),
     });
     void sei
@@ -1043,8 +1134,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         slot?.end();
       })
       .catch((err) => {
-        slot?.fail();
-        surfaceTtsError(String((err as Error)?.message ?? ''));
+        failLine(String((err as Error)?.message ?? ''), () => slot?.fail());
       })
       .finally(settleTts);
   }
@@ -1715,7 +1805,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     if (push.chunk) handle.push(push.chunk);
     if (push.done || push.error) {
       ttsStreams.delete(streamId);
-      if (push.error) handle.fail();
+      if (push.error) handle.error(push.error);
       else handle.end();
       pendingTts = Math.max(0, pendingTts - 1);
       maybeFinishRemoteEnd();
@@ -1749,6 +1839,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           if (fishNoticeReasons.has(push.reason)) return;
           fishNoticeReasons.add(push.reason);
         }
+        // 261120: once per reason per call (main reports the failure class).
+        if (push.kind === 'fish-cloud-fallback') {
+          const key = `fish-cloud:${push.reason}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
+        }
         // 261110: once per call, whatever the reason.
         if (push.kind === 'sei-voices-fallback') {
           if (fishNoticeReasons.has('sei-voices')) return;
@@ -1759,6 +1855,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
             state: push.reason === 'no-credits' ? 'used_up' : 'fallback',
             reason: push.reason,
           });
+        }
+        // 261119: once per companion per call (shape only, no voice name).
+        if (push.kind === 'library-voice-unavailable') {
+          const key = `library:${push.characterId}`;
+          if (fishNoticeReasons.has(key)) return;
+          fishNoticeReasons.add(key);
+          sei.track('library_voice_fallback', { surface: 'call' });
         }
         set({ callNotice: ttsNoticeText(push) });
       }) ?? null;
@@ -1803,6 +1906,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     lastSpoken: '',
     lastSpokenId: null,
     callNotice: '',
+    voiceFailing: false,
     error: null,
     connectingDetail: null,
     liveAt: null,
@@ -1860,6 +1964,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastSpoken: '',
         lastSpokenId: null,
         callNotice: '',
+        voiceFailing: false,
         error: null,
         connectingDetail: null,
         liveAt: null,
@@ -1956,10 +2061,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           // First audible sample of this clip: the companion is talking NOW.
           // Everything the player can see of that lands together here, so the
           // caption advances with the voice rather than ahead of it.
+          // 261121: audio is back, so the voice-failure notice (if it is
+          // the one up) and the forced captions go.
+          unvoicedRun = null;
+          const clearNotice = voiceFailNotice.audible() && get().callNotice === voiceFailNoticeText;
           set({
             speaking: true,
             speakingId: cid,
             ...(text ? { lastSpoken: text, lastSpokenId: cid } : {}),
+            ...(get().voiceFailing ? { voiceFailing: false } : {}),
+            ...(clearNotice ? { callNotice: '' } : {}),
           });
           // Echo gate: this exact text is now coming out of the speakers, so
           // the mic hearing these words back is her, not the player.
@@ -1981,7 +2092,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // local Whisper worker boots at all, and whether cloud Scribe is wired.
       const callCfg = await sei.getConfig().catch(() => null);
       if (session !== mySession) return;
-      const chatLanguage = callCfg?.chat_language ?? 'en';
+      // 261116: the player's language (chat_language, else the UI language).
+      const chatLanguage = userChatLanguage(callCfg);
       // Local TTS route (260816): the same read decides how this call's clips
       // are synthesized. See localTtsCall.
       // 260908: BYOK on the ElevenLabs engine with NO key stored also counts —
@@ -2013,6 +2125,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         localTtsCall && callCfg?.tts_engine === 'local' && localTtsModel(callCfg) === 'fish';
       fishOverrideIds = new Set(fishTtsCall ? Object.keys(callCfg?.fish_voice_overrides ?? {}) : []);
       fishNoticeReasons.clear();
+      voiceFailNotice.reset();
+      voiceFailNoticeText = '';
+      unvoicedRun = null;
       // 260725: kind from the fresh config read (main truth), not the display
       // store — the store can be UNKNOWN (null) at call time.
       // 260816 SenseVoice: the policy also reads whether the SenseVoice pack is
@@ -2428,6 +2543,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         lastSpoken: '',
         lastSpokenId: null,
         callNotice: '',
+        voiceFailing: false,
         error: null,
         connectingDetail: null,
         liveAt: null,

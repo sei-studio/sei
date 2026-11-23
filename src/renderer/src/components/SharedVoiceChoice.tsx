@@ -8,7 +8,7 @@
  * whose first option is the close match main rolls for adopters (the
  * default, stored as an ABSENT metadata.voiceShared), plus a sample button.
  * Used in the publish confirm (CharacterPage), the creation flow's visibility
- * step, and Edit companion > Voice. `SharedVoiceLabel` is the read-only
+ * step, and the profile's Voice tab. `SharedVoiceLabel` is the read-only
  * "Voice for others: <name>" line on the character page.
  *
  * Samples play the bundled pool clip (instant, offline, no spend) at the
@@ -29,6 +29,7 @@ import {
 import { attach as attachPitch } from '../lib/voice/pitchBus';
 import { PlayIcon, StopIcon } from './icons';
 import styles from './SharedVoiceChoice.module.css';
+import { userChatLanguage } from '@shared/chatLanguage';
 
 /** The pool + the default close match for one character. `ownGender` stands
  * in for the stored own-voice gender while an own pick is still unsaved. */
@@ -112,7 +113,7 @@ export function SharedVoiceChoice({
     void sei
       .getConfig()
       .then((c) => {
-        langRef.current = c.chat_language ?? 'en';
+        langRef.current = userChatLanguage(c);
       })
       .catch(() => {
         /* keep 'en' */

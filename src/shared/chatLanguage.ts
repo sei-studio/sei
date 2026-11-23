@@ -4,8 +4,9 @@
  * STT language auto-switch), and the bot supervisor (init payload bridge).
  *
  * This is the CONVERSATION language only — what the companion speaks and
- * understands in chat, on voice calls, and in game. It is NOT an app/UI
- * locale: every UI string stays English regardless of this setting.
+ * understands in chat, on voice calls, and in game. It is NOT the app/UI
+ * locale (uiLanguage.ts), but since 261116 the UI language is its default
+ * (userChatLanguage, companionLanguage).
  *
  * 260725: the user-facing picker (onboarding step + Settings row) was
  * removed. The language is now AUTO-DETECTED from the player's voice:
@@ -28,6 +29,11 @@ export const CHAT_LANGUAGES = [
   { code: 'ko', label: 'Korean', native: '한국어' },
   { code: 'fr', label: 'French', native: 'Français' },
   { code: 'es', label: 'Spanish', native: 'Español' },
+  // 261116: the UI languages added on 261104 (ru, pt-BR, it), so a companion's
+  // default language can follow any UI language (userChatLanguage below).
+  { code: 'ru', label: 'Russian', native: 'Русский' },
+  { code: 'pt', label: 'Portuguese', native: 'Português' },
+  { code: 'it', label: 'Italian', native: 'Italiano' },
 ] as const;
 
 export type ChatLanguage = (typeof CHAT_LANGUAGES)[number]['code'];
@@ -65,6 +71,9 @@ const DETECTED_CODE_MAP: Record<string, ChatLanguage> = Object.assign(Object.cre
   ko: 'ko', kor: 'ko',
   fr: 'fr', fra: 'fr', fre: 'fr',
   es: 'es', spa: 'es',
+  ru: 'ru', rus: 'ru',
+  pt: 'pt', por: 'pt',
+  it: 'it', ita: 'it',
 });
 
 export function detectedToChatLanguage(raw: unknown): ChatLanguage | null {
@@ -90,9 +99,72 @@ export function characterLanguage(metadata: unknown): ChatLanguage | null {
 }
 
 /**
- * The language an AI surface should run in for a character: the character's
- * own pin when present, else the auto-detected conversation language.
+ * 261116 (product call 261116): the conversation language a companion falls
+ * back to is the player's UI language, not English. Each UI language maps to
+ * the conversation language of the same name (pt-BR speaks 'pt').
  */
-export function surfaceLanguage(metadata: unknown, chatLanguageRaw: unknown): ChatLanguage {
-  return characterLanguage(metadata) ?? clampChatLanguage(chatLanguageRaw);
+export function chatLanguageForUi(raw: unknown): ChatLanguage | null {
+  if (typeof raw !== 'string') return null;
+  const base = raw.toLowerCase().split(/[-_]/)[0];
+  return (CHAT_LANGUAGE_CODES as string[]).includes(base) ? (base as ChatLanguage) : null;
+}
+
+/**
+ * The PLAYER's language: the one they have been heard speaking on calls
+ * (chat_language, written by voice/languageAutoSwitch.ts), else their UI
+ * language, else English. Drives STT, voice previews and every companion
+ * that has no language of its own.
+ */
+export function userChatLanguage(
+  config: { chat_language?: unknown; ui_language?: unknown } | null | undefined,
+): ChatLanguage {
+  const heard = config?.chat_language;
+  if ((CHAT_LANGUAGE_CODES as string[]).includes(heard as string)) return heard as ChatLanguage;
+  return chatLanguageForUi(config?.ui_language) ?? 'en';
+}
+
+/**
+ * Did this player write this companion? Their own (or a legacy owner-less
+ * local) companion, yes; a built-in (Sui, Lyra, Marv) or one added from the
+ * World tab (owner is someone else), no. `viewer` is the active profile
+ * scope: the account id when signed in, 'local' (or null) when not.
+ */
+export function isOwnCharacter(
+  c: { owner?: string | null; is_default?: boolean | null },
+  viewer: string | null | undefined,
+): boolean {
+  if (c.is_default) return false;
+  return c.owner == null || c.owner === viewer;
+}
+
+export interface CompanionLanguage {
+  language: ChatLanguage;
+  /**
+   * Someone else wrote her (a World companion): her description may name a
+   * language (Aria's creator wrote "Speak primarily in natural, casual
+   * Spanish"), which is that person's choice, not this player's. The prompt
+   * then says so (renderAdoptedLanguageNote) so the player's language wins.
+   */
+  adopted: boolean;
+}
+
+/**
+ * The language an AI surface (chat, calls, TTS, the game bot, games, WorldLink
+ * lines) runs in for a character (261116):
+ *  1. her metadata.language pin (stamped at creation under the zh UI), only
+ *     when this player made her: a pin on someone else's companion is the
+ *     creator's UI language, not a choice this player made;
+ *  2. else the player's own language (userChatLanguage: heard on calls, else
+ *     the UI language).
+ * Until 261116 a World companion took her creator's pin, and an English
+ * default left her description's language instructions in charge.
+ */
+export function companionLanguage(
+  c: { metadata?: unknown; owner?: string | null; is_default?: boolean | null },
+  config: { chat_language?: unknown; ui_language?: unknown } | null | undefined,
+  viewer: string | null | undefined,
+): CompanionLanguage {
+  const own = isOwnCharacter(c, viewer);
+  const adopted = !own && !c.is_default;
+  return { language: (own ? characterLanguage(c.metadata) : null) ?? userChatLanguage(config), adopted };
 }

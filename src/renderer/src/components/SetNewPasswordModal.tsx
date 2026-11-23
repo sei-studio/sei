@@ -22,6 +22,7 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
 import styles from './SetNewPasswordModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface SetNewPasswordModalProps {
   /** Called on success AND on dismissal. App.tsx clears the recovery flag. */
@@ -57,7 +58,7 @@ export function SetNewPasswordModal({ onClose }: SetNewPasswordModalProps): Reac
       if (res.ok) {
         setDone(true);
       } else {
-        setError(res.message);
+        setError(userFacingError(res.message));
       }
     } finally {
       setSubmitting(false);

@@ -20,6 +20,12 @@ on:
 permissions:
   contents: write
 
+
+# onnxruntime-node's postinstall tries to fetch Linux CUDA binaries from GitHub; the v1.21.0 asset
+# now 404s and Sei never uses the CUDA provider, so skip it.
+env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   build:
     strategy:
@@ -51,6 +57,12 @@ jobs:
         env:
           npm_config_python: ${{ steps.setup-python.outputs.python-path }}
         run: npm ci
+
+      # 261116: fail in seconds, not after a 45-minute signed build, when the
+      # unbundled bot (src/bot/**) or a vendored file: dep has an import plain
+      # Node ESM rejects at link time (v0.7.0-beta.5: the bot never loaded).
+      - name: ESM link check (unbundled runtime code)
+        run: npm run check:esm
 
       # 261104 SeiLink desktop host addon (native/seilink): mac universal, win x64,
       # into resources/seilink (electron-builder extraResources). predist runs the

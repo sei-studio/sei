@@ -42,7 +42,7 @@ import {
 } from '../shared/ipc';
 import { GAME_IDS, isGameId, type GameId, type WorldState, type WorldStates } from '../shared/gameIpc';
 import type { HomeNextStep } from '../shared/homeNextStep';
-import { UI_LANGUAGES, normalizeUiLanguage } from '../shared/uiLanguage';
+import { UI_LANGUAGES, normalizeUiLanguage, uiLocaleTag } from '../shared/uiLanguage';
 import { localTtsModel } from '../shared/ttsEngine';
 import { BACKSEAT_START_TRIGGERS, CALL_END_REASONS } from '../shared/callEndReasons';
 import type { CallInterruptCounts } from '../shared/callInterrupts';
@@ -71,6 +71,7 @@ import {
   onAiBackendKindChanged,
 } from './apiKeyStore';
 import { capture as trackAnalytics, getAnalyticsOptOut, setAnalyticsOptOut } from './analytics';
+import { FIRST_VIEW_EVENT, firstViewProps } from './startupMarks';
 import {
   REPLY_LATENCY_EVENT,
   recordReplyLatency,
@@ -80,6 +81,14 @@ import {
 } from './replyLatency';
 import { blockedAutoSummon, clearSummonBlock } from './summonGuard';
 import { noteCreditWall, type CreditWallContext } from './creditWall';
+import {
+  ackPendingHardStop,
+  ackPendingSpendAlert,
+  capNoticeHardStop,
+  capNoticeSpendAlert,
+  peekPendingHardStop,
+  peekPendingSpendAlert,
+} from './capNotices';
 import { observeOnboardingEvent } from './onboardingFunnel';
 import { getLanDiagnosis } from './lanSources';
 import { sanitizeRendererSetupProps, trackMcScan, trackOpenLauncher, trackStardewScan, trackStartMinecraft } from './setupTelemetry';
@@ -829,6 +838,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // prompt — the user's edits win, no regeneration is triggered.
   ipcMain.handle(IpcChannel.chars.save, async (_event, charArg: unknown, optsArg: unknown): Promise<Character> => {
     const parsedCharacter = CharacterSchema.parse(charArg);
+
+    // 261120 `expandOnly`: run the persona expansion and return the expanded
+    // character WITHOUT writing it. The profile Regenerate uses it so the
+    // write happens afterwards on the row as it is THEN (the renderer's
+    // character save queue re-reads it and applies only the persona fields):
+    // a whole-row write at the end of a ~30 s expansion reverted any edit
+    // saved meanwhile. No write means no create, quota, owner or moderation
+    // step here; the renderer's follow-up save runs those as usual.
+    if (
+      optsArg != null &&
+      typeof optsArg === 'object' &&
+      (optsArg as { expandOnly?: unknown }).expandOnly === true
+    ) {
+      const requestId = (optsArg as { expansionRequestId?: unknown }).expansionRequestId;
+      return await expandAndSaveCharacter({
+        character: parsedCharacter,
+        persist: false,
+        onProgress:
+          typeof requestId === 'string'
+            ? (p: { fraction: number; section: string }): void =>
+                deps.sendExpansionProgress({ requestId, ...p })
+            : undefined,
+      });
+    }
 
     // 260703 procgen slot backstop — a CREATE (id not yet on disk) may not push
     // the Home library past MAX_COMPANION_SLOTS. Updates to an existing
@@ -2231,8 +2264,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       let chatLanguage: string | undefined;
       try {
         const { loadConfig } = await import('./configStore');
-        const { clampChatLanguage } = await import('../shared/chatLanguage');
-        chatLanguage = clampChatLanguage((await loadConfig()).chat_language);
+        const { userChatLanguage } = await import('../shared/chatLanguage');
+        // 261116: the player's language (chat_language, else the UI language).
+        chatLanguage = userChatLanguage(await loadConfig());
       } catch {
         /* auto-detect */
       }
@@ -2766,6 +2800,30 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     if (bytes) return bytes;
     const { voicePreviewTts } = await import('./voice/tts');
     return await voicePreviewTts({ voiceId: args.voiceId });
+  });
+
+  // Voice Library voices on Sei cloud (261119, voice/libraryVoices.ts). The
+  // proxy validates and records; main only relays with the JWT. Lookup, add
+  // and status never throw (reason / status fields).
+  ipcMain.handle(IpcChannel.voice.libraryLookup, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { lookupLibraryVoice } = await import('./voice/libraryVoices');
+    return lookupLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryAdd, async (_event, argsRaw: unknown) => {
+    const args = z.object({ input: z.string().max(2048) }).parse(argsRaw);
+    const { addLibraryVoice } = await import('./voice/libraryVoices');
+    return addLibraryVoice(args.input);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryStatus, async (_event, argsRaw: unknown) => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoiceStatus } = await import('./voice/libraryVoices');
+    return libraryVoiceStatus(args.voiceId);
+  });
+  ipcMain.handle(IpcChannel.voice.libraryPreview, async (_event, argsRaw: unknown): Promise<ArrayBuffer> => {
+    const args = z.object({ voiceId: z.string().min(1).max(64) }).parse(argsRaw);
+    const { libraryVoicePreviewBytes } = await import('./voice/libraryVoices');
+    return libraryVoicePreviewBytes(args.voiceId);
   });
 
   // Voice for others (261019): the close pool voice an adopter hears for a
@@ -3533,7 +3591,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     event: z.string().min(1).max(80),
     props: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   });
-  ipcMain.on(IpcChannel.analytics.track, (_event, raw: unknown) => {
+  ipcMain.on(IpcChannel.analytics.track, (event_, raw: unknown) => {
     try {
       const { event, props } = TrackArgsSchema.parse(raw);
       // 261106: the renderer's voice reply clock. Rebuilt from closed enums
@@ -3541,6 +3599,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       if (event === REPLY_LATENCY_EVENT) {
         const sample = sanitizeRendererReplyLatency(props);
         if (sample) recordReplyLatency(sample);
+        return;
+      }
+      // 261123: launch timing (startupMarks.ts). Main stamps the time on arrival.
+      if (event === FIRST_VIEW_EVENT) {
+        const fv = firstViewProps(props);
+        // A hidden login launch loads its view long before anyone sees it.
+        try {
+          fv.window_visible = BrowserWindow.fromWebContents(event_.sender)?.isVisible() ?? false;
+        } catch {
+          /* shape only; leave it out */
+        }
+        console.log(`[sei] startup: first_view ${String(fv.view_kind)} +${String(fv.ms_since_process_start)}ms (auth wait ${String(fv.waited_auth_ms ?? 0)}ms)`);
+        trackAnalytics(event, fv);
         return;
       }
       // 261104: setup steps are rebuilt from closed enums (shape only).
@@ -4126,8 +4197,19 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
 
   // 260603 per-profile partitioning — anonymous(local)→account on-device import.
   ipcMain.handle(IpcChannel.profile.peekLocal, async () => {
-    const { peekLocalProfile } = await import('./profile/localImport');
-    return peekLocalProfile();
+    const { peekLocalProfile, localImportPartyFit } = await import('./profile/localImport');
+    const peek = await peekLocalProfile();
+    // 261116: signed in, also say whether the roster fits the account's party.
+    const { getActiveScope, SCOPE_LOCAL } = await import('./paths');
+    const scope = getActiveScope();
+    if (scope === SCOPE_LOCAL) return peek;
+    try {
+      return { ...peek, party: await localImportPartyFit(scope, peek.migratableCharacterIds) };
+    } catch (err) {
+      // Unknown: the import itself still checks before it writes anything.
+      console.warn(`[sei] profile.peekLocal party fit failed: ${(err as Error).message}`);
+      return peek;
+    }
   });
 
   ipcMain.handle(IpcChannel.profile.importFromLocal, async (_event, idsArg: unknown) => {
@@ -4537,9 +4619,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         for (const w of BrowserWindow.getAllWindows()) {
           if (!w.isDestroyed()) w.webContents.send(IpcChannel.usage.spendAlert, e);
         }
+        // 261120: kept until dismissed + OS notification when Sei is not in front.
+        capNoticeSpendAlert(e);
       }),
     )
     .catch(() => undefined);
+  // 261120: replay of a notice that fired before this window mounted, and its ack.
+  ipcMain.handle(IpcChannel.usage.spendAlertPending, () => peekPendingSpendAlert());
+  ipcMain.handle(IpcChannel.usage.spendAlertAck, () => {
+    ackPendingSpendAlert();
+  });
+  ipcMain.handle(IpcChannel.credits.hardStopPending, () => peekPendingHardStop());
+  ipcMain.handle(IpcChannel.credits.hardStopAck, () => {
+    ackPendingHardStop();
+  });
 
   // credits:catalog — 260725 server-driven pricing catalog. Reads the proxy's
   // world-readable plan_config/topup_config tables (cached in
@@ -4562,10 +4655,29 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
   // push (no success-detection wiring needed).
   ipcMain.handle(IpcChannel.credits.openCheckout, async (_e, argsRaw: unknown) => {
     const parsed = CreditsCheckoutArgsSchema.parse(argsRaw);
-    trackAnalytics('checkout_opened', { kind: String(parsed.kind) });
+    // 261122: `source` (which app surface) on both events, and checkout_opened
+    // now fires only once the session exists and the browser was handed the
+    // URL, with Polar's checkout_id so it joins the proxy's webhook funnel
+    // events (checkout_session_*, purchase_completed). A failed mint used to
+    // be invisible (the event fired first); it is checkout_open_failed now.
+    // Attempts = checkout_opened + checkout_open_failed.
+    const source = parsed.source ?? 'unknown';
+    const failed = (code: string, status?: number): { ok: false; code: string } => {
+      trackAnalytics('checkout_open_failed', {
+        kind: String(parsed.kind),
+        source,
+        code,
+        ...(status !== undefined ? { status } : {}),
+      });
+      return { ok: false as const, code };
+    };
     const { openCheckout } = await import('./cloud/proxyClient');
-    const res = await openCheckout(parsed.kind);
-    if (!res.ok) return res;
+    const locale = await loadConfig().then(
+      (c) => uiLocaleTag(normalizeUiLanguage(c.ui_language)),
+      () => undefined,
+    );
+    const res = await openCheckout(parsed.kind, { source: parsed.source, locale });
+    if (!res.ok) return failed(res.code, res.status);
 
     // Defense in depth: the URL was already protocol-validated in proxyClient
     // before being returned, but we re-assert here before the OS handoff.
@@ -4573,11 +4685,20 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     try {
       assertSafeExternalUrl(res.url);
     } catch {
-      return { ok: false as const, code: 'PROXY_NETWORK' as const };
+      return failed('PROXY_NETWORK');
     }
 
     const { shell } = await import('electron');
-    await shell.openExternal(res.url);
+    try {
+      await shell.openExternal(res.url);
+    } catch {
+      return failed('OPEN_EXTERNAL_FAILED');
+    }
+    trackAnalytics('checkout_opened', {
+      kind: String(parsed.kind),
+      source,
+      ...(res.checkoutId ? { checkout_id: res.checkoutId } : {}),
+    });
     // Return the {ok}/{ok:false,code} contract the renderer expects (the
     // renderer's useCreditsStore.openCheckout is Promise<void> and ignores the
     // body, so dropping the URL here is fine — it stays in the main process).
@@ -4705,6 +4826,9 @@ export function emitCreditsHardStop(info: CreditsHardStopEvent, ctx?: CreditWall
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(IpcChannel.credits.hardStop, info);
   }
+  // 261120: keep it for a window that opens later, and tell the player with
+  // an OS notification when the app window is not in front (capNotices.ts).
+  capNoticeHardStop(info);
 }
 
 /**

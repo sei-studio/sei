@@ -45,4 +45,10 @@ export const SEILINK_HOST_CHANNELS = {
   hover: 'seilink-host:hover',
   /** host -> page: a press went down on her (261110: she reacts at once). */
   press: 'seilink-host:press',
+  /** host -> page: {x, y} in [-1, 1] around her face (y up), the cursor for her gaze (product call (261116)). */
+  cursor: 'seilink-host:cursor',
+  /** host -> page: SeilinkArrival, how she arrives (261119, main/seilink/host/arrival.ts). */
+  arrival: 'seilink-host:arrival',
+  /** page -> host: {played, reduced, kind}, she is in (261119). */
+  arrived: 'seilink-host:arrived',
 } as const;

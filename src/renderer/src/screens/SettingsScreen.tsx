@@ -25,7 +25,7 @@ import { useUiStore } from '../lib/stores/useUiStore';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useDataStore } from '../lib/stores/useDataStore';
-import { applyTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
+import { applyTheme, rememberBootTheme, resolvedScheme, type ThemeMode, type ThemeName } from '../lib/theme';
 import { Button } from '../components/Button';
 import { Seg } from '../components/Seg';
 import { Toggle } from '../components/Toggle';
@@ -52,6 +52,7 @@ import { FacepackDevRow } from '../components/settings/FacepackDevRow';
 import { ExperimentalUpdatesRow } from '../components/settings/ExperimentalUpdatesRow';
 import { OpenAtLoginRow } from '../components/settings/OpenAtLoginRow';
 import { UI_LANGUAGES, UI_LANGUAGE_NATIVE_NAMES, isUiLanguage } from '@shared/uiLanguage';
+import { userFacingError } from '../lib/errors';
 
 /**
  * Theme swatches (260724): each theme renders as a circle split diagonally
@@ -114,7 +115,7 @@ export function SettingsScreen(): React.ReactElement {
   );
   // ui-A9: "Reset all character memories" iterates over the renderer's
   // character list. refreshCharacter pulls the post-reset row back into the
-  // store so EditCharacterModal / CharacterPage observe last_launched=null
+  // store so CharacterPage observes last_launched=null
   // + playtime_ms=0 without a manual reload.
   const allCharacters = useDataStore((s) => s.characters);
   const refreshCharacter = useDataStore((s) => s.refreshCharacter);
@@ -265,6 +266,7 @@ export function SettingsScreen(): React.ReactElement {
     if (mode === themeMode) return;
     setThemeMode(mode);
     applyTheme(mode);
+    rememberBootTheme(mode);
     if (cfg) {
       const updated: UserConfig = { ...cfg, theme_mode: mode };
       try {
@@ -464,7 +466,7 @@ export function SettingsScreen(): React.ReactElement {
         await refreshCharacter(c.id);
       } catch (err) {
         if (firstError === null) {
-          firstError = err instanceof Error ? err.message : t('Failed to reset some memories.');
+          firstError = userFacingError(err, t('Failed to reset some memories.'));
         }
       }
       setResetAllProgress({ done: i + 1, total: snapshot.length });
@@ -646,7 +648,7 @@ export function SettingsScreen(): React.ReactElement {
           <h3 className={styles.groupTitle}>{t('AI') /* >AI< */}</h3>
           <div className={styles.row} data-testid="settings-open-playtime">
             <span className={styles.label}>{t('Brain, voice and plan')}</span>
-            <Button kind="ghost" size="sm" onClick={() => navigate({ kind: 'credits' })}>
+            <Button kind="ghost" size="sm" onClick={() => navigate({ kind: 'credits', from: 'settings' })}>
               {t('Open Playtime')}
             </Button>
           </div>

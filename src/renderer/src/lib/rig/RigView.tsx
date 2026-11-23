@@ -7,14 +7,16 @@
  * works unchanged.
  *
  * Liveliness model, ported from the pipeline's viewer:
- *  - Blink: a 160 ms triangle every 2.5-6 s.
+ *  - Blink (261116): motion/organic.ts Blinker, a natural lid curve (fast
+ *    close, short hold, slower open) every couple of seconds.
  *  - Mouth: two-state patch (open/closed) switched + vertically squashed by
  *    the same speaking/levelRef envelope Live2DView feeds ParamMouthOpenY;
  *    with no level feed a pseudo-envelope keeps it moving while speaking.
- *  - Head sway: the gaze system from Live2DView (wander goals on a saccade
- *    cadence, alternating with cursor-follow when the overlay's cursor feed
- *    is fresh, constant-speed glide) mapped onto a pixel translation of the
- *    'head' group.
+ *  - Head (261116): motion/organic.ts GazeDriver, the head part only (a rig
+ *    has no separate irises, so her gaze shows through the head): a damped
+ *    spring after each look, with its own slow sway, mapped onto a pixel
+ *    translation of the 'head' group. The overlay's cursor feed, when fresh,
+ *    is one of the things she looks at.
  *  - Hair physics: per-layer damped spring followers chasing the head target
  *    (rig.json `physics: {k, c}`) — hair lags, overshoots, and re-converges
  *    exactly at rest, the way Live2D physics chains behave. A plain `sway`
@@ -23,6 +25,7 @@
 import React, { useEffect, useRef } from 'react';
 import type { AvatarCamera, AvatarRigLayer, AvatarRigSpec } from '@shared/ipc';
 import { sei } from '../ipcClient';
+import { Blinker, GazeDriver, type GazeInput } from '../motion/organic';
 
 export interface RigViewProps {
   characterId: string;
@@ -39,10 +42,6 @@ export interface RigViewProps {
   fps?: number;
 }
 
-/* Blink (viewer.html): quick close-open triangle on a randomized timer. */
-const BLINK_MS = 160;
-const BLINK_GAP_MIN_MS = 2_500;
-const BLINK_GAP_RAND_MS = 3_500;
 /** A states patch reads "closed" below this openness; above it the open
  * image draws with a vertical squash for the intermediate frames. */
 const PATCH_THRESHOLD = 0.35;
@@ -51,23 +50,11 @@ const PATCH_THRESHOLD = 0.35;
 const MOUTH_ATTACK = 0.5;
 const MOUTH_RELEASE = 0.18;
 
-/* Gaze constants, mirrored from Live2DView (same reasoning, same feel). */
-const SACCADE_MIN_MS = 2_600;
-const SACCADE_MAX_MS = 7_500;
-const GAZE_KEEP = 0.35;
-const GAZE_STEP_X = 0.2;
-const GAZE_STEP_Y = 0.14;
-const GLANCE_CHANCE = 0.15;
-const GLANCE_STEP_X = 0.45;
-const GLANCE_STEP_Y = 0.28;
-const MODE_MIN_MS = 6_000;
-const MODE_MAX_MS = 14_000;
-const CURSOR_CHANCE = 0.45;
 const CURSOR_FRESH_MS = 2_000;
 const CURSOR_GAIN_X = 0.75;
 const CURSOR_GAIN_Y = 0.6;
-const GAZE_SPEED = 0.9;
-const GAZE_ARRIVE_DIST = 0.06;
+/** The head carries about half of a look (GazeDriver head share); this restores the old full-deflection range. */
+const HEAD_RANGE = 1.8;
 
 /** Head translation per gaze unit, as fractions of the rig canvas (≈ the
  * viewer's 22 px / 12 px on a 2048 canvas at full deflection). */
@@ -121,8 +108,6 @@ export function RigView({
     let cancelled = false;
     let raf = 0;
     let resizeObserver: ResizeObserver | null = null;
-    let saccadeTimer: ReturnType<typeof setTimeout> | null = null;
-    let gazeModeTimer: ReturnType<typeof setTimeout> | null = null;
     let offCursor: (() => void) | undefined;
     const bitmaps: ImageBitmap[] = [];
     const host = hostRef.current;
@@ -194,49 +179,19 @@ export function RigView({
         resizeObserver = new ResizeObserver(fit);
         resizeObserver.observe(host);
 
-        // ── Gaze: wander goals + cursor alternation + constant-speed glide ─
-        const wanderGoal = { x: 0, y: 0 };
+        // ── Gaze (261116) ──────────────────────────────────────────────────
         const cursor = { x: 0, y: 0, at: 0 };
-        let gazeMode: 'wander' | 'cursor' = 'wander';
-        const gaze = { x: 0, y: 0 };
-        const saccade = (): void => {
-          if (cancelled) return;
-          const glance = Math.random() < GLANCE_CHANCE;
-          const ax = glance ? GLANCE_STEP_X : GAZE_STEP_X;
-          const ay = glance ? GLANCE_STEP_Y : GAZE_STEP_Y;
-          wanderGoal.x = Math.max(
-            -0.55,
-            Math.min(0.55, wanderGoal.x * GAZE_KEEP + (Math.random() * 2 - 1) * ax),
-          );
-          wanderGoal.y = Math.max(
-            -0.4,
-            Math.min(0.3, wanderGoal.y * GAZE_KEEP + (Math.random() * 1.7 - 1) * ay),
-          );
-          saccadeTimer = setTimeout(
-            saccade,
-            SACCADE_MIN_MS + Math.random() * (SACCADE_MAX_MS - SACCADE_MIN_MS),
-          );
-        };
-        saccade();
+        const cursorPt = { x: 0, y: 0 };
+        const gazeIn: GazeInput = { cursor: null, engaged: false };
+        const gazeDriver = new GazeDriver(performance.now());
+        const blinker = new Blinker(performance.now());
         offCursor = sei.onAvatarOverlayCursor?.((pt) => {
           cursor.x = pt.x;
           cursor.y = pt.y;
           cursor.at = Date.now();
         });
-        const pickGazeMode = (): void => {
-          if (cancelled) return;
-          const fresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
-          gazeMode = fresh && Math.random() < CURSOR_CHANCE ? 'cursor' : 'wander';
-          gazeModeTimer = setTimeout(
-            pickGazeMode,
-            MODE_MIN_MS + Math.random() * (MODE_MAX_MS - MODE_MIN_MS),
-          );
-        };
-        pickGazeMode();
 
         // ── Per-frame state ────────────────────────────────────────────────
-        let nextBlink = performance.now() + 1_500 + Math.random() * BLINK_GAP_RAND_MS;
-        let blinkAt = -1;
         let mouth = 0;
         let pseudoPhase = 0;
         let lastT = performance.now();
@@ -269,17 +224,8 @@ export function RigView({
           const dt = Math.min((t - lastT) / 1000, 0.05);
           lastT = t;
 
-          // Blink value: 1 open, triangle dip to 0 and back over BLINK_MS.
-          if (t > nextBlink) {
-            blinkAt = t;
-            nextBlink = t + BLINK_GAP_MIN_MS + Math.random() * BLINK_GAP_RAND_MS;
-          }
-          let eye = 1;
-          if (blinkAt > 0) {
-            const ph = (t - blinkAt) / BLINK_MS;
-            if (ph >= 1) blinkAt = -1;
-            else eye = Math.abs(ph * 2 - 1);
-          }
+          // Eye openness: 1 open, 0 shut, on the lid curve.
+          const eye = 1 - blinker.lid(t);
 
           // Mouth envelope: level feed when present, pseudo-syllables when
           // speaking without one, easing shut otherwise.
@@ -294,28 +240,18 @@ export function RigView({
           }
           mouth += (target - mouth) * (target > mouth ? MOUTH_ATTACK : MOUTH_RELEASE);
 
-          // Gaze glide → head pixel target.
+          // Gaze → head pixel target (the head part of her look; y down).
           const cursorFresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
-          const goalX =
-            gazeMode === 'cursor' && cursorFresh
-              ? Math.max(-0.7, Math.min(0.7, cursor.x * CURSOR_GAIN_X))
-              : wanderGoal.x;
-          const goalY =
-            gazeMode === 'cursor' && cursorFresh
-              ? Math.max(-0.45, Math.min(0.35, cursor.y * CURSOR_GAIN_Y))
-              : wanderGoal.y;
-          const gdx = goalX - gaze.x;
-          const gdy = goalY - gaze.y;
-          const dist = Math.hypot(gdx, gdy);
-          if (dist > 0.001 && dt > 0) {
-            const speed = GAZE_SPEED * Math.min(1, dist / GAZE_ARRIVE_DIST);
-            const step = Math.min(dist, speed * dt);
-            gaze.x += (gdx / dist) * step;
-            gaze.y += (gdy / dist) * step;
+          if (cursorFresh) {
+            cursorPt.x = cursor.x * CURSOR_GAIN_X;
+            cursorPt.y = -cursor.y * CURSOR_GAIN_Y;
           }
+          gazeIn.cursor = cursorFresh ? cursorPt : null;
+          gazeIn.engaged = speakingRef.current;
+          const g = gazeDriver.update(t, gazeIn);
           const breath = Math.sin(t / BREATH_PERIOD_MS) * H * BREATH_AMP;
-          const headDX = gaze.x * W * HEAD_GAIN_X;
-          const headDY = gaze.y * H * HEAD_GAIN_Y + breath;
+          const headDX = g.headX * HEAD_RANGE * W * HEAD_GAIN_X;
+          const headDY = g.headY * HEAD_RANGE * H * HEAD_GAIN_Y + breath;
 
           // Contain fit + camera, then draw in rig coordinates.
           const cam = cameraRef.current;
@@ -367,8 +303,6 @@ export function RigView({
       cancelled = true;
       resumeRef.current = null;
       cancelAnimationFrame(raf);
-      if (saccadeTimer) clearTimeout(saccadeTimer);
-      if (gazeModeTimer) clearTimeout(gazeModeTimer);
       offCursor?.();
       resizeObserver?.disconnect();
       for (const bm of bitmaps) bm.close();

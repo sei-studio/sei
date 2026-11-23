@@ -72,7 +72,7 @@ import * as chatStore from '../chat/chatStore';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { createPriorityQueue, Priority } from '../../bot/brain/fsm.js';
 import { isCallActive } from '../voice/callState';
-import { surfaceLanguage } from '../../shared/chatLanguage';
+import { companionLanguageFor } from '../companionLanguage';
 import { ensureModel, modelReady } from './modelStore';
 import { getOrCreateChessProfile, type ChessProfile } from './chessProfile';
 import {
@@ -1280,8 +1280,8 @@ function endSession(
         const c = await getCharacter(s.characterId);
         if (c?.name) name = c.name;
         personaExpanded = c?.persona?.expanded;
-        const { characterLanguage } = await import('../../shared/chatLanguage');
-        if (characterLanguage(c?.metadata) === 'zh') rowLanguage = 'zh';
+        // 261116: the companion's resolved language (see companionLanguage.ts).
+        if (c && companionLanguageFor(c, await loadConfig()).language === 'zh') rowLanguage = 'zh';
       } catch { /* generic name */ }
       // Replay payload: SAN/UCI only (the renderer rebuilds per-ply FENs from
       // the start position), so a long game stays a few hundred bytes in the
@@ -2019,7 +2019,11 @@ async function runChessLlmTurn(
     inGame: false,
     voiceCall: opts.voiceCall,
     // 260730: character-pinned language wins over the auto-detected one.
-    language: surfaceLanguage(character.metadata, config.chat_language),
+    ...(() => {
+      // 261116: the player's language by default (companionLanguage).
+      const lang = companionLanguageFor(character, config);
+      return { language: lang.language, adoptedLanguage: lang.adopted };
+    })(),
     // STATIC for the whole game, so it rides inside the cached region. The
     // volatile per-turn view goes in the messages tail below, never here.
     extraStable: chessContractBlock(s, playerName),

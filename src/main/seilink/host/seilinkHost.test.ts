@@ -24,6 +24,9 @@ const state = vi.hoisted(() => ({
   events: [] as Array<[string, Record<string, unknown>]>,
   /** Every message the fake hosts got from main (261105 face test). */
   received: [] as Array<Record<string, unknown>>,
+  /** 261119: her anima stage (her look), and who listens for changes. */
+  animaStage: 'unavailable' as string,
+  animaListeners: [] as Array<(id: string) => void>,
 }));
 
 vi.mock('electron', () => ({
@@ -113,6 +116,22 @@ vi.mock('../../configStore', () => ({
 vi.mock('../../lazyAnalytics', () => ({
   loadAnalytics: async () => ({ capture: (e: string, p: Record<string, unknown>) => state.events.push([e, p]) }),
 }));
+vi.mock('../../anima/animaRuntime', () => ({
+  anima: {
+    prepare: async () => undefined,
+    reset: () => {},
+    noteShown: () => {},
+    cutoutFor: async () => null,
+    status: (id: string) => ({ characterId: id, state: state.animaStage === 'ready' ? 'ready' : 'idle', stage: state.animaStage }),
+    inFlight: () => false,
+  },
+  onAnimaChange: (cb: (id: string) => void) => {
+    state.animaListeners.push(cb);
+    return () => {
+      state.animaListeners = state.animaListeners.filter((f) => f !== cb);
+    };
+  },
+}));
 vi.mock('../../profile/scopeBarrier', () => ({ beginSessionStart: () => ({ stillValid: () => true }) }));
 
 const host = await import('./seilinkHost');
@@ -131,6 +150,7 @@ describe('seilink host start / stop / restore', () => {
     state.script = [];
     state.events = [];
     state.received = [];
+    state.animaStage = 'unavailable';
     host.initSeilinkHost({ pushStatus: () => {}, openChat: () => {} });
   });
   afterEach(async () => {
@@ -205,11 +225,14 @@ describe('seilink host start / stop / restore', () => {
       { type: 'first-frame', sinceStartMs: 900, verified: true, hidden: false, covered: false, paused: false, reasons: [] },
       hb,
       { type: 'attached', reattach: true, reason: 'validate:taskbarCreated:no-workerw', layout: 'raised', attachMs: 7 },
+      // Product call (261116): a click is her reaction on the desktop, a double click opens her chat.
       { type: 'click', kind: 'click' },
+      { type: 'click', kind: 'dblclick' },
       { type: 'verify-failed', reasons: ['hidden'], trigger: 'timer' },
     ];
     const opened: string[] = [];
-    host.initSeilinkHost({ pushStatus: () => {}, openChat: (id) => (opened.push(id), 'focused') });
+    const clicked: string[] = [];
+    host.initSeilinkHost({ pushStatus: () => {}, openChat: (id) => (opened.push(id), 'focused'), onClick: (id) => clicked.push(id) });
     await host.startSeilinkHost(SUI);
     await settle();
     await host.stopSeilinkHost('user_stop');
@@ -229,8 +252,9 @@ describe('seilink host start / stop / restore', () => {
     expect(by('seilink_reattached')).toMatchObject({ cause: 'explorer_restart', detail: 'workerw_lost', shown: true });
     expect(by('seilink_verify_failed')).toMatchObject({ reasons: 'hidden', trigger: 'timer' });
     expect(opened).toEqual([SUI]);
+    expect(clicked).toEqual([SUI]);
     const ended = by('seilink_ended');
-    expect(ended).toMatchObject({ shown: true, clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
+    expect(ended).toMatchObject({ shown: true, clicks: 1, double_clicks: 1, chat_open_focused: 1, reattaches: 1, reattach_explorer_restart: 1, verify_fail_hidden: 1, resolution: '1440p' });
     expect(typeof ended?.first_frame_ms).toBe('number');
     expect(by('seilink_not_shown')).toBeUndefined();
   });
@@ -239,6 +263,9 @@ describe('seilink host start / stop / restore', () => {
     state.script = [{ type: 'attached', reattach: false, reason: 'initial', layout: 'raised', attachMs: 5 }];
     await host.startSeilinkHost(SUI);
     await settle();
+    // 261119: no lines while she is held for her entrance; the app stepping aside lets her in.
+    expect(host.sendSeilinkLine(SUI, 'not yet', 'poke')).toBeNull();
+    host.noteSeilinkRevealed();
     expect(host.sendSeilinkLine(LYRA, 'haha hi', 'poke')).toBeNull();
     expect(host.sendSeilinkLine(SUI, 'haha you found me', 'poke')).toEqual({ expression: 'lexicon' });
     expect(host.sendSeilinkLine(SUI, 'i moved the lamp', 'idle', 'smug')).toEqual({ expression: 'tag' });
@@ -253,5 +280,52 @@ describe('seilink host start / stop / restore', () => {
     await host.stopSeilinkHost('user_stop');
     await settle(20);
     expect(state.events.find(([e]) => e === 'seilink_ended')?.[1]).toMatchObject({ expressions: 2 });
+  });
+
+  it('261119: her arrival goes to the host before her room; a move-in holds, then comes in; the end reports it', async () => {
+    await host.startSeilinkHost(SUI);
+    await settle();
+    const types = state.received.map((m) => m.type);
+    expect(types.indexOf('arrival')).toBeGreaterThan(-1);
+    expect(types.indexOf('arrival')).toBeLessThan(types.indexOf('room'));
+    expect(state.received.find((m) => m.type === 'arrival')).toEqual({ type: 'arrival', arrival: { mode: 'hold', trigger: 'move_in' } });
+    const arrived = host.whenSeilinkArrived(SUI);
+    host.noteSeilinkRevealed();
+    await settle(20);
+    expect(state.received.filter((m) => m.type === 'arrival').map((m) => (m.arrival as { mode: string }).mode)).toEqual(['hold', 'enter']);
+    await host.stopSeilinkHost('user_stop');
+    await settle(20);
+    await expect(arrived).resolves.toBe(false);
+    expect(state.events.find(([e]) => e === 'seilink_entrance')?.[1]).toMatchObject({ character_id: SUI, trigger: 'move_in', action: 'ended', waited: false });
+  });
+
+  it('261119: while her look bakes she waits, even after the app stepped aside; her look landing brings her in', async () => {
+    state.animaStage = 'running';
+    await host.startSeilinkHost(SUI);
+    await settle();
+    const modes = (): string[] => state.received.filter((m) => m.type === 'arrival').map((m) => (m.arrival as { mode: string }).mode);
+    host.noteSeilinkRevealed();
+    expect(modes()).toEqual(['wait']);
+    expect(host.sendSeilinkLine(SUI, 'hi', 'poke')).toBeNull();
+    state.animaStage = 'ready';
+    for (const cb of state.animaListeners) cb(SUI);
+    await settle(20);
+    expect(modes()).toEqual(['wait', 'enter']);
+  });
+
+  it('261119: a switch-in is a switch; a restore of a ready look is just there', async () => {
+    await host.startSeilinkHost(SUI);
+    await settle();
+    await host.startSeilinkHost(LYRA);
+    await settle();
+    const last = state.received.filter((m) => m.type === 'arrival').pop();
+    expect(last).toEqual({ type: 'arrival', arrival: { mode: 'hold', trigger: 'switch' } });
+    await host.stopSeilinkHost('user_stop');
+    await settle(20);
+    state.received = [];
+    state.config = { seilink_moved_in: { character_id: SUI, moved_in_at: 1 } };
+    await host.restoreSeilinkHost();
+    await settle();
+    expect(state.received.find((m) => m.type === 'arrival')).toEqual({ type: 'arrival', arrival: { mode: 'show', trigger: 'restore' } });
   });
 });

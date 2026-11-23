@@ -7,12 +7,24 @@
  * without its flow layer.
  *
  *   http://localhost:5173/?dashshot=screen&screen=<screen>[&modal=<modal>]
- *     screen = home | character | chat | call | settings | edit (&section=appearance|voice|persona|games)
+ *     screen = home | character | chat | call | settings | edit (&section=basic|appearance|voice|persona|games)
+ *              (edit, 261119: the Edit companion popup is gone; its sections
+ *              are your own companion's profile tabs, so this opens the
+ *              character screen on the tab that holds the section)
+ *     &ownkey=0|1   (character tab=voice, or edit section=voice) no ElevenLabs
+ *                   key / a saved one with one own voice: the picker's Voice
+ *                   Library tile (261119)
+ *     &backend=local  your own keys instead of Sei cloud (the Voice Library
+ *                   link with its key note instead of the paste field)
+ *     &lib=rejected|removed  (tab=voice) a pasted library voice is refused /
+ *                   her stored library voice is gone (261120)
  *     modal  = delete | feedback | report | signout | apikey | creationlimit |
  *              topup | factoryreset | deleteaccount | movein   (over the Home screen)
  *     &seilink=on|unsupported       SeiLink availability (261104; no setting since 261105)
  *     movein: &pack=<url of a pack dir> (its thumbnail), &swap=1 (Lyra lives there now)
  *     &theme=light|dark  &lang=zh  &backdrop=1 (call: the character-art view)
+ *     &ttsfail=1     (call) the voice could not load: notice + unvoiced line
+ *                    as the caption with captions off (261121)
  *     &tour=1[&audience=new]  the guide's SeiLink tour, live from its offer on
  *                    Home (261105): the screen follows the tour's navigation,
  *                    and its end opens the move-in sheet (&pack= as movein)
@@ -57,11 +69,10 @@ import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useCreditsStore } from '../lib/stores/useCreditsStore';
 import { useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
-import { useLangStore } from '../lib/i18n';
+import { t, useLangStore } from '../lib/i18n';
 import { applyTheme } from '../lib/theme';
 import { MacosWindow } from './MacosWindow';
 import { IconRail } from './IconRail';
-import { EditCharacterModal } from './EditCharacterModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { FeedbackModal } from './FeedbackModal';
 import { ReportCompanionModal } from './ReportCompanionModal';
@@ -79,6 +90,10 @@ import { CharactersScreen } from '../screens/CharactersScreen';
 import { CharacterPage } from '../screens/CharacterPage';
 import { ChatScreen } from '../screens/ChatScreen';
 import { VoiceCallScreen } from '../screens/VoiceCallScreen';
+import { AwakenScreen } from '../screens/AwakenScreen';
+import { Banner } from './Banner';
+import { useT } from '../lib/i18n';
+import { PARTY_FULL_LINE } from './ImportLocalProfileModal';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
@@ -91,10 +106,22 @@ const LYRA = '7a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c03';
 const MARV = 'c2d3e4f5-a6b7-4c8d-9e0f-1a2b3c4d5e06';
 const PEBBLE = '6d0a3f0e-58a4-4d43-9a43-6c1f0d2b7e11';
 
-type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'edit';
+type Screen = 'home' | 'character' | 'chat' | 'call' | 'settings' | 'awaken';
 
 const params = new URLSearchParams(window.location.search);
-const screen = (params.get('screen') ?? 'home') as Screen;
+/** The old Edit companion sections, and the profile tab each one lives on now (261119). */
+const EDIT_SECTION_TAB: Record<string, string> = {
+  basic: 'personality',
+  appearance: 'look',
+  voice: 'voice',
+  persona: 'personality',
+  games: 'games',
+};
+const rawScreen = params.get('screen') ?? 'home';
+if (rawScreen === 'edit' && !params.has('tab')) {
+  params.set('tab', EDIT_SECTION_TAB[params.get('section') ?? 'basic'] ?? 'personality');
+}
+const screen = (rawScreen === 'edit' ? 'character' : rawScreen) as Screen;
 const modal = params.get('modal');
 const seilinkShot = params.get('seilink');
 const tourShot = params.get('tour') === '1';
@@ -162,7 +189,22 @@ if (screen === 'character') {
   if (who === 'world') sui.owner = OTHER_PLAYER;
   // &noskin=1: still on the free creation placeholder (skin_pending).
   if (params.get('noskin') === '1') sui.metadata = { ...(sui.metadata as object), skin_pending: true };
+  // &lib=removed: her voice is a Voice Library voice the proxy says is gone.
+  if (params.get('lib') === 'removed') {
+    sui.metadata = { voiceId: 'LibVoice0000000000aa', voiceLibrary: { name: 'Captain Wren', gender: 'female' } };
+  }
 }
+/** &backend=local: your own keys (BYOK) instead of Sei cloud (261120). */
+const shotBackend = params.get('backend') === 'local' ? 'local' : 'cloud-proxy';
+const LIB_VOICE = {
+  voiceId: 'LibVoice0000000000aa',
+  name: 'Captain Wren',
+  gender: 'female',
+  age: 'middle_aged',
+  accent: 'british',
+  description: 'A weathered sea captain with a warm, steady voice.',
+  hasPreview: true,
+};
 
 const CHAT = [
   ['user', 'morning! did you end up finishing the lake house roof?', 46],
@@ -202,7 +244,7 @@ function seed(): void {
     }),
     getConfig: async () => ({
       preferred_name: 'Robin',
-      ai_backend_kind: 'cloud-proxy',
+      ai_backend_kind: shotBackend,
       ui_language: params.get('lang') ?? 'en',
       added_default_ids: who === 'builtin' ? [SUI] : [],
       added_world_ids: who === 'world' ? [SUI] : [],
@@ -216,7 +258,25 @@ function seed(): void {
     listCharacters: async () => CHARACTERS,
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
     voiceListVoices: async () => VOICES,
-    voiceListOwnVoices: async () => ({ status: 'unavailable', voices: [] }),
+    voiceListOwnVoices: async () =>
+      params.get('ownkey') === '1'
+        ? { status: 'ok', voices: [{ id: 'own1', name: 'My voice', category: 'cloned', hasPreview: true }] }
+        : { status: 'unavailable', voices: [] },
+    // &ownkey=0|1 (edit, section=voice): no ElevenLabs key / a saved one, so
+    // the picker's Voice Library tile renders (261119). Absent: no answer.
+    ...(params.has('ownkey') ? { voiceElevenKeyStatus: async () => ({ present: params.get('ownkey') === '1' }) } : {}),
+    // The Voice Library line (Sei cloud, 261119). A lookup finds Captain
+    // Wren; &lib=rejected refuses it (a custom-rate voice); &lib=removed
+    // makes her the stored voice and the proxy says she is gone.
+    voiceLibraryLookup: async () =>
+      params.get('lib') === 'rejected' ? { ok: false, reason: 'custom_rate' } : { ok: true, voice: LIB_VOICE },
+    voiceLibraryAdd: async () => ({ ok: true, already: false, voice: LIB_VOICE }),
+    voiceLibraryStatus: async () => ({
+      status: params.get('lib') === 'removed' ? 'removed' : 'active',
+      name: 'Captain Wren',
+      gender: 'female',
+    }),
+    voiceLibraryPreview: async () => new ArrayBuffer(0),
     // &img=custom: the player's own upload is showing (no Regenerate);
     // otherwise a regenerated version is (Regenerate, 2 left).
     charsPortraitVersions: async (id: string) =>
@@ -268,6 +328,25 @@ function seed(): void {
       { id: 'k2', title: 'Farm plan.md', bytes: 3100, added: new Date(now - 3 * 24 * HOUR).toISOString(), source: 'upload' },
     ],
     seilinkRoomGet: async () => ({ saved: true, state: { preset: 'cozy' } }),
+    // &localimport=ready|full (261116): Settings, Account's "Companions from
+    // before you signed in" row, with room in the party or with it full.
+    ...(params.get('localimport')
+      ? {
+          profilePeekLocal: async () => ({
+            migratableCharacterIds: ['5f0c0c4e-0000-4000-8000-00000000aa01', '5f0c0c4e-0000-4000-8000-00000000aa02'],
+            memoryOnlyCharacterIds: [],
+            mcUsername: null,
+            preferredName: null,
+            hasData: true,
+            hasCompanionData: true,
+            untouchedSeedIds: [],
+            party:
+              params.get('localimport') === 'full'
+                ? { count: 3, incoming: 2, limit: 4, fits: false }
+                : { count: 1, incoming: 2, limit: 4, fits: true },
+          }),
+        }
+      : {}),
   });
   useDataStore.setState({
     characters: CHARACTERS as unknown as ReturnType<typeof useDataStore.getState>['characters'],
@@ -276,6 +355,17 @@ function seed(): void {
   if (screen === 'call') {
     useUiStore.getState().setCallBackdropFor(SUI, params.get('backdrop') === '1');
     useVoiceStore.setState({ participants: [SUI], status: 'live', liveAt: now - 3 * 60_000 - 12_000 });
+    // 261121 (T507): &ttsfail=1, the voice could not load: the unvoiced
+    // line shows as a caption (captions setting off) under the notice.
+    if (params.get('ttsfail') === '1') {
+      useUiStore.setState({ callCaptions: false });
+      useVoiceStore.setState({
+        lastSpoken: "wait, you found diamonds already? show me where, I'm coming over.",
+        lastSpokenId: SUI,
+        voiceFailing: true,
+        callNotice: t('[voice could not load, check your connection]'),
+      });
+    }
   }
   // A signed-in cloud account: the common case.
   useAuthStore.setState({
@@ -284,7 +374,7 @@ function seed(): void {
       user: { id: '8c41e2d7-5b9a-4f3e-a1c6-2d7e9f0b4a18', email: 'robin@example.com', emailVerified: true, createdAt: '2026-09-20T10:00:00Z' },
     },
   } as never);
-  useCreditsStore.setState({ ai_backend_kind: 'cloud-proxy' } as never);
+  useCreditsStore.setState({ ai_backend_kind: shotBackend } as never);
   // 261107: the one-time regenerate hint shows only with &regenhint=1.
   try {
     if (params.get('regenhint') === '1') localStorage.removeItem(regenHintKey());
@@ -307,10 +397,11 @@ function seed(): void {
   if (isProfileFocus(shotTab)) requestProfileFocus(shotTab);
   const nav = useUiStore.getState().navigate;
   if (screen === 'home') nav({ kind: 'home' });
-  if (screen === 'character' || screen === 'edit') nav({ kind: 'character', id: SUI });
+  if (screen === 'character') nav({ kind: 'character', id: SUI });
   if (screen === 'chat') nav({ kind: 'chat', characterId: SUI });
   if (screen === 'call') nav({ kind: 'voice-call', characterId: SUI });
   if (screen === 'settings') nav({ kind: 'settings' });
+  if (screen === 'awaken') nav({ kind: 'awaken' });
   if (tourShot) {
     nav({ kind: 'home' });
     useTutorialStore.getState().startSeilink(SUI, params.get('audience') === 'new' ? 'new' : 'existing', 1);
@@ -321,16 +412,28 @@ seed();
 
 const noop = (): void => undefined;
 
-/** The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already). */
+function PartyFullLine(): React.ReactElement {
+  const t = useT();
+  return <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={noop} />;
+}
+
+/**
+ * The move-in sheet (261106: a first room starts blank; &saved=1 = she has a room already).
+ * 261116: &look=busy_background|uploaded = her uploaded look keeps her out (uploadedLooks.ts).
+ * 261118: &custom=1 = her look is a custom uploaded picture (the custom-image line).
+ */
 function MoveInShot(): React.ReactElement {
+  const look = params.get('look');
   return (
     <MoveInSheetView
-      name="Sui"
+      name={params.get('name') ?? 'Sui'}
       otherName={params.get('swap') === '1' ? 'Lyra' : null}
       firstRoom={params.get('saved') !== '1'}
       busy={false}
+      lookBlocked={look === 'busy_background' || look === 'uploaded' ? look : null}
+      customImage={params.get('custom') === '1'}
       error={null}
-      onCancel={noop}
+      onCancel={() => useSeilinkStore.getState().closeFlow()}
       onConfirm={noop}
     />
   );
@@ -370,7 +473,6 @@ export function DevScreenShot(): React.ReactElement {
   const body = (() => {
     switch (shown) {
       case 'character':
-      case 'edit':
         return <CharacterPage id={SUI} />;
       case 'chat':
         return <ChatScreen characterId={SUI} />;
@@ -378,15 +480,18 @@ export function DevScreenShot(): React.ReactElement {
         return <VoiceCallScreen characterId={SUI} />;
       case 'settings':
         return <SettingsScreen />;
+      case 'awaken':
+        return <AwakenScreen />;
       default:
         return <CharactersScreen />;
     }
   })();
-  const sui = CHARACTERS[0] as unknown as Parameters<typeof EditCharacterModal>[0]['character'];
   return (
     <div style={{ position: 'fixed', inset: 0, display: 'flex' }}>
       <MacosWindow railHidden={false}>
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
+          {/* &partyfull=1 (261116): App's own-key import line, party full. */}
+          {params.get('partyfull') === '1' ? <PartyFullLine /> : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             <IconRail />
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, background: 'var(--elbow)' }}>
@@ -408,7 +513,6 @@ export function DevScreenShot(): React.ReactElement {
           </div>
         </div>
       </MacosWindow>
-      {screen === 'edit' ? <EditCharacterModal character={sui} onClose={noop} initialSection={(['appearance', 'voice', 'persona', 'games'] as const).find((x) => x === params.get('section')) ?? 'basic'} /> : null}
       <Modal />
       {tourShot && flow?.kind === 'sheet' ? <MoveInShot /> : null}
       {tourShot ? <TutorialOverlay /> : null}

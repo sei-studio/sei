@@ -651,6 +651,55 @@ describe('checkout watch (beginPurchase / dismissCheckout)', () => {
     expect(store.getState().checkoutStatus).toBe('timeout');
   });
 
+  // 261122: a failed session mint must not leave "finish in your browser" up.
+  it('beginPurchase: a failed open shows failed, never waiting, and does not poll', async () => {
+    creditsOpenCheckoutMock.mockResolvedValue({ ok: false, code: 'PROXY_NETWORK' });
+    creditsGetMock.mockResolvedValue(status());
+    const mod = await import('./useCreditsStore');
+    const store = mod.useCreditsStore;
+
+    const p = store.getState().beginPurchase('quest', { source: 'cap_popup' });
+    expect(store.getState().checkoutStatus).toBe('opening');
+    await p;
+    expect(store.getState().checkoutStatus).toBe('failed');
+    expect(store.getState().checkoutKind).toBe('quest');
+    expect(store.getState().checkoutSource).toBe('cap_popup');
+    expect(creditsOpenCheckoutMock).toHaveBeenCalledWith('quest', 'cap_popup');
+
+    creditsGetMock.mockClear();
+    await vi.advanceTimersByTimeAsync(mod.CHECKOUT_POLL_INTERVAL_MS * 3);
+    expect(creditsGetMock).not.toHaveBeenCalled();
+
+    // Retry (the modal's Try again) succeeds and starts the watch.
+    creditsOpenCheckoutMock.mockResolvedValue({ ok: true });
+    await store.getState().beginPurchase('quest', { source: 'cap_popup' });
+    expect(store.getState().checkoutStatus).toBe('waiting');
+  });
+
+  it('beginPurchase: an IPC rejection is a failure too', async () => {
+    creditsOpenCheckoutMock.mockRejectedValue(new Error('ipc'));
+    const mod = await import('./useCreditsStore');
+    await mod.useCreditsStore.getState().beginPurchase('party');
+    expect(mod.useCreditsStore.getState().checkoutStatus).toBe('failed');
+  });
+
+  it('beginPurchase: closed while opening stays closed (no watch starts)', async () => {
+    let resolveOpen: (v: { ok: true }) => void = () => undefined;
+    creditsOpenCheckoutMock.mockReturnValue(new Promise((r) => (resolveOpen = r)));
+    creditsGetMock.mockResolvedValue(status());
+    const mod = await import('./useCreditsStore');
+    const store = mod.useCreditsStore;
+
+    const p = store.getState().beginPurchase('quest');
+    store.getState().dismissCheckout();
+    resolveOpen({ ok: true });
+    await p;
+    expect(store.getState().checkoutStatus).toBe('idle');
+    creditsGetMock.mockClear();
+    await vi.advanceTimersByTimeAsync(mod.CHECKOUT_POLL_INTERVAL_MS * 2);
+    expect(creditsGetMock).not.toHaveBeenCalled();
+  });
+
   it('dismissCheckout(): resets to idle and stops polling', async () => {
     creditsOpenCheckoutMock.mockResolvedValue({ ok: true });
     creditsGetMock.mockResolvedValue(status());
@@ -690,5 +739,34 @@ describe('checkout watch (beginPurchase / dismissCheckout)', () => {
 
     await vi.advanceTimersByTimeAsync(mod.CHECKOUT_POLL_INTERVAL_MS);
     expect(store.getState().checkoutStatus).toBe('confirmed');
+  });
+});
+
+// 261120 (capNotices.ts): a depleted wall main still holds is shown by a
+// window that mounts after it, and closing the modal tells main to drop it.
+describe('useCreditsStore pending wall replay', () => {
+  it('init() shows a wall main kept, acknowledgeHardStop() acks it', async () => {
+    creditsGetMock.mockResolvedValue(status({ usage_pct: 100 }));
+    const ack = vi.fn(async () => undefined);
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.creditsHardStopPending = vi.fn(async () => ({ reason: 'depleted' }));
+    w.sei.creditsHardStopAck = ack;
+    const store = await loadStore();
+    await store.getState().init();
+    await vi.waitFor(() => expect(store.getState().hardStopActive).toBe(true));
+    expect(store.getState().hardStopReason).toBe('depleted');
+    store.getState().acknowledgeHardStop();
+    expect(store.getState().hardStopActive).toBe(false);
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
+
+  it('nothing pending (or an older main without the call): no wall', async () => {
+    creditsGetMock.mockResolvedValue(status({ usage_pct: 20 }));
+    const w = (globalThis as unknown as { window: { sei: Record<string, unknown> } }).window;
+    w.sei.creditsHardStopPending = vi.fn(async () => null);
+    const store = await loadStore();
+    await store.getState().init();
+    await Promise.resolve();
+    expect(store.getState().hardStopActive).toBe(false);
   });
 });

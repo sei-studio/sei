@@ -2,7 +2,7 @@
  * Voice-picker pure logic (260720) — grouping, selection, legacy detection.
  */
 import { describe, it, expect } from 'vitest';
-import type { OwnVoiceInfo, VoiceInfo } from '@shared/ipc';
+import type { OwnVoiceInfo, OwnVoiceList, VoiceInfo } from '@shared/ipc';
 import {
   groupVoices,
   reduceSelection,
@@ -19,9 +19,17 @@ import {
   ownVoicesView,
   poolUsesOwnKey,
   elevenKeyHintShown,
+  voiceLibraryTile,
+  ELEVEN_VOICE_LIBRARY_URL,
   defaultVoiceTab,
   applyVoicePick,
+  libraryPasteShown,
+  libraryReasonCopy,
+  libraryVoiceDetail,
+  libraryVoicePick,
 } from './voicePicker';
+import type { LibraryVoiceReason } from '@shared/ipc';
+import { ZH } from './i18n/zh';
 
 function v(id: string, gender: string): VoiceInfo {
   return { id, label: id, gender, age: 'adult', tags: [], vibe: 'test voice' };
@@ -201,6 +209,20 @@ describe('own ElevenLabs voices', () => {
     expect(elevenKeyHintShown(false, true)).toBe(false); // local voice packs
   });
 
+  it('the Voice Library tile shows only where a saved voice can reach the picker', () => {
+    const ok: OwnVoiceList = { status: 'ok', voices: [] };
+    expect(voiceLibraryTile(false, false, null)).toBe('needs_key');
+    expect(voiceLibraryTile(true, false, ok)).toBe('with_key');
+    expect(voiceLibraryTile(true, false, null)).toBe(null); // own list still loading
+    expect(voiceLibraryTile(true, false, { status: 'bad_key', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(true, false, { status: 'error', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(true, false, { status: 'unavailable', voices: [] })).toBe(null);
+    expect(voiceLibraryTile(null, false, ok)).toBe(null); // key probe still out
+    expect(voiceLibraryTile(true, true, ok)).toBe(null); // local voice packs
+    expect(voiceLibraryTile(false, true, null)).toBe(null);
+    expect(ELEVEN_VOICE_LIBRARY_URL).toBe('https://elevenlabs.io/app/voice-library');
+  });
+
   it('defaultVoiceTab opens where the selection lives', () => {
     const groups = groupVoices([v('f1', 'female'), v('m1', 'male')]);
     const list = [own('Own1')];
@@ -220,5 +242,41 @@ describe('own ElevenLabs voices', () => {
     const pool = [v('f1', 'female')];
     expect(isUnlistedVoice('Own1', pool)).toBe(true);
     expect(isUnlistedVoice('Own1', [...pool, own('Own1')])).toBe(false);
+  });
+});
+
+describe('Voice Library paste card (261119)', () => {
+  it('shows for Sei cloud only, never for BYOK or on-device voices', () => {
+    expect(libraryPasteShown('cloud-proxy', false)).toBe(true);
+    expect(libraryPasteShown('cloud-proxy', true)).toBe(false);
+    expect(libraryPasteShown('local', false)).toBe(false);
+    expect(libraryPasteShown(null, false)).toBe(false);
+  });
+
+  it('the pick is tagged as a library pick', () => {
+    expect(libraryVoicePick({ name: 'Wren', gender: 'female' })).toEqual({ name: 'Wren', gender: 'female', source: 'library' });
+    expect(libraryVoicePick({ name: 'Wren', gender: null })).toEqual({ name: 'Wren', source: 'library' });
+  });
+
+  it('every reason has one translated line of copy, no em dash', () => {
+    const reasons: LibraryVoiceReason[] = [
+      'invalid_input', 'not_found', 'pool_voice', 'custom_rate', 'live_moderation', 'short_notice', 'delisted',
+      'restricted_category', 'daily_limit', 'voice_limit', 'capacity', 'unavailable', 'no_session', 'rate_limited',
+    ];
+    const lines = reasons.map(libraryReasonCopy);
+    expect(new Set(lines).size).toBe(reasons.length);
+    for (const line of lines) {
+      expect(line).not.toContain('\u2014');
+      expect(ZH[line], line).toBeTruthy();
+    }
+  });
+
+  it('detail: the labels, else the description, trimmed', () => {
+    expect(libraryVoiceDetail({ gender: 'female', age: 'middle_aged', accent: 'british', description: 'x' })).toBe(
+      'female, middle aged, british',
+    );
+    expect(libraryVoiceDetail({ gender: null, age: null, accent: null, description: 'A calm voice.' })).toBe('A calm voice.');
+    expect(libraryVoiceDetail({ gender: null, age: null, accent: null, description: 'y'.repeat(200) })).toHaveLength(120);
+    expect(libraryVoiceDetail({ gender: null, age: null, accent: null, description: null })).toBe('');
   });
 });

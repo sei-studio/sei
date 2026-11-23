@@ -12,7 +12,11 @@
  *    surface: intro_end|app_window, os}: the "lives on your desktop" card
  *    when the room first goes live.
  *  - seilink_minimize_windows {outcome: ok|failed|unsupported, windows
- *    (count, capped), surface, os}: "Minimize other windows".
+ *    (count, capped), surface: live_card|desktop_hint|other, os}: "Minimize
+ *    other windows", and 261116 the desktop hint's "Hide windows".
+ *  - seilink_desktop_hint {action: shown|hide_windows|expired|hidden, kind:
+ *    opened|updated, os} (product call (261116)): the one-line hint in the app
+ *    after WorldLink opened or updated the desktop.
  *  - seilink_placement_guide {mode: outline, cls: floor|surface|wall, placed}:
  *    the first drag of each kind in an editor session (outlined areas in
  *    place of the old blur).
@@ -24,6 +28,7 @@ export const SEILINK_SETUP_CALL_EVENT = 'seilink_setup_call';
 export const SEILINK_LIVE_HINT_EVENT = 'seilink_live_hint';
 export const SEILINK_MINIMIZE_EVENT = 'seilink_minimize_windows';
 export const SEILINK_PLACEMENT_GUIDE_EVENT = 'seilink_placement_guide';
+export const SEILINK_DESKTOP_HINT_EVENT = 'seilink_desktop_hint';
 
 export const SETUP_CALL_OUTCOMES = ['started', 'consent_shown', 'install_started', 'installed', 'install_failed', 'declined', 'error'] as const;
 export type SetupCallOutcome = (typeof SETUP_CALL_OUTCOMES)[number];
@@ -38,7 +43,15 @@ export type LiveHintSurface = (typeof LIVE_HINT_SURFACES)[number];
 
 export const MINIMIZE_OUTCOMES = ['ok', 'failed', 'unsupported'] as const;
 export type MinimizeOutcome = (typeof MINIMIZE_OUTCOMES)[number];
-export const MINIMIZE_SURFACES = ['live_card', 'other'] as const;
+export const MINIMIZE_SURFACES = ['live_card', 'desktop_hint', 'other'] as const;
+export type MinimizeSurface = (typeof MINIMIZE_SURFACES)[number];
+
+/** 261116: the desktop hint. `expired`: it hid itself; `hidden`: the window went away first (Win+D, Hide). */
+export const DESKTOP_HINT_ACTIONS = ['shown', 'hide_windows', 'expired', 'hidden'] as const;
+export type DesktopHintAction = (typeof DESKTOP_HINT_ACTIONS)[number];
+/** `opened`: she came onto the desktop (a move-in or a swap); `updated`: her room was changed in the app's editor. */
+export const DESKTOP_HINT_KINDS = ['opened', 'updated'] as const;
+export type DesktopHintKind = (typeof DESKTOP_HINT_KINDS)[number];
 /** The most windows the minimize count says. */
 const MINIMIZE_MAX = 50;
 
@@ -61,7 +74,13 @@ function charId(v: unknown): string | null {
 
 /** The events this module owns. */
 export function isSeilinkSetupEvent(event: string): boolean {
-  return event === SEILINK_SETUP_CALL_EVENT || event === SEILINK_LIVE_HINT_EVENT || event === SEILINK_MINIMIZE_EVENT || event === SEILINK_PLACEMENT_GUIDE_EVENT;
+  return (
+    event === SEILINK_SETUP_CALL_EVENT ||
+    event === SEILINK_LIVE_HINT_EVENT ||
+    event === SEILINK_MINIMIZE_EVENT ||
+    event === SEILINK_PLACEMENT_GUIDE_EVENT ||
+    event === SEILINK_DESKTOP_HINT_EVENT
+  );
 }
 
 /** Rebuild one of these events' props from the closed shapes. */
@@ -94,6 +113,14 @@ export function sanitizeSeilinkSetupTrack(event: string, raw: Record<string, unk
     const n = Number(p.windows);
     if (Number.isFinite(n) && n >= 0) out.windows = Math.min(Math.round(n), MINIMIZE_MAX);
     return out;
+  }
+  if (event === SEILINK_DESKTOP_HINT_EVENT) {
+    return {
+      character_id: charId(p.character_id),
+      action: oneOf(DESKTOP_HINT_ACTIONS, p.action) ?? 'shown',
+      kind: oneOf(DESKTOP_HINT_KINDS, p.kind) ?? 'opened',
+      os: oneOf(OSES, p.os),
+    };
   }
   if (event === SEILINK_PLACEMENT_GUIDE_EVENT) {
     return {

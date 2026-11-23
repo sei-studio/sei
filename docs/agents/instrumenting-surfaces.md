@@ -492,6 +492,27 @@ is the empty moment between the click and Sei; `update_screen` is true on the
 launch right after Update.exe restarted Sei (the update splash covered it).
 Hidden login launches are skipped. Filter `packaged = true`.
 
+261123 (launch speed, `src/main/startupMarks.ts`): `app_window_shown` also
+carries the main phase marks reached by then as `<phase>_ms` (ms since process
+start, Node's performance clock): `boot_entry`, `app_import_start`,
+`app_imported`, `ready`, `updater_started`, `bootstrap_start`,
+`window_created`, `scope`, `migrations`, `ipc_ready`, `auth_ready`,
+`bootstrap_done`, `ready_to_show`. The gap `ready` to `bootstrap_start` is the
+Windows pending-update / repair check; `window_created` to `ready_to_show` is
+the renderer bundle load. `app_first_view {view_kind, ms_since_process_start,
+waited_auth_ms, renderer_ms, first_of_process, window_visible, <phase>_ms...}` is the first
+real view after the boot splash (renderer `lib/firstView.ts`, rebuilt in main:
+`view_kind` from a closed list, else `other`; `ms_since_process_start` stamped
+by main on arrival; `waited_auth_ms` = the boot routing's wait on main's auth
+snapshot). It is sent on every renderer load; `first_of_process` marks the
+launch's own; `window_visible` is false when the window was still hidden
+(a login launch loads its view before anyone opens Sei), so filter
+`first_of_process = true AND window_visible = true` for launch time.
+`app_ipc_ready_slow {ms_since_process_start, last_phase, <phase>_ms...}` fires
+once when the IPC handlers are still not registered 60 s after the window
+showed (a launch hung behind the splash; `last_phase` = the last mark reached).
+It waits in analytics' pre-init queue, so it only arrives if init runs later.
+
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:
 - `<userData>/session.json` is written `open` at launch (heartbeat every 60s,

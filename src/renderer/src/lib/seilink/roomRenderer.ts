@@ -120,7 +120,9 @@ const MIX_STEPS = 128;
 function structureKey(state: RoomState): string {
   const slots: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(state.slots)) slots[k] = v ? { id: v.id } : v;
-  return JSON.stringify({ ...state, time: null, slots, items: state.items.map(({ tint: _t, pattern: _p, accent: _a, ...rest }) => rest) });
+  // 261119: widgets and lighting are drawn over and on the canvases (DOM, CSS filter), never into them.
+  const { widgets: _w, lighting: _l, ...room } = state;
+  return JSON.stringify({ ...room, time: null, slots, items: state.items.map(({ tint: _t, pattern: _p, accent: _a, ...rest }) => rest) });
 }
 
 function tintKey(state: RoomState): string {
@@ -171,6 +173,10 @@ function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
 }
 
+function emptyAssets(): RoomAssets {
+  return { images: new Map(), masks: new Map(), glows: new Map() };
+}
+
 /** Dev only: the live renderers, for the perf harness (`globalThis.__seilinkRenderers`). */
 function devRenderers(): Set<RoomRenderer> {
   const g = globalThis as { __seilinkRenderers?: Set<RoomRenderer> };
@@ -190,7 +196,13 @@ export class RoomRenderer {
   private sceneTints = '';
   private retinting = false;
   private retintAgain = false;
-  private assets: RoomAssets = { images: new Map(), masks: new Map(), glows: new Map() };
+  /**
+   * Loaded pack files, keyed by pack-relative path. Packs reuse file names
+   * (cozy and gamer both have chair_night.webp and shell_night.webp), so the
+   * set belongs to one pack's resolver: setScene starts a new one when the
+   * resolver changes.
+   */
+  private assets: RoomAssets = emptyAssets();
   private caches = new Map<RoomTime, TimeCache>();
   private building = new Map<RoomTime, Promise<TimeCache | null>>();
   /** Device px per canvas px. */
@@ -254,6 +266,11 @@ export class RoomRenderer {
     const tints = tintKey(state);
     const prev = this.scene;
     this.scene = { manifest, state, resolve };
+    // Another pack (or a new revision of it): its files must not be served
+    // from the previous pack's set under the same names. The caches are
+    // rebuilt below anyway; a build still running for the old scene keeps
+    // the old set and its result is dropped (sceneSeq).
+    if (prev && prev.resolve !== resolve) this.assets = emptyAssets();
     if (prev && prev.manifest === manifest && prev.resolve === resolve && key === this.sceneKey) {
       if (tints === this.sceneTints) return;
       this.sceneTints = tints;

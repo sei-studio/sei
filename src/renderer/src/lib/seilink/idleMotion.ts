@@ -85,13 +85,16 @@ export interface IdleMotionConfig {
 
 export const DEFAULT_IDLE_CONFIG: IdleMotionConfig = {
   breathPeriodMs: 4_600,
-  breathAmp: 0.005,
-  swayLeanDeg: 0.7,
-  swayDrift: 0.003,
+  breathAmp: 0.007,
+  // 261119 (product call 261119, "too much swaying"): the lean rotates the whole figure about her
+  // feet, so 0.7 deg read as a pendulum on the desktop. Breath and a faint weight shift stay.
+  swayLeanDeg: 0.2,
+  swayDrift: 0.0015,
   shiftMinGapMs: 9_000,
-  shiftMeanGapMs: 38_000,
-  shiftRange: 0.045,
-  shiftStep: 0.028,
+  shiftMeanGapMs: 26_000,
+  // 261119: a seat shift is a small settle in place, not a slide across the desk.
+  shiftRange: 0.014,
+  shiftStep: 0.009,
   shiftMinMs: 1_400,
   shiftMaxMs: 2_300,
   walkMinGapMs: 9 * 60_000,
@@ -376,7 +379,7 @@ export class IdleScheduler {
       case 'shifting': {
         const e = smoother(u);
         const arc = Math.sin(Math.PI * u);
-        return { ...seated, x: s.fromX + (s.toX - s.fromX) * e + sway.drift, lift: 0.006 * arc, lean: sway.lean + s.dir * 1.1 * arc };
+        return { ...seated, x: s.fromX + (s.toX - s.fromX) * e + sway.drift, lift: 0.002 * arc, lean: sway.lean + s.dir * 0.35 * arc };
       }
       case 'standing': {
         const up: IdlePose = { ...seated, x: s.fromX, lift: c.standLift, lean: s.dir * c.travelLeanDeg, scale: c.walkScale, breath: 1 };
@@ -411,11 +414,15 @@ export class IdleScheduler {
 /** Her rest pose, for reduced motion and a still room. */
 export const REST_POSE: IdlePose = { x: 0, lift: 0, lean: 0, scale: 1, breath: 1, phase: 'seated', present: true };
 
+/** How much of a breath widens her (the shoulders and chest), as a share of how much it lifts her (261116). */
+export const BREATH_WIDTH = 0.3;
+
 /** CSS transform for a pose, about her bottom centre, in px of a slot `height` tall. */
 export function poseTransform(p: IdlePose, height: number): string {
   const tx = p.x * height;
   const ty = -p.lift * height;
-  return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${p.scale.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
+  const sx = p.scale * (1 + (p.breath - 1) * BREATH_WIDTH);
+  return `translate3d(${tx.toFixed(2)}px, ${ty.toFixed(2)}px, 0) rotate(${p.lean.toFixed(3)}deg) scale(${sx.toFixed(4)}, ${(p.scale * p.breath).toFixed(4)})`;
 }
 
 // ── frame pacing (261110) ───────────────────────────────────────────────────

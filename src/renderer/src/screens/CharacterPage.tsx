@@ -4,8 +4,9 @@
  * Profile v2 (product call 261110, second pass): no long scroll, one tab of
  * a top section menu at a time, bigger type and the actions near the
  * content. The content is on the left: back crumb, name + share code
- * (+ Built-in chip) with Chat + Play (or Invite to party) beside it, one
- * meta line, the section menu and the active tab (the Overview leads with
+ * (+ Built-in chip), one stats line, Chat + Play (or Invite to party) as
+ * two equal buttons under it (261116), the section menu and the active
+ * tab (the Overview leads with
  * the description and voice). The portrait is a panel on the right whose
  * inner (left) edge fades into the page.
  *
@@ -22,8 +23,10 @@
  *    owner control (look, voice, persona, Public, Locked rows) shows.
  *
  * The rows (components/profile/ProfileSettings.tsx) are label + value +
- * action; every action opens the existing editor or popup, which this page
- * owns.
+ * action. Your own companion's voice, name and description, persona and
+ * chess are edited inline in their tab (components/profile/ProfileEditors,
+ * 261119: the Edit companion popup that repeated the tabs is gone); the
+ * other actions open a focused popup this page owns.
  *
  * This page is STATIC info only. Minecraft connect/disconnect controls live
  * exclusively in the chat's game surface (McLaunchPanel Launch / the
@@ -35,12 +38,13 @@
  * Source: docs/design/UI-REDESIGN-PARTY.md §4.6 (frame), 261107 (rows).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { sei } from '../lib/ipcClient';
 import { useT, t as tGlobal } from '../lib/i18n';
 import { useUiStore } from '../lib/stores/useUiStore';
 import { resolvedScheme } from '../lib/theme';
 import { useDataStore } from '../lib/stores/useDataStore';
+import { forgetEditDrafts } from '../lib/profileEditDrafts';
 import { useChatStore } from '../lib/stores/useChatStore';
 import { useAuthStore } from '../lib/stores/useAuthStore';
 import { useLibraryStateStore } from '../lib/stores/useLibraryStateStore';
@@ -48,7 +52,6 @@ import { movedInId, useSeilinkStore } from '../lib/stores/useSeilinkStore';
 import { Button } from '../components/Button';
 import { ModalShell, ModalFooter } from '../components/ModalShell';
 import { PixelPortrait } from '../components/PixelPortrait';
-import { EditCharacterModal, type EditSection } from '../components/EditCharacterModal';
 import { SignInModal } from '../components/SignInModal';
 import { IdTag } from '../components/IdTag';
 import { AddCount } from '../components/AddCount';
@@ -91,10 +94,11 @@ import {
 } from '../lib/profileRows';
 import type { Character } from '@shared/characterSchema';
 import type { CharacterOverviewInfo } from '@shared/ipc';
-import { NO_VOICE_ID, ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
+import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
+import { userFacingError } from '../lib/errors';
 
 /** The section menu's tab labels (English keys, translated at render). */
 const TAB_LABEL: Record<ProfileTab, string> = {
@@ -185,8 +189,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   const upgradeFraming = useAuthStore((s) => s.upgradeFraming);
 
   const character: Character | undefined = characters.find((c) => c.id === id);
-  const [editing, setEditing] = useState<boolean>(false);
-  const [editSection, setEditSection] = useState<EditSection>('basic');
   // Where a deep link (or the screenshot harness) asked the page to open: a
   // tab, or a row group (its tab opens). Read once.
   const [initialFocus] = useState<ProfileFocus | null>(() => takeRequestedProfileFocus());
@@ -253,10 +255,17 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     // Seed on open only; later metadata refreshes must not reset the pick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shareConfirm]);
-  // Set when a publish attempt is blocked on a missing description: we open the
-  // edit modal at Basic, and resume the publish once the modal closes with a
-  // description present.
+  // Set when a publish attempt is blocked on a missing description: the page
+  // opens the Personality tab, whose name and description editor says why,
+  // and the publish resumes once a description is saved.
   const [needsDescription, setNeedsDescription] = useState<boolean>(false);
+  const savedDescription = (character?.description ?? '').trim();
+  useEffect(() => {
+    if (!needsDescription || savedDescription === '') return;
+    setNeedsDescription(false);
+    setSharePhase('confirm');
+    setShareConfirm('going_public');
+  }, [needsDescription, savedDescription]);
   // 260729 — full-art popup (the corner expand button over the portrait).
   const [artOpen, setArtOpen] = useState<boolean>(false);
   const [artSaving, setArtSaving] = useState<boolean>(false);
@@ -320,11 +329,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     seilinkOn,
     movedInHere: livingId === id,
     ownVoice: !!ownVoiceOf(character?.metadata),
-    noVoice: character?.metadata?.voiceId === NO_VOICE_ID,
   });
   const view = profileView(kind);
   const tabs: ProfileTab[] = profileTabs(access);
   const tab = resolveProfileTab(tabs, wantedTab);
+  // A tab opens at its top, not at the offset the last one was scrolled to.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  }, [tab]);
   const info = overview && overview.id === id ? overview.info : null;
 
   // The Overview's cloud facts (and the owner Voice row's sample voice). Re-read
@@ -388,7 +401,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     character,
     pageOverlayOpen:
       view !== 'owner' ||
-      editing ||
       knowledgeOpen ||
       cardImage !== null ||
       skinEditOpen ||
@@ -427,7 +439,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         await refreshCharacter(id);
       } catch (err) {
         if (cancelled) return;
-        setPrepareError((err as Error).message);
+        setPrepareError(userFacingError(err));
       } finally {
         if (!cancelled) {
           setPreparing(false);
@@ -502,11 +514,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // Per-character accent tint for the portrait bloom.
   const tint = palette[2] ?? palette[1] ?? 'var(--accent)';
 
-  const openEdit = (section: EditSection): void => {
-    setEditSection(section);
-    setEditing(true);
-  };
-
   // "Chat" routes to the chat page; "Play" routes to chat AND opens the
   // Minecraft game surface (the launch panel, or the live dashboard when the
   // bot is already online). Both are static: connection control lives in the
@@ -542,11 +549,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       // be a dead end; an Awakened companion is always cast with a description
       // anyway (buildDescription in uniqueGeneration), so this is a fallback.
       if (!hasDescription && !viewOnly) {
-        // Description is edited in the modal now — open it at Basic and resume
-        // the publish when the modal closes with a description present.
+        // Open the name and description editor (Personality tab); the
+        // publish resumes once a description is saved (effect above).
         setNeedsDescription(true);
-        setEditSection('basic');
-        setEditing(true);
+        setWantedTab('personality');
         return;
       }
       setShareConfirm('going_public');
@@ -579,8 +585,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       setSharePhase('success');
     } catch (err) {
       // err.message carries the real reason (e.g. the moderation friendly
-      // message) — surface it verbatim instead of a generic retry string.
-      setShareError((err as Error).message);
+      // message): surface it instead of a generic retry string.
+      setShareError(userFacingError(err));
       setSharePhase('error');
     }
   };
@@ -589,22 +595,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     setShareConfirm(null);
     setSharePhase('confirm');
     setShareError(null);
-  };
-
-  /**
-   * Modal close handler. If a publish attempt was blocked on a missing
-   * description, resume it once the modal closes with a description present
-   * (read the freshest character from the store — the modal refreshed it).
-   */
-  const onEditClose = (): void => {
-    setEditing(false);
-    if (!needsDescription) return;
-    setNeedsDescription(false);
-    const latest = useDataStore.getState().characters.find((c) => c.id === id);
-    if (latest && (latest.description ?? '').trim() !== '') {
-      setSharePhase('confirm');
-      setShareConfirm('going_public');
-    }
   };
 
   // Reset memory opens a confirmation popup (reset is irreversible and does NOT
@@ -637,10 +627,15 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     try {
       if (isAddedFromWorld) {
         await sei.charsRemoveFromLibrary(character.id);
+        forgetEditDrafts(character.id);
         useDataStore.getState().removeCharacter(character.id);
         await refreshLibraryState();
       } else {
         await sei.deleteCharacter(character.id);
+        // Before anything re-renders: the profile editors' leave-saves on
+        // the way Home must not write (a save recreates a deleted companion
+        // and puts a released default back).
+        forgetEditDrafts(character.id);
         if (character.is_default) {
           await refreshLibraryState();
         } else {
@@ -677,12 +672,9 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     } catch (err) {
       console.error('[CharacterPage] add to library failed', err);
       // Surface the failure (e.g. the slot-limit backstop) instead of a
-      // silent no-op — the handler messages are already user-readable.
-      setAddError(
-        err instanceof Error && err.message
-          ? err.message
-          : t("Couldn't add this companion. Please try again."),
-      );
+      // silent no-op. The handler messages are user-readable; anything
+      // technical falls back to the line below.
+      setAddError(userFacingError(err, t("Couldn't add this companion. Please try again.")));
     }
   };
 
@@ -737,7 +729,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     tab,
     onAction: (action: ProfileAction) => onAction(action),
     onTipOpen,
-    openEdit,
+    openTab: (next: ProfileTab) => selectTab(next),
+    aboutNotice: needsDescription
+      ? t('Going public needs a description. Add one and press Save to continue publishing {name}.', {
+          name: character.name,
+        })
+      : null,
     openCardImage: (regenerate: boolean) => setCardImage({ regenerate }),
     openKnowledge: () => setKnowledgeOpen(true),
     openSkinEdit: () => setSkinEditOpen(true),
@@ -753,7 +750,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   };
 
   // Chat + Play (or Invite to party for a preview). Static routes; neither
-  // reflects game state. They sit beside the name.
+  // reflects game state. They sit under the stats, two equal buttons across
+  // the header (product call 261116).
   const actions = (
     <div className={styles.deploy} data-actions="true">
       {isPreview ? (
@@ -856,7 +854,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                aria-controls="profile-tabpanel"
+                aria-controls={`profile-tabpanel-${key}`}
                 tabIndex={tab === key ? 0 : -1}
                 className={tab === key ? styles.tabActive : styles.tab}
                 onClick={() => selectTab(key)}
@@ -867,46 +865,61 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
           </div>
         ) : null}
 
-        {/* The active tab. It scrolls inside this area only when a small
-            window cannot fit it. */}
+        {/* The tabs' bodies. Every tab is mounted when the page opens and
+            the inactive ones are hidden (product call 261116): a body that
+            mounted on click painted its rows before their reads landed, so
+            a switch showed a half-built tab that then jumped into place.
+            Mounted up front, each tab's values are already there when it is
+            picked. The area scrolls only when a small window cannot fit the
+            active tab. */}
         <div
+          ref={panelRef}
           id="profile-tabpanel"
           className={styles.panel}
           data-scroll="profile"
           data-view={view}
           data-tab={tab}
-          {...(tabs.length > 1 ? { role: 'tabpanel', 'aria-labelledby': `profile-tab-${tab}` } : {})}
         >
-          {tab === 'overview' ? (
-            <ProfileOverview
-              key={character.id}
-              character={character}
-              canReport={access.report}
-              intro={intro}
-              onReport={() => {
-                onAction('report');
-                setShowReport(true);
-              }}
-            />
-          ) : (
-            <ProfileSettings
-              key={`${character.id}:${tab}`}
-              {...settingsProps}
-              regenHint={
-                view === 'owner' && regenHint.show ? (
-                  <RegenHint
-                    placement="below"
-                    onClose={() => regenHint.dismiss('close')}
-                    onOutside={() => regenHint.dismiss('outside')}
-                    onRegenerate={() => {
-                      regenHint.regenerate();
-                      setCardImage({ regenerate: true });
-                    }}
-                  />
-                ) : null
-              }
-            />
-          )}
+          {tabs.map((key) => (
+            <div
+              key={`${character.id}:${key}`}
+              id={`profile-tabpanel-${key}`}
+              data-tab-panel={key}
+              hidden={key !== tab}
+              {...(tabs.length > 1 ? { role: 'tabpanel', 'aria-labelledby': `profile-tab-${key}` } : {})}
+            >
+              {key === 'overview' ? (
+                <ProfileOverview
+                  character={character}
+                  canReport={access.report}
+                  intro={intro}
+                  onReport={() => {
+                    onAction('report');
+                    setShowReport(true);
+                  }}
+                />
+              ) : (
+                <ProfileSettings
+                  {...settingsProps}
+                  tab={key}
+                  active={key === tab}
+                  regenHint={
+                    key === tab && view === 'owner' && regenHint.show ? (
+                      <RegenHint
+                        placement="below"
+                        onClose={() => regenHint.dismiss('close')}
+                        onOutside={() => regenHint.dismiss('outside')}
+                        onRegenerate={() => {
+                          regenHint.regenerate();
+                          setCardImage({ regenerate: true });
+                        }}
+                      />
+                    ) : null
+                  }
+                />
+              )}
+            </div>
+          ))}
         </div>
       </main>
 
@@ -960,22 +973,6 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
         </div>
       </div>
 
-      {editing ? (
-        <EditCharacterModal
-          character={character}
-          initialSection={editSection}
-          only
-          onClose={onEditClose}
-          notice={
-            needsDescription
-              ? t(
-                  'Going public needs a description. Add one, then close this window to continue publishing {name}.',
-                  { name: character.name },
-                )
-              : undefined
-          }
-        />
-      ) : null}
       {knowledgeOpen ? (
         <KnowledgeModal
           characterId={character.id}

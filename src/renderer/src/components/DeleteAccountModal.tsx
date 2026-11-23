@@ -16,6 +16,7 @@ import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { TextField } from './TextField';
 import styles from './DeleteAccountModal.module.css';
+import { userFacingError } from '../lib/errors';
 
 export interface DeleteAccountModalProps {
   accountEmail: string;
@@ -52,7 +53,7 @@ export function DeleteAccountModal({
         setError(
           res.code === 'network'
             ? t("Couldn't reach the account-deletion service. Try again.")
-            : res.message || t("Couldn't delete the account. Try again."),
+            : userFacingError(res.message, t("Couldn't delete the account. Try again.")),
         );
       }
     } finally {

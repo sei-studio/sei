@@ -70,7 +70,7 @@ first frame and on Chromium's gpu-info-update (at most every 5 s).
 
 | Event | When | Props | Answers |
 |---|---|---|---|
-| `seilink_poke` | a double click on her (a refusal repeats quietly for 60 s) | outcome `ok`/`limited`/`free_plan`/`free_cap`/`over_limit`/`no_plan`/`rate_limited`/`occupied`/`busy`/`not_live`/`not_shown`/`silence`/`no_room`/`aborted`/`error`/`depleted`, latency_ms, budget `own`/`paid`/`free`/`none` | Do pokes work, how fast, why not |
+| `seilink_poke` | a click on her (a double click before 261116; a refusal repeats quietly for 60 s) | outcome `ok`/`limited`/`free_plan`/`free_cap`/`over_limit`/`no_plan`/`rate_limited`/`occupied`/`busy`/`not_live`/`not_shown`/`silence`/`no_room`/`aborted`/`error`/`depleted`, latency_ms, budget `own`/`paid`/`free`/`none` | Do pokes work, how fast, why not |
 | `seilink_room_reaction` | a companion editor session for the desktop resident ended (one per session; nothing for an untouched StrictMode remount) | outcome `shown`/`skipped`, reason `no_change`/`cooldown`/`budget`/`on_call`/`in_game`/`busy`/`not_live`/`silence`/`error`, changes (bucket `0`/`1`/`2`/`3-5`/`6-10`/`11+`), latency_ms (shown), budget `own`/`paid`/`free`/`none` | Does she react to room edits, how fast, why not |
 | `seilink_live_line` | decorating together: a live line was due (each skip reason once per session) | outcome `shown`/`skipped`, reason `not_resident`/`on_call`/`in_game`/`cap`/`busy`/`cooldown`/`budget`/`silence`/`error`, changes (bucket), latency_ms (shown), budget | Does she comment while you decorate, why not |
 | `seilink_her_edit` | she used decorate (main, surface `chat`/`call`) or the player answered it (editor, outcome `undone`/`tried`) | outcome `applied`/`suggested`/`rejected`/`undone`/`tried`, changes (bucket), rejected (bucket), surface `chat`/`call`/`editor` | Does she decorate, do people keep it |
@@ -90,6 +90,7 @@ Live lines (decorating together): `live_shown`, `live_skip_<reason>`.
 |---|---|---|---|
 | `seilink_movein_sheet` | sheet loaded (`shown`), Move in worked (`confirmed`), a try failed (`failed`, once per class), Not now (`dismissed`) | action, reason `first_room`/`swap`/`retry`, preset, pick_room (261106: true = her first room, there is no picker any more), swap, preset_changed (always false since 261106), blank_room (261106: the first room is the blank one), plain_room (261106 v3: she starts on the plain background), packs_available (shown), ms_open, error_class `start_failed`/`save_failed`/`unsupported`/`error`, entry `button`/`gear`/`tour`/`dock` (261105: how the person got here) | Sheet funnel |
 | `seilink_moved_in` | host started for her (not a restore) | swapped, preset, first_room, blank_room (261106: the blank first room was created), plain_room + plain_tone `dark`/`light`/`unknown` (261106 v3: she spawned on the plain background, in which OS theme) | Move-ins; plain spawns by theme |
+| `seilink_entrance` | 261119, once per host session (main `host/arrival.ts`): she came in on the desktop, or the session ended before she did | character_id, trigger `first_link`/`move_in`/`switch`/`restore`, action `played` (her entrance ran)/`still` (she was just there)/`ended` (session ended first), look `ready`/`arrived` (waited, her face set landed)/`unavailable` (cut-out or picture)/`failed`/`offline`/`skipped` (a click on the waiting line)/`imported`/`waiting` (ended while waiting), waited, wait_ms (waiting line up to her look landing; 0 without a wait), timed_out (the wait passed `LINK_TIMEOUT_MS`), skipped, avatar_kind (`facepack`/`cutout`/`portrait`/`placeholder`/`live2d`/`rig`, what showed), reduced_motion | Does every move-in get an entrance, how long people wait for her look, how often they skip or give up, how often she still lands as a picture |
 | `seilink_moved_out` | she moved out | via app/dock | Move-outs |
 
 ## Entry, first-link intro, tour (261105, T337)
@@ -102,8 +103,19 @@ Shapes in `src/shared/seilinkIntroTelemetry.ts`, rebuilt in main by
 |---|---|---|---|
 | `seilink_entry` | every WorldLink entry click | character_id, source `button`/`gear`/`tour`/`dock`, action `sheet`/`move_in`/`edit`/`move_out`/`replay_intro` | Which entry point people use |
 | `seilink_intro` | the intro shows (`shown`), and how it ended (`completed`/`skipped`/`aborted`; since 261106 v6 `aborted` = closed from the WorldLink failure line, and the v6 intro runs 30 s or longer so duration_bucket is mostly `gt20s`: use `seilink_intro_link.total_ms`) | character_id, action, trigger `first_link`/`replay`, style `aurora` (the only one since 261106 v3; `bloom`/`tide` earlier that day, `holo`/`glitch`/`tunnel` before), mood `eclipse` (261106 v4: the only colour mood; `accretion`/`nebula` were sent on 261106 v3 builds only), end_on `plain_dark`/`plain_light`/`room` (what it settled into), reduced_motion, entry; on the end: beat `tunnel`/`link`/`port`/`linked` (where it ended), duration_bucket `lt3s`/`3_6s`/`6_9s`/`9_12s`/`12_20s`/`gt20s`, host `ok`/`failed`/`pending`/`none` | Do people watch it, where they skip, does the host keep up |
-| `seilink_intro_link` | once per intro, when it ends (or is unmounted): how the WorldLink status lines went (261106 v6, `lib/seilink/worldLink.ts` linkReport) | outcome `success` (the success line landed)/`failed` (the failure line showed and was closed)/`abandoned` (skipped or closed before either), failure `offline`/`network`/`timeout`/`bake_failed`/`install`/`http`/`auth`/`host`/`error` (failed only), trigger, reduced_motion, lines_shown (0 to 9), line_1_ms .. line_9_ms (how long each line was on screen), total_ms, slowest (the milestone that took longest after the one before: `sent`/`answered`/`running`/`baked`/`installed`/`host`) + slowest_ms, anima_start (her bake's `AnimaStage` when the intro started, or `none`). No character id, no text | Is the link fast enough, which stage is slow, how often it fails and why |
+| `seilink_intro_link` | once per intro, when it ends (or is unmounted): how the WorldLink status lines went (261106 v6, `lib/seilink/worldLink.ts` linkReport) | outcome `success` (the success line landed)/`failed` (the failure line showed and was closed)/`abandoned` (skipped or closed before either), failure `offline`/`network`/`timeout`/`bake_failed`/`install`/`http`/`auth`/`host`/`error` (failed only), trigger, reduced_motion, lines_shown (0 to 9), line_1_ms .. line_9_ms (how long each line was on screen), total_ms, slowest (the milestone that took longest after the one before: `sent`/`answered`/`running`/`baked`/`installed`/`host`) + slowest_ms, anima_start (her bake's `AnimaStage` when the intro started, or `none`), handoff (261119: true when her look was still baking at `LINK_TIMEOUT_MS` and the desktop brought her in instead). No character id, no text | Is the link fast enough, which stage is slow, how often it fails and why |
+| `feature_tip` | the one-time "New" tip under the chat header's WorldLink button (261119, `lib/worldlinkTipPref`): `shown` (once per account per app session), `opened` (the WorldLink button clicked while it was up; the same click also sends `seilink_entry` source `button`), `dismissed` ("Got it") | target `worldlink` (closed enum, so a later move of the tip is a separate series), action, character_id | Does the tip drive people into WorldLink |
 | `seilink_tour` | the guide's tour: `offered`, `sure`, `not_now` (snoozed true on the first, false when it retires), `completed` (the sheet opens), `dropped` (Skip tutorial) | action, audience `new`/`existing`, offer_n (1 or 2), snoozed?, step `offer`/`button`/`room` (dropped) | Tour funnel and snooze outcome |
+
+The "New" tip and WorldLink's own onboarding (261119): the tip never shows
+while a tour runs, a modal or any WorldLink surface is up (sheet, editor,
+intro, live hint, a move in progress), and never for someone who already
+knows WorldLink (intro seen, a companion on the desktop, or the tour
+finished; a tour only offered or snoozed once does not count). Every
+WorldLink entry (`seilinkFlow.trackEntry`) retires it for good, so the
+button click flows straight into the sheet and the first-link intro with the
+tip already gone. The guide's tour is unchanged and may still be offered on
+Home to someone who only dismissed the tip.
 
 Profile page (261107, v0.7; reorganized by product call 261110, then split
 into a section menu on 261110 v2): the gear menu is gone. Its WorldLink items
@@ -171,11 +183,12 @@ per app run.
 | `requested` | the first POST /anima/v1/request for her this run | trigger `move_in_sheet`/`editor`/`host_start`/`host_restore`/`portrait_changed`, state (the proxy's first answer), created (this call queued a new bake) | How often WorldLink opens lead to a bake |
 | `ready` | her face set is on disk and in use | trigger, from_cache (no bake was waited on), source `disk`/`cloud_cache`/`baked`, wait_ms (from the request), pack_mb? | How long people wait for her look |
 | `deferred` | the proxy held the bake | reason `budget`/`user_cap`, trigger, wait_ms | Budget switch and weekly cap hits |
-| `no_pack` | her portrait cannot become a face set (final for that portrait) | trigger, wait_ms | Portraits that stay on the fallback |
-| `failed` | the bake, the download or the install failed | reason (the bake's, or `network`/`poll_timeout`/`hash_mismatch`/`bad_archive`/`bad_entry`/`too_big`/`no_manifest`/`download`/`bad_reply`/`http_<n>`), trigger | Breakage |
+| `cutout` | 261118: no face to animate, but the cloud cut her figure out cleanly; the PNG is on disk and in use (instead of `no_pack`) | trigger, source `disk`/`cloud_cache`/`baked`, wait_ms, cutout_kb? | How many uploaded looks get a clean figure without a face set |
+| `no_pack` | her portrait cannot become a face set or a cut-out (final for that portrait; since 261118 only an unusable picture) | trigger, wait_ms | Portraits that stay on the in-app fallback |
+| `failed` | the bake, the download or the install failed | reason (the bake's, or `network`/`poll_timeout`/`hash_mismatch`/`bad_archive`/`bad_entry`/`too_big`/`no_manifest`/`download`/`bad_reply`/`http_<n>`; for a cut-out `cutout_` + `hash_mismatch`/`too_big`/`bad_image`/`download`/`bad_reply`), trigger | Breakage |
 | `unavailable` | the proxy will not bake her | reason `not_configured`/`no_portrait`/`portrait_unreadable`/`moderation`/`not_found` (no cloud row)/`forbidden`, trigger | Characters that cannot get a look |
 | `skipped` | nothing was asked | reason `offline`/`signed_out`, trigger | Signed-out and offline WorldLink use |
-| `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready` | What people actually see |
+| `shown` | a RoomAvatar settled on a kind | avatar_kind `live2d`/`rig`/`facepack`/`cutout` (261118, the cloud cut-out)/`portrait`/`placeholder`, surface `desktop`/`editor`, anima_state `idle`/`preparing`/`ready`; for live2d (261122, `live2dManifestShape`) l2d_ids `standard`/`remapped`/`unknown`, l2d_mouth, l2d_blink (bools), l2d_gaze `eyes_head`/`eyes`/`head`/`none`, l2d_expr_usable, l2d_expr_noop (counts). Shape only, never ids or names | What people actually see; how many imported models get a mouth, blink and gaze |
 
 ## Room editor
 
@@ -184,6 +197,8 @@ per app run.
 | `seilink_editor_session` | the editor closes, or the window goes away with it open (one per session; a drag is one edit) | opened_from `gear`/`dock`/`move_in`/`button`/`tour`/`offer` (261106)/`other`, surface `desktop`/`app` (261106: on the desktop stage or in the window), duration_ms, preset, preset_end, first_panel, panels_opened, `panel_<avatar/room/fabrics/furniture/items>`, edits, `edit_<type>`, undos, saves, save_failures, avatar_upload_start/ok/fail, `avatar_fail_<not_zip/too_big/import_failed>`, dirty_at_close, outcome `saved`/`no_changes`/`discarded`, errors; 261105 catalog: `edit_pattern_change`/`edit_accent_change`/`edit_light_colour`/`edit_light_cycle`, patterned_at_close, accents_at_close, cycling_lights_at_close, particle_parts_at_close, particles_on, last_pattern (a code pattern, a painted tile id, `plain` or `other`); 261105 colour pass: preset_color_picks (a preset swatch or the automatic second colour), custom_color_picks (one per finished custom pick: a drag, a typed hex, a key run), recent_color_picks, picker_opens, custom_colors_at_close (tinted parts whose colour is not one of their presets). Never a colour value | Do people edit, what they change, do they save; do patterns and light colours get used |
 | (on `seilink_editor_session`) | 261105 (T336), only when the editor was shared with the resident | together, on_call_at_open, live_lines, call_pictures, call_picture_skipped_unchanged, call_picture_rate_limited, her_edits_applied/suggested/rejected/undone/tried, talk_messages, talk_blocked. Her edits are not counted in `edits` / `edit_<type>` | Decorating together usage |
 | `seilink_editor_error` | first time per kind per session | kind `load_failed`/`no_packs`/`save_failed`/`avatar_import_failed`, opened_from | Editor breakage |
+| `seilink_widget` | 261119, per saved change to a wallpaper widget (a diff of the saved room against the one on disk, so a drag is one event, sent on save) | action `added`/`removed`/`edited`, kind `clock`/`date`/`text`/`progress`, surface, changed (comma list of setting names: position, font, color, size, weight, opacity, shadow, align, hour12, pad, seconds, ampm, date, text, span), widgets (count after the save, max 99). Never the text, a colour or a position | Which widgets people add, what they tweak, do they keep them |
+| `seilink_lighting` | 261119, a save that changed the room's lighting | surface, brightness (-50..50), dim (0..90), warmth (-50..50), all rounded to the nearest 10; character (she is lit with the room), reset (back to neutral) | Do people dim the room, how far, with or without her |
 
 Edit types (`classifyEdit`, a diff of two history entries):
 `swap_component`, `view_change`, `recolour`, `remove_slot`, `add_item`,
@@ -196,6 +211,10 @@ colour cycle turned on or off). There is no separate particles toggle: an
 optional slot whose part shows particles (forest fireflies) counts as a
 swap or removal, and `particle_parts_at_close` / `particles_on` give the
 state at close.
+261119: `widget_add`, `widget_remove`, `widget_edit`, `widget_move` (only
+the anchor changed) and `lighting`; panels `panel_misc` and
+`panel_lighting`; at close `widgets_at_close` and `lighting_at_close`
+(true when the lighting is not neutral).
 
 ## Open at login (261107)
 
@@ -238,8 +257,15 @@ count, the character id). `seilink_minimize_windows` is sent by main itself
 |---|---|---|---|
 | `seilink_setup_call` | the Call button by the room editor's talk box | character_id, outcome `started`/`consent_shown`/`install_started`/`installed`/`install_failed`/`declined`/`error`, guided (the guided setup was open), gate `ready`/`installing`/`consent` (the voice module when pressed) | Do people call her while setting up; how often the voice module is in the way |
 | `seilink_live_hint` | the "{name} lives on your desktop now" card (once per account, until dismissed) | character_id, action `shown`/`dismissed` (Got it)/`minimized` (Minimize other windows / Hide other apps)/`show_desktop` (the window went hidden while it was up: Win+D), surface `intro_end` (over the first link's last frame)/`app_window` (in the app after a move-in without the intro), os `mac`/`windows`/`linux` | Is the card read; how people get to the desktop |
-| `seilink_minimize_windows` | "Minimize other windows" ran (main) | outcome `ok`/`failed`/`unsupported`, windows (how many were minimized, Windows only, capped at 50), surface `live_card`/`other`, os | Does the minimize work per platform |
+| `seilink_minimize_windows` | "Minimize other windows" ran (main) | outcome `ok`/`failed`/`unsupported`, windows (how many were minimized, Windows only, capped at 50), surface `live_card`/`desktop_hint` (261116)/`other`, os | Does the minimize work per platform |
+| `seilink_desktop_hint` | product call (261116): the one-line "Your desktop was updated." hint in the app after WorldLink opened (a move-in or a swap, not the launch restore) or updated (the in-app editor closed after a save) the desktop | character_id, action `shown`/`hide_windows` (Hide windows: `seilink_minimize_windows` surface `desktop_hint` follows)/`expired` (hid itself after 6 s)/`hidden` (the window went away first), kind `opened`/`updated`, os | Is the hint seen, and does Hide windows get used |
 | `seilink_placement_guide` | the first drop of a dragged item, per kind of place, per editor session | mode `outline` (the outlined areas that replaced the blur), cls `floor`/`surface`/`wall`, placed (true: the item was dropped) | Sanity check that the outline guide shows |
 
 `seilink_movein_sheet` also carries `notice: 'beta_v1'` since 261110: the
 sheet's bullets became one short beta notice.
+
+261118: `worldlink_custom_image_notice_shown {character_id}` fires once when
+the move-in sheet shows the custom-image line (her look is an uploaded
+picture with no avatar and no face set, `worldlinkCustomImage`), and every
+`seilink_movein_sheet` action of that sheet carries `custom_image_notice:
+true`. Proceed rate = `confirmed` / `shown` with that prop.

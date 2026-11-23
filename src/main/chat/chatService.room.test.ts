@@ -231,6 +231,15 @@ describe('desktop lines (M4)', () => {
     const rows = await readRecent(CHAR, 5);
     expect(rows.map((m) => m.text)).toContain('hey, that tickles');
     expect(rows.every((m) => m.voice !== true)).toBe(true);
+    // Product call (261116): a desktop row, hidden in the chat UI (desktop bubbles only).
+    expect(rows.find((m) => m.text === 'hey, that tickles')?.desktop).toBe(true);
+  });
+
+  it("product call (261116): the editor's live line ('chat') is a normal chat row", async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'the rug goes there' }] });
+    const line = await sendDesktopLineTurn(CHAR, 'react', undefined, 'note', 'chat');
+    expect(line?.messages.every((m) => m.desktop !== true)).toBe(true);
+    expect((await readRecent(CHAR, 5)).find((m) => m.text === 'the rug goes there')?.desktop).toBeUndefined();
   });
 
   it('261105: the face tag her line led with comes back for her desktop face (dev flag only)', async () => {

@@ -71,4 +71,16 @@ describe('nearbyEntities requireLineOfSight', () => {
     expect(pinned.entries.map((e) => e.entity.name)).toContain('zombie')
     expect(pinned.entries).toHaveLength(6)
   })
+
+  // 261115 (quality pass 56): the zombie hitting the player stood straight
+  // behind them from where she was, and the player's body hid it.
+  it('a mob standing behind the player is still listed (entities do not occlude)', () => {
+    const bot = makeBot([
+      { username: 'Alex', type: 'player', position: at(3, 64, 0), width: 0.6, height: 1.8 },
+      { name: 'zombie', position: at(5, 64, 0), width: 0.6, height: 1.95 },
+    ])
+    const names = nearbyEntities(bot, { radius: 64, count: 6, pin: 'Alex', requireLineOfSight: true })
+      .entries.map((e) => e.entity.name ?? e.entity.username)
+    expect(names).toContain('zombie')
+  })
 })

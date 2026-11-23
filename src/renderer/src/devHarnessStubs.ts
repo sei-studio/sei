@@ -119,6 +119,8 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
         : { [params.get('provider') ?? 'anthropic']: { model: 'claude-haiku-5-5' } },
     tts_engine: ptVoice === 'sei' ? 'sei' : ptVoice === 'elevenlabs' ? 'elevenlabs' : 'local',
     local_tts_model: ptVoice === 'fish' ? 'fish' : params.get('engine') === 'kokoro' ? 'kokoro' : 'fast',
+    // 261120: &cloudvoice=fish = Fish picked in Playtime > Sei > Advanced.
+    ...(params.get('cloudvoice') === 'fish' ? { cloud_tts_provider: 'fish' } : {}),
     stt_engine: 'whisper',
     spend_alert_enabled: params.has('alert'),
     spend_alert_usd: 20,
@@ -391,6 +393,41 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
             { id: 'f2', label: 'Lily', gender: 'female', age: 'adult', tags: [], vibe: 'soft, British' },
             { id: 'm1', label: 'Liam', gender: 'male', age: 'young', tags: [], vibe: 'easygoing, American' },
           ],
+          // 261119: the Voice Library paste card. &lib=rejected answers a
+          // lookup with a rejection; anything else finds a voice.
+          voiceLibraryLookup: async () =>
+            params.get('lib') === 'rejected'
+              ? { ok: false, reason: 'custom_rate' }
+              : {
+                  ok: true,
+                  voice: {
+                    voiceId: 'LibVoice0000000000aa',
+                    name: 'Captain Wren',
+                    gender: 'female',
+                    age: 'middle_aged',
+                    accent: 'british',
+                    description: 'A weathered sea captain with a warm, steady voice.',
+                    hasPreview: true,
+                  },
+                },
+          voiceLibraryAdd: async () => ({
+            ok: true,
+            already: false,
+            voice: {
+              voiceId: 'LibVoice0000000000aa',
+              name: 'Captain Wren',
+              gender: 'female',
+              age: 'middle_aged',
+              accent: 'british',
+              description: null,
+              hasPreview: true,
+            },
+          }),
+          voiceLibraryStatus: async () =>
+            params.get('lib') === 'removed'
+              ? { status: 'removed', name: 'Captain Wren', gender: 'female' }
+              : { status: 'active', name: 'Captain Wren', gender: 'female' },
+          voiceLibraryPreview: async () => new ArrayBuffer(0),
           voiceListOwnVoices: async () =>
             voiceKeySaved
               ? {
@@ -431,7 +468,8 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           hasApiKey: async () => !params.has('nokey'),
           saveApiKey: async () => undefined,
           voiceElevenKeyStatus: async () => ({ present: params.get('key') === '1' }),
-          voiceFishKeyStatus: async () => ({ present: false }),
+          voiceFishKeyStatus: async () => ({ present: params.get('fishkey') === '1' }),
+          voiceFishKeySet: async () => undefined,
           speechPackStatus: async () => ({
             packs: {
               'tts-en': { state: 'ready', bytes: 64_000_000 },
@@ -493,6 +531,18 @@ if (import.meta.env.DEV && w && w.sei == null && new URLSearchParams(w.location.
           chatgptLoginResendCode: async () => ({ ok: true }),
         }
       : {}),
+    // ?dashshot=creditwall&checkout=fail (261122): the checkout session
+    // cannot be created, so the plan page shows its "Couldn't open checkout"
+    // state instead of "finish in your browser". Records the call either way.
+    ...(creditWallMode
+      ? {
+          creditsOpenCheckout: async (kind: string, source?: string) => {
+            const dev = window as unknown as { __seiDevCheckout?: Array<{ kind: string; source?: string }> };
+            (dev.__seiDevCheckout ??= []).push({ kind, source });
+            return params.get('checkout') === 'fail' ? { ok: false, code: 'PROXY_NETWORK' } : { ok: true };
+          },
+        }
+      : {}),
     // ?dashshot=onboard and ?dashshot=creditwall (the usage-limit popup's
     // credit_wall_action clicks, 261103) record track calls. So does
     // ?dashshot=roblox (the Suggest-a-game hint events, 261109).
@@ -545,12 +595,29 @@ if (
     const refs = spec.layers.flatMap((l) => [l.src, l.states?.open, l.states?.closed]).filter((r): r is string => !!r);
     return Promise.all(['rig.json', ...refs].map(get));
   };
+  // &live2d=<url of a model dir>&live2dentry=<x.model3.json> (261122): a Live2D model the same
+  // way, as an older store hands it over (no resolved `params`, so Live2DView resolves them from
+  // the files, the fallback path).
+  const l2dBase = harnessParams.get('live2d')?.replace(/\/?$/, '/') ?? null;
+  const l2dEntry = harnessParams.get('live2dentry') ?? 'model.model3.json';
+  const l2dFiles = async (): Promise<Array<{ path: string; bytes: Uint8Array }>> => {
+    if (!l2dBase) return [];
+    const get = async (rel: string): Promise<{ path: string; bytes: Uint8Array }> => ({ path: rel, bytes: new Uint8Array(await (await fetch(l2dBase + rel)).arrayBuffer()) });
+    const refs = ((await (await fetch(l2dBase + l2dEntry)).json()) as { FileReferences?: Record<string, unknown> }).FileReferences ?? {};
+    const list = [refs.Moc, refs.Physics, refs.Pose, refs.DisplayInfo, ...((refs.Textures as string[] | undefined) ?? []), ...((refs.Expressions as Array<{ File: string }> | undefined) ?? []).map((e) => e.File)];
+    return Promise.all([l2dEntry, ...list.filter((r): r is string => typeof r === 'string' && !!r)].map(get));
+  };
   const answers: Record<string, unknown> = rigBase
     ? {
         avatarGet: async () => ({ version: 2, kind: 'rig', name: 'dev rig', entry: 'rig.json', importedAt: '', bytes: 0, expressions: [], emotions: {} }),
         avatarModelFiles: rigFiles,
       }
-    : {};
+    : l2dBase
+      ? {
+          avatarGet: async () => ({ version: 2, name: 'dev live2d', entry: l2dEntry, importedAt: '', bytes: 0, expressions: [], emotions: {} }),
+          avatarModelFiles: l2dFiles,
+        }
+      : {};
   const packsBase = harnessParams.get('facepacks')?.replace(/\/?$/, '/') ?? null;
   const packId = harnessParams.get('facepackid');
   if (packsBase && packId) {
@@ -578,6 +645,65 @@ if (
     answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
       listeners.add(cb);
       return () => listeners.delete(cb);
+    };
+  }
+  // &cursorfeed=1 (261119): her gaze feed from the page's own pointer, the way the
+  // desktop host makes it (hostEntry pollHover + dock.ts gazeSample): polled every
+  // 150 ms, [-1, 1] around her face (y up), sent on a change or every 0.7 s.
+  if (harnessParams.has('cursorfeed')) {
+    const subs = new Set<(pt: { x: number; y: number }) => void>();
+    let ptr: { x: number; y: number } | null = null;
+    let last: { x: number; y: number } | null = null;
+    let sentAt = 0;
+    window.addEventListener('pointermove', (e) => (ptr = { x: e.clientX, y: e.clientY }), { passive: true });
+    setInterval(() => {
+      const her = document.querySelector('[data-seilink-hit]')?.getBoundingClientRect();
+      if (!ptr || !her || her.width <= 0) return;
+      const c = (v: number): number => Math.round(Math.max(-1, Math.min(1, v)) * 1000) / 1000;
+      const g = { x: c((ptr.x - (her.x + her.width / 2)) / (window.innerWidth / 2)), y: c((her.y + her.height * 0.22 - ptr.y) / (window.innerHeight / 2)) };
+      const now = Date.now();
+      if (last && Math.abs(last.x - g.x) <= 0.004 && Math.abs(last.y - g.y) <= 0.004 && now - sentAt < 700) return;
+      last = g;
+      sentAt = now;
+      subs.forEach((cb) => cb(g));
+    }, 150);
+    answers.onAvatarOverlayCursor = (cb: (pt: { x: number; y: number }) => void) => {
+      subs.add(cb);
+      return () => subs.delete(cb);
+    };
+  }
+  // &cutout=<png url> (261118): her cloud cut-out (anima no_pack + cutout), from the
+  // start, or &cutoutat=<ms> after the room is ready (a manifest push, like a bake landing).
+  const cutoutUrl = harnessParams.get('cutout');
+  if (cutoutUrl) {
+    const at = harnessParams.get('cutoutat');
+    let ready = at === null;
+    const subs = new Set<(u: { characterId: string; manifest: null }) => void>();
+    if (!ready) {
+      const poll = setInterval(() => {
+        if (document.body?.dataset.roomReady !== '1') return;
+        clearInterval(poll);
+        setTimeout(() => {
+          ready = true;
+          for (const cb of subs) cb({ characterId: 'dev-preview', manifest: null });
+        }, Number(at) || 0);
+      }, 50);
+    }
+    let bytes: Promise<Uint8Array | null> | null = null;
+    answers.seilinkAnimaCutout = async () => {
+      if (!ready) return null;
+      bytes ??= fetch(cutoutUrl).then(async (r) => (r.ok ? new Uint8Array(await r.arrayBuffer()) : null));
+      const png = await bytes;
+      return png ? { sha256: 'c'.repeat(48) + String(png.byteLength).padStart(16, '0'), png } : null;
+    };
+    const prevSub = answers.onAvatarManifest as ((cb: (u: { characterId: string; manifest: null }) => void) => () => void) | undefined;
+    answers.onAvatarManifest = (cb: (u: { characterId: string; manifest: null }) => void) => {
+      subs.add(cb);
+      const off = prevSub?.(cb);
+      return () => {
+        subs.delete(cb);
+        off?.();
+      };
     };
   }
   // &together=<name> (261105, T336): the shared editor (RoomTogether). An empty
@@ -635,3 +761,24 @@ if (
 }
 
 export {};
+
+// &ipclatency=<ms> (261116): every async bridge answer arrives that much
+// later, like the real IPC round trip, so a harness can show what a screen
+// paints before its reads land (the profile tab switch was checked this way).
+if (import.meta.env.DEV && w && harnessParams?.has('dashshot') && Number(harnessParams.get('ipclatency')) > 0) {
+  const lag = Number(harnessParams.get('ipclatency'));
+  const inner = (w as { sei?: unknown }).sei as Record<string, unknown> | undefined;
+  if (inner) {
+    (w as { sei?: unknown }).sei = new Proxy(inner, {
+      get(target, key) {
+        const value = target[key as string];
+        if (typeof value !== 'function' || (typeof key === 'string' && key.startsWith('on'))) return value;
+        return (...args: unknown[]) => {
+          const out = (value as (...a: unknown[]) => unknown)(...args);
+          if (!out || typeof (out as Promise<unknown>).then !== 'function') return out;
+          return new Promise((resolve, reject) => setTimeout(() => (out as Promise<unknown>).then(resolve, reject), lag));
+        };
+      },
+    });
+  }
+}

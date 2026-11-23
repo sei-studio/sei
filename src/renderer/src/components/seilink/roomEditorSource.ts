@@ -13,6 +13,7 @@ import { sanitizeRoomState } from '@shared/seilinkValidate';
 import { seilinkResolver, type RoomUrlResolver } from '@shared/seilinkPack';
 import { sei } from '../../lib/ipcClient';
 import { useAvatarStore } from '../../lib/stores/useAvatarStore';
+import { useSeilinkStore } from '../../lib/stores/useSeilinkStore';
 
 export interface EditorPack {
   id: RoomPresetId;
@@ -56,7 +57,10 @@ export function ipcRoomEditorSource(characterId: string): RoomEditorSource {
     },
     async save(state) {
       if (!sei.seilinkRoomSet) throw new Error('SEILINK_UNAVAILABLE');
-      return (await sei.seilinkRoomSet(characterId, state)).state;
+      const saved = (await sei.seilinkRoomSet(characterId, state)).state;
+      // 261116: the in-app editor says "desktop updated" when it closes (useSeilinkStore.desktopHint).
+      useSeilinkStore.getState().noteRoomSaved(characterId);
+      return saved;
     },
     avatar: {
       async get() {

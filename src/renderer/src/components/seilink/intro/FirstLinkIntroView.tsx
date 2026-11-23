@@ -29,12 +29,13 @@
  *    stage) only the captions fade: the last frame is her on the plain
  *    background (or in her room) full screen, the same picture the
  *    wallpaper draws, so the window can step aside without a visible cut.
- *  - skipped: the Skip button or Esc. Fades out fast; with `holdEnd` it
+ *  - skipped: Esc (a quiet way out; there is no Skip button since the
+ *    product call (261116), the lines type fast instead). Fades out fast; with `holdEnd` it
  *    crossfades into the solid (before the success line) and plays her
  *    entrance, rushing the settle (SKIP_RUSH) once the solid has cleared, so
  *    a skip also ends on her room. The climax and the solid are never played fast.
  *  - aborted: the link failed (the failure line). The light stays with the
- *    line and no her; the button turns into Close, and Close or Esc fades
+ *    line and no her; a Close button comes up, and Close or Esc fades
  *    the overlay out (the move-in sheet's retry shows when the host failed).
  * onReport gets the status lines' analytics once: at the end, or when it is
  * unmounted before one.
@@ -44,6 +45,7 @@ import type { IntroBeat, IntroEndOn, LinkOutcome } from '@shared/seilinkIntroTel
 import type { RoomPresetManifest, RoomState } from '@shared/seilinkRoom';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import type { SeilinkStageFrame } from '@shared/seilinkHost';
+import { DESKTOP_STAGE } from '@shared/seilinkDraw';
 import { RoomCanvas, type RoomAvatarSlot } from '../RoomCanvas';
 import { RoomAvatar, type RoomAvatarUse } from '../RoomAvatar';
 import type { FacepackSource } from '../../../lib/facepack/facepackSource';
@@ -168,6 +170,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
   const reportedRef = useRef(false);
   const failedRef = useRef(false);
   const lastTextRef = useRef({ live: '' });
+  // 261119: whether she is drawn, decided when she would first show: only with her look in (else the desktop brings her in).
+  const herInRef = useRef<boolean | null>(null);
   const cb = useRef(props);
   cb.current = props;
   // A ref: the stage answers after the clock started, and the clock must not restart for it.
@@ -232,7 +236,14 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
       // The grain dithers the dark gradients; it goes as her place comes in (under the solid), so the last frame is the plain colour exactly.
       const grain = 1 - f.room.opacity;
       set(grainRef.current, 'opacity', Math.max(0, grain).toFixed(3));
-      set(avatarRef.current, 'opacity', f.avatar.opacity.toFixed(3));
+      // 261119: her look not in when she would come in (a handoff at LINK_TIMEOUT_MS, or a skip before it landed):
+      // the intro does not draw her picture with the oval fade; the wallpaper waits for her look and plays her entrance.
+      let herOpacity = f.avatar.opacity;
+      if (herOpacity > 0) {
+        herInRef.current ??= logRef.current.at.installed !== undefined;
+        if (!herInRef.current) herOpacity = 0;
+      }
+      set(avatarRef.current, 'opacity', herOpacity.toFixed(3));
       set(avatarRef.current, 'filter', f.avatar.filter);
       set(avatarRef.current, 'transform', f.avatar.rise > 0.05 ? `translateY(${f.avatar.rise.toFixed(2)}px)` : 'none');
       // The solid colour over the whole picture (not the HUD): the opening, the climax filling the screen, its hold under the success line and its fade as she comes in.
@@ -476,6 +487,8 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
             state={room.state}
             resolveUrl={room.resolve}
             fit="cover"
+            // Framed on her like the wallpaper (261116), so the last frame is exactly the wallpaper.
+            stage={DESKTOP_STAGE}
             frame={frame}
             // 30 in the harness too: a face set draws nothing at 0 (a still).
             fps={30}
@@ -501,9 +514,12 @@ export function FirstLinkIntroView(props: FirstLinkIntroViewProps): React.ReactE
           </div>
           <p ref={liveRef} className={styles.live} aria-live="polite" />
         </div>
-        <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
-          {failedShown ? t('Close') : t('Skip')}
-        </button>
+        {/* No Skip button (product call (261116): it was unclear; the lines type twice as fast instead). Close shows on the failure line only. */}
+        {failedShown ? (
+          <button ref={skipRef} type="button" className={styles.skip} onClick={skip}>
+            {t('Close')}
+          </button>
+        ) : null}
       </div>
     </div>
   );

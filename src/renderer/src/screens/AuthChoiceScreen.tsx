@@ -41,6 +41,7 @@ import { ContinueWithChatGPTButton } from '../components/ContinueWithChatGPTButt
 import { TextField } from '../components/TextField';
 import { OAuthInterstitialModal } from '../components/OAuthInterstitialModal';
 import styles from './AuthChoiceScreen.module.css';
+import { userFacingError } from '../lib/errors';
 
 type Mode = 'signin' | 'signup';
 
@@ -141,8 +142,8 @@ export function AuthChoiceScreen({
           // the signed_in transition and there is nothing to do here.
           if (res.needsVerification) setCodeSentTo(email);
         } else {
-          setError(res.message);
-          setHintFor(res.code === 'invalid_credentials' ? res.message : null);
+          setError(userFacingError(res.message));
+          setHintFor(res.code === 'invalid_credentials' ? userFacingError(res.message) : null);
         }
       } else {
         const res = await sei.signUpPassword({
@@ -159,7 +160,7 @@ export function AuthChoiceScreen({
           // !requiresVerification path: App.tsx's auth-state subscriber
           // routes onward on the signed_in transition.
         } else {
-          setError(res.message);
+          setError(userFacingError(res.message));
         }
       }
     } finally {
@@ -192,7 +193,7 @@ export function AuthChoiceScreen({
       } else {
         // rate_limited / network / oauth_only — surface inline; the email field
         // stays filled.
-        setError(res.message);
+        setError(userFacingError(res.message));
       }
     } finally {
       setSubmitting(false);

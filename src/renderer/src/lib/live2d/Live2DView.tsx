@@ -10,18 +10,27 @@
  * Liveliness model (AIRI-informed, own constants — see
  * docs/design/avatar-v06-260804.md):
  *  - Breath/sway + blink come FREE from the Cubism SDK on a motionless model
- *    (import guarantees the EyeBlink group exists), physics on top.
- *  - Gaze (260806): alternates between WANDER (correlated random targets on
- *    the old saccade cadence) and CURSOR-FOLLOW (the user's real pointer,
- *    polled by main and pushed over avatar:overlay-cursor-state — only the
- *    overlay window receives it; anywhere else the feed is stale and the
- *    gaze simply wanders). The published focus target GLIDES at constant
- *    speed toward the goal per frame and is handed to the focusController
- *    with instant=true, so the SDK's constant-speed pursuit never sees a
- *    stepped target. That pursuit was the ~5 s jitter: FocusController runs
- *    at MAX_SPEED ≈ 5.3 units/s toward its target and only decelerates on
- *    arrival, so every saccade retarget (mean ~5 s) yanked the face ahead
- *    for about a second mid-drift.
+ *    (import fills the EyeBlink group from the resolved eye ids), physics on top.
+ *  - Gaze (261116, product call 261116: "head tilt jumps", "linear A to
+ *    B"): motion/organic.ts GazeDriver. The eyes make quick minimum-jerk
+ *    saccades between short fixations; the head follows on a critically
+ *    damped spring with its own slow sway and tilt. They are written apart
+ *    (ParamEyeBallX/Y for the eyes, ParamAngleX/Y/Z + ParamBodyAngleX for
+ *    the head) by replacing the SDK's updateFocus, which drove all of them
+ *    from one constant-speed focus point. The user's real pointer (polled by
+ *    main for the overlay window only, avatar:overlay-cursor-state) is one
+ *    of the things she looks at, and she follows it while it moves; where
+ *    the feed never arrives her eyes simply wander. Cubism 2 models (no
+ *    separate ids) get the gaze through the focusController as before.
+ *  - Parameter ids (261122): the mouth, eyes, head and blink ids come from
+ *    the manifest's resolved roles (shared/live2dParams.ts; resolved here
+ *    from the model's own files when an older manifest has none), each
+ *    scaled to the parameter's real range, so a model that names its mouth
+ *    `ParamBocca` lip-syncs and one with an empty EyeBlink group blinks. A
+ *    model with no eye or head parameters leans slightly toward her gaze
+ *    instead.
+ *  - Blink: the SDK's EyeBlink, set to a natural lid timing (65 ms close,
+ *    45 ms hold, 105 ms open).
  *  - Mouth: driven per frame from `speaking` + `levelRef` (0..1 RMS envelope
  *    relayed from wherever the TTS actually plays). Written INSIDE a wrapped
  *    motionManager.update so the SDK layers blink/breath/physics after it and
@@ -38,8 +47,10 @@ import React, { useEffect, useRef } from 'react';
 import type { AvatarCamera, AvatarEmotion, AvatarManifest } from '@shared/ipc';
 import { sei } from '../ipcClient';
 import { resolveEmotionExpression } from '../avatar/emotion';
+import { BLINK_CLOSE_MS, BLINK_HOLD_MS, BLINK_OPEN_MS, GazeDriver, type GazeConfig, type GazeInput, type GazeOutput } from '../motion/organic';
 import { parseExpressionParams, computeAccessoryTargets } from '../avatar/accessoryParams';
 import { loadCubismCore } from './loadCore';
+import { effectiveLive2DParams, LIVE2D_STANDARD_IDS, resolveLive2DParams, resolveLive2DParamsFromFiles, type Live2DRole } from '@shared/live2dParams';
 
 export interface Live2DViewProps {
   characterId: string;
@@ -72,46 +83,28 @@ export interface Live2DViewProps {
  * for ~3 s; a long story holds it long after the last word.
  */
 const EXPRESSION_LINGER_FRACTION = 0.5;
-/** Gaze wander interval bounds (ms). Long on purpose: at 0.6-4.6 s with
- * full-range jumps the head visibly TWITCHED between directions every few
- * seconds; a calm idle looks mostly still. */
-const SACCADE_MIN_MS = 2_600;
-const SACCADE_MAX_MS = 7_500;
-/** Fraction of the previous gaze target kept each step — targets stay
- * correlated, so consecutive looks are neighbors, not opposite corners. */
-const GAZE_KEEP = 0.35;
-/** Usual wander amplitude, and the rarer bigger glance. */
-const GAZE_STEP_X = 0.2;
-const GAZE_STEP_Y = 0.14;
-const GLANCE_CHANCE = 0.15;
-const GLANCE_STEP_X = 0.45;
-const GLANCE_STEP_Y = 0.28;
-/** Gaze mode alternation (260806): every 6-14 s re-pick between wandering
- * and following the user's real cursor (only when the cursor feed is fresh —
- * main polls it only for the overlay window while a Live2D tile shows). */
-const MODE_MIN_MS = 6_000;
-const MODE_MAX_MS = 14_000;
-const CURSOR_CHANCE = 0.45;
 /** Cursor samples older than this mean the feed is gone (main pushes at
- * ~8 Hz): fall back to wander rather than staring at a frozen point. */
+ * ~8 Hz): back to wandering rather than staring at a frozen point. */
 const CURSOR_FRESH_MS = 2_000;
-/** How far the face turns toward the cursor, per axis: the pushed sample is
+/** How far she looks toward the cursor, per axis: the pushed sample is
  * [-1, 1] across the display around the window center; full deflection at
- * the screen edge reads cross-eyed, so it is scaled down and clamped to the
- * same comfortable range the wander uses. */
+ * the screen edge reads cross-eyed, so it is scaled down. */
 const CURSOR_GAIN_X = 0.75;
 const CURSOR_GAIN_Y = 0.6;
-/** Gaze glide (the ~5 s jitter fix, reworked 260806): the published focus
- * target moves toward the goal at CONSTANT SPEED (units/s) and is applied
- * with instant=true — so the SDK's own constant-speed FocusController
- * (MAX_SPEED ≈ 5.3 units/s, decelerating only on arrival) never receives a
- * step it would lurch after. Constant speed, not a time constant: an
- * exponential glide covers a big saccade in the same time as a small one,
- * which makes large glances whip and small ones crawl; at fixed speed the
- * travel time scales with the distance, like a real eye drift. The short
- * arrive zone eases the last fraction so arrival is not a hard stop. */
-const GAZE_SPEED = 0.9;
-const GAZE_ARRIVE_DIST = 0.06;
+/** Gaze in the overlay: the cursor is the main thing she looks at. */
+const LIVE2D_GAZE: Partial<GazeConfig> = { cursorChance: 0.4 };
+/** Head angles (deg) at a full head turn, and eyeball travel per unit of eye-in-head gaze. */
+const HEAD_YAW_DEG = 30;
+const HEAD_PITCH_DEG = 24;
+const HEAD_ROLL_DEG = 9;
+const BODY_YAW_DEG = 8;
+const EYEBALL_GAIN = 1.6;
+/** The standard parameters' half ranges the gains above are written for (angles ±30, body ±10, eyeballs ±1). */
+const STD_HALF_ANGLE = 30;
+const STD_HALF_BODY = 10;
+const STD_HALF_EYEBALL = 1;
+/** A model with no eye or head parameters leans this far (deg, about her bottom) at a full head turn. */
+const LEAN_DEG = 1.1;
 /** Mouth smoothing per frame (fast attack, slower release). */
 const MOUTH_ATTACK = 0.5;
 const MOUTH_RELEASE = 0.18;
@@ -123,6 +116,7 @@ type Live2DModelT = {
   position: { set: (x: number, y: number) => void };
   scale: { set: (s: number) => void };
   destroy: (opts?: unknown) => void;
+  rotation: number;
   expression: (id?: number | string) => Promise<boolean>;
   internalModel: {
     coreModel: {
@@ -130,6 +124,8 @@ type Live2DModelT = {
       getParameterIndex: (id: string) => number;
       getParameterCount: () => number;
       getParameterDefaultValue: (index: number) => number;
+      getParameterMinimumValue: (index: number) => number;
+      getParameterMaximumValue: (index: number) => number;
     };
     focusController: { focus: (x: number, y: number, instant?: boolean) => void };
     motionManager: {
@@ -174,8 +170,6 @@ export function Live2DView({
     let cancelled = false;
     let app: { destroy: (removeView?: boolean, opts?: unknown) => void; renderer: { resize: (w: number, h: number) => void } } | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    let saccadeTimer: ReturnType<typeof setTimeout> | null = null;
-    let gazeModeTimer: ReturnType<typeof setTimeout> | null = null;
     let offCursor: (() => void) | undefined;
     let offManifest: (() => void) | undefined;
     const host = hostRef.current;
@@ -295,20 +289,122 @@ export function Live2DView({
           applyAccessoryToggles(update.manifest);
         });
 
-        // ── Gaze state, read per frame by the update wrapper below ─────────
-        // The GOALS are written by the wander/mode timers and the cursor
-        // push; the published focus value `gaze` glides toward the active
-        // goal each frame (see the constants for why stepping the
-        // focusController directly is the ~5 s jitter).
-        const wanderGoal = { x: 0, y: 0 };
-        const cursor = { x: 0, y: 0, at: 0 };
-        let gazeMode: 'wander' | 'cursor' = 'wander';
-        const gaze = { x: 0, y: 0 };
-        let lastGazeAt = performance.now();
+        // ── Parameter ids (261122) ───────────────────────────────────────
+        // The stored roles (main resolves them at import), else resolved here
+        // from the model's own files; only ids the model really has are used.
+        const core = model.internalModel.coreModel;
+        const rangeOf = (id: string): { min: number; max: number; def: number } | null => {
+          const idx = core.getParameterIndex(id);
+          if (idx >= core.getParameterCount()) return null;
+          return { min: core.getParameterMinimumValue(idx), max: core.getParameterMaximumValue(idx), def: core.getParameterDefaultValue(idx) };
+        };
+        const paramMap = effectiveLive2DParams(
+          manifest.params ?? resolveLive2DParamsFromFiles(rawFiles, manifest.entry) ?? resolveLive2DParams({ params: null }),
+          manifest.paramOverrides,
+        );
+        const roleId = (role: Live2DRole): string | undefined => {
+          const id = paramMap.roles[role];
+          return id && rangeOf(id) ? id : undefined;
+        };
+        /** Half the parameter's range over the standard one's: 1 for a standard parameter. */
+        const rangeScale = (id: string, stdHalf: number): number => {
+          const r = rangeOf(id);
+          return r && r.max > r.min ? (r.max - r.min) / 2 / stdHalf : 1;
+        };
 
+        // ── Gaze (261116) ─────────────────────────────────────────────────
+        const cursor = { x: 0, y: 0, at: 0 };
+        const gazeDriver = new GazeDriver(performance.now(), LIVE2D_GAZE);
+        const gazeIn: GazeInput = { cursor: null, engaged: false };
+        const cursorPt = { x: 0, y: 0 };
+        const im = model.internalModel as unknown as {
+          updateFocus?: () => void;
+          coreModel: { addParameterValueById?: (id: unknown, v: number) => void };
+          eyeBlink?: { setBlinkingSetting?: (closing: number, closed: number, opening: number) => void } | null;
+          breath?: { getParameters?: () => Array<{ parameterId?: unknown }> } | null;
+        };
+        // Gaze per frame (eyes on gaze.eye*, head on gaze.head*), read by updateFocus below.
+        let gaze: GazeOutput | null = null;
+        const eyeBallX = roleId('eyeBallX');
+        const eyeBallY = roleId('eyeBallY');
+        const angleX = roleId('angleX');
+        const angleY = roleId('angleY');
+        const angleZ = roleId('angleZ');
+        const bodyAngleX = roleId('bodyAngleX');
+        const gazeWrites: Array<[string, (g: GazeOutput) => number]> = [];
+        // Live2D's y is up-positive; the driver's is down-positive.
+        if (eyeBallX) {
+          const k = rangeScale(eyeBallX, STD_HALF_EYEBALL);
+          gazeWrites.push([eyeBallX, (g) => Math.max(-1, Math.min(1, g.eyeX * EYEBALL_GAIN)) * k]);
+        }
+        if (eyeBallY) {
+          const k = rangeScale(eyeBallY, STD_HALF_EYEBALL);
+          gazeWrites.push([eyeBallY, (g) => Math.max(-1, Math.min(1, -g.eyeY * EYEBALL_GAIN)) * k]);
+        }
+        if (angleX) {
+          const k = rangeScale(angleX, STD_HALF_ANGLE);
+          gazeWrites.push([angleX, (g) => g.headX * HEAD_YAW_DEG * k]);
+        }
+        if (angleY) {
+          const k = rangeScale(angleY, STD_HALF_ANGLE);
+          gazeWrites.push([angleY, (g) => -g.headY * HEAD_PITCH_DEG * k]);
+        }
+        if (angleZ) {
+          const k = rangeScale(angleZ, STD_HALF_ANGLE);
+          gazeWrites.push([angleZ, (g) => g.headRoll * HEAD_ROLL_DEG * k]);
+        }
+        if (bodyAngleX) {
+          const k = rangeScale(bodyAngleX, STD_HALF_BODY);
+          gazeWrites.push([bodyAngleX, (g) => g.headX * BODY_YAW_DEG * k]);
+        }
+        const separate = typeof im.updateFocus === 'function' && typeof im.coreModel.addParameterValueById === 'function';
+        if (separate) {
+          im.updateFocus = () => {
+            const g = gaze;
+            const add = im.coreModel.addParameterValueById;
+            if (!g || !add) return;
+            for (const [id, value] of gazeWrites) add.call(im.coreModel, id, value(g));
+          };
+        }
+        // No eyes or head to move: the whole figure leans toward her gaze.
+        const lean = separate && gazeWrites.length === 0;
+        // The SDK's breath writes the standard ids; point it at the model's own.
+        try {
+          const std = new Map<string, string | undefined>([
+            [LIVE2D_STANDARD_IDS.angleX, angleX],
+            [LIVE2D_STANDARD_IDS.angleY, angleY],
+            [LIVE2D_STANDARD_IDS.angleZ, angleZ],
+            [LIVE2D_STANDARD_IDS.bodyAngleX, bodyAngleX],
+            [LIVE2D_STANDARD_IDS.breath, roleId('breath')],
+          ]);
+          for (const b of im.breath?.getParameters?.() ?? []) {
+            const to = typeof b.parameterId === 'string' ? std.get(b.parameterId) : undefined;
+            if (to) b.parameterId = to;
+          }
+        } catch {
+          /* an SDK without breath parameters */
+        }
+        // Blink: an EyeBlink group with no ids (or none at all) gave the model
+        // no blink; the resolved eye ids get one (main also fills the group).
+        try {
+          const blinkIds = paramMap.blink.filter((id) => rangeOf(id));
+          const EyeBlink = (plugin as unknown as { CubismEyeBlink?: { create: (s: unknown) => unknown } }).CubismEyeBlink;
+          if (!im.eyeBlink && blinkIds.length > 0 && EyeBlink) {
+            im.eyeBlink = EyeBlink.create({ getEyeBlinkParameters: () => blinkIds }) as typeof im.eyeBlink;
+          }
+        } catch {
+          /* keeps the SDK's own blink, if any */
+        }
         // Mouth writer + gaze pursuit, layered INSIDE the SDK's update so
         // blink/breath/physics still run after it in the same frame.
         let mouth = 0;
+        /** Where fit() put her (the lean slides from here). */
+        let base: { x: number; y: number } | null = null;
+        // The mouth parameter and its closed/open values (closed = its rest value, else its minimum).
+        const mouthId = roleId('mouthOpen');
+        const mouthRange = mouthId ? rangeOf(mouthId) : null;
+        const mouthClosed = mouthRange ? (mouthRange.def > mouthRange.min && mouthRange.def < mouthRange.max ? mouthRange.def : mouthRange.min) : 0;
+        const mouthOpen = mouthRange ? mouthRange.max : 1;
         const mm = model.internalModel.motionManager;
         const originalUpdate = mm.update.bind(mm);
         let pseudoPhase = 0;
@@ -327,7 +423,7 @@ export function Live2DView({
               }
             }
             mouth += (target - mouth) * (target > mouth ? MOUTH_ATTACK : MOUTH_RELEASE);
-            model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouth);
+            if (mouthId) core.setParameterValueById(mouthId, mouthClosed + mouth * (mouthOpen - mouthClosed));
 
             // Accessory toggles: absolute targets, every frame. This runs
             // inside motionManager.update, i.e. BEFORE saveParameters and
@@ -339,31 +435,22 @@ export function Live2DView({
               model.internalModel.coreModel.setParameterValueById(id, v);
             }
 
-            // Gaze: ease the published focus toward the active mode's goal
-            // and apply it with instant=true — our glide IS the motion, the
-            // SDK's constant-speed pursuit never sees a discontinuity.
+            // Gaze: advance the driver; updateFocus (or the focusController) shows it.
             const now = performance.now();
-            const dt = Math.min(100, Math.max(0, now - lastGazeAt));
-            lastGazeAt = now;
             const cursorFresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
-            const goalX =
-              gazeMode === 'cursor' && cursorFresh
-                ? Math.max(-0.7, Math.min(0.7, cursor.x * CURSOR_GAIN_X))
-                : wanderGoal.x;
-            const goalY =
-              gazeMode === 'cursor' && cursorFresh
-                ? Math.max(-0.45, Math.min(0.35, cursor.y * CURSOR_GAIN_Y))
-                : wanderGoal.y;
-            const gdx = goalX - gaze.x;
-            const gdy = goalY - gaze.y;
-            const dist = Math.hypot(gdx, gdy);
-            if (dist > 0.001 && dt > 0) {
-              // Constant-speed travel, easing off only inside the arrive zone.
-              const speed = GAZE_SPEED * Math.min(1, dist / GAZE_ARRIVE_DIST);
-              const step = Math.min(dist, speed * (dt / 1000));
-              gaze.x += (gdx / dist) * step;
-              gaze.y += (gdy / dist) * step;
-              model.internalModel.focusController.focus(gaze.x, gaze.y, true);
+            if (cursorFresh) {
+              cursorPt.x = cursor.x * CURSOR_GAIN_X;
+              cursorPt.y = -cursor.y * CURSOR_GAIN_Y;
+            }
+            gazeIn.cursor = cursorFresh ? cursorPt : null;
+            gazeIn.engaged = speakingRef.current;
+            gaze = gazeDriver.update(now, gazeIn);
+            if (!separate) model.internalModel.focusController.focus(gaze.gazeX, -gaze.gazeY, true);
+            else if (lean && base) {
+              // About her bottom edge: the anchor is the centre, so slide by half her height.
+              const t = (gaze.headX * LEAN_DEG * Math.PI) / 180;
+              model.rotation = t;
+              model.position.set(base.x + (model.height / 2) * t, base.y);
             }
           } catch {
             /* a mid-destroy frame must never throw into the ticker */
@@ -384,7 +471,8 @@ export function Live2DView({
           const s = Math.min(w / naturalW, h / naturalH) * (cam?.zoom ?? 1);
           model.scale.set(s);
           model.anchor.set(0.5, 0.5);
-          model.position.set(w / 2 + (cam?.x ?? 0) * w, h / 2 + (cam?.y ?? 0) * h);
+          base = { x: w / 2 + (cam?.x ?? 0) * w, y: h / 2 + (cam?.y ?? 0) * h };
+          model.position.set(base.x, base.y);
         };
         fitRef.current = fit;
         (pixiApp.stage as unknown as { addChild: (c: unknown) => void }).addChild(model);
@@ -412,52 +500,12 @@ export function Live2DView({
         };
         if (fpsRef.current !== undefined) applyFpsRef.current();
 
-        // Idle gaze wander: correlated small steps around center (each
-        // target keeps a fraction of the last), with an occasional larger
-        // glance — attention, not a head on a swivel. Writes the wander GOAL
-        // only; the eased pursuit in the update wrapper is the sole writer
-        // of the focusController.
-        const saccade = (): void => {
-          if (cancelled) return;
-          const glance = Math.random() < GLANCE_CHANCE;
-          const ax = glance ? GLANCE_STEP_X : GAZE_STEP_X;
-          const ay = glance ? GLANCE_STEP_Y : GAZE_STEP_Y;
-          wanderGoal.x = Math.max(
-            -0.55,
-            Math.min(0.55, wanderGoal.x * GAZE_KEEP + (Math.random() * 2 - 1) * ax),
-          );
-          wanderGoal.y = Math.max(
-            -0.4,
-            Math.min(0.3, wanderGoal.y * GAZE_KEEP + (Math.random() * 1.7 - 1) * ay),
-          );
-          saccadeTimer = setTimeout(
-            saccade,
-            SACCADE_MIN_MS + Math.random() * (SACCADE_MAX_MS - SACCADE_MIN_MS),
-          );
-        };
-        saccade();
-
-        // Cursor-follow alternation (260806): main polls the real cursor for
-        // the overlay window while a Live2D tile shows; every 6-14 s the
-        // gaze re-picks between wandering and following it. In surfaces that
-        // never receive the push (the profile preview) the feed stays stale
-        // and the mode never leaves wander. Transitions are smooth for free:
-        // the eased pursuit glides between the two goals.
+        // The user's real pointer, in the overlay window only (see the header).
         offCursor = sei.onAvatarOverlayCursor?.((pt) => {
           cursor.x = pt.x;
           cursor.y = pt.y;
           cursor.at = Date.now();
         });
-        const pickGazeMode = (): void => {
-          if (cancelled) return;
-          const fresh = Date.now() - cursor.at < CURSOR_FRESH_MS;
-          gazeMode = fresh && Math.random() < CURSOR_CHANCE ? 'cursor' : 'wander';
-          gazeModeTimer = setTimeout(
-            pickGazeMode,
-            MODE_MIN_MS + Math.random() * (MODE_MAX_MS - MODE_MIN_MS),
-          );
-        };
-        pickGazeMode();
 
         onStatusRef.current?.('ready');
       } catch (err) {
@@ -473,8 +521,6 @@ export function Live2DView({
       cancelled = true;
       fitRef.current = null;
       applyFpsRef.current = null;
-      if (saccadeTimer) clearTimeout(saccadeTimer);
-      if (gazeModeTimer) clearTimeout(gazeModeTimer);
       offCursor?.();
       offManifest?.();
       resizeObserver?.disconnect();

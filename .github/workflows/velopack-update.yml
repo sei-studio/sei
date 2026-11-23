@@ -15,6 +15,7 @@ name: Velopack Windows update
 #              and packages, and the real CI package (scripts/velopack-ci/
 #              authenticode.ps1)
 #   rollout-dry-run  velopack-rollout.yml itself, as a dry run against R2
+#              (migration and repair switches)
 # Nothing here writes to dl.sei.gg or a GitHub release.
 on:
   push:
@@ -52,6 +53,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
   # 261101: CI must never write to production analytics. These CI jobs
   # download and launch real releases (v0.6.4, v0.6.10), which send events
   # unless told otherwise: release builds bake no key, so analytics.ts reads
@@ -287,6 +289,16 @@ jobs:
       dry_run: true
     secrets: inherit
 
+  rollout-dry-run-repair:
+    needs: lint
+    uses: ./.github/workflows/velopack-rollout.yml
+    with:
+      channel: win
+      kind: repair
+      percent: '100'
+      dry_run: true
+    secrets: inherit
+
   scenarios:
     needs: [lint, build]
     runs-on: windows-latest
@@ -310,6 +322,13 @@ jobs:
           - sig-accept
           - restart-spawn-fail
           - session-end
+          - repair-update-missing
+          - repair-update-missing-safe
+          - repair-update-missing-unicode
+          - repair-update-corrupt
+          - repair-packages-corrupt
+          - repair-apply-fails
+          - repair-apply-fails-safe
     steps:
       # 261101: block PostHog before anything here launches Sei. The runtime
       # env above stops a release binary from sending, but the hosts entries

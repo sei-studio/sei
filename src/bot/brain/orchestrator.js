@@ -32,6 +32,7 @@ import {
   renderProactivenessDirective,
   renderPunctuationDirective,
   renderLanguageDirective,
+  renderAdoptedLanguageNote,
   renderCore,
   renderCompanions,
   voiceGroupGuidance,
@@ -2064,6 +2065,12 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   let deathPending = false
   let life = 0
   const DEATH_PENDING_MAX_MS = 10_000
+  // 261120: an adapter whose respawn can outlast DEATH_PENDING_MAX_MS (DST:
+  // up to ~21.5 s from the death to the new body) passes `stillDying`; the
+  // hold is extended while it says so, re-checked every
+  // DEATH_PENDING_RECHECK_MS, never past DEATH_PENDING_HARD_MAX_MS.
+  const DEATH_PENDING_RECHECK_MS = 1_000
+  const DEATH_PENDING_HARD_MAX_MS = 30_000
   /** Player lines that arrived while deathPending with no loop open. */
   let deathHeld = []
   function flushDeathHeld() {
@@ -2453,6 +2460,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         // character.metadata.language) beats the profile-wide setting.
         ...(renderLanguageDirective(config.persona?.language ?? config.chat_language)
           ? [renderLanguageDirective(config.persona?.language ?? config.chat_language)]
+          : []),
+        // 261116: someone else's character (from the World) whose description
+        // may name the creator's language. Appended after the directive so
+        // the player's language wins over the persona text (English gets no
+        // directive at all, so without this the persona's language won).
+        ...(config.persona?.language_adopted
+          ? [renderAdoptedLanguageNote(config.persona?.language ?? config.chat_language)]
           : []),
         // 260725 Knowledge: user-provided reference files (capped + sanitized
         // in main, shipped via the init payload). APPENDED (never inserted) for
@@ -2946,6 +2960,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     if (chatText && String(chatText).trim() && !teammate) {
       try { convo = convoMemory.recentChat.formatConversationBlock() } catch {}
     }
+    // 261118 (pass 58): this copy is the newest, so the seed's transcript
+    // and own-lines note leave the payload (loop.supersedeSeedConversation).
+    if (convo) loop?.supersedeSeedConversation?.()
     const convoLead = convo ? `${convo}\n\n` : ''
     // 260703: mid-loop interrupt turns carry the sticky greet hint too (no-op
     // once a say() line has reached chat this session).
@@ -3101,20 +3118,31 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     // back after her own completion turn carried answered questions along
     // ("ok so caves, you're into them?", pass53-probe q_only). Other work
     // ends them (see deferredLines).
+    // 261113 (pass 54): a walk to the player carries them on to the give at
+    // the end of it. The completion turn often walks first (goTo the player)
+    // and gives on the walk's own completion turn, and the carry was dropped
+    // at the walk, so the order was gone by the give (the goTo-then-give
+    // path pass 53 left open). Only a give after the walk keeps them.
     if (!ACTION_VERB_SKIP.has(name) && !STATIONARY_ACTIONS.has(name)) {
+      const carryLive = deferredCarry &&
+        (deferredCarry.loopId === currentLoop?.id || (deferredCarry.viaWalk && Date.now() - deferredCarry.at < DEFERRED_LINE_MS))
       if (isHandOver(name)) {
-        if (deferredCarry && deferredCarry.loopId === currentLoop?.id) {
+        if (carryLive) {
           const kept = deferredLines.filter((d) => !deferredCarry.lines.includes(d.line))
           deferredLines = [...kept, ...deferredCarry.lines.map((line) => ({ line, at: Date.now() }))].slice(-DEFERRED_REPLY_MAX)
           logger.info?.(`[sei/orch] deferred lines kept past ${name}: ${deferredCarry.lines.length}`)
         }
       } else if (walksOrFollowsOwner(name, args)) {
-        // neither kept nor ended
+        // neither kept nor ended; a carry rides the walk to the give
+        if (carryLive) {
+          deferredCarry = { ...deferredCarry, viaWalk: true, at: Date.now() }
+          logger.info?.(`[sei/orch] deferred lines carried on ${name}: ${deferredCarry.lines.length}`)
+        }
       } else if (deferredLines.length) {
         logger.info?.(`[sei/orch] deferred lines cleared: she started ${name}`)
         deferredLines = []
       }
-      deferredCarry = null
+      if (!(walksOrFollowsOwner(name, args) && carryLive)) deferredCarry = null
     }
     releaseTaskHolds(name, args)
     noteTaskStarted(name, args)
@@ -3263,6 +3291,21 @@ function maybeWarnByteCap(loop, warned) {
       logger.info?.('[sei/orch] player line held until the death turn')
       deathHeld.push({ event, data })
       return
+    }
+    // 261113 (pass 54): a game notice (the player's death) that a turn's
+    // snapshot already showed, with a line of hers decided since: she has
+    // reacted, and waking again made her say it twice ("oof alex. creeper
+    // got you" then "oof alex. you alright? the creeper got you fast",
+    // combat_night-01 11-12). The line is already in the record (index.js).
+    if (event === 'sei:chat_received' && typeof data?.noticeShownAt === 'function') {
+      let shownAt = null
+      try { shownAt = data.noticeShownAt() } catch { shownAt = null }
+      let last = null
+      try { last = convoMemory.recentChat.lastSelf?.() ?? null } catch { last = null }
+      if (Number.isFinite(shownAt) && Number.isFinite(last?.at) && last.at >= shownAt) {
+        logger.info?.('[sei/orch] game notice already answered: a turn saw it and she spoke since')
+        return
+      }
     }
 
     // 261011: a NEW player line, attack or death preempts whatever is left of
@@ -4610,10 +4653,27 @@ function maybeWarnByteCap(loop, warned) {
   }
 
   function attachSettleHandler(loop, runner, use, inflightEntry) {
+    // 261115 (quality pass 56): any other action she starts after a fight
+    // was handed a busy action (handleActionTick) settles what became of it.
+    if (loop._fightCut && !caps.fightActions.has(use.name)) loop._fightCut = null
     runner.promise
       .then(r => {
         const aborted = runner.abortController.signal.aborted
-        const result = formatToolResult(use.name, r)
+        let result = formatToolResult(use.name, r)
+        // 261115 (quality pass 56): a fight that replaced her long action
+        // says so in its result, so the turn after the kill goes back to it.
+        // Pass 56 probe (resume): after the kill she called shelter again in
+        // 7 of 12 runs; the rest said "come sit by me while i build this"
+        // and built nothing.
+        const cut = loop._fightCut
+        if (cut && !aborted) {
+          if (caps.fightActions.has(use.name) && Number.isFinite(runner.startedAt) && runner.startedAt >= cut.at) {
+            result = `${result} ${NUDGES.fightCutAction(cut.label)}`
+            loop._fightCut = null
+          } else if (use.name === cut.name) {
+            loop._fightCut = null
+          }
+        }
         try { logActionResult(use.name, r) } catch {}
         noteActionEvent(use.name, r)
         // 260517-fix: capture _tickClaimed BEFORE clearing/nulling, so the
@@ -5169,7 +5229,10 @@ function maybeWarnByteCap(loop, warned) {
       const arrival = arrivalAskText(data, { deferred: !!replyDeferred?.length })
       if (arrival) eventText = `${eventText}\n\n${arrival}`
       // 261112 (pass 53): kept if this turn hands something over first.
-      deferredCarry = replyDeferred?.length ? { lines: [...replyDeferred], loopId: loop.id } : null
+      // 261113 (pass 54): a carry on its way to a give keeps going through
+      // the walk's own completion turn.
+      if (replyDeferred?.length) deferredCarry = { lines: [...replyDeferred], loopId: loop.id }
+      else if (!deferredCarry?.viaWalk) deferredCarry = null
       if (replyDeferred?.length) eventText = `${eventText}\n\n${NUDGES.deferredReplies(replyDeferred)}`
       // 261020 (pass 20): her fresh line, so the result turn does not say it again.
       else if (!pendingInterrupt) eventText += resultRepeatsTail(loop)
@@ -5278,10 +5341,23 @@ function maybeWarnByteCap(loop, warned) {
     // sticky greet hint. The extra args below are dead in that variant —
     // actionTurn shows elapsed and runs the agentic-follow review only when
     // playerLine == null — so only the silent monitor builds its own turn.
+    // 261115 (quality pass 56): a long foreground action of hers (shelter,
+    // gather, build...) is in the way of the fight: it keeps moving her and
+    // holding its own item, so the body's reflex swings do not win it. The
+    // hit / defend text says so and hands the fight to the fight action.
+    // Not for a background action (follow: the reflex pauses the trail and
+    // fights with the weapon) or the fight action itself. 11-14 scorecard
+    // night_social-03: told the reflex had it and the shelter keeps running,
+    // she kept building through a kill order and the zombie's hits.
+    const inFlightName = loop.inFlight?.name ?? null
+    const busyAction = attack && inFlightName && !caps.fightActions.has(inFlightName) && !caps.backgroundActions[inFlightName]
+      ? (action || inFlightName)
+      : null
     const attackText = attack && typeof adapter.eventAddendum === 'function'
-      ? `${String(adapter.eventAddendum('sei:attacked', attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action) })}`
+      ? `${String(adapter.eventAddendum('sei:attacked', busyAction ? { ...attack, busyAction } : attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action), busy: !!busyAction })}`
       : null
     if (attack) loop._fightMobId = attack?.attacker?.id ?? null
+    if (busyAction) loop._fightCut = { label: busyAction, name: inFlightName, at: Date.now() }
     // 261013: the silent check-in that carries a waiting player order invites
     // an action that replaces hers, so the silent-tick drop must let it through.
     const tickWaitingAsk = (attackText == null && playerMessage == null && loop.inFlight?.selfStarted && loop.inFlight?.waitingAsk) || null
@@ -6283,6 +6359,15 @@ function maybeWarnByteCap(loop, warned) {
         // happens in the per-tool for-loop below. Loop stays alive.
         if (loop.inFlight) {
           if (hasStop) loop._stoppedAction = loop.inFlight.name
+          // 261115 (quality pass 56): a fight that replaces a long action of
+          // hers (a kill order mid-shelter, not only a hit) owes the same
+          // "go back to it" note as the attack-tick path. Compare run
+          // night_social-04-B: "kill it" replaced shelter, nothing was built
+          // and she never went back to it.
+          const old = loop.inFlight
+          if (!hasStop && caps.fightActions.has(newSuspendingTools[0].name) && !caps.fightActions.has(old.name) && !caps.backgroundActions[old.name]) {
+            loop._fightCut = { label: extractPriorTask(loop) || old.name, name: old.name, at: Date.now() }
+          }
           logger.debug?.(`[sei/orch] R2/suppress new action — aborting old in_flight=${loop.inFlight.name} new=${newSuspendingTools.map(u => u.name).join(',')} trigger=${loop._currentIterationTrigger ?? loop._triggerEvent}`)
           // 260516-0yw: clear the 10s action-tick BEFORE aborting on R2.
           clearActionTick(loop.inFlight)
@@ -6991,18 +7076,32 @@ function maybeWarnByteCap(loop, warned) {
    * drops whatever turn is being written (see runIterations), and `life`
    * moves on so a hit queued before the death is dropped at dispatch.
    * A parked LLM call is aborted now instead of being left to finish.
+   * @param {{ stillDying?: () => boolean }} [info]  adapter hint: true while
+   *   its respawn is still under way, which keeps the hold past
+   *   DEATH_PENDING_MAX_MS (up to DEATH_PENDING_HARD_MAX_MS).
    */
-  function noteDeath() {
+  function noteDeath(info) {
     deathPending = true
     life++
     // Backstop: the death turn normally clears this within a couple of
     // seconds. If it never comes (a disconnect mid-respawn), turns resume.
     const lifeAtDeath = life
-    const t = setTimeout(() => {
+    const diedAt = Date.now()
+    const stillDying = typeof info?.stillDying === 'function' ? info.stillDying : null
+    const release = () => {
       if (life !== lifeAtDeath || !deathPending) return
+      let dying = false
+      try { dying = stillDying ? stillDying() === true : false } catch {}
+      const left = DEATH_PENDING_HARD_MAX_MS - (Date.now() - diedAt)
+      if (dying && left > 0) {
+        const again = setTimeout(release, Math.min(DEATH_PENDING_RECHECK_MS, left))
+        again.unref?.()
+        return
+      }
       deathPending = false
       flushDeathHeld()
-    }, DEATH_PENDING_MAX_MS)
+    }
+    const t = setTimeout(release, DEATH_PENDING_MAX_MS)
     t.unref?.()
     const loop = currentLoop
     // A player line whose reply was still being written is not lost with the

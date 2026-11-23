@@ -148,6 +148,20 @@ describe('idle motion pose', () => {
     expect(shifts).toBeLessThanOrEqual(20);
   });
 
+  it('seated sway is subtle, not a pendulum (261119)', () => {
+    const s = new IdleScheduler(0, {}, rng(12));
+    const { poses } = run(s, 0, 5 * 60_000, () => false, true);
+    let maxLean = 0;
+    let maxX = 0;
+    for (const p of poses) {
+      maxLean = Math.max(maxLean, Math.abs(p.lean));
+      maxX = Math.max(maxX, Math.abs(p.x));
+    }
+    // Under half a degree of lean, and a seat shift moves her by under 2% of her height.
+    expect(maxLean).toBeLessThan(0.5);
+    expect(maxX).toBeLessThan(0.02);
+  });
+
   it('a forced walk-off goes stand, out, away, in, sit, and stays continuous', () => {
     const s = new IdleScheduler(0, {}, rng(9));
     run(s, 0, 2000);
@@ -240,7 +254,7 @@ describe('busy holds her in place', () => {
 describe('poseTransform', () => {
   it('maps heights to px about the bottom centre', () => {
     const t = poseTransform({ x: 0.1, lift: 0.05, lean: 1.5, scale: 0.97, breath: 1.01, phase: 'seated', present: true }, 400);
-    expect(t).toBe('translate3d(40.00px, -20.00px, 0) rotate(1.500deg) scale(0.9700, 0.9797)');
+    expect(t).toBe('translate3d(40.00px, -20.00px, 0) rotate(1.500deg) scale(0.9729, 0.9797)');
   });
 });
 
