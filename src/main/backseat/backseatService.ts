@@ -967,8 +967,9 @@ async function prepareAndRunTurn(
   // the transcript, which shows the "You and X called for Y" summary instead.
   //
   // 261124: a TYPED line (no `mic`, sent from the chat composer) is not a
-  // caption, so it also carries `typed` and stays visible, as does the
-  // answer to it (runTurn). Its id is the renderer's optimistic bubble's.
+  // caption, so it also carries `typed` and stays visible. Its id is the
+  // renderer's optimistic bubble's. Her answer is spoken and stays hidden
+  // (product call (261124)).
   if (isUser && tick.text) {
     const onCall = requireDeps().isCallActive?.(s.characterId) === true;
     const typed = !tick.mic;
@@ -1178,8 +1179,6 @@ async function runTurn(
   ]);
 
   const voiceCall = requireDeps().isCallActive?.(s.characterId) === true;
-  // 261124: the answer to a line the player TYPED stays visible on a call.
-  const typedTurn = tick.kind === 'user' && !tick.mic;
   const llm = await buildLlmProvider();
   const tools = sessionTools(s, llm.kind);
   const system = buildSystemBlocks({
@@ -1325,7 +1324,7 @@ async function runTurn(
     s.lastSpokeAt = Date.now();
     if (tick.kind !== 'user') s.unansweredLines += 1;
     slog(s, `turn ${tick.kind}: said ${parts.length} line(s) before the lookup`);
-    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt, typed: typedTurn });
+    leadEmit = emitCompanionLines(s, parts, voiceCall, null, undefined, { turnTag, ambientCapturedAt });
   };
   const streamed: Anthropic.Messages.ContentBlock[] = [];
   const webSearchOffered = tools.some((t) => t.name === 'web_search');
@@ -1525,7 +1524,7 @@ async function runTurn(
     voiceCall,
     clip,
     offer ? { index: parts.length - 1, id: offer.id } : undefined,
-    { turnTag, ambientCapturedAt, typed: typedTurn, ...(queries.length ? { lookup: { queries } } : {}) },
+    { turnTag, ambientCapturedAt, ...(queries.length ? { lookup: { queries } } : {}) },
   );
 }
 
@@ -1581,8 +1580,6 @@ function emitCompanionLines(
     lookup?: { queries: string[] };
     /** 261010: set on a line she said on her own; see SpokenLineContext. */
     ambientCapturedAt?: number;
-    /** 261124: these lines answer a line the player typed (ChatMessage.typed). */
-    typed?: boolean;
   } = {},
 ): Promise<void> {
   return (async () => {
@@ -1603,10 +1600,9 @@ function emitCompanionLines(
         text: parts[i],
         ts: now + i,
         // In voice mode the line is spoken by the live call and hidden from the
-        // transcript, exactly as every other call line is, unless it answers a
-        // line the player typed.
+        // transcript, exactly as every other call line is, even when it
+        // answers a line the player typed.
         ...(voiceCall ? { voice: true } : {}),
-        ...(voiceCall && opts.typed ? { typed: true } : {}),
         // The clip rides on the last part so it renders under the whole thought.
         ...(clip && i === parts.length - 1 ? { clip } : {}),
         ...(opts.lookup && i === 0 ? { lookup: opts.lookup } : {}),

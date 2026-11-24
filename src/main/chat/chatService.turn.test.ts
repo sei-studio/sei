@@ -61,7 +61,7 @@ vi.mock('../llm/webSearchSettings', () => ({
 }));
 
 import type { ChatDeps } from './chatService';
-import type { LanHost, SpokenLineContext } from '../../shared/ipc';
+import { chatRowHidden, type LanHost, type SpokenLineContext } from '../../shared/ipc';
 import { sendChatMessage, sendLaunchFailedTurn, sendVoiceIdleTurn, sendCompanionVoiceTurn, sendVoiceGreetingTurn, cancelInflightTurn, CHAT_ABORTED } from './chatService';
 import { setCallActive } from '../voice/callState';
 import { readAll as chatStoreRead, appendMessage } from './chatStore';
@@ -1289,14 +1289,21 @@ describe('provider build runs alongside the prompt build (261123)', () => {
   });
 });
 
-describe('a line typed on a call stays visible (261124)', () => {
-  it('typed: the player row and the reply keep voice (spoken, the call) and gain typed', async () => {
+describe("a line typed on a call stays visible, her reply does not (261124)", () => {
+  it('typed: the player row keeps voice (the call) and gains typed; the spoken reply stays hidden', async () => {
     createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'that is the warden, run' }] });
     const result = await sendChatMessage({ characterId: CHAR, text: 'what is that', voiceCall: true, typed: true }, deps());
     const rows = await chatStoreRead(CHAR);
-    expect(rows.find((r) => r.role === 'user')).toMatchObject({ text: 'what is that', voice: true, typed: true });
+    const player = rows.find((r) => r.role === 'user')!;
+    expect(player).toMatchObject({ text: 'what is that', voice: true, typed: true });
+    expect(chatRowHidden(player)).toBe(false);
     expect(result.replies.length).toBeGreaterThan(0);
-    for (const r of result.replies) expect(r).toMatchObject({ voice: true, typed: true });
+    for (const r of result.replies) {
+      expect(r).toMatchObject({ voice: true });
+      expect(r).not.toHaveProperty('typed');
+      expect(chatRowHidden(r)).toBe(true);
+    }
+    for (const r of rows.filter((x) => x.role === 'companion')) expect(chatRowHidden(r)).toBe(true);
   });
 
   it('spoken: a transcribed utterance and its reply stay hidden call rows', async () => {

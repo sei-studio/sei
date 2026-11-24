@@ -111,8 +111,8 @@ export async function readLast(characterId: string): Promise<ChatMessage | null>
     }
     // Skip legacy join-ack system rows (no `event`) — same rule as filterLegacySystemRows.
     if (msg.role === 'system' && msg.event === undefined) continue;
-    // Skip the rows the chat view hides (spoken call lines the player did not
-    // type, WorldLink desktop lines): they must not surface as the roster
+    // Skip the rows the chat view hides (call rows other than a line the
+    // player typed, WorldLink desktop lines): they must not surface as the roster
     // "last message" preview.
     if (chatRowHidden(msg)) continue;
     return msg;
