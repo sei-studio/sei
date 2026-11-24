@@ -760,7 +760,14 @@ built for the loop itself.
   createBot 251 to 121 / 169 to 79; main-thread busy time in
   `bot_created` to `login` 765 to 584 / 478 to 337. The window's wall time is
   dominated by the fake server's registry send, so judge the field numbers
-  by the phases around it.
+  by the split below.
+- **Phases `configuration` and `configured` (connect.js, 1.20.2+ only)**
+  split the window: `bot_created` to `configuration` = TCP, login compile and
+  login exchange; `configuration` to `configured` = the server's registries
+  and tags; `configured` to `login` = the play compile plus the play `login`
+  packet. They reach PostHog as `boot_configuration_ms` /
+  `boot_configured_ms` on `character_summoned` and `summon_failed` like every
+  other phase (`BOOT_PHASE_ORDER` in `src/main/diagnostics.ts`).
 - **Left on the table:** the play compile (~250 ms here) still runs after
   `finish_configuration`. Pre-compiling play while the client idles waiting
   for registries would overlap it, but vanilla waits for the client's

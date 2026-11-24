@@ -16,7 +16,9 @@
 //   version_resolved   the LAN status ping answered (Minecraft)
 //   create_bot         mineflayer.createBot called
 //   bot_created        createBot returned (its sync setup: plugins, registry)
-//   login              the server accepted the login
+//   configuration      login exchange done, configuration state entered (1.20.2+)
+//   configured         the server's finish_configuration arrived (1.20.2+)
+//   login              the play login packet arrived (the server accepted the join)
 //   spawn              first spawn in the world (summon-ready)
 //
 // No dependencies, safe to import first.
