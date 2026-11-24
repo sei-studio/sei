@@ -232,3 +232,17 @@ describe('NUDGES.actionTurn replyOptional', () => {
     expect(NUDGES.actionTurn({ action: null, stopTool: 'stop', playerLine: 'stay close pls', who: 'player (Alex)' })).toMatch(MANDATE)
   })
 })
+
+// 261124 (pass 63): the reply block for a line that answers her fresh turn
+// moves the acknowledgement let-off under their line. Plain text, no dashes,
+// and at most 20 words over dev's pair (ACK_LINE + "Answer it with say().").
+describe('ACK_LINE_ANSWER + ACK_ANSWER_TAIL', async () => {
+  const { ACK_LINE, ACK_LINE_ANSWER, ACK_ANSWER_TAIL } = await import('./prompts.js')
+  it('has no em dash and stays close to dev in length', () => {
+    for (const t of [ACK_LINE_ANSWER, ACK_ANSWER_TAIL]) expect(t).not.toMatch(/[—–]/)
+    const words = (t) => t.split(/\s+/).length
+    const dev = words(ACK_LINE) + words('Answer it with say().')
+    expect(words(ACK_LINE_ANSWER) + words(ACK_ANSWER_TAIL)).toBeLessThanOrEqual(dev + 20)
+    expect(ACK_ANSWER_TAIL).toContain('Otherwise answer it with say()')
+  })
+})

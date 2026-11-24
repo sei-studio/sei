@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS } from './ownRepeats.js'
+import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS, answersOwnLine, lineLeftUnanswered, ANSWERS_OWN_LINE_MS } from './ownRepeats.js'
 
 // One say() line is recorded as several chat messages within a few ms; turns
 // are seconds apart.
@@ -548,5 +548,55 @@ describe('repeatedAskTurn', () => {
 
   it('is null when the line is no repeat', () => {
     expect(turn({ distance: 1, following: false }, P.slice(0, 2))).toBeNull()
+  })
+})
+
+// 261124 (pass 63): whether the player's newest line answers her fresh turn,
+// and whether she left their newest line without a reply.
+describe('answersOwnLine', () => {
+  const T = 1_800_000_000_000
+  const p = (sec, text, who = 'Alex') => ({ at: T + sec * 1000, text, who })
+  const s = (sec, text) => ({ at: T + sec * 1000, text })
+
+  it('is true for a line right after her turn', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'thx for coming back. im good now')], [s(5, 'its dead, you good')], { now: T + 12_000 })).toBe(true)
+  })
+
+  it('is false for a question', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'how is your health')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'ur ok?')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('is false after a quiet spell, or with no turn of hers', () => {
+    const late = 5 + ANSWERS_OWN_LINE_MS / 1000 + 1
+    expect(answersOwnLine([p(0, 'zombie!!'), p(late, 'ok back')], [s(5, 'its dead')], { now: T + late * 1000 })).toBe(false)
+    expect(answersOwnLine([p(12, 'ok thx')], [], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('is false for their second line in a row since her turn', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(8, 'ok'), p(12, 'ok one more')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('leaves teammate lines out', () => {
+    const mate = { at: T + 8000, text: 'on my way', who: 'Lyra', companion: true }
+    expect(answersOwnLine([p(0, 'zombie!!'), mate, p(12, 'ok thx')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(true)
+  })
+})
+
+describe('lineLeftUnanswered', () => {
+  const T = 1_800_000_000_000
+  const p = (sec, text) => ({ at: T + sec * 1000, text, who: 'Alex' })
+  const s = (sec, text) => ({ at: T + sec * 1000, text })
+
+  it('names their fresh line when she said nothing since', () => {
+    expect(lineLeftUnanswered([p(10, 'ok thx. just gonna keep eating')], [s(5, 'eat up')], { now: T + 16_000 }))
+      .toEqual({ text: 'ok thx. just gonna keep eating', seconds: 6 })
+  })
+
+  it('is null once she spoke after it, when it is old, or for a question', () => {
+    expect(lineLeftUnanswered([p(10, 'ok thx')], [s(12, 'np')], { now: T + 16_000 })).toBeNull()
+    expect(lineLeftUnanswered([p(10, 'ok thx')], [s(5, 'eat up')], { now: T + 10_000 + ANSWERS_OWN_LINE_MS + 1 })).toBeNull()
+    expect(lineLeftUnanswered([p(10, 'where are u')], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
+    expect(lineLeftUnanswered([], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
   })
 })

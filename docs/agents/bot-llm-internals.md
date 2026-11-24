@@ -100,6 +100,24 @@ off the pass 60b note and the mandate stay. State only, no phrase list.
 Probe (`pass60-probe.mjs`, 4 reps of 8 repeat cases): replies its word
 check calls the loop dev 31/32, pass 60b 12/32, pass 61 0/32 (silent end_loop, a few follow or
 goTo); first ask (close1) still answered 3/3, far come3 still goTo 3/3.
+Pass 63 (261124): an acknowledgement ("thx for coming back. im good now",
+"ok thx. just gonna keep eating") got her last promise again ("told you im
+not going anywhere"): she spoke on 17 of 19 of them in the pass 61 compare,
+because the reply block let an acknowledgement off at the top (`ACK_LINE`)
+and then ended on "Answer it with say()". When the player's line answers
+her own fresh turn (`answersOwnLine`: not a question, within 30 s of her
+turn, nothing else of theirs in between; a repeat with its own note is
+left out), the top is `ACK_LINE_ANSWER` and the let-off sits under their
+line as `ACK_ANSWER_TAIL` (which also says a yes to her offer starts it).
+Which line is only an acknowledgement stays her call. A silent end_loop
+then left the next idle tick (5 s later) to re-promise, so an idle tick
+while their line is still unanswered (`lineLeftUnanswered`, 30 s) takes
+the own_repeats 'result' form (her last lines quoted, "make it new")
+instead of the idle form. Probe `pass63-probe.mjs` + `pass63-judge.mjs`
+(4 reps, blind Opus): acknowledgements repeat 16/16 -> 2/16 (14 quiet);
+the idle tick after one ok 0/4 -> 3/4; guards (a new remark, "protect me",
+"come closer" from 22 blocks, "ok sure" to her offer) kept their reply or
+action. A shorter tail lost most of it (see the promptLibrary comment).
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
