@@ -11,14 +11,15 @@
  * inner (left) edge fades into the page.
  *
  * Tabs (lib/profileRows.ts):
- *  - YOUR companion: Look, Voice, Personality, Games, WorldLink (where
- *    available), More (Sharing, Danger zone last). The meta line is Bonded / Played / Last
- *    launch.
+ *  - YOUR companion: Look (Sharing at its bottom), Voice, Personality,
+ *    Games, WorldLink (where available), Danger last (Reset memory, Unbind;
+ *    product call 261124 renamed it from More). The meta line is Bonded /
+ *    Played / Last launch.
  *  - SOMEONE ELSE'S (a built-in, or a World companion): a byline ("by Sei",
  *    "by <author>") and the created date; Overview first
  *    (components/profile/ProfileOverview.tsx: the description, boxed as
  *    the creator's words, its voice, Report), then "Your settings",
- *    WorldLink and More once it is in your library. Its avatars open from a
+ *    WorldLink and Danger once it is in your library. Its avatars open from a
  *    button on the portrait's corner, beside the full-art button. No
  *    owner control (look, voice, persona, Public, Locked rows) shows.
  *
@@ -111,7 +112,7 @@ const TAB_LABEL: Record<ProfileTab, string> = {
   personality: 'Personality',
   games: 'Games',
   worldlink: 'WorldLink',
-  more: 'More',
+  danger: 'Danger',
 };
 
 function fmtMs(ms: number): string {
@@ -379,7 +380,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     trackProfileTabViewed(tab, view, kind);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, character?.id, kind, view]);
-  // A row group asked for by a deep link (Sharing, Danger zone on More):
+  // A row group asked for by a deep link (Sharing on Look, the Danger zone):
   // its tab is open; bring the group into view in case the tab scrolls.
   useEffect(() => {
     if (!character || !initialFocus) return;

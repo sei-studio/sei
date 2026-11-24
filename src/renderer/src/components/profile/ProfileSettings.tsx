@@ -2,12 +2,13 @@
  * ProfileSettings: a companion's settings rows.
  *
  *  - Your own companion (access.view 'owner'): one tab of the page's
- *    section menu (Look, Voice, Personality, Games, WorldLink, More), shown
- *    one at a time with no long scroll (product call 261110, second pass).
- *    More holds Sharing and the Danger zone under small headings.
+ *    section menu (Look, Voice, Personality, Games, WorldLink, Danger),
+ *    shown one at a time with no long scroll (product call 261110, second
+ *    pass). Sharing sits at the bottom of Look under a small heading; Danger
+ *    holds Reset memory and Unbind (product call 261124, was More).
  *  - Someone else's companion in your library ('foreign'): "Your settings"
  *    (avatar pick, floating avatar, Knowledge, the DST survivor), WorldLink,
- *    or More (Reset memory, Unbind). Its look, voice and personality are
+ *    or Danger (Reset memory, Unbind). Its look, voice and personality are
  *    on the Overview (ProfileOverview), not here.
  *
  * Every row is label + value + action(s). Your own companion's voice,
@@ -112,8 +113,8 @@ export const SECTION_LABEL: Record<ProfileSection, string> = {
 };
 
 /**
- * One tab of the section menu: its rows; More puts a small heading over each
- * group (Sharing, Danger zone).
+ * One tab of the section menu: its rows; a group from another section (Sharing
+ * under Look) gets a small heading.
  */
 export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement {
   const t = useT();
@@ -134,10 +135,7 @@ export function ProfileSettings(props: ProfileSettingsProps): React.ReactElement
           aria-labelledby={g.section ? `profile-section-${g.section}-h` : undefined}
         >
           {g.section ? (
-            <h2
-              id={`profile-section-${g.section}-h`}
-              className={`${styles.sectionHead} ${g.section === 'danger' ? styles.sectionHeadDanger : ''}`}
-            >
+            <h2 id={`profile-section-${g.section}-h`} className={styles.sectionHead}>
               {t(SECTION_LABEL[g.section])}
             </h2>
           ) : null}

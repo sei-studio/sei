@@ -1,7 +1,7 @@
 /**
  * ProfileSettings (product call 261110), server-rendered: your own companion
- * shows one section menu tab at a time (More holds Sharing, WorldLink and the
- * Danger zone under headings), someone else's shows only the rows
+ * shows one section menu tab at a time (Look ends with Sharing under its own
+ * heading, Danger holds Reset memory and Unbind), someone else's shows only the rows
  * that are yours for it (no locked owner rows), and no row carries a
  * subtext line. Effects (IPC reads) do not run under renderToStaticMarkup,
  * so values that come from IPC (and rows that wait on one) are not checked.
@@ -101,16 +101,19 @@ const locked = (html: string): string[] =>
   [...html.matchAll(/data-row="([^"]+)" data-locked="true"/g)].map((m) => m[1]);
 
 describe('ProfileSettings, your own companion', () => {
-  it('one tab at a time: a single-group tab has no heading, More heads Sharing and the Danger zone', () => {
+  it('one tab at a time: a tab heads only a group from elsewhere (Sharing under Look), Danger is just the danger rows', () => {
     const look = render('custom', { seilinkOn: true }, undefined, 'look');
-    expect(rows(look)).toEqual(['card-image', 'avatar', 'floating-avatar']);
+    // Product call 261124: Sharing sits at the bottom of Look, under its own heading.
+    expect(rows(look)).toEqual(['card-image', 'avatar', 'floating-avatar', 'public']);
+    expect(sectionsOf(look)).toEqual(['sharing']);
+    expect(look).toContain('>Sharing<');
     // The Minecraft skin is a game setting, so it leads Games (product call 261116).
     expect(rows(render('custom', { seilinkOn: true }, undefined, 'games'))).toEqual(['skin', 'chess', 'dst']);
-    expect(sectionsOf(look)).toEqual([]);
-    const more = render('custom', { seilinkOn: true }, undefined, 'more');
-    expect(sectionsOf(more)).toEqual(['sharing', 'danger']);
-    for (const h of ['>Sharing<', '>Danger zone<']) expect(more).toContain(h);
-    expect(rows(more)).toEqual(['public', 'reset-memory', 'unbind']);
+    const danger = render('custom', { seilinkOn: true }, undefined, 'danger');
+    expect(sectionsOf(danger)).toEqual([]);
+    expect(danger).not.toContain('>Danger zone<');
+    expect(danger).not.toContain('>Sharing<');
+    expect(rows(danger)).toEqual(['reset-memory', 'unbind']);
     const worldlink = render('custom', { seilinkOn: true }, undefined, 'worldlink');
     expect(rows(worldlink)).toEqual(['desktop-room', 'room', 'intro']);
   });
@@ -130,6 +133,7 @@ describe('ProfileSettings, your own companion', () => {
       'card-image',
       'avatar',
       'floating-avatar',
+      'public',
       'voice',
       'about',
       'persona',
@@ -140,7 +144,6 @@ describe('ProfileSettings, your own companion', () => {
       'desktop-room',
       'room',
       'intro',
-      'public',
       'reset-memory',
       'unbind',
     ]);

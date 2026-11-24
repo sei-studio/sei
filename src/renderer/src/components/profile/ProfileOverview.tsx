@@ -15,7 +15,7 @@
  * every companion plays every game (profile v3). Nothing here edits the
  * companion: an owner's controls never show on a companion you do not own.
  * The few settings that are yours for it live on the "Your settings" and
- * More tabs (ProfileSettings).
+ * Danger tabs (ProfileSettings).
  */
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';

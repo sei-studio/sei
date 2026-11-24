@@ -13,7 +13,7 @@
  *   world       World tab header ("Party full" + Free a slot)
  *   invite      a World companion's profile after Invite to party
  *   picker      the Free a slot picker over the World tab
- *   picked      Marv picked in it: his page, open on the Danger zone
+ *   picked      Marv picked in it: his page, open on the Danger tab
  *   notice      the own-key import notice (App banner)
  *   settings    Settings, the "Companions from before you signed in" row
  * A shot that needs a selector the page does not have (an older build) is

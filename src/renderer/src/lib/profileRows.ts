@@ -9,18 +9,21 @@
  *  - OWNER (your own companion: 'custom', or an Awakened 'awakened' one):
  *    a top section menu, one tab shown at a time (product call 261110,
  *    second pass: "I don't like scrolling"; the first pass had made it one
- *    long page, 261107 had six tabs that hid too much). Tabs: Look, Voice,
- *    Personality, Games, WorldLink (only where WorldLink is available) and
- *    More (Sharing, then the Danger zone last, each under a small heading).
- *    WorldLink is its own tab so More never needs a scroll. Duplicates stay merged:
+ *    long page, 261107 had six tabs that hid too much). Tabs: Look (with
+ *    Sharing at its bottom under a small heading), Voice, Personality, Games,
+ *    WorldLink (only where WorldLink is available) and Danger (Reset memory,
+ *    Unbind) last. Product call 261124 renamed the old More tab to Danger and
+ *    moved Sharing off it, since a sharing toggle does not belong under
+ *    Danger. Duplicates stay merged:
  *    "Name and description" is one row, the in-game username is part of the
  *    Minecraft skin row.
  *  - FOREIGN (a built-in like Sui, or someone else's World companion): the
  *    page leads with an Overview (its voice, games and public avatars). Once
  *    it is in your library, "Your settings" holds the few rows that are yours
  *    for it (which avatar plays, the floating avatar, Knowledge, the DST
- *    survivor), then WorldLink, and More holds the Danger zone, as on your
- *    own companion's page. Nothing an owner edits (look, voice, persona, Public)
+ *    survivor), then WorldLink, and Danger (Reset memory, Unbind), as on
+ *    your own companion's page. Sharing rows are owner-only, so they never
+ *    show here. Nothing an owner edits (look, voice, persona, Public)
  *    is shown there.
  *
  * Row groups (`ProfileSection`: look, voice, personality, games, sharing,
@@ -55,18 +58,15 @@ export const PROFILE_SECTIONS = ['look', 'voice', 'personality', 'games', 'shari
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 
 /** Your own companion's tabs, left to right. */
-export const OWNER_TABS = ['look', 'voice', 'personality', 'games', 'worldlink', 'more'] as const;
+export const OWNER_TABS = ['look', 'voice', 'personality', 'games', 'worldlink', 'danger'] as const;
 export type OwnerTab = (typeof OWNER_TABS)[number];
 
 /** A foreign companion's tabs (all but the Overview only while it is in your library). */
-export const FOREIGN_TABS = ['overview', 'settings', 'worldlink', 'more'] as const;
+export const FOREIGN_TABS = ['overview', 'settings', 'worldlink', 'danger'] as const;
 export type ForeignTab = (typeof FOREIGN_TABS)[number];
 
 /** Any tab of the page's section menu. */
 export type ProfileTab = OwnerTab | ForeignTab;
-
-/** The row groups the More tab holds, under small headings. */
-const MORE_SECTIONS: readonly ProfileSection[] = ['sharing', 'danger'];
 
 /** 'edit' = live controls, 'locked' = value plus a Locked marker, 'hidden' = no row. */
 export type RowAccess = 'edit' | 'locked' | 'hidden';
@@ -212,9 +212,9 @@ export function ownerSections(access: ProfileAccess): { section: ProfileSection;
   })).filter((s) => s.rows.length > 0);
 }
 
-/** The owner tab a row group sits on. */
+/** The owner tab a row group sits on: Sharing is at the bottom of Look (261124). */
 export function ownerTabOf(section: ProfileSection): OwnerTab {
-  return MORE_SECTIONS.includes(section) ? 'more' : (section as OwnerTab);
+  return section === 'sharing' ? 'look' : section;
 }
 
 /**
@@ -247,27 +247,23 @@ export interface TabGroup {
 }
 
 /**
- * The rows a tab shows, grouped. A tab that is one row group (Look, Voice,
- * WorldLink) has no heading (the tab names it); More heads each group.
+ * The rows a tab shows, grouped. The tab's own row group has no heading (the
+ * tab names it, Danger included); a group from elsewhere on the tab (Sharing
+ * under Look) keeps its small heading.
  */
 export function tabGroups(access: ProfileAccess, tab: ProfileTab): TabGroup[] {
   if (tab === 'overview') return [];
   if (access.view === 'owner') {
     const groups = ownerSections(access).filter((g) => ownerTabOf(g.section) === tab);
-    return tab === 'more' ? groups : groups.map((g) => ({ section: null, rows: g.rows }));
+    return groups.map((g) => ({ section: g.section === tab ? null : g.section, rows: g.rows }));
   }
   const rows = foreignSettingsRows(access);
-  if (tab === 'settings' || tab === 'worldlink') {
+  if (tab === 'settings' || tab === 'worldlink' || tab === 'danger') {
     const plain = rows.filter((r) => {
       const section = sectionOf(r);
-      return tab === 'worldlink' ? section === 'worldlink' : section !== 'worldlink' && !MORE_SECTIONS.includes(section);
+      return tab === 'settings' ? section !== 'worldlink' && section !== 'danger' : section === tab;
     });
     return plain.length > 0 ? [{ section: null, rows: plain }] : [];
-  }
-  if (tab === 'more') {
-    return MORE_SECTIONS.map((section) => ({ section, rows: rows.filter((r) => sectionOf(r) === section) })).filter(
-      (g) => g.rows.length > 0,
-    );
   }
   return [];
 }
@@ -280,7 +276,7 @@ export function profileTabs(access: ProfileAccess): ProfileTab[] {
 
 /**
  * The tab a focus request lands on: a tab itself, or the tab that holds a
- * row group (Sharing and the Danger zone are on More). Falls back to
+ * row group (Sharing is on Look, the Danger zone is the Danger tab). Falls back to
  * the first tab when the page has no such tab.
  */
 export function resolveProfileTab(tabs: readonly ProfileTab[], wanted: ProfileFocus | null | undefined): ProfileTab {

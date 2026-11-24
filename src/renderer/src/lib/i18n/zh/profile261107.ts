@@ -75,6 +75,5 @@ export const ZH_PROFILE_261107: Record<string, string> = {
   "Stop sample": "停止试听",
   "Your settings": "你的设置",
   // profile v2 section menu (product call 261110)
-  "More": "更多",
   "by {name}": "来自 {name}",
 };

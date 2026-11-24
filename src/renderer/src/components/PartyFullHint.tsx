@@ -8,7 +8,7 @@
  *    party is full in its own words (the World header, the import notice and
  *    Settings row, Sui's casting scene).
  *  - `FreeSlotPicker`: the party, one row per companion. Picking one opens
- *    their page on the Danger zone (More tab), where Unbind keeps its own
+ *    their page on the Danger tab, where Unbind keeps its own
  *    confirm. Nothing is unbound here.
  *
  * Analytics and copy: lib/partyFull.ts (docs/agents/party-slots.md).
@@ -61,7 +61,7 @@ export function usePartyMembers(): Character[] {
   );
 }
 
-/** Pick who to unbind: opens that companion's page on the Danger zone. */
+/** Pick who to unbind: opens that companion's page on its Danger tab. */
 export function FreeSlotPicker({
   surface,
   onClose,

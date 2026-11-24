@@ -2520,7 +2520,6 @@ export const RU: Record<string, string> = {
   "Stop sample": "Остановить образец",
   "Your settings": "Ваши настройки",
   // profile v2 section menu (product call 261110)
-  "More": "Ещё",
   "by {name}": "от {name}",
   // ── playtime 261110 ──
   "Playtime": "Игровое время",

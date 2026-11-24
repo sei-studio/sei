@@ -2520,7 +2520,6 @@ export const PT_BR: Record<string, string> = {
   "Stop sample": "Parar amostra",
   "Your settings": "Suas configurações",
   // profile v2 section menu (product call 261110)
-  "More": "Mais",
   "by {name}": "por {name}",
   // ── playtime 261110 ──
   "Playtime": "Tempo de jogo",

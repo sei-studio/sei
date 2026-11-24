@@ -323,10 +323,6 @@
   color: var(--muted);
 }
 
-.sectionHeadDanger {
-  color: var(--red);
-}
-
 /* A value with a second, quieter line (the skin and its username). */
 .stack {
   display: flex;

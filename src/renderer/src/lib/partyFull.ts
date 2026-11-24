@@ -3,11 +3,11 @@
  * MAX_COMPANION_SLOTS, and how they free a slot.
  *
  * Feedback 261123: "can't figure out how to remove companions to try
- * others". Unbind lives on a companion's page (More tab, Danger zone), which
+ * others". Unbind lives on a companion's page (Danger tab), which
  * a new player does not find. Every surface that says the party is full now
  * carries a "Free a slot" button (components/PartyFullHint.tsx) that opens a
  * small picker of the party; picking one opens that companion's page on the
- * Danger zone, where Unbind keeps its own confirm. Nothing is unbound for the
+ * Danger tab, where Unbind keeps its own confirm. Nothing is unbound for the
  * player.
  *
  * Analytics (shape only, docs/agents/party-slots.md):
@@ -63,7 +63,7 @@ export function partyIsFull(count: number, limit: number): boolean {
 
 /**
  * A companion picked in the Free a slot picker: their page opens on the
- * Danger zone (More tab), where Unbind asks to confirm. Never unbinds.
+ * Danger tab, where Unbind asks to confirm. Never unbinds.
  */
 export function openForUnbind(
   surface: PartyFullSurface,

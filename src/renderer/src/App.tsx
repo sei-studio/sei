@@ -1421,7 +1421,7 @@ export function App(): React.ReactElement {
                   <AddCharacterScreen importFirst={view.importFirst === true} />
                 )}
                 {/* Keyed (261124): Free a slot opens another companion's page on
-                    its Danger zone, and the page reads that focus on mount. */}
+                    its Danger tab, and the page reads that focus on mount. */}
                 {view.kind === 'character' && <CharacterPage key={view.id} id={view.id} />}
                 {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
                 {view.kind === 'voice-call' && (

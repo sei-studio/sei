@@ -15,6 +15,7 @@ const {
   isProfileFocus,
   lockTipKey,
   ownerSections,
+  ownerTabOf,
   profileAccess,
   profileKind,
   profileTabs,
@@ -77,30 +78,35 @@ describe('profileKind / profileView', () => {
 });
 
 describe('owner page (section menu, one tab at a time, product call 261110)', () => {
-  it('tabs: Look, Voice, Personality, Games, WorldLink (when available), More; More ends with the Danger zone', () => {
+  it('tabs: Look (Sharing at its bottom), Voice, Personality, Games, WorldLink (when available), Danger last', () => {
     const a = profileAccess({ ...base, kind: 'custom', seilinkOn: true });
-    expect(OWNER_TABS).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
-    expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'more']);
-    expect(profileTabs(profileAccess({ ...base, kind: 'custom' }))).toEqual(['look', 'voice', 'personality', 'games', 'more']);
-    expect(tabGroups(a, 'look')).toEqual([{ section: null, rows: ['cardImage', 'avatar', 'floatingAvatar'] }]);
+    expect(OWNER_TABS).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'danger']);
+    expect(profileTabs(a)).toEqual(['look', 'voice', 'personality', 'games', 'worldlink', 'danger']);
+    expect(profileTabs(profileAccess({ ...base, kind: 'custom' }))).toEqual(['look', 'voice', 'personality', 'games', 'danger']);
+    // Product call 261124: Sharing moved off the old More tab to the bottom of
+    // Look, under its own heading; the Look rows themselves stay unheaded.
+    expect(tabGroups(a, 'look')).toEqual([
+      { section: null, rows: ['cardImage', 'avatar', 'floatingAvatar'] },
+      { section: 'sharing', rows: ['publicToggle'] },
+    ]);
+    expect(ownerTabOf('sharing')).toBe('look');
     // The Minecraft skin is a game setting (product call 261116).
     expect(tabGroups(a, 'games')).toEqual([{ section: null, rows: ['skin', 'chess', 'dst'] }]);
     expect(sectionOf('skin')).toBe('games');
     expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
-    expect(tabGroups(a, 'more')).toEqual([
-      { section: 'sharing', rows: ['publicToggle'] },
-      { section: 'danger', rows: ['resetMemory', 'unbind'] },
-    ]);
+    // The Danger tab is the Danger zone alone; the tab names it, so no heading.
+    expect(tabGroups(a, 'danger')).toEqual([{ section: null, rows: ['resetMemory', 'unbind'] }]);
+    expect(ownerTabOf('danger')).toBe('danger');
     expect(tabGroups(a, 'overview')).toEqual([]);
   });
 
   it('deep links to a row group open the tab that holds it', () => {
     const tabs = profileTabs(profileAccess({ ...base, kind: 'custom' }));
     expect(resolveProfileTab(tabs, 'voice')).toBe('voice');
-    expect(resolveProfileTab(tabs, 'sharing')).toBe('more');
+    expect(resolveProfileTab(tabs, 'sharing')).toBe('look');
     // No WorldLink on this install: its deep link falls back to the first tab.
     expect(resolveProfileTab(tabs, 'worldlink')).toBe('look');
-    expect(resolveProfileTab(tabs, 'danger')).toBe('more');
+    expect(resolveProfileTab(tabs, 'danger')).toBe('danger');
     expect(resolveProfileTab(tabs, 'overview')).toBe('look');
     expect(resolveProfileTab(tabs, null)).toBe('look');
   });
@@ -196,10 +202,10 @@ describe('foreign companions (Overview first, no owner rows)', () => {
 
   it('in the library: Overview + Your settings with only your per-companion rows', () => {
     const a = profileAccess({ ...base, kind: 'builtin', seilinkOn: true });
-    expect(profileTabs(a)).toEqual(['overview', 'settings', 'worldlink', 'more']);
+    expect(profileTabs(a)).toEqual(['overview', 'settings', 'worldlink', 'danger']);
     expect(tabGroups(a, 'settings')).toEqual([{ section: null, rows: ['avatar', 'floatingAvatar', 'knowledge', 'dst'] }]);
     expect(tabGroups(a, 'worldlink')).toEqual([{ section: null, rows: ['desktopRoom', 'room', 'intro'] }]);
-    expect(tabGroups(a, 'more')).toEqual([{ section: 'danger', rows: ['resetMemory', 'unbind'] }]);
+    expect(tabGroups(a, 'danger')).toEqual([{ section: null, rows: ['resetMemory', 'unbind'] }]);
     expect(foreignSettingsRows(a)).toEqual([
       'avatar',
       'floatingAvatar',
@@ -234,13 +240,14 @@ describe('foreign companions (Overview first, no owner rows)', () => {
   });
 
   it('resolveProfileTab falls back to the first tab', () => {
-    expect(resolveProfileTab(['overview', 'settings', 'more'], 'settings')).toBe('settings');
+    expect(resolveProfileTab(['overview', 'settings', 'danger'], 'settings')).toBe('settings');
     expect(resolveProfileTab(['overview'], 'settings')).toBe('overview');
     expect(resolveProfileTab(['overview'], null)).toBe('overview');
     // A row group lands on the tab that holds it.
-    expect(resolveProfileTab(['overview', 'settings', 'more'], 'danger')).toBe('more');
-    expect(resolveProfileTab(['overview', 'settings', 'worldlink', 'more'], 'worldlink')).toBe('worldlink');
-    expect(resolveProfileTab(['overview', 'settings', 'more'], 'look')).toBe('overview');
+    expect(resolveProfileTab(['overview', 'settings', 'danger'], 'danger')).toBe('danger');
+    expect(resolveProfileTab(['overview', 'settings', 'worldlink', 'danger'], 'worldlink')).toBe('worldlink');
+    expect(resolveProfileTab(['overview', 'settings', 'danger'], 'look')).toBe('overview');
+    expect(resolveProfileTab(['overview', 'settings', 'danger'], 'sharing')).toBe('overview');
   });
 });
 
@@ -255,7 +262,8 @@ describe('requested focus', () => {
 
   it('isProfileFocus accepts tabs and sections only', () => {
     expect(isProfileFocus('overview')).toBe(true);
-    expect(isProfileFocus('more')).toBe(true);
+    expect(isProfileFocus('danger')).toBe(true);
+    expect(isProfileFocus('more')).toBe(false);
     expect(isProfileFocus('worldlink')).toBe(true);
     expect(isProfileFocus('sharing')).toBe(true);
     expect(isProfileFocus('nope')).toBe(false);
@@ -278,14 +286,14 @@ describe('analytics (shape only)', () => {
   it('sends the profile events with closed props', () => {
     trackProfileViewed('foreign', 'world', 'world', false);
     trackProfileTabViewed('overview', 'foreign', 'builtin');
-    trackProfileActionClicked('replay_intro', 'more', 'custom');
+    trackProfileActionClicked('replay_intro', 'worldlink', 'custom');
     trackProfileTooltipOpened('locked');
     trackProfileVoiceSample('foreign', 'world', 'overview', 'bundled', 'played');
     trackProfileCtaClicked('invite', 'foreign', 'world', 'world');
     expect(track.mock.calls).toEqual([
       ['profile_viewed', { view: 'foreign', character_kind: 'world', entry: 'world', in_library: false }],
       ['profile_tab_viewed', { tab: 'overview', view: 'foreign', character_kind: 'builtin' }],
-      ['profile_action_clicked', { action: 'replay_intro', tab: 'more', character_kind: 'custom' }],
+      ['profile_action_clicked', { action: 'replay_intro', tab: 'worldlink', character_kind: 'custom' }],
       ['profile_tooltip_opened', { key: 'locked' }],
       [
         'profile_voice_sample_played',

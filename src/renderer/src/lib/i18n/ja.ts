@@ -2520,7 +2520,6 @@ export const JA: Record<string, string> = {
   "Stop sample": "サンプルを停止",
   "Your settings": "あなたの設定",
   // profile v2 section menu (product call 261110)
-  "More": "その他",
   "by {name}": "{name}制作",
   // ── playtime 261110 ──
   "Playtime": "プレイ時間",

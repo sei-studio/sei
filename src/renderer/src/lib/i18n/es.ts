@@ -2520,7 +2520,6 @@ export const ES: Record<string, string> = {
   "Stop sample": "Detener muestra",
   "Your settings": "Tus ajustes",
   // profile v2 section menu (product call 261110)
-  "More": "Más",
   "by {name}": "de {name}",
   // ── playtime 261110 ──
   "Playtime": "Tiempo de juego",

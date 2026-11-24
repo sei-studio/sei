@@ -85,11 +85,11 @@ describe('profile tabs (261116)', () => {
     expect(panels).toEqual([
       ['overview', 'shown'],
       ['settings', 'hidden'],
-      ['more', 'hidden'],
+      ['danger', 'hidden'],
     ]);
     // The hidden tabs already hold their rows, so a switch shows them whole.
     expect(html).toContain('data-tab-body="settings"');
-    expect(html).toContain('data-tab-body="more"');
+    expect(html).toContain('data-tab-body="danger"');
     // Each tab button points at its own panel.
     expect(html).toContain('aria-controls="profile-tabpanel-settings"');
   });

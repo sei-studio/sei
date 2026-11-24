@@ -10,7 +10,7 @@ set. Main refuses a create or library add past the cap with
 
 ## Freeing a slot
 
-Unbind lives on a companion's page, More tab, Danger zone (Unbind for a World
+Unbind lives on a companion's page, Danger tab (Unbind for a World
 companion, delete for your own; each keeps its confirm modal). Feedback
 261123 ("can't figure out how to remove companions to try others") showed new
 players never find it, so every surface that says the party is full carries a
@@ -18,10 +18,11 @@ players never find it, so every surface that says the party is full carries a
 
 - `FreeSlotButton` opens `FreeSlotPicker`: the party, rail order. Picking one
   calls `openForUnbind` (`lib/partyFull.ts`): `requestProfileFocus('danger')`
-  and navigate to that companion's page, which opens on More with the Danger
-  zone in view. Nothing is unbound by the picker. `CharacterPage` is keyed by
-  id in `App.tsx` so the focus is read again when the picker opens a second
-  profile from a first one.
+  and navigate to that companion's page, which opens on its Danger tab
+  (Reset memory, Unbind; product call 261124 renamed it from More and moved
+  Sharing to the bottom of Look). Nothing is unbound by the picker.
+  `CharacterPage` is keyed by id in `App.tsx` so the focus is read again when
+  the picker opens a second profile from a first one.
 - `PartyFullHint` is the one-line form ("Your party is full. Unbind a
   companion to make room." + Free a slot) for surfaces where an add failed.
 

@@ -39,12 +39,12 @@
  *                    on the Look tab's card image Regenerate button
  *                    (261107); without it the hint is marked seen so other
  *                    character shots stay as they were.
- *     &tab=overview|settings|worldlink|more   (character, someone else's
+ *     &tab=overview|settings|worldlink|danger   (character, someone else's
  *                    companion) the tab to open on; &tab=look|voice|
- *                    personality|games|worldlink|more opens that tab of your
- *                    own companion's section menu (worldlink needs
- *                    &seilink=on), and a row group (sharing|danger) opens
- *                    the tab that holds it (product call 261110)
+ *                    personality|games|worldlink|danger opens that tab of
+ *                    your own companion's section menu (worldlink needs
+ *                    &seilink=on), and a row group (sharing) opens the tab
+ *                    that holds it, Look (product calls 261110, 261124)
  *     &who=own|builtin|world   (character) Sui as your own companion
  *                    (default), as a built-in, or as another player's World
  *                    companion in your library; &movedin=1 with &seilink=on

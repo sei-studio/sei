@@ -128,10 +128,11 @@ available): Move onto/off desktop, Edit room and Replay intro. They still send
 she is on this desktop. The page's own events are in
 `src/renderer/src/lib/profileRows.ts`: `profile_viewed`, `profile_tab_viewed`
 (since v2 it carries `view` and fires for the owner tabs too: owner tabs
-`look`/`voice`/`personality`/`games`/`worldlink`/`more`, others
-`overview`/`settings`/`worldlink`/`more`), `profile_action_clicked` (its `tab`
-is the page tab the row sits on, so Sharing and Danger zone rows report
-`more`), `profile_tooltip_opened`, `profile_voice_sample_played` and
+`look`/`voice`/`personality`/`games`/`worldlink`/`danger`, others
+`overview`/`settings`/`worldlink`/`danger`; before 261124 the last tab was
+`more`), `profile_action_clicked` (its `tab` is the page tab the row sits on:
+Reset memory and Unbind report `danger`, Sharing rows report `look` since
+261124, `more` before), `profile_tooltip_opened`, `profile_voice_sample_played` and
 `profile_cta_clicked`. Add counts are hidden everywhere since v2
 (`SHOW_ADD_COUNTS` in `src/shared/addCounts.ts`): the World list still fetches
 them for the popular sort, and `world_page_loaded` gains `counts_displayed`
