@@ -1115,6 +1115,22 @@ const clipNote = (t, n = 160) => { const x = String(t ?? '').replace(/\s+/g, ' '
 // against dev (that sentence pair was 70 tokens, this is 67).
 export const ACK_LINE = 'Reply with the say() tool: a direct message never gets silence, even a refusal or one word, unless it only acknowledges you or laughs (ok, cool, nice, thanks, lol, jk); then skip say(). Text outside say() never reaches them.'
 
+// 261124 (pass 63): the plain reply to a line that answers her own fresh
+// turn (ownRepeats.js answersOwnLine). ACK_LINE's let-off sat at the top of
+// the reply block and the block ended on "Answer it with say()", so the
+// let-off lost: in the 11-23 pass 61 compare she spoke on 17 of 19 plain
+// acknowledgements in combat_night and, with nothing to answer, gave her last
+// promise again ("told you im not going anywhere"). On these turns the
+// let-off moves to the end, right under their line (ACK_ANSWER_TAIL), and the
+// top keeps only the say() rule. pass63-probe (4 reps, Opus labels):
+// acknowledgements repeat 16/16 -> 2/16 (14 quiet), guards held. It is 20
+// words longer than ACK_LINE plus the old tail sentence; a 5-word-longer cut
+// ("end the turn without say()", "yes to your offer") lost it: "thx for
+// coming back" re-promised 3/4 again and "ok sure" to her offer started its
+// action 2/4. The silent turns it buys save far more output than it adds.
+export const ACK_LINE_ANSWER = 'Reply with the say() tool when their line needs an answer, even a refusal or one word. Text outside say() never reaches them.'
+export const ACK_ANSWER_TAIL = 'If it only thanks you, laughs or acknowledges your last line (ok, thanks, cool, lol), it needs no reply: end the turn without say(). If it says yes to something you offered, start it now. Otherwise answer it with say().'
+
 // 261102 (pass 37): "coal×6 you got for their line "..."", joined with "and".
 function carriedList(asks) {
   const quote = (t) => {

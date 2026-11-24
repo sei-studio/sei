@@ -601,6 +601,62 @@ export function repeatedAskTurn(playerLines, selfLines, { now, names = [], selfN
   return close ? { note: askNoteNear(ask, near), replyOptional: true } : { note: askNote(ask), replyOptional: false }
 }
 
+// ---------------------------------------------------------------------------
+// 261124 (pass 63): the player answering her line.
+//
+// After pass 61 the top off source left in combat_night was her re-promising
+// to a line that only acknowledged hers: "thx for coming back. im good now"
+// got "told you im not going anywhere alex", "ok thx. just gonna keep eating"
+// got "good. eat up, i'm right here". In the 11-23 pass 61 compare she spoke
+// on nearly every such line (A arm: 17 of 19 plain acknowledgements), and
+// with nothing to answer she said her last promise again. ACK_LINE lets an
+// acknowledgement off, but the reply block then ends on "Answer it with
+// say()", and that last line won.
+//
+// Whether a line only acknowledges hers is her call, from its words; what
+// state can tell is whether it is an answer to her at all. A line that comes
+// right after her own fresh turn, with nothing else of theirs in between, is
+// a reply to her; their first line after a quiet spell, or a second line in
+// a row, is not. A question still wants its answer, so it never counts.
+export const ANSWERS_OWN_LINE_MS = 30_000
+
+/**
+ * True when the player's newest line answers her newest turn: it is not a
+ * question, it came within `withinMs` after that turn, and the speaker said
+ * nothing else between her turn and this line. Teammate (companion) lines
+ * are left out. False when anything is missing.
+ *
+ * @param {Array<{at:number,text:string,who?:string,companion?:boolean}>} playerLines  oldest first
+ * @param {Array<{at:number,text:string}>} selfLines  oldest first
+ * @returns {boolean}
+ */
+export function answersOwnLine(playerLines, selfLines, { now = Date.now(), withinMs = ANSWERS_OWN_LINE_MS } = {}) {
+  const human = (playerLines ?? []).filter((l) => l && l.companion !== true && l.text)
+  const newest = human.at(-1)
+  if (!newest || isQuestion(newest.text)) return false
+  const t1 = Number.isFinite(newest.at) ? newest.at : now
+  const mine = groupTurns(selfLines).filter((t) => Number.isFinite(t.at) && t.at <= t1).at(-1)
+  if (!mine || t1 - mine.at > withinMs) return false
+  const prev = human.at(-2)
+  return !(prev && prev.who === newest.who && Number.isFinite(prev.at) && prev.at > mine.at)
+}
+
+/**
+ * The player's newest line when she has said nothing since it, it came in
+ * the last `withinMs` and it is not a question (a question left open still
+ * wants its answer on the next turn). Teammate lines are left out.
+ *
+ * @returns {{text:string, seconds:number}|null}
+ */
+export function lineLeftUnanswered(playerLines, selfLines, { now = Date.now(), withinMs = ANSWERS_OWN_LINE_MS } = {}) {
+  const newest = (playerLines ?? []).filter((l) => l && l.companion !== true && l.text).at(-1)
+  if (!newest || !Number.isFinite(newest.at) || isQuestion(newest.text)) return null
+  if (now - newest.at > withinMs) return null
+  const mine = groupTurns(selfLines).at(-1)
+  if (mine && (!Number.isFinite(mine.at) || mine.at >= newest.at)) return null
+  return { text: String(newest.text), seconds: Math.max(1, Math.round((now - newest.at) / 1000)) }
+}
+
 function linesNote(selfLines, playerLines, opts = {}) {
   const mode = ['idle', 'checkin', 'greeted', 'result'].includes(opts.mode) ? opts.mode : 'reply'
   const last = recentOwnTurns(selfLines, { now: opts.now, turns: mode === 'reply' ? REPLY_LINES_TURNS : LAST_LINES_TURNS })

@@ -228,8 +228,11 @@ describe('repeated player ask while she is by their side', () => {
     expect(third).not.toContain('Answer it with say().')
     expect(third).not.toContain('a direct message never gets silence')
     expect(third).not.toContain('but say something')
-    // The first two lines are no repeat yet: the mandate stands.
-    expect(JSON.stringify(provider.calls[1].blocks)).toContain('Answer it with say().')
+    // The first two lines are no repeat yet: the reply stands (pass 63: the
+    // second answers her fresh turn, so it ends on the acknowledgement
+    // let-off, which still asks for a say() on anything more).
+    expect(JSON.stringify(provider.calls[0].blocks)).toContain('Answer it with say().')
+    expect(JSON.stringify(provider.calls[1].blocks)).toContain('Otherwise answer it with say().')
   })
 
   it('keeps the mandate and the retry when she is far off', async () => {
@@ -239,5 +242,87 @@ describe('repeated player ask while she is by their side', () => {
     expect(third).toContain('Answer it with say().')
     expect(third).toContain('They have now said much the same thing three times')
     expect(third).not.toContain('this line needs no answer')
+  })
+})
+
+// 261124 (pass 63): a line that answers her fresh turn may only acknowledge
+// it. The let-off then sits at the end of the block, under their line, in
+// place of "Answer it with say()" (ACK_ANSWER_TAIL); a line after a quiet
+// spell or a question keeps dev's mandate. The idle tick after a line she
+// let go quotes her last lines (the 'result' form) instead of the idle form.
+describe('a line that answers her own fresh turn', () => {
+  const TAIL = 'If it only thanks you, laughs or acknowledges your last line (ok, thanks, cool, lol), it needs no reply: end the turn without say().'
+  const setup = (script) => {
+    _setTickIntervalForTests(10_000_000)
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const made = makeOrch(script)
+    return { ...made, tick: (ms) => { now += ms } }
+  }
+
+  it('moves the let-off under their line when it comes right after her turn', async () => {
+    const { orch, provider, tick } = setup([
+      { text: '', toolUses: [say('t1', 'zombie down, you good?')] },
+      { text: '', toolUses: [] },
+    ])
+    orch.recordIncomingChat('newb', 'zombie!! help')
+    await orch.handleDispatch('sei:chat_received', chat('zombie!! help'))
+    tick(8_000)
+    orch.recordIncomingChat('newb', 'thx sui. im good now')
+    await orch.handleDispatch('sei:chat_received', chat('thx sui. im good now'))
+    const first = lastTurnText(provider.calls[0])
+    expect(first).toContain('Answer it with say().')
+    expect(first).not.toContain(TAIL)
+    const text = lastTurnText(provider.calls[1])
+    const at = text.indexOf('Their line, player (newb): thx sui. im good now')
+    expect(at).toBeGreaterThan(-1)
+    expect(text.indexOf(TAIL)).toBeGreaterThan(at)
+    expect(text).toContain('Otherwise answer it with say().')
+    expect(text).not.toContain('Answer it with say().')
+    expect(text).not.toContain('a direct message never gets silence')
+    expect(text).toContain('Reply with the say() tool when their line needs an answer')
+  })
+
+  it('keeps the mandate on a question and after a quiet spell', async () => {
+    const { orch, provider, tick } = setup([
+      { text: '', toolUses: [say('t1', 'zombie down')] },
+      { text: '', toolUses: [say('t2', 'full hp')] },
+      { text: '', toolUses: [say('t3', 'hey')] },
+    ])
+    orch.recordIncomingChat('newb', 'zombie!! help')
+    await orch.handleDispatch('sei:chat_received', chat('zombie!! help'))
+    tick(8_000)
+    orch.recordIncomingChat('newb', 'how is your health')
+    await orch.handleDispatch('sei:chat_received', chat('how is your health'))
+    tick(120_000)
+    orch.recordIncomingChat('newb', 'ok back')
+    await orch.handleDispatch('sei:chat_received', chat('ok back'))
+    for (const i of [1, 2]) {
+      const text = lastTurnText(provider.calls[i])
+      expect(text).toContain('Answer it with say().')
+      expect(text).not.toContain(TAIL)
+    }
+  })
+
+  it('quotes her last lines on the idle tick after a line she let go', async () => {
+    const { orch, provider, tick } = setup([
+      { text: '', toolUses: [say('t1', 'zombie down, not going anywhere')] },
+      { text: '', toolUses: [{ id: 'e1', name: 'end_loop', input: {} }] },
+      { text: '', toolUses: [] },
+      { text: '', toolUses: [] },
+    ])
+    orch.recordIncomingChat('newb', 'zombie!! help')
+    await orch.handleDispatch('sei:chat_received', chat('zombie!! help'))
+    tick(8_000)
+    orch.recordIncomingChat('newb', 'ok thx')
+    await orch.handleDispatch('sei:chat_received', chat('ok thx'))
+    tick(6_000)
+    await orch.handleDispatch('sei:idle', { quietMs: 6_000 })
+    expect(blockText(provider.calls.at(-1), 'own_repeats'))
+      .toContain('Your last line to them was "zombie down, not going anywhere". They already heard it, so if you say something now, make it new.')
+    // Long after their line, the idle tick is the plain idle form again.
+    tick(60_000)
+    await orch.handleDispatch('sei:idle', { quietMs: 60_000 })
+    expect(blockText(provider.calls.at(-1), 'own_repeats')).toBe('')
   })
 })

@@ -47,6 +47,8 @@ import {
   nextTimeGreeting,
   MEMORY_GOAL_TAIL,
   ACK_LINE,
+  ACK_LINE_ANSWER,
+  ACK_ANSWER_TAIL,
   staleTurnText,
   STALE_TURN_SAY_RESULT,
   STALE_TURN_TOOL_RESULT,
@@ -55,7 +57,7 @@ import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGa
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
-import { ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
+import { answersOwnLine, lineLeftUnanswered, ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import {
   describeActionEvent, describeAttackEvent, describeDeathEvent, actionEventKey,
@@ -1684,6 +1686,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
         near,
       })
     } catch { return null }
+  }
+  // 261124 (pass 63): the player's newest line answers her fresh turn
+  // (ownRepeats.js answersOwnLine). Never throws.
+  function answersOwnLineNow() {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      return answersOwnLine(playerLines, selfLines)
+    } catch { return false }
   }
   // 261020 (pass 20): the turn after one of her actions finished carried no
   // line of hers, so a line she had just said went out again: "hey alex"
@@ -3768,6 +3778,12 @@ function maybeWarnByteCap(loop, warned) {
         const repeatAsk = (plainReply && !fromTeammate) ? repeatedAskFor(speakerName) : null
         const replyOptional = repeatAsk?.replyOptional === true
         if (replyOptional) loop._noReplyOwed = true
+        // 261124 (pass 63): a line that answers her own fresh turn may only
+        // acknowledge it. The let-off moves from ACK_LINE to the end of the
+        // block, right under their line, so "Answer it with say()" no longer
+        // overrules it (ACK_ANSWER_TAIL).
+        // A line they keep repeating has its own note (repeatAsk) and keeps it.
+        const ackMayEnd = plainReply && !fromTeammate && !repeatAsk && answersOwnLineNow()
         eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice
           : (crossed || replyOptional) ? NUDGES.playerInterruptHintGreetCrossed
           : NUDGES.playerInterruptHint
@@ -3809,7 +3825,7 @@ function maybeWarnByteCap(loop, warned) {
             ? NUDGES.greetCrossed
             // 261101 (pass 34): the reply mandate, with an acknowledgement
             // let off (ACK_LINE).
-            : `${replyOptional ? '' : `${ACK_LINE} `}` +
+            : `${replyOptional ? '' : `${ackMayEnd ? ACK_LINE_ANSWER : ACK_LINE} `}` +
               NUDGES.replyNoRestate +
               // 261013 (pass 6b): the mid-action variants already end on this
               // check; a line that starts a fresh loop did not, and errands
@@ -3824,7 +3840,7 @@ function maybeWarnByteCap(loop, warned) {
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
           // 150 player-line samples silent that way, 0 with this sentence).
-          (plainReply && !replyOptional ? `\nAnswer it with say().${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '') +
+          (plainReply && !replyOptional ? `\n${ackMayEnd ? ACK_ANSWER_TAIL : 'Answer it with say().'}${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '') +
           (replyOptional && idleNow ? `\n${NUDGES.replyWhileIdle}` : '')
         eventText = `Event: ${event}${eventAddendum}`
       } else {
@@ -3883,6 +3899,20 @@ function maybeWarnByteCap(loop, warned) {
     // this session, every fresh-loop seed carries the short greet hint (no-op
     // once greeted, and skipped when the full FIRST CONTACT block is present).
     eventText = withGreetingHint(eventText)
+    // 261124 (pass 63): an idle tick while the player's newest line is
+    // still unanswered (she let an acknowledgement go, ACK_ANSWER_TAIL)
+    // quotes her last lines with the short 'result' form instead of the
+    // idle form. With the idle form the tick 5 s later said the promise she
+    // had just not repeated ("still right here alex. u doing ok": 4 of 4
+    // pass63-probe idle1 runs re-promised); with the quote none of 10 did,
+    // most asked a new question instead.
+    let idleAfterUnanswered = null
+    if ((event === 'sei:idle' || event === 'idle') && !playerMessageText) {
+      try {
+        const { selfLines, playerLines } = convoMemory.recentChat._internal
+        idleAfterUnanswered = lineLeftUnanswered(playerLines, selfLines)
+      } catch { idleAfterUnanswered = null }
+    }
     // 260725: paused turn (only voice-call lines reach here while paused — the
     // FSM hold blocks everything else). The pause contract strips ALL
     // Minecraft context: no snapshot, no memory/heartbeat/companions blocks,
@@ -3914,7 +3944,7 @@ function maybeWarnByteCap(loop, warned) {
           eventText, snapshotText: snapshotText(),
           recentConversationText: convoMemory.recentChat.formatConversationBlock(),
           lookupsText: lookupLog.formatBlock(),
-          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : 'idle'),
+          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : idleAfterUnanswered ? 'result' : 'idle'),
           playerMessageText,
           companions,
           frontierText: progFrontierText,
