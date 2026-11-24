@@ -246,6 +246,10 @@ export const ZH_MODALS: Record<string, string> = {
   'Not everything came over. Try again, or later from Settings.': '没能全部带过来。可以再试一次，或稍后在设置里操作。',
   'Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.': '你的队伍已满，这台电脑上的伙伴先留在这里。空出一个位置后，再到设置里把它们带过来。',
   'Your party is full. Free a slot to bring them over.': '你的队伍已满。空出一个位置后才能带过来。',
+  // 261124: party full, Free a slot (components/PartyFullHint.tsx).
+  'Your party is full. Unbind a companion to make room.': '你的队伍已满。解绑一位伙伴来腾出位置。',
+  'Free a slot': '空出位置',
+  'Pick who to unbind. Their page opens at Unbind, and nothing changes until you confirm.': '选一位要解绑的伙伴。会打开对方页面的解绑选项，你确认之前什么都不会变。',
 
   // ── KnowledgeModal / CompactKnowledgeModal ──
   "{name}'s knowledge": '{name} 的知识',

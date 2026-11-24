@@ -993,6 +993,10 @@ export const RU: Record<string, string> = {
   "Not everything came over. Try again, or later from Settings.": "Перенеслось не всё. Попробуй ещё раз или позже в настройках.",
   "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "Команда заполнена, поэтому компаньоны с этого компьютера остались здесь. Освободи место, а потом перенеси их в настройках.",
   "Your party is full. Free a slot to bring them over.": "Команда заполнена. Освободи место, чтобы перенести их.",
+  // 261124: party full, Free a slot (components/PartyFullHint.tsx).
+  "Your party is full. Unbind a companion to make room.": "Команда заполнена. Отпусти одного компаньона, чтобы освободить место.",
+  "Free a slot": "Освободить место",
+  "Pick who to unbind. Their page opens at Unbind, and nothing changes until you confirm.": "Выбери, кого отпустить. Откроется его страница с кнопкой «Отпустить», и ничего не изменится, пока ты не подтвердишь.",
   "{name}'s knowledge": "Знания: {name}",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "Здесь можно вручную добавить то, что должен знать AI. Внутренняя память у AI хранится отдельно.",
   "No knowledge yet. Upload files or add text context.": "Пока пусто. Загрузи файлы или добавь текст.",

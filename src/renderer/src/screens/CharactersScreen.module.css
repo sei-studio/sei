@@ -99,10 +99,19 @@
 /* Right-aligned party-slots indicator (mono muted). */
 .slots {
   margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-md);
+  white-space: nowrap;
   font-family: var(--mono);
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--muted);
+}
+
+/* 261124: "Free a slot" beside "Party full" (PartyFullHint's text button). */
+.slotsAction {
+  font-size: 13px;
 }
 
 /* Scrollable list region: holds the grid plus the auto-load sentinel, the

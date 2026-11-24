@@ -94,6 +94,7 @@ import { AwakenScreen } from '../screens/AwakenScreen';
 import { Banner } from './Banner';
 import { useT } from '../lib/i18n';
 import { PARTY_FULL_LINE } from './ImportLocalProfileModal';
+import { FreeSlotButton } from './PartyFullHint';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import suiArt from '../../../../vendor/skin-gen/examples/sui-input.png';
 import lyraArt from '../../../../vendor/skin-gen/examples/lyra-input.png';
@@ -414,7 +415,9 @@ const noop = (): void => undefined;
 
 function PartyFullLine(): React.ReactElement {
   const t = useT();
-  return <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={noop} />;
+  return (
+    <Banner kind="info" message={t(PARTY_FULL_LINE)} action={<FreeSlotButton surface="import_notice" />} onDismiss={noop} />
+  );
 }
 
 /**

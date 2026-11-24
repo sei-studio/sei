@@ -993,6 +993,10 @@ export const ES: Record<string, string> = {
   "Not everything came over. Try again, or later from Settings.": "No se pudo traer todo. Reintenta ahora o hazlo luego desde Ajustes.",
   "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "Tu equipo está completo, así que tus compis de este dispositivo se quedaron aquí. Libera un hueco y luego tráelos desde Ajustes.",
   "Your party is full. Free a slot to bring them over.": "Tu equipo está completo. Libera un hueco para traerlos.",
+  // 261124: party full, Free a slot (components/PartyFullHint.tsx).
+  "Your party is full. Unbind a companion to make room.": "Tu equipo está completo. Desvincula a un compi para hacer hueco.",
+  "Free a slot": "Liberar un hueco",
+  "Pick who to unbind. Their page opens at Unbind, and nothing changes until you confirm.": "Elige a quién desvincular. Su página se abre en Desvincular y nada cambia hasta que confirmes.",
   "{name}'s knowledge": "Conocimiento de {name}",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "Aquí puedes añadir a mano cosas que la IA debe saber. La IA guarda sus recuerdos por separado.",
   "No knowledge yet. Upload files or add text context.": "Todavía no hay conocimiento. Sube archivos o añade contexto en texto.",
