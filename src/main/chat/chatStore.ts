@@ -8,7 +8,7 @@
 import { appendFile, readFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { paths } from '../paths';
-import type { ChatMessage } from '../../shared/ipc';
+import { chatRowHidden, type ChatMessage } from '../../shared/ipc';
 
 function chatPath(characterId: string): string {
   return path.join(paths.memoryDir(characterId), 'chat.jsonl');
@@ -111,11 +111,10 @@ export async function readLast(characterId: string): Promise<ChatMessage | null>
     }
     // Skip legacy join-ack system rows (no `event`) — same rule as filterLegacySystemRows.
     if (msg.role === 'system' && msg.event === undefined) continue;
-    // Skip voice-call rows — the chat view hides them, so they must not surface
-    // as the roster "last message" preview.
-    if (msg.voice === true) continue;
-    // WorldLink desktop lines (ChatMessage.desktop) are hidden the same way.
-    if (msg.desktop === true) continue;
+    // Skip the rows the chat view hides (spoken call lines the player did not
+    // type, WorldLink desktop lines): they must not surface as the roster
+    // "last message" preview.
+    if (chatRowHidden(msg)) continue;
     return msg;
   }
   return null;

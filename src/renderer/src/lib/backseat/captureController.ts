@@ -119,8 +119,15 @@ export interface CaptureHandle {
    * `mic` (260925): set when the line came from the call's microphone (see
    * BackseatTick.mic); `t0`/`t1` are the utterance's span, used to judge
    * whether the shared window was playing speech under it.
+   * `lineId` (261124): a typed line's optimistic bubble id (BackseatTick.lineId).
+   * Resolves false when nothing was sent (capture stopped, no grid, or the IPC
+   * failed), so a typed line can fall back to the ordinary chat send.
    */
-  sendUserTick: (text: string, mic?: { ttsGapMs: number | null; t0: number; t1: number }) => Promise<void>;
+  sendUserTick: (
+    text: string,
+    mic?: { ttsGapMs: number | null; t0: number; t1: number },
+    lineId?: string,
+  ) => Promise<boolean>;
   /**
    * The companion just said something. Push the scheduled look back a full
    * fresh interval: main already spoke about these seconds, and an idle tick
@@ -812,6 +819,7 @@ export async function startCapture(
       sinceSwitchS?: number;
       transcript?: string;
       mic?: { ttsGapMs: number | null; shareVoice?: boolean | null };
+      lineId?: string;
     } = {},
   ): Promise<BackseatTickOutcome | undefined> => {
     if (stopped) return undefined;
@@ -1145,8 +1153,12 @@ export async function startCapture(
         }
       })();
     },
-    sendUserTick: async (text: string, mic?: { ttsGapMs: number | null; t0: number; t1: number }) => {
-      if (stopped) return;
+    sendUserTick: async (
+      text: string,
+      mic?: { ttsGapMs: number | null; t0: number; t1: number },
+      lineId?: string,
+    ) => {
+      if (stopped) return false;
       // The latch is best-effort. If it never armed (the player pasted a whole
       // message, or typed faster than one composite), or it armed so long ago
       // that it no longer shows what they mean, compose one now.
@@ -1155,7 +1167,7 @@ export async function startCapture(
       if (!grid || Date.now() - grid.capturedAt > USER_GRID_MAX_AGE_MS) {
         grid = await composite();
       }
-      if (!grid) return;
+      if (!grid) return false;
       // What the game said around the moment they reacted to — the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
@@ -1176,7 +1188,14 @@ export async function startCapture(
             ),
           }
         : undefined;
-      await sendTick('user', grid, { text, transcript, ...(micInfo ? { mic: micInfo } : {}) });
+      if (stopped) return false;
+      const out = await sendTick('user', grid, {
+        text,
+        transcript,
+        ...(micInfo ? { mic: micInfo } : {}),
+        ...(lineId ? { lineId } : {}),
+      });
+      return out !== 'failed';
     },
     noteSpoke: (quietExtraMs = 0) => {
       lastSpokeLocalAt = Date.now();

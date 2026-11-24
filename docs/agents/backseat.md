@@ -325,6 +325,21 @@ The design and its measurements are committed at
   every other call line: it is spoken, so a chat row would be a caption. This
   was missed when user turns started routing through backseat and the player's
   own half of the call filled the transcript.
+- **A line TYPED during a share goes to Backseat and stays visible (261124).**
+  In-app feedback: "the chat doesn't show messages typed by me". Two causes,
+  both in v0.7.0. (1) Every call row was `voice` and hidden, so a line typed
+  in the chat composer vanished on send; (2) since the overlay's mini chat was
+  deleted (260803) nothing sent a TYPED `user` tick, so the line went to an
+  ordinary chat turn that could not see the screen while this loop kept
+  talking beside it. Now `useChatStore.send(..., { typed: true })` (the
+  composer) routes the line to `sendUserTick` when this companion is the one
+  sharing (not for a quoted reply; falls back to chat when nothing was sent),
+  with the bubble's UUID as `BackseatTick.lineId` so main's row and push reuse
+  it. A tick without `mic` is typed: its row and the answer's rows carry
+  `ChatMessage.typed` beside `voice` (still spoken, still the call's), and
+  `chatRowHidden` shows them. The same flag covers typed lines on a plain call
+  (`chat:send` `typed`). Typing in the composer also arms the user grid.
+  Pinned in `backseatService.typed.test.ts`, `useChatStore.typedCall.test.ts`.
 - **TWO entry points (260803).** The share pill in `CallControls` (needs a call
   already) and the **Backseat button in `ChatTopBar`** (does not). The second
   exists because the first is unreachable without already knowing the feature
