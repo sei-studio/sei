@@ -81,8 +81,8 @@ interface ChatState {
     voicePeers?: string[],
     /** 261112: this voice line cut the companion off mid-line (see bargeCut.ts).
      *  `typed` (261124): the player typed it in the chat composer. On a call
-     *  the line and its reply are still call rows but stay visible
-     *  (ChatMessage.typed), and while this companion is watching the
+     *  the line is still a call row but stays visible (ChatMessage.typed);
+     *  her reply is spoken and hidden. While this companion is watching the
      *  player's screen (Backseat) the line goes to that loop instead. */
     opts?: { interrupted?: { line: string }; typed?: boolean },
   ) => Promise<ChatSendResult | null>;
@@ -581,7 +581,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       ts: Date.now(),
       ...(replyTo ? { replyTo } : {}),
       // Mirror main's persisted flags: a spoken call line's bubble is hidden,
-      // a typed one stays (ChatMessage.typed).
+      // a typed one stays (ChatMessage.typed). Only this, the player's own
+      // row, is ever stamped `typed`: her reply is spoken and stays hidden.
       ...(inCallEarly ? { voice: true } : {}),
       ...(inCallEarly && typed ? { typed: true } : {}),
     };
@@ -596,8 +597,8 @@ export const useChatStore = create<ChatState>((set, get) => {
     const realism = !inCall && useUiStore.getState().realisticTyping;
     put((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
-      // On a call the reply is spoken (and hidden unless typed), so a typing
-      // indicator would point at bubbles that may never appear — keep it off.
+      // On a call the reply is spoken and hidden (even to a typed line), so a
+      // typing indicator would point at bubbles that never appear — keep it off.
       awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
     if (backseat) {

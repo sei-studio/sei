@@ -2,9 +2,10 @@
  * 261124 (in-app feedback, Backseat): "the chat doesn't show messages typed
  * by me". On a call every Backseat row was flagged `voice` and hidden, the
  * player's own TYPED line included. A typed line (no `mic`) now also carries
- * `typed`, keeps the renderer's bubble id (lineId), and the answer to it is
- * stamped `typed` too, so the chat shows the exchange. A spoken line and her
- * own screen commentary stay hidden. Mocks as in the quiet/inflight tests.
+ * `typed` and keeps the renderer's bubble id (lineId), so the chat shows it.
+ * Her answer is spoken and stays hidden (product call (261124)), as do a
+ * spoken line and her own screen commentary. Mocks as in the quiet/inflight
+ * tests.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BackseatTick, BackseatTickOutcome } from '../../shared/backseatIpc';
@@ -110,7 +111,7 @@ describe('backseat rows for a line the player typed on the call (261124)', () =>
     vi.useRealTimers();
   });
 
-  it('a typed line and its answer are call rows the chat still shows; the line keeps its bubble id', async () => {
+  it("a typed line is a call row the chat still shows and keeps its bubble id; her answer stays hidden", async () => {
     await startBackseat(CH, 'window:1:0', 'Game', 'voice');
     expect(await tick({ kind: 'user', text: 'is that the warden', lineId: LINE_ID })).toBe('spoke');
     await flush();
@@ -119,8 +120,12 @@ describe('backseat rows for a line the player typed on the call (261124)', () =>
     expect(h.pushed.find((r) => r.role === 'user')?.id).toBe(LINE_ID);
     const answer = h.rows.filter((r) => r.role === 'companion');
     expect(answer.length).toBeGreaterThan(0);
-    for (const r of answer) expect(r).toMatchObject({ voice: true, typed: true });
-    expect(h.rows.every((r) => !chatRowHidden(r))).toBe(true);
+    for (const r of answer) {
+      expect(r).toMatchObject({ voice: true });
+      expect(r.typed).toBeUndefined();
+      expect(chatRowHidden(r)).toBe(true);
+    }
+    expect(chatRowHidden(player!)).toBe(false);
   });
 
   it('a spoken (mic) line, its answer and her own screen lines stay hidden', async () => {

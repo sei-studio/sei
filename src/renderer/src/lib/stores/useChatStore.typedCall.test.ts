@@ -7,7 +7,9 @@
  *
  * Under test:
  *   1. A typed line on a call keeps `voice` but gains `typed`, stays visible,
- *      and chatSend carries `typed` so main stamps the rows the same way.
+ *      and chatSend carries `typed` so main stamps the player's row the same
+ *      way. Her reply is spoken and stays hidden (product call (261124)): no
+ *      typing indicator, and the roster preview keeps the player's line.
  *   2. A director (spoken) send on a call stays hidden, as before.
  *   3. Typed to the companion watching the screen, the line goes to the
  *      Backseat loop under the bubble's own id, not to chatSend.
@@ -67,6 +69,25 @@ describe('useChatStore.send: lines typed on a call (261124)', () => {
     expect(chatSendMock).toHaveBeenCalledWith(expect.objectContaining({ text: 'what boss is that', typed: true }));
   });
 
+  it("her reply to a typed line on a call stays hidden, with no typing indicator", async () => {
+    chatSendMock.mockResolvedValueOnce({
+      replies: [
+        { id: 'r1', role: 'companion', text: 'that is the warden', ts: 1, voice: true },
+        { id: 'r2', role: 'companion', text: 'run', ts: 2, voice: true },
+      ],
+    });
+    const store = await loadOnCall();
+    const { chatPreviewFor } = await import('./useChatStore');
+    const pending = store.getState().send('c1', 'what boss is that', undefined, undefined, { typed: true });
+    expect(store.getState().awaiting.c1).toBe(false);
+    await pending;
+    const list = store.getState().messages.c1;
+    expect(list).toHaveLength(3);
+    expect(visible(list).map((m) => m.role)).toEqual(['user']);
+    expect(store.getState().awaiting.c1).toBe(false);
+    expect(chatPreviewFor(store.getState(), 'c1')).toMatchObject({ role: 'user', text: 'what boss is that' });
+  });
+
   it('a spoken (director) line on a call is still hidden', async () => {
     const store = await loadOnCall();
     await store.getState().send('c1', 'hello', undefined, []);
@@ -108,12 +129,18 @@ describe('useChatStore.send: lines typed on a call (261124)', () => {
     expect(chatSendMock).toHaveBeenCalledTimes(1);
   });
 
-  it('chatRowHidden: spoken call rows and desktop lines hide, typed call rows and plain chat show', () => {
+  it("chatRowHidden: only the player's typed call row shows; spoken call rows, her replies and desktop lines hide", () => {
     const base = { id: 'x', role: 'user' as const, text: 't', ts: 0 };
     expect(chatRowHidden(base)).toBe(false);
     expect(chatRowHidden({ ...base, voice: true })).toBe(true);
     expect(chatRowHidden({ ...base, voice: true, typed: true })).toBe(false);
     expect(chatRowHidden({ ...base, desktop: true })).toBe(true);
     expect(chatRowHidden({ ...base, desktop: true, typed: true })).toBe(true);
+    // Her reply on a call is spoken: hidden even if an old (unreleased dev
+    // build) row carries `typed`.
+    const reply = { ...base, role: 'companion' as const };
+    expect(chatRowHidden(reply)).toBe(false);
+    expect(chatRowHidden({ ...reply, voice: true })).toBe(true);
+    expect(chatRowHidden({ ...reply, voice: true, typed: true })).toBe(true);
   });
 });

@@ -507,12 +507,14 @@ export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
 /**
- * Whether the chat view hides this row: a spoken call line (ChatMessage.voice)
- * that the player did not type, or a WorldLink desktop line. The one rule for
- * the transcript, the roster preview and main's last-message read.
+ * Whether the chat view hides this row: a call row (ChatMessage.voice) other
+ * than a line the player typed, or a WorldLink desktop line. Her replies on a
+ * call stay hidden even beside a typed line (they are spoken on the call), and
+ * `typed` only ever unhides a `user` row. The one rule for the transcript, the
+ * roster preview and main's last-message read.
  */
 export function chatRowHidden(m: ChatMessage): boolean {
-  return (m.voice === true && m.typed !== true) || m.desktop === true;
+  return (m.voice === true && !(m.typed === true && m.role === 'user')) || m.desktop === true;
 }
 
 /**
@@ -561,11 +563,13 @@ export interface ChatMessage {
   voice?: boolean;
   /**
    * 261124: a call row the player TYPED (the chat composer mid-call, Backseat
-   * included), or the companion's reply to it. Still a call row (`voice`
-   * stays set: the reply is spoken and the call accounts for it), but SHOWN
-   * in the chat. The hide rule is for captions of speech; a line the player
-   * wrote is not a caption, and hiding it made every message typed during a
-   * call vanish on send (in-app feedback, Backseat). See chatRowHidden.
+   * included). Still a call row (`voice` stays set: the call accounts for
+   * it), but SHOWN in the chat. The hide rule is for captions of speech; a
+   * line the player wrote is not a caption, and hiding it made every message
+   * typed during a call vanish on send (in-app feedback, Backseat). Only the
+   * player's rows carry it: the companion's reply is spoken on the call and
+   * stays hidden like every other call line (product call (261124)). See
+   * chatRowHidden.
    */
   typed?: boolean;
   /**
@@ -2346,7 +2350,8 @@ export interface RendererApi {
     voicePeers?: string[];
     interrupted?: { line: string };
     /** 261124: typed in the chat composer (not a transcribed utterance). On a
-     *  call the exchange is still spoken but stays visible (ChatMessage.typed). */
+     *  call the player's line stays visible (ChatMessage.typed); the reply is
+     *  spoken and hidden. */
     typed?: boolean;
   }): Promise<ChatSendResult>;
   /**

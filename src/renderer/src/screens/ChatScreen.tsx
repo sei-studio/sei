@@ -154,8 +154,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // "You and X called for Y" row alone. Filtered BEFORE the map so day
   // separators and author-run detection key on the visible neighbors.
   // WorldLink desktop lines (ChatMessage.desktop) likewise: they stay desktop bubbles.
-  // A line the player TYPED on the call, and the reply to it, stay visible
-  // (ChatMessage.typed, 261124).
+  // A line the player TYPED on the call stays visible; her spoken reply to it
+  // does not (ChatMessage.typed, 261124).
   const visibleMessages = useMemo(() => messages.filter((m) => !chatRowHidden(m)), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   // On a call the reply is SPOKEN and its row is a hidden voice row (see

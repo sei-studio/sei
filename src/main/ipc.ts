@@ -1445,7 +1445,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         voicePeers: z.array(z.string()).optional(),
         // 261112: the voice line cut the companion off mid-line (bargeCut.ts).
         interrupted: z.object({ line: z.string().max(CHAT_TEXT_MAX).catch('') }).optional(),
-        // 261124: typed in the composer; on a call its rows stay visible.
+        // 261124: typed in the composer; on a call the player's row stays visible (the reply stays hidden).
         typed: z.boolean().optional(),
       })
       .parse(argsRaw);
