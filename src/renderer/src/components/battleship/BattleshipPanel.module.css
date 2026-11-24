@@ -176,6 +176,65 @@
   color: var(--text-2);
 }
 
+.fleetBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  padding: var(--gap-control) var(--gap-section);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.fleetHint {
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--text);
+}
+
+.fleetList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.fleetChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.fleetChip:hover {
+  border-color: var(--border-strong);
+}
+
+.fleetChipActive {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.fleetChipPlaced {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.fleetSize {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .resultWrap {
   position: absolute;
   inset: 0;

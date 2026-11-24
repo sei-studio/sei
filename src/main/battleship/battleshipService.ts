@@ -20,12 +20,18 @@ import type {
   BATTLESHIPGameState,
   BATTLESHIPGrid,
   BATTLESHIPGameStatus,
+  BATTLESHIPPlacement,
   BATTLESHIPResult,
   BATTLESHIPShip,
   BATTLESHIPShipName,
   BATTLESHIPShotRecord,
 } from '../../shared/battleshipIpc';
-import { BATTLESHIP_ERR_MC_ACTIVE } from '../../shared/battleshipIpc';
+import {
+  BATTLESHIP_ERR_MC_ACTIVE,
+  placementCells,
+  placementFits,
+  randomFleetPlacement,
+} from '../../shared/battleshipIpc';
 import { buildLlmProvider } from '../llm';
 import { loadAnalytics } from '../lazyAnalytics';
 import { getCharacter } from '../characterStore';
@@ -71,6 +77,8 @@ interface Session {
   aiVisibleGrid: BATTLESHIPGrid;   // player's view: hits/misses only
   turn: 'player' | 'ai';
   status: BATTLESHIPGameStatus;
+  /** Who opens once the player confirms their fleet (placement phase). */
+  pendingPlayerStarts: boolean;
   aiThinking: boolean;
   pendingAiMove: { row: number; col: number } | null;
   result: BATTLESHIPResult | null;
@@ -99,57 +107,43 @@ function emptyGrid(): BATTLESHIPGrid {
   };
 }
 
-function placeShipsRandomly(grid: BATTLESHIPGrid): void {
+function applyFleet(grid: BATTLESHIPGrid, fleet: ReadonlyArray<BATTLESHIPPlacement>): void {
   grid.ships = [];
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       grid.cells[r][c] = 'empty';
     }
   }
-  for (const name of SHIP_NAMES) {
-    const size = SHIP_SIZES[name];
-    let placed = false;
-    for (let attempt = 0; attempt < 200 && !placed; attempt++) {
-      const horizontal = Math.random() < 0.5;
-      const r = Math.floor(Math.random() * ROWS);
-      const c = Math.floor(Math.random() * COLS);
-      const cells: Array<{ row: number; col: number }> = [];
-      let ok = true;
-      for (let i = 0; i < size; i++) {
-        const rr = horizontal ? r : r + i;
-        const cc = horizontal ? c + i : c;
-        if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS || grid.cells[rr][cc] !== 'empty') {
-          ok = false;
-          break;
-        }
-        cells.push({ row: rr, col: cc });
-      }
-      if (!ok) continue;
-      for (const cell of cells) {
-        grid.cells[cell.row][cell.col] = 'ship';
-      }
-      grid.ships.push({ name, size, cells, sunk: false });
-      placed = true;
+  for (const placement of fleet) {
+    const cells = placementCells(placement);
+    for (const cell of cells) {
+      grid.cells[cell.row][cell.col] = 'ship';
     }
-    if (!placed) {
-      for (let r = 0; r < ROWS && !placed; r++) {
-        for (let c = 0; c <= COLS - SHIP_SIZES[name] && !placed; c++) {
-          let ok = true;
-          for (let i = 0; i < SHIP_SIZES[name]; i++) {
-            if (grid.cells[r][c + i] !== 'empty') { ok = false; break; }
-          }
-          if (!ok) continue;
-          const cells: Array<{ row: number; col: number }> = [];
-          for (let i = 0; i < SHIP_SIZES[name]; i++) {
-            grid.cells[r][c + i] = 'ship';
-            cells.push({ row: r, col: c + i });
-          }
-          grid.ships.push({ name, size: SHIP_SIZES[name], cells, sunk: false });
-          placed = true;
-        }
-      }
-    }
+    grid.ships.push({
+      name: placement.name,
+      size: SHIP_SIZES[placement.name],
+      cells,
+      sunk: false,
+    });
   }
+}
+
+function placeShipsRandomly(grid: BATTLESHIPGrid): void {
+  applyFleet(grid, randomFleetPlacement());
+}
+
+/** True when the fleet covers all five names exactly once, on the board, without overlaps. */
+function isCompleteFleet(fleet: ReadonlyArray<BATTLESHIPPlacement>): boolean {
+  if (fleet.length !== SHIP_NAMES.length) return false;
+  const seen = new Set<BATTLESHIPPlacement['name']>();
+  let occupied: Array<{ row: number; col: number }> = [];
+  for (const placement of fleet) {
+    if (seen.has(placement.name)) return false;
+    seen.add(placement.name);
+    if (!placementFits(placement, occupied)) return false;
+    occupied = occupied.concat(placementCells(placement));
+  }
+  return SHIP_NAMES.every((name) => seen.has(name));
 }
 
 function visibleFromGrid(grid: BATTLESHIPGrid): BATTLESHIPGrid {
@@ -215,7 +209,8 @@ export async function startBATTLESHIP(
     aiGrid: emptyGrid(),
     aiVisibleGrid: emptyGrid(),
     turn: playerStarts ? 'player' : 'ai',
-    status: 'active',
+    status: 'preparing',
+    pendingPlayerStarts: playerStarts,
     aiThinking: false,
     pendingAiMove: null,
     result: null,
@@ -227,7 +222,8 @@ export async function startBATTLESHIP(
     spoke: false,
     lastActivityAt: Date.now(),
   };
-  placeShipsRandomly(s.playerGrid);
+  // The player's own fleet is empty until they confirm their placement;
+  // the AI's fleet is hidden and random.
   placeShipsRandomly(s.aiGrid);
   s.aiVisibleGrid = visibleFromGrid(s.aiGrid);
   sessions.set(characterId, s);
@@ -247,6 +243,34 @@ export async function startBATTLESHIP(
       });
     } catch { /* analytics is never load-bearing */ }
   })();
+
+  return snapshot(s);
+}
+
+/**
+ * Confirm the player's own fleet and open the battle. `ships` is the fleet the
+ * renderer drew (all five ships); `null` means "place it randomly". The phase
+ * exists because the board used to be filled behind the player's back.
+ */
+export async function placeFleet(
+  characterId: string,
+  ships: BATTLESHIPPlacement[] | null,
+): Promise<BATTLESHIPGameState> {
+  const s = sessions.get(characterId);
+  if (!s || s.status !== 'preparing') {
+    throw new Error('no Battleship game is waiting for ship placement');
+  }
+  const fleet = ships ?? randomFleetPlacement();
+  if (!isCompleteFleet(fleet)) {
+    throw new Error('invalid Battleship fleet placement');
+  }
+
+  applyFleet(s.playerGrid, fleet);
+  s.status = 'active';
+  s.startedAt = Date.now();
+  s.lastActivityAt = Date.now();
+  s.turn = s.pendingPlayerStarts ? 'player' : 'ai';
+  push(s);
 
   if (s.turn !== 'player') enqueueAiMove(s);
   return snapshot(s);
@@ -493,12 +517,25 @@ function enqueueAiMove(s: Session): void {
 }
 
 async function runAiTurn(s: Session): Promise<void> {
+  // Setup (character read, config, chat history) can throw before the turn
+  // guard is armed; catch it here so the board never freezes on the AI.
+  const seq = s.turnSeq;
+  try {
+    await runAiTurnUnsafe(s);
+  } catch (err) {
+    if (s.turnSeq !== seq) return;
+    console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
+    s.aiThinking = false;
+    aiFallbackShot(s);
+  }
+}
+
+async function runAiTurnUnsafe(s: Session): Promise<void> {
   const d = requireDeps();
   const character = await getCharacter(s.characterId);
   if (!character) {
     s.aiThinking = false;
-    s.turn = 'player';
-    push(s);
+    aiFallbackShot(s);
     return;
   }
   const config = await loadConfig();
@@ -653,30 +690,49 @@ async function runAiTurn(s: Session): Promise<void> {
     }
 
     if (!fired && s.status === 'active') {
-      const cell = legalCells[0];
-      if (cell) {
-        applyAiShot(s, cell.row, cell.col);
-        s.shotsFired++;
-        const state = push(s);
-        if (!checkGameOver(s)) {
-          s.turn = 'player';
-          s.aiThinking = false;
-          push(s);
-        }
-      }
+      aiFallbackShot(s);
     }
   } catch (err) {
-    if (ctrl.signal.aborted || s.turnSeq !== seq) return;
-    console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
+    if (s.turnSeq !== seq) return;
+    if (!ctrl.signal.aborted) {
+      console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
+    }
+    // The companion never blocks the board: on a failed or timed-out turn it
+    // fires at the first free cell and hands the turn back to the player.
     s.aiThinking = false;
-    push(s);
+    aiFallbackShot(s);
   } finally {
     clearTimeout(timeout);
     if (s.turnCtrl === ctrl) s.turnCtrl = null;
     s.aiThinking = false;
-    if (s.status === 'active' && s.turn === 'ai') {
-      void enqueueAiMove(s);
+  }
+}
+
+/**
+ * Fire for the companion when the LLM turn produced nothing (error, timeout,
+ * no tool call). Never re-enqueues: a failing model must not spin in a retry
+ * loop while the player stares at a dead board.
+ */
+function aiFallbackShot(s: Session): void {
+  if (s.status !== 'active' || s.turn !== 'ai') return;
+  let target: { row: number; col: number } | null = null;
+  for (let r = 0; r < ROWS && !target; r++) {
+    for (let c = 0; c < COLS && !target; c++) {
+      if (s.aiVisibleGrid.cells[r][c] === 'empty') target = { row: r, col: c };
     }
+  }
+  if (!target) {
+    s.aiThinking = false;
+    push(s);
+    return;
+  }
+  applyAiShot(s, target.row, target.col);
+  s.shotsFired++;
+  s.aiThinking = false;
+  push(s);
+  if (!checkGameOver(s)) {
+    s.turn = 'player';
+    push(s);
   }
 }
 

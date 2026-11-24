@@ -407,11 +407,25 @@ function enqueueAiMove(s: Session): void {
 }
 
 async function runAiTurn(s: Session): Promise<void> {
+  // Setup (character read, config, chat history) can throw before the turn
+  // guard is armed; catch it here so the board never freezes on the AI.
+  const seq = s.turnSeq;
+  try {
+    await runAiTurnUnsafe(s);
+  } catch (err) {
+    if (s.turnSeq !== seq) return;
+    console.error(`[sei/CONNECT4] AI turn failed: ${describeErr(err)}`);
+    s.aiThinking = false;
+    aiFallbackMove(s);
+  }
+}
+
+async function runAiTurnUnsafe(s: Session): Promise<void> {
   const d = requireDeps();
   const character = await getCharacter(s.characterId);
   if (!character) {
     s.aiThinking = false;
-    push(s);
+    aiFallbackMove(s);
     return;
   }
   const config = await loadConfig();
@@ -551,30 +565,50 @@ async function runAiTurn(s: Session): Promise<void> {
 
     if (!played && s.status === 'active') {
       // Fallback: first legal column so the game never stalls.
-      const col = legalCols[0];
-      if (col !== undefined) {
-        const row = dropRow(s.board, col);
-        applyMove(s, col, row, aiColor);
-        const state = push(s);
-        if (!checkGameOver(s)) {
-          s.turn = nextTurn(s);
-          s.aiThinking = false;
-          push(s);
-        }
-      }
+      aiFallbackMove(s);
     }
   } catch (err) {
-    if (ctrl.signal.aborted || s.turnSeq !== seq) return;
-    console.error(`[sei/CONNECT4] AI turn failed: ${describeErr(err)}`);
+    if (s.turnSeq !== seq) return;
+    if (!ctrl.signal.aborted) {
+      console.error(`[sei/CONNECT4] AI turn failed: ${describeErr(err)}`);
+    }
+    // The companion never blocks the board: on a failed or timed-out turn it
+    // plays the first legal column and hands the turn back to the player.
     s.aiThinking = false;
-    push(s);
+    aiFallbackMove(s);
   } finally {
     clearTimeout(timeout);
     if (s.turnCtrl === ctrl) s.turnCtrl = null;
     s.aiThinking = false;
-    if (s.status === 'active' && s.turn !== s.playerColor) {
-      void enqueueAiMove(s);
+  }
+}
+
+/**
+ * Play a legal move for the companion when the LLM turn produced nothing
+ * (error, timeout, no tool call). Never re-enqueues: a failing model must not
+ * spin in a retry loop while the player stares at a disabled board.
+ */
+function aiFallbackMove(s: Session): void {
+  if (s.status !== 'active' || s.turn === s.playerColor) return;
+  const aiColor: CONNECT4Color = s.playerColor === 'r' ? 'y' : 'r';
+  let col = -1;
+  for (let c = 0; c < COLS; c++) {
+    if (dropRow(s.board, c) !== -1) {
+      col = c;
+      break;
     }
+  }
+  if (col === -1) {
+    s.aiThinking = false;
+    push(s);
+    return;
+  }
+  applyMove(s, col, dropRow(s.board, col), aiColor);
+  s.aiThinking = false;
+  push(s);
+  if (!checkGameOver(s)) {
+    s.turn = nextTurn(s);
+    push(s);
   }
 }
 

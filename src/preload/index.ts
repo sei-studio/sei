@@ -307,6 +307,8 @@ const api: RendererApi = {
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.start, { characterId, playerStarts: opts?.playerStarts }),
   BATTLESHIPGetState: (characterId) =>
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.getState, characterId),
+  BATTLESHIPPlaceFleet: (characterId, ships) =>
+    ipcRenderer.invoke(IpcChannel.BATTLESHIP.placeFleet, { characterId, ships }),
   BATTLESHIPMove: (characterId, row, col) =>
     ipcRenderer.invoke(IpcChannel.BATTLESHIP.move, { characterId, row, col }),
   BATTLESHIPResign: (characterId) =>

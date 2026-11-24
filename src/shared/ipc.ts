@@ -49,7 +49,7 @@ import type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './c
 export type { ChessGameState, ChessDownloadProgress, ChessReplayData } from './chessIpc';
 import type { CONNECT4GameState } from './connect4Ipc';
 export type { CONNECT4GameState } from './connect4Ipc';
-import type { BATTLESHIPGameState } from './battleshipIpc';
+import type { BATTLESHIPGameState, BATTLESHIPPlacement } from './battleshipIpc';
 export type { BATTLESHIPGameState } from './battleshipIpc';
 import type {
   DrawAiStroke,
@@ -2635,6 +2635,8 @@ export interface RendererApi {
   // --- Battleship minigame --- see src/shared/battleshipIpc.ts.
   BATTLESHIPStart(characterId: string, opts?: { playerStarts?: boolean }): Promise<BATTLESHIPGameState>;
   BATTLESHIPGetState(characterId: string): Promise<BATTLESHIPGameState | null>;
+  /** Confirm the player's own fleet (`null` = place it randomly) and start the battle. */
+  BATTLESHIPPlaceFleet(characterId: string, ships: BATTLESHIPPlacement[] | null): Promise<BATTLESHIPGameState>;
   BATTLESHIPMove(characterId: string, row: number, col: number): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }>;
   BATTLESHIPResign(characterId: string): Promise<BATTLESHIPGameState>;
   BATTLESHIPRematch(characterId: string): Promise<BATTLESHIPGameState>;
@@ -4148,6 +4150,7 @@ export const IpcChannel = {
   BATTLESHIP: {
     start: 'battleship:start',
     getState: 'battleship:get-state',
+    placeFleet: 'battleship:place-fleet',
     move: 'battleship:move',
     resign: 'battleship:resign',
     rematch: 'battleship:rematch',

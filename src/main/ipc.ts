@@ -1756,6 +1756,26 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { getBATTLESHIPState } = await import('./battleship/battleshipService');
     return getBATTLESHIPState(id);
   });
+  ipcMain.handle(IpcChannel.BATTLESHIP.placeFleet, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        ships: z
+          .array(
+            z.object({
+              name: z.enum(['carrier', 'battleship', 'cruiser', 'submarine', 'destroyer']),
+              row: z.number().int().min(0).max(9),
+              col: z.number().int().min(0).max(9),
+              horizontal: z.boolean(),
+            }),
+          )
+          .max(5)
+          .nullable(),
+      })
+      .parse(argsRaw);
+    const { placeFleet } = await import('./battleship/battleshipService');
+    return await placeFleet(args.characterId, args.ships);
+  });
   ipcMain.handle(IpcChannel.BATTLESHIP.move, async (_event, argsRaw: unknown) => {
     const args = z
       .object({ characterId: IdSchema, row: z.number().int().min(0).max(9), col: z.number().int().min(0).max(9) })

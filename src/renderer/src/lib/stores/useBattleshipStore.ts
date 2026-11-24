@@ -12,7 +12,7 @@
  */
 
 import { create } from 'zustand';
-import type { BATTLESHIPGameState } from '@shared/battleshipIpc';
+import type { BATTLESHIPGameState, BATTLESHIPPlacement } from '@shared/battleshipIpc';
 import { t } from '../i18n';
 
 interface BATTLESHIPApi {
@@ -21,6 +21,10 @@ interface BATTLESHIPApi {
     opts?: { playerStarts?: boolean },
   ): Promise<BATTLESHIPGameState>;
   BATTLESHIPGetState(characterId: string): Promise<BATTLESHIPGameState | null>;
+  BATTLESHIPPlaceFleet(
+    characterId: string,
+    ships: BATTLESHIPPlacement[] | null,
+  ): Promise<BATTLESHIPGameState>;
   BATTLESHIPMove(
     characterId: string,
     row: number,
@@ -56,6 +60,8 @@ export interface BATTLESHIPStoreState {
   start: (characterId: string, playerStarts?: boolean) => Promise<void>;
   /** Player fire at (row, col). Returns main's verdict; state applies either way. */
   move: (characterId: string, row: number, col: number) => Promise<boolean>;
+  /** Confirm the fleet drawn during placement (`null` = random) and start the battle. */
+  placeFleet: (characterId: string, ships: BATTLESHIPPlacement[] | null) => Promise<boolean>;
   resign: (characterId: string) => Promise<void>;
   rematch: (characterId: string) => Promise<void>;
   /** Close the panel. Ends any game in main (unfinished → 'abandoned'). */
@@ -138,6 +144,17 @@ export const useBattleshipStore = create<BATTLESHIPStoreState>((set, get) => {
         const res = await fn(characterId, row, col);
         applyState(res.state);
         return res.ok;
+      } catch {
+        return false;
+      }
+    },
+
+    placeFleet: async (characterId, ships) => {
+      const fn = BATTLESHIPApi().BATTLESHIPPlaceFleet;
+      if (!fn) return false;
+      try {
+        applyState(await fn(characterId, ships));
+        return true;
       } catch {
         return false;
       }

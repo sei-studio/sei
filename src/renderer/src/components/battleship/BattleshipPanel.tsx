@@ -5,6 +5,9 @@
  * States:
  *   - launch screen (no game yet, or Rematch clicked after a finished game):
  *     "Battleship" title, one primary button ("Launch" / "Start").
+ *   - status 'preparing': the player places their own five ships on the left
+ *     grid (pick a ship, rotate, tap a cell; tap a placed ship to take it
+ *     back), can roll a random fleet, then starts the battle.
  *   - status 'active' / 'ended': two 10x10 grids (player ships visible, AI
  *     shots hidden) plus turn label and resign control. Result + Rematch
  *     when the game ends.
@@ -13,13 +16,25 @@
  * src/main/battleship/battleshipService.ts.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useBattleshipStore } from '../../lib/stores/useBattleshipStore';
 import { useDataStore } from '../../lib/stores/useDataStore';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
-import type { BATTLESHIPGameState } from '@shared/battleshipIpc';
+import {
+  BATTLESHIP_SHIP_NAMES,
+  SHIP_SIZES,
+  fleetCells,
+  placementCells,
+  placementFits,
+  randomFleetPlacement,
+} from '@shared/battleshipIpc';
+import type {
+  BATTLESHIPGameState,
+  BATTLESHIPPlacement,
+  BATTLESHIPShipName,
+} from '@shared/battleshipIpc';
 import styles from './BattleshipPanel.module.css';
 
 export interface BattleshipPanelProps {
@@ -30,12 +45,21 @@ function cellLabel(r: number, c: number): string {
   return `Empty cell, row ${r + 1}, column ${c + 1}`;
 }
 
+const SHIP_LABEL: Record<BATTLESHIPShipName, string> = {
+  carrier: 'carrier',
+  battleship: 'battleship',
+  cruiser: 'cruiser',
+  submarine: 'submarine',
+  destroyer: 'destroyer',
+};
+
 export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.ReactElement {
   const t = useT();
   const game = useBattleshipStore((s) => s.games[characterId] ?? null);
   const starting = useBattleshipStore((s) => s.starting[characterId] ?? false);
   const start = useBattleshipStore((s) => s.start);
   const move = useBattleshipStore((s) => s.move);
+  const placeFleet = useBattleshipStore((s) => s.placeFleet);
   const resign = useBattleshipStore((s) => s.resign);
   const rematch = useBattleshipStore((s) => s.rematch);
   const end = useBattleshipStore((s) => s.end);
@@ -48,6 +72,12 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   const [confirmResign, setConfirmResign] = useState(false);
   const [rematchScreen, setRematchScreen] = useState(false);
 
+  // Placement draft (renderer-local until "Start battle" confirms it).
+  const [draft, setDraft] = useState<BATTLESHIPPlacement[]>([]);
+  const [horizontal, setHorizontal] = useState(true);
+  const [selected, setSelected] = useState<BATTLESHIPShipName | null>(null);
+  const [placing, setPlacing] = useState(false);
+
   useEffect(() => {
     void hydrate(characterId);
   }, [characterId, hydrate]);
@@ -59,9 +89,24 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   }, [characterId]);
 
   const gameStatus = game?.status ?? null;
+  const gameId = game?.gameId ?? null;
   useEffect(() => {
     if (gameStatus === 'active') setRematchScreen(false);
   }, [gameStatus]);
+
+  useEffect(() => {
+    setDraft([]);
+    setSelected(null);
+    setPlacing(false);
+  }, [gameId, gameStatus]);
+
+  const draftCells = useMemo(() => fleetCells(draft), [draft]);
+  const placedNames = useMemo(() => new Set(draft.map((p) => p.name)), [draft]);
+
+  const activeShip: BATTLESHIPShipName | null = useMemo(() => {
+    if (selected && !placedNames.has(selected)) return selected;
+    return BATTLESHIP_SHIP_NAMES.find((n) => !placedNames.has(n)) ?? null;
+  }, [selected, placedNames]);
 
   const doStart = async (): Promise<void> => {
     setStartErr(null);
@@ -77,17 +122,59 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
     }
   };
 
-  const onCellClick = (row: number, col: number): void => {
+  const onPlayerCellClick = (row: number, col: number): void => {
+    if (!game || game.status !== 'preparing') return;
+    const occupied = draft.find((p) =>
+      placementCells(p).some((c) => c.row === row && c.col === col),
+    );
+    if (occupied) {
+      setDraft((prev) => prev.filter((p) => p.name !== occupied.name));
+      setSelected(occupied.name);
+      return;
+    }
+    if (!activeShip) return;
+    const candidate: BATTLESHIPPlacement = {
+      name: activeShip,
+      row,
+      col,
+      horizontal,
+    };
+    if (!placementFits(candidate, draftCells)) return;
+    setDraft((prev) => [...prev, candidate]);
+    setSelected(null);
+  };
+
+  const onChipClick = (ship: BATTLESHIPShipName): void => {
+    if (!game || game.status !== 'preparing') return;
+    if (placedNames.has(ship)) {
+      setDraft((prev) => prev.filter((p) => p.name !== ship));
+      setSelected(ship);
+      return;
+    }
+    setSelected(ship);
+  };
+
+  const doPlaceFleet = async (ships: BATTLESHIPPlacement[] | null): Promise<void> => {
+    setStartErr(null);
+    setPlacing(true);
+    const ok = await placeFleet(characterId, ships);
+    setPlacing(false);
+    if (!ok) setStartErr(t("The game couldn't start. Try again in a moment."));
+  };
+
+  const onEnemyCellClick = (row: number, col: number): void => {
     if (!game || game.status !== 'active') return;
     if (game.turn !== 'player') return;
-    const already = game.aiVisibleGrid.cells?.[row]?.[col] !== null;
-    if (already) return;
+    const cell = game.aiVisibleGrid.cells?.[row]?.[col];
+    if (cell === 'hit' || cell === 'miss' || cell === 'sunk') return;
     void move(characterId, row, col);
   };
 
   const showLaunch = !game || (game.status === 'ended' && rematchScreen);
 
   const isPlayerTurn = game ? game.turn === 'player' : false;
+  const placingFleet = game?.status === 'preparing';
+  const fleetReady = draft.length === BATTLESHIP_SHIP_NAMES.length;
 
   return (
     <div className={styles.panel} aria-label={t('Battleship with {name}', { name })}>
@@ -112,35 +199,74 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
         </div>
       ) : game ? (
         <div className={styles.stage}>
+          {placingFleet ? (
+            <div className={styles.fleetBar}>
+              <span className={styles.fleetHint}>{t('Place your ships')}</span>
+              <div className={styles.fleetList}>
+                {BATTLESHIP_SHIP_NAMES.map((ship) => {
+                  const placed = placedNames.has(ship);
+                  const active = !placed && activeShip === ship;
+                  return (
+                    <button
+                      key={ship}
+                      type="button"
+                      className={[
+                        styles.fleetChip,
+                        placed ? styles.fleetChipPlaced : '',
+                        active ? styles.fleetChipActive : '',
+                      ].join(' ')}
+                      onClick={() => onChipClick(ship)}
+                      aria-pressed={placed}
+                    >
+                      {t(SHIP_LABEL[ship])}
+                      <span className={styles.fleetSize}>{SHIP_SIZES[ship]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className={styles.grids}>
             <div className={styles.gridWrap}>
               <div className={styles.gridTitle}>{t('Your ships')}</div>
               <div className={styles.grid}>
                 {game.playerGrid.cells.map((row, r) =>
-                  row.map((cell, c) => (
-                    <button
-                      key={`p-${r}-${c}`}
-                      type="button"
-                      className={[
-                        styles.cell,
-                        cell === 'ship' ? styles.ship : '',
-                        cell === 'hit' ? styles.hit : '',
-                        cell === 'miss' ? styles.miss : '',
-                      ].join(' ')}
-                      disabled
-                      aria-label={cellLabel(r, c)}
-                    />
-                  )),
+                  row.map((cell, c) => {
+                    const drafted = placingFleet
+                      ? draftCells.some((p) => p.row === r && p.col === c)
+                      : false;
+                    const showShip = placingFleet ? drafted : cell === 'ship';
+                    return (
+                      <button
+                        key={`p-${r}-${c}`}
+                        type="button"
+                        className={[
+                          styles.cell,
+                          showShip ? styles.ship : '',
+                          cell === 'hit' ? styles.hit : '',
+                          cell === 'miss' ? styles.miss : '',
+                        ].join(' ')}
+                        disabled={!placingFleet}
+                        onClick={placingFleet ? () => onPlayerCellClick(r, c) : undefined}
+                        aria-label={cellLabel(r, c)}
+                      />
+                    );
+                  }),
                 )}
               </div>
             </div>
             <div className={styles.gridWrap}>
-              <div className={styles.gridTitle}>{t("Enemy grid")}</div>
+              <div className={styles.gridTitle}>{t('Enemy grid')}</div>
               <div className={styles.grid}>
                 {game.aiVisibleGrid.cells.map((row, r) =>
                   row.map((cell, c) => {
                     const disabled =
-                      game.status !== 'active' || game.turn !== 'player' || cell !== null;
+                      game.status !== 'active' ||
+                      game.turn !== 'player' ||
+                      cell === 'hit' ||
+                      cell === 'miss' ||
+                      cell === 'sunk';
                     return (
                       <button
                         key={`a-${r}-${c}`}
@@ -152,7 +278,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
                           cell === 'miss' ? styles.miss : '',
                         ].join(' ')}
                         disabled={disabled}
-                        onClick={() => onCellClick(r, c)}
+                        onClick={() => onEnemyCellClick(r, c)}
                         aria-label={cellLabel(r, c)}
                       />
                     );
@@ -164,13 +290,42 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
 
           <div className={styles.hud}>
             <div className={styles.turnLabel}>
-              {isPlayerTurn
-                ? t("It's your turn, {name}", { name })
-                : t("{name}'s turn", { name })}
+              {placingFleet
+                ? activeShip
+                  ? t('Placing {ship}', { ship: t(SHIP_LABEL[activeShip]) })
+                  : t('Fleet ready')
+                : isPlayerTurn
+                  ? t("It's your turn, {name}", { name })
+                  : t("{name}'s turn", { name })}
             </div>
 
             <div className={styles.controls}>
-              {confirmResign ? (
+              {placingFleet ? (
+                <>
+                  <Button kind="quiet" size="sm" onClick={() => setHorizontal((h) => !h)}>
+                    {t('Rotate')}
+                  </Button>
+                  <Button
+                    kind="quiet"
+                    size="sm"
+                    disabled={placing}
+                    onClick={() => {
+                      setDraft(randomFleetPlacement());
+                      setSelected(null);
+                    }}
+                  >
+                    {t('Random')}
+                  </Button>
+                  <Button
+                    kind="accent"
+                    size="sm"
+                    disabled={placing || !fleetReady}
+                    onClick={() => void doPlaceFleet(draft)}
+                  >
+                    {t('Start battle')}
+                  </Button>
+                </>
+              ) : confirmResign ? (
                 <span className={styles.resignConfirm}>
                   <span className={styles.resignLabel}>{t('Resign?')}</span>
                   <Button
@@ -200,6 +355,10 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
               )}
             </div>
           </div>
+
+          {placingFleet && startErr ? (
+            <p className={styles.launchError} role="alert">{startErr}</p>
+          ) : null}
 
           {game.status === 'ended' && game.result ? (
             <div className={styles.resultWrap}>
