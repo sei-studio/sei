@@ -875,7 +875,7 @@ async function persistReplies(
   characterId: string,
   replyText: string,
   punctuation: 'casual' | 'deliberate' = 'casual',
-  opts?: { voice?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean; desktop?: boolean },
+  opts?: { voice?: boolean; typed?: boolean; rememberCalled?: boolean; truncated?: boolean; local?: boolean; desktop?: boolean },
 ): Promise<ChatMessage[]> {
   const now = Date.now();
   // Loop/cut-off guard first (tidyReply): repeated sentences and a max_tokens
@@ -917,8 +917,10 @@ async function persistReplies(
     role: 'companion',
     text: p.text,
     ts: now + i,
-    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
+    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice),
+    // unless it answers a line the player typed (ChatMessage.typed).
     ...(opts?.voice ? { voice: true } : {}),
+    ...(opts?.voice && opts?.typed ? { typed: true } : {}),
     // A WorldLink desktop bubble → hidden in the chat UI too (see ChatMessage.desktop).
     ...(opts?.desktop ? { desktop: true } : {}),
   }));
@@ -941,6 +943,9 @@ async function sendChatMessageImpl(
     /** 261112: a voice line that cut the companion off mid-line. Only the
      * in-game route carries it (the bot frames the turn as a cut-in). */
     interrupted?: { line: string };
+    /** 261124: typed in the composer. On a call the rows keep `voice` (spoken,
+     * the call's) but gain `typed`, so the chat still shows them. */
+    typed?: boolean;
   },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
@@ -963,9 +968,12 @@ async function sendChatMessageImpl(
       text: args.text,
       ts: Date.now(),
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
-      // Sent during a live call (a transcribed utterance, or typed mid-call —
-      // either way the exchange is spoken) → hidden in the chat UI.
+      // Sent during a live call → a call row (the reply is spoken). Hidden in
+      // the chat UI when it was a transcribed utterance; a TYPED line stays
+      // visible (261124: it is not a caption, and hiding it made the
+      // player's own messages vanish on send).
       ...(args.voiceCall === true ? { voice: true } : {}),
+      ...(args.voiceCall === true && args.typed === true ? { typed: true } : {}),
     };
     await appendTurnRow(args.characterId, userMsg);
 
@@ -1116,8 +1124,10 @@ async function sendChatMessageImpl(
           role: 'companion',
           text: b,
           ts: Date.now() + streamedReplies.length, // monotonic within the turn
-          // Spoken on a live call → hidden in the chat UI; typed bubbles show.
+          // Spoken on a live call → hidden in the chat UI; typed bubbles show,
+          // and so does the spoken answer to a line typed on the call.
           ...(args.voiceCall === true ? { voice: true } : {}),
+          ...(args.voiceCall === true && args.typed === true ? { typed: true } : {}),
         };
         streamedReplies.push(msg);
         await appendTurnRow(args.characterId, msg);
@@ -1513,6 +1523,7 @@ async function sendChatMessageImpl(
       : replyText.trim() || streamedReplies.length === 0
         ? await persistReplies(args.characterId, replyText, prep.punctuation, {
             voice: args.voiceCall === true,
+            typed: args.typed === true,
             truncated,
             local: llm.backend === 'local',
             rememberCalled: replyRememberCalled,

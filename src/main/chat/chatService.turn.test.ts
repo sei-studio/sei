@@ -1288,3 +1288,31 @@ describe('provider build runs alongside the prompt build (261123)', () => {
     }
   });
 });
+
+describe('a line typed on a call stays visible (261124)', () => {
+  it('typed: the player row and the reply keep voice (spoken, the call) and gain typed', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'that is the warden, run' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'what is that', voiceCall: true, typed: true }, deps());
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.find((r) => r.role === 'user')).toMatchObject({ text: 'what is that', voice: true, typed: true });
+    expect(result.replies.length).toBeGreaterThan(0);
+    for (const r of result.replies) expect(r).toMatchObject({ voice: true, typed: true });
+  });
+
+  it('spoken: a transcribed utterance and its reply stay hidden call rows', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'hey' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'hi', voiceCall: true }, deps());
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.find((r) => r.role === 'user')?.typed).toBeUndefined();
+    for (const r of result.replies) expect(r.typed).toBeUndefined();
+  });
+
+  it('typed off a call: plain chat rows, no call flags', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'hey' }] });
+    const result = await sendChatMessage({ characterId: CHAR, text: 'hi', typed: true }, deps());
+    const rows = await chatStoreRead(CHAR);
+    expect(rows.find((r) => r.role === 'user')).not.toHaveProperty('voice');
+    expect(rows.find((r) => r.role === 'user')).not.toHaveProperty('typed');
+    for (const r of result.replies) expect(r).not.toHaveProperty('typed');
+  });
+});

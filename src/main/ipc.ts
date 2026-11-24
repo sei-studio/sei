@@ -1445,6 +1445,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         voicePeers: z.array(z.string()).optional(),
         // 261112: the voice line cut the companion off mid-line (bargeCut.ts).
         interrupted: z.object({ line: z.string().max(CHAT_TEXT_MAX).catch('') }).optional(),
+        // 261124: typed in the composer; on a call its rows stay visible.
+        typed: z.boolean().optional(),
       })
       .parse(argsRaw);
     const { sendChatMessage } = await import('./chat/chatService');
@@ -1512,6 +1514,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         voiceCall: inCall,
         voicePeers: args.voicePeers,
         interrupted: args.interrupted,
+        typed: args.typed,
       },
       {
         getLanState: deps.getLanState,
@@ -1812,6 +1815,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
             shareVoice: z.boolean().nullable().optional(),
           })
           .optional(),
+        // 261124: a typed line's renderer-minted row id (BackseatTick.lineId).
+        lineId: z.string().uuid().optional(),
       })
       .parse(tickRaw);
     const backseat = await import('./backseat/backseatService');

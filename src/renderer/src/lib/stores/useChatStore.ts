@@ -19,6 +19,7 @@ import { useDataStore } from './useDataStore';
 import { useUiStore } from './useUiStore';
 import { useFirstMomentStore } from './useFirstMomentStore';
 import { useChatgptStore } from './useChatgptStore';
+import { useBackseatStore, backseatCapture } from './useBackseatStore';
 import {
   notifyCompanionText,
   notifyPlayerText,
@@ -27,7 +28,7 @@ import {
   requestRemoteEndCall,
   voiceCallPeers,
 } from '../voice/voiceBridge';
-import { CHAT_HISTORY_PAGE } from '@shared/ipc';
+import { CHAT_HISTORY_PAGE, chatRowHidden } from '@shared/ipc';
 import type { ChatMessage, ChatPreview, ChatReplyRef, ChatSendResult } from '@shared/ipc';
 
 interface ChatState {
@@ -78,8 +79,12 @@ interface ChatState {
     replyTo?: ChatReplyRef,
     /** Multi-companion voice (260706): names of other companions on the call. */
     voicePeers?: string[],
-    /** 261112: this voice line cut the companion off mid-line (see bargeCut.ts). */
-    opts?: { interrupted?: { line: string } },
+    /** 261112: this voice line cut the companion off mid-line (see bargeCut.ts).
+     *  `typed` (261124): the player typed it in the chat composer. On a call
+     *  the line and its reply are still call rows but stay visible
+     *  (ChatMessage.typed), and while this companion is watching the
+     *  player's screen (Backseat) the line goes to that loop instead. */
+    opts?: { interrupted?: { line: string }; typed?: boolean },
   ) => Promise<ChatSendResult | null>;
   /**
    * 260705: drop the local cache for a character so the next load() refetches.
@@ -556,14 +561,29 @@ export const useChatStore = create<ChatState>((set, get) => {
     // framing. Director sends pass their own voicePeers, which win.
     const effectivePeers =
       voicePeers && voicePeers.length ? voicePeers : inCallEarly ? voiceCallPeers(characterId) : [];
+    const typed = opts?.typed === true;
+    // 261124 Backseat: a line TYPED to the companion who is watching the
+    // player's screen goes to the Backseat loop, like a spoken one does
+    // (useVoiceStore routes the mic utterance there). Sent through chat it was
+    // answered by a turn that could not see the screen while the Backseat loop
+    // kept talking beside it. Main persists the row under this bubble's id
+    // (BackseatTick.lineId), so its push dedupes. A quoted reply keeps the
+    // chat path (a tick carries no quote), and so does a line the capture
+    // could not send (below).
+    const backseat =
+      typed && !replyTo && inCallEarly && useBackseatStore.getState().sharingFor === characterId
+        ? backseatCapture()
+        : null;
     const userMsg: ChatMessage = {
-      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: backseat ? crypto.randomUUID() : `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       role: 'user',
       text,
       ts: Date.now(),
       ...(replyTo ? { replyTo } : {}),
-      // Mirror main's persisted flag so the optimistic bubble is hidden too.
+      // Mirror main's persisted flags: a spoken call line's bubble is hidden,
+      // a typed one stays (ChatMessage.typed).
       ...(inCallEarly ? { voice: true } : {}),
+      ...(inCallEarly && typed ? { typed: true } : {}),
     };
     // "Realistic typing" (Appearance & feel): when ON, hold the typing indicator
     // back until the companion has "read" your message (task 2), then keep it up
@@ -576,10 +596,18 @@ export const useChatStore = create<ChatState>((set, get) => {
     const realism = !inCall && useUiStore.getState().realisticTyping;
     put((s) => ({
       messages: appendMessage(s.messages, characterId, userMsg),
-      // In-call exchanges are hidden in the chat UI (ChatMessage.voice), so a
-      // typing indicator would point at bubbles that never appear — keep it off.
+      // On a call the reply is spoken (and hidden unless typed), so a typing
+      // indicator would point at bubbles that may never appear — keep it off.
       awaiting: { ...s.awaiting, [characterId]: !realism && !inCall },
     }));
+    if (backseat) {
+      const sent = await backseat.sendUserTick(text, undefined, userMsg.id).catch(() => false);
+      // The answer arrives over the chat:message push, like any Backseat line.
+      if (sent) return { replies: [], routed: true };
+      if (!isCurrent()) return null;
+      // Not sent (the share just ended, or no frame yet): the chat turn below
+      // answers instead. Main persists its own copy of the line there.
+    }
     // Kick the reply off NOW so model generation overlaps the reading pause.
     const replyPromise = sei.chatSend({
       characterId,
@@ -587,6 +615,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       replyTo,
       ...(effectivePeers.length ? { voicePeers: effectivePeers } : {}),
       ...(opts?.interrupted ? { interrupted: opts.interrupted } : {}),
+      ...(typed ? { typed: true } : {}),
     });
     try {
       if (realism) {
@@ -757,7 +786,7 @@ export function chatPreviewFor(s: ChatState, characterId: string): ChatPreview |
   if (list && list.length > 0) {
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
-      if (m.voice === true || m.desktop === true) continue;
+      if (chatRowHidden(m)) continue;
       if (m.role === 'system' && m.event === undefined) continue;
       return { role: m.role, text: m.text, ts: m.ts };
     }

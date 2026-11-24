@@ -685,6 +685,12 @@ export interface BackseatTick {
    */
   mic?: { ttsGapMs: number | null; shareVoice?: boolean | null };
   /**
+   * 261124: on a TYPED 'user' tick (the chat composer), the id the renderer
+   * already gave the player's optimistic bubble, so main persists and pushes
+   * the row under that id and the push dedupes instead of doubling it.
+   */
+  lineId?: string;
+  /**
    * How old each frame in the grid is, in seconds before `capturedAt`, oldest
    * first — one entry per cell ACTUALLY drawn, after duplicates were dropped.
    *
