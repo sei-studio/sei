@@ -750,3 +750,44 @@ built for the loop itself.
   tool said "no open spot" for a table that was in fact down. craft() with a
   crafting_table in the bag puts it down instead of walking to a world table
   more than 8m off, or when that walk fails. Repro: `place-repro.mjs`.
+
+---
+
+## Summon join speed (protocol compile, 261124)
+
+- **What runs between `bot_created` and `login`.** Profiled with a fake nmp
+  server: TCP + the login exchange, nmp compiling a protodef serializer and
+  deserializer for each state it enters (login, configuration, play), the
+  server's registry data, then the play `login` packet. mineflayer's plugins
+  inject on a `setTimeout(0)` after createBot (about 60 small JS files,
+  ~230 KB: prismarine-chunk loads every chunk version, bedrock included); that
+  file set is the window's whole disk read and the compile fix does not change
+  it. The CPU was protodef codegen + `eval`, and each of the four small states
+  (handshaking, status, login, configuration) compiled the protocol's whole
+  global `types` section, so each cost about as much as play.
+- **Fix:** `patches/minecraft-protocol+1.68.0.patch` (`reachableTypes` in
+  `src/transforms/serializer.js`) compiles only the types reachable from
+  `packet` for those four states; play is unchanged. Equivalence (identical
+  generated code per kept type, every `supportedVersions` entry) is pinned by
+  `adapter/minecraft/protocolCompile.test.js`. It also speeds up the status
+  ping (`runtime_loaded` to `version_resolved`) and createBot itself (its
+  handshaking compile). It ships through the Minecraft game pack, built from
+  the patched tree for each release.
+- **Measured (Linux, loaded box, fake server, interleaved runs, medians,
+  1.21.11 n=9 / 1.21.1 n=7):** status ping 536 to 227 ms / 470 to 182;
+  createBot 251 to 121 / 169 to 79; main-thread busy time in
+  `bot_created` to `login` 765 to 584 / 478 to 337. The window's wall time is
+  dominated by the fake server's registry send, so judge the field numbers
+  by the split below.
+- **Phases `configuration` and `configured` (connect.js, 1.20.2+ only)**
+  split the window: `bot_created` to `configuration` = TCP, login compile and
+  login exchange; `configuration` to `configured` = the server's registries
+  and tags; `configured` to `login` = the play compile plus the play `login`
+  packet. They reach PostHog as `boot_configuration_ms` /
+  `boot_configured_ms` on `character_summoned` and `summon_failed` like every
+  other phase (`BOOT_PHASE_ORDER` in `src/main/diagnostics.ts`).
+- **Left on the table:** the play compile (~250 ms here) still runs after
+  `finish_configuration`. Pre-compiling play while the client idles waiting
+  for registries would overlap it, but vanilla waits for the client's
+  `select_known_packs` reply, so a blocking compile at the wrong moment can
+  delay the server instead. Needs a real-server measurement first.

@@ -737,6 +737,17 @@ describe('bootPhaseProps', () => {
     expect(props.boot_last_phase).toBe('spawn');
   });
 
+  it('orders the configuration split between bot_created and login', () => {
+    const props = bootPhaseProps({
+      attemptStartMs: FORK,
+      forkAtMs: FORK,
+      marks: { bot_created: FORK + 2_000, configured: FORK + 2_600, configuration: FORK + 2_200 },
+    });
+    expect(props.boot_configuration_ms).toBe(2_200);
+    expect(props.boot_configured_ms).toBe(2_600);
+    expect(props.boot_last_phase).toBe('configured');
+  });
+
   it('reports a null last phase when the bot never stamped one', () => {
     const props = bootPhaseProps({ attemptStartMs: FORK, forkAtMs: FORK, marks: {} });
     expect(props).toEqual({ boot_fork_ms: 0, boot_last_phase: null });

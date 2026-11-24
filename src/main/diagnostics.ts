@@ -116,6 +116,8 @@ export const BOOT_PHASE_ORDER = [
   'version_resolved',
   'create_bot',
   'bot_created',
+  'configuration',
+  'configured',
   'login',
   'spawn',
 ] as const;
