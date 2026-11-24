@@ -507,14 +507,6 @@ export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
 /**
- * 260705: max characters per outgoing chat message — single source of truth for
- * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
- * MUST agree: an over-limit paste passes the composer, renders an optimistic
- * bubble, then dies at the IPC gate pre-persist — the user sees the retryable
- * "try again" failure copy for a rejection that no retry can fix, and the
- * bubble vanishes on reload.
- */
-/**
  * Whether the chat view hides this row: a spoken call line (ChatMessage.voice)
  * that the player did not type, or a WorldLink desktop line. The one rule for
  * the transcript, the roster preview and main's last-message read.
@@ -523,6 +515,14 @@ export function chatRowHidden(m: ChatMessage): boolean {
   return (m.voice === true && m.typed !== true) || m.desktop === true;
 }
 
+/**
+ * 260705: max characters per outgoing chat message — single source of truth for
+ * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
+ * MUST agree: an over-limit paste passes the composer, renders an optimistic
+ * bubble, then dies at the IPC gate pre-persist — the user sees the retryable
+ * "try again" failure copy for a rejection that no retry can fix, and the
+ * bubble vanishes on reload.
+ */
 export const CHAT_TEXT_MAX = 4000;
 
 /**
