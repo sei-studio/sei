@@ -83,6 +83,50 @@ export function detectedToChatLanguage(raw: unknown): ChatLanguage | null {
 }
 
 /**
+ * 261122: best-effort detection of the conversation language from a chunk of
+ * typed text. Never throws; returns null when the language cannot be
+ * determined. Non-Latin scripts are detected by character range; Latin-script
+ * text is scored by stop-word frequency per language.
+ */
+export function detectLanguageFromText(text: string): ChatLanguage | null {
+  const normalized = text.trim();
+  if (normalized.length < 3) return null;
+
+  // Script-based detection (non-Latin scripts are unambiguous enough).
+  const han = /[\u4e00-\u9fff]/.test(normalized);
+  if (han) return 'zh';
+  const hangul = /[\uac00-\ud7af]/.test(normalized);
+  if (hangul) return 'ko';
+  const kana = /[\u3040-\u30ff]/.test(normalized);
+  if (kana) return 'ja';
+  const cyrillic = /[\u0400-\u04ff]/.test(normalized);
+  if (cyrillic) return 'ru';
+
+  // Latin-script stop-word counting.
+  const words = normalized.toLowerCase().split(/\s+/);
+  const counts: Record<ChatLanguage, number> = { en: 0, zh: 0, ja: 0, ko: 0, fr: 0, es: 0, ru: 0, pt: 0, it: 0 };
+
+  const STOP_WORDS: Partial<Record<ChatLanguage, string[]>> = {
+    en: ['the', 'and', 'that', 'a', 'an', 'of', 'to', 'in', 'with', 'for', 'not', 'i', 'you', 'he', 'she', 'we', 'they', 'is', 'are', 'this', 'my', 'your'],
+    it: ['che', 'è', 'la', 'il', 'un', 'una', 'e', 'di', 'a', 'in', 'con', 'per', 'non', 'mi', 'ti', 'si', 'lo', 'le', 'hai', 'siamo', 'sono', 'voi', 'loro', 'cosa', 'come', 'dove'],
+    fr: ['le', 'la', 'que', 'un', 'une', 'et', 'de', 'à', 'en', 'avec', 'pour', 'pas', 'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'est', 'sont'],
+    es: ['el', 'la', 'que', 'un', 'una', 'y', 'de', 'a', 'en', 'con', 'para', 'no', 'yo', 'tú', 'él', 'ella', 'nosotros', 'vosotros', 'ellos', 'es', 'son'],
+    pt: ['o', 'a', 'que', 'um', 'uma', 'e', 'de', 'em', 'com', 'para', 'não', 'eu', 'tu', 'ele', 'ela', 'nós', 'vocês', 'eles', 'é', 'são'],
+  };
+
+  for (const word of words) {
+    const clean = word.replace(/[.,!?;:()\"'¿¡]/g, '');
+    for (const lang of ['en', 'it', 'fr', 'es', 'pt'] as const) {
+      if (STOP_WORDS[lang]?.includes(clean)) counts[lang]++;
+    }
+  }
+
+  const best = Object.entries(counts).reduce((a, b) => (b[1] > a[1] ? b : a), ['', -1]);
+  if (best[1] <= 0) return null;
+  return best[0] as ChatLanguage;
+}
+
+/**
  * 260730: per-CHARACTER language, stamped into `character.metadata.language`
  * at creation from the app's UI language ('zh' UI → 'zh' characters). When
  * set, it PINS every AI surface for that character (persona generation, chat,

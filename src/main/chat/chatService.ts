@@ -16,7 +16,7 @@ import { forgeHostBlock, FORGE_HOST_BLOCKED, summonBlockedProps, type LanHost } 
 import { loadAnalytics } from '../lazyAnalytics';
 import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
-import { loadConfig } from '../configStore';
+import { loadConfig, updateConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from './sdk';
 // The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
@@ -35,6 +35,7 @@ import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, merge
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import type { UserConfig } from '../../shared/characterSchema';
+import { detectLanguageFromText } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from '../../bot/brain/nextStep.js';
