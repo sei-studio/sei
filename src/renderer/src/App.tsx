@@ -123,6 +123,7 @@ import { HardStopModal } from './components/HardStopModal';
 import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
 import { ImportLocalProfileModal, PARTY_FULL_LINE } from './components/ImportLocalProfileModal';
+import { FreeSlotButton } from './components/PartyFullHint';
 import {
   BOOT_OFFER_FIRST_MS,
   BOOT_OFFER_POLL_MS,
@@ -1365,7 +1366,12 @@ export function App(): React.ReactElement {
           <SpendAlertBanner />
           {/* 261116: own-key companions not imported, the party is full. */}
           {importPartyFull && authState.kind === 'signed_in' ? (
-            <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={() => setImportPartyFull(false)} />
+            <Banner
+              kind="info"
+              message={t(PARTY_FULL_LINE)}
+              action={<FreeSlotButton surface="import_notice" />}
+              onDismiss={() => setImportPartyFull(false)}
+            />
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
@@ -1414,7 +1420,9 @@ export function App(): React.ReactElement {
                 {view.kind === 'add-character' && (
                   <AddCharacterScreen importFirst={view.importFirst === true} />
                 )}
-                {view.kind === 'character' && <CharacterPage id={view.id} />}
+                {/* Keyed (261124): Free a slot opens another companion's page on
+                    its Danger zone, and the page reads that focus on mount. */}
+                {view.kind === 'character' && <CharacterPage key={view.id} id={view.id} />}
                 {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
                 {view.kind === 'voice-call' && (
                   <VoiceCallScreen characterId={view.characterId} />

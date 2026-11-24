@@ -993,6 +993,10 @@ export const JA: Record<string, string> = {
   "Not everything came over. Try again, or later from Settings.": "一部を移せませんでした。もう一度試すか、あとで「設定」から実行してください。",
   "Your party is full, so your companions from this computer stayed here. Free a slot, then bring them over from Settings.": "パーティーが満員のため、このパソコンのコンパニオンはそのまま残しています。枠を空けてから「設定」で引き継いでください。",
   "Your party is full. Free a slot to bring them over.": "パーティーが満員です。枠を空けると引き継げます。",
+  // 261124: party full, Free a slot (components/PartyFullHint.tsx).
+  "Your party is full. Unbind a companion to make room.": "パーティーが満員です。コンパニオンの絆を解いて枠を空けてください。",
+  "Free a slot": "枠を空ける",
+  "Pick who to unbind. Their page opens at Unbind, and nothing changes until you confirm.": "絆を解く相手を選んでください。そのコンパニオンのページで「絆を解く」が開きます。確定するまで何も変わりません。",
   "{name}'s knowledge": "{name}のナレッジ",
   "You can manually add things for the AI to know here. The AI has a separate internal memory storage.": "AIに覚えておいてほしいことを、ここで手動で追加できます。AIはこれとは別に内部の記憶領域を持っています。",
   "No knowledge yet. Upload files or add text context.": "ナレッジはまだありません。ファイルをアップロードするか、テキストを追加してください。",

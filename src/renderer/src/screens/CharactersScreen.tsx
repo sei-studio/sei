@@ -61,6 +61,7 @@ import { chooseHomeNextStep } from '../lib/homeNextStep';
 import { activeGameFor } from '../lib/gameLaunch';
 import type { Character } from '@shared/characterSchema';
 import { MAX_COMPANION_SLOTS } from '@shared/characterSchema';
+import { FreeSlotButton } from '../components/PartyFullHint';
 import type { BrowseEntry, BrowseSort } from '@shared/ipc';
 import { BROWSE_SORTS } from '@shared/ipc';
 import { browseArtSources } from '@shared/portraitUrls';
@@ -869,9 +870,15 @@ function WorldGrid(): React.ReactElement {
           <option value="alpha">{t('A–Z')}</option>
         </select>
         <span className={styles.slots}>
-          {partyFull
-            ? t('Party full')
-            : t('{open}/{max} slots open', { open: slotsOpen, max: MAX_COMPANION_SLOTS })}
+          {partyFull ? (
+            <>
+              {t('Party full')}
+              {/* 261124: the way to make room, one tap away (lib/partyFull.ts). */}
+              <FreeSlotButton surface="world" className={styles.slotsAction} />
+            </>
+          ) : (
+            t('{open}/{max} slots open', { open: slotsOpen, max: MAX_COMPANION_SLOTS })
+          )}
         </span>
       </header>
       <div className={styles.scroll} ref={scrollRef}>

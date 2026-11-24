@@ -26,6 +26,7 @@ import { sei } from '../lib/ipcClient';
 import { useT } from '../lib/i18n';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
+import { FreeSlotButton } from './PartyFullHint';
 import type { ImportLocalProfileResult, PeekLocalProfileResult } from '../../../shared/ipc';
 import { trackLocalImportPartyFull, trackLocalImportResult, type LocalImportEntry } from '../lib/localImportTrack';
 import styles from './confirmModal.module.css';
@@ -168,7 +169,9 @@ export function ImportLocalProfileModalView({
       ) : null}
       {status === 'full' ? (
         <p className={styles.error} role="alert">
-          {t(PARTY_FULL_LINE)}
+          {t(PARTY_FULL_LINE)}{' '}
+          {/* 261124: picking a companion opens their page, so this closes too. */}
+          <FreeSlotButton surface="import_modal" onPicked={onContinue} />
         </p>
       ) : null}
       {status === 'importing' ? (

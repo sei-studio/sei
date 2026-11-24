@@ -11,6 +11,9 @@
  *                   newest-first pages, `sorted: false`, no counts
  *     &delay=<ms>   per-page latency (default 300), to watch the auto-load
  *     &theme=light|dark  &lang=zh|ja|ru|pt-BR|es
+ *     &full=1       the party is full (Marv and Mina join Sui and Lyra): the
+ *                   header's "Party full" with its Free a slot button, and
+ *                   Invite to party on a profile shows the party-full line
  *
  * The fixture pager answers like main's browse:list: PAGE_SIZE rows per call
  * in the requested order, `hasMore` when a full page came back.
@@ -46,6 +49,7 @@ import threeM from '../assets/art-styles/3d-male.jpg';
 const params = new URLSearchParams(window.location.search);
 const view = params.get('screen') === 'worldprofile' ? 'profile' : 'grid';
 const fallback = params.get('fallback') === '1';
+const partyFull = params.get('full') === '1';
 const delayMs = Number(params.get('delay') ?? 300) || 0;
 const DAY = 86_400_000;
 const now = Date.now();
@@ -162,6 +166,9 @@ function seed(): void {
   const profileName = (params.get('who') ?? 'Aria').toLowerCase();
   const profiled = FIXTURES.find((f) => f.name.toLowerCase() === profileName) ?? FIXTURES[3];
   if (view === 'profile' && !profiled.isDefault) characters.push(toCharacter(profiled));
+  // &full=1: Mina (another player's) is in the party too, with Marv below.
+  const mina = FIXTURES.find((f) => f.name === 'Mina')!;
+  if (partyFull && profiled !== mina) characters.push(toCharacter(mina));
   const sei = window.sei as unknown as Record<string, unknown>;
   Object.assign(sei, {
     browseList: async (args: { query: string; limit: number; offset: number; sort?: Sort }) => {
@@ -178,6 +185,14 @@ function seed(): void {
     getCharacter: async (id: string) => useDataStore.getState().characters.find((c) => c.id === id) ?? null,
     listCharacters: async () => useDataStore.getState().characters,
     charsOpenPrepare: async () => ({ ok: true }),
+    // &full=1: main's slot-limit backstop, as the real handler throws it.
+    ...(partyFull
+      ? {
+          charsAddToLibrary: async () => {
+            throw new Error('You can only have 4 companions. Remove one to make room.');
+          },
+        }
+      : {}),
     getSkinServerUrl: async () => ({ baseUrl: 'http://127.0.0.1:1' }),
     charsPortraitVersions: async (id: string) => ({
       versions: [{ file: `${id}.png`, source: 'original' }],
@@ -217,8 +232,11 @@ function seed(): void {
     characters: characters as unknown as ReturnType<typeof useDataStore.getState>['characters'],
     summons: {},
   });
-  // Sui and Lyra are in this user's party; Marv is not.
-  useLibraryStateStore.setState({ addedDefaultIds: new Set([uid(1), uid(3)]), addedWorldIds: new Set() });
+  // Sui and Lyra are in this user's party; Marv is not (&full=1: Marv and Mina are too).
+  useLibraryStateStore.setState({
+    addedDefaultIds: new Set(partyFull ? [uid(1), uid(2), uid(3)] : [uid(1), uid(3)]),
+    addedWorldIds: new Set(partyFull ? [mina.id] : []),
+  });
   useAuthStore.setState({
     state: {
       kind: 'signed_in',
