@@ -27,6 +27,20 @@ renumbered items, so the table is wrong on 26.3. The bot corrects it at runtime
 (`src/bot/adapter/minecraft/registryFixes.js`, which also raises copper tool speeds from 1 to 5).
 Drop that remap once a released minecraft-data ships a real `pc/26.3/materials.json`.
 
+## Summon speed: non-play protocol compile (added 2026-11-24)
+
+`minecraft-protocol+1.68.0` also patches `src/transforms/serializer.js` (not upstream). nmp compiles
+a protodef serializer and deserializer per connection state, and each one used to include the
+protocol's whole global `types` section, i.e. all of play's item and component types. The four small
+states (handshaking, status, login, configuration) therefore cost about as much as play, and all of
+them sit on the summon path: the status ping, `createBot` (handshaking), and the login and
+configuration phases before the play `login` packet. `reachableTypes` keeps only the JSON types
+reachable from `packet` (plus every `ctx.<name>` a context type calls, and all natives) for those
+four states; play is compiled in full as before. The generated code of each kept type is unchanged:
+`src/bot/adapter/minecraft/protocolCompile.test.js` compiles every non-play state of every
+`supportedVersions` entry both ways and requires identical per-type code. When moving back to
+releases, keep this hunk (or upstream it) even after the 26.x hunks go.
+
 ### Moving back to releases
 
 Once minecraft-data, minecraft-protocol, mineflayer, prismarine-chunk and prismarine-physics
