@@ -637,11 +637,11 @@ jobs:
           full_from="vp/Sei-$from-osx-full.nupkg"; full_to="vp/Sei-$to-osx-full.nupkg"; delta="vp/Sei-$to-osx-delta.nupkg"
           ls "$full_from" "$full_to" "$delta"
           # The installed copy: FROM's bundle out of its full package, in ~/Applications.
+          # A mac package holds the bundle's Contents at lib/app.
           mkdir -p "$HOME/Applications" inst
-          (cd inst && unzip -q "../$full_from")
-          find inst -maxdepth 3 | head -20
-          app_src=$(find inst -maxdepth 3 -name '*.app' -type d | head -1)
-          [ -n "$app_src" ] || { echo "::error::no .app in the FROM package"; find inst -maxdepth 4 | head -40; exit 1; }
+          ditto -x -k "$full_from" inst
+          app_src=inst/lib/app
+          if [ ! -f "$app_src/Contents/Info.plist" ]; then echo "::error::no bundle at lib/app in the FROM package"; find inst -maxdepth 4 | head -40; exit 1; fi
           rm -rf "$HOME/Applications/Sei.app"
           ditto "$app_src" "$HOME/Applications/Sei.app"
           upd="$HOME/Applications/Sei.app/Contents/MacOS/UpdateMac"
