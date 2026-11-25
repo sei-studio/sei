@@ -218,7 +218,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        case: [peruser-default, peruser-custom, peruser-unicode, permachine, setup-killed, sig-reject, nsis-newer]
+        case: [peruser-default, peruser-custom, peruser-unicode, permachine, setup-killed, sig-reject, nsis-newer, update-exe-missing]
     steps:
       # 261101: block PostHog before anything here launches Sei. The runtime
       # env above stops a release binary from sending, but the hosts entries

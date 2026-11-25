@@ -28,6 +28,7 @@ import {
   UNINSTALLER_RUN_AS,
   uninstallSpawn,
   velopackLaunchTarget,
+  velopackRedirectTarget,
   type MigrationState,
   type SetupManifest,
 } from './velopackMigrationPolicy';
@@ -138,6 +139,13 @@ describe('paths', () => {
   it('prefers the launcher stub', () => {
     expect(velopackLaunchTarget('C:\\L\\Sei', () => true)).toBe('C:\\L\\Sei\\Sei.exe');
     expect(velopackLaunchTarget('C:\\L\\Sei', () => false)).toBe('C:\\L\\Sei\\current\\Sei.exe');
+  });
+
+  it('hands off past the stub when Update.exe is gone (the stub cannot start without it)', () => {
+    const has = (...files: string[]) => (p: string) => files.includes(p);
+    expect(velopackRedirectTarget('C:\\L\\Sei', has('C:\\L\\Sei\\Sei.exe', 'C:\\L\\Sei\\Update.exe'))).toBe('C:\\L\\Sei\\Sei.exe');
+    expect(velopackRedirectTarget('C:\\L\\Sei', has('C:\\L\\Sei\\Sei.exe'))).toBe('C:\\L\\Sei\\current\\Sei.exe');
+    expect(velopackRedirectTarget('C:\\L\\Sei', has('C:\\L\\Sei\\Update.exe'))).toBe('C:\\L\\Sei\\current\\Sei.exe');
   });
 
   it('only deletes a folder named for Sei, never a root or a shell folder', () => {

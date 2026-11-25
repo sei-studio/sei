@@ -33,6 +33,7 @@ import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } f
 import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+import { velopackPathsFor } from './velopackFastApply';
 import { spawnWhenFree } from './velopackSpawnRetry';
 import { checkSigned } from './velopackVerify';
 import { downloadSetup as download, freeBytes, setupUnchanged } from './velopackSetupFetch';
@@ -57,6 +58,7 @@ import {
   UNINSTALLER_RUN_AS,
   uninstallSpawn,
   velopackLaunchTarget,
+  velopackRedirectTarget,
   velopackRootFor,
   type MigrationRule,
   type MigrationState,
@@ -138,7 +140,20 @@ function velopackRoot(): string | null {
 
 function velopackExe(): string | null {
   const root = velopackRoot();
-  return root ? velopackLaunchTarget(root, existsSync) : null;
+  return root ? velopackRedirectTarget(root, existsSync) : null;
+}
+
+/**
+ * This process runs from a Velopack layout (<root>\current\Sei.exe with
+ * sq.version), whether or not Velopack itself loads. With Update.exe deleted
+ * velopackInstalled() is false; that copy must still never hand off to itself
+ * (CI e2e-signed 261126: it redirected to the root stub, which cannot start
+ * without Update.exe, so Sei never opened and never repaired).
+ */
+function runsFromVelopackCopy(): boolean {
+  if (process.platform !== 'win32') return false;
+  const p = velopackPathsFor(process.execPath);
+  return !!p && existsSync(path.join(p.root, 'current', 'sq.version'));
 }
 
 /** The Velopack copy's version (current\sq.version), or null. */
@@ -202,7 +217,7 @@ function startVelopack(exe: string, args: string[], env: NodeJS.ProcessEnv = pro
 }
 
 function earlyBoot(): void {
-  const velopack = velopackInstalled();
+  const velopack = velopackInstalled() || runsFromVelopackCopy();
   if (velopack) {
     // A restart from the NSIS copy: let it finish exiting so its
     // single-instance lock is free before this one asks for it.

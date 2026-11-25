@@ -202,7 +202,8 @@ $results.base_version = $base.Version
 $nsisDir = Split-Path -Parent ([regex]::Match($base.Uninstall, '^"([^"]+)"').Groups[1].Value)
 $nsisExe = Join-Path $nsisDir 'Sei.exe'
 $sig = Get-AuthenticodeSignature $nsisExe
-$results.nsis_signature = "$($sig.Status) $($sig.SignerCertificate.Subject -replace ',.*$', '')"
+# Status only: the signer's name stays out of the (public) log.
+$results.nsis_signature = "$($sig.Status)"
 if ($sig.Status -ne 'Valid') { Fail "the base NSIS Sei.exe is not validly signed ($($sig.Status)); this job needs signed releases" }
 # First run, as a player would: creates userData.
 $p = Launch $nsisExe; Start-Sleep -Seconds 25; Stop-Sei
@@ -309,7 +310,23 @@ Remove-Item -LiteralPath (Join-Path $root 'Update.exe') -Force
 Set-Env 'restart'
 $t2 = Now
 $p = Launch "$root\current\Sei.exe"
-$i = Need 'repair' 'repair-init' $Target 120
+# Released builds through 0.7.1-beta.3: without Update.exe Velopack does not
+# load, the migrated copy takes itself for the NSIS one and hands off to the
+# root stub, which cannot start without Update.exe (fixed 261126,
+# earlyBoot/runsFromVelopackCopy). Recorded as a failure; a second launch
+# inside the 3 min redirect grace then runs the copy, to see whether the
+# repair still works from there.
+$i = WaitMark 'repair-init' $Target 60
+if (-not $i) {
+  $rd = Mark 'migration-redirect' $Target
+  if ($rd) {
+    Fail 'repair: the first launch handed off to the root stub instead of repairing (released-build bug, fixed 261126)'
+    $results.repair_first_launch = 'handed off to the stub'
+    Start-Sleep -Seconds 5
+    $p = Launch "$root\current\Sei.exe"
+  }
+  $i = Need 'repair' 'repair-init' $Target 120
+}
 if ($i.broken -ne 'update-exe-missing') { Fail "repair-init saw '$($i.broken)', expected update-exe-missing" }
 $h = Need 'repair' 'repair-handoff' $Target 600
 $rsig = Mark 'repair-signature' $Target
