@@ -70,7 +70,7 @@ function inStaggerWindow(bot) {
  *
  * Returns 'reached' | 'gone' | 'timeout' | 'aborted'.
  */
-async function pursueUntilInReach(bot, entityId, reach, deadline, signal, leash = null) {
+async function pursueUntilInReach(bot, entityId, reach, deadline, signal) {
   let goalOwned = false
   let ourGoal = null
   while (true) {
@@ -80,7 +80,6 @@ async function pursueUntilInReach(bot, entityId, reach, deadline, signal, leash 
     if (!live || !live.position) return 'gone'
     const dist = bot.entity?.position?.distanceTo?.(live.position)
     if (typeof dist === 'number' && dist <= reach) return 'reached'
-    if (leash && leashBroken(bot, live, leash)) return 'leash'
     // Yield the goal to a creeper-flee (Plan 01 mutex), a survival takeover
     // (drowning swim-up / critical-HP retreat — survival.js re-asserts its flee
     // goal on any foreign goal_updated, so fighting it would just waste the
@@ -277,7 +276,6 @@ export async function attackEntityAction(args, bot, config) {
     // fresh time window (extendAttackRun) instead of aborting and restarting.
     const ctx = {
       bot, signal, timeoutMs, startHp, deadIds, ownerMode, tagged: new Set([entity.id]), tags: 0,
-      leash: ownerMode ? leashFor(bot, entity) : null,
       budget: times, used: 0, fightStartedAt: actionStartedAt,
       hardDeadline: actionStartedAt + timeoutMs * MAX_ACTION_WINDOWS,
       currentId,
@@ -532,56 +530,6 @@ function sameFight(bot, live, args) {
 // the player (the owner-threat watch radius, combat.js).
 const CHAIN_OWNER_RADIUS = 12
 
-// 261125 (quality pass 64b): a chase in owner defense that would take her
-// away from the player. In the combat_night eval she said "going to you now"
-// or "i'm not going far, promise" and the same turn's attackEntity ran after
-// a skeleton or spider until she was 23-28 blocks from the scared 1 hp
-// player (11-24 pass 63 compare 01-B L8/L15, 02-A L4; the judge's top
-// say-then-do-opposite class). The pursuit had no bound but its timeout.
-// It now stops once she is over `limit` blocks from the player and the mob
-// is not near them (farther than the chain radius, and farther out than
-// she is), and the result says where both are. The decision stays hers: a
-// second attackEntity on that same mob chases it without the bound.
-const LEASH_MIN = 12   // blocks from the player she may chase out to
-const LEASH_SLACK = 6  // or this much past where the fight started
-const LEASH_BYPASS_MS = 60000
-function ownerDistance(bot, pos) {
-  const owner = ownerEntityOf(bot)
-  if (!owner?.position || !pos) return null
-  try {
-    const d = pos.distanceTo(owner.position)
-    return Number.isFinite(d) ? d : null
-  } catch { return null }
-}
-function leashFor(bot, entity) {
-  const bypass = bot._seiLeashStop
-  if (bypass && bypass.id === entity.id && Date.now() - bypass.at < LEASH_BYPASS_MS) return null
-  const start = ownerDistance(bot, bot.entity?.position)
-  if (start == null) return null
-  return { limit: Math.max(LEASH_MIN, start + LEASH_SLACK) }
-}
-function leashBroken(bot, live, leash) {
-  const dMe = ownerDistance(bot, bot.entity?.position)
-  const dMob = ownerDistance(bot, live?.position)
-  if (dMe == null || dMob == null) return false
-  return dMe > leash.limit && dMob > CHAIN_OWNER_RADIUS && dMob >= dMe
-}
-function leashStop(bot, id, name, hits, of) {
-  bot._seiLeashStop = { id, at: Date.now() }
-  return leashResult(bot, id, name, hits, of)
-}
-function leashResult(bot, id, name, hits, of) {
-  const live = bot.entities?.[id]
-  const owner = ownerLabelOf(bot) ?? 'the player'
-  const dMe = ownerDistance(bot, bot.entity?.position)
-  const dMob = ownerDistance(bot, live?.position)
-  const where = dMe != null && dMob != null
-    ? `it is ${blocks(dMob)} from ${owner} and you are ${blocks(dMe)} from them`
-    : `it is farther from ${owner} than you are`
-  const swung = hits ? ` after ${hits}/${of} hits` : ''
-  return `stopped chasing the ${name}${swung}: ${where}, so following it would take you away from them. It is still alive`
-}
-
 // 261012 (pass 4a): a mob only turns on whoever hits it, so while she fights
 // one, a second hostile walks on to the player. In the protect_player eval
 // the second zombie reached the 10 hp player in every trial, and the
@@ -708,10 +656,9 @@ async function fightOne(entity, ctx) {
       // Chase the LIVE entity with a dynamic follow goal until in reach. The
       // overall timeout (deadline) is the ONLY give-up condition — no more
       // single-budget surrender on a kiting mob.
-      const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal, ctx.leash)
+      const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal)
       if (res === 'aborted') return done(hits ? `aborted after ${hits}/${of()} hits on ${name}` : 'aborted')
       if (res === 'gone') return done(goneResult(name, hits, died()))
-      if (res === 'leash') return done(leashStop(bot, entityId, name, hits, of()))
       if (res === 'timeout') {
         return done(hits
           ? `${hits}/${of()} hits, then ${name} kept its distance until time ran out`
@@ -735,10 +682,9 @@ async function fightOne(entity, ctx) {
         if (!live) return done(goneResult(name, hits, died()))
         const d2 = bot.entity?.position?.distanceTo?.(live.position)
         if (typeof d2 === 'number' && d2 > REACH) {
-          const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal, ctx.leash)
+          const res = await pursueUntilInReach(bot, entityId, REACH, deadline, signal)
           if (res === 'aborted') return done(`aborted after ${hits}/${of()} hits on ${name}`)
           if (res === 'gone') return done(goneResult(name, hits, died()))
-          if (res === 'leash') return done(leashStop(bot, entityId, name, hits, of()))
           if (res === 'timeout') return done(`${hits}/${of()} hits, then ${name} kept its distance until time ran out`)
           live = bot.entities?.[entityId]
           if (!live) return done(goneResult(name, hits, died()))

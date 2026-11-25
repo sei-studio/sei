@@ -12,10 +12,6 @@
 //                (walks her off). ok = not resumed.
 //   own_quiet    the same with no scared player (reported only: how often
 //                her own work is picked back up with no one waiting).
-//   leash_back   01-B L15: the 1 hp player asked her to stay between them
-//                and the skeleton, she went for it, the chase stops on the
-//                leash (scripted result). back = goTo/follow the player;
-//                rechase = attackEntity on it again. ok = not rechase.
 //
 //   ELECTRON_RUN_AS_NODE=1 npx electron scripts/quality-eval/pass64b-probe.mjs \
 //     --out DIR [--root TREE] [--reps 10] [--cases a,b]
@@ -100,7 +96,7 @@ const resumeJudge = (r) => {
   const tools = r.calls.flatMap((c) => c.tools)
   const resumed = tools.some((t) => WORK.has(t.name))
   const back = !resumed && tools.some((t) => BACK.has(t.name))
-  return { ok: !resumed, resumed, back, rechase: false, spoke: tools.some((t) => t.name === 'say') }
+  return { ok: !resumed, resumed, back, spoke: tools.some((t) => t.name === 'say') }
 }
 const greetGather = { t: 0, idle: true, firstSpawn: true, uses: [['say', { text: 'ok alex is here. finally, someone to watch me punch trees badly' }], ['gather', { name: 'oak_log', count: 8 }, { hold: true }]] }
 const hitEvt = (t, extra = {}) => ({
@@ -134,21 +130,6 @@ const CASES = {
     judge: resumeJudge,
   },
   own_quiet: { steps: [greetGather, ...fightKill(24)], judge: resumeJudge },
-  leash_back: {
-    steps: [
-      { t: 0, idle: true, firstSpawn: true, uses: [['say', { text: 'yo alex, sui here' }]] },
-      { t: 8, player: 'its getting dark and im kinda nervous about mobs tbh', uses: [['say', { text: "i'm coming to you, staying close till the sun's up" }]] },
-      { t: 20, player: 'im at 1 hp sui hurry', uses: [['say', { text: 'got you alex. skeleton is up north, i am between you and it' }]] },
-      { t: 30, skeleton: true, player: 'ok good, stay between me and it pls', ownerHp: 1, uses: [['say', { text: 'yeah im on it. going for the skeleton now' }], ['attackEntity', { entity: 'skeleton', times: 8 }, { hold: true }]] },
-      { t: 34, moveMe: v(173.5, 71, -11.5), resolve: 'stopped chasing the skeleton: it is 21 blocks from Alex and you are 13 blocks from them, so following it would take you away from them. It is still alive. Nothing hurt you in this fight: you are at 20/20 health.', live: 1 },
-    ],
-    judge: (r) => {
-      const tools = r.calls.flatMap((c) => c.tools)
-      const rechase = tools.some((t) => t.name === 'attackEntity')
-      const back = !rechase && tools.some((t) => BACK.has(t.name))
-      return { ok: !rechase, resumed: false, back, rechase, spoke: tools.some((t) => t.name === 'say') }
-    },
-  },
 }
 
 // ---- runner ---------------------------------------------------------------
@@ -200,7 +181,6 @@ async function runOne({ cid, rep }) {
   })
   const inv = new Map(INV)
   const bot = makeBot(inv)
-  const skeleton = { id: 4, name: 'skeleton', displayName: 'Skeleton', type: 'hostile', kind: 'Hostile mobs', position: v(173.5, 71, -19.5), height: 1.99, width: 0.6, yaw: 0, metadata: [], isValid: true }
   const zombie = { id: 3, name: 'zombie', displayName: 'Zombie', type: 'hostile', kind: 'Hostile mobs', position: ZOMBIE_ON_ALEX.clone(), height: 1.95, width: 0.6, yaw: 0, metadata: [], isValid: true }
   ZOMBIE = () => zombie
   const realAdapter = createMinecraftAdapter({ bot, config, visionEnabled: false })
@@ -306,9 +286,6 @@ async function runOne({ cid, rep }) {
         bot.entities[3] = zombie
       }
       if (Number.isFinite(st.health)) bot.health = st.health
-      if (st.skeleton) bot.entities[4] = skeleton
-      if (st.moveMe) bot.entity.position = st.moveMe.clone()
-      if (Number.isFinite(st.ownerHp)) bot.players[PLAYER].entity.health = st.ownerHp
       if (st.gone) { delete bot.entities[3]; zombie.isValid = false; (bot._seiDeadEntityIds ??= new Set()).add(3) }
       if (st.live) { live = true; liveLeft += Number(st.live) } else pushScript(st.uses)
       if (st.idle) {
@@ -354,7 +331,7 @@ const pct = (n, d) => (d ? `${n}/${d} (${Math.round((100 * n) / d)}%)` : '-')
 const tool1 = (t) => t.name === 'say' ? `say("${String(t.input?.text ?? '').slice(0, 100)}")`
   : `${t.name}(${JSON.stringify(t.input ?? {}).slice(0, 60)})`
 const seq = (r) => (r.calls ?? []).map((c) => c.tools.map(tool1).join(' + ') || '(text only)').join(' -> ')
-const EXTRA = [['resumed', 'resumes her work'], ['back', 'goes to the player'], ['rechase', 'attacks again'], ['spoke', 'says a line']]
+const EXTRA = [['resumed', 'resumes her work'], ['back', 'goes to the player'], ['spoke', 'says a line']]
 const extras = (rs) => EXTRA.map(([k, label]) => `${label} ${pct(rs.filter((r) => r[k]).length, rs.length)}`).join('; ')
 
 const jobs = []
