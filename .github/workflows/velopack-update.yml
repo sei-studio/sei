@@ -16,6 +16,11 @@ name: Velopack Windows update
 #              authenticode.ps1)
 #   rollout-dry-run  velopack-rollout.yml itself, as a dry run against R2
 #              (migration and repair switches)
+#   e2e-signed  (dispatch only, suite=e2e-signed) the whole beta path on REAL
+#              signed releases: NSIS install, NSIS update, migration, a
+#              Velopack update and a forced self-repair, with the real
+#              publisher check (scripts/velopack-ci/e2e-signed.ps1). Runs
+#              alone: the jobs above are skipped for that suite.
 # Nothing here writes to dl.sei.gg or a GitHub release.
 on:
   push:
@@ -44,6 +49,23 @@ on:
         description: 'Comma-separated scenarios (empty = all)'
         required: false
         default: ''
+      suite:
+        description: 'all = the branch build and its scenarios; e2e-signed = only the signed-release end to end'
+        type: choice
+        options: [all, e2e-signed]
+        default: all
+      e2e_base_tag:
+        description: 'e2e-signed: NSIS release the player starts on'
+        type: string
+        default: 'v0.7.0'
+      e2e_from_tag:
+        description: 'e2e-signed: beta the NSIS copy updates to and migrates from (its NSIS installer and Setup)'
+        type: string
+        default: ''
+      e2e_target_tag:
+        description: 'e2e-signed: beta the Velopack copy then updates to and repairs with (newer than from)'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -67,6 +89,7 @@ env:
 
 jobs:
   lint:
+    if: inputs.suite != 'e2e-signed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -79,7 +102,7 @@ jobs:
         shell: pwsh
         run: |
           $bad = $false
-          foreach ($f in 'scenario.ps1', 'migrate.ps1', 'testsign.ps1', 'authenticode.ps1') {
+          foreach ($f in 'scenario.ps1', 'migrate.ps1', 'testsign.ps1', 'authenticode.ps1', 'e2e-signed.ps1') {
             $errs = $null
             [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/velopack-ci/$f", [ref]$null, [ref]$errs) | Out-Null
             if ($errs) { $bad = $true; $errs | ForEach-Object { Write-Host "::error::${f} line $($_.Extent.StartLineNumber): $($_.Message)" } } else { Write-Host "$f parses" }
@@ -89,6 +112,7 @@ jobs:
         run: for f in scripts/velopack-*.mjs scripts/lib/velopack*.mjs scripts/velopack-ci/*.mjs; do node --check "$f"; done
 
   build:
+    if: inputs.suite != 'e2e-signed'
     runs-on: windows-latest
     timeout-minutes: 100
     steps:
@@ -385,5 +409,119 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scenario-${{ matrix.scenario }}
+          path: out
+          retention-days: 14
+
+  # The beta fast-update path on REAL signed releases (product call (261126)):
+  # what scenarios/migrate prove on unsigned branch builds, here with the
+  # packages release.yml built, signed and packed, so the Authenticode checks
+  # run against the publisher baked into the release. Two variants:
+  #   nsis-update  base NSIS -> NSIS update to from (as electron-updater runs
+  #                it) -> migration to the from Setup -> Velopack update to
+  #                target (Full) -> forced self-repair
+  #   delta        base NSIS -> migration to the base Setup -> Velopack update
+  #                to target with the release's own Delta (its base is the
+  #                newest version in the live beta feed when target was built,
+  #                so pass a base that was) -> forced self-repair
+  # Nothing is published or written to dl.sei.gg: the feed is a local copy.
+  e2e-signed:
+    if: inputs.suite == 'e2e-signed'
+    runs-on: windows-latest
+    timeout-minutes: 75
+    # Draft releases (unpublished betas) are only visible with push access.
+    # The token is used by the download step alone; nothing here writes.
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [nsis-update, delta]
+    steps:
+      - name: Block product analytics
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'us.i.posthog.com', 'us-assets.i.posthog.com', 'us.posthog.com', 'app.posthog.com', 'eu.i.posthog.com'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            $a = @(try { [System.Net.Dns]::GetHostAddresses($n) | ForEach-Object { $_.ToString() } } catch { })
+            $live = @($a | Where-Object { $_ -ne '0.0.0.0' -and $_ -ne '::' })
+            if ($live.Count) { Write-Output "::error::$n still resolves to $($live -join ', ')"; exit 1 }
+          }
+          "PostHog hosts blocked: $($names -join ', ')"
+
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/velopack-ci
+
+      - name: Download the signed releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ inputs.e2e_base_tag }}
+          FROM: ${{ inputs.e2e_from_tag }}
+          TARGET: ${{ inputs.e2e_target_tag }}
+          VARIANT: ${{ matrix.variant }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:BASE -or -not $env:TARGET -or ($env:VARIANT -eq 'nsis-update' -and -not $env:FROM)) {
+            Write-Output '::error::e2e_base_tag and e2e_target_tag are required (and e2e_from_tag for nsis-update)'; exit 1
+          }
+          $all = (gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100") -join "`n" | ConvertFrom-Json
+          # A tag can have a full draft and a partial duplicate: take the one with the most assets.
+          function Rel([string]$tag) {
+            $r = @($all | Where-Object { $_.tag_name -eq $tag } | Sort-Object { $_.assets.Count } -Descending)[0]
+            if (-not $r) { throw "no release $tag" }
+            "$tag -> release $($r.id) ($(if ($r.draft) { 'draft' } else { 'published' }), $($r.assets.Count) assets)"
+            $r
+          }
+          function Get-Asset($r, [string]$name, [string]$dir, [switch]$Optional) {
+            $a = @($r.assets | Where-Object { $_.name -like $name })
+            if ($a.Count -eq 0) { if ($Optional) { return }; throw "$($r.tag_name) has no asset $name" }
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            foreach ($x in $a) {
+              $dest = Join-Path $dir $x.name
+              # curl, not gh api: pwsh pipes text, which would corrupt a binary.
+              curl.exe -fsSL -H "Authorization: Bearer $env:GH_TOKEN" -H 'Accept: application/octet-stream' -o $dest "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($x.id)"
+              if ($LASTEXITCODE -ne 0) { throw "download of $($x.name) failed" }
+              if ((Get-Item $dest).Length -ne $x.size) { throw "$($x.name): $((Get-Item $dest).Length) bytes, expected $($x.size)" }
+              "  $($x.name) $([math]::Round($x.size / 1MB, 1)) MB"
+            }
+          }
+          $base = Rel $env:BASE; $target = Rel $env:TARGET
+          Get-Asset $base 'Sei-win-x64.exe' 'rel/base'
+          if ($env:VARIANT -eq 'nsis-update') {
+            $from = Rel $env:FROM
+            Get-Asset $from 'Sei-win-x64.exe' 'rel/nsis'
+          } else {
+            $from = $base
+          }
+          Get-Asset $from 'Sei-beta-Setup.exe' 'rel/from'
+          Get-Asset $from 'setup.beta.json' 'rel/from'
+          foreach ($n in 'Sei-beta-Setup.exe', 'setup.beta.json', 'releases.beta.json', '*-beta-full.nupkg') { Get-Asset $target $n 'rel/target' }
+          if ($env:VARIANT -eq 'delta') { Get-Asset $target '*-beta-delta.nupkg' 'rel/target' }
+
+      # From here on the app must not see the live feeds: a beta published
+      # mid-run would otherwise be offered to the NSIS copy and hold the
+      # migration (update-pending). sei.gg's policy feed stays reachable.
+      - name: Block the live update feeds
+        shell: pwsh
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'github.com', 'dl.sei.gg'
+          Add-Content -Path $hosts -Value ($names | ForEach-Object { "0.0.0.0 $_"; ":: $_" })
+          ipconfig /flushdns | Out-Null
+          "blocked: $($names -join ', ')"
+
+      - name: End to end (${{ matrix.variant }})
+        shell: pwsh
+        run: ./scripts/velopack-ci/e2e-signed.ps1 -Rel rel -Out out ${{ matrix.variant == 'delta' && '-UseDelta' || '' }}
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-signed-${{ matrix.variant }}
           path: out
           retention-days: 14
