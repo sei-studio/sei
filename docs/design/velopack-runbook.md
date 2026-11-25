@@ -300,16 +300,30 @@ that touch the updater code (and on dispatch):
   `scripts/velopack-ci/scenario.ps1`);
 - **migrate** (a real older NSIS release to Velopack): peruser-default,
   peruser-custom, peruser-unicode (`C:\游戏\Sei 测试`), permachine,
-  setup-killed, sig-reject, nsis-newer (`scripts/velopack-ci/migrate.ps1`);
+  setup-killed, sig-reject, nsis-newer, update-exe-missing (a migrated
+  copy whose Update.exe is deleted repairs itself instead of handing off to
+  the root stub) (`scripts/velopack-ci/migrate.ps1`);
 - **authenticode**: the client's signature check against signed, unsigned,
   tampered, someone-else-signed and decoy files and packages, in a folder and
   TEMP with Chinese characters, plus the real CI package as built and
   re-signed (`scripts/velopack-ci/authenticode.ps1`).
 
-Positive signature cases use a throwaway certificate trusted only on the
-runner (`testsign.ps1`). The real Azure certificate has not been through the
-in-app check end to end: the first signed release is that test. Watch its
-`velopack_verify` and `velopack_smoke` steps.
+- **e2e-signed** (dispatch only, 261126): the beta path on REAL signed
+  releases with the real publisher check, nothing built:
+  `gh workflow run velopack-update.yml --ref <branch> -f suite=e2e-signed -f e2e_base_tag=v0.7.0 -f e2e_from_tag=<beta N-1> -f e2e_target_tag=<beta N>`.
+  NSIS install of the base, `advanced_updates` on, the NSIS update to
+  `from` (variant nsis-update) or none (variant delta), migration to the
+  `from` Velopack Setup at 100% from a local feed, a Velopack update to
+  `target` (Full, or the release's own delta, which is built against the
+  live feed's newest version at release time), then Update.exe deleted and a
+  launch that must repair itself. github.com and dl.sei.gg are blocked on the
+  runner so a publish during the run cannot interfere. Draft releases work
+  (the job downloads by asset id). `result.json` and the step summary carry
+  the timings (`scripts/velopack-ci/e2e-signed.ps1`).
+
+Positive signature cases in the other jobs use a throwaway certificate
+trusted only on the runner (`testsign.ps1`); e2e-signed covers the real
+Azure certificate through the in-app check.
 
 `release.yml` with `-f dry_run=true` runs the Windows leg unsigned, packs
 against the live feed, smoke-launches it, and dry-runs the mirror (prints

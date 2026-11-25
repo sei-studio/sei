@@ -654,7 +654,9 @@ file appears, and keep `noteLaunch()` ahead of anything that writes userData.
   used to be dropped.
 - `app_quit {session_ms, last_surface}` first in before-quit; chess, Draw! and
   backseat now end (reason `app_quit`) BEFORE the flush.
-- `update_installed {from, to, via}` from `runWhatsNewCheck`.
+- `update_installed {from, to, via, updater, install_s?, restart_ms?}` from
+  `runWhatsNewCheck`; `update_downloaded` and `update_failed` from the
+  updater (fields: build-release.md, "Update telemetry").
 - `backend` reads `'unset'` until the profile has a `preferred_name` on the
   default `local` kind.
 
