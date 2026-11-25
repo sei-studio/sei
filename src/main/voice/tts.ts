@@ -1040,7 +1040,15 @@ export function prewarmTts(): void {
     const route = await resolveSpeakRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
     // Unconfigured BYOK: no request will follow, so nothing to warm.
     if (route.kind === 'unconfigured') return;
-    const origin = route.kind === 'direct' ? 'https://api.elevenlabs.io' : PROXY_BASE_URL;
+    // 261125: the proxy edge answers HEAD with `connection: close`, so the
+    // HEAD below left no pooled connection to reuse there; the proxy gets a
+    // GET /health instead (proxyPrewarm.ts, which has its own throttle).
+    if (route.kind !== 'direct') {
+      const { prewarmProxyConnection } = await import('../proxyPrewarm');
+      prewarmProxyConnection();
+      return;
+    }
+    const origin = 'https://api.elevenlabs.io';
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 3_000);
     await fetch(origin, { method: 'HEAD', signal: ctrl.signal })

@@ -23,6 +23,11 @@
  *     text token), `line_queued_ms` (first line handed to TTS),
  *     `tts_first_chunk_ms` (its first audio bytes in the renderer). `ms`
  *     minus tts_first_chunk_ms is decode and playback start.
+ *   - chat, app path only (261125, O5): CHAT_PHASE_KEYS, ms from the
+ *     chat:send handler entry. NOTE the endpoints differ from voice: chat
+ *     `ms` ends when the WHOLE reply is back (typed chat never streams its
+ *     bubbles), voice `ms` at the first audible sample of the first streamed
+ *     sentence. Compare llm_* phases across surfaces, not `ms`.
  * `backend` / `ai_provider` / `model_family` ride on every event already
  * (commonProps). No text, no character id.
  *
@@ -87,6 +92,39 @@ export const VOICE_PHASE_KEYS = [
 export type VoicePhaseKey = (typeof VOICE_PHASE_KEYS)[number];
 export type VoicePhases = Partial<Record<VoicePhaseKey, number>>;
 
+/**
+ * Typed-chat phase offsets (261125, O5), ms from the chat:send handler entry
+ * (the same start as `ms`), each absent when the turn never got there. The
+ * llm_* keys mean what they mean on voice. Typed chat does not stream on
+ * Anthropic (cloud, BYOK), so there `llm_first_token_ms` is absent and
+ * `llm_response_ms - llm_request_ms` is the whole model round trip; the
+ * ChatGPT plan streams, so it has both.
+ *   - `prompt_start_ms`   prompt assembly begins (routing checks, character +
+ *                         config read, the player's row written)
+ *   - `lan_check_ms`      the fresh world-detection pass finished (it runs
+ *                         alongside the prompt build since 261125)
+ *   - `prompt_built_ms`   the prompt is ready (reads, system blocks, notes)
+ *   - `provider_ready_ms` the LLM provider is built (session read, SDK client,
+ *                         the ChatGPT plan's model lookup)
+ *   - `llm_request_ms`    the first LLM request went out
+ *   - `llm_first_token_ms` first reply text token (streaming transports only)
+ *   - `llm_response_ms`   the response that carried the first shown bubble
+ *   - `llm_calls`         LLM round trips before it (a COUNT, not ms: tool hops)
+ * `ms - llm_response_ms` is our post-processing (split, persist, stamp).
+ */
+export const CHAT_PHASE_KEYS = [
+  'prompt_start_ms',
+  'lan_check_ms',
+  'prompt_built_ms',
+  'provider_ready_ms',
+  'llm_request_ms',
+  'llm_first_token_ms',
+  'llm_response_ms',
+  'llm_calls',
+] as const;
+export type ChatPhaseKey = (typeof CHAT_PHASE_KEYS)[number];
+export type ChatPhases = Partial<Record<ChatPhaseKey, number>>;
+
 export interface ReplyLatencySample {
   surface: ReplySurface;
   path: ReplyPath;
@@ -95,8 +133,8 @@ export interface ReplyLatencySample {
   ms: number;
   outcome: ReplyOutcome;
   via?: ReplyVia;
-  /** Voice only: where the turn's time went (see VOICE_PHASE_KEYS). */
-  phases?: VoicePhases;
+  /** Where the turn's time went: voice (VOICE_PHASE_KEYS) or app-path chat (CHAT_PHASE_KEYS). */
+  phases?: VoicePhases | ChatPhases;
 }
 
 function clampMs(v: number): number {
@@ -129,9 +167,12 @@ export function replyLatencyProps(s: ReplyLatencySample): Record<string, string 
     sample_rate: rate,
     ...(s.surface === 'minecraft' && s.via ? { via: s.via } : {}),
   };
-  if (s.surface === 'voice' && s.phases) {
-    for (const k of VOICE_PHASE_KEYS) {
-      const v = s.phases[k];
+  const keys: readonly string[] | null =
+    s.surface === 'voice' ? VOICE_PHASE_KEYS : s.surface === 'chat' && s.path === 'app' ? CHAT_PHASE_KEYS : null;
+  if (keys && s.phases) {
+    const phases = s.phases as Record<string, number | undefined>;
+    for (const k of keys) {
+      const v = phases[k];
       if (typeof v === 'number' && Number.isFinite(v) && v >= 0) props[k] = clampMs(v);
     }
   }
@@ -230,6 +271,14 @@ export function parseBotReplyLatency(raw: unknown): ReplyLatencySample | null {
 export interface ChatReplyClock {
   /** A companion bubble reached the renderer. */
   replied(): void;
+  /**
+   * Stamp a phase (CHAT_PHASE_KEYS). `at` is a Date.now() wall-clock time
+   * (default now), stored as ms since the clock started; `llm_calls` takes
+   * the count itself. A later mark of the same key overwrites; marks after
+   * the turn finished are ignored, so a phase always describes the wait the
+   * player saw.
+   */
+  mark(key: ChatPhaseKey, at?: number): void;
   /** The turn ended: the send's result or rejection. */
   settle(result: { replies: unknown[]; routed?: boolean } | null, err?: unknown): void;
 }
@@ -248,13 +297,30 @@ export function startChatReplyClock(opts: {
   const now = opts.now ?? Date.now;
   const record = opts.record ?? ((s: ReplyLatencySample) => recordReplyLatency(s));
   let done = false;
+  const phases: ChatPhases = {};
   const finish = (outcome: ReplyOutcome): void => {
     if (done) return;
     done = true;
-    record({ surface: 'chat', path: 'app', turn: opts.turn, ms: now() - opts.startedAt, outcome });
+    record({
+      surface: 'chat',
+      path: 'app',
+      turn: opts.turn,
+      ms: now() - opts.startedAt,
+      outcome,
+      ...(Object.keys(phases).length ? { phases: { ...phases } } : {}),
+    });
   };
   return {
     replied: () => finish('replied'),
+    mark: (key, at) => {
+      if (done) return;
+      if (key === 'llm_calls') {
+        if (typeof at === 'number' && Number.isInteger(at) && at >= 0) phases.llm_calls = at;
+        return;
+      }
+      const t = at ?? now();
+      if (Number.isFinite(t)) phases[key] = Math.max(0, t - opts.startedAt);
+    },
     settle: (result, err) => {
       if (done) return;
       if (result) {

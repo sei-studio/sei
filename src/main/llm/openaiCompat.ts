@@ -167,6 +167,7 @@ export function createOpenAICompatProvider(opts: {
         const reader = (resp.body as ReadableStream<Uint8Array>).getReader();
         const decoder = new TextDecoder();
         let buf = '';
+        let sawText = false;
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -183,6 +184,10 @@ export function createOpenAICompatProvider(opts: {
             let chunk: unknown;
             try { chunk = JSON.parse(payload); } catch { continue; }
             const delta = foldSseChunk(state, chunk);
+            if (delta && !sawText) {
+              sawText = true;
+              p.onFirstToken?.();
+            }
             if (delta) await p.onTextDelta!(delta);
           }
         }

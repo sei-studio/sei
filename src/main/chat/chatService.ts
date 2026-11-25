@@ -56,6 +56,7 @@ import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { companionLanguageFor } from '../companionLanguage';
 import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
+import type { ChatPhaseKey } from '../replyLatency';
 import { roomChangeTurnNote } from '../seilink/roomChangeNote';
 import { callPictureDecision, DECORATE_TOOL_NAME, decorateToolFor, editorTurnNote, notePictureSent, runDecorate } from '../seilink/editorTogether';
 import { DECORATE_MAX_CHANGES } from '../../shared/seilinkDecorate';
@@ -124,6 +125,24 @@ export interface ChatDeps {
    * absent → no blocking (tests, legacy callers).
    */
   blockedAutoLaunch?: (characterId: string) => string | null;
+  /**
+   * 261125 (O5 chat latency): the chat:send handler's fresh world-detection
+   * pass (refreshLanState, ~60-100ms of lsof/netstat + loopback pings), started
+   * by the handler and awaited here only right before getLanState() is read
+   * for the prompt, so it runs alongside the turn's reads and provider build
+   * instead of in front of them. Must never reject. Absent = the caller
+   * already refreshed (or does not need to).
+   */
+  lanReady?: Promise<unknown>;
+  /** 261125: reply_latency phase stamps for the typed-chat clock (replyLatency.ts). */
+  markPhase?: (key: ChatPhaseKey, at?: number) => void;
+}
+
+/** What a turn's prompt says about open worlds (prepareChatTurn). */
+interface WorldTruth {
+  openWorldDetected: boolean;
+  /** Game adapters (M0): status lines for the other self-launchable games. */
+  otherWorlds?: { game: string; name: string; open: boolean }[];
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
@@ -729,15 +748,17 @@ function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
  */
 async function prepareChatTurn(
   characterId: string,
-  opts: {
-    openWorldDetected: boolean;
+  opts: (
+    | WorldTruth
+    // 261125: the world truth as a promise (typed chat: it waits on the fresh
+    // LAN pass), resolved after the reads below and before the system blocks.
+    | { world: Promise<WorldTruth> }
+  ) & {
     inGame: boolean;
     voiceCall?: boolean;
     voicePeers?: string[];
     /** Cap the transcript to the last N rows (voice calls, see VOICE_RECENT_CAP). */
     recentCap?: number;
-    /** Game adapters (M0): status lines for the other self-launchable games. */
-    otherWorlds?: { game: string; name: string; open: boolean }[];
   },
 ) {
   const character = await getCharacter(characterId);
@@ -764,6 +785,7 @@ async function prepareChatTurn(
   // (the call clock stamp carries it; see roomPromptLine).
   const room = await roomForSurface(characterId, { inGame: opts.inGame });
   const roomLine = room ? roomPromptLine(room, { includeTime: opts.voiceCall !== true }) : undefined;
+  const world: WorldTruth = 'world' in opts ? await opts.world : opts;
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -773,8 +795,8 @@ async function prepareChatTurn(
     memory,
     summary,
     knowledge,
-    openWorldDetected: opts.openWorldDetected,
-    otherWorlds: opts.otherWorlds,
+    openWorldDetected: world.openWorldDetected,
+    otherWorlds: world.otherWorlds,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
@@ -1023,8 +1045,22 @@ async function sendChatMessageImpl(
     // (LOCAL_NO_API_KEY, ...) surface exactly where they did; the guard only
     // keeps it from being an unhandled rejection when the prompt build throws
     // first. Measured with src/main/chat/voiceLatency.harness.test.ts.
+    const mark = deps.markPhase;
+    mark?.('prompt_start_ms');
     const llmReady = buildLlmProvider();
-    llmReady.catch(() => {});
+    llmReady.then(() => mark?.('provider_ready_ms'), () => {});
+    // 261125 (O5 chat latency): the world truth waits on chat:send's fresh
+    // LAN pass (deps.lanReady), which now runs alongside everything above and
+    // the prompt build's reads; the prompt still reads getLanState() only
+    // after that pass, exactly as when the handler awaited it up front.
+    const world = (async (): Promise<WorldTruth> => {
+      if (deps.lanReady) {
+        await deps.lanReady;
+        mark?.('lan_check_ms');
+      }
+      return { openWorldDetected: deps.getLanState().kind === 'open', otherWorlds: otherWorldStatus(deps) };
+    })();
+    world.catch(() => {});
     // Build the prompt AFTER the user message is appended above, so the turn's
     // context includes it. Per-turn truth passed in:
     //   openWorldDetected — is an open-to-LAN world detected right now? Lets the
@@ -1032,8 +1068,7 @@ async function sendChatMessageImpl(
     //   inGame — usually false here (a live session routes messages in-game), but
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
     const prep = await prepareChatTurn(args.characterId, {
-      openWorldDetected: deps.getLanState().kind === 'open',
-      otherWorlds: otherWorldStatus(deps),
+      world,
       inGame: deps.isInGame?.(args.characterId) ?? false,
       // 260705: while a voice call is open the reply is read aloud by TTS, so
       // the system prompt leads with the voice-call primer (spoken register).
@@ -1058,6 +1093,7 @@ async function sendChatMessageImpl(
     // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
     const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
     appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
+    mark?.('prompt_built_ms');
     const llm = await llmReady;
     if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
@@ -1104,6 +1140,8 @@ async function sendChatMessageImpl(
     let llmStartAt: number | undefined;
     let firstTokenAt: number | undefined;
     let replyTimingSent = false;
+    /** 261125: the turn's first streamed reply token was stamped (reply_latency chat phase). */
+    let sawFirstToken = false;
     /** `moreAfter`: text of this same reply is ALREADY known to follow. */
     const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
       // The silence-filler and peer-impersonation drops stay VOICE-scoped
@@ -1197,6 +1235,8 @@ async function sendChatMessageImpl(
       // from the system prompt without truncating mid-sentence.
       const t0 = Date.now();
       llmStartAt ??= t0;
+      if (hop === 0) mark?.('llm_request_ms', t0);
+      mark?.('llm_calls', hop + 1);
       // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
       // stream, byte-identical to the old messages.stream path; non-Anthropic:
       // SSE deltas, or one whole-text call for non-streaming providers).
@@ -1243,7 +1283,10 @@ async function sendChatMessageImpl(
         timeoutMs: CHAT_TIMEOUT_MS,
         signal: ctrl.signal,
         ...(onTextDelta ? { onTextDelta } : {}),
+        // 261125: observation only; fires on transports that already stream.
+        ...(mark ? { onFirstToken: () => { if (!sawFirstToken) { sawFirstToken = true; mark('llm_first_token_ms'); } } } : {}),
       });
+      mark?.('llm_response_ms');
       if (isStreaming) {
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation),
