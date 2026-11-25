@@ -107,6 +107,14 @@ export function mcPing(port: number, host = '127.0.0.1', timeoutMs = 800): Promi
     };
     const timer = setTimeout(() => finish(new Error('LAN_PING_TIMEOUT')), timeoutMs);
     sock.on('error', (e) => finish(e));
+    // 261125 (O5 chat latency): a socket the other side closed can never
+    // deliver a status response, so fail now instead of at the timeout. Most
+    // non-Minecraft listeners (HTTP, TLS, SMB) answer the handshake bytes with
+    // a short error and hang up; without this every one of them held the LAN
+    // pass for the full timeout, and with no world open the pass pings every
+    // listening port on the machine. A complete response is always parsed in
+    // 'data' before 'close' fires, so a real world is never missed.
+    sock.on('close', () => finish(new Error('LAN_PING_CLOSED')));
     sock.on('connect', () => {
       const addr = Buffer.from(host, 'utf8');
       const handshake = mkPacket(

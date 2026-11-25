@@ -397,6 +397,28 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   via `emitReply`, else the returned reply). Empty replies = silent,
   `CHAT_ABORTED` = aborted, a rejection = error. Realistic-typing pacing is
   not included. A routed send records nothing here; the bot times it.
+  Chat phases (261125, O5), app path only, integer ms from the same handler
+  entry, each absent when the turn never got there (`CHAT_PHASE_KEYS` in
+  replyLatency.ts, stamped through `ChatDeps.markPhase`): `prompt_start_ms`
+  (routing checks, character + config read, the player's row written),
+  `lan_check_ms` (the fresh world-detection pass finished; it runs alongside
+  the prompt build, `ChatDeps.lanReady`), `prompt_built_ms`,
+  `provider_ready_ms` (session read, SDK client, the ChatGPT plan's model
+  lookup), `llm_request_ms`, `llm_first_token_ms` (streaming transports only:
+  typed chat streams only on the ChatGPT plan, so it is absent on cloud and
+  BYOK, where `llm_response_ms - llm_request_ms` is the whole model round
+  trip), `llm_response_ms` (the response that carried the first shown
+  bubble) and `llm_calls` (a COUNT of LLM round trips before it: tool hops).
+  `ms - llm_response_ms` is our post-processing. The llm_* keys mean the same
+  as on voice, but `ms` does NOT: chat ends when the whole reply is back
+  (typed chat never streams its bubbles), voice at the first audible sample
+  of the first streamed sentence, after TTS. Compare llm_* phases across
+  surfaces, never `ms`. Samples from before 261125 also waited for the whole
+  LAN pass up front, and a no-world pass usually held 700 ms on a ping
+  timeout (mcPing now fails fast on a closed socket), so chat `ms` drops
+  across that build. Offline measurement:
+  `SEI_LATENCY_HARNESS=1 npx vitest run src/main/chat/chatLatency.harness.test.ts`
+  (add `HARNESS_KEEPALIVE=1` for the connection-reuse case).
 - voice (renderer, `lib/voice/replyClock.ts`, wired in `useVoiceStore`):
   `dispatchUserTurn` (the STT final) to the audio queue's `onAudible`. Turn =
   utterance number in the call. A new utterance or hang-up before audio =
