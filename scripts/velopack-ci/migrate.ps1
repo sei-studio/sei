@@ -449,11 +449,18 @@ if ($Case -eq 'nsis-newer') {
 if ($Case -eq 'update-exe-missing') {
   Stop-Sei
   Remove-Item -LiteralPath (Join-Path $root 'Update.exe') -Force
-  $env:SEI_VELOPACK_FEED = 'http://127.0.0.1:8765'
-  $env:SEI_REPAIR_DELAY_MS = '3000'
   $tR = Now
   $after = [scriptblock]::Create("param(`$e) `$e.t -gt $tR")
-  $v = Launch "$root\current\Sei.exe" 'none'
+  # As Launch, but with the CI restart: the repair, once its Setup is ready,
+  # waits for "Update Sei"; CI mode restart presses it.
+  $env:SEI_VELOPACK_CI = '1'
+  $env:SEI_VELOPACK_CI_PUBLISHER = ''
+  $env:SEI_VELOPACK_CI_MODE = 'restart'
+  $env:SEI_VELOPACK_FEED = 'http://127.0.0.1:8765'
+  $env:SEI_MIGRATION_FEED = 'http://127.0.0.1:8765'
+  $env:SEI_MIGRATION_CI_ACTION = 'none'
+  $env:SEI_REPAIR_DELAY_MS = '3000'
+  $v = Start-Process -FilePath "$root\current\Sei.exe" -PassThru
   $i = Need 'repair-init' 90 $after
   $results.repair_init_broken = $i.broken
   if ($i.broken -ne 'update-exe-missing') { Fail "repair-init saw '$($i.broken)', expected update-exe-missing" }
