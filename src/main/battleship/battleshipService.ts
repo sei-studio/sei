@@ -41,7 +41,10 @@ import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
 import { paths } from '../paths';
 import { isCallActive } from '../voice/callState';
 import { foldIfDue } from '../chat/continuity';
+import { toMessages } from '../chat/transcript';
 import { REMEMBER_TOOL } from '../chat/chatPrompts';
+import { companionLanguageFor } from '../companionLanguage';
+import { renderAdoptedLanguageNote, renderLanguageDirective } from '../../bot/brain/promptLibrary.js';
 import type { LlmMessage } from '../llm/types';
 
 const ROWS = 10;
@@ -547,6 +550,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     })(),
   ]);
 
+  // 261124: the games were the one surface with no language rule, so the
+  // companion answered in whatever the transcript happened to be in.
+  const lang = companionLanguageFor(character, config);
   const system = [
     `# Battleship (BATTLESHIP)`,
     `You are playing Battleship against ${playerName} inside the Sei app.`,
@@ -559,6 +565,11 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     'NEVER SAY COORDINATES OUT LOUD. Point at cells in words instead ("top left", "center", "bottom right").',
     '',
     'Do not announce the cell you are about to fire at: the board shows it by itself.',
+    '',
+    // 261124: the games were the one surface with no language rule, so the
+    // companion answered in whatever the transcript happened to be in.
+    renderLanguageDirective(lang.language),
+    lang.adopted ? renderAdoptedLanguageNote(lang.language) : '',
   ].join('\n');
 
   // Build a player-visible board (hits/misses only on AI grid; player's own grid hidden from AI view text).
@@ -582,7 +593,10 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
   }
 
   const messages: LlmMessage[] = [
-    ...(history ?? []).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text })),
+    // Transcript rows carry roles the API does not know ('companion', plus
+    // 'system' rows for play and call events), and a malformed role made the
+    // whole game turn fail upstream. toMessages is the canonical mapper.
+    ...toMessages(history ?? []),
     {
       role: 'user',
       content:

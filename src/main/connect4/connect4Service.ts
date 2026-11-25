@@ -36,7 +36,10 @@ import { appendMemory } from '../../bot/brain/memory/memoryLog.js';
 import { paths } from '../paths';
 import { isCallActive } from '../voice/callState';
 import { REMEMBER_TOOL } from '../chat/chatPrompts';
+import { companionLanguageFor } from '../companionLanguage';
+import { renderAdoptedLanguageNote, renderLanguageDirective } from '../../bot/brain/promptLibrary.js';
 import { foldIfDue } from '../chat/continuity';
+import { toMessages } from '../chat/transcript';
 
 const ROWS = 6;
 const COLS = 7;
@@ -438,6 +441,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     })(),
   ]);
 
+  // 261124: the games were the one surface with no language rule, so the
+  // companion answered in whatever the transcript happened to be in.
+  const lang = companionLanguageFor(character, config);
   const system = [
     `# FORZA 4 GAME`,
     `You are playing a casual Forza 4 (Connect Four) game against ${playerName} inside the Sei app.`,
@@ -449,6 +455,11 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     'NEVER SAY COLUMN NUMBERS OUT LOUD. Point at columns in words instead ("the leftmost column", "the middle column", "the rightmost column").',
     '',
     'Do not announce the column you are about to play: the board shows it by itself.',
+    '',
+    // 261124: the games were the one surface with no language rule, so the
+    // companion answered in whatever the transcript happened to be in.
+    renderLanguageDirective(lang.language),
+    lang.adopted ? renderAdoptedLanguageNote(lang.language) : '',
   ].join('\n');
 
   const boardText = s.board
@@ -463,7 +474,10 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
   }
 
   const messages: LlmMessage[] = [
-    ...(history ?? []).map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text })),
+    // Transcript rows carry roles the API does not know ('companion', plus
+    // 'system' rows for play and call events), and a malformed role made the
+    // whole game turn fail upstream. toMessages is the canonical mapper.
+    ...toMessages(history ?? []),
     {
       role: 'user',
       content:
