@@ -178,6 +178,72 @@ function ticNote(hits) {
 }
 
 // ---------------------------------------------------------------------------
+// 261125 (pass 64a): a sound or catchphrase her card quotes on its own.
+//
+// Sui's card: 'you cackle ("ehehe", "nehehe"), but that is a once-in-a-while
+// thing'. Lyra's: 'a "nya" can slip out ... That is rare, not a habit.' The
+// tic note above needs a term in 3 of her last 4 turns, and a cackle in every
+// other line never gets there: in the 11-24 scorecard night_social-02 she
+// cackled in 5 lines in two minutes (U6, U7, U8, U12, U14) with no note, and
+// "ehehe" or "nehe" as a verbal tic was a repeat label in most November
+// compares. A one-word quote in the card is the card naming her sound, so
+// that word gets a lower bar: 2 of her last 6 turns. Taken from her card and
+// her own lines; never a fixed list.
+const CARD_SOUND_TURNS = 6
+const CARD_SOUND_MIN = 2
+let _soundCache = { text: null, sounds: [] }
+/** One-word quotes in the card text ("ehehe", "nya"), lowercased, grammar words left out. */
+export function cardSounds(text) {
+  const t = typeof text === 'string' ? text : ''
+  if (_soundCache.text === t) return _soundCache.sounds
+  const out = new Set()
+  for (const m of t.matchAll(/["“]([^"”\n]{1,24})["”]/g)) {
+    const w = tokensOf(m[1])
+    if (w.length === 1 && w[0].length >= 3 && isContent(w[0]) && !/\d/.test(w[0])) out.add(w[0])
+  }
+  _soundCache = { text: t, sounds: [...out] }
+  return _soundCache.sounds
+}
+// "nehehe" is the same cackle as "ehehe"; a short sound only matches whole.
+const soundIn = (s, w) => w === s || (s.length >= 4 && w.includes(s)) || (w.length >= 4 && s.includes(w))
+
+/**
+ * Card sounds (cardSounds) in at least `minTurns` of her last `window`
+ * turns, inside `withinMs`. Sounds found in the same turns are one habit and
+ * come back together; a sound the player used recently is left out.
+ *
+ * @returns {Array<{terms:string[], count:number, of:number}>}
+ */
+export function repeatedCardSounds(selfLines, playerLines = [], {
+  signature = '', now = Date.now(), window = CARD_SOUND_TURNS, minTurns = CARD_SOUND_MIN, withinMs = 300_000, playerWindow = 8,
+} = {}) {
+  const sounds = cardSounds(signature)
+  if (!sounds.length) return []
+  const turns = groupTurns(selfLines)
+    .filter((t) => !Number.isFinite(t.at) || now - t.at <= withinMs)
+    .slice(-window)
+  if (turns.length < minTurns) return []
+  const heard = (playerLines ?? []).slice(-playerWindow).flatMap((l) => tokensOf(l?.text))
+  const byTurns = new Map()
+  for (const s of sounds) {
+    if (heard.some((w) => soundIn(s, w))) continue
+    const hit = turns.map((t, i) => (tokensOf(t.text).some((w) => soundIn(s, w)) ? i : -1)).filter((i) => i >= 0)
+    if (hit.length < minTurns) continue
+    const key = hit.join(',')
+    if (!byTurns.has(key)) byTurns.set(key, { terms: [], count: hit.length, of: turns.length })
+    byTurns.get(key).terms.push(s)
+  }
+  return [...byTurns.values()].sort((a, b) => b.count - a.count)
+}
+
+function soundNote(hits) {
+  if (!hits.length) return null
+  const h = hits[0]
+  return `You used ${h.terms.map((t) => `"${t}"`).join(' or ')} in ${h.count} of your last ${h.of} lines. ` +
+    'A sound or catchphrase from your card lands when it is rare, so leave it out of this one.'
+}
+
+// ---------------------------------------------------------------------------
 // 261013: whole lines and bits, not only single words.
 //
 // In the scripted-conversation eval (261012 scorecard and the pass-5 and
@@ -698,7 +764,30 @@ function linesNote(selfLines, playerLines, opts = {}) {
 export function ownRepeatsNote(selfLines, playerLines = [], opts = {}) {
   const { names, context } = opts
   const tics = repeatedOwnTerms(selfLines, playerLines, { names, context })
-  const lines = linesNote(selfLines, playerLines, { ...opts, skipTerms: tics.map((h) => h.term) })
-  const parts = [lines, ticNote(tics)].filter(Boolean)
+  const sounds = soundsOutsideTics(selfLines, playerLines, tics, opts)
+  const lines = linesNote(selfLines, playerLines, { ...opts, skipTerms: [...tics.map((h) => h.term), ...sounds.flatMap((h) => h.terms)] })
+  // 261125 (pass 64a): `soundsApart` leaves the card-sound sentence out; the
+  // caller puts cardSoundNote right under the player's line instead.
+  const parts = [lines, ticNote(tics), opts.soundsApart ? null : soundNote(sounds)].filter(Boolean)
   return parts.length ? parts.join(' ') : null
+}
+
+// A card sound the tic note does not already name.
+function soundsOutsideTics(selfLines, playerLines, tics, opts) {
+  const named = (s) => tics.some((h) => h.term.split(' ').some((w) => soundIn(s, w)))
+  return repeatedCardSounds(selfLines, playerLines, { signature: opts.signature, now: opts.now })
+    .filter((h) => !h.terms.some(named))
+}
+
+/**
+ * 261125 (pass 64a): the card-sound sentence alone (repeatedCardSounds), for
+ * a reply turn to place right under the player's line. In the own_repeats
+ * block, mid-payload, she still cackled on 10 of 24 tries at "ur dumb as a
+ * rock" after cackling in 3 of her last 6 lines (dev 12 of 16); right under
+ * their line, 0 of 8 (pass64a-probe tic_rock). Null when the tic note
+ * already names the sound or nothing repeats.
+ */
+export function cardSoundNote(selfLines, playerLines = [], opts = {}) {
+  const tics = repeatedOwnTerms(selfLines, playerLines, { names: opts.names, context: opts.context })
+  return soundNote(soundsOutsideTics(selfLines, playerLines, tics, opts))
 }

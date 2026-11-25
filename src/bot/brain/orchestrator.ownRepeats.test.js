@@ -28,7 +28,7 @@ function makeProvider(script) {
   }
 }
 
-function makeOrch(script, executeAction = () => Promise.resolve('done'), extraAdapter = {}) {
+function makeOrch(script, executeAction = () => Promise.resolve('done'), extraAdapter = {}, persona = null) {
   const provider = makeProvider(script)
   const adapter = {
     gameName: 'Minecraft',
@@ -49,7 +49,7 @@ function makeOrch(script, executeAction = () => Promise.resolve('done'), extraAd
   const config = {
     player_username: 'newb',
     preferred_name: 'newb',
-    persona: { name: 'Sui', expanded: 'You are a chaotic gremlin.', proactiveness: 2 },
+    persona: persona ?? { name: 'Sui', expanded: 'You are a chaotic gremlin.', proactiveness: 2 },
     anthropic: { model: 'claude-haiku-4-5', timeout_ms: 20_000, max_retries: 1 },
     llm: { provider: 'anthropic', rate_limit_per_min: 60, debounce_ms: 0, max_hops: 5 },
     memory: {
@@ -324,5 +324,53 @@ describe('a line that answers her own fresh turn', () => {
     tick(60_000)
     await orch.handleDispatch('sei:idle', { quietMs: 60_000 })
     expect(blockText(provider.calls.at(-1), 'own_repeats')).toBe('')
+  })
+})
+
+// 261125 (pass 64a): a card sound she keeps using is named right under the
+// player's line on a reply turn, and left out of own_repeats there.
+describe('card sound under their line', () => {
+  const persona = { name: 'Sui', expanded: 'When a bad idea gets you, you cackle ("ehehe", "nehehe"), but rarely.', proactiveness: 2 }
+  const SOUND = 'You used "ehehe" or "nehehe" in 2 of your last'
+
+  it('reply turn: under their line, not in own_repeats', async () => {
+    _setTickIntervalForTests(10_000_000)
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { orch, provider } = makeOrch([
+      { text: '', toolUses: [say('t1', 'ehehe yeah i KNOW')] },
+      { text: '', toolUses: [say('t2', 'nehehe ok thats my whole act')] },
+      { text: '', toolUses: [say('t3', 'rude')] },
+    ], undefined, {}, persona)
+    for (const line of ['nice job', 'tell me a joke', 'ur dumb as a rock']) {
+      now += 8_000
+      orch.recordIncomingChat('newb', line)
+      await orch.handleDispatch('sei:chat_received', chat(line))
+    }
+    const call = provider.calls.at(-1)
+    expect(blockText(call, 'own_repeats')).not.toContain(SOUND)
+    const pm = blockText(call, 'player_message')
+    expect(pm).toContain(`ur dumb as a rock\n${SOUND} 2 lines.`)
+    // The second turn had only one cackle before it: no note.
+    expect(JSON.stringify(provider.calls[1].blocks)).not.toContain('You used "ehehe"')
+  })
+
+  it('idle turn: in own_repeats', async () => {
+    _setTickIntervalForTests(10_000_000)
+    let now = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { orch, provider } = makeOrch([
+      { text: '', toolUses: [say('t1', 'ehehe yeah i KNOW')] },
+      { text: '', toolUses: [say('t2', 'nehehe ok thats my whole act')] },
+      { text: '', toolUses: [] },
+    ], undefined, {}, persona)
+    for (const line of ['nice job', 'tell me a joke']) {
+      now += 8_000
+      orch.recordIncomingChat('newb', line)
+      await orch.handleDispatch('sei:chat_received', chat(line))
+    }
+    now += 40_000
+    await orch.handleDispatch('sei:idle', { quietMs: 40_000 })
+    expect(blockText(provider.calls.at(-1), 'own_repeats')).toContain(SOUND)
   })
 })

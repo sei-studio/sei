@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS, answersOwnLine, lineLeftUnanswered, ANSWERS_OWN_LINE_MS } from './ownRepeats.js'
+import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS, answersOwnLine, lineLeftUnanswered, ANSWERS_OWN_LINE_MS, cardSounds, repeatedCardSounds } from './ownRepeats.js'
 
 // One say() line is recorded as several chat messages within a few ms; turns
 // are seconds apart.
@@ -598,5 +598,51 @@ describe('lineLeftUnanswered', () => {
     expect(lineLeftUnanswered([p(10, 'ok thx')], [s(5, 'eat up')], { now: T + 10_000 + ANSWERS_OWN_LINE_MS + 1 })).toBeNull()
     expect(lineLeftUnanswered([p(10, 'where are u')], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
     expect(lineLeftUnanswered([], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
+  })
+})
+
+// 261125 (pass 64a): a one-word quote in the card is her sound; it is named
+// at 2 of her last 6 turns, not the tic note's 3 of 4.
+describe('card sounds', () => {
+  const CARD = 'When one of your bad ideas really gets you, you cackle ("ehehe", "nehehe"), but that is a once-in-a-while thing. Praised: "yeah i KNOW". Never say "you" or "oh..." twice.'
+  const NOW = 1_000_000 + 8 * 5000
+
+  it('takes one-word quotes from the card, without grammar words or sample lines', () => {
+    expect(cardSounds(CARD)).toEqual(['ehehe', 'nehehe'])
+    expect(cardSounds('a "nya" can slip out')).toEqual(['nya'])
+    expect(cardSounds('')).toEqual([])
+    expect(cardSounds(null)).toEqual([])
+  })
+
+  it('names a sound in 2 of her last 6 turns, with its variants as one habit', () => {
+    const self = session(['ehehe yeah i KNOW', 'why did the zombie skip the party. nehehe ok', 'creepers are the worst'])
+    const hits = repeatedCardSounds(self, [], { signature: CARD, now: NOW })
+    expect(hits).toEqual([{ terms: ['ehehe', 'nehehe'], count: 2, of: 3 }])
+    const note = ownRepeatsNote(self, [], { signature: CARD, now: NOW })
+    expect(note).toContain('You used "ehehe" or "nehehe" in 2 of your last 3 lines.')
+    expect(note).toContain('lands when it is rare, so leave it out of this one')
+  })
+
+  it('stays quiet at one use, outside the window, or when the player said it', () => {
+    expect(repeatedCardSounds(session(['ehehe yeah', 'ok', 'fine']), [], { signature: CARD, now: NOW })).toEqual([])
+    const old = session(['ehehe one', 'a', 'b', 'c', 'd', 'e', 'f', 'ehehe two'])
+    expect(repeatedCardSounds(old, [], { signature: CARD, now: NOW + 5000 })).toEqual([])
+    const self = session(['ehehe yeah', 'ehehe again'])
+    expect(repeatedCardSounds(self, [{ text: 'ehehe nice', who: 'Alex' }], { signature: CARD, now: NOW })).toEqual([])
+    expect(ownRepeatsNote(self, [], { now: NOW }) ?? '').not.toContain('lands when it is rare')
+  })
+
+  it('a short sound matches only as a whole word', () => {
+    const self = session(['nya hi', 'kenya is far', 'ok'])
+    expect(repeatedCardSounds(self, [], { signature: 'a "nya" slips out', now: NOW })).toEqual([])
+    const twice = session(['nya hi', 'ok nya', 'ok'])
+    expect(repeatedCardSounds(twice, [], { signature: 'a "nya" slips out', now: NOW })[0]).toMatchObject({ terms: ['nya'], count: 2 })
+  })
+
+  it('is not named twice when the tic note already names it', () => {
+    const self = session(['ehehe a', 'ehehe b', 'ehehe c', 'd'])
+    const note = ownRepeatsNote(self, [], { signature: CARD, now: NOW })
+    expect(note).toContain('keep using "ehehe"')
+    expect(note).not.toContain('lands when it is rare')
   })
 })

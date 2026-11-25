@@ -147,6 +147,12 @@ describe('261012 crossed greeting', () => {
     // The mandatory-reply framing is swapped out for this one line.
     expect(lastTurnText(provider)).not.toContain('a direct message never gets silence')
     expect(lastTurnText(provider)).not.toContain('but say something')
+    // 261125 (pass 64a): the let-off for a plain hello sits right under
+    // their line, and the turn is not told to respond to it.
+    const t = lastTurnText(provider)
+    expect(t).toContain('Their line, player (Steve): hey sui\\nIf this line is only a hello, do not call say() this turn')
+    expect(t).not.toContain('respond to their line')
+    expect(t.indexOf('it already answers their hello')).toBeLessThan(t.indexOf('Their line, player (Steve): hey sui'))
     await say2(orch, 'wanna get wood')
     expect(lastTurnText(provider)).not.toContain(NOTE)
   })

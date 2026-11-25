@@ -118,6 +118,23 @@ instead of the idle form. Probe `pass63-probe.mjs` + `pass63-judge.mjs`
 the idle tick after one ok 0/4 -> 3/4; guards (a new remark, "protect me",
 "come closer" from 22 blocks, "ok sure" to her offer) kept their reply or
 action. A shorter tail lost most of it (see the promptLibrary comment).
+Pass 64a (261125): a player hello typed while her first-contact greeting
+was in flight (`greetCrossed`) got a second greeting: the "only a hello,
+do not call say()" let-off sat above their line and the block also said
+"respond to their line"; she wrote "they only said hello, keep it short"
+and greeted anyway. A crossed hello now takes `NUDGES.greetCrossedLead`
+above the line (no "respond to their line") and `greetCrossedTail` right
+under it (hello rule first; placed last it re-greeted 11/24). The
+mid-action crossed path keeps `greetCrossed` whole. Card sounds:
+`repeatedOwnTerms` needs 3 of 4 turns, so a cackle every other line
+("ehehe", "nehehe") was never named. `ownRepeats.js` `cardSounds` takes
+one-word quoted sounds from the persona card; `repeatedCardSounds` names
+one used in 2 of her last 6 lines (variants as one habit, skipped if the
+player used it). On a reply turn `cardSoundNote` goes under their line
+(own_repeats 10/24 cackled again, under the line 2/16; dev 12/16); on
+other turns it stays in own_repeats. Probe `pass64a-probe.mjs`: a crossed
+"hey sui hows it going" re-greeted dev 14/24 -> 0/32; a crossed ask still
+acted 8/8.
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:

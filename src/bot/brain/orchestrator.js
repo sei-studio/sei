@@ -57,7 +57,7 @@ import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGa
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
-import { answersOwnLine, lineLeftUnanswered, ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
+import { answersOwnLine, cardSoundNote, lineLeftUnanswered, ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import {
   describeActionEvent, describeAttackEvent, describeDeathEvent, actionEventKey,
@@ -1657,14 +1657,24 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   }
   // `mode` is the kind of turn (ownRepeats.js REUSE_ASK): 'reply' when the
   // player just spoke, 'idle' for a turn of her own, 'checkin' mid-action.
-  function ownRepeatsText(mode = 'reply') {
+  function ownRepeatsText(mode = 'reply', { soundsApart = false } = {}) {
     try {
       const { selfLines, playerLines } = convoMemory.recentChat._internal
       const names = [config?.player_display_name, config?.player_username, ...companions]
       const { snapshot, goals, frontier } = _repeatsContext
       return ownRepeatsNote(selfLines, playerLines, {
-        mode, names, context: [snapshot, goals, frontier], vocab: gameVocab(), signature: config?.persona?.expanded,
+        mode, names, context: [snapshot, goals, frontier], vocab: gameVocab(), signature: config?.persona?.expanded, soundsApart,
       })
+    } catch { return null }
+  }
+  // 261125 (pass 64a): the card-sound sentence for right under the player's
+  // line on a reply turn (ownRepeats.js cardSoundNote). Never throws.
+  function cardSoundText() {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      const names = [config?.player_display_name, config?.player_username, ...companions]
+      const { snapshot, goals, frontier } = _repeatsContext
+      return cardSoundNote(selfLines, playerLines, { names, context: [snapshot, goals, frontier], signature: config?.persona?.expanded })
     } catch { return null }
   }
   const ownRepeatsTail = (mode) => { const t = ownRepeatsText(mode); return t ? `\n\n${t}` : '' }
@@ -3723,6 +3733,8 @@ function maybeWarnByteCap(loop, warned) {
     // 261017 (pass 13): the player's line crossed her first-contact hello
     // (greetCrossed), for the own_repeats note's 'greeted' form.
     let greetedTurn = false
+    // 261125 (pass 64a): the card-sound note rides under their line.
+    let soundsApart = false
     if (isSafetyEvent && typeof adapter.eventAddendum === 'function') {
       eventText = adapter.eventAddendum(event, data).trim() + fightToldSuffix(data)
       loop._fightMobId = data?.attacker?.id ?? null
@@ -3816,13 +3828,19 @@ function maybeWarnByteCap(loop, warned) {
         // the line before it ("ok, stopping" to a tease after "actually stop").
         const lineSpeaker = fromTeammate ? (speakerName || 'your teammate') : playerLabel(speakerName)
         const lineText = String(data?.text ?? '').trim()
-        playerMessageText = `${opener}${teammateVoice ? ':' : '. respond to their line, not to the scene around you.'}\n` +
+        // 261125 (pass 64a): her card's sound, when she keeps using it, is
+        // named right under their line instead of in own_repeats.
+        const soundLine = (groupVoice || teammateVoice) ? null : cardSoundText()
+        soundsApart = !!soundLine
+        // 261125 (pass 64a): a crossed hello is not told to respond; the
+        // let-off for a plain hello sits under their line (greetCrossedTail).
+        playerMessageText = `${opener}${teammateVoice ? ':' : crossed ? '.' : '. respond to their line, not to the scene around you.'}\n` +
           (groupVoice
             ? voiceGroupGuidance(companions).trim() + ' Your text output is a private scratchpad the player can NEVER see; a reply that exists only in your text is silence to them; only say() reaches them.'
             : teammateVoice
             ? teammateVoiceGuidance(speakerName || 'your teammate').trim()
             : crossed
-            ? NUDGES.greetCrossed
+            ? NUDGES.greetCrossedLead
             // 261101 (pass 34): the reply mandate, with an acknowledgement
             // let off (ACK_LINE).
             : `${replyOptional ? '' : `${ackMayEnd ? ACK_LINE_ANSWER : ACK_LINE} `}` +
@@ -3836,6 +3854,8 @@ function maybeWarnByteCap(loop, warned) {
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
           (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
           (repeatAsk ? `\n${repeatAsk.note}` : '') +
+          (soundLine ? `\n${soundLine}` : '') +
+          (crossed ? `\n${NUDGES.greetCrossedTail}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
@@ -3944,7 +3964,7 @@ function maybeWarnByteCap(loop, warned) {
           eventText, snapshotText: snapshotText(),
           recentConversationText: convoMemory.recentChat.formatConversationBlock(),
           lookupsText: lookupLog.formatBlock(),
-          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : idleAfterUnanswered ? 'result' : 'idle'),
+          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : idleAfterUnanswered ? 'result' : 'idle', { soundsApart }),
           playerMessageText,
           companions,
           frontierText: progFrontierText,

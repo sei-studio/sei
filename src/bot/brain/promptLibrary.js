@@ -1346,6 +1346,21 @@ export const NUDGES = {
   // answer: skip say() this turn") she greeted again on 6 of 15 crossed
   // hellos in the paired compare, against 0 of 14 with this one.
   greetCrossed: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part, and act on it if it is a request, without greeting them or introducing yourself again. Your text output is a private scratchpad they never see.`,
+  // 261125 (pass 64a): the same note split around their line on a turn
+  // their hello starts (orchestrator player_message). Above the line it lost
+  // to the block's last word, their line: "The player only said hello, so
+  // I'll keep it short", then a second hello or her greeting again in other
+  // words (work_session-01/02 U1 of the 11-24 scorecard). The let-off now
+  // sits right under their line, as ACK_ANSWER_TAIL does (pass 63), in the
+  // pass 34 wording, and the turn drops "respond to their line" (with it the
+  // moved note re-greeted 6/8 in pass64a-probe cross_hey2). A request "gets
+  // its action too": "act on it if it is a request" left half of "hey sui
+  // can u get some wood" gathering without a word. Keep the hello rule
+  // first: last, a plain hello was greeted again 11/24 (6/8 cross_hey2).
+  // The mid-action turn keeps greetCrossed whole: there it already comes
+  // after their line.
+  greetCrossedLead: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. Your text output is a private scratchpad they never see.`,
+  greetCrossedTail: `If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part with say() without greeting them or introducing yourself again; a request gets its action too.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the
   // line may belong to a teammate, so the mandatory-reply sentence is wrong
