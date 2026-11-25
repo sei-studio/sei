@@ -543,9 +543,14 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
       const info = pending;
       if (!info) throw new Error('no update to download');
       ciMark('download-start');
+      // The bytes this download fetches (the deltas, else the full package),
+      // for update_downloaded's download_mb. A failed delta chain that falls
+      // back to the full package is reported at the delta size.
+      const deltaBytes = info.DeltasToTarget.reduce((n, d) => n + (Number(d.Size) || 0), 0);
+      const total = info.DeltasToTarget.length > 0 && deltaBytes > 0 ? deltaBytes : Number(info.TargetFullRelease.Size) || 0;
       try {
         await manager().downloadUpdateAsync(info, (percent) => {
-          events.emit('download-progress', { percent });
+          events.emit('download-progress', { percent, total });
         });
       } catch (err) {
         void noteUpdaterFailure('download', {
@@ -559,6 +564,8 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
       }
       ciMark('download-done');
       noteUpdaterHealthy('downloaded');
+      // Stage (pre-extract) + signature check + overlay frames: prepare_ms.
+      const prepareStart = Date.now();
       // CI only: SEI_VELOPACK_CI_NOSTAGE exercises the stock extraction path.
       if (!(process.env.SEI_VELOPACK_CI === '1' && process.env.SEI_VELOPACK_CI_NOSTAGE === '1')) {
         await stage(p, packagePath(info.TargetFullRelease), STAGE_OFFER_WAIT_MS);
@@ -578,7 +585,7 @@ export function createVelopackAutoUpdater(): VelopackAutoUpdater | null {
       if ('skipped' in sig) log('signature check off: this build is unsigned');
       await prerenderOverlayFrames(p);
       downloaded = true;
-      events.emit('update-downloaded', { version: info.TargetFullRelease.Version });
+      events.emit('update-downloaded', { version: info.TargetFullRelease.Version, prepareMs: Date.now() - prepareStart });
       return [];
     },
     quitAndInstall: () => {

@@ -51,7 +51,7 @@ async function recordStart(startedAt: number, progressWindow: boolean): Promise<
     const state = await loadUpdateState();
     await saveUpdateState({
       ...state,
-      installTiming: { startedAt, fromVersion: app.getVersion(), progressWindow },
+      installTiming: { startedAt, fromVersion: app.getVersion(), progressWindow, updater: 'nsis' },
     });
   } catch (err) {
     logger.warn(`updater: could not record the install start (${(err as Error).message})`);

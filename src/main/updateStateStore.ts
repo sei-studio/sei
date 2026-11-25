@@ -82,6 +82,8 @@ export interface InstallTiming {
   fromVersion: string;
   /** True when Sei's own progress window covered it (false = stock banner). */
   progressWindow?: boolean;
+  /** Which update path ran it (updateTelemetry.ts UpdaterKind); absent = nsis (older files). */
+  updater?: string;
 }
 
 /** How many install-time samples are kept. */
@@ -123,6 +125,7 @@ function coerceInstallTiming(raw: unknown): InstallTiming | null {
   if (typeof obj.fromVersion !== 'string' || obj.fromVersion.length === 0) return null;
   const out: InstallTiming = { startedAt: obj.startedAt, fromVersion: obj.fromVersion };
   if (typeof obj.progressWindow === 'boolean') out.progressWindow = obj.progressWindow;
+  if (typeof obj.updater === 'string' && /^[a-z_]{1,20}$/.test(obj.updater)) out.updater = obj.updater;
   return out;
 }
 
