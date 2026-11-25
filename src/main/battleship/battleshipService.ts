@@ -531,6 +531,12 @@ async function runAiTurn(s: Session): Promise<void> {
     s.aiThinking = false;
     aiFallbackShot(s);
   }
+  // Safety net: if the AI turn finished without firing and it's still the AI's
+  // turn, fall back to a shot so the board never stalls on a yapping model.
+  if (s.status === 'active' && s.turn === 'ai') {
+    s.aiThinking = false;
+    aiFallbackShot(s);
+  }
 }
 
 async function runAiTurnUnsafe(s: Session): Promise<void> {
@@ -560,11 +566,12 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     `You each have a hidden 10x10 grid with 5 ships: carrier (5), battleship (4), cruiser (3), submarine (3), destroyer (2).`,
     'Every plain-text line you write is spoken out loud at the board, exactly as written.',
     '',
-    'TALK ABOUT THE GAME. React to their last shot, say what you are going for, needle them, complain, gloat. Keep it short — one line. Never open with "ok", "okay", "alright", or any variant. If you have nothing specific to say, say nothing at all.',
+    'You MUST call fire() exactly once every turn. Do not write text describing your shot.',
+    'Never say "firing at row X col Y" — the board shows the shot by itself.',
+    'If you have nothing to add, say nothing at all — just call fire().',
+    'Do not write a running commentary. One short line maximum, only to react to their last shot.',
     '',
     'NEVER SAY COORDINATES OUT LOUD. Point at cells in words instead ("top left", "center", "bottom right").',
-    '',
-    'Do not announce the cell you are about to fire at: the board shows it by itself.',
     '',
     // 261124: the games were the one surface with no language rule, so the
     // companion answered in whatever the transcript happened to be in.
@@ -631,9 +638,13 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
         .map((b) => b.text)
         .join('\n')
         .trim();
-      if (text) await speak(s, text, spoken);
 
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
+      // Only speak text that accompanies an actual fire() call — otherwise the
+      // model just yaps ("Firing at row 5, col 5") without taking a shot.
+      const firedThisHop = toolUses.some((tu) => tu.name === 'fire');
+      if (text && firedThisHop) await speak(s, text, spoken);
+
       if (!toolUses.length) break;
 
       messages.push({ role: 'assistant', content: res.content as unknown as string });

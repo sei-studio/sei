@@ -450,11 +450,12 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     `You are ${aiColor === 'r' ? 'red' : 'yellow'}; they are ${s.playerColor === 'r' ? 'red' : 'yellow'}. Red moves first.`,
     'Every plain-text line you write is spoken out loud at the board, exactly as written.',
     '',
-    'TALK ABOUT THE GAME. React to their last drop, say what you are going for, needle them, complain, gloat. Keep it short — one line, the length of a text message. Never open with "ok", "okay", "alright", or any variant. If you have nothing specific to say, say nothing at all.',
+    'You MUST call play() exactly once every turn. Do not write text describing your move.',
+    'Never say "playing column X" — the board shows the move by itself.',
+    'If you have nothing to add, say nothing at all — just call play().',
+    'Do not write a running commentary. One short line maximum, only to react to their last drop.',
     '',
     'NEVER SAY COLUMN NUMBERS OUT LOUD. Point at columns in words instead ("the leftmost column", "the middle column", "the rightmost column").',
-    '',
-    'Do not announce the column you are about to play: the board shows it by itself.',
     '',
     // 261124: the games were the one surface with no language rule, so the
     // companion answered in whatever the transcript happened to be in.
@@ -512,9 +513,13 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
         .map((b) => b.text)
         .join('\n')
         .trim();
-      if (text) await speak(s, text, spoken);
 
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
+      // Only speak text that accompanies an actual play() call — otherwise the
+      // model just yaps without taking a turn.
+      const playedThisHop = toolUses.some((tu) => tu.name === 'play');
+      if (text && playedThisHop) await speak(s, text, spoken);
+
       if (!toolUses.length) break;
 
       messages.push({ role: 'assistant', content: res.content });
