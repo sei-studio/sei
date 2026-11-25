@@ -71,7 +71,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: velopack-update-${{ github.ref }}
+  # Per suite: an e2e-signed dispatch must not cancel a branch run (or the reverse).
+  group: velopack-update-${{ github.ref }}-${{ inputs.suite || 'all' }}
   cancel-in-progress: true
 
 env:
