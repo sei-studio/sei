@@ -4741,7 +4741,7 @@ function maybeWarnByteCap(loop, warned) {
         const cut = loop._fightCut
         if (cut && !aborted) {
           if (caps.fightActions.has(use.name) && Number.isFinite(runner.startedAt) && runner.startedAt >= cut.at) {
-            result = `${result} ${NUDGES.fightCutAction(cut.label)}`
+            result = `${result} ${NUDGES.fightCutAction(cut.label, { own: cut.own })}`
             loop._fightCut = null
           } else if (use.name === cut.name) {
             loop._fightCut = null
@@ -5430,7 +5430,7 @@ function maybeWarnByteCap(loop, warned) {
       ? `${String(adapter.eventAddendum('sei:attacked', busyAction ? { ...attack, busyAction } : attack) ?? '').trim()}${fightToldSuffix(attack)}\n\n${NUDGES.attackMidAction({ action, stopTool: stopToolForAction(action), busy: !!busyAction })}`
       : null
     if (attack) loop._fightMobId = attack?.attacker?.id ?? null
-    if (busyAction) loop._fightCut = { label: busyAction, name: inFlightName, at: Date.now() }
+    if (busyAction) loop._fightCut = { label: busyAction, name: inFlightName, at: Date.now(), own: !!loop.inFlight?.selfStarted }
     // 261013: the silent check-in that carries a waiting player order invites
     // an action that replaces hers, so the silent-tick drop must let it through.
     const tickWaitingAsk = (attackText == null && playerMessage == null && loop.inFlight?.selfStarted && loop.inFlight?.waitingAsk) || null
@@ -6439,7 +6439,7 @@ function maybeWarnByteCap(loop, warned) {
           // and she never went back to it.
           const old = loop.inFlight
           if (!hasStop && caps.fightActions.has(newSuspendingTools[0].name) && !caps.fightActions.has(old.name) && !caps.backgroundActions[old.name]) {
-            loop._fightCut = { label: extractPriorTask(loop) || old.name, name: old.name, at: Date.now() }
+            loop._fightCut = { label: extractPriorTask(loop) || old.name, name: old.name, at: Date.now(), own: !!old.selfStarted }
           }
           logger.debug?.(`[sei/orch] R2/suppress new action — aborting old in_flight=${loop.inFlight.name} new=${newSuspendingTools.map(u => u.name).join(',')} trigger=${loop._currentIterationTrigger ?? loop._triggerEvent}`)
           // 260516-0yw: clear the 10s action-tick BEFORE aborting on R2.

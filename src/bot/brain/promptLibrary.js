@@ -1366,8 +1366,16 @@ export const NUDGES = {
 
   // 261115 (pass 56): appended to the result of a fight that replaced her
   // long action (see attackMidAction busy). Past tense: it stays in history.
-  fightCutAction: (action) =>
-    `This fight cut short your ${action || 'action'} before it was done. Unless something else needs you first, call it again now to finish it.`,
+  // 261125 (pass 64b): `own` = work she started on her own (a greeting or
+  // idle turn, not one answering the player). There the "call it again now"
+  // was the order of the moment, and it beat the player-first line in her
+  // goals: right after a fight at night she said "finishing the wood run, i'll
+  // stay near alex" and walked off to gather while the scared player was
+  // asking her to stay close (11-24 pass 63 compare 01-A, 02-B, 03-B). Her
+  // goals and the idle tick still bring her back to it.
+  fightCutAction: (action, { own = false } = {}) => own
+    ? `This fight cut short your ${action || 'action'} before it was done.`
+    : `This fight cut short your ${action || 'action'} before it was done. Unless something else needs you first, call it again now to finish it.`,
 
   // 261011: appended to an attack turn when the bot already spoke about the
   // fight moments ago. Quality eval 2026-10-11: every throttled hit forced a

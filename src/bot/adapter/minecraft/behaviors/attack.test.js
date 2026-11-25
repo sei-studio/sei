@@ -450,3 +450,87 @@ describe('the running attack, as the turn sees it (261106)', () => {
     expect(withAttackRunState(bot, 'sei:attacked', data)).toBe(data)
   })
 })
+
+// 261125 (pass 64b): a chase in owner defense stops before it takes her away
+// from the player; a second call on the same mob chases without the bound.
+describe('attackEntity chase leash near the player (261125)', () => {
+  // She stands next to Alex (x=0); the skeleton stays 20 blocks out and every
+  // poll of the pursuit moves her one block toward it, as a chase would.
+  function chaseBot({ alexAt = new Vec3(-1, 64, 0), mobAt = new Vec3(20, 64, 0), name = 'skeleton' } = {}) {
+    const mob = { id: 7, name, type: 'hostile', position: mobAt, height: 1.95 }
+    const alex = { id: 2, username: 'Alex', type: 'player', position: alexAt }
+    const bot = {
+      health: 20,
+      entity: { position: new Vec3(0, 64, 0) },
+      entities: { 7: mob, 2: alex },
+      players: { Alex: { username: 'Alex', entity: alex } },
+      _seiOwnerNames: ['alex'],
+      heldItem: { name: 'stone_sword' },
+      inventory: { items: () => [{ name: 'stone_sword' }] },
+      lookAt: vi.fn(), swingArm: vi.fn(), attack: vi.fn(),
+      equip: vi.fn(),
+      setControlState: vi.fn(),
+    }
+    bot.pathfinder = {
+      goal: null,
+      setGoal: vi.fn((g) => { bot.pathfinder.goal = g }),
+      setMovements: vi.fn(),
+      stop: vi.fn(),
+    }
+    const step = setInterval(() => {
+      const p = bot.entity.position
+      if (p.distanceTo(mob.position) > 3) bot.entity.position = p.offset(1, 0, 0)
+    }, 100)
+    bot.stopChase = () => clearInterval(step)
+    return bot
+  }
+
+  it('stops the chase once it would leave the player, and says where both are', async () => {
+    const bot = chaseBot()
+    try {
+      const r = await attackEntityAction({ entity_id: 7, times: 4, timeout_ms: 8000 }, bot, {})
+      expect(r).toMatch(/^stopped chasing the skeleton: it is 21 blocks from Alex and you are 1[345] blocks from them, so following it would take you away from them\. It is still alive/)
+      expect(bot.attack).not.toHaveBeenCalled()
+      expect(bot.entity.position.distanceTo(bot.entities[2].position)).toBeLessThan(16)
+    } finally { bot.stopChase() }
+  })
+
+  it('a second call on that same mob chases it anyway', async () => {
+    const bot = chaseBot()
+    try {
+      await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 8000 }, bot, {})
+      const r = await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 8000 }, bot, {})
+      expect(bot.attack).toHaveBeenCalledTimes(1)
+      expect(r).not.toMatch(/stopped chasing/)
+    } finally { bot.stopChase() }
+  })
+
+  it('a mob near the player is chased as before', async () => {
+    // Alex stands by the zombie; she runs 14 blocks to it.
+    const bot = chaseBot({ alexAt: new Vec3(17, 64, 0), mobAt: new Vec3(16, 64, 0), name: 'zombie' })
+    try {
+      const r = await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 8000 }, bot, {})
+      expect(bot.attack).toHaveBeenCalledTimes(1)
+      expect(r).not.toMatch(/stopped chasing/)
+    } finally { bot.stopChase() }
+  })
+
+  it('the bound starts from where the fight began when she is already away from the player', async () => {
+    // 10 blocks from Alex at the start: the bound is 16, not 12.
+    const bot = chaseBot({ alexAt: new Vec3(-10, 64, 0), mobAt: new Vec3(30, 64, 0) })
+    try {
+      const r = await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 8000 }, bot, {})
+      expect(r).toMatch(/^stopped chasing the skeleton: it is 40 blocks from Alex and you are 1[789] blocks from them/)
+    } finally { bot.stopChase() }
+  })
+
+  it('no player in sight, no bound', async () => {
+    const bot = chaseBot()
+    delete bot.players.Alex
+    try {
+      const r = await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 8000 }, bot, {})
+      expect(bot.attack).toHaveBeenCalledTimes(1)
+      expect(r).not.toMatch(/stopped chasing/)
+    } finally { bot.stopChase() }
+  })
+})
