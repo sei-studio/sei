@@ -636,7 +636,8 @@ jobs:
         run: |
           set -euo pipefail
           from="${FROM_TAG#v}"; to="${TO_TAG#v}"
-          full_from="vp/Sei-$from-osx-full.nupkg"; full_to="vp/Sei-$to-osx-full.nupkg"; delta="vp/Sei-$to-osx-delta.nupkg"
+          # Absolute: UpdateMac runs from inside the bundle.
+          full_from="$PWD/vp/Sei-$from-osx-full.nupkg"; full_to="$PWD/vp/Sei-$to-osx-full.nupkg"; delta="$PWD/vp/Sei-$to-osx-delta.nupkg"
           ls "$full_from" "$full_to" "$delta"
           # The installed copy: FROM's bundle out of its full package, in ~/Applications.
           # Installed the way a user would: FROM's portable zip into ~/Applications.
@@ -651,7 +652,7 @@ jobs:
           [ -x "$upd" ] || { echo "::error::no UpdateMac in the installed bundle"; exit 1; }
           now() { python3 -c 'import time; print(time.time())'; }
           t0=$(now)
-          "$upd" patch --old "$full_from" --delta "$delta" --output rebuilt.nupkg --verbose 2>&1 | tail -15
+          "$upd" patch --old "$full_from" --delta "$delta" --output "$PWD/rebuilt.nupkg" --verbose 2>&1 | tail -15
           t1=$(now)
           ls -la rebuilt.nupkg "$full_to"
           t2=$(now)
