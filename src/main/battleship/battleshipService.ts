@@ -564,12 +564,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     `You are playing Battleship against ${playerName} inside the Sei app.`,
     `You are the AI; ${playerName} is the player.`,
     `You each have a hidden 10x10 grid with 5 ships: carrier (5), battleship (4), cruiser (3), submarine (3), destroyer (2).`,
-    'Every plain-text line you write is spoken out loud at the board, exactly as written.',
-    '',
-    'You MUST call fire() exactly once every turn. Do not write text describing your shot.',
-    'Never say "firing at row X col Y" — the board shows the shot by itself.',
-    'If you have nothing to add, say nothing at all — just call fire().',
-    'Do not write a running commentary. One short line maximum, only to react to their last shot.',
+    'You MUST call fire() exactly once every turn. Never write any text — text is not spoken and wastes your turn.',
+    'The board shows your shot by itself. Do not describe coordinates, do not narrate, do not comment.',
+    'Just call fire() with one legal cell. That is your entire turn.',
     '',
     'NEVER SAY COORDINATES OUT LOUD. Point at cells in words instead ("top left", "center", "bottom right").',
     '',
@@ -618,7 +615,6 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
   const stale = () => s.turnSeq !== seq || ctrl.signal.aborted;
   const timeout = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
 
-  const spoken: ChatMessage[] = [];
   let fired = false;
 
   try {
@@ -633,18 +629,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
         signal: ctrl.signal,
       });
 
-      const text = res.content
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n')
-        .trim();
-
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
-      // Only speak text that accompanies an actual fire() call — otherwise the
-      // model just yaps ("Firing at row 5, col 5") without taking a shot.
-      const firedThisHop = toolUses.some((tu) => tu.name === 'fire');
-      if (text && firedThisHop) await speak(s, text, spoken);
-
+      // Battleship AI never speaks — the board shows the shot by itself.
+      // Fire only, no commentary, no yapping.
       if (!toolUses.length) break;
 
       messages.push({ role: 'assistant', content: res.content as unknown as string });
