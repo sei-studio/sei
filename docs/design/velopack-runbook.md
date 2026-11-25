@@ -321,6 +321,13 @@ that touch the updater code (and on dispatch):
   (the job downloads by asset id). `result.json` and the step summary carry
   the timings (`scripts/velopack-ci/e2e-signed.ps1`).
 
+- **mac-spike** (dispatch only, 261126, measures only): Velopack on macOS
+  against two real signed mac releases on an Apple Silicon runner:
+  `gh workflow run velopack-update.yml --ref <branch> -f suite=mac-spike -f e2e_base_tag=v0.7.0 -f e2e_target_tag=<newer tag>`.
+  Today's Squirrel.Mac differential, unzip and code-sign check vs the vpk
+  delta, UpdateMac's rebuild from it and its bundle swap (vpk packs unsigned
+  there: no Developer ID on the runner).
+
 Positive signature cases in the other jobs use a throwaway certificate
 trusted only on the runner (`testsign.ps1`); e2e-signed covers the real
 Azure certificate through the in-app check.
