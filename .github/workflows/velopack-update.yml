@@ -21,6 +21,11 @@ name: Velopack Windows update
 #              Velopack update and a forced self-repair, with the real
 #              publisher check (scripts/velopack-ci/e2e-signed.ps1). Runs
 #              alone: the jobs above are skipped for that suite.
+#   mac-spike  (dispatch only, suite=mac-spike) Velopack on macOS measured on
+#              an Apple Silicon runner against two real signed releases
+#              (e2e_base_tag -> e2e_target_tag): today's Squirrel.Mac
+#              differential, unzip and code-sign check vs a vpk delta,
+#              UpdateMac's rebuild from it and its bundle swap. Measures only.
 # Nothing here writes to dl.sei.gg or a GitHub release.
 on:
   push:
@@ -50,9 +55,9 @@ on:
         required: false
         default: ''
       suite:
-        description: 'all = the branch build and its scenarios; e2e-signed = only the signed-release end to end'
+        description: 'all = the branch build and its scenarios; e2e-signed = only the signed-release end to end; mac-spike = Velopack on macOS measured (e2e_base_tag -> e2e_target_tag)'
         type: choice
-        options: [all, e2e-signed]
+        options: [all, e2e-signed, mac-spike]
         default: all
       e2e_base_tag:
         description: 'e2e-signed: NSIS release the player starts on'
@@ -90,7 +95,7 @@ env:
 
 jobs:
   lint:
-    if: inputs.suite != 'e2e-signed'
+    if: inputs.suite != 'e2e-signed' && inputs.suite != 'mac-spike'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -113,7 +118,7 @@ jobs:
         run: for f in scripts/velopack-*.mjs scripts/lib/velopack*.mjs scripts/velopack-ci/*.mjs; do node --check "$f"; done
 
   build:
-    if: inputs.suite != 'e2e-signed'
+    if: inputs.suite != 'e2e-signed' && inputs.suite != 'mac-spike'
     runs-on: windows-latest
     timeout-minutes: 100
     steps:
@@ -526,3 +531,163 @@ jobs:
           name: e2e-signed-${{ matrix.variant }}
           path: out
           retention-days: 14
+
+  mac-spike:
+    if: inputs.suite == 'mac-spike'
+    runs-on: macos-latest
+    timeout-minutes: 45
+    # Draft releases are only visible with push access.
+    permissions:
+      contents: write
+    steps:
+      - name: Block product analytics
+        run: |
+          printf '127.0.0.1 us.i.posthog.com\n127.0.0.1 us-assets.i.posthog.com\n127.0.0.1 app.posthog.com\n' | sudo tee -a /etc/hosts >/dev/null
+
+      - name: Download both releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FROM_TAG: ${{ inputs.e2e_base_tag }}
+          TO_TAG: ${{ inputs.e2e_target_tag || 'v0.7.1-beta.2' }}
+        run: |
+          set -euo pipefail
+          mkdir -p rel/from rel/to
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > releases.json
+          for side in from to; do
+            if [ "$side" = from ]; then tag="$FROM_TAG"; else tag="$TO_TAG"; fi
+            # The release with the most assets for the tag (a partial duplicate draft has fewer).
+            for name in Sei-mac-arm64.zip Sei-mac-arm64.zip.blockmap; do
+              id=$(jq -r --arg t "$tag" --arg n "$name" '[.[] | select(.tag_name == $t)] | sort_by(.assets | length) | last | .assets[] | select(.name == $n) | .id' releases.json)
+              if [ -z "$id" ] || [ "$id" = null ]; then echo "::error::$tag has no $name"; exit 1; fi
+              curl -sfL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/octet-stream' \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$id" -o "rel/$side/$name"
+            done
+            ls -la "rel/$side"
+          done
+
+      - name: Today (Squirrel.Mac) - differential, unzip, code-sign check
+        run: |
+          set -euo pipefail
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund electron-updater@6.8.3 >/dev/null 2>&1
+          cat > bm.cjs <<'EOF'
+          const zlib = require('zlib'), fs = require('fs');
+          const { computeOperations, OperationKind } = require('electron-updater/out/differentialDownloader/downloadPlanBuilder.js');
+          const rd = (f) => JSON.parse(zlib.gunzipSync(fs.readFileSync(f)));
+          const o = rd('rel/from/Sei-mac-arm64.zip.blockmap'), n = rd('rel/to/Sei-mac-arm64.zip.blockmap');
+          const ops = computeOperations(o, n, { info() {}, warn() {}, debug() {} });
+          let dl = 0; for (const op of ops) if (op.kind === OperationKind.DOWNLOAD) dl += op.end - op.start;
+          console.log(JSON.stringify({ differential_mb: +(dl / 1e6).toFixed(1), full_zip_mb: +(fs.statSync('rel/to/Sei-mac-arm64.zip').size / 1e6).toFixed(1) }));
+          EOF
+          node bm.cjs > today-dl.json
+          mkdir -p unz/from unz/to
+          t0=$(python3 -c 'import time; print(time.time())')
+          ditto -x -k rel/to/Sei-mac-arm64.zip unz/to
+          t1=$(python3 -c 'import time; print(time.time())')
+          codesign --verify --deep --strict unz/to/Sei.app
+          t2=$(python3 -c 'import time; print(time.time())')
+          ditto -x -k rel/from/Sei-mac-arm64.zip unz/from
+          spctl -a -vv unz/to/Sei.app 2>&1 | sed -E 's/(origin=).*/\1<signer>/' || true
+          python3 - "$t0" "$t1" "$t2" <<'EOF' > today-prep.json
+          import json, sys
+          t0, t1, t2 = map(float, sys.argv[1:])
+          print(json.dumps({"unzip_ms": round((t1 - t0) * 1000), "codesign_verify_ms": round((t2 - t1) * 1000)}))
+          EOF
+          cat today-dl.json today-prep.json
+          du -sm unz/to/Sei.app
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install vpk
+        env:
+          VPK_VERSION: 1.3.39-g8d2844f
+        run: |
+          set -euo pipefail
+          dotnet tool install -g vpk --version "$VPK_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Proposed (Velopack) - pack both, delta
+        env:
+          FROM_TAG: ${{ inputs.e2e_base_tag }}
+          TO_TAG: ${{ inputs.e2e_target_tag || 'v0.7.1-beta.2' }}
+        run: |
+          set -euo pipefail
+          from="${FROM_TAG#v}"; to="${TO_TAG#v}"
+          mkdir -p vp
+          for side in from to; do
+            if [ "$side" = from ]; then v="$from"; else v="$to"; fi
+            t0=$(python3 -c 'import time; print(time.time())')
+            vpk --skip-updates pack -u Sei -v "$v" -p "unz/$side/Sei.app" -e Sei \
+              --packTitle Sei --packAuthors Sei --channel osx --noInst \
+              --skipVeloAppCheck -o vp 2>&1 | tail -25
+            t1=$(python3 -c 'import time; print(time.time())')
+            echo "pack $side: $(python3 -c "print(round(($t1-$t0)*1000))") ms"
+          done
+          ls -la vp
+
+      - name: Proposed (Velopack) - rebuild from the delta, apply the update
+        env:
+          FROM_TAG: ${{ inputs.e2e_base_tag }}
+          TO_TAG: ${{ inputs.e2e_target_tag || 'v0.7.1-beta.2' }}
+        run: |
+          set -euo pipefail
+          from="${FROM_TAG#v}"; to="${TO_TAG#v}"
+          full_from="vp/Sei-$from-osx-full.nupkg"; full_to="vp/Sei-$to-osx-full.nupkg"; delta="vp/Sei-$to-osx-delta.nupkg"
+          ls "$full_from" "$full_to" "$delta"
+          # The installed copy: FROM's bundle out of its full package, in ~/Applications.
+          mkdir -p "$HOME/Applications" inst
+          (cd inst && unzip -q "../$full_from")
+          find inst -maxdepth 3 | head -20
+          app_src=$(find inst -maxdepth 3 -name '*.app' -type d | head -1)
+          [ -n "$app_src" ] || { echo "::error::no .app in the FROM package"; find inst -maxdepth 4 | head -40; exit 1; }
+          rm -rf "$HOME/Applications/Sei.app"
+          ditto "$app_src" "$HOME/Applications/Sei.app"
+          upd="$HOME/Applications/Sei.app/Contents/MacOS/UpdateMac"
+          ls -la "$HOME/Applications/Sei.app/Contents/MacOS"
+          [ -x "$upd" ] || { echo "::error::no UpdateMac in the installed bundle"; exit 1; }
+          now() { python3 -c 'import time; print(time.time())'; }
+          t0=$(now)
+          "$upd" patch --old "$full_from" --delta "$delta" --output rebuilt.nupkg --verbose 2>&1 | tail -15
+          t1=$(now)
+          ls -la rebuilt.nupkg "$full_to"
+          t2=$(now)
+          "$upd" apply --norestart --silent --verbose --package "$PWD/rebuilt.nupkg" 2>&1 | tail -40 || echo "apply exited $?"
+          t3=$(now)
+          plutil -extract CFBundleShortVersionString raw "$HOME/Applications/Sei.app/Contents/Info.plist" || true
+          head -20 "$HOME/Applications/Sei.app/Contents/MacOS/sq.version" 2>/dev/null || true
+          python3 - "$t0" "$t1" "$t2" "$t3" "$full_from" "$full_to" "$delta" <<'EOF' > proposed.json
+          import json, os, sys
+          t0, t1, t2, t3 = map(float, sys.argv[1:5])
+          ff, ft, d = sys.argv[5:8]
+          mb = lambda p: round(os.path.getsize(p) / 1e6, 1)
+          print(json.dumps({"full_mb": mb(ft), "delta_mb": mb(d), "delta_rebuild_ms": round((t1 - t0) * 1000), "apply_ms": round((t3 - t2) * 1000)}))
+          EOF
+          cat proposed.json
+
+      - name: Summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          def rd(f):
+              try: return json.load(open(f))
+              except Exception: return {}
+          out = {"today": {**rd("today-dl.json"), **rd("today-prep.json")}, "proposed": rd("proposed.json")}
+          json.dump(out, open("spike.json", "w"), indent=1)
+          lines = ["## Velopack mac spike", "", "| | value |", "|---|---|"]
+          for side, d in out.items():
+              for k, v in d.items(): lines.append(f"| {side} {k} | {v} |")
+          open(os.environ["GITHUB_STEP_SUMMARY"], "a").write("\n".join(lines) + "\n")
+          print(json.dumps(out, indent=1))
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: velopack-mac-spike
+          path: |
+            spike.json
+            vp/*.json
+          if-no-files-found: ignore
