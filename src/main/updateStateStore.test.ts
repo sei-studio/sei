@@ -99,6 +99,26 @@ describe('updateStateStore install timing (Windows progress window)', () => {
     expect(s.installSeconds).toEqual([2, 3, 4, 5, 6]);
   });
 
+  it('keeps the updater name, drops a junk one (261126)', async () => {
+    await saveUpdateState({
+      version: 1,
+      lastSeenVersion: '0.7.0',
+      pending: null,
+      installTiming: { startedAt: 1_000, fromVersion: '0.7.0', updater: 'squirrel_mac' },
+    });
+    expect((await loadUpdateState()).installTiming).toEqual({ startedAt: 1_000, fromVersion: '0.7.0', updater: 'squirrel_mac' });
+    await writeFile(
+      path.join(h.userData, 'update-state.json'),
+      JSON.stringify({
+        version: 1,
+        lastSeenVersion: null,
+        pending: null,
+        installTiming: { startedAt: 1_000, fromVersion: '0.7.0', updater: 'C:\\Users\\x' },
+      }),
+    );
+    expect((await loadUpdateState()).installTiming).toEqual({ startedAt: 1_000, fromVersion: '0.7.0' });
+  });
+
   it('measures only a changed version inside 30 minutes', () => {
     const t = { startedAt: 10_000, fromVersion: '0.7.0' };
     expect(measuredInstallSeconds(t, '0.7.1', 10_000 + 104_400)).toBe(104);
