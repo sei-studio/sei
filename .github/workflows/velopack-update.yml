@@ -624,6 +624,8 @@ jobs:
               -o vp 2>&1 | tail -25
             t1=$(python3 -c 'import time; print(time.time())')
             echo "pack $side: $(python3 -c "print(round(($t1-$t0)*1000))") ms"
+            # The portable zip is rewritten by each pack: keep FROM's to install from.
+            cp "vp/Sei-osx-Portable.zip" "portable-$side.zip"
           done
           ls -la vp
 
@@ -637,11 +639,11 @@ jobs:
           full_from="vp/Sei-$from-osx-full.nupkg"; full_to="vp/Sei-$to-osx-full.nupkg"; delta="vp/Sei-$to-osx-delta.nupkg"
           ls "$full_from" "$full_to" "$delta"
           # The installed copy: FROM's bundle out of its full package, in ~/Applications.
-          # A mac package holds the bundle's Contents at lib/app.
+          # Installed the way a user would: FROM's portable zip into ~/Applications.
           mkdir -p "$HOME/Applications" inst
-          ditto -x -k "$full_from" inst
-          app_src=inst/lib/app
-          if [ ! -f "$app_src/Contents/Info.plist" ]; then echo "::error::no bundle at lib/app in the FROM package"; find inst -maxdepth 4 | head -40; exit 1; fi
+          ditto -x -k portable-from.zip inst
+          app_src=$(find inst -maxdepth 2 -name '*.app' -type d | head -1)
+          if [ -z "$app_src" ]; then echo "::error::no .app in FROM's portable zip"; find inst -maxdepth 3 | head -40; exit 1; fi
           rm -rf "$HOME/Applications/Sei.app"
           ditto "$app_src" "$HOME/Applications/Sei.app"
           upd="$HOME/Applications/Sei.app/Contents/MacOS/UpdateMac"
