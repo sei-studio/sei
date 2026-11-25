@@ -621,7 +621,7 @@ jobs:
             t0=$(python3 -c 'import time; print(time.time())')
             vpk --skip-updates pack -u Sei -v "$v" -p "unz/$side/Sei.app" -e Sei \
               --packTitle Sei --packAuthors Sei --channel osx --noInst \
-              --skipVeloAppCheck -o vp 2>&1 | tail -25
+              -o vp 2>&1 | tail -25
             t1=$(python3 -c 'import time; print(time.time())')
             echo "pack $side: $(python3 -c "print(round(($t1-$t0)*1000))") ms"
           done
