@@ -150,11 +150,30 @@ describe('261012 crossed greeting', () => {
     // 261125 (pass 64a): the let-off for a plain hello sits right under
     // their line, and the turn is not told to respond to it.
     const t = lastTurnText(provider)
-    expect(t).toContain('Their line, player (Steve): hey sui\\nIf this line is only a hello, do not call say() this turn')
+    // 261126 (pass 64a follow-up): with her hello quoted between them.
+    expect(t).toContain('Their line, player (Steve): hey sui\\nRight under it they read your hello: \\"heyyy steve\\". If this line is only a hello, do not call say() this turn')
     expect(t).not.toContain('respond to their line')
     expect(t.indexOf('it already answers their hello')).toBeLessThan(t.indexOf('Their line, player (Steve): hey sui'))
     await say2(orch, 'wanna get wood')
     expect(lastTurnText(provider)).not.toContain(NOTE)
+  })
+
+  // 261126: night_social-03-B of the 11-25 compare. The note fired but she
+  // greeted again, restating her hello ("yo alex. it's night and i have a
+  // sword and zero plan"); quoted under their line, 12/96 -> 1/96 in
+  // pass64a-probe. The quote is her whole hello (every message it split
+  // into), not lines decided after their line.
+  it('the crossed hello quotes her whole greeting under their line', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([sayTurn('oh hey steve. new world, night already. perfect'), sayTurn('sure')])
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({ adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
+    await say2(orch, 'yo')
+    const t = lastTurnText(provider)
+    const m = t.match(/Right under it they read your hello: \\"([^\\]*)\\"/)
+    expect(m?.[1]).toBe('oh hey steve new world, night already perfect')
+    expect(t.indexOf('Their line, player (Steve): yo')).toBeLessThan(t.indexOf('Right under it they read your hello'))
   })
 
   it('mid-action: the hello that crossed hers gets the same note', async () => {

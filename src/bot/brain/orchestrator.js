@@ -1762,7 +1762,14 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const since = playerLines.filter((l) => l.at >= greet.at && !l.companion)
     if (since.length !== 1) return false
     if (since[0].at - greet.at > GREET_CROSS_WINDOW_MS) return false
-    if (loop) loop._noReplyOwed = true
+    if (loop) {
+      loop._noReplyOwed = true
+      // 261126: her hello as they read it (every message it was split into,
+      // decided before their line), quoted under their line by
+      // NUDGES.greetCrossedTail on the turn their line starts.
+      loop._crossedHello = selfLines.filter((l) => l.at >= _firstContactAt && l.at <= since[0].at)
+        .map((l) => l.text).join(' ').trim() || null
+    }
     return true
   }
   // 260921: what she found on the web, kept across loops (see lookups.js).
@@ -3855,7 +3862,7 @@ function maybeWarnByteCap(loop, warned) {
           (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
           (repeatAsk ? `\n${repeatAsk.note}` : '') +
           (soundLine ? `\n${soundLine}` : '') +
-          (crossed ? `\n${NUDGES.greetCrossedTail}` : '') +
+          (crossed ? `\n${NUDGES.greetCrossedTail(loop._crossedHello)}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of

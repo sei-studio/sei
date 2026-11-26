@@ -134,7 +134,13 @@ player used it). On a reply turn `cardSoundNote` goes under their line
 (own_repeats 10/24 cackled again, under the line 2/16; dev 12/16); on
 other turns it stays in own_repeats. Probe `pass64a-probe.mjs`: a crossed
 "hey sui hows it going" re-greeted dev 14/24 -> 0/32; a crossed ask still
-acted 8/8.
+acted 8/8. Follow-up (261126): in the live compare the note fired on every
+crossed hello (24/24); the two that greeted again (night_social-03-B,
+-04-A, one per arm) said the greeting over as if it had not been sent.
+`greetCrossedTail(hello)` now quotes her whole hello (`loop._crossedHello`,
+every message decided before their line) right under their line: plain
+crossed hellos re-greeted 12/96 -> 1/96 in the probe, the question and ask
+guards kept their answer and action.
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:

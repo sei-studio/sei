@@ -1360,7 +1360,14 @@ export const NUDGES = {
   // The mid-action turn keeps greetCrossed whole: there it already comes
   // after their line.
   greetCrossedLead: `Your hello reached them just after they typed this (it comes right after their line in the conversation above), so it already answers their hello. Your text output is a private scratchpad they never see.`,
-  greetCrossedTail: `If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part with say() without greeting them or introducing yourself again; a request gets its action too.`,
+  // 261126: her hello, quoted, comes first. The 11-25 compare's live misses
+  // (night_social-03-B, -04-A) had this note and still greeted again, each
+  // time saying her greeting over ("yo alex. it's night and i have a sword
+  // and zero plan"), as if it had not been sent. Quoted right under their
+  // line, plain crossed hellos greeted again 12/96 -> 1/96 (pass64a-probe
+  // cross_hey2/yo/yo3/yo4); a crossed question and a crossed ask still got
+  // their answer and action (16/16 each).
+  greetCrossedTail: (hello) => `${hello ? `Right under it they read your hello: "${hello}". ` : ''}If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part with say() without greeting them or introducing yourself again; a request gets its action too.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the
   // line may belong to a teammate, so the mandatory-reply sentence is wrong

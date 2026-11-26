@@ -17,6 +17,8 @@
 //   cross_hey   her greeting, then "hey sui" (work_session-01)
 //   cross_hey2  a greeting that is all intro (work_session-02), then "hey sui"
 //   cross_yo    night greeting, then "yo" (night_social)
+//   cross_yo3   night_social-03-B of the 11-25 compare (no tree, real greeting)
+//   cross_yo4   night_social-04-A of the 11-25 compare
 //   tic_lmao    "lmao thats so bad" after ehehe + nehehe in her last two lines
 //   tic_rock    "ur dumb as a rock" two lines after the last cackles
 //   tic_like    "do you actually like playing with me" after one more ehehe
@@ -136,8 +138,12 @@ function snapshot(w) {
     `inventory (${(w.inv ?? []).filter(([, c]) => c > 0).length} of 36 slots used): ${inv}`,
     'pickaxe: none, so stone and ore drop nothing when dug.',
     'terrain at feet: 25 grass_block', 'nearby blocks:',
-    '  #1 grass_block x789 @176,70,0 (right by you)', '  #2 oak_leaves x207 @182,73,-2 (6 blocks northeast)',
-    '  #3 oak_log x8 @184,71,-4 (9 blocks northeast)', '  #4 stone x29 @169,62,7 (13 blocks southwest, 9 down)',
+    ...(w.bare
+      // night_social of the 11-25 compare: no tree in loaded chunks.
+      ? ['  #1 grass_block x793 @176,70,0 (right by you)', '  #2 stone x29 @169,62,7 (13 blocks southwest, 9 down)',
+        '  #3 sand x18 @169,61,6 (14 blocks southwest, 10 down)', '  #4 water x21 @169,61,7 (14 blocks southwest, 10 down)']
+      : ['  #1 grass_block x789 @176,70,0 (right by you)', '  #2 oak_leaves x207 @182,73,-2 (6 blocks northeast)',
+        '  #3 oak_log x8 @184,71,-4 (9 blocks northeast)', '  #4 stone x29 @169,62,7 (13 blocks southwest, 9 down)']),
     'nearby entities:',
     `  #5 ${PLAYER} @173,71,1 (4 blocks west)`,
     `follow_target: ${w.following ? PLAYER : '(none)'}`,
@@ -155,7 +161,12 @@ const DAY = { inv: [], lar: 'goal set' }
 const NIGHT = { inv: [['iron_sword', 1], ['bread', 4]], night: true, holding: 'iron_sword (250/250)' }
 const FACTS_DAY = 'Alex 4 blocks away; Sui just joined, empty inventory, oak trees 9 blocks northeast; day; nothing running'
 const FACTS_NIGHT = 'Alex 4 blocks away; Sui holding an iron_sword with bread x4; night; nothing running; one zombie killed earlier with no damage taken'
-const greet = (text) => ({ t: 0, idle: true, firstSpawn: true, uses: [say(text), ['setGoal', { text: 'Get a full wood-to-iron setup: wood, wood tools, stone, then iron. Start by gathering oak logs from the trees to the northeast.' }]] })
+const greet = (text, goal = 'Get a full wood-to-iron setup: wood, wood tools, stone, then iron. Start by gathering oak logs from the trees to the northeast.') => ({ t: 0, idle: true, firstSpawn: true, uses: [say(text), ['setGoal', { text: goal }]] })
+// 11-25 pass64a compare, the two crossed "yo" turns that greeted again
+// (night_social-03-B on the branch, night_social-04-A on dev): her real
+// greeting and goal, no tree in sight, "yo" 3s after her hello was decided.
+const NIGHT_BARE = { ...NIGHT, bare: true }
+const KIT = 'Get a full iron-tier kit: gather wood, craft wood then stone then iron tools, smelt iron. Start with wood.'
 // night_social-02 of the 11-24 scorecard, her real lines.
 const NS = [
   { t: 0, idle: true, firstSpawn: true, uses: [say("oh hey alex. first time in this world together, so no pressure, i'm bad at this game on purpose")] },
@@ -186,6 +197,8 @@ const CASES = {
   cross_hey: { world: DAY, facts: FACTS_DAY, kind: 'cross', steps: [greet("oh hey alex. first time in this world so i have zero idea what i'm doing. lower your expectations"), live({ t: 3, player: 'hey sui' })] },
   cross_hey2: { world: DAY, facts: FACTS_DAY, kind: 'cross', steps: [greet("ok the sei terminal dropped me in a plains world with zero tools. alex, you know this game, i'm gonna need you"), live({ t: 3, player: 'hey sui' })] },
   cross_yo: { world: NIGHT, facts: FACTS_NIGHT, kind: 'cross', steps: [greet("oh hey alex. first time in this world together, don't let me die in the first five minutes"), live({ t: 2, player: 'yo' })] },
+  cross_yo3: { world: NIGHT_BARE, facts: FACTS_NIGHT, kind: 'cross', steps: [greet('oh hey Alex. new world, night already, zero plan. perfect', KIT), live({ t: 3, player: 'yo' })] },
+  cross_yo4: { world: NIGHT_BARE, facts: FACTS_NIGHT, kind: 'cross', steps: [greet("oh hey alex. first time in this world, it's night and i have a sword and bread. great start", KIT), live({ t: 3, player: 'yo' })] },
   tic_lmao: { world: NIGHT, facts: FACTS_NIGHT, kind: 'tic', steps: [...NS, live(LMAO)] },
   tic_rock: { world: NIGHT, facts: FACTS_NIGHT, kind: 'tic', steps: [...NS, ...NS2, live(ROCK)] },
   tic_like: { world: NIGHT, facts: FACTS_NIGHT, kind: 'tic', steps: [...NS, ...NS2, ...NS3, live(LIKE)] },
