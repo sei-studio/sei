@@ -1095,7 +1095,9 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     const r = s.result;
     const how =
       r.reason === 'all-ships-sunk'
-        ? r.winner === 'ai' ? 'You sank their whole fleet: you won.' : 'They sank your whole fleet: they won.'
+        ? r.winner === 'ai'
+          ? 'You sank their whole fleet: you won. That is settled; the app checked it.'
+          : 'They sank your whole fleet: they won. That is settled; the app checked it.'
         : r.reason === 'resign'
           ? 'They gave up, so you won.'
           : 'The game ended.';

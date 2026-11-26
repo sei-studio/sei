@@ -778,6 +778,42 @@ function applyMove(
 }
 
 /** True when the piece at (row, col) is part of four in a row (any direction). */
+/**
+ * The line of four (or more) through (row, col), as plain words for the
+ * game-over turn ("up column 6", "across the bottom row, columns 3 to 6").
+ * Null when there is none. A fact about the finished game, not a move.
+ */
+export function winningLineText(
+  board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
+  row: number,
+  col: number,
+): string | null {
+  const color = board[row]?.[col];
+  if (!color) return null;
+  const dirs: Array<[number, number]> = [[0, 1], [1, 0], [1, 1], [1, -1]];
+  for (const [dr, dc] of dirs) {
+    const cells: Array<[number, number]> = [[row, col]];
+    for (const sign of [1, -1]) {
+      for (let step = 1; step < COLS; step++) {
+        const r = row + dr * step * sign;
+        const c = col + dc * step * sign;
+        if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c] !== color) break;
+        cells.push([r, c]);
+      }
+    }
+    if (cells.length < WIN) continue;
+    const cols = cells.map(([, c]) => c + 1).sort((a, b) => a - b);
+    const from = cols[0];
+    const to = cols[cols.length - 1];
+    if (dr === 1 && dc === 0) return `${cells.length} stacked up column ${col + 1}`;
+    const rowFromBottom = ROWS - row;
+    const rowName = rowFromBottom === 1 ? 'the bottom row' : `row ${rowFromBottom} from the bottom`;
+    if (dr === 0) return `${cells.length} across ${rowName}, columns ${from} to ${to}`;
+    return `${cells.length} on a diagonal, columns ${from} to ${to}`;
+  }
+  return null;
+}
+
 export function isWinningPiece(
   board: ReadonlyArray<ReadonlyArray<CONNECT4Color | null>>,
   row: number,
@@ -868,6 +904,11 @@ function boardText(s: Session): string {
   return [...rows, '1 2 3 4 5 6 7'].join('\n');
 }
 
+function lastLineText(s: Session): string {
+  const last = s.history[s.history.length - 1];
+  return (last && winningLineText(s.board, last.row, last.column)) ?? 'four in a row';
+}
+
 function columnsText(s: Session): string {
   const mark = (c: CONNECT4Color | null): string => (c === 'r' ? 'R' : 'Y');
   return Array.from({ length: COLS }, (_, col) => {
@@ -915,7 +956,7 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
     const r = s.result;
     const how =
       r.reason === 'connect-four'
-        ? r.winner === ai ? 'You won with four in a row.' : 'They won with four in a row.'
+        ? `${r.winner === ai ? 'You won' : 'They won'} with ${r.winner === ai ? 'your' : 'their'} ${colorName(r.winner ?? ai)} pieces: ${lastLineText(s)}. That is settled; the app checked it.`
         : r.reason === 'draw'
           ? 'The board filled up, so it is a draw.'
           : r.reason === 'resign'

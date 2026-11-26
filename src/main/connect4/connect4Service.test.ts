@@ -58,6 +58,7 @@ import {
   handlePlayerChat,
   getCONNECT4State,
   isWinningPiece,
+  winningLineText,
   dropRow,
   __setConnect4TestHooks,
   __resetConnect4ForTests,
@@ -195,6 +196,10 @@ describe('Four in a Row rules', () => {
     const anti = empty();
     for (let i = 0; i < 4; i++) anti[2 + i][i] = 'y';
     expect(isWinningPiece(anti, 5, 3)).toBe(true);
+    expect(winningLineText(across, 5, 2)).toBe('4 across the bottom row, columns 2 to 5');
+    expect(winningLineText(up, 2, 6)).toBe('4 stacked up column 7');
+    expect(winningLineText(diag, 4, 1)).toBe('4 on a diagonal, columns 1 to 4');
+    expect(winningLineText(anti, 3, 1)).toBe('4 on a diagonal, columns 1 to 4');
     const three = empty();
     for (let c = 0; c < 3; c++) three[5][c] = 'r';
     three[5][3] = 'y';
