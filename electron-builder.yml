@@ -620,8 +620,29 @@ win:
     # 260908: the prismarine-viewer texture prune (and the 1.16.4 entity-texture
     # exception, 260806) moved to packs/minecraft/prune.mjs with the Minecraft
     # game pack. prismarine-viewer is not in the app tree any more.
-  # Windows ships UNSIGNED for now (RESEARCH §Resolved Q2). SmartScreen's
-  # "unknown publisher" warning is the accepted UX.
+  # Windows signing: release.yml passes azureSignOptions (Azure Trusted
+  # Signing) on a real release and leaves it out on a dry run or when the
+  # secrets are unset, which builds UNSIGNED.
+  #
+  # 261127 (issue #59): sign every bundled native, not just the .exe files.
+  # electron-builder's default (no signExts) signs Sei.exe and any .exe under
+  # app.asar.unpacked only, so v0.7.0 shipped sherpa-onnx.node, its DLLs,
+  # sharp, the Velopack addon, seilink.node and Electron's own ffmpeg/ANGLE/
+  # Vulkan DLLs with no signature. Windows 11 Smart App Control (and any Code
+  # Integrity policy) refuses to load an unsigned native with no reputation,
+  # which silenced every on-device voice. With these extensions listed,
+  # signApp also signs the top-level DLLs and every .dll/.node under
+  # app.asar.unpacked, and the extraResources transformer signs
+  # resources/seilink/seilink.node on copy. Files already signed by Microsoft
+  # (d3dcompiler_47, dxil, onnxruntime) are re-signed with our certificate,
+  # which is harmless. Velopack packs release/win-unpacked AFTER this, so its
+  # packages carry the same signed files (scripts/velopack-pack.mjs keeps
+  # --signExclude so they are not signed a second time per channel).
+  # release.yml's "Verify Windows native signatures" step fails a signed
+  # build that still has an unsigned native.
+  signExts:
+    - .node
+    - .dll
   #
   # publisherName: null is LOAD-BEARING, not decoration. Leaving it unset does
   # NOT mean "no publisher" — electron-builder falls back to the common name of

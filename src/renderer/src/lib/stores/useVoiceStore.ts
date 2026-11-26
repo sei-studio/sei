@@ -980,6 +980,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // auto-downloaded mid-call; Settings owns the download prompt.
         const packId = /VOICE_PACK_MISSING:([\w-]+)/.exec(msg)?.[1];
         set({ callNotice: missingPackNotice(packId) });
+      } else if (/SPEECH_RUNTIME_FAILED: os_blocked/.test(msg)) {
+        // 261127 (issue #59): Windows security (Smart App Control) refused to
+        // load the on-device voice runtime. No on-device voice can speak
+        // until it is allowed, so point at the voices that need no native code.
+        set({ callNotice: t('[voice blocked by Windows security, pick an online voice in Playtime]') });
       } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
         // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
         // (e.g. a mac x64 build shipped without the platform package).

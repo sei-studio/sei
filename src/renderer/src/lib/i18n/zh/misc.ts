@@ -177,6 +177,8 @@ export const ZH_MISC: Record<string, string> = {
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':
     '[语音不可用，本地语音无法在此安装上运行]',
+  '[voice blocked by Windows security, pick an online voice in Playtime]':
+    '[语音被 Windows 安全功能拦截，请在「游玩时长」中选择在线语音]',
   // Backseat share errors (useBackseatStore) — these bypassed t() until 260817.
   '{name} is in your Minecraft world right now. End that session first.':
     '{name} 现在正在你的 Minecraft 世界里。请先结束那边的会话。',
@@ -386,6 +388,7 @@ export const ZH_MISC: Record<string, string> = {
   'Stop the pitch sample': '停止试听',
   'Download a voice pack in Playtime to hear a sample.': '先在「游玩时长」中下载语音包，才能试听。',
   'Local speech cannot run on this install.': '本地语音无法在此安装上运行。',
+  'Windows security blocked on-device voices on this PC.': 'Windows 安全功能在此电脑上拦截了设备端语音。',
   'Calmness': '平稳度',
   'Higher is steadier and more even. Lower is more dramatic.':
     '越高越平稳均匀，越低越富有戏剧性。',
