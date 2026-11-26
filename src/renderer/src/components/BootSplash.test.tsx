@@ -2,12 +2,15 @@
  * 261029 review: App's 'loading' view used to be an empty fragment, a blank
  * window while the boot routing waited for main's auth state.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+const bridge = vi.hoisted((): { launchStartedAt?: number } => ({}));
+vi.mock('../lib/ipcClient', () => ({ sei: bridge }));
+
 import { BootSplash } from './BootSplash';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +22,16 @@ describe('BootSplash', () => {
     expect(html).toContain('role="status"');
     expect(html).toContain('role="img"');
     expect(html).toContain('sei-text.png');
+    expect(html).toContain('animation-delay:1200ms');
+  });
+  it('fades the mark in on the launch clock (261123)', () => {
+    bridge.launchStartedAt = Date.now() - 5000;
+    try {
+      const html = renderToStaticMarkup(React.createElement(BootSplash));
+      expect(html).toContain('animation-delay:-800ms');
+    } finally {
+      delete bridge.launchStartedAt;
+    }
   });
   it("is what App renders for the 'loading' view", () => {
     const app = readFileSync(resolve(__dirname, '../App.tsx'), 'utf-8');

@@ -7,7 +7,7 @@
  *
  * ── Why this does not hold 900 frames ────────────────────────────────────
  *
- * At 60 fps, BUFFER_MS of retained 720p video is several hundred raw frames —
+ * At 30-60 fps, BUFFER_MS of retained 720p video is several hundred raw frames —
  * several GB, or 60 JPEG encodes a second, and neither is survivable on a
  * machine that is also running a game.
  *
@@ -18,9 +18,9 @@
  * cell-sized JPEG every tenth of a second, ~90 of them (~3 MB) covering
  * BUFFER_MS, at 10 encodes/second rather than 60.
  *
- * The full-rate 60 fps video is not lost either: MediaRecorder in the
- * controller keeps it for clip export, which is the only thing that actually
- * needs every frame.
+ * The full-rate video is kept only when the player turned Clip That on
+ * (261123): MediaRecorder in the controller keeps it for clip export, the
+ * only thing that needs every frame. Off (the default), no recorder runs.
  *
  * 260801: this used to keep ONE frame per one-second bucket, chosen by running
  * argmax over audio gain. That made the cell spacing depend on where the loud
@@ -127,9 +127,30 @@ let currentGain = -100;
 const jolt = createJoltState();
 
 let running = false;
-/** Frames seen vs samples encoded, surfaced for diagnostics. */
+/** Frames analysed vs samples encoded, surfaced for diagnostics and the
+ *  backseat_perf event (cumulative; the controller takes differences). */
 let framesSeen = 0;
 let encodes = 0;
+/** 261123: frames closed on arrival because the stream runs faster than the
+ *  analysis rate (Clip That at 60/120 fps), and samples skipped because the
+ *  previous JPEG encode had not finished (the "falling behind" signal). */
+let framesSkipped = 0;
+let sampleBusy = 0;
+
+/**
+ * 261123: the worker analyses at most ANALYSIS_FPS frames a second (the
+ * controller sends it), whatever the stream delivers. A frame inside the gap
+ * is closed untouched. The 0.85 lets a 30 fps stream's jitter through whole
+ * while a 60 fps stream keeps every other frame and a 120 fps one every
+ * fourth. Nothing downstream needs more: sampling is 10 Hz and both jolt arms
+ * are time-based (signals.test: "a 10 Hz sim and a 60 fps app agree").
+ */
+let minFrameGapMs = 0;
+let lastAnalysedAt = 0;
+/** A sample is due within this much of SAMPLE_INTERVAL_MS. Without it a 30 fps
+ *  stream (frames ~33 ms apart) lands its 10 Hz sample on the frame AFTER the
+ *  100 ms mark about half the time, and the ring thins to ~7.5 Hz. */
+const SAMPLE_SLACK_MS = 10;
 
 /**
  * Periodic signal report (260728), so "is the jolt arm alive" is answerable
@@ -206,7 +227,6 @@ const JOLT_THRESHOLDS = {
  * the encode itself finishes later and the frame loop has moved on.
  */
 function sample(at: number, thumb: Uint8ClampedArray): void {
-  if (encoding) return;
   encoding = true;
   try {
     encodeCtx!.drawImage(cellCanvas!, 0, 0);
@@ -234,10 +254,25 @@ function sample(at: number, thumb: Uint8ClampedArray): void {
 
 async function onFrame(frame: VideoFrame): Promise<void> {
   const now = Date.now();
+  if (minFrameGapMs && lastAnalysedAt && now - lastAnalysedAt < minFrameGapMs) {
+    frame.close();
+    framesSkipped++;
+    return;
+  }
+  lastAnalysedAt = now;
   const srcW = frame.displayWidth;
   const srcH = frame.displayHeight;
+  // Uniform 10 Hz, independent of the capture rate. 261123: decided BEFORE
+  // drawing, because the cell-sized copy is only ever read by sample(); it used
+  // to be drawn on every frame (60 a second) to be used on ten.
+  const sampleDue = now - lastSampleAt >= SAMPLE_INTERVAL_MS - SAMPLE_SLACK_MS;
+  if (sampleDue) {
+    lastSampleAt = now;
+    if (encoding) sampleBusy++;
+  }
+  const drawCell = sampleDue && !encoding;
   try {
-    drawFitted(cellCtx!, frame, srcW, srcH, 0, 0, CELL_W, CELL_H);
+    if (drawCell) drawFitted(cellCtx!, frame, srcW, srcH, 0, 0, CELL_W, CELL_H);
     thumbCtx!.drawImage(frame, 0, 0, THUMB_W, THUMB_H);
   } finally {
     // A VideoFrame holds a hardware buffer; not closing it stalls the whole
@@ -253,13 +288,10 @@ async function onFrame(frame: VideoFrame): Promise<void> {
     : 0;
   if (now - lastThumbAt >= THUMB_INTERVAL_MS) pushThumb(jolt, now, thumb);
 
-  // Uniform 10 Hz, independent of the capture rate. sample() returns
-  // immediately; the encode finishes on a microtask so the frame loop is never
-  // stalled by it.
-  if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
-    lastSampleAt = now;
-    sample(now, thumb);
-  }
+  // sample() returns immediately; the encode finishes on a microtask so the
+  // frame loop is never stalled by it. One encode in flight at a time: a
+  // stalled encode drops samples instead of queueing them out of order.
+  if (drawCell) sample(now, thumb);
   // 261010: a 2.3 KB thumbnail twice a second, so the renderer can tell at
   // playback time how far the screen has moved from a line's frame without a
   // round trip (the audio queue's check is synchronous).
@@ -298,6 +330,8 @@ async function onFrame(frame: VideoFrame): Promise<void> {
       // screen, so a log line reporting the delta alone says nothing.
       colorThr: round3n(colorThreshold(jolt, JOLT_THRESHOLDS)),
       samples: ring.length,
+      // 261123: cumulative counters for the backseat_perf event.
+      totals: { analysed: framesSeen, skipped: framesSkipped, encodes, sampleBusy },
     });
     lastStatsAt = now;
     statsFramesSeen = framesSeen;
@@ -457,13 +491,14 @@ async function consume(readable: ReadableStream<VideoFrame>): Promise<void> {
 
 self.onmessage = async (e: MessageEvent): Promise<void> => {
   const msg = e.data as
-    | { type: 'start'; readable: ReadableStream<VideoFrame> }
+    | { type: 'start'; readable: ReadableStream<VideoFrame>; analysisFps?: number }
     | { type: 'gain'; db: number }
     | { type: 'composite'; requestId: string }
     | { type: 'stop' };
 
   if (msg.type === 'start') {
     ensureCanvases();
+    minFrameGapMs = msg.analysisFps && msg.analysisFps > 0 ? (1000 / msg.analysisFps) * 0.85 : 0;
     void consume(msg.readable);
     return;
   }

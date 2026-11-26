@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener } from './ownRepeats.js'
+import { groupTurns, repeatedOwnTerms, ownRepeatsNote, recentOwnTurns, repeatedOwnPhrases, repeatedOpener, repeatedPlayerAsk, repeatedAskNote, repeatedAskTurn, ASK_NEAR_BLOCKS, answersOwnLine, lineLeftUnanswered, ANSWERS_OWN_LINE_MS } from './ownRepeats.js'
 
 // One say() line is recorded as several chat messages within a few ms; turns
 // are seconds apart.
@@ -439,5 +439,164 @@ describe('repeatedOpener, context and signatures', () => {
     const lines = session(["table's down", "table's ready"])
     expect(ownRepeatsNote(lines, [], { now: nowAfter(2) })).toContain('keep starting with')
     expect(ownRepeatsNote(lines, [], { now: nowAfter(2), context: ['crafting_table×1'] })).not.toContain('keep starting with')
+  })
+})
+
+// 261121 (pass 60): the nervous player at night saying "stay close pls" again
+// and again (11-20 scorecard combat_night-02, real lines).
+describe('repeatedPlayerAsk', () => {
+  const T = (s) => 1_000_000 + s * 1000
+  const P = [
+    [144, 'ok sui im behind u. more coming?'],
+    [156, 'ok thx sui. stay close pls, skeletons scare me'],
+    [169, 'ok sui thx. stay close pls'],
+    [209, 'ok sui. stay close pls, im scared of skeletons'],
+    [220, 'ok sui thx. stay close pls'],
+  ].map(([t, text]) => ({ at: T(t), who: 'Alex', text }))
+  const S = [143, 146, 157, 171, 199, 210, 222].map((t) => ({ at: T(t), text: 'line' }))
+  const upTo = (k) => {
+    const p = P.slice(0, k)
+    const now = p.at(-1).at + 500
+    return repeatedPlayerAsk(p, S.filter((s) => s.at < now), { now, names: ['Alex', 'Sui'] })
+  }
+
+  it('is quiet for the first and second time they ask', () => {
+    expect(upTo(2)).toBeNull()
+    expect(upTo(3)).toBeNull()
+  })
+
+  it('names the third time on, with the time span and their last such line', () => {
+    expect(upTo(4)).toEqual({ times: 3, seconds: 53, earlier: 'ok sui thx. stay close pls' })
+    expect(upTo(5)).toEqual({ times: 4, seconds: 64, earlier: 'ok sui. stay close pls, im scared of skeletons' })
+  })
+
+  it('needs her answers in between', () => {
+    const now = P[3].at + 500
+    expect(repeatedPlayerAsk(P.slice(0, 4), [{ at: T(143), text: 'x' }], { now, names: ['Sui'] })).toBeNull()
+  })
+
+  it('leaves out questions, other speakers and lines with a new ask in them', () => {
+    const q = [...P.slice(0, 4), { at: T(220), who: 'Alex', text: 'stay close pls?' }]
+    expect(repeatedPlayerAsk(q, S, { now: T(221), names: ['Sui'] })).toBeNull()
+    const sib = P.slice(0, 4).map((l, i) => (i === 2 ? { ...l, who: 'Lyra', companion: true } : l))
+    expect(repeatedPlayerAsk(sib, S, { now: T(210), names: ['Sui'] })).toBeNull()
+    const fresh = [...P.slice(0, 4), { at: T(220), who: 'Alex', text: 'ok sui, a creeper is close, stay close and kill it' }]
+    expect(repeatedPlayerAsk(fresh, S, { now: T(221), names: ['Sui'] })).toBeNull()
+  })
+
+  it('forgets asks older than the window', () => {
+    const old = P.map((l, i) => (i < 3 ? { ...l, at: l.at - 200_000 } : l))
+    expect(repeatedPlayerAsk(old.slice(0, 4), S, { now: T(210), names: ['Sui'] })).toBeNull()
+  })
+
+  it('is a plain note of its own, not part of the own-lines note', () => {
+    const self = [[146, 'nothing close right now'], [157, 'staying on you alex'], [171, 'yeah yeah i got you alex'], [210, "im right here alex"]]
+      .map(([t, text]) => ({ at: T(t), text }))
+    const note = repeatedAskNote(P.slice(0, 4), self, { now: T(210), names: ['Alex'], selfNames: ['Sui'] })
+    expect(note).toContain('They have now said much the same thing three times in the last 53 seconds (before this: "ok sui thx. stay close pls"), and you answered each time.')
+    expect(note).toContain('If you are not doing it yet, do it now.')
+    // 261122 (pass 60b): the new thing must be true now, a claimed action needs
+    // its call; no open "something you can do" (it invited invented builds).
+    expect(note).toContain('say something else that is true right now')
+    expect(note).toContain('Say you are doing something only if you call its action in this turn.')
+    expect(note).not.toContain('something you can do')
+    expect(note).not.toMatch(/[—–]/)
+    expect(repeatedAskNote(P.slice(0, 3), self, { now: T(170), names: ['Alex'], selfNames: ['Sui'] })).toBeNull()
+    expect(ownRepeatsNote(self, P.slice(0, 4), { now: T(210), names: ['Alex'] }) ?? '').not.toContain('much the same thing')
+  })
+})
+
+// 261123 (pass 61): the same ask while she is already by their side owes no
+// reply; the distance comes from state, never from their words.
+describe('repeatedAskTurn', () => {
+  const T = (s) => 1_000_000 + s * 1000
+  const P = [
+    [156, 'ok thx sui. stay close pls, skeletons scare me'],
+    [169, 'ok sui thx. stay close pls'],
+    [209, 'ok sui. stay close pls, im scared of skeletons'],
+  ].map(([t, text]) => ({ at: T(t), who: 'Alex', text }))
+  const self = [[157, 'staying on you alex'], [171, 'yeah yeah i got you alex'], [199, 'skeletons are far']]
+    .map(([t, text]) => ({ at: T(t), text }))
+  const turn = (near, p = P) => repeatedAskTurn(p, self, { now: T(210), names: ['Alex'], selfNames: ['Sui'], near })
+
+  it('lifts the reply when she is within a few blocks, and says where she is', () => {
+    const r = turn({ distance: 2, following: false })
+    expect(r.replyOptional).toBe(true)
+    expect(r.note).toContain('They have now said much the same thing three times')
+    expect(r.note).toContain('You are 2 blocks from them.')
+    expect(r.note).toContain('this line needs no answer: you can end the turn without say()')
+    expect(r.note).toContain('If it is not happening yet, do it now.')
+    expect(r.note).not.toMatch(/[—–]/)
+    expect(turn({ distance: 1, following: true }).note).toContain('You are following them and right next to them.')
+    expect(turn({ distance: ASK_NEAR_BLOCKS, following: false }).replyOptional).toBe(true)
+  })
+
+  it('keeps the reply owed when she is farther off, or where she is is unknown', () => {
+    for (const near of [{ distance: ASK_NEAR_BLOCKS + 1, following: false }, { distance: 12, following: true }, null]) {
+      const r = turn(near)
+      expect(r.replyOptional).toBe(false)
+      expect(r.note).toBe(repeatedAskNote(P, self, { now: T(210), names: ['Alex'], selfNames: ['Sui'] }))
+    }
+  })
+
+  it('takes a running follow as by their side only when no distance is known', () => {
+    const r = turn({ distance: null, following: true })
+    expect(r.replyOptional).toBe(true)
+    expect(r.note).toContain('You are following them.')
+    expect(turn({ distance: null, following: false }).replyOptional).toBe(false)
+  })
+
+  it('is null when the line is no repeat', () => {
+    expect(turn({ distance: 1, following: false }, P.slice(0, 2))).toBeNull()
+  })
+})
+
+// 261124 (pass 63): whether the player's newest line answers her fresh turn,
+// and whether she left their newest line without a reply.
+describe('answersOwnLine', () => {
+  const T = 1_800_000_000_000
+  const p = (sec, text, who = 'Alex') => ({ at: T + sec * 1000, text, who })
+  const s = (sec, text) => ({ at: T + sec * 1000, text })
+
+  it('is true for a line right after her turn', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'thx for coming back. im good now')], [s(5, 'its dead, you good')], { now: T + 12_000 })).toBe(true)
+  })
+
+  it('is false for a question', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'how is your health')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+    expect(answersOwnLine([p(0, 'zombie!!'), p(12, 'ur ok?')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('is false after a quiet spell, or with no turn of hers', () => {
+    const late = 5 + ANSWERS_OWN_LINE_MS / 1000 + 1
+    expect(answersOwnLine([p(0, 'zombie!!'), p(late, 'ok back')], [s(5, 'its dead')], { now: T + late * 1000 })).toBe(false)
+    expect(answersOwnLine([p(12, 'ok thx')], [], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('is false for their second line in a row since her turn', () => {
+    expect(answersOwnLine([p(0, 'zombie!!'), p(8, 'ok'), p(12, 'ok one more')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(false)
+  })
+
+  it('leaves teammate lines out', () => {
+    const mate = { at: T + 8000, text: 'on my way', who: 'Lyra', companion: true }
+    expect(answersOwnLine([p(0, 'zombie!!'), mate, p(12, 'ok thx')], [s(5, 'its dead')], { now: T + 12_000 })).toBe(true)
+  })
+})
+
+describe('lineLeftUnanswered', () => {
+  const T = 1_800_000_000_000
+  const p = (sec, text) => ({ at: T + sec * 1000, text, who: 'Alex' })
+  const s = (sec, text) => ({ at: T + sec * 1000, text })
+
+  it('names their fresh line when she said nothing since', () => {
+    expect(lineLeftUnanswered([p(10, 'ok thx. just gonna keep eating')], [s(5, 'eat up')], { now: T + 16_000 }))
+      .toEqual({ text: 'ok thx. just gonna keep eating', seconds: 6 })
+  })
+
+  it('is null once she spoke after it, when it is old, or for a question', () => {
+    expect(lineLeftUnanswered([p(10, 'ok thx')], [s(12, 'np')], { now: T + 16_000 })).toBeNull()
+    expect(lineLeftUnanswered([p(10, 'ok thx')], [s(5, 'eat up')], { now: T + 10_000 + ANSWERS_OWN_LINE_MS + 1 })).toBeNull()
+    expect(lineLeftUnanswered([p(10, 'where are u')], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
+    expect(lineLeftUnanswered([], [s(5, 'eat up')], { now: T + 16_000 })).toBeNull()
   })
 })

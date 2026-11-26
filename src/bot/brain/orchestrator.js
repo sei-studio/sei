@@ -47,6 +47,8 @@ import {
   nextTimeGreeting,
   MEMORY_GOAL_TAIL,
   ACK_LINE,
+  ACK_LINE_ANSWER,
+  ACK_ANSWER_TAIL,
   staleTurnText,
   STALE_TURN_SAY_RESULT,
   STALE_TURN_TOOL_RESULT,
@@ -55,7 +57,7 @@ import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGa
 import { buildAnthropicTools } from './schemaBridge.js'
 import { createInflightTracker, describeArgs } from './inflight.js'
 import { createConvoMemory, playerLabel } from './convoMemory.js'
-import { ownRepeatsNote, recentOwnTurns } from './ownRepeats.js'
+import { answersOwnLine, lineLeftUnanswered, ownRepeatsNote, recentOwnTurns, repeatedAskTurn } from './ownRepeats.js'
 import { createLookupLog, extractServerLookup } from './lookups.js'
 import {
   describeActionEvent, describeAttackEvent, describeDeathEvent, actionEventKey,
@@ -101,6 +103,8 @@ import { linkGoalToSpine, linkFinished } from './goalLink.js'
 // it mirrors the clip the TTS proxy route applies anyway (MAX_TTS_CHARS in
 // src/main/voice/tts.ts).
 const APP_LINE_MAX_CHARS = 2500
+/** 261123: most game-session rows the seed's chat_continuity shows (main: continuityCore MAX_SESSION_ROWS). */
+export const SEED_MAX_SESSION_ROWS = 4
 
 /**
  * Hard clip that never splits a surrogate pair. `slice(0, n)` counts UTF-16
@@ -801,9 +805,10 @@ export async function composeSeedBlocks({
         if (typeof config._seiContinuityLead === 'string') {
           lead = config._seiContinuityLead
         } else {
-          const newestTs = (cont.recent ?? [])
-            .map((m) => (typeof m?.ts === 'number' ? m.ts : 0))
-            .reduce((a, b) => Math.max(a, b), 0)
+          const newest = (cont.recent ?? [])
+            .filter((m) => typeof m?.ts === 'number')
+            .reduce((a, m) => (!a || m.ts >= a.ts ? m : a), null)
+          const newestTs = newest ? newest.ts : 0
           if (newestTs > 0) {
             const gapMin = Math.max(0, Math.round((Date.now() - newestTs) / 60_000))
             const gapPhrase =
@@ -811,12 +816,16 @@ export async function composeSeedBlocks({
               : gapMin < 60 ? `about ${gapMin} minutes`
               : gapMin < 1_440 ? `about ${Math.round(gapMin / 60)} hour${Math.round(gapMin / 60) === 1 ? '' : 's'}`
               : `about ${Math.round(gapMin / 1_440)} day${Math.round(gapMin / 1_440) === 1 ? '' : 's'}`
+            // 261113 (v0.7 D1): the handoff now carries game sessions too, so
+            // the last time together may have been a game, not a text chat.
             lead =
-              `You were texting with the player in the app ${gapPhrase} before joining this world. ` +
-              'Continue as the same person — do not act like you only just met.' +
-              (gapMin < 3
-                ? ' That conversation is only moments old — pick it up mid-thread; do not greet or reminisce like time has passed.'
-                : '')
+              newest.role === 'session'
+                ? `The last time you and the player were together was a game session that ended ${gapPhrase} ago (below). Continue as the same person who was there, not as if you only just met.`
+                : `You were texting with the player in the app ${gapPhrase} before joining this world. ` +
+                  'Continue as the same person — do not act like you only just met.' +
+                  (gapMin < 3
+                    ? ' That conversation is only moments old — pick it up mid-thread; do not greet or reminisce like time has passed.'
+                    : '')
           }
           config._seiContinuityLead = lead
         }
@@ -836,11 +845,24 @@ export async function composeSeedBlocks({
           const mm = String(d.getMinutes()).padStart(2, '0')
           return ` (${d.getDate()} ${months[d.getMonth()]} ${hh}:${mm})`
         }
-        const lines = cont.recent
-          .filter((m) => m && typeof m.text === 'string')
-          .map((m) => `${m.role === 'user' ? 'Player' : 'You'}${stamp(m.ts)}: ${m.text}`)
-          .join('\n')
-        if (lines) parts.push('\nThe last things you said to each other:\n' + lines)
+        // 261113: a 'session' row is a finished game session with what
+        // happened in it (main chat/continuityCore.ts launchContinuityFrom).
+        const who = (role) => (role === 'user' ? 'Player' : role === 'session' ? 'Game session' : 'You')
+        // 261123 (review): at most SEED_MAX_SESSION_ROWS game sessions, the
+        // newest, however many the handoff carries (main caps it the same way,
+        // continuityCore.ts MAX_SESSION_ROWS); every chat line stays.
+        let extraSessions = cont.recent.filter((m) => m && m.role === 'session').length - SEED_MAX_SESSION_ROWS
+        const rows = cont.recent.filter(
+          (m) => m && typeof m.text === 'string' && !(m.role === 'session' && extraSessions-- > 0),
+        )
+        const lines = rows.map((m) => `${who(m.role)}${stamp(m.ts)}: ${m.text}`).join('\n')
+        if (lines) {
+          parts.push(
+            rows.some((m) => m.role === 'session')
+              ? '\nWhat the two of you said and played most recently, oldest first:\n' + lines
+              : '\nThe last things you said to each other:\n' + lines,
+          )
+        }
       }
       blocks.push({ type: 'text', name: 'chat_continuity', text: parts.join('\n') })
     }
@@ -1646,6 +1668,33 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     } catch { return null }
   }
   const ownRepeatsTail = (mode) => { const t = ownRepeatsText(mode); return t ? `\n\n${t}` : '' }
+  // 261121 (pass 60): the player saying much the same line for the third
+  // time or more, after she answered each one (ownRepeats.js
+  // repeatedPlayerAsk). Placed right under their line. Never throws.
+  // 261123 (pass 61): with where she is relative to the speaker (adapter
+  // playerNearby: distance, her follow on them). Already by their side, the
+  // turn owes no reply ({ replyOptional: true }); the callers drop the reply
+  // mandate and the unanswered-line retry for it.
+  function repeatedAskFor(speaker) {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      let near = null
+      try { near = (speaker && typeof adapter.playerNearby === 'function') ? adapter.playerNearby(String(speaker)) : null } catch { near = null }
+      return repeatedAskTurn(playerLines, selfLines, {
+        names: [config?.player_display_name, config?.player_username, ...companions],
+        selfNames: [config?.persona?.name, ownUsername()],
+        near,
+      })
+    } catch { return null }
+  }
+  // 261124 (pass 63): the player's newest line answers her fresh turn
+  // (ownRepeats.js answersOwnLine). Never throws.
+  function answersOwnLineNow() {
+    try {
+      const { selfLines, playerLines } = convoMemory.recentChat._internal
+      return answersOwnLine(playerLines, selfLines)
+    } catch { return false }
+  }
   // 261020 (pass 20): the turn after one of her actions finished carried no
   // line of hers, so a line she had just said went out again: "hey alex"
   // twice when a dig came back out of range, "you're welcome" on the "thanks"
@@ -2964,6 +3013,11 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const crossedTail = crossed
       ? `\n\n${NUDGES.greetCrossed}`
       : humanLine ? `\n\n${NUDGES.replyNoRestate}` : ''
+    // 261123 (pass 61): a line they keep saying while she is already by
+    // their side owes no reply (repeatedAskFor).
+    const repeatAsk = (humanLine && !crossed && !voiceCallActive) ? repeatedAskFor(who) : null
+    const replyOptional = repeatAsk?.replyOptional === true
+    if (replyOptional) loop._noReplyOwed = true
     return convoLead + unansweredLead + withGreetingHint(NUDGES.actionTurn({
       action,
       stopTool: stopToolForAction(action),
@@ -2980,7 +3034,9 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
       peers: companions,
       fromTeammate: teammate === true,
       ownAction,
+      replyOptional,
     })) + crossedTail + (humanLine ? heartbeatNowTail() + ownRepeatsTail(crossed ? 'greeted' : 'reply') : '') +
+      (repeatAsk ? `\n\n${repeatAsk.note}` : '') +
       // 261112: their line cut her off mid-line (see cutInOf).
       (humanLine && cutIn && !unanswered ? `\n\n${NUDGES.cutOff(cutIn.line)}` : '')
   }
@@ -3295,6 +3351,10 @@ function maybeWarnByteCap(loop, warned) {
         return
       }
     }
+
+    // 261126 (O5): reply_latency `dispatch_ms`, the brain picked the line up
+    // (after the death hold above, which re-sends it later).
+    if (isPlayerChat) { try { sessionActionStats.noteLineDispatched() } catch {} }
 
     // 261011: a NEW player line, attack or death preempts whatever is left of
     // a previous turn's drained batch, exactly as it preempts a live action.
@@ -3712,12 +3772,25 @@ function maybeWarnByteCap(loop, warned) {
         loop._groupVoiceLine = isVoiceLine && (companions.length > 0 || fromTeammate)
         const crossed = !groupVoice && !teammateVoice && !fromTeammate && greetCrossed(loop)
         greetedTurn = crossed
-        eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice
-          : crossed ? NUDGES.playerInterruptHintGreetCrossed
-          : NUDGES.playerInterruptHint
         // 261014: say whether anything is running, rather than tell every reply
         // that its say() keeps "the current action" going.
         const plainReply = !groupVoice && !teammateVoice && !crossed
+        // 261123 (pass 61): a line they keep saying while she is already by
+        // their side owes no reply (repeatedAskFor): the hint without the
+        // reply sentence (the one a crossed hello takes), no ACK_LINE, no
+        // "Answer it with say()", and no unanswered-line retry.
+        const repeatAsk = (plainReply && !fromTeammate) ? repeatedAskFor(speakerName) : null
+        const replyOptional = repeatAsk?.replyOptional === true
+        if (replyOptional) loop._noReplyOwed = true
+        // 261124 (pass 63): a line that answers her own fresh turn may only
+        // acknowledge it. The let-off moves from ACK_LINE to the end of the
+        // block, right under their line, so "Answer it with say()" no longer
+        // overrules it (ACK_ANSWER_TAIL).
+        // A line they keep repeating has its own note (repeatAsk) and keeps it.
+        const ackMayEnd = plainReply && !fromTeammate && !repeatAsk && answersOwnLineNow()
+        eventAddendum += (groupVoice || teammateVoice) ? NUDGES.playerInterruptHintGroupVoice
+          : (crossed || replyOptional) ? NUDGES.playerInterruptHintGreetCrossed
+          : NUDGES.playerInterruptHint
         const idleNow = !inflight.current()
         // 261029 (pass 30): on a plain reply the idle sentence moves to the
         // end of the turn, right after "Answer it with say()." Up in the
@@ -3756,7 +3829,7 @@ function maybeWarnByteCap(loop, warned) {
             ? NUDGES.greetCrossed
             // 261101 (pass 34): the reply mandate, with an acknowledgement
             // let off (ACK_LINE).
-            : `${ACK_LINE} ` +
+            : `${replyOptional ? '' : `${ackMayEnd ? ACK_LINE_ANSWER : ACK_LINE} `}` +
               NUDGES.replyNoRestate +
               // 261013 (pass 6b): the mid-action variants already end on this
               // check; a line that starts a fresh loop did not, and errands
@@ -3766,11 +3839,13 @@ function maybeWarnByteCap(loop, warned) {
           (fromTeammate ? '' : goodbyeNotStartedTail()) +
           `\n\nTheir line, ${lineSpeaker}: ${lineText}` +
           (cutIn ? `\n${NUDGES.cutOff(cutIn.line)}` : '') +
+          (repeatAsk ? `\n${repeatAsk.note}` : '') +
           // Said again right under the line. Ending the block on the line
           // alone read as a transcript to continue: she wrote say("...") in
           // her text instead of calling the tool (persona eval 261017, 20 of
           // 150 player-line samples silent that way, 0 with this sentence).
-          (plainReply ? `\nAnswer it with say().${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '')
+          (plainReply && !replyOptional ? `\n${ackMayEnd ? ACK_ANSWER_TAIL : 'Answer it with say().'}${idleNow ? ` ${NUDGES.replyWhileIdle}` : ''}` : '') +
+          (replyOptional && idleNow ? `\n${NUDGES.replyWhileIdle}` : '')
         eventText = `Event: ${event}${eventAddendum}`
       } else {
         eventText = `Event: ${event}\nData: ${formatEventData(event, data)}${eventAddendum}`
@@ -3828,6 +3903,20 @@ function maybeWarnByteCap(loop, warned) {
     // this session, every fresh-loop seed carries the short greet hint (no-op
     // once greeted, and skipped when the full FIRST CONTACT block is present).
     eventText = withGreetingHint(eventText)
+    // 261124 (pass 63): an idle tick while the player's newest line is
+    // still unanswered (she let an acknowledgement go, ACK_ANSWER_TAIL)
+    // quotes her last lines with the short 'result' form instead of the
+    // idle form. With the idle form the tick 5 s later said the promise she
+    // had just not repeated ("still right here alex. u doing ok": 4 of 4
+    // pass63-probe idle1 runs re-promised); with the quote none of 10 did,
+    // most asked a new question instead.
+    let idleAfterUnanswered = null
+    if ((event === 'sei:idle' || event === 'idle') && !playerMessageText) {
+      try {
+        const { selfLines, playerLines } = convoMemory.recentChat._internal
+        idleAfterUnanswered = lineLeftUnanswered(playerLines, selfLines)
+      } catch { idleAfterUnanswered = null }
+    }
     // 260725: paused turn (only voice-call lines reach here while paused — the
     // FSM hold blocks everything else). The pause contract strips ALL
     // Minecraft context: no snapshot, no memory/heartbeat/companions blocks,
@@ -3859,7 +3948,7 @@ function maybeWarnByteCap(loop, warned) {
           eventText, snapshotText: snapshotText(),
           recentConversationText: convoMemory.recentChat.formatConversationBlock(),
           lookupsText: lookupLog.formatBlock(),
-          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : 'idle'),
+          ownRepeatsText: ownRepeatsText(playerMessageText ? (greetedTurn ? 'greeted' : 'reply') : idleAfterUnanswered ? 'result' : 'idle'),
           playerMessageText,
           companions,
           frontierText: progFrontierText,
@@ -6850,6 +6939,8 @@ function maybeWarnByteCap(loop, warned) {
   async function callPersonality(loop, signal) {
     if (!personalityBucket.tryAcquire()) {
       logger.warn('[sei/orch] Rate limit hit — dropping personality call')
+      // 261126 (O5): counted, so a silent reply can be traced to it.
+      try { sessionActionStats.noteLlmRateLimited() } catch {}
       return null
     }
     const budget = config.anthropic.thinking_budget_tokens ?? 0
@@ -6910,6 +7001,11 @@ function maybeWarnByteCap(loop, warned) {
           loop._earlySay = { id: toolUseId, text, result: _emitSayLine(loop, text) }
         }
       : undefined
+    // 261126 (O5): reply_latency phases (actionStats.js). Timestamps only.
+    let callStat = null
+    try { callStat = sessionActionStats.noteLlmCallStart() } catch {}
+    let callAborted = false
+    let callFailed = false
     try {
       const resp = await anthropic.call({
       systemBlocks: cachedSystemBlocks,
@@ -6946,8 +7042,11 @@ function maybeWarnByteCap(loop, warned) {
           sessionActionStats.noteLlmError(err)
         }
       } catch {}
+      if (err?.isTimeout === true || err?.name === 'AbortError' || signal?.aborted) callAborted = true
+      else callFailed = true
       throw err
     } finally {
+      try { sessionActionStats.noteLlmCallEnd(callStat, { aborted: callAborted, failed: callFailed }) } catch {}
       loop._llmCallInFlight = false
       // One-shot: consumed by this call, never by the next one.
       loop._replaySay = null
@@ -7011,6 +7110,9 @@ function maybeWarnByteCap(loop, warned) {
         cutIn: pendingInterrupt?.cutIn ?? cutInOf(data),
       }
       try { loop.abortController.abort() } catch {}
+      // 261126 (O5): a claimed line never reaches handleDispatch; this fold
+      // is its pickup (reply_latency `dispatch_ms`).
+      try { sessionActionStats.noteLineDispatched() } catch {}
       // Claimed events never reach handleDispatch, so its drain preempt check
       // would miss this line.
       if (!(data && typeof data === 'object' && drainSpared.has(data))) abortDrain('player spoke')

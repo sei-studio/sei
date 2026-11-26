@@ -41,11 +41,13 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AvatarCamera, AvatarEmotion } from '@shared/ipc';
-import type { RoomState, RoomTime } from '@shared/seilinkRoom';
+import type { RoomFigure, RoomState, RoomTime } from '@shared/seilinkRoom';
+import { facepackFigure } from '@shared/facepack';
+import { isAnimaPackId } from '@shared/anima';
 import { sei } from '../../lib/ipcClient';
 import { AvatarView } from '../../lib/avatar/AvatarView';
 import { FacepackView } from '../../lib/facepack/FacepackView';
-import type { FacepackSource } from '../../lib/facepack/facepackSource';
+import { ipcPackSource, type FacepackSource } from '../../lib/facepack/facepackSource';
 import { portraitSrc } from '../../lib/portraitSrc';
 import { loadCutout, loadServerCutout, peekCutout, peekServerCutout, type CutoutImage } from '../../lib/seilink/portraitCutout';
 import { FramePacer } from '../../lib/framePacer';
@@ -69,6 +71,19 @@ export type RoomAvatarKind = 'live2d' | 'rig' | 'facepack' | 'cutout' | 'portrai
 /** Kinds with no face to move: they bounce when she talks and lean toward her gaze. */
 function faceless(kind: RoomAvatarKind | null | undefined): boolean {
   return kind === 'cutout' || kind === 'portrait' || kind === 'placeholder';
+}
+
+/**
+ * 261121: the room figure kind of what she shows (RoomCanvas slot.onFigure;
+ * a pack's seat fit redraws her chair for a bust). Only the chibi art the
+ * rooms were painted around is 'seated': a chibi rig, or a face set that is
+ * one (facepackFigure). Everything else is a head-and-shoulders picture at
+ * real proportions.
+ */
+export function roomFigureOf(kind: RoomAvatarKind, facepack?: 'seated' | 'bust'): RoomFigure {
+  if (kind === 'rig') return 'seated';
+  if (kind === 'facepack') return facepack ?? 'bust';
+  return 'bust';
 }
 
 /** 'auto': her imported avatar when she has one; 'sei': the Sei avatar only; 'imported': her model (falls back like auto). */
@@ -141,7 +156,18 @@ const TIME_GRADE: Record<RoomTime, string> = {
 
 // ── kind resolution ─────────────────────────────────────────────────────────
 
-type Resolved = { kind: RoomAvatarKind; packId?: string; cut?: { sha256: string; png: Uint8Array } };
+type Resolved = { kind: RoomAvatarKind; packId?: string; cut?: { sha256: string; png: Uint8Array }; figure?: 'seated' | 'bust' };
+
+/** 261121: a face set's figure kind from its manifest (an anima pack is always a bust; no manifest reads as one). */
+async function facepackFigureOf(source: FacepackSource | null, packId: string | null): Promise<'seated' | 'bust'> {
+  if (packId && isAnimaPackId(packId)) return 'bust';
+  try {
+    const src = source ?? (packId ? ipcPackSource(packId) : null);
+    return facepackFigure(src ? await src.manifest() : null);
+  } catch {
+    return 'bust';
+  }
+}
 
 async function resolveKind(
   characterId: string,
@@ -159,11 +185,11 @@ async function resolveKind(
     }
   }
   if (!failed.has('facepack')) {
-    if (facepack) return { kind: 'facepack' };
+    if (facepack) return { kind: 'facepack', figure: await facepackFigureOf(facepack, null) };
     if (facepack === undefined) {
       try {
         const id = await sei?.facepackForCharacter?.(characterId);
-        if (id) return { kind: 'facepack', packId: id };
+        if (id) return { kind: 'facepack', packId: id, figure: await facepackFigureOf(null, id) };
       } catch {
         /* dev flag off */
       }
@@ -461,7 +487,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
     let dead = false;
     void resolveKind(characterId, use, facepack, portraitUrl, failed).then((r) => {
       if (dead) return;
-      setResolved((prev) => (prev && prev.kind === r.kind && prev.packId === r.packId && prev.cut?.sha256 === r.cut?.sha256 ? prev : r));
+      setResolved((prev) => (prev && prev.kind === r.kind && prev.packId === r.packId && prev.cut?.sha256 === r.cut?.sha256 && prev.figure === r.figure ? prev : r));
     });
     return () => {
       dead = true;
@@ -493,6 +519,15 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
       /* analytics only */
     }
   }, [resolved, characterId]);
+
+  // 261121: tell the room what kind of figure she is (its seat fit redraws her chair for a bust).
+  const figure = resolved ? roomFigureOf(resolved.kind, resolved.figure) : null;
+  const onFigureRef = useRef(slot.onFigure);
+  onFigureRef.current = slot.onFigure;
+  useEffect(() => {
+    if (figure) onFigureRef.current?.(figure);
+  }, [figure]);
+  useEffect(() => () => onFigureRef.current?.(null), []);
 
   // 261105: her face set arriving while her portrait (or silhouette) shows
   // crossfades instead of popping: the old figure stays on top until the
@@ -656,6 +691,7 @@ export function RoomAvatar(props: RoomAvatarProps): React.ReactElement {
       role="img"
       aria-label={name}
       data-avatar-kind={kind ?? 'loading'}
+      data-avatar-figure={figure ?? undefined}
       data-avatar-phase={phase}
       data-avatar-face={kind === 'facepack' || kind === 'live2d' ? ((face !== undefined ? face : emotion) ?? undefined) : undefined}
     >

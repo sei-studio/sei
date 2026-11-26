@@ -68,20 +68,52 @@
  * in the buffer rather than a window that has already rolled past it.
  */
 export const BUFFER_MS = 9_000;
-/** Length of a saved clip. Only meaningful when clipping is enabled. */
+/** Length of a saved clip. Only meaningful when Clip That is on. */
 export const CLIP_MS = 15_000;
 /**
- * Whether the rolling clip recorders run at all.
+ * Clip That (261123, product call 261123) is a SETTING, off by default for new
+ * and existing players (`UserConfig.clip_that`).
  *
- * They are the single most expensive thing in the pipeline: two MediaRecorders
- * continuously encoding 720p60 for the whole session, purely so that a rare
- * save_clip call has something to harvest. Everything else backseat does (the
- * grid, both local triggers, the schedule) is unaffected by turning this off, so
- * this is the first dial to reach for if capture is costing too much.
+ * The rolling clip recorders were the single most expensive thing in the
+ * pipeline: two MediaRecorders continuously encoding the shared stream for the
+ * whole session, purely so that a rare save_clip call has something to
+ * harvest. Lag and freeze reports on Windows ("the whole PC freezes when I
+ * share") came from a session that ran them at 720p60 for everyone. Now they
+ * run only for a player who turned Clip That on, at the rate they picked
+ * (`clip_fps`). Off, no MediaRecorder exists and save_clip is not offered to
+ * the model at all, so the companion never promises a clip it cannot make.
  */
-export const CLIPS_ENABLED = true;
-/** Frame retention target. The capture loop degrades gracefully below this. */
-export const CAPTURE_FPS = 60;
+export const CLIP_FPS_OPTIONS = [30, 60, 120] as const;
+export type ClipFps = (typeof CLIP_FPS_OPTIONS)[number];
+export const DEFAULT_CLIP_FPS: ClipFps = 30;
+/** A clip_fps value from config, or the default for anything else. */
+export function clipFpsOf(raw: unknown): ClipFps {
+  return (CLIP_FPS_OPTIONS as readonly unknown[]).includes(raw) ? (raw as ClipFps) : DEFAULT_CLIP_FPS;
+}
+/** Recorder bitrate per clip rate: more frames need more bits for the same
+ *  picture, but not proportionally more (motion between frames shrinks). */
+export function clipBitrate(fps: ClipFps): number {
+  return fps >= 120 ? 5_000_000 : fps >= 60 ? 3_500_000 : 2_500_000;
+}
+/**
+ * What the capture stream runs at for everything EXCEPT clips (261123, was
+ * 60): the frame ring samples at 10 Hz (SAMPLE_INTERVAL_MS), both jolt arms
+ * are time-based and were tuned in a 10 Hz sim (signals.test "a 10 Hz sim and
+ * a 60 fps app agree"), and the audio gain arrives in ~32 ms windows, so 30
+ * frames a second still reads every gain window. The extra 30 frames were
+ * captured, scaled and analysed for nothing.
+ *
+ * With Clip That on, the STREAM runs at the clip rate (the recorder needs the
+ * frames) and the worker still analyses at most ANALYSIS_FPS, closing the rest
+ * on arrival.
+ */
+export const CAPTURE_FPS = 30;
+/** The most frames a second the capture worker analyses, whatever the stream gives. */
+export const ANALYSIS_FPS = 30;
+/** Stream rate for a session: the analysis rate, or the clip rate when higher. */
+export function streamFps(clipThat: boolean, clipFps: ClipFps): number {
+  return clipThat ? Math.max(CAPTURE_FPS, clipFps) : CAPTURE_FPS;
+}
 /** Capture resolution requested from getDisplayMedia (downscaled per cell). */
 export const CAPTURE_W = 1280;
 export const CAPTURE_H = 720;
@@ -652,6 +684,12 @@ export interface BackseatTick {
    * re-asked rather than acted on.
    */
   mic?: { ttsGapMs: number | null; shareVoice?: boolean | null };
+  /**
+   * 261124: on a TYPED 'user' tick (the chat composer), the id the renderer
+   * already gave the player's optimistic bubble, so main persists and pushes
+   * the row under that id and the push dedupes instead of doubling it.
+   */
+  lineId?: string;
   /**
    * How old each frame in the grid is, in seconds before `capturedAt`, oldest
    * first — one entry per cell ACTUALLY drawn, after duplicates were dropped.

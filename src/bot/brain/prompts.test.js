@@ -213,3 +213,36 @@ describe('MEMORY_GOAL_CUE — memory/goal capture (260708)', () => {
     expect(silent).not.toContain('setGoal in the same turn')
   })
 })
+
+// 261123 (pass 61): a line the player keeps saying while she is already by
+// their side (orchestrator repeatedAskFor) takes actionTurn without the
+// reply mandate; the default keeps it.
+describe('NUDGES.actionTurn replyOptional', () => {
+  const MANDATE = /also answer with one short say\(\)|also call say\(\) this turn|That say\(\) is required/
+  it('drops the say() mandate mid-action and when idle', () => {
+    const running = NUDGES.actionTurn({ action: 'follow Alex', stopTool: 'unfollow', playerLine: 'stay close pls', who: 'player (Alex)', replyOptional: true })
+    expect(running).not.toMatch(MANDATE)
+    expect(running).toContain('A line you only put in your text is not sent to the player.')
+    const idle = NUDGES.actionTurn({ action: null, stopTool: 'stop', playerLine: 'stay close pls', who: 'player (Alex)', replyOptional: true })
+    expect(idle).not.toMatch(MANDATE)
+    expect(idle).toContain('You are not in the middle of anything.')
+  })
+  it('keeps it by default', () => {
+    expect(NUDGES.actionTurn({ action: 'follow Alex', stopTool: 'unfollow', playerLine: 'stay close pls', who: 'player (Alex)' })).toMatch(MANDATE)
+    expect(NUDGES.actionTurn({ action: null, stopTool: 'stop', playerLine: 'stay close pls', who: 'player (Alex)' })).toMatch(MANDATE)
+  })
+})
+
+// 261124 (pass 63): the reply block for a line that answers her fresh turn
+// moves the acknowledgement let-off under their line. Plain text, no dashes,
+// and at most 20 words over dev's pair (ACK_LINE + "Answer it with say().").
+describe('ACK_LINE_ANSWER + ACK_ANSWER_TAIL', async () => {
+  const { ACK_LINE, ACK_LINE_ANSWER, ACK_ANSWER_TAIL } = await import('./prompts.js')
+  it('has no em dash and stays close to dev in length', () => {
+    for (const t of [ACK_LINE_ANSWER, ACK_ANSWER_TAIL]) expect(t).not.toMatch(/[—–]/)
+    const words = (t) => t.split(/\s+/).length
+    const dev = words(ACK_LINE) + words('Answer it with say().')
+    expect(words(ACK_LINE_ANSWER) + words(ACK_ANSWER_TAIL)).toBeLessThanOrEqual(dev + 20)
+    expect(ACK_ANSWER_TAIL).toContain('Otherwise answer it with say()')
+  })
+})

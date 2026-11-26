@@ -84,6 +84,15 @@ export interface LlmCallParams {
    */
   onContentBlock?: (block: Anthropic.Messages.ContentBlock) => void;
   /**
+   * 261125 (O5 reply_latency): observation only, called when the first reply
+   * text arrives on a streamed response (may fire again on a retried
+   * request; callers keep the first). Never changes the transport: it fires
+   * only where the call already streams (Anthropic and OpenAI-compat with an
+   * onTextDelta sink, the ChatGPT plan always), and never for a
+   * non-streaming response.
+   */
+  onFirstToken?: () => void;
+  /**
    * 260925 (backseat act spike): extra top-level request fields merged into
    * the Anthropic request as is (e.g. `thinking`, `output_config`). Honored
    * ONLY by the Anthropic adapter and only when set, so every existing call

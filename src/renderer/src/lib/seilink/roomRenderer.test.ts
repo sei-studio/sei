@@ -39,6 +39,7 @@ vi.mock('./roomImages', () => {
     makeCanvas,
     ctx2d: (c: { getContext: () => unknown }) => c.getContext(),
     loadRoomImage: async (url: string) => bitmap(url),
+    loadRoomImageClean: async (url: string) => bitmap(`${url}#clean`),
     loadRoomMask: async (url: string) => bitmap(url),
     loadRoomGlow: async (url: string) => ({ bitmap: bitmap(url), x: 0, y: 0, w: 64, h: 64, fw: 64, fh: 64 }),
     loadRoomGlowGrey: async (url: string) => ({ bitmap: bitmap(url), x: 0, y: 0, w: 64, h: 64, fw: 64, fh: 64 }),
@@ -121,6 +122,66 @@ describe('RoomRenderer: switching packs (beta.4: the cozy room kept the gamer ch
     const cozy = await show(r, 'cozy', { ...defaultRoomState('cozy'), time: 'night' });
     expect(cozy).toContain('sei-room://cozy/shell_night.webp');
     expect(cozy.filter((u) => !u.startsWith('sei-room://cozy/'))).toEqual([]);
+    r.renderer.dispose();
+  });
+});
+
+describe('RoomRenderer: seat fit (261121, a portrait looked far in front of the chair)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('document', { addEventListener: () => undefined, removeEventListener: () => undefined, hidden: false, visibilityState: 'visible' });
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+  };
+
+  it('a bust draws the chair from its tidied edge; the seated chibi and no figure draw it as painted', async () => {
+    for (const [figure, chair] of [
+      ['bust', 'sei-room://cozy/chair_night.webp#clean'],
+      ['seated', 'sei-room://cozy/chair_night.webp'],
+      [null, 'sei-room://cozy/chair_night.webp'],
+    ] as const) {
+      const r = newRenderer();
+      r.renderer.setResolution(0.25);
+      r.renderer.setMix({ from: 'night', to: 'night', t: 1 });
+      r.renderer.setFigure(figure);
+      const files = await show(r, 'cozy', { ...defaultRoomState('cozy'), time: 'night' });
+      expect(files).toContain(chair);
+      expect(files.filter((u) => u.includes('chair_night')).every((u) => u === chair)).toBe(true);
+      r.renderer.dispose();
+    }
+  });
+
+  it('a figure reported after the room is up redraws it, and back again', async () => {
+    const r = newRenderer();
+    r.renderer.setResolution(0.25);
+    r.renderer.setMix({ from: 'night', to: 'night', t: 1 });
+    await show(r, 'gamer', { ...defaultRoomState('gamer'), time: 'night' });
+    drawn.length = 0;
+    r.renderer.setFigure('bust');
+    await settle();
+    expect(drawn).toContain('sei-room://gamer/chair_night.webp#clean');
+    drawn.length = 0;
+    r.renderer.setFigure('bust');
+    await settle();
+    expect(drawn).toEqual([]);
+    r.renderer.setFigure(null);
+    await settle();
+    expect(drawn).toContain('sei-room://gamer/chair_night.webp');
+    expect(drawn).not.toContain('sei-room://gamer/chair_night.webp#clean');
+    r.renderer.dispose();
+  });
+
+  it('forest has no seat fit: a bust leaves the log as painted', async () => {
+    const r = newRenderer();
+    r.renderer.setResolution(0.25);
+    r.renderer.setMix({ from: 'night', to: 'night', t: 1 });
+    r.renderer.setFigure('bust');
+    const files = await show(r, 'forest', { ...defaultRoomState('forest'), time: 'night' });
+    expect(files.some((u) => u.endsWith('#clean'))).toBe(false);
     r.renderer.dispose();
   });
 });

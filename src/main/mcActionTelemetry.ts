@@ -67,6 +67,8 @@ const COUNTER_KEYS = [
   'drop_reset',
   'drop_other',
   'drop_ping_failed',
+  // 261126: personality calls the bot's client-side rate limit dropped.
+  'llm_rate_limited',
 ] as const;
 
 const count = z.number().int().nonnegative().catch(0);

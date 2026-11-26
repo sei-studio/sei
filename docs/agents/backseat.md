@@ -225,10 +225,37 @@ The design and its measurements are committed at
   offline sim run the SAME code rather than a re-implementation.
 - **TWO buffers, not one (260728).** The frame ring needs one grid plus latency
   slack, so `BUFFER_MS` is **9 s**. The 15 s belongs solely to clip capture
-  (`CLIP_MS`, MediaRecorder). Clipping is the most expensive thing in the
-  pipeline (two recorders encoding 720p60 all session for a rare `save_clip`),
-  so it sits behind `CLIPS_ENABLED` and vanishes when off. First dial to turn if
-  capture costs too much.
+  (`CLIP_MS`, MediaRecorder).
+- **Clip That is opt-in, capture runs at 30 fps (261123).** Windows players
+  reported the whole PC lagging while sharing. The two staggered VP9
+  recorders were the most expensive thing in a share, encoding 720p60 all
+  session for a rare `save_clip`. Now `UserConfig.clip_that` (Settings, OFF by
+  default for everyone) gates them: off, no MediaRecorder or audio tap runs
+  and `save_clip` is not in the tool list (`sessionTools`). On, the player
+  picks `clip_fps` 30/60/120 (`clipBitrate`; the request is a ceiling, a
+  source that gives less is recorded at what it gives). The info tip
+  (`CLIP_THAT_TIP`) sits next to the Settings row and on every `ClipCard`.
+  The stream asks for `streamFps()`: 30 (`CAPTURE_FPS`, was 60), or the clip
+  rate when Clip That needs more, and the worker analyses at most
+  `ANALYSIS_FPS` (30) and closes faster frames on arrival. The ring samples
+  at 10 Hz and the jolt arms are time-based, so nothing the companion
+  notices changes. The grid cell is drawn only when a sample is due (it used
+  to be drawn on every frame). Analytics: `backseat_started/_ended` carry
+  `clip_that` and `clip_fps`, `_ended` also `clips_saved`; `backseat_perf`
+  (`shared/backseatPerf.ts`, `main/backseat/perfSample.ts`) is sent at the
+  first minute and at the end with renderer / GPU / all-of-Sei CPU (percent
+  of one core, from `app.getAppMetrics()` cumulative CPU seconds), memory,
+  source / analysed / skipped frames and samples per minute, the track's
+  real rate and height, and the clip settings. Measured headless on Linux
+  (fake 720p60 camera, software rendering, so absolute numbers are not a
+  Windows machine's): the old default
+  (60 fps, two recorders) took a median 159% of one core for the browser
+  tree, the new default (30 fps, no recorders) 66%, Clip That on at 30 fps
+  135% and at 60 fps 129% (3 interleaved runs each on a loaded box, spread
+  about +-40 points). The recorders are nearly all of the difference; the
+  frame-rate and worker changes did not separate from noise there, because
+  the starved box delivered and analysed fewer frames than requested. Read
+  `backseat_perf` on Windows for the real numbers.
 - **THE COMPANION ALWAYS SPEAKS, and the reason is three failed attempts
   (260802).** The contract has been through three positions on silence. 260728
   sanctioned it as "the normal outcome" and produced a mute companion (five
@@ -298,6 +325,25 @@ The design and its measurements are committed at
   every other call line: it is spoken, so a chat row would be a caption. This
   was missed when user turns started routing through backseat and the player's
   own half of the call filled the transcript.
+- **A line TYPED during a share goes to Backseat; the player's line stays visible (261124).**
+  In-app feedback: "the chat doesn't show messages typed by me". Two causes,
+  both in v0.7.0. (1) Every call row was `voice` and hidden, so a line typed
+  in the chat composer vanished on send; (2) since the overlay's mini chat was
+  deleted (260803) nothing sent a TYPED `user` tick, so the line went to an
+  ordinary chat turn that could not see the screen while this loop kept
+  talking beside it. Now `useChatStore.send(..., { typed: true })` (the
+  composer) routes the line to `sendUserTick` when this companion is the one
+  sharing (not for a quoted reply; falls back to chat when nothing was sent),
+  with the bubble's UUID as `BackseatTick.lineId` so main's row and push reuse
+  it. A tick without `mic` is typed: the PLAYER's row carries
+  `ChatMessage.typed` beside `voice` (still the call's), and `chatRowHidden`
+  shows it. Her answer is NOT stamped: it is spoken on the call and stays
+  hidden like every other call line (product call (261124); the first cut
+  showed her replies too). `chatRowHidden` only lets `typed` unhide a `user`
+  row, so an old companion row with `typed` stays hidden. The same flag covers
+  typed lines on a plain call (`chat:send` `typed`). Typing in the composer
+  also arms the user grid. Pinned in `backseatService.typed.test.ts`,
+  `useChatStore.typedCall.test.ts`, `chatService.turn.test.ts`.
 - **TWO entry points (260803).** The share pill in `CallControls` (needs a call
   already) and the **Backseat button in `ChatTopBar`** (does not). The second
   exists because the first is unreachable without already knowing the feature
@@ -623,6 +669,29 @@ The design and its measurements are committed at
     gap_ms}`). On macOS a same-id end with the window still listed is the
     system "Stop sharing" control and ends the share
     (`capture_stopped_by_os`). Unverified on a Mac or Windows machine.
+  - **Capture start retry (261123).** `capture_failed:busy`
+    (NotReadableError) hit 18 Windows users in 30 days, 92 failed starts.
+    Every one was refused within a second of the start and the same player
+    then failed over and over (up to 22 times in two minutes); 78% were
+    WINDOW sources. Chromium's Windows window capturer refuses a window it
+    cannot capture right now, most often a fullscreen game that minimized
+    itself when the player alt-tabbed to Sei to press Share. `captureOpen.ts`
+    (pure + tested) now retries a busy start once with RELAXED constraints
+    (no max size or rate in the request, the cap re-applied on the track),
+    on the same source only. If that fails the player sees one hint line
+    instead of the browser's English (`captureFailureCopy`: un-minimize the
+    game, or share the whole screen) and decides. Never widen a window share
+    to the screen automatically: the player picked one window, and the screen
+    would send other apps, notifications and DMs to the vision model (product
+    call 261123). Analytics (`outcome` / `capture_retry`: none, relaxed_ok,
+    failed):
+    `backseat_capture_retried {source_kind, first_class, minimized, outcome}`
+    on every retry, and a final failure's `backseat_ended` carries
+    `capture_source_kind / capture_first_class / capture_retry /
+    capture_minimized`. `minimized` comes from `main/backseat/windowState.ts`
+    (IsIconic via PowerShell, Windows only, asked only after a refusal).
+    Unverified on Windows: watch the busy share and `capture_minimized` on
+    the next beta.
   - **Resume note.** A share that starts under `RESUME_WINDOW_MS` (2 min)
     after one where she spoke (`resumedAfterMs`) gets the resume start note
     (`tickNote` `resumedAfterS`): no second hello, one thought about the

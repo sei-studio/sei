@@ -14,13 +14,16 @@ export interface BannerProps {
   kind: 'warn' | 'error' | 'info';
   message: string;
   onDismiss?: () => void;
+  /** A short action after the message (e.g. Free a slot, 261124). */
+  action?: React.ReactNode;
 }
 
-export function Banner({ kind, message, onDismiss }: BannerProps): React.ReactElement {
+export function Banner({ kind, message, onDismiss, action }: BannerProps): React.ReactElement {
   const t = useT();
   return (
     <div className={`${styles.banner} ${styles[kind]}`} role="alert">
       <span className={styles.message}>{message}</span>
+      {action ?? null}
       {onDismiss ? (
         <button
           type="button"

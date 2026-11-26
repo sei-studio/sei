@@ -224,7 +224,7 @@ export function createSttStream(opts: { language?: string } = {}): SttStream {
     const id = nextId++;
     // 261121: a slow job releases the tick waiting on it, NOT the stream.
     // This used to clear `busy` here too, so a Whisper that ran slower than
-    // real time (a CPU-starved machine: a game, two 720p60 clip encoders and
+    // real time (a CPU-starved machine: a game, two clip encoders and
     // the call's own Whisper all at once) was handed a new job every 15 s on
     // top of the ones it had not finished. The worker runs every message it
     // gets concurrently, so the backlog grew without bound, each job holding

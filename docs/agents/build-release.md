@@ -43,7 +43,18 @@ Packaging is **electron-builder** (`electron-builder.yml`):
   the per-machine migration hook (`build/installer.nsh`) are documented above
   the `nsis:` block in electron-builder.yml; `.github/workflows/nsis-upgrade-check.yml`
   (manual dispatch) re-verifies them on windows-latest. Release builds are
-  signed through Azure Trusted Signing (the "unsigned for v1" note is stale).
+  signed through Azure Trusted Signing. Since 261127 (issue #59) that covers
+  every `.dll` and `.node` too (`win.signExts`): v0.7.0 signed only the
+  `.exe` files, and Windows 11 Smart App Control refused the unsigned
+  `sherpa-onnx.node`, silencing on-device voices. The release step "Verify
+  Windows native signatures" fails a signed build with any PE file in
+  `release/win-unpacked` that is not Valid, and the Velopack verify step
+  checks the natives inside each Full package. Game packs
+  (`scripts/build-game-pack.mjs`) are NOT signed yet: the Minecraft win pack's
+  `canvas` and `gl` natives (POV vision) are unsigned. Signing them is open:
+  a timestamped signature differs per build, so the pack `treeHash` would
+  change every release and defeat the no-download re-link in
+  `src/main/games/packs.ts`.
 - **Linux:** AppImage (best-effort unsigned).
 - **WorldLink desktop host addon (261104):** `native/seilink` is built by
   `scripts/build-seilink-addon.mjs` (mac universal via lipo, win x64) into
@@ -178,6 +189,37 @@ Velopack copy (`velopackRepair.ts`, kill switch `repair.<channel>.json` via
 run, re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
+
+**Update telemetry (261126).** Every update path reports the same events,
+shape only (a closed error class, durations, sizes; never a message, path, URL
+or feed body). Helpers in `src/main/updateTelemetry.ts` (pure, tested),
+captured from `updater.ts`; the Windows update CI (`SEI_VELOPACK_CI=1`) sends
+nothing. `updater` is `nsis` | `velopack` | `squirrel_mac` | `appimage`.
+- `update_downloaded {updater, to, level, download_ms, download_mb?,
+  prepare_ms?}` once per finished download. `download_mb` = what was fetched
+  (electron-updater's progress total, so a blockmap differential counts only
+  its ranges; Velopack the delta chain, else the full package). `prepare_ms`:
+  Velopack = stage + signature check; macOS = from electron-updater's
+  update-downloaded to Squirrel.Mac's own (unzip + code-sign check, a
+  restart clicked before then waits for it); capped at 15 min, after which
+  it is `update_failed {stage: prepare, class: timeout}`.
+- `update_failed {updater, stage: check|download|prepare|install, class}`,
+  class one of offline, timeout, http_4xx, http_5xx, checksum, signature,
+  disk, permission, no_effect, other. Once per stage and class per process
+  (an offline check on every focus is one event). `install/no_effect` = the
+  restart-to-update relaunched on the same version within 30 min.
+- `update_installed {from, to, via, updater, install_s?, restart_ms?,
+  progress_window?}` on the first launch of a new version. Every in-app
+  restart records `installTiming {startedAt, fromVersion, updater}` first
+  (NSIS in `windowsUpdateInstall.ts`, Velopack and macOS in
+  `restartIntoUpdate`); `restart_ms` = click to the new process starting.
+  Only NSIS samples feed the NSIS progress window's estimate.
+- `velopack_migration {phase: installed|failed|cleaned, attempt, version,
+  download_ms, setup_ms, total_ms, mb, stage (failed: download|signature|
+  setup), error (short, failed only), spawn_retries}` and `velopack_repair
+  {phase: triggered|repaired|failed|gave_up|held, ...recover_ms}` cover the
+  migration and the self-repair.
+Read them with the `packaged = true` filter; dev launches report too.
 
 **Staged rollout (electron-updater, 261101).** Every shipped client (0.6.x,
 electron-updater 6.8.3) honours `stagingPercentage` in latest.yml /

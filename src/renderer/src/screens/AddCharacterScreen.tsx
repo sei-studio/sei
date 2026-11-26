@@ -51,6 +51,8 @@ import { SharedVoiceChoice } from '../components/SharedVoiceChoice';
 import type { Character } from '@shared/characterSchema';
 import { KNOWLEDGE_COMPACT_SUGGEST_BYTES } from '@shared/ipc';
 import { userFacingDetail, userFacingError } from '../lib/errors';
+import { isPartyFullError } from '../lib/partyFull';
+import { PartyFullHint } from '../components/PartyFullHint';
 
 const STEPS = 7;
 
@@ -108,6 +110,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
   const [visibility, setVisibility] = useState<'public' | 'private' | null>(null);
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [partyFull, setPartyFull] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<Character | null>(null);
   // Daily-cap hit mid-flow (rare race past the pre-flight gate in
@@ -156,6 +159,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
 
   const persistCreate = async (): Promise<Character | null> => {
     setError(null);
+    setPartyFull(false);
     setSubmitting(true);
     // New routing key per attempt; reset the bar to 0 before the stream opens.
     const requestId = crypto.randomUUID();
@@ -210,6 +214,9 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
       // same friendly modal instead of the raw sentinel error string.
       if (message.includes('daily_limit_reached')) {
         setLimitHit(true);
+      } else if (isPartyFullError(err)) {
+        // 261124: the party filled up (main's slot backstop): say how to make room.
+        setPartyFull(true);
       } else {
         setError(userFacingError(err));
       }
@@ -565,6 +572,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           </div>
         ) : null}
         {error ? <ErrorRow message={error} /> : null}
+        {partyFull ? <PartyFullHint surface="create" /> : null}
         {limitHit ? (
           <CreationLimitModal
             onClose={() => {
@@ -614,6 +622,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           />
         ) : null}
         {error ? <ErrorRow message={error} /> : null}
+        {partyFull ? <PartyFullHint surface="create" /> : null}
       </QuestionShell>
     );
   }
@@ -673,6 +682,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           surface="create"
         />
         {error ? <ErrorRow message={error} /> : null}
+        {partyFull ? <PartyFullHint surface="create" /> : null}
       </QuestionShell>
     );
   }
@@ -719,6 +729,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
           </div>
         ) : null}
         {error ? <ErrorRow message={error} /> : null}
+        {partyFull ? <PartyFullHint surface="create" /> : null}
       </QuestionShell>
     );
   }
@@ -744,6 +755,7 @@ export function AddCharacterScreen({ importFirst = false }: { importFirst?: bool
         aria-label={t('Public description')}
       />
       {error ? <ErrorRow message={error} /> : null}
+      {partyFull ? <PartyFullHint surface="create" /> : null}
     </QuestionShell>
   );
 }

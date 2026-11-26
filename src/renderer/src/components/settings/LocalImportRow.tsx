@@ -22,6 +22,7 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { useLibraryStateStore } from '../../lib/stores/useLibraryStateStore';
 import { Button } from '../Button';
 import { ImportLocalProfileModal } from '../ImportLocalProfileModal';
+import { FreeSlotButton } from '../PartyFullHint';
 import styles from '../../screens/SettingsScreen.module.css';
 
 /** The row itself, or nothing when there is nothing to bring. */
@@ -39,7 +40,13 @@ export function LocalImportRowView({
     <div className={styles.row} data-local-import={full ? 'party-full' : 'ready'}>
       <span className={`${styles.label} ${styles.labelStack}`}>
         <span>{t('Companions from before you signed in')}</span>
-        {full ? <span className={styles.helper}>{t('Your party is full. Free a slot to bring them over.')}</span> : null}
+        {full ? (
+          <span className={styles.helper}>
+            {t('Your party is full. Free a slot to bring them over.')}{' '}
+            {/* 261124: the way to free one, one tap away. */}
+            <FreeSlotButton surface="import_settings" />
+          </span>
+        ) : null}
       </span>
       <Button kind="ghost" size="sm" onClick={onOpen} disabled={full}>
         {t('Bring over')}

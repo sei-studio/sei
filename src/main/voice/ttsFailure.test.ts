@@ -24,6 +24,8 @@ describe('ttsFailureClass', () => {
     expect(ttsFailureClass(new Error('VOICE_NOT_CONFIGURED: voice service unavailable'), false)).toBe('not_configured');
     expect(ttsFailureClass(new Error('VOICE_PACK_MISSING:tts-en'), false)).toBe('pack_missing');
     expect(ttsFailureClass(new Error('SPEECH_RUNTIME_FAILED: no binding'), false)).toBe('speech_runtime');
+    expect(ttsFailureClass(new Error('SPEECH_RUNTIME_FAILED: os_blocked: sherpa-onnx-node load failed: x'), false)).toBe('speech_runtime_blocked');
+    expect(ttsFailureClass(new Error('SPEECH_RUNTIME_FAILED: load_error: sherpa-onnx-node load failed: x'), false)).toBe('speech_runtime');
   });
 
   it('reads an upstream status out of VOICE_TTS_FAILED', () => {

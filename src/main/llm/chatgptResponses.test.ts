@@ -63,6 +63,17 @@ describe('chatgpt main provider', () => {
     expect(p.backend).toBe('local');
   });
 
+  // 261125 (O5): typed chat's reply_latency first-token stamp; no onTextDelta needed.
+  it('onFirstToken fires once on the first text delta, without an onTextDelta sink', async () => {
+    const fetchImpl = vi.fn(async () => okStream(textReply('hey there')));
+    const { s } = fakeSession();
+    const p = createChatgptProvider({ model: 'm', vision: 'yes', session: s, fetchImpl });
+    const onFirstToken = vi.fn();
+    const r = await p.call({ ...params, onFirstToken });
+    expect(r.text).toBe('hey there');
+    expect(onFirstToken).toHaveBeenCalledTimes(1);
+  });
+
   it('fails fast on a latched plan: no token, no request', async () => {
     const fetchImpl = vi.fn();
     const latched = Object.assign(new Error('CHATGPT_USAGE_LIMIT: paused'), { code: 'CHATGPT_USAGE_LIMIT', terminal: true });

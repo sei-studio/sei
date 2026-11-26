@@ -28,6 +28,9 @@
  *
  * Key (dev-only): ANTHROPIC_API_KEY env wins, else ~/.sei-dev/anthropic-test-key.
  *
+ * Fold mode (261113, v0.7 D2): --fold case | batch scores the fold's
+ * <remember> lines instead of the turn's remember() (see foldMain).
+ *
  * Usage: npx tsx scripts/remember-eval.ts [--reps 3] [--arms h45,h55]
  *          [--case V1_dog] [--kind save] [--concurrency 4] [--out file.json]
  *          [--text-remember on|off]
@@ -101,7 +104,12 @@ if (!apiKey) {
 const client = new Anthropic({ apiKey, maxRetries: 0 });
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SUI = JSON.parse(readFileSync(join(root, 'demo/fixtures/default-characters/sui.json'), 'utf8')).persona;
+// The bundled demo fixture went with the demo recorder (30aa8c8c); the eval
+// character rows (scripts/quality-eval/persona/characters.mjs) hold the card.
+const SUI_FILE = flag('--sui') ?? join(homedir(), 'suisei/eval/characters/sui.json');
+const SUI_ROW = JSON.parse(readFileSync(SUI_FILE, 'utf8'));
+const SUI: string = SUI_ROW.persona_expanded ?? SUI_ROW.persona;
+void root;
 
 // Same as chatService TRANSCRIPT_STOP_SEQUENCES (not exported from there:
 // chatService pulls in Electron).
@@ -574,7 +582,101 @@ function summarize(arm: string, samples: Sample[]) {
   }
 }
 
+// ── fold mode (261113, v0.7 consistency D2) ───────────────────────────────
+// --fold case: each case's history is one fold batch through the real fold
+//   (continuityCore runFold: the fold prompt, the case's memory notes, Haiku
+//   5.5 with adaptive thinking as continuity.ts sends it). Scores the
+//   <remember> lines: save / plan_bye cases must hold the key facts (recall);
+//   none / bye_noplan cases must save nothing (traps; V18_dup's fact is
+//   already in memory). voice-kind cases are skipped.
+// --fold batch: every save / none / plan case (V18_dup and voice cases left
+//   out) in ONE batch over MEM_BASE, as a real fold sees a stretch of chat;
+//   recall per case, and every line printed to read for trivia.
+const FOLD = flag('--fold');
+const FOLD_MODEL = 'claude-haiku-5-5';
+const STAMP = /^\[(\d{1,2}) (\w{3}) (\d\d):(\d\d)\]\s*/;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function foldMsgs(history: [string, string][], from = 0): any[] {
+  let ts = Date.UTC(2026, 9, 8, 12, 0) + from;
+  return history.map(([role, text]) => {
+    const m = STAMP.exec(text);
+    if (m) ts = new Date(2026, MONTHS.indexOf(m[2]), Number(m[1]), Number(m[3]), Number(m[4])).getTime();
+    else ts += 20_000;
+    return { role: role === 'user' ? 'user' : 'companion', text: text.replace(STAMP, ''), ts };
+  });
+}
+
+const foldLlm = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async call(p: any) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg: any = await client.messages.create({ model: p.model, max_tokens: p.maxTokens, system: p.system, messages: p.messages, ...(p.anthropicExtra ?? {}) } as any);
+    foldUsage.push(msg.usage);
+    return { content: msg.content, stopReason: msg.stop_reason };
+  },
+};
+const foldUsage: Array<Record<string, number>> = [];
+
+async function foldOnce(msgs: unknown[], memory: string): Promise<string[]> {
+  const { runFold } = await import('../src/main/chat/continuityCore');
+  for (let attempt = 0; ; attempt++) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r: any = await runFold({ llm: foldLlm as any, summary: '', msgs: msgs as any, memory, persona: SUI, model: FOLD_MODEL, extra: { thinking: { type: 'adaptive' } } });
+      return r.status === 'ok' ? r.facts : [];
+    } catch (err) {
+      if (attempt >= 3) throw err;
+      await sleep(2000 * (attempt + 1));
+    }
+  }
+}
+
+async function foldMain() {
+  const keysHit = (c: Case, text: string) => (c.keys ?? []).every((k) => k.test(text));
+  const scored = CASES.filter((c) => c.kind !== 'voice' && (!ONLY_CASES || ONLY_CASES.includes(c.id)));
+  const rows: Array<{ id: string; kind: Kind; rep: number; facts: string[]; ok: boolean }> = [];
+  const jobs: Array<() => Promise<void>> = [];
+  if (FOLD === 'batch') {
+    const batch = scored.filter((c) => c.id !== 'V18_dup');
+    for (let r = 0; r < REPS; r++) {
+      jobs.push(async () => {
+        const msgs = batch.flatMap((c, i) => foldMsgs(c.history, i * 60_000));
+        const facts = await foldOnce(msgs, MEM_BASE);
+        const all = facts.join('\n');
+        for (const c of batch) rows.push({ id: c.id, kind: c.kind, rep: r, facts, ok: c.keys ? keysHit(c, all) : true });
+        console.log(`[batch#${r}] ${facts.length} lines:\n    ${facts.join('\n    ')}`);
+      });
+    }
+  } else {
+    for (const c of scored) for (let r = 0; r < REPS; r++) {
+      jobs.push(async () => {
+        const facts = await foldOnce(foldMsgs(c.history), c.memory);
+        const want = c.kind === 'save' || c.kind === 'plan_bye';
+        const ok = want ? keysHit(c, facts.join('\n')) : facts.length === 0;
+        rows.push({ id: c.id, kind: c.kind, rep: r, facts, ok });
+        console.log(`[fold] ${c.id}#${r} ${ok ? 'ok ' : 'MISS'} ${facts.length ? facts.map((f) => JSON.stringify(f)).join(' | ') : '(none)'}`);
+      });
+    }
+  }
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, async () => { while (next < jobs.length) await jobs[next++](); }));
+  const rate = (xs: typeof rows) => `${xs.filter((x) => x.ok).length}/${xs.length}`;
+  const want = rows.filter((x) => x.kind === 'save' || x.kind === 'plan_bye');
+  console.log(`\nfold ${FOLD === 'batch' ? 'batch' : 'per case'}, reps ${REPS}:`);
+  console.log(`  recall (save + plan_bye, key facts in the remember lines): ${rate(want)}`);
+  if (FOLD !== 'batch') {
+    console.log(`  traps (none + bye_noplan, nothing saved): ${rate(rows.filter((x) => x.kind === 'none' || x.kind === 'bye_noplan'))}`);
+  }
+  const misses = [...new Set(want.filter((x) => !x.ok).map((x) => x.id))];
+  if (misses.length) console.log(`  missed: ${misses.join(' ')}`);
+  console.log(`  cost: $${foldUsage.reduce((t, u) => t + costOf(FOLD_MODEL, u), 0).toFixed(3)}`);
+  if (OUT) writeFileSync(OUT, JSON.stringify(rows, null, 1));
+}
+
 async function main() {
+  if (FOLD) return foldMain();
   const cases = CASES.filter((c) => (!ONLY_CASE || c.id === ONLY_CASE) && (!ONLY_CASES || ONLY_CASES.includes(c.id)) && (!ONLY_KIND || c.kind === ONLY_KIND));
   const jobs: Array<() => Promise<Sample>> = [];
   for (const arm of ARM_KEYS) for (const c of cases) for (let r = 0; r < REPS; r++) jobs.push(() => runCase(arm, c, r));

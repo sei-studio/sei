@@ -10,7 +10,7 @@
  *     (api.sei.gg main /v1/messages route — meters credits exactly like gameplay;
  *      NOT the /free expansion route). apiKey:null suppresses the X-Api-Key header.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getAiBackendKind, hasApiKey, loadApiKey } from '../apiKeyStore';
 import { COMPANION_MODEL } from '../../shared/llmCatalog';
 
@@ -45,7 +45,8 @@ export async function buildChatSdk(): Promise<ChatSdk> {
     const { data } = await getClient().auth.getSession();
     const authToken = data.session?.access_token ?? '';
     // apiKey:null → no X-Api-Key header, only Authorization: Bearer <jwt>.
-    const client = new Anthropic({ baseURL: PROXY_BASE_URL, authToken, apiKey: null, maxRetries: 1 });
+    const { default: AnthropicSdk } = await import('@anthropic-ai/sdk');
+    const client = new AnthropicSdk({ baseURL: PROXY_BASE_URL, authToken, apiKey: null, maxRetries: 1 });
     return { client, model: CHAT_MODEL };
   }
   // local (BYOK): the ONLY credential this branch may use is the on-disk key.
@@ -56,6 +57,7 @@ export async function buildChatSdk(): Promise<ChatSdk> {
     );
   }
   const apiKey = await loadApiKey();
-  const client = new Anthropic({ apiKey, maxRetries: 1 });
+  const { default: AnthropicSdk } = await import('@anthropic-ai/sdk');
+  const client = new AnthropicSdk({ apiKey, maxRetries: 1 });
   return { client, model: CHAT_MODEL };
 }

@@ -40,6 +40,7 @@
 import {
   AVATAR_Z,
   type RoomBox,
+  type RoomFigure,
   type RoomPresetManifest,
   type RoomState,
   type RoomTime,
@@ -191,6 +192,7 @@ function devRenderers(): Set<RoomRenderer> {
 const CYCLE_STEP_MS = 125;
 export class RoomRenderer {
   private scene: Scene | null = null;
+  private figure: RoomFigure | null = null;
   private sceneSeq = 0;
   private sceneKey = '';
   private sceneTints = '';
@@ -285,6 +287,19 @@ export class RoomRenderer {
     this.sceneTints = tints;
     this.sceneSeq++;
     this.readySent = false;
+    this.invalidate();
+  }
+
+  /**
+   * 261121: who sits in her slot (RoomAvatar reports it through RoomCanvas). A
+   * pack with a seat fit for that figure redraws her chair; the caches
+   * rebuild and the old picture stays until the new one is ready.
+   */
+  setFigure(figure: RoomFigure | null): void {
+    if (figure === this.figure) return;
+    this.figure = figure;
+    if (!this.scene) return;
+    this.sceneSeq++;
     this.invalidate();
   }
 
@@ -401,7 +416,7 @@ export class RoomRenderer {
     const scene = this.scene;
     if (!scene) return null;
     const { manifest, state, resolve } = scene;
-    const plan = roomDrawPlan(manifest, state, time);
+    const plan = roomDrawPlan(manifest, state, time, { figure: this.figure });
     const { errors } = await loadPlanAssets(plan, resolve, this.assets);
     for (const e of errors) {
       const key = `${this.sceneSeq}:${e.file}`;
@@ -493,7 +508,7 @@ export class RoomRenderer {
         if (!scene) return;
         const seq = this.sceneSeq;
         const caches = [...this.caches.values()];
-        const plans = caches.map((c) => roomDrawPlan(scene.manifest, scene.state, c.time));
+        const plans = caches.map((c) => roomDrawPlan(scene.manifest, scene.state, c.time, { figure: this.figure }));
         // Masks are usually loaded already (the part was tinted by its default).
         await Promise.all(plans.map((p) => loadPlanAssets(p, scene.resolve, this.assets)));
         if (this.disposed || seq !== this.sceneSeq) return;

@@ -591,6 +591,8 @@ export function VoicePicker({
       const msg = String((err as Error)?.message ?? '');
       if (/VOICE_PACK_MISSING/.test(msg)) {
         setError(t('Download a voice pack in Playtime to hear a sample.'));
+      } else if (/SPEECH_RUNTIME_FAILED: os_blocked/.test(msg)) {
+        setError(t('Windows security blocked on-device voices on this PC.'));
       } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
         setError(t('Local speech cannot run on this install.'));
       } else {

@@ -791,6 +791,11 @@ async function synthesizeLocalClip(
         return encodeWav(samples, sampleRate);
       } catch (err) {
         const msg = String((err as Error)?.message ?? err);
+        // The Fast voices run on the same sherpa-onnx runtime: when that
+        // would not load (issue #59: Smart App Control blocking it), falling
+        // back only turns the real cause into a pack-missing prompt.
+        const runtimeAt = msg.indexOf('SPEECH_RUNTIME_FAILED');
+        if (runtimeAt >= 0) throw new Error(msg.slice(runtimeAt));
         kokoroFallback = msg.startsWith('VOICE_PACK_MISSING') ? 'pack-missing' : 'failed';
         console.warn(`[sei/voice] Kokoro unavailable, using the Fast voices: ${msg}`);
       }
@@ -1040,7 +1045,15 @@ export function prewarmTts(): void {
     const route = await resolveSpeakRoute().catch((): ElevenLabsRoute => ({ kind: 'proxy' }));
     // Unconfigured BYOK: no request will follow, so nothing to warm.
     if (route.kind === 'unconfigured') return;
-    const origin = route.kind === 'direct' ? 'https://api.elevenlabs.io' : PROXY_BASE_URL;
+    // 261125: the proxy edge answers HEAD with `connection: close`, so the
+    // HEAD below left no pooled connection to reuse there; the proxy gets a
+    // GET /health instead (proxyPrewarm.ts, which has its own throttle).
+    if (route.kind !== 'direct') {
+      const { prewarmProxyConnection } = await import('../proxyPrewarm');
+      prewarmProxyConnection();
+      return;
+    }
+    const origin = 'https://api.elevenlabs.io';
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), 3_000);
     await fetch(origin, { method: 'HEAD', signal: ctrl.signal })

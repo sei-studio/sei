@@ -91,6 +91,48 @@ describe('replyLatencyProps', () => {
     expect(replyLatencyProps({ ...base, surface: 'minecraft', path: 'in_game', via: 'action' })?.via).toBe('action');
     expect(replyLatencyProps({ ...base, via: 'say' })).not.toHaveProperty('via');
   });
+
+  // 261123 (O5): where a voice turn's wait went.
+  it('voice phases ride flat, rounded and clamped; voice only', () => {
+    const phases = {
+      speech_end_to_final_ms: 812.4,
+      llm_request_ms: 14,
+      llm_first_token_ms: 1190.5,
+      line_queued_ms: 1620,
+      tts_first_chunk_ms: 1e12,
+    };
+    expect(replyLatencyProps({ ...base, surface: 'voice', ms: 2400, phases })).toEqual({
+      surface: 'voice',
+      path: 'app',
+      ms: 2400,
+      outcome: 'replied',
+      turn_index_bucket: 'first',
+      sample_rate: 1,
+      speech_end_to_final_ms: 812,
+      llm_request_ms: 14,
+      llm_first_token_ms: 1191,
+      line_queued_ms: 1620,
+      tts_first_chunk_ms: REPLY_MS_MAX,
+    });
+    // 261125: a chat sample carries only the chat keys (llm_* are shared).
+    const chat = replyLatencyProps({ ...base, phases });
+    expect(chat).not.toHaveProperty('speech_end_to_final_ms');
+    expect(chat).not.toHaveProperty('line_queued_ms');
+    expect(chat).not.toHaveProperty('tts_first_chunk_ms');
+    expect(replyLatencyProps({ ...base, path: 'in_game', phases })).not.toHaveProperty('llm_first_token_ms');
+  });
+
+  it('a missing or junk phase is left out, never sent as 0', () => {
+    const props = replyLatencyProps({
+      ...base,
+      surface: 'voice',
+      phases: { line_queued_ms: Number.NaN, llm_request_ms: -3, tts_first_chunk_ms: 900 },
+    });
+    expect(props).not.toHaveProperty('line_queued_ms');
+    expect(props).not.toHaveProperty('llm_request_ms');
+    expect(props).not.toHaveProperty('llm_first_token_ms');
+    expect(props?.tts_first_chunk_ms).toBe(900);
+  });
 });
 
 describe('recordReplyLatency', () => {
@@ -130,6 +172,40 @@ describe('sanitizeRendererReplyLatency', () => {
     const extra = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied', text: 'hi there' });
     expect(extra).not.toHaveProperty('text');
   });
+
+  it('keeps the voice phases; a bad phase drops only itself', () => {
+    expect(
+      sanitizeRendererReplyLatency({
+        surface: 'voice',
+        path: 'app',
+        turn: 2,
+        ms: 2600,
+        outcome: 'replied',
+        speech_end_to_final_ms: 900,
+        llm_request_ms: 12,
+        llm_first_token_ms: 1300,
+        line_queued_ms: 1700,
+        tts_first_chunk_ms: 'soon',
+        llm_text: 'nope',
+      }),
+    ).toEqual({
+      surface: 'voice',
+      path: 'app',
+      turn: 2,
+      ms: 2600,
+      outcome: 'replied',
+      phases: { speech_end_to_final_ms: 900, llm_request_ms: 12, llm_first_token_ms: 1300, line_queued_ms: 1700 },
+    });
+    const neg = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied', line_queued_ms: -1 });
+    expect(neg).toEqual({ surface: 'voice', path: 'app', turn: 1, ms: 5, outcome: 'replied' });
+  });
+
+  it('a sanitized sample with phases reaches capture flat', () => {
+    const capture = vi.fn();
+    const s = sanitizeRendererReplyLatency({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', line_queued_ms: 1500 });
+    recordReplyLatency(s!, capture);
+    expect(capture).toHaveBeenCalledWith(REPLY_LATENCY_EVENT, expect.objectContaining({ ms: 2000, line_queued_ms: 1500 }));
+  });
 });
 
 describe('parseBotReplyLatency', () => {
@@ -152,6 +228,35 @@ describe('parseBotReplyLatency', () => {
       ms: 3000,
       outcome: 'replied',
     });
+  });
+
+  it('carries the bot phases (261126): a bad phase drops alone, never the sample', () => {
+    const raw = {
+      type: 'reply-latency', origin: 'game', turn: 1, ms: 9000, outcome: 'replied', via: 'say',
+      dispatch_ms: 3, llm_request_ms: 40, llm_last_request_ms: 4100, llm_response_ms: 8900,
+      llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, llm_rate_limited: 0, busy_at_line: 'action',
+      // Junk: a negative phase, a fractional count, a free-form state, an unknown key.
+      dispatch_extra_ms: 5, text: 'hello',
+    };
+    const s = parseBotReplyLatency(raw)!;
+    expect(s.phases).toEqual({ dispatch_ms: 3, llm_request_ms: 40, llm_last_request_ms: 4100, llm_response_ms: 8900, llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, llm_rate_limited: 0 });
+    expect(s.busyAtLine).toBe('action');
+    const bad = parseBotReplyLatency({ ...raw, llm_response_ms: -1, llm_calls: 1.5, busy_at_line: 'typing hello' })!;
+    expect(bad).not.toBeNull();
+    expect(bad.phases).not.toHaveProperty('llm_response_ms');
+    expect(bad.phases).not.toHaveProperty('llm_calls');
+    expect(bad.busyAtLine).toBeUndefined();
+    const props = replyLatencyProps(s)!;
+    expect(props).toMatchObject({ surface: 'minecraft', ms: 9000, dispatch_ms: 3, llm_model_ms: 8700, llm_calls: 2, llm_aborted: 1, busy_at_line: 'action' });
+    expect(props).not.toHaveProperty('text');
+    expect(props).not.toHaveProperty('dispatch_extra_ms');
+    // Routed app chat (chat / in_game) is bot-timed too.
+    const routed = replyLatencyProps(parseBotReplyLatency({ ...raw, origin: 'app' })!)!;
+    expect(routed).toMatchObject({ surface: 'chat', path: 'in_game', llm_request_ms: 40, busy_at_line: 'action' });
+    // A bot key never rides a voice or app-chat sample.
+    const voice = replyLatencyProps({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', phases: { llm_model_ms: 9 } as never, busyAtLine: 'idle' });
+    expect(voice).not.toHaveProperty('llm_model_ms');
+    expect(voice).not.toHaveProperty('busy_at_line');
   });
 
   it('rejects anything malformed', () => {
@@ -206,5 +311,80 @@ describe('startChatReplyClock', () => {
     const b = clock();
     b.c.settle(null, new Error('PROXY_HTTP_500'));
     expect(b.samples[0].outcome).toBe('error');
+  });
+});
+
+describe('chat phases (261125, O5)', () => {
+  function clock(turn = 1) {
+    let t = 10_000;
+    const samples: ReplyLatencySample[] = [];
+    const c = startChatReplyClock({ turn, startedAt: t, now: () => t, record: (s) => samples.push(s) });
+    return { c, samples, advance: (ms: number) => (t += ms), at: () => t };
+  }
+
+  it('phases are ms since the clock started; llm_calls is a count; a later mark overwrites', () => {
+    const { c, samples, advance, at } = clock();
+    advance(5);
+    c.mark('prompt_start_ms');
+    advance(20);
+    c.mark('prompt_built_ms');
+    c.mark('llm_request_ms', at() + 2);
+    c.mark('llm_calls', 1);
+    advance(900);
+    c.mark('llm_response_ms');
+    c.mark('llm_calls', 2);
+    advance(700);
+    c.mark('llm_response_ms');
+    advance(10);
+    c.settle({ replies: [{}] });
+    expect(samples[0]).toEqual({
+      surface: 'chat',
+      path: 'app',
+      turn: 1,
+      ms: 1635,
+      outcome: 'replied',
+      phases: { prompt_start_ms: 5, prompt_built_ms: 25, llm_request_ms: 27, llm_calls: 2, llm_response_ms: 1625 },
+    });
+  });
+
+  it('marks after the bubble reached the renderer are ignored', () => {
+    const { c, samples, advance } = clock();
+    c.mark('llm_request_ms');
+    advance(800);
+    c.replied();
+    advance(3000);
+    c.mark('llm_response_ms');
+    c.mark('llm_calls', 3);
+    expect(samples[0].phases).toEqual({ llm_request_ms: 0 });
+  });
+
+  it('no marks = no phases key (unchanged sample shape)', () => {
+    const { c, samples } = clock();
+    c.settle({ replies: [{}] });
+    expect(samples[0]).not.toHaveProperty('phases');
+  });
+
+  it('a bad llm_calls value is dropped', () => {
+    const { c, samples } = clock();
+    c.mark('llm_calls', 1.5);
+    c.settle({ replies: [{}] });
+    expect(samples[0]).not.toHaveProperty('phases');
+  });
+
+  it('props carry the chat phases on the app path only, clamped like ms', () => {
+    const base = { surface: 'chat' as const, turn: 1, ms: 2000, outcome: 'replied' as const };
+    const phases = { prompt_start_ms: 4.4, llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1, llm_first_token_ms: -5 };
+    const app = replyLatencyProps({ ...base, path: 'app', phases });
+    expect(app).toMatchObject({ prompt_start_ms: 4, llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1 });
+    expect(app).not.toHaveProperty('llm_first_token_ms');
+    // 261126: a chat routed into a live game is bot-timed: bot keys only.
+    const inGame = replyLatencyProps({ ...base, path: 'in_game', phases });
+    expect(inGame).not.toHaveProperty('prompt_start_ms');
+    expect(inGame).toMatchObject({ llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1 });
+    // A voice-only key never rides a chat sample, nor a chat-only key a voice one.
+    const chatWithVoiceKey = replyLatencyProps({ ...base, path: 'app', phases: { tts_first_chunk_ms: 100 } });
+    expect(chatWithVoiceKey).not.toHaveProperty('tts_first_chunk_ms');
+    const voice = replyLatencyProps({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', phases: { prompt_built_ms: 9 } as never });
+    expect(voice).not.toHaveProperty('prompt_built_ms');
   });
 });

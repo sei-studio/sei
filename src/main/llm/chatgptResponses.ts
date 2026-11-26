@@ -151,6 +151,7 @@ export function createChatgptProvider(opts: {
     // The last usage any event carried, for a stream we cut before
     // response.completed (that is where usage normally arrives).
     let seenUsage: unknown = undefined;
+    let sawText = false;
     let r: { text: string; toolUses: LlmToolUse[]; usage: LlmResult['usage']; stopReason: string | null };
     try {
       r = (await streamResponses({
@@ -160,7 +161,13 @@ export function createChatgptProvider(opts: {
         body,
         signal: inner.signal,
         onChunk,
-        onTextDelta: (d: string) => gate.push(d),
+        onTextDelta: (d: string) => {
+          if (d && !sawText) {
+            sawText = true;
+            p.onFirstToken?.();
+          }
+          return gate.push(d);
+        },
         onEvent: (ev: { response?: { usage?: unknown } } | null) => {
           if (ev?.response?.usage) seenUsage = ev.response.usage;
         },

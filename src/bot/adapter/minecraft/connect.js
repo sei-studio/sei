@@ -608,6 +608,15 @@ export function createBotInstance({
   const bot = createBot(botOpts)
   markBoot('bot_created')
   try { bot.once('login', () => markBoot('login')) } catch {}
+  // 261124: split bot_created -> login (1.20.2+ only; older versions have no
+  // configuration state, so both stay unstamped). `configuration` = the login
+  // exchange is done and the configuration protocol is compiled; `configured`
+  // = the server's finish_configuration arrived (its registries are in), which
+  // leaves the play-protocol compile and the play `login` packet for the rest.
+  try {
+    bot._client?.on?.('state', (state) => { if (state === 'configuration') markBoot('configuration') })
+    bot._client?.once?.('finish_configuration', () => markBoot('configured'))
+  } catch {}
 
   // Forge/NeoForge handshake SPIKE (260806). Off unless SEI_FORGE_HANDSHAKE=1.
   // Must be installed here, immediately after createBot and before the socket

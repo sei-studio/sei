@@ -73,6 +73,7 @@ import {
   PillPicker,
 } from './suiQuestions';
 import styles from './onboard.module.css';
+import { FreeSlotButton } from '../components/PartyFullHint';
 
 type QuestionLineId = 'qAge' | 'qDyn' | 'qArt';
 type LineId = 'ready' | 'needQs' | QuestionLineId | 'which' | 'gotIt';
@@ -459,9 +460,14 @@ export function SuiMeetScene(): React.ReactElement {
                   {cast.errDetail.length > 200 ? `${cast.errDetail.slice(0, 200)}…` : cast.errDetail}
                 </p>
               ) : null}
-              <button className={`${styles.pill} ${styles.pillWide}`} onClick={cast.retry}>
-                {tt('Try again')}
-              </button>
+              {cast.errCode === 'slot_limit' ? (
+                // 261124: casting again cannot help until a slot is free.
+                <FreeSlotButton surface="cast" plain className={`${styles.pill} ${styles.pillWide}`} />
+              ) : (
+                <button className={`${styles.pill} ${styles.pillWide}`} onClick={cast.retry}>
+                  {tt('Try again')}
+                </button>
+              )}
               <button className={styles.quietLink} onClick={() => leave('home')}>
                 {tt('Back')}
               </button>

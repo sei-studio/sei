@@ -38,6 +38,7 @@ import { useChessStore, isChessOpen, isChessReplayOpen } from '../lib/stores/use
 import { useConnect4Store, isCONNECT4Open } from '../lib/stores/useConnect4Store';
 import { useBattleshipStore, isBATTLESHIPOpen } from '../lib/stores/useBattleshipStore';
 import { useVoiceStore } from '../lib/stores/useVoiceStore';
+import { useBackseatStore, backseatCapture } from '../lib/stores/useBackseatStore';
 import { ChessPanel } from '../components/chess/ChessPanel';
 import { ChessReplayPanel } from '../components/chess/ChessReplayPanel';
 import { CONNECT4Panel } from '../components/connect4/Connect4Panel';
@@ -48,6 +49,7 @@ import { botGameName } from '../lib/gameLaunch';
 import { GameSurface } from '../components/GameSurface';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { sei } from '../lib/ipcClient';
+import { noteComposerTyping } from '../lib/chatPrewarm';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -68,7 +70,7 @@ import {
   ReplyIcon,
 } from '../components/icons';
 import { IdTag } from '../components/IdTag';
-import { CHAT_TEXT_MAX, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
+import { CHAT_TEXT_MAX, chatRowHidden, type ChatMessage, type ChatReplyRef, type UserProfile } from '@shared/ipc';
 import type { Character } from '@shared/characterSchema';
 import { ClipCard } from '../components/backseat/ClipCard';
 import { FirstMomentCard } from '../components/FirstMomentCard';
@@ -157,7 +159,9 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
   // "You and X called for Y" row alone. Filtered BEFORE the map so day
   // separators and author-run detection key on the visible neighbors.
   // WorldLink desktop lines (ChatMessage.desktop) likewise: they stay desktop bubbles.
-  const visibleMessages = useMemo(() => messages.filter((m) => !m.voice && !m.desktop), [messages]);
+  // A line the player TYPED on the call stays visible; her spoken reply to it
+  // does not (ChatMessage.typed, 261124).
+  const visibleMessages = useMemo(() => messages.filter((m) => !chatRowHidden(m)), [messages]);
   const awaiting = useChatStore((s) => s.awaiting[characterId]) ?? false;
   // On a call the reply is SPOKEN and its row is a hidden voice row (see
   // visibleMessages above), so "is typing…" would show and then nothing ever
@@ -371,7 +375,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     const ref = replyTo ?? undefined;
     setDraft('');
     setReplyTo(null);
-    void send(characterId, text, ref);
+    void send(characterId, text, ref, undefined, { typed: true });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -652,7 +656,7 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
     const prev = seenCountRef.current;
     seenCountRef.current = messages.length;
     if (!chatHidden || messages.length <= prev) return;
-    if (messages.slice(prev).some((m) => m.role !== 'user' && !m.voice && !m.desktop)) setGameUnread(true);
+    if (messages.slice(prev).some((m) => m.role !== 'user' && !chatRowHidden(m))) setGameUnread(true);
   }, [messages, chatHidden]);
   useEffect(() => {
     if (!chatHidden) setGameUnread(false);
@@ -929,7 +933,15 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               ref={inputRef}
               className={styles.input}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                // 261125: keep the chat upstream connection warm for the send.
+                noteComposerTyping(e.target.value);
+                // 261124: typing to the companion watching your screen latches
+                // the frames from when you started, so the answer is about
+                // what you were looking at, not the moment you hit Enter.
+                if (useBackseatStore.getState().sharingFor === characterId) backseatCapture()?.armUserGrid();
+              }}
               onKeyDown={onKeyDown}
               placeholder={t('Message {name}…', { name: companionName })}
               // 260705: mirror the chat:send Zod cap — an over-limit paste would

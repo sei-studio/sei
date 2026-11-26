@@ -41,7 +41,7 @@ import type { ChatgptSignInResult, ChatgptSignOutResult, ChatgptStatus } from '.
 import type { RegionStatus } from './regionGate';
 import type { UsageSummary } from './llmUsage';
 import type { PopupAction } from './popupActions';
-import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason } from './callEndReasons';
+import type { BackseatEndReasonArg, BackseatStartTrigger, CallEndReason, CaptureFailDetail } from './callEndReasons';
 import type { CallInterruptCounts } from './callInterrupts';
 import type { FishAudioResult, FishFailureReason, FishOverrideResult } from './fishVoices';
 export type { ErrorClass } from './errorClasses';
@@ -511,6 +511,17 @@ export function isForgeFamilyLanHost(host: LanHost | undefined): boolean {
 
 // ── In-app chat (Phase 18/19) ───────────────────────────────────────────────
 /**
+ * Whether the chat view hides this row: a call row (ChatMessage.voice) other
+ * than a line the player typed, or a WorldLink desktop line. Her replies on a
+ * call stay hidden even beside a typed line (they are spoken on the call), and
+ * `typed` only ever unhides a `user` row. The one rule for the transcript, the
+ * roster preview and main's last-message read.
+ */
+export function chatRowHidden(m: ChatMessage): boolean {
+  return (m.voice === true && !(m.typed === true && m.role === 'user')) || m.desktop === true;
+}
+
+/**
  * 260705: max characters per outgoing chat message — single source of truth for
  * the chat:send Zod gate (main) AND the composer's maxLength (renderer). The two
  * MUST agree: an over-limit paste passes the composer, renders an optimistic
@@ -555,6 +566,17 @@ export interface ChatMessage {
    */
   voice?: boolean;
   /**
+   * 261124: a call row the player TYPED (the chat composer mid-call, Backseat
+   * included). Still a call row (`voice` stays set: the call accounts for
+   * it), but SHOWN in the chat. The hide rule is for captions of speech; a
+   * line the player wrote is not a caption, and hiding it made every message
+   * typed during a call vanish on send (in-app feedback, Backseat). Only the
+   * player's rows carry it: the companion's reply is spoken on the call and
+   * stays hidden like every other call line (product call (261124)). See
+   * chatRowHidden.
+   */
+  typed?: boolean;
+  /**
    * WorldLink (product call (261116)): a line she said on the desktop as a
    * speech bubble (a click on her, an idle line, a reaction to her room).
    * Persisted so she remembers saying it, but HIDDEN in the chat UI like a
@@ -587,9 +609,20 @@ export interface ChatMessage {
    * called for Y"), rendered with a phone icon.
    * A chess row additionally carries `chess` (the recorded moves + result), so
    * the row is clickable and opens a board replay of that game.
+   * A game session's row (261113) also carries what happened in it, for the
+   * model only: `recap`, the companion's own short recap from the session-end
+   * call, or, when there is none, `lines`, the last few lines said in the game
+   * (chat/playSummary.ts playStory). The renderer shows `text` either way.
    */
   event?:
-    | { kind: 'play'; game: string; durationMs: number; chess?: ChessReplayData }
+    | {
+        kind: 'play';
+        game: string;
+        durationMs: number;
+        chess?: ChessReplayData;
+        recap?: string;
+        lines?: Array<{ who: 'player' | 'you' | 'other'; text: string }>;
+      }
     | { kind: 'call'; durationMs: number };
 }
 
@@ -1037,6 +1070,14 @@ export interface SpokenLineContext {
    * to TTS.
    */
   ambientCapturedAt?: number;
+  /**
+   * 261123 (O5 voice latency): main's wall-clock (Date.now) stamps for the
+   * send that produced this line, set on the FIRST streamed line of a voice
+   * reply only: when the LLM request went out and when its first reply text
+   * token arrived. The renderer's reply clock turns them into the
+   * reply_latency phases (lib/voice/replyClock.ts). Never sent to TTS.
+   */
+  replyTiming?: { llmStartAt?: number; firstTokenAt?: number };
 }
 
 /**
@@ -2312,6 +2353,10 @@ export interface RendererApi {
     replyTo?: ChatReplyRef;
     voicePeers?: string[];
     interrupted?: { line: string };
+    /** 261124: typed in the chat composer (not a transcribed utterance). On a
+     *  call the player's line stays visible (ChatMessage.typed); the reply is
+     *  spoken and hidden. */
+    typed?: boolean;
   }): Promise<ChatSendResult>;
   /**
    * Multi-companion voice (260706): silently record a line spoken on the call
@@ -2703,6 +2748,9 @@ export interface RendererApi {
    *  the window's current title, or for a whole-screen share the title of
    *  whatever is frontmost. Null when it cannot be read. */
   backseatShareLabel(sourceId: string): Promise<string | null>;
+  /** 261123: whether a window source is minimized right now (Windows only;
+   *  null anywhere it cannot be read). Asked only after capture refused it. */
+  backseatWindowMinimized(sourceId: string): Promise<boolean | null>;
   /** Abort the in-flight backseat turn (the player barged in over it). */
   backseatInterrupt(characterId: string): Promise<void>;
   /** 260925 act: whether the line pushed with SpokenLineContext.confirmId played to its end. */
@@ -2714,7 +2762,7 @@ export interface RendererApi {
   backseatRevealClip(clipPath: string): Promise<void>;
   /** `reason` (261023): why the share ended, for backseat_ended. Main
    *  validates it (callEndReasons.ts); a missing one is 'unspecified'. */
-  backseatEnd(characterId: string, reason?: BackseatEndReasonArg): Promise<void>;
+  backseatEnd(characterId: string, reason?: BackseatEndReasonArg, captureDetail?: CaptureFailDetail): Promise<void>;
   onBackseatState(cb: (state: BackseatState) => void): Unsubscribe;
   onBackseatLine(cb: (l: BackseatLine & { characterId: string }) => void): Unsubscribe;
   onBackseatClipRequest(cb: (r: { characterId: string; requestId: string }) => void): Unsubscribe;
@@ -2875,6 +2923,13 @@ export interface RendererApi {
    * STT request that follows utterance-end reuses a warm pooled connection.
    */
   voiceSttPrewarm(): Promise<void>;
+  /**
+   * 261125 (O5): fire-and-forget connection prewarm for typed chat, called
+   * while the player types in the composer so the send's LLM request reuses a
+   * warm pooled connection to the proxy (cloud backend), or finds the ChatGPT
+   * plan's model catalog cached. Throttled in main.
+   */
+  chatPrewarm(): Promise<void>;
   /**
    * Mark a voice call open (active:true) or hung up (active:false) for a
    * character. Main records it (voice/callState) so idle-chat prompts carry
@@ -3601,6 +3656,12 @@ export interface RendererApi {
    * renderer only ever compares it against `'darwin'`.
    */
   platform: string;
+  /**
+   * 261123: when main's process started (epoch ms), passed to the main window
+   * as `--sei-process-start=` (windowChrome.ts). The boot splash fades its mark
+   * in on that clock (renderer lib/bootMark.ts). Absent in other windows.
+   */
+  launchStartedAt?: number;
   /** Frameless window controls (Windows/Linux custom titlebar). */
   windowMinimize(): Promise<void>;
   /** Toggle maximize/restore for the focused window. */
@@ -4073,6 +4134,9 @@ export const IpcChannel = {
     /** Pull: the page of rows before a given message id (infinite scrollback). */
     historyBefore: 'chat:history-before',
     send: 'chat:send',
+    /** Invoke, fire-and-forget (261125): the player is typing; warm the chat
+     * upstream connection so the send does not pay TCP+TLS setup. */
+    prewarm: 'chat:prewarm',
     /** Pull: the chat surface was opened. Main decides (kind 'unique', empty
      * transcript, never chatted) whether the companion speaks first and returns
      * any greeting replies; a no-op returns []. */
@@ -4176,6 +4240,8 @@ export const IpcChannel = {
     audioStop: 'backseat:audio-stop',
     /** What is on the shared surface right now, as one short line (260804). */
     shareLabel: 'backseat:share-label',
+    /** 261123: is this window source minimized (Windows, after a busy refusal). */
+    windowMinimized: 'backseat:window-minimized',
     /** Abort the in-flight turn: the player started talking over it. */
     interrupt: 'backseat:interrupt',
     /** 260925 act: a confirmId line finished playing (or was cut off). */
@@ -4409,6 +4475,10 @@ export const IpcChannel = {
     // 261031 (T277): the main window's React tree mounted (send, renderer →
     // main). The boot guard counts a start as good a few seconds after it.
     rendererReady: 'app:renderer-ready',
+    // 261123 launch speed: invoke, renderer → main. Answers once main has
+    // registered its IPC handlers; the preload holds every call until then
+    // (src/preload/mainReadyGate.ts), so the window can load before they exist.
+    ipcReady: 'app:ipc-ready',
     // ── In-app updater (quick/260604-uoy) ────────────────────────────────────
     // Push (main → renderer):
     updateAvailable: 'app:update-available',       // optional update detected

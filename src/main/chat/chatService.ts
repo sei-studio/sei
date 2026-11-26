@@ -39,7 +39,7 @@ import { detectLanguageFromText, userChatLanguage } from '../../shared/chatLangu
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from '../../bot/brain/nextStep.js';
-import { callGreetingNote, renderReplyLanguageNote } from '../../bot/brain/promptLibrary.js';
+import { callGreetingNote, renderReplyLanguageNote, voiceIdleNote } from '../../bot/brain/promptLibrary.js';
 import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
@@ -57,6 +57,7 @@ import { readKnowledgeForPrompt } from '../knowledge/knowledgeStore';
 import { companionLanguageFor } from '../companionLanguage';
 import { LOOK_TOOL_NAME, lookAtRoom, lookResultContent, lookToolResult, roomForSurface, roomPromptLine, type RoomContext, type RoomLook } from '../seilink/roomContext';
 import type { RoomImage } from '../seilink/roomRender';
+import type { ChatPhaseKey } from '../replyLatency';
 import { roomChangeTurnNote } from '../seilink/roomChangeNote';
 import { callPictureDecision, DECORATE_TOOL_NAME, decorateToolFor, editorTurnNote, notePictureSent, runDecorate } from '../seilink/editorTogether';
 import { DECORATE_MAX_CHANGES } from '../../shared/seilinkDecorate';
@@ -125,6 +126,24 @@ export interface ChatDeps {
    * absent → no blocking (tests, legacy callers).
    */
   blockedAutoLaunch?: (characterId: string) => string | null;
+  /**
+   * 261125 (O5 chat latency): the chat:send handler's fresh world-detection
+   * pass (refreshLanState, ~60-100ms of lsof/netstat + loopback pings), started
+   * by the handler and awaited here only right before getLanState() is read
+   * for the prompt, so it runs alongside the turn's reads and provider build
+   * instead of in front of them. Must never reject. Absent = the caller
+   * already refreshed (or does not need to).
+   */
+  lanReady?: Promise<unknown>;
+  /** 261125: reply_latency phase stamps for the typed-chat clock (replyLatency.ts). */
+  markPhase?: (key: ChatPhaseKey, at?: number) => void;
+}
+
+/** What a turn's prompt says about open worlds (prepareChatTurn). */
+interface WorldTruth {
+  openWorldDetected: boolean;
+  /** Game adapters (M0): status lines for the other self-launchable games. */
+  otherWorlds?: { game: string; name: string; open: boolean }[];
 }
 
 // 260725: doubled 6000 -> 12000 alongside the bot-side compaction trigger
@@ -730,15 +749,17 @@ function clampPunctuation(raw: unknown): 'casual' | 'deliberate' {
  */
 async function prepareChatTurn(
   characterId: string,
-  opts: {
-    openWorldDetected: boolean;
+  opts: (
+    | WorldTruth
+    // 261125: the world truth as a promise (typed chat: it waits on the fresh
+    // LAN pass), resolved after the reads below and before the system blocks.
+    | { world: Promise<WorldTruth> }
+  ) & {
     inGame: boolean;
     voiceCall?: boolean;
     voicePeers?: string[];
     /** Cap the transcript to the last N rows (voice calls, see VOICE_RECENT_CAP). */
     recentCap?: number;
-    /** Game adapters (M0): status lines for the other self-launchable games. */
-    otherWorlds?: { game: string; name: string; open: boolean }[];
   },
 ) {
   const character = await getCharacter(characterId);
@@ -765,6 +786,7 @@ async function prepareChatTurn(
   // (the call clock stamp carries it; see roomPromptLine).
   const room = await roomForSurface(characterId, { inGame: opts.inGame });
   const roomLine = room ? roomPromptLine(room, { includeTime: opts.voiceCall !== true }) : undefined;
+  const world: WorldTruth = 'world' in opts ? await opts.world : opts;
   const system = buildSystemBlocks({
     persona: character.persona,
     name: character.name,
@@ -774,8 +796,8 @@ async function prepareChatTurn(
     memory,
     summary,
     knowledge,
-    openWorldDetected: opts.openWorldDetected,
-    otherWorlds: opts.otherWorlds,
+    openWorldDetected: world.openWorldDetected,
+    otherWorlds: world.otherWorlds,
     inGame: opts.inGame,
     voiceCall: opts.voiceCall === true,
     voicePeers: opts.voicePeers,
@@ -918,7 +940,8 @@ async function persistReplies(
     role: 'companion',
     text: p.text,
     ts: now + i,
-    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice).
+    // Spoken on a live call → hidden in the chat UI (see ChatMessage.voice),
+    // even when it answers a line the player typed (ChatMessage.typed).
     ...(opts?.voice ? { voice: true } : {}),
     // A WorldLink desktop bubble → hidden in the chat UI too (see ChatMessage.desktop).
     ...(opts?.desktop ? { desktop: true } : {}),
@@ -942,6 +965,10 @@ async function sendChatMessageImpl(
     /** 261112: a voice line that cut the companion off mid-line. Only the
      * in-game route carries it (the bot frames the turn as a cut-in). */
     interrupted?: { line: string };
+    /** 261124: typed in the composer. On a call the player's row keeps `voice`
+     * (the call's) but gains `typed`, so the chat still shows it. The reply is
+     * spoken and stays hidden. */
+    typed?: boolean;
   },
   deps: ChatDeps,
 ): Promise<ChatSendResult> {
@@ -964,9 +991,12 @@ async function sendChatMessageImpl(
       text: args.text,
       ts: Date.now(),
       ...(args.replyTo ? { replyTo: args.replyTo } : {}),
-      // Sent during a live call (a transcribed utterance, or typed mid-call —
-      // either way the exchange is spoken) → hidden in the chat UI.
+      // Sent during a live call → a call row (the reply is spoken). Hidden in
+      // the chat UI when it was a transcribed utterance; a TYPED line stays
+      // visible (261124: it is not a caption, and hiding it made the
+      // player's own messages vanish on send). Her reply stays hidden.
       ...(args.voiceCall === true ? { voice: true } : {}),
+      ...(args.voiceCall === true && args.typed === true ? { typed: true } : {}),
     };
     await appendTurnRow(args.characterId, userMsg);
 
@@ -1023,6 +1053,30 @@ async function sendChatMessageImpl(
       }
     }
 
+    // 261123 (O5 voice latency): the provider is built WHILE the prompt is.
+    // Neither reads what the other produces (the provider is config + the
+    // credential: the session read, an SDK client, on the ChatGPT plan the
+    // model catalog), and both used to run back to back before every LLM
+    // request. It is still awaited at the same point below, so its errors
+    // (LOCAL_NO_API_KEY, ...) surface exactly where they did; the guard only
+    // keeps it from being an unhandled rejection when the prompt build throws
+    // first. Measured with src/main/chat/voiceLatency.harness.test.ts.
+    const mark = deps.markPhase;
+    mark?.('prompt_start_ms');
+    const llmReady = buildLlmProvider();
+    llmReady.then(() => mark?.('provider_ready_ms'), () => {});
+    // 261125 (O5 chat latency): the world truth waits on chat:send's fresh
+    // LAN pass (deps.lanReady), which now runs alongside everything above and
+    // the prompt build's reads; the prompt still reads getLanState() only
+    // after that pass, exactly as when the handler awaited it up front.
+    const world = (async (): Promise<WorldTruth> => {
+      if (deps.lanReady) {
+        await deps.lanReady;
+        mark?.('lan_check_ms');
+      }
+      return { openWorldDetected: deps.getLanState().kind === 'open', otherWorlds: otherWorldStatus(deps) };
+    })();
+    world.catch(() => {});
     // Build the prompt AFTER the user message is appended above, so the turn's
     // context includes it. Per-turn truth passed in:
     //   openWorldDetected — is an open-to-LAN world detected right now? Lets the
@@ -1030,8 +1084,7 @@ async function sendChatMessageImpl(
     //   inGame — usually false here (a live session routes messages in-game), but
     //     re-read so the routed-then-vanished fallback and any races tell the truth.
     const prep = await prepareChatTurn(args.characterId, {
-      openWorldDetected: deps.getLanState().kind === 'open',
-      otherWorlds: otherWorldStatus(deps),
+      world,
       inGame: deps.isInGame?.(args.characterId) ?? false,
       // 260705: while a voice call is open the reply is read aloud by TTS, so
       // the system prompt leads with the voice-call primer (spoken register).
@@ -1061,7 +1114,8 @@ async function sendChatMessageImpl(
     // language of the transcript.
     const languageNote = renderReplyLanguageNote(detectLanguageFromText(args.text));
     appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote, languageNote);
-    const llm = await buildLlmProvider();
+    mark?.('prompt_built_ms');
+    const llm = await llmReady;
     if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
 
     // Voice calls (260706): STREAM the reply so TTS can start on sentence 1 while
@@ -1099,6 +1153,16 @@ async function sendChatMessageImpl(
      * context at all and each sentence opened as a fresh utterance.
      */
     let prevSpoken: string | undefined;
+    /**
+     * 261123 (O5): wall-clock stamps for reply_latency's voice phases, sent
+     * once on the first streamed line (SpokenLineContext.replyTiming): the
+     * first LLM request, and the first reply text token of the turn (any hop).
+     */
+    let llmStartAt: number | undefined;
+    let firstTokenAt: number | undefined;
+    let replyTimingSent = false;
+    /** 261125: the turn's first streamed reply token was stamped (reply_latency chat phase). */
+    let sawFirstToken = false;
     /** `moreAfter`: text of this same reply is ALREADY known to follow. */
     const emitStreamedBubble = async (raw: string, moreAfter: boolean): Promise<void> => {
       // The silence-filler and peer-impersonation drops stay VOICE-scoped
@@ -1119,14 +1183,20 @@ async function sendChatMessageImpl(
           role: 'companion',
           text: b,
           ts: Date.now() + streamedReplies.length, // monotonic within the turn
-          // Spoken on a live call → hidden in the chat UI; typed bubbles show.
+          // Spoken on a live call → hidden in the chat UI, even when it
+          // answers a line the player typed on the call.
           ...(args.voiceCall === true ? { voice: true } : {}),
         };
         streamedReplies.push(msg);
         await appendTurnRow(args.characterId, msg);
         // Facepack pilot: the cue lands before the bubble it belongs to.
         if (facesEnabled()) emitReplyFaces(args.characterId, msg, parts[i].face);
-        deps.emitReply?.(args.characterId, msg, { prev: prevSpoken, more: i < parts.length - 1 || moreAfter });
+        const speech: SpokenLineContext = { prev: prevSpoken, more: i < parts.length - 1 || moreAfter };
+        if (!replyTimingSent) {
+          replyTimingSent = true;
+          speech.replyTiming = { llmStartAt, firstTokenAt };
+        }
+        deps.emitReply?.(args.characterId, msg, speech);
         prevSpoken = b;
       }
     };
@@ -1185,6 +1255,9 @@ async function sendChatMessageImpl(
       // sentence each time. 200 tokens comfortably fits the 1–2 sentence target
       // from the system prompt without truncating mid-sentence.
       const t0 = Date.now();
+      llmStartAt ??= t0;
+      if (hop === 0) mark?.('llm_request_ms', t0);
+      mark?.('llm_calls', hop + 1);
       // Streaming rides the layer's onTextDelta sink (Anthropic: the SDK
       // stream, byte-identical to the old messages.stream path; non-Anthropic:
       // SSE deltas, or one whole-text call for non-streaming providers).
@@ -1200,6 +1273,7 @@ async function sendChatMessageImpl(
       // `prev` so its own opening still continues cleanly.
       const onTextDelta = isStreaming
         ? async (delta: string): Promise<void> => {
+            if (firstTokenAt === undefined && delta) firstTokenAt = Date.now();
             streamBuf += delta;
             const { sentences, rest } = takeSentences(streamBuf);
             streamBuf = rest;
@@ -1230,7 +1304,10 @@ async function sendChatMessageImpl(
         timeoutMs: CHAT_TIMEOUT_MS,
         signal: ctrl.signal,
         ...(onTextDelta ? { onTextDelta } : {}),
+        // 261125: observation only; fires on transports that already stream.
+        ...(mark ? { onFirstToken: () => { if (!sawFirstToken) { sawFirstToken = true; mark('llm_first_token_ms'); } } } : {}),
       });
+      mark?.('llm_response_ms');
       if (isStreaming) {
         // This hop's trailing partial (a final sentence with no boundary punct,
         // or the whole reply when the model ends without terminal punctuation),
@@ -2034,22 +2111,8 @@ async function sendVoiceIdleTurnImpl(
     const { system, messages } = prep;
     // 260725: proactiveness is no longer a per-character dial, so every
     // companion gets the take-it-or-leave-it nudge with silence sanctioned.
-    const quiet = Math.max(1, Math.round(quietSeconds));
-    // 260730: two nudges, not one. The generic "start a topic" note read wrong
-    // after the companion had just ASKED something — the reply that follows a
-    // question is an answer, and a fresh topic on top of the unanswered one
-    // drops it. The follow-up note is deliberately unpressured: no "still
-    // there?", no repeating the question at them, and silence is still a fine
-    // answer. Fires at most once per question (see the renderer's idle clock).
-    const note = opts.awaitingAnswer
-      ? `[System note — not the player speaking: you asked them something and they have not answered for about ${quiet} seconds. ` +
-        'You can follow up in one short spoken line: put it a different way, offer an easy option, say it is fine either way, or let it go and move on. ' +
-        'Or reply with exactly (silence), which is never spoken and just ends your turn. ' +
-        'Keep it light and unbothered. Do not repeat the question as it was, do not press them for an answer, and do not ask if they are still there. Do not mention this note.]'
-      : `[System note — not the player speaking: the conversation has been quiet for about ${quiet} seconds. ` +
-        'You can start a topic in one short spoken line: something you remember about the player, something from earlier in this call, or a genuine question. ' +
-        'Or reply with exactly (silence) and let the quiet sit, which is completely fine; it is never spoken, it just ends your turn. ' +
-        'Do not greet them again and do not ask if they are still there. Do not mention this note.]';
+    // The text (and the 260730 follow-up variant) lives in promptLibrary.
+    const note = voiceIdleNote({ quietSeconds, awaitingAnswer: opts.awaitingAnswer === true });
     // Same warm tools+system cache prefix as every other voice turn.
     // 261024: the note rides after the breakpoint (see the companion turn).
     markLastMessageCached(messages);

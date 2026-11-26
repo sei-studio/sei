@@ -229,6 +229,8 @@ describe('llmMetaFromConfig', () => {
 })
 
 describe('reply_latency samples (261106)', () => {
+  // 261126: every sample carries its LLM counts, zero when no call ran.
+  const NO_LLM = { llm_calls: 0, llm_aborted: 0, llm_rate_limited: 0 }
   function withSink() {
     const c = clock()
     const s = createActionStats({ now: c.now })
@@ -244,11 +246,11 @@ describe('reply_latency samples (261106)', () => {
     s.notePlayerChat()
     c.advance(800)
     s.noteReply()
-    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 2000, outcome: 'replied', via: 'say' }])
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 2000, outcome: 'replied', via: 'say', ...NO_LLM }])
     s.notePlayerChat()
     c.advance(500)
     s.noteActionStarted()
-    expect(out[1]).toEqual({ origin: 'game', turn: 3, ms: 500, outcome: 'replied', via: 'action' })
+    expect(out[1]).toEqual({ origin: 'game', turn: 3, ms: 500, outcome: 'replied', via: 'action', ...NO_LLM })
   })
 
   it('a routed app chat is its own origin with its own turn count', () => {
@@ -258,8 +260,8 @@ describe('reply_latency samples (261106)', () => {
     c.advance(900)
     s.noteReply()
     expect(out).toEqual([
-      { origin: 'game', turn: 1, ms: 900, outcome: 'replied', via: 'say' },
-      { origin: 'app', turn: 1, ms: 900, outcome: 'replied', via: 'say' },
+      { origin: 'game', turn: 1, ms: 900, outcome: 'replied', via: 'say', ...NO_LLM },
+      { origin: 'app', turn: 1, ms: 900, outcome: 'replied', via: 'say', ...NO_LLM },
     ])
   })
 
@@ -280,7 +282,7 @@ describe('reply_latency samples (261106)', () => {
     s.notePlayerChat()
     c.advance(UNANSWERED_MS)
     s.snapshot()
-    expect(out).toEqual([{ origin: 'game', turn: 1, ms: UNANSWERED_MS, outcome: 'silent' }])
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: UNANSWERED_MS, outcome: 'silent', ...NO_LLM }])
     s.notePlayerChat()
     c.advance(1000)
     s.noteLlmError({ status: 429 })
@@ -294,12 +296,96 @@ describe('reply_latency samples (261106)', () => {
     s.notePlayerChat()
     c.advance(3000)
     s.abandonPending()
-    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 3000, outcome: 'aborted' }])
+    expect(out).toEqual([{ origin: 'game', turn: 1, ms: 3000, outcome: 'aborted', ...NO_LLM }])
     expect(s.snapshot().counters.pending_chats).toBe(1)
     s.abandonPending()
     c.advance(UNANSWERED_MS)
     s.snapshot()
     expect(out).toHaveLength(1)
+  })
+
+  it('splits the wait into dispatch, model and client time (261126)', () => {
+    const { c, s, out } = withSink()
+    // A call already in flight when the line lands is preempted: counted
+    // from the line, as an aborted call, but not as one of the line's calls.
+    const parked = s.noteLlmCallStart()
+    c.advance(500)
+    s.notePlayerChat({ busy: 'llm' })
+    c.advance(5)
+    s.noteLineDispatched()
+    s.noteLlmCallEnd(parked, { aborted: true })
+    c.advance(45)
+    // Round 1: an inline tool round, then 300 ms of our own work.
+    const r1 = s.noteLlmCallStart()
+    c.advance(2000)
+    s.noteLlmCallEnd(r1)
+    c.advance(300)
+    // Round 2 carries the say().
+    const r2 = s.noteLlmCallStart()
+    c.advance(1500)
+    s.noteLlmCallEnd(r2)
+    c.advance(10)
+    s.noteReply()
+    expect(out).toEqual([{
+      origin: 'game', turn: 1, ms: 3860, outcome: 'replied', via: 'say',
+      dispatch_ms: 5,
+      llm_request_ms: 50,
+      llm_last_request_ms: 2350,
+      llm_response_ms: 3850,
+      llm_model_ms: 5 + 2000 + 1500,
+      llm_calls: 2,
+      llm_aborted: 1,
+      llm_rate_limited: 0,
+      busy_at_line: 'llm',
+    }])
+  })
+
+  it('counts calls the rate limit dropped, per waiting line and per session (261126)', () => {
+    const { c, s, out } = withSink()
+    s.noteLlmRateLimited() // nobody waiting: session count only
+    s.notePlayerChat()
+    s.noteLlmRateLimited()
+    s.noteLlmRateLimited()
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out[0]).toMatchObject({ outcome: 'silent', llm_calls: 0, llm_rate_limited: 2 })
+    expect(s.snapshot().counters.llm_rate_limited).toBe(3)
+  })
+
+  it('a reply sent mid-stream has no response phase; old calls are trimmed (261126)', () => {
+    const { c, s, out } = withSink()
+    const old = s.noteLlmCallStart()
+    c.advance(100)
+    s.noteLlmCallEnd(old)
+    c.advance(1000)
+    s.notePlayerChat({ busy: 'not-a-state' })
+    c.advance(20)
+    const live = s.noteLlmCallStart()
+    c.advance(700)
+    s.noteReply() // early say() while the call still streams
+    expect(out[0]).toMatchObject({ ms: 720, llm_request_ms: 20, llm_last_request_ms: 20, llm_model_ms: 700, llm_calls: 1, llm_aborted: 0 })
+    expect(out[0]).not.toHaveProperty('llm_response_ms')
+    expect(out[0]).not.toHaveProperty('busy_at_line')
+    expect(out[0]).not.toHaveProperty('dispatch_ms')
+    s.noteLlmCallEnd(live, { failed: true })
+    // A later line sees none of the earlier calls.
+    c.advance(5000)
+    s.notePlayerChat()
+    c.advance(100)
+    s.noteActionStarted()
+    expect(out[1]).toEqual({ origin: 'game', turn: 2, ms: 100, outcome: 'replied', via: 'action', ...NO_LLM })
+  })
+
+  it('a failed reply call stamps no response (261126)', () => {
+    const { c, s, out } = withSink()
+    s.notePlayerChat()
+    const r = s.noteLlmCallStart()
+    c.advance(300)
+    s.noteLlmCallEnd(r, { failed: true })
+    c.advance(UNANSWERED_MS)
+    s.snapshot()
+    expect(out[0]).toMatchObject({ outcome: 'silent', llm_calls: 1, llm_aborted: 0, llm_model_ms: 300 })
+    expect(out[0]).not.toHaveProperty('llm_response_ms')
   })
 
   it('existing reply counters are unchanged by the sink', () => {

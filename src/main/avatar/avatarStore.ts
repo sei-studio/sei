@@ -41,7 +41,8 @@
  */
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
+import { loadJSZip } from '../lazyJszip';
 import { paths } from '../paths';
 import { avatarImageProblem, MAX_TEXTURE_SIDE, sniffAvatarImage, type ImageProblem } from './avatarImage';
 import type {
@@ -653,7 +654,7 @@ export async function importAvatarZip(characterId: string, zip: Buffer): Promise
   if (zip.byteLength > AVATAR_ZIP_MAX_BYTES) {
     throw new Error(`avatar zip too large (${zip.byteLength} bytes)`);
   }
-  const archive = await JSZip.loadAsync(zip, { decodeFileName: decodeZipName });
+  const archive = await (await loadJSZip()).loadAsync(zip, { decodeFileName: decodeZipName });
 
   // ── Check every declared size BEFORE inflating anything (a 1 MB zip can
   // declare, and inflate to, a gigabyte) ────────────────────────────────────
@@ -935,7 +936,7 @@ export async function zipStoredAvatar(characterId: string): Promise<Buffer | nul
   const files = await withLock(characterId, () => readStoredFiles(characterId));
   if (files.length === 0) return null;
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
-  const zip = new JSZip();
+  const zip = new (await loadJSZip())();
   for (const f of files) {
     zip.file(f.rel, f.bytes, {
       date: STABLE_ZIP_DATE,

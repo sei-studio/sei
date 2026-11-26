@@ -354,6 +354,13 @@ const cutTracker = createCutTracker();
 const replyClock = createVoiceReplyClock({
   now: () => performance.now(),
   report: (sample) => {
+    // 261123: the phase breakdown in DevTools too (numbers only).
+    console.log(
+      `[sei/voice] reply_latency turn=${sample.turn} ${sample.outcome} ms=${sample.ms} ` +
+        `speech_end_to_final=${sample.speech_end_to_final_ms ?? '-'} llm_request=${sample.llm_request_ms ?? '-'} ` +
+        `llm_first_token=${sample.llm_first_token_ms ?? '-'} line_queued=${sample.line_queued_ms ?? '-'} ` +
+        `tts_first_chunk=${sample.tts_first_chunk_ms ?? '-'}`,
+    );
     try {
       sei.track('reply_latency', { ...sample });
     } catch {
@@ -932,7 +939,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       );
       replyClockAt = null;
     }
-    replyClock.lineQueued();
+    // 261123: the turn's first line also times its first audio bytes (and
+    // carries main's LLM stamps on ctx.replyTiming); see replyClock.ts.
+    const firstAudio = replyClock.lineQueued(ctx.replyTiming);
     // Caption is set when this clip reaches the playhead (see the audio queue's
     // onSpeakingChange below), NOT here at enqueue time — otherwise a multi-line
     // reply (or two companions' queued lines) would jump the caption straight to
@@ -971,6 +980,11 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
         // auto-downloaded mid-call; Settings owns the download prompt.
         const packId = /VOICE_PACK_MISSING:([\w-]+)/.exec(msg)?.[1];
         set({ callNotice: missingPackNotice(packId) });
+      } else if (/SPEECH_RUNTIME_FAILED: os_blocked/.test(msg)) {
+        // 261127 (issue #59): Windows security (Smart App Control) refused to
+        // load the on-device voice runtime. No on-device voice can speak
+        // until it is allowed, so point at the voices that need no native code.
+        set({ callNotice: t('[voice blocked by Windows security, pick an online voice in Playtime]') });
       } else if (/SPEECH_RUNTIME_FAILED/.test(msg)) {
         // Local TTS (260817, W10): the sherpa-onnx runtime failed to load
         // (e.g. a mac x64 build shipped without the platform package).
@@ -1045,7 +1059,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // whether THIS line (a "want me to ...?" control offer) played to its end,
     // and the offer only becomes answerable once it did.
     // `ambientCapturedAt` (261010) is the staleness gate's input, never sent.
-    const { turn, confirmId, ambientCapturedAt, ...ttsCtx } = ctx;
+    // `replyTiming` (261123) is reply_latency bookkeeping, never sent either.
+    const { turn, confirmId, ambientCapturedAt, replyTiming: _replyTiming, ...ttsCtx } = ctx;
     const stale = ambientCapturedAt !== undefined ? staleGate(text, ambientCapturedAt) : undefined;
     const onDone = confirmId
       ? (completed: boolean): void => {
@@ -1082,7 +1097,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
       // The stream's chunks and its terminal error arrive through
       // applyTtsPush; this wrapper tells the line which happened.
       const handle: LineStreamHandle = {
-        push: (chunk) => slot.push(chunk),
+        push: (chunk) => {
+          firstAudio?.();
+          slot.push(chunk);
+        },
         end: () => slot.end(),
         fail: () => slot.fail(),
         error: (msg) => failLine(msg, () => slot.fail()),
@@ -1130,6 +1148,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
           slot?.fail();
           return;
         }
+        firstAudio?.();
         slot?.push(buf);
         slot?.end();
       })
@@ -1628,7 +1647,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
   /** A player utterance arrived (from the mic). Barge-in already cleared the
    * audio queue; here we supersede any running chain, mirror the line to the
    * non-responders for context, and kick off the responder's turn. */
-  function dispatchUserTurn(text: string, span?: { t0: number; t1: number }): void {
+  function dispatchUserTurn(text: string, span?: { t0: number; t1: number; speechEnd?: number }): void {
     const parts = get().participants;
     if (!parts.length || get().status !== 'live') return;
     // 261112: the first utterance after a confirmed barge-in is the one that
@@ -1689,7 +1708,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => {
     // back over the push long after the send, and backseat's own loop owns
     // its reply), so those wait for the give-up timer.
     const inGame = parts.some(inGameNow);
-    replyClock.utterance(mySeq, inGame ? 'in_game' : 'app');
+    replyClock.utterance(mySeq, inGame ? 'in_game' : 'app', span?.speechEnd);
     const directTurns: Promise<void>[] = [];
     for (const id of parts) {
       if (capture && id === sharingFor) {

@@ -20,6 +20,7 @@ import {
   composeSeedBlocks,
   _setTickIntervalForTests,
   appendProcedureOnce,
+  SEED_MAX_SESSION_ROWS,
 } from './orchestrator.js'
 
 // ───────────────────────── Change 2: template ─────────────────────────
@@ -521,6 +522,48 @@ describe('composeSeedBlocks — game scope (261020)', () => {
     expect(text(blocks, 'heartbeat')).toMatch(/^# HEARTBEAT\n/)
     expect(text(blocks, 'memory')).not.toContain('You are playing')
     expect(text(blocks, 'chat_continuity')).not.toContain('a different game')
+  })
+
+  // 261113 (v0.7 D1): the handoff carries finished game sessions.
+  it('reads a game session row in the handoff and leads with it when it is newest', async () => {
+    const a = args()
+    a.config._seiContinuity = {
+      recent: [
+        { role: 'user', text: 'see you in game', ts: Date.now() - 3 * 86_400_000 },
+        { role: 'session', text: 'You and Sui played Minecraft for 30 minutes. Your own recap of it afterwards: a creeper took the roof', ts: Date.now() - 2 * 86_400_000 },
+      ],
+    }
+    const t = text(await composeSeedBlocks(a), 'chat_continuity')
+    expect(t).toMatch(/^The last time you and the player were together was a game session that ended about 2 days ago/)
+    expect(t).toContain('What the two of you said and played most recently, oldest first:')
+    expect(t).toMatch(/\nGame session \(\d+ \w+ \d\d:\d\d\): You and Sui played Minecraft for 30 minutes\. Your own recap of it afterwards: a creeper took the roof/)
+    expect(t).toMatch(/\nPlayer \(.*\): see you in game/)
+  })
+
+  // 261123 (review): a player who only plays must not carry every session.
+  it('shows at most SEED_MAX_SESSION_ROWS game sessions, the newest, and every chat line', async () => {
+    const a = args()
+    const day = 86_400_000
+    a.config._seiContinuity = {
+      recent: [
+        { role: 'user', text: 'first chat line', ts: Date.now() - 40 * day },
+        ...Array.from({ length: 30 }, (_, i) => ({ role: 'session', text: `session number ${i} recap`, ts: Date.now() - (30 - i) * day })),
+        { role: 'companion', text: 'last chat line', ts: Date.now() - 1000 },
+      ],
+    }
+    const t = text(await composeSeedBlocks(a), 'chat_continuity')
+    expect((t.match(/\nGame session /g) ?? []).length).toBe(SEED_MAX_SESSION_ROWS)
+    expect(t).toContain('session number 29 recap')
+    expect(t).toContain(`session number ${30 - SEED_MAX_SESSION_ROWS} recap`)
+    expect(t).not.toContain(`session number ${29 - SEED_MAX_SESSION_ROWS} recap`)
+    expect(t).toContain('first chat line')
+    expect(t).toContain('last chat line')
+  })
+
+  it('keeps the texting lead and header when there is no session row', async () => {
+    const t = text(await composeSeedBlocks(args()), 'chat_continuity')
+    expect(t).toMatch(/^You were texting with the player in the app/)
+    expect(t).toContain('The last things you said to each other:')
   })
 
   it('the scope lines are plain prose', () => {

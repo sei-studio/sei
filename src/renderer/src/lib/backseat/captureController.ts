@@ -23,8 +23,12 @@ import { sei } from '../ipcClient';
 import {
   BUFFER_MS,
   CLIP_MS,
-  CLIPS_ENABLED,
+  ANALYSIS_FPS,
   CAPTURE_FPS,
+  clipBitrate,
+  clipFpsOf,
+  streamFps,
+  type ClipFps,
   CAPTURE_H,
   CAPTURE_W,
   JOLT_GAIN_DB,
@@ -44,7 +48,17 @@ import { downmixInterleaved, resampleMono, rmsDb } from './pcm';
 import { createSttStream, type SttStream } from './sttStream';
 import { blockMaxDelta } from './signals';
 import { createSwitchDwell } from './switchDwell';
+import {
+  captureSourceKind,
+  CaptureStartError,
+  desktopVideoConstraints,
+  openWithRetry,
+  type CaptureRetryOutcome,
+  type OpenedCapture,
+} from './captureOpen';
+import type { CaptureFailDetail } from '../../../../shared/callEndReasons';
 import { userChatLanguage } from '@shared/chatLanguage';
+import { BACKSEAT_PERF_EVENT, type BackseatPerfPhase } from '../../../../shared/backseatPerf';
 
 /**
  * How long a grid captured at the player's first word stays usable. Someone can
@@ -94,6 +108,8 @@ export interface CaptureHandle {
    * coexist. The preview is a consumer, never the source of anything.
    */
   stream: MediaStream;
+  /** How the start went (captureOpen.ts). */
+  retry: CaptureRetryOutcome;
   stop: () => void;
   setPaused: (paused: boolean) => void;
   /** Latch a grid ending now, to ride along with the message being composed. */
@@ -103,8 +119,15 @@ export interface CaptureHandle {
    * `mic` (260925): set when the line came from the call's microphone (see
    * BackseatTick.mic); `t0`/`t1` are the utterance's span, used to judge
    * whether the shared window was playing speech under it.
+   * `lineId` (261124): a typed line's optimistic bubble id (BackseatTick.lineId).
+   * Resolves false when nothing was sent (capture stopped, no grid, or the IPC
+   * failed), so a typed line can fall back to the ordinary chat send.
    */
-  sendUserTick: (text: string, mic?: { ttsGapMs: number | null; t0: number; t1: number }) => Promise<void>;
+  sendUserTick: (
+    text: string,
+    mic?: { ttsGapMs: number | null; t0: number; t1: number },
+    lineId?: string,
+  ) => Promise<boolean>;
   /**
    * The companion just said something. Push the scheduled look back a full
    * fresh interval: main already spoke about these seconds, and an idle tick
@@ -190,6 +213,22 @@ async function findLoopbackDevice(): Promise<string | null> {
 }
 
 /**
+ * After a relaxed open, ask for the usual cap on the track itself. Chromium
+ * scales and drops frames per track, so this normally lands the same shape the
+ * strict request would have. Best effort: a refusal keeps the source's shape,
+ * which still works (cells are downscaled anyway), it just costs more.
+ */
+async function capRelaxedTrack(stream: MediaStream, fps: number): Promise<void> {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+  try {
+    await track.applyConstraints({ width: { max: CAPTURE_W }, height: { max: CAPTURE_H }, frameRate: { max: fps } });
+  } catch {
+    /* keep whatever the capturer gives */
+  }
+}
+
+/**
  * Open the shared stream. Audio is wanted but NEVER required.
  *
  * 260728, measured on macOS 26.4 / Electron 42 / Chromium 148: system-audio
@@ -217,16 +256,14 @@ async function findLoopbackDevice(): Promise<string | null> {
  */
 async function openStream(
   sourceId: string,
+  relaxed = false,
+  fps: number = CAPTURE_FPS,
 ): Promise<{ stream: MediaStream; audioSource: AudioSource }> {
-  const video = {
-    mandatory: {
-      chromeMediaSource: 'desktop',
-      chromeMediaSourceId: sourceId,
-      maxWidth: CAPTURE_W,
-      maxHeight: CAPTURE_H,
-      maxFrameRate: CAPTURE_FPS,
-    },
-  } as unknown as MediaTrackConstraints;
+  // 261123: `relaxed` is the retry after a busy refusal (captureOpen.ts): no
+  // max size or rate in the request. The cap is put back on the track
+  // afterwards (capRelaxedTrack), where a capturer that cannot honour it just
+  // keeps its own shape instead of refusing to start.
+  const video = desktopVideoConstraints(sourceId, relaxed, { width: CAPTURE_W, height: CAPTURE_H, fps });
   // Windows: desktop loopback works, so ask for it inline.
   if (navigator.userAgent.includes('Windows')) {
     try {
@@ -235,7 +272,10 @@ async function openStream(
         video,
       });
       const track = stream.getAudioTracks()[0];
-      if (track) return { stream, audioSource: { kind: 'track', track } };
+      if (track) {
+        if (relaxed) await capRelaxedTrack(stream, fps);
+        return { stream, audioSource: { kind: 'track', track } };
+      }
       stream.getTracks().forEach((t) => t.stop());
     } catch {
       /* fall through to video-only */
@@ -243,6 +283,7 @@ async function openStream(
   }
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+  if (relaxed) await capRelaxedTrack(stream, fps);
 
   // macOS: the bundled tap. Main answers null anywhere it cannot run (not
   // macOS, binary missing, pre-13, TCC refused), which just falls through.
@@ -288,6 +329,7 @@ async function openStream(
 function startAudioPipeline(
   source: AudioSource,
   stream: MediaStream,
+  clipsOn: boolean,
   onPcm16k: (pcm: Float32Array) => void,
 ): { stop: () => void } {
   if (source.kind === 'none') return { stop: () => {} };
@@ -354,7 +396,7 @@ function startAudioPipeline(
       writable: WritableStream;
     };
   }).MediaStreamTrackGenerator;
-  if (CLIPS_ENABLED && Gen) {
+  if (clipsOn && Gen) {
     try {
       const gen = new Gen({ kind: 'audio' });
       writer = gen.writable.getWriter();
@@ -400,10 +442,34 @@ function startAudioPipeline(
   };
 }
 
+/** Whether the shared window was minimized when capture refused it. */
+export type MinimizedState = 'yes' | 'no' | 'unknown';
+/** How long a failed start waits on the minimized probe before reporting. */
+const MINIMIZED_PROBE_WAIT_MS = 4_000;
+
+/**
+ * Ask main whether a window source is minimized (Windows only; anything else,
+ * a screen, or a probe that does not answer in time is 'unknown').
+ */
+function probeMinimized(sourceId: string): Promise<MinimizedState> {
+  if (captureSourceKind(sourceId) !== 'window' || !sei.backseatWindowMinimized) return Promise.resolve('unknown');
+  const probe = sei
+    .backseatWindowMinimized(sourceId)
+    .then((m): MinimizedState => (m === true ? 'yes' : m === false ? 'no' : 'unknown'))
+    .catch((): MinimizedState => 'unknown');
+  const late = new Promise<MinimizedState>((r) => window.setTimeout(() => r('unknown'), MINIMIZED_PROBE_WAIT_MS));
+  return Promise.race([probe, late]);
+}
+
+/** Read the failure detail startCapture attached to its error, if any. */
+export function captureFailDetail(err: unknown): CaptureFailDetail | null {
+  return (err as { captureDetail?: CaptureFailDetail } | null)?.captureDetail ?? null;
+}
+
 export async function startCapture(
   characterId: string,
-  sourceId: string,
-  sourceName: string,
+  requestedId: string,
+  requestedName: string,
   opts: {
     /** 261004: the shared window went away (the OS ended the track), after
      *  capture was torn down. 261023: the owner decides what that means
@@ -416,7 +482,77 @@ export async function startCapture(
   } = {},
 ): Promise<CaptureHandle> {
   stopCapture();
-  const { stream, audioSource } = await openStream(sourceId);
+  // The session's settings, read once: the STT language, and Clip That
+  // (261123: off by default; when on, the stream runs at the clip rate).
+  let language = 'en';
+  let clipThat = false;
+  let clipFps: ClipFps = clipFpsOf(undefined);
+  try {
+    const cfg = (await sei.getConfig()) as {
+      chat_language?: string;
+      ui_language?: string;
+      clip_that?: boolean;
+      clip_fps?: number;
+    } | null;
+    language = userChatLanguage(cfg);
+    clipThat = cfg?.clip_that === true;
+    clipFps = clipFpsOf(cfg?.clip_fps);
+  } catch {
+    /* English, no clips: the right defaults */
+  }
+  const fps = streamFps(clipThat, clipFps);
+  // 261123: one relaxed retry of the same source, never a wider one. See
+  // captureOpen.ts for the busy telemetry this answers.
+  // A holder, not a `let`: it is set inside a callback, which TS's flow
+  // narrowing cannot see.
+  const probe: { minimized: Promise<MinimizedState> | null } = { minimized: null };
+  let opened: OpenedCapture<{ stream: MediaStream; audioSource: AudioSource }>;
+  try {
+    opened = await openWithRetry(
+      { id: requestedId, name: requestedName },
+      (id, relaxed) => openStream(id, relaxed, fps),
+      () => {
+        probe.minimized = probeMinimized(requestedId);
+      },
+    );
+  } catch (err) {
+    if (err instanceof CaptureStartError && err.retry !== 'none') {
+      const detail: CaptureFailDetail = {
+        source_kind: err.sourceKind,
+        first_class: err.firstClass,
+        retry: err.retry,
+        minimized: probe.minimized ? await probe.minimized : 'unknown',
+      };
+      (err as unknown as { captureDetail: CaptureFailDetail }).captureDetail = detail;
+      sei.track('backseat_capture_retried', { character_id: characterId, ...detail, outcome: 'failed' });
+    } else if (err instanceof CaptureStartError) {
+      (err as unknown as { captureDetail: CaptureFailDetail }).captureDetail = {
+        source_kind: err.sourceKind,
+        first_class: err.firstClass,
+        retry: 'none',
+        minimized: 'unknown',
+      };
+    }
+    throw err;
+  }
+  const { stream, audioSource } = opened.value;
+  const sourceId = requestedId;
+  const sourceName = requestedName;
+  if (opened.retry !== 'none') {
+    const retry = opened.retry;
+    const firstClass = opened.firstClass;
+    console.log(`[backseat] capture started after a retry (${retry})`);
+    void (probe.minimized ?? Promise.resolve<MinimizedState>('unknown')).then((m) =>
+      sei.track('backseat_capture_retried', {
+        character_id: characterId,
+        source_kind: captureSourceKind(requestedId),
+        ...(firstClass ? { first_class: firstClass } : {}),
+        retry,
+        minimized: m,
+        outcome: retry,
+      }),
+    );
+  }
   const videoTrack = stream.getVideoTracks()[0];
   if (!videoTrack) {
     stream.getTracks().forEach((t) => t.stop());
@@ -425,14 +561,6 @@ export async function startCapture(
   }
 
   const worker = new Worker(new URL('./captureWorker.ts', import.meta.url), { type: 'module' });
-
-  // The session's language, read once, for the STT ring.
-  let language = 'en';
-  try {
-    language = userChatLanguage((await sei.getConfig()) as { chat_language?: string; ui_language?: string } | null);
-  } catch {
-    /* English is the right default */
-  }
 
   // ── The switch dwell (260806) ───────────────────────────────────────────
   // Content switches (a colour discontinuity, a changed share label) no longer
@@ -532,7 +660,7 @@ export async function startCapture(
       readable: ReadableStream<VideoFrame>;
     };
   }).MediaStreamTrackProcessor({ track: videoTrack });
-  worker.postMessage({ type: 'start', readable: processor.readable }, [
+  worker.postMessage({ type: 'start', readable: processor.readable, analysisFps: ANALYSIS_FPS }, [
     processor.readable as unknown as Transferable,
   ]);
 
@@ -547,7 +675,7 @@ export async function startCapture(
   // its windows are stamped back across it.
   const echoEnv: EnvSample[] = [];
   const ECHO_ENV_KEEP_MS = 20_000;
-  const pipeline = startAudioPipeline(audioSource, stream, (pcm) => {
+  const pipeline = startAudioPipeline(audioSource, stream, clipThat, (pcm) => {
     stt.push(pcm);
     const endT = Date.now();
     const chunkMs = (pcm.length / STT_SAMPLE_RATE) * 1000;
@@ -580,7 +708,7 @@ export async function startCapture(
     if (prev && prev.recorder.state !== 'inactive') prev.recorder.stop();
     let rec: MediaRecorder;
     try {
-      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2_500_000 });
+      rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: clipBitrate(clipFps) });
     } catch {
       rollers[slot] = null;
       return;
@@ -594,10 +722,11 @@ export async function startCapture(
   };
   const cycleTimers: number[] = [];
   let staggerTimer = 0;
-  // Continuously encoding 720p60 for a whole session is by far the most
+  // Continuously encoding the stream for a whole session is by far the most
   // expensive thing here, and it exists only so a rare save_clip has something
-  // to harvest. With clipping off, none of it runs.
-  if (CLIPS_ENABLED) {
+  // to harvest. 261123: only for a player who turned Clip That on (Settings);
+  // off, no MediaRecorder is ever created.
+  if (clipThat) {
     cycle(0);
     cycleTimers.push(window.setInterval(() => cycle(0), CLIP_PERIOD_MS));
     staggerTimer = window.setTimeout(() => {
@@ -608,7 +737,7 @@ export async function startCapture(
 
   /** The complete segment that best covers the last BUFFER_MS. */
   const harvestClip = async (): Promise<string | null> => {
-    if (!CLIPS_ENABLED) return null;
+    if (!clipThat) return null;
     const candidates = rollers.filter((r): r is Rolling => !!r && r.chunks.length > 0);
     if (!candidates.length) return null;
     // Longest-running recorder = the one whose segment reaches furthest back.
@@ -690,6 +819,7 @@ export async function startCapture(
       sinceSwitchS?: number;
       transcript?: string;
       mic?: { ttsGapMs: number | null; shareVoice?: boolean | null };
+      lineId?: string;
     } = {},
   ): Promise<BackseatTickOutcome | undefined> => {
     if (stopped) return undefined;
@@ -728,6 +858,41 @@ export async function startCapture(
     return blockMaxDelta(best.thumb, newest.thumb);
   };
 
+  // ── backseat_perf (261123, shared/backseatPerf.ts) ─────────────────────
+  // The worker's cumulative counters arrive with its 10 s stats; the sample
+  // rates them over the time since capture began. Main adds CPU and memory.
+  const perfStartedAt = Date.now();
+  let perfTotals: { at: number; analysed: number; skipped: number; encodes: number; sampleBusy: number } | null =
+    null;
+  const sendPerf = (phase: BackseatPerfPhase): void => {
+    try {
+      const t = perfTotals;
+      const windowS = t ? (t.at - perfStartedAt) / 1000 : 0;
+      const perMin = (n: number): number => (windowS > 0 ? Math.round((n / windowS) * 60) : 0);
+      const settings = videoTrack.getSettings();
+      sei.track(BACKSEAT_PERF_EVENT, {
+        phase,
+        window_s: Math.round(windowS),
+        source_frames_per_min: t ? perMin(t.analysed + t.skipped) : 0,
+        analysed_per_min: t ? perMin(t.analysed) : 0,
+        skipped_per_min: t ? perMin(t.skipped) : 0,
+        samples_per_min: t ? perMin(t.encodes) : 0,
+        sample_busy_per_min: t ? perMin(t.sampleBusy) : 0,
+        stream_fps: fps,
+        track_fps: typeof settings.frameRate === 'number' ? Math.round(settings.frameRate) : null,
+        track_height: typeof settings.height === 'number' ? settings.height : null,
+        clip_that: clipThat,
+        clip_fps: clipThat ? clipFps : null,
+        clip_recorders: rollers.filter((r) => r && r.recorder.state === 'recording').length,
+        audio_source: audioSource.kind,
+      });
+    } catch {
+      /* analytics is never load-bearing */
+    }
+  };
+  sendPerf('start');
+  const perfMinuteTimer = window.setTimeout(() => sendPerf('first_minute'), 65_000);
+
   worker.onmessage = (e: MessageEvent): void => {
     const msg = e.data as
       | { type: 'thumb'; at: number; thumb: Uint8ClampedArray }
@@ -750,6 +915,7 @@ export async function startCapture(
           colorDelta: number | null;
           colorThr: number | null;
           samples: number;
+          totals?: { analysed: number; skipped: number; encodes: number; sampleBusy: number };
         };
     if (msg.type === 'thumb') {
       sceneThumbs.push({ at: msg.at, thumb: msg.thumb });
@@ -765,6 +931,7 @@ export async function startCapture(
       return;
     }
     if (msg.type === 'stats') {
+      if (msg.totals) perfTotals = { at: Date.now(), ...msg.totals };
       // Every 10 s, so "are the signals alive" is answerable from the devtools
       // console of the main window (260803: capture runs here now, so these are
       // reachable without the overlay's console relay). gain vs base is what the
@@ -928,10 +1095,13 @@ export async function startCapture(
 
   const handle: CaptureHandle = {
     stream,
+    retry: opened.retry,
     sceneChangeSince,
     stop: () => {
       if (stopped) return;
       stopped = true;
+      window.clearTimeout(perfMinuteTimer);
+      sendPerf('end');
       switchDwell.cancel();
       window.clearTimeout(switchDeferTimer);
       window.clearTimeout(idleTimer);
@@ -983,8 +1153,12 @@ export async function startCapture(
         }
       })();
     },
-    sendUserTick: async (text: string, mic?: { ttsGapMs: number | null; t0: number; t1: number }) => {
-      if (stopped) return;
+    sendUserTick: async (
+      text: string,
+      mic?: { ttsGapMs: number | null; t0: number; t1: number },
+      lineId?: string,
+    ) => {
+      if (stopped) return false;
       // The latch is best-effort. If it never armed (the player pasted a whole
       // message, or typed faster than one composite), or it armed so long ago
       // that it no longer shows what they mean, compose one now.
@@ -993,7 +1167,7 @@ export async function startCapture(
       if (!grid || Date.now() - grid.capturedAt > USER_GRID_MAX_AGE_MS) {
         grid = await composite();
       }
-      if (!grid) return;
+      if (!grid) return false;
       // What the game said around the moment they reacted to — the flush
       // window reaches back far enough to cover a held grid's span.
       const transcript = await tickTranscript();
@@ -1014,7 +1188,14 @@ export async function startCapture(
             ),
           }
         : undefined;
-      await sendTick('user', grid, { text, transcript, ...(micInfo ? { mic: micInfo } : {}) });
+      if (stopped) return false;
+      const out = await sendTick('user', grid, {
+        text,
+        transcript,
+        ...(micInfo ? { mic: micInfo } : {}),
+        ...(lineId ? { lineId } : {}),
+      });
+      return out !== 'failed';
     },
     noteSpoke: (quietExtraMs = 0) => {
       lastSpokeLocalAt = Date.now();

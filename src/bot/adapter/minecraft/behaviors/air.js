@@ -37,7 +37,7 @@ export const AIR_FULL = 18
 const POLL_MS = 50
 export const SURFACE_BUDGET_MS = 20000
 
-function isWaterBlock(b) {
+export function isWaterBlock(b) {
   if (!b) return false
   if (WATER.has(b.name)) return true
   try { if (b.getProperties?.()?.waterlogged === true) return true } catch {}

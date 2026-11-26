@@ -8,7 +8,12 @@
    the same "Sei" splash. The delay is now 1.2 s: an ordinary launch shows
    the plain app background until its first view, and only a boot that is
    really waiting (auth state, a slow PC) gets the mark so it never looks
-   stuck on an empty window. */
+   stuck on an empty window.
+   261123 (product call: keep the logo, show it early on a slow launch): the
+   1.2 s now counts from the process start, not from this mount
+   (lib/bootMark.ts sets animation-delay inline, negative when the fade is
+   already under way), and the window's first paint is a static copy of this
+   splash in index.html. Both drag the window: it has no title bar yet. */
 .root {
   position: fixed;
   inset: 0;
@@ -17,9 +22,11 @@
   justify-content: center;
   background: var(--desktop);
   color: var(--text);
+  -webkit-app-region: drag;
 }
 
 .mark {
+  display: flex;
   opacity: 0;
   animation: bootSplashIn 800ms ease 1200ms forwards;
 }

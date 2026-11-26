@@ -24,7 +24,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { sei } from './lib/ipcClient';
 import { profileSetUp } from './lib/profileSetUp';
 import { effectiveAvatarMode } from '@shared/characterSchema';
-import { applyTheme, clampThemeMode, subscribeSystemTheme } from './lib/theme';
+import { applyTheme, clampThemeMode, rememberBootTheme, subscribeSystemTheme } from './lib/theme';
 import { useLangStore, useT } from './lib/i18n';
 import { useUiStore } from './lib/stores/useUiStore';
 import { movedInId, useSeilinkStore } from './lib/stores/useSeilinkStore';
@@ -114,6 +114,7 @@ import { useLibraryStateStore } from './lib/stores/useLibraryStateStore';
 import { handleScopeEnding, resetAccountScopedState } from './lib/scopeReset';
 import { waitForAuthScope } from './lib/authBoot';
 import { resolveBootRoute } from './lib/bootRoute';
+import { reportFirstView, timeAuthWait } from './lib/firstView';
 import { BootSplash } from './components/BootSplash';
 import { AuthChoiceScreen } from './screens/AuthChoiceScreen';
 import { AcceptToSModal } from './components/AcceptToSModal';
@@ -122,6 +123,7 @@ import { HardStopModal } from './components/HardStopModal';
 import { SetNewPasswordModal } from './components/SetNewPasswordModal';
 import { MigrateLocalCharsModal } from './components/MigrateLocalCharsModal';
 import { ImportLocalProfileModal, PARTY_FULL_LINE } from './components/ImportLocalProfileModal';
+import { FreeSlotButton } from './components/PartyFullHint';
 import {
   BOOT_OFFER_FIRST_MS,
   BOOT_OFFER_POLL_MS,
@@ -154,6 +156,11 @@ export function App(): React.ReactElement {
   useEffect(() => {
     try { sei.rendererReady?.(); } catch { /* older bridge */ }
   }, []);
+  // 261123: launch timing, the first view after the boot splash (lib/firstView.ts).
+  useEffect(() => {
+    if (view.kind === 'loading') return;
+    reportFirstView(view.kind, { signin: view.kind === 'onboard' && 'signin' in view && view.signin === true });
+  }, [view]);
   // 261104 SeiLink desktop host: she was clicked on the desktop wallpaper
   // (main focused this window first; src/main/seilink/host/seilinkHost.ts).
   useEffect(
@@ -704,6 +711,7 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          rememberBootTheme(mode);
           // App UI language follows the incoming profile's config (260730).
           useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           useUiStore.getState().setDevConsoleVisible(!!cfg.dev_console_visible);
@@ -956,6 +964,7 @@ export function App(): React.ReactElement {
           const mode = clampThemeMode(cfg.theme_mode ?? 'midnight');
           setThemeMode(mode);
           applyTheme(mode);
+          rememberBootTheme(mode);
           // App UI language (260730): hydrate before the first localized render.
           useLangStore.getState().setLang(normalizeUiLanguage(cfg.ui_language));
           // ui-A7: seed the developer-console visibility from persisted config
@@ -1046,7 +1055,7 @@ export function App(): React.ReactElement {
       // and for a scope switch already under way, then reads the profile
       // again if it may have moved. The splash stays up meanwhile.
       const dest = await resolveBootRoute({
-        waitForScope: () => waitForAuthScope({ isCancelled: () => cancelled }),
+        waitForScope: () => timeAuthWait(() => waitForAuthScope({ isCancelled: () => cancelled })),
         applyAuthState: authStore.applyAuthState,
         currentAuth: () => useAuthStore.getState().state,
         rehydrate: hydrate,
@@ -1360,7 +1369,12 @@ export function App(): React.ReactElement {
           <SpendAlertBanner />
           {/* 261116: own-key companions not imported, the party is full. */}
           {importPartyFull && authState.kind === 'signed_in' ? (
-            <Banner kind="info" message={t(PARTY_FULL_LINE)} onDismiss={() => setImportPartyFull(false)} />
+            <Banner
+              kind="info"
+              message={t(PARTY_FULL_LINE)}
+              action={<FreeSlotButton surface="import_notice" />}
+              onDismiss={() => setImportPartyFull(false)}
+            />
           ) : null}
           <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
             {!railHidden ? <IconRail /> : null}
@@ -1409,7 +1423,9 @@ export function App(): React.ReactElement {
                 {view.kind === 'add-character' && (
                   <AddCharacterScreen importFirst={view.importFirst === true} />
                 )}
-                {view.kind === 'character' && <CharacterPage id={view.id} />}
+                {/* Keyed (261124): Free a slot opens another companion's page on
+                    its Danger zone, and the page reads that focus on mount. */}
+                {view.kind === 'character' && <CharacterPage key={view.id} id={view.id} />}
                 {view.kind === 'chat' && <ChatScreen characterId={view.characterId} />}
                 {view.kind === 'voice-call' && (
                   <VoiceCallScreen characterId={view.characterId} />

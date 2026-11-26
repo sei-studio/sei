@@ -57,6 +57,68 @@ give.js `TOSS_RANGE`) and the line reads "still walking over to X to hand
 them N item. Nothing is tossed until you get there": delivered claims 9/30
 to 0/30, and an idle finish still calls give() (15/30 before, 19/30 after).
 
+**The player saying the same thing again (261121, pass 60).** In free-play
+combat_night the nervous scripted player says "ok sui thx. stay close pls"
+every 10 s, and each reply was another "staying right here, you're safe" in
+new words (11-20 scorecard: 14 of 42 combat_night off labels; replies to a
+line the player had nearly said before were off 50 of 73 times over
+11-11..11-20). The own-lines note could not name it: stay/here/close are
+answer words (`PLAIN_WORDS`, `STOP` in `ownRepeats.js`) and the wording
+changed every time. `repeatedPlayerAsk` looks at the player's side instead:
+their newest line shares two or more content words with at least two of
+their own lines in the last 150 s, at most a third of its words are new, it
+is not a question, and she spoke after each. Then `repeatedAskNote` (says it
+is the Nth time, they know her answer, give them something new or do it if
+she is not doing it yet) goes right under "Their line" on a plain reply, and
+at the end of a mid-loop line's tail. Inside the own-lines note, several
+blocks above the line, it moved the probe half as much
+(`scripts/quality-eval/pass60-probe.mjs`: base 23/24 loop replies, in the
+note 11/24, under the line 5/24). Zero tokens unless it fires.
+Pass 60b (261122): that probe judged a "loop" with a word list, and live
+the replies it passed were the same reassurance in new words ("i'm watching
+the dark for you") or made up to be new (a creeper no sensor showed,
+"bread's almost gone" with 7, "walls going up" with no build). Asking for
+"something new" or "something you can do" invites invention when nothing
+has changed. The note now says advice already given is a repeat too, the
+new thing has to be true right now (what the snapshot shows that she has
+not said, how she feels, a question for them), and a claimed action needs
+its call. Probe live cases (`pass60-probe.mjs` behind/heal/follow5, judged
+blind by Opus with `pass60b-judge.mjs`, 35 replies an arm): ok 2 (no note),
+12 (first wording), 21 (now); invented 0, 13, 2. Judge probe replies with
+an LLM, not a word regex.
+Pass 61 (261123): live the note still left her owing a reply, and every
+reassurance loop ran with her one or two blocks from the player: the ask
+was already being done. `repeatedAskTurn` now also takes where she is
+(adapter `playerNearby(name)`: distance from the entities, and whether her
+follow is on them; `observers/nearPlayer.js`). Within `ASK_NEAR_BLOCKS` (4),
+or following with no distance known, the turn owes no reply: the plain
+reply drops `ACK_LINE`, the "answer them" hint and "Answer it with say()",
+the mid-loop turn takes `actionTurn({ replyOptional })`, `_noReplyOwed`
+stops the unanswered-line retry, and the note under their line says where
+she is and that the line needs no answer if it is already happening. Farther
+off the pass 60b note and the mandate stay. State only, no phrase list.
+Probe (`pass60-probe.mjs`, 4 reps of 8 repeat cases): replies its word
+check calls the loop dev 31/32, pass 60b 12/32, pass 61 0/32 (silent end_loop, a few follow or
+goTo); first ask (close1) still answered 3/3, far come3 still goTo 3/3.
+Pass 63 (261124): an acknowledgement ("thx for coming back. im good now",
+"ok thx. just gonna keep eating") got her last promise again ("told you im
+not going anywhere"): she spoke on 17 of 19 of them in the pass 61 compare,
+because the reply block let an acknowledgement off at the top (`ACK_LINE`)
+and then ended on "Answer it with say()". When the player's line answers
+her own fresh turn (`answersOwnLine`: not a question, within 30 s of her
+turn, nothing else of theirs in between; a repeat with its own note is
+left out), the top is `ACK_LINE_ANSWER` and the let-off sits under their
+line as `ACK_ANSWER_TAIL` (which also says a yes to her offer starts it).
+Which line is only an acknowledgement stays her call. A silent end_loop
+then left the next idle tick (5 s later) to re-promise, so an idle tick
+while their line is still unanswered (`lineLeftUnanswered`, 30 s) takes
+the own_repeats 'result' form (her last lines quoted, "make it new")
+instead of the idle form. Probe `pass63-probe.mjs` + `pass63-judge.mjs`
+(4 reps, blind Opus): acknowledgements repeat 16/16 -> 2/16 (14 quiet);
+the idle tick after one ok 0/4 -> 3/4; guards (a new remark, "protect me",
+"come closer" from 22 blocks, "ok sure" to her offer) kept their reply or
+action. A shorter tail lost most of it (see the promptLibrary comment).
+
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:
 
@@ -183,6 +245,26 @@ session was `setGoal("Reach iron tier")`) and gained shared-activity framing.
 **What none of this says is that the progression does not matter** — told that,
 the model stops working and the world goes still, which is worse company than a
 grinder. The project is the SETTING; both halves are the job.
+
+**Quiet personas and how often she talks (261123).** The persona decides how
+OFTEN a character speaks, not only how. Before this, an explicitly quiet card
+("speaks only when it's worth it", "says very little") still spoke on 85-100%
+of quiet in-game ticks: the agentic directive's looping-in, `IDLE_TICK_TEXT`'s
+invitation plus question-about-them, and the curiosity clause each push a line,
+and Haiku reads "quiet" as "short line", not "rare line" (its scratchpad says
+"quiet tick, one short line is fine" and then speaks). The fix is a clause in
+the agentic directive next to the initiative persona-wins clause, with a
+concrete rate ("three in four of your turns or more are just the work", "a
+short line still counts as speaking"); vague wording ("as often as your
+persona would talk") measured as no change. Token-neutral: paid for by cutting
+the curiosity clause's closing rhetoric. The persona expander (sei-proxy
+`expansionPrompt.ts`, bundled fallback `EXPANSION_SYSTEM`) now writes a plain
+how-much-they-talk line into VOICE, because a card that says so concretely is
+what actually moves the rate; the expander's PROACTIVENESS word never reaches
+the character. Harness: `scripts/talkativeness-probe.ts` (calls, Backseat) and
+`persona/run.mjs --situations-file persona/talkativeness-situations.mjs`
+(in-game; `PROBE_STRIP` ablates prompt text, `prelude` adds mid-session
+context). Backseat cadence is mechanical by design; only length follows the card.
 
 **Say-suppression (260731).** `IDLE_SAY_GAP_MS` is now **0 = disabled**. The
 45s floor compared TIMESTAMPS only, so it could not tell a reworded repeat from
@@ -668,3 +750,44 @@ built for the loop itself.
   tool said "no open spot" for a table that was in fact down. craft() with a
   crafting_table in the bag puts it down instead of walking to a world table
   more than 8m off, or when that walk fails. Repro: `place-repro.mjs`.
+
+---
+
+## Summon join speed (protocol compile, 261124)
+
+- **What runs between `bot_created` and `login`.** Profiled with a fake nmp
+  server: TCP + the login exchange, nmp compiling a protodef serializer and
+  deserializer for each state it enters (login, configuration, play), the
+  server's registry data, then the play `login` packet. mineflayer's plugins
+  inject on a `setTimeout(0)` after createBot (about 60 small JS files,
+  ~230 KB: prismarine-chunk loads every chunk version, bedrock included); that
+  file set is the window's whole disk read and the compile fix does not change
+  it. The CPU was protodef codegen + `eval`, and each of the four small states
+  (handshaking, status, login, configuration) compiled the protocol's whole
+  global `types` section, so each cost about as much as play.
+- **Fix:** `patches/minecraft-protocol+1.68.0.patch` (`reachableTypes` in
+  `src/transforms/serializer.js`) compiles only the types reachable from
+  `packet` for those four states; play is unchanged. Equivalence (identical
+  generated code per kept type, every `supportedVersions` entry) is pinned by
+  `adapter/minecraft/protocolCompile.test.js`. It also speeds up the status
+  ping (`runtime_loaded` to `version_resolved`) and createBot itself (its
+  handshaking compile). It ships through the Minecraft game pack, built from
+  the patched tree for each release.
+- **Measured (Linux, loaded box, fake server, interleaved runs, medians,
+  1.21.11 n=9 / 1.21.1 n=7):** status ping 536 to 227 ms / 470 to 182;
+  createBot 251 to 121 / 169 to 79; main-thread busy time in
+  `bot_created` to `login` 765 to 584 / 478 to 337. The window's wall time is
+  dominated by the fake server's registry send, so judge the field numbers
+  by the split below.
+- **Phases `configuration` and `configured` (connect.js, 1.20.2+ only)**
+  split the window: `bot_created` to `configuration` = TCP, login compile and
+  login exchange; `configuration` to `configured` = the server's registries
+  and tags; `configured` to `login` = the play compile plus the play `login`
+  packet. They reach PostHog as `boot_configuration_ms` /
+  `boot_configured_ms` on `character_summoned` and `summon_failed` like every
+  other phase (`BOOT_PHASE_ORDER` in `src/main/diagnostics.ts`).
+- **Left on the table:** the play compile (~250 ms here) still runs after
+  `finish_configuration`. Pre-compiling play while the client idles waiting
+  for registries would overlap it, but vanilla waits for the client's
+  `select_known_packs` reply, so a blocking compile at the wrong moment can
+  delay the server instead. Needs a real-server measurement first.

@@ -142,6 +142,68 @@ index 1b61618..be114c7 100644
  function readVarLong (buffer, offset) {
    return readVarInt(buffer, offset)
  }
+diff --git a/node_modules/minecraft-protocol/src/transforms/serializer.js b/node_modules/minecraft-protocol/src/transforms/serializer.js
+index 76f7ef27..bdb73099 100644
+--- a/node_modules/minecraft-protocol/src/transforms/serializer.js
++++ b/node_modules/minecraft-protocol/src/transforms/serializer.js
+@@ -11,6 +11,45 @@ const merge = require('lodash.merge')
+ const minecraftData = require('minecraft-data')
+ const protocols = {}
+ 
++// Sei perf patch (261124): every state compiles the protocol's whole global
++// `types` section (all of the play-state item/component types), so the four
++// small states (handshaking, status, login, configuration) cost about as much
++// to compile as play does, and they sit on the summon's critical path (status
++// ping, then the login and configuration phases before the play `login`
++// packet). Keep only the JSON types reachable from `packet`: every string in a
++// reachable type that names a type, plus every `ctx.<name>` a context type's
++// code calls. Natives always stay. The code generated for each kept type is
++// unchanged, because a type's code only depends on which of the names it
++// mentions exist. Play is compiled in full, as before.
++function reachableTypes (compiler, root) {
++  const types = compiler.types
++  const keep = new Set()
++  const stack = [root]
++  for (const code of Object.values(compiler.context)) {
++    for (const m of String(code).matchAll(/ctx\.([A-Za-z_$][\w$]*)/g)) stack.push(m[1])
++  }
++  const visit = (value) => {
++    if (typeof value === 'string') {
++      if (Object.prototype.hasOwnProperty.call(types, value) && !keep.has(value)) stack.push(value)
++    } else if (Array.isArray(value)) {
++      for (const v of value) visit(v)
++    } else if (value && typeof value === 'object') {
++      for (const k in value) { visit(k); visit(value[k]) }
++    }
++  }
++  while (stack.length) {
++    const name = stack.pop()
++    if (keep.has(name) || !Object.prototype.hasOwnProperty.call(types, name)) continue
++    keep.add(name)
++    if (types[name] !== 'native') visit(types[name])
++  }
++  const kept = {}
++  for (const name in types) {
++    if (types[name] === 'native' || keep.has(name)) kept[name] = types[name]
++  }
++  return kept
++}
++
+ function createProtocol (state, direction, version, customPackets, compiled = true) {
+   const key = `${state};${direction};${version}${compiled ? ';c' : ''}`
+   if (protocols[key]) { return protocols[key] }
+@@ -31,6 +70,11 @@ function createProtocol (state, direction, version, customPackets, compiled = tr
+     compiler.addTypes(require('../datatypes/compiler-minecraft'))
+     compiler.addProtocol(mergedProtocol, [state, direction])
+     nbt.addTypesToCompiler('big', compiler)
++    if (state !== states.PLAY) {
++      compiler.readCompiler.types = reachableTypes(compiler.readCompiler, 'packet')
++      compiler.writeCompiler.types = reachableTypes(compiler.writeCompiler, 'packet')
++      compiler.sizeOfCompiler.types = reachableTypes(compiler.sizeOfCompiler, 'packet')
++    }
+     const proto = compiler.compileProtoDefSync()
+     protocols[key] = proto
+     return proto
 diff --git a/node_modules/minecraft-protocol/src/version.js b/node_modules/minecraft-protocol/src/version.js
 index 3aff3da..ce2a4fd 100644
 --- a/node_modules/minecraft-protocol/src/version.js

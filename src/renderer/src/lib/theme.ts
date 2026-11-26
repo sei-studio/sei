@@ -55,6 +55,39 @@ export function applyTheme(mode: ThemeMode): void {
 }
 
 /**
+ * 261123: remember the user's theme mode for the next launch's first paint.
+ * index.html's inline script applies it to the static boot splash, before
+ * the bundle (and the config read) has run. Call it where the mode comes
+ * from config or the user, not from the store's 'system' default.
+ */
+export const BOOT_THEME_KEY = 'sei.bootTheme';
+
+export function rememberBootTheme(mode: ThemeMode): void {
+  try {
+    localStorage.setItem(BOOT_THEME_KEY, mode);
+  } catch {
+    /* cosmetic: the splash keeps the html default theme */
+  }
+}
+
+/**
+ * 261123: the theme mode the main window starts with, before config has been
+ * read (that read waits for main's IPC handlers, which can take seconds on a
+ * slow launch). The last remembered mode keeps the boot splash in the theme
+ * index.html painted it in, instead of 'system' flipping it in between.
+ * Other windows (they load with a query string) keep 'system', as before.
+ */
+export function rememberedBootTheme(): ThemeMode {
+  try {
+    if (typeof location !== 'undefined' && location.search) return 'system';
+    if (typeof localStorage === 'undefined') return 'system';
+    return clampThemeMode(localStorage.getItem(BOOT_THEME_KEY));
+  } catch {
+    return 'system';
+  }
+}
+
+/**
  * The currently-applied scheme ('light' | 'dark'), read off <html>. The
  * replacement for the old `getAttribute('data-theme') as 'light'|'dark'`
  * pattern now that data-theme carries a theme NAME.

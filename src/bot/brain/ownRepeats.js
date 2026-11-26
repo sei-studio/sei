@@ -443,6 +443,220 @@ const REUSE_ASK = 'Sound like yourself as always, but do not reuse a joke, comeb
 // where things stand, only not her last line again.
 const REPITCH_ASK = 'Do not bring up your plan, a count or an offer again unless they ask about it or it has changed. If they ask how it is going, tell them where things stand, just not in the same words as before. If their line only acknowledges yours, a short reaction is enough.'
 
+// ---------------------------------------------------------------------------
+// 261121 (pass 60): the player saying the same thing again.
+//
+// The biggest off source in free-play combat_night (the nervous player at
+// night) was her reassurance going round: "ok sui thx. stay close pls" six
+// times in two minutes, and six answers that all said "staying right here,
+// you're safe" in slightly different words (11-20 scorecard: 14 of 42 off
+// labels; 11-11..11-20 combat_night: a reply to a line the player had
+// nearly said before was off 50 of 73 times, 46 of them repetitive). The
+// line note above cannot see it: "staying right here" and "not going
+// anywhere" are follow and stay words (PLAIN_WORDS, STOP), which are
+// answers, not bits, and each reply was a new wording. What repeats in
+// words is the player's line, so that is what this looks at: data about
+// what they said, never a list of phrases.
+//
+// Words that carry no ask of their own: thanks, please, fillers.
+const ASK_FILLER = new Set((
+  'ok okay k kk thx thanks thank ty tysm pls plz please lol lmao haha hah yeah yep yea ya ' +
+  'cool nice good great alright sure hey omg fr rn tbh ngl kinda now still again ur'
+).split(' '))
+// The player's line counts as said before when it shares this many of its
+// content words with each earlier line, and at most a third of its words are
+// new (in none of their lines in the window): "ok sui, a creeper is close,
+// stay close" shares "stay close" with the earlier asks but brings something
+// new.
+const ASK_MIN_SHARED = 2
+// Answered this many times already before it is named (the third ask is the
+// first that gets the note: one repeat of an ask is normal).
+const ASK_MIN_EARLIER = 2
+const ASK_WITHIN_MS = 150_000
+
+function askWords(text, nameKeys) {
+  const out = []
+  for (const w of tokensOf(text)) {
+    if (!isContent(w) || ASK_FILLER.has(w)) continue
+    const keys = wordKeys(w)
+    if (keys.some((k) => nameKeys.has(k))) continue
+    if (!out.some((o) => o.some((k) => keys.includes(k)))) out.push(keys)
+  }
+  return out
+}
+
+/**
+ * The player's newest line when it says much the same as at least
+ * `minEarlier` of their own lines in the last `withinMs`, and she has
+ * answered since the first of them. Questions are left out: a question asked
+ * again still wants its answer. Returns null otherwise.
+ *
+ * @param {Array<{at:number,text:string,who?:string,companion?:boolean}>} playerLines  oldest first
+ * @param {Array<{at:number,text:string}>} selfLines  oldest first
+ * @returns {{times:number, seconds:number, earlier:string}|null}
+ */
+export function repeatedPlayerAsk(playerLines, selfLines, {
+  now = Date.now(), withinMs = ASK_WITHIN_MS, minEarlier = ASK_MIN_EARLIER, names = [],
+} = {}) {
+  const human = (playerLines ?? []).filter((l) => l && l.companion !== true && l.text)
+  const newest = human.at(-1)
+  if (!newest || isQuestion(newest.text)) return null
+  if (Number.isFinite(newest.at) && now - newest.at > 60_000) return null
+  const nameKeys = new Set()
+  for (const n of [...(names ?? []), ...human.map((l) => l.who)]) {
+    for (const w of tokensOf(n)) if (w.length > 1) for (const k of wordKeys(w)) nameKeys.add(k)
+  }
+  const mine = askWords(newest.text, nameKeys)
+  if (mine.length < ASK_MIN_SHARED) return null
+  const t0 = Number.isFinite(newest.at) ? newest.at : now
+  const earlier = human.slice(0, -1)
+    .filter((l) => l.who === newest.who && !(Number.isFinite(l.at) && t0 - l.at > withinMs))
+    .map((l) => ({ line: l, words: askWords(l.text, nameKeys) }))
+  const inLine = (m, words) => words.some((t) => t.some((k) => m.includes(k)))
+  const fresh = mine.filter((m) => !earlier.some((e) => inLine(m, e.words)))
+  if (fresh.length > Math.floor(mine.length / 3)) return null
+  const similar = earlier
+    .filter((e) => mine.filter((m) => inLine(m, e.words)).length >= ASK_MIN_SHARED)
+    .map((e) => e.line)
+  if (similar.length < minEarlier) return null
+  const first = similar[0]
+  // She answered: at least one turn of hers after each of the earlier ones.
+  const turns = groupTurns(selfLines).filter((t) => !Number.isFinite(first.at) || !Number.isFinite(t.at) || t.at >= first.at)
+  if (turns.length < similar.length) return null
+  const seconds = Number.isFinite(first.at) ? Math.max(1, Math.round((t0 - first.at) / 1000)) : null
+  return { times: similar.length + 1, seconds, earlier: similar.at(-1).text }
+}
+
+const TIMES = ['', 'once', 'twice', 'three times', 'four times', 'five times', 'six times']
+// 261123 (pass 61): within this many blocks of them she is already by their
+// side, and a line they keep saying about that needs no fresh answer.
+export const ASK_NEAR_BLOCKS = 4
+
+function askLead(ask) {
+  const n = TIMES[ask.times] ?? `${ask.times} times`
+  const when = ask.seconds == null ? 'recently' : ask.seconds < 90 ? `in the last ${ask.seconds} seconds` : `in the last ${Math.round(ask.seconds / 60)} minutes`
+  return `They have now said much the same thing ${n} ${when} (before this: "${clip(ask.earlier, 100)}"), and you answered each time.`
+}
+
+function askNote(ask) {
+  if (!ask) return null
+  return `${askLead(ask)} ` +
+    'They know your answer, so saying it again in other words is still a repeat, and so is advice you already gave them. ' +
+    'If you are already doing what they ask, say something else that is true right now: something your snapshot shows that you have not told them, how you feel, or a question for them. ' +
+    'Say you are doing something only if you call its action in this turn. If you are not doing it yet, do it now.'
+}
+
+// 261123 (pass 61): the same line said again while she is already right by
+// them (or following them). Every combat_night reassurance loop ran with her
+// one or two blocks away: the ask was already being done, and the reply
+// mandate still made her answer it a fourth time in new words. Here the
+// mandate is lifted (the caller drops "answer it with say()" and the
+// unanswered-line retry), and the note says where she is, from state.
+function askNoteNear(ask, near) {
+  const where = near.following
+    ? `You are following them${Number.isFinite(near.distance) ? ` and ${near.distance <= 1 ? 'right next to them' : `${near.distance} blocks away`}` : ''}.`
+    : `You are ${near.distance <= 1 ? 'right next to them' : `${near.distance} blocks from them`}.`
+  return `${askLead(ask)} ${where} ` +
+    'If what they keep asking for is already happening, this line needs no answer: you can end the turn without say() and carry on with what you are doing. ' +
+    'Speak only if something changed that they should hear about now. If it is not happening yet, do it now.'
+}
+
+// 261122 (pass 60b): the first wording asked for "something they have not
+// heard yet: something you notice around you, how you feel, or something you
+// can do about it". Live (11-21 compare) she met it by rewording the same
+// reassurance ("i'm watching the dark for you") or by inventing the new
+// thing: a creeper no sensor showed, "bread's almost gone" with 7, "walls
+// going up" with no build. The new thing now has to be true right now (the
+// snapshot, her feeling, a question), advice already given counts as a
+// repeat, and a claimed action needs its call. Probe (pass60-probe.mjs live
+// cases, Opus labels): ok 12/35 -> 21/35, invented 13 -> 2.
+/**
+ * 261121 (pass 60): the note for a reply to a line the player keeps saying
+ * (repeatedPlayerAsk), or null. It goes right under their line, not into the
+ * own-lines note: in the own-lines note, several blocks above the line, it
+ * moved the reassurance loop less (probe pass60-probe.mjs). `selfNames` are
+ * her own names, which their lines use ("ok sui thx") and are no part of the
+ * ask.
+ */
+export function repeatedAskNote(playerLines, selfLines, { now, names = [], selfNames = [] } = {}) {
+  return askNote(repeatedPlayerAsk(playerLines, selfLines, { now, names: [...(names ?? []), ...(selfNames ?? [])] }))
+}
+
+/**
+ * 261123 (pass 61): repeatedAskNote plus whether the reply can be skipped.
+ * `near` is where she is relative to the speaker ({ distance, following },
+ * from the adapter; null when unknown). Within ASK_NEAR_BLOCKS (or, with no
+ * distance known, while her follow on them runs) the note is the near
+ * variant and `replyOptional` is true. Returns null when the player's line
+ * is no repeat.
+ *
+ * @returns {{ note: string, replyOptional: boolean } | null}
+ */
+export function repeatedAskTurn(playerLines, selfLines, { now, names = [], selfNames = [], near = null } = {}) {
+  const ask = repeatedPlayerAsk(playerLines, selfLines, { now, names: [...(names ?? []), ...(selfNames ?? [])] })
+  if (!ask) return null
+  // A follow that has fallen behind is not by their side: the distance,
+  // when known, decides; following counts only when it is not.
+  const close = !!near && (Number.isFinite(near.distance) ? near.distance <= ASK_NEAR_BLOCKS : near.following === true)
+  return close ? { note: askNoteNear(ask, near), replyOptional: true } : { note: askNote(ask), replyOptional: false }
+}
+
+// ---------------------------------------------------------------------------
+// 261124 (pass 63): the player answering her line.
+//
+// After pass 61 the top off source left in combat_night was her re-promising
+// to a line that only acknowledged hers: "thx for coming back. im good now"
+// got "told you im not going anywhere alex", "ok thx. just gonna keep eating"
+// got "good. eat up, i'm right here". In the 11-23 pass 61 compare she spoke
+// on nearly every such line (A arm: 17 of 19 plain acknowledgements), and
+// with nothing to answer she said her last promise again. ACK_LINE lets an
+// acknowledgement off, but the reply block then ends on "Answer it with
+// say()", and that last line won.
+//
+// Whether a line only acknowledges hers is her call, from its words; what
+// state can tell is whether it is an answer to her at all. A line that comes
+// right after her own fresh turn, with nothing else of theirs in between, is
+// a reply to her; their first line after a quiet spell, or a second line in
+// a row, is not. A question still wants its answer, so it never counts.
+export const ANSWERS_OWN_LINE_MS = 30_000
+
+/**
+ * True when the player's newest line answers her newest turn: it is not a
+ * question, it came within `withinMs` after that turn, and the speaker said
+ * nothing else between her turn and this line. Teammate (companion) lines
+ * are left out. False when anything is missing.
+ *
+ * @param {Array<{at:number,text:string,who?:string,companion?:boolean}>} playerLines  oldest first
+ * @param {Array<{at:number,text:string}>} selfLines  oldest first
+ * @returns {boolean}
+ */
+export function answersOwnLine(playerLines, selfLines, { now = Date.now(), withinMs = ANSWERS_OWN_LINE_MS } = {}) {
+  const human = (playerLines ?? []).filter((l) => l && l.companion !== true && l.text)
+  const newest = human.at(-1)
+  if (!newest || isQuestion(newest.text)) return false
+  const t1 = Number.isFinite(newest.at) ? newest.at : now
+  const mine = groupTurns(selfLines).filter((t) => Number.isFinite(t.at) && t.at <= t1).at(-1)
+  if (!mine || t1 - mine.at > withinMs) return false
+  const prev = human.at(-2)
+  return !(prev && prev.who === newest.who && Number.isFinite(prev.at) && prev.at > mine.at)
+}
+
+/**
+ * The player's newest line when she has said nothing since it, it came in
+ * the last `withinMs` and it is not a question (a question left open still
+ * wants its answer on the next turn). Teammate lines are left out.
+ *
+ * @returns {{text:string, seconds:number}|null}
+ */
+export function lineLeftUnanswered(playerLines, selfLines, { now = Date.now(), withinMs = ANSWERS_OWN_LINE_MS } = {}) {
+  const newest = (playerLines ?? []).filter((l) => l && l.companion !== true && l.text).at(-1)
+  if (!newest || !Number.isFinite(newest.at) || isQuestion(newest.text)) return null
+  if (now - newest.at > withinMs) return null
+  const mine = groupTurns(selfLines).at(-1)
+  if (mine && (!Number.isFinite(mine.at) || mine.at >= newest.at)) return null
+  return { text: String(newest.text), seconds: Math.max(1, Math.round((now - newest.at) / 1000)) }
+}
+
 function linesNote(selfLines, playerLines, opts = {}) {
   const mode = ['idle', 'checkin', 'greeted', 'result'].includes(opts.mode) ? opts.mode : 'reply'
   const last = recentOwnTurns(selfLines, { now: opts.now, turns: mode === 'reply' ? REPLY_LINES_TURNS : LAST_LINES_TURNS })

@@ -185,6 +185,23 @@ describe('backseat opening look (261023)', () => {
     expect(ended).toHaveLength(1);
     expect(ended[0][1]).toMatchObject({ reason: 'capture_lost', failed_turns: 1, last_error_class: 'timeout' });
     expect(ended[0][1].first_line_ms).toBeTypeOf('number');
+    // 261123: the Clip That setting (off by default) and the clip count.
+    expect(ended[0][1]).toMatchObject({ clip_that: false, clips_saved: 0 });
+    expect(ended[0][1]).not.toHaveProperty('clip_fps');
+  });
+
+  it('a failed capture start carries its validated shape (261123)', async () => {
+    await endBackseat(CH, 'capture_failed:busy', {
+      extraProps: { capture_source_kind: 'window', capture_retry: 'failed', capture_minimized: 'yes' },
+    });
+    await flush();
+    const ended = h.captures.filter(([e]) => e === 'backseat_ended');
+    expect(ended[0][1]).toMatchObject({
+      reason: 'capture_failed:busy',
+      capture_source_kind: 'window',
+      capture_retry: 'failed',
+      capture_minimized: 'yes',
+    });
   });
 });
 

@@ -177,12 +177,20 @@ export const ZH_MISC: Record<string, string> = {
   // platform package). Without this caption the companion is silently mute.
   '[voice unavailable, local speech cannot run on this install]':
     '[语音不可用，本地语音无法在此安装上运行]',
+  '[voice blocked by Windows security, pick an online voice in Playtime]':
+    '[语音被 Windows 安全功能拦截，请在「游玩时长」中选择在线语音]',
   // Backseat share errors (useBackseatStore) — these bypassed t() until 260817.
   '{name} is in your Minecraft world right now. End that session first.':
     '{name} 现在正在你的 Minecraft 世界里。请先结束那边的会话。',
   'Could not start sharing. Try picking a different window.':
     '无法开始共享。试试选择其他窗口。',
   'Could not read that window.': '无法读取那个窗口。',
+  'Clip That': 'Clip That',
+  'About Clip That': '关于 Clip That',
+  'Clip frame rate': '片段帧率',
+  'Saves the last 15 seconds of your screen share as a clip in chat. Say "clip that" while sharing, or your companion clips great moments on their own.': '把屏幕共享的最后15秒保存成片段发到聊天里。共享时说"clip that"，或者让你的伙伴自己保存精彩时刻。',
+  'Could not capture that window. Un-minimize the game, or share your whole screen.': '无法捕获那个窗口。请把游戏从最小化恢复，或者共享整个屏幕。',
+  'Could not capture your screen. Try again, or share a single window.': '无法捕获你的屏幕。请重试，或者只共享一个窗口。',
   'Voice service is not available right now.': '语音服务暂时不可用。',
   'This voice is not in your ElevenLabs library. Add it there, or pick a different voice.':
     '这个声音不在你的 ElevenLabs 声音库中。请先在那里添加它，或选择其他声音。',
@@ -380,6 +388,7 @@ export const ZH_MISC: Record<string, string> = {
   'Stop the pitch sample': '停止试听',
   'Download a voice pack in Playtime to hear a sample.': '先在「游玩时长」中下载语音包，才能试听。',
   'Local speech cannot run on this install.': '本地语音无法在此安装上运行。',
+  'Windows security blocked on-device voices on this PC.': 'Windows 安全功能在此电脑上拦截了设备端语音。',
   'Calmness': '平稳度',
   'Higher is steadier and more even. Lower is more dramatic.':
     '越高越平稳均匀，越低越富有戏剧性。',

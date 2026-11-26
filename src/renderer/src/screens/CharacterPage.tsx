@@ -92,13 +92,15 @@ import {
   type ProfileFocus,
   type ProfileTab,
 } from '../lib/profileRows';
-import type { Character } from '@shared/characterSchema';
+import { MAX_COMPANION_SLOTS, type Character } from '@shared/characterSchema';
 import type { CharacterOverviewInfo } from '@shared/ipc';
 import { ownVoiceOf, sharedVoiceIdOf } from '@shared/voiceIds';
 import { sharedVoiceMetadataToSave } from '../lib/sharedVoice';
 import { voicePitchRate } from '@shared/voicePitch';
 import styles from './CharacterPage.module.css';
 import { userFacingError } from '../lib/errors';
+import { PartyFullHint, usePartyMembers } from '../components/PartyFullHint';
+import { isPartyFullError, noteCompanionUnbound, partyIsFull } from '../lib/partyFull';
 
 /** The section menu's tab labels (English keys, translated at render). */
 const TAB_LABEL: Record<ProfileTab, string> = {
@@ -205,6 +207,10 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
   // 260703 procgen: inline failure line for the Add-to-library CTA (e.g. the
   // main-process slot-limit backstop) — a silent no-op reads as a broken button.
   const [addError, setAddError] = useState<string | null>(null);
+  // 261124: Invite to party with the party full shows the party-full line
+  // (with Free a slot) instead of main's bare "Remove one to make room".
+  const [partyFullHit, setPartyFullHit] = useState<boolean>(false);
+  const partySize = usePartyMembers().length;
   const [showSignIn, setShowSignIn] = useState<boolean>(false);
   // 260706 — in-app report form (replaces the old mailto:dmca@sei.gg link).
   const [showReport, setShowReport] = useState<boolean>(false);
@@ -627,11 +633,13 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
     try {
       if (isAddedFromWorld) {
         await sei.charsRemoveFromLibrary(character.id);
+        noteCompanionUnbound(character.id);
         forgetEditDrafts(character.id);
         useDataStore.getState().removeCharacter(character.id);
         await refreshLibraryState();
       } else {
         await sei.deleteCharacter(character.id);
+        noteCompanionUnbound(character.id);
         // Before anything re-renders: the profile editors' leave-saves on
         // the way Home must not write (a save recreates a deleted companion
         // and puts a released default back).
@@ -660,6 +668,12 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       return;
     }
     setAddError(null);
+    setPartyFullHit(false);
+    // The party is full: say how to make room instead of asking main to refuse.
+    if (partyIsFull(partySize, MAX_COMPANION_SLOTS)) {
+      setPartyFullHit(true);
+      return;
+    }
     try {
       if (character.is_default) {
         await sei.charsRestoreDefault(character.id);
@@ -674,7 +688,8 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
       // Surface the failure (e.g. the slot-limit backstop) instead of a
       // silent no-op. The handler messages are user-readable; anything
       // technical falls back to the line below.
-      setAddError(userFacingError(err, t("Couldn't add this companion. Please try again.")));
+      if (isPartyFullError(err)) setPartyFullHit(true);
+      else setAddError(userFacingError(err, t("Couldn't add this companion. Please try again.")));
     }
   };
 
@@ -842,6 +857,7 @@ export function CharacterPage({ id }: CharacterPageProps): React.ReactElement {
             {addError}
           </p>
         ) : null}
+        {partyFullHit && isPreview ? <PartyFullHint surface="invite" /> : null}
 
         {/* The section menu: one tab shown at a time, no long scroll
             (product call 261110). */}

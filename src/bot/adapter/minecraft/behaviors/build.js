@@ -10,6 +10,7 @@ import { goTo } from './pathfind.js'
 import { isNaturalBlock } from './naturalBlocks.js'
 import { reason } from '../../../brain/errStrings.js'
 import { bodyInCell } from './placeSpots.js'
+import { inDeepWater } from './swimOut.js'
 
 export const DEFAULT_TIMEOUT_MS = 4000 // per-cell, inherited via placeBlockAction
 export const ITERATION_ORDER = 'Y-asc, then nearest-to-builder first within each layer (hollow layers: perimeter walk rotated to start nearest)' // D-07 documented constant
@@ -481,6 +482,14 @@ export async function buildAction(args, bot, config, deps = {}) {
   // to reach high cells.
   if (args.direction === 'below') {
     const n = args.count ?? 1
+    // 261123 (pass 62): a pillar needs a jump that clears the cell under her,
+    // and in deep water there is none (gather_craft-02: "no solid floor
+    // below", then "only 1 cobblestone" while still in the river); say what
+    // works instead.
+    if (inDeepWater(bot)) {
+      return 'you are in deep water, where a jump does not lift you clear of the cell under you, so pillaring up cannot work here. ' +
+        'goTo a spot on land first: the walk swims you to the nearest shore'
+    }
     const have = invCount()
     if (have < n) {
       return `you only have ${have} ${args.block}, and pillaring up ${n} needs ${n}. Get more ${args.block} first, or pillar up ${have}.`

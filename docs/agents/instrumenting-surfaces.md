@@ -109,6 +109,17 @@ game?, saved, outcome}` and `next_step_saved {source:'player_end', surface,
 game?}` as follow-ups (the `_ended` event has already gone out). Live check:
 `npx tsx scripts/player-end-next-step-probe.ts --reps 3`.
 
+**Game session recaps and saved facts (261113, v0.7 consistency).** A bot
+game's play row carries the session-end call's recap (D1), and that call and
+every fold also save the durable facts memory does not have yet (D2,
+`chat/memoryFacts.ts`). Shape only, never text: `play_recap {character_id,
+game, saved, source: 'recap'|'lines'|'none', recap_chars, recap_words, lines,
+check_outcome, facts_returned, facts_saved, fact_dupes}` once per bot-game
+play row (`playRecap.ts playRecapProps`), and `fold_facts {character_id,
+batch, session_rows, returned, saved, dupes}` once per successful fold
+(`continuity.ts foldIntoSummary`). `dupes` counts lines memory already had
+(normalized text against every entry).
+
 **The Home "up next" strip reads those plans back (261013, T119).** One
 strip above the party wall: the first Home companion (wall order) with an
 unconsumed `Plan for next time:` under 7 days old, else the first with an
@@ -386,6 +397,28 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   via `emitReply`, else the returned reply). Empty replies = silent,
   `CHAT_ABORTED` = aborted, a rejection = error. Realistic-typing pacing is
   not included. A routed send records nothing here; the bot times it.
+  Chat phases (261125, O5), app path only, integer ms from the same handler
+  entry, each absent when the turn never got there (`CHAT_PHASE_KEYS` in
+  replyLatency.ts, stamped through `ChatDeps.markPhase`): `prompt_start_ms`
+  (routing checks, character + config read, the player's row written),
+  `lan_check_ms` (the fresh world-detection pass finished; it runs alongside
+  the prompt build, `ChatDeps.lanReady`), `prompt_built_ms`,
+  `provider_ready_ms` (session read, SDK client, the ChatGPT plan's model
+  lookup), `llm_request_ms`, `llm_first_token_ms` (streaming transports only:
+  typed chat streams only on the ChatGPT plan, so it is absent on cloud and
+  BYOK, where `llm_response_ms - llm_request_ms` is the whole model round
+  trip), `llm_response_ms` (the response that carried the first shown
+  bubble) and `llm_calls` (a COUNT of LLM round trips before it: tool hops).
+  `ms - llm_response_ms` is our post-processing. The llm_* keys mean the same
+  as on voice, but `ms` does NOT: chat ends when the whole reply is back
+  (typed chat never streams its bubbles), voice at the first audible sample
+  of the first streamed sentence, after TTS. Compare llm_* phases across
+  surfaces, never `ms`. Samples from before 261125 also waited for the whole
+  LAN pass up front, and a no-world pass usually held 700 ms on a ping
+  timeout (mcPing now fails fast on a closed socket), so chat `ms` drops
+  across that build. Offline measurement:
+  `SEI_LATENCY_HARNESS=1 npx vitest run src/main/chat/chatLatency.harness.test.ts`
+  (add `HARNESS_KEEPALIVE=1` for the connection-reuse case).
 - voice (renderer, `lib/voice/replyClock.ts`, wired in `useVoiceStore`):
   `dispatchUserTurn` (the STT final) to the audio queue's `onAudible`. Turn =
   utterance number in the call. A new utterance or hang-up before audio =
@@ -395,6 +428,19 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   silent. Sent via `sei.track('reply_latency', ...)`; main's analytics:track
   handler rebuilds it from closed enums (`sanitizeRendererReplyLatency`) and
   samples it. Typed mid-call messages are not timed on any surface.
+  Voice phases (261123, O5): the voice sample also carries where the wait
+  went, integer ms from the same dispatch, each absent when the turn never
+  got there: `speech_end_to_final_ms` (the player's last voiced mic frame to
+  the dispatch: end-of-speech silence + STT + echo gate, the wait BEFORE
+  `ms` starts; from the dictation span's `speechEnd`), `llm_request_ms` and
+  `llm_first_token_ms` (main's wall-clock stamps, sent once on the first
+  streamed line as `SpokenLineContext.replyTiming`), `line_queued_ms` (first
+  line handed to TTS) and `tts_first_chunk_ms` (its first audio bytes in the
+  renderer; not on Kokoro). `ms - tts_first_chunk_ms` is decode and playback
+  start. In-game turns have no llm_* phases. A bad phase is dropped alone,
+  never the sample. The client's own share can be measured offline with
+  `SEI_LATENCY_HARNESS=1 npx vitest run src/main/chat/voiceLatency.harness.test.ts`
+  (real main pipeline, local proxy stand-in with fixed delays).
 - minecraft (bot, `brain/actionStats.js`, minecraft sessions only): a timed
   player line (`notePlayerChat`) to the say() or started world action that
   answers it (same events as the existing `reply_ms_total`, decision time,
@@ -406,6 +452,30 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   routed in by `deliverSeiChat`) is reported as surface `chat`, path
   `in_game`; voice lines reaching the bot are not timed there (the voice
   clock owns calls).
+  Minecraft phases (261126, O5), on every bot sample (game and routed app
+  lines; `BOT_PHASE_KEYS` in replyLatency.ts), integer ms from the line, each
+  absent when the turn never got there: `dispatch_ms` (the brain picked the
+  line up: handleDispatch, or handlePreempt's claim of a line arriving
+  mid-turn), `llm_request_ms` (first model call started at or after the
+  line), `llm_last_request_ms` (the last one before the answer: with
+  `llm_calls` > 1 the reply came after tool hops or a preempt restart),
+  `llm_response_ms` (that last call came back; absent when the reply was a
+  say() sent mid-call or the call was aborted/failed) and `llm_model_ms`
+  (total time any call was in flight inside [line, answer], so
+  `ms - llm_model_ms` is client time: snapshot/prompt build, dispatch, action
+  waits). Counts, always present: `llm_calls`, `llm_aborted` (calls cut off by
+  a preempt or the 12 s cloud timeout; on an `error` line this is the
+  timeout-and-retry path) and `llm_rate_limited` (personality calls dropped
+  by the 30/min bucket, which ends the turn with no reply; also a session
+  counter on `mc_session_actions`). `busy_at_line` (`idle|llm|action|turn`)
+  is what the brain was doing when the line arrived. Read these on
+  `outcome = 'replied'`: silent and error lines are >= 20 s by construction
+  (the lazy sweep reports them at 20-34 s) and set the all-outcome p90 by
+  themselves, so track the non-reply rate separately from the replied p90.
+  Offline:
+  `scripts/mc-reply-latency-harness.mjs` drives the real bot against a local
+  MC server and a stub model with a fixed delay (header has the command);
+  with a 1 s stub, steady replies are 1.02-1.05 s (client 16-20 ms).
 No model call and no tokens are added; dev launches send nothing (the
 initAnalytics channel gate).
 
@@ -469,6 +539,9 @@ read). Rules in `src/main/analyticsContext.ts` (pure, tested):
   game matched from the shared window title against the closed list in
   `backseat/watchedGame.ts`, `game_source: tile|title`) and `watched_kind`
   (`game`/`video`/`browser`/`other`/`unknown`). The title never ships.
+  They also carry `clip_that` / `clip_fps` (the Clip That setting), `_ended`
+  `clips_saved`; `backseat_perf` (phase `first_minute` / `end`) is the
+  share's CPU, memory and frame-rate health (`shared/backseatPerf.ts`).
 - `summon_failed` carries `game`, and redact() also scrubs the player's own
   `mc_username` / `preferred_name` (`RedactOptions.playerNames`).
 
@@ -480,6 +553,27 @@ that show. A normal launch has no splash since product call (261108), so this
 is the empty moment between the click and Sei; `update_screen` is true on the
 launch right after Update.exe restarted Sei (the update splash covered it).
 Hidden login launches are skipped. Filter `packaged = true`.
+
+261123 (launch speed, `src/main/startupMarks.ts`): `app_window_shown` also
+carries the main phase marks reached by then as `<phase>_ms` (ms since process
+start, Node's performance clock): `boot_entry`, `app_import_start`,
+`app_imported`, `ready`, `updater_started`, `bootstrap_start`,
+`window_created`, `scope`, `migrations`, `ipc_ready`, `auth_ready`,
+`bootstrap_done`, `ready_to_show`. The gap `ready` to `bootstrap_start` is the
+Windows pending-update / repair check; `window_created` to `ready_to_show` is
+the renderer bundle load. `app_first_view {view_kind, ms_since_process_start,
+waited_auth_ms, renderer_ms, first_of_process, window_visible, <phase>_ms...}` is the first
+real view after the boot splash (renderer `lib/firstView.ts`, rebuilt in main:
+`view_kind` from a closed list, else `other`; `ms_since_process_start` stamped
+by main on arrival; `waited_auth_ms` = the boot routing's wait on main's auth
+snapshot). It is sent on every renderer load; `first_of_process` marks the
+launch's own; `window_visible` is false when the window was still hidden
+(a login launch loads its view before anyone opens Sei), so filter
+`first_of_process = true AND window_visible = true` for launch time.
+`app_ipc_ready_slow {ms_since_process_start, last_phase, <phase>_ms...}` fires
+once when the IPC handlers are still not registered 60 s after the window
+showed (a launch hung behind the splash; `last_phase` = the last mark reached).
+It waits in analytics' pre-init queue, so it only arrives if init runs later.
 
 **Crash reporting (261031, T278, `src/main/crashReporting.ts`).** No Sentry,
 no minidump upload. `initCrashReporting()` runs first in whenReady:
@@ -584,7 +678,9 @@ file appears, and keep `noteLaunch()` ahead of anything that writes userData.
   used to be dropped.
 - `app_quit {session_ms, last_surface}` first in before-quit; chess, Draw! and
   backseat now end (reason `app_quit`) BEFORE the flush.
-- `update_installed {from, to, via}` from `runWhatsNewCheck`.
+- `update_installed {from, to, via, updater, install_s?, restart_ms?}` from
+  `runWhatsNewCheck`; `update_downloaded` and `update_failed` from the
+  updater (fields: build-release.md, "Update telemetry").
 - `backend` reads `'unset'` until the profile has a `preferred_name` on the
   default `local` kind.
 

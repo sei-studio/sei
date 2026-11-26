@@ -39,12 +39,14 @@ import {
   roomTimeAt,
   type RoomBox,
   type RoomComponent,
+  type RoomFigure,
   type RoomFrame,
   type RoomGlowEffect,
   type RoomPatternChoice,
   resolvePattern,
   type RoomPolygon,
   type RoomPresetManifest,
+  type RoomSeatFit,
   type RoomSlotId,
   type RoomState,
   type RoomTime,
@@ -70,6 +72,8 @@ export interface SlotLayer {
   quads?: PatternQuad[];
   /** 261105: a light cycling through the colours (its glow is coloured per frame). */
   cycle?: boolean;
+  /** 261121: drawn larger by a seat fit (`box` is already scaled); renderers tidy its enlarged edge. */
+  fitted?: boolean;
 }
 
 export interface AvatarLayer {
@@ -124,6 +128,13 @@ export interface GlowLayer {
   tint?: string;
   /** 261105: the light runs through the hues (colour per frame, see cycleColour). */
   cycle?: boolean;
+  /**
+   * 261121: parts a seat fit drew larger in front of this glow's owner. A
+   * glow is painted for the room as drawn, so a lamp's light on the wall
+   * and floor would show through the larger chair: it is cut by these
+   * parts' pixels. Absent without a seat fit.
+   */
+  occluders?: SlotLayer[];
 }
 
 /** One frame's particles, placed (261105). */
@@ -193,16 +204,34 @@ export function itemZ(component: RoomComponent, placementZ?: number): number {
   return ITEM_Z[component.placement ?? 'floor'];
 }
 
-export function roomDrawPlan(
-  manifest: RoomPresetManifest,
-  state: RoomState,
-  time: RoomTime,
-  opts: { avatar?: boolean } = {},
-): RoomDrawPlan {
+/** 261121: the pack's seat fit for this figure kind, or null (drawn as painted). */
+export function seatFitFor(manifest: Pick<RoomPresetManifest, 'avatar'>, figure: RoomFigure | null | undefined): RoomSeatFit | null {
+  if (!figure) return null;
+  const fit = manifest.avatar.fit?.[figure];
+  return fit && fit.scale > 0 && fit.slots.length ? fit : null;
+}
+
+/** A slot layer's box (null = the whole canvas) scaled by a seat fit about its origin. */
+export function fitBox(box: RoomBox | null, canvas: readonly [number, number], fit: RoomSeatFit): RoomBox {
+  const [x, y, w, h] = box ?? [0, 0, canvas[0], canvas[1]];
+  const [ox, oy] = fit.origin;
+  return [ox + (x - ox) * fit.scale, oy + (y - oy) * fit.scale, w * fit.scale, h * fit.scale];
+}
+
+export interface RoomPlanOptions {
+  /** false: no avatar layer (thumbnails, look()). */
+  avatar?: boolean;
+  /** 261121: who sits in her slot; a pack's `avatar.fit` for it redraws her seat (seatFitFor). */
+  figure?: RoomFigure | null;
+}
+
+export function roomDrawPlan(manifest: RoomPresetManifest, state: RoomState, time: RoomTime, opts: RoomPlanOptions = {}): RoomDrawPlan {
   const layers: RoomLayer[] = [];
+  const fit = seatFitFor(manifest, opts.figure);
   for (const { slot, component, tint, pattern, cycle } of resolveSlots(manifest, state)) {
     const frame = frameFor(component, time);
     const tinted = component.tintable && frame.mask && tint ? tint : null;
+    const box = component.box ?? null;
     const layer: SlotLayer = {
       kind: 'slot',
       z: manifest.slots[slot]!.z,
@@ -211,8 +240,9 @@ export function roomDrawPlan(
       frame,
       // A cycling light's part is drawn in white; its glow carries the colour.
       tint: tinted && cycle ? '#ffffff' : tinted,
-      box: component.box ?? null,
+      box: fit?.slots.includes(slot) ? fitBox(box, manifest.canvas, fit) : box,
     };
+    if (fit?.slots.includes(slot)) layer.fitted = true;
     if (tinted && pattern && !cycle) {
       layer.pattern = pattern;
       const quads = frame.patternQuads ?? component.patternQuads;
@@ -278,6 +308,7 @@ export function roomDrawPlan(
   const sorted = order.map((o) => o.l);
   const glows: GlowLayer[] = [];
   const particles: ParticleLayer[] = [];
+  const fitted = fit ? sorted.filter((l): l is SlotLayer => l.kind === 'slot' && !l.clip && fit.slots.includes(l.slot)) : [];
   for (const l of sorted) {
     // A lip is its part drawn again in part: the part's own layer carries the glow.
     if (l.kind === 'avatar' || (l.kind === 'slot' && l.clip)) continue;
@@ -285,6 +316,8 @@ export function roomDrawPlan(
       const g: GlowLayer = { z: l.z, src: l.frame.glow, effect: l.frame.effect ?? null, owner: l };
       if (l.frame.glowTint && l.kind === 'slot' && l.cycle) g.cycle = true;
       else if (l.frame.glowTint && l.tint) g.tint = l.tint;
+      const over = fitted.filter((f) => f !== l && f.z > l.z);
+      if (over.length) g.occluders = over;
       glows.push(g);
     }
     if (l.frame.particles && l.kind === 'slot') {
