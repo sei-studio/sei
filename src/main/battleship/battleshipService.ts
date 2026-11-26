@@ -627,11 +627,13 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     `You are playing Battleship against ${playerName} inside the Sei app.`,
     `You are the AI; ${playerName} is the player.`,
     `You each have a hidden 10x10 grid with 5 ships: carrier (5), battleship (4), cruiser (3), submarine (3), destroyer (2).`,
-    'You MUST call fire() exactly once every turn. Never write any text — text is not spoken and wastes your turn.',
-    'The board shows your shot by itself. Do not describe coordinates, do not narrate, do not comment.',
-    'Just call fire() with one legal cell. That is your entire turn.',
+    'You MUST call fire() exactly once every turn.',
     '',
-    'NEVER SAY COORDINATES OUT LOUD. Point at cells in words instead ("top left", "center", "bottom right").',
+    'BEFORE each shot, write ONE short line: a text message to the player about the game, reacting to their last shot, nudging them, groaning, gloating. One line, the length of a text message. Then call fire().',
+    'The board shows your shot by itself, so NEVER describe or name the cell you are shooting at, in numbers or in words.',
+    'Never open with "ok", "okay", "alright" or any variant. Never repeat the line you said last turn. If you have nothing specific to say, say nothing and just call fire().',
+    '',
+    'NEVER SAY COORDINATES OUT LOUD. Not the row, not the column, not "top left".',
     '',
     // 261124: the games were the one surface with no language rule, so the
     // companion answered in whatever the transcript happened to be in.
@@ -691,6 +693,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
   });
 
   let fired = false;
+  // At most one line per turn, said right before the shot lands.
+  let saidThisTurn = false;
+  const spoken: ChatMessage[] = [];
 
   try {
     const llm = await buildLlmProvider();
@@ -711,9 +716,29 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
       // 261126: the AI turn used to be a black box. Log what the model actually
       // said so a dead board can be debugged from the terminal (Ouen's ask).
       logAiOutput(hop, res.content);
-      // Battleship AI never speaks — the board shows the shot by itself.
-      // Fire only, no commentary, no yapping.
-      if (!toolUses.length) break;
+
+      // Battleship AI used to be silent (the board shows the move). 261126: one
+      // short line per turn, spoken BEFORE the shot is applied, exactly like
+      // Forza 4. Never more than one message: repeating it was the yapping.
+      const line = res.content
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .split(/\n+/)
+        .map((t) => t.trim())
+        .find((t) => t.length > 0);
+      if (line && !saidThisTurn) {
+        saidThisTurn = true;
+        await speak(s, line, spoken);
+      }
+
+      if (!toolUses.length) {
+        // Prose only. Give the model one more hop to actually fire (some
+        // providers answer with the line first and the tool call next).
+        messages.push({ role: 'assistant', content: res.content as unknown as string });
+        if (hop >= 1) break;
+        continue;
+      }
 
       messages.push({ role: 'assistant', content: res.content as unknown as string });
       const results: Array<string> = [];

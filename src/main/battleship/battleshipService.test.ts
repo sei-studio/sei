@@ -22,6 +22,14 @@ vi.mock('../llm', () => ({
         throw e;
       }
       if (mode === 'yap') return { content: [{ type: 'text', text: 'Hmm, where to fire?' }] };
+      if (mode === 'chatter') {
+        return {
+          content: [
+            { type: 'text', text: 'You are not getting away this time.' },
+            { type: 'tool_use', name: 'fire', input: { row: 5, col: 5 } },
+          ],
+        };
+      }
       // A real call: always aim at (5,5) like a lazy model would.
       return { content: [{ type: 'tool_use', name: 'fire', input: { row: 5, col: 5 } }] };
     },
@@ -55,8 +63,9 @@ vi.mock('../../bot/brain/promptLibrary.js', () => ({
 }));
 vi.mock('../../bot/brain/memory/memoryLog.js', () => ({ appendMemory: async () => 1 }));
 
-let mode: 'yap' | 'fire' | 'boom' | 'hang' = 'yap';
+let mode: 'yap' | 'fire' | 'boom' | 'hang' | 'chatter' = 'yap';
 let lastCall: { toolChoice?: { type: string; name: string } } | null = null;
+const pushed: Array<{ role: string; text: string }> = [];
 
 const {
   initBATTLESHIPService,
@@ -105,7 +114,9 @@ describe('Battleship AI turn', () => {
     await endBATTLESHIP('c1');
     initBATTLESHIPService({
       pushState: () => {},
-      pushChatMessage: () => {},
+      pushChatMessage: (_id: string, msg: { role: string; text: string }) => {
+        pushed.push(msg);
+      },
       isSummoned: () => false,
     });
     await startBATTLESHIP('c1');
@@ -157,5 +168,16 @@ describe('Battleship AI turn', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('says exactly one line per turn, before the shot lands', async () => {
+    mode = 'chatter';
+    pushed.length = 0;
+    await playerFiresSomewhere();
+    await nextPlayerTurn();
+    expect(aiShotsFired()).toBe(1);
+    const said = pushed.filter((m) => m.role === 'companion');
+    expect(said).toHaveLength(1);
+    expect(said[0].text).toBe('You are not getting away this time.');
   });
 });
