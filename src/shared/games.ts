@@ -62,19 +62,25 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
   { id: 'chess', name: 'Chess', available: true, aliases: ['国际象棋', 'チェス', 'Шахматы', 'Xadrez', 'Ajedrez'] },
   { id: 'draw', name: 'Draw!', available: true },
   // Main-side minigames (261122): no engine, no downloadable pack. The
-  // companion plays through a tool (play(column) / fire(row, col)); the
-  // services live in src/main/connect4 and src/main/battleship.
+  // companion plays through its own tool calls (play(column) / fire(cell));
+  // the services live in src/main/connect4 and src/main/battleship.
+  // 261127: generic names only, never a trademarked game name (tile, prompt,
+  // aliases). The aliases are the names the UI dictionaries use plus the
+  // generic names of the paper games in each UI language.
   {
     id: 'CONNECT4',
-    name: 'Forza 4',
+    name: 'Four in a Row',
     available: true,
-    aliases: ['Connect Four', 'Connect4', 'Quattro in fila', '四目並べ', 'Четыре в ряд', 'Cuatro en línea'],
+    aliases: ['4 in a row', 'Quattro in fila', '四子棋', '四目並べ', 'Четыре в ряд', 'Quatro em linha', 'Cuatro en línea', 'Cuatro en raya'],
   },
   {
     id: 'BATTLESHIP',
-    name: 'Battleship',
+    name: 'Fleet Battle',
     available: true,
-    aliases: ['Battaglia navale', '海战', '海戦', 'Битва кораблей', 'Batalha Naval', 'Hundir la flota'],
+    aliases: [
+      'Sea battle', 'Naval battle', 'Battaglia tra flotte', 'Battaglia navale', '舰队对战', '海战', '艦隊バトル', '海戦',
+      'Битва флотов', 'Морской бой', 'Batalha de frotas', 'Batalha naval', 'Batalla naval',
+    ],
   },
   // 260803: no "Backseat" entry. Sharing your screen is not a game and it does
   // not belong in a grid beside chess, so it lives on the call controls' share

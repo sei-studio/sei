@@ -738,7 +738,7 @@ export function resetDiagThrottleForTest(): void {
  * failure event — chat, voice calls, chess, Draw!, and backseat failures were
  * invisible in analytics.
  */
-export type ErrorSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat';
+export type ErrorSurface = 'chat' | 'voice' | 'chess' | 'draw' | 'backseat' | 'connect4' | 'battleship';
 
 /** error_class must be a short stable snake token — never a raw message. */
 const ERROR_CLASS_RE = /^[a-z0-9_]{1,64}$/;

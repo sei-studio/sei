@@ -1,0 +1,118 @@
+/**
+ * runWithAttempts (261127): the retry policy of a board-game character turn.
+ * A turn is retried a few times, then stops in a clear failed state; there is
+ * never a made-up move. The services' own tests cover the runner end to end.
+ */
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../characterStore', () => ({ getCharacter: vi.fn() }));
+vi.mock('../configStore', () => ({ loadConfig: vi.fn(async () => ({})) }));
+
+import {
+  runWithAttempts,
+  attemptBudgetMs,
+  alreadyMovedResult,
+  BoardTurnTimeout,
+  MOVE_ATTEMPTS,
+  RETRY_BACKOFF_MS,
+  type BoardTurnResult,
+} from './boardTurn';
+
+const noMove = (over: Partial<BoardTurnResult> = {}): BoardTurnResult => ({
+  moved: false,
+  spoken: [],
+  hops: 1,
+  illegal: 0,
+  noToolHops: 1,
+  lastRejection: null,
+  ...over,
+});
+
+function harness(attempt: (i: number, note: string | null) => Promise<BoardTurnResult>, live = () => true) {
+  const sleeps: number[] = [];
+  const notes: Array<string | null> = [];
+  return {
+    sleeps,
+    notes,
+    run: () =>
+      runWithAttempts({
+        attempt: (i, note) => {
+          notes.push(note);
+          return attempt(i, note);
+        },
+        isLive: live,
+        onUsageLimit: async () => null,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }),
+  };
+}
+
+describe('runWithAttempts', () => {
+  it('a move on the second attempt is a move, with the reason folded into that attempt', async () => {
+    const h = harness(async (i) => (i === 0 ? noMove() : alreadyMovedResult()));
+    const out = await h.run();
+    expect(out).toMatchObject({ kind: 'moved', attempts: 2 });
+    expect(h.notes[0]).toBeNull();
+    expect(h.notes[1]).toMatch(/did not make a move/);
+    expect(h.sleeps).toEqual([]); // no backoff after a model answer, only after errors
+  });
+
+  it('illegal moves on every attempt fail as illegal_move and count each rejection', async () => {
+    const h = harness(async () => noMove({ illegal: 1, lastRejection: 'Column 4 is full.' }));
+    const out = await h.run();
+    expect(out).toEqual({
+      kind: 'failed',
+      failure: { reason: 'illegal_move', attempts: MOVE_ATTEMPTS },
+      errorClass: null,
+      illegal: MOVE_ATTEMPTS,
+    });
+    expect(h.notes[1]).toContain('Column 4 is full.');
+  });
+
+  it('timeouts back off and end as timeout', async () => {
+    const h = harness(async () => {
+      throw new BoardTurnTimeout(90_000);
+    });
+    const out = await h.run();
+    expect(out).toMatchObject({ kind: 'failed', failure: { reason: 'timeout', attempts: MOVE_ATTEMPTS } });
+    expect(h.sleeps).toEqual([...RETRY_BACKOFF_MS]);
+  });
+
+  it('a config class error stops at once', async () => {
+    const h = harness(async () => {
+      throw new Error('ollama_model_missing: qwen3');
+    });
+    const out = await h.run();
+    expect(out).toMatchObject({ kind: 'failed', failure: { reason: 'provider_error', attempts: 1 }, errorClass: 'model_not_found' });
+  });
+
+  it('a usage limit stops with the wall the popup reported', async () => {
+    const out = await runWithAttempts({
+      attempt: async () => {
+        throw Object.assign(new Error('429 rate limited'), { status: 429 });
+      },
+      isLive: () => true,
+      onUsageLimit: async () => 'rate_limited',
+      sleep: async () => {},
+    });
+    expect(out).toMatchObject({ kind: 'failed', failure: { reason: 'rate_limited', attempts: 1 } });
+  });
+
+  it('a turn that stops mattering is aborted, not failed', async () => {
+    let live = true;
+    const h = harness(async () => {
+      live = false;
+      throw new Error('500 server error');
+    }, () => live);
+    expect(await h.run()).toEqual({ kind: 'aborted' });
+  });
+});
+
+describe('attemptBudgetMs', () => {
+  it('is 90s for hosted providers and twice the cold-load floor for Ollama', () => {
+    expect(attemptBudgetMs({ kind: 'anthropic' })).toBe(90_000);
+    expect(attemptBudgetMs({ kind: 'ollama' })).toBeGreaterThanOrEqual(240_000);
+  });
+});

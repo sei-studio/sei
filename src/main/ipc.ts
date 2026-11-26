@@ -1493,6 +1493,31 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
       });
       if (handled) return handled;
     }
+    // Four in a Row and Fleet Battle (261127): same routing as chess while a
+    // game is open, so the reply sees the board. Lines come back streamed
+    // (persisted + pushed by the game's turn runner). Null = no live game.
+    {
+      const connect4 = await import('./connect4/connect4Service');
+      if (connect4.isCONNECT4Active(args.characterId)) {
+        const handled = await connect4.handlePlayerChat({
+          characterId: args.characterId,
+          text: args.text,
+          replyTo: args.replyTo,
+          voiceCall: inCall,
+        });
+        if (handled) return handled;
+      }
+      const battleship = await import('./battleship/battleshipService');
+      if (battleship.isBATTLESHIPActive(args.characterId)) {
+        const handled = await battleship.handlePlayerChat({
+          characterId: args.characterId,
+          text: args.text,
+          replyTo: args.replyTo,
+          voiceCall: inCall,
+        });
+        if (handled) return handled;
+      }
+    }
     // Fresh world-detection pass before the prompt is built (260703): the
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     // Skipped mid-call — a live voice call cannot be opening a world, and this
@@ -1722,7 +1747,7 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await draw.endDraw(id);
   });
 
-  // ── Forza 4 minigame ───────────────────────────────────────────────────────
+  // ── Four in a Row minigame (internal id CONNECT4) ──────────────────────────
   // Thin wrappers over src/main/connect4/connect4Service (module state initialized
   // in main/index.ts). All character-scoped.
   const CONNECT4MoveArgsSchema = z.object({
@@ -1756,13 +1781,18 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const { rematch } = await import('./connect4/connect4Service');
     return await rematch(id);
   });
+  ipcMain.handle(IpcChannel.CONNECT4.retry, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { retryAiTurn } = await import('./connect4/connect4Service');
+    return await retryAiTurn(id);
+  });
   ipcMain.handle(IpcChannel.CONNECT4.end, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
     const { endCONNECT4 } = await import('./connect4/connect4Service');
     await endCONNECT4(id);
   });
 
-  // ── Battleship minigame ──────────────────────────────────────────────
+  // ── Fleet Battle minigame (internal id BATTLESHIP) ─────────────────────
   ipcMain.handle(IpcChannel.BATTLESHIP.start, async (_event, argsRaw: unknown) => {
     const args = z
       .object({
@@ -1816,6 +1846,11 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     const id = IdSchema.parse(idArg);
     const { rematch } = await import('./battleship/battleshipService');
     return await rematch(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.retry, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { retryAiTurn } = await import('./battleship/battleshipService');
+    return await retryAiTurn(id);
   });
   ipcMain.handle(IpcChannel.BATTLESHIP.end, async (_event, idArg: unknown) => {
     const id = IdSchema.parse(idArg);
@@ -4715,6 +4750,8 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         try { await deps.supervisor.shutdown(); } catch { /* best-effort */ }
         try { (await import('./chess/chessService')).shutdownChess(); } catch { /* best-effort */ }
         try { (await import('./draw/drawService')).shutdownDraw(); } catch { /* best-effort */ }
+        try { (await import('./connect4/connect4Service')).endAllCONNECT4('factory_reset'); } catch { /* best-effort */ }
+        try { (await import('./battleship/battleshipService')).endAllBATTLESHIP('factory_reset'); } catch { /* best-effort */ }
         try { await (await import('./backseat/backseatService')).clearAllBackseat('factory_reset'); } catch { /* best-effort */ }
         // A leftover tray-settings.json (retired tray mode) is the only record
         // that Sei registered a login item: remove the item before the wipe.
