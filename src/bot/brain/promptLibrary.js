@@ -1365,8 +1365,14 @@ export const NUDGES = {
   // time saying her greeting over ("yo alex. it's night and i have a sword
   // and zero plan"), as if it had not been sent. Quoted right under their
   // line, plain crossed hellos greeted again 12/96 -> 1/96 (pass64a-probe
-  // cross_hey2/yo/yo3/yo4); a crossed question and a crossed ask still got
-  // their answer and action (16/16 each).
+  // cross_hey2/yo/yo3/yo4); a crossed ask still acted 16/16. Cost: a crossed
+  // "hey sui hows it going" went unanswered 6/42 (0/36 without the quote;
+  // her scratchpad: "my hello already covered it"). Tried and dropped: the
+  // question rule first (plain hellos 14/96), "they are waiting for your
+  // answer to that part" (question 1/40 silent, but cross_hey2 re-greeted
+  // 11/48), "it answers their hello and nothing more" / "even if your hello
+  // touched on it" (question 4-5/20 silent), deciding in the text first
+  // (question silent 14/20).
   greetCrossedTail: (hello) => `${hello ? `Right under it they read your hello: "${hello}". ` : ''}If this line is only a hello, do not call say() this turn; that is the one exception to answering every line. If it says or asks something more, answer that part with say() without greeting them or introducing yourself again; a request gets its action too.`,
 
   // 260708: group-voice variant of playerInterruptHint. On a group call the

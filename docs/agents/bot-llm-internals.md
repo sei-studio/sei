@@ -139,8 +139,13 @@ crossed hello (24/24); the two that greeted again (night_social-03-B,
 -04-A, one per arm) said the greeting over as if it had not been sent.
 `greetCrossedTail(hello)` now quotes her whole hello (`loop._crossedHello`,
 every message decided before their line) right under their line: plain
-crossed hellos re-greeted 12/96 -> 1/96 in the probe, the question and ask
-guards kept their answer and action.
+crossed hellos re-greeted 12/96 -> 1/96 in the probe and 1/12 -> 0/12 in
+the paired compare; a crossed ask still acts, but a crossed "hey sui hows it
+going" goes unanswered about 1 in 7 (variants tried are in the
+promptLibrary comment). `greetCrossed` also needs their line to arrive
+before her hello reached chat or within `GREET_SEEN_SLACK_MS` (3s) of it: a
+"yo" typed 5-6s after her hello was on screen answers it and gets a normal
+reply turn.
 
 **Event-sourced FSM.** `src/bot/brain/fsm.js` is a priority queue with a
 single-flight dispatcher and one `AbortController`:

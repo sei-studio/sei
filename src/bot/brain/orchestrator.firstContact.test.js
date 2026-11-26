@@ -218,6 +218,26 @@ describe('261012 crossed greeting', () => {
     expect(lastTurnText(provider)).toContain('but say something')
   })
 
+  // 261126: a hello typed after hers was already on screen answers it; it
+  // did not cross it (pass64a follow-up compare, "yo" 5-6s after her hello
+  // landed got the crossed note and ended in silence).
+  it('no note when their hello comes a few seconds after hers reached them', async () => {
+    _setTickIntervalForTests(10_000_000)
+    const provider = makeProvider([sayTurn('heyyy steve'), sayTurn('sup')])
+    const { adapter } = makeAdapter()
+    const orch = createOrchestrator({ adapter, config: makeConfig(), reenqueue: () => {}, _anthropicOverride: provider })
+    await orch.handleDispatch('sei:idle', { reason: 'just_connected_first_spawn', quietMs: 0 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(Date.now() + 6_000)
+      await say2(orch, 'yo')
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(lastTurnText(provider)).not.toContain(NOTE)
+    expect(lastTurnText(provider)).toContain('Their line, player (Steve): yo')
+  })
+
   it('no note when she never said a greeting', async () => {
     _setTickIntervalForTests(10_000_000)
     const provider = makeProvider([{ text: '', toolUses: [] }, sayTurn('hey')])

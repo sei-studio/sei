@@ -1749,6 +1749,13 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
   // was told her (long delivered) hello already answered it, with the reply
   // retry switched off, so they got no answer.
   const GREET_CROSS_WINDOW_MS = 20_000
+  // 261126: and only a line that reached her before her hello reached them,
+  // or right after (the few seconds a short hello they were already typing
+  // needs to land). Bounded by decision time alone, a "yo" typed 5-6s after
+  // her hello was on screen (an answer to it) was told her hello "already
+  // answers" it and got silence (pass64a follow-up compare, night_social-01-B
+  // and errands-01-B U1, both labelled silence).
+  const GREET_SEEN_SLACK_MS = 3_000
   // True (once) when this player line is their first since her first-contact
   // hello was decided. The turn then takes NUDGES.greetCrossed framing, and
   // the loop owes no reply (the unanswered-line retry would otherwise push
@@ -1762,6 +1769,7 @@ export function createOrchestrator({ adapter, config, logger = console, sessionS
     const since = playerLines.filter((l) => l.at >= greet.at && !l.companion)
     if (since.length !== 1) return false
     if (since[0].at - greet.at > GREET_CROSS_WINDOW_MS) return false
+    if (since[0].at - (greet.sentAt ?? greet.at) > GREET_SEEN_SLACK_MS) return false
     if (loop) {
       loop._noReplyOwed = true
       // 261126: her hello as they read it (every message it was split into,
