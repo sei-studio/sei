@@ -1428,6 +1428,15 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     return await readBefore(args.characterId, args.beforeId, CHAT_HISTORY_PAGE);
   });
 
+  // 261125 (O5 chat latency): the player is typing. Warm the proxy connection
+  // so the send's LLM request does not open a fresh TCP+TLS connection (fetch
+  // drops idle ones after 4s); on the ChatGPT plan, prefetch the model
+  // catalog the turn would otherwise fetch first. proxyPrewarm.ts throttles.
+  ipcMain.handle(IpcChannel.chat.prewarm, async (): Promise<void> => {
+    const { prewarmChatUpstream } = await import('./proxyPrewarm');
+    await prewarmChatUpstream();
+  });
+
   ipcMain.handle(IpcChannel.chat.send, async (_event, argsRaw: unknown) => {
     // 261106 reply_latency: the player's wait starts when the send arrives
     // (the world-detection pass below is part of it). replyLatency.ts.
@@ -1488,9 +1497,16 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     // "is my world open?" answer must not come from a stale poll. ~60-100ms.
     // Skipped mid-call — a live voice call cannot be opening a world, and this
     // ran on the latency-critical path before every spoken reply (260706).
-    if (!inCall) {
-      try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
-    }
+    // 261125 (O5 chat latency): started here, awaited inside the turn
+    // (ChatDeps.lanReady) right before the prompt reads getLanState(), so it
+    // overlaps the transcript write, the prompt reads and the provider build
+    // instead of running in front of them. A routed (in-game) send never
+    // reads it, so it no longer waits for it either.
+    const lanReady = inCall
+      ? undefined
+      : (async () => {
+          try { await deps.refreshLanState?.(); } catch { /* chat proceeds on cache */ }
+        })();
     // Analytics (260801): the ONLY chat-session choke point. Everything routed
     // above this line belongs to another surface that emits its own timed
     // event — chess and Draw! have already declined, and a mid-call line is
@@ -1523,6 +1539,9 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
         // 260828 retry-loop guard: launch() refuses (and tells the model not
         // to retry) while a summon pre-gate refusal is still standing.
         blockedAutoLaunch: (id) => blockedAutoSummon(id),
+        ...(lanReady ? { lanReady } : {}),
+        // 261125: reply_latency phases for this turn's clock (replyLatency.ts).
+        ...(replyClock ? { markPhase: replyClock.mark } : {}),
         // Task 4 — when the character is already in-game (spawned), route this
         // message into that live session instead of the standalone chat brain.
         isInGame: (id) => deps.isSessionOnline(id),

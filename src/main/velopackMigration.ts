@@ -33,6 +33,7 @@ import { ciMark, pidAlive, userDataInstallId, velopackInstalled, velopackLog } f
 import { noteNeutralExit } from './bootContext';
 import { bundleRequire } from './bundleRequire';
 import { isSeilinkHostLaunch } from './seilink/host/hostArgs';
+import { velopackPathsFor } from './velopackFastApply';
 import { spawnWhenFree } from './velopackSpawnRetry';
 import { checkSigned } from './velopackVerify';
 import { downloadSetup as download, freeBytes, setupUnchanged } from './velopackSetupFetch';
@@ -57,6 +58,7 @@ import {
   UNINSTALLER_RUN_AS,
   uninstallSpawn,
   velopackLaunchTarget,
+  velopackRedirectTarget,
   velopackRootFor,
   type MigrationRule,
   type MigrationState,
@@ -138,7 +140,20 @@ function velopackRoot(): string | null {
 
 function velopackExe(): string | null {
   const root = velopackRoot();
-  return root ? velopackLaunchTarget(root, existsSync) : null;
+  return root ? velopackRedirectTarget(root, existsSync) : null;
+}
+
+/**
+ * This process runs from a Velopack layout (<root>\current\Sei.exe with
+ * sq.version), whether or not Velopack itself loads. With Update.exe deleted
+ * velopackInstalled() is false; that copy must still never hand off to itself
+ * (CI e2e-signed 261126: it redirected to the root stub, which cannot start
+ * without Update.exe, so Sei never opened and never repaired).
+ */
+function runsFromVelopackCopy(): boolean {
+  if (process.platform !== 'win32') return false;
+  const p = velopackPathsFor(process.execPath);
+  return !!p && existsSync(path.join(p.root, 'current', 'sq.version'));
 }
 
 /** The Velopack copy's version (current\sq.version), or null. */
@@ -202,7 +217,7 @@ function startVelopack(exe: string, args: string[], env: NodeJS.ProcessEnv = pro
 }
 
 function earlyBoot(): void {
-  const velopack = velopackInstalled();
+  const velopack = velopackInstalled() || runsFromVelopackCopy();
   if (velopack) {
     // A restart from the NSIS copy: let it finish exiting so its
     // single-instance lock is free before this one asks for it.
@@ -446,6 +461,10 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
   const m = manifest!;
   const local = winEnv().LOCALAPPDATA;
   if (!local) return;
+  // Durations for velopack_migration (261126): download, Setup run, total.
+  const t0 = Date.now();
+  let stage: 'download' | 'signature' | 'setup' = 'download';
+  let downloadMs: number | undefined;
   const tmp = path.join(app.getPath('temp'), `sei-migration-${randomBytes(4).toString('hex')}`);
   mkdirSync(tmp, { recursive: true });
   if (!enoughDiskForMigration(freeBytes(tmp), m.size) || !enoughDiskForMigration(freeBytes(local), m.size)) {
@@ -475,6 +494,9 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
       phase: 'failed',
       attempt: decision.attempt,
       error: error.slice(0, 80),
+      stage,
+      download_ms: downloadMs,
+      total_ms: Date.now() - t0,
       spawn_retries: spawnRetries,
     });
   };
@@ -496,6 +518,8 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
     await removeTemp(tmp);
     return;
   }
+  downloadMs = Date.now() - t0;
+  stage = 'signature';
   // The sha256 above comes from the same bucket as the Setup, so it only
   // proves the download matches the bucket. Windows has to vouch for the
   // signer before Sei runs it.
@@ -509,6 +533,8 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
   if ('skipped' in sig) log('signature check off: this build is unsigned');
 
   writeState(base);
+  stage = 'setup';
+  const setupStart = Date.now();
   ciMark('migration-installing', { version: m.version, attempt: decision.attempt });
   log(`installing Velopack ${m.version} (attempt ${decision.attempt})`);
   // A busy Setup (still held by its writer or a scanner) is retried briefly,
@@ -535,6 +561,7 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
     /* a normal priority install is fine */
   }
   const r = await waitForExit(child, SETUP_TIMEOUT_MS);
+  const setupMs = Date.now() - setupStart;
   if (r.code === 0) await new Promise((res) => setTimeout(res, SETUP_APP_START_GRACE_MS));
   await removeTemp(tmp);
   const root = velopackRootFor(local);
@@ -557,6 +584,10 @@ async function installVelopack(nsis: NsisInstall, deps: MigrationDeps): Promise<
     phase: 'installed',
     attempt: decision.attempt,
     version: m.version,
+    download_ms: downloadMs,
+    setup_ms: setupMs,
+    total_ms: Date.now() - t0,
+    mb: Math.round(m.size / 1e5) / 10,
     spawn_retries: spawnRetries,
   });
   deps.handOff(restartIntoVelopack, m.version);

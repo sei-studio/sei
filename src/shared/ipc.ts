@@ -2900,6 +2900,13 @@ export interface RendererApi {
    */
   voiceSttPrewarm(): Promise<void>;
   /**
+   * 261125 (O5): fire-and-forget connection prewarm for typed chat, called
+   * while the player types in the composer so the send's LLM request reuses a
+   * warm pooled connection to the proxy (cloud backend), or finds the ChatGPT
+   * plan's model catalog cached. Throttled in main.
+   */
+  chatPrewarm(): Promise<void>;
+  /**
    * Mark a voice call open (active:true) or hung up (active:false) for a
    * character. Main records it (voice/callState) so idle-chat prompts carry
    * the voice-call primer, and forwards {type:'voice-call'} into a live game
@@ -4103,6 +4110,9 @@ export const IpcChannel = {
     /** Pull: the page of rows before a given message id (infinite scrollback). */
     historyBefore: 'chat:history-before',
     send: 'chat:send',
+    /** Invoke, fire-and-forget (261125): the player is typing; warm the chat
+     * upstream connection so the send does not pay TCP+TLS setup. */
+    prewarm: 'chat:prewarm',
     /** Pull: the chat surface was opened. Main decides (kind 'unique', empty
      * transcript, never chatted) whether the companion speaks first and returns
      * any greeting replies; a no-op returns []. */

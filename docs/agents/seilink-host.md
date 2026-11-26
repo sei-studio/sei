@@ -332,6 +332,34 @@ Shots: `scripts/seilink-host-shots.mjs --shots host-expression --facepacks ...`.
   seilinkPlace regions, the bubble and the click mask follow. The room
   editor keeps whole-room `cover` (everything stays editable), so opening it
   from the desktop zooms out. On macOS the Dock may cover her lower chest.
+- **Seat fit (261121, product call 261121: "the couch is way too far, it
+  doesn't look like she's sitting on it").** The packs' slot (720 canvas px)
+  and chairs were painted around the seated chibi Sui. A head-and-shoulders
+  picture (portrait, cloud cut-out, an anima face set, Live2D, the
+  silhouette) in the same slot is about 1.4x too big for the chair: in cozy
+  her hair top was at 720 and the chair back at 767, so the chair read as far
+  behind her. She keeps her size and place; instead the pack's
+  `avatar.fit.bust` (`seilinkRoom.ts` `RoomSeatFit`: `slots`, `scale`,
+  `origin`) redraws the chair larger around her: cozy 1.43 about (1300, 940),
+  gamer 1.43 about (1300, 191) (back tops land at about 693 and 640, arms
+  beside her shoulders). Forest has none (the log carries item tops; the
+  validator refuses a fit on a slot whose parts have surfaces).
+  RoomAvatar reports its figure through `slot.onFigure` (`roomFigureOf`: a
+  chibi rig and a face set that is one, `facepackFigure` = manifest `figure`
+  or method `vector`, are 'seated', everything else 'bust'); RoomCanvas hands
+  it to the renderer (`setFigure`) and to `onFigure` (the editor's
+  RoomPicker, so picks and outlines follow the bigger chair). So the
+  wallpaper, the editor, decorate-together and the intro all fit the same way
+  with no call-site changes; the editor's glass figure reports 'bust'.
+  `roomDrawPlan(..., {figure})` scales the fitted slots' boxes (`fitted`);
+  the renderer draws them from `loadRoomImageClean` (alpha under 90 dropped,
+  a 3x3 opening takes off one-pixel nicks, the edge softened inward only: the
+  matte's faint dark halo showed as specks once enlarged), and glows of parts
+  behind them are cut by their pixels (`GlowLayer.occluders`; cozy's lamp
+  light on the floor and wall showed through the bigger chair). Placement
+  areas (`blocks`) and look() keep the painted chair. Shots:
+  `seilink-room-shots.mjs --query 'stage=desktop&portrait=...'`
+  (`data-figure` on the RoomCanvas root, `data-avatar-figure` on her).
 - **Motion** (`lib/motion/organic.ts`, pure, tested): critically damped
   springs (`springStep`, exact for any dt), minimum-jerk saccades,
   `Wander` (incommensurate sines), `Blinker` (65 ms close, 45 ms hold,

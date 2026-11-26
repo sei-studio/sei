@@ -112,9 +112,14 @@ export async function createAnthropicProvider(backend: LlmBackend): Promise<LlmP
         });
       }
       if (p.onTextDelta) {
+        let sawText = false;
         for await (const ev of stream) {
           const e = ev as { type?: string; delta?: { type?: string; text?: string } };
           if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta' && typeof e.delta.text === 'string') {
+            if (!sawText && e.delta.text) {
+              sawText = true;
+              p.onFirstToken?.();
+            }
             await p.onTextDelta(e.delta.text);
           }
         }

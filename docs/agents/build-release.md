@@ -179,6 +179,37 @@ run, re-running a cancelled mirror, and the one-time move of the workflows to
 `main` are in **`docs/design/velopack-runbook.md`**. Read it before any
 Windows release.
 
+**Update telemetry (261126).** Every update path reports the same events,
+shape only (a closed error class, durations, sizes; never a message, path, URL
+or feed body). Helpers in `src/main/updateTelemetry.ts` (pure, tested),
+captured from `updater.ts`; the Windows update CI (`SEI_VELOPACK_CI=1`) sends
+nothing. `updater` is `nsis` | `velopack` | `squirrel_mac` | `appimage`.
+- `update_downloaded {updater, to, level, download_ms, download_mb?,
+  prepare_ms?}` once per finished download. `download_mb` = what was fetched
+  (electron-updater's progress total, so a blockmap differential counts only
+  its ranges; Velopack the delta chain, else the full package). `prepare_ms`:
+  Velopack = stage + signature check; macOS = from electron-updater's
+  update-downloaded to Squirrel.Mac's own (unzip + code-sign check, a
+  restart clicked before then waits for it); capped at 15 min, after which
+  it is `update_failed {stage: prepare, class: timeout}`.
+- `update_failed {updater, stage: check|download|prepare|install, class}`,
+  class one of offline, timeout, http_4xx, http_5xx, checksum, signature,
+  disk, permission, no_effect, other. Once per stage and class per process
+  (an offline check on every focus is one event). `install/no_effect` = the
+  restart-to-update relaunched on the same version within 30 min.
+- `update_installed {from, to, via, updater, install_s?, restart_ms?,
+  progress_window?}` on the first launch of a new version. Every in-app
+  restart records `installTiming {startedAt, fromVersion, updater}` first
+  (NSIS in `windowsUpdateInstall.ts`, Velopack and macOS in
+  `restartIntoUpdate`); `restart_ms` = click to the new process starting.
+  Only NSIS samples feed the NSIS progress window's estimate.
+- `velopack_migration {phase: installed|failed|cleaned, attempt, version,
+  download_ms, setup_ms, total_ms, mb, stage (failed: download|signature|
+  setup), error (short, failed only), spawn_retries}` and `velopack_repair
+  {phase: triggered|repaired|failed|gave_up|held, ...recover_ms}` cover the
+  migration and the self-repair.
+Read them with the `packaged = true` filter; dev launches report too.
+
 **Staged rollout (electron-updater, 261101).** Every shipped client (0.6.x,
 electron-updater 6.8.3) honours `stagingPercentage` in latest.yml /
 latest-mac.yml: `AppUpdater.isStagingMatch` offers the update only when the

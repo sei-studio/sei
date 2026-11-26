@@ -33,7 +33,7 @@
  *   - src/main/updateStateStore.ts (device-global pending/lastSeen persistence)
  */
 import { existsSync } from 'node:fs';
-import { app, net, powerMonitor, type BrowserWindow } from 'electron';
+import { app, net, powerMonitor, autoUpdater as nativeUpdater, type BrowserWindow } from 'electron';
 import { IpcChannel, type WhatsNewEvent } from '../shared/ipc';
 import {
   applyMinSupported,
@@ -52,6 +52,16 @@ import {
   saveUpdateState,
 } from './updateStateStore';
 import { restartInstallArgs } from './updateInstall';
+import {
+  FailureDedupe,
+  classifyUpdateError,
+  durationMs,
+  installOutcome,
+  toMb,
+  updaterKind,
+  type UpdateStage,
+  type UpdaterKind,
+} from './updateTelemetry';
 import { refreshNotices } from './notices';
 import { updaterLog } from './updaterLog';
 import { ciMark, velopackInstalled } from './velopackBoot';
@@ -215,6 +225,102 @@ let mandatoryApply: ApplyTiming | null = null;
  * of repeating the changelog the user already read in the popup.
  */
 let offeredOptional: { version: string; changelog: string } | null = null;
+
+/* -------------------------------------------------------------------------- */
+/*  Telemetry (261126): update_downloaded / update_failed, shape only          */
+/* -------------------------------------------------------------------------- */
+
+/** The download in flight: when it started, its level, the size the progress reported. */
+let download: { startedAt: number; level: 'mandatory' | 'optional'; bytes: number | null } | null = null;
+/**
+ * macOS: electron-updater says "downloaded" once Squirrel.Mac has fetched the
+ * zip from its local proxy; Squirrel then unzips and checks the code signature
+ * before the update can install (its own update-downloaded). The gap is
+ * `prepare_ms`, and a click on "Update Sei" inside it waits for it.
+ */
+let macPrepare: { to: string; downloadedAt: number; props: Record<string, unknown>; timer: NodeJS.Timeout } | null = null;
+let nativeReadyAt: number | null = null;
+const MAC_PREPARE_WAIT_MS = 15 * 60 * 1000;
+const failures = new FailureDedupe();
+
+function currentUpdater(): UpdaterKind {
+  return updaterKind(process.platform, process.platform === 'win32' && velopackInstalled());
+}
+
+function captureUpdate(event: string, props: Record<string, unknown>): void {
+  // The Windows update CI launches real releases; they never report.
+  if (process.env.SEI_VELOPACK_CI === '1') return;
+  void import('./lazyAnalytics')
+    .then(({ loadAnalytics }) => loadAnalytics())
+    .then(({ capture }) => capture(event, props))
+    .catch(() => {});
+}
+
+function noteUpdateFailure(stage: UpdateStage, message: string): void {
+  const cls = classifyUpdateError(message);
+  if (!failures.first(stage, cls)) return;
+  captureUpdate('update_failed', { updater: currentUpdater(), stage, class: cls });
+}
+
+function beginDownload(level: 'mandatory' | 'optional'): void {
+  download = { startedAt: Date.now(), level, bytes: null };
+  nativeReadyAt = null;
+}
+
+function finishMacPrepare(timedOut: boolean): void {
+  const p = macPrepare;
+  if (!p) return;
+  macPrepare = null;
+  clearTimeout(p.timer);
+  if (timedOut) {
+    noteUpdateFailure('prepare', 'timeout');
+    return;
+  }
+  const prepare = nativeReadyAt === null ? undefined : Math.max(0, nativeReadyAt - p.downloadedAt);
+  captureUpdate('update_downloaded', { ...p.props, prepare_ms: prepare });
+}
+
+/** electron-updater's update-downloaded: one update_downloaded event per download. */
+function noteDownloaded(version: string | undefined, prepareMs?: number): void {
+  const d = download;
+  download = null;
+  const now = Date.now();
+  const prepare = typeof prepareMs === 'number' && prepareMs >= 0 ? Math.round(prepareMs) : undefined;
+  const props: Record<string, unknown> = {
+    updater: currentUpdater(),
+    to: version ?? '',
+    level: d?.level ?? 'mandatory',
+    download_ms: durationMs(d?.startedAt, now - (prepare ?? 0)),
+    download_mb: toMb(d?.bytes),
+    prepare_ms: prepare,
+  };
+  if (process.platform !== 'darwin') {
+    captureUpdate('update_downloaded', props);
+    return;
+  }
+  if (macPrepare) finishMacPrepare(false);
+  macPrepare = {
+    to: version ?? '',
+    downloadedAt: now,
+    props,
+    timer: setTimeout(() => finishMacPrepare(true), MAC_PREPARE_WAIT_MS),
+  };
+  macPrepare.timer.unref?.();
+  if (nativeReadyAt !== null) finishMacPrepare(false);
+}
+
+/**
+ * The install timing for the update paths that have no progress window
+ * (Velopack, macOS); the NSIS path records its own (windowsUpdateInstall.ts).
+ */
+async function recordInstallStart(updater: UpdaterKind): Promise<void> {
+  try {
+    const state = await loadUpdateState();
+    await saveUpdateState({ ...state, installTiming: { startedAt: Date.now(), fromVersion: app.getVersion(), updater } });
+  } catch (err) {
+    logger.warn(`updater: could not record the install start (${(err as Error).message})`);
+  }
+}
 
 /**
  * True while the in-flight checkForUpdates() came from the background timer.
@@ -552,6 +658,11 @@ function ensureAutoUpdater(): AutoUpdater | null {
       progress && typeof progress === 'object' && typeof (progress as { percent?: unknown }).percent === 'number'
         ? (progress as { percent: number }).percent
         : 0;
+    const total =
+      progress && typeof progress === 'object' && typeof (progress as { total?: unknown }).total === 'number'
+        ? (progress as { total: number }).total
+        : null;
+    if (download && total) download.bytes = total;
     send(IpcChannel.app.updateProgress, { percent });
   });
 
@@ -560,8 +671,26 @@ function ensureAutoUpdater(): AutoUpdater | null {
       info && typeof info === 'object' && typeof (info as { version?: unknown }).version === 'string'
         ? (info as { version: string }).version
         : undefined;
+    // Velopack reports the time it spent staging and checking the package.
+    const prepareMs =
+      info && typeof info === 'object' && typeof (info as { prepareMs?: unknown }).prepareMs === 'number'
+        ? (info as { prepareMs: number }).prepareMs
+        : undefined;
+    noteDownloaded(version, prepareMs);
     void handleUpdateDownloaded(version);
   });
+
+  if (process.platform === 'darwin') {
+    // Squirrel.Mac's own "ready to install" (see macPrepare).
+    try {
+      nativeUpdater.on('update-downloaded', () => {
+        nativeReadyAt = Date.now();
+        if (macPrepare) finishMacPrepare(false);
+      });
+    } catch (err) {
+      logger.warn(`updater: could not watch Squirrel.Mac (${(err as Error).message})`);
+    }
+  }
 
   autoUpdater.on('error', (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
@@ -575,6 +704,10 @@ function ensureAutoUpdater(): AutoUpdater | null {
       return;
     }
     logger.warn(`updater error: ${message}`);
+    const stage: UpdateStage = macPrepare ? 'prepare' : download ? 'download' : 'check';
+    if (stage === 'download') download = null;
+    if (stage === 'prepare') finishMacPrepare(false);
+    noteUpdateFailure(stage, message);
     send(IpcChannel.app.updateError, message);
   });
 
@@ -651,6 +784,7 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   // the changelog so it can be shown on the next launch (on-restart) or right
   // after the forced restart.
   mandatoryApply = apply;
+  beginDownload('mandatory');
   try {
     const state = await loadUpdateState();
     await saveUpdateState({
@@ -665,6 +799,10 @@ async function handleUpdateAvailable(info: unknown): Promise<void> {
   } catch (err) {
     const message = (err as Error).message;
     logger.warn(`updater: mandatory downloadUpdate failed (${message})`);
+    if (download) {
+      download = null;
+      noteUpdateFailure('download', message);
+    }
     send(IpcChannel.app.updateError, message);
   }
 }
@@ -797,10 +935,20 @@ async function runWhatsNewCheck(): Promise<void> {
   // (it sizes the next progress window's estimate) and rides update_installed.
   const installSec = measuredInstallSeconds(state.installTiming, cur, Date.now());
   const progressWindow = state.installTiming?.progressWindow;
+  // 261126: which updater ran the timed restart (absent = an older NSIS record).
+  const timedUpdater = state.installTiming?.updater ?? 'nsis';
+  // Only NSIS samples feed the NSIS progress window's estimate.
   const installSeconds =
-    installSec === null
+    installSec === null || timedUpdater !== 'nsis'
       ? state.installSeconds
       : [...(state.installSeconds ?? []), installSec].slice(-INSTALL_HISTORY_MAX);
+  // Click to this process starting, without this launch's own bootstrap.
+  const processStart = Math.round(performance.timeOrigin);
+  const outcome = installOutcome(state.installTiming, cur, processStart);
+  if (outcome?.kind === 'no_effect') {
+    logger.warn(`updater: the restart-to-update from ${cur} relaunched on ${cur} (${timedUpdater})`);
+    noteUpdateFailure('install', 'no_effect');
+  }
   if (installSec !== null) {
     logger.info(`updater: restart-to-update took ${installSec} s (progress window: ${progressWindow === true})`);
   }
@@ -809,11 +957,23 @@ async function runWhatsNewCheck(): Promise<void> {
     const from = state.lastSeenVersion;
     const viaApp = Boolean(state.pending && state.pending.version === cur);
     const timing =
-      installSec === null ? {} : { install_s: installSec, progress_window: progressWindow === true };
+      installSec === null
+        ? {}
+        : {
+            install_s: installSec,
+            restart_ms: outcome?.kind === 'installed' ? outcome.ms : undefined,
+            progress_window: progressWindow === true,
+          };
     void import('./lazyAnalytics')
       .then(({ loadAnalytics }) => loadAnalytics())
       .then(({ capture }) =>
-        capture('update_installed', { from, to: cur, via: viaApp ? 'in_app' : 'other', ...timing }),
+        capture('update_installed', {
+          from,
+          to: cur,
+          via: viaApp ? 'in_app' : 'other',
+          updater: installSec === null ? currentUpdater() : timedUpdater,
+          ...timing,
+        }),
       )
       .catch(() => {});
   }
@@ -1132,11 +1292,16 @@ export async function downloadAcceptedUpdate(): Promise<void> {
       logger.warn(`updater: failed to stash accepted update (${(err as Error).message})`);
     }
   }
+  beginDownload('optional');
   try {
     await au.downloadUpdate();
   } catch (err) {
     const message = (err as Error).message;
     logger.warn(`updater: downloadUpdate failed (${message})`);
+    if (download) {
+      download = null;
+      noteUpdateFailure('download', message);
+    }
     send(IpcChannel.app.updateError, message);
   }
 }
@@ -1170,10 +1335,15 @@ async function restartIntoUpdate(au: AutoUpdater, minHoldMs: number): Promise<vo
       logger.warn(`updater: progress window path failed (${(err as Error).message})`);
     }
   }
+  // Velopack and macOS: the next launch turns this into install_s / restart_ms
+  // on update_installed, or an install failure (no_effect) when it relaunches
+  // on the same version.
+  await recordInstallStart(currentUpdater());
   try {
     au.quitAndInstall(...restartInstallArgs(process.platform));
   } catch (err) {
     logger.warn(`updater: quitAndInstall failed (${(err as Error).message})`);
+    noteUpdateFailure('install', (err as Error).message);
   }
 }
 

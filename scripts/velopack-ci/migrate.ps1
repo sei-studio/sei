@@ -26,6 +26,11 @@
 #   nsis-newer       after a full migration, an NSIS build newer than the
 #                    Velopack copy is installed: it runs instead of handing
 #                    off, and the Velopack copy leaves it alone
+#   update-exe-missing  after a full migration, Update.exe is deleted: the
+#                    Velopack copy (which Velopack no longer loads) must not
+#                    hand off to the root stub (it cannot start without
+#                    Update.exe), and repairs itself instead (261126; the
+#                    signed e2e caught released builds doing exactly that)
 param(
   [Parameter(Mandatory = $true)][string]$Case,
   [string]$Feed = 'feed',
@@ -438,5 +443,36 @@ if ($Case -eq 'nsis-newer') {
   Start-Sleep -Seconds 15
   if (-not (Test-Path $nsisExe2)) { Fail 'the Velopack copy removed the newer NSIS copy' }
   if (Mark 'migration-done' ([scriptblock]::Create("param(`$e) `$e.t -gt $tVp"))) { Fail 'the Velopack copy marked the migration done over the newer NSIS copy' }
+}
+
+# ------------------------------------------------------------------ 6. update-exe-missing
+if ($Case -eq 'update-exe-missing') {
+  Stop-Sei
+  Remove-Item -LiteralPath (Join-Path $root 'Update.exe') -Force
+  $tR = Now
+  $after = [scriptblock]::Create("param(`$e) `$e.t -gt $tR")
+  # As Launch, but with the CI restart: the repair, once its Setup is ready,
+  # waits for "Update Sei"; CI mode restart presses it.
+  $env:SEI_VELOPACK_CI = '1'
+  $env:SEI_VELOPACK_CI_PUBLISHER = ''
+  $env:SEI_VELOPACK_CI_MODE = 'restart'
+  $env:SEI_VELOPACK_FEED = 'http://127.0.0.1:8765'
+  $env:SEI_MIGRATION_FEED = 'http://127.0.0.1:8765'
+  $env:SEI_MIGRATION_CI_ACTION = 'none'
+  $env:SEI_REPAIR_DELAY_MS = '3000'
+  $v = Start-Process -FilePath "$root\current\Sei.exe" -PassThru
+  $i = Need 'repair-init' 90 $after
+  $results.repair_init_broken = $i.broken
+  if ($i.broken -ne 'update-exe-missing') { Fail "repair-init saw '$($i.broken)', expected update-exe-missing" }
+  if (Mark 'migration-redirect' $after) { Fail 'the Velopack copy handed off (to the stub that needs Update.exe)' }
+  $h = Need 'repair-handoff' 300 $after
+  $r = Need 'repair-result' 600 ([scriptblock]::Create("param(`$e) `$e.t -gt $tR -and `$e.pid -ne $($h.pid)"))
+  $results.repair_result = $r.result
+  $results.repair_handoff_to_result_ms = $r.t - $h.t
+  if ($r.result -ne 'setup-exit 0') { Fail "the repair Setup ended: $($r.result)" }
+  Start-Sleep -Seconds 5
+  if (-not (Test-Path (Join-Path $root 'Update.exe'))) { Fail 'Update.exe still missing after the repair' }
+  if ((Get-Content $marker -Raw).Trim() -ne $token) { Fail 'userData marker lost in the repair' }
+  State 'repaired'
 }
 Finish
