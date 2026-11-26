@@ -36,11 +36,6 @@ export const GAME_SURFACES: Record<GameId, GameSurface> = {
   minecraft: { LaunchPanel: McLaunchPanel, DashboardPanel: McDashboardPanel },
   stardew: withGame('stardew'),
   dontstarve: withGame('dontstarve'),
-  // Forza 4 mounts its own panel from ChatScreen; this is only so the
-  // Record<GameId, GameSurface> type is satisfied.
-  CONNECT4: withGame('CONNECT4'),
-  // Battleship mounts its own panel from ChatScreen; placeholder.
-  BATTLESHIP: withGame('BATTLESHIP'),
 };
 
 export function registerGameSurface(game: GameId, surface: GameSurface): void {

@@ -231,10 +231,6 @@ export const summonFlows: Record<GameId, SummonFlow> = {
   minecraft: minecraftFlow,
   stardew: makeDefaultSummonFlow('stardew'),
   dontstarve: makeDefaultSummonFlow('dontstarve'),
-  // Forza 4 is launched from its own panel; keep the type satisfied.
-  CONNECT4: makeDefaultSummonFlow('CONNECT4'),
-  // Battleship is launched from its own panel; keep the type satisfied.
-  BATTLESHIP: makeDefaultSummonFlow('BATTLESHIP'),
 };
 
 /** Replace a game's flow (the game agents' seam). */

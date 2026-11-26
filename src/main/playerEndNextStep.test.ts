@@ -608,10 +608,7 @@ describe('261020: the game a plan is for', () => {
     expect(saveOpts[0]).toEqual({ inGame: true });
     expect(tags).toEqual([['char-1', 'game', 'minecraft', 'Get copper for your copper bulb lighthouse']]);
     // The prompt lists the games and asks for the line.
-    // 261122: Forza 4 and Battleship are in GAME_IDS, so they join the list too.
-    expect(llm.calls[0].system).toContain(
-      "one of Minecraft, Stardew Valley, Don't Starve Together, Forza 4 or Battleship, or none",
-    );
+    expect(llm.calls[0].system).toContain("one of Minecraft, Stardew Valley or Don't Starve Together, or none");
     expect(llm.calls[0].system).not.toContain('{games}');
     expect(String(llm.calls[0].messages[0].content)).toContain('(note:, player: and game:)');
   });
