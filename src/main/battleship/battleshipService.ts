@@ -871,7 +871,7 @@ async function runGameOverTurn(s: Session): Promise<void> {
     characterId: s.characterId,
     kind: 'game-over',
     contract: await contractBlock(s),
-    turnBlock: turnBlock(s, 'game-over', null),
+    turnBlock: s.result ? gameOverBlock(s, s.result, await playerNameOf()) : turnBlock(s, 'game-over', null),
     gameLog: s.gameLog,
     clock: s.clock,
     tools: BATTLESHIP_TOOLS,
@@ -989,9 +989,13 @@ const PLACE_FLEET_TOOL = {
 /** One fixed array for every turn kind (tools lead the cache prefix). */
 const BATTLESHIP_TOOLS = [FIRE_TOOL, PLACE_FLEET_TOOL, REMEMBER_TOOL];
 
-async function contractBlock(_s: Session): Promise<string> {
+async function playerNameOf(): Promise<string> {
   const config = await loadConfig();
-  const playerName = (config.preferred_name ?? '').trim() || 'the player';
+  return (config.preferred_name ?? '').trim() || 'the player';
+}
+
+async function contractBlock(_s: Session): Promise<string> {
+  const playerName = await playerNameOf();
   return [
     '# FLEET BATTLE',
     `You are playing a casual game of Fleet Battle against ${playerName} inside the Sei app.`,
@@ -1091,19 +1095,35 @@ function turnBlock(s: Session, kind: BoardTurnKind, retryNote: string | null): s
         ? 'They just said something. Your own turn comes on its own right after this reply. Answer them in text, or say nothing.'
         : 'They just said something. Answer them in text, or say nothing.',
     );
-  } else if (kind === 'game-over' && s.result) {
-    const r = s.result;
-    const how =
-      r.reason === 'all-ships-sunk'
-        ? r.winner === 'ai'
-          ? 'You sank their whole fleet: you won. That is settled; the app checked it.'
-          : 'They sank your whole fleet: they won. That is settled; the app checked it.'
-        : r.reason === 'resign'
-          ? 'They gave up, so you won.'
-          : 'The game ended.';
-    lines.push(`The game is over. ${how} There is nothing to call now. Write only the line you say to them, in your own voice, or nothing.`);
   }
   return lines.join('\n');
+}
+
+/**
+ * The game-over turn: the result first and in so many words, no boards,
+ * with the player named. With the result under both boards, Haiku 5.5 got it
+ * backwards in 2 of 3 games; with a bare "YOU WON" it still told the player
+ * "you won" in 3 of 5 scripted wins, so the line names who won and says which
+ * side of the table the character is talking from.
+ */
+function gameOverBlock(s: Session, r: BATTLESHIPResult, player: string): string {
+  const theirsSunk = s.playerGrid.ships.filter((sh) => sh.sunk).length;
+  const mineAfloat = s.aiGrid.ships.filter((sh) => !sh.sunk).length;
+  const Player = player.charAt(0).toUpperCase() + player.slice(1);
+  const result =
+    r.reason === 'all-ships-sunk'
+      ? r.winner === 'ai'
+        ? `You won and ${player} lost. You sank all five of ${player}'s ships while ${mineAfloat} of yours were ` +
+          `still afloat. You are the winner, talking to the person you just beat.`
+        : `${Player} won and you lost. ${Player} sank all five of your ships; you had sunk ${theirsSunk} of theirs. ` +
+          `You are the one who lost, talking to the person who beat you.`
+      : r.reason === 'resign'
+        ? `You won: ${player} gave up. You are the winner, talking to the person who gave up.`
+        : 'The game ended without a winner.';
+  return [
+    `The game is over. ${result} That is settled; the app checked it.`,
+    'There is nothing to call now. Write only the line you say to them, in your own voice, or nothing.',
+  ].join('\n');
 }
 
 function describeErr(err: unknown): string {
