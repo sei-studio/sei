@@ -34,17 +34,18 @@ import { RU } from './ru';
 import { PT_BR } from './pt-BR';
 import { ES } from './es';
 import { IT } from './it';
+import { TABLETOP_3D } from './tabletop3d';
 
 export type { UiLanguage } from '@shared/uiLanguage';
 
 /** Every non-English dictionary, keyed by the English string. */
 export const DICTIONARIES: Record<Exclude<UiLanguage, 'en'>, Record<string, string>> = {
-  zh: ZH,
-  ja: JA,
-  ru: RU,
-  'pt-BR': PT_BR,
-  es: ES,
-  it: IT,
+  zh: { ...ZH, ...TABLETOP_3D.zh },
+  ja: { ...JA, ...TABLETOP_3D.ja },
+  ru: { ...RU, ...TABLETOP_3D.ru },
+  'pt-BR': { ...PT_BR, ...TABLETOP_3D['pt-BR'] },
+  es: { ...ES, ...TABLETOP_3D.es },
+  it: { ...IT, ...TABLETOP_3D.it },
 };
 
 interface LangState {

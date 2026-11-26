@@ -1,0 +1,550 @@
+/* TabletopHud — shared chrome for the 3D tabletop minigames (Four in a Row,
+ * Fleet Battle). Same de-boxed HUD as the chess panel (ChessPanel.module.css,
+ * ChessBoard3D.module.css) so the three games read as one family:
+ *
+ *   top-center   turn line (+ dim sub line), shimmer while the AI thinks
+ *   top-left     borderless icon controls (resign flag, inline confirm)
+ *   center       result card + Rematch (the app's popup surface)
+ *   launch       title, side picker, one button over the live scene + scrim
+ *
+ * The 3D table is always dark wood regardless of app theme, so text sitting
+ * directly on it uses fixed light art colors (same exemption as the chess
+ * scene palette), not theme tokens. Cards and buttons use tokens. */
+
+.panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  /* Over-scene ink (art colors, see header note). */
+  --scene-ink: rgba(242, 234, 217, 0.92);
+  --scene-ink-soft: rgba(242, 234, 217, 0.62);
+  --scene-text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  --scene-error: #ffc2b8;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.boardFill {
+  position: absolute;
+  inset: 0;
+}
+
+/* ── Viewport (the canvas host) ────────────────────────────────────────── */
+.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  /* Art color: the scene's room color, so resize flashes stay dark. */
+  background: #1a120c;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  outline: none;
+}
+
+.viewport canvas {
+  display: block;
+}
+
+/* Keyboard focus: a soft inset glow, never a hard outline on the art. */
+.viewport:focus-visible {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.pointer {
+  cursor: pointer;
+}
+
+/* One passive layer; interactive HUD children opt back in. */
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ── Turn line, top-center ─────────────────────────────────────────────── */
+.topCenter {
+  position: absolute;
+  top: var(--space-sm);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 60%;
+}
+
+.turnChip {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: rgba(242, 234, 217, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.subTag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  color: rgba(242, 234, 217, 0.55);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+/* "{Name} is thinking…" shimmer, same as chess. */
+.thinking {
+  background: linear-gradient(
+    90deg,
+    rgba(242, 234, 217, 0.55) 20%,
+    var(--accent) 50%,
+    rgba(242, 234, 217, 0.55) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: tabletopShimmer 1.6s linear infinite;
+}
+
+@keyframes tabletopShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* A short-lived callout under the turn line ("Hit", "Miss", "Sunk"). */
+.callout {
+  margin-top: 4px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--scene-ink);
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+  animation: tabletopCallout 1700ms var(--ease) both;
+}
+
+.calloutHit {
+  color: #ffb199;
+}
+
+.calloutSunk {
+  color: #ffd56b;
+}
+
+@keyframes tabletopCallout {
+  0% {
+    opacity: 0;
+    transform: translateY(4px) scale(0.92);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1.04);
+  }
+  22% {
+    transform: scale(1);
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinking {
+    animation: none;
+    color: rgba(242, 234, 217, 0.62);
+    background: none;
+  }
+  .callout {
+    animation: none;
+  }
+}
+
+/* Labels pinned to scene positions (projected from 3D). */
+.sceneLabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  pointer-events: none;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+/* ── Top-left controls (borderless glyph buttons, like chess) ──────────── */
+/* A label that starts at its anchor (beside a harbor slot), vertically centred. */
+.sceneLabelStart {
+  transform: translate(0, -50%);
+}
+
+.hudTopLeft {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.ctrlBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--scene-ink-soft);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.ctrlBtn:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.ctrlBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ctrlDanger:hover:not(:disabled) {
+  color: var(--red);
+}
+
+.hudChrome {
+  background: color-mix(in srgb, var(--window) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.resignConfirm {
+  composes: hudChrome;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 2px var(--space-sm);
+}
+
+.resignLabel {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--red);
+}
+
+/* ── Top-right action cluster (placement: rotate / random / start) ─────── */
+.hudTopRight {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  pointer-events: auto;
+}
+
+/* Text action over the scene: no border, no fill until hovered/pressed. */
+.sceneBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+  cursor: pointer;
+  transition: color 120ms var(--ease), background 120ms var(--ease);
+}
+
+.sceneBtn svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+}
+
+.sceneBtn:hover:not(:disabled) {
+  color: var(--scene-ink);
+  background: rgba(242, 234, 217, 0.08);
+}
+
+.sceneBtn:active:not(:disabled) {
+  background: rgba(242, 234, 217, 0.16);
+}
+
+.sceneBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Result card, centered (chess's end state) ─────────────────────────── */
+.hudResult {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(360px, 86%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 20px 28px;
+  background: var(--bg2);
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+  animation: tabletopCard 320ms var(--ease) both;
+  animation-delay: 700ms;
+}
+
+@keyframes tabletopCard {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hudResult {
+    animation: none;
+  }
+}
+
+/* Low-key placement of the card: bottom-center, so the winning line or the
+ * sunk fleet behind it stays in view. */
+.hudResultLow {
+  top: auto;
+  bottom: calc(var(--game-chrome-h, 56px) + var(--space-sm));
+  transform: translateX(-50%);
+  animation-name: tabletopCardLow;
+}
+
+@keyframes tabletopCardLow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.result {
+  text-align: center;
+}
+
+.resultTitle {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.resultWin .resultTitle {
+  color: var(--green);
+}
+
+.resultLoss .resultTitle {
+  color: var(--red-strong);
+}
+
+.resultDraw .resultTitle {
+  color: var(--accent);
+}
+
+.resultDetail {
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+/* ── Launch screen over the live scene ─────────────────────────────────── */
+.launch {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.hudResultRow {
+  flex-direction: row;
+  gap: var(--space-lg);
+  max-width: min(520px, 92%);
+  padding: 12px 14px 12px 22px;
+}
+.hudResultRow .result {
+  text-align: left;
+}
+.hudResultRow .resultTitle {
+  font-size: 22px;
+}
+
+.launchScrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 46% 40% at 50% 46%, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0) 100%),
+    linear-gradient(180deg, rgba(10, 7, 4, 0.5) 0%, rgba(10, 7, 4, 0.6) 55%, rgba(10, 7, 4, 0.74) 100%);
+}
+
+.launchContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-lg);
+  padding: var(--space-lg) var(--space-lg) var(--game-chrome-h, 56px);
+  text-align: center;
+}
+
+.launchTitle {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--scene-ink);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.launchHint {
+  margin: 0;
+  max-width: 340px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.launchError {
+  margin: 0;
+  max-width: 320px;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--scene-error);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.sideRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.sideSep {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+}
+
+.sideBtn {
+  -webkit-appearance: none;
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 2px var(--space-xs);
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--scene-ink-soft);
+  text-shadow: var(--scene-text-shadow);
+  cursor: pointer;
+  transition: color 120ms var(--ease);
+}
+
+.sideBtn:hover:not(:disabled) {
+  color: var(--scene-ink);
+}
+
+.sideBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sideBtnActive,
+.sideBtnActive:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* Small colored dot before a side name (Four in a Row disc colors). */
+.sideDot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

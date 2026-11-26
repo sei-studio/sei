@@ -1,15 +1,16 @@
 /**
- * CONNECT4Panel — the Forza 4 surface that slides into the chat screen.
+ * CONNECT4Panel — the Four in a Row surface that slides into the chat screen.
  *
- * States:
- *   - launch screen (no game yet, or Rematch clicked after a finished game):
- *     "Forza 4" title, the inline Red / Yellow / Random side picker, one
- *     primary button ("Launch" / "Start").
- *   - status 'active' / 'ended': the 6x7 board fills the panel edge to edge
- *     and everything else floats over it as a de-boxed HUD:
- *       top-left   turn label + icon controls (resign)
- *       center     result + Rematch when the game ends
- *     Closing goes through the unified GameSurface "x".
+ * The 3D frame (Connect4Board3D) fills the panel edge to edge in every state
+ * and everything else floats over it as the chess panel's de-boxed HUD:
+ *   - launch (no game yet, or Rematch clicked on a finished game): title,
+ *     the inline Red / Random / Yellow side picker and one button ("Launch",
+ *     "Start" on the rematch pass) over the empty frame under a scrim;
+ *   - active: turn line top-center (inside the board), the borderless resign
+ *     flag top-left with an inline confirm;
+ *   - ended: the winning four glow in the frame and the result card with
+ *     Rematch rises at the bottom, clear of the winning line.
+ * Closing goes through the unified GameSurface "x".
  *
  * Contract: src/shared/connect4Ipc.ts + src/main/connect4/connect4Service.ts.
  */
@@ -20,8 +21,10 @@ import { useDataStore } from '../../lib/stores/useDataStore';
 import { requestGameLaunch } from '../../lib/gameLaunch';
 import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
-import type { CONNECT4Color, CONNECT4GameState } from '@shared/connect4Ipc';
-import styles from './Connect4Panel.module.css';
+import { FlagIcon } from '../icons';
+import type { CONNECT4GameState, CONNECT4Result } from '@shared/connect4Ipc';
+import { Connect4Board3D } from './Connect4Board3D';
+import hud from '../tabletop/TabletopHud.module.css';
 
 export interface CONNECT4PanelProps {
   characterId: string;
@@ -29,15 +32,35 @@ export interface CONNECT4PanelProps {
 
 type SideChoice = 'r' | 'y' | 'random';
 
-const SIDE_OPTIONS: Array<{ value: SideChoice; label: string }> = [
-  { value: 'r', label: 'Red' },
-  { value: 'y', label: 'Yellow' },
+/** Disc colors for the side picker dots (art colors, match the 3D discs). */
+const SIDE_OPTIONS: Array<{ value: SideChoice; label: string; dot?: string }> = [
+  { value: 'r', label: 'Red', dot: '#d8473b' },
   { value: 'random', label: 'Random' },
+  { value: 'y', label: 'Yellow', dot: '#f2b430' },
 ];
 
-function columnFull(board: CONNECT4GameState['board'], c: number): boolean {
-  for (let r = 0; r < board.length; r++) if (board[r][c] === null) return false;
-  return true;
+type Tr = (en: string, params?: Record<string, string | number>) => string;
+
+function resultCopy(result: CONNECT4Result, game: CONNECT4GameState, name: string, t: Tr): {
+  title: string;
+  detail: string;
+  tone: 'win' | 'loss' | 'draw';
+} {
+  const playerWon = result.winner !== null && result.winner === game.playerColor;
+  const tone = result.winner === null ? 'draw' : playerWon ? 'win' : 'loss';
+  const title = result.winner === null ? t('Draw') : playerWon ? t('You won') : t('{name} won', { name });
+  switch (result.reason) {
+    case 'connect-four':
+      return { title, tone, detail: t('Four in a row.') };
+    case 'draw':
+      return { title: t('Draw'), tone: 'draw', detail: t('The board is full.') };
+    case 'resign':
+      return { title, tone, detail: t('You resigned. {name} takes the game.', { name }) };
+    case 'forfeit':
+      return { title, tone, detail: t('{name} forfeited the game.', { name }) };
+    default:
+      return { title: t('Game closed'), tone: 'draw', detail: t('This game ended without a result.') };
+  }
 }
 
 export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactElement {
@@ -47,8 +70,6 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const start = useConnect4Store((s) => s.start);
   const move = useConnect4Store((s) => s.move);
   const resign = useConnect4Store((s) => s.resign);
-  const rematch = useConnect4Store((s) => s.rematch);
-  const end = useConnect4Store((s) => s.end);
   const hydrate = useConnect4Store((s) => s.hydrate);
 
   const character = useDataStore((s) => s.characters.find((c) => c.id === characterId));
@@ -75,6 +96,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const gameStatus = game?.status ?? null;
   useEffect(() => {
     if (gameStatus === 'active') setRematchScreen(false);
+    if (gameStatus !== 'active') setConfirmResign(false);
   }, [gameStatus]);
 
   const doStart = async (choice: SideChoice): Promise<void> => {
@@ -84,164 +106,131 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
     } catch (err) {
       const msg = String((err as { message?: string })?.message ?? err);
       if (/not available in this build/.test(msg)) {
-        setStartErr(t('Forza 4 is not available in this build yet.'));
+        setStartErr(t('Four in a Row is not available in this build yet.'));
       } else {
         setStartErr(t("The game couldn't start. Try again in a moment."));
       }
     }
   };
 
-  const onCellClick = (column: number): void => {
-    if (!game || game.status !== 'active') return;
-    if (game.turn !== game.playerColor) return;
-    if (columnFull(game.board, column)) return;
-    void move(characterId, column);
-  };
-
-  const showLaunch = !game || game.status === 'ended' && rematchScreen;
-
-  const playerColor = game?.playerColor ?? 'r';
-  const isPlayerTurn = game ? game.turn === game.playerColor : false;
+  const showLaunch = !game || (game.status === 'ended' && rematchScreen);
+  const result = game?.status === 'ended' && game.result ? resultCopy(game.result, game, name, t) : null;
 
   return (
-    <div className={styles.panel} aria-label={t('Forza 4 with {name}', { name })}>
-      {showLaunch ? (
-        <div className={styles.launch}>
-          <h3 className={styles.launchTitle}>{t('Forza 4')}</h3>
-          <div className={styles.sideRow} role="radiogroup" aria-label={t('Your side')}>
-            {SIDE_OPTIONS.map((opt, i) => (
-              <React.Fragment key={opt.value}>
-                {i > 0 ? <span className={styles.sideSep} aria-hidden="true">/</span> : null}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={colorChoice === opt.value}
-                  className={
-                    colorChoice === opt.value
-                      ? `${styles.sideBtn} ${styles.sideBtnActive}`
-                      : styles.sideBtn
-                  }
-                  disabled={starting}
-                  onClick={() => setColorChoice(opt.value)}
-                >
-                  {t(opt.label)}
-                </button>
-              </React.Fragment>
-            ))}
-          </div>
-          {startErr ? (
-            <p className={styles.launchError} role="alert">{startErr}</p>
-          ) : null}
-          <Button
-            kind="accent"
-            size="md"
-            disabled={starting}
-            onClick={() =>
-              requestGameLaunch(characterId, { id: 'CONNECT4', name: 'Forza 4' }, () =>
-                void doStart(colorChoice),
-              )
-            }
-          >
-            {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
-          </Button>
+    <div className={hud.panel} aria-label={t('Four in a Row with {name}', { name })}>
+      <div className={hud.stage}>
+        <div className={hud.boardFill}>
+          <Connect4Board3D
+            game={showLaunch ? null : game}
+            companionName={name}
+            onDrop={(column) => move(characterId, column)}
+          />
         </div>
-      ) : game ? (
-        <div className={styles.stage}>
-          <div className={styles.boardWrap}>
-            <div className={styles.board}>
-              {game.board.map((row, r) =>
-                row.map((cell, c) => {
-                  const full = columnFull(game.board, c);
-                  const disabled =
-                    game.status !== 'active' || game.turn !== game.playerColor || full;
-                  return (
+
+        {showLaunch ? (
+          <div className={hud.launch}>
+            <div className={hud.launchScrim} />
+            <div className={hud.launchContent}>
+              <h3 className={hud.launchTitle}>{t('Four in a Row')}</h3>
+              <div className={hud.sideRow} role="radiogroup" aria-label={t('Your side')}>
+                {SIDE_OPTIONS.map((opt, i) => (
+                  <React.Fragment key={opt.value}>
+                    {i > 0 ? (
+                      <span className={hud.sideSep} aria-hidden="true">
+                        /
+                      </span>
+                    ) : null}
                     <button
-                      key={`${r}-${c}`}
                       type="button"
-                      className={[
-                        styles.cell,
-                        full ? styles.full : '',
-                        disabled ? styles.disabled : '',
-                      ].join(' ')}
-                      disabled={disabled}
-                      onClick={() => onCellClick(c)}
-                      aria-label={
-                        cell === null
-                          ? t('Empty cell, row {r}, column {c}', { r: r + 1, c: c + 1 })
-                          : cell === 'r'
-                            ? t('Red piece')
-                            : t('Yellow piece')
-                      }
+                      role="radio"
+                      aria-checked={colorChoice === opt.value}
+                      className={colorChoice === opt.value ? `${hud.sideBtn} ${hud.sideBtnActive}` : hud.sideBtn}
+                      disabled={starting}
+                      onClick={() => setColorChoice(opt.value)}
                     >
-                      {cell === 'r' ? (
-                        <span className={`${styles.piece} ${styles.red}`} aria-hidden="true" />
-                      ) : cell === 'y' ? (
-                        <span className={`${styles.piece} ${styles.yellow}`} aria-hidden="true" />
-                      ) : null}
+                      {opt.dot ? <span className={hud.sideDot} style={{ background: opt.dot }} aria-hidden="true" /> : null}
+                      {t(opt.label)}
                     </button>
-                  );
-                }),
-              )}
+                  </React.Fragment>
+                ))}
+              </div>
+              {startErr ? (
+                <p className={hud.launchError} role="alert">
+                  {startErr}
+                </p>
+              ) : null}
+              <Button
+                kind="accent"
+                size="md"
+                disabled={starting}
+                onClick={() =>
+                  requestGameLaunch(characterId, { id: 'CONNECT4', name: t('Four in a Row') }, () =>
+                    void doStart(colorChoice),
+                  )
+                }
+              >
+                {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
+              </Button>
             </div>
           </div>
+        ) : game ? (
+          <div className={hud.hud}>
+            {game.status === 'active' ? (
+              <div className={hud.hudTopLeft} role="group" aria-label={t('Game controls')}>
+                {confirmResign ? (
+                  <span className={hud.resignConfirm}>
+                    <span className={hud.resignLabel}>{t('Resign?')}</span>
+                    <Button
+                      kind="danger"
+                      size="sm"
+                      onClick={() => {
+                        setConfirmResign(false);
+                        void resign(characterId);
+                      }}
+                    >
+                      {t('Yes')}
+                    </Button>
+                    <Button kind="quiet" size="sm" onClick={() => setConfirmResign(false)}>
+                      {t('No')}
+                    </Button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className={`${hud.ctrlBtn} ${hud.ctrlDanger}`}
+                    onClick={() => setConfirmResign(true)}
+                    aria-label={t('Resign')}
+                    data-tip={t('Resign')}
+                    data-tip-edge="left"
+                  >
+                    <FlagIcon size={16} />
+                  </button>
+                )}
+              </div>
+            ) : null}
 
-          <div className={styles.hud}>
-            <div className={styles.turnLabel}>
-              {isPlayerTurn
-                ? t("It's your turn, {name}", { name })
-                : t("{name}'s turn", { name })}
-            </div>
-
-            <div className={styles.controls}>
-              {confirmResign ? (
-                <span className={styles.resignConfirm}>
-                  <span className={styles.resignLabel}>{t('Resign?')}</span>
-                  <Button kind="danger" size="sm" onClick={() => { setConfirmResign(false); void resign(characterId); }}>
-                    {t('Yes')}
-                  </Button>
-                  <Button kind="quiet" size="sm" onClick={() => setConfirmResign(false)}>
-                    {t('No')}
-                  </Button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className={`${styles.ctrlBtn} ${styles.ctrlDanger}`}
-                  onClick={() => setConfirmResign(true)}
-                  aria-label={t('Resign')}
-                  data-tip={t('Resign')}
+            {result ? (
+              <div className={`${hud.hudResult} ${hud.hudResultLow} ${hud.hudResultRow}`}>
+                <div
+                  className={[
+                    hud.result,
+                    result.tone === 'win' ? hud.resultWin : result.tone === 'loss' ? hud.resultLoss : hud.resultDraw,
+                  ].join(' ')}
+                  role="status"
                 >
-                  {t('Resign')}
-                </button>
-              )}
-            </div>
+                  <div className={hud.resultTitle}>{result.title}</div>
+                  <div className={hud.resultDetail}>{result.detail}</div>
+                </div>
+                <div className={hud.resultActions}>
+                  <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
+                    {t('Rematch')}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
-
-          {game.status === 'ended' && game.result ? (
-            <div className={styles.resultWrap}>
-              <div className={styles.resultTitle}>
-                {game.result.winner === null
-                  ? t('Draw')
-                  : game.result.winner === game.playerColor
-                    ? t('You won')
-                    : t('{name} won', { name })}
-              </div>
-              <div className={styles.resultDetail}>
-                {game.result.reason === 'connect-four'
-                  ? t('Four in a row.')
-                  : game.result.reason === 'draw'
-                    ? t('The board is full.')
-                    : t('This game ended without a result.')}
-              </div>
-              <div className={styles.resultActions}>
-                <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
-                  {t('Rematch')}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
