@@ -791,6 +791,11 @@ async function synthesizeLocalClip(
         return encodeWav(samples, sampleRate);
       } catch (err) {
         const msg = String((err as Error)?.message ?? err);
+        // The Fast voices run on the same sherpa-onnx runtime: when that
+        // would not load (issue #59: Smart App Control blocking it), falling
+        // back only turns the real cause into a pack-missing prompt.
+        const runtimeAt = msg.indexOf('SPEECH_RUNTIME_FAILED');
+        if (runtimeAt >= 0) throw new Error(msg.slice(runtimeAt));
         kokoroFallback = msg.startsWith('VOICE_PACK_MISSING') ? 'pack-missing' : 'failed';
         console.warn(`[sei/voice] Kokoro unavailable, using the Fast voices: ${msg}`);
       }

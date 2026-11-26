@@ -63,6 +63,9 @@ export function ttsFailureClass(err: unknown, inBody: boolean): string | null {
   if (msg.startsWith('VOICE_NO_SESSION')) return 'no_session';
   if (msg.startsWith('VOICE_NOT_CONFIGURED')) return 'not_configured';
   if (msg.startsWith('VOICE_PACK_MISSING')) return 'pack_missing';
+  // 261127 (issue #59): Windows refused to load the native runtime
+  // (Smart App Control / Code Integrity), see speech/runtimeFailure.ts.
+  if (msg.startsWith('SPEECH_RUNTIME_FAILED: os_blocked')) return 'speech_runtime_blocked';
   if (msg.startsWith('SPEECH_RUNTIME_FAILED')) return 'speech_runtime';
   if (msg.startsWith('VOICE_NOT_IN_LIBRARY') || msg.startsWith('VOICE_LIBRARY_UNAVAILABLE')) {
     return 'voice_unavailable';
