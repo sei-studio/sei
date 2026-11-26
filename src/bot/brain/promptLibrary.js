@@ -257,7 +257,7 @@ export const ACTION_DESCRIPTIONS = {
     'Stop trailing; hold position until the next movement.',
 
   attackEntity:
-    'Swing at an entity `times` (1-10) in one call; a combat reflex auto-pursues a moving target, so one call usually suffices. The best weapon you own is equipped automatically. A hostile asked for by name is the one nearest the player when any are near them, and after a kill the swings left go to the next hostile near the player, so use a high `times` (8-10) when protecting them.',
+    'Swing at an entity `times` (1-10) in one call; a combat reflex auto-pursues a moving target, so one call usually suffices. The best weapon you own is equipped automatically. A hostile asked for by name is the one nearest the player when any are near them, and after a kill the swings left go to the next hostile near the player, so use a high `times` (8-10) when protecting them. When you are within 12 blocks of the player as it starts, the fight stays near them: a mob that backs off is followed only a few blocks past where it started (and at least 12 blocks from the player, 16 for a skeleton), then you go back to their side and fight it there when it comes back.',
 
   setPvp:
     'Toggle PvP spar mode: `{enabled:true}` when the player asks to spar/fight/duel/PvP you, `{enabled:false}` when they ask to stop. While ON you may attackEntity the player and hit back when they hit you; while OFF (the default) you never attack or retaliate against the player. If they named a weapon for the duel ("stick fight", "fists only"), equip exactly that item first — a stick fight means holding a stick, not a sword. Turn it OFF the moment they call it off.',

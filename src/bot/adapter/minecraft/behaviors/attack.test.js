@@ -450,3 +450,118 @@ describe('the running attack, as the turn sees it (261106)', () => {
     expect(withAttackRunState(bot, 'sei:attacked', data)).toBe(data)
   })
 })
+
+// 261126 (pass 64c): a fight she starts by the player stays near them. A mob
+// that backs off is followed out to its guard zone, then she goes back to
+// the player and waits there for it.
+describe('attackEntity keeps a fight near the player (261126)', () => {
+  // Every 100ms she walks one block toward the entity her pathfinder goal
+  // follows (the mob on a chase, Alex on a hold), as the pathfinder would.
+  // mob: 'still' | 'flee' (backs off 1 block per tick while she is within 6)
+  // | 'approach' (walks to Alex 1 block per tick).
+  function guardBot({ meAt = new Vec3(0, 64, 0), alexAt = new Vec3(-1, 64, 0), mobAt = new Vec3(8, 64, 0), name = 'skeleton', mob: moves = 'still' } = {}) {
+    const mob = { id: 7, name, type: 'hostile', position: mobAt, height: 1.95 }
+    const alex = { id: 2, username: 'Alex', type: 'player', position: alexAt }
+    const bot = {
+      health: 20,
+      entity: { position: meAt },
+      entities: { 7: mob, 2: alex },
+      players: { Alex: { username: 'Alex', entity: alex } },
+      _seiOwnerNames: ['alex'],
+      heldItem: { name: 'stone_sword' },
+      inventory: { items: () => [{ name: 'stone_sword' }] },
+      lookAt: vi.fn(), swingArm: vi.fn(), attack: vi.fn(),
+      equip: vi.fn(),
+      setControlState: vi.fn(),
+    }
+    bot.nearestEntity = (match) => Object.values(bot.entities)
+      .filter((e) => match(e))
+      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0] ?? null
+    bot.pathfinder = {
+      goal: null,
+      setGoal: vi.fn((g) => { bot.pathfinder.goal = g }),
+      setMovements: vi.fn(),
+      stop: vi.fn(),
+    }
+    const towards = (from, to, range) => {
+      const d = from.distanceTo(to)
+      if (d <= range) return from
+      const k = Math.min(1, d - range) / d
+      return from.offset((to.x - from.x) * k, 0, (to.z - from.z) * k)
+    }
+    const step = setInterval(() => {
+      const g = bot.pathfinder.goal
+      if (g?.entity?.position) bot.entity.position = towards(bot.entity.position, g.entity.position, 2)
+      if (moves === 'approach') mob.position = towards(mob.position, alex.position, 1)
+      if (moves === 'flee' && mob.position.distanceTo(bot.entity.position) < 6) mob.position = mob.position.offset(1, 0, 0)
+    }, 100)
+    bot.stopSim = () => clearInterval(step)
+    return bot
+  }
+  const toAlex = (bot) => bot.entity.position.distanceTo(bot.entities[2].position)
+
+  it('follows a skeleton that backs off only to its zone, then goes back to the player and says so', async () => {
+    const bot = guardBot({ mob: 'flee' })
+    try {
+      const r = await attackEntityAction({ entity: 'skeleton', times: 4, timeout_ms: 3000 }, bot, {})
+      expect(r).toMatch(/^the skeleton stayed out at 1[78] blocks from Alex, so you waited by Alex instead of following it farther\. It is still alive/)
+      expect(toAlex(bot)).toBeLessThan(4)
+    } finally { bot.stopSim() }
+  })
+
+  it('a mob she was sent out to is still reached', async () => {
+    const bot = guardBot({ name: 'zombie', mobAt: new Vec3(15, 64, 0) })
+    try {
+      await attackEntityAction({ entity: 'zombie', times: 1, timeout_ms: 3000 }, bot, {})
+      expect(bot.attack).toHaveBeenCalledTimes(1)
+    } finally { bot.stopSim() }
+  })
+
+  it('calling it again on the same mob keeps its zone', async () => {
+    const bot = guardBot({ mob: 'flee' })
+    try {
+      await attackEntityAction({ entity: 'skeleton', times: 4, timeout_ms: 3000 }, bot, {})
+      const r = await attackEntityAction({ target: 'skeleton', times: 4, timeout_ms: 1000 }, bot, {})
+      expect(r).toMatch(/^the skeleton stayed out at/)
+      expect(toAlex(bot)).toBeLessThan(4)
+    } finally { bot.stopSim() }
+  })
+
+  it('fights it by the player when it comes back in', async () => {
+    const bot = guardBot({ name: 'zombie', mobAt: new Vec3(16, 64, 0), mob: 'approach' })
+    bot._seiGuardZones = new Map([[7, { zone: 12, at: Date.now() }]])
+    try {
+      const r = await attackEntityAction({ entity: 'zombie', times: 1, timeout_ms: 4000 }, bot, {})
+      expect(bot.attack).toHaveBeenCalledTimes(1)
+      expect(r).toMatch(/^attacked zombie 1×/)
+      expect(toAlex(bot)).toBeLessThan(9)
+    } finally { bot.stopSim() }
+  })
+
+  it('an entity_id call is not guarded', async () => {
+    const bot = guardBot({ mob: 'flee' })
+    try {
+      await attackEntityAction({ entity_id: 7, times: 1, timeout_ms: 2500 }, bot, {})
+      expect(toAlex(bot)).toBeGreaterThan(18)
+    } finally { bot.stopSim() }
+  })
+
+  it('not guarded when she is already away from the player as the fight starts', async () => {
+    const bot = guardBot({ alexAt: new Vec3(-14, 64, 0), mob: 'flee' })
+    try {
+      await attackEntityAction({ entity: 'skeleton', times: 1, timeout_ms: 2500 }, bot, {})
+      expect(toAlex(bot)).toBeGreaterThan(30)
+    } finally { bot.stopSim() }
+  })
+
+  it('the snapshot says she is back by the player while she waits', async () => {
+    const bot = guardBot({ name: 'zombie', mobAt: new Vec3(16, 64, 0) })
+    bot._seiGuardZones = new Map([[7, { zone: 12, at: Date.now() }]])
+    try {
+      let text = null
+      setTimeout(() => { text = attackInFlightSuffix(attackRunState(bot), bot, 'Alex') }, 400)
+      await attackEntityAction({ entity: 'zombie', times: 4, timeout_ms: 800 }, bot, {})
+      expect(text).toBe(', back by Alex, waiting for the zombie to come within 12 blocks of them again, then it fights it there.')
+    } finally { bot.stopSim() }
+  })
+})
