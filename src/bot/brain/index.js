@@ -256,6 +256,16 @@ export async function start({ config, adapter, logger = console, onTerminalError
     logger,
   })
 
+  // 261126 (O5): what the brain was doing when a player line arrived, for the
+  // reply_latency `busy_at_line` phase (actionStats.js BUSY_AT_LINE).
+  function busyAtLine() {
+    const loop = orchestrator.currentLoop
+    if (!loop) return 'idle'
+    if (loop._llmCallInFlight) return 'llm'
+    if (loop.inFlight) return 'action'
+    return 'turn'
+  }
+
   // ── Attach adapter handlers ────────────────────────────────────────
   adapter.attach({
     onPlayerJoined: (player) => {
@@ -296,7 +306,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       // 261011: a real player line this bot should answer starts the
       // unanswered-chat clock (brain/actionStats.js). Counts only.
       if (evt.playerSpoke === true && !evt.gameEvent) {
-        try { sessionActionStats.notePlayerChat() } catch {}
+        try { sessionActionStats.notePlayerChat({ busy: busyAtLine() }) } catch {}
       }
       // Enqueue with the adapter-compatible payload shape (chat.js produced
       // { username, message, addressed, playerSpoke }; the priority queue's
@@ -465,7 +475,7 @@ export async function start({ config, adapter, logger = console, onTerminalError
       try { orchestrator.recordIncomingChat?.(who, raw, { companion: false }) } catch {}
       // 261112: a voice line that cut her off mid-line (the renderer's barge-in).
       const cutIn = voice === true && interrupted === true
-      try { sessionActionStats.notePlayerChat({ voice: voice === true, origin: 'app', interrupted: cutIn }) } catch {}
+      try { sessionActionStats.notePlayerChat({ voice: voice === true, origin: 'app', interrupted: cutIn, busy: busyAtLine() }) } catch {}
       // 260708: a live voice-call utterance while the bot is in-game is NOT an
       // out-of-band text message, and the old framing ("NOT in the game with
       // you right now") was factually wrong on every line of a play-while-

@@ -452,6 +452,30 @@ sessions, and a roll-up is lost when a session never closes cleanly. Clocks:
   routed in by `deliverSeiChat`) is reported as surface `chat`, path
   `in_game`; voice lines reaching the bot are not timed there (the voice
   clock owns calls).
+  Minecraft phases (261126, O5), on every bot sample (game and routed app
+  lines; `BOT_PHASE_KEYS` in replyLatency.ts), integer ms from the line, each
+  absent when the turn never got there: `dispatch_ms` (the brain picked the
+  line up: handleDispatch, or handlePreempt's claim of a line arriving
+  mid-turn), `llm_request_ms` (first model call started at or after the
+  line), `llm_last_request_ms` (the last one before the answer: with
+  `llm_calls` > 1 the reply came after tool hops or a preempt restart),
+  `llm_response_ms` (that last call came back; absent when the reply was a
+  say() sent mid-call or the call was aborted/failed) and `llm_model_ms`
+  (total time any call was in flight inside [line, answer], so
+  `ms - llm_model_ms` is client time: snapshot/prompt build, dispatch, action
+  waits). Counts, always present: `llm_calls`, `llm_aborted` (calls cut off by
+  a preempt or the 12 s cloud timeout; on an `error` line this is the
+  timeout-and-retry path) and `llm_rate_limited` (personality calls dropped
+  by the 30/min bucket, which ends the turn with no reply; also a session
+  counter on `mc_session_actions`). `busy_at_line` (`idle|llm|action|turn`)
+  is what the brain was doing when the line arrived. Read these on
+  `outcome = 'replied'`: silent and error lines are >= 20 s by construction
+  (the lazy sweep reports them at 20-34 s) and set the all-outcome p90 by
+  themselves, so track the non-reply rate separately from the replied p90.
+  Offline:
+  `scripts/mc-reply-latency-harness.mjs` drives the real bot against a local
+  MC server and a stub model with a fixed delay (header has the command);
+  with a 1 s stub, steady replies are 1.02-1.05 s (client 16-20 ms).
 No model call and no tokens are added; dev launches send nothing (the
 initAnalytics channel gate).
 

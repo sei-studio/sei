@@ -139,6 +139,87 @@ export function detectCraftingTable(bot) {
   }
 }
 
+/**
+ * 261126 (O5, T554): the same yes/no as `detectCraftingTable(bot) != null`,
+ * for the per-snapshot craftable list, without mineflayer's full section scan.
+ *
+ * Profiled on the reply path (local server, real bot, stub LLM): with a
+ * crafting table in a nearby section, `bot.findBlock` walked every one of
+ * that section's 4096 blocks through `bot.blockAt` (a Block object each) to
+ * find one within 4 blocks. That was ~55% of the snapshot's CPU (400 of
+ * 736 ms over 20 snapshots), and a snapshot is built before every LLM call.
+ *
+ * This visits exactly the sections mineflayer's findBlocks does for
+ * maxDistance 4 (OctahedronIterator apothem 1: the feet section, then its 6
+ * face neighbours; the one more it yields is 16+ blocks away), skips a
+ * section on the same palette test, and then checks only the positions
+ * within 4 blocks of the floored feet (mineflayer's distance test), with the
+ * same `bot.blockAt(p, false)` type match. So it finds a table exactly when
+ * findBlock does. It returns the FIRST table found, not the nearest: callers
+ * only need whether one is in reach (recipesFor reads the table argument as
+ * a boolean). craft() keeps detectCraftingTable, which it activates.
+ *
+ * Falls back to detectCraftingTable when the bot has no world to scan (stubs).
+ * @returns {import('prismarine-block').Block | null}
+ */
+const FIND_SECTION_OFFSETS = [[0, 0, 0], [-1, 0, 0], [0, 0, -1], [0, -1, 0], [0, 0, 1], [0, 1, 0], [1, 0, 0]]
+export function craftingTableInReach(bot) {
+  try {
+    const world = bot?.world
+    const game = bot?.game
+    const pos = bot?.entity?.position
+    if (typeof world?.getColumn !== 'function' || typeof bot?.blockAt !== 'function' || !pos ||
+        !Number.isFinite(game?.minY) || !Number.isFinite(game?.height)) {
+      return detectCraftingTable(bot)
+    }
+    const def = bot.registry?.blocksByName?.crafting_table ?? mcData(bot)?.blocksByName?.crafting_table
+    if (!def || !Number.isFinite(def.minStateId) || !Number.isFinite(def.maxStateId)) return detectCraftingTable(bot)
+    const R = CRAFT_TABLE_REACH
+    const px = Math.floor(pos.x), py = Math.floor(pos.y), pz = Math.floor(pos.z)
+    const sx = Math.floor(px / 16), sy = Math.floor(py / 16), sz = Math.floor(pz / 16)
+    const yShift = Math.abs(game.minY >> 4)
+    const totalSections = game.height >> 4
+    const cursor = pos.clone ? pos.floored() : null
+    if (!cursor) return detectCraftingTable(bot)
+    for (const [ox, oy, oz] of FIND_SECTION_OFFSETS) {
+      const cx = sx + ox, cy = sy + oy, cz = sz + oz
+      const sectionY = cy + yShift
+      if (sectionY < 0 || sectionY >= totalSections) continue
+      const column = world.getColumn(cx, cz)
+      if (!column) continue
+      const section = column.sections?.[sectionY]
+      if (!section) continue
+      if (section.palette) {
+        let has = false
+        for (const stateId of section.palette) {
+          if (stateId >= def.minStateId && stateId <= def.maxStateId) { has = true; break }
+        }
+        if (!has) continue
+      }
+      // This section's blocks within R of the feet (mineflayer's own bounds:
+      // x/z = section * 16, y = sectionY * 16 + minY).
+      const x0 = Math.max(cx * 16, px - R), x1 = Math.min(cx * 16 + 15, px + R)
+      const yBase = sectionY * 16 + game.minY
+      const y0 = Math.max(yBase, py - R), y1 = Math.min(yBase + 15, py + R)
+      const z0 = Math.max(cz * 16, pz - R), z1 = Math.min(cz * 16 + 15, pz + R)
+      for (let x = x0; x <= x1; x++) {
+        for (let y = y0; y <= y1; y++) {
+          for (let z = z0; z <= z1; z++) {
+            const dx = x - px, dy = y - py, dz = z - pz
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) > R) continue
+            cursor.x = x; cursor.y = y; cursor.z = z
+            const b = bot.blockAt(cursor, false)
+            if (b && b.type === def.id) return bot.blockAt(cursor)
+          }
+        }
+      }
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 // ── enumeration (cached) ─────────────────────────────────────────────────────
 // Module-level cache. One bot per process, so a single slot is correct.
 let _cache = { key: null, value: null }
@@ -152,7 +233,8 @@ export function getCraftableEntries(bot) {
     const d = mcData(bot)
     if (!d || typeof bot?.recipesFor !== 'function') return { entries: [], nearTable: false }
 
-    const tableBlock = detectCraftingTable(bot)
+    // 261126: same answer as detectCraftingTable, a fraction of the scan.
+    const tableBlock = craftingTableInReach(bot)
     const nearTable = tableBlock != null
     const invById = inventoryById(bot)
     const key = `${bot.version}|${nearTable ? 'T' : 'F'}|${inventorySig(invById)}`
