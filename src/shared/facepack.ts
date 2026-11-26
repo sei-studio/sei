@@ -118,6 +118,23 @@ export interface FacepackManifest {
   bytes?: number;
   attribution?: string[];
   compose?: string;
+  /**
+   * 261121: what the canvas shows. 'seated': a figure drawn for a room's
+   * seat (the chibi Sui set); 'bust': a head-and-shoulders picture at real
+   * proportions (every anima pack). Absent: see facepackFigure.
+   */
+  figure?: 'seated' | 'bust';
+}
+
+/**
+ * 261121: the room figure kind of a face set (seilinkRoom RoomFigure). The
+ * manifest's `figure` wins; otherwise a 'vector' pack is the chibi Sui set
+ * (drawn as a seated chibi, baked before the field existed) and anything else
+ * (anima and THA packs of a portrait, the LED visor) is a bust.
+ */
+export function facepackFigure(m: Pick<FacepackManifest, 'figure' | 'method'> | null | undefined): 'seated' | 'bust' {
+  if (m?.figure === 'seated' || m?.figure === 'bust') return m.figure;
+  return m?.method === 'vector' ? 'seated' : 'bust';
 }
 
 /**

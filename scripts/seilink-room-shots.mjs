@@ -15,6 +15,10 @@
  * <out>/<name>.mp4, H.264 with a silent AAC track (Telegram shows a
  * soundless mp4 as a GIF), plus a still at each --stills second.
  *
+ * The desktop wallpaper is framed on her (DESKTOP_STAGE, about two thirds of
+ * the screen); the preview's default is a plain cover fit of the whole room.
+ * For a wallpaper-accurate shot add `stage=desktop` to --query.
+ *
  * Starts the renderer's Vite dev server on its own (no electron-vite), a small
  * CORS static server for <packs>/<preset>/, and Chrome through playwright,
  * then opens the `?seilink=1&pack=<url>` preview (DevRoomPreview) per shot.

@@ -38,9 +38,14 @@
  * The room lighting (brightness, the dark veil, warmth) is a CSS filter on
  * the room layers, and on her too when `lighting.character`; never on the
  * widgets. Warmth is an SVG colour matrix, only mounted when it is not 0.
+ *
+ * 261121: the avatar reports its figure kind through `slot.onFigure`; a pack
+ * with a seat fit for it (manifest avatar.fit) gets her chair redrawn around
+ * her, wherever the room shows her (wallpaper, editor, decorate-together,
+ * the first-link intro), with no change at the call sites.
  */
 import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { resolveRoomTime, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
+import { resolveRoomTime, type RoomFigure, type RoomPresetManifest, type RoomState, type RoomTime } from '@shared/seilinkRoom';
 import { roomTimeMix, roomViewport, stageViewport, type RoomFit, type StageOptions, type RoomOverlay, type RoomTimeMix, type RoomViewport } from '@shared/seilinkDraw';
 import type { RoomUrlResolver } from '@shared/seilinkPack';
 import { RoomRenderer } from '../../lib/seilink/roomRenderer';
@@ -63,6 +68,12 @@ export interface RoomAvatarSlot {
   time: RoomTime;
   /** The frame cap the room runs at; the avatar should honour it. */
   fps: number;
+  /**
+   * 261121: the avatar says what kind of figure she is ('bust' or 'seated';
+   * null when it unmounts), so a pack's seat fit can redraw her chair around
+   * her (RoomPresetManifest avatar.fit). Stable across renders.
+   */
+  onFigure?(figure: RoomFigure | null): void;
 }
 
 export interface RoomCanvasProps {
@@ -104,6 +115,8 @@ export interface RoomCanvasProps {
   stage?: StageOptions | null;
   /** 261119: the editor's view of the widgets (placeholders, the selected one, a drag in progress). */
   widgetEdit?: Pick<RoomWidgetsProps, 'selected' | 'moving'> | null;
+  /** 261121: the figure her avatar reported (the editor's picker draws the same seat fit). */
+  onFigure?(figure: RoomFigure | null): void;
 }
 
 /** How often 'auto' time re-reads the clock. A clock fade lasts 30 minutes, so this is smooth. */
@@ -129,6 +142,8 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   const plainRef = useRef(plain);
   plainRef.current = plain;
   const tone = usePlainTone();
+  // 261121: what kind of figure sits in her slot, as her avatar reports it (slot.onFigure).
+  const [figure, setFigure] = useState<RoomFigure | null>(null);
 
   useLayoutEffect(() => {
     const r = new RoomRenderer(
@@ -216,6 +231,11 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
   }, [plain, tone]);
 
   useEffect(() => {
+    rendererRef.current?.setFigure(figure);
+    cb.current.onFigure?.(figure);
+  }, [figure]);
+
+  useEffect(() => {
     rendererRef.current?.setFps(fps);
   }, [fps]);
 
@@ -248,6 +268,7 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
     scale: vp.scale,
     time,
     fps,
+    onFigure: setFigure,
   };
   const avatarNode = typeof avatar === 'function' ? avatar(slot) : avatar;
 
@@ -267,6 +288,7 @@ export function RoomCanvas(props: RoomCanvasProps): React.ReactElement {
       style={plain ? { background: PLAIN_COLOURS[tone], ...style } : style}
       data-plain={plain ? tone : undefined}
       data-lit={filter ? '' : undefined}
+      data-figure={figure ?? undefined}
     >
       {warm && (
         <svg className={styles.defs} aria-hidden="true" focusable="false">

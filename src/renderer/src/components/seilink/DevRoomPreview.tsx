@@ -35,11 +35,19 @@
  * with its date, a date line, a text line, day progress), widget=<id> selects
  * one in the editor (demo ids: clock, date, text, progress), and
  * light.brightness=, light.dim=, light.warmth= (numbers), light.char=1.
+ *
+ * 261121: with portrait=<url> the editor draws her from it too (as the
+ * desktop editor does), so its seat fit shows; without it, the glass figure.
+ *
+ * 261121: stage=desktop frames the room the way the desktop wallpaper does
+ * (DESKTOP_STAGE, stageViewport: her slot 70% of the height, floor line on
+ * the bottom edge). Without it the preview is a plain cover fit, where she is
+ * only her slot's share of the canvas (about half the height in cozy).
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultRoomState, type RoomPresetManifest, type RoomSlotId, type RoomState } from '@shared/seilinkRoom';
 import { parseRoomManifest } from '@shared/seilinkValidate';
-import type { RoomFit, RoomOverlay } from '@shared/seilinkDraw';
+import { DESKTOP_STAGE, type RoomFit, type RoomOverlay } from '@shared/seilinkDraw';
 import { seilinkResolver, type RoomUrlResolver, type SeilinkPack } from '@shared/seilinkPack';
 import { RoomCanvas } from './RoomCanvas';
 import { clearRoomImageCache } from '../../lib/seilink/roomImages';
@@ -136,6 +144,9 @@ function sampleItems(manifest: RoomPresetManifest): RoomState['items'] {
   return out;
 }
 
+/** stage=desktop: the desktop wallpaper's framing (see the header). */
+const STAGE = params.get('stage') === 'desktop' ? DESKTOP_STAGE : null;
+
 /** RoomAvatar from the preview params (see the header). */
 const AVATAR = {
   characterId: params.get('char') ?? 'dev-preview',
@@ -205,6 +216,7 @@ function DevRoomEditor({ onClose }: { onClose(): void }): React.ReactElement {
       fps={Number(params.get('fps') ?? 30) || 0}
       initial={{ panel: (params.get('panel') as never) ?? null, selected: sel !== null ? Number(sel) : null, widget: params.get('widget') }}
       together={params.has('together') ? devTogether : undefined}
+      {...(AVATAR.portrait ? { characterId: AVATAR.characterId, portrait: AVATAR.portrait, name: 'Sui' } : {})}
     />
   );
 }
@@ -329,6 +341,7 @@ function DevRoomPreviewCanvas({ onEdit }: { onEdit(): void }): React.ReactElemen
         state={state}
         resolveUrl={loaded.resolve}
         fit={fit}
+        stage={STAGE}
         fps={fps}
         avatar={(slot) => (
           <RoomAvatar
