@@ -21,7 +21,7 @@ import { requestGameLaunch } from '../../lib/gameLaunch';
 import { useT } from '../../lib/i18n';
 import { Button } from '../Button';
 import type { CONNECT4Color, CONNECT4GameState } from '@shared/connect4Ipc';
-import styles from './CONNECT4Panel.module.css';
+import styles from './Connect4Panel.module.css';
 
 export interface CONNECT4PanelProps {
   characterId: string;
