@@ -53,6 +53,9 @@ const SHIP_LABEL: Record<BATTLESHIPShipName, string> = {
   destroyer: 'destroyer',
 };
 
+const COORD_ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+const COORD_COLS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+
 export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.ReactElement {
   const t = useT();
   const game = useBattleshipStore((s) => s.games[characterId] ?? null);
@@ -230,60 +233,74 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
           <div className={styles.grids}>
             <div className={styles.gridWrap}>
               <div className={styles.gridTitle}>{t('Your ships')}</div>
-              <div className={styles.grid}>
-                {game.playerGrid.cells.map((row, r) =>
-                  row.map((cell, c) => {
-                    const drafted = placingFleet
-                      ? draftCells.some((p) => p.row === r && p.col === c)
-                      : false;
-                    const showShip = placingFleet ? drafted : cell === 'ship';
-                    return (
-                      <button
-                        key={`p-${r}-${c}`}
-                        type="button"
-                        className={[
-                          styles.cell,
-                          showShip ? styles.ship : '',
-                          cell === 'hit' ? styles.hit : '',
-                          cell === 'miss' ? styles.miss : '',
-                        ].join(' ')}
-                        disabled={!placingFleet}
-                        onClick={placingFleet ? () => onPlayerCellClick(r, c) : undefined}
-                        aria-label={cellLabel(r, c)}
-                      />
-                    );
-                  }),
-                )}
+              <div className={styles.gridWithCoords}>
+                <div className={styles.coordCell} />
+                {COORD_COLS.map((num) => (
+                  <div key={num} className={styles.coordCell}>{num}</div>
+                ))}
+                {game.playerGrid.cells.map((row, r) => (
+                  <React.Fragment key={r}>
+                    <div className={styles.coordCell}>{COORD_ROWS[r]}</div>
+                    {row.map((cell, c) => {
+                      const drafted = placingFleet
+                        ? draftCells.some((p) => p.row === r && p.col === c)
+                        : false;
+                      const showShip = placingFleet ? drafted : cell === 'ship';
+                      return (
+                        <button
+                          key={`p-${r}-${c}`}
+                          type="button"
+                          className={[
+                            styles.cell,
+                            showShip ? styles.ship : '',
+                            cell === 'hit' ? styles.hit : '',
+                            cell === 'miss' ? styles.miss : '',
+                          ].join(' ')}
+                          disabled={!placingFleet}
+                          onClick={placingFleet ? () => onPlayerCellClick(r, c) : undefined}
+                          aria-label={cellLabel(r, c)}
+                        />
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
               </div>
             </div>
             <div className={styles.gridWrap}>
               <div className={styles.gridTitle}>{t('Enemy grid')}</div>
-              <div className={styles.grid}>
-                {game.aiVisibleGrid.cells.map((row, r) =>
-                  row.map((cell, c) => {
-                    const disabled =
-                      game.status !== 'active' ||
-                      game.turn !== 'player' ||
-                      cell === 'hit' ||
-                      cell === 'miss' ||
-                      cell === 'sunk';
-                    return (
-                      <button
-                        key={`a-${r}-${c}`}
-                        type="button"
-                        className={[
-                          styles.cell,
-                          disabled ? styles.disabled : '',
-                          cell === 'hit' ? styles.hit : '',
-                          cell === 'miss' ? styles.miss : '',
-                        ].join(' ')}
-                        disabled={disabled}
-                        onClick={() => onEnemyCellClick(r, c)}
-                        aria-label={cellLabel(r, c)}
-                      />
-                    );
-                  }),
-                )}
+              <div className={styles.gridWithCoords}>
+                <div className={styles.coordCell} />
+                {COORD_COLS.map((num) => (
+                  <div key={num} className={styles.coordCell}>{num}</div>
+                ))}
+                {game.aiVisibleGrid.cells.map((row, r) => (
+                  <React.Fragment key={r}>
+                    <div className={styles.coordCell}>{COORD_ROWS[r]}</div>
+                    {row.map((cell, c) => {
+                      const disabled =
+                        game.status !== 'active' ||
+                        game.turn !== 'player' ||
+                        cell === 'hit' ||
+                        cell === 'miss' ||
+                        cell === 'sunk';
+                      return (
+                        <button
+                          key={`a-${r}-${c}`}
+                          type="button"
+                          className={[
+                            styles.cell,
+                            disabled ? styles.disabled : '',
+                            cell === 'hit' ? styles.hit : '',
+                            cell === 'miss' ? styles.miss : '',
+                          ].join(' ')}
+                          disabled={disabled}
+                          onClick={() => onEnemyCellClick(r, c)}
+                          aria-label={cellLabel(r, c)}
+                        />
+                      );
+                    })}
+                  </React.Fragment>
+                ))}
               </div>
             </div>
           </div>

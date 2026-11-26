@@ -90,6 +90,8 @@ interface Session {
   startedAt: number;
   turnCtrl: AbortController | null;
   turnSeq: number;
+  /** When the current AI turn was armed (staleness check for a lost promise). */
+  aiTurnStartedAt?: number;
   spoke: boolean;
   lastActivityAt: number;
 }
@@ -174,7 +176,12 @@ function snapshot(s: Session): BATTLESHIPGameState {
 
 function push(s: Session): BATTLESHIPGameState {
   const state = snapshot(s);
-  requireDeps().pushState(state);
+  // A dead window must never be able to stall a turn: a throwing push used to
+  // escape the AI turn's catch (the fallback pushed too) and leave the board
+  // armed on the AI forever.
+  try {
+    requireDeps().pushState(state);
+  } catch { /* window gone; the next getState reconciles */ }
   return state;
 }
 
@@ -288,6 +295,7 @@ export async function playerMove(
   if (!s || s.status !== 'active') {
     throw new Error('no active Battleship game');
   }
+  rearmIfWedged(s);
   if (s.aiThinking || s.pendingAiMove || s.turn !== 'player') {
     return { ok: false, error: 'not your turn', state: snapshot(s) };
   }
@@ -493,6 +501,30 @@ function nextTurn(s: Session): 'player' | 'ai' {
 
 // ── AI move (LLM picks row, col) ─────────────────────────────────────────────
 
+/**
+ * A cell the AI has not fired at yet. The AI's shot record IS the player's grid
+ * ('hit' / 'miss' / 'sunk' were written by applyAiShot); 'ship' still reads as
+ * an unfired cell because the player's fleet is hidden from the AI.
+ *
+ * aiVisibleGrid is the PLAYER's view of the AI's own board and must never be
+ * used here: doing so made every AI turn accept a cell it had already bombed,
+ * so the board never changed and the companion looked like it was not playing.
+ */
+function aiCanFireAt(s: Session, row: number, col: number): boolean {
+  const cell = s.playerGrid.cells[row][col];
+  return cell === 'empty' || cell === 'ship';
+}
+
+function aiLegalCells(s: Session): Array<{ row: number; col: number }> {
+  const out: Array<{ row: number; col: number }> = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (aiCanFireAt(s, r, c)) out.push({ row: r, col: c });
+    }
+  }
+  return out;
+}
+
 const FIRE_TOOL = {
   name: 'fire',
   description:
@@ -509,27 +541,58 @@ const FIRE_TOOL = {
 };
 
 const CONNECT4_MAX_HOPS = 5;
-const TURN_TIMEOUT_MS = 90_000;
+/** Hard wall-clock budget for one AI turn (the deadline race, not just an abort). */
+const TURN_TIMEOUT_MS = 20_000;
+/** Whole-turn ceiling: setup + provider call. Must exceed TURN_TIMEOUT_MS. */
+const TURN_HARD_DEADLINE_MS = 28_000;
 
 function enqueueAiMove(s: Session): void {
   if (s.status !== 'active' || s.turn !== 'ai') return;
-  if (s.aiThinking) return;
+  if (s.aiThinking) {
+    // A turn that never settled must not block the next one forever: past its
+    // own budget the flag is stale and this enqueue takes the turn over.
+    const age = Date.now() - (s.aiTurnStartedAt ?? 0);
+    if (age < TURN_HARD_DEADLINE_MS + 10_000) return;
+    try { s.turnCtrl?.abort(); } catch { /* already done */ }
+  }
   s.aiThinking = true;
+  s.aiTurnStartedAt = Date.now();
   push(s);
   void runAiTurn(s);
+}
+
+/** Re-arm a wedged AI turn so a player click can never land on a dead board. */
+function rearmIfWedged(s: Session): void {
+  if (s.status !== 'active' || s.turn !== 'ai') return;
+  if (s.aiThinking && Date.now() - (s.aiTurnStartedAt ?? 0) < TURN_HARD_DEADLINE_MS + 10_000) return;
+  s.aiThinking = false;
+  enqueueAiMove(s);
 }
 
 async function runAiTurn(s: Session): Promise<void> {
   // Setup (character read, config, chat history) can throw before the turn
   // guard is armed; catch it here so the board never freezes on the AI.
   const seq = s.turnSeq;
+  // 261126: the whole turn is bounded, not just the provider call. A hung
+  // history read sat before the LLM deadline and pinned aiThinking forever,
+  // which made every later player move a silent no-op.
+  let hardTimer: ReturnType<typeof setTimeout> | null = null;
+  const hardDeadline = new Promise<never>((_, reject) => {
+    hardTimer = setTimeout(() => {
+      const e = new Error(`Battleship turn exceeded ${TURN_HARD_DEADLINE_MS}ms`);
+      e.name = 'TimeoutError';
+      reject(e);
+    }, TURN_HARD_DEADLINE_MS);
+  });
   try {
-    await runAiTurnUnsafe(s);
+    await Promise.race([runAiTurnUnsafe(s), hardDeadline]);
   } catch (err) {
     if (s.turnSeq !== seq) return;
     console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
     s.aiThinking = false;
     aiFallbackShot(s);
+  } finally {
+    if (hardTimer) clearTimeout(hardTimer);
   }
   // Safety net: if the AI turn finished without firing and it's still the AI's
   // turn, fall back to a shot so the board never stalls on a yapping model.
@@ -576,10 +639,12 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     lang.adopted ? renderAdoptedLanguageNote(lang.language) : '',
   ].join('\n');
 
-  // Build a player-visible board (hits/misses only on AI grid; player's own grid hidden from AI view text).
-  const boardText = s.aiVisibleGrid.cells
-    .map((row, r) =>
-      row.map((cell, c) => {
+  // The AI's own view of the board it is shooting at: only its own hits and
+  // misses are known, and the player's fleet reads as '.' exactly like a real
+  // hidden grid.
+  const boardText = s.playerGrid.cells
+    .map((row) =>
+      row.map((cell) => {
         if (cell === 'hit') return 'X';
         if (cell === 'miss') return 'o';
         if (cell === 'sunk') return '#';
@@ -588,13 +653,7 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     )
     .join('\n');
 
-  const legalCells: Array<{ row: number; col: number }> = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = s.aiVisibleGrid.cells[r][c];
-      if (cell === 'empty') legalCells.push({ row: r, col: c });
-    }
-  }
+  const legalCells = aiLegalCells(s);
 
   const messages: LlmMessage[] = [
     // Transcript rows carry roles the API does not know ('companion', plus
@@ -613,23 +672,45 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
   s.turnCtrl = ctrl;
   const seq = s.turnSeq;
   const stale = () => s.turnSeq !== seq || ctrl.signal.aborted;
-  const timeout = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
+  /**
+   * 261126: the board stalled on a turn whose provider call never settled (a
+   * proxy 502 that keeps retrying, a fetch that ignores the abort signal). The
+   * abort alone is not a deadline: the turn only ends when the call REJECTS, so
+   * a hung call left aiThinking true forever and the board stuck mid-turn.
+   * Race the call against a wall-clock deadline so the fallback shot always
+   * happens.
+   */
+  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const deadline = new Promise<never>((_, reject) => {
+    deadlineTimer = setTimeout(() => {
+      try { ctrl.abort(); } catch { /* already done */ }
+      const e = new Error(`Battleship turn timed out after ${TURN_TIMEOUT_MS}ms`);
+      e.name = 'TimeoutError';
+      reject(e);
+    }, TURN_TIMEOUT_MS);
+  });
 
   let fired = false;
 
   try {
     const llm = await buildLlmProvider();
     for (let hop = 0; hop < CONNECT4_MAX_HOPS && !stale(); hop++) {
-      const res = await llm.call({
-        maxTokens: 160,
-        system,
-        tools: [FIRE_TOOL, REMEMBER_TOOL],
-        messages,
-        timeoutMs: 90_000,
-        signal: ctrl.signal,
-      });
+      const res = await Promise.race([
+        llm.call({
+          maxTokens: 600,
+          system,
+          tools: [FIRE_TOOL, REMEMBER_TOOL],
+          messages,
+          timeoutMs: TURN_TIMEOUT_MS,
+          signal: ctrl.signal,
+        }),
+        deadline,
+      ]);
 
       const toolUses = res.content.filter((b) => b.type === 'tool_use');
+      // 261126: the AI turn used to be a black box. Log what the model actually
+      // said so a dead board can be debugged from the terminal (Ouen's ask).
+      logAiOutput(hop, res.content);
       // Battleship AI never speaks — the board shows the shot by itself.
       // Fire only, no commentary, no yapping.
       if (!toolUses.length) break;
@@ -645,8 +726,9 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
           if (
             typeof rawRow !== 'number' || typeof rawCol !== 'number' ||
             !Number.isFinite(rawRow) || !Number.isFinite(rawCol) ||
+            !Number.isInteger(rawRow) || !Number.isInteger(rawCol) ||
             rawRow < 0 || rawRow >= ROWS || rawCol < 0 || rawCol >= COLS ||
-            s.aiVisibleGrid.cells[rawRow][rawCol] !== 'empty'
+            !aiCanFireAt(s, rawRow, rawCol)
           ) {
             note = `(${rawRow},${rawCol}) is not a legal cell here. Legal cells: ${legalCells.map((cell) => `(${cell.row},${cell.col})`).join(', ')}. Call fire() again.`;
           } else if (fired) {
@@ -706,15 +788,17 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
     }
   } catch (err) {
     if (s.turnSeq !== seq) return;
-    if (!ctrl.signal.aborted) {
+    if (err instanceof Error && err.name === 'TimeoutError') {
+      console.error(`[sei/battleship] AI turn timed out, firing a fallback shot`);
+    } else if (!ctrl.signal.aborted) {
       console.error(`[sei/battleship] AI turn failed: ${describeErr(err)}`);
     }
     // The companion never blocks the board: on a failed or timed-out turn it
-    // fires at the first free cell and hands the turn back to the player.
+    // fires at a free cell and hands the turn back to the player.
     s.aiThinking = false;
     aiFallbackShot(s);
   } finally {
-    clearTimeout(timeout);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
     if (s.turnCtrl === ctrl) s.turnCtrl = null;
     s.aiThinking = false;
   }
@@ -725,14 +809,42 @@ async function runAiTurnUnsafe(s: Session): Promise<void> {
  * no tool call). Never re-enqueues: a failing model must not spin in a retry
  * loop while the player stares at a dead board.
  */
-function aiFallbackShot(s: Session): void {
-  if (s.status !== 'active' || s.turn !== 'ai') return;
-  let target: { row: number; col: number } | null = null;
-  for (let r = 0; r < ROWS && !target; r++) {
-    for (let c = 0; c < COLS && !target; c++) {
-      if (s.aiVisibleGrid.cells[r][c] === 'empty') target = { row: r, col: c };
+function chooseFallbackShot(
+  s: Session,
+  legal: ReadonlyArray<{ row: number; col: number }>,
+): { row: number; col: number } | null {
+  if (!legal.length) return null;
+  const free = new Set(legal.map((cell) => cell.row * COLS + cell.col));
+  const isFree = (row: number, col: number): boolean =>
+    row >= 0 && row < ROWS && col >= 0 && col < COLS && free.has(row * COLS + col);
+  const pick = (
+    cells: ReadonlyArray<{ row: number; col: number }>,
+  ): { row: number; col: number } =>
+    cells[Math.floor(Math.random() * cells.length)] ?? legal[0];
+
+  // Hunt/target: a cell NEXT TO one of our hits first, so a wounded ship gets
+  // finished instead of the board being sprayed at random.
+  const wounded: Array<{ row: number; col: number }> = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = s.playerGrid.cells[r][c];
+      if (cell !== 'hit') continue;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        if (isFree(r + dr, c + dc)) wounded.push({ row: r + dr, col: c + dc });
+      }
     }
   }
+  if (wounded.length) return pick(wounded);
+
+  // Nothing wounded: sweep one parity of the board (a 10x10 grid holds every
+  // ship of length 2+ on both parities, and a checkerboard halves the misses).
+  const parity = legal.filter((cell) => (cell.row + cell.col) % 2 === 0);
+  return pick(parity.length ? parity : legal);
+}
+
+function aiFallbackShot(s: Session): void {
+  if (s.status !== 'active' || s.turn !== 'ai') return;
+  const target = chooseFallbackShot(s, aiLegalCells(s));
   if (!target) {
     s.aiThinking = false;
     push(s);
@@ -774,6 +886,25 @@ async function speak(
       s.spoke = true;
     } catch { /* best-effort */ }
   }
+}
+
+/** One line per LLM hop: what the model chose and what (if anything) it said. */
+function logAiOutput(
+  hop: number,
+  content: ReadonlyArray<{ type: string; text?: string; name?: string; input?: unknown }>,
+): void {
+  const text = content
+    .filter((b) => b.type === 'text' && b.text)
+    .map((b) => b.text!.trim())
+    .join(' ')
+    .slice(0, 160);
+  const tools = content
+    .filter((b) => b.type === 'tool_use')
+    .map((b) => `${b.name}(${JSON.stringify(b.input ?? {})})`)
+    .join(' ');
+  console.log(
+    `[sei/battleship] ai hop=${hop} tools=${tools || 'none'} text=${text ? JSON.stringify(text) : 'none'}`,
+  );
 }
 
 function describeErr(err: unknown): string {

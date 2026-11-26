@@ -70,19 +70,20 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  grid-template-rows: repeat(10, 1fr);
+  grid-template-columns: repeat(10, 28px);
+  grid-template-rows: repeat(10, 28px);
   gap: 2px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--border-strong);
   max-width: 320px;
-  width: 100%;
+  width: auto;
   touch-action: manipulation;
 }
 
 .cell {
   position: relative;
+  width: 28px;
   height: 28px;
   background: var(--surface-2);
   border-radius: var(--radius-sm);
@@ -107,6 +108,84 @@
 .cell.miss {
   background: var(--bg4);
   box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.cell.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.gridWithCoords {
+  display: grid;
+  grid-template-columns: 28px repeat(10, 28px);
+  grid-template-rows: 28px repeat(10, 28px);
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--border-strong);
+  max-width: 356px;
+  width: auto;
+  touch-action: manipulation;
+}
+
+.cell,
+.coordCell {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+
+.cell {
+  font-size: 0;
+}
+
+.coordCell {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  font-family: var(--mono);
+  background: var(--bg2);
+  cursor: default;
+}
+
+.cell:hover:not(.disabled) {
+  background: var(--accent-soft);
+}
+
+.cell.ship {
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.cell.hit {
+  background: var(--red);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.cell.miss {
+  background: var(--bg4);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+/* A fired-and-empty cell must be unmistakable: the two dark shades alone read
+   as "nothing happened" and the companion looks like she never shot. */
+.cell.miss::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-2);
+  opacity: 0.55;
 }
 
 .cell.disabled {
