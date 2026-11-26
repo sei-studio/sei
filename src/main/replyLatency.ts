@@ -23,6 +23,8 @@
  *     text token), `line_queued_ms` (first line handed to TTS),
  *     `tts_first_chunk_ms` (its first audio bytes in the renderer). `ms`
  *     minus tts_first_chunk_ms is decode and playback start.
+ *   - minecraft, and chat on the in_game path (261126, O5): BOT_PHASE_KEYS +
+ *     `busy_at_line`, timed in the bot from the player line (see below).
  *   - chat, app path only (261125, O5): CHAT_PHASE_KEYS, ms from the
  *     chat:send handler entry. NOTE the endpoints differ from voice: chat
  *     `ms` ends when the WHOLE reply is back (typed chat never streams its
@@ -125,6 +127,45 @@ export const CHAT_PHASE_KEYS = [
 export type ChatPhaseKey = (typeof CHAT_PHASE_KEYS)[number];
 export type ChatPhases = Partial<Record<ChatPhaseKey, number>>;
 
+/**
+ * Bot-timed turn phases (261126, O5, T554): a minecraft sample, or a Sei chat
+ * routed into a live game (surface chat, path in_game). Measured in the bot
+ * (brain/actionStats.js), integer ms from the player line's arrival (the same
+ * start as `ms`), each absent when the turn never got there:
+ *   - `dispatch_ms`          the brain picked the line up (FSM dispatch, or a
+ *                            preempt folding it into a parked call)
+ *   - `llm_request_ms`       the first LLM request after the line went out
+ *   - `llm_last_request_ms`  the request whose response carried the reply
+ *   - `llm_response_ms`      that response arrived (absent when the reply went
+ *                            out mid-stream: a voice-call early say())
+ *   - `llm_model_ms`         total time an LLM call was in flight inside the
+ *                            wait. `ms - llm_model_ms` is client time:
+ *                            queueing, turn builds, inline tools (web search
+ *                            included), emit
+ *   - `llm_calls`            COUNT of LLM requests after the line, the reply's
+ *                            own included (tool rounds, retries)
+ *   - `llm_aborted`          COUNT of calls in the wait that were aborted or
+ *                            timed out (preempt restarts, timeout retries)
+ *   - `llm_rate_limited`     COUNT of calls the bot's client-side rate limit
+ *                            dropped in the wait (no request went out)
+ * plus `busy_at_line` (BOT_BUSY_AT_LINE): what the brain was doing when the
+ * line came in.
+ */
+export const BOT_PHASE_KEYS = [
+  'dispatch_ms',
+  'llm_request_ms',
+  'llm_last_request_ms',
+  'llm_response_ms',
+  'llm_model_ms',
+  'llm_calls',
+  'llm_aborted',
+  'llm_rate_limited',
+] as const;
+export type BotPhaseKey = (typeof BOT_PHASE_KEYS)[number];
+export type BotPhases = Partial<Record<BotPhaseKey, number>>;
+export const BOT_BUSY_AT_LINE = ['idle', 'llm', 'action', 'turn'] as const;
+export type BotBusyAtLine = (typeof BOT_BUSY_AT_LINE)[number];
+
 export interface ReplyLatencySample {
   surface: ReplySurface;
   path: ReplyPath;
@@ -133,8 +174,13 @@ export interface ReplyLatencySample {
   ms: number;
   outcome: ReplyOutcome;
   via?: ReplyVia;
-  /** Where the turn's time went: voice (VOICE_PHASE_KEYS) or app-path chat (CHAT_PHASE_KEYS). */
-  phases?: VoicePhases | ChatPhases;
+  /**
+   * Where the turn's time went: voice (VOICE_PHASE_KEYS), app-path chat
+   * (CHAT_PHASE_KEYS) or a bot-timed turn (BOT_PHASE_KEYS).
+   */
+  phases?: VoicePhases | ChatPhases | BotPhases;
+  /** Bot-timed turns only: what the brain was doing when the line came in. */
+  busyAtLine?: BotBusyAtLine;
 }
 
 function clampMs(v: number): number {
@@ -167,14 +213,24 @@ export function replyLatencyProps(s: ReplyLatencySample): Record<string, string 
     sample_rate: rate,
     ...(s.surface === 'minecraft' && s.via ? { via: s.via } : {}),
   };
+  const botTimed = s.surface === 'minecraft' || (s.surface === 'chat' && s.path === 'in_game');
   const keys: readonly string[] | null =
-    s.surface === 'voice' ? VOICE_PHASE_KEYS : s.surface === 'chat' && s.path === 'app' ? CHAT_PHASE_KEYS : null;
+    s.surface === 'voice'
+      ? VOICE_PHASE_KEYS
+      : s.surface === 'chat' && s.path === 'app'
+        ? CHAT_PHASE_KEYS
+        : botTimed
+          ? BOT_PHASE_KEYS
+          : null;
   if (keys && s.phases) {
     const phases = s.phases as Record<string, number | undefined>;
     for (const k of keys) {
       const v = phases[k];
       if (typeof v === 'number' && Number.isFinite(v) && v >= 0) props[k] = clampMs(v);
     }
+  }
+  if (botTimed && s.busyAtLine && (BOT_BUSY_AT_LINE as readonly string[]).includes(s.busyAtLine)) {
+    props.busy_at_line = s.busyAtLine;
   }
   return props;
 }
@@ -253,18 +309,37 @@ const BotSampleSchema = z.object({
   ms: MsSchema,
   outcome: z.enum(REPLY_OUTCOMES),
   via: z.enum(REPLY_VIAS).optional(),
+  // 261126: phases (BOT_PHASE_KEYS). A bad one drops alone, never the sample.
+  dispatch_ms: PhaseSchema,
+  llm_request_ms: PhaseSchema,
+  llm_last_request_ms: PhaseSchema,
+  llm_response_ms: PhaseSchema,
+  llm_model_ms: PhaseSchema,
+  llm_calls: z.number().int().min(0).max(10_000).optional().catch(undefined),
+  llm_aborted: z.number().int().min(0).max(10_000).optional().catch(undefined),
+  llm_rate_limited: z.number().int().min(0).max(10_000).optional().catch(undefined),
+  busy_at_line: z.enum(BOT_BUSY_AT_LINE).optional().catch(undefined),
 });
 
 export function parseBotReplyLatency(raw: unknown): ReplyLatencySample | null {
   const r = BotSampleSchema.safeParse(raw);
   if (!r.success) return null;
   const d = r.data;
+  const phases: BotPhases = {};
+  for (const k of BOT_PHASE_KEYS) {
+    const v = d[k];
+    if (v !== undefined) phases[k] = v;
+  }
+  const extra = {
+    ...(Object.keys(phases).length ? { phases } : {}),
+    ...(d.busy_at_line ? { busyAtLine: d.busy_at_line } : {}),
+  };
   // A chat typed in the app and answered by the live game session is still a
   // chat-surface wait (the reply shows in the chat window); its path says who
   // answered it.
   return d.origin === 'app'
-    ? { surface: 'chat', path: 'in_game', turn: d.turn, ms: d.ms, outcome: d.outcome }
-    : { surface: 'minecraft', path: 'in_game', turn: d.turn, ms: d.ms, outcome: d.outcome, ...(d.via ? { via: d.via } : {}) };
+    ? { surface: 'chat', path: 'in_game', turn: d.turn, ms: d.ms, outcome: d.outcome, ...extra }
+    : { surface: 'minecraft', path: 'in_game', turn: d.turn, ms: d.ms, outcome: d.outcome, ...(d.via ? { via: d.via } : {}), ...extra };
 }
 
 /** One chat turn's clock (main side). Every method after the first that resolves is a no-op. */
