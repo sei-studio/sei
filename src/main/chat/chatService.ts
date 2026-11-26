@@ -16,7 +16,7 @@ import { forgeHostBlock, FORGE_HOST_BLOCKED, summonBlockedProps, type LanHost } 
 import { loadAnalytics } from '../lazyAnalytics';
 import type { GameId, WorldStates } from '../../shared/gameIpc';
 import { paths } from '../paths';
-import { loadConfig, updateConfig } from '../configStore';
+import { loadConfig } from '../configStore';
 import { getCharacter, patchCharacter } from '../characterStore';
 import { CHAT_TIMEOUT_MS } from './sdk';
 // The multi-provider LLM layer (china-compat W1). Anthropic (cloud-proxy and
@@ -35,11 +35,10 @@ import { isWebTool, webToolsFor, splitTextAroundServerSearch, replyTextOf, merge
 import { getChatWebSession, resolveWebSearchSettings } from '../llm/webSearchSettings';
 import type { LlmCallParams, LlmMessage, LlmProvider, LlmResult, LlmToolDef } from '../llm/types';
 import type { UserConfig } from '../../shared/characterSchema';
-import { detectLanguageFromText, userChatLanguage } from '../../shared/chatLanguage';
 import { appendMemory, humanizeMemoryStamps } from '../../bot/brain/memory/memoryLog.js';
 import { isSilenceFiller } from '../../bot/brain/silenceFiller.js';
 import { normalizeNextStep, nextStepMemoryLine, normalizePlayerLine, parsePlanGameField, PLAN_GAMES } from '../../bot/brain/nextStep.js';
-import { callGreetingNote, voiceIdleNote, renderReplyLanguageNote } from '../../bot/brain/promptLibrary.js';
+import { callGreetingNote, voiceIdleNote } from '../../bot/brain/promptLibrary.js';
 import { noteCompanionGoodbye, type NextStepHookResult } from '../sessionGoodbye';
 import { isNoteLeak, stripThoughtTags } from './noteLeak';
 import { isCallActive } from '../voice/callState';
@@ -1000,21 +999,6 @@ async function sendChatMessageImpl(
     };
     await appendTurnRow(args.characterId, userMsg);
 
-    // 261124: the reply follows the language the player actually TYPES, not
-    // only the one they were heard speaking on calls (voice/languageAutoSwitch
-    // is the other writer of chat_language). Written before prepareChatTurn,
-    // which re-reads the config, so this very turn already answers in it. An
-    // unsure detection (null) or the language already in use writes nothing.
-    try {
-      const typed = detectLanguageFromText(args.text);
-      if (typed && typed !== userChatLanguage(config)) {
-        await updateConfig((cfg) => ({ ...cfg, chat_language: typed }));
-        console.log(`[sei/chat] chat language switched to ${typed}`);
-      }
-    } catch (err) {
-      console.error('[sei/chat] chat language write failed:', err);
-    }
-
     // Task 4 — if the companion is live in-game, route this message INTO that
     // session (same brain + prompt cache) instead of the standalone chat brain,
     // so the two surfaces are one conversation. The bot receives it as an
@@ -1108,12 +1092,7 @@ async function sendChatMessageImpl(
     // 261105 SeiLink: room edits she did not react to ride once, here too (roomChangeNote.ts).
     // 261105 (T336): with her room editor open, the decorating-together note (what changed since her last turn).
     const editorNote = prep.room ? editorTurnNote(args.characterId, { now: Date.now(), onCall: args.voiceCall === true }) : '';
-    // 261124: the language rule rides LAST, after the cache breakpoint, naming
-    // the language of the message just sent (null when the text has no signal).
-    // The system directive alone was not enough: models kept answering in the
-    // language of the transcript.
-    const languageNote = renderReplyLanguageNote(detectLanguageFromText(args.text));
-    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote, languageNote);
+    appendUncachedTail(messages, roomChangeTurnNote(args.characterId, prep.room), editorNote, prep.clockNote);
     mark?.('prompt_built_ms');
     const llm = await llmReady;
     if (editorNote && args.voiceCall === true) await appendCallPicture(args.characterId, prep.room, llm, messages);
