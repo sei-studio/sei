@@ -1,13 +1,14 @@
 /**
- * CONNECT4Panel — the Forza 4 surface that slides into the chat screen.
+ * CONNECT4Panel: the Four in a Row surface that slides into the chat screen.
  *
  * States:
  *   - launch screen (no game yet, or Rematch clicked after a finished game):
- *     "Forza 4" title, the inline Red / Yellow / Random side picker, one
+ *     "Four in a Row" title, the inline Red / Yellow / Random side picker, one
  *     primary button ("Launch" / "Start").
  *   - status 'active' / 'ended': the 6x7 board fills the panel edge to edge
  *     and everything else floats over it as a de-boxed HUD:
- *       top-left   turn label + icon controls (resign)
+ *       top-left   turn label + icon controls (resign; Try again when the
+ *                  character could not move, aiTurnFailed)
  *       center     result + Rematch when the game ends
  *     Closing goes through the unified GameSurface "x".
  *
@@ -47,7 +48,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
   const start = useConnect4Store((s) => s.start);
   const move = useConnect4Store((s) => s.move);
   const resign = useConnect4Store((s) => s.resign);
-  const rematch = useConnect4Store((s) => s.rematch);
+  const retry = useConnect4Store((s) => s.retry);
   const end = useConnect4Store((s) => s.end);
   const hydrate = useConnect4Store((s) => s.hydrate);
 
@@ -84,7 +85,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
     } catch (err) {
       const msg = String((err as { message?: string })?.message ?? err);
       if (/not available in this build/.test(msg)) {
-        setStartErr(t('Forza 4 is not available in this build yet.'));
+        setStartErr(t('Four in a Row is not available in this build yet.'));
       } else {
         setStartErr(t("The game couldn't start. Try again in a moment."));
       }
@@ -102,12 +103,13 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
 
   const playerColor = game?.playerColor ?? 'r';
   const isPlayerTurn = game ? game.turn === game.playerColor : false;
+  const aiFailed = game?.status === 'active' && !!game.aiTurnFailed;
 
   return (
-    <div className={styles.panel} aria-label={t('Forza 4 with {name}', { name })}>
+    <div className={styles.panel} aria-label={t('Four in a Row with {name}', { name })}>
       {showLaunch ? (
         <div className={styles.launch}>
-          <h3 className={styles.launchTitle}>{t('Forza 4')}</h3>
+          <h3 className={styles.launchTitle}>{t('Four in a Row')}</h3>
           <div className={styles.sideRow} role="radiogroup" aria-label={t('Your side')}>
             {SIDE_OPTIONS.map((opt, i) => (
               <React.Fragment key={opt.value}>
@@ -137,7 +139,7 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
             size="md"
             disabled={starting}
             onClick={() =>
-              requestGameLaunch(characterId, { id: 'CONNECT4', name: 'Forza 4' }, () =>
+              requestGameLaunch(characterId, { id: 'CONNECT4', name: t('Four in a Row') }, () =>
                 void doStart(colorChoice),
               )
             }
@@ -187,13 +189,22 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
 
           <div className={styles.hud}>
             <div className={styles.turnLabel}>
-              {isPlayerTurn
-                ? t("It's your turn, {name}", { name })
-                : t("{name}'s turn", { name })}
+              {game.status !== 'active'
+                ? null
+                : aiFailed
+                  ? t("{name} couldn't move", { name })
+                  : isPlayerTurn
+                    ? t('Your turn')
+                    : t("{name}'s turn", { name })}
             </div>
 
             <div className={styles.controls}>
-              {confirmResign ? (
+              {aiFailed ? (
+                <Button kind="accent" size="sm" onClick={() => void retry(characterId)}>
+                  {t('Try again')}
+                </Button>
+              ) : null}
+              {game.status !== 'active' ? null : confirmResign ? (
                 <span className={styles.resignConfirm}>
                   <span className={styles.resignLabel}>{t('Resign?')}</span>
                   <Button kind="danger" size="sm" onClick={() => { setConfirmResign(false); void resign(characterId); }}>
@@ -231,7 +242,9 @@ export function CONNECT4Panel({ characterId }: CONNECT4PanelProps): React.ReactE
                   ? t('Four in a row.')
                   : game.result.reason === 'draw'
                     ? t('The board is full.')
-                    : t('This game ended without a result.')}
+                    : game.result.reason === 'resign'
+                      ? t('You resigned. {name} takes the game.', { name })
+                      : t('This game ended without a result.')}
               </div>
               <div className={styles.resultActions}>
                 <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>

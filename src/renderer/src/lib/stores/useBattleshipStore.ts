@@ -1,5 +1,5 @@
 /**
- * useBATTLESHIPStore — per-character Battleship games (renderer
+ * useBATTLESHIPStore: per-character Fleet Battle games (renderer
  * mirror). The authoritative game lives in main
  * (src/main/battleship/); this store caches the last pushed
  * BATTLESHIPGameState per character and holds the panel open intent.
@@ -32,6 +32,7 @@ interface BATTLESHIPApi {
   ): Promise<{ ok: boolean; error?: string; state: BATTLESHIPGameState }>;
   BATTLESHIPResign(characterId: string): Promise<BATTLESHIPGameState>;
   BATTLESHIPRematch(characterId: string): Promise<BATTLESHIPGameState>;
+  BATTLESHIPRetry(characterId: string): Promise<BATTLESHIPGameState>;
   BATTLESHIPEnd(characterId: string): Promise<void>;
   onBATTLESHIPState(cb: (state: BATTLESHIPGameState) => void): () => void;
 }
@@ -40,7 +41,7 @@ function BATTLESHIPApi(): Partial<BATTLESHIPApi> {
   return window.sei as unknown as Partial<BATTLESHIPApi>;
 }
 
-const NOT_AVAILABLE = 'Battleship is not available in this build yet.';
+const NOT_AVAILABLE = 'Fleet Battle is not available in this build yet.';
 
 export interface BATTLESHIPStoreState {
   /** characterId → last authoritative snapshot from main. */
@@ -52,7 +53,7 @@ export interface BATTLESHIPStoreState {
   /** characterId → hydrate (BATTLESHIPGetState) already attempted. */
   hydrated: Record<string, boolean>;
 
-  /** Open the Battleship panel for a character (pre-game card if no game yet). */
+  /** Open the Fleet Battle panel for a character (pre-game card if no game yet). */
   openPanel: (characterId: string) => void;
   /** Fetch any existing game once (resume after navigation / relaunch). */
   hydrate: (characterId: string) => Promise<void>;
@@ -63,7 +64,10 @@ export interface BATTLESHIPStoreState {
   /** Confirm the fleet drawn during placement (`null` = random) and start the battle. */
   placeFleet: (characterId: string, ships: BATTLESHIPPlacement[] | null) => Promise<boolean>;
   resign: (characterId: string) => Promise<void>;
+  /** New game against the same character (main alternates who fires first). */
   rematch: (characterId: string) => Promise<void>;
+  /** Run the character's failed turn again (placement or shot). */
+  retry: (characterId: string) => Promise<void>;
   /** Close the panel. Ends any game in main (unfinished → 'abandoned'). */
   end: (characterId: string) => Promise<void>;
   /**
@@ -96,7 +100,7 @@ export const useBattleshipStore = create<BATTLESHIPStoreState>((set, get) => {
   try {
     offState = BATTLESHIPApi().onBATTLESHIPState?.(applyState) ?? null;
   } catch {
-    /* preload without the Battleship bridge — pushes just won't stream */
+    /* preload without the Fleet Battle bridge — pushes just won't stream */
   }
 
   return {
@@ -106,6 +110,14 @@ export const useBattleshipStore = create<BATTLESHIPStoreState>((set, get) => {
     hydrated: {},
 
     openPanel: (characterId) => {
+      // Funnel step 1 (shape only). Once per open, not per re-render.
+      if (get().panelIntent[characterId] !== true) {
+        try {
+          window.sei.track('battleship_panel_opened', { character_id: characterId });
+        } catch {
+          /* analytics is never load-bearing */
+        }
+      }
       set((s) => ({ panelIntent: { ...s.panelIntent, [characterId]: true } }));
       void get().hydrate(characterId);
     },
@@ -172,6 +184,16 @@ export const useBattleshipStore = create<BATTLESHIPStoreState>((set, get) => {
 
     rematch: async (characterId) => {
       const fn = BATTLESHIPApi().BATTLESHIPRematch;
+      if (!fn) return;
+      try {
+        applyState(await fn(characterId));
+      } catch {
+        /* next push reconciles */
+      }
+    },
+
+    retry: async (characterId) => {
+      const fn = BATTLESHIPApi().BATTLESHIPRetry;
       if (!fn) return;
       try {
         applyState(await fn(characterId));

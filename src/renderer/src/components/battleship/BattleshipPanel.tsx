@@ -1,16 +1,21 @@
 /**
- * BATTLESHIPPanel — the Battleship surface that slides into the
+ * BATTLESHIPPanel: the Fleet Battle surface that slides into the
  * chat screen.
  *
  * States:
  *   - launch screen (no game yet, or Rematch clicked after a finished game):
- *     "Battleship" title, one primary button ("Launch" / "Start").
+ *     "Fleet Battle" title, one primary button ("Launch").
  *   - status 'preparing': the player places their own five ships on the left
  *     grid (pick a ship, rotate, tap a cell; tap a placed ship to take it
- *     back), can roll a random fleet, then starts the battle.
+ *     back), can roll a random fleet, then confirms. The character places
+ *     its own fleet at the same time (aiFleet); the battle opens once both
+ *     are ready, so a quick player waits for it.
+ *   - Try again shows whenever the character's turn could not be finished
+ *     (aiTurnFailed), during placement or the battle.
  *   - status 'active' / 'ended': two 10x10 grids (player ships visible, AI
  *     shots hidden) plus turn label and resign control. Result + Rematch
- *     when the game ends.
+ *     when the game ends; Rematch starts the next game in main, which
+ *     alternates who fires first.
  *
  * Contract: src/shared/battleshipIpc.ts +
  * src/main/battleship/battleshipService.ts.
@@ -65,6 +70,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   const placeFleet = useBattleshipStore((s) => s.placeFleet);
   const resign = useBattleshipStore((s) => s.resign);
   const rematch = useBattleshipStore((s) => s.rematch);
+  const retryTurn = useBattleshipStore((s) => s.retry);
   const end = useBattleshipStore((s) => s.end);
   const hydrate = useBattleshipStore((s) => s.hydrate);
 
@@ -73,7 +79,6 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
 
   const [startErr, setStartErr] = useState<string | null>(null);
   const [confirmResign, setConfirmResign] = useState(false);
-  const [rematchScreen, setRematchScreen] = useState(false);
 
   // Placement draft (renderer-local until "Start battle" confirms it).
   const [draft, setDraft] = useState<BATTLESHIPPlacement[]>([]);
@@ -88,15 +93,10 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
   useEffect(() => {
     setStartErr(null);
     setConfirmResign(false);
-    setRematchScreen(false);
   }, [characterId]);
 
   const gameStatus = game?.status ?? null;
   const gameId = game?.gameId ?? null;
-  useEffect(() => {
-    if (gameStatus === 'active') setRematchScreen(false);
-  }, [gameStatus]);
-
   useEffect(() => {
     setDraft([]);
     setSelected(null);
@@ -118,7 +118,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
     } catch (err) {
       const msg = String((err as { message?: string })?.message ?? err);
       if (/not available in this build/.test(msg)) {
-        setStartErr(t('Battleship is not available in this build yet.'));
+        setStartErr(t('Fleet Battle is not available in this build yet.'));
       } else {
         setStartErr(t("The game couldn't start. Try again in a moment."));
       }
@@ -173,17 +173,21 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
     void move(characterId, row, col);
   };
 
-  const showLaunch = !game || (game.status === 'ended' && rematchScreen);
+  const showLaunch = !game;
 
   const isPlayerTurn = game ? game.turn === 'player' : false;
-  const placingFleet = game?.status === 'preparing';
+  /** The player is still drawing their fleet (placement UI on). */
+  const placingFleet = game?.status === 'preparing' && !game.playerFleetPlaced;
+  /** The player's fleet is in; the character is still placing its own. */
+  const waitingForAiFleet = game?.status === 'preparing' && game.playerFleetPlaced;
+  const aiFailed = !!game && game.status !== 'ended' && !!game.aiTurnFailed;
   const fleetReady = draft.length === BATTLESHIP_SHIP_NAMES.length;
 
   return (
-    <div className={styles.panel} aria-label={t('Battleship with {name}', { name })}>
+    <div className={styles.panel} aria-label={t('Fleet Battle with {name}', { name })}>
       {showLaunch ? (
         <div className={styles.launch}>
-          <h3 className={styles.launchTitle}>{t('Battleship')}</h3>
+          <h3 className={styles.launchTitle}>{t('Fleet Battle')}</h3>
           {startErr ? (
             <p className={styles.launchError} role="alert">{startErr}</p>
           ) : null}
@@ -192,12 +196,12 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
             size="md"
             disabled={starting}
             onClick={() =>
-              requestGameLaunch(characterId, { id: 'BATTLESHIP', name: 'Battleship' }, () =>
+              requestGameLaunch(characterId, { id: 'BATTLESHIP', name: t('Fleet Battle') }, () =>
                 void doStart(),
               )
             }
           >
-            {starting ? t('Starting…') : rematchScreen ? t('Start') : t('Launch')}
+            {starting ? t('Starting…') : t('Launch')}
           </Button>
         </div>
       ) : game ? (
@@ -253,7 +257,8 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
                           className={[
                             styles.cell,
                             showShip ? styles.ship : '',
-                            cell === 'hit' ? styles.hit : '',
+                            // A sunk cell has no style of its own yet: show it as a hit.
+                            cell === 'hit' || cell === 'sunk' ? styles.hit : '',
                             cell === 'miss' ? styles.miss : '',
                           ].join(' ')}
                           disabled={!placingFleet}
@@ -290,7 +295,7 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
                           className={[
                             styles.cell,
                             disabled ? styles.disabled : '',
-                            cell === 'hit' ? styles.hit : '',
+                            cell === 'hit' || cell === 'sunk' ? styles.hit : '',
                             cell === 'miss' ? styles.miss : '',
                           ].join(' ')}
                           disabled={disabled}
@@ -307,17 +312,28 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
 
           <div className={styles.hud}>
             <div className={styles.turnLabel}>
-              {placingFleet
-                ? activeShip
-                  ? t('Placing {ship}', { ship: t(SHIP_LABEL[activeShip]) })
-                  : t('Fleet ready')
-                : isPlayerTurn
-                  ? t("It's your turn, {name}", { name })
-                  : t("{name}'s turn", { name })}
+              {game.status === 'ended'
+                ? null
+                : aiFailed
+                  ? t("{name} couldn't move", { name })
+                  : placingFleet
+                    ? activeShip
+                      ? t('Placing {ship}', { ship: t(SHIP_LABEL[activeShip]) })
+                      : t('Fleet ready')
+                    : waitingForAiFleet
+                      ? t('Waiting for {name} to place ships', { name })
+                      : isPlayerTurn
+                        ? t('Your turn')
+                        : t("{name}'s turn", { name })}
             </div>
 
             <div className={styles.controls}>
-              {placingFleet ? (
+              {aiFailed ? (
+                <Button kind="accent" size="sm" onClick={() => void retryTurn(characterId)}>
+                  {t('Try again')}
+                </Button>
+              ) : null}
+              {game.status === 'ended' ? null : placingFleet ? (
                 <>
                   <Button kind="quiet" size="sm" onClick={() => setHorizontal((h) => !h)}>
                     {t('Rotate')}
@@ -389,10 +405,12 @@ export function BattleshipPanel({ characterId }: BattleshipPanelProps): React.Re
               <div className={styles.resultDetail}>
                 {game.result.reason === 'all-ships-sunk'
                   ? t('All ships sunk.')
-                  : t('This game ended without a result.')}
+                  : game.result.reason === 'resign'
+                    ? t('You resigned. {name} takes the game.', { name })
+                    : t('This game ended without a result.')}
               </div>
               <div className={styles.resultActions}>
-                <Button kind="accent" size="md" onClick={() => setRematchScreen(true)}>
+                <Button kind="accent" size="md" onClick={() => void rematch(characterId)}>
                   {t('Rematch')}
                 </Button>
               </div>
