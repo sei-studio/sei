@@ -34,6 +34,8 @@ import { useDataStore } from '../lib/stores/useDataStore';
 import { useChessStore } from '../lib/stores/useChessStore';
 import { useBackseatStore } from '../lib/stores/useBackseatStore';
 import { useDrawStore } from '../lib/stores/useDrawStore';
+import { useConnect4Store } from '../lib/stores/useConnect4Store';
+import { useBattleshipStore } from '../lib/stores/useBattleshipStore';
 import { Button } from './Button';
 import { ModalShell, ModalFooter } from './ModalShell';
 import { RefreshIcon } from './icons';
@@ -48,6 +50,9 @@ export interface LiveSessionInputs {
   chessGames: Readonly<Record<string, { status: string } | null | undefined>>;
   backseat: Readonly<Record<string, boolean | undefined>>;
   drawGames: Readonly<Record<string, Pick<DrawGameState, 'phase'> | undefined>>;
+  /** Main-side minigames (261122): a restart would forfeit the board. */
+  connect4Games: Readonly<Record<string, { status: string } | null | undefined>>;
+  battleshipGames: Readonly<Record<string, { status: string } | null | undefined>>;
 }
 
 /** Pure so it tests without mounting anything. A call wins over a game. */
@@ -59,7 +64,10 @@ export function liveSessionForRestart(s: LiveSessionInputs): LiveSession {
   const drawing = Object.values(s.drawGames).some(
     (g) => g != null && (g.phase === 'pick' || g.phase === 'drawing' || g.phase === 'turn-end'),
   );
-  return bot || chess || watching || drawing ? 'session' : null;
+  const minigame =
+    Object.values(s.connect4Games).some((g) => g != null && g.status !== 'ended') ||
+    Object.values(s.battleshipGames).some((g) => g != null && g.status !== 'ended');
+  return bot || chess || watching || drawing || minigame ? 'session' : null;
 }
 
 export interface UpdateRailButtonProps {
@@ -79,6 +87,8 @@ export function UpdateRailButton({ setHover, platform }: UpdateRailButtonProps):
   const chessGames = useChessStore((s) => s.games);
   const backseat = useBackseatStore((s) => s.active);
   const drawGames = useDrawStore((s) => s.games);
+  const connect4Games = useConnect4Store((s) => s.games);
+  const battleshipGames = useBattleshipStore((s) => s.games);
   const [confirm, setConfirm] = useState<Exclude<LiveSession, null> | null>(null);
 
   if (!rail) return null;
@@ -110,7 +120,15 @@ export function UpdateRailButton({ setHover, platform }: UpdateRailButtonProps):
   const onClick = (): void => {
     if (restarting) return;
     setHover?.(null);
-    const live = liveSessionForRestart({ callStatus, summons, chessGames, backseat, drawGames });
+    const live = liveSessionForRestart({
+      callStatus,
+      summons,
+      chessGames,
+      backseat,
+      drawGames,
+      connect4Games,
+      battleshipGames,
+    });
     if (live) {
       setConfirm(live);
       return;

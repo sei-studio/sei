@@ -1722,6 +1722,107 @@ export function registerIpcHandlers(deps: IpcHandlerDeps): void {
     await draw.endDraw(id);
   });
 
+  // ── Forza 4 minigame ───────────────────────────────────────────────────────
+  // Thin wrappers over src/main/connect4/connect4Service (module state initialized
+  // in main/index.ts). All character-scoped.
+  const CONNECT4MoveArgsSchema = z.object({
+    characterId: IdSchema,
+    column: z.number().int().min(0).max(6),
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, playerColor: z.enum(['r', 'y', 'random']).optional() })
+      .parse(argsRaw);
+    const { startCONNECT4 } = await import('./connect4/connect4Service');
+    return await startCONNECT4(args.characterId, { playerColor: args.playerColor });
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getCONNECT4State } = await import('./connect4/connect4Service');
+    return getCONNECT4State(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.move, async (_event, argsRaw: unknown) => {
+    const args = CONNECT4MoveArgsSchema.parse(argsRaw);
+    const { playerMove } = await import('./connect4/connect4Service');
+    return await playerMove(args.characterId, args.column);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.resign, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { resign } = await import('./connect4/connect4Service');
+    return await resign(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.rematch, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { rematch } = await import('./connect4/connect4Service');
+    return await rematch(id);
+  });
+  ipcMain.handle(IpcChannel.CONNECT4.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { endCONNECT4 } = await import('./connect4/connect4Service');
+    await endCONNECT4(id);
+  });
+
+  // ── Battleship minigame ──────────────────────────────────────────────
+  ipcMain.handle(IpcChannel.BATTLESHIP.start, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        playerStarts: z.boolean().optional(),
+      })
+      .parse(argsRaw);
+    const { startBATTLESHIP } = await import('./battleship/battleshipService');
+    return await startBATTLESHIP(args.characterId, {
+      playerStarts: args.playerStarts,
+    });
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.getState, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { getBATTLESHIPState } = await import('./battleship/battleshipService');
+    return getBATTLESHIPState(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.placeFleet, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({
+        characterId: IdSchema,
+        ships: z
+          .array(
+            z.object({
+              name: z.enum(['carrier', 'battleship', 'cruiser', 'submarine', 'destroyer']),
+              row: z.number().int().min(0).max(9),
+              col: z.number().int().min(0).max(9),
+              horizontal: z.boolean(),
+            }),
+          )
+          .max(5)
+          .nullable(),
+      })
+      .parse(argsRaw);
+    const { placeFleet } = await import('./battleship/battleshipService');
+    return await placeFleet(args.characterId, args.ships);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.move, async (_event, argsRaw: unknown) => {
+    const args = z
+      .object({ characterId: IdSchema, row: z.number().int().min(0).max(9), col: z.number().int().min(0).max(9) })
+      .parse(argsRaw);
+    const { playerMove } = await import('./battleship/battleshipService');
+    return await playerMove(args.characterId, args.row, args.col);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.resign, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { resign } = await import('./battleship/battleshipService');
+    return await resign(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.rematch, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { rematch } = await import('./battleship/battleshipService');
+    return await rematch(id);
+  });
+  ipcMain.handle(IpcChannel.BATTLESHIP.end, async (_event, idArg: unknown) => {
+    const id = IdSchema.parse(idArg);
+    const { endBATTLESHIP } = await import('./battleship/battleshipService');
+    await endBATTLESHIP(id);
+  });
+
   // ── OS permission flows (260929) ──────────────────────────────────────────
   // Mic on first Call press, macOS Screen Recording before the share picker,
   // Settings deep links from a fixed allowlist. See permissions/*.

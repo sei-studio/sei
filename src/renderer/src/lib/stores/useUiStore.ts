@@ -158,7 +158,7 @@ export type Modal =
   | {
       kind: 'cross-launch';
       characterId: string;
-      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve';
+      fromId: 'chess' | 'minecraft' | 'draw' | 'backseat' | 'stardew' | 'dontstarve' | 'CONNECT4' | 'BATTLESHIP';
       fromName: string;
       toName: string;
     }

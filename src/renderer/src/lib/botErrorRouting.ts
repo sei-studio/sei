@@ -84,6 +84,10 @@ export const BOT_ERROR_ROUTES: Record<GameId, Partial<Record<ErrorClass, Route>>
     DST_DIED_TOO_OFTEN: genericRoute,
     DST_DANGEROUS_SPOT: genericRoute,
   },
+  // Battleship: main-side minigame, no bot error routes.
+  BATTLESHIP: {},
+  // Forza 4: main-side minigame, no bot error routes.
+  CONNECT4: {},
 };
 
 /**

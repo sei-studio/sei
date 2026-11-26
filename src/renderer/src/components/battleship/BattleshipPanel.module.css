@@ -1,0 +1,349 @@
+/* BattleshipPanel.module.css — Battaglia navale board surface.
+   Tokens only; px kept to control heights (the documented exception),
+   never literal hex. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.launch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: var(--gap-section);
+  text-align: center;
+  background: var(--surface-2);
+}
+
+.launchTitle {
+  font-family: var(--display);
+  font-size: 28px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  margin: 0 0 var(--gap-group) 0;
+}
+
+.launchError {
+  color: var(--red);
+  font-size: 13px;
+  margin: 0 0 var(--gap-stack) 0;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.grids {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-section);
+  background: var(--surface);
+  padding: var(--gap-section);
+  overflow: auto;
+}
+
+.gridWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.gridTitle {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(10, 28px);
+  grid-template-rows: repeat(10, 28px);
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--border-strong);
+  max-width: 320px;
+  width: auto;
+  touch-action: manipulation;
+}
+
+.cell {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+
+.cell:hover:not(.disabled) {
+  background: var(--accent-soft);
+}
+
+.cell.ship {
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.cell.hit {
+  background: var(--red);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.cell.miss {
+  background: var(--bg4);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+.cell.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.gridWithCoords {
+  display: grid;
+  grid-template-columns: 28px repeat(10, 28px);
+  grid-template-rows: 28px repeat(10, 28px);
+  gap: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--border-strong);
+  max-width: 356px;
+  width: auto;
+  touch-action: manipulation;
+}
+
+.cell,
+.coordCell {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.1s var(--ease);
+}
+
+.cell {
+  font-size: 0;
+}
+
+.coordCell {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-2);
+  font-family: var(--mono);
+  background: var(--bg2);
+  cursor: default;
+}
+
+.cell:hover:not(.disabled) {
+  background: var(--accent-soft);
+}
+
+.cell.ship {
+  background: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.cell.hit {
+  background: var(--red);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.cell.miss {
+  background: var(--bg4);
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.15);
+}
+
+/* A fired-and-empty cell must be unmistakable: the two dark shades alone read
+   as "nothing happened" and the companion looks like she never shot. */
+.cell.miss::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-2);
+  opacity: 0.55;
+}
+
+.cell.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-group);
+  padding: var(--gap-control) var(--gap-section);
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.turnLabel {
+  font-family: var(--display);
+  font-size: 16px;
+  color: var(--text);
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.ctrlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.ctrlBtn:hover {
+  border-color: var(--border-strong);
+}
+
+.ctrlDanger {
+  color: var(--red);
+}
+
+.ctrlDanger:hover {
+  background: rgba(217, 79, 58, 0.08);
+  border-color: var(--red-strong);
+}
+
+.resignConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-control);
+}
+
+.resignLabel {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.fleetBar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-control);
+  padding: var(--gap-control) var(--gap-section);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.fleetHint {
+  font-family: var(--display);
+  font-size: 15px;
+  color: var(--text);
+}
+
+.fleetList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-control);
+}
+
+.fleetChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: 12px;
+  cursor: pointer;
+  text-transform: capitalize;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.fleetChip:hover {
+  border-color: var(--border-strong);
+}
+
+.fleetChipActive {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.fleetChipPlaced {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.fleetSize {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.resultWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-stack);
+  padding: var(--gap-section);
+  text-align: center;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.resultTitle {
+  font-family: var(--display);
+  font-size: 26px;
+  color: var(--text);
+  margin: 0;
+}
+
+.resultDetail {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
+}
+
+.resultActions {
+  display: flex;
+  gap: var(--gap-control);
+  margin-top: var(--gap-group);
+}

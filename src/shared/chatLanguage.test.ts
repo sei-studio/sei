@@ -9,6 +9,7 @@ import {
   chatLanguageForUi,
   clampChatLanguage,
   companionLanguage,
+  detectLanguageFromText,
   detectedToChatLanguage,
   isOwnCharacter,
   userChatLanguage,
@@ -135,5 +136,42 @@ describe('companionLanguage', () => {
   it('built-in companions follow the player and are not flagged adopted', () => {
     const sui = { is_default: true, owner: null, metadata: {} };
     expect(companionLanguage(sui, { ui_language: 'es' }, 'me')).toEqual({ language: 'es', adopted: false });
+  });
+});
+
+// 261124: what players actually type at a companion is short ("hi", "let's
+// play connect 4"), so detection cannot rely on function words alone.
+describe('detectLanguageFromText', () => {
+  it('detects the language of everyday typed messages', () => {
+    expect(detectLanguageFromText('hi')).toBe('en');
+    expect(detectLanguageFromText("let's play connect 4")).toBe('en');
+    expect(detectLanguageFromText('hey, want to play a game with me?')).toBe('en');
+    expect(detectLanguageFromText('ciao come stai')).toBe('it');
+    expect(detectLanguageFromText('giochiamo una partita?')).toBe('it');
+    expect(detectLanguageFromText('bonjour, tu veux jouer une partie avec moi')).toBe('fr');
+    expect(detectLanguageFromText('hola, quieres jugar una partida conmigo')).toBe('es');
+    expect(detectLanguageFromText('ola, quer jogar uma partida comigo')).toBe('pt');
+  });
+
+  it('detects non-Latin scripts by range', () => {
+    expect(detectLanguageFromText('你好，我们玩一局')).toBe('zh');
+    expect(detectLanguageFromText('こんにちは、遊ぼう')).toBe('ja');
+    expect(detectLanguageFromText('안녕, 같이 놀자')).toBe('ko');
+    expect(detectLanguageFromText('привет, сыграем')).toBe('ru');
+  });
+
+  it('returns null when there is no usable signal', () => {
+    expect(detectLanguageFromText('')).toBeNull();
+    expect(detectLanguageFromText('4')).toBeNull();
+    expect(detectLanguageFromText('ok ok ok')).toBeNull(); // shared by every lexicon, or absent
+    expect(detectLanguageFromText('xyzzy plugh')).toBeNull();
+    // A word claimed by two languages ("sono" is it, "la" is fr/es/it) cannot
+    // decide on its own.
+    expect(detectLanguageFromText('la')).toBeNull();
+  });
+
+  it('never throws on junk', () => {
+    expect(() => detectLanguageFromText('🎲🎲🎲')).not.toThrow();
+    expect(detectLanguageFromText('🎲🎲🎲')).toBeNull();
   });
 });
