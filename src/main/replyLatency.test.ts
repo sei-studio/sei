@@ -114,7 +114,12 @@ describe('replyLatencyProps', () => {
       line_queued_ms: 1620,
       tts_first_chunk_ms: REPLY_MS_MAX,
     });
-    expect(replyLatencyProps({ ...base, phases })).not.toHaveProperty('llm_first_token_ms');
+    // 261125: a chat sample carries only the chat keys (llm_* are shared).
+    const chat = replyLatencyProps({ ...base, phases });
+    expect(chat).not.toHaveProperty('speech_end_to_final_ms');
+    expect(chat).not.toHaveProperty('line_queued_ms');
+    expect(chat).not.toHaveProperty('tts_first_chunk_ms');
+    expect(replyLatencyProps({ ...base, path: 'in_game', phases })).not.toHaveProperty('llm_first_token_ms');
   });
 
   it('a missing or junk phase is left out, never sent as 0', () => {
@@ -277,5 +282,78 @@ describe('startChatReplyClock', () => {
     const b = clock();
     b.c.settle(null, new Error('PROXY_HTTP_500'));
     expect(b.samples[0].outcome).toBe('error');
+  });
+});
+
+describe('chat phases (261125, O5)', () => {
+  function clock(turn = 1) {
+    let t = 10_000;
+    const samples: ReplyLatencySample[] = [];
+    const c = startChatReplyClock({ turn, startedAt: t, now: () => t, record: (s) => samples.push(s) });
+    return { c, samples, advance: (ms: number) => (t += ms), at: () => t };
+  }
+
+  it('phases are ms since the clock started; llm_calls is a count; a later mark overwrites', () => {
+    const { c, samples, advance, at } = clock();
+    advance(5);
+    c.mark('prompt_start_ms');
+    advance(20);
+    c.mark('prompt_built_ms');
+    c.mark('llm_request_ms', at() + 2);
+    c.mark('llm_calls', 1);
+    advance(900);
+    c.mark('llm_response_ms');
+    c.mark('llm_calls', 2);
+    advance(700);
+    c.mark('llm_response_ms');
+    advance(10);
+    c.settle({ replies: [{}] });
+    expect(samples[0]).toEqual({
+      surface: 'chat',
+      path: 'app',
+      turn: 1,
+      ms: 1635,
+      outcome: 'replied',
+      phases: { prompt_start_ms: 5, prompt_built_ms: 25, llm_request_ms: 27, llm_calls: 2, llm_response_ms: 1625 },
+    });
+  });
+
+  it('marks after the bubble reached the renderer are ignored', () => {
+    const { c, samples, advance } = clock();
+    c.mark('llm_request_ms');
+    advance(800);
+    c.replied();
+    advance(3000);
+    c.mark('llm_response_ms');
+    c.mark('llm_calls', 3);
+    expect(samples[0].phases).toEqual({ llm_request_ms: 0 });
+  });
+
+  it('no marks = no phases key (unchanged sample shape)', () => {
+    const { c, samples } = clock();
+    c.settle({ replies: [{}] });
+    expect(samples[0]).not.toHaveProperty('phases');
+  });
+
+  it('a bad llm_calls value is dropped', () => {
+    const { c, samples } = clock();
+    c.mark('llm_calls', 1.5);
+    c.settle({ replies: [{}] });
+    expect(samples[0]).not.toHaveProperty('phases');
+  });
+
+  it('props carry the chat phases on the app path only, clamped like ms', () => {
+    const base = { surface: 'chat' as const, turn: 1, ms: 2000, outcome: 'replied' as const };
+    const phases = { prompt_start_ms: 4.4, llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1, llm_first_token_ms: -5 };
+    const app = replyLatencyProps({ ...base, path: 'app', phases });
+    expect(app).toMatchObject({ prompt_start_ms: 4, llm_request_ms: 30, llm_response_ms: 1900, llm_calls: 1 });
+    expect(app).not.toHaveProperty('llm_first_token_ms');
+    const inGame = replyLatencyProps({ ...base, path: 'in_game', phases });
+    expect(inGame).not.toHaveProperty('llm_request_ms');
+    // A voice-only key never rides a chat sample, nor a chat-only key a voice one.
+    const chatWithVoiceKey = replyLatencyProps({ ...base, path: 'app', phases: { tts_first_chunk_ms: 100 } });
+    expect(chatWithVoiceKey).not.toHaveProperty('tts_first_chunk_ms');
+    const voice = replyLatencyProps({ surface: 'voice', path: 'app', turn: 1, ms: 2000, outcome: 'replied', phases: { prompt_built_ms: 9 } as never });
+    expect(voice).not.toHaveProperty('prompt_built_ms');
   });
 });

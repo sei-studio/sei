@@ -1323,3 +1323,64 @@ describe("a line typed on a call stays visible, her reply does not (261124)", ()
     for (const r of result.replies) expect(r).not.toHaveProperty('typed');
   });
 });
+
+describe('typed chat latency (261125, O5)', () => {
+  it('the fresh LAN pass runs alongside the turn, and the prompt reads LAN state only after it', async () => {
+    createSpy.mockResolvedValueOnce({ content: [{ type: 'text', text: 'yep' }] });
+    let lanOpen = false;
+    let releaseLan!: () => void;
+    const lanReady = new Promise<void>((r) => {
+      releaseLan = () => {
+        lanOpen = true; // the pass refreshes the cached state, then resolves
+        r();
+      };
+    });
+    const d: ChatDeps = {
+      ...deps(),
+      lanReady,
+      getLanState: () => (lanOpen ? { kind: 'open', port: 55555, motd: 'World', lastSeenAt: Date.now() } : { kind: 'closed' }),
+    };
+    const turn = sendChatMessage({ characterId: CHAR, text: 'is my world open?' }, d);
+    // The turn gets as far as it can without the pass, but never calls the model.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(createSpy).not.toHaveBeenCalled();
+    releaseLan();
+    await turn;
+    const req = createSpy.mock.calls[0][0] as { system: unknown };
+    expect(JSON.stringify(req.system)).toContain('an open Minecraft world is detected');
+  });
+
+  it('a routed (in-game) send does not wait for the LAN pass', async () => {
+    const routeToBot = vi.fn(() => true);
+    const never = new Promise<void>(() => {});
+    const result = await sendChatMessage(
+      { characterId: CHAR, text: 'hi' },
+      { ...deps(), lanReady: never, isInGame: () => true, routeToBot },
+    );
+    expect(result).toEqual({ replies: [], routed: true });
+    expect(routeToBot).toHaveBeenCalledTimes(1);
+  });
+
+  it('stamps the reply_latency phases in order, with llm_calls counting the tool hops', async () => {
+    createSpy
+      .mockResolvedValueOnce({ content: [{ type: 'tool_use', id: 'tu_1', name: 'launch', input: { game: 'minecraft' } }] })
+      .mockResolvedValueOnce({ content: [{ type: 'text', text: 'open your world first' }] });
+    const marks: Array<[string, number | undefined]> = [];
+    const d: ChatDeps = { ...deps(), lanReady: Promise.resolve(), markPhase: (k, at) => marks.push([k, at]) };
+    await sendChatMessage({ characterId: CHAR, text: 'hop in' }, d);
+    const keys = marks.map(([k]) => k);
+    for (const k of ['prompt_start_ms', 'lan_check_ms', 'prompt_built_ms', 'provider_ready_ms', 'llm_request_ms', 'llm_response_ms']) {
+      expect(keys).toContain(k);
+    }
+    expect(keys.indexOf('prompt_start_ms')).toBeLessThan(keys.indexOf('prompt_built_ms'));
+    expect(keys.indexOf('lan_check_ms')).toBeLessThan(keys.indexOf('prompt_built_ms'));
+    expect(keys.indexOf('prompt_built_ms')).toBeLessThan(keys.indexOf('llm_request_ms'));
+    expect(keys.filter((k) => k === 'llm_request_ms')).toHaveLength(1);
+    expect(marks.filter(([k]) => k === 'llm_calls').map(([, n]) => n)).toEqual([1, 2]);
+    expect(keys.filter((k) => k === 'llm_response_ms')).toHaveLength(2);
+    // Non-streaming typed chat: no first-token stamp, and the transport is unchanged.
+    expect(keys).not.toContain('llm_first_token_ms');
+    expect(streamSpy).not.toHaveBeenCalled();
+    expect(createSpy.mock.calls[0][0]).not.toHaveProperty('onFirstToken');
+  });
+});

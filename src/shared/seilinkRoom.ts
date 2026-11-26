@@ -298,6 +298,42 @@ export interface RoomSlotDef {
   label?: string;
 }
 
+/**
+ * 261121 (product call 261121, "the couch is way too far, it doesn't look
+ * like she's sitting on it"): what kind of figure sits in her slot.
+ *  - 'seated': art drawn for the slot (the chibi Sui face set, a chibi rig):
+ *    the room's furniture was painted around it, so nothing changes.
+ *  - 'bust': a head-and-shoulders picture at real proportions (a portrait,
+ *    its cut-out, a face set baked from one, a Live2D model, the
+ *    silhouette). Stood in the same slot it is about 1.4x too big for the
+ *    chair, so the chair reads as far behind her. The pack's `fit.bust`
+ *    redraws the seat larger around her instead (she keeps her size and
+ *    place, so the desktop stage still frames her at 70% of the screen).
+ */
+export type RoomFigure = 'seated' | 'bust';
+export const ROOM_FIGURES: readonly RoomFigure[] = ['seated', 'bust'];
+
+/**
+ * 261121: how the seat is redrawn for one figure kind. Each listed slot's
+ * layers (frame, mask, glow) are drawn scaled by `scale` about `origin`
+ * (canvas px); everything else stays put. Only slots with no surface tops
+ * can be fitted (items resting on a moved top would float), and the slot's
+ * `blocks` keep their painted shape (placement does not depend on who sits).
+ */
+export interface RoomSeatFit {
+  slots: RoomSlotId[];
+  scale: number;
+  origin: RoomPoint;
+}
+
+export interface RoomAvatarSpot {
+  x: number;
+  y: number;
+  height: number;
+  /** 261121: per figure kind, how her seat is redrawn around her (see RoomSeatFit). Absent: as painted. */
+  fit?: Partial<Record<RoomFigure, RoomSeatFit>>;
+}
+
 export interface RoomPresetManifest {
   format: typeof SEILINK_ROOM_FORMAT;
   version: typeof SEILINK_ROOM_VERSION;
@@ -306,7 +342,7 @@ export interface RoomPresetManifest {
   place: string;
   canvas: [w: number, h: number];
   /** Where she sits: bottom center of her body in canvas px, and her height in canvas px. */
-  avatar: { x: number; y: number; height: number };
+  avatar: RoomAvatarSpot;
   /** Floor area items may be placed on (canvas px), for the editor. Legacy; floorAreas wins. */
   floor?: RoomBox;
   /** Real floor, as polygons following the perspective (261105). */

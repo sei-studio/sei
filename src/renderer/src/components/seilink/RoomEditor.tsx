@@ -58,6 +58,7 @@ import {
   slotLabel,
   resolveRoomTime,
   type RoomComponent,
+  type RoomFigure,
   type RoomItemPlacement,
   type RoomPolygon,
   type RoomPresetId,
@@ -363,7 +364,14 @@ function RoomCard({ pack, state, time, width }: { pack: EditorPack; state: RoomS
 // ── Avatar ──────────────────────────────────────────────────────────────────
 
 /** Her figure when she uses the Sei avatar here: frosted glass in her shape, so the room reads through. */
-function GlassFigure({ height }: { height: number }): React.ReactElement {
+function GlassFigure({ height, onFigure }: { height: number; onFigure?: RoomAvatarSlot['onFigure'] }): React.ReactElement {
+  // 261121: a head-and-shoulders shape like the wallpaper's silhouette, so the room fits her seat the same way.
+  const report = useRef(onFigure);
+  report.current = onFigure;
+  useEffect(() => {
+    report.current?.('bust');
+    return () => report.current?.(null);
+  }, []);
   return <div className={styles.figure} style={{ width: height * 0.6, height }} aria-hidden="true" />;
 }
 
@@ -387,7 +395,7 @@ function EditorAvatar({
   // 261106: with her portrait known, the Sei avatar is her face set or portrait as on the
   // wallpaper, so the editor on the desktop stage does not swap her for a silhouette.
   if (characterId && portrait) return <RoomAvatar slot={slot} characterId={characterId} name={name} use="sei" portrait={portrait} busy motion={false} />;
-  return <GlassFigure height={slot.height} />;
+  return <GlassFigure height={slot.height} onFigure={slot.onFigure} />;
 }
 
 // ── Item drag ghost ─────────────────────────────────────────────────────────
@@ -787,6 +795,12 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
   const stageRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef(new RoomPicker());
+  // 261121: her figure kind, so picks and outlines follow a seat the pack redraws around her.
+  const onFigure = useCallback((f: RoomFigure | null) => {
+    if (pickerRef.current.figure === f) return;
+    pickerRef.current.figure = f;
+    setPickTick((n) => n + 1);
+  }, []);
   const dragRef = useRef<{ index: number; pointerId: number; dx: number; dy: number; sx: number; sy: number; lifted: boolean; surface: number } | null>(null);
   const historyRef = useRef(history);
   historyRef.current = history;
@@ -1848,6 +1862,7 @@ export function RoomEditor(props: RoomEditorProps): React.ReactElement {
         clock={clock}
         onOverlay={setOverlay}
         onLayout={setVp}
+        onFigure={onFigure}
         frame={props.frame}
         widgetEdit={{ selected: widgetSel, moving: widgetDrag }}
         avatar={(slot) => <EditorAvatar slot={slot} state={state} characterId={characterId} portrait={props.portrait} name={props.name} />}

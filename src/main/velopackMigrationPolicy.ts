@@ -206,6 +206,17 @@ export function velopackLaunchTarget(root: string, exists: (p: string) => boolea
   return exists(stub) ? stub : w.join(root, 'current', 'Sei.exe');
 }
 
+/**
+ * Where an NSIS copy hands off to (261126). The root stub needs Update.exe to
+ * start anything; with Update.exe gone the stub exits without a window, so the
+ * hand-off goes to current\Sei.exe, whose launch repairs the install
+ * (velopackRepair.ts). Shortcuts keep velopackLaunchTarget (the stub).
+ */
+export function velopackRedirectTarget(root: string, exists: (p: string) => boolean): string {
+  const target = velopackLaunchTarget(root, exists);
+  return exists(w.join(root, 'Update.exe')) ? target : w.join(root, 'current', 'Sei.exe');
+}
+
 /** The NSIS install this process runs from, or null (Velopack, portable, dev). */
 export function nsisInstallFor(execPath: string, env: WinEnv, exists: (p: string) => boolean): NsisInstall | null {
   const dir = w.dirname(execPath);

@@ -45,6 +45,7 @@ import { botGameName } from '../lib/gameLaunch';
 import { GameSurface } from '../components/GameSurface';
 import { ChatTopBar } from '../components/ChatTopBar';
 import { sei } from '../lib/ipcClient';
+import { noteComposerTyping } from '../lib/chatPrewarm';
 import { startOrOpenCall } from '../lib/callLaunch';
 import { portraitSrc } from '../lib/portraitSrc';
 import { pickPalette } from '../lib/portraitPalettes';
@@ -908,6 +909,8 @@ export function ChatScreen({ characterId }: ChatScreenProps): React.ReactElement
               value={draft}
               onChange={(e) => {
                 setDraft(e.target.value);
+                // 261125: keep the chat upstream connection warm for the send.
+                noteComposerTyping(e.target.value);
                 // 261124: typing to the companion watching your screen latches
                 // the frames from when you started, so the answer is about
                 // what you were looking at, not the moment you hit Enter.

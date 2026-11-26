@@ -176,7 +176,17 @@ describe('installVelopack: starting Setup', () => {
     expect(marks('migration-installed')).toEqual([expect.objectContaining({ version: '0.6.91', spawnRetries: 1 })]);
     expect(migrationState()).toMatchObject({ phase: 'installed', attempts: 1, version: '0.6.91' });
     expect(migrationState().pid).toBeUndefined();
-    expect(h.capture).toHaveBeenCalledWith('velopack_migration', expect.objectContaining({ phase: 'installed', spawn_retries: 1 }));
+    expect(h.capture).toHaveBeenCalledWith(
+      'velopack_migration',
+      expect.objectContaining({
+        phase: 'installed',
+        spawn_retries: 1,
+        download_ms: expect.any(Number),
+        setup_ms: expect.any(Number),
+        total_ms: expect.any(Number),
+        mb: expect.any(Number),
+      }),
+    );
     expect(deps.handOff).toHaveBeenCalledTimes(1);
     expect(tempLeft()).toEqual([]);
   });
@@ -200,6 +210,9 @@ describe('installVelopack: starting Setup', () => {
       phase: 'failed',
       attempt: 1,
       error: 'setup: spawn EBUSY',
+      stage: 'setup',
+      download_ms: expect.any(Number),
+      total_ms: expect.any(Number),
       spawn_retries: SPAWN_BUSY_DELAYS_MS.length,
     });
     expect(deps.handOff).not.toHaveBeenCalled();
